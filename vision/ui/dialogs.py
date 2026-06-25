@@ -1,3 +1,4 @@
+import cv2
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QInputDialog,
@@ -7,6 +8,8 @@ from PySide6.QtWidgets import (
 
 from core import config
 from core.db import Database
+
+from .widgets_roi import RegionDrawWidget
 
 _ID_ROLE = Qt.ItemDataRole.UserRole
 
@@ -285,3 +288,47 @@ class SelectProductAngleDialog(QDialog):
         self.selected_product_id = product_item.data(_ID_ROLE)
         self.selected_angle_id = angle_item.data(_ID_ROLE)
         self.accept()
+
+
+class InspectionPlanDialog(QDialog):
+    """Read-only answer to "what exactly am I checking?": shows the primary
+    reference image for one product/angle with its defined inspection
+    regions drawn on top (gray - this is a static reference, not a live
+    PASS/FAIL result), plus a name/type list. Products with no regions
+    defined are checked as a whole image (V1/V2 aggregate comparison only),
+    which is stated explicitly rather than left implicit."""
+
+    def __init__(self, parent, product: dict, angle: dict, regions: list[dict], reference: dict | None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Inspection Plan - {product['name']} / {angle['angle_name']}")
+        self.setMinimumSize(640, 520)
+        root = QVBoxLayout(self)
+
+        preview = RegionDrawWidget(single_rect=False, read_only=True)
+        if reference is not None:
+            frame = cv2.imread(reference["image_path"])
+            if frame is not None:
+                preview.set_image(frame)
+        preview.load_regions(regions)
+        root.addWidget(preview, stretch=3)
+
+        if reference is None:
+            root.addWidget(QLabel("No reference image captured yet for this angle."))
+
+        if regions:
+            region_list = QListWidget()
+            for region in regions:
+                type_label = config.REGION_TYPE_LABELS.get(region["region_type"], region["region_type"])
+                region_list.addItem(f"{region['region_name']}  -  {type_label}")
+            root.addWidget(region_list, stretch=1)
+        else:
+            root.addWidget(QLabel(
+                "No named inspection regions defined - this product is checked as a whole "
+                "(overall GOOD/BAD comparison against the reference image, no per-feature breakdown)."
+            ))
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        buttons.button(QDialogButtonBox.StandardButton.Close).clicked.connect(self.accept)
+        root.addWidget(buttons)

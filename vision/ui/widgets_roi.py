@@ -67,9 +67,10 @@ class RegionDrawWidget(QWidget):
 
     regions_changed = Signal()
 
-    def __init__(self, single_rect: bool = False, parent=None):
+    def __init__(self, single_rect: bool = False, parent=None, read_only: bool = False):
         super().__init__(parent)
         self.single_rect = single_rect
+        self.read_only = read_only
         self.setMinimumSize(320, 240)
         self.setMouseTracking(True)
 
@@ -171,6 +172,8 @@ class RegionDrawWidget(QWidget):
     # ------------------------------------------------------------- mouse events
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if self.read_only:
+            return
         display = self._display_rect()
         if display.isEmpty() or not display.contains(event.position().toPoint()):
             return

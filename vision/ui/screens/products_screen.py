@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
 
 from core.app import QCApp
 
-from ..dialogs import AddEditProductDialog, prompt_text
+from ..dialogs import AddEditProductDialog, InspectionPlanDialog, prompt_text
 
 _ID_ROLE = Qt.ItemDataRole.UserRole
 
@@ -77,8 +77,11 @@ class ProductsScreen(QWidget):
         delete_angle_button = QPushButton("Delete Angle")
         delete_angle_button.setObjectName("dangerButton")
         delete_angle_button.clicked.connect(self._on_delete_angle)
+        view_plan_button = QPushButton("View Inspection Plan")
+        view_plan_button.clicked.connect(self._on_view_inspection_plan)
         angle_button_row.addWidget(add_angle_button)
         angle_button_row.addWidget(delete_angle_button)
+        angle_button_row.addWidget(view_plan_button)
         right.addLayout(angle_button_row)
         root.addWidget(right_card, stretch=1)
 
@@ -168,6 +171,20 @@ class ProductsScreen(QWidget):
             self.engine.location = None
         self._load_angles()
         self.on_change()
+
+    def _on_view_inspection_plan(self) -> None:
+        product_id = self._selected_product_id()
+        items = self.angle_list.selectedItems()
+        if product_id is None or not items:
+            QMessageBox.warning(self, "View Inspection Plan", "Select a product and an angle first.")
+            return
+        angle_id = items[0].data(_ID_ROLE)
+        product = self.engine.db.get_product(product_id)
+        angle = self.engine.db.get_angle(angle_id)
+        regions = self.engine.db.list_regions(product_id, angle_id)
+        reference = self.engine.db.get_primary_reference(angle_id)
+        dialog = InspectionPlanDialog(self, product, angle, regions, reference)
+        dialog.exec()
 
     def _load_angles(self) -> None:
         self.angle_list.clear()
