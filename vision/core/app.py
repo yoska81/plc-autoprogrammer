@@ -276,10 +276,22 @@ class QCApp:
 
     # ------------------------------------------------- product/angle selection
 
+    def _clear_pending_inspection(self) -> None:
+        """Drops any in-progress comparison/inspection-image state from
+        whichever product/angle was previously selected, so the UI never
+        shows a stale GOOD/BAD result or detection overlay for a product
+        that is no longer the one selected."""
+        self.last_comparison = None
+        self.last_comparison_v2 = None
+        self.last_inspection_image_path = None
+        self.last_reference = None
+        self.last_inspection_id = None
+
     def select_product(self, product_id: int) -> None:
         self.current_product = self.db.get_product(product_id)
         self.current_angle = None
         self.location = None
+        self._clear_pending_inspection()
 
     def select_angle(self, angle_id: int) -> None:
         angle = self.db.get_angle(angle_id)
@@ -287,11 +299,59 @@ class QCApp:
         self.current_product = self.db.get_product(angle["product_id"])
         self.location = ProductAngleLocation(self.current_product["name"], angle["angle_name"])
         self.location.ensure_dirs()
+        self._clear_pending_inspection()
 
     def _require_location(self) -> ProductAngleLocation:
         if self.location is None:
             raise RuntimeError("No product/angle selected.")
         return self.location
+
+    def setup_status(self) -> dict:
+        """Single source of truth for 'is this product ready to inspect?'.
+
+        Both the Inspection screen's Selected Product / Golden Reference /
+        Inspection Plan panels and the Inspect/Compare/Trigger blocking logic
+        read from this one dict, so the UI's explanation of *why* a product
+        can't be inspected yet always matches what actually gets blocked. A
+        product with zero regions defined is still 'ready' (Whole Product
+        Compare) - regions are an additive layer, not a requirement; only a
+        missing GOOD reference blocks inspection.
+        """
+        status = {
+            "has_product": self.current_product is not None,
+            "has_angle": self.current_angle is not None,
+            "product_name": self.current_product["name"] if self.current_product else None,
+            "ready": False,
+            "reason": "No product selected.",
+            "reference_count": 0,
+            "primary_reference": None,
+            "region_count": 0,
+            "regions": [],
+            "plan_label": "Whole Product Compare",
+            "station_name": config.DEFAULT_STATION_NAME,
+        }
+        if self.current_product is None:
+            return status
+        status["reason"] = "Select an angle to continue."
+        if self.current_angle is None:
+            return status
+
+        regions = self.db.list_regions(self.current_product["id"], self.current_angle["id"])
+        status["region_count"] = len(regions)
+        status["regions"] = regions
+        status["plan_label"] = "Region-Based Inspection" if regions else "Whole Product Compare"
+
+        references = self.db.list_reference_images(self.current_angle["id"])
+        status["reference_count"] = len(references)
+        status["primary_reference"] = self.db.get_primary_reference(self.current_angle["id"])
+
+        if status["primary_reference"] is None:
+            status["reason"] = "Product not taught yet - run Teach Product before inspection."
+            return status
+
+        status["ready"] = True
+        status["reason"] = ""
+        return status
 
     # --------------------------------------------------------------- capture
 

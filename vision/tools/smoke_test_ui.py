@@ -82,6 +82,102 @@ def _test_v2_region_scoring(window: MainWindow) -> None:
     print("[smoke_test_ui] V2 region scoring sub-test OK")
 
 
+def _test_setup_blocking(window: MainWindow) -> None:
+    """Setup-status/blocking sub-test covering the usability-correction pass:
+    a product is not inspectable until it has a GOOD reference (regardless
+    of regions), region definitions are an additive layer (not required),
+    and the Selected Product / Golden Reference / Inspection Plan panels on
+    the Inspection screen reflect QCApp.setup_status() after each
+    select_product()/select_angle()/refresh()."""
+    engine = window.engine
+    inspection = window.inspection_screen
+    engine.set_inspection_mode(config.INSPECTION_MODE_FREE_POSE)
+
+    product = get_or_create_product(engine, "smoke_test_setup_blocking_product")
+    engine.select_product(product["id"])
+    angle = get_or_create_angle(engine, product["id"], "front")
+    engine.select_angle(angle["id"])
+    window.refresh_all()
+
+    # No GOOD reference yet -> not ready, and the panels must say so.
+    # (Not exercising _require_setup_ready() here: when status is not ready
+    # it pops a real modal QMessageBox.exec(), which would hang forever
+    # under a headless/offscreen run with no display to click a button on.)
+    status = engine.setup_status()
+    assert not status["ready"], "product with no GOOD reference must not be ready"
+    assert "not taught" in status["reason"].lower(), status["reason"]
+    assert "No product selected" not in inspection.selected_product_panel.name_label.text()
+    assert inspection.selected_product_panel.name_label.text() == product["name"]
+    assert "Setup Complete" not in inspection.selected_product_panel.status_label.text()
+    assert inspection.golden_panel.image_label.text() == "No GOOD reference saved" or \
+        not inspection.golden_panel.image_label.pixmap(), (
+        "Golden Reference panel must show the empty state until a reference is saved"
+    )
+
+    demo_dir = config.DATA_DIR / "test_images_v2_demo"
+    reference_path = demo_dir / "v2_demo_reference.png"
+    good_path = demo_dir / "v2_demo_good_rotated.png"
+    reference_image = cv2.imread(str(reference_path))
+    assert reference_image is not None, f"could not read {reference_path}"
+    engine.save_good_reference_from_image(reference_image, make_primary=True)
+
+    # GOOD reference saved, still zero regions -> ready (Whole Product Compare).
+    status = engine.setup_status()
+    assert status["ready"], f"product with a GOOD reference but no regions must be ready: {status}"
+    assert status["plan_label"] == "Whole Product Compare"
+    assert status["region_count"] == 0
+    assert inspection._require_setup_ready(), (
+        "_require_setup_ready() must allow inspection once a GOOD reference exists"
+    )
+
+    # Add ROIs -> still ready, now Region-Based, and the V2 result carries
+    # region_scores/region_summary through to the database/report.
+    engine.db.add_region(
+        product["id"], angle["id"], "setup_blocking_region_a", config.REGION_TYPE_PRESENCE,
+        0.1, 0.1, 0.3, 0.3, sort_order=0,
+    )
+    status = engine.setup_status()
+    assert status["ready"], "adding regions must not make an already-taught product unready"
+    assert status["plan_label"] == "Region-Based Inspection"
+    assert status["region_count"] == 1
+
+    window.refresh_all()
+    assert inspection.selected_product_panel.status_label.text().startswith("✓"), (
+        inspection.selected_product_panel.status_label.text()
+    )
+    assert inspection.selected_product_panel._rows["regions"].text() == "1"
+    assert inspection.golden_panel.image_label.pixmap() is not None and \
+        not inspection.golden_panel.image_label.pixmap().isNull(), (
+        "Golden Reference panel must show the saved reference image once one exists"
+    )
+    assert inspection.region_plan_panel.list_widget.count() == 1, (
+        "Inspection Plan panel must list the staged region definition before any compare runs"
+    )
+
+    good_image = cv2.imread(str(good_path))
+    assert good_image is not None, f"could not read {good_path}"
+    location = engine._require_location()
+    inspection_path = location.new_inspection_path()
+    cv2.imwrite(str(inspection_path), good_image)
+    engine.last_inspection_image_path = inspection_path
+
+    assert inspection._require_setup_ready(), (
+        "_require_setup_ready() must allow inspection once regions are also defined"
+    )
+    inspection._on_compare()
+    assert engine.last_comparison_v2 is not None, "compare did not produce a V2 result"
+    assert engine.last_comparison_v2.region_scores is not None and \
+        len(engine.last_comparison_v2.region_scores) == 1
+    inspection._on_save_result()
+    inspection_id = engine.last_inspection_id
+    assert inspection_id is not None, "result was not saved to the database"
+
+    rows = engine.db.list_inspections(limit=5)
+    row = next(r for r in rows if r["id"] == inspection_id)
+    assert row.get("region_summary"), f"report row is missing region_summary: {row}"
+    print("[smoke_test_ui] setup blocking + panel/report sub-test OK")
+
+
 def _test_camera_detail_screen(window: MainWindow) -> None:
     """Headless instantiate-and-.refresh() check for the new 'Open Full
     View' window (ui/screens/camera_detail_screen.py) - confirms it builds
@@ -145,6 +241,7 @@ def main() -> None:
     assert not engine.camera_running, "camera did not stop"
 
     _test_v2_region_scoring(window)
+    _test_setup_blocking(window)
     _test_camera_detail_screen(window)
 
     print("[smoke_test_ui] OK")

@@ -8,10 +8,7 @@ from core.app import QCApp
 
 _MODE_CHOICES = ("auto", "real", "test")
 
-_INSPECTION_MODE_LABELS = {
-    config.INSPECTION_MODE_FIXED: "Fixed Reference (V1)",
-    config.INSPECTION_MODE_FREE_POSE: "Free Position / Continuous Rotation (V2)",
-}
+_INSPECTION_MODE_LABELS = config.INSPECTION_MODE_LABELS
 
 _NO_PRODUCT_ACTION_LABELS = {
     config.NO_PRODUCT_ACTION_SKIP: "Skip and do not count",

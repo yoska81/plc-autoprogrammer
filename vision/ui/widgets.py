@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from core import config
+
 from .image_utils import frame_to_pixmap
 
 # Matches ui/styles.py's QSS hex colors #00d97e/#ff4d4f/#ffb020 - the one
@@ -112,10 +114,10 @@ class ImagePreviewPanel(QWidget):
         if frame is not None:
             self.set_frame(frame)
 
-    def clear(self) -> None:
+    def clear(self, message: str = "NO IMAGE") -> None:
         self._last_pixmap = None
         self.image_label.clear()
-        self.image_label.setText("NO IMAGE")
+        self.image_label.setText(message)
 
 
 class ResultBadge(QLabel):
@@ -251,8 +253,100 @@ class RegionPlanList(QFrame):
             item.setForeground(REGION_DOT_COLOR.get(result, QColor("#cfcfcf")))
             self.list_widget.addItem(item)
 
+    def set_plan(self, regions: list[dict] | None) -> None:
+        """Static pre-inspection view: one row per region *definition*
+        (core/db.py's list_regions() rows) with its type and Ready/Disabled
+        status, shown as soon as a product/angle is selected - before any
+        comparison has run. set_regions() (live PASS/FAIL/WARN dots) replaces
+        this once an inspection actually executes."""
+        self.list_widget.clear()
+        if not regions:
+            self.list_widget.setVisible(False)
+            self.empty_label.setVisible(True)
+            return
+        self.empty_label.setVisible(False)
+        self.list_widget.setVisible(True)
+        for region in regions:
+            type_label = config.REGION_TYPE_LABELS.get(region["region_type"], region["region_type"])
+            enabled = bool(region.get("enabled", 1))
+            status = "Ready" if enabled else "Disabled"
+            item = QListWidgetItem(f"○  {region['region_name']} — {type_label}  ({status})")
+            item.setForeground(QColor("#cfcfcf") if enabled else QColor("#6b7280"))
+            self.list_widget.addItem(item)
+
     def clear(self) -> None:
         self.set_regions(None)
+
+
+class SelectedProductPanel(QFrame):
+    """'Selected Product' identity card: the always-visible answer to 'what
+    product am I working on right now?' - name, part number, station,
+    setup-complete status, and reference/region counts, fed by
+    core/app.py's QCApp.setup_status(). Distinct from ResultPanel (which
+    answers 'did the LAST PART pass?'), so an operator never confuses 'is
+    this product taught?' with 'did this part pass?'."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("panelCard")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(6)
+
+        caption = QLabel("SELECTED PRODUCT")
+        caption.setObjectName("panelTitle")
+        layout.addWidget(caption)
+
+        self.name_label = QLabel("No product selected")
+        self.name_label.setObjectName("infoValue")
+        self.name_label.setWordWrap(True)
+        layout.addWidget(self.name_label)
+
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        self._rows: dict[str, QLabel] = {}
+        for key, caption_text in (
+            ("part_number", "Part Number"), ("station", "Station"),
+            ("references", "GOOD References"), ("regions", "Inspection Regions"),
+            ("mode", "Inspection Mode"), ("plan", "Inspection Plan"),
+        ):
+            row = QHBoxLayout()
+            label = QLabel(caption_text)
+            label.setObjectName("statusCaption")
+            row.addWidget(label)
+            row.addStretch()
+            value = QLabel("—")
+            value.setObjectName("statusValue")
+            value.setAlignment(Qt.AlignmentFlag.AlignRight)
+            row.addWidget(value)
+            layout.addLayout(row)
+            self._rows[key] = value
+
+    def set_status(self, status: dict, part_number: str = "", inspection_mode_label: str = "") -> None:
+        if not status["has_product"]:
+            self.name_label.setText("No product selected")
+            self.status_label.setText("Select or teach a product to begin.")
+            self.status_label.setStyleSheet("color: #ffb020;")
+            for value in self._rows.values():
+                value.setText("—")
+            return
+
+        self.name_label.setText(status.get("product_name", "—"))
+        if status["ready"]:
+            self.status_label.setText("✓ Setup Complete")
+            self.status_label.setStyleSheet("color: #00d97e; font-weight: 600;")
+        else:
+            self.status_label.setText(f"✗ {status['reason']}")
+            self.status_label.setStyleSheet("color: #ff4d4f; font-weight: 600;")
+
+        self._rows["part_number"].setText(part_number or "—")
+        self._rows["station"].setText(status.get("station_name", "—"))
+        self._rows["references"].setText(str(status["reference_count"]))
+        self._rows["regions"].setText(str(status["region_count"]))
+        self._rows["mode"].setText(inspection_mode_label or "—")
+        self._rows["plan"].setText(status.get("plan_label", "—"))
 
 
 class CountersPanel(QFrame):

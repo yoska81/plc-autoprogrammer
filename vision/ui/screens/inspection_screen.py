@@ -14,7 +14,7 @@ from core.app import NoProductDecisionRequired, QCApp
 from core.compare_v2 import V2ComparisonResult
 
 from ..dialogs import SelectProductAngleDialog, prompt_text
-from ..widgets import CountersPanel, ImagePreviewPanel, RegionPlanList, ResultPanel
+from ..widgets import CountersPanel, ImagePreviewPanel, RegionPlanList, ResultPanel, SelectedProductPanel
 from ..wizards import TeachProductWizard
 
 LIVE_PREVIEW_INTERVAL_MS = 200
@@ -36,6 +36,7 @@ class InspectionScreen(QWidget):
         self.switch_to_reports = switch_to_reports
         self.switch_to_camera_setup = switch_to_camera_setup
         self.last_inspection_time: str | None = None
+        self._overlay_frozen = False
 
         self._build_ui()
         self.preview_timer = QTimer(self)
@@ -67,6 +68,26 @@ class InspectionScreen(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(6)
 
+        self.selected_product_panel = SelectedProductPanel()
+        layout.addWidget(self.selected_product_panel)
+
+        layout.addSpacing(10)
+        layout.addWidget(self._section_title("GOLDEN REFERENCE"))
+        golden_caption = QLabel("This is what GOOD looks like")
+        golden_caption.setObjectName("infoLabel")
+        golden_caption.setWordWrap(True)
+        layout.addWidget(golden_caption)
+        self.golden_panel = ImagePreviewPanel("", preview_size=(198, 140))
+        self.golden_panel.clear("No GOOD reference saved")
+        layout.addWidget(self.golden_panel)
+
+        layout.addSpacing(10)
+        teach_first_button = QPushButton("Teach Product")
+        teach_first_button.setObjectName("primaryActionButton")
+        teach_first_button.clicked.connect(self._on_teach_product)
+        layout.addWidget(teach_first_button)
+
+        layout.addSpacing(10)
         layout.addWidget(self._section_title("STATION"))
 
         self.station_name_label = QLabel("—")
@@ -319,6 +340,7 @@ class InspectionScreen(QWidget):
             QMessageBox.warning(self, "Camera", str(exc))
             return
         self.preview_timer.start()
+        self._overlay_frozen = False
         self.live_panel.set_live(True)
         self.camera_toggle_button.setText("Stop Camera")
         self.on_change()
@@ -328,12 +350,15 @@ class InspectionScreen(QWidget):
             return
         self.preview_timer.stop()
         self.engine.stop()
+        self._overlay_frozen = False
         self.live_panel.clear()
         self.live_panel.set_live(False)
         self.camera_toggle_button.setText("Start Camera")
         self.on_change()
 
     def _update_live_preview(self) -> None:
+        if self._overlay_frozen:
+            return
         try:
             frame = self.engine.camera.read_frame()
         except Exception:
@@ -348,6 +373,27 @@ class InspectionScreen(QWidget):
             QMessageBox.warning(self, "Product / Angle", "Select or add a product/angle first.")
             return False
         return True
+
+    def _require_setup_ready(self) -> bool:
+        """Blocks Compare/Trigger - the actions that produce a GOOD/BAD
+        verdict - until QCApp.setup_status() reports the selected product is
+        fully taught (at minimum, a GOOD reference exists). Never shows a
+        fake GOOD/BAD result for a product the system doesn't know how to
+        check yet."""
+        status = self.engine.setup_status()
+        if status["ready"]:
+            return True
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Setup Incomplete")
+        box.setText("Cannot inspect — product setup is incomplete.")
+        box.setInformativeText(status["reason"])
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        teach_button = box.addButton("Open Teach Product", QMessageBox.ButtonRole.ActionRole)
+        box.exec()
+        if box.clickedButton() is teach_button:
+            self._on_teach_product()
+        return False
 
     # ------------------------------------------------------- product/angle
 
@@ -404,12 +450,16 @@ class InspectionScreen(QWidget):
         except Exception as exc:
             QMessageBox.warning(self, "Take Inspection Picture", str(exc))
             return
+        self._overlay_frozen = False
+        self.live_panel.set_live(True)
         self.last_inspection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.on_change()
 
     def _on_compare(self) -> None:
         if self.engine.location is None:
             QMessageBox.warning(self, "Compare", "Select or add a product/angle first.")
+            return
+        if not self._require_setup_ready():
             return
         try:
             comparison = self.engine.compute_comparison_v2() if self.engine.inspection_mode == \
@@ -453,6 +503,14 @@ class InspectionScreen(QWidget):
         overlay = self._build_detection_overlay(comparison)
         if overlay is not None:
             self.overlay_panel.set_frame(overlay)
+            # Freeze the dominant live panel on this analyzed frame (product
+            # outline/name/rotation/center/ROI labels, or the "not found"
+            # banner) so the operator sees exactly what was checked, instead
+            # of the raw feed racing ahead at the next preview tick. Cleared
+            # by the next Start Camera / Inspect action.
+            self.live_panel.set_frame(overlay)
+            self.live_panel.set_live(False)
+            self._overlay_frozen = True
         else:
             self.overlay_panel.clear()
         self.best_match_label.setText(comparison.best_angle_name or "—")
@@ -468,20 +526,38 @@ class InspectionScreen(QWidget):
 
     def _build_detection_overlay(self, comparison: V2ComparisonResult) -> np.ndarray | None:
         """Full inspection frame with the detected (rotated) product bounding
-        box, its center marker, and - when the product has named inspection
-        regions - one labeled, color-coded polygon per region (green=PASS,
-        red=FAIL, yellow=WARN). Purely a display rendering, computed from
-        fields the V2 engine already reports; never runs on the live preview
-        timer, only after an explicit Inspect/Compare/trigger action."""
+        box, a product-name + rotation-angle label, its center marker, and -
+        when the product has named inspection regions - one labeled,
+        color-coded polygon per region (green=PASS, red=FAIL, yellow=WARN).
+        When the selected product was NOT found in the frame, returns the
+        raw frame with a 'not found' banner instead of None, so the operator
+        always sees what the camera actually saw. Purely a display
+        rendering, computed from fields the V2 engine already reports; never
+        runs on the live preview timer, only after an explicit
+        Inspect/Compare/trigger action."""
         path = self.engine.last_inspection_image_path
-        if not comparison.product_detected or path is None or not path.exists():
+        if path is None or not path.exists():
             return None
         image = cv2.imread(str(path))
         if image is None:
             return None
+
+        if not comparison.product_detected:
+            cv2.putText(image, "SELECTED PRODUCT NOT FOUND IN IMAGE", (20, 44),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, config.OVERLAY_COLOR_BAD, 2, cv2.LINE_AA)
+            return image
+
         if comparison.detected_bbox_corners:
             points = np.array(comparison.detected_bbox_corners, dtype=np.int32).reshape((-1, 1, 2))
             cv2.polylines(image, [points], isClosed=True, color=(0, 220, 0), thickness=3)
+            product_name = self.engine.current_product["name"] if self.engine.current_product else "Product"
+            rotation_text = (
+                f"{comparison.detected_rotation_deg:.1f} deg"
+                if comparison.detected_rotation_deg is not None else ""
+            )
+            label_pos = (int(points[0][0][0]), max(20, int(points[0][0][1]) - 14))
+            cv2.putText(image, f"{product_name}  {rotation_text}".strip(), label_pos,
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 0), 2, cv2.LINE_AA)
         if comparison.detected_center_x is not None and comparison.detected_center_y is not None:
             center = (int(round(comparison.detected_center_x)), int(round(comparison.detected_center_y)))
             cv2.drawMarker(image, center, (0, 0, 255), cv2.MARKER_CROSS, 36, 3)
@@ -591,6 +667,8 @@ class InspectionScreen(QWidget):
 
     def _on_simulate_trigger(self) -> None:
         """Stands in for a future real PLC pulse - see machine_interface/."""
+        if self.engine.location is not None and not self._require_setup_ready():
+            return
         self.trigger_status_label.setText("TRIGGER: Trigger Received")
         self.engine.fire_trigger()
         if self.engine.location is None or not self.engine.camera_running:
@@ -643,6 +721,29 @@ class InspectionScreen(QWidget):
 
     def refresh(self) -> None:
         location = self.engine.location
+        status = self.engine.setup_status()
+
+        self.selected_product_panel.set_status(
+            status,
+            part_number=(self.engine.current_product or {}).get("part_number") or "",
+            inspection_mode_label=config.INSPECTION_MODE_LABELS.get(self.engine.inspection_mode, "—"),
+        )
+
+        if status["primary_reference"]:
+            self.golden_panel.set_image_path(status["primary_reference"]["image_path"])
+        else:
+            self.golden_panel.clear("No GOOD reference saved")
+
+        if self.engine.inspection_mode == config.INSPECTION_MODE_FREE_POSE and self.engine.last_comparison_v2 is None:
+            self.region_plan_panel.set_plan(status["regions"])
+
+        if self.engine.last_comparison_v2 is None and self.engine.last_comparison is None and self._overlay_frozen:
+            # A different product/angle was selected since the last frozen
+            # detection overlay - never leave a stale GOOD/BAD overlay on
+            # screen for a product that is no longer the one selected.
+            self._overlay_frozen = False
+            self.overlay_panel.clear()
+            self.live_panel.set_live(self.engine.camera_running)
 
         self.station_name_label.setText(config.DEFAULT_STATION_NAME)
         self.station_camera_index_label.setText(str(self.engine.device_index))
