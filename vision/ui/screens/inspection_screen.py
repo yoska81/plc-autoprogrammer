@@ -60,33 +60,35 @@ class InspectionScreen(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(6)
 
-        layout.addWidget(self._section_title("PRODUCT / ANGLE"))
+        layout.addWidget(self._section_title("STATUS"))
+
         self.product_label = QLabel("—")
         self.product_label.setObjectName("infoValue")
         self.product_label.setWordWrap(True)
-        layout.addWidget(self.product_label)
-        self.angle_label = QLabel("ANGLE: —")
-        self.angle_label.setObjectName("infoLabel")
-        layout.addWidget(self.angle_label)
+        layout.addWidget(self._status_row("Product", self.product_label))
 
-        layout.addSpacing(14)
-        layout.addWidget(self._section_title("CAMERA"))
-        self.camera_label = QLabel("CAMERA: —")
+        self.part_number_label = QLabel("—")
+        self.part_number_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Part Number", self.part_number_label))
+
+        self.angle_label = QLabel("—")
+        self.angle_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Angle", self.angle_label))
+
+        self.camera_label = QLabel("—")
         self.camera_label.setObjectName("infoLabel")
-        layout.addWidget(self.camera_label)
-        self.threshold_label = QLabel("THRESHOLD: —")
-        self.threshold_label.setObjectName("infoLabel")
-        layout.addWidget(self.threshold_label)
-        self.last_inspection_label = QLabel("LAST INSPECTION: —")
+        layout.addWidget(self._status_row("Camera Mode", self.camera_label))
+
+        self.comm_status_label = QLabel("—")
+        self.comm_status_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Machine Signal", self.comm_status_label))
+
+        self.last_inspection_label = QLabel("—")
         self.last_inspection_label.setObjectName("infoLabel")
         self.last_inspection_label.setWordWrap(True)
-        layout.addWidget(self.last_inspection_label)
+        layout.addWidget(self._status_row("Last Inspection", self.last_inspection_label))
 
-        layout.addSpacing(14)
-        layout.addWidget(self._section_title("MACHINE SIGNAL"))
-        self.comm_status_label = QLabel("COMMUNICATION: —")
-        self.comm_status_label.setObjectName("infoLabel")
-        layout.addWidget(self.comm_status_label)
+        layout.addSpacing(10)
         self.trigger_status_label = QLabel("TRIGGER: Waiting")
         self.trigger_status_label.setObjectName("infoLabel")
         layout.addWidget(self.trigger_status_label)
@@ -124,7 +126,7 @@ class InspectionScreen(QWidget):
         previews_row = QHBoxLayout()
         previews_row.setSpacing(18)
         self.live_panel = ImagePreviewPanel("Camera / Test Feed", large=True, live=True)
-        previews_row.addWidget(self.live_panel, stretch=3)
+        previews_row.addWidget(self.live_panel, stretch=4)
 
         secondary_col = QVBoxLayout()
         secondary_col.setSpacing(14)
@@ -139,7 +141,7 @@ class InspectionScreen(QWidget):
         result_row = QHBoxLayout()
         result_row.addStretch()
         self.result_panel = ResultPanel()
-        self.result_panel.setMinimumWidth(440)
+        self.result_panel.setMinimumWidth(560)
         result_row.addWidget(self.result_panel)
         result_row.addStretch()
         column.addLayout(result_row)
@@ -172,6 +174,18 @@ class InspectionScreen(QWidget):
         label = QLabel(text)
         label.setObjectName("panelTitle")
         return label
+
+    @staticmethod
+    def _status_row(caption: str, value_label: QLabel) -> QWidget:
+        row = QWidget()
+        row_layout = QVBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(1)
+        caption_label = QLabel(caption.upper())
+        caption_label.setObjectName("statusCaption")
+        row_layout.addWidget(caption_label)
+        row_layout.addWidget(value_label)
+        return row
 
     # --------------------------------------------------------------- camera
 
@@ -337,16 +351,15 @@ class InspectionScreen(QWidget):
     def refresh(self) -> None:
         location = self.engine.location
         if self.engine.current_product:
-            name = self.engine.current_product["name"]
-            part_number = self.engine.current_product.get("part_number") or ""
-            self.product_label.setText(f"{name}  ({part_number})" if part_number else name)
+            self.product_label.setText(self.engine.current_product["name"])
+            self.part_number_label.setText(self.engine.current_product.get("part_number") or "—")
         else:
             self.product_label.setText("—")
-        self.angle_label.setText(f"ANGLE: {location.angle if location else '—'}")
-        self.camera_label.setText(f"CAMERA: {self.engine.mode} (index {self.engine.device_index})")
-        self.threshold_label.setText(f"THRESHOLD: {self.engine.threshold_percent:.1f}%")
-        self.last_inspection_label.setText(f"LAST INSPECTION: {self.last_inspection_time or '—'}")
-        self.comm_status_label.setText(f"COMMUNICATION: {self.engine.get_machine_status()}")
+            self.part_number_label.setText("—")
+        self.angle_label.setText(location.angle if location else "—")
+        self.camera_label.setText(f"{self.engine.mode.title()} (index {self.engine.device_index})")
+        self.last_inspection_label.setText(self.last_inspection_time or "—")
+        self.comm_status_label.setText(self.engine.get_machine_status())
 
         self.camera_toggle_button.setText("Stop Camera" if self.engine.camera_running else "Start Camera")
         self.live_panel.set_live(self.engine.camera_running)

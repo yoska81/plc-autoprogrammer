@@ -39,7 +39,7 @@ class ImagePreviewPanel(QWidget):
         self.image_label.setObjectName("imagePreviewLive" if large else "imagePreview")
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if large:
-            self.image_label.setMinimumSize(640, 420)
+            self.image_label.setMinimumSize(760, 480)
         else:
             self.image_label.setFixedSize(300, 200)
         layout.addWidget(self.image_label, stretch=1 if large else 0)
@@ -75,7 +75,7 @@ class ResultBadge(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setMinimumWidth(220)
+        self.setMinimumWidth(300)
         self.set_state(None)
 
     def set_state(self, result: str | None) -> None:

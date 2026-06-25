@@ -87,9 +87,17 @@ QLabel#infoLabel {
 
 QLabel#infoValue {
     color: #ffffff;
-    font-size: 14px;
+    font-size: 17px;
+    font-weight: 700;
+    padding: 1px 0;
+}
+
+QLabel#statusCaption {
+    color: #707070;
+    font-size: 10px;
     font-weight: 600;
-    padding: 3px 0;
+    letter-spacing: 1px;
+    padding-top: 6px;
 }
 
 QFrame#headerBar {
@@ -144,28 +152,28 @@ QFrame#resultCardNone {
 
 QLabel#resultBadgeGood {
     color: #00d97e;
-    font-size: 72px;
+    font-size: 92px;
     font-weight: 800;
-    letter-spacing: 6px;
+    letter-spacing: 8px;
 }
 
 QLabel#resultBadgeBad {
     color: #ff4d4f;
-    font-size: 72px;
+    font-size: 92px;
     font-weight: 800;
-    letter-spacing: 6px;
+    letter-spacing: 8px;
 }
 
 QLabel#resultBadgeNone {
     color: #5a5a5a;
-    font-size: 72px;
+    font-size: 92px;
     font-weight: 800;
-    letter-spacing: 6px;
+    letter-spacing: 8px;
 }
 
 QLabel#scoreLabel {
     color: #ffffff;
-    font-size: 26px;
+    font-size: 30px;
     font-weight: 500;
 }
 
