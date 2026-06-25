@@ -1,14 +1,68 @@
-# Vision (QC camera capture + GOOD/BAD comparison)
+# VISION SYSTEM - QC (camera capture + GOOD/BAD comparison)
 
-Vision subsystem for PLC Autoprogrammer: a standalone Python app that
-captures frames from either a real USB camera (local PC) or a
+A standalone Windows PC desktop application (this `vision/` folder lives
+inside the `plc-autoprogrammer` repo but is otherwise independent of it):
+it captures frames from either a real USB/web camera (local PC) or a
 bundled/synthetic test image (cloud, no camera attached), saves a GOOD
 reference and an inspection image per product/angle, and compares them with
-OpenCV to produce a GOOD/BAD result. No AI, OCR, object detection, FastAPI,
-or PLC integration yet.
+OpenCV to produce a GOOD/BAD result. The Windows PC is the brain of the
+system: it controls the camera, holds the GOOD-reference and product
+database, runs every inspection decision, and keeps the CSV/SQLite reports
+and bad-product archive — all on the PC, with no PLC logic, ladder logic,
+or PLC-side database involved. No AI, OCR, object detection, or FastAPI
+yet either.
+
+A PLC or other machine controller may eventually exchange simple
+production signals with the PC over a cable (e.g. Ethernet, serial,
+USB-to-I/O, Modbus TCP/RTU) — for example the PLC sends a "take picture
+now" trigger and the PC sends back a GOOD/BAD result — but the PLC stays a
+signal peer, not the controller of the vision logic. That communication
+layer does not exist yet; when added, it will live in its own module
+(planned: `vision/io/` or `vision/plc_interface/`), start with a simulated
+signal source, and the UI will label it a "Machine Signal Interface" (or
+"PLC / I-O Signal Interface") rather than implying it runs the system.
 
 Two front ends drive the same engine in `core/`: a text menu (`main.py`)
 and a desktop UI (`ui_main.py`).
+
+## Windows release build (recommended — no Python required)
+
+For end users on a Windows PC, the recommended way to run VISION SYSTEM -
+QC is the packaged `.exe`, built automatically by GitHub Actions on every
+push to `main` (and on demand) — no Python, pip, venv, or terminal
+commands needed.
+
+1. Open this repository on GitHub and go to the **Actions** tab.
+2. Click the **Build VISION SYSTEM - QC (Windows)** workflow in the list
+   on the left.
+3. Click the most recent (top) run — it should show a green checkmark.
+4. Scroll down to the **Artifacts** section at the bottom of that run's
+   page and click **VISION_SYSTEM_QC_WINDOWS** to download the ZIP.
+5. Unzip it anywhere on the PC.
+6. Double-click `VISION_SYSTEM_QC.exe`, then click **Start Camera** in the
+   app window.
+
+If you want to trigger a fresh build yourself (for example, right after a
+code change), open the **Actions** tab → **Build VISION SYSTEM - QC
+(Windows)** → **Run workflow**.
+
+The unzipped folder also contains `README_FOR_WINDOWS_USER.txt` (the same
+quick-start plus troubleshooting, written for the end user) and three
+optional helper files — `RUN_TEST_MODE.bat`, `RUN_REAL_CAMERA.bat`,
+`PROBE_CAMERAS.bat` — that just launch the `.exe` with different
+arguments; double-clicking the `.exe` directly is enough for normal use.
+
+See `vision_qc.spec` for the PyInstaller build definition and
+`.github/workflows/build-vision-windows.yml` for the build pipeline
+(install deps → headless UI smoke test in test-image mode → `pyinstaller
+vision_qc.spec` → assemble the release folder → zip → upload as a
+workflow artifact). `core/config.py` resolves all data paths relative to
+the running `.exe`'s own folder when frozen, so the unzipped release
+folder is fully self-contained.
+
+Everything below this section (`.bat` launchers run from source, manual
+PowerShell setup) is the **developer fallback** for working on the code
+itself, not the path end users need.
 
 ## Setup
 
@@ -84,11 +138,14 @@ offscreen platform plugin to load.
   probes for a real camera and transparently falls back to test images, so
   the app always runs.
 
-## Local PC camera testing (Windows)
+## Local PC camera testing (Windows, from source — developer fallback)
 
-`--mode real` (or `auto`, which falls back to test images if no camera is
-found) talks to a physical USB camera and only works on a machine that
-actually has one attached — it cannot be exercised in a cloud sandbox.
+This section covers running the app from a Python source checkout instead
+of the packaged `.exe` above — useful for development, or if you'd rather
+manage Python yourself. `--mode real` (or `auto`, which falls back to test
+images if no camera is found) talks to a physical USB camera and only
+works on a machine that actually has one attached — it cannot be
+exercised in a cloud sandbox.
 
 ### Windows double-click setup (recommended, no typing required)
 
@@ -205,3 +262,31 @@ dependencies and works in headless cloud environments; the live preview
 falls back to writing frames to `data/captures/_live_preview.png` when no
 display is available. For an on-screen preview window during local PC
 testing, swap it for `opencv-python` in `requirements.txt`.
+
+## Packaging (Windows release build)
+
+- `vision_qc.spec` — PyInstaller build definition (onedir build, entry
+  point `ui_main.py`, name `VISION_SYSTEM_QC`, bundles `data/test_images`).
+  Build locally on Windows with `pyinstaller vision_qc.spec --noconfirm
+  --clean`; output goes to `dist/VISION_SYSTEM_QC/`.
+- `tools/smoke_test_ui.py` — headless regression check (test-image mode,
+  `QT_QPA_PLATFORM=offscreen`) that drives `MainWindow` through start
+  camera → select product/angle → save reference → take inspection →
+  compare → save result → stop camera, with no display needed. Run before
+  packaging; also run by CI.
+- `packaging/` — assets that ship inside the release ZIP next to the
+  `.exe`, not used when running from source: `README_FOR_WINDOWS_USER.txt`
+  (end-user quick start) and `RUN_TEST_MODE.bat` / `RUN_REAL_CAMERA.bat` /
+  `PROBE_CAMERAS.bat` (thin wrappers that call `VISION_SYSTEM_QC.exe` with
+  different arguments — optional, since double-clicking the `.exe`
+  directly already works).
+- `.github/workflows/build-vision-windows.yml` — builds the above on a
+  `windows-latest` GitHub Actions runner and uploads
+  `VISION_SYSTEM_QC_WINDOWS.zip` as a workflow artifact (see the "Windows
+  release build" section near the top of this README for how to download
+  it).
+- `core/config.py`'s `VISION_ROOT` is frozen-aware: under PyInstaller
+  (`sys.frozen`) it resolves to the folder containing `sys.executable`
+  (the `.exe`'s own folder), otherwise it resolves the usual way from
+  `__file__`. This is what makes the unzipped release folder
+  self-contained — `data/` is created and read next to the `.exe`.

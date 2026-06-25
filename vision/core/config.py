@@ -1,6 +1,13 @@
+import sys
 from pathlib import Path
 
-VISION_ROOT = Path(__file__).resolve().parent.parent
+if getattr(sys, "frozen", False):
+    # Inside a PyInstaller onedir build, __file__ points into the frozen
+    # archive, not the real folder layout next to the .exe; use the exe's
+    # own location instead so data/ resolves alongside it.
+    VISION_ROOT = Path(sys.executable).resolve().parent
+else:
+    VISION_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = VISION_ROOT / "data"
 TEST_IMAGES_DIR = DATA_DIR / "test_images"
 CAPTURES_DIR = DATA_DIR / "captures"

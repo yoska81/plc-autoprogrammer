@@ -207,7 +207,7 @@ def run_menu(app: QCApp) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="PLC Autoprogrammer - Vision QC capture app")
+    parser = argparse.ArgumentParser(description="VISION SYSTEM - QC: Windows PC camera QC capture app")
     parser.add_argument("--mode", choices=["auto", "real", "test"], default=config.DEFAULT_CAMERA_MODE,
                          help="auto (default): use a real camera if present, else fall back to test images")
     parser.add_argument("--device-index", type=int, default=config.DEFAULT_DEVICE_INDEX)

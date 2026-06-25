@@ -1,0 +1,65 @@
+name: Build VISION SYSTEM - QC (Windows)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vision/**"
+      - ".github/workflows/build-vision-windows.yml"
+  pull_request:
+    paths:
+      - "vision/**"
+      - ".github/workflows/build-vision-windows.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: vision
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Run headless UI smoke test (test-image mode, no camera needed)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/smoke_test_ui.py
+
+      - name: Clean up smoke-test data artifacts
+        run: |
+          Remove-Item -Recurse -Force data\products -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force data\bad_products -ErrorAction SilentlyContinue
+          Remove-Item -Force data\results.csv -ErrorAction SilentlyContinue
+          Remove-Item -Force data\results.db -ErrorAction SilentlyContinue
+
+      - name: Build the Windows executable with PyInstaller
+        run: pyinstaller vision_qc.spec --noconfirm --clean
+
+      - name: Assemble the release package
+        run: |
+          $release = "release\VISION_SYSTEM_QC"
+          New-Item -ItemType Directory -Force -Path $release | Out-Null
+          Copy-Item -Recurse -Force dist\VISION_SYSTEM_QC\* $release
+          Copy-Item -Force packaging\README_FOR_WINDOWS_USER.txt $release
+          Copy-Item -Force packaging\RUN_TEST_MODE.bat $release
+          Copy-Item -Force packaging\RUN_REAL_CAMERA.bat $release
+          Copy-Item -Force packaging\PROBE_CAMERAS.bat $release
+          Compress-Archive -Path "$release\*" -DestinationPath VISION_SYSTEM_QC_WINDOWS.zip -Force
+
+      - name: Upload release ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VISION_SYSTEM_QC_WINDOWS
+          path: vision/VISION_SYSTEM_QC_WINDOWS.zip
+          if-no-files-found: error
