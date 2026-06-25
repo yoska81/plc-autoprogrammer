@@ -6,6 +6,7 @@ data/products/
 data/bad_products/
 data/difference_images/
 data/reports/
+data/debug_v2/
 !data/test_images/*.png
 database/
 camera_probe.txt

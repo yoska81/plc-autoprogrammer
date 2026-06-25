@@ -82,10 +82,23 @@ DEFAULT_SAVE_NORMALIZED_IMAGE = True
 # Combined-score weights (must be explainable - a plain weighted average of
 # the four sub-scores, no black-box model). Used only when matching_method
 # is "hybrid"; "pixel" / "feature" modes use that one sub-score directly.
-DEFAULT_FEATURE_SCORE_WEIGHT = 0.35
-DEFAULT_SHAPE_SCORE_WEIGHT = 0.15
-DEFAULT_PIXEL_SCORE_WEIGHT = 0.35
-DEFAULT_EDGE_SCORE_WEIGHT = 0.15
+#
+# pixel_score/edge_score are the only two sub-scores that actually look at
+# the product's surface for defects; feature_score (ORB/AKAZE recognition
+# confidence) and shape_score (outer-silhouette Hu-moment distance) instead
+# answer "did we find the right product/pose", a question already gated
+# separately via DEFAULT_MIN_RECOGNITION_CONFIDENCE before a score is even
+# computed. Weighting recognition confidence as heavily as appearance
+# (the old 0.35/0.15/0.35/0.15 split) caps the achievable score for a
+# flawless product near the noise floor of ORB confidence on its texture
+# (commonly ~85-92%, never reliably ~100% even with zero defects), making
+# DEFAULT_MATCH_THRESHOLD_PERCENT effectively unreachable for genuine GOOD
+# parts. Appearance (pixel+edge) is weighted far higher here so the
+# GOOD/BAD call tracks visible defects, not pose-recognition noise.
+DEFAULT_FEATURE_SCORE_WEIGHT = 0.20
+DEFAULT_SHAPE_SCORE_WEIGHT = 0.10
+DEFAULT_PIXEL_SCORE_WEIGHT = 0.50
+DEFAULT_EDGE_SCORE_WEIGHT = 0.20
 
 # All V2 alignment happens into this fixed-size canonical frame, regardless
 # of the original reference image's resolution, so scores are comparable

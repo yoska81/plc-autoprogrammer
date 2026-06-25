@@ -27,6 +27,29 @@ import numpy as np
 from . import config
 
 _RATIO_TEST = 0.75  # Lowe's ratio test for ORB/AKAZE knn matches
+# A real product pose only ever scales mildly (camera/working-distance
+# variation); estimateAffinePartial2D can still return a numerically
+# "successful" but physically nonsensical near-singular fit (e.g. scale
+# 0.002) when its inlier set is small/degenerate, so any fit outside this
+# band is rejected as a bad estimate rather than trusted.
+_MIN_PLAUSIBLE_SCALE = 0.2
+_MAX_PLAUSIBLE_SCALE = 5.0
+
+# A defect that only covers a small fraction of the canonical frame (a
+# missing screw hole, a thin scratch) barely moves the mean of absdiff()
+# across the whole frame, since that mean is dominated by the much larger
+# area of unchanged surface around it - two images 70x apart in "how many
+# pixels changed a lot" can look only ~2x apart in mean diff. Pixels above
+# this threshold are counted directly (as a fraction of the frame) instead,
+# so a small but locally-severe defect isn't diluted away by everything
+# around it that's correctly unchanged.
+_DEFECT_DIFF_THRESHOLD = 40
+# Scales that defect-area fraction into the score: chosen so the residual
+# diff from interpolation/anti-aliasing on a correctly-aligned, defect-free
+# part (well under 0.1% of pixels above _DEFECT_DIFF_THRESHOLD) costs only a
+# fraction of a point, while a real localized defect (low single-digit
+# percent of pixels) drives the score down hard.
+_DEFECT_AREA_GAIN = 20.0
 
 
 @dataclass
@@ -212,6 +235,9 @@ def _match_and_estimate_affine(
     M, inliers = cv2.estimateAffinePartial2D(ref_pts, insp_pts, method=cv2.RANSAC, ransacReprojThreshold=4.0)
     if M is None:
         return None, 0, len(good)
+    scale = float(np.sqrt(M[0, 0] ** 2 + M[1, 0] ** 2))
+    if not (_MIN_PLAUSIBLE_SCALE <= scale <= _MAX_PLAUSIBLE_SCALE):
+        return None, 0, len(good)
     return M, int(inliers.sum()) if inliers is not None else 0, len(good)
 
 
@@ -243,28 +269,85 @@ def _contour_fallback_pose(ref_contour: np.ndarray | None, insp_gray: np.ndarray
     ], dtype=np.float32)
 
 
-def _ecc_refine(reference_gray: np.ndarray, insp_gray: np.ndarray, M: np.ndarray) -> np.ndarray:
+def _product_bbox(contour: np.ndarray | None, frame_shape: tuple[int, int], margin_ratio: float = 0.6) -> tuple[int, int, int, int] | None:
+    """Bounding box (x0, y0, x1, y1) of the product in the reference frame,
+    expanded by a margin - used to keep ECC/NCC focused on the product
+    instead of the (often much larger) surrounding background. None if no
+    contour was found at reference-build time."""
+    if contour is None:
+        return None
+    x, y, w, h = cv2.boundingRect(contour)
+    mx, my = int(w * margin_ratio), int(h * margin_ratio)
+    x0, y0 = max(0, x - mx), max(0, y - my)
+    x1, y1 = min(frame_shape[1], x + w + mx), min(frame_shape[0], y + h + my)
+    return x0, y0, x1, y1
+
+
+def _mask_outside_bbox(gray: np.ndarray, bbox: tuple[int, int, int, int] | None) -> np.ndarray:
+    if bbox is None:
+        return gray
+    x0, y0, x1, y1 = bbox
+    masked = np.zeros_like(gray)
+    masked[y0:y1, x0:x1] = gray[y0:y1, x0:x1]
+    return masked
+
+
+def _ncc_for_pose(
+    reference_gray: np.ndarray, insp_gray: np.ndarray, M: np.ndarray, bbox: tuple[int, int, int, int] | None = None,
+) -> float:
+    """Normalized cross-correlation between the reference and insp_gray
+    warped into the reference frame by M, restricted to bbox (the product's
+    neighborhood) when given - a cheap, direction-agnostic way to ask "does
+    this pose actually line the product up", used to keep _ecc_refine()
+    honest. Without the bbox restriction this is dominated by whatever
+    background surrounds the product (which moves/rotates along with M and
+    so generally stops matching the reference's untouched background),
+    drowning out the one signal that actually matters."""
+    inv_m = cv2.invertAffineTransform(M)
+    warped = cv2.warpAffine(insp_gray, inv_m, (reference_gray.shape[1], reference_gray.shape[0]))
+    if bbox is not None:
+        x0, y0, x1, y1 = bbox
+        warped, reference_gray = warped[y0:y1, x0:x1], reference_gray[y0:y1, x0:x1]
+    return float(cv2.matchTemplate(warped.astype(np.float32), reference_gray.astype(np.float32), cv2.TM_CCOEFF_NORMED)[0, 0])
+
+
+def _ecc_refine(
+    reference_gray: np.ndarray, insp_gray: np.ndarray, M: np.ndarray, product_bbox: tuple[int, int, int, int] | None = None,
+) -> np.ndarray:
     """Best-effort sub-pixel polish of an existing ref->insp estimate via ECC.
 
     ECC needs a reasonable initial guess and equal-sized inputs, so it is
     only used to refine a coarse feature/contour estimate, never to locate
-    the product from scratch. Silently returns the un-refined M if ECC
-    fails to converge (common when the coarse estimate is still far off).
+    the product from scratch. Both the ECC optimization itself and the
+    sanity check on its result are restricted to product_bbox (when known)
+    by zeroing everything outside it in both images first - feeding ECC the
+    full frame lets it chase whatever surrounding background drifted out of
+    alignment (since the background moves/rotates along with M too, even
+    though only the product's pose is being estimated), walking an already-
+    good pose into a worse local optimum. Returns the un-refined M if ECC
+    fails to converge, or if its result correlates worse with the reference
+    (within product_bbox) than the coarse estimate did.
     """
+    ref_for_ecc = _mask_outside_bbox(reference_gray, product_bbox)
     try:
         inv_m = cv2.invertAffineTransform(M)
         warped_insp = cv2.warpAffine(insp_gray, inv_m, (reference_gray.shape[1], reference_gray.shape[0]))
+        warped_for_ecc = _mask_outside_bbox(warped_insp, product_bbox)
         warp_matrix = np.eye(2, 3, dtype=np.float32)
         criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4)
         _, refine_m = cv2.findTransformECC(
-            reference_gray.astype(np.float32), warped_insp.astype(np.float32),
+            ref_for_ecc.astype(np.float32), warped_for_ecc.astype(np.float32),
             warp_matrix, cv2.MOTION_EUCLIDEAN, criteria,
         )
         refine_3x3 = np.vstack([refine_m, [0.0, 0.0, 1.0]])
         m_3x3 = np.vstack([M, [0.0, 0.0, 1.0]])
-        return (m_3x3 @ refine_3x3)[:2, :].astype(np.float32)
+        refined_M = (m_3x3 @ refine_3x3)[:2, :].astype(np.float32)
     except cv2.error:
         return M
+
+    if _ncc_for_pose(reference_gray, insp_gray, refined_M, product_bbox) <= _ncc_for_pose(reference_gray, insp_gray, M, product_bbox):
+        return M
+    return refined_M
 
 
 def locate_and_align(
@@ -280,13 +363,27 @@ def locate_and_align(
     if alignment_method in (config.ALIGNMENT_METHOD_AKAZE, config.ALIGNMENT_METHOD_HYBRID):
         feature_attempts.append((config.ALIGNMENT_METHOD_AKAZE, reference_features.akaze_keypoints, reference_features.akaze_descriptors))
 
-    M = used_method = None
-    inlier_count = total_matches = 0
+    # Try every configured feature detector and keep whichever yields the
+    # most RANSAC inliers - NOT just the first one that returns any affine
+    # fit at all. ORB and AKAZE can each independently pass the "enough good
+    # matches" gate with a poor-quality estimate (e.g. 4/22 inliers) while
+    # the other detector finds a far more accurate one (e.g. 13/28) on the
+    # very same image pair; stopping at the first success would silently
+    # keep the worse pose.
+    best_attempt: tuple[int, np.ndarray, str, int] | None = None
     for method, positions, descriptors in feature_attempts:
-        M, inlier_count, total_matches = _match_and_estimate_affine(positions, descriptors, insp_gray, method, min_feature_matches)
-        if M is not None:
-            used_method = method
-            break
+        candidate_M, candidate_inliers, candidate_total = _match_and_estimate_affine(
+            positions, descriptors, insp_gray, method, min_feature_matches)
+        if candidate_M is None:
+            continue
+        if best_attempt is None or candidate_inliers > best_attempt[0]:
+            best_attempt = (candidate_inliers, candidate_M, method, candidate_total)
+
+    if best_attempt is not None:
+        inlier_count, M, used_method, total_matches = best_attempt
+    else:
+        M = used_method = None
+        inlier_count = total_matches = 0
 
     if M is None and alignment_method in (config.ALIGNMENT_METHOD_CONTOUR, config.ALIGNMENT_METHOD_HYBRID):
         M = _contour_fallback_pose(reference_features.contour, insp_gray)
@@ -296,7 +393,8 @@ def locate_and_align(
         return None
 
     if alignment_method == config.ALIGNMENT_METHOD_HYBRID:
-        M = _ecc_refine(ref_gray, insp_gray, M)
+        product_bbox = _product_bbox(reference_features.contour, ref_gray.shape[:2])
+        M = _ecc_refine(ref_gray, insp_gray, M, product_bbox)
 
     ref_w, ref_h = reference_features.size
     ref_center = np.array([ref_w / 2.0, ref_h / 2.0, 1.0], dtype=np.float32)
@@ -323,19 +421,40 @@ def locate_and_align(
 
 # ---------------------------------------------------- normalization/scoring
 
-def normalize_inspection(insp_image: np.ndarray, alignment: AlignmentResult, reference_size: tuple[int, int]) -> np.ndarray:
+def normalize_inspection(
+    insp_image: np.ndarray, alignment: AlignmentResult, reference_size: tuple[int, int],
+    product_bbox: tuple[int, int, int, int] | None = None,
+) -> np.ndarray:
     """Warp the located product out of the inspection frame, undo its
-    rotation/scale/position, and resize it to the canonical comparison
-    size - this is the image every downstream score is computed on, never
-    the raw inspection frame."""
+    rotation/scale/position, crop down to product_bbox (the product's own
+    footprint in the reference frame, not the whole scene), and resize that
+    crop to the canonical comparison size - this is the image every
+    downstream score is computed on, never the raw inspection frame.
+
+    Cropping before resizing matters: reference_size is the FULL captured
+    frame (the product can be anywhere in it, that's the point of V2), so
+    skipping the crop would squash the whole scene - background, borders,
+    and all - into CANONICAL_SIZE, leaving the product a small, aspect-
+    distorted fraction of the image every pixel/edge score is computed on.
+    """
     inv_m = cv2.invertAffineTransform(alignment.M)
     warped = cv2.warpAffine(insp_image, inv_m, reference_size)
+    if product_bbox is not None:
+        x0, y0, x1, y1 = product_bbox
+        warped = warped[y0:y1, x0:x1]
     return cv2.resize(warped, config.CANONICAL_SIZE)
 
 
 def _pixel_score(ref_gray: np.ndarray, norm_gray: np.ndarray) -> float:
     diff = cv2.absdiff(ref_gray, norm_gray)
-    return round(100.0 - (float(np.mean(diff)) / 255.0 * 100.0), 2)
+    mean_score = 100.0 - (float(np.mean(diff)) / 255.0 * 100.0)
+    # Whichever of "average brightness drifted" (mean_score) or "a
+    # concentrated patch changed a lot" (area_score) looks worse wins - a
+    # real defect only needs to trip one of these, and a clean image needs
+    # to fail both before its score drops.
+    defect_ratio = float(np.count_nonzero(diff > _DEFECT_DIFF_THRESHOLD)) / diff.size
+    area_score = 100.0 - defect_ratio * 100.0 * _DEFECT_AREA_GAIN
+    return round(max(0.0, min(mean_score, area_score)), 2)
 
 
 def _edge_score(ref_gray: np.ndarray, norm_gray: np.ndarray) -> float:
@@ -394,8 +513,13 @@ def compare_one_reference(
     if alignment is None:
         return None, {}
 
-    normalized = normalize_inspection(insp_image, alignment, reference_features.size)
-    canonical_reference = cv2.resize(reference_image, config.CANONICAL_SIZE)
+    product_bbox = _product_bbox(reference_features.contour, reference_image.shape[:2], margin_ratio=0.3)
+    normalized = normalize_inspection(insp_image, alignment, reference_features.size, product_bbox)
+    canonical_reference_source = reference_image
+    if product_bbox is not None:
+        x0, y0, x1, y1 = product_bbox
+        canonical_reference_source = reference_image[y0:y1, x0:x1]
+    canonical_reference = cv2.resize(canonical_reference_source, config.CANONICAL_SIZE)
     norm_gray = cv2.cvtColor(normalized, cv2.COLOR_BGR2GRAY)
     ref_gray = cv2.cvtColor(canonical_reference, cv2.COLOR_BGR2GRAY)
 
