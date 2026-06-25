@@ -1,9 +1,27 @@
+"""On-disk path resolution for one product/angle combination.
+
+The database (core/db.py) is the source of truth for which files exist;
+this module only computes where new files should be written, following
+the layout in SPECIFICATION.md:
+
+    data/products/<product_slug>/<angle_slug>/reference/
+    data/products/<product_slug>/<angle_slug>/inspection/
+    data/difference_images/<product_slug>/<angle_slug>/
+    data/bad_products/<product_slug>/<angle_slug>/
+"""
+from datetime import datetime
+from pathlib import Path
+
 from . import config
 from .naming import slugify
 
 
+def _timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+
 class ProductAngleLocation:
-    """Resolves the on-disk paths used for one product/angle combination."""
+    """Resolves the on-disk directories/filenames for one product/angle."""
 
     def __init__(self, product: str, angle: str):
         self.product = product
@@ -11,13 +29,28 @@ class ProductAngleLocation:
         self.product_slug = slugify(product)
         self.angle_slug = slugify(angle)
 
-        root = config.PRODUCTS_DIR / self.product_slug / self.angle_slug
-        self.reference_path = root / "reference" / "good_reference.png"
-        self.inspection_path = root / "inspection" / "latest_inspection.png"
-        self.diff_path = root / "diff" / "latest_diff.png"
+        product_root = config.PRODUCTS_DIR / self.product_slug / self.angle_slug
+        self.reference_dir = product_root / "reference"
+        self.inspection_dir = product_root / "inspection"
+        self.diff_dir = config.DIFFERENCE_IMAGES_DIR / self.product_slug / self.angle_slug
         self.bad_products_dir = config.BAD_PRODUCTS_DIR / self.product_slug / self.angle_slug
 
     def ensure_dirs(self) -> None:
-        for path in (self.reference_path, self.inspection_path, self.diff_path):
-            path.parent.mkdir(parents=True, exist_ok=True)
-        self.bad_products_dir.mkdir(parents=True, exist_ok=True)
+        for path in (self.reference_dir, self.inspection_dir, self.diff_dir, self.bad_products_dir):
+            path.mkdir(parents=True, exist_ok=True)
+
+    def new_reference_path(self) -> Path:
+        self.ensure_dirs()
+        return self.reference_dir / f"reference_{_timestamp()}.png"
+
+    def new_inspection_path(self) -> Path:
+        self.ensure_dirs()
+        return self.inspection_dir / f"inspection_{_timestamp()}.png"
+
+    def new_diff_path(self) -> Path:
+        self.ensure_dirs()
+        return self.diff_dir / f"diff_{_timestamp()}.png"
+
+    def new_bad_product_path(self, suffix: str = "") -> Path:
+        self.ensure_dirs()
+        return self.bad_products_dir / f"bad_{_timestamp()}{suffix}.png"

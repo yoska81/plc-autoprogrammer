@@ -3,17 +3,21 @@ VISION SYSTEM - QC
 
 What this is
 -------------
-A Windows desktop app that uses your PC and a USB/web camera to take
-snapshots, compare them against a saved "GOOD" reference photo, decide
-GOOD or BAD, and keep a log of every result. Everything runs on this PC -
-there is no PLC, no cloud service, and no extra hardware required to use
-it.
+A Windows desktop app that uses your PC and a USB camera (tested with an
+SVPRO USB UVC camera, 1080p/60fps, manual-zoom lens) to take snapshots,
+compare them against saved "GOOD" reference photos, decide GOOD or BAD,
+and keep a log of every result. Everything runs on this PC - there is no
+PLC, no cloud service, and no extra hardware required to use it. A future
+version may exchange a simple trigger/result signal with a PLC, but the PC
+stays in charge of the camera, the database, and every decision either way.
 
 How to start it
 -----------------
 1. Unzip this whole folder somewhere on your PC (e.g. your Desktop).
 2. Double-click VISION_SYSTEM_QC.exe.
-3. Click "Start Camera" in the app window.
+3. Go to the "Camera Setup" tab, set the camera index/resolution/FPS, and
+   click "Start Preview" to confirm you can see the camera image.
+4. Go to the "Inspection" tab and click "Start Camera" to begin working.
 
 That's it - no Python, no installers, no typing commands.
 
@@ -24,18 +28,23 @@ status and error messages (for example, if a camera can't be found) that
 are useful for troubleshooting. Leave it open while you use the app; it
 closes automatically when you close the main app window.
 
-If "Start Camera" shows an error
------------------------------------
-- Make sure a USB/web camera is plugged in and powered on.
+If the camera shows an error
+-------------------------------
+- Make sure the USB camera is plugged in and powered on.
 - Close other apps that might be using the camera (Zoom, Teams, Skype, a
   browser tab with camera access, or another copy of this app).
-- Open Settings inside the app and click "Detect Cameras" to see which
-  device index responds, then set that index in Settings.
+- Go to the "Camera Setup" tab and click "Detect Cameras" to see which
+  device index responds, then set that index and click "Apply".
 - Check Windows Settings > Privacy & security > Camera > make sure
   "Let desktop apps access your camera" is turned on.
 - If you don't have a camera handy yet, double-click RUN_TEST_MODE.bat
   instead - it runs the app with bundled sample images so you can try
   everything else (saving a reference, comparing, reports) first.
+
+Once the camera is framed and working, lock its physical mount, lock the
+lens's zoom/focus/aperture rings by hand, and keep the lighting stable -
+the app has no automatic re-alignment, so moving the camera or relighting
+the scene means old GOOD references no longer match.
 
 Optional helper files in this folder
 ---------------------------------------
@@ -49,22 +58,32 @@ directly is enough. They're shortcuts for specific situations:
                         if your camera is not at index 0.
   PROBE_CAMERAS.bat     Checks device indexes 0, 1, 2 and reports which one
                         is AVAILABLE, saving the result to
-                        camera_probe.txt. The app's Settings > Detect
+                        camera_probe.txt. The app's Camera Setup > Detect
                         Cameras button does the same thing.
 
 Basic day-to-day use
 -----------------------
-1. Start Camera.
+1. Inspection tab: Start Camera.
 2. Add Product (type a product name and an angle, e.g. "Widget A" /
    "Front") or Select Product if it already exists.
-3. Save GOOD Reference once, with a known-good part in view.
+3. Save GOOD Reference once, with a known-good part in view (or use the
+   References tab to manage multiple reference shots and pick which one
+   is primary).
 4. For each part you inspect: Take Inspection Picture, then Compare.
 5. Save Result to log it and (if BAD) archive the image for review.
-6. Open Bad Products Folder or Export Report any time to review history.
+6. Open Bad Products Folder any time, or go to the Reports tab to filter
+   history and export it to CSV or Excel.
 
 Where things are saved
 -------------------------
-All data is saved inside this same folder, under data\ (per-product
-reference/inspection/diff images, a results.csv log, and a results.db
-database). Moving or deleting this folder removes that history, so back
-it up if you want to keep it.
+All data is saved inside this same folder:
+
+  data\products\<product>\<angle>\reference\   GOOD reference images
+  data\products\<product>\<angle>\inspection\  captured inspection images
+  data\difference_images\<product>\<angle>\    diff images from comparisons
+  data\bad_products\<product>\<angle>\         archived BAD images
+  data\reports\                                exported CSV/Excel reports
+  database\vision.db                           the inspection database
+
+Moving or deleting this folder removes that history, so back it up if you
+want to keep it.

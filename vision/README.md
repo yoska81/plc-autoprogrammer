@@ -2,28 +2,31 @@
 
 A standalone Windows PC desktop application (this `vision/` folder lives
 inside the `plc-autoprogrammer` repo but is otherwise independent of it):
-it captures frames from either a real USB/web camera (local PC) or a
-bundled/synthetic test image (cloud, no camera attached), saves a GOOD
-reference and an inspection image per product/angle, and compares them with
-OpenCV to produce a GOOD/BAD result. The Windows PC is the brain of the
-system: it controls the camera, holds the GOOD-reference and product
-database, runs every inspection decision, and keeps the CSV/SQLite reports
-and bad-product archive — all on the PC, with no PLC logic, ladder logic,
-or PLC-side database involved. No AI, OCR, object detection, or FastAPI
-yet either.
+it captures frames from either a real USB camera (local PC) or a
+bundled/synthetic test image (cloud, no camera attached), saves one or
+more GOOD reference images per product/angle, and compares an inspection
+image against the primary reference with OpenCV to produce a GOOD/BAD
+result. **The Windows PC is the brain of the system**: it owns the camera,
+holds the product/reference-image database, runs every inspection
+decision, archives bad products, and produces reports — all on the PC,
+with no PLC logic, ladder logic, or PLC-side database involved. No AI,
+OCR, object detection, barcode/QR, or robotic arm control either — see
+`TODO_NEXT_STEPS.md` for what's deliberately deferred.
 
-A PLC or other machine controller may eventually exchange simple
-production signals with the PC over a cable (e.g. Ethernet, serial,
-USB-to-I/O, Modbus TCP/RTU) — for example the PLC sends a "take picture
-now" trigger and the PC sends back a GOOD/BAD result — but the PLC stays a
-signal peer, not the controller of the vision logic. That communication
-layer does not exist yet; when added, it will live in its own module
-(planned: `vision/io/` or `vision/plc_interface/`), start with a simulated
-signal source, and the UI will label it a "Machine Signal Interface" (or
-"PLC / I-O Signal Interface") rather than implying it runs the system.
+A PLC or other machine controller may, in a future phase, exchange simple
+signals with the PC — a "take picture now" trigger in, and a GOOD/BAD
+result out. **The camera and that PLC link are two separate, unrelated
+connections**: the camera talks to the PC over USB purely as an image
+source, and never routes through the PLC link. That future link is
+modeled today as a `vision/machine_interface/` package (simulated only —
+see below); when a real transport is added it slots in behind the same
+interface without the PC giving up control of the camera, the database,
+or the GOOD/BAD decision.
 
 Two front ends drive the same engine in `core/`: a text menu (`main.py`)
-and a desktop UI (`ui_main.py`).
+and a desktop UI (`ui_main.py`). See `SPECIFICATION.md` for the full V1
+design (workflow, screens, database schema, folder layout) and
+`TODO_NEXT_STEPS.md` for what's intentionally not built yet.
 
 ## Windows release build (recommended — no Python required)
 
@@ -39,8 +42,8 @@ commands needed.
 4. Scroll down to the **Artifacts** section at the bottom of that run's
    page and click **VISION_SYSTEM_QC_WINDOWS** to download the ZIP.
 5. Unzip it anywhere on the PC.
-6. Double-click `VISION_SYSTEM_QC.exe`, then click **Start Camera** in the
-   app window.
+6. Double-click `VISION_SYSTEM_QC.exe`, open the **Camera Setup** tab to
+   set up the camera, then go to **Inspection** and click **Start Camera**.
 
 If you want to trigger a fresh build yourself (for example, right after a
 code change), open the **Actions** tab → **Build VISION SYSTEM - QC
@@ -91,40 +94,66 @@ A Tesla-style black-and-white desktop UI built with PySide6, under `ui/`:
 python ui_main.py --mode auto   # same --mode/--device-index flags as main.py
 ```
 
-It shows the live camera/test feed, the GOOD reference, the inspection
-image, the GOOD/BAD result and similarity score, the current
-product/angle/last-inspection-time, and a 20-row inspection history table.
-Buttons map directly onto the existing `core/app.py` engine — the UI adds
-no new comparison or capture logic:
+A single window with six tabs across the top, all sharing one `QCApp`
+engine (`core/app.py`) and SQLite database (`database/vision.db`) — no
+tab keeps its own copy of the data:
 
-- **Start Camera / Stop Camera** — `QCApp.start()` / `QCApp.stop()`, drive
-  the 200ms live preview timer.
-- **Add Product** — prompts for a product name and a first angle, then
-  `select_product_angle()`.
-- **Select Product** — browses existing `data/products/` folders and picks
-  a product/angle pair. Note: this list shows the slugified folder name
-  (e.g. `widget_a`), not the original display-cased text typed under Add
-  Product, since the slug is the only thing kept on disk.
-- **Add Angle** — adds a new angle under the currently selected product.
-- **Save GOOD Reference** / **Take Inspection Picture** —
-  `save_good_reference()` / `capture_inspection_image()`.
-- **Compare** — `compute_comparison()`: runs the GOOD/BAD comparison and
-  updates the result badge/score, but does not log or archive anything yet.
-- **Save Result** — `persist_last_result()`: logs the last `Compare` result
-  to CSV/SQLite and archives BAD captures, same as the CLI's combined
-  "run comparison" step.
-- **Open Bad Products Folder** — opens `data/bad_products/<product>/<angle>/`
-  (or the top-level folder if no product is selected) in the OS file
-  browser.
-- **Export Report** — copies `data/results.csv` to a location you choose.
-- **Settings** — change camera mode/device index (restarts the camera if
-  running) and the match threshold percentage. "Detect Cameras" probes
-  device indices 0, 1, 2 and reports which ones respond.
+- **Inspection** (`ui/screens/inspection_screen.py`) — the main screen:
+  live camera/test feed, GOOD reference / inspection / diff previews, the
+  GOOD/BAD result badge with similarity score, product/angle controls,
+  Machine Signal Interface communication/trigger status, and the
+  "Simulate PLC Trigger" button. Buttons map directly onto the `QCApp`
+  engine — the UI adds no new comparison or capture logic.
+- **Camera Setup** (`ui/screens/camera_setup_screen.py`) — live preview,
+  camera device index ("Detect Cameras" probes indices 0/1/2), resolution
+  (with the 1920×1080 → 1280×720 → 640×480 fallback list), FPS, and
+  exposure/brightness sliders when the connected UVC camera exposes them.
+  Includes on-screen instructions to lock the camera's physical position
+  and the lens's zoom/focus/aperture rings after framing the shot, and to
+  keep lighting stable — V1 has no automatic re-alignment, so a moved
+  camera or relit scene invalidates existing GOOD references.
+- **Products** (`ui/screens/products_screen.py`) — add/edit/delete
+  products (name, part number, description, customer, notes) and manage
+  each product's angles.
+- **References** (`ui/screens/references_screen.py`) — for the selected
+  product/angle: list/add/delete GOOD reference images and mark one
+  primary. V1 always compares against the primary reference.
+- **Reports** (`ui/screens/reports_screen.py`) — full inspection history,
+  filterable by product/result, exportable to CSV (always available) or
+  Excel (when `openpyxl` is installed).
+- **Settings** (`ui/screens/settings_screen.py`) — camera mode
+  (test/real/auto), match threshold, snapshot/bad-product save toggles,
+  and the Machine Signal Interface's simulation-mode toggle and reserved
+  communication-type placeholder. Camera index/resolution/FPS/exposure
+  live on the Camera Setup tab instead, next to the live preview they
+  affect.
 
 Runs headless too: set `QT_QPA_PLATFORM=offscreen` before launching (useful
 in CI/cloud sandboxes with no display). On Linux this also needs
 `libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3` installed for Qt's
 offscreen platform plugin to load.
+
+## Camera hardware
+
+The V1 prototype camera is an **SVPRO USB UVC camera**: 1080p, 60fps, with
+a 2.8–12mm manual zoom CS-mount lens (manual focus, manual aperture — all
+adjusted by hand on the lens barrel, never by software). It's a plain USB
+Video Class (UVC) webcam, not a vendor-SDK "smart" camera, so:
+
+- `core/camera/real_camera.py` opens it with OpenCV's `cv2.VideoCapture`,
+  using the DirectShow backend (`cv2.CAP_DSHOW`) on Windows (more
+  reliable open/read behavior than the default MSMF backend for many USB
+  webcams) and OpenCV's default backend elsewhere.
+- No vendor SDK is required or used.
+- Device index, resolution, and FPS are software-selectable from the
+  Camera Setup tab (or `core/config.py` defaults: 1920×1080 @ 60fps,
+  device index 0).
+- If the requested resolution can't be opened reliably, `RealCamera`
+  automatically falls back through `config.RESOLUTION_FALLBACKS`
+  (1920×1080 → 1280×720 → 640×480) until one opens and delivers frames.
+
+This same code path works with any other plain UVC USB camera, not just
+the SVPRO unit — there's nothing SVPRO-specific in `RealCamera`.
 
 ## Camera modes
 
@@ -200,8 +229,8 @@ python ui_main.py --mode real --device-index 0
 
 `--probe-cameras` tries indices 0, 1, and 2 and prints which ones opened
 and returned a frame, then exits — use it instead of guessing an index.
-In the desktop UI, the same check is available from **Settings → Detect
-Cameras**.
+In the desktop UI, the same check is available from **Camera Setup →
+Detect Cameras**.
 
 On Windows, `RealCamera` opens the camera with the DirectShow backend
 (`cv2.CAP_DSHOW`) instead of OpenCV's default MSMF backend, since MSMF is
@@ -231,37 +260,59 @@ develop this app.
 `compare_images()` (`core/compare.py`) resizes the inspection image to the
 reference size if they differ, converts both to grayscale, and computes a
 similarity score as `100 - mean(absolute pixel difference)`. The result is
-GOOD if the score meets `DEFAULT_MATCH_THRESHOLD_PERCENT` (95% by default,
-in `core/config.py`), otherwise BAD. A diff visualization (colormap of the
-pixel difference) is saved alongside. No alignment beyond resizing, no AI.
+GOOD if the score meets the configured match threshold (95% by default,
+`core/config.py`'s `DEFAULT_MATCH_THRESHOLD_PERCENT`, editable on the
+Settings tab), otherwise BAD. A diff visualization (colormap of the pixel
+difference) is saved alongside. No alignment beyond resizing, no AI — see
+`TODO_NEXT_STEPS.md`.
 
-Every comparison is logged as a row in `data/results.csv` and in the
-`results` table of the SQLite database `data/results.db`
-(`core/results_store.py`). On a BAD result, the inspection image and diff
-image are additionally copied into `data/bad_products/<product>/<angle>/`
-for traceability.
+Every comparison is logged as a row in the `inspections` table of the
+SQLite database `database/vision.db` (`core/db.py`). On a BAD result (and
+if "save bad products" is enabled in Settings), the inspection image and
+diff image are additionally copied into
+`data/bad_products/<product>/<angle>/` for traceability. `core/reports.py`
+exports the same `inspections` table to CSV (always) or Excel (when
+`openpyxl` is installed) — it's a read-only view, never a second source
+of truth.
 
 ## Data layout
 
-- `data/test_images/` — bundled sample frames for test mode (checked in).
-- `data/captures/` — manual/live-preview snapshots.
-- `data/products/<product>/<angle>/reference/good_reference.png` — the GOOD
-  reference image for that product/angle.
-- `data/products/<product>/<angle>/inspection/latest_inspection.png` — the
-  latest captured inspection image.
-- `data/products/<product>/<angle>/diff/latest_diff.png` — the latest diff
-  visualization from a comparison run.
-- `data/bad_products/<product>/<angle>/` — archived copies of BAD inspection
-  and diff images, timestamped.
-- `data/results.csv` / `data/results.db` — the full comparison history.
-- `camera_probe.txt` — generated by `--probe-cameras` / `PROBE_CAMERAS.bat`
-  / `SETUP_AND_RUN_WINDOWS.bat`; not checked in.
+```
+vision/
+  data/
+    test_images/                                  bundled sample frames
+    captures/                                      live-preview snapshots
+    products/<product_slug>/<angle_slug>/
+      reference/                                   timestamped GOOD references
+      inspection/                                   timestamped inspection images
+    bad_products/<product_slug>/<angle_slug>/       archived BAD inspection + diff
+    difference_images/<product_slug>/<angle_slug>/  diff images from every comparison
+    reports/                                        CSV/Excel exports
+  database/
+    vision.db                                       SQLite database (products, angles,
+                                                      reference_images, inspections, settings)
+  logs/                                              reserved for future log files
+```
+
+See `SPECIFICATION.md` for the full SQLite schema.
 
 `opencv-python-headless` is used by default since it has no GUI
 dependencies and works in headless cloud environments; the live preview
 falls back to writing frames to `data/captures/_live_preview.png` when no
 display is available. For an on-screen preview window during local PC
 testing, swap it for `opencv-python` in `requirements.txt`.
+
+## Machine Signal Interface
+
+`vision/machine_interface/` models a future PC↔PLC link without
+committing to a transport. `base.py` defines the abstract interface
+(`connect`/`disconnect`/`read_trigger`/`send_good`/`send_bad`/
+`reset_outputs`/`get_status`); `simulator.py`'s `SimulatedMachineInterface`
+is the only implementation in V1 — `read_trigger()` is edge-triggered, so
+a UI button (the Inspection tab's "Simulate PLC Trigger") calls
+`fire_trigger()` to arm it and the next `read_trigger()` call consumes it,
+mimicking a momentary PLC pulse. See `TODO_NEXT_STEPS.md` for what a real
+backend would need.
 
 ## Packaging (Windows release build)
 
@@ -270,10 +321,11 @@ testing, swap it for `opencv-python` in `requirements.txt`.
   Build locally on Windows with `pyinstaller vision_qc.spec --noconfirm
   --clean`; output goes to `dist/VISION_SYSTEM_QC/`.
 - `tools/smoke_test_ui.py` — headless regression check (test-image mode,
-  `QT_QPA_PLATFORM=offscreen`) that drives `MainWindow` through start
-  camera → select product/angle → save reference → take inspection →
-  compare → save result → stop camera, with no display needed. Run before
-  packaging; also run by CI.
+  `QT_QPA_PLATFORM=offscreen`) that drives `MainWindow`'s screens through
+  start camera → select/create product+angle → save reference → take
+  inspection → compare → save result → simulated PLC trigger → CSV export
+  → stop camera, with no display needed. Run before packaging; also run
+  by CI.
 - `packaging/` — assets that ship inside the release ZIP next to the
   `.exe`, not used when running from source: `README_FOR_WINDOWS_USER.txt`
   (end-user quick start) and `RUN_TEST_MODE.bat` / `RUN_REAL_CAMERA.bat` /
@@ -289,4 +341,5 @@ testing, swap it for `opencv-python` in `requirements.txt`.
   (`sys.frozen`) it resolves to the folder containing `sys.executable`
   (the `.exe`'s own folder), otherwise it resolves the usual way from
   `__file__`. This is what makes the unzipped release folder
-  self-contained — `data/` is created and read next to the `.exe`.
+  self-contained — `data/` and `database/` are created and read next to
+  the `.exe`.

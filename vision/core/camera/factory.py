@@ -11,8 +11,10 @@ def create_camera_source(
     mode: str,
     device_index: int,
     test_image_dir: Path,
-    width: int = 1280,
-    height: int = 720,
+    width: int = 1920,
+    height: int = 1080,
+    fps: int | None = None,
+    resolution_fallbacks: tuple[tuple[int, int], ...] = (),
 ) -> CameraSource:
     """Build a CameraSource for the requested mode.
 
@@ -26,14 +28,17 @@ def create_camera_source(
     if mode == "test":
         return TestImageCamera(test_image_dir, width, height)
 
+    def _make_real() -> RealCamera:
+        return RealCamera(device_index, width, height, fps, resolution_fallbacks)
+
     if mode == "real":
-        return RealCamera(device_index, width, height)
+        return _make_real()
 
     # auto: probe the real camera, fall back to test images on failure
-    probe = RealCamera(device_index, width, height)
+    probe = _make_real()
     try:
         probe.open()
         probe.close()
-        return RealCamera(device_index, width, height)
+        return _make_real()
     except CameraUnavailableError:
         return TestImageCamera(test_image_dir, width, height)

@@ -4,9 +4,10 @@ __pycache__/
 data/captures/*.png
 data/products/
 data/bad_products/
-data/results.csv
-data/results.db
+data/difference_images/
+data/reports/
 !data/test_images/*.png
+database/
 camera_probe.txt
 build/
 dist/

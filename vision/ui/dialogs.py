@@ -1,11 +1,13 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-    QHBoxLayout, QInputDialog, QLabel, QListWidget, QMessageBox, QPushButton,
-    QSpinBox, QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QInputDialog,
+    QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit,
+    QVBoxLayout, QWidget,
 )
 
-from core import config
-from core.camera.real_camera import probe_camera_indices
+from core.db import Database
+
+_ID_ROLE = Qt.ItemDataRole.UserRole
 
 
 def prompt_text(parent: QWidget, title: str, label: str) -> str | None:
@@ -16,19 +18,59 @@ def prompt_text(parent: QWidget, title: str, label: str) -> str | None:
     return text
 
 
-class SelectProductAngleDialog(QDialog):
-    """Lets the operator browse existing product/angle folders under data/products/.
+class AddEditProductDialog(QDialog):
+    """Add or edit a product: name, part number, description, customer, notes."""
 
-    Folder names are slugified (lowercase, underscores), so the list shows
-    those slugs rather than the original free-text names typed at Add time.
-    """
-
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, product: dict | None = None):
         super().__init__(parent)
+        self.setWindowTitle("Edit Product" if product else "Add Product")
+        self.setMinimumWidth(420)
+        form = QFormLayout(self)
+
+        self.name_edit = QLineEdit(product["name"] if product else "")
+        self.part_number_edit = QLineEdit(product["part_number"] if product else "")
+        self.description_edit = QLineEdit(product["description"] if product else "")
+        self.customer_edit = QLineEdit(product["customer"] if product else "")
+        self.notes_edit = QPlainTextEdit(product["notes"] if product else "")
+        self.notes_edit.setFixedHeight(60)
+
+        form.addRow("Name", self.name_edit)
+        form.addRow("Part number", self.part_number_edit)
+        form.addRow("Description", self.description_edit)
+        form.addRow("Customer / project", self.customer_edit)
+        form.addRow("Notes", self.notes_edit)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def _on_accept(self) -> None:
+        if not self.name_edit.text().strip():
+            self.name_edit.setFocus()
+            return
+        self.accept()
+
+    def values(self) -> dict:
+        return {
+            "name": self.name_edit.text().strip(),
+            "part_number": self.part_number_edit.text().strip(),
+            "description": self.description_edit.text().strip(),
+            "customer": self.customer_edit.text().strip(),
+            "notes": self.notes_edit.toPlainText().strip(),
+        }
+
+
+class SelectProductAngleDialog(QDialog):
+    """Lets the operator pick an existing product/angle from the database."""
+
+    def __init__(self, db: Database, parent=None):
+        super().__init__(parent)
+        self.db = db
         self.setWindowTitle("Select Product / Angle")
         self.setMinimumSize(440, 320)
-        self.selected_product: str | None = None
-        self.selected_angle: str | None = None
+        self.selected_product_id: int | None = None
+        self.selected_angle_id: int | None = None
 
         root = QVBoxLayout(self)
 
@@ -52,70 +94,31 @@ class SelectProductAngleDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 
-        self.product_list.currentTextChanged.connect(self._load_angles)
+        self.product_list.currentItemChanged.connect(self._load_angles)
         self._load_products()
 
     def _load_products(self) -> None:
         self.product_list.clear()
-        if config.PRODUCTS_DIR.exists():
-            for entry in sorted(p.name for p in config.PRODUCTS_DIR.iterdir() if p.is_dir()):
-                self.product_list.addItem(entry)
+        for product in self.db.list_products():
+            item = QListWidgetItem(product["name"])
+            item.setData(_ID_ROLE, product["id"])
+            self.product_list.addItem(item)
 
-    def _load_angles(self, product_slug: str) -> None:
+    def _load_angles(self, current: QListWidgetItem, _previous=None) -> None:
         self.angle_list.clear()
-        if not product_slug:
+        if current is None:
             return
-        product_dir = config.PRODUCTS_DIR / product_slug
-        if product_dir.exists():
-            for entry in sorted(p.name for p in product_dir.iterdir() if p.is_dir()):
-                self.angle_list.addItem(entry)
+        product_id = current.data(_ID_ROLE)
+        for angle in self.db.list_angles(product_id):
+            item = QListWidgetItem(angle["angle_name"])
+            item.setData(_ID_ROLE, angle["id"])
+            self.angle_list.addItem(item)
 
     def _on_accept(self) -> None:
         product_item = self.product_list.currentItem()
         angle_item = self.angle_list.currentItem()
         if product_item is None or angle_item is None:
             return
-        self.selected_product = product_item.text()
-        self.selected_angle = angle_item.text()
+        self.selected_product_id = product_item.data(_ID_ROLE)
+        self.selected_angle_id = angle_item.data(_ID_ROLE)
         self.accept()
-
-
-class SettingsDialog(QDialog):
-    def __init__(self, mode: str, device_index: int, threshold_percent: float, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Settings")
-        form = QFormLayout(self)
-
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["auto", "real", "test"])
-        self.mode_combo.setCurrentText(mode)
-        form.addRow("Camera mode", self.mode_combo)
-
-        device_row = QHBoxLayout()
-        self.device_spin = QSpinBox()
-        self.device_spin.setRange(0, 10)
-        self.device_spin.setValue(device_index)
-        device_row.addWidget(self.device_spin)
-        detect_button = QPushButton("Detect Cameras")
-        detect_button.clicked.connect(self._on_detect_cameras)
-        device_row.addWidget(detect_button)
-        form.addRow("Device index", device_row)
-
-        self.threshold_spin = QDoubleSpinBox()
-        self.threshold_spin.setRange(0.0, 100.0)
-        self.threshold_spin.setDecimals(1)
-        self.threshold_spin.setValue(threshold_percent)
-        form.addRow("Match threshold %", self.threshold_spin)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        form.addRow(buttons)
-
-    def values(self) -> tuple[str, int, float]:
-        return self.mode_combo.currentText(), self.device_spin.value(), self.threshold_spin.value()
-
-    def _on_detect_cameras(self) -> None:
-        results = probe_camera_indices([0, 1, 2])
-        lines = [f"Index {index}: {'available' if available else 'not found'}" for index, available in results.items()]
-        QMessageBox.information(self, "Detect Cameras", "\n".join(lines))

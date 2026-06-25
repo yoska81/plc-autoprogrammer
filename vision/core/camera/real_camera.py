@@ -35,44 +35,61 @@ def _platform_backend() -> int:
 
 
 class RealCamera(CameraSource):
-    """Reads frames from a physical USB camera via OpenCV. Local-PC use only."""
+    """Reads frames from a physical USB UVC camera via OpenCV.VideoCapture.
 
-    def __init__(self, device_index: int = 0, width: int = 1280, height: int = 720):
+    Targets plain UVC USB cameras (e.g. the SVPRO 1080p/60fps prototype
+    camera with a manual-zoom CS-mount lens) - no vendor SDK, just the
+    standard OpenCV capture API. Zoom/focus/aperture are adjusted by hand
+    on the lens and are not controlled by this class."""
+
+    def __init__(self, device_index: int = 0, width: int = 1920, height: int = 1080,
+                 fps: int | None = None, resolution_fallbacks: tuple[tuple[int, int], ...] = ()):
         self.device_index = device_index
         self.width = width
         self.height = height
+        self.fps = fps
+        self.resolution_fallbacks = resolution_fallbacks
         self._cap: cv2.VideoCapture | None = None
 
-    def open(self) -> None:
+    def _try_open_at(self, width: int, height: int) -> cv2.VideoCapture | None:
         cap = cv2.VideoCapture(self.device_index, _platform_backend())
-        if self.width:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-        if self.height:
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        if width:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        if height:
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        if self.fps:
+            cap.set(cv2.CAP_PROP_FPS, self.fps)
 
         if not cap.isOpened():
             cap.release()
-            raise CameraUnavailableError(TROUBLESHOOTING.format(index=self.device_index))
+            return None
 
         # isOpened() can be True even when the device can't actually deliver
         # frames yet (common DirectShow quirk right after opening), so a few
         # warm-up reads are needed to confirm it really works.
-        warmed_up = False
         for _ in range(5):
             ok, _frame = cap.read()
             if ok:
-                warmed_up = True
-                break
+                return cap
             time.sleep(0.1)
 
-        if not warmed_up:
-            cap.release()
-            raise CameraUnavailableError(
-                f"Camera at index {self.device_index} opened but never returned a "
-                f"frame.\n{TROUBLESHOOTING.format(index=self.device_index)}"
-            )
+        cap.release()
+        return None
 
-        self._cap = cap
+    def open(self) -> None:
+        # Try the requested resolution first, then fall back to smaller
+        # ones the camera/PC/USB bandwidth is more likely to support.
+        attempts = [(self.width, self.height)]
+        attempts += [r for r in self.resolution_fallbacks if r not in attempts]
+
+        for width, height in attempts:
+            cap = self._try_open_at(width, height)
+            if cap is not None:
+                self.width, self.height = width, height
+                self._cap = cap
+                return
+
+        raise CameraUnavailableError(TROUBLESHOOTING.format(index=self.device_index))
 
     def read_frame(self) -> np.ndarray:
         if self._cap is None:
@@ -86,6 +103,19 @@ class RealCamera(CameraSource):
         if self._cap is not None:
             self._cap.release()
             self._cap = None
+
+    def get_property(self, prop_id: int) -> float | None:
+        """Read a cv2.CAP_PROP_* value, or None if the camera isn't open."""
+        if self._cap is None:
+            return None
+        return self._cap.get(prop_id)
+
+    def set_property(self, prop_id: int, value: float) -> bool:
+        """Set a cv2.CAP_PROP_* value. Returns whether the device accepted it
+        (best-effort - not every UVC camera exposes every property)."""
+        if self._cap is None:
+            return False
+        return bool(self._cap.set(prop_id, value))
 
 
 def probe_camera_indices(indices: list[int]) -> dict[int, bool]:

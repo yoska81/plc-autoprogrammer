@@ -15,7 +15,11 @@ a = Analysis(
     datas=[
         (str(ROOT / "data" / "test_images"), "data/test_images"),
     ],
-    hiddenimports=[],
+    # openpyxl is only imported lazily inside core/reports.py's
+    # export_excel()/excel_available() (so the CSV-only path has zero
+    # dependency on it) - PyInstaller's static analysis can miss imports
+    # that are conditional like that, so it's listed explicitly here.
+    hiddenimports=["openpyxl"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

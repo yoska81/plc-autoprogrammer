@@ -68,11 +68,23 @@ class ResultBadge(QLabel):
 
 
 class HistoryTable(QTableWidget):
-    COLUMNS = ("Timestamp", "Product", "Angle", "Result", "Score %")
+    """Renders rows shaped like core/db.py's list_inspections() output.
+    `columns` is a list of (dict_key, header_label) pairs; defaults to a
+    short summary suitable for the Inspection screen's recent-activity
+    strip. The Reports screen passes the full core/reports.py column set."""
 
-    def __init__(self, parent=None):
-        super().__init__(0, len(self.COLUMNS), parent)
-        self.setHorizontalHeaderLabels(self.COLUMNS)
+    DEFAULT_COLUMNS = [
+        ("created_at", "Date/Time"),
+        ("product_name", "Product"),
+        ("angle_name", "Angle"),
+        ("result", "Result"),
+        ("score", "Score %"),
+    ]
+
+    def __init__(self, columns: list[tuple[str, str]] | None = None, parent=None):
+        self.columns = columns or self.DEFAULT_COLUMNS
+        super().__init__(0, len(self.columns), parent)
+        self.setHorizontalHeaderLabels([label for _, label in self.columns])
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.verticalHeader().setVisible(False)
@@ -81,9 +93,8 @@ class HistoryTable(QTableWidget):
     def set_rows(self, rows: list[dict]) -> None:
         self.setRowCount(len(rows))
         for r, row in enumerate(rows):
-            values = (
-                row["timestamp"], row["product"], row["angle"],
-                row["result"], f"{row['score_percent']:.2f}",
-            )
-            for c, value in enumerate(values):
+            for c, (key, _label) in enumerate(self.columns):
+                value = row.get(key, "")
+                if key == "score" and isinstance(value, (int, float)):
+                    value = f"{value:.2f}"
                 self.setItem(r, c, QTableWidgetItem(str(value)))

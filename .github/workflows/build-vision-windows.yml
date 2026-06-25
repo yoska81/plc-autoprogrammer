@@ -40,8 +40,9 @@ jobs:
         run: |
           Remove-Item -Recurse -Force data\products -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force data\bad_products -ErrorAction SilentlyContinue
-          Remove-Item -Force data\results.csv -ErrorAction SilentlyContinue
-          Remove-Item -Force data\results.db -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force data\difference_images -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force data\captures -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force database -ErrorAction SilentlyContinue
 
       - name: Build the Windows executable with PyInstaller
         run: pyinstaller vision_qc.spec --noconfirm --clean

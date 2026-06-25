@@ -121,4 +121,51 @@ QListWidget::item:selected {
     background-color: #1a1a1a;
     color: #ffffff;
 }
+
+QTabWidget::pane {
+    border: 1px solid #2a2a2a;
+    top: -1px;
+}
+
+QTabBar::tab {
+    background-color: #0a0a0a;
+    color: #8a8a8a;
+    border: 1px solid #2a2a2a;
+    padding: 8px 20px;
+    margin-right: 2px;
+}
+
+QTabBar::tab:selected {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    border-bottom: 2px solid #ffffff;
+}
+
+QCheckBox {
+    color: #f5f5f5;
+    spacing: 8px;
+}
+
+QGroupBox {
+    border: 1px solid #2a2a2a;
+    margin-top: 10px;
+    padding-top: 14px;
+    color: #8a8a8a;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+}
+
+QLabel#statusValue {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QLabel#instructionsText {
+    color: #8a8a8a;
+    font-size: 12px;
+}
 """

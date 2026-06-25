@@ -8,3 +8,7 @@ opencv-python-headless>=4.9
 # Desktop UI (ui/, ui_main.py). Works headless too: set
 # QT_QPA_PLATFORM=offscreen to run/test without a display.
 PySide6>=6.7
+
+# Reports screen "Export Excel" button (core/reports.py). CSV export has no
+# dependency and always works; this is only needed for the .xlsx option.
+openpyxl>=3.1
