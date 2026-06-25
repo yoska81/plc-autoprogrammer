@@ -7,3 +7,4 @@ data/bad_products/
 data/results.csv
 data/results.db
 !data/test_images/*.png
+camera_probe.txt
