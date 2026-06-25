@@ -34,6 +34,8 @@ def _gui_available() -> bool:
 
 class QCApp:
     def __init__(self, mode: str, device_index: int):
+        self.mode = mode
+        self.device_index = device_index
         self.camera = create_camera_source(
             mode, device_index, config.TEST_IMAGES_DIR,
             config.DEFAULT_FRAME_WIDTH, config.DEFAULT_FRAME_HEIGHT,
@@ -42,6 +44,7 @@ class QCApp:
         self._last_frame: np.ndarray | None = None
         self.location: ProductAngleLocation | None = None
         self.last_result: ComparisonResult | None = None
+        self.threshold_percent = config.DEFAULT_MATCH_THRESHOLD_PERCENT
 
     def start(self) -> None:
         self.camera.open()
@@ -49,6 +52,16 @@ class QCApp:
 
     def stop(self) -> None:
         self.camera.close()
+
+    def reconfigure_camera(self, mode: str, device_index: int) -> None:
+        """Swap in a new camera source (e.g. from the UI Settings dialog). Caller
+        is responsible for stopping/starting around this if the camera was open."""
+        self.mode = mode
+        self.device_index = device_index
+        self.camera = create_camera_source(
+            mode, device_index, config.TEST_IMAGES_DIR,
+            config.DEFAULT_FRAME_WIDTH, config.DEFAULT_FRAME_HEIGHT,
+        )
 
     def select_product_angle(self, product: str, angle: str) -> None:
         self.location = ProductAngleLocation(product, angle)
@@ -95,7 +108,9 @@ class QCApp:
         save_image(frame, location.inspection_path.parent, location.inspection_path.name)
         print(f"[vision] inspection image captured at {location.inspection_path}")
 
-    def run_comparison(self) -> ComparisonResult | None:
+    def compute_comparison(self) -> ComparisonResult | None:
+        """Run the GOOD/BAD comparison and store it as self.last_result, but
+        don't persist it yet (no bad-product archiving, no CSV/SQLite log)."""
         location = self._require_location()
         if not location.reference_path.exists():
             print("[vision] no GOOD reference saved yet for this product/angle.")
@@ -106,10 +121,20 @@ class QCApp:
 
         comparison = compare_images(
             location.reference_path, location.inspection_path, location.diff_path,
-            threshold_percent=config.DEFAULT_MATCH_THRESHOLD_PERCENT,
+            threshold_percent=self.threshold_percent,
         )
         self.last_result = comparison
         print(f"[vision] result={comparison.result} score={comparison.score_percent:.2f}% diff={comparison.diff_image_path}")
+        return comparison
+
+    def persist_last_result(self) -> None:
+        """Archive a BAD result under bad_products/ and log self.last_result to
+        CSV/SQLite. Call after compute_comparison()."""
+        location = self._require_location()
+        comparison = self.last_result
+        if comparison is None:
+            print("[vision] no comparison result to save yet.")
+            return
 
         if comparison.result == "BAD":
             stamp = time.strftime("%Y%m%d_%H%M%S")
@@ -122,6 +147,13 @@ class QCApp:
             location.product, location.angle, comparison,
             location.reference_path, location.inspection_path,
         )
+        print("[vision] result saved")
+
+    def run_comparison(self) -> ComparisonResult | None:
+        """CLI convenience: compute and immediately persist, in one step."""
+        comparison = self.compute_comparison()
+        if comparison is not None:
+            self.persist_last_result()
         return comparison
 
     def show_last_result(self) -> None:

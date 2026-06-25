@@ -7,6 +7,9 @@ reference and an inspection image per product/angle, and compares them with
 OpenCV to produce a GOOD/BAD result. No AI, OCR, object detection, FastAPI,
 or PLC integration yet.
 
+Two front ends drive the same engine in `core/`: a text menu (`main.py`)
+and a desktop UI (`ui_main.py`).
+
 ## Setup
 
 ```bash
@@ -25,6 +28,48 @@ python main.py --mode test   # force the bundled/synthetic test image feed
 
 Menu options: select product/angle, live preview, save GOOD reference,
 capture inspection image, run GOOD/BAD comparison, show last result, exit.
+
+## Desktop UI
+
+A Tesla-style black-and-white desktop UI built with PySide6, under `ui/`:
+
+```bash
+python ui_main.py --mode auto   # same --mode/--device-index flags as main.py
+```
+
+It shows the live camera/test feed, the GOOD reference, the inspection
+image, the GOOD/BAD result and similarity score, the current
+product/angle/last-inspection-time, and a 20-row inspection history table.
+Buttons map directly onto the existing `core/app.py` engine — the UI adds
+no new comparison or capture logic:
+
+- **Start Camera / Stop Camera** — `QCApp.start()` / `QCApp.stop()`, drive
+  the 200ms live preview timer.
+- **Add Product** — prompts for a product name and a first angle, then
+  `select_product_angle()`.
+- **Select Product** — browses existing `data/products/` folders and picks
+  a product/angle pair. Note: this list shows the slugified folder name
+  (e.g. `widget_a`), not the original display-cased text typed under Add
+  Product, since the slug is the only thing kept on disk.
+- **Add Angle** — adds a new angle under the currently selected product.
+- **Save GOOD Reference** / **Take Inspection Picture** —
+  `save_good_reference()` / `capture_inspection_image()`.
+- **Compare** — `compute_comparison()`: runs the GOOD/BAD comparison and
+  updates the result badge/score, but does not log or archive anything yet.
+- **Save Result** — `persist_last_result()`: logs the last `Compare` result
+  to CSV/SQLite and archives BAD captures, same as the CLI's combined
+  "run comparison" step.
+- **Open Bad Products Folder** — opens `data/bad_products/<product>/<angle>/`
+  (or the top-level folder if no product is selected) in the OS file
+  browser.
+- **Export Report** — copies `data/results.csv` to a location you choose.
+- **Settings** — change camera mode/device index (restarts the camera if
+  running) and the match threshold percentage.
+
+Runs headless too: set `QT_QPA_PLATFORM=offscreen` before launching (useful
+in CI/cloud sandboxes with no display). On Linux this also needs
+`libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3` installed for Qt's
+offscreen platform plugin to load.
 
 ## Camera modes
 

@@ -4,3 +4,7 @@ numpy>=1.26,<3.0
 # For a real on-screen preview window during local PC testing, replace this
 # line with: opencv-python>=4.9
 opencv-python-headless>=4.9
+
+# Desktop UI (ui/, ui_main.py). Works headless too: set
+# QT_QPA_PLATFORM=offscreen to run/test without a display.
+PySide6>=6.7

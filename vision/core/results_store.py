@@ -65,3 +65,17 @@ def record_result(
             row,
         )
         conn.commit()
+
+
+def fetch_recent_results(db_path: Path, limit: int = 20) -> list[dict]:
+    """Used by the UI's inspection history table."""
+    if not db_path.exists():
+        return []
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT timestamp, product, angle, result, score_percent "
+            "FROM results ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
