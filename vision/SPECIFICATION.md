@@ -101,15 +101,28 @@ Products Folder, Export Report, Settings (Settings opens the Settings
 tab).
 
 When `inspection_mode` is "free_pose" (V2 — see below), this same screen
-additionally shows: a "Normalized (Aligned)" preview panel (the located
-product warped into the matched reference's canonical frame), a "Best
-Match" sidebar row naming the matched reference's angle, a feature/shape/
-pixel/edge score breakdown line under the result badge, a "Product
-Detection: FOUND / NOT FOUND" status, the TOTAL/GOOD/BAD/NO PRODUCT/
-SKIPPED/ERROR counters panel, and an "Auto Match Reference" sidebar
-button calling `QCApp.auto_match_reference()` — the same V2 search
-Compare runs, exposed under its own name. These V2 widgets stay
-blank/dashed and have no effect while `inspection_mode` is "fixed" (V1).
+additionally shows: a "Best Matching Reference" preview panel (replaces
+V1's fixed "Good Reference" panel with whichever saved reference V2's
+search actually matched), a "Detection Overlay" panel (the inspection
+image with the detected product's rotated bounding box and center marker
+drawn on it — built from `V2ComparisonResult.detected_bbox_corners`, the
+4 reference-frame bbox corners mapped through the recovered pose
+transform, purely a presentation field with no effect on scoring), a
+"Normalized (Aligned)" preview panel (the located product warped into the
+matched reference's canonical frame), a "Difference" panel, sidebar rows
+for **Product Center (X, Y)** in pixels, **Rotation Angle** (continuous,
+two-decimal precision, e.g. `23.70°`), **Detected Scale**, **Recognition
+Confidence**, and **Alignment Quality**, a "Best Match" sidebar row naming
+the matched reference's angle, a feature/shape/pixel/edge score breakdown
+line under the result badge, a "Product Detection: FOUND / NOT FOUND"
+status, the TOTAL/GOOD/BAD/NO PRODUCT/SKIPPED/ERROR counters panel, and an
+"Auto Match Reference" sidebar button calling
+`QCApp.auto_match_reference()` — the same V2 search Compare runs, exposed
+under its own name. All of this state survives `MainWindow.refresh_all()`
+(camera start/stop, product/angle changes, Save Result, ...) by re-
+rendering from `engine.last_comparison_v2` rather than being recomputed.
+These V2 widgets stay blank/dashed and have no effect while
+`inspection_mode` is "fixed" (V1).
 
 ### 2. Camera Setup / Calibration (`ui/screens/camera_setup_screen.py`)
 
@@ -142,10 +155,18 @@ later.
 
 ### 5. Reports (`ui/screens/reports_screen.py`)
 
-Full inspection history table: date/time, product, angle, result, score,
-inspection image path, bad image path, diff image path, notes. Filter by
-product, result, and date range. Export CSV (always available) and
-Export Excel (when `openpyxl` is installed). Open image folder shortcut.
+Full inspection history table (`core/reports.py`'s `REPORT_COLUMNS`):
+date/time, product, angle, result, score, inspection/bad/diff image,
+notes, plus the V2 columns (blank on V1 rows) — engine version,
+recognition confidence, alignment method/quality, feature/shape/pixel/
+edge sub-scores, detected X/Y/rotation/scale, normalized image, best
+reference image, product-detected/detection-confidence, and skipped
+flag. The table widget (`ui/widgets.py`'s `HistoryTable`) shows only the
+filename for every `*_path` column, never the full path, so the on-screen
+table stays readable regardless of how deep the underlying
+`data/products/...` folder structure is. Filter by product, result, and
+date range. Export CSV (always available) and Export Excel (when
+`openpyxl` is installed) write every column, including full paths.
 
 ### 6. Settings (`ui/screens/settings_screen.py`)
 

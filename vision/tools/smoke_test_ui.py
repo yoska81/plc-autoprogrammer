@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtWidgets import QApplication
 
-from core import reports
+from core import config, reports
 from core.app import get_or_create_angle, get_or_create_product
 from ui.main_window import MainWindow
 
@@ -26,6 +26,11 @@ def main() -> None:
     window = MainWindow(mode="test", device_index=0)
     engine = window.engine
     inspection = window.inspection_screen
+
+    # This test exercises the V1 fixed-reference path specifically; force the
+    # mode rather than trusting whatever inspection_mode was last persisted to
+    # the database (e.g. by manual V2 testing), so the test is deterministic.
+    engine.set_inspection_mode(config.INSPECTION_MODE_FIXED)
 
     inspection._on_start_camera()
     assert engine.camera_running, "camera did not start in test mode"

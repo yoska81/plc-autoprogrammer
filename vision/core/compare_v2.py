@@ -103,6 +103,11 @@ class V2ComparisonResult:
     normalized_image: np.ndarray | None
     diff_image: np.ndarray | None
     no_product_found: bool
+    # Presentation-only: the 4 corners (inspection-frame pixel coords, in
+    # order) of the product's reference-frame bounding box mapped through
+    # alignment.M. Lets the UI draw a rotated bbox without re-deriving the
+    # transform itself. Never read by any scoring/threshold logic.
+    detected_bbox_corners: list[tuple[float, float]] | None = None
 
 
 # --------------------------------------------------------------- utilities
@@ -538,10 +543,18 @@ def compare_one_reference(
 
     diff_image = cv2.applyColorMap(cv2.absdiff(ref_gray, norm_gray), cv2.COLORMAP_JET)
 
+    bbox_corners = None
+    if product_bbox is not None:
+        x0, y0, x1, y1 = product_bbox
+        ref_corners = np.array(
+            [[x0, y0, 1.0], [x1, y0, 1.0], [x1, y1, 1.0], [x0, y1, 1.0]], dtype=np.float32)
+        insp_corners = (alignment.M @ ref_corners.T).T
+        bbox_corners = [(float(p[0]), float(p[1])) for p in insp_corners]
+
     return alignment, dict(
         feature_score=feature_score, shape_score=shape_score, pixel_score=pixel_score, edge_score=edge_score,
         alignment_quality=alignment_quality, combined_score=combined,
-        normalized_image=normalized, diff_image=diff_image,
+        normalized_image=normalized, diff_image=diff_image, bbox_corners=bbox_corners,
     )
 
 
@@ -614,4 +627,5 @@ def compute_comparison_v2(
         best_reference_image_id=candidate["id"], best_reference_image_path=Path(candidate["image_path"]),
         best_angle_id=candidate.get("angle_id"), best_angle_name=candidate.get("angle_name"),
         normalized_image=scores["normalized_image"], diff_image=scores["diff_image"], no_product_found=False,
+        detected_bbox_corners=scores.get("bbox_corners"),
     )

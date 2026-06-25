@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import cv2
+import numpy as np
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
@@ -108,6 +110,27 @@ class InspectionScreen(QWidget):
         self.best_match_label.setObjectName("infoLabel")
         self.best_match_label.setWordWrap(True)
         layout.addWidget(self._status_row("Best Match", self.best_match_label))
+
+        self.center_label = QLabel("—")
+        self.center_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Product Center (X, Y)", self.center_label))
+
+        self.rotation_label = QLabel("—")
+        self.rotation_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Rotation Angle", self.rotation_label))
+
+        self.scale_label = QLabel("—")
+        self.scale_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Detected Scale", self.scale_label))
+
+        self.confidence_label = QLabel("—")
+        self.confidence_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Recognition Confidence", self.confidence_label))
+
+        self.alignment_quality_label = QLabel("—")
+        self.alignment_quality_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Alignment Quality", self.alignment_quality_label))
+
         auto_match_button = QPushButton("Auto Match Reference")
         auto_match_button.setObjectName("secondaryActionButton")
         auto_match_button.clicked.connect(self._on_auto_match_reference)
@@ -146,11 +169,15 @@ class InspectionScreen(QWidget):
 
         secondary_col = QVBoxLayout()
         secondary_col.setSpacing(14)
-        self.reference_panel = ImagePreviewPanel("Good Reference")
+        self.reference_panel = ImagePreviewPanel("Best Matching Reference")
         self.inspection_panel = ImagePreviewPanel("Inspection Image")
+        self.overlay_panel = ImagePreviewPanel("Detection Overlay")
         self.diff_panel = ImagePreviewPanel("Difference")
         self.normalized_panel = ImagePreviewPanel("Normalized (Aligned)")
-        for panel in (self.reference_panel, self.inspection_panel, self.diff_panel, self.normalized_panel):
+        for panel in (
+            self.reference_panel, self.inspection_panel, self.overlay_panel,
+            self.diff_panel, self.normalized_panel,
+        ):
             secondary_col.addWidget(panel)
         previews_row.addLayout(secondary_col, stretch=1)
         column.addLayout(previews_row, stretch=1)
@@ -337,24 +364,78 @@ class InspectionScreen(QWidget):
         the two engines report different score/diff-image fields."""
         if isinstance(comparison, V2ComparisonResult):
             self.result_panel.set_result(comparison.result, comparison.final_score)
-            self.detection_label.setText("FOUND" if comparison.product_detected else "NOT FOUND")
-            if self.engine._last_v2_diff_path:
-                self.diff_panel.set_image_path(self.engine._last_v2_diff_path)
-            else:
-                self.diff_panel.clear()
-            if self.engine._last_v2_normalized_path:
-                self.normalized_panel.set_image_path(self.engine._last_v2_normalized_path)
-            else:
-                self.normalized_panel.clear()
-            self.best_match_label.setText(comparison.best_angle_name or "—")
-            self.v2_score_label.setText(self._format_v2_scores(comparison))
+            self._render_v2_details(comparison)
         else:
             self.result_panel.set_result(comparison.result, comparison.score_percent)
             self.detection_label.setText("FOUND")
             self.diff_panel.set_image_path(comparison.diff_image_path)
             self.normalized_panel.clear()
+            self.overlay_panel.clear()
             self.best_match_label.setText("—")
             self.v2_score_label.setText("")
+            self._clear_v2_detail_labels()
+
+    def _render_v2_details(self, comparison: V2ComparisonResult) -> None:
+        self.detection_label.setText("FOUND" if comparison.product_detected else "NOT FOUND")
+        if self.engine._last_v2_diff_path:
+            self.diff_panel.set_image_path(self.engine._last_v2_diff_path)
+        else:
+            self.diff_panel.clear()
+        if self.engine._last_v2_normalized_path:
+            self.normalized_panel.set_image_path(self.engine._last_v2_normalized_path)
+        else:
+            self.normalized_panel.clear()
+        if comparison.best_reference_image_path:
+            self.reference_panel.set_image_path(comparison.best_reference_image_path)
+        else:
+            self.reference_panel.clear()
+        overlay = self._build_detection_overlay(comparison)
+        if overlay is not None:
+            self.overlay_panel.set_frame(overlay)
+        else:
+            self.overlay_panel.clear()
+        self.best_match_label.setText(comparison.best_angle_name or "—")
+        self.v2_score_label.setText(self._format_v2_scores(comparison))
+        self._set_v2_detail_labels(comparison)
+
+    def _build_detection_overlay(self, comparison: V2ComparisonResult) -> np.ndarray | None:
+        """Full inspection frame with the detected (rotated) product bounding
+        box and its center marker drawn on top - purely a display rendering,
+        computed from fields the V2 engine already reports."""
+        path = self.engine.last_inspection_image_path
+        if not comparison.product_detected or path is None or not path.exists():
+            return None
+        image = cv2.imread(str(path))
+        if image is None:
+            return None
+        if comparison.detected_bbox_corners:
+            points = np.array(comparison.detected_bbox_corners, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.polylines(image, [points], isClosed=True, color=(0, 220, 0), thickness=3)
+        if comparison.detected_center_x is not None and comparison.detected_center_y is not None:
+            center = (int(round(comparison.detected_center_x)), int(round(comparison.detected_center_y)))
+            cv2.drawMarker(image, center, (0, 0, 255), cv2.MARKER_CROSS, 36, 3)
+        return image
+
+    def _set_v2_detail_labels(self, comparison: V2ComparisonResult) -> None:
+        if comparison.detected_center_x is not None and comparison.detected_center_y is not None:
+            self.center_label.setText(f"{comparison.detected_center_x:.1f}, {comparison.detected_center_y:.1f} px")
+        else:
+            self.center_label.setText("—")
+        self.rotation_label.setText(
+            f"{comparison.detected_rotation_deg:.2f}°" if comparison.detected_rotation_deg is not None else "—"
+        )
+        self.scale_label.setText(
+            f"{comparison.detected_scale:.3f}" if comparison.detected_scale is not None else "—"
+        )
+        self.confidence_label.setText(f"{comparison.recognition_confidence:.1f}%")
+        self.alignment_quality_label.setText(f"{comparison.alignment_quality:.1f}%")
+
+    def _clear_v2_detail_labels(self) -> None:
+        for label in (
+            self.center_label, self.rotation_label, self.scale_label,
+            self.confidence_label, self.alignment_quality_label,
+        ):
+            label.setText("—")
 
     @staticmethod
     def _format_v2_scores(comparison: V2ComparisonResult) -> str:
@@ -480,7 +561,9 @@ class InspectionScreen(QWidget):
         self.camera_toggle_button.setText("Stop Camera" if self.engine.camera_running else "Start Camera")
         self.live_panel.set_live(self.engine.camera_running)
 
-        if self.engine.current_angle:
+        if self.engine.inspection_mode == config.INSPECTION_MODE_FREE_POSE and self.engine.last_comparison_v2 is not None:
+            self._render_v2_details(self.engine.last_comparison_v2)
+        elif self.engine.current_angle:
             primary = self.engine.db.get_primary_reference(self.engine.current_angle["id"])
             self.reference_panel.set_image_path(primary["image_path"]) if primary else self.reference_panel.clear()
         else:

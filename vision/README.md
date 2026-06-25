@@ -103,16 +103,22 @@ tab keeps its own copy of the data:
   GOOD/BAD result badge with similarity score, product/angle controls,
   Machine Signal Interface communication/trigger status, and the
   "Simulate PLC Trigger" button. When `inspection_mode` is "free_pose"
-  (V2), it also shows a "Normalized (Aligned)" preview panel, a "Best
-  Match" status row naming the matched reference's angle, a feature/
-  shape/pixel/edge score breakdown line under the result badge, a
-  "Product Detection" FOUND/NOT FOUND status, the GOOD/BAD/NO
-  PRODUCT/SKIPPED/ERROR counters panel, and an "Auto Match Reference"
-  sidebar button (`QCApp.auto_match_reference()`) that runs the same V2
-  search as Compare but is exposed under its own name for clarity; these
-  V2 widgets stay blank/dashed and inert in V1's default "fixed" mode.
-  Buttons map directly onto the `QCApp` engine — the UI adds no new
-  comparison or capture logic.
+  (V2), it also shows a "Best Matching Reference" panel (replaces V1's
+  fixed "Good Reference" panel with whichever saved reference V2's search
+  actually matched), a "Detection Overlay" panel (inspection image with
+  the detected product's rotated bounding box and center marker drawn on
+  it), a "Normalized (Aligned)" preview panel, a "Difference" panel,
+  sidebar rows for Product Center (X, Y), Rotation Angle (continuous,
+  two-decimal precision, e.g. `23.70°`), Detected Scale, Recognition
+  Confidence, and Alignment Quality, a "Best Match" status row naming the
+  matched reference's angle, a feature/shape/pixel/edge score breakdown
+  line under the result badge, a "Product Detection" FOUND/NOT FOUND
+  status, the GOOD/BAD/NO PRODUCT/SKIPPED/ERROR counters panel, and an
+  "Auto Match Reference" sidebar button (`QCApp.auto_match_reference()`)
+  that runs the same V2 search as Compare but is exposed under its own
+  name for clarity; these V2 widgets stay blank/dashed and inert in V1's
+  default "fixed" mode. Buttons map directly onto the `QCApp` engine — the
+  UI adds no new comparison or capture logic.
 - **Camera Setup** (`ui/screens/camera_setup_screen.py`) — live preview,
   camera device index ("Detect Cameras" probes indices 0/1/2), resolution
   (with the 1920×1080 → 1280×720 → 640×480 fallback list), FPS, and
@@ -128,8 +134,12 @@ tab keeps its own copy of the data:
   product/angle: list/add/delete GOOD reference images and mark one
   primary. V1 always compares against the primary reference.
 - **Reports** (`ui/screens/reports_screen.py`) — full inspection history,
-  filterable by product/result, exportable to CSV (always available) or
-  Excel (when `openpyxl` is installed).
+  including V2 columns (engine, recognition confidence, alignment
+  method/quality, sub-scores, detected X/Y/rotation/scale, best reference
+  image — blank for V1 rows); the on-screen table always shows just the
+  filename for any image-path column, never a long path. Filterable by
+  product/result, exportable to CSV (always available) or Excel (when
+  `openpyxl` is installed).
 - **Settings** (`ui/screens/settings_screen.py`) — camera mode
   (test/real/auto), match threshold, snapshot/bad-product save toggles,
   the Machine Signal Interface's simulation-mode toggle and reserved
