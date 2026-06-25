@@ -1,4 +1,4 @@
-# VISION SYSTEM - QC — V1 Specification
+# VISION SYSTEM - QC — V1 + V2 Specification
 
 ## What this is
 
@@ -148,6 +148,107 @@ doesn't need to change shape later. Camera index/resolution/FPS/exposure
 live on the Camera Setup / Calibration screen instead, next to the live
 preview they affect.
 
+Two additional cards configure the V2 engine (see below): **Inspection
+Engine (V2)** (inspection mode, matching method, alignment method,
+minimum product detection confidence, minimum feature matches, save
+normalized image) and **No Product Handling (V2)** (the No Product Action
+choice, save-no-product-images, log-skipped-inspections). Both are no-ops
+while `inspection_mode` is "Fixed Reference (V1)".
+
+## V2: Free Position / Continuous Rotation Engine (`core/compare_v2.py`)
+
+V1's pipeline above is **untouched and remains the default**
+(`inspection_mode = "fixed"`). V2 is a purely additive, opt-in inspection
+mode (`inspection_mode = "free_pose"`, set from the Settings screen) for
+products that aren't placed in a fixed spot/orientation under the camera:
+the part can appear anywhere in the frame, rotated by any continuous
+angle (0–359.99°, never snapped to a fixed step like V1's named angles),
+and slightly scaled, all from the same fixed camera viewpoint (no 3D tilt).
+
+Pipeline, run per inspection when `inspection_mode` is "free_pose":
+
+1. **Locate** — find the product anywhere in the inspection frame using
+   ORB or AKAZE feature matching against every saved reference for the
+   product (not just one angle's primary reference, unlike V1), falling
+   back to a contour/`minAreaRect` estimate if feature matching can't find
+   enough inliers. The `alignment_method` setting picks ORB / AKAZE /
+   contour / hybrid (ORB → AKAZE → contour fallback chain).
+2. **Recover pose** — center, continuous rotation angle, and scale of the
+   located product, plus a 0–100 recognition/localization confidence score.
+3. **Decide product_detected** — if confidence is below
+   `min_recognition_confidence` (Settings: "Minimum product detection
+   confidence"), or too few feature-match inliers
+   (`min_feature_matches`), the engine reports `NO_PRODUCT_FOUND` and
+   stops here — see "No Product Found / Skip Logic" below. It **never**
+   resolves this to BAD itself; that decision belongs entirely to
+   `core/app.py`'s `no_product_action` setting.
+4. **Align** — warp the located product back into the best-matching
+   reference's own canonical frame (`config.CANONICAL_SIZE`, 480×480) so
+   scores are comparable across references regardless of original image
+   resolution.
+5. **Score** — compare the aligned/normalized image against the reference
+   using the `matching_method` setting: `pixel` (grayscale diff, like
+   V1), `feature` (keypoint-match ratio), or `hybrid` (an explainable
+   weighted average of feature/shape/pixel/edge sub-scores — no black-box
+   model; weights are in `core/config.py`).
+6. **Decide GOOD/BAD** against the same `match_threshold_percent` setting
+   V1 uses.
+
+V2 searches every saved reference image for the whole product (across all
+angles), not just the currently selected angle — appropriate for a part
+that can present any side to the camera. The matched reference's angle is
+recorded on the inspection row (`best_angle_id`/`best_angle_name`).
+
+## No Product Found / Skip Logic (V2 only)
+
+**No product is not the same as BAD product.** BAD means a product was
+located and failed inspection. **NO PRODUCT FOUND** means the system could
+not reliably locate any product in the frame at all — an early trigger, an
+empty conveyor gap, or a manual trigger fired with nothing in front of the
+camera. **SKIPPED** means the system intentionally excluded that
+inspection cycle from the GOOD/BAD/NO PRODUCT counts. **ERROR** covers a
+cycle that failed for reasons unrelated to product quality (a camera/IO
+exception raised mid-cycle). V1 has no localization step and therefore no
+concept of "no product found" — this logic only applies when
+`inspection_mode` is "free_pose".
+
+Result states (`core/config.py` `RESULT_*`): `GOOD`, `BAD`,
+`NO_PRODUCT_FOUND`, `SKIPPED`, `ERROR`.
+
+When V2 reports `NO_PRODUCT_FOUND`, `core/app.py` applies the **No Product
+Action** setting (Settings → "No Product Handling (V2)"):
+
+- **Skip and do not count** (default in simulation/manual mode) — nothing
+  is saved to the database and none of GOOD/BAD/NO PRODUCT/SKIPPED is
+  incremented, *unless* "Log skipped inspections" is on, in which case a
+  `SKIPPED` row is written (and the SKIPPED counter increments) purely for
+  audit purposes. The UI shows "SKIPPED — NO PRODUCT FOUND". The machine
+  output sends neither GOOD nor BAD.
+- **Count as NO PRODUCT** — a `NO_PRODUCT_FOUND` row is saved and the NO
+  PRODUCT counter increments. The inspection image is only archived under
+  `data/no_product/` if "Save no-product images" is on; nothing is written
+  to `bad_products/`. The simulated Machine Signal Interface's
+  `send_no_product()` is called (reserved for a future real PLC signal).
+- **Treat as BAD** — a `BAD` row is saved and the BAD counter increments.
+  The image is archived under `bad_products/` (if "Save bad products" is
+  on), and the result clearly reads "BAD — NO PRODUCT FOUND" so it's never
+  confused with a genuine quality failure in the history/reports. The
+  simulated machine output sends BAD.
+- **Ask operator** — nothing is saved yet; `save_result()` /
+  `poll_trigger_and_inspect()` raise `NoProductDecisionRequired` and the UI
+  shows "No product found. Skip this inspection or count as BAD?" with
+  Skip / Count as BAD / Save as NO PRODUCT buttons. Whichever the operator
+  picks is applied via `save_no_product_decision()`, using the same three
+  behaviors above.
+
+Production lines can choose a different No Product Action per machine
+sequence in Settings; simulation/manual mode defaults to "Skip and do not
+count" so an empty trigger never pollutes GOOD/BAD statistics.
+
+The Inspection screen shows a live **Product Detection: FOUND / NOT
+FOUND** status and a compact counters panel: **TOTAL, GOOD, BAD, NO
+PRODUCT, SKIPPED, ERROR** (`core/db.py`'s `count_inspections()`).
+
 ## Machine Signal Interface
 
 `vision/machine_interface/` (not `vision/io/` — that name would shadow
@@ -195,6 +296,10 @@ vision/
       inspection/                                   timestamped inspection images
     bad_products/<product_slug>/<angle_slug>/       archived BAD inspection + diff
     difference_images/<product_slug>/<angle_slug>/  diff images from every comparison
+    no_product/                                     V2: NO_PRODUCT_FOUND images (flat,
+                                                     not per-product/angle - a product may
+                                                     not even be identified yet), only when
+                                                     "Save no-product images" is on
     reports/                                        CSV/Excel exports
   database/
     vision.db                                       SQLite database (see schema below)
@@ -211,7 +316,16 @@ inspections(
     id, product_id, angle_id, reference_image_id,
     inspection_image_path, difference_image_path, bad_image_path,
     result, score, threshold, camera_mode, camera_index, trigger_source,
-    created_at, notes
+    created_at, notes,
+    -- V2 "Free Position / Continuous Rotation" engine fields; blank for V1 rows
+    engine_version, feature_score, shape_score, pixel_score, edge_score,
+    recognition_confidence, alignment_quality, alignment_method,
+    detected_center_x, detected_center_y, detected_rotation_deg, detected_scale,
+    normalized_image_path,
+    -- No Product Found / Skip / Error fields; blank for V1 rows and for V2
+    -- rows where a product was located normally
+    no_product_found, product_detected, skipped, skip_reason,
+    no_product_action, detection_confidence, saved_no_product_image_path
 )
 settings(key, value)
 ```
