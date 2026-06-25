@@ -102,8 +102,17 @@ tab keeps its own copy of the data:
   live camera/test feed, GOOD reference / inspection / diff previews, the
   GOOD/BAD result badge with similarity score, product/angle controls,
   Machine Signal Interface communication/trigger status, and the
-  "Simulate PLC Trigger" button. Buttons map directly onto the `QCApp`
-  engine — the UI adds no new comparison or capture logic.
+  "Simulate PLC Trigger" button. When `inspection_mode` is "free_pose"
+  (V2), it also shows a "Normalized (Aligned)" preview panel, a "Best
+  Match" status row naming the matched reference's angle, a feature/
+  shape/pixel/edge score breakdown line under the result badge, a
+  "Product Detection" FOUND/NOT FOUND status, the GOOD/BAD/NO
+  PRODUCT/SKIPPED/ERROR counters panel, and an "Auto Match Reference"
+  sidebar button (`QCApp.auto_match_reference()`) that runs the same V2
+  search as Compare but is exposed under its own name for clarity; these
+  V2 widgets stay blank/dashed and inert in V1's default "fixed" mode.
+  Buttons map directly onto the `QCApp` engine — the UI adds no new
+  comparison or capture logic.
 - **Camera Setup** (`ui/screens/camera_setup_screen.py`) — live preview,
   camera device index ("Detect Cameras" probes indices 0/1/2), resolution
   (with the 1920×1080 → 1280×720 → 640×480 fallback list), FPS, and

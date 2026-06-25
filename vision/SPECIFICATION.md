@@ -100,6 +100,17 @@ GOOD Reference, Take Inspection Picture, Compare, Save Result, Open Bad
 Products Folder, Export Report, Settings (Settings opens the Settings
 tab).
 
+When `inspection_mode` is "free_pose" (V2 — see below), this same screen
+additionally shows: a "Normalized (Aligned)" preview panel (the located
+product warped into the matched reference's canonical frame), a "Best
+Match" sidebar row naming the matched reference's angle, a feature/shape/
+pixel/edge score breakdown line under the result badge, a "Product
+Detection: FOUND / NOT FOUND" status, the TOTAL/GOOD/BAD/NO PRODUCT/
+SKIPPED/ERROR counters panel, and an "Auto Match Reference" sidebar
+button calling `QCApp.auto_match_reference()` — the same V2 search
+Compare runs, exposed under its own name. These V2 widgets stay
+blank/dashed and have no effect while `inspection_mode` is "fixed" (V1).
+
 ### 2. Camera Setup / Calibration (`ui/screens/camera_setup_screen.py`)
 
 Live preview plus everything needed to set the camera up once and then

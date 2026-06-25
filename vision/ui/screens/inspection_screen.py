@@ -102,6 +102,17 @@ class InspectionScreen(QWidget):
         trigger_button.clicked.connect(self._on_simulate_trigger)
         layout.addWidget(trigger_button)
 
+        layout.addSpacing(10)
+        layout.addWidget(self._section_title("V2 ENGINE"))
+        self.best_match_label = QLabel("—")
+        self.best_match_label.setObjectName("infoLabel")
+        self.best_match_label.setWordWrap(True)
+        layout.addWidget(self._status_row("Best Match", self.best_match_label))
+        auto_match_button = QPushButton("Auto Match Reference")
+        auto_match_button.setObjectName("secondaryActionButton")
+        auto_match_button.clicked.connect(self._on_auto_match_reference)
+        layout.addWidget(auto_match_button)
+
         layout.addStretch()
 
         layout.addWidget(self._section_title("PRODUCT SETUP"))
@@ -138,7 +149,8 @@ class InspectionScreen(QWidget):
         self.reference_panel = ImagePreviewPanel("Good Reference")
         self.inspection_panel = ImagePreviewPanel("Inspection Image")
         self.diff_panel = ImagePreviewPanel("Difference")
-        for panel in (self.reference_panel, self.inspection_panel, self.diff_panel):
+        self.normalized_panel = ImagePreviewPanel("Normalized (Aligned)")
+        for panel in (self.reference_panel, self.inspection_panel, self.diff_panel, self.normalized_panel):
             secondary_col.addWidget(panel)
         previews_row.addLayout(secondary_col, stretch=1)
         column.addLayout(previews_row, stretch=1)
@@ -150,6 +162,14 @@ class InspectionScreen(QWidget):
         result_row.addWidget(self.result_panel)
         result_row.addStretch()
         column.addLayout(result_row)
+
+        score_row = QHBoxLayout()
+        score_row.addStretch()
+        self.v2_score_label = QLabel("")
+        self.v2_score_label.setObjectName("instructionsText")
+        score_row.addWidget(self.v2_score_label)
+        score_row.addStretch()
+        column.addLayout(score_row)
 
         counters_row = QHBoxLayout()
         counters_row.addStretch()
@@ -322,10 +342,43 @@ class InspectionScreen(QWidget):
                 self.diff_panel.set_image_path(self.engine._last_v2_diff_path)
             else:
                 self.diff_panel.clear()
+            if self.engine._last_v2_normalized_path:
+                self.normalized_panel.set_image_path(self.engine._last_v2_normalized_path)
+            else:
+                self.normalized_panel.clear()
+            self.best_match_label.setText(comparison.best_angle_name or "—")
+            self.v2_score_label.setText(self._format_v2_scores(comparison))
         else:
             self.result_panel.set_result(comparison.result, comparison.score_percent)
             self.detection_label.setText("FOUND")
             self.diff_panel.set_image_path(comparison.diff_image_path)
+            self.normalized_panel.clear()
+            self.best_match_label.setText("—")
+            self.v2_score_label.setText("")
+
+    @staticmethod
+    def _format_v2_scores(comparison: V2ComparisonResult) -> str:
+        parts = []
+        for label, value in (
+            ("Feature", comparison.feature_score),
+            ("Shape", comparison.shape_score),
+            ("Pixel", comparison.pixel_score),
+            ("Edge", comparison.edge_score),
+        ):
+            if value is not None:
+                parts.append(f"{label} {value:.1f}%")
+        return "   ".join(parts)
+
+    def _on_auto_match_reference(self) -> None:
+        if self.engine.location is None:
+            QMessageBox.warning(self, "Auto Match Reference", "Select or add a product/angle first.")
+            return
+        try:
+            comparison = self.engine.auto_match_reference()
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "Auto Match Reference", str(exc))
+            return
+        self._show_comparison(comparison)
 
     def _prompt_no_product_decision(self, trigger_source: str, notes: str = "") -> None:
         """Only reachable when Settings' No Product Action is "Ask Operator" -
