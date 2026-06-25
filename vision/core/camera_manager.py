@@ -81,8 +81,8 @@ class CameraWorker:
             self.last_error = str(exc)
             return
 
-        fps = max(1, self.row.get("fps") or config.DEFAULT_FRAME_FPS)
-        period = 1.0 / min(fps, 30)  # never busy-loop faster than 30Hz, regardless of configured fps
+        preview_fps = self.row.get("preview_fps") or self.row.get("fps") or config.DEFAULT_FRAME_FPS
+        period = 1.0 / min(max(1, preview_fps), 30)  # never busy-loop faster than 30Hz
         while not self._stop_event.is_set():
             try:
                 frame = self.source.read_frame()
@@ -280,6 +280,7 @@ class CameraManager:
         location = ProductAngleLocation(product["name"], angle["angle_name"])
         location.ensure_dirs()
         inspection_path = location.new_inspection_path()
+        frame = self._resize_for_inspection(row, frame)
         cv2.imwrite(str(inspection_path), frame)
 
         camera_index_or_address = (
@@ -305,6 +306,16 @@ class CameraManager:
                 camera_index_or_address=camera_index_or_address,
             )
             return {"camera_id": camera_id, "result": config.RESULT_ERROR, "error": str(exc), "inspection_id": inspection_id}
+
+    @staticmethod
+    def _resize_for_inspection(row: dict, frame: np.ndarray) -> np.ndarray:
+        """Resize the captured frame to the station's inspection_width/height,
+        when set - independent of the camera's native capture width/height,
+        which the live preview loop still uses unchanged."""
+        width, height = row.get("inspection_width"), row.get("inspection_height")
+        if not width or not height:
+            return frame
+        return cv2.resize(frame, (int(width), int(height)))
 
     def _run_primary_inspection(self, trigger_source: str) -> dict:
         """Station 1: delegate to QCApp so it stays the single source of

@@ -4,9 +4,12 @@ The single source of truth for products, angles, reference images,
 inspections, and settings. No other module talks to sqlite3 directly -
 core/app.py and the UI screens go through a Database instance.
 """
+import csv
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+
+from . import config
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS products (
@@ -100,6 +103,16 @@ _REFERENCE_IMAGE_MIGRATION_COLUMNS = [
     # such references rather than failing.
     ("feature_path", "TEXT"),
 ]
+_CAMERA_MIGRATION_COLUMNS = [
+    # Preview/inspection are decoupled: preview_fps throttles only the
+    # low-cost live-view loop (CameraWorker._run() in camera_manager.py),
+    # while inspection_width/height (when set) resize the frame actually
+    # saved/compared at capture time, independent of the camera's native
+    # width/height/fps above. NULL means "fall back to fps/width/height".
+    ("preview_fps", "INTEGER"),
+    ("inspection_width", "INTEGER"),
+    ("inspection_height", "INTEGER"),
+]
 _INSPECTION_MIGRATION_COLUMNS = [
     ("engine_version", "TEXT"),        # "v1" (fixed pixel diff) | "v2" (free pose match)
     ("feature_score", "REAL"),         # V2: ORB/AKAZE inlier match score, 0-100
@@ -135,6 +148,54 @@ INSPECTION_COLUMNS = [
     "camera_mode", "camera_index", "trigger_source", "created_at", "notes",
 ] + [name for name, _type in _INSPECTION_MIGRATION_COLUMNS]
 
+# (db column or join alias, display label) pairs shared by the Reports screen
+# table, manual CSV/Excel export (core/reports.py), and the always-on
+# auto-append CSV log below. Defined here (not in reports.py) since
+# record_inspection() needs it and reports.py already imports this module -
+# the other import direction would be circular.
+REPORT_COLUMNS = [
+    ("created_at", "Date/Time"),
+    ("product_name", "Product"),
+    ("part_number", "Part Number"),
+    ("angle_name", "Angle"),
+    ("result", "Result"),
+    ("score", "Score %"),
+    ("inspection_image_path", "Inspection Image"),
+    ("bad_image_path", "Bad Image"),
+    ("difference_image_path", "Diff Image"),
+    ("notes", "Notes"),
+    # V2 "Free Position / Continuous Rotation" engine fields. Blank for V1 rows.
+    ("engine_version", "Engine"),
+    ("recognition_confidence", "Recognition Confidence %"),
+    ("alignment_method", "Alignment Method"),
+    ("alignment_quality", "Alignment Quality %"),
+    ("feature_score", "Feature Score %"),
+    ("shape_score", "Shape Score %"),
+    ("pixel_score", "Pixel Score %"),
+    ("edge_score", "Edge Score %"),
+    ("detected_center_x", "Detected X"),
+    ("detected_center_y", "Detected Y"),
+    ("detected_rotation_deg", "Detected Rotation (deg)"),
+    ("detected_scale", "Detected Scale"),
+    ("normalized_image_path", "Normalized Image"),
+    ("no_product_found", "No Product Found"),
+    ("reference_image_path", "Best Reference Image"),
+    # No Product Found / Skip / Error fields. Blank for V1 rows and for V2
+    # rows where a product was located normally.
+    ("product_detected", "Product Detected"),
+    ("detection_confidence", "Detection Confidence %"),
+    ("skipped", "Skipped"),
+    ("skip_reason", "Skip Reason"),
+    ("no_product_action", "No Product Action"),
+    ("saved_no_product_image_path", "No-Product Image"),
+    # Multi-camera / multi-station identity (core/camera_manager.py). Blank
+    # for inspections recorded before this feature existed.
+    ("camera_id", "Camera ID"),
+    ("station_name", "Station"),
+    ("camera_type", "Camera Type"),
+    ("camera_index_or_address", "Camera Index/Address"),
+]
+
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
@@ -143,6 +204,7 @@ def _now() -> str:
 class Database:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
+        self.last_csv_log_error: str | None = None
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -158,6 +220,7 @@ class Database:
         migrations = [
             ("reference_images", _REFERENCE_IMAGE_MIGRATION_COLUMNS),
             ("inspections", _INSPECTION_MIGRATION_COLUMNS),
+            ("cameras", _CAMERA_MIGRATION_COLUMNS),
         ]
         for table, columns in migrations:
             existing = {row["name"] for row in self._conn.execute(f"PRAGMA table_info({table})")}
@@ -304,15 +367,18 @@ class Database:
                        product_id: int | None = None, angle_id: int | None = None,
                        inspection_mode: str = "fixed", trigger_source: str = "manual",
                        save_images: bool = True, enabled: bool = True, is_primary_station: bool = False,
-                       notes: str = "") -> int:
+                       notes: str = "", preview_fps: int | None = None,
+                       inspection_width: int | None = None, inspection_height: int | None = None) -> int:
         cursor = self._conn.execute(
             "INSERT INTO cameras (station_name, enabled, camera_type, device_index, ip_address, width, "
             "height, fps, exposure, brightness, product_id, angle_id, inspection_mode, trigger_source, "
-            "save_images, is_primary_station, notes, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "save_images, is_primary_station, notes, created_at, preview_fps, inspection_width, "
+            "inspection_height) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (station_name, int(enabled), camera_type, device_index, ip_address, width, height, fps,
              exposure, brightness, product_id, angle_id, inspection_mode, trigger_source,
-             int(save_images), int(is_primary_station), notes, _now()),
+             int(save_images), int(is_primary_station), notes, _now(), preview_fps,
+             inspection_width, inspection_height),
         )
         self._conn.commit()
         return cursor.lastrowid
@@ -321,7 +387,7 @@ class Database:
         allowed = {
             "station_name", "enabled", "camera_type", "device_index", "ip_address", "width", "height",
             "fps", "exposure", "brightness", "product_id", "angle_id", "inspection_mode", "trigger_source",
-            "save_images", "notes",
+            "save_images", "notes", "preview_fps", "inspection_width", "inspection_height",
         }
         fields = {k: v for k, v in fields.items() if k in allowed}
         if not fields:
@@ -360,20 +426,51 @@ class Database:
             f"INSERT INTO inspections ({', '.join(INSPECTION_COLUMNS)}) VALUES ({placeholders})", values,
         )
         self._conn.commit()
-        return cursor.lastrowid
+        inspection_id = cursor.lastrowid
+        self.last_csv_log_error = None
+        if self.get_setting_bool("auto_csv_log", config.DEFAULT_AUTO_CSV_LOG):
+            try:
+                self._append_csv_log(inspection_id)
+            except Exception as exc:
+                self.last_csv_log_error = str(exc)
+        return inspection_id
+
+    def _append_csv_log(self, inspection_id: int) -> None:
+        """Append one row to the always-on inspection_log.csv, creating the
+        reports folder/file (with a header row) the first time. Distinct
+        from core/reports.py's export_csv(), which is a manual, full,
+        filtered re-dump to a user-chosen path."""
+        row = self.get_inspection(inspection_id)
+        if row is None:
+            return
+        path = config.AUTO_CSV_LOG_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        is_new_file = not path.exists()
+        with path.open("a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if is_new_file:
+                writer.writerow([label for _key, label in REPORT_COLUMNS])
+            writer.writerow([row.get(key, "") for key, _label in REPORT_COLUMNS])
+
+    _INSPECTIONS_JOIN_SELECT = (
+        "SELECT i.*, p.name AS product_name, p.part_number AS part_number, "
+        "a.angle_name AS angle_name, r.image_path AS reference_image_path "
+        "FROM inspections i "
+        "JOIN products p ON p.id = i.product_id "
+        "JOIN angles a ON a.id = i.angle_id "
+        "LEFT JOIN reference_images r ON r.id = i.reference_image_id "
+    )
+
+    def get_inspection(self, inspection_id: int) -> dict | None:
+        row = self._conn.execute(
+            self._INSPECTIONS_JOIN_SELECT + "WHERE i.id = ?", (inspection_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
     def list_inspections(self, product_name: str | None = None, result: str | None = None,
                           date_from: str | None = None, date_to: str | None = None,
                           camera_id: int | None = None, limit: int = 200) -> list[dict]:
-        query = (
-            "SELECT i.*, p.name AS product_name, a.angle_name AS angle_name, "
-            "r.image_path AS reference_image_path "
-            "FROM inspections i "
-            "JOIN products p ON p.id = i.product_id "
-            "JOIN angles a ON a.id = i.angle_id "
-            "LEFT JOIN reference_images r ON r.id = i.reference_image_id "
-            "WHERE 1 = 1"
-        )
+        query = self._INSPECTIONS_JOIN_SELECT + "WHERE 1 = 1"
         params: list = []
         if product_name:
             query += " AND p.name = ?"

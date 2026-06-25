@@ -111,6 +111,27 @@ class AddEditCameraDialog(QDialog):
         self.fps_spin.setValue(camera["fps"] if camera else 30)
         form.addRow("FPS", self.fps_spin)
 
+        self.preview_fps_spin = QSpinBox()
+        self.preview_fps_spin.setRange(0, 120)
+        self.preview_fps_spin.setSpecialValueText("Use camera FPS")
+        self.preview_fps_spin.setValue(
+            camera.get("preview_fps") or 0 if camera else config.DEFAULT_PREVIEW_FPS)
+        form.addRow("Preview FPS", self.preview_fps_spin)
+
+        self.inspection_width_spin = QSpinBox()
+        self.inspection_width_spin.setRange(0, 7680)
+        self.inspection_width_spin.setSpecialValueText("Use resolution")
+        self.inspection_width_spin.setValue(camera.get("inspection_width") or 0 if camera else 0)
+        self.inspection_height_spin = QSpinBox()
+        self.inspection_height_spin.setRange(0, 4320)
+        self.inspection_height_spin.setSpecialValueText("Use resolution")
+        self.inspection_height_spin.setValue(camera.get("inspection_height") or 0 if camera else 0)
+        inspection_resolution_row = QHBoxLayout()
+        inspection_resolution_row.addWidget(self.inspection_width_spin)
+        inspection_resolution_row.addWidget(QLabel("x"))
+        inspection_resolution_row.addWidget(self.inspection_height_spin)
+        form.addRow("Inspection resolution", inspection_resolution_row)
+
         self.product_combo = QComboBox()
         self.product_combo.addItem("(none)", None)
         for product in self.db.list_products():
@@ -191,6 +212,9 @@ class AddEditCameraDialog(QDialog):
             "width": self.width_spin.value(),
             "height": self.height_spin.value(),
             "fps": self.fps_spin.value(),
+            "preview_fps": self.preview_fps_spin.value() or None,
+            "inspection_width": self.inspection_width_spin.value() or None,
+            "inspection_height": self.inspection_height_spin.value() or None,
             "product_id": self.product_combo.currentData(),
             "angle_id": self.angle_combo.currentData(),
             "inspection_mode": self.inspection_mode_combo.currentData(),

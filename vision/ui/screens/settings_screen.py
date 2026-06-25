@@ -75,6 +75,8 @@ class SettingsScreen(QWidget):
         saving_form.addRow(self.save_all_checkbox)
         self.save_bad_checkbox = QCheckBox("Save BAD product images to bad_products/")
         saving_form.addRow(self.save_bad_checkbox)
+        self.auto_csv_log_checkbox = QCheckBox("Auto CSV Log (append every inspection to a CSV automatically)")
+        saving_form.addRow(self.auto_csv_log_checkbox)
         cards_row.addWidget(saving_box)
 
         root.addLayout(cards_row)
@@ -180,6 +182,7 @@ class SettingsScreen(QWidget):
         self.engine.set_threshold(self.threshold_spin.value())
         self.engine.set_save_all_snapshots(self.save_all_checkbox.isChecked())
         self.engine.set_save_bad_products(self.save_bad_checkbox.isChecked())
+        self.engine.set_auto_csv_log(self.auto_csv_log_checkbox.isChecked())
         self.engine.set_plc_simulation_mode(self.plc_simulation_checkbox.isChecked())
         self.engine.set_communication_type(self.communication_combo.currentText())
 
@@ -203,6 +206,7 @@ class SettingsScreen(QWidget):
         self.threshold_spin.setValue(self.engine.threshold_percent)
         self.save_all_checkbox.setChecked(self.engine.save_all_snapshots)
         self.save_bad_checkbox.setChecked(self.engine.save_bad_products)
+        self.auto_csv_log_checkbox.setChecked(self.engine.auto_csv_log)
         self.plc_simulation_checkbox.setChecked(self.engine.plc_simulation_mode)
         self.communication_combo.setCurrentText(self.engine.communication_type)
 

@@ -1,9 +1,11 @@
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QVBoxLayout, QWidget,
 )
 
-from core import reports
+from core import config, reports
 from core.app import QCApp
 
 from ..widgets import HistoryTable
@@ -59,6 +61,9 @@ class ReportsScreen(QWidget):
 
         export_row = QHBoxLayout()
         export_row.setSpacing(10)
+        open_folder_button = QPushButton("Open Reports Folder")
+        open_folder_button.clicked.connect(self._on_open_reports_folder)
+        export_row.addWidget(open_folder_button)
         export_csv_button = QPushButton("Export CSV")
         export_csv_button.clicked.connect(self._on_export_csv)
         export_row.addWidget(export_csv_button)
@@ -83,6 +88,10 @@ class ReportsScreen(QWidget):
         return filters
 
     # ------------------------------------------------------------- actions
+
+    def _on_open_reports_folder(self) -> None:
+        config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(config.REPORTS_DIR)))
 
     def _on_export_csv(self) -> None:
         target, _ = QFileDialog.getSaveFileName(

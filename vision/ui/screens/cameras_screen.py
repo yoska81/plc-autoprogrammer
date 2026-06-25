@@ -148,6 +148,18 @@ class CamerasScreen(QWidget):
             button_row.addWidget(button)
         left.addLayout(button_row)
 
+        selected_row = QHBoxLayout()
+        selected_row.setSpacing(8)
+        start_selected_button = QPushButton("Start Selected")
+        start_selected_button.clicked.connect(self._on_start_selected)
+        stop_selected_button = QPushButton("Stop Selected")
+        stop_selected_button.clicked.connect(self._on_stop_selected)
+        test_selected_button = QPushButton("Test Selected")
+        test_selected_button.clicked.connect(self._on_test_selected)
+        for button in (start_selected_button, stop_selected_button, test_selected_button):
+            selected_row.addWidget(button)
+        left.addLayout(selected_row)
+
         all_row = QHBoxLayout()
         all_row.setSpacing(8)
         start_all_button = QPushButton("Start All")
@@ -256,6 +268,27 @@ class CamerasScreen(QWidget):
         self.engine.camera_manager.remove_camera(camera_id)
         self.refresh()
         self.on_change()
+
+    def _on_start_selected(self) -> None:
+        camera_id = self._selected_camera_id()
+        if camera_id is None:
+            QMessageBox.warning(self, "Start Station", "Select a station first.")
+            return
+        self._on_start(camera_id)
+
+    def _on_stop_selected(self) -> None:
+        camera_id = self._selected_camera_id()
+        if camera_id is None:
+            QMessageBox.warning(self, "Stop Station", "Select a station first.")
+            return
+        self._on_stop(camera_id)
+
+    def _on_test_selected(self) -> None:
+        camera_id = self._selected_camera_id()
+        if camera_id is None:
+            QMessageBox.warning(self, "Test Station", "Select a station first.")
+            return
+        self._on_inspect(camera_id)
 
     def _on_start_all(self) -> None:
         self.engine.camera_manager.start_all()

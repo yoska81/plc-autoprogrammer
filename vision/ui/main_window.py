@@ -43,7 +43,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self.inspection_screen = InspectionScreen(
-            self.engine, self.refresh_all, self._switch_to_settings, self._switch_to_reports)
+            self.engine, self.refresh_all, self._switch_to_settings, self._switch_to_reports,
+            self._switch_to_cameras_screen)
         self.camera_setup_screen = CameraSetupScreen(self.engine, self.refresh_all)
         self.cameras_screen = CamerasScreen(self.engine, self.refresh_all)
         self.products_screen = ProductsScreen(self.engine, self.refresh_all)
@@ -119,6 +120,9 @@ class MainWindow(QMainWindow):
 
     def _switch_to_camera_setup(self) -> None:
         self.tabs.setCurrentWidget(self.camera_setup_screen)
+
+    def _switch_to_cameras_screen(self) -> None:
+        self.tabs.setCurrentWidget(self.cameras_screen)
 
     def refresh_all(self) -> None:
         self.inspection_screen.refresh()

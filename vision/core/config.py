@@ -16,10 +16,33 @@ BAD_PRODUCTS_DIR = DATA_DIR / "bad_products"
 DIFFERENCE_IMAGES_DIR = DATA_DIR / "difference_images"
 REPORTS_DIR = DATA_DIR / "reports"
 
+# Always-on append log, separate from the manual/on-demand timestamped
+# exports produced by core/reports.py's export_csv()/export_excel().
+DEFAULT_AUTO_CSV_LOG = True
+AUTO_CSV_LOG_PATH = REPORTS_DIR / "inspection_log.csv"
+
 DATABASE_DIR = VISION_ROOT / "database"
 DATABASE_PATH = DATABASE_DIR / "vision.db"
 
 LOGS_DIR = VISION_ROOT / "logs"
+
+
+def ensure_data_folders() -> None:
+    """Create every top-level data/database folder the app depends on.
+
+    Called once at startup so a fresh install (or one where a folder was
+    deleted) never silently fails to save a reference image, report row, or
+    snapshot - it self-heals instead. Per-product subfolders under
+    PRODUCTS_DIR/BAD_PRODUCTS_DIR/DIFFERENCE_IMAGES_DIR remain created lazily
+    on demand (see core/product_paths.py); only the top-level folders are
+    created here.
+    """
+    for folder in (
+        REPORTS_DIR, DATABASE_DIR, CAPTURES_DIR, BAD_PRODUCTS_DIR,
+        NO_PRODUCT_DIR, DIFFERENCE_IMAGES_DIR, PRODUCTS_DIR,
+    ):
+        folder.mkdir(parents=True, exist_ok=True)
+
 
 DEFAULT_CAMERA_MODE = "auto"  # "auto" | "real" | "test"
 DEFAULT_DEVICE_INDEX = 0
@@ -34,6 +57,11 @@ DEFAULT_DEVICE_INDEX = 0
 DEFAULT_FRAME_WIDTH = 1920
 DEFAULT_FRAME_HEIGHT = 1080
 DEFAULT_FRAME_FPS = 60
+# Per-station live-view throttle, independent of the camera's native capture
+# fps above - keeps a Multi Camera Overview tile or per-station preview from
+# burning CPU/bandwidth at full camera fps when a low-rate glance is enough
+# (see CameraWorker._run() in camera_manager.py). None means "use fps".
+DEFAULT_PREVIEW_FPS = 5
 RESOLUTION_FALLBACKS = (
     (1920, 1080),
     (1280, 720),

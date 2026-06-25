@@ -25,12 +25,14 @@ class InspectionScreen(QWidget):
     bottom action bar. Buttons map directly onto the `QCApp` engine - the
     UI adds no new comparison or capture logic."""
 
-    def __init__(self, engine: QCApp, on_change, switch_to_settings, switch_to_reports=None, parent=None):
+    def __init__(self, engine: QCApp, on_change, switch_to_settings, switch_to_reports=None,
+                 switch_to_camera_setup=None, parent=None):
         super().__init__(parent)
         self.engine = engine
         self.on_change = on_change
         self.switch_to_settings = switch_to_settings
         self.switch_to_reports = switch_to_reports
+        self.switch_to_camera_setup = switch_to_camera_setup
         self.last_inspection_time: str | None = None
 
         self._build_ui()
@@ -63,6 +65,30 @@ class InspectionScreen(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(6)
 
+        layout.addWidget(self._section_title("STATION"))
+
+        self.station_name_label = QLabel("—")
+        self.station_name_label.setObjectName("infoValue")
+        layout.addWidget(self._status_row("Selected Station", self.station_name_label))
+
+        self.station_camera_index_label = QLabel("—")
+        self.station_camera_index_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Camera Index", self.station_camera_index_label))
+
+        self.station_product_label = QLabel("—")
+        self.station_product_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Product", self.station_product_label))
+
+        self.station_status_label = QLabel("—")
+        self.station_status_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Status", self.station_status_label))
+
+        open_camera_setup_button = QPushButton("Open Camera Setup")
+        open_camera_setup_button.setObjectName("secondaryActionButton")
+        open_camera_setup_button.clicked.connect(self._on_open_camera_setup)
+        layout.addWidget(open_camera_setup_button)
+
+        layout.addSpacing(10)
         layout.addWidget(self._section_title("STATUS"))
 
         self.product_label = QLabel("—")
@@ -94,6 +120,11 @@ class InspectionScreen(QWidget):
         self.last_inspection_label.setObjectName("infoLabel")
         self.last_inspection_label.setWordWrap(True)
         layout.addWidget(self._status_row("Last Inspection", self.last_inspection_label))
+
+        self.report_status_label = QLabel("—")
+        self.report_status_label.setObjectName("infoLabel")
+        self.report_status_label.setWordWrap(True)
+        layout.addWidget(self._status_row("Report Status", self.report_status_label))
 
         layout.addSpacing(10)
         self.trigger_status_label = QLabel("TRIGGER: Waiting")
@@ -540,6 +571,10 @@ class InspectionScreen(QWidget):
         if self.switch_to_reports:
             self.switch_to_reports()
 
+    def _on_open_camera_setup(self) -> None:
+        if self.switch_to_camera_setup:
+            self.switch_to_camera_setup()
+
     def _on_settings(self) -> None:
         self.switch_to_settings()
 
@@ -547,6 +582,14 @@ class InspectionScreen(QWidget):
 
     def refresh(self) -> None:
         location = self.engine.location
+
+        self.station_name_label.setText(config.DEFAULT_STATION_NAME)
+        self.station_camera_index_label.setText(str(self.engine.device_index))
+        self.station_product_label.setText(
+            self.engine.current_product["name"] if self.engine.current_product else "—")
+        self.station_status_label.setText("LIVE" if self.engine.camera_running else "STOPPED")
+        self.report_status_label.setText(self.engine.last_report_status or "—")
+
         if self.engine.current_product:
             self.product_label.setText(self.engine.current_product["name"])
             self.part_number_label.setText(self.engine.current_product.get("part_number") or "—")

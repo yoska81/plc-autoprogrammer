@@ -52,6 +52,7 @@ class QCApp:
 
     def __init__(self, mode: str | None = None, device_index: int | None = None,
                  db_path: Path | None = None):
+        config.ensure_data_folders()
         self.db = Database(db_path or config.DATABASE_PATH)
 
         self.mode = mode or self.db.get_setting("camera_mode", config.DEFAULT_CAMERA_MODE)
@@ -88,6 +89,8 @@ class QCApp:
             "log_skipped_inspections", config.DEFAULT_LOG_SKIPPED_INSPECTIONS)
         self.save_normalized_image = self.db.get_setting_bool(
             "save_normalized_image", config.DEFAULT_SAVE_NORMALIZED_IMAGE)
+        self.auto_csv_log = self.db.get_setting_bool(
+            "auto_csv_log", config.DEFAULT_AUTO_CSV_LOG)
         self.feature_score_weight = self.db.get_setting_float(
             "feature_score_weight", config.DEFAULT_FEATURE_SCORE_WEIGHT)
         self.shape_score_weight = self.db.get_setting_float(
@@ -126,6 +129,7 @@ class QCApp:
         self._last_v2_diff_path: Path | None = None
         self._last_v2_normalized_path: Path | None = None
         self.last_inspection_id: int | None = None
+        self.last_report_status: str = ""
 
     # -------------------------------------------------------------- camera
 
@@ -136,15 +140,33 @@ class QCApp:
         before any additional station is configured."""
         existing = [row for row in self.db.list_cameras() if row["is_primary_station"]]
         if existing:
+            self.primary_camera_id = existing[0]["id"]
             return
         camera_type = config.CAMERA_TYPE_TEST if self.mode == "test" else config.CAMERA_TYPE_USB
-        self.db.create_camera(
+        self.primary_camera_id = self.db.create_camera(
             config.DEFAULT_STATION_NAME, camera_type=camera_type, device_index=self.device_index,
             width=self.frame_width, height=self.frame_height, fps=self.frame_fps,
             inspection_mode=self.inspection_mode, trigger_source=config.TRIGGER_SOURCE_MANUAL,
             save_images=self.save_all_snapshots, enabled=True, is_primary_station=True,
             notes="Original single-camera workflow (Inspection tab).",
         )
+
+    def _primary_camera_identity(self) -> dict:
+        """camera_id/station_name/camera_type/camera_index_or_address for the
+        Inspection tab's own saves, matching the fields core/camera_manager.py
+        already attaches to every other station's inspection rows."""
+        return {
+            "camera_id": self.primary_camera_id,
+            "station_name": config.DEFAULT_STATION_NAME,
+            "camera_type": config.CAMERA_TYPE_TEST if self.mode == "test" else config.CAMERA_TYPE_USB,
+            "camera_index_or_address": str(self.device_index),
+        }
+
+    def _note_report_saved(self) -> None:
+        if self.db.last_csv_log_error:
+            self.last_report_status = f"Report saved (CSV log failed: {self.db.last_csv_log_error})"
+        else:
+            self.last_report_status = "Report saved"
 
     def _build_camera(self):
         return create_camera_source(
@@ -247,6 +269,10 @@ class QCApp:
     def set_save_normalized_image(self, value: bool) -> None:
         self.save_normalized_image = value
         self.db.set_setting("save_normalized_image", value)
+
+    def set_auto_csv_log(self, value: bool) -> None:
+        self.auto_csv_log = value
+        self.db.set_setting("auto_csv_log", value)
 
     # ------------------------------------------------- product/angle selection
 
@@ -398,23 +424,29 @@ class QCApp:
             shutil.copy2(self.last_inspection_image_path, bad_image_path)
             shutil.copy2(comparison.diff_image_path, location.new_bad_product_path(suffix="_diff"))
 
-        inspection_id = self.db.record_inspection(
-            product_id=self.current_product["id"],
-            angle_id=self.current_angle["id"],
-            reference_image_id=self.last_reference["id"],
-            inspection_image_path=str(self.last_inspection_image_path),
-            difference_image_path=str(comparison.diff_image_path),
-            bad_image_path=str(bad_image_path) if bad_image_path else None,
-            result=comparison.result,
-            score=comparison.score_percent,
-            threshold=self.threshold_percent,
-            camera_mode=self.mode,
-            camera_index=self.device_index,
-            trigger_source=trigger_source,
-            notes=notes,
-            engine_version="v1",
-        )
+        try:
+            inspection_id = self.db.record_inspection(
+                product_id=self.current_product["id"],
+                angle_id=self.current_angle["id"],
+                reference_image_id=self.last_reference["id"],
+                inspection_image_path=str(self.last_inspection_image_path),
+                difference_image_path=str(comparison.diff_image_path),
+                bad_image_path=str(bad_image_path) if bad_image_path else None,
+                result=comparison.result,
+                score=comparison.score_percent,
+                threshold=self.threshold_percent,
+                camera_mode=self.mode,
+                camera_index=self.device_index,
+                trigger_source=trigger_source,
+                notes=notes,
+                engine_version="v1",
+                **self._primary_camera_identity(),
+            )
+        except Exception as exc:
+            self.last_report_status = f"Report save failed: {exc}"
+            raise
         self.last_inspection_id = inspection_id
+        self._note_report_saved()
 
         if comparison.result == "GOOD":
             self.machine.send_good()
@@ -448,39 +480,45 @@ class QCApp:
             shutil.copy2(self.last_inspection_image_path, bad_image_path)
 
         angle_id = result.best_angle_id or self.current_angle["id"]
-        inspection_id = self.db.record_inspection(
-            product_id=self.current_product["id"],
-            angle_id=angle_id,
-            reference_image_id=result.best_reference_image_id,
-            inspection_image_path=str(self.last_inspection_image_path),
-            difference_image_path=str(self._last_v2_diff_path) if self._last_v2_diff_path else None,
-            bad_image_path=str(bad_image_path) if bad_image_path else None,
-            result=result.result,
-            score=result.final_score,
-            threshold=self.threshold_percent,
-            camera_mode=self.mode,
-            camera_index=self.device_index,
-            trigger_source=trigger_source,
-            notes=notes,
-            engine_version="v2",
-            feature_score=result.feature_score,
-            shape_score=result.shape_score,
-            pixel_score=result.pixel_score,
-            edge_score=result.edge_score,
-            recognition_confidence=result.recognition_confidence,
-            alignment_quality=result.alignment_quality,
-            alignment_method=result.alignment_method,
-            detected_center_x=result.detected_center_x,
-            detected_center_y=result.detected_center_y,
-            detected_rotation_deg=result.detected_rotation_deg,
-            detected_scale=result.detected_scale,
-            normalized_image_path=str(self._last_v2_normalized_path) if self._last_v2_normalized_path else None,
-            no_product_found=0,
-            product_detected=1,
-            skipped=0,
-            detection_confidence=result.recognition_confidence,
-        )
+        try:
+            inspection_id = self.db.record_inspection(
+                product_id=self.current_product["id"],
+                angle_id=angle_id,
+                reference_image_id=result.best_reference_image_id,
+                inspection_image_path=str(self.last_inspection_image_path),
+                difference_image_path=str(self._last_v2_diff_path) if self._last_v2_diff_path else None,
+                bad_image_path=str(bad_image_path) if bad_image_path else None,
+                result=result.result,
+                score=result.final_score,
+                threshold=self.threshold_percent,
+                camera_mode=self.mode,
+                camera_index=self.device_index,
+                trigger_source=trigger_source,
+                notes=notes,
+                engine_version="v2",
+                feature_score=result.feature_score,
+                shape_score=result.shape_score,
+                pixel_score=result.pixel_score,
+                edge_score=result.edge_score,
+                recognition_confidence=result.recognition_confidence,
+                alignment_quality=result.alignment_quality,
+                alignment_method=result.alignment_method,
+                detected_center_x=result.detected_center_x,
+                detected_center_y=result.detected_center_y,
+                detected_rotation_deg=result.detected_rotation_deg,
+                detected_scale=result.detected_scale,
+                normalized_image_path=str(self._last_v2_normalized_path) if self._last_v2_normalized_path else None,
+                no_product_found=0,
+                product_detected=1,
+                skipped=0,
+                detection_confidence=result.recognition_confidence,
+                **self._primary_camera_identity(),
+            )
+        except Exception as exc:
+            self.last_report_status = f"Report save failed: {exc}"
+            raise
         self.last_inspection_id = inspection_id
+        self._note_report_saved()
 
         if result.result == config.RESULT_GOOD:
             self.machine.send_good()
@@ -500,6 +538,7 @@ class QCApp:
         if action == config.NO_PRODUCT_ACTION_SKIP:
             if not self.log_skipped_inspections:
                 print("[vision] inspection skipped (no product found, not counted)")
+                self.last_report_status = "Skipped (no product found, not logged per settings)"
                 return None
             return self._record_no_product_row(
                 result, db_result=config.RESULT_SKIPPED, action=action, trigger_source=trigger_source,
@@ -537,36 +576,42 @@ class QCApp:
     def _record_no_product_row(self, result: V2ComparisonResult, db_result: str, action: str,
                                 trigger_source: str, notes: str, skipped: int, skip_reason: str | None,
                                 saved_no_product_path: Path | None, bad_image_path: Path | None = None) -> int:
-        inspection_id = self.db.record_inspection(
-            product_id=self.current_product["id"],
-            angle_id=self.current_angle["id"],
-            reference_image_id=None,
-            inspection_image_path=str(self.last_inspection_image_path) if self.last_inspection_image_path else None,
-            difference_image_path=None,
-            bad_image_path=str(bad_image_path) if bad_image_path else None,
-            result=db_result,
-            score=0.0,
-            threshold=self.threshold_percent,
-            camera_mode=self.mode,
-            camera_index=self.device_index,
-            trigger_source=trigger_source,
-            notes=notes,
-            engine_version="v2",
-            recognition_confidence=result.recognition_confidence,
-            detection_confidence=result.recognition_confidence,
-            alignment_method=result.alignment_method,
-            detected_center_x=result.detected_center_x,
-            detected_center_y=result.detected_center_y,
-            detected_rotation_deg=result.detected_rotation_deg,
-            detected_scale=result.detected_scale,
-            no_product_found=1,
-            product_detected=0,
-            skipped=skipped,
-            skip_reason=skip_reason,
-            no_product_action=action,
-            saved_no_product_image_path=str(saved_no_product_path) if saved_no_product_path else None,
-        )
+        try:
+            inspection_id = self.db.record_inspection(
+                product_id=self.current_product["id"],
+                angle_id=self.current_angle["id"],
+                reference_image_id=None,
+                inspection_image_path=str(self.last_inspection_image_path) if self.last_inspection_image_path else None,
+                difference_image_path=None,
+                bad_image_path=str(bad_image_path) if bad_image_path else None,
+                result=db_result,
+                score=0.0,
+                threshold=self.threshold_percent,
+                camera_mode=self.mode,
+                camera_index=self.device_index,
+                trigger_source=trigger_source,
+                notes=notes,
+                engine_version="v2",
+                recognition_confidence=result.recognition_confidence,
+                detection_confidence=result.recognition_confidence,
+                alignment_method=result.alignment_method,
+                detected_center_x=result.detected_center_x,
+                detected_center_y=result.detected_center_y,
+                detected_rotation_deg=result.detected_rotation_deg,
+                detected_scale=result.detected_scale,
+                no_product_found=1,
+                product_detected=0,
+                skipped=skipped,
+                skip_reason=skip_reason,
+                no_product_action=action,
+                saved_no_product_image_path=str(saved_no_product_path) if saved_no_product_path else None,
+                **self._primary_camera_identity(),
+            )
+        except Exception as exc:
+            self.last_report_status = f"Report save failed: {exc}"
+            raise
         self.last_inspection_id = inspection_id
+        self._note_report_saved()
         print(f"[vision] inspection #{inspection_id} saved ({db_result}, no_product_action={action})")
         return inspection_id
 
@@ -615,6 +660,7 @@ class QCApp:
 
     def _record_error(self, message: str, trigger_source: str) -> None:
         if self.current_product is None or self.current_angle is None:
+            self.last_report_status = f"Report save failed: {message}"
             return  # inspections.product_id/angle_id are NOT NULL - nothing to attach this to
         try:
             inspection_id = self.db.record_inspection(
@@ -632,11 +678,14 @@ class QCApp:
                 trigger_source=trigger_source,
                 notes=message,
                 engine_version="v2" if self.inspection_mode == config.INSPECTION_MODE_FREE_POSE else "v1",
+                **self._primary_camera_identity(),
             )
             self.last_inspection_id = inspection_id
+            self._note_report_saved()
             print(f"[vision] inspection #{inspection_id} saved (ERROR: {message})")
         except Exception:
-            pass  # logging the error must never mask the original exception
+            self.last_report_status = f"Report save failed: {message}"
+            # logging the error must never mask the original exception
 
     def get_machine_status(self) -> str:
         return self.machine.get_status()
