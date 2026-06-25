@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
+    QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
     QPushButton, QVBoxLayout, QWidget,
 )
 
@@ -28,12 +28,16 @@ class ReferencesScreen(QWidget):
 
     def _build_ui(self) -> None:
         root = QHBoxLayout(self)
-        root.setContentsMargins(24, 16, 24, 16)
-        root.setSpacing(16)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(18)
 
-        left = QVBoxLayout()
+        left_card = QFrame()
+        left_card.setObjectName("panelCard")
+        left = QVBoxLayout(left_card)
+        left.setContentsMargins(20, 20, 20, 20)
+        left.setSpacing(12)
         self.selection_label = QLabel("PRODUCT / ANGLE: —")
-        self.selection_label.setObjectName("sectionTitle")
+        self.selection_label.setObjectName("panelTitle")
         left.addWidget(self.selection_label)
 
         select_button = QPushButton("Select Product / Angle")
@@ -45,19 +49,26 @@ class ReferencesScreen(QWidget):
         left.addWidget(self.reference_list)
 
         button_row = QHBoxLayout()
+        button_row.setSpacing(10)
         add_button = QPushButton("Add Reference (capture)")
         add_button.clicked.connect(self._on_add_reference)
         primary_button = QPushButton("Mark Primary")
         primary_button.clicked.connect(self._on_mark_primary)
         delete_button = QPushButton("Delete")
+        delete_button.setObjectName("dangerButton")
         delete_button.clicked.connect(self._on_delete_reference)
         for button in (add_button, primary_button, delete_button):
             button_row.addWidget(button)
         left.addLayout(button_row)
-        root.addLayout(left, stretch=1)
+        root.addWidget(left_card, stretch=1)
 
-        self.preview_panel = ImagePreviewPanel("Reference Preview")
-        root.addWidget(self.preview_panel)
+        right_card = QFrame()
+        right_card.setObjectName("panelCard")
+        right_layout = QVBoxLayout(right_card)
+        right_layout.setContentsMargins(20, 20, 20, 20)
+        self.preview_panel = ImagePreviewPanel("Reference Preview", large=True)
+        right_layout.addWidget(self.preview_panel)
+        root.addWidget(right_card, stretch=1)
 
     # ------------------------------------------------------------- actions
 

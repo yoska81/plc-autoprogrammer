@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QVBoxLayout, QWidget,
 )
 
@@ -23,14 +23,21 @@ class ReportsScreen(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 16, 24, 16)
+        root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(16)
 
-        title = QLabel("REPORTS")
-        title.setObjectName("sectionTitle")
-        root.addWidget(title)
+        card = QFrame()
+        card.setObjectName("panelCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(14)
+
+        title = QLabel("INSPECTION HISTORY / REPORTS")
+        title.setObjectName("panelTitle")
+        card_layout.addWidget(title)
 
         filter_row = QHBoxLayout()
+        filter_row.setSpacing(10)
         filter_row.addWidget(QLabel("Product:"))
         self.product_filter = QLineEdit()
         self.product_filter.setPlaceholderText("(all products)")
@@ -45,12 +52,13 @@ class ReportsScreen(QWidget):
         apply_button.clicked.connect(self.refresh)
         filter_row.addWidget(apply_button)
         filter_row.addStretch()
-        root.addLayout(filter_row)
+        card_layout.addLayout(filter_row)
 
         self.history_table = HistoryTable(reports.REPORT_COLUMNS)
-        root.addWidget(self.history_table)
+        card_layout.addWidget(self.history_table)
 
         export_row = QHBoxLayout()
+        export_row.setSpacing(10)
         export_csv_button = QPushButton("Export CSV")
         export_csv_button.clicked.connect(self._on_export_csv)
         export_row.addWidget(export_csv_button)
@@ -58,7 +66,9 @@ class ReportsScreen(QWidget):
         export_excel_button.clicked.connect(self._on_export_excel)
         export_row.addWidget(export_excel_button)
         export_row.addStretch()
-        root.addLayout(export_row)
+        card_layout.addLayout(export_row)
+
+        root.addWidget(card)
 
     # ------------------------------------------------------------- helpers
 

@@ -11,46 +11,61 @@ _MODE_CHOICES = ("auto", "real", "test")
 
 class SettingsScreen(QWidget):
     """Match threshold, snapshot/archival toggles, and the reserved Machine
-    Signal Interface communication-type placeholder. Camera index/resolution/
-    FPS/exposure live on the Camera Setup / Calibration screen instead, next
-    to the live preview they affect."""
+    Signal Interface communication-type placeholder, grouped into cards:
+    Camera Settings, Inspection Settings, Saving Options, Machine Signal
+    Interface. Camera index/resolution/FPS/exposure controls live on the
+    Camera Setup tab next to the live preview they affect; this screen's
+    Camera Settings card links there."""
 
-    def __init__(self, engine: QCApp, on_change, parent=None):
+    def __init__(self, engine: QCApp, on_change, switch_to_camera_setup=None, parent=None):
         super().__init__(parent)
         self.engine = engine
         self.on_change = on_change
+        self.switch_to_camera_setup = switch_to_camera_setup
         self._build_ui()
         self.refresh()
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 16, 24, 16)
-        root.setSpacing(16)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(18)
 
         title = QLabel("SETTINGS")
-        title.setObjectName("sectionTitle")
+        title.setObjectName("panelTitle")
         root.addWidget(title)
 
-        inspection_box = QGroupBox("Inspection")
-        inspection_form = QFormLayout(inspection_box)
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(18)
 
+        camera_box = QGroupBox("Camera Settings")
+        camera_form = QFormLayout(camera_box)
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(_MODE_CHOICES)
-        inspection_form.addRow("Camera mode", self.mode_combo)
+        camera_form.addRow("Camera mode", self.mode_combo)
+        open_camera_setup_button = QPushButton("Open Camera Setup")
+        open_camera_setup_button.setObjectName("secondaryActionButton")
+        open_camera_setup_button.clicked.connect(self._on_open_camera_setup)
+        camera_form.addRow(open_camera_setup_button)
+        cards_row.addWidget(camera_box)
 
+        inspection_box = QGroupBox("Inspection Settings")
+        inspection_form = QFormLayout(inspection_box)
         self.threshold_spin = QDoubleSpinBox()
         self.threshold_spin.setRange(0.0, 100.0)
         self.threshold_spin.setDecimals(1)
         self.threshold_spin.setSuffix(" %")
         inspection_form.addRow("Match threshold", self.threshold_spin)
+        cards_row.addWidget(inspection_box)
 
+        saving_box = QGroupBox("Saving Options")
+        saving_form = QFormLayout(saving_box)
         self.save_all_checkbox = QCheckBox("Save all snapshots (GOOD and BAD)")
-        inspection_form.addRow(self.save_all_checkbox)
-
+        saving_form.addRow(self.save_all_checkbox)
         self.save_bad_checkbox = QCheckBox("Save BAD product images to bad_products/")
-        inspection_form.addRow(self.save_bad_checkbox)
+        saving_form.addRow(self.save_bad_checkbox)
+        cards_row.addWidget(saving_box)
 
-        root.addWidget(inspection_box)
+        root.addLayout(cards_row)
 
         machine_box = QGroupBox("Machine Signal Interface (future PLC connection)")
         machine_form = QFormLayout(machine_box)
@@ -73,22 +88,28 @@ class SettingsScreen(QWidget):
 
         root.addWidget(machine_box)
 
-        info_box = QGroupBox("Storage (display only)")
-        info_form = QFormLayout(info_box)
-        info_form.addRow("Database", QLabel(str(config.DATABASE_PATH)))
-        info_form.addRow("Reports folder", QLabel(str(config.REPORTS_DIR)))
-        root.addWidget(info_box)
-
         button_row = QHBoxLayout()
         save_button = QPushButton("Save Settings")
+        save_button.setObjectName("primaryActionButton")
         save_button.clicked.connect(self._on_save)
         button_row.addWidget(save_button)
         button_row.addStretch()
         root.addLayout(button_row)
 
+        storage_note = QLabel(
+            f"Database: {config.DATABASE_PATH}    |    Reports folder: {config.REPORTS_DIR}"
+        )
+        storage_note.setObjectName("instructionsText")
+        storage_note.setWordWrap(True)
+        root.addWidget(storage_note)
+
         root.addStretch()
 
     # ------------------------------------------------------------- actions
+
+    def _on_open_camera_setup(self) -> None:
+        if self.switch_to_camera_setup:
+            self.switch_to_camera_setup()
 
     def _on_save(self) -> None:
         mode = self.mode_combo.currentText()

@@ -1,7 +1,7 @@
 import cv2
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QMessageBox,
+    QComboBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel, QMessageBox,
     QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import Qt
@@ -43,11 +43,16 @@ class CameraSetupScreen(QWidget):
 
     def _build_ui(self) -> None:
         root = QHBoxLayout(self)
-        root.setContentsMargins(24, 16, 24, 16)
-        root.setSpacing(16)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(18)
 
-        self.preview_panel = ImagePreviewPanel("Live Preview")
-        root.addWidget(self.preview_panel)
+        preview_card = QFrame()
+        preview_card.setObjectName("panelCard")
+        preview_card_layout = QVBoxLayout(preview_card)
+        preview_card_layout.setContentsMargins(20, 20, 20, 20)
+        self.preview_panel = ImagePreviewPanel("Live Preview", large=True)
+        preview_card_layout.addWidget(self.preview_panel)
+        root.addWidget(preview_card, stretch=2)
 
         right = QVBoxLayout()
 

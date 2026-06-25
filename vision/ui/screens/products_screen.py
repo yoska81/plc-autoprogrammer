@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+    QAbstractItemView, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -23,12 +23,16 @@ class ProductsScreen(QWidget):
 
     def _build_ui(self) -> None:
         root = QHBoxLayout(self)
-        root.setContentsMargins(24, 16, 24, 16)
-        root.setSpacing(16)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(18)
 
-        left = QVBoxLayout()
+        left_card = QFrame()
+        left_card.setObjectName("panelCard")
+        left = QVBoxLayout(left_card)
+        left.setContentsMargins(20, 20, 20, 20)
+        left.setSpacing(12)
         title = QLabel("PRODUCTS")
-        title.setObjectName("sectionTitle")
+        title.setObjectName("panelTitle")
         left.addWidget(title)
 
         self.product_table = QTableWidget(0, 4)
@@ -36,38 +40,47 @@ class ProductsScreen(QWidget):
         self.product_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.product_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.product_table.verticalHeader().setVisible(False)
+        self.product_table.verticalHeader().setDefaultSectionSize(38)
         self.product_table.horizontalHeader().setStretchLastSection(True)
         self.product_table.itemSelectionChanged.connect(self._load_angles)
         left.addWidget(self.product_table)
 
         button_row = QHBoxLayout()
+        button_row.setSpacing(10)
         add_button = QPushButton("Add Product")
         add_button.clicked.connect(self._on_add_product)
         edit_button = QPushButton("Edit Product")
         edit_button.clicked.connect(self._on_edit_product)
         delete_button = QPushButton("Delete Product")
+        delete_button.setObjectName("dangerButton")
         delete_button.clicked.connect(self._on_delete_product)
         for button in (add_button, edit_button, delete_button):
             button_row.addWidget(button)
         left.addLayout(button_row)
-        root.addLayout(left, stretch=2)
+        root.addWidget(left_card, stretch=2)
 
-        right = QVBoxLayout()
+        right_card = QFrame()
+        right_card.setObjectName("panelCard")
+        right = QVBoxLayout(right_card)
+        right.setContentsMargins(20, 20, 20, 20)
+        right.setSpacing(12)
         angle_title = QLabel("ANGLES")
-        angle_title.setObjectName("sectionTitle")
+        angle_title.setObjectName("panelTitle")
         right.addWidget(angle_title)
         self.angle_list = QListWidget()
         right.addWidget(self.angle_list)
 
         angle_button_row = QHBoxLayout()
+        angle_button_row.setSpacing(10)
         add_angle_button = QPushButton("Add Angle")
         add_angle_button.clicked.connect(self._on_add_angle)
         delete_angle_button = QPushButton("Delete Angle")
+        delete_angle_button.setObjectName("dangerButton")
         delete_angle_button.clicked.connect(self._on_delete_angle)
         angle_button_row.addWidget(add_angle_button)
         angle_button_row.addWidget(delete_angle_button)
         right.addLayout(angle_button_row)
-        root.addLayout(right, stretch=1)
+        root.addWidget(right_card, stretch=1)
 
     # ------------------------------------------------------------- helpers
 
