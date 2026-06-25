@@ -64,7 +64,8 @@ no new comparison or capture logic:
   browser.
 - **Export Report** — copies `data/results.csv` to a location you choose.
 - **Settings** — change camera mode/device index (restarts the camera if
-  running) and the match threshold percentage.
+  running) and the match threshold percentage. "Detect Cameras" probes
+  device indices 0, 1, 2 and reports which ones respond.
 
 Runs headless too: set `QT_QPA_PLATFORM=offscreen` before launching (useful
 in CI/cloud sandboxes with no display). On Linux this also needs
@@ -82,6 +83,53 @@ offscreen platform plugin to load.
 - `create_camera_source(mode="auto", ...)` (`core/camera/factory.py`):
   probes for a real camera and transparently falls back to test images, so
   the app always runs.
+
+## Local PC camera testing (Windows)
+
+`--mode real` (or `auto`, which falls back to test images if no camera is
+found) talks to a physical USB camera and only works on a machine that
+actually has one attached — it cannot be exercised in a cloud sandbox.
+
+```powershell
+cd vision
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+
+# find which device indices respond before picking one
+python main.py --probe-cameras
+
+python main.py --mode real --device-index 0
+python ui_main.py --mode real --device-index 0
+```
+
+`--probe-cameras` tries indices 0, 1, and 2 and prints which ones opened
+and returned a frame, then exits — use it instead of guessing an index.
+In the desktop UI, the same check is available from **Settings → Detect
+Cameras**.
+
+On Windows, `RealCamera` opens the camera with the DirectShow backend
+(`cv2.CAP_DSHOW`) instead of OpenCV's default MSMF backend, since MSMF is
+known to hang or misreport `isOpened()` for many USB webcams. After
+opening, it also does a few warm-up reads before declaring the camera
+ready, since some webcams report "opened" before they can actually
+deliver frames.
+
+If `--mode real` still fails, the error message lists what to check
+(camera plugged in, not in use by another app, wrong device index, Windows
+camera privacy permission). Things to try in order:
+
+1. `python main.py --probe-cameras` to see which indices respond at all.
+2. Close any other app that might be holding the camera (Zoom, Teams,
+   Skype, browser tabs with camera permission, a previous run of this app).
+3. Try device index 0, then 1, then 2 — a laptop's built-in webcam and a
+   plugged-in USB camera often land on different indices.
+4. Check Windows Settings → Privacy & security → Camera → "Let desktop
+   apps access your camera" is on.
+
+`--mode test` and `--mode auto` (with no camera attached) are unaffected
+by any of this and keep working the same in the cloud sandbox used to
+develop this app.
 
 ## GOOD/BAD comparison
 

@@ -1,9 +1,11 @@
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-    QHBoxLayout, QInputDialog, QLabel, QListWidget, QSpinBox, QVBoxLayout, QWidget,
+    QHBoxLayout, QInputDialog, QLabel, QListWidget, QMessageBox, QPushButton,
+    QSpinBox, QVBoxLayout, QWidget,
 )
 
 from core import config
+from core.camera.real_camera import probe_camera_indices
 
 
 def prompt_text(parent: QWidget, title: str, label: str) -> str | None:
@@ -89,10 +91,15 @@ class SettingsDialog(QDialog):
         self.mode_combo.setCurrentText(mode)
         form.addRow("Camera mode", self.mode_combo)
 
+        device_row = QHBoxLayout()
         self.device_spin = QSpinBox()
         self.device_spin.setRange(0, 10)
         self.device_spin.setValue(device_index)
-        form.addRow("Device index", self.device_spin)
+        device_row.addWidget(self.device_spin)
+        detect_button = QPushButton("Detect Cameras")
+        detect_button.clicked.connect(self._on_detect_cameras)
+        device_row.addWidget(detect_button)
+        form.addRow("Device index", device_row)
 
         self.threshold_spin = QDoubleSpinBox()
         self.threshold_spin.setRange(0.0, 100.0)
@@ -107,3 +114,8 @@ class SettingsDialog(QDialog):
 
     def values(self) -> tuple[str, int, float]:
         return self.mode_combo.currentText(), self.device_spin.value(), self.threshold_spin.value()
+
+    def _on_detect_cameras(self) -> None:
+        results = probe_camera_indices([0, 1, 2])
+        lines = [f"Index {index}: {'available' if available else 'not found'}" for index, available in results.items()]
+        QMessageBox.information(self, "Detect Cameras", "\n".join(lines))
