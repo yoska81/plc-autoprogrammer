@@ -171,8 +171,11 @@ class ProductsScreen(QWidget):
 
     def refresh(self) -> None:
         selected_id = self._selected_product_id()
+        if selected_id is None and self.engine.current_product:
+            selected_id = self.engine.current_product["id"]
         products = self.engine.db.list_products()
         self.product_table.setRowCount(len(products))
+        matched_row = None
         for r, product in enumerate(products):
             angle_count = len(self.engine.db.list_angles(product["id"]))
             values = [product["name"], product["part_number"], product["customer"], str(angle_count)]
@@ -182,5 +185,9 @@ class ProductsScreen(QWidget):
                     item.setData(_ID_ROLE, product["id"])
                 self.product_table.setItem(r, c, item)
             if selected_id == product["id"]:
-                self.product_table.selectRow(r)
+                matched_row = r
+        if matched_row is not None:
+            self.product_table.selectRow(matched_row)
+        elif products:
+            self.product_table.selectRow(0)
         self._load_angles()

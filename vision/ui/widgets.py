@@ -26,6 +26,7 @@ class ImagePreviewPanel(QWidget):
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setFixedSize(340, 240)
         layout.addWidget(self.image_label)
+        layout.addStretch()
 
     def set_frame(self, frame: np.ndarray) -> None:
         pixmap = frame_to_pixmap(frame)
@@ -95,6 +96,11 @@ class HistoryTable(QTableWidget):
         for r, row in enumerate(rows):
             for c, (key, _label) in enumerate(self.columns):
                 value = row.get(key, "")
-                if key == "score" and isinstance(value, (int, float)):
+                if value is None:
+                    value = ""
+                elif key == "score" and isinstance(value, (int, float)):
                     value = f"{value:.2f}"
+                elif key.endswith("_path"):
+                    value = Path(value).name
                 self.setItem(r, c, QTableWidgetItem(str(value)))
+        self.resizeColumnsToContents()
