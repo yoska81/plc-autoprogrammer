@@ -24,6 +24,63 @@ INSTRUCTIONS = (
 )
 
 
+class CameraPickerForm(QWidget):
+    """Device index / resolution / FPS picker, shared by CameraSetupScreen's
+    main form and the Teach Product wizard's SelectCameraPage - extracted so
+    neither place re-derives the same spinbox/combo wiring."""
+
+    def __init__(self, engine: QCApp, parent=None):
+        super().__init__(parent)
+        self.engine = engine
+
+        form = QFormLayout(self)
+
+        self.device_spin = QSpinBox()
+        self.device_spin.setRange(0, 10)
+        device_row = QHBoxLayout()
+        device_row.addWidget(self.device_spin)
+        detect_button = QPushButton("Detect Cameras")
+        detect_button.clicked.connect(self._on_detect_cameras)
+        device_row.addWidget(detect_button)
+        form.addRow("Device index", device_row)
+
+        self.resolution_combo = QComboBox()
+        for width, height in config.RESOLUTION_FALLBACKS:
+            self.resolution_combo.addItem(f"{width} x {height}", (width, height))
+        form.addRow("Resolution", self.resolution_combo)
+
+        self.fps_spin = QSpinBox()
+        self.fps_spin.setRange(1, 120)
+        form.addRow("FPS", self.fps_spin)
+
+    def _on_detect_cameras(self) -> None:
+        results = probe_camera_indices([0, 1, 2])
+        lines = [f"Index {index}: {'available' if available else 'not found'}" for index, available in results.items()]
+        QMessageBox.information(self, "Detect Cameras", "\n".join(lines))
+
+    def refresh(self) -> None:
+        self.device_spin.blockSignals(True)
+        self.device_spin.setValue(self.engine.device_index)
+        self.device_spin.blockSignals(False)
+
+        for i in range(self.resolution_combo.count()):
+            if self.resolution_combo.itemData(i) == (self.engine.frame_width, self.engine.frame_height):
+                self.resolution_combo.setCurrentIndex(i)
+                break
+
+        self.fps_spin.blockSignals(True)
+        self.fps_spin.setValue(self.engine.frame_fps)
+        self.fps_spin.blockSignals(False)
+
+    def apply(self) -> None:
+        """Push the form's current values into the engine's camera config.
+        Does not start/stop the camera - the caller decides that."""
+        width, height = self.resolution_combo.currentData()
+        self.engine.reconfigure_camera(
+            device_index=self.device_spin.value(), width=width, height=height, fps=self.fps_spin.value(),
+        )
+
+
 class CameraSetupScreen(QWidget):
     """Camera index/resolution/FPS/exposure setup for the SVPRO USB UVC
     prototype camera (or any other plain UVC USB camera). Zoom/focus/
@@ -57,25 +114,9 @@ class CameraSetupScreen(QWidget):
         right = QVBoxLayout()
 
         form_box = QGroupBox("Camera")
-        form = QFormLayout(form_box)
-
-        self.device_spin = QSpinBox()
-        self.device_spin.setRange(0, 10)
-        device_row = QHBoxLayout()
-        device_row.addWidget(self.device_spin)
-        detect_button = QPushButton("Detect Cameras")
-        detect_button.clicked.connect(self._on_detect_cameras)
-        device_row.addWidget(detect_button)
-        form.addRow("Device index", device_row)
-
-        self.resolution_combo = QComboBox()
-        for width, height in config.RESOLUTION_FALLBACKS:
-            self.resolution_combo.addItem(f"{width} x {height}", (width, height))
-        form.addRow("Resolution", self.resolution_combo)
-
-        self.fps_spin = QSpinBox()
-        self.fps_spin.setRange(1, 120)
-        form.addRow("FPS", self.fps_spin)
+        form = QVBoxLayout(form_box)
+        self.camera_form = CameraPickerForm(self.engine)
+        form.addWidget(self.camera_form)
 
         apply_row = QHBoxLayout()
         start_button = QPushButton("Start Preview")
@@ -87,7 +128,7 @@ class CameraSetupScreen(QWidget):
         apply_row.addWidget(start_button)
         apply_row.addWidget(stop_button)
         apply_row.addWidget(apply_button)
-        form.addRow(apply_row)
+        form.addLayout(apply_row)
 
         right.addWidget(form_box)
 
@@ -116,11 +157,6 @@ class CameraSetupScreen(QWidget):
 
     # ------------------------------------------------------------- actions
 
-    def _on_detect_cameras(self) -> None:
-        results = probe_camera_indices([0, 1, 2])
-        lines = [f"Index {index}: {'available' if available else 'not found'}" for index, available in results.items()]
-        QMessageBox.information(self, "Detect Cameras", "\n".join(lines))
-
     def _on_start_preview(self) -> None:
         if not self.engine.camera_running:
             try:
@@ -147,14 +183,11 @@ class CameraSetupScreen(QWidget):
         self.preview_panel.set_frame(frame)
 
     def _on_apply(self) -> None:
-        width, height = self.resolution_combo.currentData()
         was_running = self.engine.camera_running
         if was_running:
             self.preview_timer.stop()
             self.engine.stop()
-        self.engine.reconfigure_camera(
-            device_index=self.device_spin.value(), width=width, height=height, fps=self.fps_spin.value(),
-        )
+        self.camera_form.apply()
         if was_running:
             try:
                 self.engine.start()
@@ -193,19 +226,7 @@ class CameraSetupScreen(QWidget):
     # ------------------------------------------------------------ refresh
 
     def refresh(self) -> None:
-        self.device_spin.blockSignals(True)
-        self.device_spin.setValue(self.engine.device_index)
-        self.device_spin.blockSignals(False)
-
-        for i in range(self.resolution_combo.count()):
-            if self.resolution_combo.itemData(i) == (self.engine.frame_width, self.engine.frame_height):
-                self.resolution_combo.setCurrentIndex(i)
-                break
-
-        self.fps_spin.blockSignals(True)
-        self.fps_spin.setValue(self.engine.frame_fps)
-        self.fps_spin.blockSignals(False)
-
+        self.camera_form.refresh()
         self._update_exposure_controls()
 
     def shutdown(self) -> None:

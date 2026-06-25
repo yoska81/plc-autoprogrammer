@@ -149,6 +149,44 @@ RESULT_SKIPPED = "SKIPPED"
 RESULT_ERROR = "ERROR"
 RESULT_CHOICES = (RESULT_GOOD, RESULT_BAD, RESULT_NO_PRODUCT_FOUND, RESULT_SKIPPED, RESULT_ERROR)
 
+# Per-region/per-feature check vocabulary (V2 only). Deliberately distinct
+# from RESULT_GOOD/RESULT_BAD above, which name the *overall* product
+# result - these name one named inspection region's own pass/fail. WARN
+# covers "not checked" (region disabled, or no product found at all).
+REGION_RESULT_PASS = "PASS"
+REGION_RESULT_FAIL = "FAIL"
+REGION_RESULT_WARN = "WARN"
+REGION_RESULT_CHOICES = (REGION_RESULT_PASS, REGION_RESULT_FAIL, REGION_RESULT_WARN)
+
+# BGR tuples (cv2 drawing convention) matching ui/styles.py's QSS hex colors
+# #00d97e/#ff4d4f/#ffb020, used to color-code per-region overlay boxes.
+OVERLAY_COLOR_GOOD = (126, 217, 0)
+OVERLAY_COLOR_BAD = (79, 77, 255)
+OVERLAY_COLOR_WARN = (32, 176, 255)
+
+# Operator-facing inspection-type categories for a named region (Teach
+# Product wizard Step 4). Informational only in this pass - every type
+# scores via the same pixel+edge mechanism (core/compare_v2.score_regions());
+# per-type algorithm branching is a future enhancement, not required here.
+REGION_TYPE_PRESENCE = "presence"
+REGION_TYPE_POSITION = "position"
+REGION_TYPE_SHAPE = "shape"
+REGION_TYPE_DIMENSION = "dimension"
+REGION_TYPE_SURFACE_COMPARE = "surface_compare"
+REGION_TYPE_SCRATCH_DAMAGE = "scratch_damage"
+REGION_TYPE_CHOICES = (
+    REGION_TYPE_PRESENCE, REGION_TYPE_POSITION, REGION_TYPE_SHAPE,
+    REGION_TYPE_DIMENSION, REGION_TYPE_SURFACE_COMPARE, REGION_TYPE_SCRATCH_DAMAGE,
+)
+REGION_TYPE_LABELS = {
+    REGION_TYPE_PRESENCE: "Presence / Missing Feature",
+    REGION_TYPE_POSITION: "Position / Alignment",
+    REGION_TYPE_SHAPE: "Shape / Outline",
+    REGION_TYPE_DIMENSION: "Dimension / Size",
+    REGION_TYPE_SURFACE_COMPARE: "Surface Compare",
+    REGION_TYPE_SCRATCH_DAMAGE: "Scratch / Damage Detection",
+}
+
 # What to do when V2 can't locate a product at all. This only applies to
 # inspection_mode == INSPECTION_MODE_FREE_POSE; V1 has no localization step
 # and so no concept of "no product found".

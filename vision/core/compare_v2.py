@@ -64,6 +64,13 @@ class ReferenceFeatures:
     akaze_descriptors: np.ndarray | None
     contour: np.ndarray | None      # largest product contour, or None
     size: tuple[int, int]           # (width, height) of the reference image
+    # Operator-drawn override of the product boundary (Teach Product wizard
+    # Step 3), reference-image pixel coords (x0, y0, x1, y1). When set, this
+    # bypasses _product_bbox()'s contour+margin computation entirely - see
+    # _resolve_product_bbox(). None for every reference saved outside the
+    # wizard (the overwhelming majority), which keeps today's auto-contour
+    # behavior exactly as it was.
+    manual_bbox: tuple[int, int, int, int] | None = None
 
 
 @dataclass
@@ -77,6 +84,22 @@ class AlignmentResult:
     rotation_deg: float       # continuous, [0, 360) - never snapped to a fixed step
     scale: float
     confidence: float         # 0-100, how much to trust this localization
+
+
+@dataclass
+class RegionScore:
+    """One named inspection region's own pass/fail (V2 only), independent of
+    the product's overall combined_score/result. canonical_rect echoes the
+    input frac rect (frac_x0, frac_y0, frac_x1, frac_y1 of config.CANONICAL_SIZE)
+    so the overlay/UI layer doesn't need a separate lookup back to the DB row."""
+    region_name: str
+    region_type: str
+    pixel_score: float
+    edge_score: float
+    combined_score: float
+    result: str  # config.REGION_RESULT_PASS / FAIL / WARN
+    canonical_rect: tuple[float, float, float, float]
+    region_id: int | None = None
 
 
 @dataclass
@@ -108,6 +131,22 @@ class V2ComparisonResult:
     # alignment.M. Lets the UI draw a rotated bbox without re-deriving the
     # transform itself. Never read by any scoring/threshold logic.
     detected_bbox_corners: list[tuple[float, float]] | None = None
+    # Per-named-region explainability (V2 only, additive). None when the
+    # matched product has no inspection_regions defined - never affects
+    # result/final_score, which stay computed exactly as before. Populated
+    # by core/app.py's compute_comparison_v2() wrapper via score_regions(),
+    # not by this module's own compute_comparison_v2() (compare_v2.py has no
+    # core.db import and isn't going to gain one for this).
+    region_scores: list["RegionScore"] | None = None
+    # Canonical-space grayscale images and the reference-frame product bbox/
+    # alignment, forwarded from compare_one_reference()'s internal `scores`
+    # dict purely so core/app.py and core/camera_manager.py can call
+    # score_regions()/region_to_inspection_corners() without recomputing
+    # anything. Never read by scoring/threshold logic itself.
+    ref_gray: np.ndarray | None = None
+    norm_gray: np.ndarray | None = None
+    product_bbox: tuple[int, int, int, int] | None = None
+    alignment: "AlignmentResult | None" = None
 
 
 # --------------------------------------------------------------- utilities
@@ -153,7 +192,9 @@ def _largest_contour(gray: np.ndarray) -> np.ndarray | None:
 
 # -------------------------------------------------------- reference features
 
-def build_reference_features(image: np.ndarray) -> ReferenceFeatures:
+def build_reference_features(
+    image: np.ndarray, manual_bbox: tuple[int, int, int, int] | None = None,
+) -> ReferenceFeatures:
     gray = _to_gray(image)
     height, width = gray.shape[:2]
 
@@ -163,8 +204,20 @@ def build_reference_features(image: np.ndarray) -> ReferenceFeatures:
     return ReferenceFeatures(
         orb_keypoints=_kp_positions(orb_kp), orb_descriptors=orb_desc,
         akaze_keypoints=_kp_positions(akaze_kp), akaze_descriptors=akaze_desc,
-        contour=_largest_contour(gray), size=(width, height),
+        contour=_largest_contour(gray), size=(width, height), manual_bbox=manual_bbox,
     )
+
+
+def detect_product_bbox(image: np.ndarray, margin_ratio: float = 0.3) -> tuple[int, int, int, int] | None:
+    """Auto-detected product boundary for a freshly-captured frame, in that
+    frame's own pixel coordinates. Used only by the Teach Product wizard's
+    Define Object page to pre-fill a suggested rect before the operator
+    accepts it or drags a manual override - never called from the
+    compare/scoring path itself (that always works from a saved
+    reference's already-built contour, via _resolve_product_bbox())."""
+    gray = _to_gray(image)
+    contour = _largest_contour(gray)
+    return _product_bbox(contour, gray.shape[:2], margin_ratio)
 
 
 def has_usable_features(features: ReferenceFeatures) -> bool:
@@ -177,6 +230,11 @@ def has_usable_features(features: ReferenceFeatures) -> bool:
 
 def save_reference_features(features: ReferenceFeatures, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    # manual_bbox has no natural "empty" array shape, so absence is encoded
+    # as a single sentinel [-1, -1, -1, -1] (no real bbox has negative
+    # coords) rather than a variable-length placeholder like the other
+    # optional fields below.
+    manual_bbox = np.array(features.manual_bbox if features.manual_bbox is not None else (-1, -1, -1, -1), dtype=np.int32)
     np.savez(
         str(path),
         orb_keypoints=features.orb_keypoints,
@@ -185,27 +243,32 @@ def save_reference_features(features: ReferenceFeatures, path: Path) -> None:
         akaze_descriptors=features.akaze_descriptors if features.akaze_descriptors is not None else np.empty((0, 0), dtype=np.uint8),
         contour=features.contour if features.contour is not None else np.empty((0, 1, 2), dtype=np.int32),
         size=np.array(features.size, dtype=np.int32),
+        manual_bbox=manual_bbox,
     )
 
 
 def load_reference_features(path: Path) -> ReferenceFeatures:
     data = np.load(str(path))
     orb_desc, akaze_desc, contour = data["orb_descriptors"], data["akaze_descriptors"], data["contour"]
+    manual_bbox = tuple(int(v) for v in data["manual_bbox"]) if "manual_bbox" in data else (-1, -1, -1, -1)
     return ReferenceFeatures(
         orb_keypoints=data["orb_keypoints"], orb_descriptors=orb_desc if orb_desc.size else None,
         akaze_keypoints=data["akaze_keypoints"], akaze_descriptors=akaze_desc if akaze_desc.size else None,
         contour=contour if contour.size else None, size=tuple(int(v) for v in data["size"]),
+        manual_bbox=manual_bbox if manual_bbox != (-1, -1, -1, -1) else None,
     )
 
 
-def build_and_save_reference_features(image: np.ndarray, output_path: Path) -> Path | None:
+def build_and_save_reference_features(
+    image: np.ndarray, output_path: Path, manual_bbox: tuple[int, int, int, int] | None = None,
+) -> Path | None:
     """Build features for a freshly-saved GOOD reference and persist them.
 
     Returns None (and writes nothing) if neither keypoints nor a contour
     could be extracted - compute_comparison_v2() simply skips such
     references rather than failing.
     """
-    features = build_reference_features(image)
+    features = build_reference_features(image, manual_bbox=manual_bbox)
     if not has_usable_features(features):
         return None
     save_reference_features(features, output_path)
@@ -286,6 +349,43 @@ def _product_bbox(contour: np.ndarray | None, frame_shape: tuple[int, int], marg
     x0, y0 = max(0, x - mx), max(0, y - my)
     x1, y1 = min(frame_shape[1], x + w + mx), min(frame_shape[0], y + h + my)
     return x0, y0, x1, y1
+
+
+def _resolve_product_bbox(
+    reference_features: ReferenceFeatures, frame_shape: tuple[int, int], margin_ratio: float = 0.6,
+) -> tuple[int, int, int, int] | None:
+    """Like _product_bbox(), but honors an operator-drawn override
+    (Teach Product wizard Step 3) when one was saved with this reference -
+    in that case the manual rect IS the product boundary, so the
+    contour+margin computation is skipped entirely rather than adjusted."""
+    if reference_features.manual_bbox is not None:
+        return reference_features.manual_bbox
+    return _product_bbox(reference_features.contour, frame_shape, margin_ratio)
+
+
+def region_to_inspection_corners(
+    canonical_rect: tuple[float, float, float, float],
+    product_bbox: tuple[int, int, int, int],
+    alignment: AlignmentResult,
+) -> list[tuple[float, float]]:
+    """Map one region's canonical-space fractional rect to a 4-point polygon
+    in inspection-frame pixel coordinates, for overlay drawing only (never
+    used by score_regions(), which works purely in canonical space). Mirrors
+    the bbox_corners pattern in compare_one_reference(): a rect in
+    reference-image pixel coordinates, taken through the same alignment.M
+    homogeneous-corner multiply used there.
+    """
+    frac_x0, frac_y0, frac_x1, frac_y1 = canonical_rect
+    bx0, by0, bx1, by1 = product_bbox
+    bbox_w, bbox_h = bx1 - bx0, by1 - by0
+    ref_x0, ref_x1 = bx0 + frac_x0 * bbox_w, bx0 + frac_x1 * bbox_w
+    ref_y0, ref_y1 = by0 + frac_y0 * bbox_h, by0 + frac_y1 * bbox_h
+    ref_corners = np.array(
+        [[ref_x0, ref_y0, 1.0], [ref_x1, ref_y0, 1.0], [ref_x1, ref_y1, 1.0], [ref_x0, ref_y1, 1.0]],
+        dtype=np.float32,
+    )
+    insp_corners = (alignment.M @ ref_corners.T).T
+    return [(float(p[0]), float(p[1])) for p in insp_corners]
 
 
 def _mask_outside_bbox(gray: np.ndarray, bbox: tuple[int, int, int, int] | None) -> np.ndarray:
@@ -398,7 +498,7 @@ def locate_and_align(
         return None
 
     if alignment_method == config.ALIGNMENT_METHOD_HYBRID:
-        product_bbox = _product_bbox(reference_features.contour, ref_gray.shape[:2])
+        product_bbox = _resolve_product_bbox(reference_features, ref_gray.shape[:2])
         M = _ecc_refine(ref_gray, insp_gray, M, product_bbox)
 
     ref_w, ref_h = reference_features.size
@@ -518,7 +618,7 @@ def compare_one_reference(
     if alignment is None:
         return None, {}
 
-    product_bbox = _product_bbox(reference_features.contour, reference_image.shape[:2], margin_ratio=0.3)
+    product_bbox = _resolve_product_bbox(reference_features, reference_image.shape[:2], margin_ratio=0.3)
     normalized = normalize_inspection(insp_image, alignment, reference_features.size, product_bbox)
     canonical_reference_source = reference_image
     if product_bbox is not None:
@@ -555,7 +655,63 @@ def compare_one_reference(
         feature_score=feature_score, shape_score=shape_score, pixel_score=pixel_score, edge_score=edge_score,
         alignment_quality=alignment_quality, combined_score=combined,
         normalized_image=normalized, diff_image=diff_image, bbox_corners=bbox_corners,
+        ref_gray=ref_gray, norm_gray=norm_gray, product_bbox=product_bbox,
     )
+
+
+def score_regions(
+    ref_gray: np.ndarray, norm_gray: np.ndarray,
+    regions: list[dict],
+    pixel_edge_weights: tuple[float, float] = (0.5, 0.5),
+) -> list["RegionScore"]:
+    """Score each named region by slicing the winning reference's/inspection's
+    canonical-space gray images (both always exactly config.CANONICAL_SIZE,
+    see compare_one_reference()) by that region's fractional rect and
+    rerunning _pixel_score()/_edge_score() on the sub-images. Pure function:
+    does not touch alignment, shape_score, or the existing aggregate
+    combined_score. One RegionScore per region in `regions`, same order.
+
+    `regions` is the list of dicts returned by core.db.Database.list_regions()
+    (or any dict with the same frac_x0/frac_y0/frac_x1/frac_y1/region_name/
+    region_type/id/fail_threshold/enabled keys).
+    """
+    height, width = ref_gray.shape[:2]
+    pixel_w, edge_w = pixel_edge_weights
+    results: list[RegionScore] = []
+    for region in regions:
+        frac_rect = (region["frac_x0"], region["frac_y0"], region["frac_x1"], region["frac_y1"])
+        if not region.get("enabled", True):
+            results.append(RegionScore(
+                region_name=region["region_name"], region_type=region["region_type"],
+                pixel_score=0.0, edge_score=0.0, combined_score=0.0,
+                result=config.REGION_RESULT_WARN, canonical_rect=frac_rect, region_id=region.get("id"),
+            ))
+            continue
+        x0 = int(round(frac_rect[0] * width))
+        y0 = int(round(frac_rect[1] * height))
+        x1 = int(round(frac_rect[2] * width))
+        y1 = int(round(frac_rect[3] * height))
+        ref_slice = ref_gray[y0:y1, x0:x1]
+        norm_slice = norm_gray[y0:y1, x0:x1]
+        if ref_slice.size == 0 or norm_slice.size == 0:
+            results.append(RegionScore(
+                region_name=region["region_name"], region_type=region["region_type"],
+                pixel_score=0.0, edge_score=0.0, combined_score=0.0,
+                result=config.REGION_RESULT_WARN, canonical_rect=frac_rect, region_id=region.get("id"),
+            ))
+            continue
+        pixel_score = _pixel_score(ref_slice, norm_slice)
+        edge_score = _edge_score(ref_slice, norm_slice)
+        combined = round(pixel_score * pixel_w + edge_score * edge_w, 2)
+        fail_threshold = region.get("fail_threshold")
+        threshold = fail_threshold if fail_threshold is not None else config.DEFAULT_MATCH_THRESHOLD_PERCENT
+        result = config.REGION_RESULT_PASS if combined >= threshold else config.REGION_RESULT_FAIL
+        results.append(RegionScore(
+            region_name=region["region_name"], region_type=region["region_type"],
+            pixel_score=pixel_score, edge_score=edge_score, combined_score=combined,
+            result=result, canonical_rect=frac_rect, region_id=region.get("id"),
+        ))
+    return results
 
 
 def find_best_match(
@@ -628,4 +784,6 @@ def compute_comparison_v2(
         best_angle_id=candidate.get("angle_id"), best_angle_name=candidate.get("angle_name"),
         normalized_image=scores["normalized_image"], diff_image=scores["diff_image"], no_product_found=False,
         detected_bbox_corners=scores.get("bbox_corners"),
+        ref_gray=scores.get("ref_gray"), norm_gray=scores.get("norm_gray"),
+        product_bbox=scores.get("product_bbox"), alignment=alignment,
     )

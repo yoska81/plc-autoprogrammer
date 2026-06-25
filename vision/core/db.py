@@ -89,6 +89,43 @@ CREATE TABLE IF NOT EXISTS cameras (
     notes TEXT,
     created_at TEXT NOT NULL
 );
+
+-- Named inspection regions ("ROI 1 - Outer Shape", "ROI 2 - Camera Holes",
+-- ...) the operator defines per product+angle in the Teach Product wizard
+-- (V2 only - V1 has no localization to anchor a region to). Rect is stored
+-- once in canonical space (fractions 0..1 of config.CANONICAL_SIZE) so the
+-- same definition scores against every reference/inspection pair with no
+-- per-pose transform math - see core/compare_v2.score_regions().
+CREATE TABLE IF NOT EXISTS inspection_regions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    angle_id INTEGER NOT NULL REFERENCES angles(id) ON DELETE CASCADE,
+    region_name TEXT NOT NULL,
+    region_type TEXT NOT NULL DEFAULT 'surface_compare',
+    frac_x0 REAL NOT NULL, frac_y0 REAL NOT NULL,
+    frac_x1 REAL NOT NULL, frac_y1 REAL NOT NULL,
+    weight REAL NOT NULL DEFAULT 1.0,
+    fail_threshold REAL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(product_id, angle_id, region_name)
+);
+
+-- One row per named region per inspection cycle (V2 only, only when the
+-- product has regions defined). region_name is denormalized rather than a
+-- plain FK lookup so history/CSV rows stay meaningful if a region is later
+-- renamed/deleted (ON DELETE SET NULL on region_id).
+CREATE TABLE IF NOT EXISTS region_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inspection_id INTEGER NOT NULL REFERENCES inspections(id) ON DELETE CASCADE,
+    region_id INTEGER REFERENCES inspection_regions(id) ON DELETE SET NULL,
+    region_name TEXT NOT NULL,
+    pixel_score REAL, edge_score REAL, combined_score REAL,
+    result TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 # Columns added after V1 shipped. Applied with ALTER TABLE on every connect
@@ -164,6 +201,10 @@ REPORT_COLUMNS = [
     ("bad_image_path", "Bad Image"),
     ("difference_image_path", "Diff Image"),
     ("notes", "Notes"),
+    # Per-feature/per-region explainability summary (V2 only, only when the
+    # product has named regions defined), e.g. "4/4 PASS" or
+    # "Surface Area: FAIL" for the first failing region. Blank otherwise.
+    ("region_summary", "Region Results"),
     # V2 "Free Position / Continuous Rotation" engine fields. Blank for V1 rows.
     ("engine_version", "Engine"),
     ("recognition_confidence", "Recognition Confidence %"),
@@ -295,6 +336,93 @@ class Database:
             "SELECT * FROM angles WHERE product_id = ? ORDER BY angle_name", (product_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ----------------------------------------------------- inspection regions
+
+    def add_region(self, product_id: int, angle_id: int, region_name: str, region_type: str,
+                    frac_x0: float, frac_y0: float, frac_x1: float, frac_y1: float,
+                    weight: float = 1.0, fail_threshold: float | None = None,
+                    sort_order: int = 0, notes: str = "") -> int:
+        cursor = self._conn.execute(
+            "INSERT INTO inspection_regions "
+            "(product_id, angle_id, region_name, region_type, frac_x0, frac_y0, frac_x1, frac_y1, "
+            "weight, fail_threshold, sort_order, notes, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (product_id, angle_id, region_name, region_type, frac_x0, frac_y0, frac_x1, frac_y1,
+             weight, fail_threshold, sort_order, notes, _now()),
+        )
+        self._conn.commit()
+        return cursor.lastrowid
+
+    def update_region(self, region_id: int, **fields) -> None:
+        allowed = {
+            "region_name", "region_type", "frac_x0", "frac_y0", "frac_x1", "frac_y1",
+            "weight", "fail_threshold", "enabled", "sort_order", "notes",
+        }
+        fields = {k: v for k, v in fields.items() if k in allowed}
+        if not fields:
+            return
+        if "enabled" in fields:
+            fields["enabled"] = int(fields["enabled"])
+        assignments = ", ".join(f"{k} = ?" for k in fields)
+        self._conn.execute(
+            f"UPDATE inspection_regions SET {assignments} WHERE id = ?", (*fields.values(), region_id),
+        )
+        self._conn.commit()
+
+    def delete_region(self, region_id: int) -> None:
+        self._conn.execute("DELETE FROM inspection_regions WHERE id = ?", (region_id,))
+        self._conn.commit()
+
+    def list_regions(self, product_id: int, angle_id: int) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM inspection_regions WHERE product_id = ? AND angle_id = ? "
+            "ORDER BY sort_order, id",
+            (product_id, angle_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def record_region_results(self, inspection_id: int, region_scores: list[dict]) -> None:
+        """Bulk-insert one region_results row per entry in region_scores.
+        Each dict needs region_name/result and may include region_id/
+        pixel_score/edge_score/combined_score. Called once per inspection,
+        right after record_inspection() returns the new inspection_id."""
+        now = _now()
+        rows = [
+            (
+                inspection_id,
+                score.get("region_id"),
+                score["region_name"],
+                score.get("pixel_score"),
+                score.get("edge_score"),
+                score.get("combined_score"),
+                score["result"],
+                now,
+            )
+            for score in region_scores
+        ]
+        if not rows:
+            return
+        self._conn.executemany(
+            "INSERT INTO region_results "
+            "(inspection_id, region_id, region_name, pixel_score, edge_score, combined_score, "
+            "result, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+        self._conn.commit()
+
+    def list_region_results(self, inspection_id: int) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM region_results WHERE inspection_id = ? ORDER BY id", (inspection_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_inspection_detail(self, inspection_id: int) -> dict | None:
+        inspection = self.get_inspection(inspection_id)
+        if inspection is None:
+            return None
+        inspection["region_results"] = self.list_region_results(inspection_id)
+        return inspection
 
     # ---------------------------------------------------- reference images
 
@@ -465,7 +593,11 @@ class Database:
         row = self._conn.execute(
             self._INSPECTIONS_JOIN_SELECT + "WHERE i.id = ?", (inspection_id,),
         ).fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        result = dict(row)
+        self._attach_region_summaries([result])
+        return result
 
     def list_inspections(self, product_name: str | None = None, result: str | None = None,
                           date_from: str | None = None, date_to: str | None = None,
@@ -489,8 +621,39 @@ class Database:
             params.append(camera_id)
         query += " ORDER BY i.id DESC LIMIT ?"
         params.append(limit)
-        rows = self._conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
+        rows = [dict(r) for r in self._conn.execute(query, params).fetchall()]
+        self._attach_region_summaries(rows)
+        return rows
+
+    def _attach_region_summaries(self, inspection_rows: list[dict]) -> None:
+        """Sets row["region_summary"] on every dict in inspection_rows, e.g.
+        "4/4 PASS" or "Surface Area: FAIL" for the first failure. One extra
+        query total (not per-row), regardless of how many inspections are
+        being listed."""
+        ids = [row["id"] for row in inspection_rows]
+        if not ids:
+            return
+        placeholders = ", ".join(["?"] * len(ids))
+        result_rows = self._conn.execute(
+            f"SELECT inspection_id, region_name, result FROM region_results "
+            f"WHERE inspection_id IN ({placeholders}) ORDER BY id",
+            ids,
+        ).fetchall()
+        by_inspection: dict[int, list[sqlite3.Row]] = {}
+        for r in result_rows:
+            by_inspection.setdefault(r["inspection_id"], []).append(r)
+        for row in inspection_rows:
+            entries = by_inspection.get(row["id"])
+            if not entries:
+                row["region_summary"] = ""
+                continue
+            total = len(entries)
+            passed = sum(1 for e in entries if e["result"] == config.REGION_RESULT_PASS)
+            if passed == total:
+                row["region_summary"] = f"{passed}/{total} PASS"
+            else:
+                first_fail = next(e for e in entries if e["result"] != config.REGION_RESULT_PASS)
+                row["region_summary"] = f"{first_fail['region_name']}: {first_fail['result']}"
 
     def count_inspections(self, product_name: str | None = None, camera_id: int | None = None) -> dict:
         """Counters for the Inspection screen (and, with camera_id set, one

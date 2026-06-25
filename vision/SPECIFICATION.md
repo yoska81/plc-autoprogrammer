@@ -89,40 +89,40 @@ of the data.
 
 ### 1. Inspection (`ui/screens/inspection_screen.py`)
 
-Live camera/test feed, GOOD reference preview, inspection image preview,
-diff image preview, a large GOOD/BAD result badge with the similarity
-score, product/angle selectors, camera mode/index, threshold, last
-inspection time, **Communication status** (Simulation / Connected /
-Error) and **Trigger status** (Waiting / Trigger Received / Inspecting /
-Complete) from the Machine Signal Interface, and the full button row:
-Start Camera, Stop Camera, Add Product, Select Product, Add Angle, Save
-GOOD Reference, Take Inspection Picture, Compare, Save Result, Open Bad
-Products Folder, Export Report, Settings (Settings opens the Settings
-tab).
+Redesigned for real-PC usability after live testing surfaced a too-small
+camera image, an oversized result card hiding useful information, and no
+explanation of *what* was actually checked. The live camera/test feed is
+now the dominant element (≈70% of the main column width, with a Fit/100%
+zoom toolbar operating client-side on the already-decoded pixmap — no
+change to capture resolution or performance). Next to it, an **Inspection
+Plan** panel lists every named region defined for the current product/
+angle (V2 only — see "Per-Region Explainability" below) with a colored
+status dot, name, and score, so the operator can see at a glance *which*
+features passed or failed, not just an overall GOOD/BAD. Below the live
+feed, a **compact status strip** (a single colored dot + GOOD/BAD/NO
+PRODUCT/etc. text + score, `ResultPanel`'s `compact=True` mode) replaces
+the old 560px-wide result badge. A slim sidebar keeps Station/Status/
+Trigger and a "Teach Product (Wizard)" button (see below) front and
+center; the V2 debug fields (best match, center, rotation, scale,
+confidence, alignment quality) and "Auto Match Reference" move into a
+collapsible **Advanced** section at the sidebar's bottom (a checkable
+`QToolButton` toggling a hidden frame — nothing is removed, just
+deprioritized). The five raw debug preview panels (reference/inspection/
+overlay/diff/normalized images) move into a similarly collapsible
+**Technical Images** section below the status strip. The full button row
+(Start/Stop Camera, Save GOOD Reference, Take Inspection Picture, Compare,
+Save Result, Reports, Settings) stays, just visually smaller.
 
-When `inspection_mode` is "free_pose" (V2 — see below), this same screen
-additionally shows: a "Best Matching Reference" preview panel (replaces
-V1's fixed "Good Reference" panel with whichever saved reference V2's
-search actually matched), a "Detection Overlay" panel (the inspection
-image with the detected product's rotated bounding box and center marker
-drawn on it — built from `V2ComparisonResult.detected_bbox_corners`, the
-4 reference-frame bbox corners mapped through the recovered pose
-transform, purely a presentation field with no effect on scoring), a
-"Normalized (Aligned)" preview panel (the located product warped into the
-matched reference's canonical frame), a "Difference" panel, sidebar rows
-for **Product Center (X, Y)** in pixels, **Rotation Angle** (continuous,
-two-decimal precision, e.g. `23.70°`), **Detected Scale**, **Recognition
-Confidence**, and **Alignment Quality**, a "Best Match" sidebar row naming
-the matched reference's angle, a feature/shape/pixel/edge score breakdown
-line under the result badge, a "Product Detection: FOUND / NOT FOUND"
-status, the TOTAL/GOOD/BAD/NO PRODUCT/SKIPPED/ERROR counters panel, and an
-"Auto Match Reference" sidebar button calling
-`QCApp.auto_match_reference()` — the same V2 search Compare runs, exposed
-under its own name. All of this state survives `MainWindow.refresh_all()`
-(camera start/stop, product/angle changes, Save Result, ...) by re-
-rendering from `engine.last_comparison_v2` rather than being recomputed.
-These V2 widgets stay blank/dashed and have no effect while
-`inspection_mode` is "fixed" (V1).
+When `inspection_mode` is "free_pose" (V2), the detection overlay drawn
+into the Technical Images section's overlay panel additionally draws each
+defined region's polygon color-coded green/red/yellow by PASS/FAIL/WARN
+(`compare_v2.region_to_inspection_corners()`), on top of the existing
+single green-bbox + red-center-marker behavior, which is unchanged for
+products with no regions defined. All of this state survives
+`MainWindow.refresh_all()` by re-rendering from `engine.last_comparison_v2`
+rather than being recomputed. The Advanced/Technical sections and the
+Inspection Plan panel stay blank/hidden while `inspection_mode` is "fixed"
+(V1), which has no localization step to anchor regions to.
 
 ### 2. Camera Setup / Calibration (`ui/screens/camera_setup_screen.py`)
 
@@ -161,6 +161,20 @@ rebuilt when a station is added/removed/edited, never on every tick. When
 running and any of them are at high resolution/FPS, a warning banner
 appears pointing at the "Hardware Planning" notes below — the screen never
 silently degrades by, say, dropping frames or skipping stations.
+
+To stay clear and usable as station counts grow, the Multi Camera Overview
+has a **Tile/List toggle**: Tile mode is the card grid above; List mode
+swaps it for a denser `QTableWidget` (one row per station: name, status,
+result, counters, and inline Start/Stop/Inspect/Open Full View) that scales
+better past the many-cameras threshold. A **panel-size slider** next to the
+toggle resizes the tile previews (`_StationCard`'s `preview_size`) without
+changing capture resolution. Each card/row's **Open Full View** button opens
+a non-modal `CameraDetailScreen` (`ui/screens/camera_detail_screen.py`) — a
+large single-station view (preview, compact result, counters, and a full
+set of status/config fields plus that station's Inspection Plan and an
+"Inspect Now" button) for operators who want one camera's full detail
+without leaving the multi-camera overview; re-opening an already-open
+station's detail window raises it instead of stacking duplicates.
 
 The **Inspection** tab is the Single Camera View (the original, fully
 detailed single-station workflow); this **Cameras / Stations** tab is the
@@ -259,6 +273,56 @@ V2 searches every saved reference image for the whole product (across all
 angles), not just the currently selected angle — appropriate for a part
 that can present any side to the camera. The matched reference's angle is
 recorded on the inspection row (`best_angle_id`/`best_angle_name`).
+
+## Per-Region Explainability (V2 only)
+
+V2's aggregate GOOD/BAD score doesn't tell an operator *what* was actually
+checked. Per-region scoring is an additive, optional layer on top: a
+product/angle can have named **inspection regions** (`core/db.py`'s
+`inspection_regions` table) — rectangles defined once in canonical space
+(fractions 0..1 of the 480×480 normalized frame `compare_v2.py` already
+builds for every comparison, so no new transform math is needed to score
+them on a fresh inspection). Each region has a name, a `region_type`
+(Presence/Missing Feature, Position/Alignment, Shape/Outline, Dimension/
+Size, Surface Compare, Scratch/Damage Detection — informational for the
+UI; every type currently scores via the same pixel+edge mechanism, not a
+per-type algorithm) and an enabled flag.
+
+`compare_v2.score_regions()` slices the reference and normalized inspection
+images by each region's rect and reruns the existing pixel/edge scoring on
+the sub-images, producing a `RegionScore` per region with its own
+`PASS`/`FAIL`/`WARN` result (`config.REGION_RESULT_*` — a separate
+vocabulary from the overall `GOOD`/`BAD`, since these describe individual
+features, not the whole product). Results are saved to `region_results`
+right after the parent inspection row, and read back by the Inspection
+screen's Inspection Plan panel, the multi-camera `CameraDetailScreen`, and
+the Reports screen's "View Details" dialog. Products with no regions
+defined see no change at all to V2's existing aggregate scoring/output —
+this is a strictly additive layer.
+
+## Teach Product Wizard (`ui/wizards/teach_product_wizard.py`)
+
+A guided, modal 7-step `QWizard` for setting up a new product end to end,
+launched from the Inspection screen ("Teach Product (Wizard)") or the
+Products screen, addressing live testing's complaint that the manual
+multi-screen setup flow (Camera Setup → Products → References, separately)
+wasn't clear for new operators. Steps: (1) **Select Camera** — pick/
+configure the device; (2) **Product Setup** — name, part number,
+description, angle name, and Fixed/Free-Pose mode; (3) **Define Object**
+(V2 only) — confirm the auto-detected product boundary or drag a manual
+override, which is stored as that reference's `manual_bbox` and reused on
+every later comparison instead of recomputing it from the contour; (4)
+**Define Inspection Features** (V2 only) — drag named, typed rectangles
+over the frozen canonical preview using `RegionDrawWidget`
+(`ui/widgets_roi.py`), staged in memory only; (5) **Save GOOD References**
+— capture one or more reference images; (6) **Test Inspection** — run a
+real comparison against the staged (not-yet-committed) regions so the
+operator sees live PASS/FAIL per feature before anything is saved; (7)
+**Finish** — commits the product/angle and the staged region list to the
+database in one step. Canceling or going Back at any point before Finish
+leaves the database untouched. The existing Products / Camera Setup /
+References screens are unchanged and remain the manual/advanced fallback
+for one-off edits.
 
 ## No Product Found / Skip Logic (V2 only)
 
@@ -496,6 +560,18 @@ cameras(
     product_id, angle_id, inspection_mode, trigger_source, save_images,
     is_primary_station, notes, created_at
 )
+-- Per-region explainability (V2 only, additive). Region rects are defined
+-- once in canonical-space fractions, so they apply to any inspection of
+-- that product/angle regardless of the located product's actual pose.
+inspection_regions(
+    id, product_id, angle_id, region_name, region_type,
+    frac_x0, frac_y0, frac_x1, frac_y1, weight, fail_threshold,
+    enabled, sort_order, notes, created_at
+)
+region_results(
+    id, inspection_id, region_id, region_name,
+    pixel_score, edge_score, combined_score, result, created_at
+)
 ```
 
 `inspections` rows also carry `camera_id`, `station_name`, `camera_type`,
@@ -512,7 +588,13 @@ Every inspection is written to `inspections` as it happens. CSV export
 (`core/reports.py`) reads straight from the database (with whatever
 filters the Reports screen has applied) — it is a view, not a second
 source of truth. Excel export uses the same query, written with
-`openpyxl` when available.
+`openpyxl` when available. `REPORT_COLUMNS` includes a computed
+`region_summary` column (e.g. "4/4 PASS" or naming the first failing
+region) for products with per-region scoring; full per-region detail isn't
+in the fixed CSV/Excel column list (region sets vary per product) but is
+reachable from the Reports screen's "View Details" button, which opens a
+read-only dialog listing every region's result for the selected
+inspection.
 
 ## Windows packaging
 

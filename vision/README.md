@@ -98,27 +98,31 @@ A single window with seven tabs across the top, all sharing one `QCApp`
 engine (`core/app.py`) and SQLite database (`database/vision.db`) — no
 tab keeps its own copy of the data:
 
-- **Inspection** (`ui/screens/inspection_screen.py`) — the main screen:
-  live camera/test feed, GOOD reference / inspection / diff previews, the
-  GOOD/BAD result badge with similarity score, product/angle controls,
-  Machine Signal Interface communication/trigger status, and the
-  "Simulate PLC Trigger" button. When `inspection_mode` is "free_pose"
-  (V2), it also shows a "Best Matching Reference" panel (replaces V1's
-  fixed "Good Reference" panel with whichever saved reference V2's search
-  actually matched), a "Detection Overlay" panel (inspection image with
-  the detected product's rotated bounding box and center marker drawn on
-  it), a "Normalized (Aligned)" preview panel, a "Difference" panel,
-  sidebar rows for Product Center (X, Y), Rotation Angle (continuous,
-  two-decimal precision, e.g. `23.70°`), Detected Scale, Recognition
-  Confidence, and Alignment Quality, a "Best Match" status row naming the
-  matched reference's angle, a feature/shape/pixel/edge score breakdown
-  line under the result badge, a "Product Detection" FOUND/NOT FOUND
-  status, the GOOD/BAD/NO PRODUCT/SKIPPED/ERROR counters panel, and an
-  "Auto Match Reference" sidebar button (`QCApp.auto_match_reference()`)
-  that runs the same V2 search as Compare but is exposed under its own
-  name for clarity; these V2 widgets stay blank/dashed and inert in V1's
-  default "fixed" mode. Buttons map directly onto the `QCApp` engine — the
-  UI adds no new comparison or capture logic.
+- **Inspection** (`ui/screens/inspection_screen.py`) — the main screen,
+  redesigned for real-PC usability: a dominant live camera/test feed
+  (≈70% of the main column, with a Fit/100% zoom toolbar) next to an
+  **Inspection Plan** panel listing every named region for the current
+  product (V2 only — colored status dot + name + score per feature, so
+  the operator sees *what* was checked, not just GOOD/BAD), a compact
+  status strip instead of the old oversized result badge, and a slim
+  sidebar (Station/Status/Trigger + a "Teach Product (Wizard)" button).
+  The V2 debug fields (best match, center, rotation, scale, confidence,
+  alignment quality, "Auto Match Reference") and the five raw debug
+  preview images (reference/inspection/overlay/diff/normalized) live in
+  collapsible **Advanced** / **Technical Images** sections so they're one
+  click away instead of crowding the main view; the overlay panel inside
+  Technical Images also draws each region's polygon color-coded green/
+  red/yellow by PASS/FAIL/WARN. All of this stays blank/hidden in V1's
+  default "fixed" mode, which has no localization step to anchor regions
+  to. Buttons map directly onto the `QCApp` engine — the UI adds no new
+  comparison or capture logic.
+- **Teach Product Wizard** (`ui/wizards/teach_product_wizard.py`) — a
+  guided modal 7-step wizard (Select Camera → Product Setup → Define
+  Object → Define Inspection Features → Save GOOD References → Test
+  Inspection → Finish) for setting up a new product end to end, launched
+  from the Inspection or Products screen. Nothing is written to the
+  database until Finish; the existing Products/Camera Setup/References
+  screens remain the manual/advanced fallback for one-off edits.
 - **Camera Setup** (`ui/screens/camera_setup_screen.py`) — live preview,
   camera device index ("Detect Cameras" probes indices 0/1/2), resolution
   (with the 1920×1080 → 1280×720 → 640×480 fallback list), FPS, and
@@ -136,11 +140,16 @@ tab keeps its own copy of the data:
   may additionally drive the legacy Inspection tab's Machine Signal
   Interface trigger — every other station runs self-contained, with its
   own product/angle/inspection-mode/trigger-source assignment. The screen
-  polls status/counters on a 1-second timer and switches between a
-  single-camera detail view and a many-camera grid view via its own
-  sub-tabs; with a large number of cameras configured, the grid shows
-  low-FPS thumbnails rather than full-resolution/full-FPS previews for
-  every station at once (see "Hardware Planning" below for why).
+  polls status/counters on a 1-second timer; with a large number of
+  cameras configured, the grid shows low-FPS thumbnails rather than
+  full-resolution/full-FPS previews for every station at once (see
+  "Hardware Planning" below for why). A **Tile/List toggle** swaps the
+  card grid for a denser one-row-per-station table as camera counts grow,
+  a **panel-size slider** resizes the tile previews, and each station's
+  **Open Full View** button opens a non-modal `CameraDetailScreen` with a
+  large preview, that station's Inspection Plan, and an "Inspect Now"
+  button (re-opening an already-open station's window raises it instead
+  of stacking duplicates).
 - **Products** (`ui/screens/products_screen.py`) — add/edit/delete
   products (name, part number, description, customer, notes) and manage
   each product's angles.

@@ -403,6 +403,11 @@ class CameraManager:
             diff_path = location.new_diff_path()
             cv2.imwrite(str(diff_path), result.diff_image)
 
+        if result.product_detected and result.ref_gray is not None and result.norm_gray is not None:
+            regions = self.db.list_regions(product["id"], result.best_angle_id or angle["id"])
+            if regions:
+                result.region_scores = compare_v2.score_regions(result.ref_gray, result.norm_gray, regions)
+
         if result.result == config.RESULT_NO_PRODUCT_FOUND:
             return self._finalize_no_product(row, product, angle, location, result, inspection_path,
                                                trigger_source, camera_index_or_address)
@@ -430,6 +435,15 @@ class CameraManager:
             camera_id=row["id"], station_name=row["station_name"], camera_type=row["camera_type"],
             camera_index_or_address=camera_index_or_address,
         )
+        if result.region_scores:
+            self.db.record_region_results(inspection_id, [
+                {
+                    "region_id": rs.region_id, "region_name": rs.region_name,
+                    "pixel_score": rs.pixel_score, "edge_score": rs.edge_score,
+                    "combined_score": rs.combined_score, "result": rs.result,
+                }
+                for rs in result.region_scores
+            ])
         return {"camera_id": row["id"], "result": result.result, "score": result.final_score,
                 "inspection_id": inspection_id}
 

@@ -15,7 +15,10 @@ needs to change, the engine's behavior changed, not the demo images.
 Run directly:
     python3 tools/test_v2_pose_engine.py
 """
+import shutil
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import cv2
@@ -25,6 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import compare as compare_v1
 from core import compare_v2, config
+from core.camera_manager import CameraManager
+from core.db import Database
 
 DEMO_DIR = config.DATA_DIR / "test_images_v2_demo"
 DEBUG_DIR = config.DATA_DIR / "debug_v2"
@@ -250,6 +255,148 @@ def test_empty_frame_no_product_found() -> None:
     )
 
 
+def test_region_scoring_pass_and_fail() -> None:
+    """compare_v2.score_regions() is a pure function over two equal-sized
+    canonical-space gray images (see its docstring) - it never touches
+    alignment or the rotated/rescaled demo fixtures, so testing it against
+    real demo images would actually be testing the ORB/AKAZE alignment
+    pipeline's sub-pixel precision on tiny 12px-radius features, not
+    score_regions() itself. Build the two canonical images directly instead:
+    a synthetic "reference" with 5 named features, an identical "good"
+    inspection (every region must PASS), and a "bad" inspection with exactly
+    one feature erased (only that region must FAIL, the rest must stay
+    unaffected - a defect in one region must never drag down another)."""
+    print("\n=== Per-region scoring (score_regions) ===")
+    width, height = config.CANONICAL_SIZE
+    ref_gray = np.full((height, width), 200, dtype=np.uint8)
+    feature_rects = {
+        "top_left_hole": (60, 60, 110, 110),
+        "top_right_hole": (370, 60, 420, 110),
+        "bottom_left_hole": (60, 370, 110, 420),
+        "bottom_right_hole": (370, 370, 420, 420),
+        "center_ring": (200, 200, 280, 280),
+    }
+    for x0, y0, x1, y1 in feature_rects.values():
+        cv2.rectangle(ref_gray, (x0, y0), (x1, y1), 40, -1)
+
+    good_norm_gray = ref_gray.copy()
+    bad_norm_gray = ref_gray.copy()
+    missing_region = "top_right_hole"
+    bx0, by0, bx1, by1 = feature_rects[missing_region]
+    cv2.rectangle(bad_norm_gray, (bx0, by0), (bx1, by1), 200, -1)  # erase just this one feature
+
+    _dump("region_01_reference.png", ref_gray)
+    _dump("region_02_good_inspection.png", good_norm_gray)
+    _dump("region_03_bad_inspection.png", bad_norm_gray)
+
+    def _region_dicts() -> list[dict]:
+        return [
+            {
+                "id": None, "region_name": name, "region_type": config.REGION_TYPE_PRESENCE,
+                "frac_x0": x0 / width, "frac_y0": y0 / height,
+                "frac_x1": x1 / width, "frac_y1": y1 / height,
+                "enabled": True, "fail_threshold": None,
+            }
+            for name, (x0, y0, x1, y1) in feature_rects.items()
+        ]
+
+    good_scores = compare_v2.score_regions(ref_gray, good_norm_gray, _region_dicts())
+    for score in good_scores:
+        assert score.result == config.REGION_RESULT_PASS, (
+            f"region '{score.region_name}' came back {score.result} (pixel={score.pixel_score} "
+            f"edge={score.edge_score} combined={score.combined_score}) when compared against an "
+            f"UNCHANGED inspection image - score_regions() must report PASS for every region when "
+            f"ref_gray and norm_gray are identical."
+        )
+
+    bad_scores = {s.region_name: s for s in compare_v2.score_regions(ref_gray, bad_norm_gray, _region_dicts())}
+    assert bad_scores[missing_region].result == config.REGION_RESULT_FAIL, (
+        f"'{missing_region}' is the only feature erased from the inspection image, but score_regions() "
+        f"reported {bad_scores[missing_region].result} (pixel={bad_scores[missing_region].pixel_score} "
+        f"edge={bad_scores[missing_region].edge_score})."
+    )
+    for name, score in bad_scores.items():
+        if name == missing_region:
+            continue
+        assert score.result == config.REGION_RESULT_PASS, (
+            f"region '{name}' was untouched in the inspection image, but score_regions() reported "
+            f"{score.result} (pixel={score.pixel_score} edge={score.edge_score}) - a defect confined "
+            f"to '{missing_region}' must not drag down an unrelated region's score."
+        )
+
+
+def test_product_with_no_regions_unaffected() -> None:
+    """No-regression guard: per-region scoring is additive-only. A product
+    with zero rows in inspection_regions must produce exactly the result V2
+    already produced before per-region scoring existed - same RESULT_GOOD
+    classification as test_good_rotated() above for the identical fixture -
+    and must not write any region_results rows. Drives the real
+    CameraManager save path (core/camera_manager.py's _run_v2(), the same
+    code core/app.py's compute_comparison_v2() wrapper mirrors) against an
+    isolated temp database, exactly like tools/test_multi_camera.py does."""
+    print("\n=== Product with no regions defined (no-regression) ===")
+    reference_path = DEMO_DIR / "v2_demo_reference.png"
+    good_image_path = DEMO_DIR / "v2_demo_good_rotated.png"
+    assert reference_path.exists() and good_image_path.exists(), (
+        f"missing demo fixtures - run tools/generate_v2_demo_images.py first"
+    )
+
+    with tempfile.TemporaryDirectory(prefix="vision_test_noregions_") as tmp:
+        tmp_path = Path(tmp)
+        db = Database(tmp_path / "test.db")
+        product_id = db.create_product(name="No-Regions Test Product", part_number="TEST-NR-1")
+        angle_id = db.create_angle(product_id, angle_name="Top")
+        reference_id = db.add_reference_image(product_id, angle_id, str(reference_path), make_primary=True)
+
+        reference_image = cv2.imread(str(reference_path))
+        assert reference_image is not None, f"could not read {reference_path}"
+        features = compare_v2.build_reference_features(reference_image)
+        feature_path = tmp_path / "reference_features.npz"
+        compare_v2.save_reference_features(features, feature_path)
+        db.set_reference_feature_path(reference_id, str(feature_path))
+
+        assert db.list_regions(product_id, angle_id) == [], (
+            "test setup error: this product must start with zero regions defined"
+        )
+
+        good_frames_dir = tmp_path / "good_frames"
+        good_frames_dir.mkdir()
+        shutil.copy2(good_image_path, good_frames_dir / good_image_path.name)
+
+        manager = CameraManager(db, primary_engine=None)
+        # width/height must match the demo image's native 1920x1080 - TestImageCamera
+        # resizes every frame to exactly this size (core/camera/test_camera.py), and
+        # 1920x1080 -> 640x480 distorts the aspect ratio enough to break alignment.
+        camera_id = manager.add_camera(
+            "No-Regions Station", camera_type=config.CAMERA_TYPE_TEST, device_index=0,
+            width=1920, height=1080, fps=10, product_id=product_id, angle_id=angle_id,
+            inspection_mode=config.INSPECTION_MODE_FREE_POSE, trigger_source=config.TRIGGER_SOURCE_MANUAL,
+        )
+
+        original_test_images_dir = config.TEST_IMAGES_DIR
+        config.TEST_IMAGES_DIR = good_frames_dir
+        try:
+            manager.start_camera(camera_id)
+            time.sleep(0.3)
+            result = manager.run_inspection(camera_id, trigger_source=config.TRIGGER_SOURCE_MANUAL)
+        finally:
+            manager.stop_camera(camera_id)
+            config.TEST_IMAGES_DIR = original_test_images_dir
+
+        print(f"result: {result}")
+        assert result.get("result") == config.RESULT_GOOD, (
+            f"a product with no regions defined must classify exactly as it did before per-region "
+            f"scoring existed (same fixture as test_good_rotated -> GOOD), got {result}"
+        )
+        inspection_id = result.get("inspection_id")
+        assert inspection_id is not None, f"expected a saved inspection_id, got {result}"
+        region_results = db.list_region_results(inspection_id)
+        assert region_results == [], (
+            f"a product with no inspection_regions rows must not write any region_results rows, "
+            f"got {region_results}"
+        )
+
+
 def test_v1_fixed_reference_still_works() -> None:
     print("\n=== V1 fixed-reference mode (regression sanity) ===")
     reference_path = V1_SAMPLE_DIR / "sample_1_panel_good.png"
@@ -272,6 +419,7 @@ def main() -> None:
     failures = []
     for test_fn in (
         test_good_rotated, test_bad_rotated, test_empty_frame_no_product_found,
+        test_region_scoring_pass_and_fail, test_product_with_no_regions_unaffected,
         test_v1_fixed_reference_still_works,
     ):
         try:

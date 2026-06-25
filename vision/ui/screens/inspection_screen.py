@@ -5,15 +5,17 @@ import numpy as np
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
-from core import config
+from core import compare_v2, config
 from core.app import NoProductDecisionRequired, QCApp
 from core.compare_v2 import V2ComparisonResult
 
 from ..dialogs import SelectProductAngleDialog, prompt_text
-from ..widgets import CountersPanel, ImagePreviewPanel, ResultPanel
+from ..widgets import CountersPanel, ImagePreviewPanel, RegionPlanList, ResultPanel
+from ..wizards import TeachProductWizard
 
 LIVE_PREVIEW_INTERVAL_MS = 200
 
@@ -60,9 +62,9 @@ class InspectionScreen(QWidget):
     def _build_sidebar(self) -> QFrame:
         sidebar = QFrame()
         sidebar.setObjectName("panelCard")
-        sidebar.setFixedWidth(300)
+        sidebar.setFixedWidth(230)
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(6)
 
         layout.addWidget(self._section_title("STATION"))
@@ -136,40 +138,60 @@ class InspectionScreen(QWidget):
         layout.addWidget(trigger_button)
 
         layout.addSpacing(10)
-        layout.addWidget(self._section_title("V2 ENGINE"))
+        self.advanced_toggle = QToolButton()
+        self.advanced_toggle.setText("▸ Advanced")
+        self.advanced_toggle.setObjectName("advancedToggle")
+        self.advanced_toggle.setCheckable(True)
+        self.advanced_toggle.setChecked(False)
+        self.advanced_toggle.clicked.connect(self._on_toggle_advanced)
+        layout.addWidget(self.advanced_toggle)
+
+        self.advanced_frame = QFrame()
+        advanced_layout = QVBoxLayout(self.advanced_frame)
+        advanced_layout.setContentsMargins(0, 8, 0, 0)
+        advanced_layout.setSpacing(6)
+        advanced_layout.addWidget(self._section_title("V2 ENGINE"))
+
         self.best_match_label = QLabel("—")
         self.best_match_label.setObjectName("infoLabel")
         self.best_match_label.setWordWrap(True)
-        layout.addWidget(self._status_row("Best Match", self.best_match_label))
+        advanced_layout.addWidget(self._status_row("Best Match", self.best_match_label))
 
         self.center_label = QLabel("—")
         self.center_label.setObjectName("infoLabel")
-        layout.addWidget(self._status_row("Product Center (X, Y)", self.center_label))
+        advanced_layout.addWidget(self._status_row("Product Center (X, Y)", self.center_label))
 
         self.rotation_label = QLabel("—")
         self.rotation_label.setObjectName("infoLabel")
-        layout.addWidget(self._status_row("Rotation Angle", self.rotation_label))
+        advanced_layout.addWidget(self._status_row("Rotation Angle", self.rotation_label))
 
         self.scale_label = QLabel("—")
         self.scale_label.setObjectName("infoLabel")
-        layout.addWidget(self._status_row("Detected Scale", self.scale_label))
+        advanced_layout.addWidget(self._status_row("Detected Scale", self.scale_label))
 
         self.confidence_label = QLabel("—")
         self.confidence_label.setObjectName("infoLabel")
-        layout.addWidget(self._status_row("Recognition Confidence", self.confidence_label))
+        advanced_layout.addWidget(self._status_row("Recognition Confidence", self.confidence_label))
 
         self.alignment_quality_label = QLabel("—")
         self.alignment_quality_label.setObjectName("infoLabel")
-        layout.addWidget(self._status_row("Alignment Quality", self.alignment_quality_label))
+        advanced_layout.addWidget(self._status_row("Alignment Quality", self.alignment_quality_label))
 
         auto_match_button = QPushButton("Auto Match Reference")
         auto_match_button.setObjectName("secondaryActionButton")
         auto_match_button.clicked.connect(self._on_auto_match_reference)
-        layout.addWidget(auto_match_button)
+        advanced_layout.addWidget(auto_match_button)
+
+        self.advanced_frame.setVisible(False)
+        layout.addWidget(self.advanced_frame)
 
         layout.addStretch()
 
         layout.addWidget(self._section_title("PRODUCT SETUP"))
+        teach_button = QPushButton("Teach Product (Wizard)")
+        teach_button.setObjectName("secondaryActionButton")
+        teach_button.clicked.connect(self._on_teach_product)
+        layout.addWidget(teach_button)
         select_button = QPushButton("Select Product")
         select_button.setObjectName("secondaryActionButton")
         select_button.clicked.connect(self._on_select_product)
@@ -191,15 +213,41 @@ class InspectionScreen(QWidget):
 
     def _build_main_column(self) -> QVBoxLayout:
         column = QVBoxLayout()
-        column.setSpacing(18)
+        column.setSpacing(14)
 
         previews_row = QHBoxLayout()
         previews_row.setSpacing(18)
-        self.live_panel = ImagePreviewPanel("Camera / Test Feed", large=True, live=True)
-        previews_row.addWidget(self.live_panel, stretch=4)
+        self.live_panel = ImagePreviewPanel("Camera / Test Feed", large=True, live=True, zoomable=True)
+        previews_row.addWidget(self.live_panel, stretch=7)
 
-        secondary_col = QVBoxLayout()
-        secondary_col.setSpacing(14)
+        self.region_plan_panel = RegionPlanList()
+        previews_row.addWidget(self.region_plan_panel, stretch=3)
+        column.addLayout(previews_row, stretch=1)
+
+        status_row = QHBoxLayout()
+        status_row.setSpacing(14)
+        self.result_panel = ResultPanel(compact=True)
+        status_row.addWidget(self.result_panel, stretch=1)
+        self.v2_score_label = QLabel("")
+        self.v2_score_label.setObjectName("instructionsText")
+        status_row.addWidget(self.v2_score_label)
+        status_row.addStretch()
+        self.counters_panel = CountersPanel()
+        status_row.addWidget(self.counters_panel)
+        column.addLayout(status_row)
+
+        self.technical_toggle = QToolButton()
+        self.technical_toggle.setText("▸ Technical Images")
+        self.technical_toggle.setObjectName("advancedToggle")
+        self.technical_toggle.setCheckable(True)
+        self.technical_toggle.setChecked(False)
+        self.technical_toggle.clicked.connect(self._on_toggle_technical)
+        column.addWidget(self.technical_toggle)
+
+        self.technical_frame = QFrame()
+        technical_row = QHBoxLayout(self.technical_frame)
+        technical_row.setContentsMargins(0, 8, 0, 0)
+        technical_row.setSpacing(14)
         self.reference_panel = ImagePreviewPanel("Best Matching Reference")
         self.inspection_panel = ImagePreviewPanel("Inspection Image")
         self.overlay_panel = ImagePreviewPanel("Detection Overlay")
@@ -209,32 +257,9 @@ class InspectionScreen(QWidget):
             self.reference_panel, self.inspection_panel, self.overlay_panel,
             self.diff_panel, self.normalized_panel,
         ):
-            secondary_col.addWidget(panel)
-        previews_row.addLayout(secondary_col, stretch=1)
-        column.addLayout(previews_row, stretch=1)
-
-        result_row = QHBoxLayout()
-        result_row.addStretch()
-        self.result_panel = ResultPanel()
-        self.result_panel.setMinimumWidth(560)
-        result_row.addWidget(self.result_panel)
-        result_row.addStretch()
-        column.addLayout(result_row)
-
-        score_row = QHBoxLayout()
-        score_row.addStretch()
-        self.v2_score_label = QLabel("")
-        self.v2_score_label.setObjectName("instructionsText")
-        score_row.addWidget(self.v2_score_label)
-        score_row.addStretch()
-        column.addLayout(score_row)
-
-        counters_row = QHBoxLayout()
-        counters_row.addStretch()
-        self.counters_panel = CountersPanel()
-        counters_row.addWidget(self.counters_panel)
-        counters_row.addStretch()
-        column.addLayout(counters_row)
+            technical_row.addWidget(panel)
+        self.technical_frame.setVisible(False)
+        column.addWidget(self.technical_frame)
 
         return column
 
@@ -326,6 +351,10 @@ class InspectionScreen(QWidget):
 
     # ------------------------------------------------------- product/angle
 
+    def _on_teach_product(self) -> None:
+        wizard = TeachProductWizard(self.engine, self.on_change, self)
+        wizard.exec()
+
     def _on_add_product(self) -> None:
         name = prompt_text(self, "Add Product", "Product name:")
         if not name:
@@ -405,6 +434,7 @@ class InspectionScreen(QWidget):
             self.best_match_label.setText("—")
             self.v2_score_label.setText("")
             self._clear_v2_detail_labels()
+            self.region_plan_panel.clear()
 
     def _render_v2_details(self, comparison: V2ComparisonResult) -> None:
         self.detection_label.setText("FOUND" if comparison.product_detected else "NOT FOUND")
@@ -428,11 +458,21 @@ class InspectionScreen(QWidget):
         self.best_match_label.setText(comparison.best_angle_name or "—")
         self.v2_score_label.setText(self._format_v2_scores(comparison))
         self._set_v2_detail_labels(comparison)
+        self.region_plan_panel.set_regions(comparison.region_scores)
+
+    _REGION_OVERLAY_COLOR = {
+        config.REGION_RESULT_PASS: config.OVERLAY_COLOR_GOOD,
+        config.REGION_RESULT_FAIL: config.OVERLAY_COLOR_BAD,
+        config.REGION_RESULT_WARN: config.OVERLAY_COLOR_WARN,
+    }
 
     def _build_detection_overlay(self, comparison: V2ComparisonResult) -> np.ndarray | None:
         """Full inspection frame with the detected (rotated) product bounding
-        box and its center marker drawn on top - purely a display rendering,
-        computed from fields the V2 engine already reports."""
+        box, its center marker, and - when the product has named inspection
+        regions - one labeled, color-coded polygon per region (green=PASS,
+        red=FAIL, yellow=WARN). Purely a display rendering, computed from
+        fields the V2 engine already reports; never runs on the live preview
+        timer, only after an explicit Inspect/Compare/trigger action."""
         path = self.engine.last_inspection_image_path
         if not comparison.product_detected or path is None or not path.exists():
             return None
@@ -445,6 +485,17 @@ class InspectionScreen(QWidget):
         if comparison.detected_center_x is not None and comparison.detected_center_y is not None:
             center = (int(round(comparison.detected_center_x)), int(round(comparison.detected_center_y)))
             cv2.drawMarker(image, center, (0, 0, 255), cv2.MARKER_CROSS, 36, 3)
+        if comparison.region_scores and comparison.product_bbox and comparison.alignment:
+            for region in comparison.region_scores:
+                corners = compare_v2.region_to_inspection_corners(
+                    region.canonical_rect, comparison.product_bbox, comparison.alignment,
+                )
+                points = np.array(corners, dtype=np.int32).reshape((-1, 1, 2))
+                color = self._REGION_OVERLAY_COLOR.get(region.result, config.OVERLAY_COLOR_WARN)
+                cv2.polylines(image, [points], isClosed=True, color=color, thickness=2)
+                label_pos = (int(points[0][0][0]), max(0, int(points[0][0][1]) - 8))
+                cv2.putText(image, region.region_name, label_pos, cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5, color, 1, cv2.LINE_AA)
         return image
 
     def _set_v2_detail_labels(self, comparison: V2ComparisonResult) -> None:
@@ -480,6 +531,16 @@ class InspectionScreen(QWidget):
             if value is not None:
                 parts.append(f"{label} {value:.1f}%")
         return "   ".join(parts)
+
+    def _on_toggle_advanced(self) -> None:
+        expanded = self.advanced_toggle.isChecked()
+        self.advanced_frame.setVisible(expanded)
+        self.advanced_toggle.setText("▾ Advanced" if expanded else "▸ Advanced")
+
+    def _on_toggle_technical(self) -> None:
+        expanded = self.technical_toggle.isChecked()
+        self.technical_frame.setVisible(expanded)
+        self.technical_toggle.setText("▾ Technical Images" if expanded else "▸ Technical Images")
 
     def _on_auto_match_reference(self) -> None:
         if self.engine.location is None:

@@ -300,12 +300,14 @@ class QCApp:
         return self.save_good_reference_from_image(frame, make_primary=make_primary, notes=notes)
 
     def save_good_reference_from_image(self, image: np.ndarray, make_primary: bool | None = None,
-                                        notes: str = "") -> int:
+                                        notes: str = "", manual_bbox: tuple[int, int, int, int] | None = None) -> int:
         """Save a GOOD reference image and build its V2 feature descriptors.
 
         Features are built unconditionally (cheap, ORB+AKAZE+contour) so a
         later switch of Inspection Mode to Free Position/Continuous Rotation
-        never requires re-saving references that already exist.
+        never requires re-saving references that already exist. manual_bbox
+        is the Teach Product wizard's operator-drawn product-boundary
+        override (Step 3); None preserves today's auto-contour behavior.
         """
         location = self._require_location()
         path = location.new_reference_path()
@@ -314,7 +316,9 @@ class QCApp:
             self.current_product["id"], self.current_angle["id"], str(path),
             notes=notes, make_primary=make_primary,
         )
-        feature_path = compare_v2.build_and_save_reference_features(image, path.with_suffix(".npz"))
+        feature_path = compare_v2.build_and_save_reference_features(
+            image, path.with_suffix(".npz"), manual_bbox=manual_bbox,
+        )
         if feature_path is not None:
             self.db.set_reference_feature_path(reference_id, str(feature_path))
         return reference_id
@@ -389,6 +393,12 @@ class QCApp:
         if result.diff_image is not None:
             self._last_v2_diff_path = location.new_diff_path()
             cv2.imwrite(str(self._last_v2_diff_path), result.diff_image)
+
+        if result.product_detected and result.ref_gray is not None and result.norm_gray is not None:
+            angle_id = result.best_angle_id or self.current_angle["id"]
+            regions = self.db.list_regions(self.current_product["id"], angle_id)
+            if regions:
+                result.region_scores = compare_v2.score_regions(result.ref_gray, result.norm_gray, regions)
 
         self.last_comparison_v2 = result
         print(
@@ -519,6 +529,16 @@ class QCApp:
             raise
         self.last_inspection_id = inspection_id
         self._note_report_saved()
+
+        if result.region_scores:
+            self.db.record_region_results(inspection_id, [
+                {
+                    "region_id": rs.region_id, "region_name": rs.region_name,
+                    "pixel_score": rs.pixel_score, "edge_score": rs.edge_score,
+                    "combined_score": rs.combined_score, "result": rs.result,
+                }
+                for rs in result.region_scores
+            ])
 
         if result.result == config.RESULT_GOOD:
             self.machine.send_good()

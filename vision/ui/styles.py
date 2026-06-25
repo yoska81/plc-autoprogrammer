@@ -236,6 +236,42 @@ QLabel#scoreLabel {
     font-weight: 500;
 }
 
+/* Compact single-line variant of the result card, used on the redesigned
+   Inspection screen where the live camera feed - not the result badge - is
+   the dominant element. Same color/state mapping, just smaller. */
+QLabel#resultBadgeGood[compact="true"],
+QLabel#resultBadgeBad[compact="true"],
+QLabel#resultBadgeNone[compact="true"],
+QLabel#resultBadgeWarn[compact="true"],
+QLabel#resultBadgeSkipped[compact="true"] {
+    font-size: 22px;
+    letter-spacing: 2px;
+}
+
+QLabel#scoreLabel[compact="true"] {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+QFrame#resultCardGood[compact="true"],
+QFrame#resultCardBad[compact="true"],
+QFrame#resultCardNone[compact="true"],
+QFrame#resultCardWarn[compact="true"],
+QFrame#resultCardSkipped[compact="true"] {
+    border-radius: 10px;
+}
+
+QPushButton#zoomButton {
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 6px;
+}
+
+QPushButton#zoomButton:checked {
+    border: 1px solid #00d97e;
+    color: #00d97e;
+}
+
 /* --------------------------------------------------------------- buttons */
 
 QPushButton {

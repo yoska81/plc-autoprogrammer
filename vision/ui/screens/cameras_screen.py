@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView, QFrame, QGridLayout, QHBoxLayout, QLabel, QMessageBox,
-    QPushButton, QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QPushButton, QScrollArea, QSlider, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from core import config
@@ -9,10 +9,17 @@ from core.app import QCApp
 
 from ..dialogs import AddEditCameraDialog
 from ..widgets import ImagePreviewPanel
+from .camera_detail_screen import CameraDetailScreen
 
 _ID_ROLE = Qt.ItemDataRole.UserRole
 
 GRID_COLUMNS = 4
+
+_TILE_SIZE_MIN = 200
+_TILE_SIZE_MAX = 460
+_TILE_SIZE_DEFAULT = 300
+
+_LIST_COLUMNS = ["Station", "Status", "Result", "Score", "Counters"]
 
 _STATUS_DOT_STYLE = {
     config.CAMERA_STATUS_LIVE: "statusDotGood",
@@ -34,7 +41,7 @@ class _StationCard(QFrame):
     never the full-resolution/full-FPS feed), last result/score/time, and
     per-station counters. Start/Stop/Inspect Now act on this one station."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, preview_size: tuple[int, int] = (300, 200)):
         super().__init__(parent)
         self.setObjectName("panelCard")
         layout = QVBoxLayout(self)
@@ -53,7 +60,7 @@ class _StationCard(QFrame):
         header.addWidget(self.status_text)
         layout.addLayout(header)
 
-        self.preview = ImagePreviewPanel("Preview", large=False, live=True)
+        self.preview = ImagePreviewPanel("Preview", large=False, live=True, preview_size=preview_size)
         layout.addWidget(self.preview)
 
         self.result_label = QLabel("—")
@@ -86,6 +93,10 @@ class _StationCard(QFrame):
         self.inspect_button = QPushButton("Inspect Now")
         layout.addWidget(self.inspect_button)
 
+        self.open_full_view_button = QPushButton("Open Full View")
+        self.open_full_view_button.setObjectName("secondaryActionButton")
+        layout.addWidget(self.open_full_view_button)
+
 
 class CamerasScreen(QWidget):
     """Cameras / Stations screen: configure up to config.MAX_CAMERAS stations
@@ -101,6 +112,10 @@ class CamerasScreen(QWidget):
         self.engine = engine
         self.on_change = on_change
         self._cards: dict[int, _StationCard] = {}
+        self._list_rows: dict[int, int] = {}
+        self._detail_windows: dict[int, CameraDetailScreen] = {}
+        self._view_mode = "tile"
+        self._tile_size = (_TILE_SIZE_DEFAULT, int(_TILE_SIZE_DEFAULT * 2 / 3))
         self._build_ui()
 
         self.overview_timer = QTimer(self)
@@ -156,7 +171,9 @@ class CamerasScreen(QWidget):
         stop_selected_button.clicked.connect(self._on_stop_selected)
         test_selected_button = QPushButton("Test Selected")
         test_selected_button.clicked.connect(self._on_test_selected)
-        for button in (start_selected_button, stop_selected_button, test_selected_button):
+        open_full_view_button = QPushButton("Open Full View")
+        open_full_view_button.clicked.connect(self._on_open_full_view_selected)
+        for button in (start_selected_button, stop_selected_button, test_selected_button, open_full_view_button):
             selected_row.addWidget(button)
         left.addLayout(selected_row)
 
@@ -177,9 +194,34 @@ class CamerasScreen(QWidget):
         right = QVBoxLayout(right_card)
         right.setContentsMargins(20, 20, 20, 20)
         right.setSpacing(12)
+        toolbar = QHBoxLayout()
         overview_title = QLabel("MULTI CAMERA OVERVIEW")
         overview_title.setObjectName("panelTitle")
-        right.addWidget(overview_title)
+        toolbar.addWidget(overview_title)
+        toolbar.addStretch()
+
+        self.tile_view_button = QPushButton("Tile")
+        self.tile_view_button.setCheckable(True)
+        self.tile_view_button.setChecked(True)
+        self.tile_view_button.clicked.connect(lambda: self._set_view_mode("tile"))
+        self.list_view_button = QPushButton("List")
+        self.list_view_button.setCheckable(True)
+        self.list_view_button.clicked.connect(lambda: self._set_view_mode("list"))
+        toolbar.addWidget(self.tile_view_button)
+        toolbar.addWidget(self.list_view_button)
+
+        toolbar.addSpacing(12)
+        size_caption = QLabel("Tile Size")
+        size_caption.setObjectName("infoLabel")
+        toolbar.addWidget(size_caption)
+        self.tile_size_slider = QSlider(Qt.Orientation.Horizontal)
+        self.tile_size_slider.setMinimum(_TILE_SIZE_MIN)
+        self.tile_size_slider.setMaximum(_TILE_SIZE_MAX)
+        self.tile_size_slider.setValue(_TILE_SIZE_DEFAULT)
+        self.tile_size_slider.setFixedWidth(120)
+        self.tile_size_slider.valueChanged.connect(self._on_tile_size_changed)
+        toolbar.addWidget(self.tile_size_slider)
+        right.addLayout(toolbar)
 
         self.warning_label = QLabel("")
         self.warning_label.setObjectName("counterValueWarn")
@@ -187,14 +229,23 @@ class CamerasScreen(QWidget):
         self.warning_label.setVisible(False)
         right.addWidget(self.warning_label)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.tile_scroll = QScrollArea()
+        self.tile_scroll.setWidgetResizable(True)
+        self.tile_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.grid_container = QWidget()
         self.grid_layout = QGridLayout(self.grid_container)
         self.grid_layout.setSpacing(14)
-        scroll.setWidget(self.grid_container)
-        right.addWidget(scroll, stretch=1)
+        self.tile_scroll.setWidget(self.grid_container)
+        right.addWidget(self.tile_scroll, stretch=1)
+
+        self.list_table = QTableWidget(0, len(_LIST_COLUMNS) + 1)
+        self.list_table.setHorizontalHeaderLabels(_LIST_COLUMNS + ["Actions"])
+        self.list_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.list_table.verticalHeader().setVisible(False)
+        self.list_table.verticalHeader().setDefaultSectionSize(40)
+        self.list_table.horizontalHeader().setStretchLastSection(True)
+        self.list_table.setVisible(False)
+        right.addWidget(self.list_table, stretch=1)
 
         root.addWidget(right_card, stretch=3)
 
@@ -320,6 +371,38 @@ class CamerasScreen(QWidget):
         self._update_overview()
         self.on_change()
 
+    def _on_open_full_view_selected(self) -> None:
+        camera_id = self._selected_camera_id()
+        if camera_id is None:
+            QMessageBox.warning(self, "Open Full View", "Select a station first.")
+            return
+        self._on_open_full_view(camera_id)
+
+    def _on_open_full_view(self, camera_id: int) -> None:
+        window = self._detail_windows.get(camera_id)
+        if window is not None:
+            window.refresh()
+            window.show()
+            window.raise_()
+            window.activateWindow()
+            return
+        window = CameraDetailScreen(self.engine, camera_id, self.on_change, parent=self)
+        window.finished.connect(lambda _result, cid=camera_id: self._detail_windows.pop(cid, None))
+        self._detail_windows[camera_id] = window
+        window.show()
+
+    def _set_view_mode(self, mode: str) -> None:
+        self._view_mode = mode
+        self.tile_view_button.setChecked(mode == "tile")
+        self.list_view_button.setChecked(mode == "list")
+        self.tile_scroll.setVisible(mode == "tile")
+        self.list_table.setVisible(mode == "list")
+
+    def _on_tile_size_changed(self, value: int) -> None:
+        self._tile_size = (value, int(value * 2 / 3))
+        for card in self._cards.values():
+            card.preview.set_preview_size(self._tile_size)
+
     # ------------------------------------------------------------ refresh
 
     def refresh(self) -> None:
@@ -368,13 +451,17 @@ class CamerasScreen(QWidget):
         for index, camera in enumerate(cameras):
             card = self._cards.get(camera["id"])
             if card is None:
-                card = _StationCard()
+                card = _StationCard(preview_size=self._tile_size)
                 card.start_button.clicked.connect(lambda _checked=False, cid=camera["id"]: self._on_start(cid))
                 card.stop_button.clicked.connect(lambda _checked=False, cid=camera["id"]: self._on_stop(cid))
                 card.inspect_button.clicked.connect(lambda _checked=False, cid=camera["id"]: self._on_inspect(cid))
+                card.open_full_view_button.clicked.connect(
+                    lambda _checked=False, cid=camera["id"]: self._on_open_full_view(cid))
                 self._cards[camera["id"]] = card
             row, col = divmod(index, GRID_COLUMNS)
             self.grid_layout.addWidget(card, row, col)
+
+        self._rebuild_list_rows(cameras)
 
         # Many-cameras safeguard: warn rather than silently degrade if a lot
         # of stations are configured for high resolution/FPS at once - see
@@ -395,6 +482,38 @@ class CamerasScreen(QWidget):
             self.warning_label.setVisible(True)
         else:
             self.warning_label.setVisible(False)
+
+    def _rebuild_list_rows(self, cameras: list[dict]) -> None:
+        """Full rebuild of the List-mode table (Station/Status/Result/Score/
+        Counters/Actions). Cheap and only runs from _rebuild_overview() (on
+        refresh(), not the 1Hz overview timer), unlike _update_overview()
+        which just edits existing cells/widgets in place every tick."""
+        self.list_table.setRowCount(len(cameras))
+        self._list_rows = {}
+        for row, camera in enumerate(cameras):
+            self._list_rows[camera["id"]] = row
+            station_item = QTableWidgetItem(camera["station_name"])
+            station_item.setData(_ID_ROLE, camera["id"])
+            self.list_table.setItem(row, 0, station_item)
+            for col in range(1, len(_LIST_COLUMNS)):
+                self.list_table.setItem(row, col, QTableWidgetItem("—"))
+
+            actions = QWidget()
+            actions_row = QHBoxLayout(actions)
+            actions_row.setContentsMargins(2, 2, 2, 2)
+            actions_row.setSpacing(4)
+            start_button = QPushButton("Start")
+            start_button.clicked.connect(lambda _checked=False, cid=camera["id"]: self._on_start(cid))
+            stop_button = QPushButton("Stop")
+            stop_button.clicked.connect(lambda _checked=False, cid=camera["id"]: self._on_stop(cid))
+            inspect_button = QPushButton("Inspect")
+            inspect_button.clicked.connect(lambda _checked=False, cid=camera["id"]: self._on_inspect(cid))
+            open_button = QPushButton("Open")
+            open_button.clicked.connect(lambda _checked=False, cid=camera["id"]: self._on_open_full_view(cid))
+            for button in (start_button, stop_button, inspect_button, open_button):
+                button.setObjectName("secondaryActionButton")
+                actions_row.addWidget(button)
+            self.list_table.setCellWidget(row, len(_LIST_COLUMNS), actions)
 
     def _update_overview(self) -> None:
         for camera_id, card in self._cards.items():
@@ -448,6 +567,25 @@ class CamerasScreen(QWidget):
             card.start_button.setEnabled(camera["enabled"] and state != config.CAMERA_STATUS_LIVE)
             card.stop_button.setEnabled(state in (config.CAMERA_STATUS_LIVE, config.CAMERA_STATUS_STARTING))
             card.inspect_button.setEnabled(bool(camera["enabled"]))
+
+            row = self._list_rows.get(camera_id)
+            if row is None:
+                continue
+            self.list_table.item(row, 0).setText(camera["station_name"])
+            self.list_table.item(row, 1).setText(state.upper())
+            last_rows = self.engine.db.list_inspections(camera_id=camera_id, limit=1)
+            if last_rows:
+                last = last_rows[0]
+                score = last.get("score")
+                self.list_table.item(row, 2).setText(last["result"])
+                self.list_table.item(row, 3).setText(f"{score:.2f}%" if score is not None else "—")
+            else:
+                self.list_table.item(row, 2).setText("—")
+                self.list_table.item(row, 3).setText("—")
+            self.list_table.item(row, 4).setText(
+                f"Total {counters.get('TOTAL', 0)} · Good {counters.get('GOOD', 0)} · "
+                f"Bad {counters.get('BAD', 0)} · No-Prod {counters.get('NO_PRODUCT_FOUND', 0)}"
+            )
 
     def shutdown(self) -> None:
         self.overview_timer.stop()
