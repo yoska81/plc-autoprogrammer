@@ -36,24 +36,31 @@ is not signed yet, so Smart App Control may refuse to let it run on some
 PCs - this is a Windows policy decision about the file, not a sign that
 anything is wrong with the app.
 
-If that happens, you have a few options:
-  1. Use the "Developer Run" package instead. It is a separate ZIP
+If that happens, this is the recommended order:
+  1. Use the "Developer Run" package instead - this is the main way to
+     run and test the app for now. It is a separate ZIP
      (VISION_SYSTEM_QC_DEVRUN_WINDOWS.zip) that runs this exact same app
      directly from its Python source code instead of a compiled .exe, so
      there is no unsigned EXE for Smart App Control to block. Unzip it and
-     double-click SETUP_AND_RUN_WINDOWS.bat - see that package's
-     README_DEVRUN.txt for details. It needs a one-time Python install
-     (the BAT file tells you where to get it if it's missing).
+     double-click SETUP_AND_RUN_WINDOWS.bat (or RUN_TEST_MODE.bat to skip
+     straight to test-image mode) - see that package's README_DEVRUN.txt
+     for details. It needs a one-time Python install (the BAT file tells
+     you where to get it if it's missing), and every step after that is a
+     plain double-click BAT file - no PowerShell commands needed.
   2. Try the EXE on a different PC, such as a test/engineering machine
-     where Smart App Control is in evaluation mode or not active.
-  3. Wait for a future code-signed build. Once VISION_SYSTEM_QC.exe is
-     signed with a trusted certificate, Smart App Control will allow it
-     normally - that's a packaging task for later, not something you need
-     to do.
+     where Smart App Control is in evaluation mode or not active. This is
+     a fallback, not the main plan.
+  3. For a customer-ready release, the correct long-term fix is to either
+     code-sign VISION_SYSTEM_QC.exe with a valid certificate from a
+     recognized publisher, or distribute it through a proper installer
+     (e.g. an MSI/MSIX package or Microsoft Store listing) instead of a
+     bare EXE - either one lets Smart App Control trust it normally. This
+     is a packaging task for later, not something you need to do now.
 
-We don't suggest turning Smart App Control off as a fix - it's a PC-wide
-security setting, not something specific to this app, so the Developer
-Run package above is the recommended workaround for now.
+We do not recommend turning Smart App Control off as the main fix for
+this - it is a PC-wide security setting, not something specific to this
+app, so the Developer Run package above is the right workaround for
+development and testing in the meantime.
 
 If the camera shows an error
 -------------------------------
