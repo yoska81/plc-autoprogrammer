@@ -28,6 +28,33 @@ status and error messages (for example, if a camera can't be found) that
 are useful for troubleshooting. Leave it open while you use the app; it
 closes automatically when you close the main app window.
 
+If Windows Smart App Control blocks the EXE
+-----------------------------------------------
+Windows has a feature called Smart App Control that can block programs
+that are not digitally signed by a recognized publisher. VISION_SYSTEM_QC.exe
+is not signed yet, so Smart App Control may refuse to let it run on some
+PCs - this is a Windows policy decision about the file, not a sign that
+anything is wrong with the app.
+
+If that happens, you have a few options:
+  1. Use the "Developer Run" package instead. It is a separate ZIP
+     (VISION_SYSTEM_QC_DEVRUN_WINDOWS.zip) that runs this exact same app
+     directly from its Python source code instead of a compiled .exe, so
+     there is no unsigned EXE for Smart App Control to block. Unzip it and
+     double-click SETUP_AND_RUN_WINDOWS.bat - see that package's
+     README_DEVRUN.txt for details. It needs a one-time Python install
+     (the BAT file tells you where to get it if it's missing).
+  2. Try the EXE on a different PC, such as a test/engineering machine
+     where Smart App Control is in evaluation mode or not active.
+  3. Wait for a future code-signed build. Once VISION_SYSTEM_QC.exe is
+     signed with a trusted certificate, Smart App Control will allow it
+     normally - that's a packaging task for later, not something you need
+     to do.
+
+We don't suggest turning Smart App Control off as a fix - it's a PC-wide
+security setting, not something specific to this app, so the Developer
+Run package above is the recommended workaround for now.
+
 If the camera shows an error
 -------------------------------
 - Make sure the USB camera is plugged in and powered on.

@@ -65,3 +65,32 @@ jobs:
           name: VISION_SYSTEM_QC_WINDOWS
           path: vision/VISION_SYSTEM_QC_WINDOWS.zip
           if-no-files-found: error
+
+      - name: Assemble the Developer Run (source) package
+        run: |
+          $devrun = "release\VISION_SYSTEM_QC_DEVRUN"
+          New-Item -ItemType Directory -Force -Path $devrun | Out-Null
+          Copy-Item -Recurse -Force core "$devrun\core"
+          Copy-Item -Recurse -Force ui "$devrun\ui"
+          Copy-Item -Recurse -Force machine_interface "$devrun\machine_interface"
+          Copy-Item -Recurse -Force data\test_images "$devrun\data\test_images"
+          Copy-Item -Recurse -Force docs\screenshots "$devrun\docs\screenshots"
+          Get-ChildItem -Path $devrun -Recurse -Filter "__pycache__" -Directory | Remove-Item -Recurse -Force
+          Copy-Item -Force requirements.txt $devrun
+          Copy-Item -Force ui_main.py $devrun
+          Copy-Item -Force main.py $devrun
+          Copy-Item -Force SETUP_AND_RUN_WINDOWS.bat $devrun
+          Copy-Item -Force RUN_TEST_MODE.bat $devrun
+          Copy-Item -Force RUN_REAL_CAMERA.bat $devrun
+          Copy-Item -Force PROBE_CAMERAS.bat $devrun
+          Copy-Item -Force INSTALL_REQUIREMENTS.bat $devrun
+          Copy-Item -Force packaging\README_DEVRUN.txt "$devrun\README_DEVRUN.txt"
+          Copy-Item -Force packaging\README_FOR_WINDOWS_USER.txt "$devrun\README_FOR_WINDOWS_USER.txt"
+          Compress-Archive -Path "$devrun\*" -DestinationPath VISION_SYSTEM_QC_DEVRUN_WINDOWS.zip -Force
+
+      - name: Upload Developer Run package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VISION_SYSTEM_QC_DEVRUN_WINDOWS
+          path: vision/VISION_SYSTEM_QC_DEVRUN_WINDOWS.zip
+          if-no-files-found: error
