@@ -1,20 +1,24 @@
 TESLA_STYLE = """
 QWidget {
-    background-color: #000000;
+    background-color: #060708;
     color: #f0f0f0;
-    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     font-size: 14px;
 }
 
 QMainWindow {
-    background-color: #000000;
+    background-color: #060708;
 }
 
 /* ------------------------------------------------------------- top bar */
 
 QFrame#topBar {
-    background-color: #050505;
-    border-bottom: 1px solid #2a2a2a;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0e1015, stop:1 #07080a);
+    border-bottom: 1px solid #2a2f3a;
+}
+
+QLabel#appLogoMark {
+    padding-right: 2px;
 }
 
 QLabel#appTitle {
@@ -54,14 +58,16 @@ QLabel#statusDotWarn {
 /* ------------------------------------------------------------ panel/card */
 
 QFrame#panelCard {
-    background-color: #0a0a0a;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d0e11, stop:1 #090a0c);
     border: 1px solid #2a2a2a;
+    border-top: 1px solid #343b46;
     border-radius: 12px;
 }
 
 QFrame#panelCardAccent {
-    background-color: #0a0a0a;
-    border: 1px solid #3a3a3a;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d0f14, stop:1 #090a0c);
+    border: 1px solid #3a4150;
+    border-top: 1px solid #5b9dff;
     border-radius: 12px;
 }
 
@@ -275,7 +281,7 @@ QPushButton#zoomButton:checked {
 /* --------------------------------------------------------------- buttons */
 
 QPushButton {
-    background-color: #0a0a0a;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #121316, stop:1 #0a0a0c);
     color: #f0f0f0;
     border: 1px solid #3a3a3a;
     padding: 10px 16px;
@@ -284,8 +290,8 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #1a1a1a;
-    border: 1px solid #5a5a5a;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1d1f24, stop:1 #131418);
+    border: 1px solid #5b9dff;
 }
 
 QPushButton:pressed {
@@ -298,8 +304,8 @@ QPushButton:disabled {
 }
 
 QPushButton#primaryActionButton {
-    background-color: #111111;
-    border: 1px solid #4a4a4a;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #161922, stop:1 #0d0e12);
+    border: 1px solid #4a5568;
     border-radius: 10px;
     font-size: 16px;
     font-weight: 600;
@@ -308,8 +314,8 @@ QPushButton#primaryActionButton {
 }
 
 QPushButton#primaryActionButton:hover {
-    background-color: #1c1c1c;
-    border: 1px solid #6a6a6a;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1b2030, stop:1 #11141c);
+    border: 1px solid #5b9dff;
 }
 
 QPushButton#secondaryActionButton {
@@ -366,6 +372,11 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
     font-size: 14px;
 }
 
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+    border: 1px solid #5b9dff;
+    background-color: #0d1117;
+}
+
 QListWidget {
     background-color: #050505;
     border: 1px solid #2a2a2a;
@@ -380,7 +391,13 @@ QListWidget::item {
 }
 
 QListWidget::item:selected {
-    background-color: #1a1a1a;
+    background-color: #14202e;
+    color: #ffffff;
+    border: 1px solid #5b9dff;
+}
+
+QTableWidget::item:selected {
+    background-color: #14202e;
     color: #ffffff;
 }
 
@@ -407,9 +424,10 @@ QTabBar::tab:hover {
 }
 
 QTabBar::tab:selected {
-    background-color: #161616;
+    background-color: #161a20;
     color: #ffffff;
     border-radius: 8px;
+    border-bottom: 2px solid #5b9dff;
 }
 
 QCheckBox {
@@ -456,6 +474,10 @@ QScrollBar::handle:vertical {
     background-color: #3a3a3a;
     border-radius: 5px;
     min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #5b9dff;
 }
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
