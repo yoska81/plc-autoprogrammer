@@ -45,6 +45,12 @@ REPORT_COLUMNS = [
     ("skip_reason", "Skip Reason"),
     ("no_product_action", "No Product Action"),
     ("saved_no_product_image_path", "No-Product Image"),
+    # Multi-camera / multi-station identity (core/camera_manager.py). Blank
+    # for inspections recorded before this feature existed.
+    ("camera_id", "Camera ID"),
+    ("station_name", "Station"),
+    ("camera_type", "Camera Type"),
+    ("camera_index_or_address", "Camera Index/Address"),
 ]
 
 

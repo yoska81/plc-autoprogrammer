@@ -94,7 +94,7 @@ A Tesla-style black-and-white desktop UI built with PySide6, under `ui/`:
 python ui_main.py --mode auto   # same --mode/--device-index flags as main.py
 ```
 
-A single window with six tabs across the top, all sharing one `QCApp`
+A single window with seven tabs across the top, all sharing one `QCApp`
 engine (`core/app.py`) and SQLite database (`database/vision.db`) — no
 tab keeps its own copy of the data:
 
@@ -127,6 +127,20 @@ tab keeps its own copy of the data:
   and the lens's zoom/focus/aperture rings after framing the shot, and to
   keep lighting stable — V1 has no automatic re-alignment, so a moved
   camera or relit scene invalidates existing GOOD references.
+- **Cameras / Stations** (`ui/screens/cameras_screen.py`) — the
+  multi-camera/multi-station overview: a table/grid of every configured
+  camera (name, type, status, product/angle, live GOOD/BAD/NO
+  PRODUCT/SKIPPED/ERROR counters), each running independently via
+  `core/camera_manager.py`'s `CameraManager`. Add, edit, remove, start, and
+  stop individual stations from here; "Station 1" is the one camera that
+  may additionally drive the legacy Inspection tab's Machine Signal
+  Interface trigger — every other station runs self-contained, with its
+  own product/angle/inspection-mode/trigger-source assignment. The screen
+  polls status/counters on a 1-second timer and switches between a
+  single-camera detail view and a many-camera grid view via its own
+  sub-tabs; with a large number of cameras configured, the grid shows
+  low-FPS thumbnails rather than full-resolution/full-FPS previews for
+  every station at once (see "Hardware Planning" below for why).
 - **Products** (`ui/screens/products_screen.py`) — add/edit/delete
   products (name, part number, description, customer, notes) and manage
   each product's angles.
@@ -177,6 +191,44 @@ Video Class (UVC) webcam, not a vendor-SDK "smart" camera, so:
 
 This same code path works with any other plain UVC USB camera, not just
 the SVPRO unit — there's nothing SVPRO-specific in `RealCamera`.
+
+### Hardware planning: how many cameras can one PC handle?
+
+`MAX_CAMERAS = 50` in `core/config.py` is a *software* ceiling — the
+multi-camera architecture itself has no lower limit baked in. What actually
+limits how many cameras one PC can run reliably is USB bus bandwidth and
+host-controller real estate, which is hardware physics, not a software
+limitation, and a plain powered USB hub is not a magic multiplier — it's
+**not a simple splitter**: every camera behind it still competes for the
+same upstream USB link's bandwidth and the host controller's available
+endpoints.
+
+- **1–2 cameras** — direct USB connection to the PC, or a basic powered USB
+  hub. No special hardware needed.
+- **3–4 cameras** — one good-quality powered USB 3.0 hub is normally
+  enough, as long as it's a 3.0 hub on a 3.0 port (USB 2.0 anywhere in the
+  chain caps all connected cameras to USB 2.0 bandwidth).
+- **5–8 cameras** — plan for multiple powered USB hubs spread across
+  separate host controllers, or a PCIe USB expansion card to add more
+  independent controllers to the PC.
+- **10+ cameras on USB** — likely unstable (dropped frames, intermittent
+  disconnects, devices that fail to enumerate) no matter how the hubs are
+  arranged, because too many high-bandwidth UVC streams are fighting over
+  too few host controllers. At this scale, GigE or PoE machine-vision
+  cameras (each on its own network link, no USB bus sharing) are the
+  recommended hardware, not more USB hubs.
+- **Up to 50 cameras** (the software ceiling) — `CameraManager` supports
+  configuring and running this many stations, but production deployments
+  at this scale should use GigE/PoE cameras, managed network switches, and
+  realistically multiple PCs / distributed inspection stations rather than
+  one PC fanned out over USB. Fifty full-resolution, full-FPS live previews
+  on screen at once is also not realistic — that's why the Cameras/Stations
+  grid view uses low-FPS thumbnails for overview at that scale.
+
+In short: the software does not artificially cap camera count below 50,
+but going much past what a single USB topology can reliably carry is a
+hardware decision (GigE/PoE, more host controllers, more PCs), not
+something a future software update fixes.
 
 ## Camera modes
 
@@ -384,6 +436,57 @@ The Inspection tab shows a live **Product Detection: FOUND / NOT FOUND**
 status and a compact counters panel: TOTAL, GOOD, BAD, NO PRODUCT,
 SKIPPED, ERROR (`core/db.py`'s `count_inspections()`).
 
+## Multi-camera / multi-station
+
+`core/camera_manager.py`'s `CameraManager` runs any number of independent
+**camera/station** entries from one process: each has its own name, camera
+type (real USB / test-image / simulated), device index or address,
+resolution/FPS, assigned product/angle, inspection mode, trigger source,
+and its own `CameraWorker` thread with its own status, last inspection
+result, and GOOD/BAD/NO PRODUCT/SKIPPED/ERROR counters. A camera's `cameras`
+table row and runtime worker are independent of every other camera's — one
+camera failing to open (no hardware plugged in, wrong device index, in use
+by another app) only sets that camera's status to `ERROR` and never
+touches, pauses, or crashes any other station. Only one camera may be
+flagged `is_primary_station`; that one optionally delegates into the
+existing `QCApp` engine so the legacy single-camera Inspection tab and
+Machine Signal Interface trigger keep working unchanged. Every other
+camera runs entirely through `CameraManager` itself, calling the same
+`core/compare.py` (V1) / `core/compare_v2.py` (V2) comparison code the
+single-camera path uses — there is only one inspection engine, multi-camera
+support just calls it from more places. Camera configuration lives in the
+database (`cameras` table, see `SPECIFICATION.md`); live status/counters
+are runtime-only and reset when the app restarts. All `CAMERA_TYPE_TEST`
+stations currently share the same `data/test_images/` folder, so they
+cycle through the same frames as each other (and as `--mode test`) unless
+pointed at a different image source.
+
+The supported ceiling is `core/config.py`'s `MAX_CAMERAS = 50` (see
+"Hardware Planning" below for why that number is a software ceiling, not a
+guarantee that 50 cameras will run smoothly on any given PC) — the
+Cameras/Stations screen's grid view is built around low-FPS thumbnails
+specifically so that displaying many stations at once stays usable.
+
+### Demo / simulation support
+
+No real camera hardware is required to see or test the multi-camera
+architecture:
+
+- `tools/generate_v2_demo_images.py`'s `generate_random_pose_demo_images()`
+  writes additional V2 demo images under `data/test_images_v2_demo/` —
+  GOOD/BAD panels at continuous, non-fixed-step rotation angles (11.36°,
+  48.72°, 137.4°, 219.8°), each at a random off-center position and scale,
+  plus two no-product (empty-station) frames — without touching the three
+  original fixed-geometry demo files `tools/test_v2_pose_engine.py` checks
+  against.
+- `tools/simulate_multi_camera_demo.py` drives `CameraManager` directly
+  against an isolated temporary database — never the real `vision.db` —
+  starting three simulated `CAMERA_TYPE_TEST` stations plus one
+  `CAMERA_TYPE_USB` station pointed at a device index with no hardware
+  behind it, and prints each station's independent status/result/counters
+  plus proof that the no-hardware station's `ERROR` status never stopped
+  the other three.
+
 ## Data layout
 
 ```
@@ -439,6 +542,19 @@ backend would need.
   inspection → compare → save result → simulated PLC trigger → CSV export
   → stop camera, with no display needed. Run before packaging; also run
   by CI.
+- `tools/test_multi_camera.py` — regression test for the multi-camera
+  architecture: at least 3 simulated stations running independently (one
+  camera's failure never stops the others) plus the full No Product
+  Action decision matrix (skip / count-as-no-product / treat-as-bad,
+  including the log-skipped-inspections toggle). Drives
+  `core/camera_manager.py`'s `CameraManager` directly against an isolated
+  temporary database — no GUI, no real camera hardware, and the real
+  `vision.db` is never touched. Run before packaging alongside
+  `tools/test_v2_pose_engine.py`.
+- `tools/simulate_multi_camera_demo.py` — non-asserting demo script that
+  prints the same multi-camera independence proof in human-readable form
+  (status/result/counters per station); useful for a quick manual look,
+  `tools/test_multi_camera.py` is the actual regression gate.
 - `packaging/` — assets that ship inside the release ZIP next to the
   `.exe`, not used when running from source: `README_FOR_WINDOWS_USER.txt`
   (end-user quick start) and `RUN_TEST_MODE.bat` / `RUN_REAL_CAMERA.bat` /

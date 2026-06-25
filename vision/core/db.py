@@ -59,6 +59,33 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Multi-camera / multi-station configuration. One row per physical camera
+-- + inspection view (see core/camera_manager.py). Row id 1 (is_primary_station
+-- = 1) represents the original single-camera workflow ("Station 1") and is
+-- created automatically by core/app.py - everything else is additional
+-- stations the operator configures on the Cameras/Stations screen.
+CREATE TABLE IF NOT EXISTS cameras (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    station_name TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    camera_type TEXT NOT NULL DEFAULT 'test',
+    device_index INTEGER,
+    ip_address TEXT,
+    width INTEGER NOT NULL DEFAULT 1920,
+    height INTEGER NOT NULL DEFAULT 1080,
+    fps INTEGER NOT NULL DEFAULT 30,
+    exposure REAL,
+    brightness REAL,
+    product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    angle_id INTEGER REFERENCES angles(id) ON DELETE SET NULL,
+    inspection_mode TEXT NOT NULL DEFAULT 'fixed',
+    trigger_source TEXT NOT NULL DEFAULT 'manual',
+    save_images INTEGER NOT NULL DEFAULT 1,
+    is_primary_station INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 # Columns added after V1 shipped. Applied with ALTER TABLE on every connect
@@ -94,6 +121,12 @@ _INSPECTION_MIGRATION_COLUMNS = [
     ("no_product_action", "TEXT"),     # V2: the No Product Action setting in effect when this was saved
     ("detection_confidence", "REAL"),  # V2: confidence the product-detection step reported, 0-100
     ("saved_no_product_image_path", "TEXT"),  # V2: copy under data/no_product/, if that setting was on
+    # Multi-camera / multi-station identity (core/camera_manager.py). NULL
+    # for inspections recorded before this feature existed.
+    ("camera_id", "INTEGER"),               # FK to cameras.id, the station that ran this cycle
+    ("station_name", "TEXT"),               # denormalized snapshot, so history survives a renamed/deleted station
+    ("camera_type", "TEXT"),                # "test" | "usb" | "gige" | "ip" | "future"
+    ("camera_index_or_address", "TEXT"),    # USB device index, or IP address for gige/ip cameras
 ]
 
 INSPECTION_COLUMNS = [
@@ -263,6 +296,59 @@ class Database:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # ------------------------------------------------------ cameras/stations
+
+    def create_camera(self, station_name: str, camera_type: str = "test", device_index: int | None = None,
+                       ip_address: str | None = None, width: int = 1920, height: int = 1080, fps: int = 30,
+                       exposure: float | None = None, brightness: float | None = None,
+                       product_id: int | None = None, angle_id: int | None = None,
+                       inspection_mode: str = "fixed", trigger_source: str = "manual",
+                       save_images: bool = True, enabled: bool = True, is_primary_station: bool = False,
+                       notes: str = "") -> int:
+        cursor = self._conn.execute(
+            "INSERT INTO cameras (station_name, enabled, camera_type, device_index, ip_address, width, "
+            "height, fps, exposure, brightness, product_id, angle_id, inspection_mode, trigger_source, "
+            "save_images, is_primary_station, notes, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (station_name, int(enabled), camera_type, device_index, ip_address, width, height, fps,
+             exposure, brightness, product_id, angle_id, inspection_mode, trigger_source,
+             int(save_images), int(is_primary_station), notes, _now()),
+        )
+        self._conn.commit()
+        return cursor.lastrowid
+
+    def update_camera(self, camera_id: int, **fields) -> None:
+        allowed = {
+            "station_name", "enabled", "camera_type", "device_index", "ip_address", "width", "height",
+            "fps", "exposure", "brightness", "product_id", "angle_id", "inspection_mode", "trigger_source",
+            "save_images", "notes",
+        }
+        fields = {k: v for k, v in fields.items() if k in allowed}
+        if not fields:
+            return
+        for bool_key in ("enabled", "save_images"):
+            if bool_key in fields:
+                fields[bool_key] = int(fields[bool_key])
+        assignments = ", ".join(f"{k} = ?" for k in fields)
+        self._conn.execute(f"UPDATE cameras SET {assignments} WHERE id = ?", (*fields.values(), camera_id))
+        self._conn.commit()
+
+    def set_camera_enabled(self, camera_id: int, enabled: bool) -> None:
+        self._conn.execute("UPDATE cameras SET enabled = ? WHERE id = ?", (int(enabled), camera_id))
+        self._conn.commit()
+
+    def delete_camera(self, camera_id: int) -> None:
+        self._conn.execute("DELETE FROM cameras WHERE id = ?", (camera_id,))
+        self._conn.commit()
+
+    def get_camera(self, camera_id: int) -> dict | None:
+        row = self._conn.execute("SELECT * FROM cameras WHERE id = ?", (camera_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_cameras(self) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM cameras ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
     # ----------------------------------------------------------- inspections
 
     def record_inspection(self, **fields) -> int:
@@ -278,7 +364,7 @@ class Database:
 
     def list_inspections(self, product_name: str | None = None, result: str | None = None,
                           date_from: str | None = None, date_to: str | None = None,
-                          limit: int = 200) -> list[dict]:
+                          camera_id: int | None = None, limit: int = 200) -> list[dict]:
         query = (
             "SELECT i.*, p.name AS product_name, a.angle_name AS angle_name, "
             "r.image_path AS reference_image_path "
@@ -301,22 +387,33 @@ class Database:
         if date_to:
             query += " AND i.created_at <= ?"
             params.append(date_to)
+        if camera_id is not None:
+            query += " AND i.camera_id = ?"
+            params.append(camera_id)
         query += " ORDER BY i.id DESC LIMIT ?"
         params.append(limit)
         rows = self._conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
-    def count_inspections(self, product_name: str | None = None) -> dict:
-        """Counters for the Inspection screen: one key per `result` value
-        plus "TOTAL". Rows that were skipped without logging (see
+    def count_inspections(self, product_name: str | None = None, camera_id: int | None = None) -> dict:
+        """Counters for the Inspection screen (and, with camera_id set, one
+        station's card on the Cameras/Stations screen): one key per `result`
+        value plus "TOTAL". Rows that were skipped without logging (see
         core/app.py's no_product_action == "skip") were never written, so
         they're naturally absent here - exactly matching the "do not count"
         requirement."""
         query = "SELECT i.result AS result, COUNT(*) AS n FROM inspections i"
+        clauses: list[str] = []
         params: list = []
         if product_name:
-            query += " JOIN products p ON p.id = i.product_id WHERE p.name = ?"
+            query += " JOIN products p ON p.id = i.product_id"
+            clauses.append("p.name = ?")
             params.append(product_name)
+        if camera_id is not None:
+            clauses.append("i.camera_id = ?")
+            params.append(camera_id)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
         query += " GROUP BY i.result"
         rows = self._conn.execute(query, params).fetchall()
         counts = {r["result"]: r["n"] for r in rows}

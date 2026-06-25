@@ -139,13 +139,42 @@ because V1's comparison pipeline has no alignment/ROI correction (see
 `TODO_NEXT_STEPS.md`), a moved camera or relit scene invalidates existing
 GOOD references.
 
-### 3. Products (`ui/screens/products_screen.py`)
+### 3. Cameras / Stations (`ui/screens/cameras_screen.py`)
+
+Multi-camera/multi-station control surface (see "Multi-Camera / Multi-
+Station Architecture" below for the underlying model). A left panel lists
+every configured station in a table (station name, camera type, assigned
+product, inspection mode, enabled) with Add Station, Edit Station,
+Enable/Disable, Delete Station, Start All, and Stop All buttons; Station 1
+(the original single-camera workflow from the Inspection tab) cannot be
+edited or deleted from here, only started/stopped/enabled like any other
+station. A right panel is the **Multi Camera Overview**: a card per
+station in a scrolling grid, each card showing the station name, a live/
+offline/error status dot, a low-FPS preview thumbnail, the last GOOD/BAD/
+NO PRODUCT/SKIPPED/ERROR result, the last score, the last inspection time,
+the TOTAL/GOOD/BAD/NO-PROD/SKIP/ERR counters for that station, and Start/
+Stop/Inspect Now buttons. Cards refresh on a 1-second timer
+(`config.OVERVIEW_THUMBNAIL_REFRESH_MS`) regardless of how many stations
+are configured (up to `config.MAX_CAMERAS` = 50) — the grid itself is only
+rebuilt when a station is added/removed/edited, never on every tick. When
+`config.MANY_CAMERAS_WARNING_THRESHOLD` (8) or more enabled stations are
+running and any of them are at high resolution/FPS, a warning banner
+appears pointing at the "Hardware Planning" notes below — the screen never
+silently degrades by, say, dropping frames or skipping stations.
+
+The **Inspection** tab is the Single Camera View (the original, fully
+detailed single-station workflow); this **Cameras / Stations** tab is the
+Multi Camera Overview. The two tabs are how the spec's "Single Camera View
+(detailed) and Multi Camera Overview grid" requirement is satisfied — there
+is no separate in-tab toggle, since each view already has a tab of its own.
+
+### 4. Products (`ui/screens/products_screen.py`)
 
 Add/edit/delete (delete only with a confirmation dialog) products: name,
 part number, description, customer/project, notes. Lists each product's
 angles and how many reference images each angle has.
 
-### 4. References (`ui/screens/references_screen.py`)
+### 5. References (`ui/screens/references_screen.py`)
 
 For the selected product/angle: list saved GOOD reference images, add a
 new one (captures from the current camera/test frame), delete a bad one,
@@ -153,7 +182,7 @@ mark one as primary. V1 compares against the primary reference only;
 keeping the rest around is preparation for multi-reference comparison
 later.
 
-### 5. Reports (`ui/screens/reports_screen.py`)
+### 6. Reports (`ui/screens/reports_screen.py`)
 
 Full inspection history table (`core/reports.py`'s `REPORT_COLUMNS`):
 date/time, product, angle, result, score, inspection/bad/diff image,
@@ -168,7 +197,7 @@ table stays readable regardless of how deep the underlying
 date range. Export CSV (always available) and Export Excel (when
 `openpyxl` is installed) write every column, including full paths.
 
-### 6. Settings (`ui/screens/settings_screen.py`)
+### 7. Settings (`ui/screens/settings_screen.py`)
 
 Camera mode (test/real/auto), similarity threshold, "save all snapshots"
 on/off, "save bad products" on/off, report folder, database location
@@ -281,6 +310,104 @@ The Inspection screen shows a live **Product Detection: FOUND / NOT
 FOUND** status and a compact counters panel: **TOTAL, GOOD, BAD, NO
 PRODUCT, SKIPPED, ERROR** (`core/db.py`'s `count_inspections()`).
 
+## Multi-Camera / Multi-Station Architecture
+
+**Camera** = a physical image source (a USB webcam, in the future a GigE/
+PoE/IP camera). **Station** = one inspection view driven by one camera —
+its own assigned product/angle, inspection mode (V1 fixed or V2 free-pose),
+trigger source, and result counters. Most installations need exactly one
+camera/station — that is the original single-camera workflow described
+above, unchanged, and is recorded as **Station 1**
+(`cameras.is_primary_station = 1`) in the database. A site that needs to
+inspect several parts/lines at once from the same PC (or fleet of PCs) adds
+more stations from the **Cameras / Stations** screen; every station is
+fully independent of every other one.
+
+`core/camera_manager.py`'s `CameraManager` is the runtime coordinator:
+
+- One independent capture thread per non-primary station (`CameraWorker`),
+  so a slow, disconnected, or errored camera never blocks the UI or any
+  other station. An exception in one station's capture loop marks only
+  that station `error` — it never stops or slows the others.
+- Station 1 is never driven by a `CameraWorker`; start/stop/capture for it
+  delegate straight to the existing `QCApp` instance (`primary_engine`), so
+  the single-camera workflow's behavior is completely unchanged by any of
+  this.
+- API: `add_camera`, `remove_camera`, `start_camera`, `stop_camera`,
+  `start_all`, `stop_all`, `capture_frame`, `get_latest_frame`,
+  `get_camera_status`, `list_cameras`, `get_counters`,
+  `probe_available_cameras`, and `run_inspection()` — one capture+compare+
+  save cycle for a station, scored by the exact same pure V1/V2 functions
+  (`core/compare.py` / `core/compare_v2.py`) the single-camera engine uses.
+  No inspection logic is duplicated per station, only re-invoked.
+- Per-station configuration (camera type/device index/IP, resolution,
+  FPS, assigned product/angle, inspection mode, trigger source, save-
+  images, notes) lives in `cameras` table rows (see schema below); runtime
+  state (thread, latest frame, status, error) is never persisted — it is
+  rebuilt from the row whenever a station starts.
+- Test-mode (`camera_type = "test"`) stations all cycle the same bundled
+  `data/test_images/` folder — they prove independent threads/status/
+  counters, not independent physical scenes. Real (`"usb"`) and future
+  GigE/IP stations each read from their own device index/address.
+- Up to `config.MAX_CAMERAS` (50) stations are supported by the software.
+  The Cameras / Stations screen's Multi Camera Overview only ever shows
+  low-FPS thumbnails for the grid (`config.OVERVIEW_THUMBNAIL_REFRESH_MS`,
+  1 second) — full-resolution/full-FPS frames are used only for the actual
+  triggered inspection capture on a station, never for 50 simultaneous
+  live previews.
+
+### Demo / simulation support
+
+Two scripts under `tools/` prove this architecture without any real camera
+hardware attached:
+
+- `tools/generate_v2_demo_images.py` — besides its original 3 fixed-
+  geometry V2 demo images (unchanged; `tools/test_v2_pose_engine.py` still
+  asserts against their exact pose values), it additively writes a random-
+  pose demo set to the same `data/test_images_v2_demo/` folder via
+  `generate_random_pose_demo_images()`: GOOD/BAD product images at the
+  spec's example continuous rotation angles (11.36°, 48.72°, 137.4°,
+  219.8°) at randomized (seeded, reproducible) positions/scale, plus two
+  no-product frames (background only, nothing composited).
+- `tools/simulate_multi_camera_demo.py` — drives `CameraManager` directly
+  (no `QCApp`/GUI) against an isolated temporary database: starts 3
+  simulated `"test"` stations plus one `"usb"` station pointed at a device
+  index with no real hardware behind it, runs an inspection per working
+  station, and prints each station's independent status/result/counters,
+  ending by asserting the 3 working stations stayed LIVE the whole time
+  despite the 4th station's permanent open failure.
+
+## Hardware Planning: How Many Cameras Can One PC Handle?
+
+The software supports up to 50 configured stations, but **USB has real
+physical limits** that no amount of software can work around. These are
+planning guidelines, not hard software limits:
+
+- **1–2 cameras**: plug directly into the PC's USB ports, or use a single
+  basic powered USB hub. No special planning needed.
+- **3–4 cameras**: use one good powered USB 3.0 hub (not USB 2.0, not an
+  unpowered "bus-powered" hub — cameras draw real power and bandwidth).
+- **5–8 cameras**: spread the load across multiple powered USB hubs, or use
+  a PCIe USB expansion card to add more independent USB controllers/root
+  ports to the PC — putting 8 cameras on one hub/controller invites
+  bandwidth contention and dropped frames.
+- **10+ cameras**: USB is likely to become unstable at this scale (root
+  port/bandwidth limits, hub power budgets, cable length limits). At this
+  point, recommend GigE or PoE industrial cameras on a proper network
+  switch instead of USB, and/or splitting stations across multiple PCs.
+- **Up to 50 cameras**: the software supports this configuration, but a
+  production line at this scale should use GigE/PoE cameras, managed
+  network switches, multiple PCs, and physically distributed inspection
+  stations — not 50 USB cameras hanging off one PC. A USB hub is **not** a
+  "simple splitter" for unlimited cameras; it is a shared, finite-bandwidth,
+  finite-power bus, and that ceiling is real hardware physics, not a
+  software limitation that can be removed later.
+
+The Cameras / Stations screen's own load warning (`config.
+MANY_CAMERAS_WARNING_THRESHOLD`) is a heads-up inside the running app; this
+section is the planning reference for choosing hardware before a line is
+ever built.
+
 ## Machine Signal Interface
 
 `vision/machine_interface/` (not `vision/io/` — that name would shadow
@@ -360,7 +487,21 @@ inspections(
     no_product_action, detection_confidence, saved_no_product_image_path
 )
 settings(key, value)
+-- Multi-camera / multi-station configuration (core/camera_manager.py owns
+-- the runtime side; this table only holds per-station config). Station 1
+-- (is_primary_station = 1) is the original single-camera workflow above.
+cameras(
+    id, station_name, enabled, camera_type, device_index, ip_address,
+    width, height, fps, exposure, brightness,
+    product_id, angle_id, inspection_mode, trigger_source, save_images,
+    is_primary_station, notes, created_at
+)
 ```
+
+`inspections` rows also carry `camera_id`, `station_name`, `camera_type`,
+and `camera_index_or_address` (blank for inspections recorded before this
+feature existed) so reports and counters can be filtered/grouped per
+station.
 
 `core/db.py` owns this schema and every query; no other module talks to
 SQLite directly.

@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QTabWidg
 from core.app import QCApp
 
 from .screens.camera_setup_screen import CameraSetupScreen
+from .screens.cameras_screen import CamerasScreen
 from .screens.inspection_screen import InspectionScreen
 from .screens.products_screen import ProductsScreen
 from .screens.references_screen import ReferencesScreen
@@ -44,6 +45,7 @@ class MainWindow(QMainWindow):
         self.inspection_screen = InspectionScreen(
             self.engine, self.refresh_all, self._switch_to_settings, self._switch_to_reports)
         self.camera_setup_screen = CameraSetupScreen(self.engine, self.refresh_all)
+        self.cameras_screen = CamerasScreen(self.engine, self.refresh_all)
         self.products_screen = ProductsScreen(self.engine, self.refresh_all)
         self.references_screen = ReferencesScreen(self.engine, self.refresh_all)
         self.reports_screen = ReportsScreen(self.engine, self.refresh_all)
@@ -51,6 +53,7 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(self.inspection_screen, "Inspection")
         self.tabs.addTab(self.camera_setup_screen, "Camera Setup")
+        self.tabs.addTab(self.cameras_screen, "Cameras / Stations")
         self.tabs.addTab(self.products_screen, "Products")
         self.tabs.addTab(self.references_screen, "References")
         self.tabs.addTab(self.reports_screen, "Reports")
@@ -120,6 +123,7 @@ class MainWindow(QMainWindow):
     def refresh_all(self) -> None:
         self.inspection_screen.refresh()
         self.camera_setup_screen.refresh()
+        self.cameras_screen.refresh()
         self.products_screen.refresh()
         self.references_screen.refresh()
         self.reports_screen.refresh()
@@ -130,6 +134,6 @@ class MainWindow(QMainWindow):
         self.status_timer.stop()
         self.inspection_screen.shutdown()
         self.camera_setup_screen.shutdown()
-        if self.engine.camera_running:
-            self.engine.stop()
+        self.cameras_screen.shutdown()
+        self.engine.camera_manager.stop_all()
         event.accept()

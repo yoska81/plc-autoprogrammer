@@ -126,6 +126,58 @@ def _composite_rotated_panel(
     return result.astype(np.uint8)
 
 
+def generate_random_pose_demo_images(output_dir: Path = OUTPUT_DIR, seed: int = 20240915) -> list[dict]:
+    """Additive demo set for the "random positions/random continuous
+    rotations...including GOOD/BAD/no-product examples" requirement.
+
+    Writes new files under new names only - main()'s 3 fixed-geometry files
+    (and the angle/center/scale values tools/test_v2_pose_engine.py asserts
+    against) are untouched. Rotation angles are the exact examples from the
+    spec (11.36, 48.72, 137.4, 219.8 degrees); position/scale per angle are
+    drawn from a seeded RNG so the set is reproducible across runs. Returns a
+    manifest list (one dict per generated file) for callers that want the
+    exact ground-truth pose/result without re-parsing filenames.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    width, height = CANVAS_SIZE
+    rng = np.random.default_rng(seed)
+    manifest: list[dict] = []
+
+    angles = [11.36, 48.72, 137.4, 219.8]
+    for i, rotation_deg in enumerate(angles):
+        defect = i % 2 == 1  # alternate GOOD/BAD across the 4 examples
+        center = (
+            width // 2 + int(rng.uniform(-350, 350)),
+            height // 2 + int(rng.uniform(-200, 200)),
+        )
+        scale = float(rng.uniform(0.85, 1.15))
+        frame = _composite_rotated_panel(
+            _gradient_background(width, height), _draw_panel(PANEL_SIZE, defect=defect),
+            center_xy=center, rotation_deg=rotation_deg, scale=scale,
+        )
+        label = "bad" if defect else "good"
+        angle_tag = f"{rotation_deg:.2f}".replace(".", "p")
+        path = output_dir / f"v2_demo_random_{i + 1:02d}_{label}_{angle_tag}deg.png"
+        cv2.imwrite(str(path), frame)
+        manifest.append({
+            "path": path, "result": config.RESULT_BAD if defect else config.RESULT_GOOD,
+            "rotation_deg": rotation_deg, "center": center, "scale": scale,
+        })
+        print(f"[generate_v2_demo_images] wrote {path}")
+
+    # No-product examples: the background alone, no panel composited at all -
+    # simulates an empty station / nothing in front of the camera.
+    for i in range(2):
+        frame = _gradient_background(width, height)
+        path = output_dir / f"v2_demo_random_no_product_{i + 1:02d}.png"
+        cv2.imwrite(str(path), frame)
+        manifest.append({"path": path, "result": config.RESULT_NO_PRODUCT_FOUND, "rotation_deg": None,
+                          "center": None, "scale": None})
+        print(f"[generate_v2_demo_images] wrote {path}")
+
+    return manifest
+
+
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     width, height = CANVAS_SIZE
@@ -160,6 +212,8 @@ def main() -> None:
     print(f"[generate_v2_demo_images] wrote {reference_path}")
     print(f"[generate_v2_demo_images] wrote {good_path}")
     print(f"[generate_v2_demo_images] wrote {bad_path}")
+
+    generate_random_pose_demo_images()
 
 
 if __name__ == "__main__":

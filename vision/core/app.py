@@ -11,6 +11,7 @@ import numpy as np
 from . import compare_v2, config
 from .camera.factory import create_camera_source
 from .camera.real_camera import probe_camera_indices
+from .camera_manager import CameraManager
 from .compare import ComparisonResult, compare_images
 from .compare_v2 import V2ComparisonResult
 from .db import Database
@@ -103,6 +104,16 @@ class QCApp:
         self.machine = SimulatedMachineInterface()
         self.machine.connect()
 
+        # Multi-camera / multi-station layer (core/camera_manager.py). This
+        # workflow above is, and remains, "Station 1" - the primary station
+        # row below is config/identity only, so the Cameras/Stations screen
+        # can list it alongside any additional stations; CameraManager
+        # delegates all Station 1 start/stop/capture calls straight back to
+        # this QCApp instance rather than ever opening a second handle to
+        # the same physical camera.
+        self._ensure_primary_camera_row()
+        self.camera_manager = CameraManager(self.db, primary_engine=self)
+
         self.current_product: dict | None = None
         self.current_angle: dict | None = None
         self.location: ProductAngleLocation | None = None
@@ -117,6 +128,23 @@ class QCApp:
         self.last_inspection_id: int | None = None
 
     # -------------------------------------------------------------- camera
+
+    def _ensure_primary_camera_row(self) -> None:
+        """Create the "Station 1" row in cameras (core/db.py) the first time
+        this database is opened, so the Cameras/Stations screen always has
+        something to show for the original single-camera workflow even
+        before any additional station is configured."""
+        existing = [row for row in self.db.list_cameras() if row["is_primary_station"]]
+        if existing:
+            return
+        camera_type = config.CAMERA_TYPE_TEST if self.mode == "test" else config.CAMERA_TYPE_USB
+        self.db.create_camera(
+            config.DEFAULT_STATION_NAME, camera_type=camera_type, device_index=self.device_index,
+            width=self.frame_width, height=self.frame_height, fps=self.frame_fps,
+            inspection_mode=self.inspection_mode, trigger_source=config.TRIGGER_SOURCE_MANUAL,
+            save_images=self.save_all_snapshots, enabled=True, is_primary_station=True,
+            notes="Original single-camera workflow (Inspection tab).",
+        )
 
     def _build_camera(self):
         return create_camera_source(

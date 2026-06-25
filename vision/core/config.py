@@ -139,3 +139,43 @@ DEFAULT_SAVE_NO_PRODUCT_IMAGES = False
 DEFAULT_LOG_SKIPPED_INSPECTIONS = False
 
 NO_PRODUCT_DIR = DATA_DIR / "no_product"
+
+# ------------------------------------------------- multi-camera / multi-station
+# Camera = physical image source. Station = one inspection view using one
+# camera. Most products need exactly one camera/station (the original,
+# still fully-supported single-camera workflow below, which becomes
+# "Station 1" in core/db.py's `cameras` table). This section only adds the
+# vocabulary/limits for running several stations from the same PC -
+# core/camera_manager.py is what actually runs them.
+MAX_CAMERAS = 50
+
+CAMERA_TYPE_TEST = "test"        # bundled test images, cycled - no hardware required
+CAMERA_TYPE_USB = "usb"          # OpenCV VideoCapture by device index
+CAMERA_TYPE_GIGE = "gige"        # reserved for a future GigE/PoE camera driver
+CAMERA_TYPE_IP = "ip"            # reserved for a future IP-camera driver
+CAMERA_TYPE_FUTURE = "future"    # placeholder for any not-yet-supported source
+CAMERA_TYPE_CHOICES = (
+    CAMERA_TYPE_TEST, CAMERA_TYPE_USB, CAMERA_TYPE_GIGE, CAMERA_TYPE_IP, CAMERA_TYPE_FUTURE,
+)
+
+TRIGGER_SOURCE_MANUAL = "manual"
+TRIGGER_SOURCE_SIMULATION = "simulation"
+TRIGGER_SOURCE_MACHINE_SIGNAL = "machine_signal"  # reserved - no real PLC/machine link exists yet
+TRIGGER_SOURCE_CHOICES = (TRIGGER_SOURCE_MANUAL, TRIGGER_SOURCE_SIMULATION, TRIGGER_SOURCE_MACHINE_SIGNAL)
+DEFAULT_TRIGGER_SOURCE = TRIGGER_SOURCE_MANUAL
+
+CAMERA_STATUS_STOPPED = "stopped"
+CAMERA_STATUS_STARTING = "starting"
+CAMERA_STATUS_LIVE = "live"
+CAMERA_STATUS_ERROR = "error"
+CAMERA_STATUS_OFFLINE = "offline"
+
+DEFAULT_STATION_NAME = "Station 1"
+
+# Multi Camera Overview safeguard: thumbnails refresh slowly by design (low
+# FPS is enough for an operator glance; full-resolution frames are still
+# used for the actual triggered inspection capture, never for this preview).
+OVERVIEW_THUMBNAIL_REFRESH_MS = 1000
+# Past this many simultaneously-enabled stations, the Cameras/Stations
+# screen shows a CPU/bandwidth load warning rather than silently degrading.
+MANY_CAMERAS_WARNING_THRESHOLD = 8
