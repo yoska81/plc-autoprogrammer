@@ -2,6 +2,8 @@
 __pycache__/
 *.pyc
 data/captures/*.png
-data/reference/*.png
-data/inspection/*.png
+data/products/
+data/bad_products/
+data/results.csv
+data/results.db
 !data/test_images/*.png

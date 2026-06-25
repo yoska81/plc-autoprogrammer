@@ -1,5 +1,6 @@
 import argparse
 import os
+import shutil
 import sys
 import time
 
@@ -8,6 +9,9 @@ import numpy as np
 
 from . import config
 from .camera.factory import create_camera_source
+from .compare import ComparisonResult, compare_images
+from .product_paths import ProductAngleLocation
+from .results_store import record_result
 from .storage import save_image
 
 
@@ -36,6 +40,8 @@ class QCApp:
         )
         self.has_gui = _gui_available()
         self._last_frame: np.ndarray | None = None
+        self.location: ProductAngleLocation | None = None
+        self.last_result: ComparisonResult | None = None
 
     def start(self) -> None:
         self.camera.open()
@@ -43,6 +49,18 @@ class QCApp:
 
     def stop(self) -> None:
         self.camera.close()
+
+    def select_product_angle(self, product: str, angle: str) -> None:
+        self.location = ProductAngleLocation(product, angle)
+        self.location.ensure_dirs()
+        has_reference = self.location.reference_path.exists()
+        print(f"[vision] selected product='{product}' angle='{angle}' ({self.location.product_slug}/{self.location.angle_slug})")
+        print(f"[vision] GOOD reference {'found' if has_reference else 'not set yet'} at {self.location.reference_path}")
+
+    def _require_location(self) -> ProductAngleLocation:
+        if self.location is None:
+            raise RuntimeError("No product/angle selected. Choose option 1 first.")
+        return self.location
 
     def live_preview(self, duration_seconds: float = 5.0) -> None:
         print(f"[vision] live preview for {duration_seconds:.0f}s" + (" (press 'q' to stop early)" if self.has_gui else ""))
@@ -63,53 +81,96 @@ class QCApp:
             print(f"[vision] no display detected; latest frame written to {config.CAPTURES_DIR / '_live_preview.png'}")
         print("[vision] live preview stopped")
 
-    def capture_snapshot(self):
-        frame = self.camera.read_frame()
-        self._last_frame = frame
-        path = save_image(frame, config.CAPTURES_DIR)
-        print(f"[vision] snapshot saved to {path}")
-        return path
-
     def save_good_reference(self):
-        frame = self._last_frame if self._last_frame is not None else self.camera.read_frame()
-        path = save_image(frame, config.REFERENCE_DIR, "good_reference.png")
-        print(f"[vision] GOOD reference saved to {path}")
-        return path
-
-    def prepare_inspection_image(self):
+        location = self._require_location()
         frame = self.camera.read_frame()
         self._last_frame = frame
-        path = save_image(frame, config.INSPECTION_DIR, "latest_inspection.png")
-        print(f"[vision] inspection image prepared at {path}")
-        return path
+        save_image(frame, location.reference_path.parent, location.reference_path.name)
+        print(f"[vision] GOOD reference saved to {location.reference_path}")
+
+    def capture_inspection_image(self):
+        location = self._require_location()
+        frame = self.camera.read_frame()
+        self._last_frame = frame
+        save_image(frame, location.inspection_path.parent, location.inspection_path.name)
+        print(f"[vision] inspection image captured at {location.inspection_path}")
+
+    def run_comparison(self) -> ComparisonResult | None:
+        location = self._require_location()
+        if not location.reference_path.exists():
+            print("[vision] no GOOD reference saved yet for this product/angle.")
+            return None
+        if not location.inspection_path.exists():
+            print("[vision] no inspection image captured yet for this product/angle.")
+            return None
+
+        comparison = compare_images(
+            location.reference_path, location.inspection_path, location.diff_path,
+            threshold_percent=config.DEFAULT_MATCH_THRESHOLD_PERCENT,
+        )
+        self.last_result = comparison
+        print(f"[vision] result={comparison.result} score={comparison.score_percent:.2f}% diff={comparison.diff_image_path}")
+
+        if comparison.result == "BAD":
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            shutil.copy2(location.inspection_path, location.bad_products_dir / f"bad_{stamp}.png")
+            shutil.copy2(comparison.diff_image_path, location.bad_products_dir / f"diff_{stamp}.png")
+            print(f"[vision] BAD product archived under {location.bad_products_dir}")
+
+        record_result(
+            config.RESULTS_CSV_PATH, config.RESULTS_DB_PATH,
+            location.product, location.angle, comparison,
+            location.reference_path, location.inspection_path,
+        )
+        return comparison
+
+    def show_last_result(self) -> None:
+        if self.last_result is None:
+            print("[vision] no comparison run yet this session.")
+            return
+        r = self.last_result
+        print(f"[vision] last result: {r.result} ({r.score_percent:.2f}%) diff={r.diff_image_path}")
 
 
 MENU = """
-1) Live preview
-2) Capture snapshot
-3) Save current frame as GOOD reference
-4) Prepare inspection image
-5) Exit
+1) Select product / angle
+2) Live preview
+3) Save GOOD reference (capture + save)
+4) Capture inspection image
+5) Run GOOD/BAD comparison
+6) Show last result
+7) Exit
 """
 
 
 def run_menu(app: QCApp) -> None:
-    actions = {
-        "1": app.live_preview,
-        "2": app.capture_snapshot,
-        "3": app.save_good_reference,
-        "4": app.prepare_inspection_image,
-    }
     while True:
         print(MENU)
         choice = input("Select an option: ").strip()
-        if choice == "5":
+        if choice == "7":
             break
-        action = actions.get(choice)
-        if action is None:
-            print("Invalid option")
-            continue
-        action()
+        try:
+            if choice == "1":
+                product = input("Product name: ").strip()
+                angle = input("Angle name: ").strip()
+                if not product or not angle:
+                    print("[vision] product and angle cannot be empty")
+                    continue
+                app.select_product_angle(product, angle)
+            elif choice == "2":
+                app.live_preview()
+            elif choice == "3":
+                app.save_good_reference()
+            elif choice == "4":
+                app.capture_inspection_image()
+            elif choice == "5":
+                app.run_comparison()
+            elif choice == "6":
+                app.show_last_result()
+            else:
+                print("Invalid option")
+        except RuntimeError as exc:
+            print(f"[vision] {exc}")
 
 
 def main() -> None:
