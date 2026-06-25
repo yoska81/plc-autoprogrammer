@@ -4,8 +4,8 @@ import cv2
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFrame, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QAbstractItemView, QFrame, QGridLayout, QHBoxLayout, QLabel, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .image_utils import frame_to_pixmap
@@ -78,16 +78,20 @@ class ResultBadge(QLabel):
         self.setMinimumWidth(300)
         self.set_state(None)
 
+    _STATES = {
+        "GOOD": ("resultBadgeGood", "GOOD"),
+        "BAD": ("resultBadgeBad", "BAD"),
+        # NO_PRODUCT_FOUND is a detection problem, not a quality failure - it
+        # gets the warning color (yellow/orange), never the BAD color (red).
+        "NO_PRODUCT_FOUND": ("resultBadgeWarn", "NO PRODUCT FOUND"),
+        "SKIPPED": ("resultBadgeSkipped", "SKIPPED — NO PRODUCT FOUND"),
+        "ERROR": ("resultBadgeWarn", "ERROR"),
+    }
+
     def set_state(self, result: str | None) -> None:
-        if result == "GOOD":
-            self.setObjectName("resultBadgeGood")
-            self.setText("GOOD")
-        elif result == "BAD":
-            self.setObjectName("resultBadgeBad")
-            self.setText("BAD")
-        else:
-            self.setObjectName("resultBadgeNone")
-            self.setText("—")
+        object_name, text = self._STATES.get(result, ("resultBadgeNone", "—"))
+        self.setObjectName(object_name)
+        self.setText(text)
         self.style().unpolish(self)
         self.style().polish(self)
 
@@ -96,7 +100,14 @@ class ResultPanel(QFrame):
     """Large, centered GOOD/BAD result card: the one thing an operator
     should be able to read from across the room."""
 
-    _CARD_NAMES = {"GOOD": "resultCardGood", "BAD": "resultCardBad", None: "resultCardNone"}
+    _CARD_NAMES = {
+        "GOOD": "resultCardGood",
+        "BAD": "resultCardBad",
+        "NO_PRODUCT_FOUND": "resultCardWarn",
+        "SKIPPED": "resultCardSkipped",
+        "ERROR": "resultCardWarn",
+        None: "resultCardNone",
+    }
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -120,6 +131,56 @@ class ResultPanel(QFrame):
         self.setObjectName(self._CARD_NAMES.get(result, "resultCardNone"))
         self.style().unpolish(self)
         self.style().polish(self)
+
+
+class CountersPanel(QFrame):
+    """Compact GOOD/BAD/NO PRODUCT/SKIPPED/ERROR counter grid, fed by
+    core/db.py's count_inspections(). Lives in the Inspection screen
+    sidebar, next to the ResultPanel."""
+
+    _FIELDS = [
+        ("TOTAL", "TOTAL", "counterValue"),
+        ("GOOD", "GOOD", "counterValueGood"),
+        ("BAD", "BAD", "counterValueBad"),
+        ("NO_PRODUCT_FOUND", "NO PRODUCT", "counterValueWarn"),
+        ("SKIPPED", "SKIPPED", "counterValue"),
+        ("ERROR", "ERROR", "counterValueWarn"),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("panelCard")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+
+        caption = QLabel("COUNTERS")
+        caption.setObjectName("panelTitle")
+        layout.addWidget(caption)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(10)
+        self._value_labels: dict[str, QLabel] = {}
+        for i, (key, caption_text, style_name) in enumerate(self._FIELDS):
+            row, col = divmod(i, 3)
+            cell = QVBoxLayout()
+            cell.setSpacing(2)
+            value = QLabel("0")
+            value.setObjectName(style_name)
+            value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cell.addWidget(value)
+            cap = QLabel(caption_text)
+            cap.setObjectName("counterCaption")
+            cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cell.addWidget(cap)
+            grid.addLayout(cell, row, col)
+            self._value_labels[key] = value
+        layout.addLayout(grid)
+
+    def set_counts(self, counts: dict) -> None:
+        for key, label in self._value_labels.items():
+            label.setText(str(counts.get(key, 0)))
 
 
 class HistoryTable(QTableWidget):

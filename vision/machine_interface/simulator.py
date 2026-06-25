@@ -39,6 +39,9 @@ class SimulatedMachineInterface(MachineSignalInterface):
     def send_bad(self) -> None:
         self._last_result = "BAD"
 
+    def send_no_product(self) -> None:
+        self._last_result = "NO_PRODUCT"
+
     def reset_outputs(self) -> None:
         self._last_result = None
 

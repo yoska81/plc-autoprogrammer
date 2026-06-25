@@ -105,6 +105,39 @@ QFrame#headerBar {
     padding-bottom: 8px;
 }
 
+/* ----------------------------------------------------------------- counters */
+
+QLabel#counterValue {
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 700;
+}
+
+QLabel#counterValueGood {
+    color: #00d97e;
+    font-size: 22px;
+    font-weight: 700;
+}
+
+QLabel#counterValueBad {
+    color: #ff4d4f;
+    font-size: 22px;
+    font-weight: 700;
+}
+
+QLabel#counterValueWarn {
+    color: #ffb020;
+    font-size: 22px;
+    font-weight: 700;
+}
+
+QLabel#counterCaption {
+    color: #707070;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
 /* --------------------------------------------------------- image preview */
 
 QLabel#imagePreview {
@@ -150,6 +183,18 @@ QFrame#resultCardNone {
     border-radius: 18px;
 }
 
+QFrame#resultCardWarn {
+    background-color: #211705;
+    border: 2px solid #ffb020;
+    border-radius: 18px;
+}
+
+QFrame#resultCardSkipped {
+    background-color: #0a0a0a;
+    border: 2px dashed #5a5a5a;
+    border-radius: 18px;
+}
+
 QLabel#resultBadgeGood {
     color: #00d97e;
     font-size: 92px;
@@ -169,6 +214,20 @@ QLabel#resultBadgeNone {
     font-size: 92px;
     font-weight: 800;
     letter-spacing: 8px;
+}
+
+QLabel#resultBadgeWarn {
+    color: #ffb020;
+    font-size: 56px;
+    font-weight: 800;
+    letter-spacing: 3px;
+}
+
+QLabel#resultBadgeSkipped {
+    color: #8a8a8a;
+    font-size: 56px;
+    font-weight: 800;
+    letter-spacing: 3px;
 }
 
 QLabel#scoreLabel {

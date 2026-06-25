@@ -7,10 +7,11 @@ from PySide6.QtWidgets import (
 )
 
 from core import config
-from core.app import QCApp
+from core.app import NoProductDecisionRequired, QCApp
+from core.compare_v2 import V2ComparisonResult
 
 from ..dialogs import SelectProductAngleDialog, prompt_text
-from ..widgets import ImagePreviewPanel, ResultPanel
+from ..widgets import CountersPanel, ImagePreviewPanel, ResultPanel
 
 LIVE_PREVIEW_INTERVAL_MS = 200
 
@@ -83,6 +84,10 @@ class InspectionScreen(QWidget):
         self.comm_status_label.setObjectName("infoLabel")
         layout.addWidget(self._status_row("Machine Signal", self.comm_status_label))
 
+        self.detection_label = QLabel("—")
+        self.detection_label.setObjectName("infoLabel")
+        layout.addWidget(self._status_row("Product Detection", self.detection_label))
+
         self.last_inspection_label = QLabel("—")
         self.last_inspection_label.setObjectName("infoLabel")
         self.last_inspection_label.setWordWrap(True)
@@ -145,6 +150,13 @@ class InspectionScreen(QWidget):
         result_row.addWidget(self.result_panel)
         result_row.addStretch()
         column.addLayout(result_row)
+
+        counters_row = QHBoxLayout()
+        counters_row.addStretch()
+        self.counters_panel = CountersPanel()
+        counters_row.addWidget(self.counters_panel)
+        counters_row.addStretch()
+        column.addLayout(counters_row)
 
         return column
 
@@ -293,18 +305,62 @@ class InspectionScreen(QWidget):
             QMessageBox.warning(self, "Compare", "Select or add a product/angle first.")
             return
         try:
-            comparison = self.engine.compute_comparison()
+            comparison = self.engine.compute_comparison_v2() if self.engine.inspection_mode == \
+                config.INSPECTION_MODE_FREE_POSE else self.engine.compute_comparison()
         except RuntimeError as exc:
             QMessageBox.warning(self, "Compare", str(exc))
             return
-        self.result_panel.set_result(comparison.result, comparison.score_percent)
-        self.diff_panel.set_image_path(comparison.diff_image_path)
+        self._show_comparison(comparison)
+
+    def _show_comparison(self, comparison) -> None:
+        """Renders either a V1 ComparisonResult or a V2 V2ComparisonResult -
+        the two engines report different score/diff-image fields."""
+        if isinstance(comparison, V2ComparisonResult):
+            self.result_panel.set_result(comparison.result, comparison.final_score)
+            self.detection_label.setText("FOUND" if comparison.product_detected else "NOT FOUND")
+            if self.engine._last_v2_diff_path:
+                self.diff_panel.set_image_path(self.engine._last_v2_diff_path)
+            else:
+                self.diff_panel.clear()
+        else:
+            self.result_panel.set_result(comparison.result, comparison.score_percent)
+            self.detection_label.setText("FOUND")
+            self.diff_panel.set_image_path(comparison.diff_image_path)
+
+    def _prompt_no_product_decision(self, trigger_source: str, notes: str = "") -> None:
+        """Only reachable when Settings' No Product Action is "Ask Operator" -
+        save_result()/poll_trigger_and_inspect() raised NoProductDecisionRequired
+        instead of saving anything, and it's on us to ask and finalize."""
+        box = QMessageBox(self)
+        box.setWindowTitle("No Product Found")
+        box.setText("No product found. Skip this inspection or count as BAD?")
+        skip_button = box.addButton("Skip", QMessageBox.ButtonRole.AcceptRole)
+        no_product_button = box.addButton("Save as NO PRODUCT", QMessageBox.ButtonRole.ActionRole)
+        bad_button = box.addButton("Count as BAD", QMessageBox.ButtonRole.DestructiveRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is skip_button:
+            action = config.NO_PRODUCT_ACTION_SKIP
+        elif clicked is no_product_button:
+            action = config.NO_PRODUCT_ACTION_COUNT_AS_NO_PRODUCT
+        elif clicked is bad_button:
+            action = config.NO_PRODUCT_ACTION_TREAT_AS_BAD
+        else:
+            return
+        self.engine.save_no_product_decision(action, trigger_source=trigger_source, notes=notes)
+        self.on_change()
 
     def _on_save_result(self) -> None:
-        if self.engine.last_comparison is None:
+        has_pending = self.engine.last_comparison_v2 is not None if \
+            self.engine.inspection_mode == config.INSPECTION_MODE_FREE_POSE else self.engine.last_comparison is not None
+        if not has_pending:
             QMessageBox.warning(self, "Save Result", "Run Compare first.")
             return
-        self.engine.save_result(trigger_source="manual")
+        try:
+            self.engine.save_result(trigger_source="manual")
+        except NoProductDecisionRequired:
+            self._prompt_no_product_decision(trigger_source="manual")
+            return
         self.on_change()
 
     def _on_simulate_trigger(self) -> None:
@@ -319,6 +375,14 @@ class InspectionScreen(QWidget):
         self.trigger_status_label.setText("TRIGGER: Inspecting")
         try:
             comparison = self.engine.poll_trigger_and_inspect(trigger_source="plc_simulated")
+        except NoProductDecisionRequired:
+            self.trigger_status_label.setText("TRIGGER: Awaiting Decision")
+            self._show_comparison(self.engine.last_comparison_v2)
+            self._prompt_no_product_decision(trigger_source="plc_simulated")
+            self.trigger_status_label.setText("TRIGGER: Complete")
+            self.last_inspection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.on_change()
+            return
         except RuntimeError as exc:
             self.trigger_status_label.setText("TRIGGER: Waiting")
             QMessageBox.warning(self, "Simulate PLC Trigger", str(exc))
@@ -327,8 +391,7 @@ class InspectionScreen(QWidget):
             self.trigger_status_label.setText("TRIGGER: Waiting")
             return
         self.trigger_status_label.setText("TRIGGER: Complete")
-        self.result_panel.set_result(comparison.result, comparison.score_percent)
-        self.diff_panel.set_image_path(comparison.diff_image_path)
+        self._show_comparison(comparison)
         self.last_inspection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.on_change()
 
@@ -374,6 +437,10 @@ class InspectionScreen(QWidget):
             self.inspection_panel.set_image_path(self.engine.last_inspection_image_path)
         else:
             self.inspection_panel.clear()
+
+        self.counters_panel.set_counts(
+            self.engine.db.count_inspections(self.engine.current_product["name"] if self.engine.current_product else None)
+        )
 
     def shutdown(self) -> None:
         if self.engine.camera_running:

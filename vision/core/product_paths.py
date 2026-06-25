@@ -34,9 +34,11 @@ class ProductAngleLocation:
         self.inspection_dir = product_root / "inspection"
         self.diff_dir = config.DIFFERENCE_IMAGES_DIR / self.product_slug / self.angle_slug
         self.bad_products_dir = config.BAD_PRODUCTS_DIR / self.product_slug / self.angle_slug
+        self.normalized_dir = product_root / "normalized"
 
     def ensure_dirs(self) -> None:
-        for path in (self.reference_dir, self.inspection_dir, self.diff_dir, self.bad_products_dir):
+        for path in (self.reference_dir, self.inspection_dir, self.diff_dir,
+                     self.bad_products_dir, self.normalized_dir):
             path.mkdir(parents=True, exist_ok=True)
 
     def new_reference_path(self) -> Path:
@@ -54,3 +56,16 @@ class ProductAngleLocation:
     def new_bad_product_path(self, suffix: str = "") -> Path:
         self.ensure_dirs()
         return self.bad_products_dir / f"bad_{_timestamp()}{suffix}.png"
+
+    def new_normalized_path(self) -> Path:
+        self.ensure_dirs()
+        return self.normalized_dir / f"normalized_{_timestamp()}.png"
+
+
+def new_no_product_path() -> Path:
+    """Not tied to any product/angle - V2's NO_PRODUCT_FOUND handling can hit
+    before a product is even identified, so this is one flat folder shared
+    across the whole app (data/no_product/), unlike the per-product/angle
+    layout above."""
+    config.NO_PRODUCT_DIR.mkdir(parents=True, exist_ok=True)
+    return config.NO_PRODUCT_DIR / f"no_product_{_timestamp()}.png"

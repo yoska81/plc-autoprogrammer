@@ -34,6 +34,12 @@ class MachineSignalInterface(ABC):
     def send_bad(self) -> None: ...
 
     @abstractmethod
+    def send_no_product(self) -> None:
+        """Reserved for when no_product_action sends an explicit signal
+        instead of staying silent (see core/app.py); not driven by any real
+        PLC yet."""
+
+    @abstractmethod
     def reset_outputs(self) -> None: ...
 
     @abstractmethod
