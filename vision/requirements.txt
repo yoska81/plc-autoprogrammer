@@ -1,0 +1,6 @@
+numpy>=1.26,<3.0
+# Headless build: no GUI deps, works in cloud/CI sandboxes. Live preview falls
+# back to writing frames to disk when no display is available.
+# For a real on-screen preview window during local PC testing, replace this
+# line with: opencv-python>=4.9
+opencv-python-headless>=4.9
