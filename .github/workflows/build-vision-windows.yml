@@ -52,6 +52,7 @@ jobs:
           $release = "release\VISION_SYSTEM_QC"
           New-Item -ItemType Directory -Force -Path $release | Out-Null
           Copy-Item -Recurse -Force dist\VISION_SYSTEM_QC\* $release
+          Copy-Item -Recurse -Force docs\screenshots "$release\docs\screenshots"
           Copy-Item -Force packaging\README_FOR_WINDOWS_USER.txt $release
           Copy-Item -Force packaging\RUN_TEST_MODE.bat $release
           Copy-Item -Force packaging\RUN_REAL_CAMERA.bat $release
