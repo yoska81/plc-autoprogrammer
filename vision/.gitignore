@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+data/captures/*.png
+data/products/
+data/bad_products/
+data/difference_images/
+data/reports/
+data/debug_v2/
+!data/test_images/*.png
+database/
+camera_probe.txt
+build/
+dist/
+release/
+VISION_SYSTEM_QC_WINDOWS.zip
