@@ -94,6 +94,28 @@ def _seed_demo_product(window: MainWindow) -> dict:
     return {"product": product, "angle": angle, "good_path": good_path, "bad_path": bad_path}
 
 
+def _capture_not_taught_screenshot(window: MainWindow) -> None:
+    """A fresh, never-taught product selected on the Inspection screen -
+    setup_status()['ready'] is False, so the Selected Product / Golden
+    Reference / Inspection Plan panels show their blocked/empty state.
+    Deletes-and-recreates its own product every run so this is deterministic
+    regardless of how many times the script has run against this database."""
+    engine = window.engine
+    engine.set_inspection_mode(config.INSPECTION_MODE_FREE_POSE)
+
+    existing = engine.db.get_product_by_name("screenshot_demo_product_not_taught")
+    if existing is not None:
+        engine.db.delete_product(existing["id"])
+
+    product = get_or_create_product(engine, "screenshot_demo_product_not_taught")
+    engine.select_product(product["id"])
+    angle = get_or_create_angle(engine, product["id"], "front")
+    engine.select_angle(angle["id"])
+    window.refresh_all()
+    window.tabs.setCurrentWidget(window.inspection_screen)
+    _grab(window, "1_not_taught_blocked.png")
+
+
 def _run_comparison_against(window: MainWindow, image_path: Path):
     engine = window.engine
     location = engine._require_location()
@@ -206,6 +228,8 @@ def main() -> None:
     window.show()
     QApplication.processEvents()
 
+    _capture_not_taught_screenshot(window)
+
     demo = _seed_demo_product(window)
     engine = window.engine
     engine.start()
@@ -215,27 +239,33 @@ def main() -> None:
     window.refresh_all()
     window.tabs.setCurrentWidget(window.inspection_screen)
     _grab(window, "main_inspection_screen.png")
+    _grab(window, "2_teach_product_completed_golden_reference.png")
+    _grab(window, "3_inspection_plan_named_regions.png")
 
     good_result = _run_comparison_against(window, demo["good_path"])
     assert good_result.result == config.RESULT_GOOD, f"expected GOOD, got {good_result.result}"
     window.refresh_all()
     _grab(window, "main_inspection_screen_good.png")
+    _grab(window, "6_main_screen_compact_result_good.png")
 
     window.inspection_screen.technical_toggle.setChecked(True)
     window.inspection_screen._on_toggle_technical()
     window.inspection_screen.advanced_toggle.setChecked(True)
     window.inspection_screen._on_toggle_advanced()
     _grab(window, "main_inspection_screen_good_technical.png")
+    _grab(window, "4_live_overlay_name_rotation_center_regions.png")
 
     bad_result = _run_comparison_against(window, demo["bad_path"])
     assert bad_result.result == config.RESULT_BAD, f"expected BAD, got {bad_result.result}"
     window.refresh_all()
     _grab(window, "main_inspection_screen_bad_technical.png")
+    _grab(window, "5_per_region_pass_fail.png")
 
     window.inspection_screen.technical_toggle.setChecked(False)
     window.inspection_screen._on_toggle_technical()
     window.inspection_screen.advanced_toggle.setChecked(False)
     window.inspection_screen._on_toggle_advanced()
+    _grab(window, "6_main_screen_compact_result_bad.png")
 
     engine.stop()
     window.inspection_screen.preview_timer.stop()

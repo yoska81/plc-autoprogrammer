@@ -93,6 +93,14 @@ def _test_setup_blocking(window: MainWindow) -> None:
     inspection = window.inspection_screen
     engine.set_inspection_mode(config.INSPECTION_MODE_FREE_POSE)
 
+    # Start from a clean slate: this sub-test asserts a "not yet taught"
+    # starting state, which only holds on a fresh product - re-running this
+    # script against the same persistent database must not inherit a GOOD
+    # reference saved by a previous run.
+    existing = engine.db.get_product_by_name("smoke_test_setup_blocking_product")
+    if existing is not None:
+        engine.db.delete_product(existing["id"])
+
     product = get_or_create_product(engine, "smoke_test_setup_blocking_product")
     engine.select_product(product["id"])
     angle = get_or_create_angle(engine, product["id"], "front")
