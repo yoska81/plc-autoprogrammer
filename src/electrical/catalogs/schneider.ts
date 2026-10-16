@@ -3,8 +3,12 @@
  *
  * Verification (October 2026): each part number was confirmed on its own official US
  * product data sheet on download.schneider-electric.com (the PDF in `url`); every rating
- * is copied from that data sheet. Not stated there and therefore left out: UL Type E/F,
- * SCCR and horsepower of GV2 motor circuit breakers, AWG range of Linergy terminals.
+ * is copied from that data sheet. GV2 horsepower / SCCR are from Schneider bulletin
+ * 8536DB0901 (GV2ME is for group motor installation with an LC1D, not UL Type E; Type E is
+ * the GV2P with a GV1G09 / GV2GH7 line spacer). Not stated: AWG range of Linergy terminals.
+ *
+ * Ratings added later from a manufacturer publication other than the part's page carry that
+ * publication in ratings.ratingsSource (e.g. horsepower tables, module limits, SCCR).
  */
 import type { CatalogPart } from '../types';
 
@@ -446,6 +450,8 @@ export const SCHNEIDER: CatalogPart[] = [
     family: 'TeSys Deca',
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LC1D12BD_DATASHEET_US_en-US.pdf&p_Doc_Ref=LC1D12BD_DATASHEET_US_en-US',
     mount: 'backplate',
+    widthMm: 45,
+    heightMm: 77,
     ratings: { family: 'TeSys Deca', amps: 12, poles: 3, coilVoltage: '24VDC', coil: 'BD', hp230: 3, hp480: 7.5, hp575: 10, aux: '1NO+1NC' },
     verified: true,
   },
@@ -457,6 +463,8 @@ export const SCHNEIDER: CatalogPart[] = [
     family: 'TeSys Deca',
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LC1D18BD_DATASHEET_US_en-US.pdf&p_Doc_Ref=LC1D18BD_DATASHEET_US_en-US',
     mount: 'backplate',
+    widthMm: 45,
+    heightMm: 77,
     ratings: { family: 'TeSys Deca', amps: 18, poles: 3, coilVoltage: '24VDC', coil: 'BD', hp230: 5, hp480: 10, hp575: 15, aux: '1NO+1NC' },
     verified: true,
   },
@@ -481,6 +489,8 @@ export const SCHNEIDER: CatalogPart[] = [
     family: 'TeSys Deca',
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LC1D32BD_DATASHEET_US_en-US.pdf&p_Doc_Ref=LC1D32BD_DATASHEET_US_en-US',
     mount: 'backplate',
+    widthMm: 45,
+    heightMm: 85,
     ratings: { family: 'TeSys Deca', amps: 32, poles: 3, coilVoltage: '24VDC', coil: 'BD', hp230: 10, hp480: 20, hp575: 25, aux: '1NO+1NC' },
     verified: true,
   },
@@ -493,6 +503,7 @@ export const SCHNEIDER: CatalogPart[] = [
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LRD06_DATASHEET_US_en-US.pdf&p_Doc_Ref=LRD06_DATASHEET_US_en-US',
     mount: 'backplate',
     widthMm: 45,
+    heightMm: 66,
     ratings: { family: 'TeSys Deca', minAmps: 1, maxAmps: 1.6, tripClass: '10A', reset: 'blue push-button reset (red stop button)', forUse: 'LC1D09-D38' },
     verified: true,
   },
@@ -518,6 +529,7 @@ export const SCHNEIDER: CatalogPart[] = [
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LRD08_DATASHEET_US_en-US.pdf&p_Doc_Ref=LRD08_DATASHEET_US_en-US',
     mount: 'backplate',
     widthMm: 45,
+    heightMm: 66,
     ratings: { family: 'TeSys Deca', minAmps: 2.5, maxAmps: 4, tripClass: '10A', reset: 'blue push-button reset (red stop button)', forUse: 'LC1D09-D38' },
     verified: true,
   },
@@ -530,6 +542,7 @@ export const SCHNEIDER: CatalogPart[] = [
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LRD10_DATASHEET_US_en-US.pdf&p_Doc_Ref=LRD10_DATASHEET_US_en-US',
     mount: 'backplate',
     widthMm: 45,
+    heightMm: 66,
     ratings: { family: 'TeSys Deca', minAmps: 4, maxAmps: 6, tripClass: '10A', reset: 'blue push-button reset (red stop button)', forUse: 'LC1D09-D38' },
     verified: true,
   },
@@ -542,6 +555,7 @@ export const SCHNEIDER: CatalogPart[] = [
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LRD12_DATASHEET_US_en-US.pdf&p_Doc_Ref=LRD12_DATASHEET_US_en-US',
     mount: 'backplate',
     widthMm: 45,
+    heightMm: 66,
     ratings: { family: 'TeSys Deca', minAmps: 5.5, maxAmps: 8, tripClass: '10A', reset: 'blue push-button reset (red stop button)', forUse: 'LC1D09-D38' },
     verified: true,
   },
@@ -554,6 +568,7 @@ export const SCHNEIDER: CatalogPart[] = [
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LRD14_DATASHEET_US_en-US.pdf&p_Doc_Ref=LRD14_DATASHEET_US_en-US',
     mount: 'backplate',
     widthMm: 45,
+    heightMm: 66,
     ratings: { family: 'TeSys Deca', minAmps: 7, maxAmps: 10, tripClass: '10A', reset: 'blue push-button reset (red stop button)', forUse: 'LC1D09-D38' },
     verified: true,
   },
@@ -566,6 +581,7 @@ export const SCHNEIDER: CatalogPart[] = [
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LRD16_DATASHEET_US_en-US.pdf&p_Doc_Ref=LRD16_DATASHEET_US_en-US',
     mount: 'backplate',
     widthMm: 45,
+    heightMm: 66,
     ratings: { family: 'TeSys Deca', minAmps: 9, maxAmps: 13, tripClass: '10A', reset: 'blue push-button reset (red stop button)', forUse: 'LC1D12-D38' },
     verified: true,
   },
@@ -578,6 +594,7 @@ export const SCHNEIDER: CatalogPart[] = [
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LRD21_DATASHEET_US_en-US.pdf&p_Doc_Ref=LRD21_DATASHEET_US_en-US',
     mount: 'backplate',
     widthMm: 45,
+    heightMm: 66,
     ratings: { family: 'TeSys Deca', minAmps: 12, maxAmps: 18, tripClass: '10A', reset: 'blue push-button reset (red stop button)', forUse: 'LC1D18-D38' },
     verified: true,
   },
@@ -590,6 +607,7 @@ export const SCHNEIDER: CatalogPart[] = [
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LRD22_DATASHEET_US_en-US.pdf&p_Doc_Ref=LRD22_DATASHEET_US_en-US',
     mount: 'backplate',
     widthMm: 45,
+    heightMm: 66,
     ratings: { family: 'TeSys Deca', minAmps: 16, maxAmps: 24, tripClass: '10A', reset: 'blue push-button reset (red stop button)', forUse: 'LC1D25-D38' },
     verified: true,
   },
@@ -602,6 +620,7 @@ export const SCHNEIDER: CatalogPart[] = [
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=LRD32_DATASHEET_US_en-US.pdf&p_Doc_Ref=LRD32_DATASHEET_US_en-US',
     mount: 'backplate',
     widthMm: 45,
+    heightMm: 66,
     ratings: { family: 'TeSys Deca', minAmps: 23, maxAmps: 32, tripClass: '10A', reset: 'blue push-button reset (red stop button)', forUse: 'LC1D25-D38' },
     verified: true,
   },
@@ -615,7 +634,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 0.63, maxAmps: 1, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 0.63, maxAmps: 1, poles: 3, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {
@@ -628,7 +647,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 1, maxAmps: 1.6, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 1, maxAmps: 1.6, poles: 3, hp480: 0.75, hp1ph: 0.1, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {
@@ -641,7 +660,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 1.6, maxAmps: 2.5, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 1.6, maxAmps: 2.5, poles: 3, hp480: 1, hp230: 0.5, hp1ph: 0.167, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {
@@ -654,7 +673,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 2.5, maxAmps: 4, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 2.5, maxAmps: 4, poles: 3, hp480: 2, hp230: 0.75, hp1ph: 0.333, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {
@@ -667,7 +686,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 4, maxAmps: 6.3, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 4, maxAmps: 6.3, poles: 3, hp480: 3, hp230: 1.5, hp1ph: 0.5, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {
@@ -680,7 +699,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 6, maxAmps: 10, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 6, maxAmps: 10, poles: 3, hp480: 5, hp230: 3, hp1ph: 1.5, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {
@@ -693,7 +712,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 9, maxAmps: 14, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 9, maxAmps: 14, poles: 3, hp480: 10, hp230: 3, hp1ph: 2, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {
@@ -706,7 +725,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 13, maxAmps: 18, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 13, maxAmps: 18, poles: 3, hp480: 10, hp230: 5, hp1ph: 3, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {
@@ -719,7 +738,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 17, maxAmps: 23, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 17, maxAmps: 23, poles: 3, hp480: 15, hp230: 7.5, hp1ph: 3, sccrKA480: 10, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {
@@ -732,7 +751,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 20, maxAmps: 25, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 20, maxAmps: 25, poles: 3, hp480: 15, hp230: 7.5, sccrKA480: 10, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {
@@ -745,18 +764,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2P', minAmps: 6, maxAmps: 10, poles: 3 },
-    verified: true,
-  },
-  {
-    partNumber: 'GV2GH7',
-    category: 'other',
-    description: 'TeSys Deca large-spacing (line-side) adapter for GV2P and GV2L, 3P, top-mounted',
-    manufacturer: 'Schneider Electric',
-    family: 'TeSys Deca GV2',
-    url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=GV2GH7_DATASHEET_US_en-US.pdf&p_Doc_Ref=GV2GH7_DATASHEET_US_en-US',
-    mount: 'backplate',
-    ratings: { kind: 'large spacing adapter', forUse: 'GV2P / GV2L (not listed for GV2ME)' },
+    ratings: { family: 'TeSys Deca GV2P', minAmps: 6, maxAmps: 10, poles: 3, hp480: 5, hp230: 3, hp1ph: 1.5, sccrKA480: 100, ul: '60947-4-1 Type E (with GV1G09 or GV2GH7 line spacer)', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf', volts: '690VAC' },
     verified: true,
   },
   {

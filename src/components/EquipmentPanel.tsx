@@ -13,6 +13,7 @@ import { cpuFit, findCpu, hmiFit, type Need } from '../plc/core/fit';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, type EquipmentChoice } from '../spec/equipment';
 import VendorPreferenceCard from './VendorPreferenceCard';
+import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
 
 const MAX_MODULES = 8;
@@ -142,6 +143,8 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
           <span className="block mt-1 text-xs text-steel-600">CPU {rec.plc.cpuId}: {rec.plc.why}{rec.hmi ? ` · HMI ${rec.hmi.partNumber}: ${rec.hmi.why}` : ''}</span>
         </div>
       )}
+
+      <BrandHardwareCard need={need} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
         <div className="xl:col-span-2 space-y-4">
