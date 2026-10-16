@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowsRightLeftIcon, PrinterIcon } from '@heroicons/react/20/solid';
 import { Link } from 'react-router-dom';
 import { useProgramStore } from '../../store/useProgramStore';
 import { generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../lib/ai/ladderAI';
@@ -12,6 +13,9 @@ import ResizablePane from '../ResizablePane';
 import { useFingerprints, useStages } from '../../spec/useStages';
 import { useStageStore } from '../../store/useStageStore';
 import { changedSections, specToText } from '../../spec/types';
+import BlockTree from './BlockTree';
+import CrossRefPanel from './CrossRefPanel';
+import ProgramPrint from './ProgramPrint';
 
 type Tab = 'describe' | 'fix' | 'history';
 
@@ -92,6 +96,29 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
   const blockName = activeBlock === null ? '' : blocks.find((b) => b.id === activeBlock)?.name ?? 'General';
   const shown: LadderProgram = activeBlock === null ? ladder : { ...ladder, rungs: ladder.rungs.filter((r) => blockOf(r) === activeBlock) };
   const realNumber = (id: string) => ladder.rungs.findIndex((r) => r.id === id) + 1;
+  const [xrefOpen, setXrefOpen] = useState(false);
+  const [xrefAddress, setXrefAddress] = useState<string | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(null);
+  const labelOf = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of ladder.tags) if (t.nickname) m.set(t.address.toUpperCase(), t.nickname);
+    for (const [a, l] of labels) if (l) m.set(a.toUpperCase(), l);
+    return (a: string) => m.get(a.toUpperCase()) ?? '';
+  }, [ladder.tags, labels]);
+
+  /** Select a rung and scroll it into view, switching to its block if another block is shown. */
+  const jumpToRung = (id: string) => {
+    const r = ladder.rungs.find((x) => x.id === id);
+    if (!r) return;
+    if (activeBlock !== null && blockOf(r) !== activeBlock) setBlock(blockOf(r));
+    setSelectedRungId(id);
+    setScrollTo((s) => ({ id, n: (s?.n ?? 0) + 1 }));
+  };
+  useEffect(() => {
+    if (!scrollTo) return;
+    document.querySelector(`[data-rung-id="${CSS.escape(scrollTo.id)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [scrollTo]);
 
   const updateFromSpec = () => {
     const changed = changedSections(sources.program?.spec ?? null, fp.spec);
@@ -317,25 +344,28 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
           ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} />
         )}
 
-        {!review && blocks.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1 px-3 py-1.5 bg-[#f7f8f9] border-b border-gray-200 text-xs">
-            <span className="text-gray-500 mr-1">Blocks:</span>
-            {[{ id: null as string | null, name: 'Whole program', n: ladder.rungs.length },
-              ...blocks.map((b) => ({ id: b.id as string | null, name: b.name, n: ladder.rungs.filter((r) => blockOf(r) === b.id).length })),
-              ...(hasGeneral ? [{ id: GENERAL as string | null, name: 'General', n: ladder.rungs.filter((r) => blockOf(r) === GENERAL).length }] : []),
-            ].map((b) => (
-              <button key={b.id ?? '*'} onClick={() => { setBlock(b.id); setSelectedRungId(null); }}
-                className={`px-2.5 py-1 rounded-sm border ${activeBlock === b.id ? 'bg-brand-600 border-brand-600 text-brand-950' : 'bg-white border-gray-300 text-gray-700 hover:bg-brand-50'}`}>
-                {b.name} <span className={activeBlock === b.id ? 'text-brand-800' : 'text-gray-400'}>{b.n}</span>
-              </button>
-            ))}
+        {!review && ladder.rungs.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 bg-[#f7f8f9] border-b border-gray-200 text-xs">
+            <span className="font-semibold text-gray-700">{activeBlock === null ? 'Whole program' : blockName}</span>
+            <span className="text-gray-400">{shown.rungs.length} rung{shown.rungs.length === 1 ? '' : 's'}</span>
             {activeBlock !== null && (
               <button onClick={() => { setTab('fix'); handleRevise(`Review and rewrite this block so it fully matches the specification for this part of the machine. Keep its interface (the internal bits other blocks read or write) unless it is wrong, and explain any change to it.\n\nCurrent specification:\n${specText}`); }}
                 disabled={isGenerating || !ready || Boolean(proposal)}
-                className="ml-auto px-2.5 py-1 rounded-sm border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 disabled:opacity-50">
+                className="px-2.5 py-1 rounded-sm border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 disabled:opacity-50">
                 Regenerate this block
               </button>
             )}
+            <div className="ml-auto flex items-center gap-1.5">
+              <button onClick={() => setXrefOpen((v) => !v)} aria-pressed={xrefOpen}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border ${xrefOpen ? 'bg-brand-600 border-brand-600 text-brand-950' : 'bg-white border-gray-300 text-gray-700 hover:bg-brand-50'}`}
+                title="Pick an address and see every rung that reads or writes it">
+                <ArrowsRightLeftIcon className="h-3.5 w-3.5" /> Cross reference
+              </button>
+              <button onClick={() => setPrinting(true)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50"
+                title="Printable program: structure, rung descriptions, ladder per block and the tag table">
+                <PrinterIcon className="h-3.5 w-3.5" /> Print program
+              </button>
+            </div>
           </div>
         )}
         {!review && activeBlock !== null && (
@@ -344,7 +374,14 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
           </div>
         )}
 
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 flex overflow-hidden">
+        {!review && ladder.rungs.length > 0 && (
+          <ResizablePane id="program.tree" defaultSize={230} min={160} max={480} className="border-r border-gray-200">
+            <BlockTree program={ladder} issues={issues} active={activeBlock} selectedRungId={selectedRungId}
+              onBlock={(id) => { setBlock(id); setSelectedRungId(null); }} onRung={jumpToRung} />
+          </ResizablePane>
+        )}
+        <div className="flex-1 min-w-0 overflow-auto">
           {review ? (
             <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} />
           ) : ladder.rungs.length ? (
@@ -375,6 +412,13 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
             </div>
           )}
         </div>
+        {!review && xrefOpen && ladder.rungs.length > 0 && (
+          <ResizablePane id="program.xref" defaultSize={340} min={240} max={700} handle="left" className="border-l border-gray-200">
+            <CrossRefPanel program={ladder} labelOf={labelOf} address={xrefAddress} onAddress={setXrefAddress}
+              selectedRungId={selectedRungId} onRung={jumpToRung} onClose={() => setXrefOpen(false)} />
+          </ResizablePane>
+        )}
+        </div>
 
         {!review && ladder.rungs.length > 0 && (
           <div className="px-4 py-2 border-t border-gray-200 flex items-center gap-2 text-xs text-gray-500">
@@ -389,6 +433,10 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
           </div>
         )}
       </section>
+      {printing && (
+        <ProgramPrint program={ladder} projectName={store.projectName} plcName={`${ctx.profile.vendor} ${ctx.profile.name} · ${ctx.cpu.label}`}
+          issues={issues} labels={labels} onClose={() => setPrinting(false)} />
+      )}
     </div>
   );
 }

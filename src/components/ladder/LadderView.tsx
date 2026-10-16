@@ -287,6 +287,7 @@ function RungRow(props: RungRowProps) {
 
   return (
     <div
+      data-rung-id={rung.id}
       className={`group relative flex ${st.bg} ${selected ? 'ring-2 ring-inset ring-sky-400' : ''}`}
       style={{ minWidth: GUTTER_W + width + 24 }}
       onClick={() => props.onSelect?.(rung.id)}

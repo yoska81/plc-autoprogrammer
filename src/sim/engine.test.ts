@@ -15,6 +15,7 @@ import { validateProgram } from '../plc/validate';
 import { getProfile } from '../plc/profiles';
 import { rungAddresses, rungWrites } from '../plc/ladder';
 import { rungReads } from './blocks';
+import { crossReference, issueStatus } from '../components/program/programIndex';
 
 let passed = 0;
 const failures: string[] = [];
@@ -677,6 +678,18 @@ test('example: parts per minute, run hours, service due and retentive hours', ()
   const hb = new Set<boolean>();
   for (let i = 0; i < 4; i++) { sim.run(1000, 10); hb.add(sim.readBit('C1203')); }
   assert.equal(hb.size, 2, 'heartbeat toggles');
+});
+
+test('program page cross reference and block status', () => {
+  const x = crossReference(LADDER);
+  const c1204 = x.get('C1204')!;
+  assert.deepEqual(c1204.map((u) => [u.kind, u.how, u.block]), [['write', 'OUT coil', 'manual'], ['read', 'NO contact', 'manual']]);
+  assert.ok(x.get('TD1')!.some((u) => u.kind === 'write' && u.how === 'Timer value'));
+  assert.ok(x.get('DS1001')!.some((u) => u.how === 'Timer preset'));
+  assert.ok(x.get('CTD1')!.some((u) => u.how === 'MATH operand'));
+  const st = issueStatus(LADDER, [{ rungId: 'r_y1', severity: 'error', message: 'x' }, { rungId: null, severity: 'warning', message: 'y' }]);
+  assert.deepEqual(st.byBlock.get('outputs'), { errors: 1, warnings: 0 });
+  assert.equal(st.byBlock.size, 1);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
