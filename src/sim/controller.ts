@@ -33,6 +33,8 @@ export interface BlockSignal extends ExternalSignal { held: boolean }
 
 export interface SimSnapshot {
   running: boolean;
+  /** Simulated ms still to run in a "skip ahead" (0 = none). */
+  skipLeftMs: number;
   speed: number;
   timeMs: number;
   scanCount: number;
@@ -76,9 +78,15 @@ export class SimController {
   private lastFrame = 0;
   private carryMs = 0;
   private log: LogEntry[] = [];
+  private skipLeftMs = 0;
+  private skipTimer: ReturnType<typeof setTimeout> | null = null;
   private logId = 0;
   private pressScan = new Map<string, number>();
   private pendingRelease = new Set<string>();
+  /** HMI bits turned ON, with the scan they were turned on in. */
+  private hmiPressScan = new Map<string, number>();
+  /** HMI bits released before any scan saw them ON; turned OFF after the next scan. */
+  private hmiPendingRelease = new Set<string>();
   private readonly program: LadderProgram;
   private userForces = new Map<string, boolean | number>();
   private rungBypass = new Set<string>();
@@ -97,7 +105,7 @@ export class SimController {
     this.snap = this.buildSnapshot();
     this.handle = {
       read: (a) => this.sim.read(a),
-      write: (a, v) => { this.sim.write(a, v); this.emit(); },
+      write: (a, v) => { this.hmiWrite(a, v); this.emit(); },
       subscribe: this.subscribe,
     };
   }
@@ -124,6 +132,7 @@ export class SimController {
     for (const [a, c] of st.counters) counters.set(a, { ...c });
     return {
       running: this.running,
+      skipLeftMs: this.skipLeftMs,
       speed: this.speed,
       timeMs: st.timeMs,
       scanCount: st.scanCount,
@@ -152,14 +161,18 @@ export class SimController {
     this.machine.inputs = now;
   }
 
-  private scan() {
-    for (const [a, v] of stepMachine(this.machine, (a) => this.sim.readBit(a), SCAN_MS)) this.sim.setInput(a, v);
-    const changes = this.sim.step(SCAN_MS);
+  private scan(dt = SCAN_MS) {
+    for (const [a, v] of stepMachine(this.machine, (a) => this.sim.readBit(a), dt)) this.sim.setInput(a, v);
+    const changes = this.sim.step(dt);
     for (const c of changes) {
       if (!LOGGED.test(c.address)) continue;
       this.log.unshift({ id: ++this.logId, timeMs: c.timeMs, address: c.address, value: c.value });
     }
     if (this.log.length > MAX_LOG) this.log.length = MAX_LOG;
+    if (this.hmiPendingRelease.size) {
+      for (const a of this.hmiPendingRelease) this.sim.write(a, false);
+      this.hmiPendingRelease.clear();
+    }
     if (this.pendingRelease.size) {
       for (const id of this.pendingRelease) this.setPressed(id, false);
       this.pendingRelease.clear();
@@ -200,6 +213,36 @@ export class SimController {
   dispose() {
     this.running = false;
     cancelAnimationFrame(this.raf);
+    if (this.skipTimer) clearTimeout(this.skipTimer);
+    this.skipTimer = null;
+    this.skipLeftMs = 0;
+  }
+
+  /**
+   * Fast-forward `ms` of simulated time (run hours, rates, service intervals)
+   * in small slices so the page stays responsive. Long skips use 100 ms scans.
+   */
+  skipAhead(ms: number) {
+    if (this.skipLeftMs > 0) return;
+    const scanMs = ms > 60_000 ? 100 : SCAN_MS;
+    const slice = scanMs * 2000;
+    this.skipLeftMs = ms;
+    const run = () => {
+      const n = Math.min(slice, this.skipLeftMs);
+      this.advance(n, scanMs);
+      this.skipLeftMs -= n;
+      if (this.skipLeftMs > 0) this.skipTimer = setTimeout(run, 0);
+      else { this.skipTimer = null; this.emit(); }
+    };
+    this.emit();
+    this.skipTimer = setTimeout(run, 0);
+  }
+
+  cancelSkip() {
+    if (this.skipTimer) clearTimeout(this.skipTimer);
+    this.skipTimer = null;
+    this.skipLeftMs = 0;
+    this.emit();
   }
 
   stepOnce() {
@@ -207,14 +250,42 @@ export class SimController {
     this.emit();
   }
 
-  /** Run `ms` of simulated time immediately (tests, "fast forward"). */
-  advance(ms: number) {
-    for (let t = 0; t < ms; t += SCAN_MS) this.scan();
+  /**
+   * Run `ms` of simulated time immediately (tests, "skip ahead"). `scanMs`
+   * above 10 trades timing resolution for speed on long skips.
+   */
+  advance(ms: number, scanMs = SCAN_MS) {
+    for (let t = 0; t < ms; t += scanMs) this.scan(scanMs);
     this.emit();
   }
 
-  reset() {
-    this.sim.reset();
+  /**
+   * HMI write. A momentary button that is pressed and released between two
+   * scans stays ON for one scan, so the program always sees the press (a real
+   * panel's touch also lasts longer than a PLC scan).
+   */
+  private hmiWrite(address: string, value: boolean | number) {
+    const a = normAddress(address);
+    if (typeof value === 'boolean' && /^C\d+$/.test(a)) {
+      if (value) {
+        this.hmiPendingRelease.delete(a);
+        this.hmiPressScan.set(a, this.sim.state.scanCount);
+      } else if (this.sim.readBit(a) && this.hmiPressScan.get(a) === this.sim.state.scanCount) {
+        this.hmiPendingRelease.add(a);
+        return;
+      }
+    }
+    this.sim.write(a, value);
+  }
+
+  /** Power-cycle the PLC and reset the machine. Retentive memory (DS/DD/DF/DH registers, counters) is kept unless `clearRetentive`. */
+  reset(clearRetentive = false) {
+    if (this.skipTimer) clearTimeout(this.skipTimer);
+    this.skipTimer = null;
+    this.skipLeftMs = 0;
+    this.sim.reset({ clearRetentive });
+    this.hmiPressScan.clear();
+    this.hmiPendingRelease.clear();
     const bypass = new Map(this.machine.devices.map((d) => [d.id, d.bypass]));
     this.machine = buildMachineModel(this.io, this.wiring);
     for (const d of this.machine.devices) { const b = bypass.get(d.id); if (b && d.bypass) d.bypass = { ...b }; }

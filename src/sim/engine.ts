@@ -92,8 +92,12 @@ export interface Simulator {
   step(dtMs?: number): BitChange[];
   /** Run scans for `ms` of simulated time. */
   run(ms: number, scanMs?: number): BitChange[];
-  /** Power-cycle: clear memory, inputs and the clock. Forces and rung bypasses are kept. */
-  reset(): void;
+  /**
+   * Power-cycle: clear memory, inputs and the clock. Retentive memory (see
+   * SimOptions.retentive) keeps its value unless `clearRetentive` is set.
+   * Forces and rung bypasses are kept.
+   */
+  reset(opts?: { clearRetentive?: boolean }): void;
   /** Power flow of the last scan, per rung id. */
   rungPower(): Map<string, RungPower>;
   /** Current Y output image. */
@@ -217,7 +221,18 @@ function emptyState(): SimState {
   };
 }
 
-export function createSimulator(program: LadderProgram): Simulator {
+export interface SimOptions {
+  /** Memory that survives a power cycle. Default: CLICK defaults (DS, DD, DH, DF registers and counters CT / CTD). */
+  retentive?: (address: string) => boolean;
+}
+
+/** CLICK default retentive memory: data registers and counters keep their value through a power cycle. */
+export function clickRetentive(address: string): boolean {
+  return /^(DS|DD|DH|DF|CTD|CT)\d+$/.test(address);
+}
+
+export function createSimulator(program: LadderProgram, options: SimOptions = {}): Simulator {
+  const retentive = options.retentive ?? clickRetentive;
   const state = emptyState();
   /** Previous value per edge contact instance / counter instance. */
   let edges = new Map<string, boolean>();
@@ -436,8 +451,13 @@ export function createSimulator(program: LadderProgram): Simulator {
       }
       return out;
     },
-    reset() {
+    reset(opts = {}) {
       const fresh = emptyState();
+      if (!opts.clearRetentive) {
+        for (const [a, v] of state.words) if (retentive(a)) fresh.words.set(a, v);
+        for (const [a, v] of state.bits) if (retentive(a)) fresh.bits.set(a, v);
+        for (const [a, c] of state.counters) if (retentive(a)) fresh.counters.set(a, { ...c });
+      }
       state.bits = fresh.bits; state.words = fresh.words; state.timers = fresh.timers;
       state.counters = fresh.counters; state.inputs = fresh.inputs;
       // forces and rung bypasses are test settings: they survive a PLC reset
