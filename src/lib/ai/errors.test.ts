@@ -4,7 +4,7 @@
  * Run with:  npx tsx src/lib/ai/errors.test.ts
  */
 import assert from 'node:assert/strict';
-import { AiRequestError, classifyAiError, withRetries } from './errors';
+import { AiRequestError, classifyAiError, withRetries, withWatchdog, WatchdogTimeout } from './errors';
 
 let passed = 0;
 const failures: string[] = [];
@@ -56,6 +56,37 @@ await test('abort stops the wait between retries', async () => {
   const p = withRetries(async () => { throw err({ status: 529 }); }, { explain: () => 'x', signal: c.signal, delays: [10_000] });
   setTimeout(() => c.abort(), 20);
   await assert.rejects(p, (e: AiRequestError) => e.info.kind === 'cancelled');
+});
+
+const never = () => new Promise<string>(() => { /* a call that hangs and ignores abort */ });
+
+await test('watchdog: no progress → timeout, even when the call ignores the abort', async () => {
+  await assert.rejects(withWatchdog(() => never(), { idleMs: 30, totalMs: 10_000, reportsProgress: true }), (e: Error) => e instanceof WatchdogTimeout && classifyAiError(e).kind === 'timeout');
+});
+
+await test('watchdog: steady progress keeps a long call alive; total cap still applies', async () => {
+  const r = await withWatchdog((_s, progress) => new Promise<string>((res) => { const t = setInterval(progress, 10); setTimeout(() => { clearInterval(t); res('done'); }, 120); }), { idleMs: 40, totalMs: 10_000, reportsProgress: true });
+  assert.equal(r, 'done');
+  await assert.rejects(withWatchdog((_s, progress) => { const t = setInterval(progress, 5); return new Promise<string>(() => { setTimeout(() => clearInterval(t), 200); }); }, { idleMs: 1_000, totalMs: 60, reportsProgress: true }), /timed out after/);
+});
+
+await test('watchdog: without progress events only the total cap applies', async () => {
+  const r = await withWatchdog(() => new Promise<string>((res) => setTimeout(() => res('ok'), 80)), { idleMs: 20, totalMs: 1_000, reportsProgress: false });
+  assert.equal(r, 'ok');
+});
+
+await test('watchdog: user cancel aborts the call, not as a timeout', async () => {
+  const c = new AbortController();
+  const p = withWatchdog(() => never(), { signal: c.signal, idleMs: 10_000, totalMs: 10_000, reportsProgress: true });
+  setTimeout(() => c.abort(), 10);
+  await assert.rejects(p, (e: Error) => !(e instanceof WatchdogTimeout));
+});
+
+await test('a hung request is retried and then reported in plain words', async () => {
+  let n = 0;
+  await assert.rejects(withRetries(() => { n++; return withWatchdog(() => never(), { idleMs: 10, totalMs: 1_000, reportsProgress: true }); }, { explain: (e) => (e as Error).message, delays: [1, 1, 1] }),
+    (e: AiRequestError) => e.info.kind === 'timeout' && /without progress.*\(tried 4 times\)/.test(e.message));
+  assert.equal(n, 4);
 });
 
 console.log(failures.length ? `\n${failures.length} failed` : `\n${passed} passed, 0 failed`);

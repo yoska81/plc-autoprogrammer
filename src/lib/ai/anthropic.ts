@@ -3,7 +3,7 @@ import type { Effort } from '../../store/useSettingsStore';
 import { IS_PREVIEW } from '../../preview/mode';
 import { callClaudeAccount } from '../../preview/claudeAccount';
 import { trackAi } from './busy';
-import { KIND_TEXT, withRetries, type AiErrorInfo } from './errors';
+import { KIND_TEXT, totalLimitFor, withRetries, withWatchdog, type AiErrorInfo } from './errors';
 import { reportRetry } from './jobs';
 
 export interface ChatTurn {
@@ -63,13 +63,21 @@ export function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
 function explainFailure(err: unknown, info: AiErrorInfo, model: string): string {
   if (err instanceof Anthropic.APIError || err instanceof Anthropic.APIConnectionError) return explainApiError(err, model);
   const msg = err instanceof Error ? err.message : String(err);
+  if (err instanceof Error && err.name === 'WatchdogTimeout') return `${msg} Try again; if it keeps happening, check the connection or lower the thinking effort in Settings.`;
   if (info.kind === 'network' || info.kind === 'timeout') return `${KIND_TEXT[info.kind]} before the answer was complete. Check the internet connection and try again.`;
   return msg;
 }
 
 async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   // The preview can't reach the API; the viewer's own Claude account answers instead.
-  if (IS_PREVIEW) return callClaudeAccount(opts as Parameters<typeof callClaudeAccount>[0]);
+  // A watchdog makes sure no request hangs: no data for 3 min, or longer than the cap for its
+  // effort level, aborts it as a timeout (retried by callClaude, then reported).
+  const totalMs = totalLimitFor(opts.effort);
+  if (IS_PREVIEW) {
+    // plain answers stream their text (progress); JSON answers arrive at once (total cap only)
+    return withWatchdog((signal, progress) => callClaudeAccount({ ...(opts as Parameters<typeof callClaudeAccount>[0]), signal, onProgress: progress }),
+      { signal: opts.signal, totalMs, reportsProgress: !opts.schema });
+  }
   // Keys live in the user's own browser; there is no backend to proxy through.
   // Retries are done by callClaude (also for streams that drop half-way), not by the SDK.
   const client = new Anthropic({ apiKey: opts.apiKey, dangerouslyAllowBrowser: true, maxRetries: 0 });
@@ -77,8 +85,8 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   // Streamed so long, deep-thinking generations don't hit HTTP timeouts.
   // `fallbacks: 'default'` lets the API retry on another model if a safety
   // classifier declines the request instead of returning nothing.
-  const message = await client.beta.messages
-    .stream({
+  const message = await withWatchdog(async (signal, progress) => {
+    const stream = client.beta.messages.stream({
       model: opts.model,
       max_tokens: 64000,
       betas: ['server-side-fallback-2026-07-01'],
@@ -91,8 +99,10 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
       // The system prompt is static per stage: cached across calls (5 min) when it is long enough.
       system: [{ type: 'text', text: opts.system, cache_control: { type: 'ephemeral' } }],
       messages: opts.messages,
-    }, { signal: opts.signal })
-    .finalMessage();
+    }, { signal });
+    stream.on('streamEvent', progress);
+    return stream.finalMessage();
+  }, { signal: opts.signal, totalMs, reportsProgress: true });
 
   if (message.stop_reason === 'refusal') {
     throw new Error('Claude declined this request. Try rephrasing it.');

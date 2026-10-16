@@ -46,6 +46,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
     const stage = stageOf(sysText(body.system));
     calls[stage] = (calls[stage] ?? 0) + 1;
     const b = script[stage]?.shift() ?? {};
+    if (b.hang) return; // never answers: the app's watchdog must give up on it
     if (b.delay) await new Promise((res) => setTimeout(res, b.delay));
     if (b.status) {
       await route.fulfill({ status: b.status, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, body: JSON.stringify({ type: 'error', error: { type: b.type ?? 'overloaded_error', message: b.message ?? 'Overloaded' } }) }).catch(() => {});
@@ -129,6 +130,17 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   await bar.getByRole('button', { name: 'Retry Electrical design' }).click();
   await page.waitForFunction(async (exp) => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation === exp, ELECTRICAL.explanation, { timeout: 10000 });
   log('Retry succeeded');
+
+  // 6. A request that never answers (the preview hang) is stopped by the watchdog, retried, and the retry succeeds.
+  script.electrical.push({ hang: true }, {});
+  await page.goto(BASE + '/electrical?tab=design');
+  await page.evaluate(async () => (await import('/src/lib/ai/errors.ts')).setAiLimits({ idleMs: 1500 })); // after the page load
+  await page.getByRole('button', { name: 'Generate New Design' }).click();
+  await bar.getByText(/did not answer in time, retrying \(1\/3\)/).waitFor({ timeout: 8000 });
+  log('Hung request:', await bar.innerText());
+  await page.waitForFunction(() => !document.querySelector('[data-job="electrical"]'), null, { timeout: 15000 });
+  check(await bar.locator('[data-status="failed"]').count() === 0, 'hung request recovered by the retry');
+  log('Hung request recovered');
   await page.screenshot({ path: OUT + '02_end.png' });
 
   check(!errors.length, 'no page errors: ' + errors.join(' | '));
