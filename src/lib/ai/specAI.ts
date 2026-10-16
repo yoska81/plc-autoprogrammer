@@ -45,6 +45,7 @@ Rules:
 - Keep every fact, number, name and requirement from the current spec and the new material. Never drop details. When new material contradicts the current spec, use the new material and mention the change in "summary".
 - Write in clear, short engineering sentences or bullet lines ("- "). Keep the customer's terms and device names.
 - Leave a section as an empty string when nothing is known about it. Do not invent requirements.
+- Write the facts the design steps need explicitly, one per line, whenever the material gives them: every motor (name, HP, voltage, starter / VFD / servo), every sensor and actuator (what it detects or moves), every safety device and exactly what it must stop (per zone when there are several, e.g. "Light curtain at pallet position 1 stops the robot only while it works at position 1"), every analog signal with its range (e.g. "Tank level transmitter 4-20 mA, 0–500 gal"), every interface to other equipment (robot, other machine: each handshake signal and its direction), recipes (how many, which values), and the supply voltage and country.
 - "questions": the specific missing information an engineer needs before designing (e.g. "How is the lift axis homed: home switch or hard stop?", "What stop category for the guard door?"). Max 12, most important first.
 - "summary": two or three sentences on what you organized and what changed.`;
 

@@ -1,0 +1,5 @@
+{
+ "stage": "io",
+ "model": "e2e-fixture",
+ "text": "{\"explanation\":\"5 inputs, 2 outputs.\",\"points\":[{\"description\":\"E-Stop OK (safety relay)\",\"type\":\"input\",\"category\":\"Safety\",\"deviceType\":\"safety-relay-output\",\"reason\":\"spec\"},{\"description\":\"Start Button\",\"type\":\"input\",\"category\":\"Operator/HMI\",\"deviceType\":\"pushbutton-no\",\"reason\":\"spec\"},{\"description\":\"Stop Button\",\"type\":\"input\",\"category\":\"Operator/HMI\",\"deviceType\":\"pushbutton-nc\",\"reason\":\"spec\"},{\"description\":\"Part at end photo-eye\",\"type\":\"input\",\"category\":\"Product Detection\",\"deviceType\":\"sensor-pnp\",\"reason\":\"spec\"},{\"description\":\"Pusher extended\",\"type\":\"input\",\"category\":\"Pneumatic\",\"deviceType\":\"sensor-pnp\",\"reason\":\"spec\"},{\"description\":\"Conveyor motor contactor\",\"type\":\"output\",\"category\":\"Conveyor\",\"deviceType\":\"contactor-coil\",\"reason\":\"spec\"},{\"description\":\"Pusher solenoid\",\"type\":\"output\",\"category\":\"Pneumatic\",\"deviceType\":\"solenoid\",\"reason\":\"spec\"}],\"questions\":[]}"
+}
