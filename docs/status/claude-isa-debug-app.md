@@ -3,7 +3,7 @@
 PRs: #3 (merged), #12 (draft → `claude/optimistic-maxwell-6nfcs6`). Dev server / test port: 5203.
 
 ## Tasks (my own words)
-- [x] **TOP PRIORITY — Windows program with an installer** (details below). Waiting on the Windows CI run of PR #12 for proof on a real Windows runner.
+- [x] **TOP PRIORITY — Windows program with an installer** (details below). Windows CI on PR #12 is green: run 38944010761 on windows-latest (lint, unit tests, `npm run dist:win`) uploaded the artifact `ISA-Auto-Programmer-Setup` (112.8 MB).
 - [x] Plain-English generation errors (manager queue #1): f0aa0b1.
 - [x] Project switching while the AI works + Delete project (manager queue #3): f0aa0b1, beddcd4.
 - [x] Fix the E2E for the redesigned HMI page and the live HMI in the simulator, then extend it to every user flow listed by the manager.
