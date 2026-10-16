@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('isaDesktop', {
   print: (job) => ipcRenderer.invoke('isa:print', job),
   listPrinters: () => ipcRenderer.invoke('isa:list-printers'),
   saveFile: (name, bytes) => ipcRenderer.invoke('isa:save-file', name, bytes),
+  onOpenFile: (cb) => { ipcRenderer.on('isa:open-file', (_e, name, bytes) => cb(name, bytes)); },
   modbus: {
     connect: async (o) => { const r = await ipcRenderer.invoke('isa:modbus', 'connect', [o]); return r.ok ? r.value : { ok: false, error: r.error }; },
     disconnect: () => mb('disconnect'),
