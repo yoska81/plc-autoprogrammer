@@ -20,6 +20,7 @@ export interface PartPrice {
 // displayed price) on the date given. Re-check before quoting: list prices change.
 export const PRICES: Record<string, PartPrice> = {
   '100222015324006': { price: 31.0, currency: 'USD', unit: 'each', date: '2026-10-16', sourceUrl: 'https://www.automationdirect.com/adc/shopping/catalog/valves/directional_control_solenoid_valves/solenoid_valves/100222015324006' },
+  'ECX1651': { price: 3.25, currency: 'USD', unit: 'each', date: '2026-10-16', sourceUrl: 'https://www.automationdirect.com/adc/shopping/catalog/pushbuttons_-z-_switches_-z-_indicators/legend_plates/ecx1651' },
   '14070520': { price: 8.0, currency: 'USD', unit: 'each', date: '2026-10-16', sourceUrl: 'https://www.automationdirect.com/adc/shopping/catalog/circuit_protection_-z-_fuses_-z-_disconnects/disconnects_-a-_switches/disconnect_external_handles_-a-_components/14070520' },
   '14070532': { price: 9.0, currency: 'USD', unit: 'each', date: '2026-10-16', sourceUrl: 'https://www.automationdirect.com/adc/shopping/catalog/circuit_protection_-z-_fuses_-z-_disconnects/disconnects_-a-_switches/disconnect_external_handles_-a-_components/14070532' },
   '14831111': { price: 28.0, currency: 'USD', unit: 'each', date: '2026-10-16', sourceUrl: 'https://www.automationdirect.com/adc/shopping/catalog/circuit_protection_-z-_fuses_-z-_disconnects/disconnects_-a-_switches/disconnect_external_handles_-a-_components/14831111' },

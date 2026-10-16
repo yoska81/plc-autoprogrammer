@@ -99,3 +99,9 @@ Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 althoug
 - [x] Tests: layout.test.ts 12/12; e2e/layout.e2e.cjs (scale, cabinet + motor + two valves, tray, lengths in the schedule + CSV, JB + manifold accepted, BOM note, reload, drawing sheet); app E2E, sweep (+ layout page; sweep "example" scenario now really opens the example), checkers 0 FAIL / 0 WARN with a layout in the big variant.
 - Open: purchasing order list could take `cableTotals()` (per type, m) instead of per-cable "BY SITE" — Dev 1.
 - Merged integration 1beee34 (analog I/O, HMI editor, online): all unit tests, app + layout E2E, sweep, checkers (5 variants) green.
+
+## Coordinator follow-ups after code rules merge (19:05)
+- [x] Sheet 4 integral CT fuses (coordinator fix): ca600 PDF checks re-run, 0 FAIL / 0 WARN.
+- [x] "No safety reset" no longer listed twice in the review: the design warning is skipped when the code rule reports it (checks.ts COVERED_BY_CODE_RULES); review.test.ts 8/8 with a new test (fails without the fix).
+- [x] Yellow E-stop background: AutomationDirect ECX1651 oversized legend plate, yellow, "EMERGENCY STOP", for 22 mm devices (product page + cut sheet; $3.25 read 2026-10-16) added to the catalog (no door cutout of its own) and prices; the estop-device rule names it in its fix and passes when it is in the design. The 60 mm diameter is not on AD's page or cut sheet, so it is not claimed.
+- [ ] SCCR ratings for PS / CT / VFD parts: left "unknown" — needs each AD datasheet's SCCR statement (to do with the vendor-catalog cross-check).

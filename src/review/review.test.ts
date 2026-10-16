@@ -9,6 +9,7 @@ import { useProgramStore } from '../store/useProgramStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useIOStore } from '../store/useIOStore';
 import { useSpecStore } from '../store/useSpecStore';
+import { useElectricalStore } from '../store/useElectricalStore';
 import { useReviewStore } from './useReviewStore';
 import { projectSummary, REVIEW_SCHEMA } from './reviewAI';
 import { reviewRows } from './report';
@@ -131,6 +132,16 @@ test('spec coverage: analog, guarding, motors, VFD and servo the design misses',
   // an equipment caution about servo motion answers the servo check
   useProjectStore.getState().setRecommendation({ ...useProjectStore.getState().recommendation!, cautions: ['Servo motion needs a drive with an indexer.'] });
   assert.ok(!ids().includes('spec-servo'));
+});
+
+test('no safety reset is reported once (code rule), not again as a design warning', () => {
+  seedSampleProject();
+  const el = useElectricalStore.getState();
+  const d = el.design!;
+  const resetTag = d.components.find((c) => /safety reset/i.test(c.function))?.tag;
+  el.setDesign({ ...d, components: d.components.filter((c) => c.tag !== resetTag) }, 'generated', null);
+  const reset = check().filter((f) => /no reset pushbutton/i.test(f.title));
+  assert.equal(reset.length, 1, JSON.stringify(reset.map((f) => f.id)));
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
