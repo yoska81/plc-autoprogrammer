@@ -1,8 +1,16 @@
 import { useIOStore } from '../store/useIOStore';
 import { IORow } from './IORow';
+import { usePlc } from '../plc/usePlc';
 
 export function IOTable() {
   const { projectIO } = useIOStore();
+  const { profile, addresses } = usePlc();
+  const seen = new Set<string>();
+  const dupes = new Set<string>();
+  for (const a of addresses.values()) {
+    if (a && seen.has(a)) dupes.add(a);
+    seen.add(a);
+  }
 
   if (projectIO.length === 0) {
     return (
@@ -26,6 +34,7 @@ export function IOTable() {
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
             <th className="px-4 py-2 text-left font-semibold text-gray-600 text-xs uppercase tracking-wide">ID</th>
+            <th className="px-4 py-2 text-left font-semibold text-gray-600 text-xs uppercase tracking-wide" title="Address on the selected PLC. Type to override.">{profile.name} Address</th>
             <th className="px-4 py-2 text-left font-semibold text-gray-600 text-xs uppercase tracking-wide">Type</th>
             <th className="px-4 py-2 text-left font-semibold text-gray-600 text-xs uppercase tracking-wide">Category</th>
             <th className="px-4 py-2 text-left font-semibold text-gray-600 text-xs uppercase tracking-wide">Description</th>
@@ -36,21 +45,21 @@ export function IOTable() {
           {inputs.length > 0 && (
             <>
               <tr className="bg-blue-600">
-                <td colSpan={5} className="px-4 py-1 text-xs font-semibold text-white uppercase tracking-wider">
+                <td colSpan={6} className="px-4 py-1 text-xs font-semibold text-white uppercase tracking-wider">
                   Inputs ({inputs.length})
                 </td>
               </tr>
-              {inputs.map((p) => <IORow key={p.id} point={p} />)}
+              {inputs.map((p) => <IORow key={p.id} point={p} address={addresses.get(p.id) ?? ''} duplicate={dupes.has(addresses.get(p.id) ?? '')} />)}
             </>
           )}
           {outputs.length > 0 && (
             <>
               <tr className="bg-amber-600">
-                <td colSpan={5} className="px-4 py-1 text-xs font-semibold text-white uppercase tracking-wider">
+                <td colSpan={6} className="px-4 py-1 text-xs font-semibold text-white uppercase tracking-wider">
                   Outputs ({outputs.length})
                 </td>
               </tr>
-              {outputs.map((p) => <IORow key={p.id} point={p} />)}
+              {outputs.map((p) => <IORow key={p.id} point={p} address={addresses.get(p.id) ?? ''} duplicate={dupes.has(addresses.get(p.id) ?? '')} />)}
             </>
           )}
         </tbody>

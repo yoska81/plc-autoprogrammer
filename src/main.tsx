@@ -7,13 +7,17 @@ import IOPage from './pages/IOPage.tsx'
 import ProgramPage from './pages/ProgramPage.tsx'
 import ExportPage from './pages/ExportPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
+import PlcSetupPage from './pages/PlcSetupPage.tsx'
+import PrintPage from './pages/PrintPage.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <Routes>
+        <Route path="/print" element={<PrintPage />} />
         <Route path="/" element={<App />}>
-          <Route index element={<Navigate to="/io" replace />} />
+          <Route index element={<Navigate to="/plc" replace />} />
+          <Route path="plc" element={<PlcSetupPage />} />
           <Route path="io" element={<IOPage />} />
           <Route path="program" element={<ProgramPage />} />
           <Route path="export" element={<ExportPage />} />

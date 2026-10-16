@@ -1,20 +1,30 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Effort } from '../../store/useSettingsStore';
-import { SYSTEM_PROMPT } from './prompt';
 
-export interface AnthropicResult {
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ClaudeResult {
   text: string;
   reasoning: string | null;
 }
 
-export async function generateWithClaude(
-  apiKey: string,
-  model: string,
-  effort: Effort,
-  userMessage: string,
-): Promise<AnthropicResult> {
+/**
+ * One Claude request. With `schema`, the reply is constrained to that JSON
+ * schema (structured outputs) and `text` is the JSON string.
+ */
+export async function callClaude(opts: {
+  apiKey: string;
+  model: string;
+  effort: Effort;
+  system: string;
+  messages: ChatTurn[];
+  schema?: Record<string, unknown>;
+}): Promise<ClaudeResult> {
   // Keys live in the user's own browser; there is no backend to proxy through.
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  const client = new Anthropic({ apiKey: opts.apiKey, dangerouslyAllowBrowser: true });
 
   let message;
   try {
@@ -23,14 +33,17 @@ export async function generateWithClaude(
     // classifier declines the request instead of returning nothing.
     message = await client.beta.messages
       .stream({
-        model,
+        model: opts.model,
         max_tokens: 64000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
         thinking: { type: 'adaptive', display: 'summarized' },
-        output_config: { effort },
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userMessage }],
+        output_config: {
+          effort: opts.effort,
+          ...(opts.schema ? { format: { type: 'json_schema' as const, schema: opts.schema } } : {}),
+        },
+        system: opts.system,
+        messages: opts.messages,
       })
       .finalMessage();
   } catch (err) {
@@ -47,19 +60,16 @@ export async function generateWithClaude(
   }
 
   if (message.stop_reason === 'refusal') {
-    throw new Error('Claude declined this request. Try rephrasing the machine description.');
+    throw new Error('Claude declined this request. Try rephrasing it.');
+  }
+  if (message.stop_reason === 'max_tokens') {
+    throw new Error('The answer was cut off (output limit reached). Try splitting the machine into smaller parts.');
   }
 
-  const text = message.content
-    .flatMap((b) => (b.type === 'text' ? [b.text] : []))
-    .join('');
+  const text = message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
   const reasoning = message.content
     .flatMap((b) => (b.type === 'thinking' && b.thinking ? [b.thinking] : []))
     .join('\n\n');
-
   if (!text) throw new Error('Claude returned an empty response.');
-  if (message.stop_reason === 'max_tokens') {
-    throw new Error('Program was cut off (output limit reached). Try splitting the machine into smaller parts.');
-  }
   return { text, reasoning: reasoning || null };
 }

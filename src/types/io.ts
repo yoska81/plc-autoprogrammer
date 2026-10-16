@@ -21,6 +21,8 @@ export interface IOPoint {
   category: IOCategory;
   /** Set when the point was imported from the template library. */
   templateId?: string;
+  /** Manual PLC address override (e.g. "X103"); empty = assigned automatically. */
+  plcAddress?: string;
 }
 
 export interface TemplatePoint {

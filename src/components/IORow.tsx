@@ -9,8 +9,17 @@ const ALL_CATEGORIES: IOCategory[] = [
   'Station 2', 'Analog/Process', 'Spare',
 ];
 
-export function IORow({ point }: { point: IOPoint }) {
-  const { updateDescription, updateCategory, deletePoint } = useIOStore();
+interface IORowProps {
+  point: IOPoint;
+  /** Effective PLC address (manual override or automatic). */
+  address: string;
+  /** Another point resolves to the same address. */
+  duplicate: boolean;
+}
+
+export function IORow({ point, address, duplicate }: IORowProps) {
+  const { updateDescription, updateCategory, deletePoint, setPlcAddress } = useIOStore();
+  const isManual = Boolean(point.plcAddress);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(point.description);
 
@@ -30,6 +39,21 @@ export function IORow({ point }: { point: IOPoint }) {
     <tr className={`${rowBg} transition-colors`}>
       <td className="px-4 py-2 font-mono text-sm font-semibold text-gray-700 whitespace-nowrap">
         {point.id}
+      </td>
+      <td className="px-4 py-2 whitespace-nowrap">
+        <input
+          key={address}
+          defaultValue={isManual ? address : ''}
+          placeholder={address || '—'}
+          aria-label={`PLC address for ${point.id}`}
+          title={isManual ? 'Manual address. Clear it to assign automatically.' : 'Assigned automatically. Type to override.'}
+          onBlur={(e) => { if (e.target.value.trim().toUpperCase() !== (point.plcAddress ?? '')) setPlcAddress(point.id, e.target.value); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+          className={`w-20 font-mono text-sm px-1.5 py-0.5 rounded border bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 ${
+            duplicate ? 'border-red-400 text-red-700' : isManual ? 'border-blue-300 text-gray-800' : 'border-transparent text-gray-500 placeholder:text-gray-500'
+          }`}
+        />
+        {duplicate && <span className="ml-1 text-xs text-red-600" title="Two I/O points use this address">dup</span>}
       </td>
       <td className="px-4 py-2 text-xs">
         <span className={`px-2 py-0.5 rounded font-medium ${point.type === 'input' ? 'bg-blue-200 text-blue-800' : 'bg-amber-200 text-amber-800'}`}>

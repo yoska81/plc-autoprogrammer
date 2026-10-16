@@ -10,6 +10,8 @@ interface IOStore {
   updateDescription: (id: string, description: string) => void;
   updateCategory: (id: string, category: IOCategory) => void;
   deletePoint: (id: string) => void;
+  /** Manual PLC address override; empty string = automatic. */
+  setPlcAddress: (id: string, address: string) => void;
 }
 
 function nextInputId(existing: IOPoint[]): string {
@@ -85,6 +87,13 @@ export const useIOStore = create<IOStore>()(
           projectIO: s.projectIO.map((p) =>
             p.id === id ? { ...p, category } : p
           ),
+        }));
+      },
+
+      setPlcAddress: (id: string, address: string) => {
+        const plcAddress = address.trim().toUpperCase();
+        set((s) => ({
+          projectIO: s.projectIO.map((p) => (p.id === id ? { ...p, plcAddress } : p)),
         }));
       },
 

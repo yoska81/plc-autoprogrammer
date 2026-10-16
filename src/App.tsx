@@ -1,8 +1,9 @@
 import { NavLink, Outlet } from 'react-router-dom';
 
 const NAV_ITEMS = [
+  { to: '/plc', label: 'PLC Setup', icon: '▣' },
   { to: '/io', label: 'I/O List', icon: '⊞' },
-  { to: '/program', label: 'Program Generator', icon: '⚡' },
+  { to: '/program', label: 'Program', icon: '⚡' },
   { to: '/export', label: 'Export', icon: '↓' },
   { to: '/settings', label: 'Settings', icon: '⚙' },
 ];

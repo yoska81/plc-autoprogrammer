@@ -1,26 +1,29 @@
-import { SYSTEM_PROMPT } from './prompt';
+import type { ChatTurn } from './anthropic';
 
-export async function generateWithOpenAI(
-  apiKey: string,
-  model: string,
-  userMessage: string,
-): Promise<string> {
+/** One OpenAI chat request; with `schema` the reply is strict JSON. */
+export async function callOpenAI(opts: {
+  apiKey: string;
+  model: string;
+  system: string;
+  messages: ChatTurn[];
+  schema?: Record<string, unknown>;
+}): Promise<string> {
   // o-series reasoning models take a "developer" role and max_completion_tokens.
-  const isReasoningModel = /^o\d/.test(model);
+  const isReasoningModel = /^o\d/.test(opts.model);
 
   const body: Record<string, unknown> = {
-    model,
-    messages: [
-      { role: isReasoningModel ? 'developer' : 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: userMessage },
-    ],
+    model: opts.model,
+    messages: [{ role: isReasoningModel ? 'developer' : 'system', content: opts.system }, ...opts.messages],
   };
   if (isReasoningModel) body.max_completion_tokens = 32000;
   else body.max_tokens = 16000;
+  if (opts.schema) {
+    body.response_format = { type: 'json_schema', json_schema: { name: 'ladder_response', strict: true, schema: opts.schema } };
+  }
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+    headers: { Authorization: `Bearer ${opts.apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
 
@@ -31,13 +34,14 @@ export async function generateWithOpenAI(
   }
 
   const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>;
+    choices?: Array<{ message?: { content?: string | null; refusal?: string | null }; finish_reason?: string }>;
   };
   const choice = data.choices?.[0];
+  if (choice?.message?.refusal) throw new Error(`OpenAI declined: ${choice.message.refusal}`);
+  if (choice?.finish_reason === 'length') {
+    throw new Error('The answer was cut off (output limit reached). Try splitting the machine into smaller parts.');
+  }
   const text = choice?.message?.content ?? '';
   if (!text) throw new Error('OpenAI returned an empty response.');
-  if (choice?.finish_reason === 'length') {
-    throw new Error('Program was cut off (output limit reached). Try splitting the machine into smaller parts.');
-  }
   return text;
 }
