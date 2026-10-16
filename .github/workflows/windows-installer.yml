@@ -41,6 +41,11 @@ jobs:
           npx tsx src/components/questions/questions.test.ts
           node e2e/modbus.test.cjs
           npx tsx src/hmi/editor.test.ts
+          npx tsx src/review/review.test.ts
+          npx tsx src/review/codeRules/codeRules.test.ts
+          npx tsx src/review/codeRules/iec.test.ts
+          npx tsx src/electrical/layout/layout.test.ts
+          npx tsx src/electrical/catalog.test.ts
 
       - name: Build installer
         run: npm run dist:win
