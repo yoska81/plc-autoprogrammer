@@ -24,3 +24,12 @@ VITE_PREVIEW=1 npx vite build --config vite.preview.config.ts
 npx http-server dist-preview -p 5203 -s &
 BASE_URL=http://localhost:5203 node e2e/preview.e2e.cjs     # saved files land in e2e/out-preview/
 ```
+
+## Page sweep and old projects
+
+```bash
+BASE_URL=http://localhost:5203 node e2e/sweep.e2e.cjs      # every page, 1366x768 + 1920x1080, empty + example project
+BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # projects saved by older versions (e2e/old-data/*.json) still open and export
+```
+The sweep fails on page/console errors, sideways scrolling, controls pushed off-screen, text below 3:1 contrast and light
+text on lime. `old-data/<commit>.json` is the browser storage the example project of that commit left behind.
