@@ -16,6 +16,9 @@ import { getProfile } from '../core/profiles';
 import { rungAddresses, rungWrites } from '../core/ladder';
 import { rungReads } from './blocks';
 import { crossReference, issueStatus } from '../ui/program/programIndex';
+import { clickProfile, clickRetentive } from '../core/profiles/click';
+import { tagTable } from '../core/tags';
+import { clickNicknameCsv, clickRungListing } from '../core/clickExport';
 
 let passed = 0;
 const failures: string[] = [];
@@ -690,6 +693,47 @@ test('program page cross reference and block status', () => {
   const st = issueStatus(LADDER, [{ rungId: 'r_y1', severity: 'error', message: 'x' }, { rungId: null, severity: 'warning', message: 'y' }]);
   assert.deepEqual(st.byBlock.get('outputs'), { errors: 1, warnings: 0 });
   assert.equal(st.byBlock.size, 1);
+});
+
+console.log('\nvendor-neutral foundations');
+
+test('CLICK profile: IEC data types, scan semantics, exporters', () => {
+  const t = clickProfile.dataTypeOf!;
+  assert.deepEqual(['X001', 'Y002', 'C1', 'T1', 'CT2', 'SC2', 'DS1', 'DD1', 'DH1', 'DF1', 'TD1', 'CTD1', 'TXT1', '5', 'Q1'].map((a) => t(a)),
+    ['BOOL', 'BOOL', 'BOOL', 'TON', 'CTU', 'BOOL', 'INT', 'DINT', 'WORD', 'REAL', 'INT', 'DINT', 'STRING', null, null]);
+  const sem = clickProfile.simSemantics!;
+  assert.deepEqual([sem.alwaysOn, sem.firstScan, sem.clock1s], ['SC1', 'SC2', 'SC7']);
+  assert.equal(sem.retentive, clickRetentive);
+  const io = DESIGN.ioWiring.map((w, i) => ({ id: `p${i}`, description: w.description, type: (w.address.startsWith('X') ? 'input' : 'output') as 'input' | 'output', category: '', plcAddress: w.address }));
+  const addresses = new Map(io.map((p) => [p.id, p.plcAddress]));
+  const labels = new Map(io.map((p) => [p.plcAddress, p.description]));
+  const ctx = { io: io as never, addresses, labels, header: 'H', extraTags: [] };
+  const ex = Object.fromEntries(clickProfile.exporters!.map((e) => [e.id, e.build(LADDER, ctx)]));
+  assert.equal(ex['click-rungs'], clickRungListing(LADDER, labels, 'H'), 'same output as before');
+  assert.equal(ex['click-nicknames'], clickNicknameCsv(LADDER, io as never, addresses, []));
+});
+
+test('engine follows the profile scan semantics (default = CLICK, unchanged)', () => {
+  const p = prog(rung([[NO('SC2')]], [{ type: 'SET', address: 'C1' }]), rung([[NO('M_FIRST')]], [{ type: 'SET', address: 'C2' }]));
+  const a = createSimulator(p); a.step();
+  assert.equal(a.readBit('C1'), true);
+  const b = createSimulator(p, { semantics: { alwaysOn: null, firstScan: 'M_FIRST', clock1s: null, retentive: () => false } }); b.step();
+  assert.equal(b.readBit('C1'), false);
+  assert.equal(b.readBit('C2'), true, 'first-scan bit from the semantics');
+});
+
+test('vendor-neutral tag table of the example program', () => {
+  const labels = new Map(DESIGN.ioWiring.map((w) => [w.address, w.description]));
+  const tags = tagTable(LADDER, clickProfile, labels);
+  const by = new Map(tags.map((t) => [t.address, t]));
+  assert.deepEqual(by.get('C1204'), { symbol: 'STS_Jog_Permit', dataType: 'BOOL', address: 'C1204', retentive: false, comment: 'Manual jog conveyor permitted', io: false });
+  assert.equal(by.get('X004')!.symbol, 'Part_at_end_photo_eye');
+  assert.equal(by.get('X004')!.io, true);
+  assert.equal(by.get('DS1102')!.retentive, true);
+  assert.equal(by.get('T1')!.dataType, 'TON');
+  assert.equal(by.get('CTD1')!.dataType, 'DINT');
+  assert.equal(new Set(tags.map((t) => t.symbol.toLowerCase())).size, tags.length, 'unique symbols');
+  assert.ok(tags.every((t) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(t.symbol)), 'IEC identifiers');
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

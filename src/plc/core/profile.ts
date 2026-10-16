@@ -1,5 +1,5 @@
 import type { IOPoint } from '../../types/io';
-import type { Rung } from './ladder';
+import type { LadderProgram, Rung } from './ladder';
 
 export type ProgramLanguage = 'ladder' | 'st';
 
@@ -29,6 +29,45 @@ export interface CpuModel {
   notes?: string;
 }
 
+/**
+ * IEC 61131-3 data type of an operand. Vendor-neutral: profiles map their own
+ * memory (CLICK DS = INT, Logix DINT tags, Siemens %MW ...) onto these.
+ */
+export type IecDataType = 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'WORD' | 'STRING' | 'TON' | 'TOF' | 'RTO' | 'CTU' | 'CTD';
+
+/** How the PLC's scan behaves, so the simulator can follow the target instead of CLICK only. */
+export interface SimSemantics {
+  /** System bit that is always ON (CLICK SC1). */
+  alwaysOn: string | null;
+  /** System bit that is ON for the first scan only (CLICK SC2). */
+  firstScan: string | null;
+  /** System bit toggling with a 1 s period: ON for 0.5 s, OFF for 0.5 s (CLICK SC7). */
+  clock1s: string | null;
+  /** Memory that survives a power cycle by default. */
+  retentive(address: string): boolean;
+}
+
+/** Context an exporter gets besides the program. */
+export interface ExportContext {
+  io: IOPoint[];
+  /** I/O point id -> PLC address. */
+  addresses: Map<string, string>;
+  /** Address -> I/O description. */
+  labels: Map<string, string>;
+  /** Free text heading the file (project, PLC, date). */
+  header: string;
+  /** Additional nicknames (e.g. HMI tags) to include. */
+  extraTags: { address: string; nickname: string; comment: string }[];
+}
+
+/** One file the vendor's software can import or the engineer types in from. */
+export interface ProgramExporter {
+  id: string;
+  label: string;
+  fileName(base: string): string;
+  build(program: LadderProgram, ctx: ExportContext): string;
+}
+
 export interface PlcProfile {
   id: string;
   vendor: string;
@@ -46,6 +85,12 @@ export interface PlcProfile {
   promptKnowledge(cpu: CpuModel): string;
   /** PLC-specific rules beyond address checks. */
   checkRung?(rung: Rung): { severity: 'error' | 'warning'; message: string }[];
+  /** IEC data type of an address (null = not valid / constant). Foundation for vendor-neutral tags. */
+  dataTypeOf?(address: string): IecDataType | null;
+  /** Scan semantics for the simulator. */
+  simSemantics?: SimSemantics;
+  /** Program files this PLC's software can import (or that are typed in from). */
+  exporters?: ProgramExporter[];
 }
 
 /** Effective PLC address of each I/O point: manual override, else auto. */
