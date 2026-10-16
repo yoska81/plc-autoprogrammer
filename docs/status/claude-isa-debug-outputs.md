@@ -32,7 +32,7 @@ PR #7 merged (batches 1–2). Branch restarted from integration d78b221. Last in
 | I-10 (fixed by coordinator, verified p15) | Drawings (big, door detail) | legend "AUTO/MANUAL" squeezed into overlapping glyphs outside the plate. Root cause: `Txt` (drawings/symbols.tsx:28) squeezes with `textLength` + `lengthAdjust="spacingAndGlyphs"`; svg2pdf only tightens spacing, so glyphs overlap. Every `maxW` overflow in the PDF set is affected; shrink the font size instead | medium | coordinator | reported | — |
 | I-11 | Example design | SR1 monitored manual reset (S33–S34) but no reset PB → cannot reset; sheet shows PB? | high | Dev 2 (sampleProject) | fixed on claude/isa-dev-program-sim 46dfc43 (verified: PB3 on S33/S33A, door cutout E3, warning gone) | 46dfc43 |
 | I-12 | Example program | HMI alarm bits C1102/C1103 not driven by the ladder ("Not found in the program") | medium | Dev 2 | fixed on claude/isa-dev-program-sim (rungs 10–11 drive C1102/C1103) | — |
-| I-13 | Layout (big) | SR1, relays, TB1 "do not fit" while PLC rail ~60 % empty (rows share rails only as a whole group) | medium | Debug 2 / coordinator decision | open (proposal) | — |
+| I-13 | Layout (big) | SR1, relays, TB1 "do not fit" while PLC rail ~60 % empty (rows share rails only as a whole group) | medium | Debug 2 | fixed: compact packing when the normal pass overflows; big 21 placed / 6 not fit → 27 / 0 (same 4 rails); others unchanged; `tools/layout_summary.py` checks overlaps (parts, ducts, panel edge) | (batch 4) |
 | I-15 | Door cutout sheet | longer dual HMI label overflowed into the handle mark; G-label on the HMI edge | low | Debug 2 | fixed (two-line label, size fits cutout; handle label right of mark) | (this batch) |
 | I-16 | STEP header | FILE_NAME originating system / preprocessor = "PLC Autoprogrammer cabinet STEP export" (old brand) | low | coordinator | reported | — |
 | I-17 | STEP names | product names use an em dash (`\\X2\\2014\\X0\\`): valid, but SolidWorks uses product names as part file names on Save As — an ASCII " - " is safer | low | coordinator | suggestion | — |
@@ -44,8 +44,8 @@ PR #7 merged (batches 1–2). Branch restarted from integration d78b221. Last in
 Integration d78b221 + batch 3: tsc, eslint, 4 unit tests, sim_example, e2e, check-all → DXF/STEP/PDF/XLSX/consistency 0 FAIL 0 WARN; I-10 AUTO/MANUAL fits its plate; no 'Not found in the program' in the package.
 
 ## Plan
-1. I-13 layout packing (panelLayout): fill partly used rails before 'does not fit', keep ducts between rows; before/after for all variants; keep drilling/DXF/STEP/pictures consistent.
-2. Periodic review of the dev branches.
+1. Periodic review of the dev branches.
+2. Note: there is no '25 % spare space' rule in the code today (coordinator mentioned one) — if wanted, it should be a design check (used rail length / total) rather than a packing limit; awaiting decision.
 
 ## Review of claude/isa-dev-labels-print (c9f4f5c, 262d3ff)
 How: worktree of the branch, dev server :5214, `tools/gen-outputs.cjs us480 big`, all checkers, plus a roll-layout harness (labelPrinterPdf with pageLayout 'roll' for B33-80-427 horizontal/vertical and THT-14-498-10), renders at 300–1200 dpi.

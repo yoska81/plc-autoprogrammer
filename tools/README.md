@@ -35,6 +35,7 @@ alarms, STEP summary) used by the checkers.
 | `check_step.py` | OCP loads the file; every solid valid (BRepCheck); names and colours; enclosure shell = catalog size; duplicate products; door bodies on the DXF cutout centres |
 | `check_pdf.py` | Page sizes (drawings ANSI B 17x11, documents Letter); no `undefined` / `NaN` / `null` / `[object Object]` / replacement glyphs; "Page x of y" and "Sheet x of y"; TOC page numbers; renders every page at 60 dpi into `tools/out/<variant>/pages/` for a visual pass (`--no-render` to skip) |
 | `check_xlsx.py` | Every sheet has a header and data; no bad text; numbers in quantity / rung / amps columns stored as numbers |
+| `layout_summary.py` | Per variant: rails, parts placed / not fitting, lowest used point, device area; FAIL when a part overlaps another part or a wire duct or leaves the back panel |
 | `check_consistency.py` | Part numbers and quantities (BOM CSV, Excel, drawings, package), wire numbers (CSV, Excel, labels, drawings; marker copies = 2 per conductor), terminals (CSV, Excel, labels), I/O addresses (CSV, Excel, app, nicknames, drawings, package), alarm texts, revision letter on every page / title block, motor FLA against an independent copy of NEC 430.250 / 430.248, 24 VDC load and heat sums, failed calculations listed in the design review |
 
 Visual pass: after `check_pdf.py`, look through `tools/out/<variant>/pages/**.png`
