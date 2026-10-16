@@ -20,6 +20,8 @@ export interface ReviewInput {
   stages: Record<StageId, StageInfo>;
   /** Expansion module part numbers in slot order. */
   modules: string[];
+  /** Equipment recommendation cautions (servo, safety PLC … that CLICK can't do), if any. */
+  cautions?: string[];
 }
 
 /** Short stable hash for ids built from free text. */
@@ -236,10 +238,72 @@ function projectChecks({ p }: ReviewInput): Finding[] {
   return out;
 }
 
+const ANALOG_RE = /\b(4\s*-\s*20\s*ma|0\s*-\s*10\s*v|analog|transmitter|rtd|thermocouple|proportional|modulating|open(?:s)? partly|variable speed|speed (?:from|on) the screen|set the speed)\b/i;
+const GUARD_RE = /\b(light curtains?|safety mats?|guard doors?|door switch(?:es)?|interlocked (?:door|gate|guard)s?|gate switch(?:es)?|doors? around it)\b/i;
+const VFD_RE = /\b(vfds?|variable speed|variable frequency|drives? so we can set the speed|inverters?|speed drives?)\b/i;
+const SERVO_RE = /\bservo\b/i;
+const HP_RE = /(\d+(?:\.\d+)?|\d+\/\d+)\s*hp\b/gi;
+
+/**
+ * Spec coverage: things the machine description asks for that the generated
+ * design is missing. These catch the typical AI misses on real machines.
+ */
+function specCoverage({ p, cautions = [] }: ReviewInput): Finding[] {
+  const out: Finding[] = [];
+  const spec = Object.values(p.spec).join('\n');
+  if (!spec.trim()) return out;
+  const io = p.io;
+  const comps = p.electrical?.components ?? [];
+  const catOf = (pn: string) => p.drawingCtx?.getPart(pn)?.category;
+  // analog signals
+  const analogLine = spec.split('\n').find((l) => ANALOG_RE.test(l));
+  if (analogLine && io.length) {
+    const onDiscrete = io.filter((pt) => /\b(transmitter|4\s*-\s*20|0\s*-\s*10\s*v|rtd|thermocouple|analog|proportional)\b/i.test(pt.description));
+    for (const pt of onDiscrete) {
+      const a = p.addresses.get(pt.id) ?? '';
+      out.push(finding(`analog-on-discrete:${pt.id}`, 'critical', 'io', 'io', '', `Analog signal on a discrete ${pt.type}: ${a} ${pt.description}`,
+        `"${pt.description}" is an analog signal but the I/O list gives it a discrete ${pt.type} (${a}). A 4-20 mA / 0-10 V / RTD signal cannot be wired to a 24 V on/off point.`,
+        'Remove it from the discrete I/O list; add an analog module channel for it (the app lists discrete I/O only today — record the analog channel in the design notes and wire it by hand).'));
+    }
+    out.push(finding('spec-analog', 'major', 'io', 'io', '', 'The spec needs analog signals the I/O list cannot hold',
+      `The specification asks for analog measurement or control ("${analogLine.trim().slice(0, 120)}"), but the I/O list, drawings and program in this app handle discrete (on/off) points only.`,
+      'Choose analog modules on the Equipment page, list each analog channel (signal, range, scaling) in the electrical design notes and program them by hand, or confirm that on/off switches are enough.'));
+  }
+  // guarding devices in the safety circuit
+  const guard = GUARD_RE.exec(spec);
+  if (guard && io.length) {
+    const word = guard[1].toLowerCase().replace(/s$/, '').split(' ')[0];
+    const inSafety = io.some((pt) => (pt.category === 'Safety' || SAFETY_RE.test(pt.description)) && new RegExp(`\\b(${word}|curtain|door|guard|gate|zone|mat)`, 'i').test(pt.description))
+      || comps.some((c) => new RegExp(`\\b(${word}|curtain|door|guard|gate|mat)`, 'i').test(c.function));
+    if (!inSafety) {
+      out.push(finding('spec-guard', 'major', 'safety', 'electrical', '', `Spec guarding (${guard[1]}) is not in the safety circuit`,
+        `The specification has ${guard[1]}, but no safety input, safety relay channel or device in the design covers it, so opening it would not stop the machine.`,
+        'Wire the guard devices (light curtain OSSDs, door switches) into a safety relay channel and give the PLC a status input per safety zone.'));
+    }
+  }
+  // motors and drives
+  const specHp = [...spec.matchAll(HP_RE)].length;
+  const designMotors = p.electrical?.inputs.motors.length ?? 0;
+  if (p.electrical && specHp > designMotors) {
+    out.push(finding('spec-motors', 'major', 'electrical', 'electrical', '', `The spec names ${specHp} motor rating${specHp > 1 ? 's' : ''}, the panel has ${designMotors} motor${designMotors === 1 ? '' : 's'}`,
+      'Some motors described in the specification have no starter, overload or drive in the electrical design.', 'Add every motor (HP, voltage, starter or VFD) to the electrical design inputs and regenerate.'));
+  }
+  if (p.electrical && VFD_RE.test(spec) && !comps.some((c) => catOf(c.partNumber) === 'vfd')) {
+    out.push(finding('spec-vfd', 'major', 'electrical', 'electrical', '', 'The spec asks for variable-speed drives; the panel has none',
+      'The specification wants adjustable speed / soft starting, but every motor is on a contactor.', 'Set those motors to "VFD" in the electrical design inputs and regenerate.'));
+  }
+  if (SERVO_RE.test(spec) && !io.some((pt) => pt.category === 'Servo/Axis') && !cautions.some((c) => SERVO_RE.test(c))) {
+    out.push(finding('spec-servo', 'major', 'equipment', 'equipment', '', 'Servo motion is in the spec but not in the design',
+      'The specification needs a servo axis, but there is no motion hardware, axis I/O or equipment caution for it. A CLICK PLC cannot close a servo position loop by itself.',
+      'Add a servo drive with built-in indexer (or a motion controller) and its handshake I/O (enable, home, start move, in position, fault), or record why it is not needed.'));
+  }
+  return out;
+}
+
 /** Every deterministic finding for the project. */
 export function runChecks(input: ReviewInput): Finding[] {
   const all = [
-    ...stageChecks(input), ...specVsIo(input), ...equipmentChecks(input), ...electricalChecks(input),
+    ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input),
     ...programChecks(input), ...hmiChecks(input), ...projectChecks(input),
   ];
   const seen = new Set<string>();
