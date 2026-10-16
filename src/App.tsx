@@ -129,8 +129,14 @@ export default function App() {
         label: 'HMI screens', to: '/hmi', stage: 'hmi',
         children: hmiScreens.length ? hmiScreens.map((s) => ({ label: s.name, to: `/hmi?screen=${s.id}` })) : undefined,
       },
-      { label: 'PLC program', to: '/program', stage: 'program' },
-      { label: 'Simulation', to: '/simulate' },
+      {
+        label: 'PLC program', to: '/program', stage: 'program',
+        children: [
+          { label: 'Ladder program', to: '/program' },
+          { label: 'I/O addressing', to: '/plc' },
+          { label: 'Simulation', to: '/simulate' },
+        ],
+      },
       { label: 'Deliverables', to: '/export' },
     ],
   };

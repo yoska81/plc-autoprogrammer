@@ -49,7 +49,7 @@ export interface ProjectInfo {
 
 export const DEFAULT_INFO: ProjectInfo = {
   region: 'US', customer: '', site: '', drawingPrefix: '', standards: ['NFPA 79', 'UL 508A'],
-  projectNumber: '', company: '', preparedBy: '', checkedBy: '', approvedBy: '',
+  projectNumber: '', company: 'ISA', preparedBy: '', checkedBy: '', approvedBy: '',
   revisions: [],
 };
 
@@ -76,7 +76,8 @@ export const useProjectStore = create<ProjectStore>()(
       // Older projects stored fewer project-data fields.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<ProjectStore>;
-        return { ...current, ...p, info: { ...DEFAULT_INFO, ...(p.info ?? {}) } };
+        const info = { ...DEFAULT_INFO, ...(p.info ?? {}) };
+        return { ...current, ...p, info: { ...info, company: info.company || DEFAULT_INFO.company } };
       },
     }
   )
