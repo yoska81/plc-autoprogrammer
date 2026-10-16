@@ -15,7 +15,7 @@ import { labelPrinterPdf, labelSheetPdf, labelsXlsx } from '../electrical/labels
 import { labelSetupFor } from '../electrical/labels/setup';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { buildPurchaseSummaryPdf } from './purchaseSummaryPdf';
-import { buildOrderList, orderListCsv, supplierCsv } from './purchasing';
+import { buildOrderList, orderListCsv, PANEL_ORDER, SPARES_ORDER, supplierCsv } from './purchasing';
 
 /**
  * The whole project as one printable PDF: cover, contents with page numbers,
@@ -262,9 +262,20 @@ export async function addPackageToZip(zip: JSZip, p: ProjectSnapshot, pre: Prebu
   if (p.drawingCtx || p.hmi) {
     onProgress?.('Purchasing');
     zip.file(`purchasing/${p.fileBase}_purchase_summary.pdf`, await buildPurchaseSummaryPdf(p));
-    const ol = buildOrderList(p, { spares: true, labels: true });
+    // The order files are the panel parts only; the recommended spares are a separate, clearly named order.
+    const slug = (s: string) => s.replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
+    const ol = buildOrderList(p, PANEL_ORDER);
     zip.file(`purchasing/${p.fileBase}_order_list.csv`, orderListCsv(ol));
-    for (const g of ol.groups) zip.file(`purchasing/${p.fileBase}_order_${g.supplier.replace(/[^\w]+/g, '_').replace(/^_|_$/g, '')}.csv`, supplierCsv(g));
+    for (const g of ol.groups) zip.file(`purchasing/${p.fileBase}_order_${slug(g.supplier)}.csv`, supplierCsv(g));
+    const sp = buildOrderList(p, SPARES_ORDER);
+    if (sp.groups.length) {
+      zip.file(`purchasing/${p.fileBase}_spares_order_list.csv`, orderListCsv(sp));
+      for (const g of sp.groups) zip.file(`purchasing/${p.fileBase}_${slug(g.supplier)}_spares_order.csv`, supplierCsv(g));
+    }
+  }
+  if (Object.values(p.checkout ?? {}).some((c) => c.verified || c.note)) {
+    const { buildCheckoutPdf } = await import('../online/checkoutPdf');
+    zip.file(`commissioning/${p.fileBase}_IO_checkout.pdf`, await buildCheckoutPdf(p, p.checkout));
   }
   onProgress?.('Full package PDF');
   zip.file(`${p.fileBase}_full_package.pdf`, await buildFullPackagePdf(p, undefined, pre));

@@ -63,7 +63,8 @@ Windows **Settings → Apps → Installed apps → ISA Auto Programmer → Unins
 | `npm run dev` | Web version in the browser (unchanged). |
 | `npm run desktop` | Builds the app into `dist-desktop/` and opens it in Electron. |
 | `npm run dist:win` | Builds the Windows installer into `release/` (on Linux this needs `wine64` + `wine32`). |
-| `xvfb-run -a node e2e/desktop.e2e.cjs` | Desktop test, after `npm run build:desktop`: window and bridge, projects kept after a restart, Save dialog, printing at real size. |
+| `xvfb-run -a node e2e/desktop.e2e.cjs` | Desktop test, after `npm run build:desktop`: window and bridge, projects kept after a restart, Save dialog, Modbus through the bridge, printing at real size. |
+| `node e2e/modbus.test.cjs` | The Modbus TCP client (`electron/modbus.cjs`) against a fake PLC (`e2e/fake-modbus.cjs`): reads, writes, exceptions, timeouts, dropped connection, argument checks. |
 
 - **Structure:**
   - `electron/main.cjs` serves the built app from the private scheme `app://isa`. That gives the app a fixed origin, so localStorage keeps the projects, and Anthropic calls work exactly as in the browser.
@@ -74,6 +75,11 @@ Windows **Settings → Apps → Installed apps → ISA Auto Programmer → Unins
   - labels at 600 dpi, sheets at 200 dpi;
   - each image is sized to the page's real size in mm, on CSS pages of that size (mixed sizes allowed);
   - it is printed with `webContents.print` at scale 100, no margins, and the label size as the paper size for label PDFs.
+- **Connect to PLC:** Modbus TCP runs in the main process (`electron/modbus.cjs`) because a web page can't open TCP sockets. The page reaches it as `window.isaDesktop.modbus` (`ModbusBridge` in `src/desktop/bridge.ts`).
+  - The client is written directly on raw sockets: FC 1–6, about 150 lines, no native modules, so nothing complicates the installer.
+  - There is one connection per window, and requests run one at a time.
+  - It does no retries itself; the page polls.
+  - Every argument is checked in the main process, and errors come back in plain English.
 - **Installer:** electron-builder, NSIS, x64, per user. Icon in `build/icon.png`. Version from `package.json`.
 - **CI:** `.github/workflows/windows-installer.yml` builds on `windows-latest` for every push to the integration branch (the installer is attached to the run) and for tags `v*` (also published as a GitHub Release).
 - **Later:** code signing. With a code-signing certificate, the SmartScreen warning goes away. Set `CSC_LINK` / `CSC_KEY_PASSWORD` in the workflow. Automatic updates (electron-updater, `latest.yml` is already produced) can come after signing.

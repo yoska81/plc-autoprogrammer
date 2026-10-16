@@ -17,13 +17,15 @@ import { buildEverythingZip } from '../../src/deliverables/files';
 import { drillingDxf } from '../../src/electrical/dxf';
 import {
   backPanelDrilling, billOfMaterials, cableSchedule, designWarnings, doorDrilling, motorFla, panelLayout,
-  panelNameplate, revisionState, terminalPlan, wireNumbers, buildModel,
+  panelNameplate, revisionState, spareSpace, terminalPlan, wireNumbers, buildModel,
 } from '../../src/electrical/derive';
 import { buildLabels, labelsCsv } from '../../src/electrical/labels';
 import { cabinetStepSummary } from '../../src/electrical/step/cabinetStep';
 import { calculations } from '../../src/deliverables/docs/calcs';
 import { alarmRows, programInfo } from '../../src/deliverables/docs/program';
 import { getHmi } from '../../src/hmi/hmiCatalog';
+import { runCodeRules } from '../../src/review/codeRules';
+import { sccrTable } from '../../src/deliverables/docs/electrical';
 import type { DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, MotorSpec } from '../../src/electrical/types';
 import type { IOCategory } from '../../src/types/io';
 
@@ -262,6 +264,8 @@ export async function build(v: Variant | `ai-${string}`): Promise<Record<string,
     motors: m.motors.map((x) => ({ tag: x.motor.tag, hp: x.motor.hp, voltage: x.motor.voltage, fla: x.fla, tableFla: motorFla(x.motor.hp, x.motor.voltage) })),
     nameplate: panelNameplate(ctx),
     step: cabinetStepSummary(ctx),
+    spare: spareSpace(ctx),
+    codeRules: runCodeRules({ ctx, spec: p.spec, sccr: (({ unknown, lowest }) => ({ unknown, lowest }))(sccrTable(p)) }),
   };
   out['data.json'] = text(JSON.stringify(data, null, 1));
   return out;

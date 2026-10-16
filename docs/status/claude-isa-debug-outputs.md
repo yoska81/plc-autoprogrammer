@@ -45,7 +45,8 @@ Integration d78b221 + batch 3: tsc, eslint, 4 unit tests, sim_example, e2e, chec
 
 ## Plan
 1. Periodic review of the dev branches.
-2. Note: there is no '25 % spare space' rule in the code today (coordinator mentioned one) — if wanted, it should be a design check (used rail length / total) rather than a packing limit; awaiting decision.
+2. [x] 25 % spare space: `derive.spareSpace` + review finding (minor < 25 %, info otherwise). Example 30 %, ca600 36 %, big 12 % (warned), us120 0 % (overflow).
+3. Review Dev 1 purchasing outputs (order CSV vs AutomationDirect format, prices vs pack sizes, purchase summary PDF) and the questions feature when they land.
 
 ## Review of claude/isa-dev-labels-print (c9f4f5c, 262d3ff)
 How: worktree of the branch, dev server :5214, `tools/gen-outputs.cjs us480 big`, all checkers, plus a roll-layout harness (labelPrinterPdf with pageLayout 'roll' for B33-80-427 horizontal/vertical and THT-14-498-10), renders at 300–1200 dpi.
@@ -61,3 +62,30 @@ How: worktree, dev server :5224, `gen-outputs.cjs us480`, checkers, `npx tsx src
 - Verified fixes: I-11 (reset PB3), I-12 (C1102/C1103 driven).
 - Consistency on this branch: 0 FAIL, 0 WARN (no more PB?).
 - No new issues found in the generated files.
+
+## Review of claude/isa-dev-labels-print — purchasing (ccd368c) and questions (ed94e39)
+How: worktree at ed94e39 (harness from integration, dev server :5214), `gen-outputs.cjs us480 big`, purchasing files from the ZIP, AutomationDirect help page https://www.automationdirect.com/help/csvupload, live product pages, a pack-size script over `PRICES` x catalog.
+- OK: order file `ItemCode,Qty` per line, no header, CRLF — exactly AutomationDirect's cart CSV upload format; quantities are in selling units (packs), as AutomationDirect sells pack items as one item.
+- OK: all 58 price entries: selling unit = catalog packQty (each / pack of 2, 10, 50, 100), source URL ends in the part number; spot checks on the live site match (DN-T10-A $87.00 per 100-pack, GS23-45P0 $399.00, CM5-T7W $499.00).
+- OK: every order line: order qty = ceil((need + spares) / pack); extended = unit x qty; CSV total = PDF total (us480 $3,895.25, big $10,381.25); "Needed" equals bom.csv for every part; unpriced parts shown as "price to confirm" and kept out of totals (SZ-A11T).
+- R-P1 (medium): the ZIP's AutomationDirect order file includes the recommended spares by default (ZIP built with spares: true). For the example it orders 2 x PLC, HMI ($499), safety relay, power supply, contactor, overload, every pushbutton and sensor — a full spare set (~$1,200 extra on a $2,700 panel). Someone uploading "the order file" to the cart buys it all. Suggest: ZIP order file = BOM only (`_order_AutomationDirect.csv`) plus a separate `_spares_AutomationDirect.csv`, or name it `_with_spares`; the summary PDF already separates Need / Spares columns.
+- R-P2 (low): big panel's "one-page" purchase summary (38 lines) puts only the price-basis note on a nearly empty page 2 (font step 5.3 pt starts at >34 lines but the notes don't fit).
+- Questions (ed94e39): unit test passes; answers are appended as "- Q: … A: …" under "Answers to open questions" in the right spec section; only answered questions are merged (pending()), so no empty "A:" lines reach the spec / spec.md.
+
+## Cross-check round 18:38 UTC (integration a38ce1e = both dev branches fully merged)
+tsc, tools tsc, eslint, 7 unit tests (questions, labels layout, prices, cabinetStep, strength, sim engine 37, review 7), sim_example 11/11, e2e, check-all (layout, DXF, STEP, PDF, Excel, consistency on 4 variants): all pass, 0 FAIL / 0 WARN.
+Still open from the previous review: R-P1 (ZIP order file built with spares: true, fullPackage.ts:265) and R-P2 (big purchase summary 2 pages).
+
+## Electrical code compliance rules (src/review/codeRules) — milestone 1
+- [x] 18 rules (rules.ts), region-aware clauses, plain-English message + fix, wired into runChecks; codeRules.test.ts 18/18 (pass + fail case each); Dev 2's review.test.ts 7/7.
+- [x] Run on the 4 variants (data.json `codeRules`) and the ai-quality replay (only m0 has a recording; m1–m6 need ANTHROPIC_API_KEY to record).
+
+| Variant | Findings |
+|---|---|
+| us480 | info mounting window 0.39–1.55 m; minor SCCR unknown PS1; minor nameplate SCCR not stated (SB 5 kA); minor no yellow E-stop background |
+| ca600 | same, SCCR unknown T1 |
+| us120 | same, mounting window 0.37–1.73 m |
+| big | **major 18 AWG 24 VDC wiring on a 10 A supply (PSR-24-240-3) without DC protection**; SCCR unknown VFD1–4, PS1; nameplate SCCR; yellow background |
+
+Design bugs found and fixed (derive.ts): I-20 control-transformer primary wires from a phantom device "1L"; I-21 PS1 fed twice from T1 (X1→PS1:L1 and PS1-L1 'T1:T1'→PS1:L); I-22 120 VAC control conductors black instead of red (NFPA 79 13.2.4.3, and our own sheet-1 legend).
+Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 although CT-…-1 has an integral primary + secondary fuse block (coordinator); AI design should add 24 VDC branch protection when a supply > 7 A feeds 18 AWG (electricalAI prompt — coordinator); no yellow E-stop legend plate in the catalog (catalog); SCCR ratings missing for PS / transformer / VFD parts (catalog); 'no reset' is reported by both designWarnings and safety-reset (dedupe if the score double-count matters).

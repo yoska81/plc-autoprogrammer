@@ -8,7 +8,7 @@ import { makeTable, specLines, pad, type DocRow, type DocTable } from './table';
 
 /** Factory acceptance test procedure and site acceptance / commissioning checklist. */
 
-export interface TestRow { id: string; section: string; description: string; procedure: string; expected: string }
+export interface TestRow { id: string; section: string; description: string; procedure: string; expected: string; /** Recorded result (e.g. from the I/O check-out). */ result?: string }
 
 export function fatProcedure(p: ProjectSnapshot, meta: DocMeta, info: ProgramInfo = programInfo(p), sf: SafetyFunction[] = safetyFunctions(p)): TestRow[] {
   const rows: TestRow[] = [];
@@ -94,7 +94,7 @@ export function testTable(rows: TestRow[]): DocTable {
   let last = '';
   for (const r of rows) {
     if (r.section !== last) { out.push({ group: r.section }); last = r.section; }
-    out.push([r.id, r.description, r.procedure, r.expected, '', '']);
+    out.push([r.id, r.description, r.procedure, r.expected, r.result ?? '', '']);
   }
   return makeTable([['Test ID', 9], ['Description', 24], ['Procedure', 44], ['Expected result', 44], ['Pass/Fail', 9, 'center'], ['Initials', 8, 'center']], out, 9);
 }
@@ -129,6 +129,8 @@ export function satChecklist(p: ProjectSnapshot, sf: SafetyFunction[] = safetyFu
   for (const x of p.io) {
     const a = p.addresses.get(x.id) || x.id;
     add(D, `${a} ${x.description}`, x.type === 'input' ? 'Operate the field device at its installed location.' : 'Force the output with the machine safe.', x.type === 'input' ? `PLC ${a} and HMI follow the device.` : 'Device operates at its installed location.');
+    const c = p.checkout?.[x.id];
+    if (c?.verified) rows[rows.length - 1].result = `OK — I/O check-out ${c.date}${c.by ? ` (${c.by})` : ''}${c.note ? `: ${c.note}` : ''}`;
   }
   const E = '5. Safety validation';
   for (const s of sf) add(E, `${s.id} ${s.name}`, `${s.test} Measure stopping time where relevant.`, s.expected);
@@ -146,7 +148,7 @@ export function satTable(rows: TestRow[]): DocTable {
   let last = '';
   for (const r of rows) {
     if (r.section !== last) { out.push({ group: r.section }); last = r.section; }
-    out.push([r.id, r.description, r.procedure, r.expected, '', '']);
+    out.push([r.id, r.description, r.procedure, r.expected, r.result ?? '', '']);
   }
   return makeTable([['Item', 9], ['Check', 26], ['Method', 44], ['Acceptance', 40], ['Done', 8, 'center'], ['Initials', 8, 'center']], out, 9);
 }

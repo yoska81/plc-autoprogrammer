@@ -14,6 +14,8 @@ import { Spinner, ReasoningPanel } from '../components/common';
 import { type AccessLevel, type HmiDesign, type HmiElement, type HmiScreen, type HmiState, type HmiStyle, type MachineSymbol } from '../hmi/types';
 import { checkDesign, layoutBands, MIN_TOUCH, type LayoutIssue } from '../hmi/layout';
 import { LEVEL_LABEL } from '../hmi/theme';
+import QuestionList from '../components/questions/QuestionList';
+import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
 
 const input = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white';
 const fieldLabel = 'block text-[11px] font-medium text-gray-500 uppercase tracking-wide';
@@ -206,6 +208,9 @@ export default function HmiPage() {
   const model = getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
   const apiKey = settings.anthropicApiKey;
   const design = hmi.design;
+  // "To confirm" items, answered under each one.
+  useSyncQuestions('hmi', design ? design.notes.map((n) => ({ text: n, assumption: n, section: 'operator' as const })) : null);
+  const hmiQuestions = useQuestions('hmi');
   const screen = design?.screens.find((s) => s.id === screenId) ?? design?.screens[0] ?? null;
   const selectedEl = screen?.elements.find((e) => e.id === selected) ?? null;
   const issues = useMemo(() => (design && model ? checkDesign(design, model.widthPx, model.heightPx) : []), [design, model]);
@@ -398,7 +403,7 @@ export default function HmiPage() {
                 {tabBtn('tags', 'Tags', design.tags.length)}
                 {tabBtn('alarms', 'Alarms', design.alarms.length)}
                 {tabBtn('check', 'Layout check', issues.length)}
-                {tabBtn('notes', 'To confirm', design.notes.length)}
+                {tabBtn('notes', 'To confirm', hmiQuestions.filter((q) => q.status === 'open').length)}
               </div>
               <div className="p-4 overflow-x-auto">
                 {tab === 'tags' && (
@@ -461,7 +466,8 @@ export default function HmiPage() {
                   ) : <p className="text-sm text-emerald-700">All screens pass: on-screen, no overlaps, touch targets ≥ {MIN_TOUCH.w}×{MIN_TOUCH.h} px, header and navigation present, every address tagged.</p>
                 )}
                 {tab === 'notes' && (
-                  design.notes.length ? <ul className="list-disc pl-5 text-sm text-gray-800 space-y-1">{design.notes.map((n, i) => <li key={i}>{n}</li>)}</ul> : <p className="text-sm text-gray-500">Nothing to confirm.</p>
+                  hmiQuestions.length ? <QuestionList questions={hmiQuestions} title="To confirm"
+                    intro="Confirm each item or type the correct answer under it; answers are added to the machine description (operator station) and the HMI becomes out of date so Update uses them." /> : <p className="text-sm text-gray-500">Nothing to confirm.</p>
                 )}
               </div>
             </section>

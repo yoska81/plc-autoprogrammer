@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import QuestionList from '../components/questions/QuestionList';
+import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
 import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon } from '@heroicons/react/20/solid';
 import { collectProject } from '../deliverables/collect';
 import { useElectricalStore } from '../store/useElectricalStore';
@@ -12,7 +14,7 @@ import { AREA_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, pageRoute, sortFindings, ty
 
 const SEV_STYLE: Record<Severity, string> = {
   critical: 'bg-red-600 text-white',
-  major: 'bg-amber-500 text-white',
+  major: 'bg-amber-500 text-amber-950',
   minor: 'bg-sky-100 text-sky-800',
   info: 'bg-steel-100 text-steel-600',
 };
@@ -98,6 +100,10 @@ export default function ReviewPage() {
   useEffect(() => { refreshChecks(); }, []);
 
   const all = useMemo(() => sortFindings([...checks, ...(ai?.findings ?? [])]), [checks, ai]);
+  // Info findings that need the user's input become questions (electrical / HMI notes are already asked on their pages).
+  useSyncQuestions('review', all.filter((f) => f.severity === 'info' && !/^(enote|hnote|empty):/.test(f.id) && /confirm|\?|provide|unknown|not (stated|known|given)|to be /i.test(`${f.title} ${f.detail}`))
+    .map((f) => ({ text: f.detail && f.detail !== f.title ? `${f.title}: ${f.detail}` : f.title, assumption: f.fix || undefined })));
+  const allQuestions = useQuestions();
   const shown = all.filter((f) => sev.has(f.severity) && (area === 'all' || f.area === area) && (source === 'all' || f.source === source)
     && (status === 'all' || statusOf(marks, f.id) === status) && (!q.trim() || `${f.title} ${f.detail}`.toLowerCase().includes(q.toLowerCase())));
   const openCount = (s: Severity) => all.filter((f) => f.severity === s && statusOf(marks, f.id) === 'open').length;
@@ -167,6 +173,9 @@ export default function ReviewPage() {
           </div>
           {ai?.summary && <p className="mt-1.5"><span className="font-semibold text-steel-800">Reviewer's verdict: </span>{ai.summary}</p>}
         </div>
+
+        <QuestionList questions={allQuestions.filter((q) => q.status === 'open' || !q.merged)} title="Questions to answer (all stages)" showSource
+          intro="Every open question and assumption from the machine description, I/O, electrical design, HMI and this review, each with its answer box right under it. Answers go into the machine description; the affected stages become out of date so Update uses them." />
 
         <div className="flex flex-wrap items-center gap-1.5 rounded border border-steel-200 bg-white px-3 py-2">
           <span className="mr-1 text-[11px] font-bold uppercase tracking-wide text-steel-500">Severity</span>

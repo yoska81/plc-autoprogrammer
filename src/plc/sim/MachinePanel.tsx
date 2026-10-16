@@ -92,11 +92,11 @@ function BypassControl({ d, onSet }: { d: SimDevice; onSet: MachineActions['setB
       </button>
     );
   }
-  const seg = (v: boolean) => `px-1.5 py-px text-[10px] font-bold ${b.value === v ? 'bg-amber-500 text-white' : 'bg-white text-amber-700 hover:bg-amber-50'}`;
+  const seg = (v: boolean) => `px-1.5 py-px text-[10px] font-bold ${b.value === v ? 'bg-amber-500 text-amber-950' : 'bg-white text-amber-700 hover:bg-amber-50'}`;
   return (
     <span className="inline-flex items-center gap-1">
       <button type="button" onClick={() => onSet(d.id, false)} title="Remove the bypass"
-        className="rounded bg-amber-500 px-1.5 py-px text-[10.5px] font-bold text-white hover:bg-amber-600">
+        className="rounded bg-amber-500 px-1.5 py-px text-[10.5px] font-bold text-amber-950 hover:bg-amber-600">
         BYPASSED ✕
       </button>
       {HAS_VALUE.has(d.kind) && (

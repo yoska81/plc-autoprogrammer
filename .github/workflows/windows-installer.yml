@@ -37,6 +37,7 @@ jobs:
           npx tsx src/electrical/strength.test.ts
           npx tsx src/electrical/step/cabinetStep.test.ts
           npx tsx src/electrical/labels/layout.test.ts
+          node e2e/modbus.test.cjs
 
       - name: Build installer
         run: npm run dist:win

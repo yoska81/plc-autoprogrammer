@@ -13,7 +13,9 @@ for n in names:
     placed = [i for i in L['items'] if i['category'] not in ('groundBar',)]
     low = max((i['y'] + i['h'] for i in L['items']), default=0) - bp['y']
     used = sum(i['w'] * i['h'] for i in placed) / (bp['w'] * bp['h'])
-    print(f"{n:6} panel {bp['w']:.0f}x{bp['h']:.0f}  rails {len(L['rails'])}  placed {len(placed)}  not fit {len(L['notFit'])} {[x['tag'] for x in L['notFit']]}  lowest {low:.0f} mm  device area {used:.0%}")
+    sp = d.get('spare') or {}
+    sps = f"  spare {sp.get('panel', 0):.0%} (rails {', '.join(f'{r['spare']:.0%}' for r in sp.get('rails', []))}; +{sp.get('extraRails', 0)} rails)" if sp else ''
+    print(f"{n:6} panel {bp['w']:.0f}x{bp['h']:.0f}  rails {len(L['rails'])}  placed {len(placed)}  not fit {len(L['notFit'])} {[x['tag'] for x in L['notFit']]}  lowest {low:.0f} mm  device area {used:.0%}{sps}")
 
 # ---- geometry checks: parts inside the back panel, no part overlaps another part or a duct
 fails = 0

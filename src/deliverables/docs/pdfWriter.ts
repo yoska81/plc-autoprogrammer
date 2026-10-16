@@ -38,7 +38,7 @@ export function pdfSafe(t: string): string {
 
 export interface Heading { level: 1 | 2; title: string; page: number }
 
-export interface TableOpts { fontSize?: number; zebra?: boolean; headerless?: boolean; boldFirstCol?: boolean }
+export interface TableOpts { fontSize?: number; zebra?: boolean; headerless?: boolean; boldFirstCol?: boolean; /** Cell padding in mm (default 1.3). */ pad?: number }
 
 export class PdfWriter {
   readonly doc: jsPDF;
@@ -179,7 +179,7 @@ export class PdfWriter {
   table(t: DocTable, o: TableOpts = {}): void {
     const doc = this.doc;
     const fs = o.fontSize ?? 7.6;
-    const pad = 1.3;
+    const pad = o.pad ?? 1.3;
     const lh = this.lineH(fs);
     const widths = this.columnWidths(t, fs, pad);
     const xs = widths.map((_, i) => this.M + widths.slice(0, i).reduce((s, w) => s + w, 0));

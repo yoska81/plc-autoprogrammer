@@ -249,7 +249,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
             </span>
           ))}
           <button type="button" onClick={() => ctl.clearAll()}
-            className="ml-auto rounded border border-amber-500 bg-amber-500 px-2 py-0.5 text-[12px] font-semibold text-white hover:bg-amber-600">
+            className="ml-auto rounded border border-amber-500 bg-amber-500 px-2 py-0.5 text-[12px] font-semibold text-amber-950 hover:bg-amber-600">
             Clear all bypasses / forces
           </button>
         </div>
@@ -304,7 +304,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
                       <span className="inline-flex overflow-hidden rounded border border-steel-300">
                         {[true, false].map((v) => (
                           <button key={String(v)} type="button" onClick={() => ctl.setHold(s.address, { value: v, held: true })}
-                            className={`px-1.5 text-[10.5px] font-bold ${s.value === v && s.held ? 'bg-amber-500 text-white' : s.value === v ? 'bg-steel-200 text-steel-700' : 'bg-white text-steel-500 hover:bg-steel-50'}`}>
+                            className={`px-1.5 text-[10.5px] font-bold ${s.value === v && s.held ? 'bg-amber-500 text-amber-950' : s.value === v ? 'bg-steel-200 text-steel-700' : 'bg-white text-steel-500 hover:bg-steel-50'}`}>
                             {v ? 'ON' : 'OFF'}
                           </button>
                         ))}

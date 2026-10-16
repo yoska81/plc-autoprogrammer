@@ -473,6 +473,8 @@ export function seedSampleProject() {
     // Store the example under its own id and put the viewer's project back in the stores.
     storeStateAs(EXAMPLE_ID, active);
     useProjectsStore.setState((s) => ({ projects: hasExample ? s.projects : [entry, ...s.projects] }));
+    // Older previews kept the example in the viewer's own project: don't show two projects with the same name.
+    if (ps.projects.find((p) => p.id === active)?.name === EXAMPLE_NAME) useProjectsStore.getState().renameActive('Conveyor Cell (your copy)');
   } else {
     useProjectsStore.setState((s) => ({
       projects: hasExample ? s.projects.map((p) => (p.id === EXAMPLE_ID ? { ...p, name: EXAMPLE_NAME } : p)) : [entry, ...s.projects],

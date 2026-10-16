@@ -4,6 +4,8 @@
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const JSZip = require('jszip');
 const { PDFDocument, PDFName } = require('pdf-lib');
+const { createFakeModbus } = require('../tools/modbus/fake-server.cjs');
+const { createModbusClient } = require('../tools/modbus/client.cjs');
 const fs = require('fs');
 const SP = __dirname + '/';
 const OUT = SP + 'out/';
@@ -27,7 +29,7 @@ const IO_POINTS = [
 ].map(([description, type, category, deviceType]) => ({ description, type, category, deviceType, reason: 'spec' }));
 
 const counts = {};
-function reply(system) {
+function reply(system, body = {}) {
   const k = system.includes('checks a machine control design') ? 'review'
     : system.includes('functional specification') ? 'spec'
     : system.includes('choosing the control equipment') ? 'equipment'
@@ -39,7 +41,13 @@ function reply(system) {
   const m = F.DESIGN.machine;
   switch (k) {
     case 'review': return F.REVIEW;
-    case 'spec': return { sections: F.SPEC, questions: ['How many parts per minute at most?'], summary: 'Organized the description into 10 sections.' };
+    case 'spec': {
+      // Answers to open questions are merged into the overview (like the real spec AI would).
+      const user = (body.messages ?? []).flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }])).map((c) => c.text ?? '').join('\n');
+      const answers = user.includes('Answers to open questions') ? user.split('\n').filter((l) => l.startsWith('- Q: ')) : [];
+      if (answers.length) return { sections: { ...F.SPEC, overview: `${F.SPEC.overview}\n${answers.map((l) => `- ${l.replace(/^- Q: .*? A: /, '')}`).join('\n')}` }, questions: [], summary: `Added ${answers.length} answer(s).` };
+      return { sections: F.SPEC, questions: ['How many parts per minute at most?'], summary: 'Organized the description into 10 sections.' };
+    }
     case 'equipment': return F.RECOMMENDATION;
     case 'io': return { explanation: '5 inputs, 2 outputs.', points: IO_POINTS, questions: [] };
     case 'electrical': return {
@@ -78,7 +86,7 @@ function sse(model, text) {
   page.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
-    await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, JSON.stringify(reply(body.system))) });
+    await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, JSON.stringify(reply(body.system, body))) });
   });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
 
@@ -370,7 +378,18 @@ function sse(model, text) {
   await snap(page, 'settings');
 
   // Spec change → update all
+  // Open questions: answer right under the question; the answer is merged into the spec and the tree count clears
   await page.goto(BASE + '/spec');
+  const qBox = page.getByLabel('Answer to: How many parts per minute at most?');
+  await qBox.waitFor({ timeout: 10000 });
+  log('Open questions in tree:', await page.locator('nav [aria-label$="open questions"]').allInnerTexts());
+  await qBox.fill('60 parts per minute');
+  await page.getByRole('button', { name: 'Save answer' }).first().click();
+  await page.getByText(/Added to the spec ·/).first().waitFor({ timeout: 20000 });
+  const overview = await page.locator('#spec-overview').inputValue();
+  log('Answer merged into spec:', overview.includes('60 parts per minute'), '| tree badges left:', await page.locator('nav [aria-label$="open questions"]').count());
+  if (!overview.includes('60 parts per minute')) throw new Error('answer was not merged into the spec');
+  await snap(page, 'questions');
   await page.locator('#spec-alarms').fill('- Pusher fault: pusher not extended within 5 s.');
   log('Out of date after edit:', await page.locator('nav [title="Out of date"]').count());
   await page.getByRole('button', { name: /Update out-of-date stages/ }).click();
@@ -447,10 +466,12 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 10000 });
   await rowOf('Air is not dumped on an E-stop').getByRole('button', { name: 'Resolved' }).click();
   await page.getByPlaceholder(/Reason/).fill('Dump valve added to the pneumatic design');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   check(await rowOf('Air is not dumped on an E-stop').count() === 0, 'resolved finding leaves the open list');
   await rowOf('Pusher retract is not confirmed').getByRole('button', { name: 'Ask AI to fix' }).click();
   await page.waitForURL(/\/program/);
+  // Wait for the program's request box (the review page also has answer boxes until it unmounts).
+  await page.waitForFunction(() => [...document.querySelectorAll('textarea')].some((t) => t.value.includes('Pusher retract is not confirmed')), null, { timeout: 10000 }).catch(() => {});
   const req = await page.locator('textarea').last().inputValue();
   check(req.includes('Pusher retract is not confirmed'), 'finding handed to the program Fix & Ask');
   log('Program request from review:', req.split('\n')[0]);
@@ -459,6 +480,46 @@ function sse(model, text) {
   await page.getByRole('combobox', { name: 'Status' }).selectOption('all');
   check(await rowOf('Air is not dumped on an E-stop').getByText('resolved').count() === 1, 'resolution kept');
   await snap(page, 'review');
+
+  // Online with a real PLC (desktop bridge mocked by a Node Modbus client talking to a fake CLICK on localhost):
+  // read-only by default, live values, writes only to C/DS after "Allow writes", I/O check-out feeds the SAT and ZIP
+  const plc = createFakeModbus({ discrete: { 0: true, 45056: true }, coils: { 8192: false, 16385: true }, holding: { 0: 7 } });
+  const plcPort = await plc.listen(0);
+  const mb = createModbusClient();
+  await page.exposeFunction('__modbus', (method, args) => mb[method](...args));
+  await ctx.addInitScript(() => {
+    const call = (m) => (...a) => window.__modbus(m, a);
+    window.isaDesktop = { ...(window.isaDesktop ?? {}), modbus: Object.fromEntries(['connect', 'disconnect', 'readCoils', 'readDiscreteInputs', 'readHoldingRegisters', 'readInputRegisters', 'writeCoil', 'writeRegister'].map((m) => [m, call(m)])) };
+  });
+  await page.goto(BASE + '/online');
+  await page.getByLabel('PLC IP address').fill('127.0.0.1');
+  await page.getByLabel('Modbus port').fill(String(plcPort));
+  await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await page.getByText(/Connected · \d+ reads/).waitFor({ timeout: 10000 });
+  await page.waitForTimeout(800);
+  const val = (a) => page.getByLabel(`Value of ${a}`).innerText();
+  log('Online values:', 'X001', await val('X001'), '| X002', await val('X002'), '| Y001', await val('Y001'), '| C2', await val('C2'), '| T1', await val('T1'));
+  if (await val('X001') !== 'ON' || await val('C2') !== 'ON' || await val('Y001') !== 'OFF') throw new Error('online values do not match the PLC');
+  check(!(await page.getByLabel('Allow writes').isChecked()) && plc.log.every((l) => l.fc <= 4), 'read-only by default (no write requests)');
+  await page.getByLabel('Allow writes').check();
+  await page.getByRole('alert').filter({ hasText: 'WRITES ENABLED' }).waitFor();
+  check(await page.locator('tr[data-address="Y001"] button').count() === 0 && await page.locator('tr[data-address="X001"] button').count() === 0, 'X / Y cannot be written');
+  await page.locator('tr[data-address="C1"]').getByRole('button', { name: 'Set ON' }).click();
+  await page.getByText('C1 written.').waitFor({ timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Value of C1"]')?.textContent === 'ON', null, { timeout: 5000 });
+  const writes = plc.log.filter((l) => l.fc === 5 || l.fc === 6);
+  log('PLC writes:', JSON.stringify(writes));
+  if (writes.length !== 1 || writes[0].address !== 16384 || writes[0].value !== true) throw new Error('unexpected PLC writes');
+  await page.getByRole('button', { name: 'Live ladder' }).click();
+  await snap(page, 'online_ladder');
+  await page.getByRole('button', { name: /^I\/O check-out/ }).click();
+  await page.getByLabel('Technician').fill('J.D.');
+  await page.getByLabel('Verified X001').check();
+  log('Check-out:', await page.getByText(/points verified/).first().innerText());
+  await snap(page, 'online_checkout');
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  await mb.disconnect();
+  await plc.close();
 
   // Deliverables
   await page.goto(BASE + '/export');
@@ -471,10 +532,13 @@ function sse(model, text) {
   check(wbXml.includes('name="Review Findings"'), 'Excel has the design review findings');
   // Purchasing: order list by supplier, AutomationDirect cart CSV ("PartNumber,Quantity", no header), one-page summary
   await page.getByText('Purchasing — order list').waitFor();
-  log('Order list:', (await page.locator('#order-list .bg-steel-50 span.text-xs').first().innerText()), '|', await page.getByText(/^Total of verified prices/).innerText());
+  log('Order list:', (await page.locator('#order-list .bg-steel-50 span.text-xs').first().innerText()), '|', await page.getByText(/^Panel parts, total of verified prices/).innerText());
   const adCsv = fs.readFileSync(await dl('AutomationDirect order file (CSV)'), 'utf8').trim().split(/\r?\n/);
   if (!adCsv.length || !adCsv.every((l) => /^[A-Z0-9][A-Z0-9-]*,\d+$/i.test(l))) throw new Error('AutomationDirect order file is not "PartNumber,Quantity" lines: ' + adCsv.slice(0, 3).join(' | '));
   log('AutomationDirect order file:', adCsv.length, 'lines, e.g.', adCsv.slice(0, 3).join(' | '));
+  // Panel parts only: the CPU is ordered once (spares are a separate, optional order, off by default)
+  if (!adCsv.some((l) => /^C0-1\dDD1E-D,1$/.test(l))) throw new Error('order file should hold one CPU (no spares): ' + adCsv.filter((l) => l.startsWith('C0-')).join(' | '));
+  if (await page.getByLabel('Show recommended spares (separate order)').isChecked()) throw new Error('spares should be off by default');
   const ps = await PDFDocument.load(fs.readFileSync(await dl('Purchase summary PDF')));
   log('Purchase summary PDF pages:', ps.getPageCount());
   if (ps.getPageCount() !== 1) throw new Error('purchase summary is not one page');
@@ -489,6 +553,8 @@ function sse(model, text) {
   const zip = await JSZip.loadAsync(fs.readFileSync(zipPath));
   log('ZIP:', Object.keys(zip.files).filter((f) => !f.endsWith('/')).join(', '));
   if (!Object.keys(zip.files).some((f) => f.startsWith('purchasing/') && f.endsWith('_purchase_summary.pdf'))) throw new Error('ZIP has no purchase summary');
+  if (!Object.keys(zip.files).some((f) => /^purchasing\/.*_spares_order\.csv$/.test(f))) throw new Error('ZIP has no separate spares order file');
+  if (!Object.keys(zip.files).some((f) => /^commissioning\/.*_IO_checkout\.pdf$/.test(f))) throw new Error('ZIP has no I/O check-out sheet');
   await snap(page, 'deliverables');
 
   log('AI calls:', JSON.stringify(counts));
