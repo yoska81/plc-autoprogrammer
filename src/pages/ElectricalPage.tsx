@@ -54,6 +54,8 @@ const download = (name: string, content: string, mime: string) => saveBlob(name,
 
 type Tab = 'design' | 'cabinet' | 'machine' | 'layout' | 'picture' | 'machining' | 'labels';
 
+const TAB_TITLE: Record<Tab, string> = { design: 'Design', cabinet: 'Cabinet wiring', machine: 'Machine wiring', layout: 'Machine layout', picture: 'Cabinet picture', machining: 'Machining (DXF)', labels: 'Labels' };
+
 export default function ElectricalPage() {
   const el = useElectricalStore();
   const settings = useSettingsStore();
@@ -111,16 +113,13 @@ export default function ElectricalPage() {
     }
   };
 
-  const tabBtn = (id: Tab, label: string) => (
-    <button onClick={() => setTab(id)} className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === id ? 'border-brand-600 text-brand-800' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>{label}</button>
-  );
 
   return (
     <>
-      <header className="px-6 pt-4 bg-white border-b border-steel-200">
+      <header className="px-6 py-3 bg-white border-b border-steel-200">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-base font-semibold text-steel-800">4 · Electrical Design</h2>
+            <h2 className="text-base font-semibold text-steel-800">4 · Electrical Design{tab !== 'design' && <span className="font-normal text-steel-500"> — {TAB_TITLE[tab]}</span>}</h2>
             <p className="text-xs text-steel-400 mt-0.5">Control panel design and drawings · AutomationDirect parts · {profile.name} {cpu.id}</p>
           </div>
           {el.design && (
@@ -133,7 +132,6 @@ export default function ElectricalPage() {
             </div>
           )}
         </div>
-        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('layout', 'Machine layout')}{tabBtn('picture', 'Cabinet picture')}{tabBtn('machining', 'Machining (DXF)')}{tabBtn('labels', 'Labels')}</div>
       </header>
 
       <StageBanner info={stages.electrical} action={

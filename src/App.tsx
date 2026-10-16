@@ -15,11 +15,9 @@ import { useHmiStore } from './store/useHmiStore';
 import type { StageId } from './store/useStageStore';
 import UpdateAll from './components/UpdateAll';
 import ResizablePane from './components/ResizablePane';
-import { EditorBar, PortalBrand, TaskCards } from './shell/tia';
+import { EditorBar, PortalBrand } from './shell/tia';
 import { useOpenCounts } from './components/questions/useQuestionStore';
 
-// Stable empty list: a new [] inside a store selector would re-render forever.
-const NO_SCREENS: never[] = [];
 
 const DOT: Record<StageStatus | 'none', string> = {
   empty: 'bg-steel-300',
@@ -104,7 +102,6 @@ export default function App() {
   const { projects, activeId, openProject, ensureActive } = useProjectsStore();
   const { cpuId, modules } = useProjectStore();
   const hmiPart = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber);
-  const hmiScreens = useHmiStore((s) => s.design?.screens) ?? NO_SCREENS;
   const rev = currentRevision(useProjectStore((s) => s.info));
   useEffect(() => { ensureActive(); }, [ensureActive]);
   useAutoReview();
@@ -139,12 +136,10 @@ export default function App() {
       },
       {
         label: 'HMI screens', to: '/hmi', stage: 'hmi', questions: openQ.hmi,
-        children: hmiScreens.length ? hmiScreens.map((s) => ({ label: s.name, to: `/hmi?screen=${s.id}` })) : undefined,
       },
       {
         label: 'PLC program', to: '/program', stage: 'program',
         children: [
-          { label: 'Ladder program', to: '/program' },
           { label: 'I/O addressing', to: '/plc' },
           { label: 'Simulation', to: '/simulate' },
           { label: 'Online (real PLC)', to: '/online' },
@@ -167,11 +162,6 @@ export default function App() {
               <MenuItem onClick={() => navigate('/import')}>Import existing system…</MenuItem>
               <MenuItem onClick={() => navigate('/project')}>Project data and revisions…</MenuItem>
               <div className="border-t border-steel-200 my-1" />
-              <div className="px-4 py-1 text-xs text-steel-500">Open project</div>
-              {projects.map((p) => (
-                <MenuItem key={p.id} onClick={() => openProject(p.id)}>{p.id === activeId ? '● ' : ''}{p.name}</MenuItem>
-              ))}
-              <div className="border-t border-steel-200 my-1" />
               <MenuItem onClick={() => navigate('/review')}>Design review…</MenuItem>
               <MenuItem onClick={() => navigate('/export')}>Deliverables…</MenuItem>
               <MenuItem onClick={() => navigate('/export?action=print-full')}>Print full package…</MenuItem>
@@ -182,7 +172,6 @@ export default function App() {
               <MenuItem onClick={() => navigate('/online')}>Go online (real PLC)…</MenuItem>
             </Menu>
             <Menu label="Tools">
-              <MenuItem onClick={() => navigate('/simulate')}>Simulation</MenuItem>
               <MenuItem onClick={() => navigate('/plc')}>PLC addressing</MenuItem>
               <MenuItem onClick={() => navigate('/review')}>Design review (compile)</MenuItem>
             </Menu>
@@ -237,7 +226,6 @@ export default function App() {
           )}
           <Outlet />
         </main>
-        <TaskCards />
       </div>
 
       {/* Editor bar: portal view, open editors, status */}
