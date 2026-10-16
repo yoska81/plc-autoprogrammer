@@ -4,7 +4,8 @@
  * exactly like the Export page does, plus extra DXF options and JSON dumps of the derived
  * data so the Python checkers can cross-check the files.
  */
-import { seedSampleProject, DESIGN, HMI } from '../../src/preview/sampleProject';
+import { seedSampleProject, DESIGN, HMI, EXAMPLE_ID } from '../../src/preview/sampleProject';
+import { useProjectsStore } from '../../src/store/useProjectsStore';
 import { useIOStore } from '../../src/store/useIOStore';
 import { useProjectStore } from '../../src/store/useProjectStore';
 import { useElectricalStore } from '../../src/store/useElectricalStore';
@@ -84,6 +85,8 @@ export type Variant = typeof VARIANTS[number];
 export function setupVariant(v: Variant) {
   try { localStorage.clear(); } catch { /* ignore */ }
   seedSampleProject();
+  // The example lives in its own project now; make sure it is the open one.
+  if (useProjectsStore.getState().activeId !== EXAMPLE_ID) useProjectsStore.getState().openProject(EXAMPLE_ID);
   const elec = useElectricalStore.getState();
   if (v === 'us480') return;
   if (v === 'ca600') {
