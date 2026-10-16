@@ -1,5 +1,5 @@
 # Builds the Windows installer (Setup .exe) of ISA Auto Programmer.
-# Every push to the integration branch: the installer is attached to the run as an artifact.
+# Every push to the integration branch (and pull requests into it): the installer is attached to the run as an artifact.
 # A tag v* (e.g. v0.7.0): also published as a GitHub Release with the Setup .exe.
 name: Windows installer
 
@@ -7,6 +7,8 @@ on:
   push:
     branches: [claude/optimistic-maxwell-6nfcs6]
     tags: ['v*']
+  pull_request:
+    branches: [claude/optimistic-maxwell-6nfcs6]
   workflow_dispatch:
 
 permissions:
