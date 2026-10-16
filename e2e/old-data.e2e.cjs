@@ -11,7 +11,7 @@ const url = (r) => (HASH ? `${BASE}/#${r}` : BASE + r);
 const DIR = __dirname + '/old-data/';
 const log = (...a) => console.log('•', ...a);
 const ROUTES = ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine',
-  '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/export'];
+  '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/review', '/export'];
 
 (async () => {
   const browser = await chromium.launch();
@@ -68,7 +68,7 @@ const ROUTES = ['/spec', '/project', '/equipment', '/io', '/electrical?tab=desig
       }
       let pages = 0;
       for (const r of ROUTES) {
-        if (how === 'switched') await page.locator('nav a', { hasText: { '/spec': 'Machine description', '/project': 'Project data', '/equipment': 'Equipment', '/io': 'I/O list', '/hmi': 'HMI screens', '/program': 'PLC program', '/simulate': 'Simulation', '/export': 'Deliverables' }[r] ?? 'Electrical design' }).first().click();
+        if (how === 'switched') await page.locator('nav a', { hasText: { '/spec': 'Machine description', '/project': 'Project data', '/equipment': 'Equipment', '/io': 'I/O list', '/hmi': 'HMI screens', '/program': 'PLC program', '/simulate': 'Simulation', '/review': 'Design review', '/export': 'Deliverables' }[r] ?? 'Electrical design' }).first().click();
         else await page.goto(url(r));
         await page.waitForTimeout(700);
         const blank = (await page.locator('main').innerText().catch(() => '')).trim().length < 20;
