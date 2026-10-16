@@ -12,6 +12,7 @@ import { useHmiStore } from './store/useHmiStore';
 import type { StageId } from './store/useStageStore';
 import UpdateAll from './components/UpdateAll';
 import ResizablePane from './components/ResizablePane';
+import { useOpenCounts } from './components/questions/useQuestionStore';
 
 // Stable empty list: a new [] inside a store selector would re-render forever.
 const NO_SCREENS: never[] = [];
@@ -23,7 +24,7 @@ const DOT: Record<StageStatus | 'none', string> = {
   none: 'bg-transparent',
 };
 
-interface TreeNode { label: string; to?: string; stage?: StageId; children?: TreeNode[]; mono?: boolean }
+interface TreeNode { label: string; to?: string; stage?: StageId; children?: TreeNode[]; mono?: boolean; /** Open questions on this page. */ questions?: number }
 
 /** Menu bar entry with a click-open dropdown (closes on outside click). */
 function Menu({ label, children }: { label: string; children: ReactNode }) {
@@ -72,6 +73,7 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
         {hasChildren && (open ? <ChevronDownIcon className="w-3.5 h-3.5" /> : <ChevronRightIcon className="w-3.5 h-3.5" />)}
       </span>
       <span className={`truncate ${node.mono ? 'font-mono text-xs' : ''}`}>{node.label}</span>
+      {node.questions ? <span className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900" title={`${node.questions} open question${node.questions === 1 ? '' : 's'}`} aria-label={`${node.questions} open questions`}>{node.questions}?</span> : null}
       <span className={`ml-auto w-2 h-2 rounded-full flex-shrink-0 ${DOT[status]}`} title={status === 'none' ? undefined : status === 'ready' ? 'Done' : status === 'stale' ? 'Out of date' : 'Not started'} />
     </span>
   );
@@ -90,6 +92,7 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
 
 export default function App() {
   const stages = useStages();
+  const openQ = useOpenCounts();
   const navigate = useNavigate();
   const { projects, activeId, openProject, ensureActive } = useProjectsStore();
   const { cpuId, modules } = useProjectStore();
@@ -105,7 +108,7 @@ export default function App() {
     label: projectName,
     children: [
       { label: 'Project data', to: '/project' },
-      { label: 'Machine description', to: '/spec', stage: 'spec' },
+      { label: 'Machine description', to: '/spec', stage: 'spec', questions: openQ.spec },
       {
         label: 'Equipment', to: '/equipment', stage: 'equipment',
         children: equipmentDone ? [
@@ -114,9 +117,9 @@ export default function App() {
           ...(hmiPart ? [{ label: `HMI ${hmiPart}`, mono: true }] : []),
         ] : undefined,
       },
-      { label: 'I/O list', to: '/io', stage: 'io' },
+      { label: 'I/O list', to: '/io', stage: 'io', questions: openQ.io },
       {
-        label: 'Electrical design', to: '/electrical?tab=design', stage: 'electrical',
+        label: 'Electrical design', to: '/electrical?tab=design', stage: 'electrical', questions: openQ.electrical,
         children: [
           { label: 'Cabinet wiring', to: '/electrical?tab=cabinet' },
           { label: 'Machine wiring', to: '/electrical?tab=machine' },
@@ -126,7 +129,7 @@ export default function App() {
         ],
       },
       {
-        label: 'HMI screens', to: '/hmi', stage: 'hmi',
+        label: 'HMI screens', to: '/hmi', stage: 'hmi', questions: openQ.hmi,
         children: hmiScreens.length ? hmiScreens.map((s) => ({ label: s.name, to: `/hmi?screen=${s.id}` })) : undefined,
       },
       {
@@ -137,7 +140,7 @@ export default function App() {
           { label: 'Simulation', to: '/simulate' },
         ],
       },
-      { label: 'Design review', to: '/review' },
+      { label: 'Design review', to: '/review', questions: openQ.spec + openQ.io + openQ.electrical + openQ.hmi + openQ.review },
       { label: 'Deliverables', to: '/export' },
     ],
   };
