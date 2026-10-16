@@ -1,5 +1,5 @@
-/** Machining sheets: back-panel drilling and door cutouts (lower-left datum, mm, ordinate dimensions). */
-import type { DrillCutout, DrillHole } from '../../derive';
+/** Machining sheets: back-panel drilling and door cutouts (lower-left datum, ordinate dimensions in inch [mm]). */
+import { dualDim, dualSize, type DrillCutout, type DrillHole } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
 import { DRILL_ROWS_CONT, type DrawingPlan, type DrillRow, type PlannedSheet, type SheetSpec } from '../plan';
 import { drillScale, scaleText } from '../scale';
@@ -15,7 +15,7 @@ export function DrillingSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Plann
 
 function DrillDrawing({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, { kind: 'drill' }> }) {
   const d = sp.drill;
-  const s = drillScale(d.w, d.h);
+  const s = drillScale(d.w, d.h * (168 / 150)); // leaves room below the part for the dual-dimension ordinates
   const ox = AREA.x + 30;
   const top = AREA.y + 14;
   const oyB = top + d.h * s; // paper y of the datum (Y = 0)
@@ -34,7 +34,7 @@ function DrillDrawing({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, 
   const notes = d.notes.flatMap((n) => wrapText(n, TX - ox - 10, 2.2));
   return (
     <g>
-      <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`${d.title} — ${d.part} — SCALE ${scaleText(s)} — DIMENSIONS IN mm FROM LOWER-LEFT DATUM`}</Txt>
+      <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`${d.title} — ${d.part} — SCALE ${scaleText(s)} — DIMENSIONS IN INCHES [mm] FROM LOWER-LEFT DATUM`}</Txt>
       {ref && L.ducts.map((u, i) => <rect key={`d${i}`} x={px(u.x - bp.x)} y={py(bp.y + bp.h - u.y)} width={u.w * s} height={u.h * s} strokeWidth={0.12} strokeDasharray="1 0.8" />)}
       {ref && L.rails.map((r, i) => <rect key={`r${i}`} x={px(r.x - bp.x)} y={py(bp.y + bp.h - r.y)} width={r.w * s} height={r.h * s} strokeWidth={0.12} strokeDasharray="0.4 0.6" />)}
       {!ref && <rect x={px(0) + 3} y={py(d.h) + 3} width={d.w * s - 6} height={d.h * s - 6} strokeWidth={0.12} strokeDasharray="1 0.8" />}
@@ -48,13 +48,13 @@ function DrillDrawing({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, 
       {xsShown.map((v) => (
         <g key={`x${v}`}>
           <Line x1={px(v)} y1={oyB + 0.6} x2={px(v)} y2={yb + 1.5} w={0.12} />
-          <Txt x={px(v) + 0.8} y={yb + 12.5} size={2.0} mono rotate={-90}>{v.toFixed(1)}</Txt>
+          <Txt x={px(v) + 0.8} y={yb + 18.5} size={2.0} mono rotate={-90}>{dualDim(v)}</Txt>
         </g>
       ))}
       {ysShown.map((v) => (
         <g key={`y${v}`}>
           <Line x1={px(0) - 0.6} y1={py(v)} x2={px(0) - 3} y2={py(v)} w={0.12} />
-          <Txt x={px(0) - 3.6} y={py(v) + 0.7} size={2.0} mono anchor="end">{v.toFixed(1)}</Txt>
+          <Txt x={px(0) - 3.6} y={py(v) + 0.7} size={2.0} mono anchor="end">{dualDim(v)}</Txt>
         </g>
       ))}
       <Txt x={px(d.w) + 2} y={yb + 4} size={2.0}>X</Txt>
@@ -86,8 +86,8 @@ function CutoutMark({ c, x, y, s }: { c: DrillCutout; x: number; y: number; s: n
         <circle cx={x} cy={y} r={r} strokeWidth={LW_THIN} strokeDasharray="0.8 0.6" />
         <Line x1={x - r - 2} y1={y} x2={x + r + 2} y2={y} w={0.12} />
         <Line x1={x} y1={y - r - 2} x2={x} y2={y + r + 2} w={0.12} />
-        <Txt x={x - r - 1} y={y - r - 0.5} size={2.0} mono bold anchor="end">{`${c.id} ${c.tag}`}</Txt>
-        <Txt x={x - r - 1} y={y - r + 2.3} size={1.8} anchor="end">PER HANDLE TEMPLATE</Txt>
+        <Txt x={x + r + 1} y={y - r - 0.5} size={2.0} mono bold>{`${c.id} ${c.tag}`}</Txt>
+        <Txt x={x + r + 1} y={y - r + 2.3} size={1.8}>PER HANDLE TEMPLATE</Txt>
       </g>
     );
   }
@@ -97,7 +97,9 @@ function CutoutMark({ c, x, y, s }: { c: DrillCutout; x: number; y: number; s: n
         <rect x={x - (c.w / 2) * s} y={y - (c.h / 2) * s} width={c.w * s} height={c.h * s} strokeWidth={LW} strokeDasharray={c.verified ? undefined : '1 0.6'} />
         <Line x1={x - 2} y1={y} x2={x + 2} y2={y} w={0.12} />
         <Line x1={x} y1={y - 2} x2={x} y2={y + 2} w={0.12} />
-        <Txt x={x} y={y + 4} size={2.0} mono bold anchor="middle">{`${c.id} ${c.tag} ${c.w} x ${c.h}`}</Txt>
+        <Txt x={x} y={y + 4} size={2.0} mono bold anchor="middle">{`${c.id} ${c.tag}`}</Txt>
+        {/* font size shrinks to fit the cutout (svg2pdf cannot squeeze text with textLength) */}
+        <Txt x={x} y={y + 6.6} size={Math.min(1.7, (c.w * s - 2) / (dualSize(c.w, c.h).length * 0.62))} mono anchor="middle">{dualSize(c.w, c.h)}</Txt>
       </g>
     );
   }
@@ -129,7 +131,7 @@ function CodeLegend({ sp }: { sp: Extract<SheetSpec, { kind: 'drill' }> }) {
 }
 
 function HoleTable({ x, y, w, rows, max, more }: { x: number; y: number; w: number; rows: DrillRow[]; max: number; more?: boolean }) {
-  const cols = [0, 10, 34, 54, 74];
+  const cols = [0, 9, 27, 51, 75];
   const shown = rows.slice(0, max);
   return (
     <g>
@@ -142,8 +144,8 @@ function HoleTable({ x, y, w, rows, max, more }: { x: number; y: number; w: numb
           <g key={r.id}>
             <Txt x={x + cols[0] + 1} y={yy - 0.8} size={2.0} mono bold>{r.id}</Txt>
             <Txt x={x + cols[1] + 1} y={yy - 0.8} size={2.0} mono maxW={cols[2] - cols[1] - 2}>{r.tag}</Txt>
-            <Txt x={x + cols[3] - 2} y={yy - 0.8} size={2.0} mono anchor="end">{r.x.toFixed(1)}</Txt>
-            <Txt x={x + cols[4] - 2} y={yy - 0.8} size={2.0} mono anchor="end">{r.y.toFixed(1)}</Txt>
+            <Txt x={x + cols[3] - 2} y={yy - 0.8} size={2.0} mono anchor="end">{dualDim(r.x)}</Txt>
+            <Txt x={x + cols[4] - 2} y={yy - 0.8} size={2.0} mono anchor="end">{dualDim(r.y)}</Txt>
             <Txt x={x + cols[4] + 1} y={yy - 0.8} size={2.0} mono maxW={w - cols[4] - 2}>{`${r.size}${r.verified ? '' : ' *'}`}</Txt>
             <Line x1={x} y1={yy + 0.3} x2={x + w} y2={yy + 0.3} w={0.08} />
           </g>

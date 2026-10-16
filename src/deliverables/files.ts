@@ -118,8 +118,11 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     zip.file('electrical/wire_list.csv', wireListCsv(p.drawingCtx));
     zip.file('electrical/terminal_plan.csv', terminalPlanCsv(p.drawingCtx));
     zip.file('electrical/cable_schedule.csv', cableScheduleCsv(p.drawingCtx));
-    zip.file('electrical/machining/back_panel_drilling.dxf', backPanelDxf(p.drawingCtx));
-    zip.file('electrical/machining/door_cutouts.dxf', doorDxf(p.drawingCtx));
+    // 1:1 machining files: inches (default for the shop) and the same geometry in millimetres.
+    for (const units of ['in', 'mm'] as const) {
+      zip.file(`electrical/machining/back_panel_drilling_1to1_${units}.dxf`, backPanelDxf(p.drawingCtx, { units }));
+      zip.file(`electrical/machining/door_cutouts_1to1_${units}.dxf`, doorDxf(p.drawingCtx, { units }));
+    }
     zip.file(`electrical/3d/${p.fileBase}_cabinet.step`, cabinetStep(p.drawingCtx));
     onProgress?.('Cabinet pictures');
     const hmiPart = p.hmi?.hmiPartNumber ?? null;

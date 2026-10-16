@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
-import { backPanelDrilling, doorDrilling, type DrawingContext, type DrillingPlan } from './derive';
+import { backPanelDrilling, doorDrilling, dualDim, dualSize, type DrawingContext, type DrillingPlan } from './derive';
 import { drillingDxf, type DxfOptions } from './dxf';
 import ResizablePane from '../components/ResizablePane';
 import { saveBlob } from '../deliverables/files';
@@ -37,18 +37,18 @@ function PlanView({ plan, selected, onSelect }: { plan: DrillingPlan; selected: 
         <path d="M -14 0 H 14 M 0 -14 V 14" stroke="#c0392b" strokeWidth={1} />
       </g>
       <text x={2} y={plan.h + 18} fontSize={10} fill="#c0392b">0,0</text>
-      <text x={plan.w} y={plan.h + 18} fontSize={10} fill="#55646c" textAnchor="end">{plan.w} × {plan.h} mm</text>
+      <text x={plan.w} y={plan.h + 18} fontSize={10} fill="#55646c" textAnchor="end">{dualSize(plan.w, plan.h)} in [mm]</text>
     </svg>
   );
 }
 
 /**
  * Machining: back-panel drilling and door cutouts for the machine shop, with
- * 1:1 DXF downloads (mm or inch), plus the hole tables.
+ * 1:1 DXF downloads (inch by default, or mm), plus the hole tables in dual dimensions inch [mm].
  */
 export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext | null; fileBase: string }) {
   const [which, setWhich] = useState<'backpanel' | 'door'>('backpanel');
-  const [units, setUnits] = useState<'mm' | 'in'>('mm');
+  const [units, setUnits] = useState<'mm' | 'in'>('in');
   const [cutOnly, setCutOnly] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -60,9 +60,8 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
   const opts: DxfOptions = { units, cutOnly };
   const name = (kind: 'backpanel' | 'door') => `${fileBase}_${kind === 'backpanel' ? 'back_panel_drilling' : 'door_cutouts'}_1to1_${units}${cutOnly ? '_cut' : ''}.dxf`;
   const download = (kind: 'backpanel' | 'door') => save(name(kind), drillingDxf(plans[kind], ctx.projectName, opts));
-  const fmt = (mm: number) => (units === 'in' ? (mm / 25.4).toFixed(3) : mm.toFixed(1));
-  const rows = [...plan.cutouts.map((c) => ({ id: c.id, tag: c.tag, code: c.code, x: c.x, y: c.y, size: c.kind === 'round' ? `Ø${fmt(c.w)}` : `${fmt(c.w)} × ${fmt(c.h)}`, verified: c.verified })),
-    ...plan.holes.map((h) => ({ id: h.id, tag: h.tag, code: h.code, x: h.x, y: h.y, size: `Ø${fmt(h.dia)}`, verified: h.verified }))];
+  const rows = [...plan.cutouts.map((c) => ({ id: c.id, tag: c.tag, code: c.code, x: c.x, y: c.y, size: c.kind === 'round' ? `Ø${dualDim(c.w)}` : dualSize(c.w, c.h), verified: c.verified })),
+    ...plan.holes.map((h) => ({ id: h.id, tag: h.tag, code: h.code, x: h.x, y: h.y, size: `Ø${dualDim(h.dia)}`, verified: h.verified }))];
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -78,8 +77,8 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
         <span className="w-px h-5 bg-steel-300 mx-1" />
         <label className="flex items-center gap-1.5">Units
           <select value={units} onChange={(e) => setUnits(e.target.value as 'mm' | 'in')} className="h-7 border border-steel-300 rounded-sm bg-white px-1.5" aria-label="DXF units">
-            <option value="mm">Millimetres</option>
             <option value="in">Inches</option>
+            <option value="mm">Millimetres</option>
           </select>
         </label>
         <label className="flex items-center gap-1.5" title="Leave out text, centre marks and optional notches so the laser / CNC only sees cutting geometry">
@@ -95,7 +94,7 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
         </div>
       </div>
       <div className="px-4 py-1.5 text-xs text-steel-600 bg-white border-b border-steel-200">
-        Scale <b>1:1</b> — every coordinate is the real size in {units === 'in' ? 'inches' : 'millimetres'}; the file header declares the unit so CAM software imports it at full size.
+        Scale <b>1:1</b> — every coordinate is the real size in {units === 'in' ? 'inches' : 'millimetres'}; the file header declares the unit so CAM software imports it at full size. Tables and DXF labels show inch [mm].
         Datum 0,0 is the lower-left corner{which === 'door' ? ', seen from outside the door' : ''}. Layers: OUTLINE, HOLES, CUTOUTS{cutOnly ? '' : ', NOTCH_OPTIONAL, TEMPLATE (do not cut), TEXT, DIMS'}.
       </div>
       <div className="flex-1 flex overflow-hidden">
@@ -111,14 +110,14 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
           </div>
           <div className="flex-1 overflow-auto">
             <table className="w-full text-xs">
-              <thead className="sticky top-0"><tr>{['ID', 'Feature', `X (${units})`, `Y (${units})`, 'Size'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+              <thead className="sticky top-0"><tr>{['ID', 'Feature', 'X in [mm]', 'Y in [mm]', 'Size in [mm]'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} onClick={() => setSelected(r.id)} className={`cursor-pointer ${selected === r.id ? 'bg-brand-100' : 'hover:bg-brand-50'}`}>
                     <td className={`${td} font-mono`}>{r.id}</td>
                     <td className={td}>{r.tag}</td>
-                    <td className={`${td} font-mono text-right`}>{fmt(r.x)}</td>
-                    <td className={`${td} font-mono text-right`}>{fmt(r.y)}</td>
+                    <td className={`${td} font-mono text-right`}>{dualDim(r.x)}</td>
+                    <td className={`${td} font-mono text-right`}>{dualDim(r.y)}</td>
                     <td className={`${td} font-mono`}>{r.size}{!r.verified && <span className="text-amber-700"> *</span>}</td>
                   </tr>
                 ))}

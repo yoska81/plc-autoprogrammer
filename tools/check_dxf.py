@@ -12,6 +12,8 @@ Usage: tools/.venv/bin/python tools/check_dxf.py [variant ...]
 """
 import json
 import math
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -151,13 +153,56 @@ def check_variant(vdir: Path):
             for cut in (False, True):
                 f = vdir / 'dxf' / f'{part}_{units}{"_cut" if cut else ""}.dxf'
                 check_file(f, plan, ew, eh, units, cut, hmi_cut if part == 'door' else None)
-    # ZIP copies must be byte-identical to the mm export
-    for zname, part in (('back_panel_drilling.dxf', 'back_panel'), ('door_cutouts.dxf', 'door')):
-        z = vdir / 'zip' / 'electrical' / 'machining' / zname
-        if not z.exists():
-            report('FAIL', v, f'ZIP is missing electrical/machining/{zname}')
-        elif z.read_bytes() != (vdir / 'dxf' / f'{part}_mm.dxf').read_bytes():
-            report('FAIL', v, f'ZIP {zname} differs from the mm export')
+    # ZIP copies (inch and mm) must be byte-identical to the Machining-tab exports
+    for zbase, part in (('back_panel_drilling', 'back_panel'), ('door_cutouts', 'door')):
+        for units in ('in', 'mm'):
+            z = vdir / 'zip' / 'electrical' / 'machining' / f'{zbase}_1to1_{units}.dxf'
+            if not z.exists():
+                report('FAIL', v, f'ZIP is missing electrical/machining/{z.name}')
+            elif z.read_bytes() != (vdir / 'dxf' / f'{part}_{units}.dxf').read_bytes():
+                report('FAIL', v, f'ZIP {z.name} differs from the {units} export')
+    # inch and mm files describe the same geometry (x 25.4), entity by entity
+    for part in ('back_panel', 'door'):
+        for cut in ('', '_cut'):
+            g = {}
+            for units, k in (('in', 25.4), ('mm', 1.0)):
+                doc = ezdxf.readfile(vdir / 'dxf' / f'{part}_{units}{cut}.dxf')
+                items = []
+                for e in doc.modelspace():
+                    if e.dxftype() == 'CIRCLE':
+                        items.append((e.dxf.layer, 'C', round(e.dxf.center.x * k, 2), round(e.dxf.center.y * k, 2), round(e.dxf.radius * k, 2)))
+                    elif e.dxftype() == 'LINE':
+                        items.append((e.dxf.layer, 'L', round(e.dxf.start.x * k, 2), round(e.dxf.start.y * k, 2), round(e.dxf.end.x * k, 2), round(e.dxf.end.y * k, 2)))
+                    elif e.dxftype() in ('POLYLINE', 'LWPOLYLINE'):
+                        items.append((e.dxf.layer, 'P') + tuple(round(c * k, 2) for pt in poly_pts(e) for c in pt))
+                    elif e.dxftype() == 'TEXT':
+                        items.append((e.dxf.layer, 'T', e.dxf.text.replace('DRAWING UNITS: INCH', 'U').replace('DRAWING UNITS: MM', 'U')))
+                g[units] = sorted(items)
+            if len(g['in']) != len(g['mm']):
+                report('FAIL', v, f'{part}{cut}: {len(g["in"])} entities in inch file vs {len(g["mm"])} in mm file')
+                continue
+            diff = 0
+            for a, b in zip(g['in'], g['mm']):
+                if a[:2] != b[:2] or len(a) != len(b) or (a[1] == 'T' and a[2] != b[2]) or (a[1] != 'T' and any(abs(x - y) > 0.005 for x, y in zip(a[2:], b[2:]))):
+                    diff += 1
+            if diff:
+                report('FAIL', v, f'{part}{cut}: {diff} entities differ between inch (x25.4) and mm files')
+    # Hole tables on the drawing sheets (pdf text): every row = drilling plan, in inch [mm]
+    pdf = next((vdir / 'zip' / 'electrical').glob('*_drawings.pdf'), None)
+    if pdf:
+        txt = subprocess.run(['pdftotext', '-layout', str(pdf), '-'], capture_output=True, text=True).stdout
+        rows = {}
+        for m in re.finditer(r'(?<!\S)([A-G]\d+)\s{2,}(\S+(?: \S+)*?)\s{2,}(\d+\.\d{3}) \[(\d+\.\d)\]\s+(\d+\.\d{3}) \[(\d+\.\d)\]', txt):
+            rows[m.group(1) + '|' + m.group(2).strip()] = tuple(float(m.group(i)) for i in (3, 4, 5, 6))
+        for plan in (bp_plan, door_plan):
+            for f in plan['holes'] + plan['cutouts']:
+                key = next((k for k in rows if k.split('|')[0] == f['id'] and k.split('|')[1] == f['tag']), None)
+                if not key:
+                    report('FAIL', v, f'{plan["title"]}: {f["id"]} {f["tag"]} not found in the sheet hole table (inch [mm])')
+                    continue
+                xi, xm, yi, ym = rows[key]
+                if abs(xm - f['x']) > 0.051 or abs(ym - f['y']) > 0.051 or abs(xi * 25.4 - f['x']) > 0.013 or abs(yi * 25.4 - f['y']) > 0.013:
+                    report('FAIL', v, f'{plan["title"]}: {f["id"]} sheet says {xi} [{xm}], {yi} [{ym}] but plan is {f["x"]}, {f["y"]} mm')
     # Door: disconnect handle template clearance (handle escutcheon ~ 70 mm square around the centre)
     handle = next((c for c in door_plan['cutouts'] if c['code'] == 'G'), None)
     if handle:
