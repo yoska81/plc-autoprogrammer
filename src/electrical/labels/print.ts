@@ -14,45 +14,9 @@ import { printPdf } from '../../deliverables/printPdf';
  *   }
  */
 
-export interface DesktopPrintJob {
-  /** The PDF to print. */
-  pdf: Uint8Array;
-  /** Shown in the Windows print queue. */
-  jobName: string;
-  /** Page size of the PDF in mm (label size for label PDFs; the first page for mixed sizes). */
-  pageWidthMm: number;
-  pageHeightMm: number;
-  /** True when every page has the same size (label PDFs): the printer's paper size should be set to it. */
-  uniformPageSize: boolean;
-  /** Windows printer name; empty = let the user choose in the print dialog. */
-  printerName: string;
-  /** Show the Windows print dialog (true) or print silently to `printerName` (false). */
-  showDialog: boolean;
-  /** Print at 100 % — never scale to fit (labels must come out at their real size). */
-  scale: 'actual';
-  copies: number;
-}
-
-export interface DesktopPrintResult {
-  ok: boolean;
-  /** Set when the user cancelled the dialog. */
-  cancelled?: boolean;
-  error?: string;
-}
-
-export interface DesktopPrinter {
-  name: string;
-  isDefault?: boolean;
-}
-
-export interface IsaDesktop {
-  print(job: DesktopPrintJob): Promise<DesktopPrintResult>;
-  listPrinters?(): Promise<DesktopPrinter[]>;
-}
-
-declare global {
-  interface Window { isaDesktop?: IsaDesktop }
-}
+// The desktop bridge types live in src/desktop/bridge.ts (shared with the Electron preload).
+import type { DesktopPrinter, IsaDesktop } from '../../desktop/bridge';
+export type { DesktopPrintJob, DesktopPrintResult, DesktopPrinter, IsaDesktop } from '../../desktop/bridge';
 
 /** The desktop bridge, when running inside the Windows app. */
 export function desktop(): IsaDesktop | null {

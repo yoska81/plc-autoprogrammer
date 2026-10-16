@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect x="16" y="16" width="480" height="480" rx="88" fill="#15170a"/>
+  <rect x="16" y="16" width="480" height="480" rx="88" fill="none" stroke="#3b4011" stroke-width="8"/>
+  <rect x="96" y="352" width="320" height="28" rx="6" fill="#eaff46"/>
+  <text x="256" y="300" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-weight="700" font-size="196" letter-spacing="6" fill="#eaff46">ISA</text>
+</svg>

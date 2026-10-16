@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Print</title>
+<style id="page-style">
+  html, body { margin: 0; padding: 0; background: #fff; }
+  img { display: block; break-after: page; }
+  img:last-child { break-after: auto; }
+</style>
+</head>
+<body>
+<script type="module">
+  // Draws each PDF page into an image at the page's real size (mm), so Chromium prints it at 100 %.
+  import * as pdfjs from '/__pdfjs/pdf.min.mjs';
+  pdfjs.GlobalWorkerOptions.workerSrc = '/__pdfjs/pdf.worker.min.mjs';
+  const MM_PER_PT = 25.4 / 72;
+
+  window.printBridge.onPdf(async ({ bytes, uniform, widthMm, heightMm }) => {
+    try {
+      const doc = await pdfjs.getDocument({ data: bytes }).promise;
+      const sizes = new Map();
+      let css = '';
+      for (let n = 1; n <= doc.numPages; n++) {
+        const page = await doc.getPage(n);
+        const base = page.getViewport({ scale: 1 });
+        const w = uniform ? widthMm : base.width * MM_PER_PT;
+        const h = uniform ? heightMm : base.height * MM_PER_PT;
+        // Small labels at 600 dpi stay sharp on 300/600 dpi label printers; big sheets at 200 dpi.
+        const dpi = w * h < 150 * 150 ? 600 : 200;
+        const scale = (w / MM_PER_PT / base.width) * (dpi / 72);
+        const vp = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(vp.width);
+        canvas.height = Math.ceil(vp.height);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport: vp, canvas }).promise;
+        const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(blob);
+        img.style.width = `${w}mm`;
+        img.style.height = `${h}mm`;
+        const key = `${w.toFixed(2)}x${h.toFixed(2)}`;
+        if (!sizes.has(key)) {
+          const name = `s${sizes.size}`;
+          sizes.set(key, name);
+          css += `@page ${name} { size: ${w.toFixed(2)}mm ${h.toFixed(2)}mm; margin: 0; }\n`;
+        }
+        img.style.setProperty('page', sizes.get(key));
+        await img.decode();
+        document.body.appendChild(img);
+        page.cleanup();
+      }
+      const first = [...sizes.keys()][0];
+      if (first) css += `@page { size: ${first.replace('x', 'mm ')}mm; margin: 0; }\n`;
+      document.getElementById('page-style').textContent += css;
+      window.printBridge.done({ ok: true, pages: doc.numPages });
+    } catch (err) {
+      window.printBridge.done({ ok: false, error: `The PDF could not be prepared for printing: ${err && err.message ? err.message : err}` });
+    }
+  });
+</script>
+</body>
+</html>
