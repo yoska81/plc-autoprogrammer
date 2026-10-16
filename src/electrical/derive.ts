@@ -319,6 +319,8 @@ export interface SafetyModel {
   reset?: string;
   mcr?: ResolvedComponent;
   edm: string[];
+  /** N.C. feedback contact terminals of each EDM device (same order as edm), e.g. "61-62" on an add-on block. */
+  edmTerms: string[];
   statusInput?: IoPoint;
   /** Wire supplying PLC outputs: 24+S when switched by safety, else 24+. */
   outputSupply: string;
@@ -367,7 +369,23 @@ export interface ElectricalModel {
   plcTag: string;
   mainAwg: string;
   machine: MachineModel;
+  /** N.C. auxiliary contact used for EDM feedback / reversing interlock, per contactor tag. */
+  auxNc: Map<string, AuxNc>;
 }
+
+/** Where a contactor's N.C. auxiliary contact comes from. */
+export interface AuxNc {
+  /** Terminal pair, e.g. ['61', '62']. */
+  terms: [string, string];
+  /** Add-on block fitted in the design (or added because the frame has none). */
+  block?: string;
+  /** True when the design has no add-on block although the frame has no internal auxiliary contact (added to the BOM). */
+  missing: boolean;
+  family?: string;
+}
+
+/** Fuji SC-E02(G)..E4(G) frames have no internal auxiliary contact (AutomationDirect Fuji SC-E spec, note 1). */
+const NO_INTERNAL_AUX = /^SC-E(0[2-5]|1|2S?|3|4)G?$/i;
 
 const cache = new WeakMap<DrawingContext, ElectricalModel>();
 
@@ -510,12 +528,38 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const estopTags = byCat(rc, 'estop').map((c) => c.tag);
   const ioW = ctx.design.ioWiring;
   for (const w of ioW) if (w.deviceType === 'estop-contact' && !estopTags.includes(w.deviceTag)) estopTags.push(w.deviceTag);
-  const resetRc = byCat(rc, 'pushbutton').find((c) => /reset/i.test(c.comp.function));
+  // Safety-relay reset button: an explicit "safety reset" first; a plain "Reset" only when it is not
+  // also a PLC input (a fault-reset button wired to the PLC is not the relay's reset).
+  const pbs = byCat(rc, 'pushbutton');
+  const plcInputs = new Set(ctx.design.ioWiring.map((w) => w.deviceTag));
+  const resetRc = pbs.find((c) => /safety.*reset|reset.*safety|relay reset/i.test(c.comp.function))
+    ?? pbs.find((c) => /reset/i.test(c.comp.function) && !plcInputs.has(c.tag))
+    ?? pbs.find((c) => /reset/i.test(c.comp.function));
   const reset = resetRc?.tag ?? ioW.find((w) => /reset/i.test(w.description) && w.deviceType === 'pushbutton-no')?.deviceTag;
   const mcr = byCat(rc, 'relay').find((c) => /master|mcr|safety/i.test(`${c.comp.function} ${c.tag}`));
   const edm = mcr ? [mcr.tag] : motors.flatMap((m) => m.contactors.map((c) => c.tag));
   const hasSafety = !!relay || estopTags.length > 0;
-  const safety: SafetyModel = { relay, estops: estopTags, reset, mcr, edm, outputSupply: hasSafety ? '24+S' : '24+' };
+  // N.C. auxiliary contacts for EDM feedback and reversing interlocks. Front block SZ-A11T: N.O. 53-54,
+  // N.C. 61-62; side block SZ-AS1T: N.C. 71-72, N.O. 83-84 (Fuji SC-E spec); otherwise built-in 21-22.
+  const auxNc = new Map<string, AuxNc>();
+  const needNc = [...new Set([...edm, ...motors.filter((mm) => mm.motor.reversing && mm.contactors.length === 2).flatMap((mm) => mm.contactors.map((c) => c.tag))])];
+  const blocks = rc.filter((c) => /auxiliary contact block/i.test(c.part?.description ?? '') || /^SZ-A(11|S1|22|S2)T$/i.test(c.partNumber));
+  const unassigned = blocks.flatMap((b) => Array.from({ length: Math.max(1, b.comp.quantity) }, () => b))
+    .filter((b) => !b.comp.motorTag && !needNc.some((t) => new RegExp(`\\b${t}\\b`).test(b.comp.function)));
+  for (const tag of needNc) {
+    const k = rc.find((c) => c.tag === tag);
+    const family = str(k?.part?.ratings, 'family');
+    const blk = blocks.find((b) => new RegExp(`\\b${tag}\\b`).test(b.comp.function))
+      ?? blocks.find((b) => b.comp.motorTag && b.comp.motorTag === k?.comp.motorTag && !auxNcUsed(b))
+      ?? (family && NO_INTERNAL_AUX.test(family) ? unassigned.shift() : undefined);
+    const side = (b: ResolvedComponent) => /side/i.test(b.part?.description ?? '') || /^SZ-AS/i.test(b.partNumber);
+    if (blk) auxNc.set(tag, { terms: side(blk) ? ['71', '72'] : ['61', '62'], block: blk.partNumber, missing: false, family });
+    else if (family && NO_INTERNAL_AUX.test(family)) auxNc.set(tag, { terms: ['61', '62'], block: 'SZ-A11T', missing: true, family });
+    else auxNc.set(tag, { terms: ['21', '22'], missing: false, family });
+  }
+  function auxNcUsed(b: ResolvedComponent) { return [...auxNc.values()].filter((a) => a.block === b.partNumber && !a.missing).length >= Math.max(1, b.comp.quantity); }
+  const ncOf = (tag: string): [string, string] => auxNc.get(tag)?.terms ?? ['21', '22'];
+  const safety: SafetyModel = { relay, estops: estopTags, reset, mcr, edm, edmTerms: edm.map((t) => ncOf(t).join('-')), outputSupply: hasSafety ? '24+S' : '24+' };
 
   // ---- PLC & IO points
   const plcRc = byCat(rc, 'plc')[0];
@@ -577,7 +621,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     if (mm?.overload) devices.push({ tag: mm.overload.tag, terminals: '95-96', nc: true, kind: 'ol' });
     if (mm && mm.motor.reversing && mm.contactors.length === 2) {
       const other = mm.contactors.find((c) => c.tag !== p.deviceTag);
-      if (other) devices.push({ tag: other.tag, terminals: '21-22', nc: true, kind: 'interlock' });
+      if (other) devices.push({ tag: other.tag, terminals: ncOf(other.tag).join('-'), nc: true, kind: 'interlock' });
     }
     p.coilChain = { devices, wires: [p.address, ...devices.map((_, k) => `${p.address}${letter(k + 1)}`)] };
   }
@@ -763,8 +807,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     chain('S11', 'S12', '11-12');
     chain('S21', 'S22', '21-22');
     const rs = [reset ?? 'PB?', ...edm]; // same placeholder as the drawings until a reset button is assigned
-    rs.forEach((tag, k) => addWire({ wire: k === 0 ? 'S33' : `S33${letter(k)}`, from: k === 0 ? `${relay.tag}:S33` : `${rs[k - 1]}:${k - 1 === 0 ? '14' : '22'}`, to: `${tag}:${k === 0 ? '13' : '21'}`, color: 'BU', size: '18 AWG', function: k === 0 ? 'Safety reset' : 'Feedback (EDM) loop' }));
-    addWire({ wire: 'S34', from: `${rs[rs.length - 1]}:${rs.length === 1 ? '14' : '22'}`, to: `${relay.tag}:S34`, color: 'BU', size: '18 AWG', function: 'Feedback (EDM) loop' });
+    rs.forEach((tag, k) => addWire({ wire: k === 0 ? 'S33' : `S33${letter(k)}`, from: k === 0 ? `${relay.tag}:S33` : `${rs[k - 1]}:${k - 1 === 0 ? '14' : ncOf(rs[k - 1])[1]}`, to: `${tag}:${k === 0 ? '13' : ncOf(tag)[0]}`, color: 'BU', size: '18 AWG', function: k === 0 ? 'Safety reset' : 'Feedback (EDM) loop' }));
+    addWire({ wire: 'S34', from: `${rs[rs.length - 1]}:${rs.length === 1 ? '14' : ncOf(rs[rs.length - 1])[1]}`, to: `${relay.tag}:S34`, color: 'BU', size: '18 AWG', function: 'Feedback (EDM) loop' });
     addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:13`, color: 'BU', size: '18 AWG', function: 'Safety output supply' });
     if (mcr) {
       addWire({ wire: 'SR14', from: `${relay.tag}:14`, to: `${mcr.tag}:A1`, color: 'BU', size: '18 AWG', function: 'MCR coil (safety output)' });
@@ -827,7 +871,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const machine = buildMachine(ctx, mw, io, motors, groundBar?.tag ?? 'PE BAR', strips);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc,
   };
 }
 
@@ -1218,6 +1262,15 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
       item: 0, qty: c.comp.quantity, partNumber: c.partNumber, manufacturer: c.part?.manufacturer ?? '',
       description: c.part?.description ?? `${c.comp.function} (part not found in catalog — verify)`, tags: [c.tag], category: c.category,
     });
+  }
+  // Contactors without an internal auxiliary contact need an add-on block for the EDM / interlock N.C. contact.
+  const auxMissing = [...m.auxNc].filter(([, a]) => a.missing).map(([tag]) => tag);
+  if (auxMissing.length) {
+    const key = 'other|SZ-A11T';
+    const why = `added for ${auxMissing.join(', ')}: the contactor has no built-in auxiliary contact; its N.C. 61-62 is used for ${m.safety.edm.some((t) => auxMissing.includes(t)) ? 'the safety relay feedback (EDM)' : 'the reversing interlock'}`;
+    const l = lines.get(key);
+    if (l) { l.qty += auxMissing.length; l.description += ` — ${why}`; }
+    else lines.set(key, { item: 0, qty: auxMissing.length, partNumber: 'SZ-A11T', manufacturer: ctx.getPart('SZ-A11T')?.manufacturer ?? 'Fuji Electric', description: `${ctx.getPart('SZ-A11T')?.description ?? 'Contactor auxiliary contact block, front mount, (1) N.O./(1) N.C.'} — ${why}`, tags: auxMissing.map((t) => `${t}-AUX`), category: 'other' });
   }
   // The project HMI (chosen on the HMI page) is on the door even when the design has no HMI component.
   if (ctx.hmiPartNumber && !m.rc.some((c) => c.category === 'hmi')) {
@@ -1850,6 +1903,8 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (m.safety.estops.length && !m.safety.relay) w.push('E-stop present but no safety relay — E-stop circuit is drawn as a hardwired MCR chain; perform a risk assessment (ISO 13849 / NFPA 79 9.2.5.4).');
   if (m.safety.relay && !m.safety.estops.length) w.push('Safety relay present but no E-stop device found.');
   if (m.safety.relay && !m.safety.reset) w.push('Safety relay has no reset pushbutton assigned (function "Reset").');
+  const auxMissing = [...m.auxNc].filter(([, a]) => a.missing);
+  if (auxMissing.length) w.push(`${auxMissing.map(([t, a]) => `${t} (${a.family})`).join(', ')}: no built-in auxiliary contact — an SZ-A11T front block (1 N.O. + 1 N.C.) is added to the BOM; the feedback / interlock uses its N.C. 61-62. Add it to the design or choose another block.`);
   if (m.motors.some((x) => x.vfd)) w.push('VFD: confirm Safe Torque Off / enable wiring and drive parameter settings (not shown in detail).');
   const noWiring = m.io.filter((p) => !p.wiring);
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
