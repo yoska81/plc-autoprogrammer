@@ -7,12 +7,12 @@ import { createRequire } from 'node:module';
 import { clickModbus, isWritable, modbus984 } from './clickModbus';
 import { planReads, pollOnce, decodeWord, encodeWord } from './poll';
 import { rungPowerFromValues } from './power';
-import type { ModbusBridge } from './bridge';
+import type { ModbusBridge } from '../desktop/bridge';
 import type { LadderProgram } from '../plc/core/ladder';
 
 const require = createRequire(import.meta.url);
-const { createFakeModbus } = require('../../tools/modbus/fake-server.cjs');
-const { createModbusClient } = require('../../tools/modbus/client.cjs');
+const { fakeServer } = require('../../e2e/fake-modbus.cjs');
+const { createModbusClient } = require('../../electron/modbus.cjs');
 
 // Address map (AutomationDirect: X001 = 100001, DS1 = 400001; StrideLinx appendix D offsets).
 const r = (a: string) => clickModbus(a)!;
@@ -46,9 +46,12 @@ assert.equal(decodeWord([0x0002, 0x0001], 'int32', true), 0x20001);
 assert.ok(Math.abs(decodeWord([0x0000, 0x3fc0], 'float') - 1.5) < 1e-6);
 assert.equal(encodeWord(-1, 'int16'), 0xffff);
 
-// Against the fake server through the client that implements the desktop bridge contract.
-const srv = createFakeModbus({ discrete: { 0: true, 32: true, 45056: true }, coils: { 8192: true, 16386: true }, holding: { 0: 0xfffe, 16384: 5, 16385: 1 } });
-const port = await srv.listen(0);
+// Against the fake server through the desktop app's own Modbus client (electron/modbus.cjs).
+const srv = fakeServer();
+for (const a of [0, 32, 45056]) srv.mem.discrete[a] = 1;
+for (const a of [8192, 16386]) srv.mem.coils[a] = 1;
+Object.assign(srv.mem.holding, { 0: 0xfffe, 16384: 5, 16385: 1 });
+const port = await srv.listen();
 const bridge = createModbusClient() as ModbusBridge;
 assert.deepEqual(await bridge.connect({ host: '127.0.0.1', port, unitId: 1, timeoutMs: 1000 }), { ok: true });
 const res = await pollOnce(bridge, blocks);
@@ -59,7 +62,7 @@ await bridge.writeCoil(r('C1').register, true);
 await bridge.writeRegister(r('DS2').register, encodeWord(-5, 'int16'));
 const res2 = await pollOnce(bridge, blocks);
 assert.deepEqual([res2.bits.get('C1'), res2.words.get('DS2')], [true, -5]);
-assert.deepEqual(srv.log.filter((l: { fc: number }) => l.fc === 5 || l.fc === 6).map((l: { fc: number; address: number }) => [l.fc, l.address]), [[5, 16384], [6, 1]]);
+assert.deepEqual(srv.state.log.filter((l: { fc: number }) => l.fc === 5 || l.fc === 6).map((l: { fc: number; address: number }) => [l.fc, l.address]), [[5, 16384], [6, 1]]);
 await bridge.disconnect();
 await srv.close();
 

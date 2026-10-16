@@ -4,8 +4,8 @@
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const JSZip = require('jszip');
 const { PDFDocument, PDFName } = require('pdf-lib');
-const { createFakeModbus } = require('../tools/modbus/fake-server.cjs');
-const { createModbusClient } = require('../tools/modbus/client.cjs');
+const { fakeServer } = require('./fake-modbus.cjs');
+const { createModbusClient } = require('../electron/modbus.cjs');
 const fs = require('fs');
 const SP = __dirname + '/';
 const OUT = SP + 'out/';
@@ -487,10 +487,11 @@ function sse(model, text) {
   check(await rowOf('Air is not dumped on an E-stop').getByText('resolved').count() === 1, 'resolution kept');
   await snap(page, 'review');
 
-  // Online with a real PLC (desktop bridge mocked by a Node Modbus client talking to a fake CLICK on localhost):
+  // Online with a real PLC (desktop bridge = the desktop app's own Modbus client, called from the page, talking to a fake CLICK on localhost):
   // read-only by default, live values, writes only to C/DS after "Allow writes", I/O check-out feeds the SAT and ZIP
-  const plc = createFakeModbus({ discrete: { 0: true, 45056: true }, coils: { 8192: false, 16385: true }, holding: { 0: 7 } });
-  const plcPort = await plc.listen(0);
+  const plc = fakeServer();
+  plc.mem.discrete[0] = 1; plc.mem.discrete[45056] = 1; plc.mem.coils[16385] = 1; plc.mem.holding[0] = 7;
+  const plcPort = await plc.listen();
   const mb = createModbusClient();
   await page.exposeFunction('__modbus', (method, args) => mb[method](...args));
   await ctx.addInitScript(() => {
@@ -506,14 +507,14 @@ function sse(model, text) {
   const val = (a) => page.getByLabel(`Value of ${a}`).innerText();
   log('Online values:', 'X001', await val('X001'), '| X002', await val('X002'), '| Y001', await val('Y001'), '| C2', await val('C2'), '| T1', await val('T1'));
   if (await val('X001') !== 'ON' || await val('C2') !== 'ON' || await val('Y001') !== 'OFF') throw new Error('online values do not match the PLC');
-  check(!(await page.getByLabel('Allow writes').isChecked()) && plc.log.every((l) => l.fc <= 4), 'read-only by default (no write requests)');
+  check(!(await page.getByLabel('Allow writes').isChecked()) && plc.state.log.every((l) => l.fc <= 4), 'read-only by default (no write requests)');
   await page.getByLabel('Allow writes').check();
   await page.getByRole('alert').filter({ hasText: 'WRITES ENABLED' }).waitFor();
   check(await page.locator('tr[data-address="Y001"] button').count() === 0 && await page.locator('tr[data-address="X001"] button').count() === 0, 'X / Y cannot be written');
   await page.locator('tr[data-address="C1"]').getByRole('button', { name: 'Set ON' }).click();
   await page.getByText('C1 written.').waitFor({ timeout: 5000 });
   await page.waitForFunction(() => document.querySelector('[aria-label="Value of C1"]')?.textContent === 'ON', null, { timeout: 5000 });
-  const writes = plc.log.filter((l) => l.fc === 5 || l.fc === 6);
+  const writes = plc.state.log.filter((l) => l.fc === 5 || l.fc === 6);
   log('PLC writes:', JSON.stringify(writes));
   if (writes.length !== 1 || writes[0].address !== 16384 || writes[0].value !== true) throw new Error('unexpected PLC writes');
   await page.getByRole('button', { name: 'Live ladder' }).click();
