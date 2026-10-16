@@ -1,6 +1,6 @@
 // E2E v0.8: wizard (project data → describe → equipment chooser) → project data/revisions → I/O (+filter) → electrical
-// (part picker, cabinet/machine/picture, machining DXF) → HMI → program (blocks) → simulate (blocks, bypasses) →
-// resizable panels → settings connection test → spec change/update all → second project (no leaks, rename) → labels → deliverables (incl. full package PDF).
+// (part picker, cabinet/machine/picture, machining DXF, labels: label-printer PDF / sheet / CSV / Excel) → HMI → program (blocks) → simulate (blocks, bypasses) →
+// resizable panels → settings connection test → spec change/update all → second project (no leaks, rename) → deliverables (incl. full package PDF with bookmarks).
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const JSZip = require('jszip');
 const { PDFDocument, PDFName } = require('pdf-lib');

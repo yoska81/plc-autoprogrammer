@@ -8,7 +8,8 @@ import ResizablePane from '../../components/ResizablePane';
 import { Spinner } from '../../components/program/common';
 import { canvasMeasure, expandCopies, layoutLabel } from './layout';
 import { labelPrinterPdf, labelSheetPdf, labelsXlsx, PAPER, printable } from './labelOutput';
-import { fmtSize, MM_PER_IN, SIZE_PRESETS, sizeOf, useLabelSetup, type LabelSetup } from './setup';
+import { fmtSize, MM_PER_IN, SIZE_PRESETS, sizeOf, useLabelSetupStore, type LabelSetup } from './setup';
+import { useProjectsStore } from '../../store/useProjectsStore';
 import LabelSvg from './LabelSvg';
 
 const input = 'border border-steel-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
@@ -35,7 +36,10 @@ function MmInput({ mm, units, onChange, label, min = 3 }: { mm: number; units: L
 }
 
 export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: DrawingContext | null; fileBase: string; projectName: string }) {
-  const { setup, set } = useLabelSetup();
+  const activeId = useProjectsStore((s) => s.activeId);
+  const setup = useLabelSetupStore((s) => (activeId && s.byProject[activeId]) || s.last);
+  const setFor = useLabelSetupStore((s) => s.set);
+  const set = (patch: Partial<LabelSetup>) => setFor(activeId, patch);
   const all = useMemo(() => (ctx ? listLabels(ctx) : []), [ctx]);
   const [kinds, setKinds] = useState<Set<LabelKind>>(() => new Set(LABEL_KINDS.map((k) => k.kind)));
   const [off, setOff] = useState<Set<string>>(() => new Set());

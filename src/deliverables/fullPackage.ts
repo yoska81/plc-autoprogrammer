@@ -12,7 +12,8 @@ import { ACCENT, BRAND, INK, MUTED, pdfSafe } from './docs/pdfWriter';
 import { LABEL_KINDS, labelsCsv } from '../electrical/labels';
 import { listLabels } from '../electrical/labels/list';
 import { labelPrinterPdf, labelSheetPdf, labelsXlsx } from '../electrical/labels/labelOutput';
-import { useLabelSetup } from '../electrical/labels/setup';
+import { labelSetupFor } from '../electrical/labels/setup';
+import { useProjectsStore } from '../store/useProjectsStore';
 
 /**
  * The whole project as one printable PDF: cover, contents with page numbers,
@@ -242,7 +243,7 @@ export async function labelFiles(p: ProjectSnapshot): Promise<{ name: string; da
   if (!p.drawingCtx) return [];
   const labels = listLabels(p.drawingCtx);
   if (!labels.length) return [];
-  const setup = useLabelSetup.getState().setup;
+  const setup = labelSetupFor(useProjectsStore.getState().activeId);
   return [
     { name: `${p.fileBase}_labels.csv`, data: labelsCsv(labels, setup.content, setup.rowPerCopy) },
     { name: `${p.fileBase}_labels.xlsx`, data: await labelsXlsx(labels, setup, p.projectName) },
