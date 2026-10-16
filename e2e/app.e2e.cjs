@@ -334,7 +334,7 @@ function sse(model, text) {
   check((await statusBar()).includes('PLC: —') || !(await statusBar()).includes('C0-11DD1E-D'), 'new project has no CPU from the first');
   check((await statusBar()).includes('Rev A · Preliminary'), 'new project has no revisions from the first');
   await page.goto(BASE + '/project');
-  check(await page.getByLabel('company').inputValue() === '', 'new project has no company from the first');
+  check(await page.getByLabel('company').inputValue() === 'ISA', 'new project starts with the default company ISA, not the first project\'s');
   await page.getByLabel('Project name').fill('Second Cell Renamed');
   check((await page.locator('select[aria-label="Open project"] option:checked').innerText()) === 'Second Cell Renamed', 'rename shows in the project list');
   await page.locator('select[aria-label="Open project"]').selectOption(firstId);
