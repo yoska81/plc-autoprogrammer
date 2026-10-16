@@ -273,6 +273,10 @@ export async function addPackageToZip(zip: JSZip, p: ProjectSnapshot, pre: Prebu
       for (const g of sp.groups) zip.file(`purchasing/${p.fileBase}_${slug(g.supplier)}_spares_order.csv`, supplierCsv(g));
     }
   }
+  if (Object.values(p.checkout ?? {}).some((c) => c.verified || c.note)) {
+    const { buildCheckoutPdf } = await import('../online/checkoutPdf');
+    zip.file(`commissioning/${p.fileBase}_IO_checkout.pdf`, await buildCheckoutPdf(p, p.checkout));
+  }
   onProgress?.('Full package PDF');
   zip.file(`${p.fileBase}_full_package.pdf`, await buildFullPackagePdf(p, undefined, pre));
 }

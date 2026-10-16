@@ -142,6 +142,7 @@ export default function App() {
           { label: 'Ladder program', to: '/program' },
           { label: 'I/O addressing', to: '/plc' },
           { label: 'Simulation', to: '/simulate' },
+          { label: 'Online (real PLC)', to: '/online' },
         ],
       },
       { label: 'Design review', to: '/review', badge: <ReviewTreeBadge />, questions: openQ.review },
