@@ -1,5 +1,5 @@
 import type { Effort } from '../../store/useSettingsStore';
-import type { CpuModel, PlcProfile } from '../../plc/profile';
+import type { CpuModel, PlcProfile } from '../../plc/core/profile';
 import type { IOPoint } from '../../types/io';
 import type { HmiDesign, HmiElement, HmiScreen } from '../../hmi/types';
 import { HMI_ELEMENT_KINDS, MACHINE_SYMBOL_KINDS } from '../../hmi/types';

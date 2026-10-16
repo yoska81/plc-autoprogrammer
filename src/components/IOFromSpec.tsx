@@ -3,11 +3,11 @@ import { Link } from 'react-router-dom';
 import { useIOStore } from '../store/useIOStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useStageStore } from '../store/useStageStore';
-import { usePlc } from '../plc/usePlc';
+import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, ioFingerprint } from '../spec/useStages';
 import { generateIOFromSpec, planIOMerge, type IOMergePlan } from '../lib/ai/ioAI';
 import StageBanner from './StageBanner';
-import { Spinner } from './program/common';
+import { Spinner } from './common';
 
 /** Generate / update the I/O list from the spec, with a review step before applying. */
 export default function IOFromSpec({ children }: { children: (generateButton: ReactNode) => ReactNode }) {

@@ -6,7 +6,7 @@ import { buildExcelReport } from '../deliverables/excelReport';
 import { buildEngineeringPdf } from '../deliverables/engineering';
 import { buildDrawingsPdf, buildEverythingZip, buildHmiImages, buildHmiPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
-import { Spinner } from '../components/program/common';
+import { Spinner } from '../components/common';
 import { backPanelDxf, doorDxf } from '../electrical/dxf';
 import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep';
 import { printPdf } from '../deliverables/printPdf';

@@ -2,7 +2,7 @@ import type { Worksheet, Workbook } from 'exceljs';
 import type { ProjectSnapshot } from './collect';
 import { SPEC_SECTIONS } from '../spec/types';
 import { billOfMaterials, cableSchedule, designWarnings, supplyText, terminalPlan, wireNumbers } from '../electrical/derive';
-import { describeElement, describeOutput } from '../plc/clickExport';
+import { describeElement, describeOutput } from '../plc/core/clickExport';
 import { getHmi } from '../hmi/hmiCatalog';
 import { calculations } from './docs/calcs';
 import { operatorManual } from './docs/manual';

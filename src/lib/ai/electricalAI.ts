@@ -1,5 +1,5 @@
 import type { Effort } from '../../store/useSettingsStore';
-import type { CpuModel, PlcProfile } from '../../plc/profile';
+import type { CpuModel, PlcProfile } from '../../plc/core/profile';
 import type { IOPoint } from '../../types/io';
 import type { DesignInputs, ElectricalDesign, FieldDeviceType, MotorSpec } from '../../electrical/types';
 import type { Region } from '../../store/useProjectStore';

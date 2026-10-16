@@ -10,7 +10,7 @@ import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
 import { getHmi } from '../hmi/hmiCatalog';
 import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv } from '../electrical/derive';
-import { clickNicknameCsv, clickRungListing } from '../plc/clickExport';
+import { clickNicknameCsv, clickRungListing } from '../plc/core/clickExport';
 import { buildExcelReport } from './excelReport';
 import { buildEngineeringPdf } from './engineering';
 import { cabinetPng } from '../electrical/render/renderToPng';
