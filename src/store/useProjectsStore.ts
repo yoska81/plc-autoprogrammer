@@ -8,6 +8,7 @@ import { useElectricalStore } from './useElectricalStore';
 import { useHmiStore } from './useHmiStore';
 import { useReviewStore } from '../review/useReviewStore';
 import { useStageStore } from './useStageStore';
+import { useDraftStore } from './useDraftStore';
 import { aiBusy } from '../lib/ai/busy';
 import { notify } from './useNoticeStore';
 
@@ -27,6 +28,8 @@ const PROJECT_STORES = {
   hmi: useHmiStore,
   stages: useStageStore,
   review: useReviewStore,
+  // Text typed but not yet sent, choices not yet applied (src/store/useDraftStore.ts).
+  drafts: useDraftStore,
 } as const;
 
 type StoreKey = keyof typeof PROJECT_STORES;
