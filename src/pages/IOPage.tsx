@@ -1,14 +1,14 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IOToolbar, type IOFilter } from '../components/IOToolbar';
 import { IOTable } from '../components/IOTable';
 import IOFromSpec from '../components/IOFromSpec';
 import { useStages } from '../spec/useStages';
+import { useUi } from '../store/useUiStore';
 
 export default function IOPage() {
   const stages = useStages();
   const navigate = useNavigate();
-  const [filter, setFilter] = useState<IOFilter>({ text: '', type: 'all' });
+  const [filter, setFilter] = useUi<IOFilter>('io.filter', { text: '', type: 'all' });
   return (
     <>
       <header className="px-4 py-2.5 bg-white border-b border-steel-200 flex items-center justify-between gap-4">

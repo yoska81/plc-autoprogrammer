@@ -4,6 +4,7 @@ import { buildOrderList, money, orderListCsv, PANEL_ORDER, PASTE_LIMIT, SPARES_O
 import { priceBasis } from './purchaseSummaryPdf';
 import { saveBlob } from './files';
 import { Spinner } from '../components/common';
+import { useUi } from '../store/useUiStore';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40 flex items-center gap-2';
 const primary = 'px-3 py-1.5 text-sm rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2';
@@ -46,8 +47,8 @@ async function orderListXlsx(ol: OrderList, projectName: string, spares: OrderLi
 
 /** Purchasing card on the Deliverables page: order list by supplier, exports and the purchase summary PDF. */
 export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fileBase: string }) {
-  const [spares, setSpares] = useState(false);
-  const [labels, setLabels] = useState(true);
+  const [spares, setSpares] = useUi('orders.spares', false);
+  const [labels, setLabels] = useUi('orders.labels', true);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [paste, setPaste] = useState<SupplierGroup | null>(null);

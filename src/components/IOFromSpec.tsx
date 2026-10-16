@@ -10,6 +10,7 @@ import StageBanner from './StageBanner';
 import { Spinner } from './common';
 import QuestionList from './questions/QuestionList';
 import { useQuestions, useSyncQuestions } from './questions/useQuestionStore';
+import { useDraft } from '../store/useDraftStore';
 
 /** Generate / update the I/O list from the spec, with a review step before applying. */
 export default function IOFromSpec({ children }: { children: (generateButton: ReactNode) => ReactNode }) {
@@ -22,7 +23,7 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [plan, setPlan] = useState<(IOMergePlan & { explanation: string; questions: string[] }) | null>(null);
+  const [plan, setPlan] = useDraft<(IOMergePlan & { explanation: string; questions: string[] }) | null>('io.plan', null);
 
   const apiKey = settings.anthropicApiKey;
   // The AI's questions about the I/O, answered under each question (kept per project after the dialog closes).

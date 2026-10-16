@@ -6,6 +6,8 @@ import { TO_M, unitsPerMeter, type Pt } from './geometry';
 import { cableTotals, suggest, type Suggestion } from './suggest';
 import { useLayoutStore } from './useLayoutStore';
 import { AIR, CABINET, EMPTY_LAYOUT, type LayoutItemKind, type LayoutRoute, type LengthUnit, type MachineLayout, type RouteKind } from './types';
+import { useDraft } from '../../store/useDraftStore';
+import { useUi } from '../../store/useUiStore';
 
 const th = 'text-left font-medium text-steel-500 px-2 py-1 border-b border-steel-200 bg-steel-50 whitespace-nowrap';
 const td = 'px-2 py-1 border-b border-steel-100 whitespace-nowrap';
@@ -80,19 +82,19 @@ export default function MachineLayoutPanel({ ctx }: { ctx: DrawingContext | null
   };
   const el = useElectricalStore();
 
-  const [tool, setTool] = useState<Tool>('select');
-  const [routeKind, setRouteKind] = useState<RouteKind>('tray');
-  const [draft, setDraft] = useState<Pt[]>([]);
-  const [scalePts, setScalePts] = useState<Pt[]>([]);
-  const [scaleValue, setScaleValue] = useState('');
-  const [scaleUnit, setScaleUnit] = useState<LengthUnit>('in');
+  const [tool, setTool] = useUi<Tool>('layout.tool', 'select');
+  const [routeKind, setRouteKind] = useUi<RouteKind>('layout.routeKind', 'tray');
+  const [draft, setDraft] = useDraft<Pt[]>('layout.routeDraft', []);
+  const [scalePts, setScalePts] = useDraft<Pt[]>('layout.scalePts', []);
+  const [scaleValue, setScaleValue] = useDraft('layout.scaleValue', '');
+  const [scaleUnit, setScaleUnit] = useDraft<LengthUnit>('layout.scaleUnit', 'in');
   const [placing, setPlacing] = useState<string | null>(null);
   const [selected, setSelected] = useState<Target | { type: 'route'; id: string } | null>(null);
-  const [grid, setGrid] = useState(true);
-  const [pdfPage, setPdfPage] = useState(1);
+  const [grid, setGrid] = useUi('layout.grid', true);
+  const [pdfPage, setPdfPage] = useUi('layout.pdfPage', 1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showDecided, setShowDecided] = useState(false);
+  const [showDecided, setShowDecided] = useUi('layout.showDecided', false);
   const [hover, setHover] = useState<Pt | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<Target | null>(null);

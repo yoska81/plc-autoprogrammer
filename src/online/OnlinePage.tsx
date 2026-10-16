@@ -16,6 +16,8 @@ import { connectPlc, disconnectPlc, modbusBridge, refsFor, useOnlineStore, write
 import { useCheckoutStore, type CheckoutEntry } from './useCheckoutStore';
 import { buildCheckoutPdf, checkoutRows, checkoutSummary } from './checkoutPdf';
 import { useProjectsStore } from '../store/useProjectsStore';
+import { useDraft } from '../store/useDraftStore';
+import { useUi } from '../store/useUiStore';
 
 type Tab = 'monitor' | 'ladder' | 'hmi' | 'checkout';
 
@@ -34,11 +36,11 @@ export default function OnlinePage() {
   const projectId = useProjectsStore((s) => s.activeId);
   const checkout = useCheckoutStore((s) => s.byProject[projectId ?? 'default']) ?? NO_CHECKS;
   const { tech, setTech, set: setCheck } = useCheckoutStore();
-  const [tab, setTab] = useState<Tab>('monitor');
-  const [filter, setFilter] = useState('');
-  const [screenId, setScreenId] = useState<string | null>(null);
+  const [tab, setTab] = useUi<Tab>('online.tab', 'monitor');
+  const [filter, setFilter] = useUi('online.filter', '');
+  const [screenId, setScreenId] = useUi<string | null>('online.screen', null);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
-  const [dsDraft, setDsDraft] = useState<Record<string, string>>({});
+  const [dsDraft, setDsDraft] = useDraft<Record<string, string>>('online.writeValues', {});
   const desktop = Boolean(modbusBridge());
   const isClick = profile.id === 'click';
 

@@ -3,11 +3,12 @@
  * Normal mode = sheet tabs + one sheet with zoom; printMode = every sheet on its own page.
  */
 import { sheetOnPaper } from '../../standards/regions';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { DrawingContext } from '../derive';
 import { SHEET_H, SHEET_W } from './geometry';
 import { planDrawings } from './plan';
 import SheetView from './SheetView';
+import { useUi } from '../../store/useUiStore';
 
 interface DrawingSetProps {
   ctx: DrawingContext;
@@ -32,8 +33,8 @@ export default function DrawingSet({ ctx, printMode, section = 'all' }: DrawingS
   const plan = useMemo(() => planDrawings(ctx), [ctx]);
   const paper = sheetOnPaper(ctx.sheet);
   const shown = useMemo(() => plan.sheets.filter((s) => section === 'all' || s.section === 'cover' || s.section === section), [plan, section]);
-  const [active, setActive] = useState(0);
-  const [zoom, setZoom] = useState<Zoom>('fit');
+  const [active, setActive] = useUi(`drawings.${section}.sheet`, 0);
+  const [zoom, setZoom] = useUi<Zoom>('drawings.zoom', 'fit');
   const idx = Math.min(active, shown.length - 1);
   const sheet = shown[idx];
 

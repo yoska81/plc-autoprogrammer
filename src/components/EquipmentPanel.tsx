@@ -15,6 +15,7 @@ import { applyEquipment, recommendedChoice, type EquipmentChoice } from '../spec
 import VendorPreferenceCard from './VendorPreferenceCard';
 import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
+import { useDraft } from '../store/useDraftStore';
 
 const MAX_MODULES = 8;
 
@@ -63,11 +64,21 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
-  const [rec, setRec] = useState<EquipmentRecommendation | null>(project.recommendation);
-  // The selection being edited; starts from what's applied, else the recommendation.
-  const [choice, setChoice] = useState<EquipmentChoice | null>(() =>
-    project.cpuId && project.recommendation ? { cpuId: project.cpuId, modules: project.modules, hmiPartNumber: appliedHmi || null }
-      : project.recommendation ? recommendedChoice(project.recommendation) : null);
+  // A new AI suggestion stays with the project until applied; dropped if the applied one changes.
+  const recBasis = JSON.stringify(project.recommendation);
+  const [pendingRec, setPendingRec] = useDraft<{ basis: string; rec: EquipmentRecommendation | null } | null>('equipment.rec', null);
+  const rec = pendingRec && pendingRec.basis === recBasis ? pendingRec.rec : project.recommendation;
+  const setRec = (r: EquipmentRecommendation | null) => setPendingRec({ basis: recBasis, rec: r });
+  // The selection being edited; starts from what's applied, else the recommendation. Kept with the
+  // project until applied (so leaving the page never loses it), and dropped if the applied
+  // equipment changes elsewhere (wizard, update all stages).
+  const appliedChoice: EquipmentChoice | null = project.cpuId && project.recommendation ? { cpuId: project.cpuId, modules: project.modules, hmiPartNumber: appliedHmi || null }
+    : project.recommendation ? recommendedChoice(project.recommendation) : null;
+  const basis = JSON.stringify([project.cpuId, project.modules, appliedHmi || null]);
+  const [pending, setPending] = useDraft<{ basis: string; choice: EquipmentChoice | null } | null>('equipment.choice', null);
+  const choice = pending && pending.basis === basis ? pending.choice : appliedChoice;
+  const setChoice = (next: EquipmentChoice | null | ((c: EquipmentChoice | null) => EquipmentChoice | null)) =>
+    setPending({ basis, choice: typeof next === 'function' ? next(choice) : next });
 
   const specEmpty = !Object.values(spec).some((t) => t.trim());
   const apiKey = settings.anthropicApiKey;
@@ -136,6 +147,12 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
       </div>
       {error && <div role="alert" className="bg-red-50 border border-red-200 p-3 text-red-800">{error}</div>}
       {reasoning && <ReasoningPanel reasoning={reasoning} />}
+      {choice && !applied && (
+        <div role="status" className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border border-amber-300 bg-amber-50 px-4 py-2 text-amber-900 shadow-sm">
+          <span className="flex-1 min-w-48">Your equipment selection ({choice.cpuId}{choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}{choice.hmiPartNumber ? `, ${choice.hmiPartNumber}` : ''}) is not applied to the project yet.</span>
+          <button onClick={apply} disabled={!fit?.ok} className="px-3 py-1 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-40">Use this selection</button>
+        </div>
+      )}
 
       {rec && (
         <div className="bg-brand-50 border border-brand-200 p-3 text-steel-800">

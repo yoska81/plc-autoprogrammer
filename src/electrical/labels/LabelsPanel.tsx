@@ -12,6 +12,8 @@ import { fmtSize, MM_PER_IN, rollOf, SIZE_PRESETS, sizeOf, useLabelSetupStore, t
 import { useProjectsStore } from '../../store/useProjectsStore';
 import LabelSvg from './LabelSvg';
 import { BRANDS, PRINTERS, printerById, SUPPLY_KIND_TITLE, supplyByPart, suppliesFor, supplyText, type SupplyKind } from './printers';
+import { useDraft } from '../../store/useDraftStore';
+import { useUi } from '../../store/useUiStore';
 
 const input = 'border border-steel-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 bg-white hover:bg-steel-50 disabled:opacity-40 flex items-center gap-2';
@@ -45,14 +47,21 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   const setFor = useLabelSetupStore((s) => s.set);
   const set = (patch: Partial<LabelSetup>) => setFor(activeId, patch);
   const all = useMemo(() => (ctx ? listLabels(ctx) : []), [ctx]);
-  const [kinds, setKinds] = useState<Set<LabelKind>>(() => new Set(LABEL_KINDS.map((k) => k.kind)));
-  const [off, setOff] = useState<Set<string>>(() => new Set());
-  const [copies, setCopies] = useState<Map<string, number>>(() => new Map());
-  const [filter, setFilter] = useState('');
-  const [range, setRange] = useState({ from: '', to: '' });
+  // Kept with the project (as arrays), so ticks and copy counts survive leaving the page.
+  const [kindList, setKindList] = useDraft<LabelKind[]>('labels.kinds', LABEL_KINDS.map((k) => k.kind));
+  const [offList, setOffList] = useDraft<string[]>('labels.off', []);
+  const [copyList, setCopyList] = useDraft<[string, number][]>('labels.copies', []);
+  const kinds = useMemo(() => new Set(kindList), [kindList]);
+  const off = useMemo(() => new Set(offList), [offList]);
+  const copies = useMemo(() => new Map(copyList), [copyList]);
+  const setKinds = (f: (s: Set<LabelKind>) => Set<LabelKind>) => setKindList((l) => [...f(new Set(l))]);
+  const setOff = (f: (s: Set<string>) => Set<string>) => setOffList((l) => [...f(new Set(l))]);
+  const setCopies = (f: (m: Map<string, number>) => Map<string, number>) => setCopyList((l) => [...f(new Map(l))]);
+  const [filter, setFilter] = useUi('labels.filter', '');
+  const [range, setRange] = useDraft('labels.range', { from: '', to: '' });
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useUi('labels.zoom', 1);
   // Progress (0..1) of a long PDF build; null when idle.
   const [prog, setProg] = useState<number | null>(null);
   const onProgress = (done: number, total: number) => setProg(total ? done / total : null);

@@ -1,7 +1,8 @@
-import { useState } from 'react';
 import { quickChoices } from './parse';
 import { answerText } from './qa';
 import { SOURCE_LABEL, useActiveProjectId, useQuestionStore, type Question } from './useQuestionStore';
+import { useDraft } from '../../store/useDraftStore';
+import { useUi } from '../../store/useUiStore';
 
 const STATUS: Record<Question['status'], { text: string; cls: string }> = {
   open: { text: 'Open', cls: 'bg-amber-100 text-amber-900' },
@@ -13,11 +14,12 @@ const STATUS: Record<Question['status'], { text: string; cls: string }> = {
 function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource: boolean }) {
   const projectId = useActiveProjectId();
   const { answer, reopen } = useQuestionStore();
-  const [draft, setDraft] = useState(q.answer);
-  const [editing, setEditing] = useState(q.status === 'open');
+  const [draft, setDraft] = useDraft(`answer.${q.id}`, q.answer);
+  const [editing, setEditing] = useUi(`answer.${q.id}.editing`, q.status === 'open');
   const choices = quickChoices(q.text);
   const save = (text: string, status: 'answered' | 'assumed') => {
     answer(projectId, q.id, text, status);
+    setDraft(text);
     setEditing(false);
   };
   const st = STATUS[q.status];
@@ -74,7 +76,7 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
  * answered ones can be hidden behind "Show answered".
  */
 export default function QuestionList({ questions, title = 'Questions to answer', intro, showSource = false, all = false }: { questions: Question[]; title?: string; intro?: string; showSource?: boolean; all?: boolean }) {
-  const [showDone, setShowDone] = useState(false);
+  const [showDone, setShowDone] = useUi('questions.showDone', false);
   if (!questions.length) return null;
   const open = questions.filter((q) => q.status === 'open');
   const done = questions.filter((q) => q.status !== 'open');

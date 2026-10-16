@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { useProjectStore, type Region } from '../store/useProjectStore';
@@ -12,6 +12,7 @@ import { getHmi } from '../hmi/hmiCatalog';
 import type { EnclosureRating, SupplyVoltage } from '../electrical/types';
 import SpecIntake from '../components/SpecIntake';
 import EquipmentPanel from '../components/EquipmentPanel';
+import { useUi, useUiStore } from '../store/useUiStore';
 
 const STEPS = ['Project data', 'Describe the machine', 'Equipment', 'Summary'];
 
@@ -48,19 +49,30 @@ export default function NewProjectPage() {
   const hmiPart = useHmiStore((s) => s.hmiPartNumber);
   const stages = useStages();
 
-  const [step, setStep] = useState(0);
-  const [created, setCreated] = useState(false);
-  const [name, setName] = useState('');
-  const [customer, setCustomer] = useState('');
-  const [site, setSite] = useState('');
-  const [company, setCompany] = useState('ISA');
-  const [projectNumber, setProjectNumber] = useState('');
-  const [prefix, setPrefix] = useState('');
-  const [preparedBy, setPreparedBy] = useState('');
-  const [region, setRegion] = useState<Region>('US');
-  const [supply, setSupply] = useState<SupplyVoltage>('480VAC-3PH');
-  const [enclosure, setEnclosure] = useState<EnclosureRating>('NEMA 12');
-  const [standards, setStandards] = useState<string[]>(['NFPA 79', 'UL 508A']);
+  const [step, setStep] = useUi('wizard.step', 0, { global: true });
+  // The project this wizard run created (remembered across pages and reloads). If another project
+  // is open now, the run was abandoned: start a new one rather than write into that project.
+  const activeId = useProjectsStore((s) => s.activeId);
+  const [wizardProject, setWizardProject] = useUi<string | null>('wizard.project', null, { global: true });
+  const created = Boolean(wizardProject) && wizardProject === activeId;
+  const setCreated = (v: boolean) => setWizardProject(v ? useProjectsStore.getState().activeId : null);
+  useEffect(() => {
+    if (wizardProject && wizardProject !== activeId) {
+      const ui = useUiStore.getState();
+      ui.clearUi('_global', Object.keys(ui.byProject._global ?? {}).filter((k) => k.startsWith('wizard.')));
+    }
+  }, [wizardProject, activeId]);
+  const [name, setName] = useUi('wizard.name', '', { global: true });
+  const [customer, setCustomer] = useUi('wizard.customer', '', { global: true });
+  const [site, setSite] = useUi('wizard.site', '', { global: true });
+  const [company, setCompany] = useUi('wizard.company', 'ISA', { global: true });
+  const [projectNumber, setProjectNumber] = useUi('wizard.projectNumber', '', { global: true });
+  const [prefix, setPrefix] = useUi('wizard.prefix', '', { global: true });
+  const [preparedBy, setPreparedBy] = useUi('wizard.preparedBy', '', { global: true });
+  const [region, setRegion] = useUi<Region>('wizard.region', 'US', { global: true });
+  const [supply, setSupply] = useUi<SupplyVoltage>('wizard.supply', '480VAC-3PH', { global: true });
+  const [enclosure, setEnclosure] = useUi<EnclosureRating>('wizard.enclosure', 'NEMA 12', { global: true });
+  const [standards, setStandards] = useUi<string[]>('wizard.standards', ['NFPA 79', 'UL 508A'], { global: true });
 
   // Until the new project exists the stores still hold the open project: show nothing of it here.
   const filled = created ? SPEC_SECTIONS.filter((s) => sections[s.id]?.trim()) : [];
@@ -81,6 +93,9 @@ export default function NewProjectPage() {
       el.setInputs({ ...el.inputs, supply, enclosureRating: enclosure });
     }
     if (step === STEPS.length - 1) {
+      // Done: the next "New project" starts with an empty wizard.
+      const ui = useUiStore.getState();
+      ui.clearUi('_global', Object.keys(ui.byProject._global ?? {}).filter((k) => k.startsWith('wizard.')));
       navigate('/io');
       return;
     }

@@ -100,7 +100,7 @@ async function analogPass(browser, problems) {
     await page.getByRole('button', { name: '+ Add module' }).click();
     await page.locator('select').filter({ has: page.locator(`option[value="${part}"]`) }).last().selectOption(part);
   }
-  await page.getByRole('button', { name: 'Use this selection' }).click();
+  await page.getByRole('button', { name: 'Use this selection' }).first().click();
   await page.waitForTimeout(500);
   await check('equipment');
 

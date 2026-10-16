@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { XMarkIcon } from '@heroicons/react/20/solid';
 import type { LadderProgram } from '../../core/ladder';
 import { GENERAL, crossReference, naturalAddress, rungUses } from './programIndex';
+import { useUi } from '../../../store/useUiStore';
 
 interface Props {
   program: LadderProgram;
@@ -16,7 +17,7 @@ interface Props {
 
 /** Cross reference: pick an address and see every rung that reads or writes it. */
 export default function CrossRefPanel({ program, labelOf, address, onAddress, selectedRungId, onRung, onClose }: Props) {
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useUi('xref.filter', '');
   const xref = useMemo(() => crossReference(program), [program]);
   const blockName = (id: string) => (id === GENERAL ? 'General' : program.blocks?.find((b) => b.id === id)?.name ?? id);
   const all = useMemo(() => [...xref.keys()].sort(naturalAddress), [xref]);

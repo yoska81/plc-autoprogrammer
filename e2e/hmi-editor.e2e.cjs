@@ -150,7 +150,16 @@ let failPage = null;
   // In the simulator: the screen with its picture; pressing the button sets C1050
   await page.goto(BASE + '/simulate');
   await page.getByRole('button', { name: /^Run$/ }).first().click();
-  await page.locator('aside, div').getByRole('button', { name: screenName, exact: true }).first().click();
+  // The live HMI has no screen list (it uses the panel's own navigation, and a screen added by hand
+  // has no nav button yet): show the screen through the remembered live-HMI screen.
+  await page.evaluate(async (name) => {
+    const { useHmiStore } = await import('/src/store/useHmiStore.ts');
+    const { useUiStore } = await import('/src/store/useUiStore.ts');
+    const { useProjectsStore } = await import('/src/store/useProjectsStore.ts');
+    const id = useHmiStore.getState().design.screens.find((s) => s.name === name).id;
+    useUiStore.getState().setUi(useProjectsStore.getState().activeId, 'liveHmi.screen', id);
+  }, screenName);
+  await page.waitForTimeout(500);
   const live = page.locator('svg[aria-label^="HMI screen"]').last();
   check(await live.locator('g[data-background] image').count() === 1, 'picture in the live HMI');
   const lamp = async () => (await live.locator('text').allTextContents()).map((t) => t.trim().toUpperCase()).find((t) => t === 'PRESSED' || t === 'IDLE');

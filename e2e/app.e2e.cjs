@@ -129,7 +129,7 @@ function sse(model, text) {
   check(!(await page.locator('aside', { hasText: 'Your selection' }).innerText()).includes(await weakRow.locator('td.font-mono').innerText()), 'clicking a greyed CPU does not select it');
   await page.locator('tr', { has: page.locator('input[aria-label="Choose C0-11DD1E-D"]') }).click();
   check(await page.locator('input[aria-label="Choose C0-11DD1E-D"]').isChecked(), 'bigger CPU selected');
-  await page.getByRole('button', { name: 'Use this selection' }).click();
+  await page.getByRole('button', { name: 'Use this selection' }).first().click();
   await page.getByText('Applied to the project.').waitFor();
   log('Summary panel controller:', await page.locator('aside.w-80 dd.font-mono').first().innerText());
   check((await page.locator('aside.w-80 dd.font-mono').first().innerText()).includes('C0-11DD1E-D'), 'bigger CPU applied');

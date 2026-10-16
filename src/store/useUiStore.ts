@@ -10,6 +10,8 @@ import { useProjectsStore } from './useProjectsStore';
 interface UiStore {
   byProject: Record<string, Record<string, unknown>>;
   setUi: (project: string, key: string, value: unknown) => void;
+  /** Forget keys (e.g. the wizard's fields once the project is open). */
+  clearUi: (project: string, keys: string[]) => void;
 }
 
 export const useUiStore = create<UiStore>()(
@@ -17,6 +19,11 @@ export const useUiStore = create<UiStore>()(
     (set) => ({
       byProject: {},
       setUi: (project, key, value) => set((s) => ({ byProject: { ...s.byProject, [project]: { ...s.byProject[project], [key]: value } } })),
+      clearUi: (project, keys) => set((s) => {
+        const p = { ...s.byProject[project] };
+        for (const k of keys) delete p[k];
+        return { byProject: { ...s.byProject, [project]: p } };
+      }),
     }),
     { name: 'plc-ui-store' },
   ),
@@ -24,11 +31,15 @@ export const useUiStore = create<UiStore>()(
 
 type SetState<T> = (v: T | ((prev: T) => T)) => void;
 
-/** useState for page UI state, remembered per project across navigation and reloads. */
-export function useUi<T>(key: string, init: T): [T, SetState<T>] {
+/**
+ * useState for page UI state, remembered per project across navigation and reloads.
+ * `global` keeps it for the browser instead (e.g. the new-project wizard, before its project exists).
+ */
+export function useUi<T>(key: string, init: T, opts: { global?: boolean } = {}): [T, SetState<T>] {
   // A stable initial value: a fresh [] / {} each render would look like a store change.
   const initial = useRef(init).current;
-  const project = useProjectsStore((s) => s.activeId) ?? '_';
+  const active = useProjectsStore((s) => s.activeId) ?? '_';
+  const project = opts.global ? '_global' : active;
   const value = useUiStore((s) => {
     const p = s.byProject[project];
     return p && key in p ? (p[key] as T) : initial;
