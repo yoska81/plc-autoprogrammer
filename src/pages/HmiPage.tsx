@@ -466,7 +466,13 @@ export default function HmiPage() {
       <StageBanner info={stages.hmi} action={genButton('Update screens')} />
 
       <div className="flex-1 overflow-auto bg-gray-50 p-5 space-y-4">
-        {(!design || choosing) && picker}
+        {(choosing || (!design && !model)) && picker}
+        {!design && model && !choosing && (
+          <p className="text-sm text-gray-700">
+            Operator panel: <span className="font-mono font-medium">{model.partNumber}</span> ({model.sizeIn}", {model.widthPx}×{model.heightPx}){' '}
+            <button onClick={() => setChoosing(true)} className="ml-1 text-xs underline text-gray-600 hover:text-gray-900">Change</button>
+          </p>
+        )}
         {!design && (
           <div className="flex flex-wrap items-center gap-3">
             {genButton('Design the HMI screens')}

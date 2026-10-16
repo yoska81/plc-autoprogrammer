@@ -220,7 +220,7 @@ export default function NewProjectPage() {
               {equipmentChosen && project.modules.length > 0 && <dd className="text-xs font-mono text-steel-600">{project.modules.join(', ')}</dd>}
             </div>
             <div><dt className="text-steel-500 text-xs">Operator panel</dt><dd className="font-mono">{hmi ? `${hmi.partNumber} (${hmi.sizeIn}")` : '—'}</dd></div>
-            <div><dt className="text-steel-500 text-xs">Electrical</dt><dd>{created && electrical.inputs.requiredParts.length ? `${electrical.inputs.requiredParts.length} parts chosen so far` : '—'}</dd></div>
+            <div><dt className="text-steel-500 text-xs">Electrical</dt><dd>{created && electrical.inputs.requiredParts.length ? `${electrical.inputs.requiredParts.length} part${electrical.inputs.requiredParts.length === 1 ? '' : 's'} chosen so far` : '—'}</dd></div>
           </dl>
         </aside>
       </div>
