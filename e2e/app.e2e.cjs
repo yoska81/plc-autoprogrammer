@@ -125,7 +125,9 @@ function sse(model, text) {
   await page.goto(BASE + '/hmi');
   log('HMI preselected:', await page.getByText(/CM5-T7W · 7"/).count() > 0);
   await page.getByRole('button', { name: 'Design the HMI screens' }).click();
-  await page.getByText(/HMI tags \(\d+\)/).waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: 'Redesign screens' }).waitFor({ timeout: 15000 });
+  log('HMI screens:', await page.locator('nav[aria-label="Screens"] > button').count(), '| tags tab:', (await page.getByRole('button', { name: /^Tags\s*\d+/ }).innerText()).replace(/\s+/g, ' '));
+  await snap(page, 'hmi');
 
   // Program
   await page.goto(BASE + '/program');
@@ -138,9 +140,12 @@ function sse(model, text) {
   // Simulate
   await page.goto(BASE + '/simulate');
   await page.getByRole('button', { name: /^Run$/ }).first().click();
-  const box = await page.locator('aside svg text', { hasText: /^START$/ }).last().boundingBox();
-  if (box) { await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.waitForTimeout(250); await page.mouse.up(); }
-  await page.waitForTimeout(5000);
+  const box = await page.locator('svg[aria-label^="HMI screen"] text', { hasText: /^start$/i }).last().boundingBox({ timeout: 10000 });
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.waitForTimeout(250); await page.mouse.up();
+  await page.waitForTimeout(3000);
+  const yOn = await page.locator('span[title="Outputs ON"] b').innerText();
+  log('Simulation outputs ON after HMI Start:', yOn);
+  if (yOn.startsWith('0/')) throw new Error('HMI Start did not start the machine');
   await snap(page, 'simulate');
 
   // Spec change → update all
