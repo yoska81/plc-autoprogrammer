@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { modbusBridge, type ModbusBridge } from './bridge';
+import { desktopBridge, type ModbusBridge } from '../desktop/bridge';
 import { clickModbus, isWritable } from './clickModbus';
 import { encodeWord, planReads, pollOnce, type ModbusRef, type ReadBlock } from './poll';
 
@@ -58,6 +58,12 @@ export const useOnlineStore = create<OnlineStore>()(
     { name: 'isa-online-settings', partialize: (s) => ({ settings: s.settings }) },
   ),
 );
+
+/** The desktop app's Modbus bridge (window.isaDesktop.modbus), or null in a browser. */
+export function modbusBridge(): ModbusBridge | null {
+  const m = desktopBridge()?.modbus;
+  return m && typeof m.connect === 'function' ? m : null;
+}
 
 let session = 0;
 let blocks: ReadBlock[] = [];

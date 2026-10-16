@@ -17,6 +17,7 @@ import { changedSections, specToText } from '../../../spec/types';
 import BlockTree from './BlockTree';
 import CrossRefPanel from './CrossRefPanel';
 import ProgramPrint from './ProgramPrint';
+import type { AnalogSetupRow } from '../../core/analog';
 
 type Tab = 'describe' | 'fix' | 'history';
 
@@ -27,6 +28,8 @@ interface Props {
   labels: Map<string, string>;
   /** API key present. */
   ready: boolean;
+  /** Analog channel setup (printed with the program). */
+  analog?: AnalogSetupRow[];
 }
 
 const GENERAL = '';
@@ -74,7 +77,7 @@ function IssueList({ issues, rungNumber }: { issues: ValidationIssue[]; rungNumb
   );
 }
 
-export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }: Props) {
+export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, analog = [] }: Props) {
   const store = useProgramStore();
   const { ladder, proposal, chat, versions, isGenerating, userPrompt } = store;
   const fp = useFingerprints();
@@ -445,7 +448,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
       </section>
       {printing && (
         <ProgramPrint program={ladder} projectName={store.projectName} plcName={`${ctx.profile.vendor} ${ctx.profile.name} · ${ctx.cpu.label}`}
-          issues={issues} labels={labels} onClose={() => setPrinting(false)} />
+          issues={issues} labels={labels} analog={analog} onClose={() => setPrinting(false)} />
       )}
     </div>
   );

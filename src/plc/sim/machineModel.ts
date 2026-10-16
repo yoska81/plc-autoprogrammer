@@ -11,12 +11,17 @@
  */
 import type { FieldDeviceType, IOWiring } from '../../electrical/types';
 import { normAddress } from './engine';
+import { buildAnalogDevices, stepAnalog, type AnalogInDevice, type AnalogOutDevice } from './analogModel';
+
+export type { AnalogInDevice, AnalogOutDevice } from './analogModel';
 
 export interface SimIOPoint {
   address: string;
   description: string;
   type: 'input' | 'output' | string;
   category: string;
+  /** Analog point (4-20 mA / 0-10 V on a DF register) with its engineering-unit scale. */
+  analog?: { min: number; max: number; units: string } | null;
 }
 
 export type LightColor = 'red' | 'amber' | 'green' | 'blue' | 'white';
@@ -115,7 +120,8 @@ export interface StackLightDevice extends Base {
 
 export type SimDevice =
   | PushbuttonDevice | SelectorDevice | EstopDevice | SafetyRelayDevice | SensorDevice
-  | CylinderDevice | MotorDevice | ConveyorDevice | IndicatorDevice | StackLightDevice;
+  | CylinderDevice | MotorDevice | ConveyorDevice | IndicatorDevice | StackLightDevice
+  | AnalogInDevice | AnalogOutDevice;
 
 export type DeviceKind = SimDevice['kind'];
 
@@ -227,9 +233,12 @@ function classifyOutput(p: SimIOPoint, t: FieldDeviceType | undefined): OutKind 
 
 export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): MachineModel {
   const wireBy = new Map(wiring.map((w) => [normAddress(w.address), w]));
-  const points = io
+  const allPts = io
     .filter((p) => p.address && p.address.trim())
     .map((p) => ({ ...p, address: normAddress(p.address) }));
+  // Analog points (DF registers) get analog devices; everything below is discrete.
+  const isAnalogPt = (p: SimIOPoint) => Boolean(p.analog) || /^DF\d+$/.test(p.address);
+  const points = allPts.filter((p) => !isAnalogPt(p));
   const inputs = points.filter((p) => p.type === 'input');
   const outputs = points.filter((p) => p.type === 'output');
   const claimed = new Set<string>();
@@ -393,14 +402,32 @@ export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): Machine
   front.sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9));
   const all = [...front, ...devices];
   for (const d of all) {
+    if (d.kind === 'analogIn' || d.kind === 'analogOut') continue;
     const inputsOf = deviceAddresses(d).inputs;
     if (!inputsOf.length && d.kind !== 'estop') continue;
     const value = d.kind === 'pushbutton' ? d.nc : d.kind !== 'conveyor'; // healthy default
     d.bypass = { on: false, value };
   }
-  const model: MachineModel = { devices: all, inputs: new Map() };
+  const analogDevices = buildAnalogDevices(
+    allPts.filter(isAnalogPt).map((p) => ({ address: p.address, description: descOf(p), type: p.type === 'output' ? 'output' as const : 'input' as const, min: p.analog?.min ?? 0, max: p.analog?.max ?? 100, units: p.analog?.units ?? '' })),
+    allPts.filter((p) => p.type === 'output').map((p) => ({ address: p.address, description: descOf(p) })),
+  );
+  const model: MachineModel = { devices: [...all, ...analogDevices], inputs: new Map() };
   model.inputs = machineInputs(model);
   return model;
+}
+
+/** Current analog input values (engineering units) the machine presents to the DF registers. */
+export function machineAnalogValues(model: MachineModel): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const d of model.devices) if (d.kind === 'analogIn') out.set(d.input, d.state.value);
+  return out;
+}
+
+/** Move an analog input (slider); a process continues from the new value. */
+export function setAnalogValue(model: MachineModel, id: string, value: number): void {
+  const d = model.devices.find((x) => x.id === id);
+  if (d?.kind === 'analogIn') d.state.value = Math.max(d.min, Math.min(d.max, value));
 }
 
 function capital(s: string): string {
@@ -442,8 +469,10 @@ type OutputReader = Map<string, boolean> | ((address: string) => boolean);
  * Advance the machine by dtMs with the PLC's current outputs.
  * Returns the inputs whose value changed since the last call.
  */
-export function stepMachine(model: MachineModel, plcOutputs: OutputReader, dtMs: number): Map<string, boolean> {
+export function stepMachine(model: MachineModel, plcOutputs: OutputReader, dtMs: number, plcWords: (a: string) => number = () => 0): Map<string, boolean> {
   const out = (a: string) => (typeof plcOutputs === 'function' ? plcOutputs(a) : plcOutputs.get(a) ?? false);
+  const aOuts = new Map(model.devices.filter((d): d is AnalogOutDevice => d.kind === 'analogOut').map((d) => [d.output, d]));
+  stepAnalog(model.devices.filter((d): d is AnalogInDevice | AnalogOutDevice => d.kind === 'analogIn' || d.kind === 'analogOut'), out, plcWords, dtMs, aOuts);
   const byId = new Map(model.devices.map((d) => [d.id, d]));
   for (const d of model.devices) {
     if (d.kind === 'cylinder') {
@@ -531,6 +560,8 @@ export function deviceAddresses(d: SimDevice): { inputs: string[]; outputs: stri
     case 'conveyor': return { inputs: d.sensors.map((s) => s.input), outputs: [] };
     case 'indicator': return { inputs: [], outputs: [d.output] };
     case 'stackLight': return { inputs: [], outputs: d.segments.map((s) => s.output) };
+    case 'analogIn': return { inputs: [d.input], outputs: [] };
+    case 'analogOut': return { inputs: [], outputs: [d.output] };
   }
 }
 

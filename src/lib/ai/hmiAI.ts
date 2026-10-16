@@ -8,6 +8,7 @@ import { checkDesign, fixDesignLayout, layoutBands, MIN_TOUCH, GAP } from '../..
 import { specToText, type SpecSections } from '../../spec/types';
 import { callClaude, type RichTurn } from './anthropic';
 import type { HmiTag } from '../../hmi/types';
+import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes } from '../../components/questions/classify';
 
 const obj = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 const ns = { type: ['string', 'null'] };
@@ -69,7 +70,7 @@ const SCHEMA = obj({
       description: { type: 'string' },
     }),
   },
-  notes: { type: 'array', items: { type: 'string' } },
+  notes: { type: 'array', items: NOTE_SCHEMA },
 });
 
 function system(hmi: HmiModel, guidelines: string, comms: string) {
@@ -107,14 +108,17 @@ LAYOUT RULES (the app validates and reports violations)
 
 PLC ADDRESSING (the PLC program will be written to match these tags exactly)
 - HMI commands (buttons, mode selector, counter resets) write C bits C1001–C1100 (never X inputs or Y outputs directly).
-- Setpoints entered on the HMI are DS1001–DS1100.
+- Setpoints entered on the HMI are DS1001–DS1100. Analog setpoints and alarm limits (level, temperature, pressure, speed) are DF101–DF200 (floating point, same units as the analog value).
+- Analog values (I/O points marked ANALOG, DF registers in engineering units): show each on the Main or a Process screen as a "numeric" with its units (and min/max) — or as a "bar" (min/max = the analog range, units) where a fill level reads better, e.g. tank level, % open — plus a "trend" for the important ones; analog outputs (valve %, VFD speed Hz) as a "numeric" too, and in Manual mode as a "numeric-entry" the PLC copies to the output only in Manual. Put the high / low alarm limits on the Setup screen as "numeric-entry" fields with units and min/max.
 - PLC-computed status words for display (machine state / sequence step for multistate, rates, run hours) are DS1101–DS1200; counters may be shown from CTD, timers from TD.
 - Alarm bits the PLC sets: C1101–C1200 (one per alarm, also listed in "alarms"). Status bits the PLC sets for display (mode active, permissives/interlocks, heartbeat, service due): C1201–C1300. Indicators may also read X/Y directly.
 - Every element that reads or writes the PLC has an address (interlock bits and machine symbol bits too). Every address used except X/Y appears once in "tags" with a clear name and a description of exactly what the PLC must do (e.g. "PLC sets ON when manual mode is active and safety is OK"). Physical X/Y may be listed too.
 - "alarms": one entry per alarm bit with a clear operator message (what happened + where), severity alarm (stops the machine) or warning.
 
 ${guidelines ? `Guidelines:\n${guidelines}\n` : ''}${comms ? `PLC communication notes:\n${comms}\n` : ''}
-"machineName": short machine name for the header. "notes": what the engineer must confirm (passwords per level, recipe needs, missing information). "explanation": a short summary of the screens for the customer.`;
+"machineName": short machine name for the header. "notes": what must be confirmed (passwords per level, recipe needs, missing information).
+${NOTE_KINDS_RULE}
+"explanation": a short summary of the screens for the customer.`;
 }
 
 type RawElement = Omit<HmiElement, 'level' | 'interlock' | 'states' | 'symbols'> & {
@@ -141,7 +145,7 @@ export async function generateHmiDesign(opts: {
   spec: SpecSections; io: IOPoint[]; addresses: Map<string, string>;
   profile: PlcProfile; cpu: CpuModel;
 }): Promise<{ design: HmiDesign; explanation: string; reasoning: string | null }> {
-  const io = opts.io.map((p) => `${opts.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.description}`).join('\n') || '(none)';
+  const io = opts.io.map((p) => `${opts.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.description}${p.signal === 'analog' && p.analog ? `\tANALOG ${p.analog.min}–${p.analog.max} ${p.analog.units}` : ''}`).join('\n') || '(none)';
   const content = `PLC: ${opts.profile.vendor} ${opts.profile.name} ${opts.cpu.id}
 
 Machine specification:
@@ -155,7 +159,7 @@ ${opts.profile.id === 'click' ? 'CLICK I/O module grouping for the Diagnostics s
     apiKey: opts.apiKey, model: opts.model, effort: opts.effort,
     system: system(opts.hmi, opts.guidelines, opts.comms), messages: [{ role: 'user', content }], schema: SCHEMA,
   });
-  let parsed: Omit<HmiDesign, 'hmiPartNumber' | 'generatedAt' | 'screens'> & { explanation: string; machineName: string; screens: RawScreen[] };
+  let parsed: Omit<HmiDesign, 'hmiPartNumber' | 'generatedAt' | 'screens' | 'notes'> & { notes: unknown; explanation: string; machineName: string; screens: RawScreen[] };
   try {
     parsed = JSON.parse(text);
   } catch (err) {
@@ -165,9 +169,10 @@ ${opts.profile.id === 'click' ? 'CLICK I/O module grouping for the Diagnostics s
     const { level, elements, ...rest } = sc;
     return { ...rest, ...(level && level !== 'operator' ? { level } : {}), elements: elements.map(normalizeElement) };
   });
+  const notes = normalizeNotes(parsed.notes);
   const draft: HmiDesign = {
     hmiPartNumber: opts.hmi.partNumber, machineName: parsed.machineName || undefined, screens,
-    alarms: parsed.alarms, tags: parsed.tags, notes: parsed.notes, generatedAt: new Date().toISOString(),
+    alarms: parsed.alarms, tags: parsed.tags, notes: notes.map((n) => n.text), askUser: notes.filter((n) => n.kind !== 'issue').map((n) => n.text), generatedAt: new Date().toISOString(),
   };
   // Validate and repair the layout; report what was changed or is still wrong.
   const { design, notes: fixes } = fixDesignLayout(draft, opts.hmi.widthPx, opts.hmi.heightPx);

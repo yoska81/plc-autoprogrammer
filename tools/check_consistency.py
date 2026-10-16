@@ -159,6 +159,9 @@ def check(vdir: Path):
         report('FAIL', v, f'I/O list CSV / Excel / app differ: {sorted(io_a ^ io_x)[:4]} {sorted(io_a ^ io_d)[:4]}')
     nick = next(z.glob('plc/*_nicknames.csv'), None)
     nick_txt = nick.read_text(encoding='utf-8-sig') if nick else ''
+    # CLICK analog channels (DF registers) are not BIT rows: they go in the analog setup CSV instead.
+    ana = next(z.glob('plc/*_analog_setup.csv'), None)
+    ana_txt = ana.read_text(encoding='utf-8-sig') if ana else ''
     for a, desc in io_a:
         if not a:
             report('FAIL', v, f'I/O "{desc}" has no PLC address')
@@ -167,7 +170,10 @@ def check(vdir: Path):
             report('FAIL', v, f'I/O address {a} not on the drawings')
         if a not in eng_all:
             report('FAIL', v, f'I/O address {a} not in the engineering package')
-        if nick and a not in nick_txt:
+        if re.fullmatch(r'DF\d+', a):
+            if not re.search(r'(?<!\w)' + a + r'(?!\w)', ana_txt):
+                report('FAIL', v, f'analog I/O address {a} not in the analog setup CSV')
+        elif nick and a not in nick_txt:
             report('FAIL', v, f'I/O address {a} not in the nickname CSV')
 
     # ---- Alarms

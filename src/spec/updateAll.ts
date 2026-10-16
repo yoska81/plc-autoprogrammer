@@ -12,7 +12,7 @@ import { moduleSlots } from '../plc/core/modules';
 import { validateProgram } from '../plc/core/validate';
 import { fingerprint, specToText, changedSections } from './types';
 import { ioFingerprint, hmiFingerprint } from './useStages';
-import { generateIOFromSpec, planIOMerge } from '../lib/ai/ioAI';
+import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge } from '../lib/ai/ioAI';
 import { recommendEquipment, modulesInSlotOrder } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice } from './equipment';
 import { cpuFit, findCpu } from '../plc/core/fit';
@@ -68,8 +68,8 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
         const r = await generateIOFromSpec({ ...ai, spec, existing: ioNow(), profile, cpu });
         const plan = planIOMerge(ioNow(), r.points);
         useIOStore.getState().applyIOUpdate(
-          plan.kept.map(({ point, next }) => ({ id: point.id, category: next.category, deviceType: next.deviceType })),
-          plan.added.map((g) => ({ description: g.description, type: g.type, category: g.category, deviceType: g.deviceType })),
+          plan.kept.map(({ point, next }) => keptUpdate(point, next)),
+          plan.added.map(generatedToPoint),
           plan.removed.map((p) => p.id),
         );
         mark('io', { specFp, spec, ioFp: ioFingerprint(ioNow()) });

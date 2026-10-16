@@ -5,6 +5,7 @@ import type { LadderProgram } from '../../core/ladder';
 import type { ValidationIssue } from '../../core/validate';
 import LadderView from '../ladder/LadderView';
 import { useProjectStore, currentRevision } from '../../../store/useProjectStore';
+import type { AnalogSetupRow } from '../../core/analog';
 import { GENERAL, blockOf, crossReference, issueStatus, naturalAddress } from './programIndex';
 
 interface Props {
@@ -14,6 +15,8 @@ interface Props {
   issues: ValidationIssue[];
   /** Address -> I/O description (physical points). */
   labels: Map<string, string>;
+  /** Analog channel setup rows (CLICK System Configuration). */
+  analog?: AnalogSetupRow[];
   onClose: () => void;
 }
 
@@ -30,7 +33,7 @@ const PRINT_CSS = `
 }`;
 
 /** Printer-friendly program document: cover, block index with rung comments, ladder per block, tag table. */
-export default function ProgramPrint({ program, projectName, plcName, issues, labels, onClose }: Props) {
+export default function ProgramPrint({ program, projectName, plcName, issues, labels, analog = [], onClose }: Props) {
   const info = useProjectStore((s) => s.info);
   const rev = currentRevision(info);
   const xref = useMemo(() => crossReference(program), [program]);
@@ -136,6 +139,28 @@ export default function ProgramPrint({ program, projectName, plcName, issues, la
             </div>
           </section>
         ))}
+
+        {analog.length > 0 && (
+          <section className="print-block mb-6">
+            <h2 className="mb-1 text-base font-semibold">Analog setup</h2>
+            <p className="mb-2 text-xs text-gray-600">Enter in the PLC software (CLICK: Setup › System Configuration) for each channel: Data Register = the DF below, Input/Output Range = the signal range, Scale Range = the engineering range, Enable Range Limiter on. The program works in these engineering units.</p>
+            <table className="w-full border border-gray-300 text-xs">
+              <thead className="bg-gray-100"><tr>{['Register', 'Channel', 'Terminal', 'Signal', 'Scale', 'Point'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {analog.map((r) => (
+                  <tr key={r.pointId}>
+                    <td className={`${td} font-mono font-semibold`}>{r.address}</td>
+                    <td className={td}>{r.channel} <span className="text-gray-500">{r.partNumber}</span></td>
+                    <td className={`${td} font-mono`}>{r.terminal}</td>
+                    <td className={td}>{r.range} {r.kind}</td>
+                    <td className={td}>{r.scaleMin} … {r.scaleMax} {r.units}</td>
+                    <td className={td}>{r.pointId} {r.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
 
         <section className="print-block">
           <h2 className="mb-2 text-base font-semibold">4 · Tag table and cross reference</h2>

@@ -5,6 +5,7 @@ import type { DesignInputs, ElectricalDesign, FieldDeviceType, MotorSpec } from 
 import type { Region } from '../../store/useProjectStore';
 import { CATALOG } from '../../electrical/catalog';
 import { callClaude } from './anthropic';
+import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes } from '../../components/questions/classify';
 
 const DEVICE_TYPES: FieldDeviceType[] = ['pushbutton-no', 'pushbutton-nc', 'selector', 'estop-contact', 'sensor-pnp', 'sensor-npn', 'limit-switch', 'pressure-switch', 'safety-relay-output', 'contactor-coil', 'relay-coil', 'solenoid', 'pilot-light', 'stack-light', 'vfd-input', 'other'];
 
@@ -40,7 +41,7 @@ function designSchema(addresses: string[]) {
       motorLocations: { type: 'array', items: obj({ motorTag: { type: 'string' }, location: { type: 'string' } }) },
       routing: { type: 'array', items: obj({ deviceTag: { type: 'string' }, junctionBox: { type: ['string', 'null'] } }) },
     }),
-    notes: { type: 'array', items: { type: 'string' } },
+    notes: { type: 'array', items: NOTE_SCHEMA },
     motors: {
       type: 'array',
       items: obj({
@@ -88,7 +89,8 @@ Design practice to follow:
 - Tags: CB (breakers), DS (disconnect), PS (power supply), K (contactors), OL (overloads), MP (motor protectors), VFD, CR (relays), SR (safety relay), TB (terminal strips), PB (pushbuttons), ES (E-stop), SS (selectors), PL (pilot lights), LS/PRS (sensors), SOL (solenoids), M (motors), PLC, ENC (enclosure).
 - ioWiring: one entry for every PLC I/O point in the I/O list, with the field device tag, type, and "location": "Cabinet door" for pushbuttons, selectors, pilot lights and the E-stop on the panel; "Cabinet" for devices inside it (safety relay status, overload contacts); otherwise the machine zone where the device is mounted (e.g. "Infeed conveyor", "Pusher station").
 - machine: the field (machine) wiring outside the cabinet. "zones" = the machine areas from the specification in order. Put a junction box (tags JB1, JB2…) in each zone that has 4 or more field devices, so one multi-core trunk cable runs from the cabinet to the box; other devices get a home-run cable straight to the cabinet terminals. "routing" gives every field device tag its junction box tag or null. "motorLocations" gives each motor's zone. A junction box partNumber may be a small catalog enclosure, else null.
-- "notes": every assumption the engineer must confirm (motor FLA, cable lengths, sensor types, SCCR, local codes).
+- "notes": every assumption that must be confirmed (motor FLA, cable lengths, sensor types, SCCR, local codes).
+${NOTE_KINDS_RULE}
 - "motors": every motor the panel drives: the designer's motor list exactly as given, plus any other motor the specification mentions (estimate HP from the description when not stated and say so in "notes").
 - "explanation": a short plain-language summary of the panel for the customer.`;
 
@@ -140,18 +142,20 @@ Design the complete control panel.`;
     junctionBoxes: { tag: string; location: string; partNumber: string | null }[];
     motorLocations: { motorTag: string; location: string }[];
     routing: { deviceTag: string; junctionBox: string | null }[];
-  } } & Pick<ElectricalDesign, 'components' | 'ioWiring' | 'notes'>;
+  } } & Pick<ElectricalDesign, 'components' | 'ioWiring'> & { notes: unknown };
   try {
     parsed = JSON.parse(text);
   } catch (err) {
     throw new Error('The AI returned a design the app could not read. Please try again.', { cause: err });
   }
+  const notes = normalizeNotes(parsed.notes);
   return {
     design: {
       inputs: { ...opts.inputs, motors: parsed.motors },
       components: parsed.components,
       ioWiring: parsed.ioWiring,
-      notes: parsed.notes,
+      notes: notes.map((n) => n.text),
+      askUser: notes.filter((n) => n.kind !== 'issue').map((n) => n.text),
       machine: {
         zones: parsed.machine.zones,
         junctionBoxes: parsed.machine.junctionBoxes,

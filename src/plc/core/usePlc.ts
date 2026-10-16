@@ -5,6 +5,7 @@ import { useProgramStore } from '../../store/useProgramStore';
 import { getCpu, getProfile } from './profiles';
 import { resolveAddresses } from './profile';
 import { ioCapacity, moduleSlots } from './modules';
+import { analogSetup } from './analog';
 
 /** Selected PLC, CPU and the project's I/O resolved to PLC addresses. */
 export function usePlc() {
@@ -25,6 +26,6 @@ export function usePlc() {
       const a = addresses.get(p.id);
       if (a && p.description) labels.set(a, p.description);
     }
-    return { profile, cpu, io: projectIO, addresses, ioAddressSet, labels, modules: slots, capacity: ioCapacity(cpu, slots) };
+    return { profile, cpu, io: projectIO, addresses, ioAddressSet, labels, modules: slots, capacity: ioCapacity(cpu, slots), analog: analogSetup(profile, cpu, slots, projectIO) };
   }, [plcId, cpuId, modules, projectIO, tags]);
 }

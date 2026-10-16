@@ -1,6 +1,7 @@
 import { TrashIcon } from '@heroicons/react/24/outline';
 import type { IOPoint, IOCategory } from '../types/io';
 import { useIOStore } from '../store/useIOStore';
+import AnalogCell from '../plc/ui/io/AnalogCell';
 
 const ALL_CATEGORIES: IOCategory[] = [
   'Safety', 'Operator/HMI', 'External Machine', 'Product Detection',
@@ -60,7 +61,9 @@ export function IORow({ point, address, duplicate }: IORowProps) {
           {ALL_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </td>
-      <td className={`${td} text-xs text-steel-500 whitespace-nowrap`}>{point.deviceType ?? '—'}</td>
+      <td className={`${td} text-xs text-steel-500 whitespace-nowrap`}>
+        <div className="flex items-center gap-2">{point.signal !== 'analog' && <span>{point.deviceType ?? '—'}</span>}<AnalogCell point={point} /></div>
+      </td>
       <td className={td}>
         <button onClick={() => deletePoint(point.id)} title="Delete" aria-label={`Delete ${point.id}`}
           className="text-steel-300 opacity-0 group-hover:opacity-100 hover:text-red-600">

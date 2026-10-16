@@ -4,8 +4,8 @@
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const JSZip = require('jszip');
 const { PDFDocument, PDFName } = require('pdf-lib');
-const { createFakeModbus } = require('../tools/modbus/fake-server.cjs');
-const { createModbusClient } = require('../tools/modbus/client.cjs');
+const { fakeServer } = require('./fake-modbus.cjs');
+const { createModbusClient } = require('../electron/modbus.cjs');
 const fs = require('fs');
 const SP = __dirname + '/';
 const OUT = SP + 'out/';
@@ -51,7 +51,7 @@ function reply(system, body = {}) {
       explanation: 'NEMA 12 panel, 480 VAC.', components: F.DESIGN.components, ioWiring: F.DESIGN.ioWiring, notes: F.DESIGN.notes, motors: F.DESIGN.inputs.motors,
       machine: { zones: m.zones, junctionBoxes: m.junctionBoxes, motorLocations: Object.entries(m.motorLocations).map(([motorTag, location]) => ({ motorTag, location })), routing: Object.entries(m.routing).map(([deviceTag, junctionBox]) => ({ deviceTag, junctionBox })) },
     };
-    case 'hmi': return { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [] };
+    case 'hmi': return { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [{ kind: 'question', text: 'Which operator password levels are needed?' }, { kind: 'issue', text: 'Alarm banner colour chosen for contrast with the header.' }] };
     case 'ladder': {
       if (counts.ladder === 1) return { explanation: 'Program written from the spec.', program: F.LADDER };
       const p = JSON.parse(JSON.stringify(F.LADDER));
@@ -393,6 +393,20 @@ function sse(model, text) {
   check(qaText.includes('How many parts per minute at most?') && qaText.includes('60 parts per minute'), 'answer stays as Q/A below the description');
   check(!overview.includes('60 parts per minute'), 'answer is not copied into the spec sections');
   check(staleAfter > staleBefore, 'answering changes the spec fingerprint (later stages out of date)');
+  // Only real questions: the HMI question is listed, the HMI issue and the layout-check messages are not.
+  check(qaText.includes('Which operator password levels are needed?'), 'AI question (kind "question") is in the Q&A');
+  check(!/Alarm banner colour|header bar|on the HMI page|Layout check|touch target|overlaps/i.test(qaText), 'technical issues are not questions: ' + qaText.split('\n').filter((l) => /header bar|Layout check|Alarm banner/i.test(l)).join(' | '));
+  // Older versions stored layout messages as questions: they are dropped on load.
+  await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem('isa-questions'));
+    const k = Object.keys(st.state.byProject)[0];
+    st.state.byProject[k].push({ id: 'hmi:legacy', source: 'hmi', text: 'I/O Status: no header bar and the top band is in use; add one on the HMI page.', answer: '', status: 'open', date: '2026-10-01 10:00', merged: false });
+    localStorage.setItem('isa-questions', JSON.stringify(st));
+  });
+  await page.reload();
+  await qa.waitFor();
+  check(!(await qa.innerText()).includes('no header bar'), 'stored layout messages are removed from the questions on load');
+  await qa.scrollIntoViewIfNeeded();
   await snap(page, 'questions');
   await page.locator('#spec-alarms').fill('- Pusher fault: pusher not extended within 5 s.');
   log('Out of date after edit:', await page.locator('nav [title="Out of date"]').count());
@@ -457,6 +471,7 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 15000 });
   log('Review verdict shown:', await page.getByText(/Reviewer's verdict/).count() > 0, '| critical open:', await page.locator('div', { hasText: /^Critical open$/ }).locator('xpath=following-sibling::div').first().innerText());
   const rowOf = (t) => page.locator('tr', { hasText: t });
+  check(await rowOf('HMI: Alarm banner colour').count() === 1, 'HMI technical issue is a design review finding (not a question)');
   const badge = page.locator('nav a', { hasText: 'Design review' }).locator('span[aria-label$="open critical or major findings"]');
   log('Review badge / status bar:', await badge.innerText(), '|', await page.getByRole('link', { name: /^Review: / }).innerText());
   check(Number(await badge.innerText()) >= 1, 'tree badge counts open critical/major findings');
@@ -487,10 +502,11 @@ function sse(model, text) {
   check(await rowOf('Air is not dumped on an E-stop').getByText('resolved').count() === 1, 'resolution kept');
   await snap(page, 'review');
 
-  // Online with a real PLC (desktop bridge mocked by a Node Modbus client talking to a fake CLICK on localhost):
+  // Online with a real PLC (desktop bridge = the desktop app's own Modbus client, called from the page, talking to a fake CLICK on localhost):
   // read-only by default, live values, writes only to C/DS after "Allow writes", I/O check-out feeds the SAT and ZIP
-  const plc = createFakeModbus({ discrete: { 0: true, 45056: true }, coils: { 8192: false, 16385: true }, holding: { 0: 7 } });
-  const plcPort = await plc.listen(0);
+  const plc = fakeServer();
+  plc.mem.discrete[0] = 1; plc.mem.discrete[45056] = 1; plc.mem.coils[16385] = 1; plc.mem.holding[0] = 7;
+  const plcPort = await plc.listen();
   const mb = createModbusClient();
   await page.exposeFunction('__modbus', (method, args) => mb[method](...args));
   await ctx.addInitScript(() => {
@@ -506,14 +522,14 @@ function sse(model, text) {
   const val = (a) => page.getByLabel(`Value of ${a}`).innerText();
   log('Online values:', 'X001', await val('X001'), '| X002', await val('X002'), '| Y001', await val('Y001'), '| C2', await val('C2'), '| T1', await val('T1'));
   if (await val('X001') !== 'ON' || await val('C2') !== 'ON' || await val('Y001') !== 'OFF') throw new Error('online values do not match the PLC');
-  check(!(await page.getByLabel('Allow writes').isChecked()) && plc.log.every((l) => l.fc <= 4), 'read-only by default (no write requests)');
+  check(!(await page.getByLabel('Allow writes').isChecked()) && plc.state.log.every((l) => l.fc <= 4), 'read-only by default (no write requests)');
   await page.getByLabel('Allow writes').check();
   await page.getByRole('alert').filter({ hasText: 'WRITES ENABLED' }).waitFor();
   check(await page.locator('tr[data-address="Y001"] button').count() === 0 && await page.locator('tr[data-address="X001"] button').count() === 0, 'X / Y cannot be written');
   await page.locator('tr[data-address="C1"]').getByRole('button', { name: 'Set ON' }).click();
   await page.getByText('C1 written.').waitFor({ timeout: 5000 });
   await page.waitForFunction(() => document.querySelector('[aria-label="Value of C1"]')?.textContent === 'ON', null, { timeout: 5000 });
-  const writes = plc.log.filter((l) => l.fc === 5 || l.fc === 6);
+  const writes = plc.state.log.filter((l) => l.fc === 5 || l.fc === 6);
   log('PLC writes:', JSON.stringify(writes));
   if (writes.length !== 1 || writes[0].address !== 16384 || writes[0].value !== true) throw new Error('unexpected PLC writes');
   await page.getByRole('button', { name: 'Live ladder' }).click();
