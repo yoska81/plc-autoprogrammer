@@ -4,6 +4,7 @@ cabinet envelope (handle / operators may stand proud of the door).
 Usage: tools/.venv/bin/python tools/check_step.py [variant ...]
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -17,7 +18,9 @@ from OCP.TCollection import TCollection_ExtendedString
 from OCP.collections import Sequence_TDF_Label as TDF_LabelSequence
 from OCP.TDataStd import TDataStd_Name
 from OCP.TDocStd import TDocStd_Document
-from OCP.TopAbs import TopAbs_SOLID
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_SOLID
+from OCP.BRepGProp import BRepGProp
+from OCP.GProp import GProp_GProps
 from OCP.TopExp import TopExp_Explorer
 from OCP.XCAFDoc import XCAFDoc_ColorType, XCAFDoc_DocumentTool
 
@@ -58,6 +61,28 @@ def check_variant(vdir: Path):
     for bad in ('NaN', 'undefined', 'Infinity'):
         if bad in txt:
             report('FAIL', v, f'STEP text contains "{bad}"')
+    # --- SolidWorks import readiness (text level)
+    if "FILE_SCHEMA(('AUTOMOTIVE_DESIGN" not in txt:
+        report('FAIL', v, 'not AP214 (FILE_SCHEMA AUTOMOTIVE_DESIGN)')
+    if 'SI_UNIT(.MILLI.,.METRE.)' not in txt:
+        report('FAIL', v, 'length unit mm not declared')
+    styled = txt.count('STYLED_ITEM(')
+    if styled and 'MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION' not in txt:
+        report('FAIL', v, 'colours (STYLED_ITEM) not wrapped in MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION — SolidWorks ignores them')
+    nauo, prods = txt.count('NEXT_ASSEMBLY_USAGE_OCCURRENCE('), txt.count('PRODUCT(')
+    if nauo == 0:
+        report('FAIL', v, 'no assembly structure (NEXT_ASSEMBLY_USAGE_OCCURRENCE)')
+    size_mb = path.stat().st_size / 1e6
+    if size_mb > 25:
+        report('WARN', v, f'STEP is {size_mb:.1f} MB')
+    for m in re.finditer(r"PRODUCT\('([^']*)'", txt):
+        nm = re.sub(r'\\X2\\[0-9A-F]+\\X0\\', '-', m.group(1))
+        if re.search(r'[\\/:*?"<>|]', nm):
+            report('FAIL', v, f'product name "{nm}" has characters Windows / SolidWorks cannot use in a part file name')
+    fn = re.search(r"FILE_NAME\([^;]*", txt)
+    if fn and 'ISA Auto Programmer' not in fn.group(0):
+        report('WARN', v, f'FILE_NAME originating system is not "ISA Auto Programmer": {fn.group(0)[:160]}')
+    print(f'{v}: {size_mb:.1f} MB, {prods} products, {nauo} occurrences, {styled} styled items')
     doc = TDocStd_Document(TCollection_ExtendedString('step'))
     reader = STEPCAFControl_Reader()
     reader.SetNameMode(True)
@@ -79,6 +104,7 @@ def check_variant(vdir: Path):
     leaves = TDF_LabelSequence()
     st.GetShapes(leaves)
     solids_total = invalid = unnamed = uncoloured = 0
+    bad_geom = []
     enclosure_box = None
     names = []
     for i in range(1, leaves.Length() + 1):
@@ -101,8 +127,27 @@ def check_variant(vdir: Path):
         exp = TopExp_Explorer(shape, TopAbs_SOLID)
         while exp.More():
             solids_total += 1
-            if not BRepCheck_Analyzer(exp.Current()).IsValid():
+            sol = exp.Current()
+            if not BRepCheck_Analyzer(sol).IsValid():
                 invalid += 1
+            gp = GProp_GProps()
+            BRepGProp.VolumeProperties_s(sol, gp)
+            if gp.Mass() <= 1e-6:
+                bad_geom.append(f'{nm}: solid volume {gp.Mass():.3g} mm3 (inside-out or flat)')
+            fx = TopExp_Explorer(sol, TopAbs_FACE)
+            while fx.More():
+                ga = GProp_GProps()
+                BRepGProp.SurfaceProperties_s(fx.Current(), ga)
+                if ga.Mass() < 1e-4:
+                    bad_geom.append(f'{nm}: zero-area face ({ga.Mass():.2g} mm2)')
+                fx.Next()
+            ex = TopExp_Explorer(sol, TopAbs_EDGE)
+            while ex.More():
+                gl = GProp_GProps()
+                BRepGProp.LinearProperties_s(ex.Current(), gl)
+                if gl.Mass() < 2e-3:
+                    bad_geom.append(f'{nm}: degenerate edge ({gl.Mass():.2g} mm, below the 0.001 mm tolerance x2)')
+                ex.Next()
             exp.Next()
     # whole-model bbox
     allshape = st.GetShape_s(free.Value(1))
@@ -113,6 +158,14 @@ def check_variant(vdir: Path):
         report('FAIL', v, 'no solids')
     if invalid:
         report('FAIL', v, f'{invalid} of {solids_total} solids invalid (BRepCheck)')
+    if bad_geom:
+        report('FAIL', v, f'{len(bad_geom)} geometry problems, e.g. {sorted(set(bad_geom))[:5]}')
+    # assembly tree: root is an assembly with components (opens as an assembly, not one part)
+    root = free.Value(1)
+    comps = TDF_LabelSequence()
+    st.GetComponents_s(root, comps, False)
+    if not st.IsAssembly_s(root) or comps.Length() == 0:
+        report('FAIL', v, 'top shape is not an assembly with components')
     if unnamed:
         report('WARN', v, f'{unnamed} leaf shapes without a meaningful name')
     if uncoloured:

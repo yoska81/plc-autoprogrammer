@@ -1,14 +1,14 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DrawingContext } from '../derive';
 import { LABEL_KINDS, labelsCsv, type LabelKind } from '../labels';
 import { listLabels, type ListedLabel } from './list';
 import { saveBlob } from '../../deliverables/files';
-import { printPdf } from '../../deliverables/printPdf';
+import { desktop, desktopPrinters, printLabelPdf, printMessage, type DesktopPrinter } from './print';
 import ResizablePane from '../../components/ResizablePane';
 import { Spinner } from '../../components/common';
 import { canvasMeasure, expandCopies, layoutLabel } from './layout';
 import { labelPrinterPdf, labelSheetPdf, labelsXlsx, PAPER, printable } from './labelOutput';
-import { fmtSize, MM_PER_IN, SIZE_PRESETS, sizeOf, useLabelSetupStore, type LabelSetup } from './setup';
+import { fmtSize, MM_PER_IN, rollOf, SIZE_PRESETS, sizeOf, useLabelSetupStore, type LabelSetup } from './setup';
 import { useProjectsStore } from '../../store/useProjectsStore';
 import LabelSvg from './LabelSvg';
 import { BRANDS, PRINTERS, printerById, SUPPLY_KIND_TITLE, supplyByPart, suppliesFor, supplyText, type SupplyKind } from './printers';
@@ -52,6 +52,9 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   const [zoom, setZoom] = useState(1);
   const last = useRef<number | null>(null);
   const measure = useMemo(() => canvasMeasure(), []);
+  // Windows printers (desktop app only).
+  const [winPrinters, setWinPrinters] = useState<DesktopPrinter[]>([]);
+  useEffect(() => { void desktopPrinters().then(setWinPrinters); }, []);
 
   const withCopies = (l: ListedLabel): ListedLabel => (copies.has(l.id) ? { ...l, copies: copies.get(l.id)! } : l);
   const counts = useMemo(() => {
@@ -65,6 +68,8 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   const totalPrinted = chosen.reduce((s, l) => s + (setup.useCopies ? l.copies : 1), 0);
   const size = sizeOf(setup);
   const printer = printerById(setup.printerId);
+  const roll = rollOf(setup);
+  const byRoll = setup.pageLayout === 'roll' && Boolean(roll);
   const supply = setup.supply ? supplyByPart(setup.supply) : undefined;
   const tapeAuto = Boolean(size.tape) && !setup.tapeLength;
 
@@ -174,7 +179,8 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
                 <div>{supplyText(supply)}</div>
                 {supply.printable && <div>Printable area {supply.printable.w} x {supply.printable.h} mm (dashed in the preview)</div>}
                 {supply.band && <div>Printable band {supply.band.h} mm of the {supply.heightMm} mm tape (dashed in the preview)</div>}
-                {supply.across && supply.across > 1 && <div>{supply.across} labels across the liner: the printer driver places them; the PDF still has one label per page.</div>}
+                {supply.across && supply.across > 1 && <div>{supply.across} labels across the liner{supply.liner ? ` (liner ${supply.liner.widthMm} mm)` : ''}: see “Page layout” below.</div>}
+                {supply.liner?.derived && setup.pageLayout === 'roll' && <div className="text-amber-800">To check: {supply.liner.derived}.</div>}
                 {supply.note && <div className="text-steel-500">{supply.note}</div>}
                 {supply.check && <div className="text-amber-800">To check: {supply.check}</div>}
                 <a href={supply.source} target="_blank" rel="noreferrer" className="underline text-steel-500">Source</a>
@@ -215,13 +221,37 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
 
           <Section title="4. Print or export">
             <p className="text-xs text-steel-600">{chosen.length} labels selected · <b>{totalPrinted}</b> to print · {sizeName}</p>
+            <fieldset className="text-sm space-y-1" aria-label="Page layout">
+              <legend className="text-xs text-steel-600 mb-1">Page layout of the label-printer PDF</legend>
+              <label className="flex items-start gap-2">
+                <input type="radio" name="pageLayout" className="mt-1" checked={!byRoll} onChange={() => set({ pageLayout: 'single' })} />
+                <span>One label per page <span className="text-xs text-steel-500">(default — the printer driver arranges the labels on the roll)</span></span>
+              </label>
+              <label className={`flex items-start gap-2 ${roll ? '' : 'text-steel-400'}`}
+                title={roll ? undefined : supply?.across && supply.across > 1 ? 'The liner width and gaps of this supply are not confirmed yet, so this layout is not offered.' : 'Only for die-cut rolls with several labels across the liner.'}>
+                <input type="radio" name="pageLayout" className="mt-1" disabled={!roll} checked={byRoll} onChange={() => set({ pageLayout: 'roll' })} />
+                <span>Match the roll{roll ? `: ${roll.across} across per page (page = ${roll.widthMm} mm liner)` : ''}</span>
+              </label>
+              <p className="text-xs text-steel-500">Use one per page when Brady Workstation or the printer driver is set to this supply. Use “match the roll” when printing the PDF from a generic PDF viewer onto a multi-across roll.</p>
+            </fieldset>
             <div className="flex flex-col gap-2">
-              {b('Labels PDF for label printer', async () => { saveBlob(`${fileBase}_labels_${size.tape && !setup.tapeLength ? `tape${size.h}mm` : `${Math.round(size.w)}x${Math.round(size.h)}mm`}.pdf`, await labelPrinterPdf(chosen, setup, `${projectName} labels`)); }, true)}
+              {b('Labels PDF for label printer', async () => { saveBlob(`${fileBase}_labels_${size.tape && !setup.tapeLength ? `tape${size.h}mm` : `${Math.round(size.w)}x${Math.round(size.h)}mm`}${byRoll && roll ? `_${roll.across}across` : ''}.pdf`, await labelPrinterPdf(chosen, setup, `${projectName} labels`)); }, true)}
+              {desktop() && winPrinters.length > 0 && (
+                <label className="text-xs text-steel-600 flex items-center gap-2">Windows printer
+                  <select aria-label="Windows printer" value={setup.windowsPrinter} onChange={(e) => set({ windowsPrinter: e.target.value })} className={`${input} flex-1 min-w-0`}>
+                    <option value="">Choose when printing</option>
+                    {winPrinters.map((p) => <option key={p.name} value={p.name}>{p.name}{p.isDefault ? ' (default)' : ''}</option>)}
+                  </select>
+                </label>
+              )}
               {b('Print labels', async () => {
-                const r = await printPdf(await labelPrinterPdf(chosen, setup, `${projectName} labels`), `${fileBase}_labels.pdf`);
-                return r === 'printed' ? 'Print dialog opened. Choose the label printer and print at 100 % (actual size).'
-                  : r === 'opened' ? 'The labels PDF opened in a new tab. Print it from there at 100 % (actual size).'
-                  : 'Printing is not available in this window, so the labels PDF was saved. Open it and print to the label printer at 100 %.';
+                const first = preview[0]?.lay;
+                const r = await printLabelPdf(await labelPrinterPdf(chosen, setup, `${projectName} labels`), {
+                  fileName: `${fileBase}_labels.pdf`, jobName: `${projectName} labels`,
+                  pageWidthMm: byRoll && roll ? roll.widthMm : first?.w ?? size.w, pageHeightMm: first?.h ?? size.h,
+                  uniformPageSize: !tapeAuto, printerName: winPrinters.some((p) => p.name === setup.windowsPrinter) ? setup.windowsPrinter : '',
+                });
+                return printMessage(r, 'The labels were');
               })}
               <div className="flex items-center gap-2">
                 {b('Sheet PDF', async () => { saveBlob(`${fileBase}_labels_sheet_${setup.paper}.pdf`, await labelSheetPdf(chosen, setup, projectName)); })}
@@ -306,7 +336,18 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
             <span>50 mm{zoom === 1 ? ' — hold a ruler to the screen; most screens are close to actual size' : ` at ${zoom * 100} %`}</span>
           </div>
           <div className="flex flex-wrap gap-2 items-start" data-testid="label-preview">
-            {preview.map(({ l, lay }, i) => <LabelSvg key={i} lay={lay} border={setup.border} zoom={zoom} title={`${l.code} ${l.description}`} />)}
+            {byRoll && roll ? (
+              // One liner row per PDF page, labels at their real positions.
+              Array.from({ length: Math.ceil(preview.length / roll.across) }, (_, r) => preview.slice(r * roll.across, (r + 1) * roll.across)).map((row, r) => (
+                <div key={r} className="relative bg-steel-300 flex-shrink-0" style={{ width: `${roll.widthMm * zoom}mm`, height: `${row[0].lay.h * zoom}mm` }}>
+                  {row.map(({ l, lay }, k) => (
+                    <div key={k} className="absolute top-0" style={{ left: `${(roll.marginMm + k * (lay.w + roll.gapMm)) * zoom}mm` }}>
+                      <LabelSvg lay={lay} border={setup.border} zoom={zoom} title={`${l.code} ${l.description}`} />
+                    </div>
+                  ))}
+                </div>
+              ))
+            ) : preview.map(({ l, lay }, i) => <LabelSvg key={i} lay={lay} border={setup.border} zoom={zoom} title={`${l.code} ${l.description}`} />)}
           </div>
           {totalPrinted > PREVIEW_MAX && <p className="mt-3 text-xs text-steel-500">First {PREVIEW_MAX} of {totalPrinted} labels shown.</p>}
           {!chosen.length && <p className="text-sm text-steel-500">Select labels to see them here.</p>}

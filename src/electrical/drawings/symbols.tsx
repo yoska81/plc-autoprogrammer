@@ -17,7 +17,7 @@ export interface TxtProps {
   anchor?: Anchor;
   mono?: boolean;
   bold?: boolean;
-  /** Squeeze the text to this width if the estimate exceeds it. */
+  /** Shrink the font so the text fits this width if the estimate exceeds it. */
   maxW?: number;
   rotate?: number;
   italic?: boolean;
@@ -28,12 +28,13 @@ export interface TxtProps {
 export function Txt({ x, y, children, size = 2.5, anchor = 'start', mono, bold, maxW, rotate, italic, fill = '#000' }: TxtProps) {
   const s = String(children);
   const est = textWidth(s, size, mono) * (bold ? 1.08 : 1);
-  const squeeze = maxW !== undefined && est > maxW && s.length > 1;
+  // Too long for its cell: shrink the font rather than squeezing glyphs
+  // (svg2pdf ignores textLength, which made glyphs overlap in the PDF).
+  const fs = maxW !== undefined && est > maxW && s.length > 1 ? Math.max(size * 0.45, (size * maxW) / est) : size;
   return (
     <text
-      x={x} y={y} fontSize={size} textAnchor={anchor} fill={fill} stroke="none"
+      x={x} y={y} fontSize={fs} textAnchor={anchor} fill={fill} stroke="none"
       fontFamily={mono ? FONT_MONO : FONT_SANS} fontWeight={bold ? 700 : 400} fontStyle={italic ? 'italic' : undefined}
-      textLength={squeeze ? maxW : undefined} lengthAdjust={squeeze ? 'spacingAndGlyphs' : undefined}
       transform={rotate ? `rotate(${rotate} ${x} ${y})` : undefined}
     >{s}</text>
   );

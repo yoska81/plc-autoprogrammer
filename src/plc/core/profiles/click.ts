@@ -1,4 +1,5 @@
-import type { AddressInfo, AddressKind, CpuModel, ModuleSlot, PlcProfile } from '../profile';
+import type { AddressInfo, AddressKind, CpuModel, IecDataType, ModuleSlot, PlcProfile, ProgramExporter, SimSemantics } from '../profile';
+import { clickNicknameCsv, clickRungListing } from '../clickExport';
 import type { IOPoint } from '../../../types/io';
 import type { Rung } from '../ladder';
 import { CLICK_CPUS, CLICK_KNOWLEDGE } from './clickData';
@@ -95,6 +96,31 @@ function checkRung(rung: Rung) {
   return issues;
 }
 
+/** CLICK memory as IEC data types (DS 16-bit INT, DD 32-bit DINT, DH hex WORD, DF REAL, TD INT, CTD DINT). */
+function dataTypeOf(address: string): IecDataType | null {
+  const a = address.trim().toUpperCase();
+  const info = parseAddress(a);
+  if (!info || info.kind === 'constant') return null;
+  if (info.isBit) return info.kind === 'timer' ? 'TON' : info.kind === 'counter' ? 'CTU' : 'BOOL';
+  if (a.startsWith('TXT')) return 'STRING';
+  if (a.startsWith('CTD') || a.startsWith('DD')) return 'DINT';
+  if (a.startsWith('DH')) return 'WORD';
+  if (a.startsWith('DF')) return 'REAL';
+  return 'INT'; // DS, TD, SD
+}
+
+/** CLICK default retentive memory: data registers and counters keep their value through a power cycle. */
+export function clickRetentive(address: string): boolean {
+  return /^(DS|DD|DH|DF|CTD|CT)\d+$/.test(address);
+}
+
+export const CLICK_SIM: SimSemantics = { alwaysOn: 'SC1', firstScan: 'SC2', clock1s: 'SC7', retentive: clickRetentive };
+
+const CLICK_EXPORTERS: ProgramExporter[] = [
+  { id: 'click-rungs', label: 'Rung listing (enter in CLICK Programming Software)', fileName: (b) => `${b}_rungs.txt`, build: (p, c) => clickRungListing(p, c.labels, c.header) },
+  { id: 'click-nicknames', label: 'Nickname CSV (CLICK Address Picker / C-more tag import)', fileName: (b) => `${b}_nicknames.csv`, build: (p, c) => clickNicknameCsv(p, c.io, c.addresses, c.extraTags) },
+];
+
 export const clickProfile: PlcProfile = {
   id: 'click',
   vendor: 'AutomationDirect',
@@ -107,4 +133,7 @@ export const clickProfile: PlcProfile = {
   parseAddress,
   promptKnowledge: (cpu) => CLICK_KNOWLEDGE(cpu),
   checkRung,
+  dataTypeOf,
+  simSemantics: CLICK_SIM,
+  exporters: CLICK_EXPORTERS,
 };

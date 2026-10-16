@@ -6,7 +6,7 @@ the program, the simulator, the editor UI and the PLC pages. Owner: Dev 2
 
 | Folder | What it holds | Main entry points |
 |---|---|---|
-| `core/` | Vendor-neutral ladder model, checker, diff, JSON schema for the AI, PLC profiles and address assignment | `ladder.ts` (`LadderProgram`, `Rung`), `validate.ts` (`validateProgram`), `profile.ts` (`PlcProfile`), `profiles/` (`getProfile`, CLICK in `click.ts` / `clickData.ts`), `usePlc.ts` (profile + I/O addresses for the open project), `clickExport.ts` (CLICK import files), `diff.ts`, `schema.ts`, `fit.ts`, `modules.ts` |
+| `core/` | Vendor-neutral ladder model, checker, diff, JSON schema for the AI, PLC profiles and address assignment | `ladder.ts` (`LadderProgram`, `Rung`), `validate.ts` (`validateProgram`), `profile.ts` (`PlcProfile` incl. the vendor-neutral hooks `dataTypeOf` → IEC types, `simSemantics`, `exporters`), `profiles/` (`getProfile`, CLICK in `click.ts` / `clickData.ts` — the first profile implementing the hooks), `tags.ts` (`tagTable`: every operand as an IEC symbol + data type), `usePlc.ts` (profile + I/O addresses for the open project), `clickExport.ts` (CLICK import files), `diff.ts`, `schema.ts`, `fit.ts`, `modules.ts` |
 | `ai/` | The AI that writes and fixes ladder programs (calls `src/lib/ai/anthropic.ts` / `openai.ts`) | `ladderAI.ts` (`generateLadder`, `reviseLadder`) |
 | `sim/` | Scan engine (CLICK semantics: SC bits, retentive memory, timers, counters, MATH/COPY), machine model built from the I/O list and wiring, run-loop controller, simulator UI | `engine.ts` (`createSimulator`), `controller.ts` (`SimController`, `SimHandle` for the live HMI), `SimulatorPanel.tsx`, `engine.test.ts` (unit tests: `npx tsx src/plc/sim/engine.test.ts`) |
 | `ui/ladder/` | Ladder drawing and hand editing | `LadderView.tsx` |
@@ -18,4 +18,5 @@ the live HMI (`src/hmi/LiveHmi.tsx`) runs against `SimHandle`; generic UI helper
 (`Spinner`, `ReasoningPanel`) are in `src/components/common.tsx`.
 
 Keep new code in `core/`, `ai/` and `sim/` vendor-neutral where it costs nothing; CLICK
-specifics belong in `core/profiles/`.
+specifics belong in `core/profiles/`. The simulator takes its system bits and retentive defaults
+from `SimSemantics` (default CLICK). Plan: `docs/architecture/multi-vendor.md`.

@@ -25,7 +25,7 @@ for (const [name, ctx, opts] of cases) {
   const s = cabinetStepSummary(ctx, opts);
   assert.deepEqual(s.bodies.filter((b) => b.simplified).map((b) => b.name), [], `${name}: every shape builds`);
   for (const b of s.bodies) {
-    assert.ok(/ — /.test(b.name), `${name}: "${b.name}" is named TAG — PARTNUMBER`);
+    assert.ok(/ - /.test(b.name), `${name}: "${b.name}" is named TAG - PARTNUMBER`);
     assert.ok(b.size.every((v) => v > 0), `${name}: ${b.name} has a size`);
     if (b.assembly === 'backPanel' && b.kind !== 'backPanel') {
       // Back-panel bodies stay inside the enclosure.

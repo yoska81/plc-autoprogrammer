@@ -1648,6 +1648,13 @@ export interface DrillingPlan {
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
+/** Inches to 3 decimals from mm. */
+export const inch3 = (mm: number): string => (mm / 25.4).toFixed(3);
+/** Dual dimension for machining: inch first, mm in brackets, e.g. "4.000 [101.6]". */
+export const dualDim = (mm: number): string => `${inch3(mm)} [${mm.toFixed(1)}]`;
+/** Dual size, e.g. "7.461 x 5.512 [189.5 x 140.0]". */
+export const dualSize = (w: number, h: number): string => `${inch3(w)} x ${inch3(h)} [${w.toFixed(1)} x ${h.toFixed(1)}]`;
+
 /** Evenly spaced positions from a to b with at most `pitch` between them (both ends included). */
 function spaced(a: number, b: number, pitch: number): number[] {
   if (b - a < 1) return [(a + b) / 2];
@@ -1722,8 +1729,8 @@ export function backPanelDrilling(ctx: DrawingContext): DrillingPlan {
     kind: 'backpanel', title: 'BACK PANEL DRILLING', part: bp.partNumber ? `${bp.tag} ${bp.partNumber}` : `BACK PANEL ${L.enclosure.partNumber ?? ''}`.trim(),
     w: r1(bp.w), h: r1(bp.h), holes: ids, cutouts: [], codes: finishCodes(ids, [], specs),
     notes: [
-      'DATUM: LOWER-LEFT CORNER OF BACK PANEL (FRONT VIEW). ALL DIMENSIONS IN mm. TOLERANCE ±0.5 mm UNLESS NOTED.',
-      'DIN RAIL: HOLES 25 mm FROM RAIL ENDS, 150 mm MAX. PITCH. WIRE DUCT: 300 mm MAX. PITCH, 50 mm FROM ENDS.',
+      'DATUM: LOWER-LEFT CORNER OF BACK PANEL (FRONT VIEW). DIMENSIONS IN INCHES [mm]. TOLERANCE ±0.020 [±0.5] UNLESS NOTED.',
+      'DIN RAIL: HOLES 0.984 [25.0] FROM RAIL ENDS, 5.906 [150.0] MAX. PITCH. WIRE DUCT: 11.811 [300.0] MAX. PITCH, 1.969 [50.0] FROM ENDS.',
       ...(unverified.length ? [`VERIFY WITH DATASHEET: ${unverified.join(', ')} — HOLE PATTERN ESTIMATED (NO MOUNTING DIMENSIONS IN CATALOG).`] : []),
       ...(panelMount.length ? [`DIN RAIL INTERRUPTED BEHIND ${panelMount.map((p) => p.tag).join(', ')} (PANEL-MOUNTED).`] : []),
       ...(L.notFit.length ? [`NOT DRILLED (DOES NOT FIT): ${L.notFit.map((n) => n.tag).join(', ')}.`] : []),
@@ -1748,15 +1755,15 @@ export function doorDrilling(ctx: DrawingContext): DrillingPlan {
   const ids = numberIds(cutouts);
   const hmi = ids.find((c) => c.code === 'F');
   const specs = {
-    E: 'Ø22.5 PUNCH (22 mm OPERATOR). ANTI-ROTATION NOTCH 3.2 W x 1.7 D AT 12 O\'CLOCK ONLY IF THE OPERATOR REQUIRES IT',
-    F: `RECTANGULAR HMI CUTOUT${hmi ? ` ${hmi.w} x ${hmi.h}` : ''} — PER HMI DRAWING${hmi && !hmi.verified ? ' (VERIFY)' : ''}`,
+    E: `Ø${dualDim(22.5)} PUNCH (22 mm OPERATOR). ANTI-ROTATION NOTCH ${dualSize(3.2, 1.7)} (W x D) AT 12 O'CLOCK ONLY IF THE OPERATOR REQUIRES IT`,
+    F: `RECTANGULAR HMI CUTOUT${hmi ? ` ${dualSize(hmi.w, hmi.h)}` : ''} — PER HMI DRAWING${hmi && !hmi.verified ? ' (VERIFY)' : ''}`,
     G: 'DISCONNECT HANDLE: CENTRE MARK ONLY — DRILL PER HANDLE TEMPLATE (e.g. SOCOMEC S0)',
   };
   return {
     kind: 'door', title: 'DOOR CUTOUTS', part: `DOOR ${L.enclosure.tag ?? ''} ${L.enclosure.partNumber ?? ''}`.trim(),
     w: r1(D.w), h: r1(D.h), holes: [], cutouts: ids, codes: finishCodes([], ids, specs),
     notes: [
-      'DATUM: LOWER-LEFT CORNER OF DOOR, OUTSIDE (FRONT) VIEW. ALL DIMENSIONS IN mm.',
+      'DATUM: LOWER-LEFT CORNER OF DOOR, OUTSIDE (FRONT) VIEW. DIMENSIONS IN INCHES [mm]. TOLERANCE ±0.020 [±0.5] UNLESS NOTED.',
       ...L.unplaced.filter((u) => /stack light/i.test(u.reason)).map((u) => `NOT ON THE DOOR: ${u.tag} ${u.partNumber} STACK LIGHT — ENCLOSURE TOP, DRILL PER MANUFACTURER TEMPLATE.`),
       'DOOR SIZE TAKEN AS ENCLOSURE OUTSIDE SIZE — CHECK FLANGE/RETURN AND HINGE CLEARANCE BEFORE CUTTING.',
       'HANDLE: ALIGN WITH DISCONNECT SHAFT CENTRE ON THE BACK PANEL; DRILL MOUNTING HOLES FROM THE HANDLE TEMPLATE.',

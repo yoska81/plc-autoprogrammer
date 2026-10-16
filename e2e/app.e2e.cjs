@@ -210,7 +210,7 @@ function sse(model, text) {
   // Machining: units, cut-only, DXF download.
   await page.goto(BASE + '/electrical?tab=machining');
   await page.getByLabel('DXF units').selectOption('in');
-  await page.getByText('X (in)').waitFor();
+  await page.getByText('X in [mm]').waitFor();
   await page.getByLabel('Cutting geometry only').check();
   {
     const [d] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Back panel DXF' }).click()]);
@@ -246,6 +246,16 @@ function sse(model, text) {
   log('Labels CSV rows:', fs.readFileSync(await dl('CSV'), 'utf8').trim().split('\n').length - 1);
   const lx = await JSZip.loadAsync(fs.readFileSync(await dl('Excel')));
   log('Labels Excel sheets:', [...(await lx.file('xl/workbook.xml').async('string')).matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
+  const howTo = await lx.file('xl/sharedStrings.xml').async('string');
+  if (!howTo.includes('Excel Import') || !howTo.includes('Use first row as header')) throw new Error('Brady Workstation steps missing from the labels Excel');
+  // Desktop app: "Print labels" goes to window.isaDesktop.print with the label page size at actual scale
+  await page.evaluate(() => { window.__jobs = []; window.isaDesktop = { print: async (job) => { window.__jobs.push({ ...job, pdf: job.pdf.length }); return { ok: true }; } }; });
+  await page.getByRole('button', { name: 'Print labels', exact: true }).click();
+  await page.getByText(/sent to the printer/).waitFor({ timeout: 30000 });
+  const job = await page.evaluate(() => window.__jobs[0]);
+  log('Desktop print job:', job.jobName, '|', job.pageWidthMm, 'x', job.pageHeightMm, 'mm | scale', job.scale, '| dialog', job.showDialog, '| PDF bytes', job.pdf);
+  if (job.pageWidthMm !== 25 || job.pageHeightMm !== 10 || job.scale !== 'actual' || !job.uniformPageSize) throw new Error('desktop print job has the wrong page size');
+  await page.evaluate(() => { delete window.isaDesktop; });
   // Brady printer + supply: the PDF pages take the supply's real size (B33-80-427 = 12.7 x 19.05 mm)
   await page.getByLabel('Label printer').selectOption('brady-i3300');
   await page.getByLabel('Printer labels').selectOption('B33-80-427');
@@ -253,6 +263,13 @@ function sse(model, text) {
   const bboxes = [...bpdf.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number));
   log('Brady i3300 B33-80-427 PDF:', bboxes.length, 'pages | sizes', [...new Set(bboxes.map(mm))].join(', '));
   if (bboxes.some((b) => mm(b) !== '12.7x19.1')) throw new Error('Brady supply page size is not 12.7 x 19.05 mm');
+  // Match the roll: B33-80-427 is 4 across on a 63.5 mm liner -> one page per row of 4
+  await page.getByLabel(/^Match the roll/).check();
+  const rpdf = fs.readFileSync(await dl('Labels PDF for label printer'), 'latin1');
+  const rboxes = [...rpdf.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number));
+  log('Match the roll PDF:', rboxes.length, 'pages | sizes', [...new Set(rboxes.map(mm))].join(', '));
+  if (rboxes.length !== Math.ceil(bboxes.length / 4) || rboxes.some((b) => mm(b) !== '63.5x19.1')) throw new Error('roll layout pages are not 63.5 x 19.05 mm rows of 4');
+  await page.getByLabel(/^One label per page/).check();
   await page.getByLabel('Label printer').selectOption('');
   await page.getByLabel('Label size').selectOption('38x12');
 

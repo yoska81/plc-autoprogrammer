@@ -7,7 +7,7 @@
  */
 import {
   billOfMaterials, buildModel, designWarnings, drawingPrefix, naturalCompare, panelLayout, plcRack, revisionState,
-  backPanelDrilling, doorDrilling, type DrillingPlan, type PlcRackSlot, type RevisionState,
+  backPanelDrilling, doorDrilling, dualDim, dualSize, type DrillingPlan, type PlcRackSlot, type RevisionState,
   type AuxBranch, type Cable, type CableCore, type JbTerminal, type JunctionBoxPlan, type MachineDevice, type BomLine, type DrawingContext, type ElectricalModel, type IoGroup, type IoPoint,
   type MotorModel, type PanelLayout, type XfmrBranch, type PsBranch, type Terminal, type TerminalStrip,
 } from '../derive';
@@ -302,7 +302,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   for (const d of [backPanelDrilling(ctx), doorDrilling(ctx)]) {
     const rows: DrillRow[] = [
       ...d.holes.map((h) => ({ id: h.id, tag: h.tag, x: h.x, y: h.y, size: h.code, verified: h.verified })),
-      ...d.cutouts.map((c) => ({ id: c.id, tag: c.tag, x: c.x, y: c.y, size: c.kind === 'rect' ? `${c.code} ${c.w}x${c.h}` : `${c.code} Ø${c.w}`, verified: c.verified })),
+      ...d.cutouts.map((c) => ({ id: c.id, tag: c.tag, x: c.x, y: c.y, size: c.kind === 'rect' ? `${c.code} ${dualSize(c.w, c.h)}` : `${c.code} Ø${dualDim(c.w)}`, verified: c.verified })),
     ];
     if (!rows.length) continue;
     const chunks: DrillRow[][] = [rows.slice(0, DRILL_ROWS_FIRST)];
