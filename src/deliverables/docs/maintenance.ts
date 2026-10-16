@@ -72,6 +72,6 @@ export function sparePartsTable(p: ProjectSnapshot): DocTable {
       rows.push([l.partNumber, l.manufacturer, l.description, l.tags.join(', '), String(l.qty), String(rule.qty(l.qty)), rule.reason]);
     }
   }
-  if (p.hmi) rows.push([p.hmi.hmiPartNumber, 'AutomationDirect', getHmi(p.hmi.hmiPartNumber)?.description ?? 'Operator touch panel', 'HMI1', '1', '1', 'Critical — operator interface (or keep a loaded backup project)']);
+  if (p.hmi && !rows.some((r) => r[0] === p.hmi!.hmiPartNumber)) rows.push([p.hmi.hmiPartNumber, 'AutomationDirect', getHmi(p.hmi.hmiPartNumber)?.description ?? 'Operator touch panel', 'HMI1', '1', '1', 'Critical — operator interface (or keep a loaded backup project)']);
   return makeTable([['Part number', 18], ['Manufacturer', 14], ['Description', 50], ['Tags', 14], ['Qty installed', 9, 'center'], ['Recommended spares', 11, 'center'], ['Reason', 30]], rows);
 }

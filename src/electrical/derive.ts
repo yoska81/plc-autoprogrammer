@@ -762,7 +762,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     };
     chain('S11', 'S12', '11-12');
     chain('S21', 'S22', '21-22');
-    const rs = [reset ?? 'RESET', ...edm];
+    const rs = [reset ?? 'PB?', ...edm]; // same placeholder as the drawings until a reset button is assigned
     rs.forEach((tag, k) => addWire({ wire: k === 0 ? 'S33' : `S33${letter(k)}`, from: k === 0 ? `${relay.tag}:S33` : `${rs[k - 1]}:${k - 1 === 0 ? '14' : '22'}`, to: `${tag}:${k === 0 ? '13' : '21'}`, color: 'BU', size: '18 AWG', function: k === 0 ? 'Safety reset' : 'Feedback (EDM) loop' }));
     addWire({ wire: 'S34', from: `${rs[rs.length - 1]}:${rs.length === 1 ? '14' : '22'}`, to: `${relay.tag}:S34`, color: 'BU', size: '18 AWG', function: 'Feedback (EDM) loop' });
     addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:13`, color: 'BU', size: '18 AWG', function: 'Safety output supply' });
@@ -1219,6 +1219,11 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
       description: c.part?.description ?? `${c.comp.function} (part not found in catalog — verify)`, tags: [c.tag], category: c.category,
     });
   }
+  // The project HMI (chosen on the HMI page) is on the door even when the design has no HMI component.
+  if (ctx.hmiPartNumber && !m.rc.some((c) => c.category === 'hmi')) {
+    const h = getHmi(ctx.hmiPartNumber);
+    lines.set(`hmi|${ctx.hmiPartNumber}`, { item: 0, qty: 1, partNumber: ctx.hmiPartNumber, manufacturer: 'AutomationDirect', description: h?.description ?? 'Operator touch panel', tags: ['HMI1'], category: 'hmi' });
+  }
   const notes: BomLine[] = [];
   const all = [...lines.values()];
   const isGround = (l: BomLine) => /ground|pe\b|earth/i.test(`${l.description} ${ctx.getPart(l.partNumber)?.ratings?.type ?? ''}`);
@@ -1479,14 +1484,19 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     }
     const cy = y + b.h / 2;
     rails.push({ x: backplate.x + MARGIN + DUCT + 4, y: cy - RAIL_H / 2, w: backplate.w - 2 * (MARGIN + DUCT + 4), h: RAIL_H });
+    // Main disconnect at the right-hand end of its rail (latch side of a left-hinged door), so the
+    // through-door handle is on the right as usual; the rest of the rail packs from the left.
+    const ds = b.items[0]?.category === 'disconnect' ? b.items[0] : undefined;
+    const rest = ds ? b.items.slice(1) : b.items;
     let x = innerX0;
-    b.items.forEach((it, k) => {
-      x += k > 0 ? it.gapLeft ?? gapBefore(b.items[k - 1], it) : 0;
+    rest.forEach((it, k) => {
+      x += k > 0 ? it.gapLeft ?? gapBefore(rest[k - 1], it) : 0;
       it.x = x; it.y = cy - it.h / 2;
       if (it.sub) { let sy = it.y; for (const s of it.sub) { s.x = x + (it.w - s.w) / 2; s.y = sy; sy += s.h; } }
       x += it.w;
       items.push(it);
     });
+    if (ds) { ds.x = innerX0 + innerW - ds.w; ds.y = cy - ds.h / 2; items.push(ds); }
     y += b.h;
     if (!(lastBand && b.terminals) || y + DUCT <= limit + 0.01) {
       ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
@@ -1521,7 +1531,9 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   };
   const legendOf = (c: ResolvedComponent) => wrapWords((str(c.part?.ratings, 'legend') ?? c.comp.function ?? c.tag).toUpperCase(), 12).slice(0, 2);
   const hmis = doorRc.filter((c) => c.category === 'hmi');
-  const ops = doorRc.filter((c) => c.category !== 'hmi' && !isLayoutAccessoryDoor(c));
+  // Stack lights mount on the enclosure top (direct base mount), not through the door face.
+  for (const c of doorRc.filter((x) => x.category === 'stackLight')) unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Enclosure top mounted (stack light) — drill per manufacturer mounting template' });
+  const ops = doorRc.filter((c) => c.category !== 'hmi' && c.category !== 'stackLight' && !isLayoutAccessoryDoor(c));
   const kindOf = (c: ResolvedComponent): DoorItem['kind'] => c.category === 'pushbutton' ? 'pushbutton' : c.category === 'estop' ? 'estop' : c.category === 'pilotLight' ? 'pilot' : c.category === 'selector' ? 'selector' : 'other';
   const order: DoorItem['kind'][] = ['pilot', 'selector', 'pushbutton', 'other', 'estop'];
   let dy = Math.min(90, encH * 0.15);
@@ -1551,13 +1563,32 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   }
   if (dy > encH - 30) { doorOverflow = true; warnings.push('Door layout: operator devices do not fit on the door at the standard spacing.'); }
 
+  // Through-door disconnect handle: on the disconnect's shaft axis (same point the 3D model and
+  // pictures use), so the door cutout lines up with the switch. Fallback when the switch is not
+  // placed: right-hand side, 45% down from the top of the door.
+  const handleOf = handleRc ?? m.disconnect;
+  let handle: PanelLayout['door']['handle'];
+  if (handleOf) {
+    const ds = items.find((i) => i.category === 'disconnect');
+    handle = { tag: handleOf.tag, partNumber: handleOf.partNumber, cx: ds ? ds.x + ds.w / 2 : encW - 70, cy: ds ? ds.y + ds.h / 2 : encH * 0.45 };
+    // Keep door devices clear of the handle escutcheon (about 70 mm square): slide the colliding row sideways.
+    const KEEP = 40;
+    const hits = (d: DoorItem) => Math.abs(d.cx - handle!.cx) < KEEP + d.w / 2 + 3 && Math.abs(d.cy - handle!.cy) < KEEP + d.h / 2 + 3;
+    for (const cy of [...new Set(doorItems.filter(hits).map((d) => d.cy))]) {
+      const row = doorItems.filter((d) => d.cy === cy);
+      const left = Math.min(...row.map((d) => d.cx - d.w / 2)), right = Math.max(...row.map((d) => d.cx + d.w / 2));
+      const toLeft = handle.cx - KEEP - 3 - right, toRight = handle.cx + KEEP + 3 - left;
+      const shift = handle.cx >= (left + right) / 2 ? toLeft : toRight;
+      if (left + shift >= 25 && right + shift <= encW - 25) for (const d of row) d.cx += shift;
+      else { doorOverflow = true; warnings.push(`Door layout: ${row.map((d) => d.tag).join(', ')} collide with the disconnect handle ${handle.tag} — rearrange the door.`); }
+    }
+  }
+
   return {
     enclosure: { w: encW, h: encH, d: inMm(num(er, 'depthIn')) ?? num(er, 'depthMm', 'depth'), partNumber: enc?.partNumber, tag: enc?.tag, estimated: encEst },
     backplate, rails, ducts, items, unplaced, notFit, overflow,
     door: {
-      w: encW, h: encH, items: doorItems, overflow: doorOverflow,
-      // through-door disconnect handle: right-hand side, 45% down from the top of the door
-      handle: handleRc || m.disconnect ? { tag: (handleRc ?? m.disconnect)!.tag, partNumber: (handleRc ?? m.disconnect)!.partNumber, cx: encW - 70, cy: encH * 0.45 } : undefined,
+      w: encW, h: encH, items: doorItems, overflow: doorOverflow, handle,
     }, warnings,
   };
 }
@@ -1726,6 +1757,7 @@ export function doorDrilling(ctx: DrawingContext): DrillingPlan {
     w: r1(D.w), h: r1(D.h), holes: [], cutouts: ids, codes: finishCodes([], ids, specs),
     notes: [
       'DATUM: LOWER-LEFT CORNER OF DOOR, OUTSIDE (FRONT) VIEW. ALL DIMENSIONS IN mm.',
+      ...L.unplaced.filter((u) => /stack light/i.test(u.reason)).map((u) => `NOT ON THE DOOR: ${u.tag} ${u.partNumber} STACK LIGHT — ENCLOSURE TOP, DRILL PER MANUFACTURER TEMPLATE.`),
       'DOOR SIZE TAKEN AS ENCLOSURE OUTSIDE SIZE — CHECK FLANGE/RETURN AND HINGE CLEARANCE BEFORE CUTTING.',
       'HANDLE: ALIGN WITH DISCONNECT SHAFT CENTRE ON THE BACK PANEL; DRILL MOUNTING HOLES FROM THE HANDLE TEMPLATE.',
       'REINFORCE DOOR AROUND LARGE CUTOUTS; KEEP GASKET LAND CLEAR. DEBURR AND TOUCH UP PAINT.',
@@ -1765,7 +1797,13 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (!m.disconnect) w.push('No main disconnect in the design (NFPA 79 5.3 requires a supply disconnecting means).');
   if (!m.rc.some((c) => c.category === 'enclosure')) w.push('No enclosure selected.');
   if (!m.psBranches.length) w.push('No 24VDC power supply in the design.');
-  for (const b of m.psBranches) if (!b.protection) w.push(`${b.ps.tag}: no primary protection (breaker/fuses) found — add branch protection.`);
+  const xfmrFused = /yes/i.test(String(m.transformer?.part?.ratings.fused ?? ''));
+  for (const b of m.psBranches) {
+    if (b.protection) continue;
+    // Transformers with an integral fuse block protect their secondary (the supply feed) themselves.
+    if (b.fromXfmr && xfmrFused) w.push(`${b.ps.tag}: fed through the fuse block of ${m.transformer!.tag} — order and fit the Class CC fuses (primary and secondary) sized per the transformer label.`);
+    else w.push(`${b.ps.tag}: no primary protection (breaker/fuses) found — add branch protection.`);
+  }
   // A 24VDC supply's AC input must cover the voltage feeding it (phase-phase on 3-phase supplies).
   const feedVolts = ({ '120VAC-1PH': 120, '208VAC-3PH': 208, '240VAC-3PH': 240, '480VAC-3PH': 480, '600VAC-3PH': 600 } as const)[m.supply];
   const hasTransformer = m.rc.some((c) => c.part?.ratings.kind === 'transformer');
@@ -1814,11 +1852,12 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (unaddressed) w.push(`${unaddressed} project I/O point(s) have no PLC address and are not drawn.`);
   // capacity
   let inCap = 0, outCap = 0, capKnown = false;
-  const caps = [m.plcPart, ...m.rc.filter((c) => c.category === 'plcModule').map((c) => c.part)];
-  for (const p of caps) {
+  // Module lines can carry a quantity (e.g. 2 x 16-point input modules).
+  const caps: [CatalogPart | undefined, number][] = [[m.plcPart, 1], ...m.rc.filter((c) => c.category === 'plcModule').map((c): [CatalogPart | undefined, number] => [c.part, Math.max(1, c.comp.quantity)])];
+  for (const [p, qty] of caps) {
     const i = num(p?.ratings, 'inputs', 'discreteInputs', 'di', 'dcInputs'); const o = num(p?.ratings, 'outputs', 'discreteOutputs', 'do', 'dcOutputs');
     if (i !== undefined || o !== undefined) capKnown = true;
-    inCap += i ?? 0; outCap += o ?? 0;
+    inCap += (i ?? 0) * qty; outCap += (o ?? 0) * qty;
   }
   const nIn = m.io.filter((p) => p.type === 'input').length, nOut = m.io.filter((p) => p.type === 'output').length;
   if (capKnown && nIn > inCap) w.push(`PLC inputs over capacity: ${nIn} used, ${inCap} available — add an input module.`);
