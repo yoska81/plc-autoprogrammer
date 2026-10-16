@@ -16,9 +16,16 @@ export type CatalogCategory =
 /** Where the part is mounted; drives which layout sheet it appears on. */
 export type MountLocation = 'backplate' | 'door' | 'field';
 
+/** Catalog a part comes from (brand / supplier); see src/electrical/catalogs. */
+export type VendorId = 'automationdirect' | 'allen-bradley' | 'siemens' | 'schneider' | 'yaskawa' | 'ifm' | 'hoffman' | 'rittal';
+
 export interface CatalogPart {
-  /** AutomationDirect part number, exactly as on automationdirect.com. */
+  /** Manufacturer / supplier part number, exactly as on the source page. */
   partNumber: string;
+  /** Catalog the part belongs to (set by src/electrical/catalogs; AutomationDirect when absent). */
+  vendor?: VendorId;
+  /** Product family, e.g. "Micro850", "SIRIUS 3RT2". */
+  family?: string;
   category: CatalogCategory;
   description: string;
   manufacturer: string;
@@ -32,6 +39,8 @@ export interface CatalogPart {
   ratings: Record<string, string | number>;
   /** false = some data (ratings/dimensions) still needs checking against the datasheet. */
   verified: boolean;
+  /** When not verified: what still needs checking. */
+  verify?: string;
 }
 
 export type SupplyVoltage = '120VAC-1PH' | '208VAC-3PH' | '240VAC-3PH' | '480VAC-3PH' | '600VAC-3PH';

@@ -29,10 +29,22 @@ protocol.registerSchemesAsPrivileged([
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_e, argv) => {
     const w = BrowserWindow.getAllWindows()[0];
     if (w) { if (w.isMinimized()) w.restore(); w.focus(); }
+    const file = projectFileArg(argv);
+    if (w && file) sendProjectFile(w, file);
   });
+}
+
+// ── Project files (.isap): double-clicked in Explorer, or passed on the command line ──
+function projectFileArg(argv) {
+  return argv.slice(1).find((a) => typeof a === 'string' && a.toLowerCase().endsWith('.isap') && fs.existsSync(a)) ?? null;
+}
+function sendProjectFile(win, file) {
+  fs.promises.readFile(file)
+    .then((buf) => win.webContents.send('isa:open-file', path.basename(file), new Uint8Array(buf)))
+    .catch(() => { /* unreadable file: nothing to open */ });
 }
 
 // ── Static files: app://isa/<path> → dist-desktop, with SPA fallback to index.html ──
@@ -99,6 +111,8 @@ function createWindow() {
   win.webContents.on('will-navigate', (e, url) => {
     if (!isAppUrl(url)) { e.preventDefault(); if (/^https?:/.test(url)) void shell.openExternal(url); }
   });
+  const startFile = projectFileArg(process.argv);
+  if (startFile) win.webContents.once('did-finish-load', () => setTimeout(() => sendProjectFile(win, startFile), 1500));
   void win.loadURL(`${ORIGIN}/`);
   return win;
 }
@@ -117,6 +131,7 @@ function buildMenu() {
 const FILTERS = {
   pdf: 'PDF document', xlsx: 'Excel workbook', csv: 'CSV (Excel)', zip: 'ZIP archive', dxf: 'DXF drawing (CAD/CAM)',
   step: 'STEP 3D model', png: 'PNG image', txt: 'Text file', json: 'JSON file', md: 'Text (Markdown)',
+  isap: 'ISA Auto Programmer project',
 };
 ipcMain.handle('isa:save-file', async (e, name, bytes) => {
   try {

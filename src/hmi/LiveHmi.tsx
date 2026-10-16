@@ -44,12 +44,6 @@ export default function LiveHmi({ handle, design }: { handle: SimHandle; design:
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap gap-1">
-        {design.screens.map((s) => (
-          <button key={s.id} onClick={() => setScreenId(s.id)}
-            className={`px-2 py-1 text-xs rounded ${s.id === screen.id ? 'bg-gray-800 text-white' : 'bg-white border border-gray-300'}`}>{s.name}</button>
-        ))}
-      </div>
       <div className="bg-gray-900 rounded-xl p-2 shadow-lg ring-1 ring-black/40">
         <HmiScreenView screen={screen} widthPx={model.widthPx} heightPx={model.heightPx} design={design}
           read={handle.read} onPress={press} onNavigate={setScreenId} runtime={runtime ?? undefined} />

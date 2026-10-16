@@ -1,4 +1,9 @@
 import { getPart, partsIn } from './catalog';
+import { GROUP_OF } from './catalogs';
+import type { CatalogPart } from './types';
+
+const groupOf = (p: CatalogPart) => GROUP_OF[p.category];
+import { useVendorPreference } from '../store/useProjectStore';
 import { compareStrength, keyRatings, sameKind } from './strength';
 
 const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50 whitespace-nowrap';
@@ -12,9 +17,12 @@ const td = 'px-3 py-1.5 border-b border-steel-100 align-top';
 export default function PartPicker({ tag, partNumber, onPick, onClose }: {
   tag: string; partNumber: string; onPick: (partNumber: string) => void; onClose: () => void;
 }) {
+  const pref = useVendorPreference();
   const current = getPart(partNumber);
   if (!current) return null;
-  const rows = partsIn(current.category).filter((p) => sameKind(current, p)).map((p) => ({ p, s: compareStrength(current, p) }))
+  // The project's preferred brands, plus the brand already in the design.
+  const pool = [...new Map([...partsIn(current.category, pref), ...partsIn(current.category, { ...pref, [groupOf(current)]: [current.vendor ?? 'automationdirect'] })].map((p) => [p.partNumber, p])).values()];
+  const rows = pool.filter((p) => sameKind(current, p)).map((p) => ({ p, s: compareStrength(current, p) }))
     .sort((x, y) => Number(y.s.ok) - Number(x.s.ok));
 
   return (

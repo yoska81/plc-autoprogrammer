@@ -96,6 +96,14 @@
       ],
       "icon": "build/icon.png",
       "category": "Development"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": "isap",
+        "name": "ISA Auto Programmer project",
+        "description": "ISA Auto Programmer project",
+        "role": "Editor"
+      }
+    ]
   }
 }
