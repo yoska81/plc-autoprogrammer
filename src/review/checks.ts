@@ -6,7 +6,7 @@
  * HMI ↔ program, approvals.
  */
 import type { ProjectSnapshot } from '../deliverables/collect';
-import { designWarnings } from '../electrical/derive';
+import { designWarnings, spareSpace } from '../electrical/derive';
 import { calcWarnings } from '../deliverables/docs/calcs';
 import { ioCapacity, moduleSlots } from '../plc/core/modules';
 import { rungWrites, type LadderProgram } from '../plc/core/ladder';
@@ -208,6 +208,18 @@ function electricalChecks({ p }: ReviewInput): Finding[] {
     for (const w of designWarnings(p.drawingCtx)) {
       const sev: Severity = MAJOR_WARN_RE.test(w) ? 'major' : INFO_WARN_RE.test(w) ? 'info' : 'minor';
       out.push(finding(`elec:${hash(w)}`, sev, /safety|e-stop/i.test(w) ? 'safety' : 'electrical', 'electrical', '', w.length > 90 ? `${w.slice(0, 88)}…` : w, w, 'Check the electrical design and correct it, or record why it is acceptable.'));
+    }
+    // Spare mounting space (customer / panel-shop rule: at least 25 % for later additions).
+    const sp = spareSpace(p.drawingCtx);
+    const pct = (f: number) => `${Math.round(f * 100)} %`;
+    const perRail = sp.rails.map((r) => `rail ${r.rail}: ${pct(r.spare)}`).join(', ');
+    if (sp.rails.length && sp.panel < 0.25) {
+      out.push(finding('elec:spare-space', 'minor', 'electrical', 'electrical', '', `Back panel has only ${pct(sp.panel)} spare space (25 % recommended)`,
+        `Spare DIN-rail length: ${perRail || 'none'}${sp.extraRails ? `; room for ${sp.extraRails} more rail(s)` : ''}. Panels are normally built with at least 25 % spare space for later changes.`,
+        'Choose a larger enclosure / back panel, or record that the customer accepts less spare space.'));
+    } else if (sp.rails.length) {
+      out.push(finding('elec:spare-space-info', 'info', 'electrical', 'electrical', '', `Back panel spare space ${pct(sp.panel)}`,
+        `Spare DIN-rail length: ${perRail}${sp.extraRails ? `; room for ${sp.extraRails} more rail(s)` : ''}.`, 'No action needed (25 % or more is free).'));
     }
     for (const w of calcWarnings(p)) {
       out.push(finding(`calc:${hash(w)}`, 'minor', 'electrical', 'electrical', '', w.length > 90 ? `${w.slice(0, 88)}…` : w, w, 'Review the calculation in the engineering package and change the design if needed.'));
