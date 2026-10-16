@@ -177,6 +177,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
                 {supply.printable && <div>Printable area {supply.printable.w} x {supply.printable.h} mm (dashed in the preview)</div>}
                 {supply.band && <div>Printable band {supply.band.h} mm of the {supply.heightMm} mm tape (dashed in the preview)</div>}
                 {supply.across && supply.across > 1 && <div>{supply.across} labels across the liner{supply.liner ? ` (liner ${supply.liner.widthMm} mm)` : ''}: see “Page layout” below.</div>}
+                {supply.liner?.derived && setup.pageLayout === 'roll' && <div className="text-amber-800">To check: {supply.liner.derived}.</div>}
                 {supply.note && <div className="text-steel-500">{supply.note}</div>}
                 {supply.check && <div className="text-amber-800">To check: {supply.check}</div>}
                 <a href={supply.source} target="_blank" rel="noreferrer" className="underline text-steel-500">Source</a>
@@ -231,7 +232,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
               <p className="text-xs text-steel-500">Use one per page when Brady Workstation or the printer driver is set to this supply. Use “match the roll” when printing the PDF from a generic PDF viewer onto a multi-across roll.</p>
             </fieldset>
             <div className="flex flex-col gap-2">
-              {b('Labels PDF for label printer', async () => { saveBlob(`${fileBase}_labels_${size.tape && !setup.tapeLength ? `tape${size.h}mm` : `${Math.round(size.w)}x${Math.round(size.h)}mm`}.pdf`, await labelPrinterPdf(chosen, setup, `${projectName} labels`)); }, true)}
+              {b('Labels PDF for label printer', async () => { saveBlob(`${fileBase}_labels_${size.tape && !setup.tapeLength ? `tape${size.h}mm` : `${Math.round(size.w)}x${Math.round(size.h)}mm`}${byRoll && roll ? `_${roll.across}across` : ''}.pdf`, await labelPrinterPdf(chosen, setup, `${projectName} labels`)); }, true)}
               {b('Print labels', async () => {
                 const r = await printPdf(await labelPrinterPdf(chosen, setup, `${projectName} labels`), `${fileBase}_labels.pdf`);
                 return r === 'printed' ? 'Print dialog opened. Choose the label printer and print at 100 % (actual size).'
