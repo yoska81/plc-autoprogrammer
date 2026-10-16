@@ -126,6 +126,10 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
         const protYs = ys.slice(0, br.b.protectedPoles);
         const PX = 146;
         const fromX = br.type === 'ps' && !!br.b.fromXfmr;
+        // Transformers with an integral fuse block (CT-...-1) protect their own primary and the secondary feed.
+        const xfmr = m.xfmrBranch?.xfmr;
+        const integral = !prot && (br.type === 'xfmr' || fromX) && /yes/i.test(String(xfmr?.part?.ratings.fused ?? ''));
+        const protYsShown = integral ? ys.slice(0, br.type === 'xfmr' ? ys.length : 1) : protYs;
         return (
           <g key={`${br.type}${br.idx}`}>
             {br.b.feedWires.map((w, k) => (
@@ -141,9 +145,9 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
                 <WireNo x={k < br.b.protectedPoles ? 172 : 172} y={ys[k]} n={w} />
               </g>
             ))}
-            {prot ? <Poles x={PX} ys={protYs} kind={protKind(prot)} /> : protYs.map((yy, k) => <Line key={k} x1={PX - 5} y1={yy} x2={PX + 5} y2={yy} />)}
-            <Txt x={PX} y={ys[0] - 4.6} size={2.8} mono bold anchor="middle">{prot?.tag ?? 'NO PROTECTION'}</Txt>
-            <Txt x={PX} y={ys[ys.length - 1] + 5} size={2.3} anchor="middle">{ratingText(prot)}</Txt>
+            {prot ? <Poles x={PX} ys={protYs} kind={protKind(prot)} /> : integral ? <Poles x={PX} ys={protYsShown} kind="fuse" /> : protYs.map((yy, k) => <Line key={k} x1={PX - 5} y1={yy} x2={PX + 5} y2={yy} />)}
+            <Txt x={PX} y={ys[0] - 4.6} size={2.8} mono bold anchor="middle">{prot?.tag ?? (integral ? `${xfmr?.tag ?? 'T1'} FU` : 'NO PROTECTION')}</Txt>
+            <Txt x={PX} y={ys[ys.length - 1] + 5} size={2.3} anchor="middle">{integral ? (br.type === 'xfmr' ? 'INTEGRAL PRIMARY FUSES' : 'INTEGRAL SECONDARY FUSE') : ratingText(prot)}</Txt>
             {fromX && <Txt x={124} y={ys[1] + 4.6} size={2.0} anchor="start">{`FROM ${m.xfmrBranch?.xfmr.tag ?? 'T1'} ${plan.xref.get('xfmr') ?? ''}`}</Txt>}
             {br.type === 'xfmr' ? <XfmrBox plan={plan} br={br.b} ys={ys} y0={y(br.idx)} pitch={POWER_PITCH} /> : br.type === 'ps' ? <PsBox plan={plan} br={br.b} ys={ys} y0={y(br.idx)} pitch={POWER_PITCH} /> : (
               <g>

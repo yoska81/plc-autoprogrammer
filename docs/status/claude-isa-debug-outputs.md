@@ -71,3 +71,21 @@ How: worktree at ed94e39 (harness from integration, dev server :5214), `gen-outp
 - R-P1 (medium): the ZIP's AutomationDirect order file includes the recommended spares by default (ZIP built with spares: true). For the example it orders 2 x PLC, HMI ($499), safety relay, power supply, contactor, overload, every pushbutton and sensor — a full spare set (~$1,200 extra on a $2,700 panel). Someone uploading "the order file" to the cart buys it all. Suggest: ZIP order file = BOM only (`_order_AutomationDirect.csv`) plus a separate `_spares_AutomationDirect.csv`, or name it `_with_spares`; the summary PDF already separates Need / Spares columns.
 - R-P2 (low): big panel's "one-page" purchase summary (38 lines) puts only the price-basis note on a nearly empty page 2 (font step 5.3 pt starts at >34 lines but the notes don't fit).
 - Questions (ed94e39): unit test passes; answers are appended as "- Q: … A: …" under "Answers to open questions" in the right spec section; only answered questions are merged (pending()), so no empty "A:" lines reach the spec / spec.md.
+
+## Cross-check round 18:38 UTC (integration a38ce1e = both dev branches fully merged)
+tsc, tools tsc, eslint, 7 unit tests (questions, labels layout, prices, cabinetStep, strength, sim engine 37, review 7), sim_example 11/11, e2e, check-all (layout, DXF, STEP, PDF, Excel, consistency on 4 variants): all pass, 0 FAIL / 0 WARN.
+Still open from the previous review: R-P1 (ZIP order file built with spares: true, fullPackage.ts:265) and R-P2 (big purchase summary 2 pages).
+
+## Electrical code compliance rules (src/review/codeRules) — milestone 1
+- [x] 18 rules (rules.ts), region-aware clauses, plain-English message + fix, wired into runChecks; codeRules.test.ts 18/18 (pass + fail case each); Dev 2's review.test.ts 7/7.
+- [x] Run on the 4 variants (data.json `codeRules`) and the ai-quality replay (only m0 has a recording; m1–m6 need ANTHROPIC_API_KEY to record).
+
+| Variant | Findings |
+|---|---|
+| us480 | info mounting window 0.39–1.55 m; minor SCCR unknown PS1; minor nameplate SCCR not stated (SB 5 kA); minor no yellow E-stop background |
+| ca600 | same, SCCR unknown T1 |
+| us120 | same, mounting window 0.37–1.73 m |
+| big | **major 18 AWG 24 VDC wiring on a 10 A supply (PSR-24-240-3) without DC protection**; SCCR unknown VFD1–4, PS1; nameplate SCCR; yellow background |
+
+Design bugs found and fixed (derive.ts): I-20 control-transformer primary wires from a phantom device "1L"; I-21 PS1 fed twice from T1 (X1→PS1:L1 and PS1-L1 'T1:T1'→PS1:L); I-22 120 VAC control conductors black instead of red (NFPA 79 13.2.4.3, and our own sheet-1 legend).
+Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 although CT-…-1 has an integral primary + secondary fuse block (coordinator); AI design should add 24 VDC branch protection when a supply > 7 A feeds 18 AWG (electricalAI prompt — coordinator); no yellow E-stop legend plate in the catalog (catalog); SCCR ratings missing for PS / transformer / VFD parts (catalog); 'no reset' is reported by both designWarnings and safety-reset (dedupe if the score double-count matters).

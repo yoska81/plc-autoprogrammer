@@ -7,6 +7,7 @@
  */
 import type { ProjectSnapshot } from '../deliverables/collect';
 import { designWarnings, spareSpace } from '../electrical/derive';
+import { codeRuleFindings } from './codeRules';
 import { calcWarnings } from '../deliverables/docs/calcs';
 import { ioCapacity, moduleSlots } from '../plc/core/modules';
 import { rungWrites, type LadderProgram } from '../plc/core/ladder';
@@ -316,7 +317,7 @@ function specCoverage({ p, cautions = [] }: ReviewInput): Finding[] {
 export function runChecks(input: ReviewInput): Finding[] {
   const all = [
     ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input),
-    ...programChecks(input), ...hmiChecks(input), ...projectChecks(input),
+    ...programChecks(input), ...hmiChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
   ];
   const seen = new Set<string>();
   return all.filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)));

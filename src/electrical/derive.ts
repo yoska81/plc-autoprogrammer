@@ -486,7 +486,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     if (protection) used.add(protection);
     const inPh = num(ps.part?.ratings, 'phases', 'inputPhases');
     // With a control transformer the supply is fed from its 120V secondary (X1 hot / X2 grounded).
-    if (transformer) return { protection, ps, feedWires: [`${ps.tag}-L1`, 'X2'], protectedPoles: 1, fromXfmr: true };
+    if (transformer) return { protection, ps, feedWires: [protection ? `${ps.tag}-L1` : 'X1', 'X2'], protectedPoles: 1, fromXfmr: true };
     const n = phases === 1 ? 2 : inPh === 3 ? 3 : 2;
     const feedWires = phases === 1 ? [`${ps.tag}-L1`, 'N'] : Array.from({ length: n }, (_, k) => `${ps.tag}-L${k + 1}`);
     return { protection, ps, feedWires, protectedPoles: phases === 1 ? 1 : n };
@@ -755,14 +755,20 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   if (mainBreaker) bus.forEach((w, k) => { if (w !== 'N') addWire({ wire: `${w}`, from: `${dsTag}:T${k + 1}`, to: `${mainBreaker.tag}:L${k + 1}`, color: 'BK', size: mainAwg, function: 'Disconnect to main breaker' }); });
   if (xfmrBranch) {
     const T = xfmrBranch.xfmr.tag;
-    xfmrBranch.primaryWires.forEach((w, k) => addWire({ wire: w, from: w === 'N' ? 'N' : `${xfmrBranch.protection?.tag ?? '1L'}:T${k + 1}`, to: `${T}:H${k === 0 ? 1 : 2}`, color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: `${T} primary` }));
-    for (const b of psBranches) addWire({ wire: 'X1', from: `${T}:X1`, to: `${b.protection?.tag ?? b.ps.tag}:L1`, color: 'BK', size: '14 AWG', function: `${T} secondary 120VAC to ${b.ps.tag}` });
+    // Primary: from its own protection, else from the transformer's integral fuse block (CT-...-1),
+    // else straight from the bus (design warning 'no primary protection').
+    const fusedT = /yes/i.test(String(xfmrBranch.xfmr.part?.ratings.fused ?? ''));
+    const primFrom = (k: number) => (xfmrBranch.protection ? `${xfmrBranch.protection.tag}:T${k + 1}` : fusedT ? `${T}:FU${k + 1}` : `BUS ${bus[k]}`);
+    xfmrBranch.primaryWires.forEach((w, k) => addWire({ wire: w, from: w === 'N' ? 'N' : primFrom(k), to: `${T}:H${k === 0 ? 1 : 2}`, color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: `${T} primary` }));
+    // 120 VAC control secondary: red (NFPA 79 13.2.4.3: ungrounded AC control conductors), grounded side white.
+    for (const b of psBranches) addWire({ wire: 'X1', from: `${T}:X1`, to: b.protection ? `${b.protection.tag}:L1` : `${b.ps.tag}:L`, color: 'RD', size: '14 AWG', function: `${T} secondary 120VAC to ${b.ps.tag}${b.protection ? '' : fusedT ? ' (through the transformer secondary fuse)' : ''}` });
     addWire({ wire: 'X2', from: `${T}:X2`, to: pe, color: 'WH', size: '14 AWG', function: `${T} secondary grounded conductor, bonded to PE` });
     addWire({ wire: 'PE', from: `${T}:GND`, to: pe, color: 'GN/YE', size: '14 AWG', function: `${T} ground` });
   }
   for (const b of psBranches) {
     if (b.fromXfmr) {
-      addWire({ wire: b.feedWires[0], from: `${b.protection?.tag ?? xfmrBranch?.xfmr.tag ?? 'T1'}:T1`, to: `${b.ps.tag}:L`, color: 'BK', size: '14 AWG', function: `${b.ps.tag} 120VAC feed` });
+      // With its own secondary protection the supply is fed from that device; otherwise X1 goes straight to it (above).
+      if (b.protection) addWire({ wire: b.feedWires[0], from: `${b.protection.tag}:T1`, to: `${b.ps.tag}:L`, color: 'RD', size: '14 AWG', function: `${b.ps.tag} 120VAC feed` });
       addWire({ wire: 'X2', from: `${xfmrBranch?.xfmr.tag ?? 'T1'}:X2`, to: `${b.ps.tag}:N`, color: 'WH', size: '14 AWG', function: `${b.ps.tag} 120VAC neutral` });
     } else b.feedWires.forEach((w, k) => addWire({ wire: w, from: w === 'N' ? 'N' : `${b.protection?.tag ?? '1L'}:T${k + 1}`, to: `${b.ps.tag}:${w === 'N' ? 'N' : phases === 1 ? 'L' : `L${k + 1}`}`, color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: `${b.ps.tag} primary feed` }));
     addWire({ wire: 'PE', from: `${b.ps.tag}:PE`, to: pe, color: 'GN/YE', size: '14 AWG', function: `${b.ps.tag} ground` });
