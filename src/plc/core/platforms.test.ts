@@ -17,7 +17,8 @@ const ids = new Set<string>();
 for (const p of PLATFORMS) {
   assert.ok(!ids.has(p.id), `duplicate platform ${p.id}`);
   ids.add(p.id);
-  assert.ok(p.cpus.length > 0 && p.protocols.length > 0 && p.notes.trim(), p.id);
+  // protocols may be empty (e.g. Omron CP1E: Ethernet only with an option board — said in the notes).
+  assert.ok(p.cpus.length > 0 && p.notes.trim(), p.id);
   for (const c of p.cpus) {
     const part = getPart(c);
     assert.equal(part?.category, 'plc', `${p.id}: ${c} is a catalog CPU`);

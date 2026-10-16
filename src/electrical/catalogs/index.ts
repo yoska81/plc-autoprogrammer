@@ -7,6 +7,7 @@ import { YASKAWA } from './yaskawa';
 import { IFM } from './ifm';
 import { HOFFMAN } from './hoffman';
 import { RITTAL } from './rittal';
+import { OMRON } from './omron';
 
 /**
  * Multi-vendor catalogs. One file per vendor in this folder, same rule for
@@ -89,6 +90,10 @@ export const VENDORS: Vendor[] = [
   {
     id: 'rittal', name: 'Rittal', supplier: 'Rittal (distributor)', parts: tag('rittal', RITTAL),
     notes: 'Rittal AX enclosures include their mounting panel: no separate subpanel part.',
+  },
+  {
+    id: 'omron', name: 'Omron', supplier: 'Omron (distributor)', parts: tag('omron', OMRON),
+    notes: 'Omron part codes: "DT" = sinking (NPN) transistor outputs, "DT1" = sourcing (PNP), "-D" = 24 VDC supply. CP2E-N20 takes no expansion units; CP2E / CP1E N30/40/60 take up to 3 CP1W expansion units. CP1E has no built-in Ethernet (needs a CP1W-CIF41 option board). NX1P2 takes up to 8 NX I/O units; the NX bus I/O power comes from an NX-PF0630 power supply unit, not from the CPU; the NX-END02 end cover ships with the CPU. 3G3M1 drives: size by heavy-duty current; Modbus RS-485 and Safe Torque Off built in.',
   },
 ];
 

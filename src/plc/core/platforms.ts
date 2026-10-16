@@ -11,7 +11,8 @@ import type { Fit, Need } from './fit';
  * CLICK keeps its own fit (./fit.ts).
  */
 
-export type Protocol = 'EtherNet/IP' | 'PROFINET' | 'Modbus TCP';
+/** Ethernet protocols built into a PLC (Omron FINS: Omron's own, spoken by most third-party panels' Omron drivers). */
+export type Protocol = 'EtherNet/IP' | 'PROFINET' | 'Modbus TCP' | 'Omron FINS';
 
 export interface Platform {
   id: string;
@@ -89,6 +90,31 @@ export const PLATFORMS: Platform[] = [
     modules: ['TM3DI16', 'TM3DQ16T', 'TM3DQ16R', 'TM3AI4', 'TM3AQ2', 'TM3AM6'],
     protocols: ['EtherNet/IP', 'Modbus TCP'],
     notes: 'Up to 7 local TM3 modules (more through a TM3BCEIP coupler). EtherNet/IP scanner and Modbus TCP client built in.',
+  },
+  {
+    id: 'omron-cp2e', vendor: 'omron', name: 'Omron CP2E',
+    cpus: ['CP2E-N20DT-D', 'CP2E-N30DT-D', 'CP2E-N30DT1-D', 'CP2E-N40DT-D', 'CP2E-N40DT1-D', 'CP2E-N60DT-D'],
+    modules: ['CP1W-8ED', 'CP1W-16ER', 'CP1W-16ET', 'CP1W-16ET1', 'CP1W-20EDR1', 'CP1W-20EDT', 'CP1W-20EDT1', 'CP1W-AD041', 'CP1W-DA041', 'CP1W-MAD11', 'CP1W-MAD42'],
+    protocols: ['Omron FINS'],
+    notes: 'CP2E-N (network type) CPUs have built-in Ethernet (N20: 1 port; N30/40/60: 2 ports with switch) for FINS/TCP, FINS/UDP and socket services - Omron does not list EtherNet/IP or Modbus TCP for CP2E. CP2E-N20 takes NO expansion units; N30/40/60 take up to 3 CP1W expansion I/O / expansion units (each comes with a short horizontal connecting cable; CP1W-CN811 80 cm cable for a second row). Option board slots: N20 1, N30/40/60 2 - serial boards CP1W-CIF01/CIF11/CIF12-V1, CP2W-CIFD1/2/3, and max. one analog option board CP1W-ADB21/DAB21V/MAB221 (not in this catalog: no maker footprint). Option battery CP2W-BAT02. "DT" = sinking (NPN) transistor outputs, "DT1" = sourcing (PNP); "-D" = 24 VDC supply. Program with CX-Programmer 9.72+ (CX-One 4.51+).',
+    // https://assets.omron.com/m/79b5d624707bfd69/original/CP2E-Series-Programmable-Controller-Datasheet.pdf
+  },
+  {
+    id: 'omron-cp1e', vendor: 'omron', name: 'Omron CP1E',
+    cpus: ['CP1E-N30DT-D', 'CP1E-N30DT1-D', 'CP1E-N40DT-D', 'CP1E-N40DT1-D'],
+    modules: ['CP1W-8ED', 'CP1W-16ER', 'CP1W-16ET', 'CP1W-16ET1', 'CP1W-20EDR1', 'CP1W-20EDT', 'CP1W-20EDT1', 'CP1W-AD041', 'CP1W-DA041', 'CP1W-MAD11', 'CP1W-MAD42'],
+    protocols: [],
+    notes: 'CP1E-N CPUs have NO built-in Ethernet (USB programming port + RS-232C); Ethernet needs the CP1W-CIF41 version 2.0+ option board (FINS) in the single option board slot. N30/40/60 take up to 3 CP1W expansion I/O / expansion units (N14/N20 none). Analog option boards CP1W-ADB21/DAB21V/MAB221 need CPU unit version 1.2+. "DT" = sinking, "DT1" = sourcing transistor outputs, "-D" = 24 VDC supply. Omron positions CP2E as the replacement (CP1E-to-CP2E replacement guide); CP1E is still Active on Omron Americas but no longer listed on Omron Europe.',
+    // https://assets.omron.com/m/00c4c2eb278c16b3/original/CP1E-Datasheet.pdf
+  },
+  {
+    id: 'omron-nx1p2', vendor: 'omron', name: 'Omron NX1P2',
+    cpus: ['NX1P2-9024DT', 'NX1P2-9024DT1', 'NX1P2-1040DT', 'NX1P2-1040DT1', 'NX1P2-1140DT', 'NX1P2-1140DT1'],
+    modules: ['NX-ID5342', 'NX-ID5442', 'NX-OD5256', 'NX-AD3603', 'NX-AD3203', 'NX-DA3603', 'NX-DA3203', 'NX-PF0630'],
+    plugIns: ['NX1W-ADB21', 'NX1W-DAB21V', 'NX1W-MAB221'],
+    protocols: ['EtherNet/IP'],
+    notes: 'Up to 8 NX I/O units on the CPU NX bus (24 total incl. 16 on EtherCAT slave terminals). The NX-END02 end cover is included with the CPU. The CPU does NOT supply I/O power to NX units: add an NX-PF0630 (4 A) / NX-PF0730 (10 A) additional I/O power supply unit (counts as an NX unit) or wire I/O power directly. Option board slots: 40-point CPUs 2, 24-point CPUs 1 (NX1W-CIF01/11/12 serial, NX1W-ADB21/DAB21V/MAB221 analog). Built-in ports: 1 EtherNet/IP + 1 EtherCAT master. "DT" = NPN, "DT1" = PNP outputs. Program with Sysmac Studio. NX-OD5121 (16 x NPN out) exists but is omitted here (no maker footprint found).',
+    // https://assets.omron.com/m/26af8e730226b1c1/original/NX1P-Machine-Automation-Controller-Datasheet.pdf
   },
 ];
 

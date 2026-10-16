@@ -36,6 +36,7 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)rittal\.(com|us)$/, makers: /rittal/i },
   { host: /(^|\.)phoenixcontact\.com$/, makers: /phoenix/i },
   { host: /(^|\.)eaton\.com$/, makers: /eaton/i },
+  { host: /(^|\.)(omron\.com|omron\.eu)$/, makers: /omron/i },
 ];
 
 /** Key ratings a part of each category must state (the design and calculations use them). */
