@@ -92,7 +92,8 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
         if (!model) { onStep({ step, status: 'skipped', message: 'No HMI chosen.' }); continue; }
         const io = ioNow();
         const r = await generateHmiDesign({ ...ai, hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: CLICK_HMI_COMMUNICATION, spec, io, addresses: resolveAddresses(profile, cpu, io, slots), profile, cpu });
-        hmi.setDesign(r.design, r.explanation);
+        // Keep the look the user picked (Siemens or dark console) across a regeneration.
+        hmi.setDesign(hmi.design?.look ? { ...r.design, look: hmi.design.look } : r.design, r.explanation);
         mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(r.design) });
         onStep({ step, status: 'done', message: `${r.design.screens.length} screens, ${r.design.tags.length} tags.` });
       }

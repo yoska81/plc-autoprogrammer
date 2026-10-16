@@ -2,6 +2,7 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import HmiScreenView from './HmiScreenView';
 import { elementsInRect, GRID, moveElements, resizeElement, type Bounds, type Handle } from './editor';
 import type { HmiDesign, HmiElement, HmiScreen } from './types';
+import { lookOf } from './theme';
 
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const CURSOR: Record<Handle, string> = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize' };
@@ -39,6 +40,8 @@ export default function ScreenEditor({ screen, design, widthPx, heightPx, select
   const bounds: Bounds = { w: widthPx, h: heightPx };
   const grid = snapToGrid ? GRID : 1;
   const shown = draft ?? screen;
+  // Faint outlines of every element: dark on the light Siemens screen, white on the dark console.
+  const light = lookOf(design) === 'siemens';
 
   const toPanel = (e: { clientX: number; clientY: number }) => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -125,7 +128,7 @@ export default function ScreenEditor({ screen, design, widthPx, heightPx, select
         )}
         {shown.elements.map((el) => (
           <rect key={el.id} x={el.x} y={el.y} width={el.w} height={el.h} fill="transparent" data-element={el.id}
-            stroke={selected.includes(el.id) ? 'none' : '#ffffff'} strokeOpacity={0.12} strokeDasharray="4 4"
+            stroke={selected.includes(el.id) ? 'none' : light ? '#1d2327' : '#ffffff'} strokeOpacity={light ? 0.22 : 0.12} strokeDasharray="4 4"
             style={{ cursor: 'move' }} onPointerDown={(e) => startMove(e, el)}>
             <title>{el.label || el.kind}{el.address ? ` · ${el.address}` : ''}</title>
           </rect>
