@@ -116,6 +116,24 @@ export const PLATFORMS: Platform[] = [
     notes: 'Up to 8 NX I/O units on the CPU NX bus (24 total incl. 16 on EtherCAT slave terminals). The NX-END02 end cover is included with the CPU. The CPU does NOT supply I/O power to NX units: add an NX-PF0630 (4 A) / NX-PF0730 (10 A) additional I/O power supply unit (counts as an NX unit) or wire I/O power directly. Option board slots: 40-point CPUs 2, 24-point CPUs 1 (NX1W-CIF01/11/12 serial, NX1W-ADB21/DAB21V/MAB221 analog). Built-in ports: 1 EtherNet/IP + 1 EtherCAT master. "DT" = NPN, "DT1" = PNP outputs. Program with Sysmac Studio. NX-OD5121 (16 x NPN out) exists but is omitted here (no maker footprint found).',
     // https://assets.omron.com/m/26af8e730226b1c1/original/NX1P-Machine-Automation-Controller-Datasheet.pdf
   },
+  {
+    id: 'mitsubishi-fx5u', vendor: 'mitsubishi', name: 'Mitsubishi Electric MELSEC iQ-F FX5U',
+    cpus: ['FX5U-32MT/ES', 'FX5U-64MT/ES', 'FX5U-80MT/ES', 'FX5U-32MR/ES', 'FX5U-32MT/DS'],
+    modules: ['FX5-16EX/ES', 'FX5-16EYT/ES', 'FX5-16EYR/ES', 'FX5-16ER/ES', 'FX5-16ET/ES', 'FX5-4AD', 'FX5-4DA', 'FX5-8AD', 'FX5-C16EX/DS', 'FX5-C32EX/DS', 'FX5-C32EYT/D', 'FX5-C32ET/DSS'],
+    plugIns: ['FX5-4AD-ADP', 'FX5-4DA-ADP', 'FX5-4A-ADP'],
+    protocols: ['Modbus TCP'],
+    notes: 'All-in-one CPU (built-in PSU, 2 AI + 1 AO, Ethernet, RS-485, SD slot). Right side: up to 16 extension modules (512 control points incl. remote, 256 local); screw-terminal "cable type" modules (FX5-16EX/ES etc.) connect directly; connector-type FX5-C... modules need the FX5-CNV-IF connector conversion module first. Large systems may need an extension power supply module (FX5-1PSU-5V) - check the 5 V / 24 V power budget in the hardware manual. Left side: up to 6 expansion adapters (max 2 communication FX5-232ADP/485ADP + max 4 analog FX5-4AD-ADP/4DA-ADP/4A-ADP/4AD-PT-ADP/4AD-TC-ADP). Front: 1 expansion board slot (FX5-232-BD / 485-BD / 422-BD-GOT / FX5-3A-BD). Built-in Ethernet does SLMP, MODBUS/TCP, socket, FTP, CC-Link IE Field Basic master; EtherNet/IP needs FX5-ENET/IP or FX5-EIP module (not built in). Optional battery FX3U-32BL for latch retention. "/ES" = 100-240 VAC supply, "/DS" = 24 VDC supply; MT = transistor sink, MT/ESS & MT/DSS = transistor source, MR = relay. Program with GX Works3.',
+    // https://dl.mitsubishielectric.co.jp/dl/fa/document/catalog/plcf/l08428eng/l08428eng-j.pdf
+  },
+  {
+    id: 'mitsubishi-fx5uc', vendor: 'mitsubishi', name: 'Mitsubishi Electric MELSEC iQ-F FX5UC',
+    cpus: ['FX5UC-32MT/D', 'FX5UC-32MT/DSS', 'FX5UC-64MT/D', 'FX5UC-96MT/D'],
+    modules: ['FX5-C16EX/DS', 'FX5-C32EX/DS', 'FX5-C32EYT/D', 'FX5-C32ET/DSS', 'FX5-16EX/ES', 'FX5-16EYT/ES', 'FX5-16EYR/ES', 'FX5-16ER/ES', 'FX5-16ET/ES', 'FX5-4AD', 'FX5-4DA', 'FX5-8AD'],
+    plugIns: ['FX5-4AD-ADP', 'FX5-4DA-ADP', 'FX5-4A-ADP'],
+    protocols: ['Modbus TCP'],
+    notes: 'Ultra-compact 24 VDC CPU with connector (MIL/ribbon) I/O - order I/O cables or terminal blocks separately; -TS variants use spring-clamp terminals. No built-in analog and no expansion-board slot. Right side: up to 16 extension modules; connector-type FX5-C... modules connect directly; screw-terminal cable-type modules (FX5-16EX/ES, FX5-4AD ...) need FX5-CNV-IFC connector conversion or FX5-C1PS-5V extension power supply first. Left side: up to 6 expansion adapters (max 2 comms + max 4 analog). Transistor outputs: Y0-Y3 0.3 A, Y4+ 0.1 A per point - use relays/interposing for loads. "/D" = sink inputs + sink outputs, "/DSS" = sink/source inputs + source outputs. Built-in Ethernet: SLMP, MODBUS/TCP, socket; EtherNet/IP via FX5-ENET/IP or FX5-EIP.',
+    // https://dl.mitsubishielectric.co.jp/dl/fa/document/catalog/plcf/l08428eng/l08428eng-j.pdf
+  },
 ];
 
 export const platformById = (id: string) => PLATFORMS.find((p) => p.id === id);
@@ -184,13 +202,16 @@ export function protocolsOf(p: CatalogPart): Protocol[] {
 export const driversOf = (hmi: CatalogPart): string[] => String(hmi.ratings.plcDrivers ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
 /**
- * Can this touch panel talk to the platform? Listed in the panel maker's PLC
- * driver list: yes. Same brand: yes unless its protocols are stated and
+ * Can this touch panel talk to the platform? Panels with a maker's PLC driver
+ * list: only the families on it. Same brand: yes unless its protocols are stated and
  * don't match. Another brand: only when a shared Ethernet protocol is stated
  * for the panel.
  */
 export function hmiCompatible(platform: Platform, hmi: CatalogPart): { ok: boolean; reason: string | null } {
-  if (driversOf(hmi).includes(platform.id)) return { ok: true, reason: null };
+  // A panel with a maker's driver list: that list alone decides (no guessing from protocol names).
+  if (hmi.ratings.plcDrivers !== undefined) {
+    return driversOf(hmi).includes(platform.id) ? { ok: true, reason: null } : { ok: false, reason: `Not in ${hmi.manufacturer}'s driver list for the ${platform.name}.` };
+  }
   const hp = protocolsOf(hmi);
   const shared = hp.filter((x) => platform.protocols.includes(x));
   if (hmi.vendor === platform.vendor) {
