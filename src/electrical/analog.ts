@@ -43,6 +43,8 @@ export interface AnalogCircuit {
   shield: string;
   /** Wire numbers along the loop. */
   wires: { plus: string; minus: string };
+  /** Set when the signal goes to a device inside the panel (e.g. a VFD speed input): no TBA, no field cable. */
+  internal?: { tag: string; plus: string; minus: string };
 }
 
 export interface AnalogWiring {
@@ -73,6 +75,8 @@ export interface AnalogOptions {
   /** Next cable number (W###) after the discrete cables. */
   firstCable: number;
   ioWiring: IOWiring[];
+  /** Analog points wired to a device inside the panel (address → device tag and its +/− terminals). */
+  internal?: Map<string, { tag: string; plus: string; minus: string }>;
 }
 
 const slotOf = (channel: string) => (/^Slot (\d+)/.exec(channel)?.[1] ? Number(/^Slot (\d+)/.exec(channel)![1]) : 0);
@@ -89,6 +93,20 @@ export function analogWiring(rows: AnalogSetupRow[], o: AnalogOptions): AnalogWi
   let tn = 0;
   let cable = o.firstCable;
   for (const row of assigned) {
+    const inside = o.internal?.get(row.address);
+    if (inside) {
+      // Panel-internal loop (e.g. PLC analog output → VFD speed input): shielded pair inside the panel,
+      // shield grounded at the PLC end only.
+      const slot = slotOf(row.channel);
+      const moduleTag = slot === 0 ? o.plcTag : o.moduleTag(slot, row.partNumber);
+      const wp = `${row.address}+`, wm = `${row.address}-`;
+      const fn = `${row.description} (${row.range}, ${row.scaleMin}…${row.scaleMax} ${row.units})`;
+      wires.push({ wire: wp, from: `${moduleTag}:${row.terminal}`, to: `${inside.tag}:${inside.plus}`, color: 'WH', size: '18 AWG', function: `Speed reference + ${fn}` });
+      wires.push({ wire: wm, from: `${moduleTag}:0V`, to: `${inside.tag}:${inside.minus}`, color: 'BK', size: '18 AWG', function: `Speed reference - ${fn}` });
+      wires.push({ wire: `${row.address}SH`, from: `${moduleTag}:SHIELD`, to: o.groundBar, color: 'GN/YE', size: '18 AWG', function: `Shield, grounded at the PLC end only - ${row.description}` });
+      circuits.push({ row, deviceTag: inside.tag, moduleTag, loop: 'output', zone: 'Cabinet', cable: '', plus: '', minus: '', shield: '', wires: { plus: wp, minus: wm }, internal: inside });
+      continue;
+    }
     const w = wiringBy.get(row.address.toUpperCase());
     const prefix = tagPrefix(row);
     const n = (counts.get(prefix) ?? 0) + 1;
@@ -133,5 +151,5 @@ export function analogWiring(rows: AnalogSetupRow[], o: AnalogOptions): AnalogWi
     });
     circuits.push({ row, deviceTag, moduleTag, loop, zone, cable: cableTag, plus, minus, shield, wires: { plus: wp, minus: wm } });
   }
-  return { circuits, wires, strip: { tag: 'TBA', title: 'ANALOG SIGNALS (SHIELDED)', terminals, endPlates: 1, endStops: 2 }, cables };
+  return { circuits, wires, strip: terminals.length ? { tag: 'TBA', title: 'ANALOG SIGNALS (SHIELDED)', terminals, endPlates: 1, endStops: 2 } : null, cables };
 }

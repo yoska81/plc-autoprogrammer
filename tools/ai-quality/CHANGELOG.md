@@ -39,3 +39,13 @@ machines need. Before/after scores: not measured (m0 fixture replay: 97 → 97, 
 - **ladder** (`ladderAI.ts`): one safety-OK bit per zone gating only that zone; VFD run = request AND
   safety AND NOT fault, fault alarm; handshakes request → feedback with timeout; recipes in DS tables
   copied to working setpoints only while stopped; be explicit when analog logic is missing.
+
+## Analog I/O and variable-speed drives (Dev 2)
+- **ladder** (`ladderAI.ts`): analog points are DF registers already scaled to engineering units (CMP to
+  read, COPY/MATH to write, setpoints DF101–DF200, alarms with deadband). VFDs as wired by
+  `electrical/vfd.ts`: run = request AND Safety OK AND NOT latched fault; forward/reverse interlocked with a
+  stop delay; fault latches an alarm reset only when the fault is gone; analog speed setpoint clamped and
+  written only while running. Why: m5 (mixing tank) and m6 (VFD conveyor line) need both; the old rule told
+  the AI it could not write a speed.
+- **hmi** (`hmiAI.ts`): analog values as numeric / bar / trend; per drive a status display, fault alarm and a
+  speed setpoint entry with limits. Why: same machines; the operator must see and set speed.

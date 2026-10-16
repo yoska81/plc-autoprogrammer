@@ -335,7 +335,15 @@ function MotorBranch({ plan, m, idx, y, BX }: { plan: DrawingPlan; m: MotorModel
 
       {m.vfd ? (
         <g>
-          {ys.map((yy, k) => <g key={k}><Line x1={protEnd} y1={yy} x2={125} y2={yy} /><WireNo x={(protEnd + 125) / 2} y={yy} n={m.lineWires[k]} /></g>)}
+          {kf ? (
+            <g>
+              {/* line contactor ahead of the drive (safety stop by contactor) */}
+              {ys.map((yy, k) => <g key={k}><Line x1={protEnd} y1={yy} x2={101} y2={yy} /><WireNo x={(protEnd + 101) / 2} y={yy} n={m.lineWires[k]} /><Line x1={109} y1={yy} x2={125} y2={yy} /><WireNo x={117} y={yy} n={m.midWires[k]} /></g>)}
+              <Poles x={105} ys={ys} kind="contact" />
+              <Txt x={105} y={labY} size={2.8} mono bold anchor="middle">{kf.tag}</Txt>
+              <Txt x={105} y={labY + 3.2} size={2.2} anchor="middle">{`COIL /${coilRef(kf.tag) ?? '?'}`}</Txt>
+            </g>
+          ) : ys.map((yy, k) => <g key={k}><Line x1={protEnd} y1={yy} x2={125} y2={yy} /><WireNo x={(protEnd + 125) / 2} y={yy} n={m.lineWires[k]} /></g>)}
           <rect x={125} y={ys[0] - 4} width={80} height={ys[ph - 1] - ys[0] + 8} strokeWidth={0.5} fill="#fff" />
           {ys.map((yy, k) => <Txt key={`i${k}`} x={127} y={yy + 0.9} size={2.2} mono>{`L${k + 1}`}</Txt>)}
           {ys.map((yy, k) => <Txt key={`o${k}`} x={203} y={yy + 0.9} size={2.2} mono anchor="end">{`T${k + 1}`}</Txt>)}

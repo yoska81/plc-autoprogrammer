@@ -1,7 +1,8 @@
 /**
  * Electrical code compliance rules: the deterministic checks a senior electrical engineer applies
  * before signing the drawings. Region aware: US = NFPA 79 (2024) + UL 508A + NEC (NFPA 70);
- * Canada = CSA C22.2 No. 14 + CEC Part I (CSA C22.1). Every hit names its clause; clauses not
+ * Canada = CSA C22.2 No. 14 + CEC Part I (CSA C22.1); IEC regions (Europe, Israel …) = IEC 60204-1:2016+A1:2021
+ * with the IEC-only rules in iec.ts. Every hit names its clause; clauses not
  * confirmed against the standard text carry "(verify clause)".
  * Pure functions of the electrical design (no stores, no React).
  */
@@ -11,12 +12,26 @@ import {
 } from '../../electrical/derive';
 import type { SpecSections } from '../../spec/types';
 import type { ReviewArea, Severity } from '../types';
+import { IEC_RULES } from './iec';
 
 export interface CodeInput {
   ctx: DrawingContext;
   spec?: Partial<SpecSections>;
   /** From the SCCR table (UL 508A SB method): components without a rating and the lowest rating. */
   sccr?: { unknown: string[]; lowest: number | null };
+  /** Rule set to apply; defaults to the project's region (see ruleSetOf). */
+  ruleSet?: RuleSet;
+}
+
+/** NA = NFPA 79 / UL 508A / NEC / CSA + CEC; IEC = IEC 60204-1 (+ ISO 13849 / ISO 13850). */
+export type RuleSet = 'NA' | 'IEC';
+
+/**
+ * Rule set of a region. US and Canada use the North American codes; every other region (Europe,
+ * Israel …) uses IEC 60204-1. Replaced by the region profile's standards family when it lands.
+ */
+export function ruleSetOf(region: string | undefined): RuleSet {
+  return !region || /^(us|usa|canada|ca|na)$/i.test(region) ? 'NA' : 'IEC';
 }
 
 export interface CodeHit {
@@ -35,13 +50,16 @@ export interface Env {
   m: ElectricalModel;
   L: PanelLayout;
   canada: boolean;
+  /** IEC 60204-1 rule set. */
+  iec: boolean;
   wires: WireRecord[];
 }
 
 export interface CodeRule {
   id: string;
   name: string;
-  clause: { US: string; Canada: string };
+  /** IEC: the IEC 60204-1 clause; rules without one do not apply under IEC. */
+  clause: { US: string; Canada: string; IEC?: string };
   run(input: CodeInput, env: Env): Omit<CodeHit, 'rule' | 'clause'>[];
 }
 
@@ -70,13 +88,13 @@ export function maxOcpd(awg: number): number {
   return STD.find((s) => s >= a) ?? a; // next standard size up (NEC 240.4(B))
 }
 
-const num = (v: unknown): number | undefined => {
+export const num = (v: unknown): number | undefined => {
   const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
   return Number.isFinite(n) ? n : undefined;
 };
 
 /** Rating of a protective device in amps: fuse cartridge in a holder, else the device. */
-function ratingA(c: ResolvedComponent | undefined, env: Env): number | undefined {
+export function ratingA(c: ResolvedComponent | undefined, env: Env): number | undefined {
   if (!c) return undefined;
   if (c.category === 'fuse' && !isFuseCartridge(c)) {
     const cart = c.fuse ?? env.m.rc.find((x) => isFuseCartridge(x) && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag)?.part;
@@ -95,7 +113,7 @@ const sizeOfWire = (env: Env, wire: string): number | null => {
 // Rules
 // ---------------------------------------------------------------------------
 
-const AC_POWER = /incoming supply|power bus|line side|contactor to overload|motor leads|motor cable|primary|disconnect to main|feed$/i;
+export const AC_POWER = /incoming supply|power bus|line side|contactor to overload|motor leads|motor cable|primary|disconnect to main|feed$/i;
 
 export const RULES: CodeRule[] = [
   {
@@ -181,10 +199,12 @@ export const RULES: CodeRule[] = [
   {
     id: 'motor-overload',
     name: 'Motor overload set to the motor FLA',
-    clause: { US: 'NEC 430.32(A)(1) / NFPA 79 7.3.1', Canada: 'CEC 28-306' },
+    clause: { US: 'NEC 430.32(A)(1) / NFPA 79 7.3.1', Canada: 'CEC 28-306', IEC: 'IEC 60204-1 7.3.1 / 7.3.2' },
     run: (_i, env) => env.m.motors.flatMap((mm) => {
       if (mm.vfd) return [];
       const ol = mm.overload ?? (mm.protection?.category === 'motorProtector' ? mm.protection : undefined);
+      // IEC 60204-1 7.3.1: overload protection is required for motors rated more than 0.5 kW
+      if (!ol && env.iec && mm.motor.hp * 0.7457 <= 0.5) return [];
       if (!ol) return [{ subject: mm.motor.tag, severity: 'major' as const, area: 'electrical' as const, title: `${mm.motor.tag} has no overload protection`,
         detail: `Motor ${mm.motor.tag} is started across the line but no overload relay or motor protector is assigned.`, fix: 'Add an overload relay sized for the motor FLA.' }];
       const lo = num(ol.part?.ratings.minAmps), hi = num(ol.part?.ratings.maxAmps);
@@ -239,15 +259,17 @@ export const RULES: CodeRule[] = [
   {
     id: 'disconnect',
     name: 'Supply disconnect rating and lockable handle',
-    clause: { US: 'NFPA 79 5.3.2 / 5.3.3 and NEC 430.110(A) (verify clause)', Canada: 'CEC 28-602 / CSA C22.2 No. 14 (verify clause)' },
+    clause: { US: 'NFPA 79 5.3.2 / 5.3.3 and NEC 430.110(A) (verify clause)', Canada: 'CEC 28-602 / CSA C22.2 No. 14 (verify clause)', IEC: 'IEC 60204-1 5.3.2 / 5.3.3' },
     run: (input, env) => {
       const ds = env.m.disconnect;
       if (!ds) return [{ subject: 'none', severity: 'critical', area: 'electrical', title: 'No supply disconnecting means', detail: 'The panel has no main disconnect switch or breaker.', fix: 'Add a lockable main disconnect sized for the panel full-load current.' }];
       const out: ReturnType<CodeRule['run']> = [];
       const flc = panelNameplate(input.ctx).fullLoadAmps;
       const a = num(ds.part?.ratings.amps);
-      if (a !== undefined && a < flc * 1.15) out.push({ subject: ds.tag, severity: 'major', area: 'electrical', title: `${ds.tag} ${a} A below 115 % of the panel full-load current`,
-        detail: `Panel full-load current is ${flc} A; the disconnect must be rated at least ${(flc * 1.15).toFixed(1)} A.`, fix: 'Choose a larger disconnect.' });
+      // NEC 430.110: 115 % of the full-load current; IEC 60204-1 5.3.2: at least the full-load current
+      const k = env.iec ? 1 : 1.15;
+      if (a !== undefined && a < flc * k) out.push({ subject: ds.tag, severity: 'major', area: 'electrical', title: `${ds.tag} ${a} A below ${env.iec ? '' : '115 % of '}the panel full-load current`,
+        detail: `Panel full-load current is ${flc} A; the disconnect must be rated at least ${(flc * k).toFixed(1)} A.`, fix: 'Choose a larger disconnect.' });
       const handle = env.m.rc.find((c) => c.category === 'disconnect' && c.mount === 'door') ?? env.m.rc.find((c) => /handle/i.test(c.part?.description ?? ''));
       const lockable = /padlock|lockable|lock/i.test(`${handle?.part?.description ?? ''} ${handle?.part?.ratings.lockable ?? ''} ${ds.part?.description ?? ''}`);
       if (!lockable) out.push({ subject: `${ds.tag}-lock`, severity: 'major', area: 'electrical', title: `${ds.tag} handle not lockable in OFF`,
@@ -258,21 +280,22 @@ export const RULES: CodeRule[] = [
   {
     id: 'mounting-heights',
     name: 'Disconnect handle and operator device heights',
-    clause: { US: 'NFPA 79 5.3.4 (handle ≤ 2.0 m) and 10.1.1 (operator devices ≥ 0.6 m) (verify clause)', Canada: 'CEC 2-308 / CSA C22.2 No. 14 (verify clause)' },
+    clause: { US: 'NFPA 79 5.3.4 (handle ≤ 2.0 m) and 10.1.1 (operator devices ≥ 0.6 m) (verify clause)', Canada: 'CEC 2-308 / CSA C22.2 No. 14 (verify clause)', IEC: 'IEC 60204-1 5.3.4 (handle 0.6–1.9 m) and 10.1.1 (operator devices ≥ 0.6 m) (verify clause)' },
     run: (_i, env) => {
       const D = env.L.door;
+      const top = env.iec ? 1.9 : 2.0;
       if (!D.handle && !D.items.length) return [];
       const fromBottom = (cy: number) => (D.h - cy) / 1000;
       const handleUp = D.handle ? fromBottom(D.handle.cy) : null;
       const lowest = D.items.length ? Math.min(...D.items.map((d) => fromBottom(d.cy + d.h / 2))) : null;
-      const maxBottom = handleUp !== null ? 2.0 - handleUp : Infinity;
+      const maxBottom = handleUp !== null ? top - handleUp : Infinity;
       const minBottom = lowest !== null ? 0.6 - lowest : 0;
       const range = `${Math.max(0, minBottom).toFixed(2)}–${Number.isFinite(maxBottom) ? maxBottom.toFixed(2) : '—'} m`;
       if (maxBottom < minBottom) return [{ subject: 'door', severity: 'minor', area: 'electrical', title: 'No mounting height satisfies the handle and operator-height limits',
-        detail: `The handle is ${handleUp!.toFixed(2)} m and the lowest operator device ${lowest!.toFixed(2)} m above the enclosure bottom: the handle must stay ≤ 2.0 m and devices ≥ 0.6 m above the floor.`,
+        detail: `The handle is ${handleUp!.toFixed(2)} m and the lowest operator device ${lowest!.toFixed(2)} m above the enclosure bottom: the handle must stay ≤ ${top} m and devices ≥ 0.6 m above the floor.`,
         fix: 'Rearrange the door (move low devices up or the handle down) or use a different enclosure.' }];
       return [{ subject: 'door', severity: 'info', area: 'electrical', title: `Mount the enclosure with its bottom ${range} above the floor`,
-        detail: `Handle centre ${handleUp !== null ? `${handleUp.toFixed(2)} m` : '—'} and lowest operator device ${lowest !== null ? `${lowest.toFixed(2)} m` : '—'} above the enclosure bottom. Bottom edge ${range} above the servicing level keeps the handle ≤ 2.0 m and devices ≥ 0.6 m.`,
+        detail: `Handle centre ${handleUp !== null ? `${handleUp.toFixed(2)} m` : '—'} and lowest operator device ${lowest !== null ? `${lowest.toFixed(2)} m` : '—'} above the enclosure bottom. Bottom edge ${range} above the servicing level keeps the handle ≤ ${top} m and devices ≥ 0.6 m.`,
         fix: 'Put the mounting height on the layout drawing / installation notes.' }];
     },
   },
@@ -304,7 +327,7 @@ export const RULES: CodeRule[] = [
   {
     id: 'protective-earth',
     name: 'Protective earth: ground bar, incoming PE and motor PE conductors',
-    clause: { US: 'NFPA 79 8.2.1 / 8.2.2 / 8.2.3 (verify clause)', Canada: 'CEC 10-400 / CSA C22.2 No. 14 (verify clause)' },
+    clause: { US: 'NFPA 79 8.2.1 / 8.2.2 / 8.2.3 (verify clause)', Canada: 'CEC 10-400 / CSA C22.2 No. 14 (verify clause)', IEC: 'IEC 60204-1 5.2 / 8.2.1 / 8.2.2' },
     run: (_i, env) => {
       const out: ReturnType<CodeRule['run']> = [];
       if (!env.m.groundBar) out.push({ subject: 'bar', severity: 'major', area: 'electrical', title: 'No PE ground bar', detail: 'There is no protective-earth bar for the incoming PE and the equipment grounding conductors.', fix: 'Add a ground bar bonded to the enclosure and back panel.' });
@@ -352,14 +375,14 @@ export const RULES: CodeRule[] = [
   {
     id: 'spare-space',
     name: 'Spare space for later additions',
-    clause: { US: 'Good practice / customer specification (no code clause)', Canada: 'Good practice / customer specification (no code clause)' },
+    clause: { US: 'Good practice / customer specification (no code clause)', Canada: 'Good practice / customer specification (no code clause)', IEC: 'Good practice / customer specification (no code clause)' },
     // Reported by the design review's spare-space finding; listed here so the rule table is complete.
     run: (input) => { spareSpace(input.ctx); return []; },
   },
   {
     id: 'estop-device',
     name: 'Emergency stop: red mushroom on a yellow background',
-    clause: { US: 'NFPA 79 10.7.2 (verify clause) / ISO 13850', Canada: 'CSA C22.2 No. 14 / CSA Z432 (verify clause)' },
+    clause: { US: 'NFPA 79 10.7.2 (verify clause) / ISO 13850', Canada: 'CSA C22.2 No. 14 / CSA Z432 (verify clause)', IEC: 'IEC 60204-1 10.7.3 / ISO 13850 (verify clause)' },
     run: (input, env) => {
       const es = env.m.rc.filter((c) => c.category === 'estop');
       const spec = Object.values(input.spec ?? {}).join(' ');
@@ -377,7 +400,7 @@ export const RULES: CodeRule[] = [
   {
     id: 'stop-category',
     name: 'Stop category stated',
-    clause: { US: 'NFPA 79 9.2.2 / 9.2.5.4', Canada: 'CSA C22.2 No. 14 / CSA Z432 (verify clause)' },
+    clause: { US: 'NFPA 79 9.2.2 / 9.2.5.4', Canada: 'CSA C22.2 No. 14 / CSA Z432 (verify clause)', IEC: 'IEC 60204-1 9.2.2 / 9.2.3.4.2' },
     run: (input, env) => {
       if (!env.m.safety.relay && !env.m.rc.some((c) => c.category === 'estop')) return [];
       const t = `${input.spec?.safety ?? ''} ${input.spec?.modes ?? ''}`;
@@ -388,7 +411,7 @@ export const RULES: CodeRule[] = [
   {
     id: 'safety-edm',
     name: 'Safety relay monitors the contactors it switches (EDM)',
-    clause: { US: 'NFPA 79 9.4.2 / ISO 13849-1 (verify clause)', Canada: 'CSA Z432 / ISO 13849-1 (verify clause)' },
+    clause: { US: 'NFPA 79 9.4.2 / ISO 13849-1 (verify clause)', Canada: 'CSA Z432 / ISO 13849-1 (verify clause)', IEC: 'ISO 13849-1 / IEC 60204-1 9.4 (verify clause)' },
     run: (_i, env) => {
       const s = env.m.safety;
       if (!s.relay) return [];
@@ -401,7 +424,7 @@ export const RULES: CodeRule[] = [
   {
     id: 'safety-reset',
     name: 'Manual, separate safety reset',
-    clause: { US: 'NFPA 79 9.2.5.4.1.2 / ISO 13850 (verify clause)', Canada: 'CSA Z432 (verify clause)' },
+    clause: { US: 'NFPA 79 9.2.5.4.1.2 / ISO 13850 (verify clause)', Canada: 'CSA Z432 (verify clause)', IEC: 'IEC 60204-1 9.2.3.4.2 / ISO 13850 (verify clause)' },
     run: (_i, env) => {
       const s = env.m.safety;
       if (!s.relay) return [];
@@ -415,11 +438,17 @@ export const RULES: CodeRule[] = [
 ];
 
 /** Run every rule (region-aware clauses). */
-export function makeEnv(ctx: DrawingContext): Env {
+export function makeEnv(ctx: DrawingContext, ruleSet: RuleSet = ruleSetOf(ctx.region)): Env {
   const m = buildModel(ctx);
-  return { m, L: panelLayout(ctx), canada: codeRefs(ctx).region === 'Canada', wires: m.wires };
+  return { m, L: panelLayout(ctx), canada: codeRefs(ctx).region === 'Canada', iec: ruleSet === 'IEC', wires: m.wires };
 }
 
-export function runCodeRules(input: CodeInput, env: Env = makeEnv(input.ctx)): CodeHit[] {
-  return RULES.flatMap((r) => r.run(input, env).map((h) => ({ ...h, rule: r.id, clause: env.canada ? r.clause.Canada : r.clause.US })));
+/** The rules of a rule set, each with its clause for the region. */
+export function rulesFor(ruleSet: RuleSet): CodeRule[] {
+  return ruleSet === 'IEC' ? [...RULES.filter((r) => r.clause.IEC), ...IEC_RULES] : RULES;
+}
+
+export function runCodeRules(input: CodeInput, env: Env = makeEnv(input.ctx, input.ruleSet)): CodeHit[] {
+  const set: RuleSet = env.iec ? 'IEC' : 'NA';
+  return rulesFor(set).flatMap((r) => r.run(input, env).map((h) => ({ ...h, rule: r.id, clause: env.iec ? r.clause.IEC ?? '' : env.canada ? r.clause.Canada : r.clause.US })));
 }

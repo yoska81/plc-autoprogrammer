@@ -186,7 +186,7 @@ export function awgNear(mm2: number): string {
   return best;
 }
 
-export const mm2Text = (mm2: number) => `${String(mm2).replace('.', ',')} mm²`;
+export const mm2Text = (mm2: number) => `${mm2} mm²`;
 
 /**
  * NFPA 79 wire colour (as drawn by the electrical engine) → IEC 60204-1 §13.2 colour for the same

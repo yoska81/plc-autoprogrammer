@@ -33,7 +33,7 @@ eq('16 mm² ≈ 6 AWG', awgNear(16), '6 AWG');
 eq('B2 sizing 10 A → 1.5', mm2For(10), 1.5);
 eq('B2 sizing 16 A → 2.5', mm2For(16), 2.5);
 eq('B2 sizing 25 A → 6', mm2For(25), 6);
-eq('size text, IEC', regionSize('14 AWG', 'EU'), '2,5 mm²');
+eq('size text, IEC', regionSize('14 AWG', 'EU'), '2.5 mm²');
 eq('size text, US unchanged', regionSize('14 AWG', 'US'), '14 AWG');
 
 eq('colours: PE', iecColor('GN/YE'), 'GN/YE');

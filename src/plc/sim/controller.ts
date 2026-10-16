@@ -7,7 +7,7 @@ import type { IOWiring } from '../../electrical/types';
 import type { LadderProgram } from '../core/ladder';
 import { createSimulator, normAddress } from './engine';
 import type { CounterState, RungPower, Simulator, TimerState } from './engine';
-import { addPart, buildMachineModel, machineAnalogValues, machineInputs, removePart, setAnalogValue, setDeviceBypass, stepMachine } from './machineModel';
+import { addPart, buildMachineModel, machineAnalogValues, machineInputs, removePart, setAnalogValue, setDeviceBypass, setDriveFault, stepMachine } from './machineModel';
 import type { MachineModel, SimDevice, SimIOPoint } from './machineModel';
 import { blockOfRung, externalSignals } from './blocks';
 import type { ExternalSignal } from './blocks';
@@ -347,6 +347,8 @@ export class SimController {
     this.emit();
   }
 
+  /** Fault injection: trip or reset a drive. */
+  setDriveFault(motorId: string, faulted: boolean) { setDriveFault(this.machine, motorId, faulted); this.syncInputs(); this.emit(); }
   addPart(conveyorId: string) { addPart(this.machine, conveyorId); this.syncInputs(); this.emit(); }
   removePart(conveyorId: string) { removePart(this.machine, conveyorId); this.syncInputs(); this.emit(); }
 

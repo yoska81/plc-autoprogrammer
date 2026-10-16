@@ -142,6 +142,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
     removePart: (id) => ctl.removePart(id),
     setBypass: (id, on, value) => ctl.setDeviceBypass(id, on, value),
     setAnalog: (id, v) => ctl.setAnalog(id, v),
+    setDriveFault: (id, f) => ctl.setDriveFault(id, f),
   }), [ctl]);
 
   const groups = hasBlocks ? (block ? blocks.filter((b) => b.id === block) : blocks) : undefined;

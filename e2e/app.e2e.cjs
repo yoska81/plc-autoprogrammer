@@ -543,6 +543,37 @@ function sse(model, text) {
   await mb.disconnect();
   await plc.close();
 
+  // Preferred brands (customer standard): Allen-Bradley panel parts become choices next to the design's own parts;
+  // the electrical AI was given the catalog notes of the brands in use (AutomationDirect by default).
+  check(/Catalog specifics per brand:\n- AutomationDirect:/.test(lastUser.electrical ?? '') && !/Allen-Bradley:/.test(lastUser.electrical ?? ''), 'electrical prompt has only the default brand notes');
+  await page.goto(BASE + '/equipment');
+  const abPanel = page.getByLabel(/^Panel parts .*: Allen-Bradley$/);
+  await abPanel.check();
+  await page.reload();
+  check(await page.getByLabel(/^Panel parts .*: Allen-Bradley$/).isChecked(), 'brand preference is saved with the project');
+  await page.goto(BASE + '/electrical?tab=design');
+  await page.getByRole('button', { name: 'Change K1' }).click();
+  const abChoices = await page.getByLabel(/^Choose 100-C\d\dEJ10$/).count();
+  log('Allen-Bradley contactors offered for K1:', abChoices);
+  check(abChoices >= 3, 'Allen-Bradley contactors offered when the brand is preferred');
+  await page.getByRole('button', { name: 'Close', exact: true }).first().click();
+  await page.goto(BASE + '/equipment');
+  await page.getByLabel(/^Panel parts .*: Allen-Bradley$/).uncheck();
+  // An Allen-Bradley PLC + HMI preference shows that brand's CPUs with the modules they'd need and the fit (comparison only).
+  await page.getByLabel(/^PLC and I\/O: Allen-Bradley$/).check();
+  await page.getByLabel(/^Operator panel \(HMI\): Allen-Bradley$/).check();
+  const abCard = page.getByRole('region', { name: 'Preferred PLC brands for this machine' });
+  await abCard.waitFor();
+  const m820 = await abCard.locator('tr[data-cpu="2080-L20E-20QBB"]').innerText();
+  log('Allen-Bradley comparison:', (await abCard.locator('tr[data-cpu]').count()), 'CPUs | Micro820:', m820.replace(/\s+/g, ' '));
+  check(/Yes ·/.test(m820), 'Micro820 fits the conveyor cell');
+  const panels = await abCard.getByText(/^Touch panels:/).first().innerText();
+  log('Touch panels for Allen-Bradley:', panels);
+  check(panels.includes('2713P-T7WD1 (7")'), 'PanelView 5310 listed as a compatible touch panel');
+  await snap(page, 'brands');
+  await page.getByLabel(/^PLC and I\/O: Allen-Bradley$/).uncheck();
+  await page.getByLabel(/^Operator panel \(HMI\): Allen-Bradley$/).uncheck();
+
   // Deliverables
   await page.goto(BASE + '/export');
   const eng = await dl('Engineering package');
@@ -578,6 +609,39 @@ function sse(model, text) {
   if (!Object.keys(zip.files).some((f) => /^purchasing\/.*_spares_order\.csv$/.test(f))) throw new Error('ZIP has no separate spares order file');
   if (!Object.keys(zip.files).some((f) => /^commissioning\/.*_IO_checkout\.pdf$/.test(f))) throw new Error('ZIP has no I/O check-out sheet');
   await snap(page, 'deliverables');
+
+  // Project file (.isap): save the open project, open it back as a new project, same data.
+  const pfBefore = await page.evaluate(() => ({
+    io: JSON.parse(localStorage.getItem('plc-io-store')).state.projectIO.length,
+    rungs: JSON.parse(localStorage.getItem('plc-program-store')).state.ladder.rungs.length,
+    hasDesign: Boolean(JSON.parse(localStorage.getItem('plc-electrical-store')).state.design),
+    screens: JSON.parse(localStorage.getItem('plc-hmi-store')).state.design?.screens.length ?? 0,
+    name: document.querySelector('select[aria-label="Open project"] option:checked').textContent,
+  }));
+  await page.getByRole('button', { name: 'Project', exact: true }).click();
+  const [isapDl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Save project to file \(\.isap\)/ }).click()]);
+  const isapPath = OUT + isapDl.suggestedFilename();
+  await isapDl.saveAs(isapPath);
+  check(isapPath.endsWith('.isap'), 'project file has the .isap extension');
+  const isap = await JSZip.loadAsync(fs.readFileSync(isapPath));
+  const manifest = JSON.parse(await isap.file('manifest.json').async('string'));
+  check(manifest.format === 'isa-auto-programmer-project' && manifest.formatVersion === 1, 'project file manifest');
+  check(!(await isap.file('project.json').async('string')).includes('sk-ant-test'), 'API key is not in the project file');
+  await page.locator('[data-testid="open-project-file"]').setInputFiles(isapPath);
+  await page.waitForTimeout(1500);
+  const pfAfter = await page.evaluate(() => ({
+    io: JSON.parse(localStorage.getItem('plc-io-store')).state.projectIO.length,
+    rungs: JSON.parse(localStorage.getItem('plc-program-store')).state.ladder.rungs.length,
+    hasDesign: Boolean(JSON.parse(localStorage.getItem('plc-electrical-store')).state.design),
+    screens: JSON.parse(localStorage.getItem('plc-hmi-store')).state.design?.screens.length ?? 0,
+    name: document.querySelector('select[aria-label="Open project"] option:checked').textContent,
+  }));
+  log('Project file:', Math.round(fs.statSync(isapPath).size / 1024), 'KB |', JSON.stringify(pfBefore), '→', JSON.stringify(pfAfter));
+  check(pfAfter.name === `${pfBefore.name} (2)`, 'opened as a new project with a new name');
+  check(pfAfter.io === pfBefore.io && pfAfter.rungs === pfBefore.rungs && pfAfter.hasDesign === pfBefore.hasDesign && pfAfter.screens === pfBefore.screens, 'project file round trip keeps the data');
+  await page.locator('[data-testid="open-project-file"]').setInputFiles({ name: 'bad.isap', mimeType: 'application/octet-stream', buffer: Buffer.from('not a zip') });
+  await page.waitForTimeout(500);
+  check((await page.locator('body').innerText()).includes('not an ISA Auto Programmer project file'), 'a wrong file is refused with a clear message');
 
   log('AI calls:', JSON.stringify(counts));
   log('Page errors:', errors.length ? errors : 'none');

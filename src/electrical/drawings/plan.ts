@@ -58,7 +58,8 @@ export type SheetSpec =
   | { kind: 'cables'; columns: CableRow[][] }
   | { kind: 'jb'; jb: JunctionBoxPlan; terminals: JbTerminal[]; trunk?: Cable; page: number; pages: number }
   | { kind: 'drill'; drill: DrillingPlan; rows: DrillRow[]; drawing: boolean; page: number; pages: number }
-  | { kind: 'analog'; from: number; page: number; pages: number };
+  | { kind: 'analog'; from: number; page: number; pages: number }
+  | { kind: 'drive'; index: number };
 
 export type DrillRow = { id: string; tag: string; x: number; y: number; size: string; verified: boolean };
 export const DRILL_ROWS_FIRST = 44;
@@ -181,8 +182,15 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
       desc: ['E-STOP CHAIN (HARDWIRED, NO SAFETY RELAY)', 'REVIEW REQUIRED — SEE NOTES'], key: s.mcr ? `coil:${s.mcr.tag}` : 'rung:24+S',
     });
   }
-  // pilot lights not driven by the PLC, e.g. "control power on"
+  // VFD line contactors held by the safety-switched supply (safety stop by contactor, not by a PLC output)
   const ioTags = new Set(model.io.map((p) => p.deviceTag));
+  for (const mm of model.motors) {
+    const k = mm.vfd ? mm.contactors[0] : undefined;
+    if (!k || ioTags.has(k.tag)) continue;
+    out.push({ start: { kind: 'node', label: s.outputSupply }, end: rail, els: [{ t: 'coil', tag: k.tag }], wires: [s.outputSupply, '0V'],
+      desc: [`${k.tag} LINE CONTACTOR FOR ${mm.vfd!.tag} (${mm.motor.tag})`, s.outputSupply === '24+S' ? 'SAFETY STOP: DROPS WITH 24+S' : 'NO SAFETY RELAY — REVIEW'], key: `coil:${k.tag}` });
+  }
+  // pilot lights not driven by the PLC, e.g. "control power on"
   const lamps = model.rc.filter((c) => c.category === 'pilotLight' && !ioTags.has(c.tag));
   if (lamps.length && out.length) out.push({ start: { kind: 'node', label: '' }, end: { kind: 'node', label: '' }, els: [], wires: [], desc: [] });
   for (const l of lamps) {
@@ -302,6 +310,9 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   for (let i = 0, pages = Math.ceil(nAnalog / 6); i < nAnalog; i += 6) {
     specs.push({ title: `ANALOG I/O — 4–20 mA / 0–10 V LOOPS${pages > 1 ? ` (${i / 6 + 1} OF ${pages})` : ''}`, spec: { kind: 'analog', from: i, page: i / 6 + 1, pages } });
   }
+
+  // VFD control wiring + parameters (electrical/vfd.ts): one sheet per drive.
+  model.drives.forEach((c, i) => specs.push({ title: `${c.drive.tag} — DRIVE CONTROL & PARAMETERS`, spec: { kind: 'drive', index: i } }));
 
   specs.push({ title: 'PANEL LAYOUT — BACKPLATE', spec: { kind: 'panel' } });
   if (layout.door.items.length) specs.push({ title: 'DOOR LAYOUT — OPERATOR DEVICES', spec: { kind: 'door' } });

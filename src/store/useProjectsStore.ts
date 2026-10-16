@@ -236,3 +236,26 @@ export function restoreAsNewProject(key: string, name: string): boolean {
   saveActiveProject();
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// Project files (.isap): the open project's data out, and a saved file back in as a new project.
+
+/** Everything stored for the open project (saved first, so nothing is lost). */
+export function activeProjectData(): { id: string | null; name: string; data: Record<string, unknown> } {
+  const { activeId, projects } = useProjectsStore.getState();
+  if (activeId) save(activeId);
+  return { id: activeId, name: projects.find((p) => p.id === activeId)?.name ?? useProgramStore.getState().projectName, data: snapshot() as Record<string, unknown> };
+}
+
+/** Add a project from a file's data and open it. Returns the new project id, or null when the AI is busy. */
+export function addProjectFromData(name: string, data: Record<string, unknown>): string | null {
+  if (blockedByAi()) return null;
+  const { activeId } = useProjectsStore.getState();
+  if (activeId) save(activeId);
+  const id = newId();
+  load(data as Snapshot);
+  useProgramStore.getState().setProjectName(name);
+  useProjectsStore.setState((s) => ({ projects: [...s.projects, { id, name, createdAt: new Date().toISOString() }], activeId: id }));
+  save(id);
+  return id;
+}

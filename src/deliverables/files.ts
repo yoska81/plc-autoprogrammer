@@ -12,7 +12,8 @@ import DrawingSet from '../electrical/drawings/DrawingSet';
 import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
 import { getHmi } from '../hmi/hmiCatalog';
-import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv } from '../electrical/derive';
+import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv, buildModel } from '../electrical/derive';
+import { driveParamsCsv } from '../electrical/vfd';
 import { analogSetup, analogSetupCsv } from '../plc/core/analog';
 import { moduleSlots } from '../plc/core/modules';
 import { clickNicknameCsv, clickRungListing } from '../plc/core/clickExport';
@@ -132,6 +133,8 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     zip.file('electrical/wire_list.csv', wireListCsv(p.drawingCtx));
     zip.file('electrical/terminal_plan.csv', terminalPlanCsv(p.drawingCtx));
     zip.file('electrical/cable_schedule.csv', cableScheduleCsv(p.drawingCtx));
+    const drives = buildModel(p.drawingCtx).drives;
+    if (drives.length) zip.file('electrical/drive_parameters.csv', driveParamsCsv(drives));
     // 1:1 machining files: inches (default for the shop) and the same geometry in millimetres.
     for (const units of ['in', 'mm'] as const) {
       zip.file(`electrical/machining/back_panel_drilling_1to1_${units}.dxf`, backPanelDxf(p.drawingCtx, { units }));

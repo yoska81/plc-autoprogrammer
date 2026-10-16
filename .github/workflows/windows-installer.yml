@@ -15,6 +15,20 @@ permissions:
   contents: write
 
 jobs:
+  # Vendor catalog data: every part needs a maker source, key ratings and a datasheet footprint.
+  # Separate job: it stays red until the data is complete, without blocking the installer build.
+  catalog-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsx src/electrical/catalog.test.ts
+
   build:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -34,7 +48,8 @@ jobs:
         run: |
           npx eslint src
           # Every unit-test suite in the repo (each exits non-zero on a failure).
-          for t in $(find src -name '*.test.ts' | sort); do echo "== $t"; npx tsx "$t"; done
+          # The vendor catalog data check runs in its own job (catalog-data) so it never blocks the installer.
+          for t in $(find src -name '*.test.ts' ! -name 'catalog.test.ts' | sort); do echo "== $t"; npx tsx "$t"; done
           node e2e/modbus.test.cjs
 
       - name: Build installer

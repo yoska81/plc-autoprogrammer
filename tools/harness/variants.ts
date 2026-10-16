@@ -29,15 +29,15 @@ import { getHmi } from '../../src/hmi/hmiCatalog';
 import { runCodeRules } from '../../src/review/codeRules';
 import { sccrTable } from '../../src/deliverables/docs/electrical';
 import type { DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, MotorSpec } from '../../src/electrical/types';
-import type { IOCategory } from '../../src/types/io';
+import type { AnalogSpec, IOCategory } from '../../src/types/io';
 
-type Point = { description: string; type: 'input' | 'output'; category: IOCategory; tag: string; deviceType: FieldDeviceType; location: string; part?: string };
+type Point = { description: string; type: 'input' | 'output'; category: IOCategory; tag: string; deviceType: FieldDeviceType; location: string; part?: string; signal?: 'analog'; analog?: AnalogSpec };
 
 const c = (tag: string, partNumber: string, quantity: number, fn: string, motorTag: string | null = null): DesignComponent => ({ tag, partNumber, quantity, function: fn, motorTag });
 
 /** Seed I/O, then build ioWiring from the addresses the app resolves (so they always agree). */
 function applyIo(points: Point[], modules: string[]): IOWiring[] {
-  useIOStore.getState().importPoints(points.map(({ description, type, category, deviceType }) => ({ description, type, category, deviceType })), true);
+  useIOStore.getState().importPoints(points.map(({ description, type, category, deviceType, signal, analog }) => ({ description, type, category, deviceType, ...(signal ? { signal, analog } : {}) })), true);
   useProjectStore.getState().setModules(modules);
   const p = collectProject();
   return p.io.map((io, i) => ({ address: p.addresses.get(io.id) ?? '', deviceTag: points[i].tag, deviceType: points[i].deviceType, description: points[i].description, location: points[i].location }));
@@ -162,7 +162,9 @@ export function setupVariant(v: Variant) {
   pts.push({ description: 'Fault light', type: 'output', category: 'Operator/HMI', tag: 'PL2', deviceType: 'pilot-light', location: 'Cabinet door' });
   pts.push({ description: 'Stack light red', type: 'output', category: 'Operator/HMI', tag: 'STK1', deviceType: 'stack-light', location: 'Outfeed' });
   pts.push({ description: 'Stack light green', type: 'output', category: 'Operator/HMI', tag: 'STK1', deviceType: 'stack-light', location: 'Outfeed' });
-  const io = applyIo(pts, ['C0-16ND3', 'C0-16ND3', 'C0-16TD1']);
+  // Belt 1 speed set from the HMI: 4-20 mA speed reference from a C0-04DA-1 to VFD1 AI2.
+  pts.push({ description: 'Belt 1 speed reference', type: 'output', category: 'Analog/Process', tag: 'VFD1', deviceType: 'other', location: 'Cabinet', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 60, units: 'Hz' } });
+  const io = applyIo(pts, ['C0-16ND3', 'C0-16ND3', 'C0-16TD1', 'C0-04DA-1']);
   const motors: MotorSpec[] = [
     { tag: 'M1', description: 'Conveyor motor', hp: 1, voltage: '480VAC-3PH', starter: 'contactor-overload', reversing: false },
     { tag: 'M2', description: 'Pump motor', hp: 3, voltage: '480VAC-3PH', starter: 'contactor-overload', reversing: false },
@@ -170,7 +172,7 @@ export function setupVariant(v: Variant) {
   ];
   const vfd = [3, 4, 5, 6].flatMap((n, i) => [
     c(`CB${n}`, 'GMCBU-3C-15', 1, `Motor M${n} branch protection`, `M${n}`),
-    c(`VFD${i + 1}`, 'GS23-45P0', 1, `Belt ${i + 1} drive`, `M${n}`),
+    c(`VFD${i + 1}`, 'GS23-45P0', 1, `Belt ${i + 1} drive${i === 0 ? ', STO from safety relay' : ''}`, `M${n}`),
   ]);
   elec.setDesign(design({
     supply: '480VAC-3PH', motors, ioWiring: io,
@@ -184,7 +186,7 @@ export function setupVariant(v: Variant) {
       c('K1', 'SC-E02PG-24VDC', 1, 'Conveyor motor contactor', 'M1'), c('OL1', 'TK-E02-220', 1, 'Conveyor motor overload', 'M1'),
       c('K2', 'SC-E02PG-24VDC', 1, 'Pump motor contactor', 'M2'), c('OL2', 'TK-E02-600', 1, 'Pump motor overload', 'M2'),
       ...vfd,
-      c('PLC', 'C0-11DD1E-D', 1, 'PLC CPU'), c('IO1', 'C0-16ND3', 2, 'Input modules'), c('IO2', 'C0-16TD1', 1, 'Output module'),
+      c('PLC', 'C0-11DD1E-D', 1, 'PLC CPU'), c('IO1', 'C0-16ND3', 2, 'Input modules'), c('IO2', 'C0-16TD1', 1, 'Output module'), c('AO1', 'C0-04DA-1', 1, 'Analog output module (VFD1 speed)'),
       c('CR1', 'KPR-SCS-24VACDC-1', 4, 'Interposing relays'),
       ...COMMON_DOOR,
       c('PB3', 'GCX1104', 1, 'Reset'), c('SS1', 'GCX1300', 1, 'Auto/Manual'),

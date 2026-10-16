@@ -23,6 +23,7 @@
  */
 import type { AnalogSetupRow } from '../plc/core/analog';
 import { analogWiring, type AnalogWiring } from './analog';
+import { driveControls, type DriveControl, type DriveTerminal } from './vfd';
 import type {
   CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, JunctionBox,
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
@@ -357,6 +358,8 @@ export interface TerminalStrip {
 export interface ElectricalModel {
   /** Analog loops (empty when the project has no analog I/O). */
   analog: AnalogWiring;
+  /** VFD control wiring and parameters, one per drive (electrical/vfd.ts). */
+  drives: DriveControl[];
   rc: ResolvedComponent[];
   supply: SupplyVoltage;
   phases: 1 | 3;
@@ -792,7 +795,16 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   for (const b of auxBranches) b.feedWires.forEach((w, k) => addWire({ wire: w, from: `${b.protection.tag}:T${k + 1}`, to: b.protection.comp.function || 'LOAD', color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: b.protection.comp.function }));
   for (const m of motors) {
     const prot = m.protection?.tag;
-    const lineTo = m.vfd ? m.vfd.tag : m.contactors[0]?.tag;
+    // VFD with a line contactor (safety stop by contactor): protection -> K:L, K:T -> VFD:L
+    const lineK = m.vfd ? m.contactors[0] : undefined;
+    const lineTo = lineK ? lineK.tag : m.vfd ? m.vfd.tag : m.contactors[0]?.tag;
+    if (lineK && m.vfd) m.midWires.forEach((w, k) => addWire({ wire: w, from: `${lineK.tag}:T${k + 1}`, to: `${m.vfd!.tag}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} line contactor to drive` }));
+    if (lineK && !io.some((p) => p.deviceTag === lineK.tag)) {
+      const safetyOut = safety.outputSupply;
+      // not switched by a PLC output: the coil is held by the safety-switched supply, so the safety relay drops it
+      addWire({ wire: safetyOut, from: `TB1 ${safetyOut}`, to: `${lineK.tag}:A1`, color: 'BU', size: '18 AWG', function: `${lineK.tag} line contactor coil (safety stop of ${m.vfd!.tag})` });
+      addWire({ wire: '0V', from: `${lineK.tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${lineK.tag} line contactor coil` });
+    }
     m.lineWires.forEach((w, k) => {
       if (prot && lineTo) addWire({ wire: w, from: `${prot}:T${k + 1}`, to: `${lineTo}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} line side` });
       if (m.contactors[1]) addWire({ wire: w, from: `${m.contactors[0].tag}:L${k + 1}`, to: `${m.contactors[1].tag}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} reversing jumper` });
@@ -852,11 +864,47 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     else if (g.outputStyle === 'sinking') addWire({ wire: '0V', from: `${g.devTag}:C`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `Output common slot ${slot}` });
     else addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${g.devTag}:+V`, color: 'BU', size: '18 AWG', function: `Output supply slot ${slot}` });
   }
+  // VFD control: which PLC point lands on which drive terminal (electrical/vfd.ts).
+  const MOTOR_VOLTS: Record<SupplyVoltage, number> = { '120VAC-1PH': 115, '208VAC-3PH': 200, '240VAC-3PH': 230, '480VAC-3PH': 460, '600VAC-3PH': 575, '400VAC-3PH': 400, '230VAC-1PH': 230, '690VAC-3PH': 690 };
+  const driveOutStyle = groups.find((g) => g.type === 'output' && g.points.some((p) => p.deviceType === 'vfd-input'))?.outputStyle ?? groups.find((g) => g.type === 'output')?.outputStyle ?? 'sourcing';
+  const drives = driveControls(
+    motors.filter((m) => m.vfd).map((m) => ({
+      tag: m.vfd!.tag, partNumber: m.vfd!.partNumber, series: String(m.vfd!.part?.ratings?.series ?? ''), outputAmps: num(m.vfd!.part?.ratings, 'outputAmps'),
+      motorTag: m.motor.tag, motorDescription: m.motor.description, motorHp: m.motor.hp, motorVolts: MOTOR_VOLTS[m.motor.voltage], fla: m.fla, reversing: m.motor.reversing,
+      sto: /\b(STO|safe torque)\b/i.test(m.vfd!.comp.function), contactor: m.contactors.length > 0,
+    })),
+    io.map((p) => ({ address: p.address, type: p.type, description: p.description, deviceTag: p.deviceTag, deviceType: p.deviceType })),
+    ctx.analog ?? [], driveOutStyle, safety.outputSupply,
+  );
+  const driveTerm = new Map<string, { tag: string; t: DriveTerminal }>();
+  for (const c of drives) for (const t of c.terminals) driveTerm.set(t.address, { tag: c.drive.tag, t });
+  for (const c of drives) {
+    const tag = c.drive.tag;
+    if (c.terminals.some((t) => ['run', 'reverse', 'preset'].includes(t.role))) {
+      if (driveOutStyle === 'sinking') addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${tag}:DCM`, color: 'BU', size: '18 AWG', function: `${tag} digital input common (sinking PLC outputs)` });
+      else addWire({ wire: '0V', from: `${tag}:DCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} digital input common` });
+    }
+    if (c.terminals.some((t) => t.role === 'fault')) addWire({ wire: '24+', from: 'TB1 24+', to: `${tag}:R1`, color: 'BU', size: '18 AWG', function: `${tag} fault relay common` });
+    if (c.safetyStop === 'sto') {
+      // Safe Torque Off from the safety relay output (factory STO jumper removed), GS20 manual App. E.
+      for (const ch of ['STO1', 'STO2']) addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${tag}:${ch}`, color: 'BU', size: '18 AWG', function: `${tag} Safe Torque Off ${ch} (safety relay output)` });
+      addWire({ wire: '0V', from: `${tag}:SCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} STO common` });
+    }
+    if (c.terminals.some((t) => t.role === 'running')) addWire({ wire: '0V', from: `${tag}:DOC`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} DO1 common` });
+  }
+
   // IO wires
   for (const p of io) {
     if (safety.statusInput === p) continue;
     const tag = p.deviceTag || '(device)';
     const g = groups.find((x) => x.key === p.group);
+    const dt = driveTerm.get(p.address);
+    if (dt) {
+      addWire(p.type === 'input'
+        ? { wire: p.address, from: `${dt.tag}:${dt.t.terminal}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description }
+        : { wire: p.address, from: `${plcTag}:${p.address}`, to: `${dt.tag}:${dt.t.terminal.replace(/^(FWD|REV)\//, '')}`, color: 'BU', size: '18 AWG', function: p.description });
+      continue;
+    }
     if (p.type === 'input') {
       if (p.signalTerminal) {
         addWire({ wire: p.address, from: `${tag}:${p.deviceType.startsWith('sensor') ? 'BK' : 'NO'}`, to: p.signalTerminal, color: p.deviceType.startsWith('sensor') ? 'BK (cable)' : 'BU', size: '18 AWG', function: p.description });
@@ -891,6 +939,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   // Analog signals: TBA terminals, shielded cables, loop wiring (electrical/analog.ts).
   const analog = analogWiring(ctx.analog ?? [], {
     plcTag, groundBar: groundBar?.tag ?? 'PE BAR', firstCable: machine.cables.length + 1, ioWiring: ioW,
+    internal: new Map(drives.flatMap((c) => c.terminals.filter((t) => t.role === 'speed').map((t) => [t.address, { tag: c.drive.tag, plus: t.terminal, minus: t.common }] as const))),
     moduleTag: (slot, pn) => modules.find((mm) => mm.partNumber === pn)?.tag ?? `${plcTag}-S${slot}`,
   });
   wires.push(...analog.wires);
@@ -899,7 +948,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   if (iec) toIec(wires, machine.cables);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives,
   };
 }
 
@@ -1449,6 +1498,8 @@ export function isLayoutAccessory(c: ResolvedComponent): boolean {
   if (['enclosure', 'dinRail', 'wireDuct', 'terminal', 'terminalAccessory'].includes(c.category)) return true;
   if (isFuseCartridge(c)) return true;
   if (c.mount !== 'backplate') return true;
+  // Plug into the CPU (memory cards, plug-in I/O modules); no place of their own on the back panel.
+  if (/\bmemory card\b/i.test(c.part?.description ?? '') || /plug-in slot/i.test(String(c.part?.ratings.forUse ?? ''))) return true;
   if (num(c.part?.ratings, 'lengthMm') !== undefined && c.category !== 'groundBar') return true;
   const ACC = /^(disconnect |terminal |din rail |terminal block )?(shaft|external (rotary )?handle|handle|contact block|jumper|marker|marking tags?|end cover|end plate|end stop|end bracket|end anchor)\b/i;
   return ACC.test(c.part?.description ?? '') || ACC.test(c.comp.function);
@@ -2059,7 +2110,7 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (m.safety.relay && !m.safety.reset) w.push('Safety relay has no reset pushbutton assigned (function "Reset").');
   const auxMissing = [...m.auxNc].filter(([, a]) => a.missing);
   if (auxMissing.length) w.push(`${auxMissing.map(([t, a]) => `${t} (${a.family})`).join(', ')}: no built-in auxiliary contact — an SZ-A11T front block (1 N.O. + 1 N.C.) is added to the BOM; the feedback / interlock uses its N.C. 61-62. Add it to the design or choose another block.`);
-  if (m.motors.some((x) => x.vfd)) w.push('VFD: confirm Safe Torque Off / enable wiring and drive parameter settings (not shown in detail).');
+  if (m.motors.some((x) => x.vfd)) w.push('VFD: enter the drive parameters marked NAMEPLATE / SET ON SITE on the drive sheets at commissioning; Safe Torque Off is not used (factory jumper) unless the risk assessment calls for it.');
   const noWiring = m.io.filter((p) => !p.wiring);
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
   const extra = ctx.design.ioWiring.filter((x) => !m.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase()));
