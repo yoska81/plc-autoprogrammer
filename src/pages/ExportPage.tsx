@@ -7,24 +7,26 @@ import { buildEngineeringPdf } from '../deliverables/engineering';
 import { buildDrawingsPdf, buildEverythingZip, buildHmiImages, buildHmiPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
 import { Spinner } from '../components/program/common';
+import { backPanelDxf, doorDxf } from '../electrical/dxf';
+import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep';
 
-const btn = 'px-3 py-1.5 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-40';
+const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40';
 const csv = (s: string) => new Blob([s], { type: 'text/csv' });
 
 function StatusNote({ info }: { info: StageInfo }) {
   if (info.status === 'stale') return <span className="text-xs text-amber-700">{info.reason}</span>;
-  if (info.status === 'empty') return <span className="text-xs text-gray-400">Not done yet</span>;
+  if (info.status === 'empty') return <span className="text-xs text-steel-400">Not done yet</span>;
   return <span className="text-xs text-green-700">Up to date</span>;
 }
 
 function Card({ title, info, children, to }: { title: string; info?: StageInfo; children: ReactNode; to?: string }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
+    <div className="bg-white rounded-sm border border-steel-200 p-5 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
+        <h3 className="text-sm font-semibold text-steel-800">{title}</h3>
         <div className="flex items-center gap-2">
           {info && <StatusNote info={info} />}
-          {to && <Link to={to} className="text-xs text-gray-500 underline">Open</Link>}
+          {to && <Link to={to} className="text-xs text-steel-500 underline">Open</Link>}
         </div>
       </div>
       {children}
@@ -67,12 +69,12 @@ export default function ExportPage() {
 
   return (
     <>
-      <header className="px-4 py-2.5 bg-white border-b border-gray-200">
-        <h2 className="text-base font-semibold text-gray-800">8 · Deliverables</h2>
-        <p className="text-xs text-gray-400 mt-0.5">{p.projectName} · {p.profile.vendor} {p.profile.name} {p.cpu.id}</p>
+      <header className="px-4 py-2.5 bg-white border-b border-steel-200">
+        <h2 className="text-base font-semibold text-steel-800">8 · Deliverables</h2>
+        <p className="text-xs text-steel-400 mt-0.5">{p.projectName} · {p.profile.vendor} {p.profile.name} {p.cpu.id}</p>
       </header>
 
-      <div className="flex-1 overflow-auto bg-gray-50 p-6">
+      <div className="flex-1 overflow-auto bg-steel-50 p-6">
         <div className="max-w-4xl space-y-5">
           {stale.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900">
@@ -81,10 +83,10 @@ export default function ExportPage() {
           )}
           {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
 
-          <div className="bg-white rounded-lg border-2 border-brand-200 p-5 flex flex-wrap items-center gap-4">
+          <div className="bg-white rounded-sm border-2 border-brand-200 p-5 flex flex-wrap items-center gap-4">
             <div className="flex-1 min-w-64">
-              <h3 className="text-sm font-semibold text-gray-800">Everything in one ZIP</h3>
-              <p className="text-xs text-gray-500">Excel report, electrical drawings PDF with BOM / wire list / terminal plan, HMI screens (PDF + PNG), PLC program files, I/O list and the spec.</p>
+              <h3 className="text-sm font-semibold text-steel-800">Everything in one ZIP</h3>
+              <p className="text-xs text-steel-500">Excel report, engineering package, electrical drawings PDF with BOM / wire list / terminal plan, machining DXFs, cabinet STEP model, HMI screens (PDF + PNG), PLC program files, I/O list and the spec.</p>
             </div>
             <B busy={busy} label="Download everything" primary onClick={run('Download everything', async () => {
               saveBlob(`${p.fileBase}_deliverables.zip`, await buildEverythingZip(collectProject(), (s) => setBusy(`Building ${s.toLowerCase()}`)));
@@ -100,7 +102,7 @@ export default function ExportPage() {
           </Card>
 
           <Card title="Project report (Excel)" info={stages.spec}>
-            <p className="text-xs text-gray-500">One workbook: summary, specification, I/O list, BOM, wire list, terminal plan, design review items, HMI tags/alarms/screens, PLC program and tags, program check.</p>
+            <p className="text-xs text-steel-500">One workbook: summary, specification, I/O list, BOM, wire list, terminal plan, design review items, HMI tags/alarms/screens, PLC program and tags, program check.</p>
             <B busy={busy} label="Excel report" onClick={run('Excel report', async () => saveBlob(`${p.fileBase}_report.xlsx`, await buildExcelReport(collectProject())))} />
           </Card>
 
@@ -122,6 +124,27 @@ export default function ExportPage() {
               })} />
               <B busy={busy} label="Terminal plan CSV" disabled={!hasElec} onClick={run('Terminal plan CSV', () => saveBlob(`${p.fileBase}_terminal_plan.csv`, csv(terminalPlanCsv(p.drawingCtx!))))} />
             </div>
+          </Card>
+
+          <Card title="Cabinet machining (for the machine shop)" info={stages.electrical} to="/electrical?tab=cabinet">
+            <p className="text-xs text-steel-500">DXF files in millimetres for laser / CNC / punch: every drilling and tapping hole of the back panel, and every cutout of the door (22 mm operators, HMI, disconnect handle). The same holes are on the "Back panel drilling" and "Door cutouts" drawing sheets with a hole table.</p>
+            <div className="flex flex-wrap gap-2">
+              <B busy={busy} label="Back panel DXF" disabled={!hasElec} onClick={run('Back panel DXF', () => saveBlob(`${p.fileBase}_back_panel_drilling.dxf`, new Blob([backPanelDxf(p.drawingCtx!)], { type: 'application/dxf' })))} />
+              <B busy={busy} label="Door cutouts DXF" disabled={!hasElec} onClick={run('Door cutouts DXF', () => saveBlob(`${p.fileBase}_door_cutouts.dxf`, new Blob([doorDxf(p.drawingCtx!)], { type: 'application/dxf' })))} />
+            </div>
+          </Card>
+
+          <Card title="Cabinet 3D model (STEP)" info={stages.electrical} to="/electrical?tab=picture">
+            <p className="text-xs text-steel-500">STEP AP214 assembly in millimetres to place the cabinet in the machine CAD (SolidWorks, Inventor, Fusion, FreeCAD): enclosure, door with real cutouts, back panel, DIN rails, wire duct and every component, named by tag and part number.</p>
+            {hasElec && (() => {
+              const sum = cabinetStepSummary(p.drawingCtx!);
+              return (
+                <p className="text-xs text-steel-600">
+                  {sum.bodies.length} bodies{sum.estimatedCount ? ` · ${sum.estimatedCount} with estimated size (components are envelope boxes)` : ''}{sum.warnings.length ? ` · ${sum.warnings.length} to check: ${sum.warnings.slice(0, 2).join('; ')}` : ''}
+                </p>
+              );
+            })()}
+            <B busy={busy} label="Cabinet STEP" disabled={!hasElec} onClick={run('Cabinet STEP', () => saveBlob(`${p.fileBase}_cabinet.step`, new Blob([cabinetStep(p.drawingCtx!)], { type: 'application/step' })))} />
           </Card>
 
           <Card title="HMI screens" info={stages.hmi} to="/hmi">
@@ -150,14 +173,14 @@ export default function ExportPage() {
                   {p.profile.language === 'ladder' && <Link to="/print" target="_blank" className={btn}>Printable ladder</Link>}
                 </div>
                 {p.profile.id === 'click' && (
-                  <ol className="list-decimal pl-5 text-xs text-gray-600 space-y-1">
+                  <ol className="list-decimal pl-5 text-xs text-steel-600 space-y-1">
                     <li>In CLICK Programming Software: <em>File → Import → Nickname</em> with the nicknames CSV, so every address gets its name.</li>
                     <li>Enter the rungs from the printable ladder or the rungs listing, and finish with an unconditional END rung. CLICK software can't import ladder logic directly.</li>
                     <li>Write the program to the PLC and test every step with the machine in a safe state.</li>
                   </ol>
                 )}
               </>
-            ) : <p className="text-sm text-gray-500">No program yet.</p>}
+            ) : <p className="text-sm text-steel-500">No program yet.</p>}
           </Card>
 
           <Card title="I/O list" info={stages.io} to="/io">

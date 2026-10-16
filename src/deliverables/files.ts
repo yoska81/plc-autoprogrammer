@@ -1,3 +1,5 @@
+import { backPanelDxf, doorDxf } from '../electrical/dxf';
+import { cabinetStep } from '../electrical/step/cabinetStep';
 import { createElement, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ProjectSnapshot } from './collect';
@@ -113,6 +115,9 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     zip.file('electrical/wire_list.csv', wireListCsv(p.drawingCtx));
     zip.file('electrical/terminal_plan.csv', terminalPlanCsv(p.drawingCtx));
     zip.file('electrical/cable_schedule.csv', cableScheduleCsv(p.drawingCtx));
+    zip.file('electrical/machining/back_panel_drilling.dxf', backPanelDxf(p.drawingCtx));
+    zip.file('electrical/machining/door_cutouts.dxf', doorDxf(p.drawingCtx));
+    zip.file(`electrical/3d/${p.fileBase}_cabinet.step`, cabinetStep(p.drawingCtx));
     onProgress?.('Cabinet pictures');
     const hmiPart = p.hmi?.hmiPartNumber ?? null;
     zip.file('electrical/cabinet_inside.png', await dataUrlToBlob(await cabinetPng(p.drawingCtx, 'inside', hmiPart, 2400)));

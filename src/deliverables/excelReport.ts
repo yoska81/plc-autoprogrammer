@@ -143,7 +143,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
       cs.addRow({ i: s.title }).font = { bold: true };
       for (const l of s.lines) cs.addRow({ i: l.item, v: l.value, b: l.basis, e: l.estimate ? 'yes' : '' });
       const r = cs.addRow({ i: `${s.ok ? 'OK' : 'CHECK'}: ${s.result}` });
-      r.font = { bold: true, color: { argb: s.ok ? 'FF002F9A' : 'FFB00000' } };
+      r.font = { bold: true, color: { argb: s.ok ? 'FF1C3873' : 'FFB00000' } };
       r.alignment = { wrapText: true };
     }
   }

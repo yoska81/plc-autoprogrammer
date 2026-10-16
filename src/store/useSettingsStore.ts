@@ -7,7 +7,8 @@ export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-5-5';
 
 export const ANTHROPIC_MODELS = [
-  { value: 'claude-opus-5-5', label: 'Claude Opus 5.5 — best quality (recommended)' },
+  { value: 'claude-opus-5-5', label: 'Claude Opus 5.5 — best (recommended)' },
+  { value: 'claude-fable-5-1', label: 'Claude Fable 5.1 — more capable, about 2.5× more expensive' },
   { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 — faster, cheaper' },
   { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 — fastest, cheapest' },
 ];
@@ -61,7 +62,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'plc-settings-store',
-      version: 2,
+      version: 4,
       // v1 stored retired model IDs and a token-budget thinking setting that
       // current Claude models reject. Keep the keys, reset the rest.
       migrate: (persisted, version) => {
@@ -75,6 +76,10 @@ export const useSettingsStore = create<SettingsStore>()(
             anthropicModel: DEFAULT_ANTHROPIC_MODEL,
             effort: 'max',
           };
+        }
+        // v4: Opus 5.5 is the default again (v3 briefly defaulted to Fable 5.1).
+        if (version < 4 && (old.anthropicModel === 'claude-fable-5-1' || !old.anthropicModel)) {
+          return { ...old, anthropicModel: DEFAULT_ANTHROPIC_MODEL };
         }
         return old;
       },

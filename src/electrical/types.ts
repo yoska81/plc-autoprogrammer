@@ -34,7 +34,7 @@ export interface CatalogPart {
   verified: boolean;
 }
 
-export type SupplyVoltage = '120VAC-1PH' | '208VAC-3PH' | '240VAC-3PH' | '480VAC-3PH';
+export type SupplyVoltage = '120VAC-1PH' | '208VAC-3PH' | '240VAC-3PH' | '480VAC-3PH' | '600VAC-3PH';
 export type EnclosureRating = 'NEMA 1' | 'NEMA 12' | 'NEMA 4' | 'NEMA 4X';
 
 /** What the designer decides before generation. */

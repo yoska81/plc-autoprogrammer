@@ -1,5 +1,5 @@
 /** Power distribution, motor circuits and 24VDC control/safety ladder sheets. */
-import { ratingText, supplyText, type MotorModel, type ResolvedComponent } from '../../derive';
+import { isFusedDisconnect, ratingText, supplyText, type MotorModel, type ResolvedComponent, type XfmrBranch } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW_THIN, lineNo } from '../geometry';
 import {
   CONTROL_PITCH, MOTOR_LINES, MOTOR_PITCH, POWER_PITCH, resolveRefs,
@@ -95,7 +95,8 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
       <Poles x={dsX} ys={m.incoming.map((w, k) => (w === 'N' ? NaN : y(2 + k))).filter((v) => !Number.isNaN(v))} kind="switch" />
       <Txt x={dsX} y={y(2) - 5} size={2.8} mono bold anchor="middle">{tagLabel(ds, 'DS1')}</Txt>
       <Txt x={dsX} y={y(1 + nPh) + 5.2} size={2.3} anchor="middle">{ds ? ratingText(ds) || 'DISCONNECT' : 'NOT SPECIFIED'}</Txt>
-      <Txt x={dsX} y={y(1 + nPh) + 8.4} size={2.3} anchor="middle">MAIN DISCONNECT</Txt>
+      <Txt x={dsX} y={y(1 + nPh) + 8.4} size={2.3} anchor="middle">{isFusedDisconnect(ds) ? 'FUSED DISCONNECT' : 'MAIN DISCONNECT'}</Txt>
+      {isFusedDisconnect(ds) && m.incoming.map((w, k) => (w === 'N' ? null : <Fuse key={`f${k}`} x={dsX + 12} y={y(2 + k)} />))}
       {/* main breaker (optional) and bus */}
       {m.incoming.map((w, k) => {
         if (w === 'N') return null;
@@ -124,12 +125,18 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
         const ys = br.b.feedWires.map((_, k) => y(br.idx + k));
         const protYs = ys.slice(0, br.b.protectedPoles);
         const PX = 146;
+        const fromX = br.type === 'ps' && !!br.b.fromXfmr;
         return (
           <g key={`${br.type}${br.idx}`}>
             {br.b.feedWires.map((w, k) => (
               <g key={k}>
-                <Dot x={BX[k]} y={ys[k]} />
-                <Line x1={BX[k]} y1={ys[k]} x2={k < br.b.protectedPoles ? PX - 5 : PX + 5} y2={ys[k]} />
+                {fromX ? (
+                  <g>
+                    <XrefArrow x={122} y={ys[k]} />
+                    <Txt x={120} y={ys[k] + 0.9} size={2.4} mono anchor="end">{k === 0 ? 'X1' : 'X2'}</Txt>
+                  </g>
+                ) : <Dot x={BX[k]} y={ys[k]} />}
+                <Line x1={fromX ? 124.4 : BX[k]} y1={ys[k]} x2={k < br.b.protectedPoles ? PX - 5 : PX + 5} y2={ys[k]} />
                 {k >= br.b.protectedPoles && <Line x1={PX - 5} y1={ys[k]} x2={PX + 5} y2={ys[k]} />}
                 <WireNo x={k < br.b.protectedPoles ? 172 : 172} y={ys[k]} n={w} />
               </g>
@@ -137,7 +144,8 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
             {prot ? <Poles x={PX} ys={protYs} kind={protKind(prot)} /> : protYs.map((yy, k) => <Line key={k} x1={PX - 5} y1={yy} x2={PX + 5} y2={yy} />)}
             <Txt x={PX} y={ys[0] - 4.6} size={2.8} mono bold anchor="middle">{prot?.tag ?? 'NO PROTECTION'}</Txt>
             <Txt x={PX} y={ys[ys.length - 1] + 5} size={2.3} anchor="middle">{ratingText(prot)}</Txt>
-            {br.type === 'ps' ? <PsBox plan={plan} br={br.b} ys={ys} y0={y(br.idx)} pitch={POWER_PITCH} /> : (
+            {fromX && <Txt x={124} y={ys[1] + 4.6} size={2.0} anchor="start">{`FROM ${m.xfmrBranch?.xfmr.tag ?? 'T1'} ${plan.xref.get('xfmr') ? `/${plan.xref.get('xfmr')}` : ''}`}</Txt>}
+            {br.type === 'xfmr' ? <XfmrBox plan={plan} br={br.b} ys={ys} y0={y(br.idx)} pitch={POWER_PITCH} /> : br.type === 'ps' ? <PsBox plan={plan} br={br.b} ys={ys} y0={y(br.idx)} pitch={POWER_PITCH} /> : (
               <g>
                 {ys.map((yy, k) => <Line key={k} x1={PX + 5} y1={yy} x2={208} y2={yy} />)}
                 {ys.map((yy, k) => <XrefArrow key={`a${k}`} x={208} y={yy} />)}
@@ -186,6 +194,44 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   );
 }
 
+function XfmrBox({ plan, br, ys, y0, pitch }: { plan: DrawingPlan; br: XfmrBranch; ys: number[]; y0: number; pitch: number }) {
+  const bx = 196, bw = 42;
+  const top = y0 - 4, bot = y0 + 2 * pitch + 4;
+  const T = br.xfmr;
+  const r = T.part?.ratings ?? {};
+  const yX1 = y0, yX2 = y0 + pitch;
+  const ps = plan.model.psBranches[0]?.ps.tag;
+  const psRef = ps ? plan.xref.get(`ps:${ps}`) : undefined;
+  return (
+    <g>
+      {ys.map((yy, k) => <Line key={k} x1={151} y1={yy} x2={bx} y2={yy} />)}
+      <rect x={bx} y={top} width={bw} height={bot - top} strokeWidth={0.5} fill="#fff" />
+      {/* transformer windings symbol */}
+      <path d={`M ${bx + 15} ${y0 - 2} q 2 1.5 0 3 q 2 1.5 0 3 q 2 1.5 0 3 q 2 1.5 0 3`} strokeWidth={0.35} />
+      <path d={`M ${bx + 27} ${y0 - 2} q -2 1.5 0 3 q -2 1.5 0 3 q -2 1.5 0 3 q -2 1.5 0 3`} strokeWidth={0.35} />
+      <Line x1={bx + 20.4} y1={y0 - 2.5} x2={bx + 20.4} y2={y0 + 10.5} w={0.3} />
+      <Line x1={bx + 21.6} y1={y0 - 2.5} x2={bx + 21.6} y2={y0 + 10.5} w={0.3} />
+      {ys.map((_, k) => <Txt key={k} x={bx + 1.5} y={ys[k] + 0.9} size={2.2} mono>{k === 0 ? 'H1' : 'H4'}</Txt>)}
+      <Txt x={bx + bw - 1.5} y={yX1 + 0.9} size={2.2} mono anchor="end">X1</Txt>
+      <Txt x={bx + bw - 1.5} y={yX2 + 0.9} size={2.2} mono anchor="end">X2</Txt>
+      <Txt x={bx + bw / 2} y={y0 + 2 * pitch + 1} size={2.6} mono bold anchor="middle">{T.tag}</Txt>
+      <Txt x={bx + bw / 2} y={bot + 4} size={2.2} anchor="middle" maxW={60}>{`CONTROL TRANSFORMER ${ratingText(T)}`}</Txt>
+      <Line x1={bx + bw} y1={yX1} x2={300} y2={yX1} />
+      <Line x1={bx + bw} y1={yX2} x2={300} y2={yX2} />
+      <WireNo x={258} y={yX1} n="X1" />
+      <WireNo x={258} y={yX2} n="X2" />
+      <XrefArrow x={300} y={yX1} />
+      <XrefArrow x={300} y={yX2} />
+      <Txt x={305} y={yX1 + 0.9} size={2.5} mono>{`X1 ${r.secondaryVolts ?? 120}VAC TO ${ps ?? 'CONTROL'} ${psRef ? `/${psRef}` : ''}`}</Txt>
+      <Txt x={305} y={yX2 + 0.9} size={2.5} mono>{`X2 TO ${ps ?? 'CONTROL'} ${psRef ? `/${psRef}` : ''}`}</Txt>
+      <Dot x={280} y={yX2} />
+      <Line x1={280} y1={yX2} x2={280} y2={yX2 + 4} />
+      <Ground x={280} y={yX2 + 4} />
+      <Txt x={284} y={yX2 + 7.6} size={2.2}>X2 BONDED TO PE</Txt>
+    </g>
+  );
+}
+
 function PsBox({ plan, br, ys, y0, pitch }: { plan: DrawingPlan; br: { ps: ResolvedComponent; feedWires: string[] }; ys: number[]; y0: number; pitch: number }) {
   const bx = 200, bw = 42;
   const top = y0 - 4, bot = y0 + 2 * pitch + 4;
@@ -197,7 +243,7 @@ function PsBox({ plan, br, ys, y0, pitch }: { plan: DrawingPlan; br: { ps: Resol
     <g>
       {ys.map((yy, k) => <Line key={k} x1={151} y1={yy} x2={bx} y2={yy} />)}
       <rect x={bx} y={top} width={bw} height={bot - top} strokeWidth={0.5} fill="#fff" />
-      {br.feedWires.map((w, k) => <Txt key={k} x={bx + 1.5} y={ys[k] + 0.9} size={2.2} mono>{w === 'N' ? 'N' : `L${k + 1}`}</Txt>)}
+      {br.feedWires.map((w, k) => <Txt key={k} x={bx + 1.5} y={ys[k] + 0.9} size={2.2} mono>{w === 'N' || w === 'X2' ? 'N' : br.feedWires.length === 2 && br.feedWires[1] === 'X2' ? 'L' : `L${k + 1}`}</Txt>)}
       <Txt x={bx + bw - 1.5} y={yP + 0.9} size={2.2} mono anchor="end">+V</Txt>
       <Txt x={bx + bw - 1.5} y={yN + 0.9} size={2.2} mono anchor="end">-V</Txt>
       <Txt x={bx + bw / 2} y={yP + 1} size={2.8} mono bold anchor="middle">{ps.tag}</Txt>
@@ -364,7 +410,7 @@ function MotorBranch({ plan, m, idx, y, BX }: { plan: DrawingPlan; m: MotorModel
       <Motor cx={MX} cy={cy} leadsY={ys} r={8.5} />
       <Txt x={MX + 12} y={ys[0] + 0.9} size={2.8} mono bold>{m.motor.tag}</Txt>
       <Txt x={MX + 12} y={ys[0] + 4.6} size={2.5}>{`${m.motor.hp} HP  ${m.motor.voltage.replace('-', ' ')}`}</Txt>
-      <Txt x={MX + 12} y={ys[0] + 8.3} size={2.5}>{`FLA ${m.fla} A (NEC 430.250)`}</Txt>
+      <Txt x={MX + 12} y={ys[0] + 8.3} size={2.5}>{`FLA ${m.fla} A (${plan.ctx.region === 'Canada' ? 'CEC TABLE 44' : 'NEC 430.250'})`}</Txt>
       <Txt x={MX + 12} y={ys[0] + 12} size={2.5}>{`CONDUCTORS ${m.awg} MIN. (VERIFY)`}</Txt>
       <Txt x={MX + 12} y={ys[0] + 15.7} size={2.3} maxW={100}>{(m.vfd ? 'VFD CONTROLLED' : m.motor.starter === 'motor-protector' ? 'MANUAL MOTOR PROTECTOR' : 'ACROSS-THE-LINE STARTER') + (m.motor.reversing ? ', REVERSING' : '')}</Txt>
       {/* PE */}

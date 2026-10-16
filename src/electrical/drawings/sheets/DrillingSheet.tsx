@@ -1,0 +1,168 @@
+/** Machining sheets: back-panel drilling and door cutouts (lower-left datum, mm, ordinate dimensions). */
+import type { DrillCutout, DrillHole } from '../../derive';
+import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
+import { DRILL_ROWS_CONT, type DrawingPlan, type DrillRow, type PlannedSheet, type SheetSpec } from '../plan';
+import { drillScale, scaleText } from '../scale';
+import { Line, Txt } from '../symbols';
+
+const TX = 296; // table x
+const ROW = 3.35;
+
+export function DrillingSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
+  const sp = sheet.spec as Extract<SheetSpec, { kind: 'drill' }>;
+  return sp.drawing ? <DrillDrawing plan={plan} sp={sp} /> : <DrillTables sp={sp} />;
+}
+
+function DrillDrawing({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, { kind: 'drill' }> }) {
+  const d = sp.drill;
+  const s = drillScale(d.w, d.h);
+  const ox = AREA.x + 30;
+  const top = AREA.y + 14;
+  const oyB = top + d.h * s; // paper y of the datum (Y = 0)
+  const px = (x: number) => ox + x * s;
+  const py = (y: number) => oyB - y * s;
+  // ordinate values (skip labels that would collide on paper)
+  const xs = [...new Set([0, d.w, ...d.holes.map((h) => h.x), ...d.cutouts.map((c) => c.x)])].sort((a, b) => a - b);
+  const ys = [...new Set([0, d.h, ...d.holes.map((h) => h.y), ...d.cutouts.map((c) => c.y)])].sort((a, b) => a - b);
+  const thin = (vals: number[], gap: number) => vals.filter((v, i, a) => i === 0 || i === a.length - 1 || (v - a[i - 1]) * s >= gap);
+  const xsShown = thin(xs, 2.7), ysShown = thin(ys, 2.9);
+  const yb = oyB + 3;
+  // back-panel context: ducts and rails (reference only)
+  const L = plan.layout;
+  const bp = L.backplate;
+  const ref = d.kind === 'backpanel';
+  const notes = d.notes.flatMap((n) => wrapText(n, TX - ox - 10, 2.2));
+  return (
+    <g>
+      <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`${d.title} — ${d.part} — SCALE ${scaleText(s)} — DIMENSIONS IN mm FROM LOWER-LEFT DATUM`}</Txt>
+      {ref && L.ducts.map((u, i) => <rect key={`d${i}`} x={px(u.x - bp.x)} y={py(bp.y + bp.h - u.y)} width={u.w * s} height={u.h * s} strokeWidth={0.12} strokeDasharray="1 0.8" />)}
+      {ref && L.rails.map((r, i) => <rect key={`r${i}`} x={px(r.x - bp.x)} y={py(bp.y + bp.h - r.y)} width={r.w * s} height={r.h * s} strokeWidth={0.12} strokeDasharray="0.4 0.6" />)}
+      {!ref && <rect x={px(0) + 3} y={py(d.h) + 3} width={d.w * s - 6} height={d.h * s - 6} strokeWidth={0.12} strokeDasharray="1 0.8" />}
+      <rect x={px(0)} y={py(d.h)} width={d.w * s} height={d.h * s} strokeWidth={0.6} />
+      {/* datum */}
+      <circle cx={px(0)} cy={py(0)} r={1.4} strokeWidth={LW_THIN} />
+      <path d={`M ${px(0)} ${py(0)} L ${px(0) + 1.4} ${py(0)} A 1.4 1.4 0 0 0 ${px(0)} ${py(0) - 1.4} Z`} fill="#000" stroke="none" />
+      {d.holes.map((h) => <HoleMark key={h.id} h={h} x={px(h.x)} y={py(h.y)} s={s} />)}
+      {d.cutouts.map((c) => <CutoutMark key={c.id} c={c} x={px(c.x)} y={py(c.y)} s={s} />)}
+      {/* ordinate dimensions: X along the bottom, Y along the left */}
+      {xsShown.map((v) => (
+        <g key={`x${v}`}>
+          <Line x1={px(v)} y1={oyB + 0.6} x2={px(v)} y2={yb + 1.5} w={0.12} />
+          <Txt x={px(v) + 0.8} y={yb + 12.5} size={2.0} mono rotate={-90}>{v.toFixed(1)}</Txt>
+        </g>
+      ))}
+      {ysShown.map((v) => (
+        <g key={`y${v}`}>
+          <Line x1={px(0) - 0.6} y1={py(v)} x2={px(0) - 3} y2={py(v)} w={0.12} />
+          <Txt x={px(0) - 3.6} y={py(v) + 0.7} size={2.0} mono anchor="end">{v.toFixed(1)}</Txt>
+        </g>
+      ))}
+      <Txt x={px(d.w) + 2} y={yb + 4} size={2.0}>X</Txt>
+      <Txt x={px(0) - 3} y={py(d.h) - 2.5} size={2.0}>Y</Txt>
+      {notes.map((n, i) => <Txt key={i} x={AREA.x + 6} y={AREA_B - 2 - (notes.length - 1 - i) * 3} size={2.2} maxW={TX - AREA.x - 14}>{n}</Txt>)}
+      {/* code legend + hole table */}
+      <CodeLegend sp={sp} />
+    </g>
+  );
+}
+
+function HoleMark({ h, x, y, s }: { h: DrillHole; x: number; y: number; s: number }) {
+  const r = Math.max(0.7, (h.dia / 2) * s);
+  return (
+    <g>
+      <circle cx={x} cy={y} r={r} strokeWidth={LW_THIN} strokeDasharray={h.verified ? undefined : '0.5 0.4'} />
+      <Line x1={x - r - 0.8} y1={y} x2={x + r + 0.8} y2={y} w={0.1} />
+      <Line x1={x} y1={y - r - 0.8} x2={x} y2={y + r + 0.8} w={0.1} />
+      <Txt x={x + r + 0.6} y={y - r - 0.3} size={1.8} mono>{h.id}</Txt>
+    </g>
+  );
+}
+
+function CutoutMark({ c, x, y, s }: { c: DrillCutout; x: number; y: number; s: number }) {
+  if (c.code === 'G') {
+    const r = (c.w / 2) * s;
+    return (
+      <g>
+        <circle cx={x} cy={y} r={r} strokeWidth={LW_THIN} strokeDasharray="0.8 0.6" />
+        <Line x1={x - r - 2} y1={y} x2={x + r + 2} y2={y} w={0.12} />
+        <Line x1={x} y1={y - r - 2} x2={x} y2={y + r + 2} w={0.12} />
+        <Txt x={x - r - 1} y={y - r - 0.5} size={2.0} mono bold anchor="end">{`${c.id} ${c.tag}`}</Txt>
+        <Txt x={x - r - 1} y={y - r + 2.3} size={1.8} anchor="end">PER HANDLE TEMPLATE</Txt>
+      </g>
+    );
+  }
+  if (c.kind === 'rect') {
+    return (
+      <g>
+        <rect x={x - (c.w / 2) * s} y={y - (c.h / 2) * s} width={c.w * s} height={c.h * s} strokeWidth={LW} strokeDasharray={c.verified ? undefined : '1 0.6'} />
+        <Line x1={x - 2} y1={y} x2={x + 2} y2={y} w={0.12} />
+        <Line x1={x} y1={y - 2} x2={x} y2={y + 2} w={0.12} />
+        <Txt x={x} y={y + 4} size={2.0} mono bold anchor="middle">{`${c.id} ${c.tag} ${c.w} x ${c.h}`}</Txt>
+      </g>
+    );
+  }
+  const r = (c.w / 2) * s;
+  return (
+    <g>
+      <circle cx={x} cy={y} r={r} strokeWidth={LW} />
+      {c.notch && <rect x={x - (c.notch.w / 2) * s} y={y - r - c.notch.d * s} width={c.notch.w * s} height={c.notch.d * s + 0.1} strokeWidth={0.1} strokeDasharray="0.3 0.3" />}
+      <Line x1={x - r - 0.8} y1={y} x2={x + r + 0.8} y2={y} w={0.1} />
+      <Line x1={x} y1={y - r - 0.8} x2={x} y2={y + r + 0.8} w={0.1} />
+      <Txt x={x} y={y + r + 2.6} size={1.9} mono anchor="middle">{`${c.id} ${c.tag}`}</Txt>
+    </g>
+  );
+}
+
+function CodeLegend({ sp }: { sp: Extract<SheetSpec, { kind: 'drill' }> }) {
+  const d = sp.drill;
+  const w = AREA_R - TX - 3;
+  const lines = d.codes.flatMap((c) => wrapText(`${c.code} — ${c.count}x ${c.spec}${c.verified ? '' : ' — VERIFY WITH DATASHEET'}`, w - 2, 2.1).map((l, i) => ({ l, first: i === 0 })));
+  const y0 = AREA.y + 7;
+  const tableTop = y0 + 5 + lines.length * 2.9 + 4;
+  return (
+    <g>
+      <Txt x={TX} y={y0} size={2.8} bold>HOLE CODES</Txt>
+      {lines.map((x, i) => <Txt key={i} x={TX + (x.first ? 0 : 3)} y={y0 + 5 + i * 2.9} size={2.1} bold={x.first} maxW={w - 2}>{x.l}</Txt>)}
+      <HoleTable x={TX} y={tableTop} w={w} rows={sp.rows} max={Math.floor((AREA_B - 4 - tableTop) / ROW) - 1} more={sp.pages > 1} />
+    </g>
+  );
+}
+
+function HoleTable({ x, y, w, rows, max, more }: { x: number; y: number; w: number; rows: DrillRow[]; max: number; more?: boolean }) {
+  const cols = [0, 10, 34, 54, 74];
+  const shown = rows.slice(0, max);
+  return (
+    <g>
+      <rect x={x} y={y - 3.6} width={w} height={(shown.length + 1) * ROW + 1.6} strokeWidth={LW_HEAVY} />
+      {['ID', 'FEATURE', 'X', 'Y', 'SIZE'].map((h, i) => <Txt key={h} x={x + cols[i] + 1} y={y} size={2.1} bold>{h}</Txt>)}
+      <Line x1={x} y1={y + 1} x2={x + w} y2={y + 1} w={LW} />
+      {shown.map((r, i) => {
+        const yy = y + 1 + (i + 1) * ROW;
+        return (
+          <g key={r.id}>
+            <Txt x={x + cols[0] + 1} y={yy - 0.8} size={2.0} mono bold>{r.id}</Txt>
+            <Txt x={x + cols[1] + 1} y={yy - 0.8} size={2.0} mono maxW={cols[2] - cols[1] - 2}>{r.tag}</Txt>
+            <Txt x={x + cols[3] - 2} y={yy - 0.8} size={2.0} mono anchor="end">{r.x.toFixed(1)}</Txt>
+            <Txt x={x + cols[4] - 2} y={yy - 0.8} size={2.0} mono anchor="end">{r.y.toFixed(1)}</Txt>
+            <Txt x={x + cols[4] + 1} y={yy - 0.8} size={2.0} mono maxW={w - cols[4] - 2}>{`${r.size}${r.verified ? '' : ' *'}`}</Txt>
+            <Line x1={x} y1={yy + 0.3} x2={x + w} y2={yy + 0.3} w={0.08} />
+          </g>
+        );
+      })}
+      {(rows.length > shown.length || more) && <Txt x={x} y={y + 1 + (shown.length + 1) * ROW + 3} size={2.0} italic>{rows.length > shown.length ? `+${rows.length - shown.length} MORE — SEE NEXT SHEET` : 'CONTINUED ON NEXT SHEET'}</Txt>}
+    </g>
+  );
+}
+
+function DrillTables({ sp }: { sp: Extract<SheetSpec, { kind: 'drill' }> }) {
+  const colW = (AREA.w - 30) / 2;
+  return (
+    <g>
+      <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`${sp.drill.title} — HOLE TABLE (CONTINUED) — * = VERIFY WITH DATASHEET`}</Txt>
+      {[0, 1].map((k) => {
+        const rows = sp.rows.slice(k * DRILL_ROWS_CONT, (k + 1) * DRILL_ROWS_CONT);
+        return rows.length ? <HoleTable key={k} x={AREA.x + 8 + k * (colW + 10)} y={AREA.y + 18} w={colW} rows={rows} max={DRILL_ROWS_CONT} /> : null;
+      })}
+    </g>
+  );
+}

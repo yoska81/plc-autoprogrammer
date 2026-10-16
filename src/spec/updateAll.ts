@@ -13,8 +13,9 @@ import { validateProgram } from '../plc/validate';
 import { fingerprint, specToText, changedSections } from './types';
 import { ioFingerprint, hmiFingerprint } from './useStages';
 import { generateIOFromSpec, planIOMerge } from '../lib/ai/ioAI';
-import { recommendEquipment } from '../lib/ai/equipmentAI';
-import { applyEquipment } from './equipment';
+import { recommendEquipment, modulesInSlotOrder } from '../lib/ai/equipmentAI';
+import { applyEquipment, recommendedChoice } from './equipment';
+import { cpuFit, findCpu } from '../plc/fit';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
 import { generateHmiDesign } from '../lib/ai/hmiAI';
 import { reviseLadder, generateLadder } from '../lib/ai/ladderAI';
@@ -48,10 +49,18 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
       const { profile, cpu, slots } = plc();
       if (step === 'equipment') {
         const { rec } = await recommendEquipment({ ...ai, spec });
-        const before = useProjectStore.getState().cpuId;
-        applyEquipment(rec);
-        const after = useProjectStore.getState();
-        onStep({ step, status: 'done', message: `${after.cpuId}${after.cpuId !== before ? ` (was ${before || 'none'})` : ''}, ${after.modules.length} module(s)${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.` });
+        const cur = useProjectStore.getState();
+        const curHmi = useHmiStore.getState().hmiPartNumber || null;
+        const curCpu = findCpu(cur.cpuId);
+        const need = { ...rec.estimatedIO, ethernetHmi: Boolean(rec.hmi || curHmi), minHmiSizeIn: null };
+        // Keep the engineer's own choice while it still covers the machine; otherwise take the recommendation.
+        if (curCpu && cur.recommendation && cpuFit(curCpu, cur.modules, need).ok) {
+          applyEquipment({ cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi }, rec);
+          onStep({ step, status: 'done', message: `Kept your ${cur.cpuId}${cur.modules.length ? ` + ${cur.modules.length} module(s)` : ''}: it still covers the I/O.` });
+        } else {
+          applyEquipment(recommendedChoice(rec), rec);
+          onStep({ step, status: 'done', message: `${rec.plc.cpuId}${cur.cpuId && cur.cpuId !== rec.plc.cpuId ? ` (was ${cur.cpuId}, no longer enough)` : ''}, ${modulesInSlotOrder(rec).length} module(s)${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.` });
+        }
         continue;
       }
 
@@ -70,7 +79,7 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
       if (step === 'electrical') {
         const el = useElectricalStore.getState();
         const io = ioNow();
-        const r = await generateElectricalDesign({ ...ai, profile, cpu, io, addresses: resolveAddresses(profile, cpu, io, slots), machineDescription: specToText(spec), inputs: el.inputs });
+        const r = await generateElectricalDesign({ ...ai, profile, cpu, io, addresses: resolveAddresses(profile, cpu, io, slots), machineDescription: specToText(spec), inputs: el.inputs, region: useProjectStore.getState().info.region });
         el.setInputs(r.design.inputs);
         el.setDesign(r.design, 'generated', r.explanation);
         mark('electrical', { specFp, spec, ioFp: ioFingerprint(io) });

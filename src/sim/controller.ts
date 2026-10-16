@@ -7,8 +7,10 @@ import type { IOWiring } from '../electrical/types';
 import type { LadderProgram } from '../plc/ladder';
 import { createSimulator, normAddress } from './engine';
 import type { CounterState, RungPower, Simulator, TimerState } from './engine';
-import { addPart, buildMachineModel, machineInputs, removePart, stepMachine } from './machineModel';
+import { addPart, buildMachineModel, machineInputs, removePart, setDeviceBypass, stepMachine } from './machineModel';
 import type { MachineModel, SimDevice, SimIOPoint } from './machineModel';
+import { blockOfRung, externalSignals } from './blocks';
+import type { ExternalSignal } from './blocks';
 
 export const SCAN_MS = 10;
 const MAX_LOG = 400;
@@ -26,6 +28,9 @@ export interface SimHandle {
 
 export interface LogEntry { id: number; timeMs: number; address: string; value: boolean }
 
+/** A signal from outside the selected block, held while the block is tested alone. */
+export interface BlockSignal extends ExternalSignal { held: boolean }
+
 export interface SimSnapshot {
   running: boolean;
   speed: number;
@@ -35,7 +40,18 @@ export interface SimSnapshot {
   words: Map<string, number>;
   /** Field input values incl. forces (what the X terminals see right now). */
   inputs: Map<string, boolean>;
-  forces: Map<string, boolean>;
+  /** Forces set by the engineer (bits and words). */
+  forces: Map<string, boolean | number>;
+  /** Values held because they come from outside the selected block. */
+  holds: Map<string, boolean | number>;
+  /** Rungs bypassed by the engineer. */
+  rungBypass: Set<string>;
+  /** Rungs skipped because "run selected block only" is on. */
+  skippedRungs: Set<string>;
+  /** Selected block id, null = whole program. */
+  block: string | null;
+  blockOnly: boolean;
+  blockSignals: BlockSignal[];
   timers: Map<string, TimerState>;
   counters: Map<string, CounterState>;
   power: Map<string, RungPower>;
@@ -63,9 +79,16 @@ export class SimController {
   private logId = 0;
   private pressScan = new Map<string, number>();
   private pendingRelease = new Set<string>();
+  private readonly program: LadderProgram;
+  private userForces = new Map<string, boolean | number>();
+  private rungBypass = new Set<string>();
+  private block: string | null = null;
+  private blockOnly = false;
+  private blockSignals: BlockSignal[] = [];
   readonly handle: SimHandle;
 
   constructor(program: LadderProgram, io: SimIOPoint[], wiring: IOWiring[]) {
+    this.program = program;
     this.io = io;
     this.wiring = wiring;
     this.sim = createSimulator(program);
@@ -107,7 +130,13 @@ export class SimController {
       bits: new Map(st.bits),
       words: new Map(st.words),
       inputs,
-      forces: new Map(st.forces),
+      forces: new Map(this.userForces),
+      holds: this.holds(),
+      rungBypass: new Set(this.rungBypass),
+      skippedRungs: this.skipped(),
+      block: this.block,
+      blockOnly: this.blockOnly,
+      blockSignals: this.blockSignals.map((b) => ({ ...b })),
       timers,
       counters,
       power: this.sim.rungPower(),
@@ -186,7 +215,10 @@ export class SimController {
 
   reset() {
     this.sim.reset();
+    const bypass = new Map(this.machine.devices.map((d) => [d.id, d.bypass]));
     this.machine = buildMachineModel(this.io, this.wiring);
+    for (const d of this.machine.devices) { const b = bypass.get(d.id); if (b && d.bypass) d.bypass = { ...b }; }
+    this.syncEngine();
     this.log = [];
     this.pressScan.clear();
     this.pendingRelease.clear();
@@ -239,9 +271,91 @@ export class SimController {
   addPart(conveyorId: string) { addPart(this.machine, conveyorId); this.syncInputs(); this.emit(); }
   removePart(conveyorId: string) { removePart(this.machine, conveyorId); this.syncInputs(); this.emit(); }
 
-  /** Force a bit (null removes the force). */
-  force(address: string, value: boolean | null) {
-    this.sim.force(normAddress(address), value);
+  // ---- forces, holds and bypasses
+  private holds(): Map<string, boolean | number> {
+    return new Map(this.blockSignals.filter((b) => b.held).map((b) => [b.address, b.value]));
+  }
+
+  private skipped(): Set<string> {
+    if (!this.blockOnly || this.block === null) return new Set();
+    return new Set(this.program.rungs.filter((r) => blockOfRung(this.program, r) !== this.block).map((r) => r.id));
+  }
+
+  /** Push forces/holds/rung bypasses into the engine (engineer forces win over holds). */
+  private syncEngine() {
+    this.sim.clearForces();
+    for (const [a, v] of this.holds()) this.sim.force(a, v);
+    for (const [a, v] of this.userForces) this.sim.force(a, v);
+    const skip = this.skipped();
+    for (const r of this.program.rungs) this.sim.bypassRung(r.id, this.rungBypass.has(r.id) || skip.has(r.id));
+  }
+
+  /** Force a bit ON/OFF or a word to a value (null removes the force). */
+  force(address: string, value: boolean | number | null) {
+    const a = normAddress(address);
+    if (value === null) this.userForces.delete(a);
+    else this.userForces.set(a, value);
+    this.syncEngine();
+    this.emit();
+  }
+
+  /** Skip a rung (its outputs hold their last value). */
+  bypassRung(rungId: string, bypassed: boolean) {
+    if (bypassed) this.rungBypass.add(rungId);
+    else this.rungBypass.delete(rungId);
+    this.syncEngine();
+    this.emit();
+  }
+
+  /** Bypass a field device (healthy / held value instead of the plant model). */
+  setDeviceBypass(id: string, on: boolean, value?: boolean) {
+    setDeviceBypass(this.machine, id, on, value);
+    this.syncInputs();
+    this.emit();
+  }
+
+  /**
+   * Focus on one block (null = whole program). Signals the block reads from
+   * other blocks are held at healthy values until released.
+   */
+  selectBlock(blockId: string | null) {
+    this.block = blockId;
+    this.blockSignals = blockId === null ? [] : externalSignals(
+      this.program, blockId,
+      (a) => this.program.tags.find((t) => normAddress(t.address) === a)?.nickname ?? this.io.find((p) => normAddress(p.address) === a)?.description ?? '',
+      (a) => this.sim.readWord(a),
+    ).map((s) => ({ ...s, held: true }));
+    if (blockId === null) this.blockOnly = false;
+    this.syncEngine();
+    this.emit();
+  }
+
+  /** Change one held signal: hold on/off and/or its value. */
+  setHold(address: string, change: { held?: boolean; value?: boolean | number }) {
+    const s = this.blockSignals.find((b) => b.address === address);
+    if (!s) return;
+    if (change.held !== undefined) s.held = change.held;
+    if (change.value !== undefined) s.value = change.value;
+    this.syncEngine();
+    this.emit();
+  }
+
+  /** Execute only the selected block's rungs (others are bypassed). */
+  setBlockOnly(on: boolean) {
+    this.blockOnly = on && this.block !== null;
+    this.syncEngine();
+    this.emit();
+  }
+
+  /** Remove every force, hold, rung bypass, device bypass and block-only run. */
+  clearAll() {
+    this.userForces.clear();
+    this.rungBypass.clear();
+    for (const s of this.blockSignals) s.held = false;
+    this.blockOnly = false;
+    for (const d of this.machine.devices) if (d.bypass) d.bypass.on = false;
+    this.syncEngine();
+    this.syncInputs();
     this.emit();
   }
 

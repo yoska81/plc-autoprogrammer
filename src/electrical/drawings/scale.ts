@@ -22,3 +22,8 @@ export function doorScale(plan: DrawingPlan): number {
   const e = plan.layout.door;
   return niceScale(Math.min(160 / e.w, 176 / e.h));
 }
+
+/** Scale for the machining (drilling / cutout) sheets. */
+export function drillScale(w: number, h: number): number {
+  return niceScale(Math.min(240 / w, 168 / h));
+}

@@ -5,7 +5,7 @@
  * power rails, parallel branches joined by vertical wires, outputs stacked on
  * the right. Read-only unless `onChange` is given.
  */
-import { useCallback, useState } from 'react';
+import { Fragment, useCallback, useState } from 'react';
 import {
   ArrowDownIcon, ArrowUpIcon, ChatBubbleBottomCenterTextIcon, DocumentDuplicateIcon,
   ExclamationCircleIcon, ExclamationTriangleIcon, PlusIcon, TrashIcon,
@@ -27,6 +27,8 @@ export interface LadderViewProps {
   program: LadderProgram;
   /** Omit for read-only. Called with a new immutable program on every edit. */
   onChange?: (program: LadderProgram) => void;
+  /** Rung number shown in the gutter (when showing part of a program); default position + 1. */
+  numberOf?: (rungId: string) => number;
   /** Address -> short label (nickname/description) shown under each address. */
   labels?: Map<string, string>;
   /** Per-rung highlight for AI change review. */
@@ -255,6 +257,7 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
 interface RungRowProps {
   rung: Rung;
   index: number;
+  number: number;
   count: number;
   cols: number;
   labels?: Map<string, string>;
@@ -295,7 +298,7 @@ function RungRow(props: RungRowProps) {
           className={`pr-2 text-right font-mono text-sm font-bold ${errors ? 'text-red-600' : 'text-slate-500'}`}
           style={{ paddingTop: HEAD_H + WIRE_Y - 10 }}
         >
-          {index + 1}
+          {props.number}
         </div>
       </div>
 
@@ -376,7 +379,7 @@ function RungRow(props: RungRowProps) {
 }
 
 export default function LadderView({
-  program, onChange, labels, changes, issues = [], selectedRungId = null, onSelectRung,
+  program, onChange, labels, changes, issues = [], selectedRungId = null, onSelectRung, numberOf,
 }: LadderViewProps) {
   const [editing, setEditing] = useState<EditPath | null>(null);
   const [editingComment, setEditingComment] = useState<string | null>(null);
@@ -388,6 +391,8 @@ export default function LadderView({
   );
   const closeEditor = useCallback(() => setEditing(null), []);
 
+  const blocks = program.blocks ?? [];
+  const blockOf = (r: Rung) => (r.block && blocks.some((b) => b.id === r.block) ? r.block : '');
   const cols = Math.max(MIN_COLS, ...program.rungs.map((r) => Math.max(0, ...r.branches.map((b) => b.length))));
   const globalIssues = issues.filter((i) => !i.rungId || !program.rungs.some((r) => r.id === i.rungId));
 
@@ -441,10 +446,20 @@ export default function LadderView({
           </div>
         </div>
         {program.rungs.map((rung, i) => (
+          <Fragment key={rung.id}>
+          {blocks.length > 0 && (i === 0 || blockOf(program.rungs[i - 1]) !== blockOf(rung)) && (
+            <div className="flex sticky left-0">
+              <div className="shrink-0" style={{ width: GUTTER_W }} />
+              <div className="flex items-baseline gap-2 px-3 py-1.5 bg-[#e9edef] border-y border-slate-300" style={{ width: diagramWidth(cols) }}>
+                <span className="text-xs font-semibold text-slate-800">{blocks.find((b) => b.id === blockOf(rung))?.name ?? 'General'}</span>
+                <span className="text-[11px] text-slate-500 truncate">{blocks.find((b) => b.id === blockOf(rung))?.description ?? 'Rungs without a block'}</span>
+              </div>
+            </div>
+          )}
           <RungRow
-            key={rung.id}
             rung={rung}
             index={i}
+            number={numberOf ? numberOf(rung.id) : i + 1}
             count={program.rungs.length}
             cols={cols}
             labels={labels}
@@ -459,6 +474,7 @@ export default function LadderView({
             setEditing={setEditing}
             apply={apply}
           />
+          </Fragment>
         ))}
         <div className="flex">
           <div className="shrink-0" style={{ width: GUTTER_W }} />

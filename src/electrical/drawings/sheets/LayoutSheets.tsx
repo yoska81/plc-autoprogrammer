@@ -219,7 +219,7 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
   const s = doorScale(plan);
   const ox = AREA.x + 30, oy = AREA.y + 14;
   const ops = D.items.filter((d) => d.kind !== 'hmi');
-  const dis = plan.layout.door.handle ?? plan.model.disconnect;
+  const hd = plan.layout.door.handle;
   // detail of the operator station
   const minX = Math.min(...ops.map((d) => d.cx - 35)), maxX = Math.max(...ops.map((d) => d.cx + 35));
   const minY = Math.min(...ops.map((d) => d.cy - (d.kind === 'estop' ? 40 : 35))), maxY = Math.max(...ops.map((d) => d.cy + (d.kind === 'estop' ? 40 : 30)));
@@ -240,12 +240,12 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
       <Txt x={ox - 3} y={oy + D.h * s * 0.5} size={2.2} anchor="middle" rotate={-90}>HINGE SIDE</Txt>
       {/* latch + disconnect handle */}
       <rect x={ox + D.w * s - 6} y={oy + D.h * s * 0.62} width={3} height={10} strokeWidth={LW_THIN} />
-      {dis && (
+      {hd && (
         <g>
-          <circle cx={ox + D.w * s - 14} cy={oy + D.h * s * 0.45} r={5} strokeWidth={LW} />
-          <rect x={ox + D.w * s - 15} y={oy + D.h * s * 0.45 - 6} width={2} height={12} strokeWidth={LW_THIN} fill="#fff" />
-          <Txt x={ox + D.w * s - 14} y={oy + D.h * s * 0.45 + 9} size={2.2} mono bold anchor="middle">{dis.tag}</Txt>
-          <Txt x={ox + D.w * s - 14} y={oy + D.h * s * 0.45 + 12} size={2.0} anchor="middle">HANDLE</Txt>
+          <circle cx={ox + hd.cx * s} cy={oy + hd.cy * s} r={Math.max(4, 30 * s)} strokeWidth={LW} />
+          <rect x={ox + hd.cx * s - 1} y={oy + hd.cy * s - Math.max(5, 36 * s)} width={2} height={2 * Math.max(5, 36 * s)} strokeWidth={LW_THIN} fill="#fff" />
+          <Txt x={ox + hd.cx * s} y={oy + hd.cy * s + Math.max(4, 30 * s) + 3.4} size={2.2} mono bold anchor="middle">{hd.tag}</Txt>
+          <Txt x={ox + hd.cx * s} y={oy + hd.cy * s + Math.max(4, 30 * s) + 6.4} size={2.0} anchor="middle">HANDLE</Txt>
         </g>
       )}
       {D.items.map((d) => <DoorDevice key={d.tag} d={d} x={ox + d.cx * s} y={oy + d.cy * s} s={s} detail={false} />)}

@@ -5,8 +5,9 @@
  */
 import {
   billOfMaterials, buildModel, designWarnings, panelLayout,
+  backPanelDrilling, doorDrilling, type DrillingPlan,
   type AuxBranch, type Cable, type CableCore, type JbTerminal, type JunctionBoxPlan, type MachineDevice, type BomLine, type DrawingContext, type ElectricalModel, type IoGroup, type IoPoint,
-  type MotorModel, type PanelLayout, type PsBranch, type Terminal, type TerminalStrip,
+  type MotorModel, type PanelLayout, type XfmrBranch, type PsBranch, type Terminal, type TerminalStrip,
 } from '../derive';
 import { lineNo } from './geometry';
 
@@ -28,7 +29,7 @@ export interface Rung {
   key?: string;
 }
 
-export type PowerBranchPlan = { type: 'ps'; b: PsBranch; idx: number } | { type: 'aux'; b: AuxBranch; idx: number };
+export type PowerBranchPlan = { type: 'ps'; b: PsBranch; idx: number } | { type: 'aux'; b: AuxBranch; idx: number } | { type: 'xfmr'; b: XfmrBranch; idx: number };
 export type TermRow = { kind: 'header'; strip: TerminalStrip; cont?: boolean } | { kind: 'row'; t: Terminal };
 export type BomRow = { kind: 'group'; title: string } | { kind: 'line'; line: BomLine };
 
@@ -45,7 +46,12 @@ export type SheetSpec =
   | { kind: 'bom'; rows: BomRow[]; first: boolean }
   | { kind: 'machine'; zones: ZonePlan[] }
   | { kind: 'cables'; columns: CableRow[][] }
-  | { kind: 'jb'; jb: JunctionBoxPlan; terminals: JbTerminal[]; trunk?: Cable; page: number; pages: number };
+  | { kind: 'jb'; jb: JunctionBoxPlan; terminals: JbTerminal[]; trunk?: Cable; page: number; pages: number }
+  | { kind: 'drill'; drill: DrillingPlan; rows: DrillRow[]; drawing: boolean; page: number; pages: number };
+
+export type DrillRow = { id: string; tag: string; x: number; y: number; size: string; verified: boolean };
+export const DRILL_ROWS_FIRST = 44;
+export const DRILL_ROWS_CONT = 52;
 
 export type SheetSection = 'cover' | 'cabinet' | 'machine';
 export interface PlannedSheet { n: number; title: string; drawingNo: string; spec: SheetSpec; section: SheetSection }
@@ -169,6 +175,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   // power distribution
   const branches: PowerBranchPlan[] = [];
   let idx = 7;
+  if (model.xfmrBranch) { branches.push({ type: 'xfmr', b: model.xfmrBranch, idx }); idx += 4; }
   for (const b of model.psBranches) { branches.push({ type: 'ps', b, idx }); idx += 4; }
   for (const b of model.auxBranches) { branches.push({ type: 'aux', b, idx }); idx += 4; }
   const contIdx = model.motors.length ? idx : idx - 1;
@@ -220,6 +227,18 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
 
   specs.push({ title: 'PANEL LAYOUT — BACKPLATE', spec: { kind: 'panel' } });
   if (layout.door.items.length) specs.push({ title: 'DOOR LAYOUT — OPERATOR DEVICES', spec: { kind: 'door' } });
+
+  // machining drawings (back panel drilling, door cutouts)
+  for (const d of [backPanelDrilling(ctx), doorDrilling(ctx)]) {
+    const rows: DrillRow[] = [
+      ...d.holes.map((h) => ({ id: h.id, tag: h.tag, x: h.x, y: h.y, size: h.code, verified: h.verified })),
+      ...d.cutouts.map((c) => ({ id: c.id, tag: c.tag, x: c.x, y: c.y, size: c.kind === 'rect' ? `${c.code} ${c.w}x${c.h}` : `${c.code} Ø${c.w}`, verified: c.verified })),
+    ];
+    if (!rows.length) continue;
+    const chunks: DrillRow[][] = [rows.slice(0, DRILL_ROWS_FIRST)];
+    for (let i = DRILL_ROWS_FIRST; i < rows.length; i += DRILL_ROWS_CONT * 2) chunks.push(rows.slice(i, i + DRILL_ROWS_CONT * 2));
+    chunks.forEach((r, i) => specs.push({ title: `${d.title}${chunks.length > 1 ? ` (${i + 1} OF ${chunks.length})` : ''} — ${d.part}`, spec: { kind: 'drill', drill: d, rows: r, drawing: i === 0, page: i + 1, pages: chunks.length } }));
+  }
 
   // terminal plan
   if (model.strips.length) {
@@ -317,7 +336,10 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     xref.set(`sheet:${sp.kind}`, xref.get(`sheet:${sp.kind}`) ?? String(sh.n));
     if (sp.kind === 'jb') xref.set(`jb:${sp.jb.tag}`, xref.get(`jb:${sp.jb.tag}`) ?? String(sh.n));
     if (sp.kind === 'power') {
-      for (const b of sp.branches) if (b.type === 'ps') xref.set(`ps:${b.b.ps.tag}`, String(lineNo(sh.n, b.idx)));
+      for (const b of sp.branches) {
+        if (b.type === 'ps') xref.set(`ps:${b.b.ps.tag}`, String(lineNo(sh.n, b.idx)));
+        if (b.type === 'xfmr') xref.set('xfmr', String(lineNo(sh.n, b.idx)));
+      }
       xref.set('power:cont', String(lineNo(sh.n, sp.contIdx + 1)));
       xref.set('power:ground', String(lineNo(sh.n, sp.groundIdx)));
     } else if (sp.kind === 'motors') {

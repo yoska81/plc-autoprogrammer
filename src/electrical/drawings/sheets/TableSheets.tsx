@@ -1,5 +1,5 @@
 /** Cover, notes, terminal plan and bill of materials sheets (tabular). */
-import { WIRE_NUMBERING_NOTES, supplyText } from '../../derive';
+import { WIRE_NUMBERING_NOTES, codeRefs, ratingText, supplyText } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
 import { TERM_ROWS, type DrawingPlan, type PlannedSheet, type SheetSpec } from '../plan';
 import { Line, Txt } from '../symbols';
@@ -43,10 +43,18 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   const x0 = AREA.x + 10;
   const RX = 222;
   const W = AREA_R - RX - 4;
+  const codes = codeRefs(ctx);
+  const hasFuses = model.rc.some((c) => c.category === 'fuse');
+  const hasCb = model.rc.some((c) => c.category === 'breaker');
+  const protText = hasFuses && !hasCb ? 'FUSES (CLASS PER FUSE HOLDER), SPARE FUSES TO BE SUPPLIED' : hasFuses ? 'CIRCUIT BREAKERS AND FUSES' : 'CIRCUIT BREAKERS';
   const notes = [
     `SUPPLY: ${supplyText(inp.supply)}${model.phases === 3 ? ', 3-WIRE + PE' : ', L1 + N + PE'}. MAIN DISCONNECT ${model.disconnect?.tag ?? '(NOT SPECIFIED)'} LOCKABLE IN OFF POSITION.`,
     `CONTROL VOLTAGE: 24VDC FROM ${model.psBranches.map((b) => b.ps.tag).join(', ') || 'POWER SUPPLY'}. 0V IS A GROUNDED CONDUCTOR, BONDED TO PE AT ONE POINT (NFPA 79 9.4.3).`,
-    `ENCLOSURE: ${inp.enclosureRating}. CONTROL PANEL TO BE BUILT AND LABELED PER UL 508A; MARK SCCR, SUPPLY VOLTAGE, FLA OF LARGEST MOTOR AND FULL-LOAD CURRENT ON THE NAMEPLATE.`,
+    `ENCLOSURE: ${inp.enclosureRating}. CONTROL PANEL TO BE BUILT AND LABELED PER ${codes.panel}${codes.region === 'Canada' ? ' (CSA/cUL CERTIFIED)' : ''}; MARK SCCR, SUPPLY VOLTAGE, FLA OF LARGEST MOTOR AND FULL-LOAD CURRENT ON THE NAMEPLATE.`,
+    codes.region === 'Canada'
+      ? 'INSTALLATION PER CANADIAN ELECTRICAL CODE (CSA C22.1), MOTOR BRANCH CIRCUITS PER CEC SECTION 28; MACHINE ELECTRICAL EQUIPMENT PER NFPA 79 / CSA C22.2 No. 14 AS APPLICABLE.'
+      : 'INSTALLATION PER NEC (NFPA 70) ARTICLES 409 / 430 / 670; INDUSTRIAL MACHINERY PER NFPA 79.',
+    `BRANCH PROTECTION: ${protText}.${model.transformer ? ` CONTROL POWER VIA TRANSFORMER ${model.transformer.tag} (${ratingText(model.transformer)}), X2 GROUNDED.` : ''}`,
     'ALL WIRING 600V, 90°C MTW/TEW/SIS COPPER (NFPA 79 CH. 12). POWER CONDUCTORS SIZED PER MOTOR SHEETS; CONTROL 18 AWG MIN., I/O 18 AWG MIN. UNLESS NOTED.',
     'EVERY CONDUCTOR IDENTIFIED AT BOTH ENDS WITH ITS WIRE NUMBER (NFPA 79 13.2.1). ONE WIRE NUMBER PER ELECTRICALLY COMMON POTENTIAL; SUFFIX LETTER AFTER EACH SERIES DEVICE.',
     'FIELD WIRING VIA TERMINAL STRIPS TB2 (INPUTS) / TB3 (OUTPUTS); MOTOR LEADS VIA TB1. ~15% SPARE TERMINALS PROVIDED.',

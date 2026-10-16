@@ -74,6 +74,8 @@ export type LadderOutput = CoilOutput | TimerOutput | CounterOutput | CopyOutput
 export interface Rung {
   /** Stable id so edits and AI revisions can be diffed rung by rung. */
   id: string;
+  /** Id of the machine block / section this rung belongs to (see LadderProgram.blocks). */
+  block?: string;
   comment: string;
   /** Parallel branches (OR). Empty = rung always true. */
   branches: LadderElement[][];
@@ -87,8 +89,17 @@ export interface TagDefinition {
   comment: string;
 }
 
+/** A machine block (station / section) used to split big programs. */
+export interface ProgramBlock {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface LadderProgram {
   rungs: Rung[];
+  /** Blocks in program order; rungs without a block belong to "General". */
+  blocks?: ProgramBlock[];
   /** Nicknames for internal memory the program uses (C, T, CT, DS ...). */
   tags: TagDefinition[];
 }

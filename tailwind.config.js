@@ -3,20 +3,20 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      // Brand palette built around the blue of the Israeli flag (#0038B8 = 600), cool greys.
+      // Brand palette: the Israeli-flag blue hue (#0038B8), softened for long screen use; cool greys.
       colors: {
         brand: {
-          50: '#eef3fc',
-          100: '#d6e2f8',
-          200: '#adc4f0',
-          300: '#7a9ee5',
-          400: '#4673d6',
-          500: '#1a4fc6',
-          600: '#0038b8',
-          700: '#002f9a',
-          800: '#00267b',
-          900: '#001c5c',
-          950: '#00123d',
+          50: '#f0f4fa',
+          100: '#dde5f4',
+          200: '#b9c8e8',
+          300: '#88a0d4',
+          400: '#5677c0',
+          500: '#2f56a8',
+          600: '#22448c',
+          700: '#1c3873',
+          800: '#172e5d',
+          900: '#122449',
+          950: '#0b1730',
         },
         steel: {
           50: '#f5f7f8',

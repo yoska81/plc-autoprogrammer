@@ -13,6 +13,8 @@ export interface FrameInfo {
   date: string;
   scale: string;
   cpu: string;
+  /** Code references for the project region, e.g. "NFPA 79 / UL 508A / NEC". */
+  codes?: string;
 }
 
 const DRAWN_BY = 'Drawn by: PLC Autoprogrammer (AI-generated — must be checked and approved by a qualified engineer before use)';
@@ -74,7 +76,7 @@ export default function SheetFrame({ info, children, width, height }: { info: Fr
         <Line x1={142} y1={ty} x2={142} y2={ty + TITLE_H} w={LW} />
         <Line x1={cx} y1={ty} x2={cx} y2={ty + TITLE_H} w={LW} />
         <Txt x={tx + 3} y={ty + 6.2} size={3.6} bold>PLC AUTOPROGRAMMER</Txt>
-        <Txt x={tx + 3} y={ty + 10.2} size={2.2}>ELECTRICAL CONTROL PANEL DRAWINGS — NFPA 79 / UL 508A PRACTICE</Txt>
+        <Txt x={tx + 3} y={ty + 10.2} size={2.2}>{`ELECTRICAL CONTROL PANEL DRAWINGS — ${info.codes ?? 'NFPA 79 / UL 508A'}`}</Txt>
         <rect x={tx + 2} y={ty + 12.5} width={126} height={drawnLines.length * 3.1 + 2.6} strokeWidth={LW_THIN} />
         {drawnLines.map((l, i) => <Txt key={i} x={tx + 4} y={ty + 16 + i * 3.1} size={2.3} bold={i === 0} maxW={122}>{l}</Txt>)}
         <Txt x={tx + 3} y={ty + TITLE_H - 2.2} size={2.0} italic>NOT FOR CONSTRUCTION UNTIL CHECKED, SIGNED AND RELEASED</Txt>

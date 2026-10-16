@@ -37,6 +37,8 @@ export function collectProject() {
     getPart,
     plc: { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label },
     io: io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type })),
+    region: info.region,
+    hmiPartNumber: hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null,
   } : null;
 
   return {

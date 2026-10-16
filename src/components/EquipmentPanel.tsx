@@ -1,74 +1,23 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useSpecStore } from '../store/useSpecStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useHmiStore } from '../store/useHmiStore';
+import { useIOStore } from '../store/useIOStore';
 import { PLC_PROFILES } from '../plc/profiles';
-import { getPart } from '../electrical/catalog';
-import { getHmi } from '../hmi/hmiCatalog';
+import { getPart, partsIn } from '../electrical/catalog';
+import { HMI_MODELS, getHmi } from '../hmi/hmiCatalog';
 import { moduleSlots, ioCapacity } from '../plc/modules';
-import { recommendEquipment, modulesInSlotOrder, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
-import { applyEquipment } from '../spec/equipment';
+import { cpuFit, findCpu, hmiFit, type Need } from '../plc/fit';
+import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
+import { applyEquipment, recommendedChoice, type EquipmentChoice } from '../spec/equipment';
 import { Spinner, ReasoningPanel } from './program/common';
 
-function cpuById(id: string) {
-  for (const p of PLC_PROFILES) {
-    const c = p.cpuModels.find((x) => x.id === id);
-    if (c) return { profile: p, cpu: c };
-  }
-  return null;
-}
-
-/** Simple product glyphs so cards read at a glance (no vendor imagery). */
-function Glyph({ kind }: { kind: 'plc' | 'module' | 'hmi' }) {
-  return (
-    <svg viewBox="0 0 48 48" className="w-12 h-12 flex-shrink-0" aria-hidden="true">
-      {kind === 'hmi' ? (
-        <>
-          <rect x="3" y="8" width="42" height="30" rx="3" fill="#2f373c" />
-          <rect x="7" y="12" width="34" height="22" rx="1" fill="#9db8ee" />
-          <rect x="10" y="15" width="12" height="6" fill="#e9edef" />
-          <rect x="26" y="15" width="12" height="6" fill="#e9edef" />
-          <rect x="10" y="25" width="28" height="5" fill="#d4dbdf" />
-        </>
-      ) : (
-        <>
-          <rect x={kind === 'plc' ? 6 : 14} y="6" width={kind === 'plc' ? 36 : 20} height="36" rx="2" fill="#e9edef" stroke="#8a9aa2" />
-          <rect x={kind === 'plc' ? 6 : 14} y="6" width={kind === 'plc' ? 36 : 20} height="7" fill="#55646c" />
-          <rect x={kind === 'plc' ? 6 : 14} y="35" width={kind === 'plc' ? 36 : 20} height="7" fill="#55646c" />
-          {[0, 1, 2, 3].map((i) => <circle key={i} cx={(kind === 'plc' ? 12 : 18) + i * (kind === 'plc' ? 7 : 4)} cy="20" r="1.6" fill={i % 2 ? '#2f9e44' : '#f59f00'} />)}
-          {kind === 'plc' && <rect x="30" y="24" width="8" height="6" fill="#2f373c" />}
-        </>
-      )}
-    </svg>
-  );
-}
-
-function ProductCard({ kind, title, subtitle, specs, why, badge }: { kind: 'plc' | 'module' | 'hmi'; title: string; subtitle: string; specs: string[]; why?: string; badge?: ReactNode }) {
-  return (
-    <div className="bg-white border border-steel-200 rounded-md p-4 flex gap-4">
-      <Glyph kind={kind} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-mono font-semibold text-steel-900">{title}</span>
-          {badge}
-        </div>
-        <div className="text-sm text-steel-600">{subtitle}</div>
-        {specs.length > 0 && (
-          <ul className="mt-1.5 flex flex-wrap gap-1.5">
-            {specs.map((s) => <li key={s} className="text-xs bg-steel-100 text-steel-700 rounded px-1.5 py-0.5">{s}</li>)}
-          </ul>
-        )}
-        {why && <p className="mt-2 text-sm text-steel-700"><span className="font-medium text-brand-700">Why: </span>{why}</p>}
-      </div>
-    </div>
-  );
-}
+const MAX_MODULES = 8;
 
 function CapacityBar({ label, need, have }: { label: string; need: number; have: number }) {
   const spare = have - need;
-  const pct = have ? Math.min(100, (need / have) * 100) : 100;
   const ok = spare >= 0;
   return (
     <div>
@@ -77,27 +26,64 @@ function CapacityBar({ label, need, have }: { label: string; need: number; have:
         <span className={ok ? 'text-steel-700' : 'text-red-700 font-medium'}>{need} needed · {have} available{ok ? ` · ${spare} spare` : ` · ${-spare} short`}</span>
       </div>
       <div className="h-2 rounded bg-steel-100 overflow-hidden">
-        <div className={`h-full ${ok ? 'bg-brand-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
+        <div className={`h-full ${ok ? 'bg-brand-500' : 'bg-red-500'}`} style={{ width: `${have ? Math.min(100, (need / have) * 100) : 100}%` }} />
       </div>
     </div>
   );
 }
 
-/** Recommend, review and accept the control equipment for the project. */
+function Section({ title, children, aside }: { title: string; children: ReactNode; aside?: ReactNode }) {
+  return (
+    <section className="bg-white border border-steel-200">
+      <div className="h-8 px-3 flex items-center justify-between bg-[#e9edef] border-b border-steel-200">
+        <h4 className="text-xs font-semibold text-steel-700">{title}</h4>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50';
+const td = 'px-3 py-1.5 border-b border-steel-100';
+
+/**
+ * AI recommendation plus a free chooser: every CPU, module and HMI is listed;
+ * options too weak for this machine are grey with the reason, anything that
+ * fits (including bigger than recommended) can be chosen.
+ */
 export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }) {
   const settings = useSettingsStore();
   const spec = useSpecStore((s) => s.sections);
   const project = useProjectStore();
-  const hmiPart = useHmiStore((s) => s.hmiPartNumber);
+  const appliedHmi = useHmiStore((s) => s.hmiPartNumber);
+  const ioPoints = useIOStore((s) => s.projectIO);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
-  const [draft, setDraft] = useState<EquipmentRecommendation | null>(null);
+  const [rec, setRec] = useState<EquipmentRecommendation | null>(project.recommendation);
+  // The selection being edited; starts from what's applied, else the recommendation.
+  const [choice, setChoice] = useState<EquipmentChoice | null>(() =>
+    project.cpuId && project.recommendation ? { cpuId: project.cpuId, modules: project.modules, hmiPartNumber: appliedHmi || null }
+      : project.recommendation ? recommendedChoice(project.recommendation) : null);
 
-  const rec = draft ?? project.recommendation;
   const specEmpty = !Object.values(spec).some((t) => t.trim());
   const apiKey = settings.anthropicApiKey;
-  const isApplied = !draft && Boolean(project.recommendation);
+
+  // What the machine needs: the AI estimate, or the real I/O list once it exists (whichever is larger).
+  const need: Need = useMemo(() => {
+    const realIn = ioPoints.filter((p) => p.type === 'input').length;
+    const realOut = ioPoints.filter((p) => p.type === 'output').length;
+    const recHmi = rec?.hmi ? getHmi(rec.hmi.partNumber) : undefined;
+    return {
+      digitalInputs: Math.max(rec?.estimatedIO.digitalInputs ?? 0, realIn),
+      digitalOutputs: Math.max(rec?.estimatedIO.digitalOutputs ?? 0, realOut),
+      analogInputs: rec?.estimatedIO.analogInputs ?? 0,
+      analogOutputs: rec?.estimatedIO.analogOutputs ?? 0,
+      ethernetHmi: Boolean(choice?.hmiPartNumber),
+      minHmiSizeIn: recHmi ? recHmi.sizeIn : null,
+    };
+  }, [ioPoints, rec, choice?.hmiPartNumber]);
 
   const recommend = async () => {
     if (!apiKey || specEmpty) return;
@@ -105,7 +91,8 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     setError(null);
     try {
       const r = await recommendEquipment({ apiKey, model: settings.anthropicModel, effort: settings.effort, spec });
-      setDraft(r.rec);
+      setRec(r.rec);
+      setChoice(recommendedChoice(r.rec));
       setReasoning(r.reasoning);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -114,101 +101,170 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     }
   };
 
-  const accept = (cpuId?: string, hmi?: string | null) => {
-    if (!rec) return;
-    applyEquipment(rec, cpuId, hmi === undefined ? undefined : hmi);
-    setDraft(null);
+  const cpus = PLC_PROFILES.filter((p) => p.available && p.language === 'ladder').flatMap((p) => p.cpuModels);
+  const modules = partsIn('plcModule');
+  const hmis = HMI_MODELS.filter((h) => h.touch);
+  const cpu = choice ? findCpu(choice.cpuId) : null;
+  const fit = cpu && choice ? cpuFit(cpu, choice.modules, need) : null;
+  const cap = cpu && choice ? ioCapacity(cpu, moduleSlots(choice.modules)) : null;
+  const applied = Boolean(project.recommendation) && choice?.cpuId === project.cpuId
+    && JSON.stringify(choice?.modules) === JSON.stringify(project.modules) && (choice?.hmiPartNumber ?? '') === (appliedHmi ?? '');
+
+  const set = (patch: Partial<EquipmentChoice>) => setChoice((c) => ({ cpuId: c?.cpuId ?? cpus[0].id, modules: c?.modules ?? [], hmiPartNumber: c?.hmiPartNumber ?? null, ...patch }));
+  const apply = () => {
+    if (!choice || !fit?.ok) return;
+    applyEquipment(choice, rec);
     onApplied?.();
   };
 
-  // What is shown: the draft recommendation, or what's currently applied to the project.
-  const shownCpuId = isApplied ? project.cpuId : rec?.plc.cpuId ?? '';
-  const shownModules = isApplied ? project.modules : rec ? modulesInSlotOrder(rec) : [];
-  const shownHmi = isApplied ? hmiPart : rec?.hmi?.partNumber ?? '';
-  const found = cpuById(shownCpuId);
-  const cap = found ? ioCapacity(found.cpu, moduleSlots(shownModules)) : null;
-  const hmi = shownHmi ? getHmi(shownHmi) : undefined;
-  const moduleCounts = [...shownModules.reduce((m, pn) => m.set(pn, (m.get(pn) ?? 0) + 1), new Map<string, number>())];
-
   return (
-    <div className="space-y-5">
-      <div className="bg-white border border-steel-200 rounded-md p-5 flex flex-wrap items-center gap-4">
+    <div className="space-y-4">
+      <div className="bg-white border border-steel-200 p-4 flex flex-wrap items-center gap-4">
         <div className="flex-1 min-w-64">
-          <h3 className="font-semibold text-steel-900">Let the AI choose the control equipment</h3>
-          <p className="text-sm text-steel-600">It reads your description, counts the inputs and outputs, adds spare capacity, and picks the PLC, I/O modules and operator panel. You can switch to an alternative before accepting.</p>
+          <h3 className="font-semibold text-steel-900">Control equipment</h3>
+          <p className="text-steel-600">The AI suggests a configuration from your description. You decide: every option is listed below. Options too small for this machine are grey; anything that fits can be chosen, including bigger than suggested.</p>
         </div>
         <button onClick={recommend} disabled={busy || !apiKey || specEmpty}
-          className="px-4 py-2 text-sm font-medium bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
-          {busy ? <><Spinner /> Selecting equipment…</> : rec ? 'Recommend again' : 'Recommend equipment'}
+          className="px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
+          {busy ? <><Spinner /> Selecting equipment…</> : rec ? 'Suggest again' : 'Suggest equipment'}
         </button>
-        {specEmpty && <p className="w-full text-sm text-amber-800">Describe the machine first on the <Link to="/spec" className="underline">Describe</Link> step.</p>}
-        {!apiKey && !specEmpty && <p className="w-full text-sm text-amber-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</p>}
+        {specEmpty && <p className="w-full text-amber-800">Describe the machine first on the <Link to="/spec" className="underline">Machine description</Link> step.</p>}
+        {!apiKey && !specEmpty && <p className="w-full text-amber-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</p>}
       </div>
-      {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
+      {error && <div role="alert" className="bg-red-50 border border-red-200 p-3 text-red-800">{error}</div>}
       {reasoning && <ReasoningPanel reasoning={reasoning} />}
 
-      {rec && found && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-          <div className="xl:col-span-2 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-steel-500">{isApplied ? 'Your configuration' : 'Recommended configuration'}</h3>
-              {isApplied && <span className="text-xs bg-brand-100 text-brand-800 rounded px-2 py-0.5">Applied to the project</span>}
-            </div>
-            <p className="text-sm text-steel-700">{rec.summary}</p>
-            <ProductCard kind="plc" title={found.cpu.id} subtitle={`${found.profile.vendor} ${found.profile.name} CPU`}
-              specs={[`${found.cpu.builtInInputs} DC inputs`, `${found.cpu.builtInOutputs} outputs`, ...(found.cpu.label.includes('Ethernet') ? ['Ethernet'] : []), ...(found.cpu.label.includes('analog') ? ['Built-in analog'] : [])]}
-              why={shownCpuId === rec.plc.cpuId ? rec.plc.why : undefined} />
-            {moduleCounts.map(([pn, qty]) => {
-              const part = getPart(pn);
-              const why = rec.modules.find((m) => m.partNumber === pn)?.why;
-              return <ProductCard key={pn} kind="module" title={pn} subtitle={part?.description ?? 'I/O module'} specs={[`Qty ${qty}`]} why={why} />;
-            })}
-            {hmi ? (
-              <ProductCard kind="hmi" title={hmi.partNumber} subtitle={`${hmi.family} touch panel`}
-                specs={[`${hmi.sizeIn}"`, `${hmi.widthPx}×${hmi.heightPx}`, ...(hmi.ethernet ? ['Ethernet'] : [])]}
-                why={shownHmi === rec.hmi?.partNumber ? rec.hmi?.why : undefined} />
-            ) : (
-              <p className="text-sm text-steel-500">No operator panel (pushbuttons and lights only).</p>
-            )}
-          </div>
+      {rec && (
+        <div className="bg-brand-50 border border-brand-200 p-3 text-steel-800">
+          <span className="font-semibold text-brand-800">AI suggestion: </span>{rec.summary}
+          <span className="block mt-1 text-xs text-steel-600">CPU {rec.plc.cpuId}: {rec.plc.why}{rec.hmi ? ` · HMI ${rec.hmi.partNumber}: ${rec.hmi.why}` : ''}</span>
+        </div>
+      )}
 
-          <aside className="space-y-4">
-            <div className="bg-white border border-steel-200 rounded-md p-4 space-y-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-steel-500">Capacity</h4>
-              {cap && <CapacityBar label="Digital inputs" need={rec.estimatedIO.digitalInputs} have={cap.inputs} />}
-              {cap && <CapacityBar label="Digital outputs" need={rec.estimatedIO.digitalOutputs} have={cap.outputs} />}
-              {(rec.estimatedIO.analogInputs > 0 || rec.estimatedIO.analogOutputs > 0) && (
-                <p className="text-xs text-steel-600">Analog: {rec.estimatedIO.analogInputs} in, {rec.estimatedIO.analogOutputs} out</p>
-              )}
-              {rec.estimatedIO.motionAxes > 0 && <p className="text-xs text-amber-800">{rec.estimatedIO.motionAxes} motion axes in the spec</p>}
-              {!isApplied && (
-                <button onClick={() => accept()} className="w-full px-4 py-2 text-sm font-medium bg-brand-600 text-white rounded hover:bg-brand-700">
-                  Use this configuration
-                </button>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+        <div className="xl:col-span-2 space-y-4">
+          <Section title="PLC CPU">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead><tr>{['', 'Part number', 'DC in', 'Out', 'Features', 'Fits this machine?'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {cpus.map((c) => {
+                    const f = cpuFit(c, choice?.modules ?? [], need);
+                    const selected = choice?.cpuId === c.id;
+                    return (
+                      <tr key={c.id} onClick={() => f.ok && set({ cpuId: c.id })}
+                        className={`${f.ok ? 'cursor-pointer hover:bg-brand-50' : 'text-steel-400 bg-steel-50/60 cursor-not-allowed'} ${selected ? 'bg-brand-100' : ''}`}>
+                        <td className={td}><input type="radio" readOnly checked={selected} disabled={!f.ok} aria-label={`Choose ${c.id}`} /></td>
+                        <td className={`${td} font-mono`}>{c.id}{rec?.plc.cpuId === c.id && <span className="ml-2 text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-sm font-sans">SUGGESTED</span>}</td>
+                        <td className={td}>{c.builtInInputs}</td>
+                        <td className={td}>{c.builtInOutputs}</td>
+                        <td className={`${td} text-xs`}>{[/ethernet/i.test(c.label) && 'Ethernet', /analog/i.test(c.label) && 'Analog', /relay/i.test(c.label) && 'Relay out', /sourcing/i.test(c.label) && 'Sourcing out', /CLICK PLUS/.test(c.label) && 'CLICK PLUS'].filter(Boolean).join(' · ')}</td>
+                        <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes · {f.spareIn} in / {f.spareOut} out spare</span> : f.reason}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+
+          <Section title={`I/O expansion modules (slot order, max ${MAX_MODULES})`}
+            aside={<button disabled={(choice?.modules.length ?? 0) >= MAX_MODULES} onClick={() => set({ modules: [...(choice?.modules ?? []), modules[0].partNumber] })} className="text-xs text-brand-700 hover:underline disabled:opacity-40">+ Add module</button>}>
+            {!(choice?.modules.length) ? <p className="px-3 py-2 text-steel-500">No expansion modules: the CPU's built-in I/O is used.</p> : (
+              <table className="w-full">
+                <tbody>
+                  {choice.modules.map((m, i) => (
+                    <tr key={i}>
+                      <td className={`${td} w-16 text-steel-500`}>Slot {i + 1}</td>
+                      <td className={td}>
+                        <select value={m} onChange={(e) => set({ modules: choice.modules.map((x, j) => (j === i ? e.target.value : x)) })} className="w-full border border-steel-300 rounded-sm px-2 py-1 bg-white">
+                          {modules.map((p) => <option key={p.partNumber} value={p.partNumber}>{p.partNumber} — {p.description}</option>)}
+                        </select>
+                      </td>
+                      <td className={`${td} w-8`}><button onClick={() => set({ modules: choice.modules.filter((_, j) => j !== i) })} className="text-steel-400 hover:text-red-600" aria-label={`Remove slot ${i + 1}`}>✕</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </Section>
+
+          <Section title="Operator panel (HMI)">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead><tr>{['', 'Part number', 'Size', 'Resolution', 'Fits this machine?'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+                <tbody>
+                  <tr onClick={() => set({ hmiPartNumber: null })} className={`cursor-pointer hover:bg-brand-50 ${!choice?.hmiPartNumber ? 'bg-brand-100' : ''}`}>
+                    <td className={td}><input type="radio" readOnly checked={!choice?.hmiPartNumber} aria-label="No HMI" /></td>
+                    <td className={td} colSpan={4}>No touch panel (pushbuttons and lights only)</td>
+                  </tr>
+                  {hmis.map((h) => {
+                    const f = hmiFit(h, need);
+                    const selected = choice?.hmiPartNumber === h.partNumber;
+                    return (
+                      <tr key={h.partNumber} onClick={() => f.ok && set({ hmiPartNumber: h.partNumber })}
+                        className={`${f.ok ? 'cursor-pointer hover:bg-brand-50' : 'text-steel-400 bg-steel-50/60 cursor-not-allowed'} ${selected ? 'bg-brand-100' : ''}`}>
+                        <td className={td}><input type="radio" readOnly checked={selected} disabled={!f.ok} aria-label={`Choose ${h.partNumber}`} /></td>
+                        <td className={`${td} font-mono`}>{h.partNumber}{rec?.hmi?.partNumber === h.partNumber && <span className="ml-2 text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-sm font-sans">SUGGESTED</span>}</td>
+                        <td className={td}>{h.sizeIn}"</td>
+                        <td className={td}>{h.widthPx}×{h.heightPx}</td>
+                        <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes</span> : f.reason}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+        </div>
+
+        <aside className="space-y-4 xl:sticky xl:top-0">
+          <Section title="Your selection">
+            <div className="p-3 space-y-3">
+              {choice && cpu ? (
+                <>
+                  <dl className="space-y-1">
+                    <div className="flex justify-between"><dt className="text-steel-500">CPU</dt><dd className="font-mono">{cpu.id}</dd></div>
+                    {choice.modules.map((m, i) => <div key={i} className="flex justify-between"><dt className="text-steel-500">Slot {i + 1}</dt><dd className="font-mono">{m}</dd></div>)}
+                    <div className="flex justify-between"><dt className="text-steel-500">HMI</dt><dd className="font-mono">{choice.hmiPartNumber ?? 'none'}</dd></div>
+                  </dl>
+                  {cap && <CapacityBar label="Digital inputs" need={need.digitalInputs} have={cap.inputs} />}
+                  {cap && <CapacityBar label="Digital outputs" need={need.digitalOutputs} have={cap.outputs} />}
+                  {fit && !fit.ok && <p className="text-red-700 text-xs">{fit.reason}</p>}
+                  {applied ? (
+                    <p className="text-xs bg-green-50 border border-green-200 text-green-800 px-2 py-1.5">Applied to the project.</p>
+                  ) : (
+                    <button onClick={apply} disabled={!fit?.ok} className="w-full px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-40">Use this selection</button>
+                  )}
+                  {choice.modules.some((m) => !getPart(m)) && <p className="text-xs text-amber-700">A module is not in the catalog.</p>}
+                </>
+              ) : (
+                <p className="text-steel-500">Ask for a suggestion, or pick a CPU from the list.</p>
               )}
             </div>
-            {rec.alternatives.length > 0 && (
-              <div className="bg-white border border-steel-200 rounded-md p-4 space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-steel-500">Alternatives</h4>
+          </Section>
+          {rec && rec.alternatives.length > 0 && (
+            <Section title="Other suggestions">
+              <div className="p-3 space-y-3">
                 {rec.alternatives.map((a, i) => (
-                  <div key={i} className="border-t border-steel-100 pt-3 first:border-0 first:pt-0">
-                    <div className="text-sm font-medium text-steel-800">{a.label}</div>
+                  <div key={i}>
+                    <div className="font-medium text-steel-800">{a.label}</div>
                     <div className="text-xs font-mono text-steel-600">{a.cpuId}{a.hmiPartNumber ? ` · ${a.hmiPartNumber}` : ''}</div>
-                    <p className="text-xs text-steel-600 mt-1">{a.tradeoff}</p>
-                    <button onClick={() => accept(a.cpuId, a.hmiPartNumber)} className="mt-1.5 text-xs text-brand-700 font-medium hover:underline">Use this instead</button>
+                    <p className="text-xs text-steel-600">{a.tradeoff}</p>
+                    <button onClick={() => set({ cpuId: a.cpuId, hmiPartNumber: a.hmiPartNumber })} className="text-xs text-brand-700 font-medium hover:underline">Select</button>
                   </div>
                 ))}
               </div>
-            )}
-            {rec.cautions.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-amber-900 mb-1">Please note</h4>
-                <ul className="list-disc pl-4 text-sm text-amber-900 space-y-1">{rec.cautions.map((c, i) => <li key={i}>{c}</li>)}</ul>
-              </div>
-            )}
-          </aside>
-        </div>
-      )}
+            </Section>
+          )}
+          {rec && rec.cautions.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 p-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-amber-900 mb-1">Please note</h4>
+              <ul className="list-disc pl-4 text-amber-900 space-y-1">{rec.cautions.map((c, i) => <li key={i}>{c}</li>)}</ul>
+            </div>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

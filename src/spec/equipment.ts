@@ -4,22 +4,33 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useStageStore } from '../store/useStageStore';
 import { useSpecStore } from '../store/useSpecStore';
 import { getPart } from '../electrical/catalog';
+import { PLC_PROFILES } from '../plc/profiles';
 import { fingerprint } from './types';
 import { modulesInSlotOrder, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 
+export interface EquipmentChoice {
+  cpuId: string;
+  /** Expansion modules in slot order. */
+  modules: string[];
+  hmiPartNumber: string | null;
+}
+
+export function recommendedChoice(rec: EquipmentRecommendation): EquipmentChoice {
+  return { cpuId: rec.plc.cpuId, modules: modulesInSlotOrder(rec), hmiPartNumber: rec.hmi?.partNumber ?? null };
+}
+
 /**
- * Apply an equipment choice to the project: PLC + CPU, expansion modules in
- * slot order (drives addressing), HMI, and the PLC parts the electrical
- * design must use. `cpuId`/`hmiPartNumber` override the recommendation when
- * the user picked an alternative.
+ * Apply an equipment choice (the AI's or the engineer's own) to the project:
+ * PLC + CPU, expansion modules in slot order (drives addressing), HMI, and
+ * the PLC parts the electrical design must use.
  */
-export function applyEquipment(rec: EquipmentRecommendation, cpuId = rec.plc.cpuId, hmiPartNumber = rec.hmi?.partNumber ?? null) {
+export function applyEquipment(choice: EquipmentChoice, rec: EquipmentRecommendation | null) {
   const project = useProjectStore.getState();
-  const modules = modulesInSlotOrder(rec);
-  project.setPlc(rec.plc.profileId, cpuId);
-  project.setModules(modules);
-  project.setRecommendation(rec);
-  useHmiStore.getState().setHmiPartNumber(hmiPartNumber ?? '');
+  const profile = PLC_PROFILES.find((p) => p.cpuModels.some((c) => c.id === choice.cpuId)) ?? PLC_PROFILES[0];
+  project.setPlc(profile.id, choice.cpuId);
+  project.setModules(choice.modules.slice(0, 8));
+  if (rec) project.setRecommendation(rec);
+  useHmiStore.getState().setHmiPartNumber(choice.hmiPartNumber ?? '');
 
   // Required parts for the electrical design: replace earlier PLC/module picks, keep the rest.
   const el = useElectricalStore.getState();
@@ -28,8 +39,8 @@ export function applyEquipment(rec: EquipmentRecommendation, cpuId = rec.plc.cpu
     return c !== 'plc' && c !== 'plcModule';
   });
   const counts = new Map<string, number>();
-  if (getPart(cpuId)) counts.set(cpuId, 1);
-  for (const m of modules) counts.set(m, (counts.get(m) ?? 0) + 1);
+  if (getPart(choice.cpuId)) counts.set(choice.cpuId, 1);
+  for (const m of choice.modules) counts.set(m, (counts.get(m) ?? 0) + 1);
   el.setInputs({ ...el.inputs, requiredParts: [...keep, ...[...counts].map(([partNumber, quantity]) => ({ partNumber, quantity }))] });
 
   const spec = useSpecStore.getState().sections;

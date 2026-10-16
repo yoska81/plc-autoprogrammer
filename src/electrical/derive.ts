@@ -25,6 +25,7 @@ import type {
   CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, JunctionBox,
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
 } from './types';
+import { getHmi } from '../hmi/hmiCatalog';
 
 export interface DrawingContext {
   projectName: string;
@@ -33,6 +34,17 @@ export interface DrawingContext {
   plc: { vendor: string; name: string; cpuPartNumber: string; cpuLabel: string };
   /** Project I/O resolved to PLC addresses. */
   io: { address: string; description: string; type: 'input' | 'output' }[];
+  /** Installation region: drives code references (NEC/UL 508A vs CEC/CSA C22.2 No. 14). Default 'US'. */
+  region?: 'US' | 'Canada';
+  /** Door-mounted HMI chosen for the project (cutout from src/hmi/hmiCatalog). */
+  hmiPartNumber?: string | null;
+}
+
+/** Electrical code references for the project region. */
+export function codeRefs(ctx: DrawingContext): { region: 'US' | 'Canada'; installation: string; panel: string; short: string } {
+  return ctx.region === 'Canada'
+    ? { region: 'Canada', installation: 'CEC (CSA C22.1)', panel: 'CSA C22.2 No. 14', short: 'NFPA 79 / CSA C22.2 No. 14 / CEC' }
+    : { region: 'US', installation: 'NEC (NFPA 70)', panel: 'UL 508A', short: 'NFPA 79 / UL 508A / NEC' };
 }
 
 export const WIRE_NUMBERING_NOTES: string[] = [
@@ -55,6 +67,24 @@ export interface ResolvedComponent {
   part?: CatalogPart;
   category: CatalogCategory;
   mount: MountLocation;
+  /** Fuse holders: the fuse cartridge fitted in them (when the design has one). */
+  fuse?: CatalogPart;
+}
+
+/** Fuse cartridge (goes into a holder; not a protective "device" position on its own). */
+export function isFuseCartridge(c: ResolvedComponent): boolean {
+  if (c.category !== 'fuse') return false;
+  const d = `${c.part?.description ?? ''} ${c.comp.function}`;
+  if (/holder|fuse ?block|fuseblock|carrier/i.test(d)) return false;
+  return num(c.part?.ratings, 'poles') === undefined && /\bfuses?\b/i.test(d);
+}
+
+export function isTransformer(c: ResolvedComponent): boolean {
+  return c.part?.ratings.kind === 'transformer' || (c.category === 'other' && /\btransformer\b/i.test(`${c.part?.description ?? ''} ${c.comp.function}`));
+}
+
+export function isFusedDisconnect(c: ResolvedComponent | undefined): boolean {
+  return !!c && c.category === 'disconnect' && /\bfused\b/i.test(c.part?.description ?? '') && !/non-?fused/i.test(c.part?.description ?? '');
 }
 
 const TAG_CATEGORY: [RegExp, CatalogCategory][] = [
@@ -120,6 +150,15 @@ export function ratingText(rc: ResolvedComponent | undefined): string {
   const ov = num(r, 'outputVolts');
   const volts = str(r, 'outputVoltage', 'output') ?? (ov !== undefined ? `${ov}VDC` : undefined);
   const hp = num(r, 'hp480', 'hp', 'hp230');
+  if (rc.category === 'fuse' && rc.fuse) {
+    const fa = num(rc.fuse.ratings, 'amps');
+    const cls = str(rc.fuse.ratings, 'fuseClass');
+    return [cls ? `CL ${cls}` : '', fa !== undefined ? `${fa}A` : '', poles !== undefined ? `${poles}P` : ''].filter(Boolean).join(' ');
+  }
+  if (isTransformer(rc)) {
+    const va = num(r, 'va');
+    return [va !== undefined ? `${va}VA` : '', str(r, 'primaryVolts') && str(r, 'secondaryVolts') ? `${str(r, 'primaryVolts')}:${str(r, 'secondaryVolts')}V` : ''].filter(Boolean).join(' ');
+  }
   switch (rc.category) {
     case 'powerSupply':
       if (volts) parts.push(volts);
@@ -143,12 +182,12 @@ export function ratingText(rc: ResolvedComponent | undefined): string {
 // ---------------------------------------------------------------------------
 
 /** NEC Table 430.250 (3-phase) / 430.248 (1-phase 115V) full-load currents. */
-const FLA_3PH: [number, number, number, number][] = [
-  // hp, 460V, 230V, 208V
-  [0.5, 1.1, 2.2, 2.4], [0.75, 1.6, 3.2, 3.5], [1, 2.1, 4.2, 4.6], [1.5, 3.0, 6.0, 6.6], [2, 3.4, 6.8, 7.5],
-  [3, 4.8, 9.6, 10.6], [5, 7.6, 15.2, 16.7], [7.5, 11, 22, 24.2], [10, 14, 28, 30.8], [15, 21, 42, 46.2],
-  [20, 27, 54, 59.4], [25, 34, 68, 74.8], [30, 40, 80, 88], [40, 52, 104, 114], [50, 65, 130, 143],
-  [60, 77, 154, 169], [75, 96, 192, 211], [100, 124, 248, 273],
+const FLA_3PH: [number, number, number, number, number][] = [
+  // hp, 460V, 230V, 208V, 575V
+  [0.5, 1.1, 2.2, 2.4, 0.9], [0.75, 1.6, 3.2, 3.5, 1.3], [1, 2.1, 4.2, 4.6, 1.7], [1.5, 3.0, 6.0, 6.6, 2.4], [2, 3.4, 6.8, 7.5, 2.7],
+  [3, 4.8, 9.6, 10.6, 3.9], [5, 7.6, 15.2, 16.7, 6.1], [7.5, 11, 22, 24.2, 9], [10, 14, 28, 30.8, 11], [15, 21, 42, 46.2, 17],
+  [20, 27, 54, 59.4, 22], [25, 34, 68, 74.8, 27], [30, 40, 80, 88, 32], [40, 52, 104, 114, 41], [50, 65, 130, 143, 52],
+  [60, 77, 154, 169, 62], [75, 96, 192, 211, 77], [100, 124, 248, 273, 99],
 ];
 const FLA_1PH_115: [number, number][] = [[0.17, 4.4], [0.25, 5.8], [0.33, 7.2], [0.5, 9.8], [0.75, 13.8], [1, 16], [1.5, 20], [2, 24], [3, 34], [5, 56]];
 
@@ -159,7 +198,12 @@ export function motorFla(hp: number, voltage: SupplyVoltage): number {
     return row[1];
   }
   const row = FLA_3PH.find(([h]) => h >= hp) ?? FLA_3PH[FLA_3PH.length - 1];
-  return voltage === '480VAC-3PH' ? row[1] : voltage === '240VAC-3PH' ? row[2] : row[3];
+  switch (voltage) {
+    case '600VAC-3PH': return row[4];
+    case '480VAC-3PH': return row[1];
+    case '240VAC-3PH': return row[2];
+    default: return row[3];
+  }
 }
 
 /** Suggested copper conductor (75°C, in enclosure) for a continuous current, min 14 AWG for power. */
@@ -176,6 +220,7 @@ export function supplyText(s: SupplyVoltage): string {
     case '208VAC-3PH': return '208VAC 3PH 60Hz';
     case '240VAC-3PH': return '240VAC 3PH 60Hz';
     case '480VAC-3PH': return '480VAC 3PH 60Hz';
+    case '600VAC-3PH': return '600VAC 3PH 60Hz';
   }
 }
 
@@ -193,7 +238,9 @@ export interface WireRecord {
   function: string;
 }
 
-export interface PsBranch { protection?: ResolvedComponent; ps: ResolvedComponent; feedWires: string[]; protectedPoles: number }
+export interface PsBranch { protection?: ResolvedComponent; ps: ResolvedComponent; feedWires: string[]; protectedPoles: number; fromXfmr?: boolean }
+/** Control power transformer branch: bus -> primary protection -> T1 (H1/H2) -> X1/X2 secondary. */
+export interface XfmrBranch { protection?: ResolvedComponent; xfmr: ResolvedComponent; primaryWires: string[]; /** Same as primaryWires (uniform with other branches). */ feedWires: string[]; protectedPoles: number }
 export interface AuxBranch { protection: ResolvedComponent; feedWires: string[]; protectedPoles: number }
 
 export interface MotorModel {
@@ -292,6 +339,7 @@ export interface ElectricalModel {
   psBranches: PsBranch[];
   auxBranches: AuxBranch[];
   transformer?: ResolvedComponent;
+  xfmrBranch?: XfmrBranch;
   groundBar?: ResolvedComponent;
   motors: MotorModel[];
   safety: SafetyModel;
@@ -317,11 +365,22 @@ export function buildModel(ctx: DrawingContext): ElectricalModel {
 }
 
 export function resolveComponents(ctx: DrawingContext): ResolvedComponent[] {
-  return ctx.design.components.map((comp) => {
+  const list = ctx.design.components.map((comp) => {
     const part = comp.partNumber ? ctx.getPart(comp.partNumber) : undefined;
     const category = part?.category ?? guessCategory(comp.tag);
-    return { comp, tag: comp.tag, partNumber: comp.partNumber, part, category, mount: part?.mount ?? defaultMount(category) };
+    return { comp, tag: comp.tag, partNumber: comp.partNumber, part, category, mount: part?.mount ?? defaultMount(category) } as ResolvedComponent;
   });
+  // link fuse cartridges to their holders (same motor, tag/function reference, or a single obvious pair)
+  const carts = list.filter(isFuseCartridge);
+  const holders = list.filter((c) => c.category === 'fuse' && !isFuseCartridge(c));
+  for (const h of holders) {
+    const ref = new RegExp(`\\b${h.tag.replace(/[^A-Za-z0-9]/g, '')}\\b`, 'i');
+    const c = carts.find((x) => h.comp.motorTag && x.comp.motorTag === h.comp.motorTag)
+      ?? carts.find((x) => ref.test(x.comp.function) || x.tag.startsWith(h.tag))
+      ?? (carts.length === 1 && holders.length === 1 ? carts[0] : undefined);
+    if (c?.part) h.fuse = c.part;
+  }
+  return list;
 }
 
 function byCat(rc: ResolvedComponent[], ...cats: CatalogCategory[]) {
@@ -371,18 +430,29 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const addWire = (w: WireRecord) => wires.push(w);
 
   const disconnect = byCat(rc, 'disconnect').filter((c) => c.mount === 'backplate' && !isLayoutAccessory(c))[0];
-  const looseProt = byCat(rc, 'breaker', 'fuse').filter((c) => !c.comp.motorTag);
+  const looseProt = byCat(rc, 'breaker', 'fuse').filter((c) => !c.comp.motorTag && !isFuseCartridge(c));
   const mainBreaker = looseProt.find((c) => /main/i.test(c.comp.function) && c.category === 'breaker');
   const rest = looseProt.filter((c) => c !== mainBreaker);
   const pss = byCat(rc, 'powerSupply');
-  const psProt = rest.filter((c) => /power supply|24 ?v|\bps\d|dc supply|psu/i.test(`${c.comp.function} ${c.comp.tag}`));
-  const transformer = rc.find((c) => /transformer/i.test(`${c.part?.description ?? ''} ${c.comp.function}`) && c.category !== 'powerSupply');
+  const transformer = rc.find(isTransformer);
+  const xfmrRe = transformer ? new RegExp(`transformer|xfmr|\\bcpt\\b|primary|\\b${transformer.tag}\\b`, 'i') : null;
+  const xfmrProt = xfmrRe ? rest.find((c) => xfmrRe.test(c.comp.function) && !/secondary/i.test(c.comp.function)) : undefined;
+  const psProt = rest.filter((c) => c !== xfmrProt && /power supply|24 ?v|\bps\d|dc supply|psu|secondary/i.test(`${c.comp.function} ${c.comp.tag}`));
   const used = new Set<ResolvedComponent>();
+  if (xfmrProt) used.add(xfmrProt);
+  const xfmrBranch: XfmrBranch | undefined = transformer ? {
+    protection: xfmrProt, xfmr: transformer,
+    primaryWires: phases === 1 ? [`${transformer.tag}-L1`, 'N'] : [`${transformer.tag}-L1`, `${transformer.tag}-L2`],
+    feedWires: phases === 1 ? [`${transformer.tag}-L1`, 'N'] : [`${transformer.tag}-L1`, `${transformer.tag}-L2`],
+    protectedPoles: phases === 1 ? 1 : Math.min(2, poles(xfmrProt, 2)),
+  } : undefined;
   const psBranches: PsBranch[] = pss.map((ps) => {
     const byName = psProt.find((p) => !used.has(p) && new RegExp(`\\b${ps.tag}\\b`, 'i').test(p.comp.function));
     const protection = byName ?? psProt.filter((p) => !used.has(p))[0];
     if (protection) used.add(protection);
     const inPh = num(ps.part?.ratings, 'phases', 'inputPhases');
+    // With a control transformer the supply is fed from its 120V secondary (X1 hot / X2 grounded).
+    if (transformer) return { protection, ps, feedWires: [`${ps.tag}-L1`, 'X2'], protectedPoles: 1, fromXfmr: true };
     const n = phases === 1 ? 2 : inPh === 3 ? 3 : 2;
     const feedWires = phases === 1 ? [`${ps.tag}-L1`, 'N'] : Array.from({ length: n }, (_, k) => `${ps.tag}-L${k + 1}`);
     return { protection, ps, feedWires, protectedPoles: phases === 1 ? 1 : n };
@@ -398,7 +468,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const motors: MotorModel[] = ctx.design.inputs.motors.map((motor) => {
     const own = rc.filter((c) => c.comp.motorTag === motor.tag);
     const fla = motorFla(motor.hp, motor.voltage);
-    const prot = own.find((c) => c.category === 'motorProtector') ?? own.find((c) => c.category === 'breaker' || c.category === 'fuse');
+    const prot = own.find((c) => c.category === 'motorProtector') ?? own.find((c) => (c.category === 'breaker' || c.category === 'fuse') && !isFuseCartridge(c));
     let contactors = own.filter((c) => c.category === 'contactor').sort((a, b) => naturalCompare(a.tag, b.tag));
     if (motor.reversing && contactors.length >= 2) {
       const fwd = contactors.find((c) => /fwd|forward/i.test(c.comp.function)) ?? contactors[0];
@@ -608,7 +678,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const busTaps: { tag: string; poles: number }[] = [];
   if (mainBreaker) busTaps.push({ tag: mainBreaker.tag, poles: phases === 1 ? 1 : 3 });
   for (const m of motors) if (m.protection ?? m.vfd ?? m.contactors[0]) busTaps.push({ tag: (m.protection ?? m.vfd ?? m.contactors[0]).tag, poles: m.lineWires.length });
-  for (const b of psBranches) busTaps.push({ tag: b.protection?.tag ?? b.ps.tag, poles: b.feedWires.length });
+  if (xfmrBranch) busTaps.push({ tag: xfmrBranch.protection?.tag ?? xfmrBranch.xfmr.tag, poles: xfmrBranch.primaryWires.length });
+  for (const b of psBranches) if (!b.fromXfmr) busTaps.push({ tag: b.protection?.tag ?? b.ps.tag, poles: b.feedWires.length });
   for (const b of auxBranches) busTaps.push({ tag: b.protection.tag, poles: b.feedWires.length });
   bus.forEach((w, k) => {
     if (w === 'N') return;
@@ -622,8 +693,18 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     }
   });
   if (mainBreaker) bus.forEach((w, k) => { if (w !== 'N') addWire({ wire: `${w}`, from: `${dsTag}:T${k + 1}`, to: `${mainBreaker.tag}:L${k + 1}`, color: 'BK', size: mainAwg, function: 'Disconnect to main breaker' }); });
+  if (xfmrBranch) {
+    const T = xfmrBranch.xfmr.tag;
+    xfmrBranch.primaryWires.forEach((w, k) => addWire({ wire: w, from: w === 'N' ? 'N' : `${xfmrBranch.protection?.tag ?? '1L'}:T${k + 1}`, to: `${T}:H${k === 0 ? 1 : 2}`, color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: `${T} primary` }));
+    for (const b of psBranches) addWire({ wire: 'X1', from: `${T}:X1`, to: `${b.protection?.tag ?? b.ps.tag}:L1`, color: 'BK', size: '14 AWG', function: `${T} secondary 120VAC to ${b.ps.tag}` });
+    addWire({ wire: 'X2', from: `${T}:X2`, to: pe, color: 'WH', size: '14 AWG', function: `${T} secondary grounded conductor, bonded to PE` });
+    addWire({ wire: 'PE', from: `${T}:GND`, to: pe, color: 'GN/YE', size: '14 AWG', function: `${T} ground` });
+  }
   for (const b of psBranches) {
-    b.feedWires.forEach((w, k) => addWire({ wire: w, from: w === 'N' ? 'N' : `${b.protection?.tag ?? '1L'}:T${k + 1}`, to: `${b.ps.tag}:${w === 'N' ? 'N' : phases === 1 ? 'L' : `L${k + 1}`}`, color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: `${b.ps.tag} primary feed` }));
+    if (b.fromXfmr) {
+      addWire({ wire: b.feedWires[0], from: `${b.protection?.tag ?? xfmrBranch?.xfmr.tag ?? 'T1'}:T1`, to: `${b.ps.tag}:L`, color: 'BK', size: '14 AWG', function: `${b.ps.tag} 120VAC feed` });
+      addWire({ wire: 'X2', from: `${xfmrBranch?.xfmr.tag ?? 'T1'}:X2`, to: `${b.ps.tag}:N`, color: 'WH', size: '14 AWG', function: `${b.ps.tag} 120VAC neutral` });
+    } else b.feedWires.forEach((w, k) => addWire({ wire: w, from: w === 'N' ? 'N' : `${b.protection?.tag ?? '1L'}:T${k + 1}`, to: `${b.ps.tag}:${w === 'N' ? 'N' : phases === 1 ? 'L' : `L${k + 1}`}`, color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: `${b.ps.tag} primary feed` }));
     addWire({ wire: 'PE', from: `${b.ps.tag}:PE`, to: pe, color: 'GN/YE', size: '14 AWG', function: `${b.ps.tag} ground` });
     addWire({ wire: '24+', from: `${b.ps.tag}:+V`, to: 'TB1 24+', color: 'BU', size: '16 AWG', function: '+24VDC distribution' });
     addWire({ wire: '0V', from: `${b.ps.tag}:-V`, to: 'TB1 0V', color: 'WH/BU', size: '16 AWG', function: '0V DC common' });
@@ -729,7 +810,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
 
   const machine = buildMachine(ctx, mw, io, motors, groundBar?.tag ?? 'PE BAR', strips);
   return {
-    rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, groundBar,
+    rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
     motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine,
   };
 }
@@ -1085,7 +1166,7 @@ export interface BomLine {
 export interface BomGroup { category: CatalogCategory | 'note'; title: string; lines: BomLine[] }
 
 const CAT_TITLES: Record<CatalogCategory, string> = {
-  enclosure: 'Enclosure', disconnect: 'Disconnect', breaker: 'Circuit breakers', fuse: 'Fuses', powerSupply: 'Power supplies',
+  enclosure: 'Enclosure', disconnect: 'Disconnect', breaker: 'Circuit breakers', fuse: 'Fuses & fuse holders', powerSupply: 'Power supplies',
   contactor: 'Contactors', overload: 'Overload relays', motorProtector: 'Motor protectors', vfd: 'Variable frequency drives',
   relay: 'Relays', safetyRelay: 'Safety relays', terminal: 'Terminal blocks', terminalAccessory: 'Terminal accessories',
   pushbutton: 'Pushbuttons', estop: 'Emergency stops', pilotLight: 'Pilot lights', selector: 'Selector switches', stackLight: 'Stack lights',
@@ -1185,6 +1266,8 @@ export interface DoorItem {
   legend: string[];
   color: string;
   estimated: boolean;
+  /** Panel cutout for HMIs (catalog value when verified). */
+  cutout?: { w: number; h: number; verified: boolean };
 }
 export interface PanelLayout {
   /** Outer enclosure size (mm). */
@@ -1199,7 +1282,7 @@ export interface PanelLayout {
   /** Back-panel parts that could not be placed inside the back panel. */
   notFit: { tag: string; partNumber: string; w: number; h: number }[];
   overflow: boolean;
-  door: { w: number; h: number; items: DoorItem[]; overflow: boolean; handle?: { tag: string; partNumber: string } };
+  door: { w: number; h: number; items: DoorItem[]; overflow: boolean; handle?: { tag: string; partNumber: string; cx: number; cy: number } };
   warnings: string[];
 }
 
@@ -1229,6 +1312,7 @@ export function isSubpanel(c: ResolvedComponent): boolean {
 /** Accessories that are not drawn as back-panel components (shafts, handles, jumpers, markers, end covers...). */
 export function isLayoutAccessory(c: ResolvedComponent): boolean {
   if (['enclosure', 'dinRail', 'wireDuct', 'terminal', 'terminalAccessory'].includes(c.category)) return true;
+  if (isFuseCartridge(c)) return true;
   if (c.mount !== 'backplate') return true;
   if (num(c.part?.ratings, 'lengthMm') !== undefined && c.category !== 'groundBar') return true;
   const ACC = /^(disconnect |terminal |din rail |terminal block )?(shaft|external (rotary )?handle|handle|contact block|jumper|marker|marking tags?|end cover|end plate|end stop|end bracket|end anchor)\b/i;
@@ -1426,9 +1510,13 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   const order: DoorItem['kind'][] = ['pilot', 'selector', 'pushbutton', 'other', 'estop'];
   let dy = Math.min(90, encH * 0.15);
   let doorOverflow = false;
-  for (const h of hmis) {
-    const d = dims(h);
-    doorItems.push({ tag: h.tag, partNumber: h.partNumber, kind: 'hmi', cx: encW / 2, cy: dy + d.h / 2, w: d.w, h: d.h, legend: [], color: '', estimated: d.estimated });
+  const hmiList: { tag: string; partNumber: string; rc?: ResolvedComponent }[] = hmis.map((h) => ({ tag: h.tag, partNumber: h.partNumber, rc: h }));
+  if (!hmiList.length && ctx.hmiPartNumber) hmiList.push({ tag: 'HMI1', partNumber: ctx.hmiPartNumber });
+  for (const h of hmiList) {
+    const model = getHmi(h.partNumber);
+    const d = model?.bezelMm ? { w: model.bezelMm.width, h: model.bezelMm.height, estimated: false } : h.rc ? dims(h.rc) : { w: 200, h: 150, estimated: true };
+    const cut = model?.cutoutMm ? { w: model.cutoutMm.width, h: model.cutoutMm.height, verified: model.verified } : { w: d.w - 15, h: d.h - 15, verified: false };
+    doorItems.push({ tag: h.tag, partNumber: h.partNumber, kind: 'hmi', cx: encW / 2, cy: dy + d.h / 2, w: d.w, h: d.h, legend: [], color: '', estimated: d.estimated, cutout: cut });
     dy += d.h + 40;
   }
   const pitchX = 60, pitchY = 75;
@@ -1450,13 +1538,183 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   return {
     enclosure: { w: encW, h: encH, d: inMm(num(er, 'depthIn')) ?? num(er, 'depthMm', 'depth'), partNumber: enc?.partNumber, tag: enc?.tag, estimated: encEst },
     backplate, rails, ducts, items, unplaced, notFit, overflow,
-    door: { w: encW, h: encH, items: doorItems, overflow: doorOverflow, handle: handleRc ? { tag: handleRc.tag, partNumber: handleRc.partNumber } : undefined }, warnings,
+    door: {
+      w: encW, h: encH, items: doorItems, overflow: doorOverflow,
+      // through-door disconnect handle: right-hand side, 45% down from the top of the door
+      handle: handleRc || m.disconnect ? { tag: (handleRc ?? m.disconnect)!.tag, partNumber: (handleRc ?? m.disconnect)!.partNumber, cx: encW - 70, cy: encH * 0.45 } : undefined,
+    }, warnings,
   };
 }
 
 /** Door-mounted accessories that are not operator devices (contact blocks, legend plates sold separately...). */
 function isLayoutAccessoryDoor(c: ResolvedComponent): boolean {
   return /\b(contact block|legend plate|lamp module|guard|shaft)\b/i.test(c.part?.description ?? '') && !['pushbutton', 'estop', 'pilotLight', 'selector'].includes(c.category);
+}
+
+// ---------------------------------------------------------------------------
+// Machining: back-panel drilling and door cutouts (datum = lower-left corner, X right, Y up, mm)
+// ---------------------------------------------------------------------------
+
+export interface DrillHole {
+  /** "A1", "B4"… (letter = hole code). */
+  id: string;
+  /** Feature the hole belongs to ("RAIL 1", "DUCT 3", "GB1", "VFD1"…). */
+  tag: string;
+  x: number;
+  y: number;
+  /** Nominal diameter drawn (thread major diameter for tapped holes). */
+  dia: number;
+  code: string;
+  verified: boolean;
+}
+
+export interface DrillCutout {
+  id: string;
+  tag: string;
+  kind: 'round' | 'rect';
+  /** Centre. */
+  x: number;
+  y: number;
+  /** Diameter for round, width/height for rect. */
+  w: number;
+  h: number;
+  code: string;
+  verified: boolean;
+  /** Optional anti-rotation notch (22 mm operators): width x depth at 12 o'clock. */
+  notch?: { w: number; d: number };
+}
+
+export interface HoleCode { code: string; spec: string; count: number; verified: boolean }
+
+export interface DrillingPlan {
+  kind: 'backpanel' | 'door';
+  title: string;
+  /** Part / tag being machined. */
+  part: string;
+  w: number;
+  h: number;
+  holes: DrillHole[];
+  cutouts: DrillCutout[];
+  codes: HoleCode[];
+  notes: string[];
+}
+
+const r1 = (v: number) => Math.round(v * 10) / 10;
+
+/** Evenly spaced positions from a to b with at most `pitch` between them (both ends included). */
+function spaced(a: number, b: number, pitch: number): number[] {
+  if (b - a < 1) return [(a + b) / 2];
+  const n = Math.max(1, Math.ceil((b - a) / pitch));
+  return Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
+}
+
+function finishCodes(holes: DrillHole[], cutouts: DrillCutout[], specs: Record<string, string>): HoleCode[] {
+  const out: HoleCode[] = [];
+  for (const [code, spec] of Object.entries(specs)) {
+    const hs = holes.filter((h) => h.code === code), cs = cutouts.filter((c) => c.code === code);
+    const n = hs.length + cs.length;
+    if (n) out.push({ code, spec, count: n, verified: [...hs, ...cs].every((x) => x.verified) });
+  }
+  return out;
+}
+
+function numberIds<T extends { id: string; code: string; x: number; y: number }>(list: T[]): T[] {
+  const byCode = new Map<string, number>();
+  // top-to-bottom, left-to-right: the order a machinist reads the drawing
+  return [...list].sort((a, b) => a.code.localeCompare(b.code) || b.y - a.y || a.x - b.x).map((h) => {
+    const n = (byCode.get(h.code) ?? 0) + 1;
+    byCode.set(h.code, n);
+    return { ...h, id: `${h.code}${n}` };
+  });
+}
+
+/** Back-panel drilling: DIN rail, wire duct, ground bar and panel-mounted device holes. */
+export function backPanelDrilling(ctx: DrawingContext): DrillingPlan {
+  const L = panelLayout(ctx);
+  const m = buildModel(ctx);
+  const bp = L.backplate;
+  const X = (x: number) => r1(x - bp.x);
+  const Y = (y: number) => r1(bp.y + bp.h - y);
+  const holes: DrillHole[] = [];
+  const add = (code: string, tag: string, x: number, y: number, dia: number, verified: boolean) => holes.push({ id: '', tag, x: X(x), y: Y(y), dia, code, verified });
+  // panel-mounted (non-DIN) devices: VFDs and transformers
+  const panelMount = L.items.filter((it) => it.category === 'vfd' || m.rc.some((c) => c.tag === it.tag && isTransformer(c)));
+  const covered = (x: number, y: number) => panelMount.some((p) => x >= p.x - 2 && x <= p.x + p.w + 2 && y >= p.y - 2 && y <= p.y + p.h + 2);
+  L.rails.forEach((r, i) => {
+    const cy = r.y + r.h / 2;
+    for (const x of spaced(r.x + 25, r.x + r.w - 25, 150)) if (!covered(x, cy)) add('A', `RAIL ${i + 1}`, x, cy, 5, true);
+  });
+  L.ducts.forEach((d, i) => {
+    if (d.orientation === 'h') { const cy = d.y + d.h / 2; for (const x of spaced(d.x + 50, d.x + d.w - 50, 300)) add('B', `DUCT ${i + 1}`, x, cy, 4, true); }
+    else { const cx = d.x + d.w / 2; for (const y of spaced(d.y + 50, d.y + d.h - 50, 300)) add('B', `DUCT ${i + 1}`, cx, y, 4, true); }
+  });
+  for (const it of L.items.filter((i) => i.category === 'groundBar')) {
+    const part = m.rc.find((c) => c.tag === it.tag)?.part;
+    const sp = num(part?.ratings, 'holeSpacingMm', 'mountingHoleSpacingMm');
+    const half = sp !== undefined ? sp / 2 : it.w / 2 - 12.7;
+    for (const dx of [-half, half]) add('C', it.tag, it.x + it.w / 2 + dx, it.y + it.h / 2, 6.35, sp !== undefined);
+  }
+  for (const it of panelMount) {
+    const part = m.rc.find((c) => c.tag === it.tag)?.part;
+    const hw = num(part?.ratings, 'mountHoleSpacingWMm', 'holeSpacingWMm');
+    const hh = num(part?.ratings, 'mountHoleSpacingHMm', 'holeSpacingHMm');
+    const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+    if (hw !== undefined && hh !== undefined) for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add('D', it.tag, cx + (dx * hw) / 2, cy + (dy * hh) / 2, 5, true);
+    else if (it.w < 80) for (const dy of [-1, 1]) add('D', it.tag, cx, cy + dy * (it.h / 2 - 6), 5, false);
+    else for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add('D', it.tag, cx + dx * (it.w / 2 - 6), cy + dy * (it.h / 2 - 6), 5, false);
+  }
+  const ids = numberIds(holes);
+  const specs = {
+    A: 'M5 TAP, Ø4.2 DRILL (OR #10-32, #21 DRILL) — 35 mm DIN RAIL FIXING',
+    B: 'M4 TAP, Ø3.3 DRILL (OR #8-32, #29 DRILL) — WIRE DUCT FIXING',
+    C: '1/4-20 TAP, #7 (Ø5.1) DRILL — GROUND BAR, REMOVE PAINT FOR BONDING',
+    D: 'M5 TAP, Ø4.2 DRILL — PANEL-MOUNTED DEVICE',
+  };
+  const unverified = [...new Set(ids.filter((h) => !h.verified).map((h) => h.tag))];
+  return {
+    kind: 'backpanel', title: 'BACK PANEL DRILLING', part: bp.partNumber ? `${bp.tag} ${bp.partNumber}` : `BACK PANEL ${L.enclosure.partNumber ?? ''}`.trim(),
+    w: r1(bp.w), h: r1(bp.h), holes: ids, cutouts: [], codes: finishCodes(ids, [], specs),
+    notes: [
+      'DATUM: LOWER-LEFT CORNER OF BACK PANEL (FRONT VIEW). ALL DIMENSIONS IN mm. TOLERANCE ±0.5 mm UNLESS NOTED.',
+      'DIN RAIL: HOLES 25 mm FROM RAIL ENDS, ≤150 mm PITCH. WIRE DUCT: ≤300 mm PITCH, 50 mm FROM ENDS.',
+      ...(unverified.length ? [`VERIFY WITH DATASHEET: ${unverified.join(', ')} — HOLE PATTERN ESTIMATED (NO MOUNTING DIMENSIONS IN CATALOG).`] : []),
+      ...(panelMount.length ? [`DIN RAIL INTERRUPTED BEHIND ${panelMount.map((p) => p.tag).join(', ')} (PANEL-MOUNTED).`] : []),
+      ...(L.notFit.length ? [`NOT DRILLED (DOES NOT FIT): ${L.notFit.map((n) => n.tag).join(', ')}.`] : []),
+      'DEBURR ALL HOLES. MASK / REMOVE PAINT AT GROUND-BAR AND BONDING POINTS.',
+    ],
+  };
+}
+
+/** Door cutouts: 22 mm operators, HMI, disconnect handle. */
+export function doorDrilling(ctx: DrawingContext): DrillingPlan {
+  const L = panelLayout(ctx);
+  const D = L.door;
+  const Y = (y: number) => r1(D.h - y);
+  const cutouts: DrillCutout[] = [];
+  for (const d of D.items) {
+    if (d.kind === 'hmi') {
+      const c = d.cutout ?? { w: d.w - 15, h: d.h - 15, verified: false };
+      cutouts.push({ id: '', tag: d.tag, kind: 'rect', x: r1(d.cx), y: Y(d.cy), w: r1(c.w), h: r1(c.h), code: 'F', verified: c.verified });
+    } else cutouts.push({ id: '', tag: d.tag, kind: 'round', x: r1(d.cx), y: Y(d.cy), w: 22.5, h: 22.5, code: 'E', verified: true, notch: { w: 3.2, d: 1.7 } });
+  }
+  if (D.handle) cutouts.push({ id: '', tag: D.handle.tag, kind: 'round', x: r1(D.handle.cx), y: Y(D.handle.cy), w: 22.5, h: 22.5, code: 'G', verified: false });
+  const ids = numberIds(cutouts);
+  const hmi = ids.find((c) => c.code === 'F');
+  const specs = {
+    E: 'Ø22.5 PUNCH (22 mm OPERATOR). ANTI-ROTATION NOTCH 3.2 W x 1.7 D AT 12 O\'CLOCK ONLY IF THE OPERATOR REQUIRES IT',
+    F: `RECTANGULAR HMI CUTOUT${hmi ? ` ${hmi.w} x ${hmi.h}` : ''} — PER HMI DRAWING${hmi && !hmi.verified ? ' (VERIFY)' : ''}`,
+    G: 'DISCONNECT HANDLE: CENTRE MARK ONLY — DRILL PER HANDLE TEMPLATE (e.g. SOCOMEC S0)',
+  };
+  return {
+    kind: 'door', title: 'DOOR CUTOUTS', part: `DOOR ${L.enclosure.tag ?? ''} ${L.enclosure.partNumber ?? ''}`.trim(),
+    w: r1(D.w), h: r1(D.h), holes: [], cutouts: ids, codes: finishCodes([], ids, specs),
+    notes: [
+      'DATUM: LOWER-LEFT CORNER OF DOOR, OUTSIDE (FRONT) VIEW. ALL DIMENSIONS IN mm.',
+      'DOOR SIZE TAKEN AS ENCLOSURE OUTSIDE SIZE — CHECK FLANGE/RETURN AND HINGE CLEARANCE BEFORE CUTTING.',
+      'HANDLE: ALIGN WITH DISCONNECT SHAFT CENTRE ON THE BACK PANEL; DRILL MOUNTING HOLES FROM THE HANDLE TEMPLATE.',
+      'REINFORCE DOOR AROUND LARGE CUTOUTS; KEEP GASKET LAND CLEAR. DEBURR AND TOUCH UP PAINT.',
+    ],
+  };
 }
 
 /** Greedy word wrap by character count. */
@@ -1493,14 +1751,25 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (!m.psBranches.length) w.push('No 24VDC power supply in the design.');
   for (const b of m.psBranches) if (!b.protection) w.push(`${b.ps.tag}: no primary protection (breaker/fuses) found — add branch protection.`);
   // A 24VDC supply's AC input must cover the voltage feeding it (phase-phase on 3-phase supplies).
-  const feedVolts = { '120VAC-1PH': 120, '208VAC-3PH': 208, '240VAC-3PH': 240, '480VAC-3PH': 480 }[m.supply];
+  const feedVolts = ({ '120VAC-1PH': 120, '208VAC-3PH': 208, '240VAC-3PH': 240, '480VAC-3PH': 480, '600VAC-3PH': 600 } as const)[m.supply];
   const hasTransformer = m.rc.some((c) => c.part?.ratings.kind === 'transformer');
   for (const b of m.psBranches) {
     const range = String(b.ps.part?.ratings.inputVolts ?? '').match(/(\d+)\s*-\s*(\d+)\s*VAC/);
-    if (range && (feedVolts > Number(range[2]) || feedVolts < Number(range[1])) && !hasTransformer) {
-      w.push(`${b.ps.tag}: input rated ${range[1]}–${range[2]} VAC but the supply is ${m.supply}. Use a power supply rated for ${feedVolts} V, or feed it from a control power transformer.`);
+    const sec = num(m.transformer?.part?.ratings, 'secondaryVolts') ?? 120;
+    const v = b.fromXfmr ? sec : feedVolts;
+    if (range && (v > Number(range[2]) || v < Number(range[1])) && (!hasTransformer || b.fromXfmr)) {
+      w.push(`${b.ps.tag}: input rated ${range[1]}–${range[2]} VAC but it is fed at ${v} V${b.fromXfmr ? ' (transformer secondary)' : ` (supply ${m.supply})`}. Use a power supply rated for ${v} V${b.fromXfmr ? '' : ', or feed it from a control power transformer'}.`);
     }
   }
+  if (!hasTransformer && feedVolts === 600 && m.psBranches.length) w.push('600 V supply: 24VDC supplies in the catalog accept max. 575 VAC — use a 600 V-primary control power transformer (e.g. CT-xxx-060-12) ahead of the power supply.');
+  if (m.transformer) {
+    const prim = String(m.transformer.part?.ratings.primaryVolts ?? '');
+    const pv = prim.split('/').map(Number).filter((x) => x > 0);
+    if (pv.length && !pv.includes(feedVolts === 208 ? 208 : feedVolts)) w.push(`${m.transformer.tag}: primary rated ${prim} V but the supply is ${m.supply} — select a transformer with a ${feedVolts} V primary.`);
+    if (!m.xfmrBranch?.protection && !/yes/i.test(String(m.transformer.part?.ratings.fused ?? ''))) w.push(`${m.transformer.tag}: no primary protection found (function "transformer primary") — add fuses/breaker per ${ctx.region === 'Canada' ? 'CEC Rule 26-256' : 'NEC 450.3 / UL 508A'}.`);
+  }
+  const holders = m.rc.filter((c) => c.category === 'fuse' && !isFuseCartridge(c));
+  for (const h of holders) if (!h.fuse) w.push(`${h.tag}: fuse holder without a matching fuse cartridge in the design (link by motorTag or by naming ${h.tag} in the fuse's function).`);
   if (!m.groundBar) w.push('No ground bar in the design.');
   for (const mm of m.motors) {
     const t = mm.motor.tag;
@@ -1544,8 +1813,12 @@ export function designWarnings(ctx: DrawingContext): string[] {
   for (const p of m.io) if (!p.deviceTag && p.wiring) w.push(`${p.address}: wiring has no device tag.`);
   w.push(...panelLayout(ctx).warnings);
   w.push(...m.machine.warnings);
-  w.push('Wire sizes are suggestions (75°C copper); verify against NFPA 79 Table 12.5.1 / UL 508A and the protective device ratings.');
-  w.push('Calculate and mark the panel SCCR (UL 508A SB) and verify available fault current.');
+  w.push(ctx.region === 'Canada'
+    ? 'Wire sizes are suggestions (75°C copper); verify against CEC Table 2 / CSA C22.2 No. 14 and the protective device ratings.'
+    : 'Wire sizes are suggestions (75°C copper); verify against NFPA 79 Table 12.5.1 / UL 508A and the protective device ratings.');
+  w.push(ctx.region === 'Canada'
+    ? 'Calculate and mark the panel SCCR and verify available fault current (CSA C22.2 No. 14 / CEC); obtain CSA/cUL field or factory certification.'
+    : 'Calculate and mark the panel SCCR (UL 508A SB) and verify available fault current.');
   return w;
 }
 

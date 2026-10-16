@@ -58,7 +58,8 @@ Screen set (adapt to the machine): Main/Auto overview with machine state, mode, 
 Layout rules:
 - Coordinates in the panel's native pixels: 0 ≤ x, x+w ≤ ${hmi.widthPx}; 0 ≤ y, y+h ≤ ${hmi.heightPx}. No overlapping elements. Leave 8 px gaps.
 - Touch targets at least 60x48 px; nav bar along the bottom or top on every screen, identical position.
-- ISA-101 high-performance style: grey background, color only for abnormal states (alarm red, warning amber, ok used sparingly).
+- Visual style: modern minimal dark UI (in the spirit of Tesla / SpaceX consoles), rendered by the app: near-black background, generous spacing, few large elements rather than many small ones. Colour only carries meaning (style "ok" green for running, "warning" amber, "alarm" red; "normal" for everything else) — this also satisfies ISA-101 high-performance practice.
+- Give each screen a clear hierarchy: a short title "text" element top-left (h about 40), the key machine state as large indicators/numerics, then actions. Keep labels short (1–3 words, they are shown in capitals). Align elements on a grid with consistent widths.
 
 PLC addressing (the PLC program will be written to match these tags exactly):
 - HMI commands (buttons) write C bits in the range C1001–C1100 (never X inputs or Y outputs directly).

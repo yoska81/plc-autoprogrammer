@@ -21,7 +21,15 @@ export interface SimIOPoint {
 
 export type LightColor = 'red' | 'amber' | 'green' | 'blue' | 'white';
 
-interface Base { id: string; label: string; tag?: string }
+/**
+ * Device bypass: the device stops being simulated and reports "healthy".
+ * `value` is the held input value for devices that have one (sensor,
+ * pushbutton, selector, conveyor sensors); cylinders and motors simply follow
+ * their command instantly, E-stops / safety relays read OK.
+ */
+export interface DeviceBypass { on: boolean; value: boolean }
+
+interface Base { id: string; label: string; tag?: string; bypass?: DeviceBypass }
 
 export interface PushbuttonDevice extends Base {
   kind: 'pushbutton';
@@ -383,7 +391,14 @@ export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): Machine
   // Operator devices first: E-stop, safety, buttons, selectors; then the machine.
   const rank: Partial<Record<DeviceKind, number>> = { estop: 0, safetyRelay: 1, pushbutton: 2, selector: 3 };
   front.sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9));
-  const model: MachineModel = { devices: [...front, ...devices], inputs: new Map() };
+  const all = [...front, ...devices];
+  for (const d of all) {
+    const inputsOf = deviceAddresses(d).inputs;
+    if (!inputsOf.length && d.kind !== 'estop') continue;
+    const value = d.kind === 'pushbutton' ? d.nc : d.kind !== 'conveyor'; // healthy default
+    d.bypass = { on: false, value };
+  }
+  const model: MachineModel = { devices: all, inputs: new Map() };
   model.inputs = machineInputs(model);
   return model;
 }
@@ -397,21 +412,23 @@ function capital(s: string): string {
 /** Every input value the machine currently drives. */
 export function machineInputs(model: MachineModel): Map<string, boolean> {
   const out = new Map<string, boolean>();
-  const estopPressed = model.devices.some((d) => d.kind === 'estop' && d.state.pressed);
+  const byp = (d: SimDevice) => !!d.bypass?.on;
+  const estopPressed = model.devices.some((d) => d.kind === 'estop' && d.state.pressed && !byp(d));
   for (const d of model.devices) {
+    const held = d.bypass?.on ? d.bypass.value : undefined;
     switch (d.kind) {
-      case 'pushbutton': out.set(d.input, d.nc ? !d.state.pressed : d.state.pressed); break;
-      case 'selector': out.set(d.input, d.state.on); break;
-      case 'estop': if (d.input) out.set(d.input, !d.state.pressed); break;
-      case 'safetyRelay': out.set(d.input, !estopPressed); break;
-      case 'sensor': out.set(d.input, d.state.on); break;
+      case 'pushbutton': out.set(d.input, held ?? (d.nc ? !d.state.pressed : d.state.pressed)); break;
+      case 'selector': out.set(d.input, held ?? d.state.on); break;
+      case 'estop': if (d.input) out.set(d.input, byp(d) || !d.state.pressed); break;
+      case 'safetyRelay': out.set(d.input, byp(d) || !estopPressed); break;
+      case 'sensor': out.set(d.input, held ?? d.state.on); break;
       case 'cylinder':
         if (d.extendedInput) out.set(d.extendedInput, d.state.pos >= 0.999);
         if (d.retractedInput) out.set(d.retractedInput, d.state.pos <= 0.001);
         break;
       case 'motor': if (d.feedbackInput) out.set(d.feedbackInput, d.state.feedback); break;
       case 'conveyor':
-        for (const s of d.sensors) out.set(s.input, d.state.parts.some((p) => Math.abs(p.pos - s.position) <= SENSOR_WINDOW));
+        for (const s of d.sensors) out.set(s.input, held ?? d.state.parts.some((p) => Math.abs(p.pos - s.position) <= SENSOR_WINDOW));
         break;
       default: break;
     }
@@ -432,14 +449,15 @@ export function stepMachine(model: MachineModel, plcOutputs: OutputReader, dtMs:
     if (d.kind === 'cylinder') {
       const ext = out(d.extendOutput);
       const ret = d.retractOutput ? out(d.retractOutput) : !ext;
-      const v = dtMs / Math.max(1, d.travelMs);
+      const v = d.bypass?.on ? 1 : dtMs / Math.max(1, d.travelMs); // bypassed: sensors follow the valve at once
       if (ext && !ret) d.state.pos = Math.min(1, d.state.pos + v);
       else if (ret && !ext) d.state.pos = Math.max(0, d.state.pos - v);
     } else if (d.kind === 'motor') {
       const on = out(d.output);
       d.state.running = on;
       if (on) d.state.angle = (d.state.angle + dtMs * 0.6) % 360;
-      if (on !== d.state.feedback) {
+      if (d.bypass?.on) { d.state.feedback = on; d.state.fbTimerMs = 0; }
+      else if (on !== d.state.feedback) {
         d.state.fbTimerMs += dtMs;
         if (d.state.fbTimerMs >= d.feedbackDelayMs) { d.state.feedback = on; d.state.fbTimerMs = 0; }
       } else d.state.fbTimerMs = 0;
@@ -514,4 +532,12 @@ export function deviceAddresses(d: SimDevice): { inputs: string[]; outputs: stri
     case 'indicator': return { inputs: [], outputs: [d.output] };
     case 'stackLight': return { inputs: [], outputs: d.segments.map((s) => s.output) };
   }
+}
+
+/** Turn a device bypass on/off and optionally set its held value. */
+export function setDeviceBypass(model: MachineModel, id: string, on: boolean, value?: boolean): void {
+  const d = model.devices.find((x) => x.id === id);
+  if (!d?.bypass) return;
+  d.bypass.on = on;
+  if (value !== undefined) d.bypass.value = value;
 }

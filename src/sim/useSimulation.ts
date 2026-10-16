@@ -5,7 +5,7 @@ import { SimController } from './controller';
 import type { SimHandle } from './controller';
 import type { SimIOPoint } from './machineModel';
 
-export type { SimHandle, SimSnapshot, LogEntry } from './controller';
+export type { SimHandle, SimSnapshot, LogEntry, BlockSignal } from './controller';
 
 /**
  * One simulator per (program, io, wiring) *content*: a parent that rebuilds

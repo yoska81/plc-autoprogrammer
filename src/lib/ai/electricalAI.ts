@@ -2,6 +2,7 @@ import type { Effort } from '../../store/useSettingsStore';
 import type { CpuModel, PlcProfile } from '../../plc/profile';
 import type { IOPoint } from '../../types/io';
 import type { DesignInputs, ElectricalDesign, FieldDeviceType, MotorSpec } from '../../electrical/types';
+import type { Region } from '../../store/useProjectStore';
 import { CATALOG } from '../../electrical/catalog';
 import { callClaude } from './anthropic';
 
@@ -46,7 +47,7 @@ function designSchema(addresses: string[]) {
         tag: { type: 'string' },
         description: { type: 'string' },
         hp: { type: 'number' },
-        voltage: { type: 'string', enum: ['120VAC-1PH', '208VAC-3PH', '240VAC-3PH', '480VAC-3PH'] },
+        voltage: { type: 'string', enum: ['120VAC-1PH', '208VAC-3PH', '240VAC-3PH', '480VAC-3PH', '600VAC-3PH'] },
         starter: { type: 'string', enum: ['contactor-overload', 'motor-protector', 'vfd'] },
         reversing: { type: 'boolean' },
       }),
@@ -61,15 +62,21 @@ function catalogText(): string {
   }).join('\n');
 }
 
+const REGION_RULES: Record<Region, string> = {
+  US: 'United States: NEC (NFPA 70), NFPA 79 and UL 508A. Protect branch circuits with UL 489 circuit breakers (or UL 489 motor protectors / manual motor controllers listed for group installation); control circuits with UL 489 breakers or Class CC fuses. Mark the panel SCCR per UL 508A Supplement SB.',
+  Canada: 'Canada: CEC (CSA C22.1) and CSA C22.2 No. 14, CSA C22.2 No. 286 panel practice. Protect branch circuits and the control transformer with HRC fuses (Class J or CC in fuse holders / fused disconnect) rather than breakers. Typical supply is 600 V 3-phase (347/600 V); size parts for 600 V. Use CSA-certified parts.',
+};
+
 const SYSTEM = `You are a senior electrical controls engineer designing an industrial control panel for a machine in North America. Your design is turned directly into the schematic drawings, panel layout, terminal plan and bill of materials, so it must be complete and buildable.
 
 Design practice to follow:
-- NFPA 79 and UL 508A practice: main disconnect with lockable handle, branch-circuit protection for every motor and for the control power supply, 24VDC control voltage, ground bar, and every field device wired through terminal blocks.
+- Follow the electrical code given in the request (see "Electrical code" below for the region's rules).
+- NFPA 79 / UL 508A (US) or CSA C22.2 No. 14 / CEC (Canada) practice: main disconnect with lockable handle, branch-circuit protection for every motor and for the control power supply, 24VDC control voltage, ground bar, and every field device wired through terminal blocks.
 - Size motor branch protection and starters from the motor's full-load current (NEC Table 430.250 values for 3-phase motors) and the parts' ratings in the catalog. Size the 24VDC power supply for the PLC, I/O, sensors, solenoids, pilot lights, relay and contactor coils, with at least 25% margin.
 - Choose PLC expansion modules so all I/O fits with about 20% spare points.
 - E-stop: dual-channel E-stop into a safety relay that removes power from the motion outputs (contactor coils / VFD enable). PLC monitors the safety relay status.
 - Choose the enclosure and back panel so the layout fits with about 25% spare space, and include DIN rail, wire duct, terminal blocks (feed-through, ground, end plates/stops), operator devices for each pushbutton/selector/pilot light input or output, and the field devices (sensors, solenoid valves) for the I/O list.
-- Check every part's input voltage against what feeds it. The 24VDC power supplies take single-phase ~90–276 VAC: on a 208/240 V supply feed one from two phases or line-neutral; on a 480 V supply use a control power transformer (480→120 VAC, sized for the load with margin) or a 3-phase 480 V power supply if the catalog has one. Never connect a part to a voltage above its rating; if the catalog has no suitable part, say so in "notes".
+- Check every part's input voltage against what feeds it. The 24VDC power supplies take single-phase ~90–276 VAC: on a 208/240 V supply feed one from two phases or line-neutral; on a 480 V or 600 V supply use a control power transformer (480/600→120 VAC, sized for the load with margin, with primary fuses) or a 3-phase power supply rated for that voltage if the catalog has one. Most catalog breakers and motor protectors are not rated for 600 V: on 600 V use fuses and parts whose catalog voltage rating is 600 V. Never connect a part to a voltage above its rating; if the catalog has no suitable part, say so in "notes".
 - Use the designer's required parts exactly as given.
 - Catalog specifics: an enclosure needs its matching subpanel (enclosure category, ratings kind=subpanel). The rotary disconnect needs its switch, a handle and a shaft. A reversing starter is two contactors plus SZ-RM, SZ-ERW1A and SZ-ERW1B. For a dual-channel E-stop into a safety relay, add an ECX1030-2 contact block to the E-stop. Order terminal end covers/brackets and markers with the terminal blocks.
 - Use only part numbers from the catalog. If something needed is not in the catalog, leave it out and say so in "notes".
@@ -86,6 +93,8 @@ export async function generateElectricalDesign(opts: {
   io: IOPoint[]; addresses: Map<string, string>;
   machineDescription: string;
   inputs: DesignInputs;
+  /** Electrical code region; default US. */
+  region?: Region;
 }): Promise<{ design: ElectricalDesign; explanation: string; reasoning: string | null }> {
   const ioAddrs = opts.io.map((p) => opts.addresses.get(p.id) || '').filter(Boolean);
   const ioText = opts.io.map((p) => `${opts.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.category}\t${p.description || '(no description)'}`).join('\n') || '(no I/O yet)';
@@ -96,6 +105,8 @@ export async function generateElectricalDesign(opts: {
 ${opts.machineDescription || '(not given)'}
 
 PLC: ${opts.profile.vendor} ${opts.profile.name}, CPU ${opts.cpu.label}
+
+Electrical code: ${REGION_RULES[opts.region ?? 'US']}
 
 Supply: ${opts.inputs.supply}. Enclosure: ${opts.inputs.enclosureRating}.
 Designer notes: ${opts.inputs.notes || '(none)'}

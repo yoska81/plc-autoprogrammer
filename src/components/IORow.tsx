@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { TrashIcon, PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { TrashIcon } from '@heroicons/react/24/outline';
 import type { IOPoint, IOCategory } from '../types/io';
 import { useIOStore } from '../store/useIOStore';
 
@@ -8,6 +7,10 @@ const ALL_CATEGORIES: IOCategory[] = [
   'Conveyor', 'Pneumatic', 'Vacuum', 'Servo/Axis', 'Station 1',
   'Station 2', 'Analog/Process', 'Spare',
 ];
+
+export const ioTh = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50 whitespace-nowrap';
+const td = 'px-3 py-1 border-b border-steel-100';
+const cell = 'w-full bg-transparent border border-transparent rounded-sm px-1.5 py-0.5 hover:border-steel-300 focus:bg-white focus:border-brand-500 focus:outline-none';
 
 interface IORowProps {
   point: IOPoint;
@@ -20,97 +23,47 @@ interface IORowProps {
 export function IORow({ point, address, duplicate }: IORowProps) {
   const { updateDescription, updateCategory, deletePoint, setPlcAddress } = useIOStore();
   const isManual = Boolean(point.plcAddress);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(point.description);
-
-  function commitEdit() {
-    updateDescription(point.id, draft);
-    setEditing(false);
-  }
-
-  function cancelEdit() {
-    setDraft(point.description);
-    setEditing(false);
-  }
-
-  const rowBg = point.type === 'input' ? 'bg-blue-50 hover:bg-blue-100' : 'bg-amber-50 hover:bg-amber-100';
 
   return (
-    <tr className={`${rowBg} transition-colors`}>
-      <td className="px-4 py-2 font-mono text-sm font-semibold text-gray-700 whitespace-nowrap">
-        {point.id}
+    <tr className="hover:bg-brand-50/60 group">
+      <td className={`${td} font-mono text-steel-700 whitespace-nowrap`}>{point.id}</td>
+      <td className={`${td} whitespace-nowrap`}>
+        <div className="flex items-center gap-1">
+          <input
+            key={address}
+            defaultValue={isManual ? address : ''}
+            placeholder={address || '—'}
+            aria-label={`PLC address for ${point.id}`}
+            title={isManual ? 'Manual address. Clear it to assign automatically.' : 'Assigned automatically. Type to override.'}
+            onBlur={(e) => { if (e.target.value.trim().toUpperCase() !== (point.plcAddress ?? '')) setPlcAddress(point.id, e.target.value); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+            className={`${cell} w-20 font-mono ${duplicate ? 'border-red-400 text-red-700' : isManual ? 'text-brand-800 font-semibold' : 'placeholder:text-steel-700'}`}
+          />
+          {duplicate && <span className="text-[10px] text-white bg-red-600 px-1 rounded-sm" title="Two I/O points use this address">DUP</span>}
+          {isManual && !duplicate && <span className="text-[10px] text-brand-700" title="Manual address">M</span>}
+        </div>
       </td>
-      <td className="px-4 py-2 whitespace-nowrap">
+      <td className={td}>
         <input
-          key={address}
-          defaultValue={isManual ? address : ''}
-          placeholder={address || '—'}
-          aria-label={`PLC address for ${point.id}`}
-          title={isManual ? 'Manual address. Clear it to assign automatically.' : 'Assigned automatically. Type to override.'}
-          onBlur={(e) => { if (e.target.value.trim().toUpperCase() !== (point.plcAddress ?? '')) setPlcAddress(point.id, e.target.value); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-          className={`w-20 font-mono text-sm px-1.5 py-0.5 rounded border bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 ${
-            duplicate ? 'border-red-400 text-red-700' : isManual ? 'border-blue-300 text-gray-800' : 'border-transparent text-gray-500 placeholder:text-gray-500'
-          }`}
+          key={point.description}
+          defaultValue={point.description}
+          placeholder="Description"
+          aria-label={`Description of ${point.id}`}
+          onBlur={(e) => { if (e.target.value !== point.description) updateDescription(point.id, e.target.value); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { e.currentTarget.value = point.description; e.currentTarget.blur(); } }}
+          className={`${cell} text-steel-900 placeholder:italic placeholder:text-steel-400`}
         />
-        {duplicate && <span className="ml-1 text-xs text-red-600" title="Two I/O points use this address">dup</span>}
       </td>
-      <td className="px-4 py-2 text-xs">
-        <span className={`px-2 py-0.5 rounded font-medium ${point.type === 'input' ? 'bg-blue-200 text-blue-800' : 'bg-amber-200 text-amber-800'}`}>
-          {point.type === 'input' ? 'INPUT' : 'OUTPUT'}
-        </span>
-      </td>
-      <td className="px-4 py-2">
-        <select
-          value={point.category}
-          onChange={(e) => updateCategory(point.id, e.target.value as IOCategory)}
-          className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
-        >
-          {ALL_CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
+      <td className={td}>
+        <select value={point.category} onChange={(e) => updateCategory(point.id, e.target.value as IOCategory)}
+          aria-label={`Category of ${point.id}`} className={`${cell} text-steel-700`}>
+          {ALL_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </td>
-      <td className="px-4 py-2 w-full">
-        {editing ? (
-          <div className="flex items-center gap-1">
-            <input
-              autoFocus
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitEdit();
-                if (e.key === 'Escape') cancelEdit();
-              }}
-              className="flex-1 text-sm border border-blue-400 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
-            />
-            <button onClick={commitEdit} className="text-green-600 hover:text-green-800">
-              <CheckIcon className="w-4 h-4" />
-            </button>
-            <button onClick={cancelEdit} className="text-gray-400 hover:text-gray-600">
-              <XMarkIcon className="w-4 h-4" />
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 group">
-            <span className={`text-sm flex-1 ${point.description ? 'text-gray-800' : 'text-gray-400 italic'}`}>
-              {point.description || 'Click to add description'}
-            </span>
-            <button
-              onClick={() => { setDraft(point.description); setEditing(true); }}
-              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
-            >
-              <PencilIcon className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-      </td>
-      <td className="px-4 py-2">
-        <button
-          onClick={() => deletePoint(point.id)}
-          className="text-gray-300 hover:text-red-500 transition-colors"
-          title="Delete"
-        >
+      <td className={`${td} text-xs text-steel-500 whitespace-nowrap`}>{point.deviceType ?? '—'}</td>
+      <td className={td}>
+        <button onClick={() => deletePoint(point.id)} title="Delete" aria-label={`Delete ${point.id}`}
+          className="text-steel-300 opacity-0 group-hover:opacity-100 hover:text-red-600">
           <TrashIcon className="w-4 h-4" />
         </button>
       </td>

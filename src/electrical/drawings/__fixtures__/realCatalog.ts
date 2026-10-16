@@ -78,3 +78,31 @@ export function realCatalogContext(): DrawingContext {
     io: design.ioWiring.map((w) => ({ address: w.address, description: w.description, type: w.address.startsWith('X') ? 'input' as const : 'output' as const })),
   };
 }
+
+/** Canada / 600 V variant: Class CC fuses instead of breakers, 600 V control transformer, door HMI. */
+export function realCatalogCanadaContext(): DrawingContext {
+  const base = realCatalogContext();
+  const d = base.design;
+  const drop = new Set(['CB1', 'CB2']);
+  const components = [
+    ...d.components.filter((c) => !drop.has(c.tag)),
+    C('FU1', 'EHCC3DU', 'M1 branch fuses', 'M1'),
+    C('FU1F', 'EDCC3', 'Fuses for FU1', 'M1', 3),
+    C('FU2', 'EHCC2DU', 'Transformer T1 primary fuses'),
+    C('FU2F', 'EDCC1', 'Fuses for FU2', null, 2),
+    C('T1', 'CT-015-060-12-1', 'Control power transformer 600:120V'),
+    C('FU3', 'EHCC1DU', 'PS1 secondary protection'),
+    C('FU3F', 'EDCC2', 'Fuses for FU3'),
+  ];
+  return {
+    ...base,
+    projectName: 'Real Catalog Check CA600',
+    region: 'Canada',
+    hmiPartNumber: 'CM5-T4W',
+    design: {
+      ...d,
+      inputs: { ...d.inputs, supply: '600VAC-3PH', motors: [{ tag: 'M1', description: 'Conveyor', hp: 1, voltage: '600VAC-3PH', starter: 'contactor-overload', reversing: false }] },
+      components,
+    },
+  };
+}

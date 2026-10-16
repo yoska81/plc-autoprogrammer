@@ -3,10 +3,15 @@
  *
  * One call to `step(dt)` is one PLC scan:
  *   1. advance the clock and update system bits (SC1 / SC2 / SC7),
- *   2. copy the field inputs (plus forces) into the X input image,
+ *   2. copy the field inputs into the X input image and apply forces,
  *   3. solve every rung top to bottom; internal bits written by a rung are seen
  *      by the rungs below it in the same scan (CLICK immediate memory),
- *   4. apply output forces; the Y image is then what the outputs show.
+ *   4. re-apply forces; the Y image is then what the outputs show.
+ *
+ * Forces (and block "holds", which use the same mechanism) win everywhere: a
+ * forced bit/word reads its forced value for the whole scan and program
+ * writes to it are ignored. Bypassed rungs are not executed at all, so their
+ * outputs hold their last value.
  *
  * Everything is in plain Maps so a UI, a test or an HMI can read it directly.
  */
@@ -38,8 +43,12 @@ export interface SimState {
   counters: Map<string, CounterState>;
   /** Field input values (what the wiring presents to the X terminals). */
   inputs: Map<string, boolean>;
-  /** Forced bits (X forces apply at input read, others after the scan). */
+  /** Forced bits: read as this value all scan; program writes are ignored. */
   forces: Map<string, boolean>;
+  /** Forced words (DS, DD, DF ...). */
+  wordForces: Map<string, number>;
+  /** Rung ids that are not executed (outputs hold their last value). */
+  bypassedRungs: Set<string>;
   scanCount: number;
   timeMs: number;
   /** Runtime problems (bad MATH formula ...), unique messages. */
@@ -52,6 +61,8 @@ export interface RungPower {
   /** Per element: the contact itself is closed / the compare is true. */
   closed: boolean[][];
   rungTrue: boolean;
+  /** Rung was skipped this scan (bypassed); the rest is the last executed state. */
+  bypassed?: boolean;
 }
 
 export interface BitChange {
@@ -65,8 +76,12 @@ export interface Simulator {
   readonly program: LadderProgram;
   /** Set a field input (X). Takes effect on the next scan's input read. */
   setInput(address: string, value: boolean): void;
-  /** Force a bit ON/OFF, or pass null to remove the force. */
-  force(address: string, value: boolean | null): void;
+  /** Force a bit ON/OFF or a word to a number; null removes the force. */
+  force(address: string, value: boolean | number | null): void;
+  /** Remove every bit and word force. */
+  clearForces(): void;
+  /** Skip (true) or execute (false) a rung. */
+  bypassRung(rungId: string, bypassed: boolean): void;
   readBit(address: string): boolean;
   readWord(address: string): number;
   /** Bit or word, depending on the address. Constants return their number. */
@@ -77,7 +92,7 @@ export interface Simulator {
   step(dtMs?: number): BitChange[];
   /** Run scans for `ms` of simulated time. */
   run(ms: number, scanMs?: number): BitChange[];
-  /** Power-cycle: clear all memory, inputs, forces and the clock. */
+  /** Power-cycle: clear memory, inputs and the clock. Forces and rung bypasses are kept. */
   reset(): void;
   /** Power flow of the last scan, per rung id. */
   rungPower(): Map<string, RungPower>;
@@ -197,7 +212,8 @@ function compare(l: number, op: CompareOp, r: number): boolean {
 function emptyState(): SimState {
   return {
     bits: new Map(), words: new Map(), timers: new Map(), counters: new Map(),
-    inputs: new Map(), forces: new Map(), scanCount: 0, timeMs: 0, errors: [],
+    inputs: new Map(), forces: new Map(), wordForces: new Map(), bypassedRungs: new Set(),
+    scanCount: 0, timeMs: 0, errors: [],
   };
 }
 
@@ -215,10 +231,13 @@ export function createSimulator(program: LadderProgram): Simulator {
     if (isBitAddress(a)) return readBit(a) ? 1 : 0;
     return state.words.get(a) ?? 0;
   };
+  /** Program/HMI bit write; forced bits keep their forced value. */
+  const setBit = (a: string, v: boolean) => { if (!state.forces.has(a)) state.bits.set(a, v); };
+  const setWord = (a: string, v: number) => { if (!state.wordForces.has(a)) state.words.set(a, v); };
   const writeWord = (raw: string, v: number) => {
     const a = normAddress(raw);
-    if (isBitAddress(a)) state.bits.set(a, v !== 0);
-    else state.words.set(a, coerceWord(a, v));
+    if (isBitAddress(a)) setBit(a, v !== 0);
+    else setWord(a, coerceWord(a, v));
   };
   const addError = (msg: string) => { if (!state.errors.includes(msg)) state.errors.push(msg); };
 
@@ -279,8 +298,8 @@ export function createSimulator(program: LadderProgram): Simulator {
       }
       if (resetOn && !on) { t.done = false; t.accMs = 0; }
     }
-    state.bits.set(a, t.done);
-    state.words.set(`TD${a.slice(1)}`, Math.floor(t.accMs / unitMs(o.unit)));
+    setBit(a, t.done);
+    setWord(`TD${a.slice(1)}`, Math.floor(t.accMs / unitMs(o.unit)));
   }
 
   function execCounter(o: Extract<LadderOutput, { type: 'CNT' }>, on: boolean, key: string) {
@@ -302,16 +321,16 @@ export function createSimulator(program: LadderProgram): Simulator {
       c.value = Math.max(-2147483648, Math.min(2147483647, c.value));
     }
     c.done = o.direction === 'DOWN' ? c.value <= 0 : c.value >= preset;
-    state.bits.set(a, c.done);
-    state.words.set(`CTD${a.slice(2)}`, c.value);
+    setBit(a, c.done);
+    setWord(`CTD${a.slice(2)}`, c.value);
   }
 
   function execOutputs(rung: Rung, ri: number, on: boolean, dt: number) {
     rung.outputs.forEach((o, k) => {
       switch (o.type) {
-        case 'OUT': state.bits.set(normAddress(o.address), on); break;
-        case 'SET': if (on) state.bits.set(normAddress(o.address), true); break;
-        case 'RST': if (on) state.bits.set(normAddress(o.address), false); break;
+        case 'OUT': setBit(normAddress(o.address), on); break;
+        case 'SET': if (on) setBit(normAddress(o.address), true); break;
+        case 'RST': if (on) setBit(normAddress(o.address), false); break;
         case 'TMR': execTimer(o, on, dt); break;
         case 'CNT': execCounter(o, on, `cnt:${ri}:${rung.id}:${k}`); break;
         case 'COPY': if (on) writeWord(o.dest, readWord(o.source)); break;
@@ -330,6 +349,11 @@ export function createSimulator(program: LadderProgram): Simulator {
     });
   }
 
+  function applyForces() {
+    for (const [a, v] of state.forces) state.bits.set(a, v);
+    for (const [a, v] of state.wordForces) state.words.set(a, v);
+  }
+
   function step(dtMs = 10): BitChange[] {
     const before = new Map(state.bits);
     state.timeMs += dtMs;
@@ -339,17 +363,21 @@ export function createSimulator(program: LadderProgram): Simulator {
     state.bits.set('SC7', Math.floor(state.timeMs / 500) % 2 === 1);
     // input image
     for (const [a, v] of state.inputs) state.bits.set(a, v);
-    for (const [a, v] of state.forces) if (a.startsWith('X')) state.bits.set(a, v);
+    applyForces();
     // logic
     const next = new Map<string, RungPower>();
     program.rungs.forEach((rung, ri) => {
+      if (state.bypassedRungs.has(rung.id)) {
+        const last = power.get(rung.id);
+        next.set(rung.id, { branches: last?.branches ?? [], closed: last?.closed ?? [], rungTrue: last?.rungTrue ?? false, bypassed: true });
+        return;
+      }
       const p = solveRung(rung, ri);
       next.set(rung.id, p);
       execOutputs(rung, ri, p.rungTrue, dtMs);
     });
     power = next;
-    // output forces (Y, C ...)
-    for (const [a, v] of state.forces) if (!a.startsWith('X')) state.bits.set(a, v);
+    applyForces();
     state.scanCount++;
 
     const changes: BitChange[] = [];
@@ -366,8 +394,24 @@ export function createSimulator(program: LadderProgram): Simulator {
     setInput(address, value) { state.inputs.set(normAddress(address), value); },
     force(address, value) {
       const a = normAddress(address);
-      if (value === null) state.forces.delete(a);
-      else state.forces.set(a, value);
+      if (value === null) {
+        state.forces.delete(a); state.wordForces.delete(a);
+        if (a.startsWith('X')) state.bits.set(a, state.inputs.get(a) ?? false); // back to the field value
+        return;
+      }
+      if (isBitAddress(a)) state.forces.set(a, typeof value === 'number' ? value !== 0 : value);
+      else state.wordForces.set(a, coerceWord(a, typeof value === 'boolean' ? (value ? 1 : 0) : value));
+      // show the forced value right away (also while paused); X stays a field input
+      if (isBitAddress(a)) { if (!a.startsWith('X')) state.bits.set(a, state.forces.get(a)!); }
+      else state.words.set(a, state.wordForces.get(a)!);
+    },
+    clearForces() {
+      for (const a of state.forces.keys()) if (a.startsWith('X')) state.bits.set(a, state.inputs.get(a) ?? false);
+      state.forces.clear(); state.wordForces.clear();
+    },
+    bypassRung(rungId, bypassed) {
+      if (bypassed) state.bypassedRungs.add(rungId);
+      else state.bypassedRungs.delete(rungId);
     },
     readBit,
     readWord,
@@ -378,7 +422,7 @@ export function createSimulator(program: LadderProgram): Simulator {
     write(address, value) {
       const a = normAddress(address);
       if (a.startsWith('X')) { state.inputs.set(a, !!value); return; }
-      if (isBitAddress(a)) state.bits.set(a, typeof value === 'number' ? value !== 0 : value);
+      if (isBitAddress(a)) setBit(a, typeof value === 'number' ? value !== 0 : value);
       else writeWord(a, typeof value === 'boolean' ? (value ? 1 : 0) : value);
     },
     step,
@@ -395,7 +439,8 @@ export function createSimulator(program: LadderProgram): Simulator {
     reset() {
       const fresh = emptyState();
       state.bits = fresh.bits; state.words = fresh.words; state.timers = fresh.timers;
-      state.counters = fresh.counters; state.inputs = fresh.inputs; state.forces = fresh.forces;
+      state.counters = fresh.counters; state.inputs = fresh.inputs;
+      // forces and rung bypasses are test settings: they survive a PLC reset
       state.scanCount = 0; state.timeMs = 0; state.errors = [];
       edges = new Map();
       power = new Map();

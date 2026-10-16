@@ -44,11 +44,14 @@ const output = {
 const rung = obj({
   id: str,
   comment: str,
+  /** Block id from program.blocks, or "" for none. */
+  block: str,
   branches: { type: 'array', items: { type: 'array', items: element } },
   outputs: { type: 'array', items: output },
 });
 
 const program = obj({
+  blocks: { type: 'array', items: obj({ id: str, name: str, description: str }) },
   rungs: { type: 'array', items: rung },
   tags: { type: 'array', items: obj({ address: str, nickname: str, comment: str }) },
 });

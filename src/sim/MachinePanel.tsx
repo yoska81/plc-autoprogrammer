@@ -14,6 +14,8 @@ export interface MachineActions {
   toggle(id: string): void;
   addPart(id: string): void;
   removePart(id: string): void;
+  /** Bypass a device (healthy without the plant model); value = held input value. */
+  setBypass(id: string, on: boolean, value?: boolean): void;
 }
 
 interface Props {
@@ -21,6 +23,8 @@ interface Props {
   bits: Map<string, boolean>;
   inputs: Map<string, boolean>;
   actions: MachineActions;
+  /** Only show these device ids (block view); null/undefined = all. */
+  visible?: Set<string> | null;
 }
 
 const LIGHT: Record<LightColor, { on: string; off: string; glow: string }> = {
@@ -50,7 +54,7 @@ function AddrChip({ address, on, kind }: { address: string; on: boolean; kind: '
   return (
     <span
       className={`inline-flex items-center gap-1 rounded px-1.5 py-px font-mono text-[10.5px] font-semibold ${
-        on ? (kind === 'in' ? 'bg-sky-100 text-sky-800' : 'bg-emerald-100 text-emerald-800') : 'bg-slate-100 text-slate-500'
+        on ? (kind === 'in' ? 'bg-brand-100 text-brand-800' : 'bg-emerald-100 text-emerald-800') : 'bg-steel-100 text-steel-500'
       }`}
       title={`${address} is ${on ? 'ON' : 'OFF'}`}
     >
@@ -60,12 +64,57 @@ function AddrChip({ address, on, kind }: { address: string; on: boolean; kind: '
   );
 }
 
-function Card({ title, tag, children, accent }: { title: string; tag?: string; children: React.ReactNode; accent?: string }) {
+const BYPASS_HELP: Partial<Record<SimDevice['kind'], string>> = {
+  cylinder: 'Bypass: the position sensors follow the solenoid instantly',
+  motor: 'Bypass: the running feedback follows the command instantly',
+  estop: 'Bypass: the E-stop contact always reads healthy',
+  safetyRelay: 'Bypass: the safety relay always reads OK',
+  conveyor: 'Bypass: hold the conveyor sensors at a chosen value',
+  sensor: 'Bypass: hold the sensor at a chosen value',
+  pushbutton: 'Bypass: hold the button input at a chosen value',
+  selector: 'Bypass: hold the selector input at a chosen value',
+};
+const HAS_VALUE = new Set<SimDevice['kind']>(['sensor', 'pushbutton', 'selector', 'conveyor']);
+
+/** "Bypass" button, or the amber BYPASSED state with an optional held value. */
+function BypassControl({ d, onSet }: { d: SimDevice; onSet: MachineActions['setBypass'] }) {
+  const b = d.bypass;
+  if (!b) return null;
+  if (!b.on) {
+    return (
+      <button type="button" onClick={() => onSet(d.id, true)} title={BYPASS_HELP[d.kind]}
+        className="rounded border border-steel-300 bg-white px-1.5 py-px text-[10.5px] font-semibold text-steel-500 hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700">
+        Bypass
+      </button>
+    );
+  }
+  const seg = (v: boolean) => `px-1.5 py-px text-[10px] font-bold ${b.value === v ? 'bg-amber-500 text-white' : 'bg-white text-amber-700 hover:bg-amber-50'}`;
   return (
-    <section className={`rounded-lg border bg-white shadow-sm ${accent ?? 'border-slate-200'}`}>
-      <header className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5">
-        <h3 className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-700" title={title}>{title}</h3>
-        {tag && <span className="rounded bg-slate-100 px-1.5 py-px font-mono text-[10px] text-slate-500">{tag}</span>}
+    <span className="inline-flex items-center gap-1">
+      <button type="button" onClick={() => onSet(d.id, false)} title="Remove the bypass"
+        className="rounded bg-amber-500 px-1.5 py-px text-[10.5px] font-bold text-white hover:bg-amber-600">
+        BYPASSED ✕
+      </button>
+      {HAS_VALUE.has(d.kind) && (
+        <span className="inline-flex overflow-hidden rounded border border-amber-400" title="Held input value">
+          <button type="button" className={seg(true)} onClick={() => onSet(d.id, true, true)}>ON</button>
+          <button type="button" className={`${seg(false)} border-l border-amber-400`} onClick={() => onSet(d.id, true, false)}>OFF</button>
+        </span>
+      )}
+    </span>
+  );
+}
+
+function Card({ title, tag, children, accent, bypass }: {
+  title: string; tag?: string; children: React.ReactNode; accent?: string; bypass?: { d: SimDevice; onSet: MachineActions['setBypass'] };
+}) {
+  const on = !!bypass?.d.bypass?.on;
+  return (
+    <section className={`rounded-lg border bg-white shadow-sm ${on ? 'border-amber-400 ring-1 ring-amber-300' : accent ?? 'border-steel-200'}`}>
+      <header className={`flex items-center gap-2 border-b px-3 py-1.5 ${on ? 'border-amber-200 bg-amber-50' : 'border-steel-100'}`}>
+        <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-steel-800" title={title}>{title}</h3>
+        {tag && <span className="rounded bg-steel-100 px-1.5 py-px font-mono text-[10px] text-steel-500">{tag}</span>}
+        {bypass && <BypassControl d={bypass.d} onSet={bypass.onSet} />}
       </header>
       <div className="px-3 py-2">{children}</div>
     </section>
@@ -83,7 +132,7 @@ function EstopControl({ d, inputs, onToggle }: { d: EstopDevice; inputs: Map<str
         onClick={onToggle}
         title={p ? 'E-stop pressed: click to twist-release' : 'Click to press the E-stop (latches)'}
         aria-pressed={p}
-        className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+        className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
       >
         <svg width="64" height="64" viewBox="0 0 64 64">
           <circle cx="32" cy="32" r="31" fill="#facc15" stroke="#a16207" strokeWidth="1" />
@@ -92,8 +141,8 @@ function EstopControl({ d, inputs, onToggle }: { d: EstopDevice; inputs: Map<str
           {!p && <ellipse cx="26" cy="24" rx="7" ry="4" fill="white" opacity="0.25" />}
         </svg>
       </button>
-      <span className="max-w-[88px] text-center text-[11px] font-medium leading-tight text-slate-700">{d.label}</span>
-      <span className={`rounded px-1.5 text-[10px] font-bold ${p ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+      <span className="max-w-[88px] text-center text-[12px] font-medium leading-tight text-steel-700">{d.label}</span>
+      <span className={`rounded px-1.5 text-[10px] font-bold ${p ? 'bg-red-600 text-white' : 'bg-steel-100 text-steel-500'}`}>
         {p ? 'PRESSED' : 'released'}
       </span>
       {d.input && <AddrChip address={d.input} on={inputs.get(d.input) ?? false} kind="in" />}
@@ -110,7 +159,7 @@ function PushbuttonControl({ d, inputs, onPress }: { d: PushbuttonDevice; inputs
         type="button"
         title={`Press and hold (${d.nc ? 'NC contact: input is ON until pressed' : 'NO contact'})`}
         aria-pressed={p}
-        className="touch-none select-none rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+        className="touch-none select-none rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
         onPointerDown={(e) => { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic event */ } onPress(true); }}
         onPointerUp={() => onPress(false)}
         onPointerCancel={() => onPress(false)}
@@ -124,8 +173,8 @@ function PushbuttonControl({ d, inputs, onPress }: { d: PushbuttonDevice; inputs
           {!p && <ellipse cx="23" cy="21" rx="6" ry="3.5" fill="white" opacity="0.3" />}
         </svg>
       </button>
-      <span className="max-w-[88px] text-center text-[11px] font-medium leading-tight text-slate-700">{d.label}</span>
-      <span className="text-[10px] text-slate-400">{d.nc ? 'NC' : 'NO'} · hold</span>
+      <span className="max-w-[88px] text-center text-[12px] font-medium leading-tight text-steel-700">{d.label}</span>
+      <span className="text-[10px] text-steel-400">{d.nc ? 'NC' : 'NO'} · hold</span>
       <AddrChip address={d.input} on={inputs.get(d.input) ?? false} kind="in" />
     </div>
   );
@@ -134,7 +183,7 @@ function PushbuttonControl({ d, inputs, onPress }: { d: PushbuttonDevice; inputs
 function SelectorControl({ d, inputs, onToggle }: { d: SelectorDevice; inputs: Map<string, boolean>; onToggle: () => void }) {
   return (
     <div className="flex flex-col items-center gap-1">
-      <button type="button" onClick={onToggle} title="Click to switch" className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+      <button type="button" onClick={onToggle} title="Click to switch" className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
         <svg width="56" height="56" viewBox="0 0 56 56">
           <circle cx="28" cy="28" r="27" fill="#cbd5e1" stroke="#64748b" strokeWidth="1" />
           <circle cx="28" cy="28" r="20" fill="#1e293b" />
@@ -143,23 +192,25 @@ function SelectorControl({ d, inputs, onToggle }: { d: SelectorDevice; inputs: M
           </g>
         </svg>
       </button>
-      <span className="max-w-[88px] text-center text-[11px] font-medium leading-tight text-slate-700">{d.label}</span>
-      <span className="text-[10px] text-slate-400">{d.state.on ? 'ON' : 'OFF'}</span>
+      <span className="max-w-[88px] text-center text-[12px] font-medium leading-tight text-steel-700">{d.label}</span>
+      <span className="text-[10px] text-steel-400">{d.state.on ? 'ON' : 'OFF'}</span>
       <AddrChip address={d.input} on={inputs.get(d.input) ?? false} kind="in" />
     </div>
   );
 }
 
-function SafetyRelayStatus({ d, inputs }: { d: SafetyRelayDevice; inputs: Map<string, boolean> }) {
+function SafetyRelayStatus({ d, inputs, onSet }: { d: SafetyRelayDevice; inputs: Map<string, boolean>; onSet: MachineActions['setBypass'] }) {
   const ok = inputs.get(d.input) ?? false;
+  const byp = !!d.bypass?.on;
   return (
-    <div className={`flex items-center gap-2 rounded-md border px-2 py-1.5 ${ok ? 'border-emerald-200 bg-emerald-50' : 'border-red-300 bg-red-50'}`}>
+    <div className={`flex flex-wrap items-center gap-2 rounded-md border px-2 py-1.5 ${byp ? 'border-amber-400 bg-amber-50' : ok ? 'border-emerald-200 bg-emerald-50' : 'border-red-300 bg-red-50'}`}>
       <Led on color={ok ? 'green' : 'red'} size={12} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[11.5px] font-semibold text-slate-700">{d.label}{d.tag ? ` (${d.tag})` : ''}</div>
-        <div className={`text-[10.5px] font-bold ${ok ? 'text-emerald-700' : 'text-red-700'}`}>{ok ? 'SAFETY OK' : 'SAFETY TRIPPED (E-stop)'}</div>
+        <div className="truncate text-[11.5px] font-semibold text-steel-700">{d.label}{d.tag ? ` (${d.tag})` : ''}</div>
+        <div className={`text-[10.5px] font-bold ${byp ? 'text-amber-700' : ok ? 'text-emerald-700' : 'text-red-700'}`}>{byp ? 'BYPASSED: reads OK' : ok ? 'SAFETY OK' : 'SAFETY TRIPPED (E-stop)'}</div>
       </div>
       <AddrChip address={d.input} on={ok} kind="in" />
+      <BypassControl d={d} onSet={onSet} />
     </div>
   );
 }
@@ -172,13 +223,19 @@ function OperatorStation({ devices, inputs, actions }: { devices: SimDevice[]; i
   return (
     <Card title="Operator station" accent={tripped ? 'border-red-300' : undefined}>
       <div className="space-y-2">
-        {relays.map((d) => <SafetyRelayStatus key={d.id} d={d} inputs={inputs} />)}
-        <div className="flex flex-wrap justify-around gap-x-2 gap-y-3 pt-1">
+        {relays.map((d) => <SafetyRelayStatus key={d.id} d={d} inputs={inputs} onSet={actions.setBypass} />)}
+        <div className="flex flex-wrap justify-around gap-x-1 gap-y-2 pt-1">
           {controls.map((d) => {
-            if (d.kind === 'estop') return <EstopControl key={d.id} d={d} inputs={inputs} onToggle={() => actions.toggle(d.id)} />;
-            if (d.kind === 'pushbutton') return <PushbuttonControl key={d.id} d={d} inputs={inputs} onPress={(p) => actions.press(d.id, p)} />;
-            if (d.kind === 'selector') return <SelectorControl key={d.id} d={d} inputs={inputs} onToggle={() => actions.toggle(d.id)} />;
-            return null;
+            let ctl: React.ReactNode = null;
+            if (d.kind === 'estop') ctl = <EstopControl d={d} inputs={inputs} onToggle={() => actions.toggle(d.id)} />;
+            else if (d.kind === 'pushbutton') ctl = <PushbuttonControl d={d} inputs={inputs} onPress={(p) => actions.press(d.id, p)} />;
+            else if (d.kind === 'selector') ctl = <SelectorControl d={d} inputs={inputs} onToggle={() => actions.toggle(d.id)} />;
+            return (
+              <div key={d.id} className={`flex flex-col items-center gap-1 rounded-md px-1 py-1 ${d.bypass?.on ? 'bg-amber-50 ring-1 ring-amber-400' : ''}`}>
+                {ctl}
+                <BypassControl d={d} onSet={actions.setBypass} />
+              </div>
+            );
           })}
         </div>
       </div>
@@ -202,14 +259,14 @@ function MotorIcon({ running, angle, size = 40 }: { running: boolean; angle: num
   );
 }
 
-function MotorCard({ d, bits, inputs }: { d: MotorDevice; bits: Map<string, boolean>; inputs: Map<string, boolean> }) {
+function MotorCard({ d, bits, inputs, onSet }: { d: MotorDevice; bits: Map<string, boolean>; inputs: Map<string, boolean>; onSet: MachineActions['setBypass'] }) {
   const on = bits.get(d.output) ?? false;
   return (
-    <Card title={d.label} tag={d.tag}>
+    <Card title={d.label} tag={d.tag} bypass={{ d, onSet }}>
       <div className="flex items-center gap-3">
         <MotorIcon running={d.state.running} angle={d.state.angle} />
         <div className="flex-1">
-          <div className={`text-sm font-bold ${d.state.running ? 'text-emerald-700' : 'text-slate-400'}`}>{d.state.running ? 'RUNNING' : 'STOPPED'}</div>
+          <div className={`text-sm font-bold ${d.state.running ? 'text-emerald-700' : 'text-steel-400'}`}>{d.state.running ? 'RUNNING' : 'STOPPED'}</div>
           <div className="mt-1 flex flex-wrap gap-1">
             <AddrChip address={d.output} on={on} kind="out" />
             {d.feedbackInput && <AddrChip address={d.feedbackInput} on={inputs.get(d.feedbackInput) ?? false} kind="in" />}
@@ -239,23 +296,23 @@ function CylinderDrawing({ d }: { d: CylinderDevice }) {
   );
 }
 
-function CylinderCard({ d, bits, inputs }: { d: CylinderDevice; bits: Map<string, boolean>; inputs: Map<string, boolean> }) {
+function CylinderCard({ d, bits, inputs, onSet }: { d: CylinderDevice; bits: Map<string, boolean>; inputs: Map<string, boolean>; onSet: MachineActions['setBypass'] }) {
   const pos = d.state.pos;
   const status = pos >= 0.999 ? 'EXTENDED' : pos <= 0.001 ? 'RETRACTED' : 'MOVING';
   return (
-    <Card title={`${d.label} cylinder`} tag={d.tag}>
+    <Card title={`${d.label} cylinder`} tag={d.tag} bypass={{ d, onSet }}>
       <CylinderDrawing d={d} />
       <div className="mt-1 flex flex-wrap items-center gap-1">
-        <span className={`mr-1 text-[11px] font-bold ${status === 'EXTENDED' ? 'text-amber-700' : status === 'MOVING' ? 'text-sky-700' : 'text-slate-500'}`}>{status}</span>
-        <span className="text-[10px] text-slate-400">sol</span>
+        <span className={`mr-1 text-[11px] font-bold ${status === 'EXTENDED' ? 'text-amber-700' : status === 'MOVING' ? 'text-brand-700' : 'text-steel-500'}`}>{status}</span>
+        <span className="text-[10px] text-steel-400">sol</span>
         <AddrChip address={d.extendOutput} on={bits.get(d.extendOutput) ?? false} kind="out" />
         {d.retractOutput && <AddrChip address={d.retractOutput} on={bits.get(d.retractOutput) ?? false} kind="out" />}
-        {(d.extendedInput || d.retractedInput) && <span className="ml-1 text-[10px] text-slate-400">sensors</span>}
+        {(d.extendedInput || d.retractedInput) && <span className="ml-1 text-[10px] text-steel-400">sensors</span>}
         {d.retractedInput && <AddrChip address={d.retractedInput} on={inputs.get(d.retractedInput) ?? false} kind="in" />}
         {d.extendedInput && <AddrChip address={d.extendedInput} on={inputs.get(d.extendedInput) ?? false} kind="in" />}
       </div>
-      <div className="mt-0.5 text-[10px] text-slate-400">
-        {d.retractOutput ? 'double solenoid' : 'spring return'} · {d.state.pos > 0 && d.state.pos < 1 ? `${Math.round(pos * 100)} %` : `${d.travelMs} ms stroke`}
+      <div className="mt-0.5 text-[10px] text-steel-400">
+        {d.retractOutput ? 'double solenoid' : 'spring return'} · {d.bypass?.on ? 'bypassed: sensors follow the valve' : d.state.pos > 0 && d.state.pos < 1 ? `${Math.round(pos * 100)} %` : `${d.travelMs} ms stroke`}
       </div>
     </Card>
   );
@@ -273,7 +330,7 @@ function ConveyorCard({ d, devices, bits, inputs, actions }: {
   const pushX = xOf(PART_END);
   const rodLen = 6 + (pusher?.state.pos ?? 0) * 36;
   return (
-    <Card title={/conveyor|belt/i.test(d.label) ? d.label : `${d.label} conveyor`} tag={motor?.tag}>
+    <Card title={/conveyor|belt/i.test(d.label) ? d.label : `${d.label} conveyor`} tag={motor?.tag} bypass={{ d, onSet: actions.setBypass }}>
       <svg width="100%" viewBox={`0 0 ${W} 100`} className="mx-auto block max-h-[150px]">
         {/* pusher above the end of the belt */}
         {pusher && (
@@ -290,8 +347,8 @@ function ConveyorCard({ d, devices, bits, inputs, actions }: {
           const x = xOf(s.position);
           return (
             <g key={s.input}>
-              <rect x={x - 4} y={beltY - 40} width="8" height="6" rx="1" fill={on ? '#0ea5e9' : '#64748b'} />
-              <line x1={x} y1={beltY - 34} x2={x} y2={beltY - 1} stroke={on ? '#0ea5e9' : '#f87171'} strokeWidth={on ? 2 : 1} strokeDasharray={on ? undefined : '3 2'} />
+              <rect x={x - 4} y={beltY - 40} width="8" height="6" rx="1" fill={on ? '#1a4fc6' : '#64748b'} />
+              <line x1={x} y1={beltY - 34} x2={x} y2={beltY - 1} stroke={on ? '#1a4fc6' : '#f87171'} strokeWidth={on ? 2 : 1} strokeDasharray={on ? undefined : '3 2'} />
             </g>
           );
         })}
@@ -315,46 +372,49 @@ function ConveyorCard({ d, devices, bits, inputs, actions }: {
       <div className="mt-1 flex flex-wrap items-center gap-2">
         {motor && <MotorIcon running={running} angle={motor.state.angle} size={28} />}
         <div className="flex flex-1 flex-wrap items-center gap-1">
-          <span className={`mr-1 text-[11px] font-bold ${running ? 'text-emerald-700' : 'text-slate-400'}`}>{running ? 'RUNNING' : 'STOPPED'}</span>
+          <span className={`mr-1 text-[11px] font-bold ${running ? 'text-emerald-700' : 'text-steel-400'}`}>{running ? 'RUNNING' : 'STOPPED'}</span>
           {motor && <AddrChip address={motor.output} on={bits.get(motor.output) ?? false} kind="out" />}
           {motor?.feedbackInput && <AddrChip address={motor.feedbackInput} on={inputs.get(motor.feedbackInput) ?? false} kind="in" />}
         </div>
+        {motor?.bypass && <span className="flex items-center gap-1 text-[10.5px] text-steel-500">motor <BypassControl d={motor} onSet={actions.setBypass} /></span>}
       </div>
       <ul className="mt-1 space-y-0.5">
         {d.sensors.map((s) => (
-          <li key={s.input} className="flex items-center gap-1.5 text-[11px] text-slate-600">
+          <li key={s.input} className="flex items-center gap-1.5 text-[11px] text-steel-600">
             <AddrChip address={s.input} on={inputs.get(s.input) ?? false} kind="in" />
             <span className="truncate">{s.label}</span>
           </li>
         ))}
       </ul>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-        <button type="button" onClick={() => actions.addPart(d.id)} className="whitespace-nowrap rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50">+ Add part</button>
-        <button type="button" onClick={() => actions.removePart(d.id)} disabled={!d.state.parts.length} className="whitespace-nowrap rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">Remove part</button>
-        <span className="ml-auto whitespace-nowrap text-[10.5px] text-slate-500"><b className="text-slate-700">{d.state.removed}</b> parts done</span>
+        <button type="button" onClick={() => actions.addPart(d.id)} className="whitespace-nowrap rounded border border-steel-300 bg-white px-2 py-0.5 text-[11px] font-medium text-steel-700 hover:bg-steel-50">+ Add part</button>
+        <button type="button" onClick={() => actions.removePart(d.id)} disabled={!d.state.parts.length} className="whitespace-nowrap rounded border border-steel-300 bg-white px-2 py-0.5 text-[11px] font-medium text-steel-700 hover:bg-steel-50 disabled:opacity-40">Remove part</button>
+        <span className="ml-auto whitespace-nowrap text-[10.5px] text-steel-500"><b className="text-steel-700">{d.state.removed}</b> parts done</span>
       </div>
-      <div className="mt-0.5 text-[10px] text-slate-400">A part is loaded every {d.spawnEveryMs / 1000} s of belt running; {d.travelMs / 1000} s end to end.</div>
+      <div className="mt-0.5 text-[10px] text-steel-400">A part is loaded every {d.spawnEveryMs / 1000} s of belt running; {d.travelMs / 1000} s end to end.</div>
     </Card>
   );
 }
 
-function SensorsCard({ sensors, inputs, onToggle }: { sensors: SensorDevice[]; inputs: Map<string, boolean>; onToggle: (id: string) => void }) {
+function SensorsCard({ sensors, inputs, onToggle, onSet }: { sensors: SensorDevice[]; inputs: Map<string, boolean>; onToggle: (id: string) => void; onSet: MachineActions['setBypass'] }) {
   return (
     <Card title="Sensors (click to trigger)">
       <ul className="space-y-1">
         {sensors.map((s) => {
           const on = inputs.get(s.input) ?? false;
           return (
-            <li key={s.id}>
+            <li key={s.id} className={`flex items-center gap-1.5 rounded ${s.bypass?.on ? 'bg-amber-50 p-1 ring-1 ring-amber-400' : ''}`}>
               <button
                 type="button"
                 onClick={() => onToggle(s.id)}
-                className={`flex w-full items-center gap-2 rounded border px-2 py-1 text-left text-[11.5px] ${on ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                disabled={!!s.bypass?.on}
+                className={`flex min-w-0 flex-1 items-center gap-2 rounded border px-2 py-1 text-left text-[12px] disabled:cursor-not-allowed ${on ? 'border-brand-300 bg-brand-50' : 'border-steel-200 bg-white hover:bg-steel-50'}`}
               >
                 <Led on={on} color="blue" />
-                <span className="min-w-0 flex-1 truncate text-slate-700">{s.label}</span>
-                <span className="font-mono text-[10.5px] text-slate-500">{s.input}</span>
+                <span className="min-w-0 flex-1 truncate text-steel-700">{s.label}</span>
+                <span className="font-mono text-[10.5px] text-steel-500">{s.input}</span>
               </button>
+              <BypassControl d={s} onSet={onSet} />
             </li>
           );
         })}
@@ -379,12 +439,12 @@ function IndicatorsCard({ items, bits }: { items: IndicatorDevice[]; bits: Map<s
                   {on && <circle cx="15" cy="15" r="9" fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />}
                 </svg>
               ) : d.style === 'relay' ? (
-                <span className={`flex h-[30px] w-[30px] items-center justify-center rounded border font-mono text-[10px] font-bold ${on ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : 'border-slate-300 bg-slate-50 text-slate-400'}`}>CR</span>
+                <span className={`flex h-[30px] w-[30px] items-center justify-center rounded border font-mono text-[10px] font-bold ${on ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : 'border-steel-300 bg-steel-50 text-steel-400'}`}>CR</span>
               ) : (
-                <span className="h-[30px] w-[30px] rounded-full border-2 border-slate-400 transition-all"
+                <span className="h-[30px] w-[30px] rounded-full border-2 border-steel-400 transition-all"
                   style={{ background: on ? c.on : c.off, boxShadow: on ? `0 0 14px 4px ${c.glow}` : 'inset 0 2px 4px rgba(0,0,0,0.15)' }} />
               )}
-              <span className="text-[11px] leading-tight text-slate-700">{d.label}</span>
+              <span className="text-[11px] leading-tight text-steel-700">{d.label}</span>
               <AddrChip address={d.output} on={on} kind="out" />
             </div>
           );
@@ -401,15 +461,15 @@ function StackLightCard({ d, bits }: { d: StackLightDevice; bits: Map<string, bo
         <div className="flex flex-col items-center">
           {d.segments.map((s) => {
             const on = bits.get(s.output) ?? false;
-            if (s.color === 'buzzer') return <div key={s.output} className={`h-4 w-9 rounded-b border border-slate-500 ${on ? 'bg-slate-700' : 'bg-slate-300'}`} />;
+            if (s.color === 'buzzer') return <div key={s.output} className={`h-4 w-9 rounded-b border border-steel-500 ${on ? 'bg-steel-700' : 'bg-steel-300'}`} />;
             const c = LIGHT[s.color];
-            return <div key={s.output} className="h-6 w-9 border border-b-0 border-slate-500 first:rounded-t-md" style={{ background: on ? c.on : c.off, boxShadow: on ? `0 0 12px 3px ${c.glow}` : undefined }} />;
+            return <div key={s.output} className="h-6 w-9 border border-b-0 border-steel-500 first:rounded-t-md" style={{ background: on ? c.on : c.off, boxShadow: on ? `0 0 12px 3px ${c.glow}` : undefined }} />;
           })}
-          <div className="h-6 w-2 bg-slate-500" />
+          <div className="h-6 w-2 bg-steel-500" />
         </div>
         <ul className="flex-1 space-y-1">
           {d.segments.map((s) => (
-            <li key={s.output} className="flex items-center gap-1.5 text-[11px] text-slate-600">
+            <li key={s.output} className="flex items-center gap-1.5 text-[11px] text-steel-600">
               <AddrChip address={s.output} on={bits.get(s.output) ?? false} kind="out" />
               <span className="truncate">{s.label}</span>
             </li>
@@ -420,7 +480,8 @@ function StackLightCard({ d, bits }: { d: StackLightDevice; bits: Map<string, bo
   );
 }
 
-export default function MachinePanel({ devices, bits, inputs, actions }: Props) {
+export default function MachinePanel({ devices: all, bits, inputs, actions, visible }: Props) {
+  const devices = visible ? all.filter((d) => visible.has(d.id)) : all;
   const sensors = devices.filter((d): d is SensorDevice => d.kind === 'sensor');
   const indicators = devices.filter((d): d is IndicatorDevice => d.kind === 'indicator');
   return (
@@ -428,18 +489,18 @@ export default function MachinePanel({ devices, bits, inputs, actions }: Props) 
       <OperatorStation devices={devices} inputs={inputs} actions={actions} />
       {devices.map((d) => {
         switch (d.kind) {
-          case 'conveyor': return <ConveyorCard key={d.id} d={d} devices={devices} bits={bits} inputs={inputs} actions={actions} />;
-          case 'motor': return d.conveyorId ? null : <MotorCard key={d.id} d={d} bits={bits} inputs={inputs} />;
-          case 'cylinder': return <CylinderCard key={d.id} d={d} bits={bits} inputs={inputs} />;
+          case 'conveyor': return <ConveyorCard key={d.id} d={d} devices={all} bits={bits} inputs={inputs} actions={actions} />;
+          case 'motor': return d.conveyorId ? null : <MotorCard key={d.id} d={d} bits={bits} inputs={inputs} onSet={actions.setBypass} />;
+          case 'cylinder': return <CylinderCard key={d.id} d={d} bits={bits} inputs={inputs} onSet={actions.setBypass} />;
           case 'stackLight': return <StackLightCard key={d.id} d={d} bits={bits} />;
           default: return null;
         }
       })}
       {indicators.length > 0 && <IndicatorsCard items={indicators} bits={bits} />}
-      {sensors.length > 0 && <SensorsCard sensors={sensors} inputs={inputs} onToggle={actions.toggle} />}
+      {sensors.length > 0 && <SensorsCard sensors={sensors} inputs={inputs} onToggle={actions.toggle} onSet={actions.setBypass} />}
       {devices.length === 0 && (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center text-xs text-slate-500">
-          No I/O points with addresses yet. Add I/O to simulate the machine.
+        <p className="rounded-lg border border-dashed border-steel-300 bg-white p-4 text-center text-xs text-steel-500">
+          {all.length ? 'No field devices are used by this block.' : 'No I/O points with addresses yet. Add I/O to simulate the machine.'}
         </p>
       )}
     </div>

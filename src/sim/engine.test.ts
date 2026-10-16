@@ -5,7 +5,9 @@
 import assert from 'node:assert/strict';
 import type { CompareOp, LadderElement, LadderOutput, LadderProgram, Rung } from '../plc/ladder';
 import { compileMath, createSimulator } from './engine';
-import { buildMachineModel, machineInputs, stepMachine } from './machineModel';
+import { buildMachineModel, machineInputs, setDeviceBypass, stepMachine } from './machineModel';
+import { blockAddresses, devicesInBlock, externalSignals, programBlocks } from './blocks';
+import { SimController } from './controller';
 import type { ConveyorDevice, CylinderDevice, MotorDevice } from './machineModel';
 import { CONVEYOR_IO, CONVEYOR_PROGRAM, CONVEYOR_WIRING } from './__fixtures__/conveyor';
 
@@ -318,6 +320,116 @@ test('closed loop: sample program runs the whole cycle', () => {
   es.state.pressed = true; scan(50);
   assert.equal(sim.readBit('Y001'), false, 'E-stop stops the conveyor');
   assert.equal(sim.readBit('C2'), false);
+});
+
+console.log('bypass & forces');
+
+test('rung bypass: skipped, outputs hold last value', () => {
+  const r1 = rung([[NO('X001')]], [OUT('Y001'), { type: 'TMR', address: 'T1', mode: 'ON_DELAY', preset: '100', unit: 'ms', accumulate: false, resetAddress: null }]);
+  const sim = createSimulator(prog(r1));
+  sim.setInput('X001', true); sim.run(50);
+  sim.bypassRung(r1.id, true);
+  sim.setInput('X001', false); sim.run(200);
+  assert.equal(sim.readBit('Y001'), true, 'OUT holds while bypassed');
+  assert.equal(sim.readWord('TD1'), 50, 'timer frozen');
+  assert.equal(sim.rungPower().get(r1.id)?.bypassed, true);
+  sim.bypassRung(r1.id, false); sim.step();
+  assert.equal(sim.readBit('Y001'), false, 'executes again');
+});
+
+test('forces win over program writes for the whole scan', () => {
+  const sim = createSimulator(prog(
+    rung([[NO('X001')]], [OUT('C1')]),
+    rung([[NO('C1')]], [OUT('Y001')]),
+    rung([], [{ type: 'COPY', source: '5', dest: 'DS1' }]),
+    rung([[{ type: 'CMP', left: 'DS1', op: '==', right: '7' }]], [OUT('C2')]),
+  ));
+  sim.force('C1', true);
+  sim.force('DS1', 7);
+  sim.step();
+  assert.equal(sim.readBit('C1'), true, 'OUT C1 (false) ignored');
+  assert.equal(sim.readBit('Y001'), true, 'later rung reads the forced value');
+  assert.equal(sim.readWord('DS1'), 7, 'COPY ignored');
+  assert.equal(sim.readBit('C2'), true);
+  sim.force('X001', true); sim.force('C1', null); sim.step();
+  assert.equal(sim.readBit('C1'), true, 'forced input drives the logic');
+  sim.clearForces(); sim.step();
+  assert.equal(sim.readBit('C1'), false);
+  assert.equal(sim.readWord('DS1'), 5);
+});
+
+test('device bypass: cylinder, motor, sensor, E-stop', () => {
+  const m = buildMachineModel([
+    { address: 'Y001', description: 'Lift solenoid', type: 'output', category: 'Pneumatic' },
+    { address: 'X001', description: 'Lift extended', type: 'input', category: 'Pneumatic' },
+    { address: 'X002', description: 'Lift retracted', type: 'input', category: 'Pneumatic' },
+    { address: 'Y002', description: 'Pump motor', type: 'output', category: 'Analog/Process' },
+    { address: 'X003', description: 'Pump running', type: 'input', category: 'Analog/Process' },
+    { address: 'X004', description: 'Guard door closed', type: 'input', category: 'Safety' },
+    { address: 'X005', description: 'Emergency stop', type: 'input', category: 'Safety' },
+  ], []);
+  const id = (k: string) => m.devices.find((d) => d.kind === k)!.id;
+  setDeviceBypass(m, id('cylinder'), true);
+  setDeviceBypass(m, id('motor'), true);
+  setDeviceBypass(m, id('sensor'), true, true);
+  const outs = new Map([['Y001', true], ['Y002', true]]);
+  stepMachine(m, outs, 10);
+  assert.equal(m.inputs.get('X001'), true, 'extended sensor follows the solenoid in one scan');
+  assert.equal(m.inputs.get('X002'), false);
+  assert.equal(m.inputs.get('X003'), true, 'motor feedback follows the command at once');
+  assert.equal(m.inputs.get('X004'), true, 'sensor held at the chosen value');
+  const es = m.devices.find((d) => d.kind === 'estop')!;
+  if (es.kind === 'estop') es.state.pressed = true;
+  stepMachine(m, outs, 10);
+  assert.equal(m.inputs.get('X005'), false, 'pressed E-stop opens its contact');
+  setDeviceBypass(m, es.id, true);
+  stepMachine(m, outs, 10);
+  assert.equal(m.inputs.get('X005'), true, 'bypassed E-stop reads healthy');
+});
+
+console.log('blocks');
+
+test('blocks, external signals and devices of a block', () => {
+  const blocks = programBlocks(CONVEYOR_PROGRAM);
+  assert.deepEqual(blocks.map((b) => [b.id, b.rungIds.length]), [['conveyor', 3], ['pusher', 4]]);
+  const conv = externalSignals(CONVEYOR_PROGRAM, 'conveyor');
+  assert.deepEqual(conv.map((s) => [s.address, s.value]), [['C3', false], ['C10', false]], 'NC-read bits held OFF');
+  const push = externalSignals(CONVEYOR_PROGRAM, 'pusher');
+  assert.deepEqual(push.map((s) => [s.address, s.value]), [['C1', true], ['C2', true]], 'NO-read bits held ON');
+  const m = buildMachineModel(CONVEYOR_IO, CONVEYOR_WIRING);
+  const kinds = (ids: Set<string>) => m.devices.filter((d) => ids.has(d.id)).map((d) => d.kind).sort();
+  assert.deepEqual(kinds(devicesInBlock(m.devices, blockAddresses(CONVEYOR_PROGRAM, 'pusher'))), ['conveyor', 'cylinder', 'motor', 'pushbutton']);
+  assert.deepEqual(kinds(devicesInBlock(m.devices, blockAddresses(CONVEYOR_PROGRAM, 'conveyor'))), ['conveyor', 'estop', 'motor', 'pushbutton', 'pushbutton', 'safetyRelay']);
+  const general = programBlocks({ rungs: [rung([], [OUT('C1')])], tags: [] });
+  assert.deepEqual(general.map((b) => b.name), ['General']);
+});
+
+test('controller: pusher block alone with held signals, block-only run, clear all', () => {
+  const ctl = new SimController(CONVEYOR_PROGRAM, CONVEYOR_IO, CONVEYOR_WIRING);
+  ctl.selectBlock('pusher');
+  ctl.setBlockOnly(true);
+  let s = ctl.getSnapshot();
+  assert.equal(s.skippedRungs.size, 3);
+  assert.equal(s.holds.get('C2'), true);
+  // No Start pressed: C2 is held ON, so the pusher reacts to a part by itself.
+  const conv = s.devices.find((d) => d.kind === 'conveyor')!;
+  ctl.addPart(conv.id);
+  ctl.force('Y001', true); // conveyor rung is skipped: run the belt by force
+  ctl.advance(5000);
+  s = ctl.getSnapshot();
+  assert.ok(s.log.some((e) => e.address === 'Y002' && e.value), 'pusher fired');
+  assert.ok(s.log.some((e) => e.address === 'X005' && e.value), 'pusher reached extended');
+  assert.equal(s.bits.get('C10') ?? false, false, 'no fault');
+  assert.equal(s.bits.get('C1'), true, 'held');
+  ctl.bypassRung('r_flt', true);
+  const cyl = s.devices.find((d) => d.kind === 'cylinder')!;
+  ctl.setDeviceBypass(cyl.id, true);
+  ctl.clearAll();
+  s = ctl.getSnapshot();
+  assert.equal(s.forces.size + s.holds.size + s.rungBypass.size + s.skippedRungs.size, 0);
+  assert.ok(!s.devices.some((d) => d.bypass?.on));
+  ctl.selectBlock(null);
+  assert.equal(ctl.getSnapshot().block, null);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

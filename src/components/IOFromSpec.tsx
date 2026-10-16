@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useIOStore } from '../store/useIOStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -10,7 +10,7 @@ import StageBanner from './StageBanner';
 import { Spinner } from './program/common';
 
 /** Generate / update the I/O list from the spec, with a review step before applying. */
-export default function IOFromSpec() {
+export default function IOFromSpec({ children }: { children: (generateButton: ReactNode) => ReactNode }) {
   const settings = useSettingsStore();
   const { projectIO, applyIOUpdate } = useIOStore();
   const markGenerated = useStageStore((s) => s.markGenerated);
@@ -56,7 +56,8 @@ export default function IOFromSpec() {
 
   const button = (
     <button onClick={generate} disabled={busy || !apiKey || specEmpty}
-      className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
+      title={specEmpty ? 'Describe the machine first' : !apiKey ? 'Add your Anthropic API key in Settings' : undefined}
+      className="h-7 px-3 text-[13px] font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
       {busy ? <><Spinner /> Reading the spec…</> : projectIO.length ? 'Update I/O from spec' : 'Generate I/O from spec'}
     </button>
   );
@@ -65,29 +66,31 @@ export default function IOFromSpec() {
     <>
       <StageBanner
         info={stages.io}
-        action={button}
-        emptyText={specEmpty ? undefined : 'Generate the I/O list from your spec, or add points by hand below.'}
+        emptyText={specEmpty ? undefined : 'Generate the I/O list from your machine description, or add points by hand.'}
       />
-      {stages.io.status === 'ready' && (
-        <div className="px-6 py-2 border-b border-gray-200 bg-white flex items-center justify-end gap-3 text-xs text-gray-500">
-          {specEmpty ? <span>Describe the machine on the <Link to="/spec" className="underline">Describe</Link> page to generate I/O automatically.</span> : button}
+      {specEmpty && (
+        <div className="px-4 py-2 border-b border-brand-200 bg-brand-50 text-brand-900">
+          Describe the machine on the <Link to="/spec" className="underline">Machine description</Link> step to generate I/O automatically.
         </div>
       )}
-      {error && <div role="alert" className="mx-6 my-2 bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
+      {children(button)}
+      {error && <div role="alert" className="mx-4 mt-3 bg-red-50 border border-red-200 p-3 text-red-800">{error}</div>}
 
       {plan && (
-        <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-6">
-          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-full flex flex-col">
-            <div className="px-5 py-4 border-b border-gray-200">
-              <h3 className="text-base font-semibold text-gray-800">Review I/O changes</h3>
-              <p className="text-sm text-gray-600 mt-1">{plan.explanation}</p>
+        <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-6">
+          <div className="bg-white border border-steel-300 shadow-2xl max-w-3xl w-full max-h-full flex flex-col">
+            <div className="h-8 px-4 flex items-center bg-brand-800 text-white">
+              <h3 className="text-[13px] font-semibold">Review I/O changes</h3>
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-4 text-sm">
+            <div className="px-4 py-3 border-b border-steel-200">
+              <p className="text-steel-700">{plan.explanation}</p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
               {plan.added.length > 0 && (
                 <section>
                   <h4 className="font-semibold text-green-800 mb-1">Add ({plan.added.length})</h4>
                   <ul className="space-y-0.5">{plan.added.map((g, i) => (
-                    <li key={i} className="flex gap-2"><span className="text-green-700 w-14 shrink-0">{g.type === 'input' ? 'Input' : 'Output'}</span><span className="flex-1">{g.description}</span><span className="text-gray-400 text-xs">{g.reason}</span></li>
+                    <li key={i} className="flex gap-2"><span className="text-green-700 w-14 shrink-0">{g.type === 'input' ? 'Input' : 'Output'}</span><span className="flex-1">{g.description}</span><span className="text-steel-500 text-xs">{g.reason}</span></li>
                   ))}</ul>
                 </section>
               )}
@@ -100,20 +103,20 @@ export default function IOFromSpec() {
                 </section>
               )}
               <section>
-                <h4 className="font-semibold text-gray-700 mb-1">Keep ({plan.kept.length}, addresses unchanged)</h4>
-                <p className="text-gray-500">{plan.kept.map((k) => k.point.description).join(' · ') || 'none'}</p>
+                <h4 className="font-semibold text-steel-700 mb-1">Keep ({plan.kept.length}, addresses unchanged)</h4>
+                <p className="text-steel-500">{plan.kept.map((k) => k.point.description).join(' · ') || 'none'}</p>
               </section>
               {plan.questions.length > 0 && (
-                <section className="bg-amber-50 border border-amber-200 rounded p-3">
+                <section className="bg-amber-50 border border-amber-200 p-3">
                   <h4 className="font-semibold text-amber-900 mb-1">Questions</h4>
                   <ul className="list-disc pl-5 text-amber-900">{plan.questions.map((q, i) => <li key={i}>{q}</li>)}</ul>
                   <p className="text-xs text-amber-800 mt-1">Answer them in the spec (Describe) and update again.</p>
                 </section>
               )}
             </div>
-            <div className="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
-              <button onClick={() => setPlan(null)} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
-              <button onClick={apply} className="px-4 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700">Apply changes</button>
+            <div className="px-4 py-2 border-t border-steel-200 bg-[#f7f8f9] flex justify-end gap-2">
+              <button onClick={() => setPlan(null)} className="px-4 py-1.5 border border-steel-300 bg-white rounded-sm hover:bg-steel-50">Cancel</button>
+              <button onClick={apply} className="px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700">Apply changes</button>
             </div>
           </div>
         </div>

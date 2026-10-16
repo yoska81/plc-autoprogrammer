@@ -18,7 +18,11 @@ interface ProjectStore {
   setInfo: (info: Partial<ProjectInfo>) => void;
 }
 
+/** Electrical code region: US (NEC / UL 508A) or Canada (CEC / CSA C22.2 No. 14). */
+export type Region = 'US' | 'Canada';
+
 export interface ProjectInfo {
+  region: Region;
   customer: string;
   site: string;
   drawingPrefix: string;
@@ -35,7 +39,7 @@ export const useProjectStore = create<ProjectStore>()(
       setModules: (modules) => set({ modules }),
       recommendation: null,
       setRecommendation: (recommendation) => set({ recommendation }),
-      info: { customer: '', site: '', drawingPrefix: '', standards: ['NFPA 79', 'UL 508A'] },
+      info: { region: 'US', customer: '', site: '', drawingPrefix: '', standards: ['NFPA 79', 'UL 508A'] },
       setInfo: (info) => set((s) => ({ info: { ...s.info, ...info } })),
     }),
     { name: 'plc-project-store' }

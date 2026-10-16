@@ -49,10 +49,12 @@ How to write the program:
 - Give every rung a short comment a technician can understand.
 - List every internal address you use (bits, timers, counters, registers) in "tags" with a short nickname (no spaces, max 24 characters) and a comment.
 - Keep the program as simple as the machine allows.
+- Split the program into blocks, one per machine section or station (e.g. "safety" Safety & modes, "infeed" Infeed conveyor, "pusher" Pusher station, "alarms" Alarms & HMI). List them in "blocks" in program order (id: short lower-case, name: 1–3 words, description: one sentence) and set every rung's "block" to its block id. Rungs of one block stay together. A small machine may have only 2–3 blocks. Signals passed between blocks go through internal bits so each block can be tested on its own.
 
 When you change an existing program:
 - Keep the "id" of every rung you keep (edited or not). Give new rungs ids like "new-1", "new-2".
 - Change only what is needed for the request; don't rewrite rungs that already work.
+- Keep the blocks and each rung's block. When the request names a block ("[Block: …]"), change only that block's rungs unless another block must change for it to work, and say so.
 - If the request is only a question, answer it and return "program": null.
 
 "explanation": plain language for the operator, no code. Say what the program does or what you changed and why, list any assumptions, and list what to check on the machine before running it.`;
@@ -80,13 +82,18 @@ function ioTable(ctx: PlcContext): string {
 function normalize(program: LadderProgram): LadderProgram {
   const seen = new Set<string>();
   const up = (s: string) => s.trim().toUpperCase();
+  const blocks = (program.blocks ?? []).filter((b, i, all) => b.id?.trim() && all.findIndex((x) => x.id === b.id) === i);
+  const blockIds = new Set(blocks.map((b) => b.id));
   return {
+    ...(blocks.length ? { blocks } : {}),
     tags: program.tags.map((t) => ({ ...t, address: up(t.address) })),
     rungs: program.rungs.map((r) => {
       const id = !r.id || seen.has(r.id) || r.id.startsWith('new-') ? newRungId() : r.id;
       seen.add(id);
+      const { block, ...rest } = r;
       return {
-        ...r,
+        ...rest,
+        ...(block && blockIds.has(block) ? { block } : {}),
         id,
         branches: r.branches.map((b) => b.map((el) =>
           el.type === 'CMP' ? { ...el, left: up(el.left), right: up(el.right) } : { ...el, address: up(el.address) })),

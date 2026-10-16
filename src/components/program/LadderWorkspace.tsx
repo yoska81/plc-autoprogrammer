@@ -4,7 +4,7 @@ import { useProgramStore } from '../../store/useProgramStore';
 import { generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../lib/ai/ladderAI';
 import { validateProgram, type ValidationIssue } from '../../plc/validate';
 import { diffPrograms, summarizeDiff, type RungChange } from '../../plc/diff';
-import type { LadderProgram } from '../../plc/ladder';
+import type { LadderProgram, Rung } from '../../plc/ladder';
 import LadderView from '../ladder/LadderView';
 import { Spinner, ReasoningPanel } from './common';
 import StageBanner from '../StageBanner';
@@ -21,6 +21,23 @@ interface Props {
   labels: Map<string, string>;
   /** API key present. */
   ready: boolean;
+}
+
+const GENERAL = '';
+
+/** Put an edited block back into the whole program, in the block's place; new rungs join the block. */
+function mergeBlock(full: LadderProgram, blockId: string, edited: LadderProgram): LadderProgram {
+  const inBlock = (r: Rung) => (r.block ?? GENERAL) === blockId;
+  const first = full.rungs.findIndex(inBlock);
+  const rest = full.rungs.filter((r) => !inBlock(r));
+  const at = first < 0 ? rest.length : full.rungs.slice(0, first).filter((r) => !inBlock(r)).length;
+  const mine = edited.rungs.map((r) => {
+    if (blockId) return { ...r, block: blockId };
+    const x = { ...r };
+    delete x.block;
+    return x;
+  });
+  return { ...full, tags: edited.tags, rungs: [...rest.slice(0, at), ...mine, ...rest.slice(at)] };
 }
 
 function IssueList({ issues, rungNumber }: { issues: ValidationIssue[]; rungNumber: (id: string) => number }) {
@@ -65,6 +82,15 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
   const [request, setRequest] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [selectedRungId, setSelectedRungId] = useState<string | null>(null);
+  /** null = whole program; '' = rungs without a block. */
+  const [block, setBlock] = useState<string | null>(null);
+  const blocks = ladder.blocks ?? [];
+  const blockOf = (r: Rung) => (r.block && blocks.some((b) => b.id === r.block) ? r.block : GENERAL);
+  const hasGeneral = blocks.length > 0 && ladder.rungs.some((r) => blockOf(r) === GENERAL);
+  const activeBlock = block !== null && (block === GENERAL ? hasGeneral : blocks.some((b) => b.id === block)) ? block : null;
+  const blockName = activeBlock === null ? '' : blocks.find((b) => b.id === activeBlock)?.name ?? 'General';
+  const shown: LadderProgram = activeBlock === null ? ladder : { ...ladder, rungs: ladder.rungs.filter((r) => blockOf(r) === activeBlock) };
+  const realNumber = (id: string) => ladder.rungs.findIndex((r) => r.id === id) + 1;
 
   const updateFromSpec = () => {
     const changed = changedSections(sources.program?.spec ?? null, fp.spec);
@@ -82,7 +108,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
   const review = useMemo(() => {
     if (!proposal) return null;
     const entries = diffPrograms(ladder, proposal.program);
-    const display: LadderProgram = { rungs: entries.map((e) => e.rung), tags: proposal.program.tags };
+    const display: LadderProgram = { rungs: entries.map((e) => e.rung), tags: proposal.program.tags, blocks: proposal.program.blocks };
     const changes = new Map<string, RungChange>(entries.map((e) => [e.rung.id, e.change]));
     return {
       display,
@@ -128,10 +154,11 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
       { role: 'user' as const, content: `Machine specification:\n${machineText || '(program was drawn by hand)'}` },
       ...chat.map((m) => ({ role: m.role, content: m.text })),
     ];
+    const scoped = activeBlock !== null && !specUpdate ? `[Block: ${blockName}${activeBlock ? ` (id "${activeBlock}")` : ''}] ${req}` : req;
     return runAI(async () => {
-      store.addChat({ role: 'user', text: req });
+      store.addChat({ role: 'user', text: scoped });
       setRequest('');
-      const r = await reviseLadder(ai, ctx, ladder, issues, history, req);
+      const r = await reviseLadder(ai, ctx, ladder, issues, history, scoped);
       if (r.program) {
         store.addChat({ role: 'assistant', text: r.explanation });
         store.setProposal({ program: r.program, explanation: r.explanation, reasoning: r.reasoning, specUpdate });
@@ -289,13 +316,41 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
           ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} />
         )}
 
+        {!review && blocks.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 px-3 py-1.5 bg-[#f7f8f9] border-b border-gray-200 text-xs">
+            <span className="text-gray-500 mr-1">Blocks:</span>
+            {[{ id: null as string | null, name: 'Whole program', n: ladder.rungs.length },
+              ...blocks.map((b) => ({ id: b.id as string | null, name: b.name, n: ladder.rungs.filter((r) => blockOf(r) === b.id).length })),
+              ...(hasGeneral ? [{ id: GENERAL as string | null, name: 'General', n: ladder.rungs.filter((r) => blockOf(r) === GENERAL).length }] : []),
+            ].map((b) => (
+              <button key={b.id ?? '*'} onClick={() => { setBlock(b.id); setSelectedRungId(null); }}
+                className={`px-2.5 py-1 rounded-sm border ${activeBlock === b.id ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-brand-50'}`}>
+                {b.name} <span className={activeBlock === b.id ? 'text-brand-100' : 'text-gray-400'}>{b.n}</span>
+              </button>
+            ))}
+            {activeBlock !== null && (
+              <button onClick={() => { setTab('fix'); handleRevise(`Review and rewrite this block so it fully matches the specification for this part of the machine. Keep its interface (the internal bits other blocks read or write) unless it is wrong, and explain any change to it.\n\nCurrent specification:\n${specText}`); }}
+                disabled={isGenerating || !ready || Boolean(proposal)}
+                className="ml-auto px-2.5 py-1 rounded-sm border border-brand-300 text-brand-700 bg-white hover:bg-brand-50 disabled:opacity-50">
+                Regenerate this block
+              </button>
+            )}
+          </div>
+        )}
+        {!review && activeBlock !== null && (
+          <div className="px-4 py-1.5 text-xs text-brand-900 bg-brand-50 border-b border-brand-200">
+            Working on <span className="font-semibold">{blockName}</span>: {(blocks.find((b) => b.id === activeBlock)?.description ?? 'rungs without a block').replace(/\.$/, '')}. Requests in Fix &amp; Ask apply to this block; the simulator can run it on its own.
+          </div>
+        )}
+
         <div className="flex-1 overflow-auto">
           {review ? (
             <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} />
           ) : ladder.rungs.length ? (
             <LadderView
-              program={ladder}
-              onChange={store.editLadder}
+              program={shown}
+              onChange={activeBlock === null ? store.editLadder : (p) => store.editLadder(mergeBlock(ladder, activeBlock, p))}
+              numberOf={activeBlock === null ? undefined : realNumber}
               labels={labels}
               issues={issues}
               selectedRungId={selectedRungId}
@@ -322,7 +377,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
 
         {!review && ladder.rungs.length > 0 && (
           <div className="px-4 py-2 border-t border-gray-200 flex items-center gap-2 text-xs text-gray-500">
-            <span className="flex-1">{ladder.rungs.length} rungs · click any instruction to edit it by hand</span>
+            <span className="flex-1">{activeBlock === null ? `${ladder.rungs.length} rungs` : `${shown.rungs.length} of ${ladder.rungs.length} rungs (${blockName})`} · click any instruction to edit it by hand</span>
             <button onClick={() => store.saveVersion('Saved manually')} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">Save version</button>
             <button
               onClick={() => { if (confirm('Clear the program? It is saved to History first.')) store.clearLadder(); }}

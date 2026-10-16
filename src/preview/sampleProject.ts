@@ -43,27 +43,32 @@ export const RECOMMENDATION: EquipmentRecommendation = {
 };
 
 export const LADDER: LadderProgram = {
+  blocks: [
+    { id: 'safety', name: 'Safety & modes', description: 'Safety OK bit and the cycle start/stop seal-in.' },
+    { id: 'conveyor', name: 'Conveyor', description: 'Runs the belt while cycling and counts delivered parts.' },
+    { id: 'pusher', name: 'Pusher', description: 'Pushes the part at the end of the belt, with timeout fault and reset.' },
+  ],
   rungs: [
-    { id: 'r_safe', comment: 'Safety OK from the E-stop safety relay', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'C1' }] },
-    { id: 'r_run', comment: 'Cycle running: panel or HMI Start seals in; Stop (NC button), HMI Stop, safety loss or pusher fault drops it',
+    { id: 'r_safe', block: 'safety', comment: 'Safety OK from the E-stop safety relay', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'C1' }] },
+    { id: 'r_run', block: 'safety', comment: 'Cycle running: panel or HMI Start seals in; Stop (NC button), HMI Stop, safety loss or pusher fault drops it',
       branches: [
         [{ type: 'NO', address: 'X002' }, { type: 'NO', address: 'X003' }, { type: 'NC', address: 'C1002' }, { type: 'NO', address: 'C1' }, { type: 'NC', address: 'C1101' }],
         [{ type: 'NO', address: 'C1001' }, { type: 'NO', address: 'X003' }, { type: 'NC', address: 'C1002' }, { type: 'NO', address: 'C1' }, { type: 'NC', address: 'C1101' }],
         [{ type: 'NO', address: 'C2' }, { type: 'NO', address: 'X003' }, { type: 'NC', address: 'C1002' }, { type: 'NO', address: 'C1' }, { type: 'NC', address: 'C1101' }],
       ],
       outputs: [{ type: 'OUT', address: 'C2' }] },
-    { id: 'r_conv', comment: 'Conveyor runs while cycling and no part is being pushed', branches: [[{ type: 'NO', address: 'C2' }, { type: 'NC', address: 'C3' }]], outputs: [{ type: 'OUT', address: 'Y001' }] },
-    { id: 'r_push', comment: 'Part at end: push it, hold until the pusher is out',
+    { id: 'r_conv', block: 'conveyor', comment: 'Conveyor runs while cycling and no part is being pushed', branches: [[{ type: 'NO', address: 'C2' }, { type: 'NC', address: 'C3' }]], outputs: [{ type: 'OUT', address: 'Y001' }] },
+    { id: 'r_cnt', block: 'conveyor', comment: 'Part counter (shown on the HMI), reset from the HMI', branches: [[{ type: 'NO', address: 'X004' }]],
+      outputs: [{ type: 'CNT', address: 'CT1', direction: 'UP', preset: '9999', resetAddress: 'C1004' }] },
+    { id: 'r_push', block: 'pusher', comment: 'Part at end: push it, hold until the pusher is out',
       branches: [[{ type: 'NO', address: 'C2' }, { type: 'RISE', address: 'X004' }], [{ type: 'NO', address: 'C3' }, { type: 'NC', address: 'X005' }, { type: 'NO', address: 'C2' }]],
       outputs: [{ type: 'OUT', address: 'C3' }, { type: 'OUT', address: 'Y002' }] },
-    { id: 'r_tmo', comment: 'Pusher timeout: 3 s to reach extended', branches: [[{ type: 'NO', address: 'C3' }]],
+    { id: 'r_tmo', block: 'pusher', comment: 'Pusher timeout: 3 s to reach extended', branches: [[{ type: 'NO', address: 'C3' }]],
       outputs: [{ type: 'TMR', address: 'T1', mode: 'ON_DELAY', preset: '3', unit: 'sec', accumulate: false, resetAddress: null }] },
-    { id: 'r_flt', comment: 'Pusher fault alarm (HMI alarm bit) latches on timeout', branches: [[{ type: 'NO', address: 'T1' }]], outputs: [{ type: 'SET', address: 'C1101' }] },
-    { id: 'r_rst', comment: 'Fault reset from panel Start or HMI Reset, with safety OK and pusher back',
+    { id: 'r_flt', block: 'pusher', comment: 'Pusher fault alarm (HMI alarm bit) latches on timeout', branches: [[{ type: 'NO', address: 'T1' }]], outputs: [{ type: 'SET', address: 'C1101' }] },
+    { id: 'r_rst', block: 'pusher', comment: 'Fault reset from panel Start or HMI Reset, with safety OK and pusher back',
       branches: [[{ type: 'NO', address: 'X002' }, { type: 'NO', address: 'C1' }, { type: 'NC', address: 'C3' }], [{ type: 'NO', address: 'C1003' }, { type: 'NO', address: 'C1' }, { type: 'NC', address: 'C3' }]],
       outputs: [{ type: 'RST', address: 'C1101' }] },
-    { id: 'r_cnt', comment: 'Part counter (shown on the HMI), reset from the HMI', branches: [[{ type: 'NO', address: 'X004' }]],
-      outputs: [{ type: 'CNT', address: 'CT1', direction: 'UP', preset: '9999', resetAddress: 'C1004' }] },
   ],
   tags: [
     { address: 'C1', nickname: 'Safety_OK', comment: 'Safety relay output healthy' },
@@ -198,7 +203,7 @@ export const DESIGN: ElectricalDesign = {
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '4';
+const SEED_VERSION = '5';
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectsStore } from '../store/useProjectsStore';
-import { useProjectStore } from '../store/useProjectStore';
+import { useProjectStore, type Region } from '../store/useProjectStore';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useSpecStore } from '../store/useSpecStore';
 import { useHmiStore } from '../store/useHmiStore';
@@ -14,7 +14,12 @@ import EquipmentPanel from '../components/EquipmentPanel';
 
 const STEPS = ['Project data', 'Describe the machine', 'Equipment', 'Summary'];
 
+const REGIONS: { value: Region; label: string; hint: string; standards: string[]; supply: SupplyVoltage }[] = [
+  { value: 'US', label: 'United States', hint: 'NEC, NFPA 79, UL 508A · circuit breakers', standards: ['NFPA 79', 'UL 508A', 'NEC'], supply: '480VAC-3PH' },
+  { value: 'Canada', label: 'Canada', hint: 'CEC, CSA C22.2 No. 14 · fuses', standards: ['CSA C22.2 No. 14', 'CEC'], supply: '600VAC-3PH' },
+];
 const SUPPLIES: { value: SupplyVoltage; label: string; hint: string }[] = [
+  { value: '600VAC-3PH', label: '600 V 3-phase', hint: 'Most Canadian factories' },
   { value: '480VAC-3PH', label: '480 V 3-phase', hint: 'Most US factories' },
   { value: '240VAC-3PH', label: '240 V 3-phase', hint: 'Smaller plants, shops' },
   { value: '208VAC-3PH', label: '208 V 3-phase', hint: 'Commercial buildings' },
@@ -26,7 +31,7 @@ const ENCLOSURES: { value: EnclosureRating; label: string; hint: string }[] = [
   { value: 'NEMA 4X', label: 'NEMA 4X', hint: 'Washdown, corrosive (stainless)' },
   { value: 'NEMA 1', label: 'NEMA 1', hint: 'Clean indoor only' },
 ];
-const STANDARDS = ['NFPA 79', 'UL 508A', 'CSA C22.2 No. 14', 'NEC'];
+const STANDARDS = ['NFPA 79', 'UL 508A', 'NEC', 'CSA C22.2 No. 14', 'CEC'];
 
 function Choice({ selected, onClick, title, hint }: { selected: boolean; onClick: () => void; title: string; hint: string }) {
   return (
@@ -58,6 +63,7 @@ export default function NewProjectPage() {
   const [name, setName] = useState('');
   const [customer, setCustomer] = useState('');
   const [site, setSite] = useState('');
+  const [region, setRegion] = useState<Region>('US');
   const [supply, setSupply] = useState<SupplyVoltage>('480VAC-3PH');
   const [enclosure, setEnclosure] = useState<EnclosureRating>('NEMA 12');
   const [standards, setStandards] = useState<string[]>(['NFPA 79', 'UL 508A']);
@@ -73,7 +79,7 @@ export default function NewProjectPage() {
         createProject(name.trim());
         setCreated(true);
       }
-      useProjectStore.getState().setInfo({ customer, site, standards });
+      useProjectStore.getState().setInfo({ region, customer, site, standards });
       const el = useElectricalStore.getState();
       el.setInputs({ ...el.inputs, supply, enclosureRating: enclosure });
     }
@@ -122,8 +128,18 @@ export default function NewProjectPage() {
                   <Field label="Site / location"><input value={site} onChange={(e) => setSite(e.target.value)} className={input} /></Field>
                 </section>
                 <section className="space-y-2">
-                  <h3 className="text-sm font-semibold text-steel-800">Power available at the machine</h3>
+                  <h3 className="text-sm font-semibold text-steel-800">Where the machine will be installed</h3>
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {REGIONS.map((r) => (
+                      <Choice key={r.value} selected={region === r.value} title={r.label} hint={r.hint}
+                        onClick={() => { setRegion(r.value); setStandards(r.standards); setSupply(r.supply); }} />
+                    ))}
+                  </div>
+                  <p className="text-xs text-steel-500">Sets the electrical code: US designs protect circuits with UL 489 breakers, Canadian designs with HRC fuses.</p>
+                </section>
+                <section className="space-y-2">
+                  <h3 className="text-sm font-semibold text-steel-800">Power available at the machine</h3>
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     {SUPPLIES.map((s) => <Choice key={s.value} selected={supply === s.value} onClick={() => setSupply(s.value)} title={s.label} hint={s.hint} />)}
                   </div>
                   <p className="text-xs text-steel-500">Not sure? Ask the plant electrician, or check the nameplate of a similar machine.</p>
