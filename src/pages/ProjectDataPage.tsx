@@ -2,6 +2,9 @@ import { useState, type ReactNode } from 'react';
 import { useProjectStore, currentRevision, type Region, type Revision } from '../store/useProjectStore';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
+import ConstructionGuard from '../review/ConstructionGuard';
+import { acceptCriticalForConstruction, openCriticalFindings } from '../review/actions';
+import type { Finding } from '../review/types';
 
 const input = 'w-full border border-steel-300 rounded-sm px-2 py-1 bg-white focus:outline-none focus:border-brand-500';
 const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50';
@@ -67,11 +70,19 @@ function ProjectData() {
     <input value={info[key]} onChange={(e) => setInfo({ [key]: e.target.value })} className={input} aria-label={key} />
   );
 
-  const issue = () => {
+  // Critical design review findings block "Issued for construction" unless overridden with a reason.
+  const [guard, setGuard] = useState<Finding[] | null>(null);
+  const issue = (override?: string) => {
     const rev = draft.rev.trim().toUpperCase();
     if (!rev || !draft.description.trim()) return;
     if (info.revisions.some((r) => r.rev.toUpperCase() === rev)) { notify(`Revision ${rev} already exists. Choose another letter or number.`); return; }
-    const revisions = [...info.revisions, { ...draft, rev }];
+    if (/construction/i.test(draft.description) && !override) {
+      const open = openCriticalFindings();
+      if (open.length) { setGuard(open); return; }
+    }
+    if (override && guard) acceptCriticalForConstruction(guard, rev, override);
+    setGuard(null);
+    const revisions = [...info.revisions, { ...draft, rev, ...(override ? { override } : {}) }];
     setInfo({ revisions });
     setDraft({ rev: nextRev(revisions), date: today, description: PURPOSES[1], by: draft.by });
   };
@@ -136,7 +147,7 @@ function ProjectData() {
                     <tr key={i}>
                       <td className={`${td} font-mono w-16`}>{r.rev}</td>
                       <td className={`${td} w-32`}>{r.date}</td>
-                      <td className={td}>{r.description}</td>
+                      <td className={td}>{r.description}{r.override && <div className="text-xs text-red-700">Issued with open critical review findings — override: {r.override}</div>}</td>
                       <td className={`${td} w-24`}>{r.by}</td>
                       <td className={`${td} w-8`}>
                         {i === info.revisions.length - 1 && (
@@ -160,8 +171,9 @@ function ProjectData() {
               </table>
               <div className="px-3 py-2 flex items-center justify-end gap-3 bg-[#f7f8f9]">
                 <span className="text-xs text-steel-500">Issuing a revision stamps it on every drawing and document you export from now on.</span>
-                <button onClick={issue} className="px-4 py-1.5 font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700">Issue revision {draft.rev}</button>
+                <button onClick={() => issue()} className="px-4 py-1.5 font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700">Issue revision {draft.rev}</button>
               </div>
+              {guard && <ConstructionGuard findings={guard} rev={draft.rev.trim().toUpperCase()} onCancel={() => setGuard(null)} onOverride={(reason) => issue(reason)} />}
             </Section>
           </div>
 

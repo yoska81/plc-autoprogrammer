@@ -85,6 +85,14 @@ function reply(system) {
   await page.waitForTimeout(800);
   log('Preview banner:', await page.getByText('Preview with an example project').count() > 0);
 
+  // The example project reviews clean: no open critical or major design review findings.
+  await page.goto(BASE + '/#/review');
+  await page.getByText(/Checks: \d+ finding/).waitFor({ timeout: 10000 });
+  const tile = async (name) => Number(await page.locator('div', { hasText: new RegExp(`^${name} open$`) }).locator('xpath=following-sibling::div').first().innerText());
+  const crit = await tile('Critical'), major = await tile('Major');
+  log('Example review: critical', crit, '| major', major, '|', await page.getByText(/Checks: \d+ finding/).innerText());
+  check(crit === 0 && major === 0, 'example project has no open critical/major review findings');
+
   // Settings: no key needed; test connection runs through the account; runtime errors in plain English.
   await page.goto(BASE + '/#/settings');
   const keyBox = page.getByPlaceholder('Not needed in the preview');

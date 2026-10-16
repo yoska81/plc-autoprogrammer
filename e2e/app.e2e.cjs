@@ -432,6 +432,19 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 15000 });
   log('Review verdict shown:', await page.getByText(/Reviewer's verdict/).count() > 0, '| critical open:', await page.locator('div', { hasText: /^Critical open$/ }).locator('xpath=following-sibling::div').first().innerText());
   const rowOf = (t) => page.locator('tr', { hasText: t });
+  const badge = page.locator('nav a', { hasText: 'Design review' }).locator('span[aria-label$="open critical or major findings"]');
+  log('Review badge / status bar:', await badge.innerText(), '|', await page.getByRole('link', { name: /^Review: / }).innerText());
+  check(Number(await badge.innerText()) >= 1, 'tree badge counts open critical/major findings');
+  // Issuing for construction is blocked while a critical finding is open.
+  await page.goto(BASE + '/project');
+  await page.getByLabel('Revision description').fill('Issued for construction');
+  await page.getByRole('button', { name: /^Issue revision/ }).click();
+  const guard = page.getByRole('alertdialog', { name: 'Critical findings open' });
+  await guard.waitFor({ timeout: 5000 });
+  log('Construction guard:', (await guard.locator('p').first().innerText()).replace(/\s+/g, ' '));
+  await guard.getByRole('button', { name: 'Cancel' }).click();
+  await page.goto(BASE + '/review');
+  await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 10000 });
   await rowOf('Air is not dumped on an E-stop').getByRole('button', { name: 'Resolved' }).click();
   await page.getByPlaceholder(/Reason/).fill('Dump valve added to the pneumatic design');
   await page.getByRole('button', { name: 'Save' }).click();

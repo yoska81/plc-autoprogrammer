@@ -14,6 +14,8 @@ import { useReviewStore } from './useReviewStore';
 import { runChecks } from './checks';
 import { projectSummary, REVIEW_SCHEMA } from './reviewAI';
 import { reviewRows } from './report';
+import { acceptCriticalForConstruction, openCriticalFindings } from './actions';
+import { openCounts } from './useReviewStore';
 import { designReviewTable } from '../deliverables/docs/manual';
 import { pageRoute } from './types';
 import type { LadderProgram } from '../plc/core/ladder';
@@ -100,6 +102,21 @@ test('AI request: summary has every part of the project, schema is strict', () =
   const item = REVIEW_SCHEMA.properties.findings.items;
   assert.deepEqual([...item.required].sort(), Object.keys(item.properties).sort());
   assert.equal(pageRoute('hmi', 'manual'), '/hmi?screen=manual');
+});
+
+test('construction guard: open criticals block, override marks them accepted', () => {
+  seedSampleProject();
+  assert.equal(openCriticalFindings().length, 0, 'example has no open critical');
+  const broken: LadderProgram = structuredClone(LADDER);
+  broken.rungs.find((r) => r.id === 'r_y1')!.branches = [[{ type: 'NO', address: 'X002' }]];
+  useProgramStore.setState({ ladder: broken });
+  const open = openCriticalFindings();
+  assert.deepEqual(open.map((f) => f.id), ['out-unsafe:Y001']);
+  assert.equal(openCounts(useReviewStore.getState()).critical, 1, 'badge count');
+  acceptCriticalForConstruction(open, 'B', 'Interlock added in hardware, program fix in rev C');
+  assert.equal(openCriticalFindings().length, 0);
+  assert.match(useReviewStore.getState().marks['out-unsafe:Y001'].reason, /rev B.*Interlock added/);
+  assert.equal(openCounts(useReviewStore.getState()).critical, 0);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

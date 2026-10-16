@@ -5,6 +5,8 @@ import {
   FolderOpenIcon, ChevronDownIcon, ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 import { IS_PREVIEW } from './preview/mode';
+import { useAutoReview } from './review/useAutoReview';
+import { ReviewStatus, ReviewTreeBadge } from './review/ReviewBadge';
 import { useStages, type StageStatus } from './spec/useStages';
 import { useProjectsStore } from './store/useProjectsStore';
 import { currentRevision, useProjectStore } from './store/useProjectStore';
@@ -23,7 +25,7 @@ const DOT: Record<StageStatus | 'none', string> = {
   none: 'bg-transparent',
 };
 
-interface TreeNode { label: string; to?: string; stage?: StageId; children?: TreeNode[]; mono?: boolean }
+interface TreeNode { label: string; to?: string; stage?: StageId; children?: TreeNode[]; mono?: boolean; badge?: ReactNode }
 
 /** Menu bar entry with a click-open dropdown (closes on outside click). */
 function Menu({ label, children }: { label: string; children: ReactNode }) {
@@ -72,6 +74,7 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
         {hasChildren && (open ? <ChevronDownIcon className="w-3.5 h-3.5" /> : <ChevronRightIcon className="w-3.5 h-3.5" />)}
       </span>
       <span className={`truncate ${node.mono ? 'font-mono text-xs' : ''}`}>{node.label}</span>
+      {node.badge}
       <span className={`ml-auto w-2 h-2 rounded-full flex-shrink-0 ${DOT[status]}`} title={status === 'none' ? undefined : status === 'ready' ? 'Done' : status === 'stale' ? 'Out of date' : 'Not started'} />
     </span>
   );
@@ -97,6 +100,7 @@ export default function App() {
   const hmiScreens = useHmiStore((s) => s.design?.screens) ?? NO_SCREENS;
   const rev = currentRevision(useProjectStore((s) => s.info));
   useEffect(() => { ensureActive(); }, [ensureActive]);
+  useAutoReview();
 
   const projectName = projects.find((p) => p.id === activeId)?.name ?? 'Project';
   const equipmentDone = stages.equipment.status !== 'empty';
@@ -137,7 +141,7 @@ export default function App() {
           { label: 'Simulation', to: '/simulate' },
         ],
       },
-      { label: 'Design review', to: '/review' },
+      { label: 'Design review', to: '/review', badge: <ReviewTreeBadge /> },
       { label: 'Deliverables', to: '/export' },
     ],
   };
@@ -226,6 +230,7 @@ export default function App() {
         <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
         <span>HMI: {hmiPart || '—'}</span>
         <span>Rev {rev.rev} · {rev.description}</span>
+        <ReviewStatus />
         <span className="ml-auto" />
         <span>v0.7.0</span>
       </div>
