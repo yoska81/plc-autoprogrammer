@@ -33,7 +33,7 @@ export function classifyAiError(err: unknown, signal?: AbortSignal): AiErrorInfo
   if (e?.code === 'rate_limited') return { kind: 'overloaded', transient: true };
   if (e?.code === 'session_expired' || e?.code === 'not_granted') return { kind: 'auth', transient: false };
   const status = typeof e?.status === 'number' ? e.status : undefined;
-  if (name === 'APIConnectionTimeoutError' || /timed? ?out|timeout/i.test(msg)) return { kind: 'timeout', transient: true, status };
+  if (name === 'WatchdogTimeout' || name === 'APIConnectionTimeoutError' || /timed? ?out|timeout/i.test(msg)) return { kind: 'timeout', transient: true, status };
   if (status === 401 || status === 403) return { kind: 'auth', transient: false, status };
   if (/credit balance|billing/i.test(msg)) return { kind: 'limit', transient: false, status };
   const ra = Number(header(err, 'retry-after'));
@@ -109,5 +109,70 @@ export class AiRequestError extends Error {
     super(message, { cause });
     this.name = 'AiRequestError';
     this.info = info;
+  }
+}
+
+/**
+ * Longest wait without any streamed data (thinking or text) before a request counts as hung, ms.
+ * Deep thinking streams its summary as it goes, so minutes of silence mean the connection is gone.
+ */
+export const IDLE_LIMIT_MS = 180_000;
+
+/** Longest one request may take, by effort level (the deepest thinking takes longest), ms. */
+export const TOTAL_LIMIT_MS: Record<string, number> = { low: 5 * 60_000, medium: 10 * 60_000, high: 20 * 60_000, xhigh: 25 * 60_000, max: 30 * 60_000 };
+
+/** Watchdog limits in force (tests shorten them with setAiLimits). */
+export const AI_LIMITS = { idleMs: IDLE_LIMIT_MS, totalMs: { ...TOTAL_LIMIT_MS } as Record<string, number> };
+export const totalLimitFor = (effort: string) => AI_LIMITS.totalMs[effort] ?? AI_LIMITS.totalMs.max;
+
+/** Test hook: shorter watchdog limits (E2E / unit tests). */
+export function setAiLimits(l: { idleMs?: number; totalMs?: number }) {
+  if (l.idleMs) AI_LIMITS.idleMs = l.idleMs;
+  if (l.totalMs) for (const k of Object.keys(AI_LIMITS.totalMs)) AI_LIMITS.totalMs[k] = l.totalMs;
+}
+
+/** A request stopped by the watchdog: classified as a timeout (retried, then reported). */
+export class WatchdogTimeout extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WatchdogTimeout';
+  }
+}
+
+/**
+ * Run one request so it can never hang: it is aborted when no progress arrives for `idleMs` (only
+ * when the call reports progress) or when it runs longer than `totalMs`, and then fails with a
+ * WatchdogTimeout. The caller's signal still cancels it.
+ */
+export async function withWatchdog<T>(
+  run: (signal: AbortSignal, progress: () => void) => Promise<T>,
+  o: { signal?: AbortSignal; idleMs?: number; totalMs: number; reportsProgress: boolean },
+): Promise<T> {
+  const ctrl = new AbortController();
+  let fired: WatchdogTimeout | null = null;
+  const fire = (why: string) => { if (!fired) { fired = new WatchdogTimeout(why); ctrl.abort(fired); } };
+  const onCancel = () => ctrl.abort(o.signal?.reason);
+  if (o.signal?.aborted) ctrl.abort(o.signal.reason); else o.signal?.addEventListener('abort', onCancel, { once: true });
+  const idleMs = o.idleMs ?? AI_LIMITS.idleMs;
+  let idle: ReturnType<typeof setTimeout> | undefined;
+  const progress = () => {
+    if (!o.reportsProgress) return;
+    clearTimeout(idle);
+    idle = setTimeout(() => fire(`The AI service stopped sending data (timed out after ${Math.round(idleMs / 1000)} s without progress).`), idleMs);
+  };
+  progress();
+  const total = setTimeout(() => fire(`The AI request timed out after ${Math.round(o.totalMs / 60_000)} min.`), o.totalMs);
+  try {
+    // a hung call may ignore the abort: race it against the watchdog so this always settles
+    return await Promise.race([
+      run(ctrl.signal, progress),
+      new Promise<never>((_, reject) => ctrl.signal.addEventListener('abort', () => reject(fired ?? ctrl.signal.reason ?? new DOMException('Aborted', 'AbortError')), { once: true })),
+    ]);
+  } catch (err) {
+    throw fired ?? err;
+  } finally {
+    clearTimeout(idle);
+    clearTimeout(total);
+    o.signal?.removeEventListener('abort', onCancel);
   }
 }
