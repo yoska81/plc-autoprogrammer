@@ -19,7 +19,7 @@ export function IOToolbar({ generateButton, filter, onFilter }: { generateButton
       <div className="flex flex-wrap items-center gap-1.5 px-4 py-1.5 bg-[#f7f8f9] border-b border-steel-200">
         {generateButton}
         <span className="w-px h-5 bg-steel-300 mx-1" />
-        <button onClick={addBlankInput} className={tool}><PlusIcon className="w-4 h-4 text-brand-600" />Add input</button>
+        <button onClick={addBlankInput} className={tool}><PlusIcon className="w-4 h-4 text-brand-800" />Add input</button>
         <button onClick={addBlankOutput} className={tool}><PlusIcon className="w-4 h-4 text-amber-600" />Add output</button>
         <button onClick={() => setShowTemplate(true)} className={tool}><BookOpenIcon className="w-4 h-4" />From template…</button>
         <span className="w-px h-5 bg-steel-300 mx-1" />

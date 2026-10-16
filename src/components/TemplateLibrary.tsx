@@ -101,7 +101,7 @@ export function TemplateLibrary({ onClose }: Props) {
                   onClick={() => setCategoryFilter(cat)}
                   className={`w-full text-left px-3 py-1.5 rounded text-sm mb-0.5 transition-colors ${
                     categoryFilter === cat
-                      ? 'bg-brand-600 text-white font-medium'
+                      ? 'bg-brand-600 text-brand-950 font-medium'
                       : 'text-steel-600 hover:bg-steel-200'
                   }`}
                 >
@@ -147,7 +147,7 @@ export function TemplateLibrary({ onClose }: Props) {
                 type="checkbox"
                 checked={allVisibleSelected}
                 onChange={toggleSelectAll}
-                className="w-4 h-4 rounded border-steel-300 text-brand-600 focus:ring-brand-400"
+                className="w-4 h-4 rounded border-steel-300 text-brand-800 focus:ring-brand-400"
                 disabled={availableVisible.length === 0}
               />
               <span className="text-xs text-steel-500">
@@ -188,7 +188,7 @@ export function TemplateLibrary({ onClose }: Props) {
                                 checked={isSelected}
                                 onChange={() => toggleSelect(t.templateId)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="w-4 h-4 rounded border-steel-300 text-brand-600 focus:ring-brand-400"
+                                className="w-4 h-4 rounded border-steel-300 text-brand-800 focus:ring-brand-400"
                               />
                             )}
                           </td>
@@ -196,7 +196,7 @@ export function TemplateLibrary({ onClose }: Props) {
                             {t.templateId}
                           </td>
                           <td className="px-2 py-2 w-20">
-                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${t.type === 'input' ? 'bg-brand-100 text-brand-700' : 'bg-amber-100 text-amber-700'}`}>
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${t.type === 'input' ? 'bg-brand-100 text-brand-800' : 'bg-amber-100 text-amber-700'}`}>
                               {t.type === 'input' ? 'IN' : 'OUT'}
                             </span>
                           </td>
@@ -229,7 +229,7 @@ export function TemplateLibrary({ onClose }: Props) {
             <button
               onClick={handleImport}
               disabled={selectedCount === 0}
-              className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 text-sm font-medium text-brand-950 bg-brand-600 rounded hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Import {selectedCount > 0 ? `${selectedCount} Selected` : ''}
             </button>

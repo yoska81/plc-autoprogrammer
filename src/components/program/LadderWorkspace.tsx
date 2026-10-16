@@ -8,6 +8,7 @@ import type { LadderProgram, Rung } from '../../plc/ladder';
 import LadderView from '../ladder/LadderView';
 import { Spinner, ReasoningPanel } from './common';
 import StageBanner from '../StageBanner';
+import ResizablePane from '../ResizablePane';
 import { useFingerprints, useStages } from '../../spec/useStages';
 import { useStageStore } from '../../store/useStageStore';
 import { changedSections, specToText } from '../../spec/types';
@@ -172,7 +173,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
     <button
       key={id}
       onClick={() => setTab(id)}
-      className={`flex-1 py-2 text-xs font-medium border-b-2 ${tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+      className={`flex-1 py-2 text-xs font-medium border-b-2 ${tab === id ? 'border-brand-600 text-brand-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
     >
       {label}
     </button>
@@ -181,7 +182,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
   return (
     <div className="flex-1 flex overflow-hidden">
       {/* Assistant panel */}
-      <aside className="w-96 flex-shrink-0 flex flex-col border-r border-gray-200 bg-white">
+      <ResizablePane id="program.assistant" defaultSize={384} min={260} max={800} className="flex flex-col border-r border-gray-200 bg-white">
         <div className="flex border-b border-gray-200">
           {tabButton('describe', 'Describe')}
           {tabButton('fix', 'Fix & Ask')}
@@ -207,7 +208,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
               <button
                 onClick={handleGenerate}
                 disabled={isGenerating || !ready || !machineText.trim()}
-                className="w-full py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isGenerating ? <><Spinner /> Thinking & writing ladder…</> : ladder.rungs.length ? 'Generate New Program' : 'Generate Program'}
               </button>
@@ -224,7 +225,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
                 </p>
               )}
               {chat.map((m, i) => (
-                <div key={i} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand-600 text-white ml-6' : 'bg-gray-100 text-gray-800 mr-2'}`}>
+                <div key={i} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand-600 text-brand-950 ml-6' : 'bg-gray-100 text-gray-800 mr-2'}`}>
                   {m.text}
                   {m.outcome && (
                     <div className={`mt-1 text-xs font-medium ${m.outcome === 'applied' ? 'text-green-700' : m.outcome === 'rejected' ? 'text-red-600' : 'text-gray-500'}`}>
@@ -286,19 +287,19 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
             <button
               onClick={() => handleRevise(request)}
               disabled={isGenerating || !ready || !request.trim() || Boolean(proposal) || !ladder.rungs.length}
-              className="w-full py-2 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50"
+              className="w-full py-2 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50"
             >
               Send
             </button>
           </div>
         )}
-      </aside>
+      </ResizablePane>
 
       {/* Ladder area */}
       <section className="flex-1 flex flex-col overflow-hidden bg-white">
         {!proposal && (
           <StageBanner info={stages.program} action={
-            <button onClick={updateFromSpec} disabled={isGenerating || !ready} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
+            <button onClick={updateFromSpec} disabled={isGenerating || !ready} className="px-3 py-1.5 text-sm bg-brand-600 text-brand-950 rounded disabled:opacity-50">
               {isGenerating ? 'Updating…' : 'Update program'}
             </button>} />
         )}
@@ -324,14 +325,14 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
               ...(hasGeneral ? [{ id: GENERAL as string | null, name: 'General', n: ladder.rungs.filter((r) => blockOf(r) === GENERAL).length }] : []),
             ].map((b) => (
               <button key={b.id ?? '*'} onClick={() => { setBlock(b.id); setSelectedRungId(null); }}
-                className={`px-2.5 py-1 rounded-sm border ${activeBlock === b.id ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-brand-50'}`}>
-                {b.name} <span className={activeBlock === b.id ? 'text-brand-100' : 'text-gray-400'}>{b.n}</span>
+                className={`px-2.5 py-1 rounded-sm border ${activeBlock === b.id ? 'bg-brand-600 border-brand-600 text-brand-950' : 'bg-white border-gray-300 text-gray-700 hover:bg-brand-50'}`}>
+                {b.name} <span className={activeBlock === b.id ? 'text-brand-800' : 'text-gray-400'}>{b.n}</span>
               </button>
             ))}
             {activeBlock !== null && (
               <button onClick={() => { setTab('fix'); handleRevise(`Review and rewrite this block so it fully matches the specification for this part of the machine. Keep its interface (the internal bits other blocks read or write) unless it is wrong, and explain any change to it.\n\nCurrent specification:\n${specText}`); }}
                 disabled={isGenerating || !ready || Boolean(proposal)}
-                className="ml-auto px-2.5 py-1 rounded-sm border border-brand-300 text-brand-700 bg-white hover:bg-brand-50 disabled:opacity-50">
+                className="ml-auto px-2.5 py-1 rounded-sm border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 disabled:opacity-50">
                 Regenerate this block
               </button>
             )}
@@ -358,7 +359,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
             />
           ) : isGenerating ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-gray-500">
-              <Spinner className="h-8 w-8 text-brand-500" />
+              <Spinner className="h-8 w-8 text-brand-800" />
               <p className="text-sm">The AI is reasoning through your machine logic — this can take a few minutes.</p>
             </div>
           ) : (

@@ -98,8 +98,8 @@ export default function NewProjectPage() {
 
   return (
     <div className="flex flex-col h-screen bg-steel-50 font-sans text-steel-900">
-      <header className="h-12 flex-shrink-0 bg-brand-900 text-white flex items-center px-4 gap-4">
-        <span className="font-semibold">PLC Autoprogrammer</span>
+      <header className="h-12 flex-shrink-0 bg-brand-950 text-white flex items-center px-4 gap-4">
+        <span className="font-semibold tracking-[0.18em] text-brand-600">ISA AUTO PROGRAMMER</span>
         <span className="text-brand-200 text-sm">New project</span>
         <button onClick={() => navigate(-1)} className="ml-auto text-sm text-brand-100 hover:text-white">Close ✕</button>
       </header>
@@ -111,7 +111,7 @@ export default function NewProjectPage() {
             <li key={label} className="flex-1">
               <button type="button" disabled={i > step || (i > 0 && !created)} onClick={() => setStep(i)}
                 className={`w-full flex items-center gap-2 py-3 border-b-4 text-sm ${i === step ? 'border-brand-600 text-brand-800 font-semibold' : i < step ? 'border-brand-200 text-steel-700' : 'border-transparent text-steel-400'}`}>
-                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${i < step ? 'bg-brand-500 text-white' : i === step ? 'bg-brand-600 text-white' : 'bg-steel-100 text-steel-500'}`}>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${i < step ? 'bg-brand-500 text-brand-950' : i === step ? 'bg-brand-600 text-brand-950' : 'bg-steel-100 text-steel-500'}`}>
                   {i < step ? '✓' : i + 1}
                 </span>
                 {label}
@@ -229,7 +229,7 @@ export default function NewProjectPage() {
         <div className="flex items-center gap-3">
           {step === 2 && stages.equipment.status === 'empty' && <span className="text-xs text-steel-500">You can also choose equipment later.</span>}
           <button onClick={next} disabled={!canNext}
-            className="px-5 py-2 text-sm font-medium bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-40">
+            className="px-5 py-2 text-sm font-medium bg-brand-600 text-brand-950 rounded hover:bg-brand-700 disabled:opacity-40">
             {step === STEPS.length - 1 ? 'Open project →' : 'Next →'}
           </button>
         </div>

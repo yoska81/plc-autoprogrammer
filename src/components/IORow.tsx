@@ -40,7 +40,7 @@ export function IORow({ point, address, duplicate }: IORowProps) {
             className={`${cell} w-20 font-mono ${duplicate ? 'border-red-400 text-red-700' : isManual ? 'text-brand-800 font-semibold' : 'placeholder:text-steel-700'}`}
           />
           {duplicate && <span className="text-[10px] text-white bg-red-600 px-1 rounded-sm" title="Two I/O points use this address">DUP</span>}
-          {isManual && !duplicate && <span className="text-[10px] text-brand-700" title="Manual address">M</span>}
+          {isManual && !duplicate && <span className="text-[10px] text-brand-800" title="Manual address">M</span>}
         </div>
       </td>
       <td className={td}>

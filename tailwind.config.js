@@ -3,20 +3,21 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      // Brand palette: the Israeli-flag blue hue (#0038B8), softened for long screen use; cool greys.
+      // Brand palette: lime accent #EAFF46 for actions and selection (dark text on it),
+      // graphite-olive 800–950 for the title/status bars and for brand-coloured text.
       colors: {
         brand: {
-          50: '#f0f4fa',
-          100: '#dde5f4',
-          200: '#b9c8e8',
-          300: '#88a0d4',
-          400: '#5677c0',
-          500: '#2f56a8',
-          600: '#22448c',
-          700: '#1c3873',
-          800: '#172e5d',
-          900: '#122449',
-          950: '#0b1730',
+          50: '#fbffe6',
+          100: '#f5ffc4',
+          200: '#ecff94',
+          300: '#e1f866',
+          400: '#cfe83a',
+          500: '#b3cc1c',
+          600: '#eaff46',
+          700: '#d6ef2c',
+          800: '#3b4011',
+          900: '#24270b',
+          950: '#15170a',
         },
         steel: {
           50: '#f5f7f8',

@@ -303,7 +303,7 @@ function CylinderCard({ d, bits, inputs, onSet }: { d: CylinderDevice; bits: Map
     <Card title={`${d.label} cylinder`} tag={d.tag} bypass={{ d, onSet }}>
       <CylinderDrawing d={d} />
       <div className="mt-1 flex flex-wrap items-center gap-1">
-        <span className={`mr-1 text-[11px] font-bold ${status === 'EXTENDED' ? 'text-amber-700' : status === 'MOVING' ? 'text-brand-700' : 'text-steel-500'}`}>{status}</span>
+        <span className={`mr-1 text-[11px] font-bold ${status === 'EXTENDED' ? 'text-amber-700' : status === 'MOVING' ? 'text-brand-800' : 'text-steel-500'}`}>{status}</span>
         <span className="text-[10px] text-steel-400">sol</span>
         <AddrChip address={d.extendOutput} on={bits.get(d.extendOutput) ?? false} kind="out" />
         {d.retractOutput && <AddrChip address={d.retractOutput} on={bits.get(d.retractOutput) ?? false} kind="out" />}

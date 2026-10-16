@@ -3,6 +3,7 @@
  * machine built from the I/O list and wiring, with live power flow, forces,
  * bypasses and per-block testing.
  */
+import ResizablePane from '../components/ResizablePane';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowPathIcon, ExclamationTriangleIcon, ForwardIcon, PauseIcon, PlayIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import type { IOWiring } from '../electrical/types';
@@ -156,7 +157,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
             <PauseIcon className="h-4 w-4" /> Pause
           </button>
         ) : (
-          <button type="button" className={`${btn} border-brand-600 bg-brand-600 text-white hover:bg-brand-700`} onClick={() => ctl.start()}>
+          <button type="button" className={`${btn} border-brand-600 bg-brand-600 text-brand-950 hover:bg-brand-700`} onClick={() => ctl.start()}>
             <PlayIcon className="h-4 w-4" /> Run
           </button>
         )}
@@ -169,7 +170,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
         <div className="ml-1 flex items-center rounded border border-steel-300 bg-white p-0.5" role="group" aria-label="Simulation speed">
           {SPEEDS.map((s) => (
             <button key={s} type="button" onClick={() => ctl.setSpeed(s)}
-              className={`rounded px-1.5 py-0.5 text-[12px] font-semibold ${snap.speed === s ? 'bg-brand-600 text-white' : 'text-steel-600 hover:bg-steel-100'}`}>
+              className={`rounded px-1.5 py-0.5 text-[12px] font-semibold ${snap.speed === s ? 'bg-brand-600 text-brand-950' : 'text-steel-600 hover:bg-steel-100'}`}>
               {s}x
             </button>
           ))}
@@ -192,8 +193,8 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
             {[{ id: null as string | null, name: 'All', rungIds: program.rungs.map((r) => r.id) }, ...blocks].map((b) => (
               <button key={b.id ?? 'all'} type="button" onClick={() => ctl.selectBlock(b.id)}
                 title={b.id ? blocks.find((x) => x.id === b.id)?.description : 'Whole program'}
-                className={`rounded px-2 py-0.5 text-[12px] font-semibold ${block === b.id ? 'bg-brand-600 text-white' : 'text-steel-600 hover:bg-steel-100'}`}>
-                {b.name} <span className={block === b.id ? 'text-brand-100' : 'text-steel-400'}>{b.rungIds.length}</span>
+                className={`rounded px-2 py-0.5 text-[12px] font-semibold ${block === b.id ? 'bg-brand-600 text-brand-950' : 'text-steel-600 hover:bg-steel-100'}`}>
+                {b.name} <span className={block === b.id ? 'text-brand-800' : 'text-steel-400'}>{b.rungIds.length}</span>
               </button>
             ))}
           </div>
@@ -236,19 +237,19 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
       )}
 
       {/* body */}
-      <div className="grid min-h-0 flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto p-3 lg:auto-rows-[minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)_330px] lg:overflow-hidden">
-        <div className="lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+      <div className="flex min-h-0 flex-1 overflow-hidden p-3">
+        <ResizablePane id="sim.machine" defaultSize={300} min={220} max={760} className="min-h-0 overflow-y-auto pr-3">
           <h2 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-steel-500">
             Machine{block ? ` · ${blockName(block)}` : ''}
           </h2>
           <MachinePanel devices={snap.devices} bits={snap.bits} inputs={snap.inputs} actions={actions} visible={visibleDevices} />
-        </div>
+        </ResizablePane>
 
-        <div className="flex h-[560px] flex-col overflow-hidden rounded-lg border border-steel-200 bg-white shadow-sm lg:h-auto">
+        <div className="flex min-w-[260px] flex-1 flex-col overflow-hidden rounded-lg border border-steel-200 bg-white shadow-sm">
           <div className="flex items-center gap-1 border-b border-steel-200 px-2 pt-1.5">
             {(['live', 'drawing'] as const).map((v) => (
               <button key={v} type="button" onClick={() => setView(v)}
-                className={`-mb-px rounded-t border px-3 py-1 text-[13px] font-semibold ${view === v ? 'border-steel-200 border-b-white bg-white text-brand-700' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>
+                className={`-mb-px rounded-t border px-3 py-1 text-[13px] font-semibold ${view === v ? 'border-steel-200 border-b-white bg-white text-brand-800' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>
                 {v === 'live' ? 'Live logic' : 'Ladder drawing'}
               </button>
             ))}
@@ -305,7 +306,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
           </div>
         </div>
 
-        <div className="flex h-[600px] flex-col overflow-hidden rounded-lg border border-steel-200 bg-white shadow-sm lg:h-auto">
+        <ResizablePane id="sim.io" defaultSize={330} min={240} max={900} handle="left" className="ml-3 flex flex-col overflow-hidden rounded-lg border border-steel-200 bg-white shadow-sm">
           <IOPanel
             inputs={addrs.inputs} outputs={addrs.outputs} cBits={addrs.cBits}
             timerAddrs={addrs.timers} counterAddrs={addrs.counters} registers={addrs.registers}
@@ -314,7 +315,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
             timers={snap.timers} counters={snap.counters} log={snap.log} labelOf={labelOf}
             onForce={(a, v) => ctl.force(a, v)} onWrite={(a, v) => ctl.write(a, v)}
           />
-        </div>
+        </ResizablePane>
       </div>
     </div>
   );

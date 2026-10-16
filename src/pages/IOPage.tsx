@@ -17,7 +17,7 @@ export default function IOPage() {
           <p className="text-xs text-steel-500 mt-0.5">Every input and output of the machine, with its PLC address</p>
         </div>
         <button onClick={() => navigate('/electrical?tab=design')} disabled={stages.io.status === 'empty'}
-          className="px-4 py-2 text-sm bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-40">Next: Electrical →</button>
+          className="px-4 py-2 text-sm bg-brand-600 text-brand-950 rounded hover:bg-brand-700 disabled:opacity-40">Next: Electrical →</button>
       </header>
       <IOFromSpec>
         {(generateButton) => <IOToolbar generateButton={generateButton} filter={filter} onFilter={setFilter} />}

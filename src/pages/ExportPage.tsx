@@ -37,7 +37,7 @@ function Card({ title, info, children, to }: { title: string; info?: StageInfo; 
 function B({ label, onClick, disabled, primary, busy }: { label: string; onClick: () => void; disabled?: boolean; primary?: boolean; busy: string | null }) {
   return (
     <button onClick={onClick} disabled={disabled || Boolean(busy)}
-      className={primary ? 'px-4 py-2 text-sm rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2' : btn}>
+      className={primary ? 'px-4 py-2 text-sm rounded bg-brand-600 text-brand-950 hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2' : btn}>
       {busy === label || (primary && busy?.startsWith('Building')) ? <><Spinner /> {busy}…</> : label}
     </button>
   );

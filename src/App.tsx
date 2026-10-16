@@ -9,9 +9,9 @@ import { useStages, type StageStatus } from './spec/useStages';
 import { useProjectsStore } from './store/useProjectsStore';
 import { currentRevision, useProjectStore } from './store/useProjectStore';
 import { useHmiStore } from './store/useHmiStore';
-import { useSettingsStore } from './store/useSettingsStore';
 import type { StageId } from './store/useStageStore';
 import UpdateAll from './components/UpdateAll';
+import ResizablePane from './components/ResizablePane';
 
 // Stable empty list: a new [] inside a store selector would re-render forever.
 const NO_SCREENS: never[] = [];
@@ -54,7 +54,7 @@ function MenuItem({ onClick, children }: { onClick: () => void; children: ReactN
 function ToolButton({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
   return (
     <button title={title} aria-label={title} onClick={onClick}
-      className="w-8 h-8 flex items-center justify-center rounded-sm text-steel-700 hover:bg-brand-50 hover:text-brand-700 border border-transparent hover:border-brand-200">
+      className="w-8 h-8 flex items-center justify-center rounded-sm text-steel-700 hover:bg-brand-50 hover:text-brand-800 border border-transparent hover:border-brand-200">
       {children}
     </button>
   );
@@ -79,7 +79,7 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
     <li>
       {node.to ? (
         <NavLink to={node.to} style={{ paddingLeft: 8 + depth * 14 }}
-          className={`block pr-2 py-[3px] ${active ? 'bg-brand-600 text-white' : 'text-steel-800 hover:bg-brand-50'}`}>{row}</NavLink>
+          className={`block pr-2 py-[3px] ${active ? 'bg-brand-600 text-brand-950' : 'text-steel-800 hover:bg-brand-50'}`}>{row}</NavLink>
       ) : (
         <div style={{ paddingLeft: 8 + depth * 14 }} className="pr-2 py-[3px] text-steel-600 cursor-default" onClick={() => setOpen((v) => !v)}>{row}</div>
       )}
@@ -95,7 +95,6 @@ export default function App() {
   const { cpuId, modules } = useProjectStore();
   const hmiPart = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber);
   const hmiScreens = useHmiStore((s) => s.design?.screens) ?? NO_SCREENS;
-  const model = useSettingsStore((s) => s.anthropicModel);
   const rev = currentRevision(useProjectStore((s) => s.info));
   useEffect(() => { ensureActive(); }, [ensureActive]);
 
@@ -137,8 +136,8 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-[#f0f2f3] font-sans text-steel-900 text-[13px]">
       {/* Title bar */}
-      <div className="h-7 flex-shrink-0 bg-brand-800 text-white flex items-center px-3 text-xs">
-        <span className="font-semibold">PLC Autoprogrammer</span>
+      <div className="h-7 flex-shrink-0 bg-brand-950 text-white flex items-center px-3 text-xs">
+        <span className="font-semibold tracking-[0.18em] text-brand-600">ISA AUTO PROGRAMMER</span>
         <span className="mx-2 text-brand-300">—</span>
         <span className="truncate text-brand-100">{projectName}</span>
       </div>
@@ -187,7 +186,7 @@ export default function App() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Project navigation */}
-        <aside className="w-64 flex-shrink-0 bg-white border-r border-steel-300 flex flex-col">
+        <ResizablePane id="app.nav" defaultSize={256} min={180} max={520} className="bg-white border-r border-steel-300 flex flex-col">
           <div className="h-7 flex items-center px-2 bg-[#e9edef] border-b border-steel-300 text-xs font-semibold text-steel-700">Project navigation</div>
           <nav className="flex-1 overflow-y-auto py-1">
             <ul><TreeItem node={tree} depth={0} stages={stages} /></ul>
@@ -197,11 +196,11 @@ export default function App() {
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> out of date</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-steel-300" /> to do</span>
           </div>
-        </aside>
+        </ResizablePane>
 
         <main className="flex-1 flex flex-col overflow-hidden">
           {IS_PREVIEW && (
-            <div className="px-4 py-1 bg-brand-700 text-white text-xs">
+            <div className="px-4 py-1 bg-brand-700 text-brand-950 text-xs">
               Preview with an example project. Everything is clickable and editable; AI generation and file downloads work when the app runs on your PC.
             </div>
           )}
@@ -210,12 +209,12 @@ export default function App() {
       </div>
 
       {/* Status bar */}
-      <div className="h-6 flex-shrink-0 bg-brand-800 text-brand-50 flex items-center gap-5 px-3 text-[11px]">
+      <div className="h-6 flex-shrink-0 bg-brand-950 text-brand-50 flex items-center gap-5 px-3 text-[11px]">
         <span>Ready</span>
         <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
         <span>HMI: {hmiPart || '—'}</span>
         <span>Rev {rev.rev} · {rev.description}</span>
-        <span className="ml-auto">AI: {model}</span>
+        <span className="ml-auto" />
         <span>v0.7.0</span>
       </div>
     </div>

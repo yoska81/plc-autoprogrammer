@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useProgramStore } from '../store/useProgramStore';
 import { useProjectsStore } from '../store/useProjectsStore';
-import { useSettingsStore, activeCredentials, ANTHROPIC_MODELS, EFFORT_LEVELS } from '../store/useSettingsStore';
+import { useSettingsStore, activeCredentials } from '../store/useSettingsStore';
 import { usePlc } from '../plc/usePlc';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useHmiStore } from '../store/useHmiStore';
@@ -22,11 +22,6 @@ export default function ProgramPage() {
   const ai: AIConfig = { provider: settings.provider, apiKey, model, effort: settings.effort };
   const ready = Boolean(apiKey);
 
-  const modelLabel = settings.provider === 'anthropic'
-    ? `${ANTHROPIC_MODELS.find((m) => m.value === model)?.label.split(' —')[0] ?? model} · thinking: ${
-        EFFORT_LEVELS.find((e) => e.value === settings.effort)?.label.split(' —')[0] ?? settings.effort}`
-    : `OpenAI · ${model}`;
-
   return (
     <>
       <header className="px-6 py-3 bg-white border-b border-gray-200 flex items-center gap-4">
@@ -39,7 +34,6 @@ export default function ProgramPage() {
           />
           <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
             {lastGeneratedAt && <span>Last generated: {new Date(lastGeneratedAt).toLocaleString()}</span>}
-            <span className="font-mono">{modelLabel}</span>
           </div>
         </div>
         <Link to="/plc" className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700" title="Change PLC">

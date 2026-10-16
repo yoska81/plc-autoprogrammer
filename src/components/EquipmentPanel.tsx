@@ -125,7 +125,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
           <p className="text-steel-600">The AI suggests a configuration from your description. You decide: every option is listed below. Options too small for this machine are grey; anything that fits can be chosen, including bigger than suggested.</p>
         </div>
         <button onClick={recommend} disabled={busy || !apiKey || specEmpty}
-          className="px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
+          className="px-4 py-1.5 font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
           {busy ? <><Spinner /> Selecting equipment…</> : rec ? 'Suggest again' : 'Suggest equipment'}
         </button>
         {specEmpty && <p className="w-full text-amber-800">Describe the machine first on the <Link to="/spec" className="underline">Machine description</Link> step.</p>}
@@ -155,7 +155,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                       <tr key={c.id} onClick={() => f.ok && set({ cpuId: c.id })}
                         className={`${f.ok ? 'cursor-pointer hover:bg-brand-50' : 'text-steel-400 bg-steel-50/60 cursor-not-allowed'} ${selected ? 'bg-brand-100' : ''}`}>
                         <td className={td}><input type="radio" readOnly checked={selected} disabled={!f.ok} aria-label={`Choose ${c.id}`} /></td>
-                        <td className={`${td} font-mono`}>{c.id}{rec?.plc.cpuId === c.id && <span className="ml-2 text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-sm font-sans">SUGGESTED</span>}</td>
+                        <td className={`${td} font-mono`}>{c.id}{rec?.plc.cpuId === c.id && <span className="ml-2 text-[10px] bg-brand-600 text-brand-950 px-1.5 py-0.5 rounded-sm font-sans">SUGGESTED</span>}</td>
                         <td className={td}>{c.builtInInputs}</td>
                         <td className={td}>{c.builtInOutputs}</td>
                         <td className={`${td} text-xs`}>{[/ethernet/i.test(c.label) && 'Ethernet', /analog/i.test(c.label) && 'Analog', /relay/i.test(c.label) && 'Relay out', /sourcing/i.test(c.label) && 'Sourcing out', /CLICK PLUS/.test(c.label) && 'CLICK PLUS'].filter(Boolean).join(' · ')}</td>
@@ -169,7 +169,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
           </Section>
 
           <Section title={`I/O expansion modules (slot order, max ${MAX_MODULES})`}
-            aside={<button disabled={(choice?.modules.length ?? 0) >= MAX_MODULES} onClick={() => set({ modules: [...(choice?.modules ?? []), modules[0].partNumber] })} className="text-xs text-brand-700 hover:underline disabled:opacity-40">+ Add module</button>}>
+            aside={<button disabled={(choice?.modules.length ?? 0) >= MAX_MODULES} onClick={() => set({ modules: [...(choice?.modules ?? []), modules[0].partNumber] })} className="text-xs text-brand-800 hover:underline disabled:opacity-40">+ Add module</button>}>
             {!(choice?.modules.length) ? <p className="px-3 py-2 text-steel-500">No expansion modules: the CPU's built-in I/O is used.</p> : (
               <table className="w-full">
                 <tbody>
@@ -205,7 +205,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                       <tr key={h.partNumber} onClick={() => f.ok && set({ hmiPartNumber: h.partNumber })}
                         className={`${f.ok ? 'cursor-pointer hover:bg-brand-50' : 'text-steel-400 bg-steel-50/60 cursor-not-allowed'} ${selected ? 'bg-brand-100' : ''}`}>
                         <td className={td}><input type="radio" readOnly checked={selected} disabled={!f.ok} aria-label={`Choose ${h.partNumber}`} /></td>
-                        <td className={`${td} font-mono`}>{h.partNumber}{rec?.hmi?.partNumber === h.partNumber && <span className="ml-2 text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-sm font-sans">SUGGESTED</span>}</td>
+                        <td className={`${td} font-mono`}>{h.partNumber}{rec?.hmi?.partNumber === h.partNumber && <span className="ml-2 text-[10px] bg-brand-600 text-brand-950 px-1.5 py-0.5 rounded-sm font-sans">SUGGESTED</span>}</td>
                         <td className={td}>{h.sizeIn}"</td>
                         <td className={td}>{h.widthPx}×{h.heightPx}</td>
                         <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes</span> : f.reason}</td>
@@ -234,7 +234,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                   {applied ? (
                     <p className="text-xs bg-green-50 border border-green-200 text-green-800 px-2 py-1.5">Applied to the project.</p>
                   ) : (
-                    <button onClick={apply} disabled={!fit?.ok} className="w-full px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-40">Use this selection</button>
+                    <button onClick={apply} disabled={!fit?.ok} className="w-full px-4 py-1.5 font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700 disabled:opacity-40">Use this selection</button>
                   )}
                   {choice.modules.some((m) => !getPart(m)) && <p className="text-xs text-amber-700">A module is not in the catalog.</p>}
                 </>
@@ -251,7 +251,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                     <div className="font-medium text-steel-800">{a.label}</div>
                     <div className="text-xs font-mono text-steel-600">{a.cpuId}{a.hmiPartNumber ? ` · ${a.hmiPartNumber}` : ''}</div>
                     <p className="text-xs text-steel-600">{a.tradeoff}</p>
-                    <button onClick={() => set({ cpuId: a.cpuId, hmiPartNumber: a.hmiPartNumber })} className="text-xs text-brand-700 font-medium hover:underline">Select</button>
+                    <button onClick={() => set({ cpuId: a.cpuId, hmiPartNumber: a.hmiPartNumber })} className="text-xs text-brand-800 font-medium hover:underline">Select</button>
                   </div>
                 ))}
               </div>

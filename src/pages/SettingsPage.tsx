@@ -16,7 +16,7 @@ function ProviderTab({ label, active, onSelect }: { label: string; active: boole
     <button
       onClick={onSelect}
       className={`flex-1 py-2.5 text-sm font-medium rounded transition-colors ${
-        active ? 'bg-brand-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'
+        active ? 'bg-brand-600 text-brand-950 shadow' : 'text-gray-600 hover:bg-gray-200'
       }`}
     >
       {label}
@@ -52,7 +52,7 @@ function ProviderCard({ title, active, children }: { title: string; active: bool
     <div className={`bg-white rounded-lg border p-5 space-y-4 ${active ? 'border-brand-300' : 'border-gray-200 opacity-60'}`}>
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-gray-700">{title}</span>
-        {active && <span className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded font-medium">Active</span>}
+        {active && <span className="text-xs bg-brand-100 text-brand-800 px-2 py-0.5 rounded font-medium">Active</span>}
       </div>
       {children}
     </div>
@@ -164,7 +164,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={handleSave}
-              className="px-5 py-2 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 transition-colors"
+              className="px-5 py-2 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 transition-colors"
             >
               Save Settings
             </button>

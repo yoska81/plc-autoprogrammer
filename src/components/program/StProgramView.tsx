@@ -55,7 +55,7 @@ export default function StProgramView({ ai, io, ready }: { ai: AIConfig; io: IOP
         <button
           onClick={handleGenerate}
           disabled={isGenerating || !ready || !userPrompt.trim()}
-          className="w-full py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full py-2.5 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {isGenerating ? <><Spinner /> Thinking & generating…</> : 'Generate Program'}
         </button>

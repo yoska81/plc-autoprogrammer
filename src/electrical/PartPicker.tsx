@@ -41,7 +41,7 @@ export default function PartPicker({ tag, partNumber, onPick, onClose }: {
                     <td className={td}>{p.description}</td>
                     <td className={`${td} text-xs whitespace-nowrap`}>{keyRatings(p)}</td>
                     <td className={`${td} text-xs whitespace-nowrap`}>
-                      {selected ? <span className="text-brand-700 font-medium">In the design</span> : s.ok ? <span className={s.better ? 'text-green-700' : 'text-steel-600'}>{s.reason}</span> : s.reason}
+                      {selected ? <span className="text-brand-800 font-medium">In the design</span> : s.ok ? <span className={s.better ? 'text-green-700' : 'text-steel-600'}>{s.reason}</span> : s.reason}
                     </td>
                   </tr>
                 );
