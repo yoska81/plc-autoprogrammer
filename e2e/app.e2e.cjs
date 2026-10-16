@@ -189,8 +189,8 @@ function sse(model, text) {
   await page.getByRole('button', { name: /Generate (Electrical Design|New Design)/ }).click();
   await page.getByRole('button', { name: 'BOM CSV' }).waitFor({ timeout: 15000 });
   await page.goto(BASE + '/electrical?tab=design');
-  check(await page.locator('select').filter({ hasText: '600VAC-3PH' }).first().inputValue() !== '', 'supply select present');
-  log('Electrical supply / code:', await page.locator('select').filter({ hasText: '600VAC-3PH' }).first().inputValue(), '/', await page.getByLabel('Electrical code').inputValue());
+  check(await page.locator('select').filter({ hasText: '600 V 3-phase' }).first().inputValue() !== '', 'supply select present');
+  log('Electrical supply / code:', await page.locator('select').filter({ hasText: '600 V 3-phase' }).first().inputValue(), '/', await page.getByLabel('Electrical code').inputValue());
 
   // Part picker: weaker parts greyed, a stronger one can be chosen.
   const changeBtn = page.locator('button[aria-label^="Change "]').first();

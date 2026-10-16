@@ -146,7 +146,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
           <Section title="PLC CPU">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead><tr>{['', 'Part number', 'DC in', 'Out', 'Features', 'Fits this machine?'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+                <thead><tr>{['', 'Part number', 'Inputs', 'Outputs', 'Features', 'Fits this machine?'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
                 <tbody>
                   {cpus.map((c) => {
                     const f = cpuFit(c, choice?.modules ?? [], need);

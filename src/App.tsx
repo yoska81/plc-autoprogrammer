@@ -211,17 +211,18 @@ export default function App() {
           <nav className="flex-1 overflow-y-auto py-1">
             <ul><TreeItem node={tree} depth={0} stages={stages} /></ul>
           </nav>
-          <div className="border-t border-steel-200 px-2 py-1.5 flex gap-3 text-[11px] text-steel-500">
+          <div className="border-t border-steel-200 px-2 py-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-steel-500">
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-600" /> done</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> out of date</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-steel-300" /> to do</span>
+            <span className="flex items-center gap-1" title="Questions the AI asked; answer them on the page or in Design review"><span className="rounded-full bg-amber-100 px-1 text-[10px] font-semibold text-amber-900">2?</span> questions</span>
           </div>
         </ResizablePane>
 
         <main className="flex-1 flex flex-col overflow-hidden">
           {IS_PREVIEW && (
             <div className="px-4 py-1 bg-brand-700 text-brand-950 text-xs">
-              Preview with an example project. Everything is clickable and editable. AI runs on your Claude account (it asks once); files are saved through Claude.
+              Preview: everything is clickable and editable, and the example project is in the project list (top right). AI runs on your Claude account (it asks once); files are saved through Claude.
             </div>
           )}
           <Outlet />
