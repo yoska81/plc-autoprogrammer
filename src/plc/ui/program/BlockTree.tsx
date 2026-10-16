@@ -41,7 +41,7 @@ export default function BlockTree({ program, issues, active, selectedRungId, onB
         <span className="w-3.5" />
         <StatusDot s={total} title="Whole program" />
         <span className="flex-1 truncate font-medium">Whole program</span>
-        <span className={active === null ? 'text-brand-800' : 'text-gray-400'}>{program.rungs.length}</span>
+        <span className={active === null ? 'text-brand-100' : 'text-gray-400'}>{program.rungs.length}</span>
       </button>
       <ul className="mt-0.5 space-y-px">
         {items.map((b) => {
@@ -56,7 +56,7 @@ export default function BlockTree({ program, issues, active, selectedRungId, onB
                 <button type="button" onClick={() => onBlock(b.id)} title={b.description} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
                   <StatusDot s={byBlock.get(b.id)} title={b.name} />
                   <span className="flex-1 truncate">{b.name}</span>
-                  <span className={active === b.id ? 'text-brand-800' : 'text-gray-400'}>{rungs.length}</span>
+                  <span className={active === b.id ? 'text-brand-100' : 'text-gray-400'}>{rungs.length}</span>
                 </button>
               </div>
               {isOpen && (

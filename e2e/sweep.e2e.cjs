@@ -1,6 +1,6 @@
 // Page sweep: every page at 1366x768 and 1920x1080, with an empty project and with the example project.
 // Fails on console/page errors, horizontal page overflow, controls pushed off-screen and unreadable text
-// (contrast below 3:1, or light text on the lime brand colour).
+// (contrast below 3:1, or light text on the old lime brand colour).
 //
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/sweep.e2e.cjs
 // Screenshots land in e2e/out-sweep/.
@@ -40,7 +40,7 @@ function audit() {
   for (const el of document.querySelectorAll('body *')) {
     if (el.closest('svg') || !el.childNodes.length) continue;
     const text = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join(' ').trim();
-    if (!text) continue;
+    if (!/[\p{L}\p{N}]/u.test(text)) continue; // separators like "|" are decoration
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) continue;
     const s = getComputedStyle(el);
