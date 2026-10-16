@@ -319,6 +319,8 @@ export interface SafetyModel {
   reset?: string;
   mcr?: ResolvedComponent;
   edm: string[];
+  /** N.C. feedback contact terminals of each EDM device (same order as edm), e.g. "61-62" on an add-on block. */
+  edmTerms: string[];
   statusInput?: IoPoint;
   /** Wire supplying PLC outputs: 24+S when switched by safety, else 24+. */
   outputSupply: string;
@@ -367,7 +369,23 @@ export interface ElectricalModel {
   plcTag: string;
   mainAwg: string;
   machine: MachineModel;
+  /** N.C. auxiliary contact used for EDM feedback / reversing interlock, per contactor tag. */
+  auxNc: Map<string, AuxNc>;
 }
+
+/** Where a contactor's N.C. auxiliary contact comes from. */
+export interface AuxNc {
+  /** Terminal pair, e.g. ['61', '62']. */
+  terms: [string, string];
+  /** Add-on block fitted in the design (or added because the frame has none). */
+  block?: string;
+  /** True when the design has no add-on block although the frame has no internal auxiliary contact (added to the BOM). */
+  missing: boolean;
+  family?: string;
+}
+
+/** Fuji SC-E02(G)..E4(G) frames have no internal auxiliary contact (AutomationDirect Fuji SC-E spec, note 1). */
+const NO_INTERNAL_AUX = /^SC-E(0[2-5]|1|2S?|3|4)G?$/i;
 
 const cache = new WeakMap<DrawingContext, ElectricalModel>();
 
@@ -510,12 +528,38 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const estopTags = byCat(rc, 'estop').map((c) => c.tag);
   const ioW = ctx.design.ioWiring;
   for (const w of ioW) if (w.deviceType === 'estop-contact' && !estopTags.includes(w.deviceTag)) estopTags.push(w.deviceTag);
-  const resetRc = byCat(rc, 'pushbutton').find((c) => /reset/i.test(c.comp.function));
+  // Safety-relay reset button: an explicit "safety reset" first; a plain "Reset" only when it is not
+  // also a PLC input (a fault-reset button wired to the PLC is not the relay's reset).
+  const pbs = byCat(rc, 'pushbutton');
+  const plcInputs = new Set(ctx.design.ioWiring.map((w) => w.deviceTag));
+  const resetRc = pbs.find((c) => /safety.*reset|reset.*safety|relay reset/i.test(c.comp.function))
+    ?? pbs.find((c) => /reset/i.test(c.comp.function) && !plcInputs.has(c.tag))
+    ?? pbs.find((c) => /reset/i.test(c.comp.function));
   const reset = resetRc?.tag ?? ioW.find((w) => /reset/i.test(w.description) && w.deviceType === 'pushbutton-no')?.deviceTag;
   const mcr = byCat(rc, 'relay').find((c) => /master|mcr|safety/i.test(`${c.comp.function} ${c.tag}`));
   const edm = mcr ? [mcr.tag] : motors.flatMap((m) => m.contactors.map((c) => c.tag));
   const hasSafety = !!relay || estopTags.length > 0;
-  const safety: SafetyModel = { relay, estops: estopTags, reset, mcr, edm, outputSupply: hasSafety ? '24+S' : '24+' };
+  // N.C. auxiliary contacts for EDM feedback and reversing interlocks. Front block SZ-A11T: N.O. 53-54,
+  // N.C. 61-62; side block SZ-AS1T: N.C. 71-72, N.O. 83-84 (Fuji SC-E spec); otherwise built-in 21-22.
+  const auxNc = new Map<string, AuxNc>();
+  const needNc = [...new Set([...edm, ...motors.filter((mm) => mm.motor.reversing && mm.contactors.length === 2).flatMap((mm) => mm.contactors.map((c) => c.tag))])];
+  const blocks = rc.filter((c) => /auxiliary contact block/i.test(c.part?.description ?? '') || /^SZ-A(11|S1|22|S2)T$/i.test(c.partNumber));
+  const unassigned = blocks.flatMap((b) => Array.from({ length: Math.max(1, b.comp.quantity) }, () => b))
+    .filter((b) => !b.comp.motorTag && !needNc.some((t) => new RegExp(`\\b${t}\\b`).test(b.comp.function)));
+  for (const tag of needNc) {
+    const k = rc.find((c) => c.tag === tag);
+    const family = str(k?.part?.ratings, 'family');
+    const blk = blocks.find((b) => new RegExp(`\\b${tag}\\b`).test(b.comp.function))
+      ?? blocks.find((b) => b.comp.motorTag && b.comp.motorTag === k?.comp.motorTag && !auxNcUsed(b))
+      ?? (family && NO_INTERNAL_AUX.test(family) ? unassigned.shift() : undefined);
+    const side = (b: ResolvedComponent) => /side/i.test(b.part?.description ?? '') || /^SZ-AS/i.test(b.partNumber);
+    if (blk) auxNc.set(tag, { terms: side(blk) ? ['71', '72'] : ['61', '62'], block: blk.partNumber, missing: false, family });
+    else if (family && NO_INTERNAL_AUX.test(family)) auxNc.set(tag, { terms: ['61', '62'], block: 'SZ-A11T', missing: true, family });
+    else auxNc.set(tag, { terms: ['21', '22'], missing: false, family });
+  }
+  function auxNcUsed(b: ResolvedComponent) { return [...auxNc.values()].filter((a) => a.block === b.partNumber && !a.missing).length >= Math.max(1, b.comp.quantity); }
+  const ncOf = (tag: string): [string, string] => auxNc.get(tag)?.terms ?? ['21', '22'];
+  const safety: SafetyModel = { relay, estops: estopTags, reset, mcr, edm, edmTerms: edm.map((t) => ncOf(t).join('-')), outputSupply: hasSafety ? '24+S' : '24+' };
 
   // ---- PLC & IO points
   const plcRc = byCat(rc, 'plc')[0];
@@ -577,7 +621,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     if (mm?.overload) devices.push({ tag: mm.overload.tag, terminals: '95-96', nc: true, kind: 'ol' });
     if (mm && mm.motor.reversing && mm.contactors.length === 2) {
       const other = mm.contactors.find((c) => c.tag !== p.deviceTag);
-      if (other) devices.push({ tag: other.tag, terminals: '21-22', nc: true, kind: 'interlock' });
+      if (other) devices.push({ tag: other.tag, terminals: ncOf(other.tag).join('-'), nc: true, kind: 'interlock' });
     }
     p.coilChain = { devices, wires: [p.address, ...devices.map((_, k) => `${p.address}${letter(k + 1)}`)] };
   }
@@ -763,8 +807,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     chain('S11', 'S12', '11-12');
     chain('S21', 'S22', '21-22');
     const rs = [reset ?? 'PB?', ...edm]; // same placeholder as the drawings until a reset button is assigned
-    rs.forEach((tag, k) => addWire({ wire: k === 0 ? 'S33' : `S33${letter(k)}`, from: k === 0 ? `${relay.tag}:S33` : `${rs[k - 1]}:${k - 1 === 0 ? '14' : '22'}`, to: `${tag}:${k === 0 ? '13' : '21'}`, color: 'BU', size: '18 AWG', function: k === 0 ? 'Safety reset' : 'Feedback (EDM) loop' }));
-    addWire({ wire: 'S34', from: `${rs[rs.length - 1]}:${rs.length === 1 ? '14' : '22'}`, to: `${relay.tag}:S34`, color: 'BU', size: '18 AWG', function: 'Feedback (EDM) loop' });
+    rs.forEach((tag, k) => addWire({ wire: k === 0 ? 'S33' : `S33${letter(k)}`, from: k === 0 ? `${relay.tag}:S33` : `${rs[k - 1]}:${k - 1 === 0 ? '14' : ncOf(rs[k - 1])[1]}`, to: `${tag}:${k === 0 ? '13' : ncOf(tag)[0]}`, color: 'BU', size: '18 AWG', function: k === 0 ? 'Safety reset' : 'Feedback (EDM) loop' }));
+    addWire({ wire: 'S34', from: `${rs[rs.length - 1]}:${rs.length === 1 ? '14' : ncOf(rs[rs.length - 1])[1]}`, to: `${relay.tag}:S34`, color: 'BU', size: '18 AWG', function: 'Feedback (EDM) loop' });
     addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:13`, color: 'BU', size: '18 AWG', function: 'Safety output supply' });
     if (mcr) {
       addWire({ wire: 'SR14', from: `${relay.tag}:14`, to: `${mcr.tag}:A1`, color: 'BU', size: '18 AWG', function: 'MCR coil (safety output)' });
@@ -827,7 +871,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const machine = buildMachine(ctx, mw, io, motors, groundBar?.tag ?? 'PE BAR', strips);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc,
   };
 }
 
@@ -1219,6 +1263,15 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
       description: c.part?.description ?? `${c.comp.function} (part not found in catalog — verify)`, tags: [c.tag], category: c.category,
     });
   }
+  // Contactors without an internal auxiliary contact need an add-on block for the EDM / interlock N.C. contact.
+  const auxMissing = [...m.auxNc].filter(([, a]) => a.missing).map(([tag]) => tag);
+  if (auxMissing.length) {
+    const key = 'other|SZ-A11T';
+    const why = `added for ${auxMissing.join(', ')}: the contactor has no built-in auxiliary contact; its N.C. 61-62 is used for ${m.safety.edm.some((t) => auxMissing.includes(t)) ? 'the safety relay feedback (EDM)' : 'the reversing interlock'}`;
+    const l = lines.get(key);
+    if (l) { l.qty += auxMissing.length; l.description += ` — ${why}`; }
+    else lines.set(key, { item: 0, qty: auxMissing.length, partNumber: 'SZ-A11T', manufacturer: ctx.getPart('SZ-A11T')?.manufacturer ?? 'Fuji Electric', description: `${ctx.getPart('SZ-A11T')?.description ?? 'Contactor auxiliary contact block, front mount, (1) N.O./(1) N.C.'} — ${why}`, tags: auxMissing.map((t) => `${t}-AUX`), category: 'other' });
+  }
   // The project HMI (chosen on the HMI page) is on the door even when the design has no HMI component.
   if (ctx.hmiPartNumber && !m.rc.some((c) => c.category === 'hmi')) {
     const h = getHmi(ctx.hmiPartNumber);
@@ -1347,6 +1400,9 @@ const MARGIN = 10;
 const OL_STACK_H = 50;
 const GAP = 4;
 
+/** Layout group of a category (breakers / fuses together, PLC + modules together). */
+const grpOf = (c: CatalogCategory) => (c === 'breaker' || c === 'fuse' ? 'cb' : c === 'plc' || c === 'plcModule' ? 'plc' : c);
+
 /** Breakers sit side by side and CLICK modules snap onto the CPU: no gap inside those groups. */
 function gapBefore(prev: PlacedItem | undefined, it: PlacedItem): number {
   if (!prev) return 0;
@@ -1439,83 +1495,140 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   }
 
   // Pack rows into DIN-rail bands (wrapping onto extra rails when a row is too wide).
+  // Normal pass: each group (protection, power/PLC, control, terminals) on its own rails; a whole group
+  // shares the previous rail when it fits. Compact pass (only when the normal pass overflows): the
+  // disconnect first, then the other parts tallest first, each on the first partly used rail with room
+  // (preferring rails already tall enough), so tall parts share rails and fewer rails + ducts are
+  // needed; terminal strips on their own rails, or one strip moved onto a device rail with room.
   const innerX0 = backplate.x + MARGIN + DUCT + CLEAR;
   const innerW = backplate.w - 2 * (MARGIN + DUCT + CLEAR);
-  const notFit: PanelLayout['notFit'] = [];
-  const bands: { items: PlacedItem[]; h: number; terminals?: boolean }[] = [];
+  type Band = { items: PlacedItem[]; h: number; terminals?: boolean };
+  const gapOf = (b: PlacedItem[], it: PlacedItem) => (b.length ? it.gapLeft ?? gapBefore(b[b.length - 1], it) : 0);
+  const bandW = (b: PlacedItem[]) => b.reduce((a, it, k) => a + it.w + (k ? it.gapLeft ?? gapBefore(b[k - 1], it) : 0), 0);
   const rowW = (row: PlacedItem[]) => row.reduce((a, it, k) => a + it.w + (k ? gapBefore(row[k - 1], it) : 0), 0);
-  rows.forEach((row, ri) => {
-    if (!row.length) return;
-    const last = bands[bands.length - 1];
-    // A whole group that fits on the end of the previous rail shares it (never for terminal strips).
-    if (ri < 3 && last && !last.terminals && rowW(last.items) + 3 * GAP + rowW(row) <= innerW) {
-      row[0].gapLeft = 3 * GAP;
-      last.items.push(...row);
-      return;
+  /** Put an item on the best rail of `pool` that has room (tall-enough rails first). */
+  const fitInto = (pool: Band[], it: PlacedItem): boolean => {
+    const gapTo = (b: Band) => { const prev = b.items[b.items.length - 1]; return grpOf(prev.category) === grpOf(it.category) ? gapBefore(prev, it) : 3 * GAP; };
+    const fits = pool.filter((b) => b.items.length && bandW(b.items) + gapTo(b) + it.w <= innerW);
+    const b = fits.find((x) => Math.max(...x.items.map((i) => i.h)) >= it.h) ?? fits[0];
+    if (!b) return false;
+    const prev = b.items[b.items.length - 1];
+    it.gapLeft = grpOf(prev.category) === grpOf(it.category) ? undefined : 3 * GAP;
+    b.items.push(it);
+    return true;
+  };
+  /** compact: -1 = normal pass; >= 0 = compact pass, moving terminal strip `moveStrip - 1` onto a device rail (0 = none). */
+  const pack = (rowsIn: PlacedItem[][], compact: number, notFit: PanelLayout['notFit']): Band[] => {
+    const bands: Band[] = [];
+    const tooWide = (it: PlacedItem) => { if (it.w <= innerW) return false; notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h }); return true; };
+    if (compact >= 0) {
+      const dev = rowsIn.slice(0, 3).flat();
+      const ds = dev.find((i) => i.category === 'disconnect');
+      const order = [...(ds ? [ds] : []), ...dev.filter((i) => i !== ds).sort((x, y) => y.h - x.h)];
+      for (const it of order) {
+        if (tooWide(it)) continue;
+        if (!fitInto(bands, it)) { it.gapLeft = undefined; bands.push({ items: [it], h: 0 }); }
+      }
+      const termBands: Band[] = [];
+      (rowsIn[3] ?? []).forEach((t, k) => {
+        if (tooWide(t)) return;
+        if (k === compact - 1 && fitInto(bands, t)) return;
+        if (!fitInto(termBands, t)) { t.gapLeft = undefined; termBands.push({ items: [t], h: 0, terminals: true }); }
+      });
+      return [...bands, ...termBands];
     }
-    let cur: PlacedItem[] = [];
-    let w = 0;
-    for (const it of row) {
-      if (it.w > innerW) { notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h }); continue; }
-      const need = gapBefore(cur[cur.length - 1], it) + it.w;
-      if (cur.length && w + need > innerW) { bands.push({ items: cur, h: 0 }); cur = []; w = 0; }
-      w += gapBefore(cur[cur.length - 1], it) + it.w;
-      cur.push(it);
-    }
-    if (cur.length) bands.push({ items: cur, h: 0, terminals: ri === 3 });
-  });
-  for (const b of bands) b.h = Math.max(RAIL_H, ...b.items.map((i) => i.h)) + 2 * CLEAR;
-  const gbH = groundBars.length ? Math.max(...groundBars.map((g) => g.h)) + CLEAR : 0;
-  const limit = backplate.y + backplate.h - MARGIN - gbH;
-  const rails: Rect[] = [];
-  const ducts: PanelLayout['ducts'] = [];
-  const items: PlacedItem[] = [];
-  const ductX = backplate.x + MARGIN, ductW = backplate.w - 2 * MARGIN;
-  let y = backplate.y + MARGIN;
-  const ductTop = y;
-  ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
-  y += DUCT;
-  bands.forEach((b, bi) => {
-    const lastBand = bi === bands.length - 1;
-    // The duct under the bottom terminal strip is optional (field wiring enters from below).
-    if (y + b.h + (lastBand && b.terminals ? 0 : DUCT) > limit + 0.01) {
-      for (const it of b.items) notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h });
-      return;
-    }
-    const cy = y + b.h / 2;
-    rails.push({ x: backplate.x + MARGIN + DUCT + 4, y: cy - RAIL_H / 2, w: backplate.w - 2 * (MARGIN + DUCT + 4), h: RAIL_H });
-    // Main disconnect at the right-hand end of its rail (latch side of a left-hinged door), so the
-    // through-door handle is on the right as usual; the rest of the rail packs from the left.
-    const ds = b.items[0]?.category === 'disconnect' ? b.items[0] : undefined;
-    const rest = ds ? b.items.slice(1) : b.items;
-    let x = innerX0;
-    rest.forEach((it, k) => {
-      x += k > 0 ? it.gapLeft ?? gapBefore(rest[k - 1], it) : 0;
-      it.x = x; it.y = cy - it.h / 2;
-      if (it.sub) { let sy = it.y; for (const s of it.sub) { s.x = x + (it.w - s.w) / 2; s.y = sy; sy += s.h; } }
-      x += it.w;
-      items.push(it);
+    rowsIn.forEach((row, ri) => {
+      if (!row.length) return;
+      const terminals = ri === 3;
+      const last = bands[bands.length - 1];
+      // A whole group that fits on the end of the previous rail shares it (never for terminal strips).
+      if (!terminals && last && !last.terminals && rowW(last.items) + 3 * GAP + rowW(row) <= innerW) {
+        row[0].gapLeft = 3 * GAP;
+        last.items.push(...row);
+        return;
+      }
+      let cur: PlacedItem[] = [];
+      let w = 0;
+      for (const it of row) {
+        if (tooWide(it)) continue;
+        const need = gapOf(cur, it) + it.w;
+        if (cur.length && w + need > innerW) { bands.push({ items: cur, h: 0 }); cur = []; w = 0; }
+        w += gapOf(cur, it) + it.w;
+        cur.push(it);
+      }
+      if (cur.length) bands.push({ items: cur, h: 0, terminals });
     });
-    if (ds) { ds.x = innerX0 + innerW - ds.w; ds.y = cy - ds.h / 2; items.push(ds); }
-    y += b.h;
-    if (!(lastBand && b.terminals) || y + DUCT <= limit + 0.01) {
-      ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
-      y += DUCT;
+    return bands;
+  };
+  const place = (rowsIn: PlacedItem[][], gbs: PlacedItem[], compact: number) => {
+    const notFit: PanelLayout['notFit'] = [];
+    const bands = pack(rowsIn, compact, notFit);
+    for (const b of bands) b.h = Math.max(RAIL_H, ...b.items.map((i) => i.h)) + 2 * CLEAR;
+    const gbH = gbs.length ? Math.max(...gbs.map((g) => g.h)) + CLEAR : 0;
+    const limit = backplate.y + backplate.h - MARGIN - gbH;
+    const rails: Rect[] = [];
+    const ducts: PanelLayout['ducts'] = [];
+    const items: PlacedItem[] = [];
+    const ductX = backplate.x + MARGIN, ductW = backplate.w - 2 * MARGIN;
+    let y = backplate.y + MARGIN;
+    const ductTop = y;
+    ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
+    y += DUCT;
+    bands.forEach((b, bi) => {
+      const lastBand = bi === bands.length - 1;
+      // The duct under the bottom terminal strip is optional (field wiring enters from below).
+      if (y + b.h + (lastBand && b.terminals ? 0 : DUCT) > limit + 0.01) {
+        for (const it of b.items) notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h });
+        return;
+      }
+      const cy = y + b.h / 2;
+      rails.push({ x: backplate.x + MARGIN + DUCT + 4, y: cy - RAIL_H / 2, w: backplate.w - 2 * (MARGIN + DUCT + 4), h: RAIL_H });
+      // Main disconnect at the right-hand end of its rail (latch side of a left-hinged door), so the
+      // through-door handle is on the right as usual; the rest of the rail packs from the left.
+      const ds = b.items[0]?.category === 'disconnect' ? b.items[0] : undefined;
+      const rest = ds ? b.items.slice(1) : b.items;
+      let x = innerX0;
+      rest.forEach((it, k) => {
+        x += k > 0 ? it.gapLeft ?? gapBefore(rest[k - 1], it) : 0;
+        it.x = x; it.y = cy - it.h / 2;
+        if (it.sub) { let sy = it.y; for (const s of it.sub) { s.x = x + (it.w - s.w) / 2; s.y = sy; sy += s.h; } }
+        x += it.w;
+        items.push(it);
+      });
+      if (ds) { ds.x = innerX0 + innerW - ds.w; ds.y = cy - ds.h / 2; items.push(ds); }
+      y += b.h;
+      if (!(lastBand && b.terminals) || y + DUCT <= limit + 0.01) {
+        ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
+        y += DUCT;
+      }
+    });
+    const bottom = y;
+    const lastDuct = ducts[ducts.length - 1];
+    const vEnd = lastDuct.y + lastDuct.h === bottom ? bottom - DUCT : bottom;
+    ducts.push({ x: ductX, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
+    ducts.push({ x: backplate.x + backplate.w - MARGIN - DUCT, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
+    // Ground bar(s): bolted to the back panel along the bottom edge, below the last duct, right-hand side.
+    let gx = backplate.x + backplate.w - MARGIN;
+    for (const g of gbs) {
+      if (g.w > gx - (backplate.x + MARGIN) || bottom + gbH > backplate.y + backplate.h + 0.01) { notFit.push({ tag: g.label, partNumber: g.partNumber, w: g.w, h: g.h }); continue; }
+      g.x = gx - g.w; g.y = bottom + (gbH - g.h) / 2;
+      gx -= g.w + GAP;
+      items.push(g);
     }
-  });
-  const bottom = y;
-  const lastDuct = ducts[ducts.length - 1];
-  const vEnd = lastDuct.y + lastDuct.h === bottom ? bottom - DUCT : bottom;
-  ducts.push({ x: ductX, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
-  ducts.push({ x: backplate.x + backplate.w - MARGIN - DUCT, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
-  // Ground bar(s): bolted to the back panel along the bottom edge, below the last duct, right-hand side.
-  let gx = backplate.x + backplate.w - MARGIN;
-  for (const g of groundBars) {
-    if (g.w > gx - (backplate.x + MARGIN) || bottom + gbH > backplate.y + backplate.h + 0.01) { notFit.push({ tag: g.label, partNumber: g.partNumber, w: g.w, h: g.h }); continue; }
-    g.x = gx - g.w; g.y = bottom + (gbH - g.h) / 2;
-    gx -= g.w + GAP;
-    items.push(g);
+    return { notFit, rails, ducts, items, bands: bands.length };
+  };
+  // Fresh copies per attempt (placement writes x / y / gapLeft into the items).
+  const copy = (it: PlacedItem): PlacedItem => ({ ...it, sub: it.sub?.map((x) => ({ ...x })) });
+  // Least part area left off the panel wins (a terminal strip weighs more than a small relay).
+  const lost = (p: { notFit: PanelLayout['notFit'] }) => p.notFit.reduce((a, n) => a + n.w * n.h, 0);
+  let placed = place(rows.map((r) => r.map(copy)), groundBars.map(copy), -1);
+  if (placed.notFit.length) {
+    for (let k = 0; k <= rows[3].length; k++) {
+      const tight = place(rows.map((r) => r.map(copy)), groundBars.map(copy), k);
+      if (lost(tight) < lost(placed)) placed = tight;
+    }
   }
+  const { notFit, rails, ducts, items } = placed;
   const overflow = notFit.length > 0;
   if (overflow) warnings.push(`Back panel ${Math.round(backplate.w)} x ${Math.round(backplate.h)} mm is too small: ${notFit.map((n) => n.tag).join(', ')} do not fit — use a larger enclosure or rearrange.`);
   const est = items.filter((i) => i.estimated && i.category !== 'terminal').map((i) => i.label);
@@ -1850,6 +1963,8 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (m.safety.estops.length && !m.safety.relay) w.push('E-stop present but no safety relay — E-stop circuit is drawn as a hardwired MCR chain; perform a risk assessment (ISO 13849 / NFPA 79 9.2.5.4).');
   if (m.safety.relay && !m.safety.estops.length) w.push('Safety relay present but no E-stop device found.');
   if (m.safety.relay && !m.safety.reset) w.push('Safety relay has no reset pushbutton assigned (function "Reset").');
+  const auxMissing = [...m.auxNc].filter(([, a]) => a.missing);
+  if (auxMissing.length) w.push(`${auxMissing.map(([t, a]) => `${t} (${a.family})`).join(', ')}: no built-in auxiliary contact — an SZ-A11T front block (1 N.O. + 1 N.C.) is added to the BOM; the feedback / interlock uses its N.C. 61-62. Add it to the design or choose another block.`);
   if (m.motors.some((x) => x.vfd)) w.push('VFD: confirm Safe Torque Off / enable wiring and drive parameter settings (not shown in detail).');
   const noWiring = m.io.filter((p) => !p.wiring);
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);

@@ -19,28 +19,28 @@ import type { EquipmentRecommendation } from '../lib/ai/equipmentAI';
 export const SPEC: SpecSections = {
   ...EMPTY_SECTIONS,
   overview: 'Conveyor cell that moves parts to an end station where a pneumatic pusher pushes each part off onto a take-away table. About 10 parts per minute.',
-  sequence: '- Start (panel pushbutton or HMI) runs the conveyor.\n- When a part reaches the end photo-eye, stop the conveyor and extend the pusher.\n- When the pusher-extended prox turns on, retract the pusher and restart the conveyor.\n- Count every part that reaches the end.',
-  safety: '- One E-stop on the operator station, dual channel into a safety relay. Safety relay output to the PLC as Safety OK.\n- Safety relay with monitored manual reset: after the E-stop is released, the blue Safety Reset pushbutton on the door (wired to the relay reset input S33-S34, in series with the contactor feedback contact) restores Safety OK. The machine never restarts by itself: Start is needed again.\n- Loss of Safety OK stops the conveyor and retracts the pusher (stop category 0).',
+  sequence: '- Start (panel pushbutton or HMI) runs the conveyor.\n- When a part reaches the end photo-eye, stop the conveyor and extend the pusher.\n- When the pusher-extended prox turns on, retract the pusher; restart the conveyor only once the pusher-retracted prox confirms it is back.\n- Count every part that reaches the end.',
+  safety: '- One E-stop on the operator station, dual channel into a safety relay. Safety relay output to the PLC as Safety OK.\n- Safety relay with monitored manual reset: after the E-stop is released, the blue Safety Reset pushbutton on the door (wired to the relay reset input S33-S34, in series with the contactor feedback contact) restores Safety OK. The machine never restarts by itself: Start is needed again.\n- Loss of Safety OK stops the conveyor and retracts the pusher (stop category 0) and exhausts the pusher air through the main dump valve (PLC output on the safety-switched 24 V supply). Confirm with the risk assessment whether a safety-rated (redundant, monitored) dump valve is required.',
   modes: '- Auto: Start (panel or HMI) runs the cycle; Stop button (NC) or HMI Stop ends it. Optional batch target stops the cycle after the last part.\n- Manual (HMI, Maintenance password): selectable only while the cycle is stopped; hold-to-run Jog Conveyor and Pusher Extend, each with an interlock (Safety OK, and the other actuator off).',
   motion: 'M1 conveyor motor, 1 HP, 480 VAC 3-phase, across-the-line contactor and overload.',
-  pneumatics: 'Pusher cylinder, single 5/2 solenoid valve (spring return), pusher-extended prox. Retracts when the valve is off.',
-  sensing: '- Part-at-end photo-eye, PNP.\n- Pusher extended prox, PNP.',
+  pneumatics: '- Pusher cylinder, single 5/2 solenoid valve (spring return), pusher-extended and pusher-retracted proxes. Retracts when the valve is off.\n- Main air dump valve (3/2 N.C., spring return) upstream of the pusher valve: energized only while Safety OK; on an E-stop or loss of safety it de-energizes and exhausts the air, so the pusher cannot move.',
+  sensing: '- Part-at-end photo-eye, PNP.\n- Pusher extended prox, PNP.\n- Pusher retracted prox, PNP (the conveyor restarts only when the pusher is back).',
   operator: '- Operator station: Start (green), Stop (red, NC), Safety Reset (blue), E-stop.\n- 7" C-more HMI: Main screen with Start/Stop/Reset, running and fault lamps, part count with reset; Alarms screen; I/O status screen.',
-  alarms: '- Pusher fault: pusher not extended within the timeout (HMI setpoint, default 3 s). Latches; Reset (panel Start or HMI Reset) clears it when the pusher is back.\n- Safety circuit open while Safety OK is off.\n- Service due warning when the run hours since the last service reach the service interval.',
+  alarms: '- Pusher fault: pusher not extended, or not back to retracted, within the timeout (HMI setpoint, default 3 s). Latches; Reset (panel Start or HMI Reset) clears it when the pusher is back.\n- Safety circuit open while Safety OK is off.\n- Service due warning when the run hours since the last service reach the service interval.',
   utilities: '480 VAC 3-phase, 60 Hz. NEMA 12 enclosure. Plant air 80 psi.',
 };
 
 export const RECOMMENDATION: EquipmentRecommendation = {
-  summary: 'A small conveyor cell: 5 inputs and 2 outputs plus a 7-inch operator panel. The smallest CLICK CPU with Ethernet covers it with room to spare, so no expansion modules are needed.',
-  estimatedIO: { digitalInputs: 5, digitalOutputs: 2, analogInputs: 0, analogOutputs: 0, motionAxes: 0 },
-  plc: { profileId: 'click', cpuId: 'C0-10DD1E-D', why: 'Its 8 inputs and 6 sinking outputs cover the 5 inputs and 2 outputs with 40% spare, and its Ethernet port connects the touch panel.' },
+  summary: 'A small conveyor cell: 6 inputs and 3 outputs plus a 7-inch operator panel. The smallest CLICK CPU with Ethernet covers it with room to spare, so no expansion modules are needed.',
+  estimatedIO: { digitalInputs: 6, digitalOutputs: 3, analogInputs: 0, analogOutputs: 0, motionAxes: 0 },
+  plc: { profileId: 'click', cpuId: 'C0-10DD1E-D', why: 'Its 8 inputs and 6 sinking outputs cover the 6 inputs and 3 outputs with spare points, and its Ethernet port connects the touch panel.' },
   modules: [],
   hmi: { partNumber: 'CM5-T7W', why: 'Three simple screens (run, alarms, I/O) fit comfortably on 7 inches; the CM5 is the current C-more model and talks to CLICK over Ethernet.' },
   alternatives: [
     { label: 'Lower cost, no touch panel', cpuId: 'C0-10DD1E-D', hmiPartNumber: null, tradeoff: 'Pushbuttons and lights only; no part count or alarm text for the operator.' },
     { label: 'Room to grow', cpuId: 'C0-11DD1E-D', hmiPartNumber: 'CM5-T10W', tradeoff: 'More inputs and a larger 10-inch screen if stations are added later; costs more.' },
   ],
-  cautions: ['The photo-eye and prox must be PNP (sourcing) to match the CPU inputs wired sinking; confirm with the sensor part numbers.'],
+  cautions: ['The photo-eye and proxes must be PNP (sourcing) to match the CPU inputs wired sinking; confirm with the sensor part numbers.'],
 };
 
 const NO = (address: string): LadderElement => ({ type: 'NO', address });
@@ -62,9 +62,9 @@ export const LADDER: LadderProgram = {
     { id: 'safety', name: 'Safety & modes', description: 'First-scan defaults, Safety OK, Auto/Manual mode and the cycle start/stop seal-in.' },
     { id: 'alarms', name: 'Alarms', description: 'Pusher fault latch and reset, safety-open alarm and the service-due warning.' },
     { id: 'conveyor', name: 'Conveyor', description: 'Automatic conveyor run request, part counter and batch complete.' },
-    { id: 'pusher', name: 'Pusher', description: 'Pushes the part at the end of the belt, timeout timer and end-of-batch stop.' },
+    { id: 'pusher', name: 'Pusher', description: 'Pushes the part at the end of the belt, extend and retract timeouts and end-of-batch stop.' },
     { id: 'manual', name: 'Manual', description: 'Manual-mode permissives and hold-to-run jog / extend requests from the HMI.' },
-    { id: 'outputs', name: 'Outputs', description: 'One coil per output: combines the automatic and manual requests.' },
+    { id: 'outputs', name: 'Outputs', description: 'One coil per output: combines the automatic and manual requests; main air dump valve.' },
     { id: 'status', name: 'HMI & status', description: 'Heartbeat, machine state word, pusher cycle counter, run hours, service hours and parts per minute.' },
   ],
   rungs: [
@@ -89,15 +89,15 @@ export const LADDER: LadderProgram = {
       [OUT('C2')]),
 
     // ---- Alarms
-    R('r_alm_push', 'alarms', 'Pusher fault alarm latches when the pusher is not extended within the timeout', [[NO('T1')]], [{ type: 'SET', address: 'C1101' }]),
-    R('r_alm_reset', 'alarms', 'Fault reset from panel Start or HMI Reset, only when safe: Safety OK (safety relay reset first) and the pusher request off',
-      [[NO('X002'), NO('C1'), NC('C3')], [NO('C1003'), NO('C1'), NC('C3')]], [{ type: 'RST', address: 'C1101' }]),
+    R('r_alm_push', 'alarms', 'Pusher fault alarm latches when the pusher does not extend (T1) or does not return to retracted (T4) within the timeout', [[NO('T1')], [NO('T4')]], [{ type: 'SET', address: 'C1101' }]),
+    R('r_alm_reset', 'alarms', 'Fault reset from panel Start or HMI Reset, only when safe and the cause is gone: Safety OK (safety relay reset first), pusher request off and pusher retracted',
+      [[NO('X002'), NO('C1'), NC('C3'), NO('X006')], [NO('C1003'), NO('C1'), NC('C3'), NO('X006')]], [{ type: 'RST', address: 'C1101' }]),
     R('r_alm_safe', 'alarms', 'Safety circuit open alarm while Safety OK is off', [[NC('C1')]], [OUT('C1102')]),
     R('r_wrn_svc', 'alarms', 'Service due warning: hours since service reached the service interval',
       [[CMP('DS1104', '>=', 'DS1003'), CMP('DS1003', '>', '0')]], [OUT('C1103')]),
 
     // ---- Conveyor
-    R('r_conv_auto', 'conveyor', 'Automatic conveyor request: cycle running and no part being pushed', [[NO('C2'), NC('C3')]], [OUT('C10')]),
+    R('r_conv_auto', 'conveyor', 'Automatic conveyor request: cycle running, no part being pushed and the pusher confirmed retracted', [[NO('C2'), NC('C3'), NO('X006')]], [OUT('C10')]),
     R('r_cnt', 'conveyor', 'Part counter: each part reaching the end photo-eye (shown on the HMI), reset from the HMI',
       [[NO('X004')]], [{ type: 'CNT', address: 'CT1', direction: 'UP', preset: '9999', resetAddress: 'C1004' }]),
     R('r_batch', 'conveyor', 'Batch complete: a batch target is set and the part count reached it',
@@ -108,10 +108,12 @@ export const LADDER: LadderProgram = {
       [[NO('C2'), RISE('X004')], [NO('C3'), NC('X005'), NO('C2')]], [OUT('C3')]),
     R('r_tmo', 'pusher', 'Pusher timeout: preset is the HMI setpoint DS1001 (seconds)', [[NO('C3')]],
       [{ type: 'TMR', address: 'T1', mode: 'ON_DELAY', preset: 'DS1001', unit: 'sec', accumulate: false, resetAddress: null }]),
+    R('r_ret_tmo', 'pusher', 'Retract timeout: after the push, the pusher must be back at retracted within DS1001 s', [[NO('C2'), NC('C3'), NC('X006')]],
+      [{ type: 'TMR', address: 'T4', mode: 'ON_DELAY', preset: 'DS1001', unit: 'sec', accumulate: false, resetAddress: null }]),
     R('r_batch_stop', 'pusher', 'End of batch: stop the cycle once the last part has been pushed', [[NO('C4'), NC('C3')]], [OUT('C5')]),
 
     // ---- Manual
-    R('r_jog_perm', 'manual', 'Jog permitted: Manual mode, Safety OK and the pusher valve off', [[NO('C1201'), NO('C1'), NC('Y002')]], [OUT('C1204')]),
+    R('r_jog_perm', 'manual', 'Jog permitted: Manual mode, Safety OK, pusher valve off and pusher retracted', [[NO('C1201'), NO('C1'), NC('Y002'), NO('X006')]], [OUT('C1204')]),
     R('r_ext_perm', 'manual', 'Extend permitted: Manual mode, Safety OK and the conveyor off', [[NO('C1201'), NO('C1'), NC('Y001')]], [OUT('C1205')]),
     R('r_jog_req', 'manual', 'Manual jog request: HMI Jog Conveyor held while permitted', [[NO('C1006'), NO('C1204')]], [OUT('C21')]),
     R('r_ext_req', 'manual', 'Manual extend request: HMI Extend held while permitted; a jog request has priority',
@@ -119,6 +121,7 @@ export const LADDER: LadderProgram = {
 
     // ---- Outputs
     R('r_y1', 'outputs', 'Conveyor motor contactor K1: automatic run or manual jog', [[NO('C10')], [NO('C21')]], [OUT('Y001')]),
+    R('r_y3', 'outputs', 'Main air dump valve SOL2: energized only while Safety OK; loss of safety exhausts the pusher air (Y003 is also on the safety-switched 24 V supply)', [[NO('C1')]], [OUT('Y003')]),
     R('r_y2', 'outputs', 'Pusher solenoid SOL1: automatic push or manual extend (spring return when off)', [[NO('C3')], [NO('C22')]], [OUT('Y002')]),
 
     // ---- HMI & status
@@ -160,6 +163,8 @@ export const LADDER: LadderProgram = {
     { address: 'C22', nickname: 'Man_Extend_Req', comment: 'Manual pusher extend request (permitted)' },
     { address: 'T1', nickname: 'Push_Timeout', comment: 'Pusher timeout, preset DS1001 s' },
     { address: 'T2', nickname: 'Run_Hour_Timer', comment: 'Accumulates conveyor run time, 3600 s' },
+    { address: 'T4', nickname: 'Retract_Timeout', comment: 'Pusher retract timeout, preset DS1001 s' },
+    { address: 'TD4', nickname: 'Retract_Timer_Value', comment: 'T4 elapsed seconds' },
     { address: 'T3', nickname: 'Rate_Window', comment: '10 s parts-per-minute window' },
     { address: 'TD1', nickname: 'Push_Timer_Value', comment: 'T1 elapsed seconds' },
     { address: 'TD2', nickname: 'Run_Hour_Seconds', comment: 'T2 elapsed seconds in the current hour' },
@@ -180,7 +185,7 @@ export const LADDER: LadderProgram = {
     { address: 'C1007', nickname: 'HMI_Pusher_Extend', comment: 'HMI hold-to-run pusher extend' },
     { address: 'C1008', nickname: 'HMI_Pusher_Cycles_Reset', comment: 'HMI reset of pusher cycle counter CT2' },
     { address: 'C1009', nickname: 'HMI_Service_Done', comment: 'HMI service done: clears DS1104' },
-    { address: 'C1101', nickname: 'ALM_Pusher_Fault', comment: 'Pusher not extended within DS1001 s' },
+    { address: 'C1101', nickname: 'ALM_Pusher_Fault', comment: 'Pusher not extended / not retracted within DS1001 s' },
     { address: 'C1102', nickname: 'ALM_Safety_Open', comment: 'Safety circuit open (E-stop)' },
     { address: 'C1103', nickname: 'WRN_Service_Due', comment: 'Hours since service reached the interval' },
     { address: 'C1201', nickname: 'STS_Manual_Mode', comment: 'Manual mode active' },
@@ -266,7 +271,7 @@ export const HMI: HmiDesign = {
       el('n-y1', 'indicator', 'Motor', 208, 180, 184, 44, { address: 'Y001', style: 'ok', onText: 'Motor On', offText: 'Motor Off' }),
       el('n-p1', 'indicator', 'Jog Permitted', 408, 180, 176, 44, { address: 'C1204', style: 'ok', onText: 'Jog Permitted', offText: 'Not Permitted' }),
       el('n-x4', 'indicator', 'Part at End', 600, 180, 168, 44, { address: 'X004', onText: 'Part at End', offText: 'No Part' }),
-      el('n-c1', 'text', 'Needs Manual mode, Safety OK and pusher retracted', 208, 236, 560, 20),
+      el('n-c1', 'text', 'Needs Manual mode, Safety OK and pusher retracted (X006)', 208, 236, 560, 20),
       el('n-push', 'panel', 'Pusher Cylinder', 16, 280, 768, 128),
       el('n-ext', 'button', 'Extend', 32, 312, 160, 80, { address: 'C1007', action: 'momentary', interlock: 'C1205', level: 'maintenance', note: 'Hold to extend; spring return retracts on release' }),
       el('n-y2', 'indicator', 'Valve', 208, 316, 184, 44, { address: 'Y002', style: 'ok', onText: 'Valve On', offText: 'Valve Off' }),
@@ -277,7 +282,7 @@ export const HMI: HmiDesign = {
     { id: 'setup', name: 'Setup', purpose: 'Machine setpoints with units and limits (Maintenance password).', level: 'maintenance', elements: [
       ...frame('s'),
       el('s-pg', 'panel', 'Pusher', 16, 52, 376, 172),
-      el('s-tmo', 'numeric-entry', 'Pusher Timeout', 32, 84, 344, 60, { address: 'DS1001', units: 's', min: 1, max: 10, level: 'maintenance', note: 'Fault if the pusher is not extended within this time (default 3 s)' }),
+      el('s-tmo', 'numeric-entry', 'Pusher Timeout', 32, 84, 344, 60, { address: 'DS1001', units: 's', min: 1, max: 10, level: 'maintenance', note: 'Fault if the pusher does not extend or retract within this time (default 3 s)' }),
       el('s-td1', 'numeric', 'Timer Now', 32, 152, 344, 56, { address: 'TD1', units: 's' }),
       el('s-prod', 'panel', 'Production', 408, 52, 376, 172),
       el('s-batch', 'numeric-entry', 'Batch Target', 424, 84, 344, 60, { address: 'DS1002', units: 'pcs', min: 0, max: 9999, level: 'maintenance', note: '0 = no batch limit' }),
@@ -301,18 +306,20 @@ export const HMI: HmiDesign = {
     { id: 'diag', name: 'Diagnostics', purpose: 'Every input and output by module, plus PLC communication status.', elements: [
       ...frame('d'),
       el('d-in', 'panel', 'CPU Inputs  X001–X008', 16, 52, 376, 290),
-      el('d-x1', 'indicator', 'X001 E-stop OK', 32, 84, 344, 40, { address: 'X001' }),
-      el('d-x2', 'indicator', 'X002 Start PB', 32, 132, 344, 40, { address: 'X002' }),
-      el('d-x3', 'indicator', 'X003 Stop PB (NC)', 32, 180, 344, 40, { address: 'X003' }),
-      el('d-x4', 'indicator', 'X004 Part at End', 32, 228, 344, 40, { address: 'X004' }),
-      el('d-x5', 'indicator', 'X005 Pusher Extended', 32, 276, 344, 40, { address: 'X005' }),
-      el('d-out', 'panel', 'CPU Outputs  Y001–Y006', 408, 52, 376, 136),
-      el('d-y1', 'indicator', 'Y001 Conveyor Motor', 424, 84, 344, 40, { address: 'Y001' }),
-      el('d-y2', 'indicator', 'Y002 Pusher Valve', 424, 132, 344, 40, { address: 'Y002' }),
-      el('d-com', 'panel', 'Communications', 408, 196, 376, 146),
-      el('d-hb', 'indicator', 'PLC Heartbeat', 424, 228, 344, 40, { address: 'C1203', style: 'ok', note: 'Blinks once a second while the PLC runs and the link is up' }),
-      el('d-c1', 'text', 'CLICK Ethernet · Modbus TCP port 502', 424, 280, 344, 20),
-      el('d-c2', 'text', 'PLC C0-10DD1E-D · HMI CM5-T7W', 424, 306, 344, 20),
+      el('d-x1', 'indicator', 'X001 E-stop OK', 32, 80, 344, 36, { address: 'X001' }),
+      el('d-x2', 'indicator', 'X002 Start PB', 32, 122, 344, 36, { address: 'X002' }),
+      el('d-x3', 'indicator', 'X003 Stop PB (NC)', 32, 164, 344, 36, { address: 'X003' }),
+      el('d-x4', 'indicator', 'X004 Part at End', 32, 206, 344, 36, { address: 'X004' }),
+      el('d-x5', 'indicator', 'X005 Pusher Extended', 32, 248, 344, 36, { address: 'X005' }),
+      el('d-x6', 'indicator', 'X006 Pusher Retracted', 32, 290, 344, 36, { address: 'X006' }),
+      el('d-out', 'panel', 'CPU Outputs  Y001–Y006', 408, 52, 376, 152),
+      el('d-y1', 'indicator', 'Y001 Conveyor Motor', 424, 80, 344, 36, { address: 'Y001' }),
+      el('d-y2', 'indicator', 'Y002 Pusher Valve', 424, 120, 344, 36, { address: 'Y002' }),
+      el('d-y3', 'indicator', 'Y003 Air Dump Valve', 424, 160, 344, 36, { address: 'Y003', note: 'ON = air supplied (Safety OK); OFF = air exhausted' }),
+      el('d-com', 'panel', 'Communications', 408, 212, 376, 130),
+      el('d-hb', 'indicator', 'PLC Heartbeat', 424, 240, 344, 36, { address: 'C1203', style: 'ok', note: 'Blinks once a second while the PLC runs and the link is up' }),
+      el('d-c1', 'text', 'CLICK Ethernet · Modbus TCP port 502', 424, 286, 344, 20),
+      el('d-c2', 'text', 'PLC C0-10DD1E-D · HMI CM5-T7W', 424, 312, 344, 20),
       el('d-state', 'multistate', 'Machine State', 16, 352, 376, 56, { address: 'DS1101', states: MACHINE_STATES }),
       el('d-safe', 'indicator', 'Safety OK', 408, 352, 376, 56, { address: 'C1', style: 'ok', onText: 'Safety OK', offText: 'Safety Open' }),
     ] },
@@ -334,7 +341,7 @@ export const HMI: HmiDesign = {
     ] },
   ],
   alarms: [
-    { address: 'C1101', message: 'Pusher did not extend in time', severity: 'alarm' },
+    { address: 'C1101', message: 'Pusher did not extend or retract in time', severity: 'alarm' },
     { address: 'C1102', message: 'Safety circuit open (E-stop)', severity: 'alarm' },
     { address: 'C1103', message: 'Service due: run hours reached', severity: 'warning' },
   ],
@@ -348,12 +355,12 @@ export const HMI: HmiDesign = {
     { name: 'HMI_Pusher_Extend', address: 'C1007', dataType: 'BIT', access: 'write', description: 'Hold-to-run: PLC energizes Y002 while ON and C1205 (extend permitted) is ON.' },
     { name: 'HMI_Pusher_Cycles_Reset', address: 'C1008', dataType: 'BIT', access: 'write', description: 'Resets the pusher cycle counter CT2.' },
     { name: 'HMI_Service_Done', address: 'C1009', dataType: 'BIT', access: 'write', description: 'Resets the hours-since-service register DS1104 to 0.' },
-    { name: 'ALM_Pusher_Fault', address: 'C1101', dataType: 'BIT', access: 'read', description: 'Set by the PLC when the pusher times out.' },
+    { name: 'ALM_Pusher_Fault', address: 'C1101', dataType: 'BIT', access: 'read', description: 'Set by the PLC when the pusher does not extend or retract within the timeout.' },
     { name: 'ALM_Safety_Open', address: 'C1102', dataType: 'BIT', access: 'read', description: 'PLC sets ON while Safety OK (C1) is OFF.' },
     { name: 'WRN_Service_Due', address: 'C1103', dataType: 'BIT', access: 'read', description: 'PLC sets ON when DS1104 (hours since service) ≥ DS1003 (service interval).' },
     { name: 'STS_Manual_Mode', address: 'C1201', dataType: 'BIT', access: 'read', description: 'PLC sets ON when Manual mode is active (C1005 ON and cycle stopped); Start is blocked while ON.' },
     { name: 'STS_Heartbeat', address: 'C1203', dataType: 'BIT', access: 'read', description: 'PLC toggles every second (comms watchdog shown on Diagnostics).' },
-    { name: 'STS_Jog_Permit', address: 'C1204', dataType: 'BIT', access: 'read', description: 'PLC sets ON when C1201 Manual, C1 Safety OK and Y002 pusher valve OFF.' },
+    { name: 'STS_Jog_Permit', address: 'C1204', dataType: 'BIT', access: 'read', description: 'PLC sets ON when C1201 Manual, C1 Safety OK, Y002 pusher valve OFF and X006 pusher retracted.' },
     { name: 'STS_Extend_Permit', address: 'C1205', dataType: 'BIT', access: 'read', description: 'PLC sets ON when C1201 Manual, C1 Safety OK and Y001 conveyor OFF.' },
     { name: 'SP_Pusher_Timeout', address: 'DS1001', dataType: 'INT', access: 'read-write', description: 'Pusher timeout in seconds (1–10, default 3); preset of timer T1.' },
     { name: 'SP_Batch_Target', address: 'DS1002', dataType: 'INT', access: 'read-write', description: 'Batch size in parts (0 = off); PLC stops the cycle when CTD1 reaches it.' },
@@ -398,6 +405,7 @@ export const DESIGN: ElectricalDesign = {
     c('PS1', 'PSR-24-120-3', 1, '24VDC control power supply, 3-phase 480 VAC input'),
     c('K1', 'SC-E02PG-24VDC', 1, 'Conveyor motor contactor', 'M1'),
     c('OL1', 'TK-E02-220', 1, 'Conveyor motor overload', 'M1'),
+    c('K1-AUX', 'SZ-A11T', 1, 'K1 aux contact', 'M1'),
     c('PLC', 'C0-10DD1E-D', 1, 'PLC CPU'),
     c('SR1', 'LG5925-48-61-24', 1, 'E-stop safety relay'),
     c('ES1', 'GCX1131', 1, 'Emergency stop'),
@@ -407,7 +415,9 @@ export const DESIGN: ElectricalDesign = {
     c('PB3', 'GCX1104', 1, 'Safety reset'),
     c('PE1', 'C18D-0P-1A', 1, 'Part at end photo-eye'),
     c('LS1', 'PNK-AP-3H', 1, 'Pusher extended prox'),
+    c('LS2', 'PNK-AP-3H', 1, 'Pusher retracted prox'),
     c('SOL1', '100222015324006', 1, 'Pusher valve'),
+    c('SOL2', '100222033324004', 1, 'Main air dump valve (3/2 N.C., exhausts on loss of safety)'),
     c('TB1', 'DN-T10-A', 30, 'Feed-through terminals'),
     c('TBG', 'DN-G10', 6, 'Ground terminals'),
     c('TBE', 'DN-EB35', 4, 'End brackets'),
@@ -421,21 +431,23 @@ export const DESIGN: ElectricalDesign = {
     { address: 'X003', deviceTag: 'PB2', location: 'Cabinet door', deviceType: 'pushbutton-nc', description: 'Stop PB' },
     { address: 'X004', deviceTag: 'PE1', location: 'Pusher station', deviceType: 'sensor-pnp', description: 'Part at end photo-eye' },
     { address: 'X005', deviceTag: 'LS1', location: 'Pusher station', deviceType: 'sensor-pnp', description: 'Pusher extended' },
+    { address: 'X006', deviceTag: 'LS2', location: 'Pusher station', deviceType: 'sensor-pnp', description: 'Pusher retracted' },
     { address: 'Y001', deviceTag: 'K1', location: 'Cabinet', deviceType: 'contactor-coil', description: 'Conveyor motor contactor' },
     { address: 'Y002', deviceTag: 'SOL1', location: 'Pusher station', deviceType: 'solenoid', description: 'Pusher solenoid' },
+    { address: 'Y003', deviceTag: 'SOL2', location: 'Pusher station', deviceType: 'solenoid', description: 'Main air dump valve' },
   ],
-  notes: ['Example design. Motor FLA assumed 2.1 A at 460 V (NEC 430.250); confirm the nameplate.', 'Safety relay SR1 uses monitored manual reset: blue Safety Reset PB3 on the door, wired to S33-S34 in the feedback loop as drawn (confirm K1 has an NC auxiliary contact for it).'],
+  notes: ['Example design. Motor FLA assumed 2.1 A at 460 V (NEC 430.250); confirm the nameplate.', 'Main air dump valve SOL2 (3/2 N.C. spring return, catalog part, not safety-rated) on Y003, supplied from the safety-switched 24+S output supply: loss of safety exhausts the pusher air. If the risk assessment requires a safety-rated dump valve (redundant, monitored, e.g. PL d), specify it as a field item from the pneumatics supplier.', 'Safety relay SR1 uses monitored manual reset: blue Safety Reset PB3 on the door, wired to S33-S34 in series with the K1 feedback contact. The SC-E02 contactor has no built-in auxiliary contact, so K1-AUX (SZ-A11T front block, N.C. 61-62) provides it.'],
   machine: {
     zones: ['Conveyor', 'Pusher station'],
-    junctionBoxes: [],
+    junctionBoxes: [{ tag: 'JB1', location: 'Pusher station', partNumber: 'SCE-16EL1206LP' }],
     motorLocations: { M1: 'Conveyor' },
-    routing: { PE1: null, LS1: null, SOL1: null },
+    routing: { PE1: 'JB1', LS1: 'JB1', LS2: 'JB1', SOL1: 'JB1', SOL2: 'JB1' },
   },
   generatedAt: new Date().toISOString(),
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '10';
+const SEED_VERSION = '11';
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }
@@ -481,8 +493,10 @@ function writeExample() {
     { description: 'Stop Button', type: 'input', category: 'Operator/HMI' },
     { description: 'Part at end photo-eye', type: 'input', category: 'Product Detection' },
     { description: 'Pusher extended', type: 'input', category: 'Pneumatic' },
+    { description: 'Pusher retracted', type: 'input', category: 'Pneumatic' },
     { description: 'Conveyor motor contactor', type: 'output', category: 'Conveyor' },
     { description: 'Pusher solenoid', type: 'output', category: 'Pneumatic' },
+    { description: 'Main air dump valve', type: 'output', category: 'Pneumatic' },
   ], true);
   const prog = useProgramStore.getState();
   prog.setProjectName(EXAMPLE_NAME);

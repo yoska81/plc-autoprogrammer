@@ -432,6 +432,19 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 15000 });
   log('Review verdict shown:', await page.getByText(/Reviewer's verdict/).count() > 0, '| critical open:', await page.locator('div', { hasText: /^Critical open$/ }).locator('xpath=following-sibling::div').first().innerText());
   const rowOf = (t) => page.locator('tr', { hasText: t });
+  const badge = page.locator('nav a', { hasText: 'Design review' }).locator('span[aria-label$="open critical or major findings"]');
+  log('Review badge / status bar:', await badge.innerText(), '|', await page.getByRole('link', { name: /^Review: / }).innerText());
+  check(Number(await badge.innerText()) >= 1, 'tree badge counts open critical/major findings');
+  // Issuing for construction is blocked while a critical finding is open.
+  await page.goto(BASE + '/project');
+  await page.getByLabel('Revision description').fill('Issued for construction');
+  await page.getByRole('button', { name: /^Issue revision/ }).click();
+  const guard = page.getByRole('alertdialog', { name: 'Critical findings open' });
+  await guard.waitFor({ timeout: 5000 });
+  log('Construction guard:', (await guard.locator('p').first().innerText()).replace(/\s+/g, ' '));
+  await guard.getByRole('button', { name: 'Cancel' }).click();
+  await page.goto(BASE + '/review');
+  await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 10000 });
   await rowOf('Air is not dumped on an E-stop').getByRole('button', { name: 'Resolved' }).click();
   await page.getByPlaceholder(/Reason/).fill('Dump valve added to the pneumatic design');
   await page.getByRole('button', { name: 'Save' }).click();
@@ -456,6 +469,17 @@ function sse(model, text) {
   const wbXml = await (await JSZip.loadAsync(fs.readFileSync(xlsx))).file('xl/workbook.xml').async('string');
   log('Excel sheets:', [...wbXml.matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
   check(wbXml.includes('name="Review Findings"'), 'Excel has the design review findings');
+  // Purchasing: order list by supplier, AutomationDirect cart CSV ("PartNumber,Quantity", no header), one-page summary
+  await page.getByText('Purchasing — order list').waitFor();
+  log('Order list:', (await page.locator('#order-list .bg-steel-50 span.text-xs').first().innerText()), '|', await page.getByText(/^Total of verified prices/).innerText());
+  const adCsv = fs.readFileSync(await dl('AutomationDirect order file (CSV)'), 'utf8').trim().split(/\r?\n/);
+  if (!adCsv.length || !adCsv.every((l) => /^[A-Z0-9][A-Z0-9-]*,\d+$/i.test(l))) throw new Error('AutomationDirect order file is not "PartNumber,Quantity" lines: ' + adCsv.slice(0, 3).join(' | '));
+  log('AutomationDirect order file:', adCsv.length, 'lines, e.g.', adCsv.slice(0, 3).join(' | '));
+  const ps = await PDFDocument.load(fs.readFileSync(await dl('Purchase summary PDF')));
+  log('Purchase summary PDF pages:', ps.getPageCount());
+  if (ps.getPageCount() !== 1) throw new Error('purchase summary is not one page');
+  const ox = await JSZip.loadAsync(fs.readFileSync(await dl('Order list (Excel)')));
+  log('Order list Excel sheets:', [...(await ox.file('xl/workbook.xml').async('string')).matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
   const full = await dl('Download full package PDF');
   const fullDoc = await PDFDocument.load(fs.readFileSync(full));
   const outlines = fullDoc.catalog.lookup(PDFName.of('Outlines'));
@@ -464,6 +488,7 @@ function sse(model, text) {
   const zipPath = await dl('Download everything');
   const zip = await JSZip.loadAsync(fs.readFileSync(zipPath));
   log('ZIP:', Object.keys(zip.files).filter((f) => !f.endsWith('/')).join(', '));
+  if (!Object.keys(zip.files).some((f) => f.startsWith('purchasing/') && f.endsWith('_purchase_summary.pdf'))) throw new Error('ZIP has no purchase summary');
   await snap(page, 'deliverables');
 
   log('AI calls:', JSON.stringify(counts));

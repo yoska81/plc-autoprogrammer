@@ -4,7 +4,8 @@
  * exactly like the Export page does, plus extra DXF options and JSON dumps of the derived
  * data so the Python checkers can cross-check the files.
  */
-import { seedSampleProject, DESIGN, HMI } from '../../src/preview/sampleProject';
+import { seedSampleProject, DESIGN, HMI, EXAMPLE_ID } from '../../src/preview/sampleProject';
+import { useProjectsStore } from '../../src/store/useProjectsStore';
 import { useIOStore } from '../../src/store/useIOStore';
 import { useProjectStore } from '../../src/store/useProjectStore';
 import { useElectricalStore } from '../../src/store/useElectricalStore';
@@ -64,6 +65,7 @@ const COMMON_DOOR = [
   c('ES1C', 'ECX1030-2', 1, 'Second NC contact for dual-channel E-stop'),
   c('PB1', 'GCX1102', 1, 'Start'),
   c('PB2', 'GCX1101', 1, 'Stop'),
+  c('PB4', 'GCX1104', 1, 'Safety Reset'),
   c('PE1', 'C18D-0P-1A', 1, 'Part at end photo-eye'),
   c('LS1', 'PNK-AP-3H', 1, 'Pusher extended prox'),
   c('SOL1', '100222015324006', 1, 'Pusher valve'),
@@ -83,6 +85,8 @@ export type Variant = typeof VARIANTS[number];
 export function setupVariant(v: Variant) {
   try { localStorage.clear(); } catch { /* ignore */ }
   seedSampleProject();
+  // The example lives in its own project now; make sure it is the open one.
+  if (useProjectsStore.getState().activeId !== EXAMPLE_ID) useProjectsStore.getState().openProject(EXAMPLE_ID);
   const elec = useElectricalStore.getState();
   if (v === 'us480') return;
   if (v === 'ca600') {

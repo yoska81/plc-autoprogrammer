@@ -10,6 +10,7 @@ import { Spinner } from '../components/common';
 import { backPanelDxf, doorDxf } from '../electrical/dxf';
 import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep';
 import { printLabelPdf, printMessage } from '../electrical/labels/print';
+import OrderListCard from '../deliverables/OrderListCard';
 import ReviewCard from '../review/ReviewCard';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40';
@@ -151,6 +152,8 @@ export default function ExportPage() {
             )}
             {pkgNote && <p className="text-xs text-steel-700 bg-brand-50 border border-brand-200 rounded p-2">{pkgNote}</p>}
           </Card>
+
+          <OrderListCard p={p} fileBase={p.fileBase} />
 
           <Card title="Labels" info={stages.electrical} to="/electrical?tab=labels">
             <p className="text-xs text-steel-500">Wire, terminal, device, cable and door labels. Choose the label size and content, preview and print in Electrical design → Labels.</p>
