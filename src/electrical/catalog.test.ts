@@ -26,7 +26,9 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   // AutomationDirect sells its own brands and these makers under AD part numbers
   { host: /(^|\.)automationdirect\.com$/, makers: /./ },
   { host: /(^|\.)rockwellautomation\.com$/, makers: /allen[- ]?bradley|rockwell/i },
-  { host: /(^|\.)siemens\.com$/, makers: /siemens/i },
+  // siemens.com includes the official download cache (cache.industry.siemens.com) and support portal;
+  // docs.tia.siemens.cloud is Siemens' official TIA Portal documentation site
+  { host: /(^|\.)(siemens\.com|tia\.siemens\.cloud)$/, makers: /siemens/i },
   { host: /(^|\.)(se\.com|schneider-electric\.com|schneider-electric\.us)$/, makers: /schneider|square ?d|telemecanique/i },
   { host: /(^|\.)ifm\.com$/, makers: /\bifm\b/i },
   { host: /(^|\.)yaskawa\.(com|eu)$/, makers: /yaskawa/i },
@@ -45,9 +47,9 @@ const REQUIRED: Partial<Record<CatalogCategory, string[]>> = {
   fuse: ['amps', 'volts', 'fuseClass'],
   powerSupply: ['outputVolts', 'outputAmps', 'inputVolts'],
   vfd: ['inputVolts', 'inputPhases', 'outputAmps'],
-  plc: ['discreteInputs', 'discreteOutputs', 'supplyVolts'],
+  plc: ['supplyVolts'],
   plcModule: ['family'],
-  enclosure: ['heightIn', 'widthIn'],
+  enclosure: [],
   estop: ['contacts'],
   pushbutton: ['contacts', 'color'],
   selector: ['positions', 'contacts'],
@@ -71,6 +73,15 @@ const RANGES: Record<string, [number, number]> = {
 
 /** Enclosure sizes in inches (other parts use widthIn for e.g. a wire duct width). */
 const ENCLOSURE_IN: [number, number] = [2, 100];
+
+/**
+ * Parts that cannot be verified yet, each with the reason (shown in the review). The list must stay short:
+ * an entry for a part that is verified, or missing from the catalog, fails.
+ */
+const UNVERIFIED_OK: Record<string, string> = {};
+
+/** A maker's document (PDF catalog / datasheet or documentation portal) covering many parts. */
+const isMakerDocument = (u: URL) => /\.pdf$/i.test(u.pathname) || /\/dl\/files\//.test(u.pathname) || /^docs\.|^literature\./.test(u.host);
 
 const isAdHost = (u: string) => /(^|\.)automationdirect\.com$/.test(new URL(u).host);
 const has = (p: CatalogPart, k: string) => (ALIASES[k] ?? [k]).some((a) => p.ratings[a] !== undefined && p.ratings[a] !== '');
@@ -107,18 +118,29 @@ test('the source page is the page of that part', () => {
     const u = new URL(p.url);
     const last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() ?? '').toLowerCase();
     if (isAdHost(p.url)) return last !== p.partNumber.toLowerCase() && !u.pathname.toLowerCase().includes(`/pn/${p.partNumber.toLowerCase()}`);
-    return !norm(decodeURIComponent(u.pathname + u.search)).includes(norm(p.partNumber));
+    return !norm(decodeURIComponent(u.pathname + u.search)).includes(norm(p.partNumber)) && !isMakerDocument(u);
   }).map((p) => `${p.partNumber}: ${p.url}`);
   assert.deepEqual(bad, []);
 });
 
-test('every part is checked against its datasheet (verified)', () => {
-  assert.deepEqual(CATALOG.filter((p) => !p.verified).map((p) => p.partNumber), []);
+test('every part is checked against its datasheet (verified), or listed with a reason', () => {
+  assert.deepEqual(CATALOG.filter((p) => !p.verified && !UNVERIFIED_OK[p.partNumber]).map((p) => p.partNumber), []);
+  const stale = Object.entries(UNVERIFIED_OK).filter(([pn, why]) => !CATALOG.some((p) => p.partNumber === pn && !p.verified) || why.trim().length < 30).map(([pn]) => pn);
+  assert.deepEqual(stale, [], 'allowlist entries must be unverified catalog parts with a reason of 30+ characters');
 });
 
 test('key ratings are stated for each category', () => {
   const bad: string[] = [];
-  for (const p of CATALOG) for (const k of REQUIRED[p.category] ?? []) if (!has(p, k)) bad.push(`${p.partNumber} (${p.category}): no ${k}`);
+  for (const p of CATALOG) {
+    for (const k of REQUIRED[p.category] ?? []) if (!has(p, k)) bad.push(`${p.partNumber} (${p.category}): no ${k}`);
+    // enclosures state their outside size; subpanels their panel size
+    if (p.category === 'enclosure') {
+      const sub = String(p.ratings.kind ?? '') === 'subpanel';
+      for (const k of sub ? ['panelHeightIn', 'panelWidthIn'] : ['heightIn', 'widthIn']) if (!has(p, k)) bad.push(`${p.partNumber} (${sub ? 'subpanel' : 'enclosure'}): no ${k}`);
+    }
+    // controllers with on-board I/O state it; modular controllers state their expansion capacity
+    if (p.category === 'plc' && !(has(p, 'discreteInputs') && has(p, 'discreteOutputs')) && !has(p, 'maxExpansionModules')) bad.push(`${p.partNumber} (plc): no on-board I/O or expansion capacity`);
+  }
   assert.deepEqual(bad, []);
 });
 
