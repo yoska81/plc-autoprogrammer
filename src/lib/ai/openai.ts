@@ -2,6 +2,8 @@ import type { ChatTurn } from './anthropic';
 import { IS_PREVIEW } from '../../preview/mode';
 import { callClaudeAccount } from '../../preview/claudeAccount';
 import { trackAi } from './busy';
+import { withRetries } from './errors';
+import { reportRetry } from './jobs';
 
 /** One OpenAI chat request; with `schema` the reply is strict JSON. */
 type OpenAIOptions = {
@@ -10,15 +12,21 @@ type OpenAIOptions = {
   system: string;
   messages: ChatTurn[];
   schema?: Record<string, unknown>;
+  signal?: AbortSignal;
 };
 
+/** One OpenAI request; transient failures are retried like callClaude. */
 export function callOpenAI(opts: OpenAIOptions): Promise<string> {
-  return trackAi(() => requestOpenAI(opts));
+  return trackAi(() => withRetries(() => requestOpenAI(opts), {
+    signal: opts.signal,
+    onRetry: (n) => reportRetry(opts.signal, n),
+    explain: (err) => (err instanceof Error ? err.message : String(err)),
+  }));
 }
 
 async function requestOpenAI(opts: OpenAIOptions): Promise<string> {
   // The preview can't reach OpenAI; the viewer's Claude account answers instead.
-  if (IS_PREVIEW) return (await callClaudeAccount({ model: 'claude-opus-5-5', effort: 'high', system: opts.system, messages: opts.messages, schema: opts.schema })).text;
+  if (IS_PREVIEW) return (await callClaudeAccount({ model: 'claude-opus-5-5', effort: 'high', system: opts.system, messages: opts.messages, schema: opts.schema, signal: opts.signal })).text;
   // o-series reasoning models take a "developer" role and max_completion_tokens.
   const isReasoningModel = /^o\d/.test(opts.model);
 
@@ -36,12 +44,13 @@ async function requestOpenAI(opts: OpenAIOptions): Promise<string> {
     method: 'POST',
     headers: { Authorization: `Bearer ${opts.apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    signal: opts.signal,
   });
 
   if (!response.ok) {
     const errBody = await response.json().catch(() => ({}));
     const msg = (errBody as { error?: { message?: string } }).error?.message;
-    throw new Error(`OpenAI API error ${response.status}${msg ? `: ${msg}` : ''}`);
+    throw Object.assign(new Error(`OpenAI API error ${response.status}${msg ? `: ${msg}` : ''}`), { status: response.status, headers: response.headers });
   }
 
   const data = (await response.json()) as {

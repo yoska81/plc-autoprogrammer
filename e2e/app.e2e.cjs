@@ -62,6 +62,9 @@ function reply(system, body = {}) {
   }
 }
 
+/** System prompt text (the app sends it as cacheable content blocks). */
+const sysText = (s) => (Array.isArray(s) ? s.map((b) => b.text).join('\n') : s);
+
 function sse(model, text) {
   const ev = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
   return ev('message_start', { message: { id: 'm', type: 'message', role: 'assistant', model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } })
@@ -83,7 +86,7 @@ function sse(model, text) {
   page.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
-    await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, JSON.stringify(reply(body.system, body))) });
+    await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, JSON.stringify(reply(sysText(body.system), body))) });
   });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
 

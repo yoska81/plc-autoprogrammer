@@ -112,7 +112,7 @@ ${NOTE_KINDS_RULE}
 - "explanation": a short plain-language summary of the panel for the customer.`;
 
 export async function generateElectricalDesign(opts: {
-  apiKey: string; model: string; effort: Effort;
+  apiKey: string; model: string; effort: Effort; signal?: AbortSignal;
   profile: PlcProfile; cpu: CpuModel;
   io: IOPoint[]; addresses: Map<string, string>;
   machineDescription: string;
@@ -148,17 +148,20 @@ ${required}
 I/O list (address, type, category, description):
 ${ioText}
 
-Catalog (part number | category | manufacturer description | ratings):
+Design the complete control panel from the catalog above.`;
+  // The catalog goes first, as its own block marked for prompt caching: it is the same for every
+  // design with the same preferred brands, so a regeneration / Update all / retry reuses it.
+  const catalogBlock = `Catalog (part number | category | manufacturer description | ratings):
 ${catalogText(catalog)}
 
 Catalog specifics per brand:
-${vendorNotes(catalog)}
-
-Design the complete control panel.`;
+${vendorNotes(catalog)}`;
 
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort,
-    system: SYSTEM, messages: [{ role: 'user', content }], schema: designSchema(ioAddrs, catalog),
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
+    system: SYSTEM,
+    messages: [{ role: 'user', content: [{ type: 'text', text: catalogBlock, cache_control: { type: 'ephemeral' } }, { type: 'text', text: content }] }],
+    schema: designSchema(ioAddrs, catalog),
   });
 
   let parsed: { explanation: string; motors: MotorSpec[]; machine: {

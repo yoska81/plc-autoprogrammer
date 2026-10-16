@@ -25,14 +25,33 @@ export type UpdateStep = 'equipment' | 'io' | 'electrical' | 'hmi' | 'program';
 export interface StepResult { step: UpdateStep; status: 'skipped' | 'done' | 'proposal' | 'failed'; message: string }
 
 /**
- * Bring every out-of-date stage up to date, in order, from the current spec.
- * I/O, electrical and HMI are applied (previous versions are kept by their
- * stores where they support it); the PLC program change is left as a
- * proposal for the engineer to approve.
+ * Stages that can run at the same time: electrical and HMI both need only the I/O list; the PLC
+ * program needs the electrical wiring and the HMI tags.
  */
-export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) => void, shouldStop: () => boolean = () => false): Promise<void> {
+export const UPDATE_GROUPS: UpdateStep[][] = [['equipment'], ['io'], ['electrical', 'hmi'], ['program']];
+
+/**
+ * Bring every out-of-date stage up to date from the current spec: equipment, then I/O, then
+ * electrical and HMI together, then the PLC program. I/O, electrical and HMI are applied (previous
+ * versions are kept by their stores where they support it); the PLC program change is left as a
+ * proposal for the engineer to approve. A failed stage stops the stages after it.
+ */
+export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) => void, opts: { signal?: AbortSignal; shouldStop?: () => boolean } = {}): Promise<void> {
+  const { signal, shouldStop = () => false } = opts;
+  for (const group of UPDATE_GROUPS) {
+    const run = group.filter((s) => steps.includes(s));
+    if (!run.length) continue;
+    // "Stop after this stage": the stages not started yet are skipped
+    if (shouldStop()) { for (const step of run) onStep({ step, status: 'skipped', message: 'Stopped before this stage.' }); continue; }
+    const ok = await Promise.all(run.map((step) => runStep(step, onStep, signal)));
+    if (ok.includes(false) || signal?.aborted) return; // later stages depend on these
+  }
+}
+
+/** One stage; false when it failed. */
+async function runStep(step: UpdateStep, onStep: (r: StepResult) => void, signal?: AbortSignal): Promise<boolean> {
   const settings = useSettingsStore.getState();
-  const ai = { apiKey: settings.anthropicApiKey, model: settings.anthropicModel, effort: settings.effort };
+  const ai = { apiKey: settings.anthropicApiKey, model: settings.anthropicModel, effort: settings.effort, signal };
   const spec = useSpecStore.getState().sections;
   const specFp = fingerprint(spec);
   // PLC, CPU and modules can change in the equipment step; read them fresh each step.
@@ -44,8 +63,7 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
   const mark = useStageStore.getState().markGenerated;
   const ioNow = () => useIOStore.getState().projectIO;
 
-  for (const step of steps) {
-    if (shouldStop()) { onStep({ step, status: 'skipped', message: 'Stopped before this stage.' }); continue; }
+  {
     try {
       const { profile, cpu, slots } = plc();
       if (step === 'equipment') {
@@ -62,7 +80,7 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
           applyEquipment(recommendedChoice(rec), rec);
           onStep({ step, status: 'done', message: `${rec.plc.cpuId}${cur.cpuId && cur.cpuId !== rec.plc.cpuId ? ` (was ${cur.cpuId}, no longer enough)` : ''}, ${modulesInSlotOrder(rec).length} module(s)${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.` });
         }
-        continue;
+        return true;
       }
 
       if (step === 'io') {
@@ -90,7 +108,7 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
       if (step === 'hmi') {
         const hmi = useHmiStore.getState();
         const model = getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
-        if (!model) { onStep({ step, status: 'skipped', message: 'No HMI chosen.' }); continue; }
+        if (!model) { onStep({ step, status: 'skipped', message: 'No HMI chosen.' }); return true; }
         const io = ioNow();
         const r = await generateHmiDesign({ ...ai, hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: CLICK_HMI_COMMUNICATION, spec, io, addresses: resolveAddresses(profile, cpu, io, slots), profile, cpu });
         // Keep the look the user picked (Siemens or dark console) across a regeneration.
@@ -100,7 +118,7 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
       }
 
       if (step === 'program') {
-        if (profile.language !== 'ladder') { onStep({ step, status: 'skipped', message: 'Update the Structured Text program from the Program page.' }); continue; }
+        if (profile.language !== 'ladder') { onStep({ step, status: 'skipped', message: 'Update the Structured Text program from the Program page.' }); return true; }
         const prog = useProgramStore.getState();
         const io = ioNow();
         const addresses = resolveAddresses(profile, cpu, io, slots);
@@ -133,7 +151,8 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
       }
     } catch (err) {
       onStep({ step, status: 'failed', message: err instanceof Error ? err.message : String(err) });
-      return; // later stages depend on this one
+      return false;
     }
   }
+  return true;
 }

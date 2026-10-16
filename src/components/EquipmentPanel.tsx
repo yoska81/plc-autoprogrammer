@@ -15,6 +15,7 @@ import { applyEquipment, recommendedChoice, type EquipmentChoice } from '../spec
 import VendorPreferenceCard from './VendorPreferenceCard';
 import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
+import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 
 const MAX_MODULES = 8;
 
@@ -60,8 +61,9 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const project = useProjectStore();
   const appliedHmi = useHmiStore((s) => s.hmiPartNumber);
   const ioPoints = useIOStore((s) => s.projectIO);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Global AI job: keeps running across pages; the recommendation is shown here when it arrives.
+  const busy = useAiJobRunning('equipment');
+  const error = useAiJobError('equipment');
   const [reasoning, setReasoning] = useState<string | null>(null);
   const [rec, setRec] = useState<EquipmentRecommendation | null>(project.recommendation);
   // The selection being edited; starts from what's applied, else the recommendation.
@@ -87,21 +89,18 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     };
   }, [ioPoints, rec, choice?.hmiPartNumber]);
 
-  const recommend = async () => {
+  const recommend = () => {
     if (!apiKey || specEmpty) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await recommendEquipment({ apiKey, model: settings.anthropicModel, effort: settings.effort, spec });
-      setRec(r.rec);
-      setChoice(recommendedChoice(r.rec));
-      setReasoning(r.reasoning);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    void startAiJob({
+      kind: 'equipment', label: 'Equipment selection', keepResult: true,
+      run: (h) => recommendEquipment({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal, spec }),
+    });
   };
+  useTakeResult<Awaited<ReturnType<typeof recommendEquipment>>>('equipment', (r) => {
+    setRec(r.rec);
+    setChoice(recommendedChoice(r.rec));
+    setReasoning(r.reasoning);
+  });
 
   const cpus = PLC_PROFILES.filter((p) => p.available && p.language === 'ladder').flatMap((p) => p.cpuModels);
   // Expansion modules of the chosen CPU's platform (multi-vendor profiles); CLICK modules otherwise.

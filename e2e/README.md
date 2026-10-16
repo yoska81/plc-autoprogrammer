@@ -25,6 +25,13 @@ npx http-server dist-preview -p 5203 -s &
 BASE_URL=http://localhost:5203 node e2e/preview.e2e.cjs     # saved files land in e2e/out-preview/
 ```
 
+## AI jobs
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/ai-jobs.e2e.cjs   # generation survives navigation (3 pages), kept result shown on return, 529 → retry, Cancel, final failure → Retry
+```
+Screenshots land in `e2e/out-ai-jobs/`.
+
 ## Machine layout
 
 ```bash

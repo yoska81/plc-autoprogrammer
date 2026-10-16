@@ -11,6 +11,7 @@ import { fixText, refreshChecks } from './actions';
 import { runAiReview } from './reviewAI';
 import { statusOf, useReviewStore } from './useReviewStore';
 import { AREA_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, pageRoute, sortFindings, type Finding, type FindingStatus, type ReviewArea, type Severity } from './types';
+import { startAiJob, useAiJobError, useAiJobRunning } from '../lib/ai/jobs';
 
 const SEV_STYLE: Record<Severity, string> = {
   critical: 'bg-red-600 text-white',
@@ -85,11 +86,12 @@ function Row({ f, onGo, onFix }: { f: Finding; onGo: () => void; onFix: (() => v
 
 export default function ReviewPage() {
   const navigate = useNavigate();
-  const { checks, checkedAt, ai, marks, setAi, requestFix } = useReviewStore();
+  const { checks, checkedAt, ai, marks, requestFix } = useReviewStore();
   const settings = useSettingsStore();
   const { apiKey, model } = activeCredentials(settings);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Global AI job: the review keeps running when the user leaves this page.
+  const busy = useAiJobRunning('review');
+  const error = useAiJobError('review');
   const [sev, setSev] = useState<Set<Severity>>(new Set(SEVERITY_ORDER));
   const [area, setArea] = useState<ReviewArea | 'all'>('all');
   const [source, setSource] = useState<'all' | 'check' | 'ai'>('all');
@@ -108,18 +110,14 @@ export default function ReviewPage() {
     && (status === 'all' || statusOf(marks, f.id) === status) && (!q.trim() || `${f.title} ${f.detail}`.toLowerCase().includes(q.toLowerCase())));
   const openCount = (s: Severity) => all.filter((f) => f.severity === s && statusOf(marks, f.id) === 'open').length;
 
-  const runAi = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const det = refreshChecks();
-      const r = await runAiReview({ provider: settings.provider, apiKey, model, effort: settings.effort }, collectProject(), det);
-      setAi(r);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+  const runAi = () => {
+    const det = refreshChecks();
+    const snapshot = collectProject();
+    void startAiJob({
+      kind: 'review', label: 'AI design review',
+      run: (h) => runAiReview({ provider: settings.provider, apiKey, model, effort: settings.effort, signal: h.signal }, snapshot, det),
+      apply: (r) => useReviewStore.getState().setAi(r),
+    });
   };
 
   const fixFor = (f: Finding): (() => void) | null => {

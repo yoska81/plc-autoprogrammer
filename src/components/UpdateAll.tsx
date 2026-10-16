@@ -2,7 +2,8 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStages } from '../spec/useStages';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { runUpdateAll, type StepResult, type UpdateStep } from '../spec/updateAll';
+import { runUpdateAll, UPDATE_GROUPS, type StepResult, type UpdateStep } from '../spec/updateAll';
+import { cancelAiJob, startAiJob, useAiJob } from '../lib/ai/jobs';
 import { Spinner } from './common';
 
 const ORDER: { step: UpdateStep; label: string }[] = [
@@ -19,7 +20,9 @@ export default function UpdateAll() {
   const apiKey = useSettingsStore((s) => s.anthropicApiKey);
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [running, setRunning] = useState(false);
+  // Runs as a global AI job: the status bar shows the stage and can cancel it; closing this dialog doesn't stop it.
+  const job = useAiJob('update-all');
+  const running = job?.status === 'running';
   const [results, setResults] = useState<StepResult[]>([]);
   const [planned, setPlanned] = useState<UpdateStep[]>([]);
   const stopRef = useRef(false);
@@ -35,15 +38,25 @@ export default function UpdateAll() {
     setPlanned(steps);
     setResults([]);
     setOpen(true);
-    setRunning(true);
+    const label = (st: UpdateStep) => ORDER.find((o) => o.step === st)!.label;
     stopRef.current = false;
     setStopping(false);
-    try {
-      await runUpdateAll(steps, (r) => setResults((prev) => [...prev, r]), () => stopRef.current);
-    } finally {
-      setRunning(false);
-    }
+    let done = 0;
+    await startAiJob({
+      kind: 'update-all', label: 'Update all',
+      run: async (h) => {
+        h.stage(`${label(steps[0])} (1/${steps.length})`);
+        await runUpdateAll(steps, (r) => {
+          done++;
+          setResults((prev) => [...prev, r]);
+          const next = steps.find((st, i) => i >= done && st !== r.step);
+          if (next) h.stage(`${label(next)} (${Math.min(done + 1, steps.length)}/${steps.length})`);
+        }, { signal: h.signal, shouldStop: () => stopRef.current });
+      },
+    });
   };
+  // the group still being worked on: its unfinished steps show a spinner
+  const activeGroup = UPDATE_GROUPS.findIndex((g) => g.some((st) => planned.includes(st) && !results.some((r) => r.step === st)));
 
   return (
     <>
@@ -71,7 +84,7 @@ export default function UpdateAll() {
               {planned.map((step) => {
                 const r = results.find((x) => x.step === step);
                 const label = ORDER.find((o) => o.step === step)!.label;
-                const isNext = running && !r && results.length === planned.indexOf(step);
+                const isNext = running && !r && UPDATE_GROUPS[activeGroup]?.includes(step);
                 return (
                   <li key={step} className="flex items-start gap-3 text-sm">
                     <span className="w-5 pt-0.5">
@@ -93,6 +106,9 @@ export default function UpdateAll() {
                 <button onClick={() => { stopRef.current = true; setStopping(true); }} disabled={stopping} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-40">
                   {stopping ? 'Stopping after this stage…' : 'Stop after this stage'}
                 </button>
+              )}
+              {running && job && (
+                <button onClick={() => cancelAiJob(job.id)} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50">Cancel now</button>
               )}
               <button onClick={() => setOpen(false)} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50">
                 {running ? 'Hide (keep working)' : 'Close'}
