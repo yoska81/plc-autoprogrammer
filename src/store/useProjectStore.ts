@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { EquipmentRecommendation } from '../lib/ai/equipmentAI';
 
 interface ProjectStore {
-  /** Selected PLC profile id (see src/plc/profiles). */
+  /** Selected PLC profile id (see src/plc/core/profiles). */
   plcId: string;
   cpuId: string;
   setPlc: (plcId: string, cpuId: string) => void;
@@ -49,7 +49,7 @@ export interface ProjectInfo {
 
 export const DEFAULT_INFO: ProjectInfo = {
   region: 'US', customer: '', site: '', drawingPrefix: '', standards: ['NFPA 79', 'UL 508A'],
-  projectNumber: '', company: '', preparedBy: '', checkedBy: '', approvedBy: '',
+  projectNumber: '', company: 'ISA', preparedBy: '', checkedBy: '', approvedBy: '',
   revisions: [],
 };
 
@@ -76,7 +76,8 @@ export const useProjectStore = create<ProjectStore>()(
       // Older projects stored fewer project-data fields.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<ProjectStore>;
-        return { ...current, ...p, info: { ...DEFAULT_INFO, ...(p.info ?? {}) } };
+        const info = { ...DEFAULT_INFO, ...(p.info ?? {}) };
+        return { ...current, ...p, info: { ...info, company: info.company || DEFAULT_INFO.company } };
       },
     }
   )

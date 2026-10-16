@@ -63,7 +63,7 @@ export default function NewProjectPage() {
   const [name, setName] = useState('');
   const [customer, setCustomer] = useState('');
   const [site, setSite] = useState('');
-  const [company, setCompany] = useState('');
+  const [company, setCompany] = useState('ISA');
   const [projectNumber, setProjectNumber] = useState('');
   const [prefix, setPrefix] = useState('');
   const [preparedBy, setPreparedBy] = useState('');

@@ -1,5 +1,5 @@
 import type { IOPoint } from '../types/io';
-import type { AIConfig } from './ai/ladderAI';
+import type { AIConfig } from '../plc/ai/ladderAI';
 import { SYSTEM_PROMPT, buildUserMessage, stripCodeFences } from './ai/prompt';
 import { callClaude } from './ai/anthropic';
 import { callOpenAI } from './ai/openai';

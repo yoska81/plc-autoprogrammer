@@ -1,14 +1,15 @@
-import { useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useStages, type StageInfo } from '../spec/useStages';
 import { collectProject } from '../deliverables/collect';
 import { buildExcelReport } from '../deliverables/excelReport';
 import { buildEngineeringPdf } from '../deliverables/engineering';
 import { buildDrawingsPdf, buildEverythingZip, buildHmiImages, buildHmiPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
-import { Spinner } from '../components/program/common';
+import { Spinner } from '../components/common';
 import { backPanelDxf, doorDxf } from '../electrical/dxf';
 import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep';
+import { printPdf } from '../deliverables/printPdf';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40';
 const csv = (s: string) => new Blob([s], { type: 'text/csv' });
@@ -60,6 +61,41 @@ export default function ExportPage() {
     }
   };
 
+  // Full package: progress of the part being built, and the result of a print.
+  const [pkg, setPkg] = useState<{ step: string; done: number; total: number } | null>(null);
+  const [pkgNote, setPkgNote] = useState<string | null>(null);
+  const fullPackage = async (print: boolean) => {
+    if (busy) return;
+    setBusy(print ? 'Print full package' : 'Download full package PDF');
+    setError(null);
+    setPkgNote(null);
+    setPkg({ step: 'Starting', done: 0, total: 1 });
+    try {
+      const { buildFullPackagePdf } = await import('../deliverables/fullPackage');
+      const snap = collectProject();
+      const pdf = await buildFullPackagePdf(snap, (step, done, total) => setPkg({ step, done, total }));
+      const name = `${snap.fileBase}_full_package.pdf`;
+      if (print) {
+        const r = await printPdf(pdf, name);
+        setPkgNote(r === 'printed' ? 'Print dialog opened.' : r === 'opened' ? 'The package opened in a new tab; print it from there.' : 'Printing is not available in this window, so the PDF was saved. Open it and print from your PDF reader.');
+      } else saveBlob(name, pdf);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+      setPkg(null);
+    }
+  };
+  // "Project → Print full package…" opens this page with ?action=print-full.
+  const [params, setParams] = useSearchParams();
+  const started = useRef(false);
+  useEffect(() => {
+    if (params.get('action') !== 'print-full' || started.current) return;
+    started.current = true;
+    setParams({}, { replace: true });
+    void fullPackage(true);
+  });
+
   const p = collectProject();
   const hasElec = Boolean(p.drawingCtx);
   const hasHmi = Boolean(p.hmi);
@@ -86,12 +122,44 @@ export default function ExportPage() {
           <div className="bg-white rounded-sm border-2 border-brand-200 p-5 flex flex-wrap items-center gap-4">
             <div className="flex-1 min-w-64">
               <h3 className="text-sm font-semibold text-steel-800">Everything in one ZIP</h3>
-              <p className="text-xs text-steel-500">Excel report, engineering package, electrical drawings PDF with BOM / wire list / terminal plan, machining DXFs, cabinet STEP model, HMI screens (PDF + PNG), PLC program files, I/O list and the spec.</p>
+              <p className="text-xs text-steel-500">Excel report, full package PDF, engineering package, electrical drawings PDF with BOM / wire list / terminal plan, machining DXFs, cabinet STEP model, HMI screens (PDF + PNG), PLC program files, label files, I/O list and the spec.</p>
             </div>
             <B busy={busy} label="Download everything" primary onClick={run('Download everything', async () => {
               saveBlob(`${p.fileBase}_deliverables.zip`, await buildEverythingZip(collectProject(), (s) => setBusy(`Building ${s.toLowerCase()}`)));
             })} />
           </div>
+
+          <Card title="Full package (one PDF to print)" info={stages.spec}>
+            <p className="text-xs text-steel-500">The whole project in one PDF: cover, contents with page numbers, engineering package, electrical drawings, HMI screens, PLC program listing, I/O list, bill of materials and label list. Bookmarks for every part and a package page number on every page.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => void fullPackage(false)} disabled={Boolean(busy)} className="px-4 py-2 text-sm rounded bg-brand-600 text-brand-950 hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2">
+                {busy === 'Download full package PDF' && <Spinner />}Download full package PDF
+              </button>
+              <button onClick={() => void fullPackage(true)} disabled={Boolean(busy)} className={`${btn} flex items-center gap-2`}>
+                {busy === 'Print full package' && <Spinner />}Print full package
+              </button>
+            </div>
+            {pkg && (
+              <div className="space-y-1" role="status">
+                <div className="h-2 bg-steel-100 rounded overflow-hidden"><div className="h-full bg-brand-600 transition-all" style={{ width: `${Math.round((pkg.done / pkg.total) * 100)}%` }} /></div>
+                <p className="text-xs text-steel-600">Building: {pkg.step} ({pkg.done + 1} of {pkg.total})…</p>
+              </div>
+            )}
+            {pkgNote && <p className="text-xs text-steel-700 bg-brand-50 border border-brand-200 rounded p-2">{pkgNote}</p>}
+          </Card>
+
+          <Card title="Labels" info={stages.electrical} to="/electrical?tab=labels">
+            <p className="text-xs text-steel-500">Wire, terminal, device, cable and door labels. Choose the label size and content, preview and print in Electrical design → Labels.</p>
+            <div className="flex flex-wrap gap-2">
+              <Link to="/electrical?tab=labels" className={btn}>Open label printing</Link>
+              <B busy={busy} label="Label files (ZIP)" disabled={!hasElec} onClick={run('Label files (ZIP)', async () => {
+                const [{ default: JSZip }, { labelFiles }] = await Promise.all([import('jszip'), import('../deliverables/fullPackage')]);
+                const zip = new JSZip();
+                for (const f of await labelFiles(collectProject())) zip.file(f.name, f.data);
+                saveBlob(`${p.fileBase}_labels.zip`, await zip.generateAsync({ type: 'blob' }));
+              })} />
+            </div>
+          </Card>
 
           <Card title="Engineering package (PDF)" info={stages.spec}>
             <p className="text-xs text-steel-500">What an engineer hands over: why each piece of equipment was chosen, power supply / motor circuit / cabinet heat calculations, the factory acceptance test checklist, the operator manual and a program summary.</p>
@@ -140,7 +208,7 @@ export default function ExportPage() {
               const sum = cabinetStepSummary(p.drawingCtx!);
               return (
                 <p className="text-xs text-steel-600">
-                  {sum.bodies.length} bodies{sum.estimatedCount ? ` · ${sum.estimatedCount} with estimated size (components are envelope boxes)` : ''}{sum.warnings.length ? ` · ${sum.warnings.length} to check: ${sum.warnings.slice(0, 2).join('; ')}` : ''}
+                  {sum.bodies.length} bodies{sum.estimatedCount ? ` · ${sum.estimatedCount} with estimated size (shapes are generic product models, not manufacturer CAD)` : ''}{sum.warnings.length ? ` · ${sum.warnings.length} to check: ${sum.warnings.slice(0, 2).join('; ')}` : ''}
                 </p>
               );
             })()}

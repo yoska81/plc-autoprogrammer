@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useProgramStore } from '../store/useProgramStore';
-import { usePlc } from '../plc/usePlc';
+import { usePlc } from '../plc/core/usePlc';
 import { CATALOG, getPart, partsIn } from '../electrical/catalog';
 import PartPicker from '../electrical/PartPicker';
 import { saveBlob } from '../deliverables/files';
@@ -12,11 +12,12 @@ import { useProjectStore, type Region } from '../store/useProjectStore';
 import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electrical/derive';
 import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
+import LabelsPanel from '../electrical/labels/LabelsPanel';
 import { useDrawingContext } from '../electrical/useDrawingContext';
 import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
 import type { CatalogCategory, DesignInputs, EnclosureRating, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
-import { Spinner, ReasoningPanel } from '../components/program/common';
+import { Spinner, ReasoningPanel } from '../components/common';
 import StageBanner from '../components/StageBanner';
 import { useFingerprints, useStages } from '../spec/useStages';
 import { useStageStore } from '../store/useStageStore';
@@ -36,7 +37,7 @@ const card = 'bg-white rounded-sm border border-steel-200 p-5';
 
 const download = (name: string, content: string, mime: string) => saveBlob(name, new Blob([content], { type: mime }));
 
-type Tab = 'design' | 'cabinet' | 'machine' | 'picture' | 'machining';
+type Tab = 'design' | 'cabinet' | 'machine' | 'picture' | 'machining' | 'labels';
 
 export default function ElectricalPage() {
   const el = useElectricalStore();
@@ -51,7 +52,7 @@ export default function ElectricalPage() {
 
   const [params, setParams] = useSearchParams();
   const urlTab = params.get('tab') as Tab | null;
-  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'picture', 'machining'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
+  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'picture', 'machining', 'labels'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
@@ -113,14 +114,16 @@ export default function ElectricalPage() {
             </div>
           )}
         </div>
-        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('picture', 'Cabinet picture')}{tabBtn('machining', 'Machining (DXF)')}</div>
+        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('picture', 'Cabinet picture')}{tabBtn('machining', 'Machining (DXF)')}{tabBtn('labels', 'Labels')}</div>
       </header>
 
       <StageBanner info={stages.electrical} action={
         <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-brand-600 text-brand-950 rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
-      {tab === 'machining' ? (
+      {tab === 'labels' ? (
+        <LabelsPanel ctx={ctx} fileBase={base} projectName={projectName} />
+      ) : tab === 'machining' ? (
         <MachiningPanel ctx={ctx} fileBase={base} />
       ) : tab === 'picture' ? (
         <CabinetPictures ctx={ctx} />

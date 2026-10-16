@@ -1,8 +1,9 @@
 // E2E v0.8: wizard (project data → describe → equipment chooser) → project data/revisions → I/O (+filter) → electrical
-// (part picker, cabinet/machine/picture, machining DXF) → HMI → program (blocks) → simulate (blocks, bypasses) →
-// resizable panels → settings connection test → spec change/update all → second project (no leaks, rename) → deliverables.
+// (part picker, cabinet/machine/picture, machining DXF, labels: label-printer PDF / sheet / CSV / Excel) → HMI → program (blocks) → simulate (blocks, bypasses) →
+// resizable panels → settings connection test → spec change/update all → second project (no leaks, rename) → deliverables (incl. full package PDF with bookmarks).
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const JSZip = require('jszip');
+const { PDFDocument, PDFName } = require('pdf-lib');
 const fs = require('fs');
 const SP = __dirname + '/';
 const OUT = SP + 'out/';
@@ -169,6 +170,13 @@ function sse(model, text) {
   await page.getByLabel('Show').selectOption('all');
   check(await ioRows() === 7, 'filter cleared shows all 7');
 
+  const dl = async (name) => {
+    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 180000 }), page.getByRole('button', { name, exact: true }).click()]);
+    const path = OUT + d.suggestedFilename();
+    await d.saveAs(path);
+    return path;
+  };
+
   // Electrical
   await page.goto(BASE + '/electrical?tab=design');
   await page.getByRole('button', { name: /Generate (Electrical Design|New Design)/ }).click();
@@ -219,6 +227,34 @@ function sse(model, text) {
     await page.waitForTimeout(1200);
     await snap(page, `electrical_${t}`);
   }
+
+  // Labels: categories, content, size, label-printer PDF (one page per label at the label size), sheet PDF, CSV, Excel
+  await page.goto(BASE + '/electrical?tab=labels');
+  await page.getByText('1. Which labels').waitFor({ timeout: 15000 });
+  log('Label categories:', (await page.locator('section label').filter({ has: page.locator('input[type=checkbox]') }).allInnerTexts()).slice(0, 6).map((t) => t.split('\n')[0] + ' ' + t.split('\n').pop()).join(' | '));
+  await page.getByLabel('Number + description beside it').check();
+  await page.getByLabel('Label size').selectOption('25x10');
+  log('Labels to print:', await page.getByText(/labels selected/).innerText(), '| preview labels', await page.locator('[data-testid=label-preview] svg').count());
+  await snap(page, 'labels');
+  const lpdf = fs.readFileSync(await dl('Labels PDF for label printer'), 'latin1');
+  const boxes = [...lpdf.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number));
+  const mm = (b) => `${((b[2] - b[0]) / 72 * 25.4).toFixed(1)}x${((b[3] - b[1]) / 72 * 25.4).toFixed(1)}`;
+  log('Label printer PDF pages:', boxes.length, '| sizes', [...new Set(boxes.map(mm))].join(', '));
+  if (boxes.some((b) => mm(b) !== '25.0x10.0')) throw new Error('label page size is not 25 x 10 mm');
+  const sheet = fs.readFileSync(await dl('Sheet PDF'), 'latin1');
+  log('Label sheet PDF pages:', (sheet.match(/\/Type \/Page[^s]/g) || []).length);
+  log('Labels CSV rows:', fs.readFileSync(await dl('CSV'), 'utf8').trim().split('\n').length - 1);
+  const lx = await JSZip.loadAsync(fs.readFileSync(await dl('Excel')));
+  log('Labels Excel sheets:', [...(await lx.file('xl/workbook.xml').async('string')).matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
+  // Brady printer + supply: the PDF pages take the supply's real size (B33-80-427 = 12.7 x 19.05 mm)
+  await page.getByLabel('Label printer').selectOption('brady-i3300');
+  await page.getByLabel('Printer labels').selectOption('B33-80-427');
+  const bpdf = fs.readFileSync(await dl('Labels PDF for label printer'), 'latin1');
+  const bboxes = [...bpdf.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number));
+  log('Brady i3300 B33-80-427 PDF:', bboxes.length, 'pages | sizes', [...new Set(bboxes.map(mm))].join(', '));
+  if (bboxes.some((b) => mm(b) !== '12.7x19.1')) throw new Error('Brady supply page size is not 12.7 x 19.05 mm');
+  await page.getByLabel('Label printer').selectOption('');
+  await page.getByLabel('Label size').selectOption('38x12');
 
   // HMI (part preselected by equipment)
   await page.goto(BASE + '/hmi');
@@ -335,7 +371,7 @@ function sse(model, text) {
   check((await statusBar()).includes('PLC: —') || !(await statusBar()).includes('C0-11DD1E-D'), 'new project has no CPU from the first');
   check((await statusBar()).includes('Rev A · Preliminary'), 'new project has no revisions from the first');
   await page.goto(BASE + '/project');
-  check(await page.getByLabel('company').inputValue() === '', 'new project has no company from the first');
+  check(await page.getByLabel('company').inputValue() === 'ISA', 'new project starts with the default company ISA, not the first project\'s');
   await page.getByLabel('Project name').fill('Second Cell Renamed');
   check((await page.locator('select[aria-label="Open project"] option:checked').innerText()) === 'Second Cell Renamed', 'rename shows in the project list');
   await page.locator('select[aria-label="Open project"]').selectOption(firstId);
@@ -369,18 +405,17 @@ function sse(model, text) {
 
   // Deliverables
   await page.goto(BASE + '/export');
-  const dl = async (name) => {
-    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.getByRole('button', { name, exact: true }).click()]);
-    const path = OUT + d.suggestedFilename();
-    await d.saveAs(path);
-    return path;
-  };
   const eng = await dl('Engineering package');
   const engTxt = fs.readFileSync(eng, 'latin1');
   log('Engineering PDF:', Math.round(fs.statSync(eng).size / 1024), 'KB, pages', (engTxt.match(/\/Type \/Page[^s]/g) || []).length, '| has images', engTxt.includes('/Subtype /Image'));
   const xlsx = await dl('Excel report');
   const wbXml = await (await JSZip.loadAsync(fs.readFileSync(xlsx))).file('xl/workbook.xml').async('string');
   log('Excel sheets:', [...wbXml.matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
+  const full = await dl('Download full package PDF');
+  const fullDoc = await PDFDocument.load(fs.readFileSync(full));
+  const outlines = fullDoc.catalog.lookup(PDFName.of('Outlines'));
+  log('Full package PDF:', Math.round(fs.statSync(full).size / 1024), 'KB, pages', fullDoc.getPageCount(), '| bookmarks', outlines ? outlines.get(PDFName.of('Count')).toString() : 'none');
+  if (!outlines) throw new Error('full package has no bookmarks');
   const zipPath = await dl('Download everything');
   const zip = await JSZip.loadAsync(fs.readFileSync(zipPath));
   log('ZIP:', Object.keys(zip.files).filter((f) => !f.endsWith('/')).join(', '));

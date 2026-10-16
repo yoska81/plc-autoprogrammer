@@ -1,6 +1,6 @@
 import { useIOStore } from '../store/useIOStore';
 import { IORow, ioTh } from './IORow';
-import { usePlc } from '../plc/usePlc';
+import { usePlc } from '../plc/core/usePlc';
 import type { IOPoint } from '../types/io';
 import type { IOFilter } from './IOToolbar';
 

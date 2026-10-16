@@ -5,14 +5,14 @@ import { useSpecStore } from '../store/useSpecStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useHmiStore } from '../store/useHmiStore';
 import { useIOStore } from '../store/useIOStore';
-import { PLC_PROFILES } from '../plc/profiles';
+import { PLC_PROFILES } from '../plc/core/profiles';
 import { getPart, partsIn } from '../electrical/catalog';
 import { HMI_MODELS, getHmi } from '../hmi/hmiCatalog';
-import { moduleSlots, ioCapacity } from '../plc/modules';
-import { cpuFit, findCpu, hmiFit, type Need } from '../plc/fit';
+import { moduleSlots, ioCapacity } from '../plc/core/modules';
+import { cpuFit, findCpu, hmiFit, type Need } from '../plc/core/fit';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, type EquipmentChoice } from '../spec/equipment';
-import { Spinner, ReasoningPanel } from './program/common';
+import { Spinner, ReasoningPanel } from './common';
 
 const MAX_MODULES = 8;
 

@@ -26,12 +26,12 @@ import type { CatalogCategory, CatalogPart } from '../types';
 import { getHmi } from '../../hmi/hmiCatalog';
 import {
   solidBounds, unionBounds, validateSolid, writeStepAssembly,
-  type Bounds, type Rgb, type SolidGeom, type StepAssembly, type StepPart, type StepSolid, type V3,
+  type Bounds, type Rgb, type SolidGeom, type StepAssembly, type StepInstance, type StepPart, type StepSolid, type V3,
 } from './stepWriter';
 import {
   COL, breakerShape, bx, contactorShape, cylY, cylZ, disconnectShape, ductShape, fuseHolderShape, genericShape, groundBarShape,
   handleShape, hmiShape, motorProtectorShape, operatorShape, overloadShape, plcShape, powerSupplyShape, px, railSlots, relayShape,
-  safetyRelayShape, terminalStripShape, transformerShape, vfdShape, type OperatorKind, type ShapeInput, type StripPiece,
+  safetyRelayShape, terminalPieceShape, transformerShape, vfdShape, type OperatorKind, type ShapeInput, type StripPiece,
 } from './shapes';
 
 export interface CabinetStepOptions {
@@ -94,8 +94,6 @@ const HMI_BODY_D = 55;     // HMI depth behind the door when unknown
 const DEFAULT_DUCT_D = 76; // 3" wire duct
 const GASKET_T = 3;        // door gasket (the body flange sits behind it)
 const FLANGE_W = 20;       // enclosure front flange width
-/** Terminal slices above this count are modelled without screw/wire pockets and markers (file size). */
-const DETAILED_TERMINALS_MAX = 160;
 
 /** Realistic default depths (mm, from the mounting surface) when the catalog has none. */
 const DEFAULT_DEPTH: Partial<Record<CatalogCategory, number>> = {
@@ -164,8 +162,7 @@ function solidsOk(solids: StepSolid[], size?: V3): boolean {
 }
 
 /** The detailed shape of a back-panel component, in its envelope frame (front at y = 0). */
-function componentSolids(cat: CatalogCategory, p: CatalogPart | undefined, s: ShapeInput, strip?: { pieces: StripPiece[]; detail: boolean }): StepSolid[] {
-  if (cat === 'terminal' && strip) return terminalStripShape(s, strip.pieces, strip.detail);
+function componentSolids(cat: CatalogCategory, p: CatalogPart | undefined, s: ShapeInput): StepSolid[] {
   switch (cat) {
     case 'breaker': return breakerShape(s);
     case 'fuse': return fuseHolderShape(s);
@@ -245,7 +242,7 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
 
   const named = (tag: string, pn: string) => uniqueName(`${tag} — ${pn || 'no part number'}`);
   /** Records a part in the summary; `origin` is the part's parent-assembly origin in the cabinet frame. */
-  const record = (part: StepPart, origin: V3, meta: Omit<CabinetStepBody, 'name' | 'description' | 'min' | 'size' | 'color' | 'solids'>, color: Rgb) => {
+  const record = (part: { name: string; description: string; solids: StepSolid[]; at: V3 }, origin: V3, meta: Omit<CabinetStepBody, 'name' | 'description' | 'min' | 'size' | 'color' | 'solids'>, color: Rgb) => {
     const b = offset(unionBounds(part.solids.map(solidBounds)), [origin[0] + part.at[0], origin[1] + part.at[1], origin[2] + part.at[2]]);
     bodies.push({
       ...meta, name: part.name, description: part.description, color: hex(color), solids: part.solids.length,
@@ -281,7 +278,7 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
 
   // ---- Back panel assembly -----------------------------------------------------------------------
   const bpOrigin: V3 = [bp.x, yPanel, bpZ0];
-  const bpKids: StepPart[] = [];
+  const bpKids: (StepPart | StepAssembly)[] = [];
   const addBp = (p: Omit<StepPart, 'kind'>, meta: Omit<CabinetStepBody, 'name' | 'description' | 'min' | 'size' | 'assembly' | 'color' | 'solids'>, color: Rgb) => {
     const part: StepPart = { kind: 'part', ...p };
     bpKids.push(part);
@@ -340,9 +337,16 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
     }, { tag: `WIRE DUCT ${i + 1}`, partNumber: ductComp?.partNumber ?? '', kind: 'wireDuct', category: 'wireDuct', sizeEstimated: !ductComp, depthEstimated: dd.estimated, simplified: simplified || undefined }, ductColor);
   });
 
-  // Terminal strips: slices from the terminal plan (ground terminals green-yellow).
+  // Terminal strips: one sub-assembly per strip, made of shared terminal / end plate / end stop
+  // products placed once per position (ground terminals green-yellow).
   const strips = new Map(terminalPlan(ctx).map((s) => [s.tag, s] as const));
-  const totalTerminals = L.items.filter((i) => i.category === 'terminal').reduce((a, it) => a + (strips.get(it.tag)?.terminals.length ?? 0), 0);
+  const accessoryPn = (cat: CatalogCategory, re: RegExp) => ctx.design.components.find((c) => {
+    const q = partOf(c.partNumber);
+    return q?.category === cat && re.test(q.description);
+  })?.partNumber ?? '';
+  const endStopPn = accessoryPn('terminalAccessory', /\bend (stop|bracket|anchor)/i);
+  const endPlatePn = accessoryPn('terminalAccessory', /\bend (cover|plate)/i);
+  const groundPn = accessoryPn('terminal', /\bground\b/i);
   const stripPieces = (it: PlacedItem, p: CatalogPart | undefined): StripPiece[] | null => {
     const s = strips.get(it.tag);
     const n = s?.terminals.length ?? parseInt(/\((\d+)\)/.exec(it.label)?.[1] ?? '0', 10);
@@ -360,6 +364,37 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
       ...Array.from({ length: stops - left }, () => ({ kind: 'endStop' as const, w: 9 })),
     ];
   };
+  const pieceParts = new Map<string, StepPart>();
+  const piecePart = (pc: StripPiece, pn: string, input: ShapeInput): StepPart => {
+    const label = pc.kind === 'endStop' ? 'END STOP' : pc.kind === 'endPlate' ? 'END PLATE' : pc.ground ? 'GROUND TERMINAL' : 'TERMINAL';
+    const key = [label, pn, pc.w.toFixed(4), input.d.toFixed(4), input.h.toFixed(4), pc.kind === 'endStop' ? '' : hex(pc.color)].join('|');
+    let part = pieceParts.get(key);
+    if (!part) {
+      part = { kind: 'part', name: named(label, pn), description: partOf(pn)?.description ?? label.toLowerCase(), solids: terminalPieceShape(input, pc), at: [0, 0, 0] };
+      pieceParts.set(key, part);
+    }
+    return part;
+  };
+  /** Builds the strip sub-assembly; null when the slices cannot fill the layout envelope. */
+  const terminalStrip = (it: PlacedItem, p: CatalogPart | undefined, input: ShapeInput, name: string, desc: string, at: V3): { asm: StepAssembly; flat: StepSolid[] } | null => {
+    const pieces = stripPieces(it, p);
+    if (!pieces) return null;
+    const plan = strips.get(it.tag);
+    const children: StepInstance[] = [];
+    const flat: StepSolid[] = [];
+    let x = 0, n = 0, stop = 0;
+    for (const pc of pieces) {
+      const pn = pc.kind === 'endStop' ? endStopPn : pc.kind === 'endPlate' ? endPlatePn : pc.ground && groundPn ? groundPn : it.partNumber;
+      const part = piecePart(pc, pn, input);
+      const inst = pc.kind === 'terminal' ? `${it.tag}-${plan?.terminals[n]?.number ?? n + 1}` : pc.kind === 'endStop' ? `${it.tag} end stop ${++stop}` : `${it.tag} end plate`;
+      if (pc.kind === 'terminal') n++;
+      children.push({ kind: 'instance', name: inst, of: part, at: [x, 0, 0] });
+      flat.push(...part.solids.map((q) => ({ ...q, at: [(q.at?.[0] ?? 0) + x, q.at?.[1] ?? 0, q.at?.[2] ?? 0] as V3 })));
+      x += pc.w;
+    }
+    if (!solidsOk(flat, [it.w, input.d, it.h])) return null;
+    return { asm: { kind: 'assembly', name, description: desc, at, children }, flat };
+  };
 
   const placeItem = (it: PlacedItem) => {
     const p = partOf(it.partNumber);
@@ -373,18 +408,27 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
     if (it.category === 'terminal') desc = `${it.label.replace(/^\S+\s*/, '').replace(/[()]/g, '')} terminals — ${desc}`;
     const color = componentColor(it.category, p);
     const input: ShapeInput = { w: it.w, d: depth, h: it.h, text: `${p?.description ?? ''} ${compByTag.get(it.tag)?.function ?? ''}`.toLowerCase(), ratings: p?.ratings ?? {} };
+    const name = named(tag, it.partNumber);
+    const at: V3 = [lx, back - depth, lz];
+    const meta = { tag, partNumber: it.partNumber, kind: 'component' as const, category: it.category, sizeEstimated: it.estimated, depthEstimated: cd === undefined };
+    if (yPanel + back - depth < 0) warnings.push(`${tag} (${Math.round(depth)} mm deep) sticks out of the enclosure front — needs a deeper enclosure.`);
+    if (it.category === 'terminal') {
+      const strip = (() => { try { return terminalStrip(it, p, input, name, desc, at); } catch { return null; } })();
+      if (strip) {
+        bpKids.push(strip.asm);
+        record({ name, description: desc, solids: strip.flat, at }, bpOrigin, { ...meta, assembly: 'backPanel' }, color);
+        return;
+      }
+    }
     let solids: StepSolid[] = [];
     try {
-      const pieces = it.category === 'terminal' ? stripPieces(it, p) : null;
-      if (it.category !== 'terminal' || pieces) solids = componentSolids(it.category, p, input, pieces ? { pieces, detail: totalTerminals <= DETAILED_TERMINALS_MAX } : undefined);
+      if (it.category !== 'terminal') solids = componentSolids(it.category, p, input);
     } catch {
       solids = [];
     }
     const simplified = !solidsOk(solids, [it.w, depth, it.h]);
     if (simplified) solids = [bx('housing', color, 0, 0, 0, it.w, depth, it.h)];
-    addBp({ name: named(tag, it.partNumber), description: desc, solids, at: [lx, back - depth, lz] },
-      { tag, partNumber: it.partNumber, kind: 'component', category: it.category, sizeEstimated: it.estimated, depthEstimated: cd === undefined, simplified: simplified || undefined }, color);
-    if (yPanel + back - depth < 0) warnings.push(`${tag} (${Math.round(depth)} mm deep) sticks out of the enclosure front — needs a deeper enclosure.`);
+    addBp({ name, description: desc, solids, at }, { ...meta, simplified: simplified || undefined }, color);
   };
   for (const it of L.items) for (const s of it.sub ?? [it]) placeItem(s);
 
@@ -473,7 +517,7 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
           const dsDepth = itemDepth(ds);
           const yFront = yPanel - RAIL_D - dsDepth; // cabinet Y of the switch front
           const y0 = DOOR_T + 14 + 2;
-          const shaftComp = ctx.design.components.find((c) => partOf(c.partNumber)?.category === 'disconnect' && /\bshaft\b/i.test(partOf(c.partNumber)?.description ?? '') && !/\bswitch\b/i.test(partOf(c.partNumber)?.description ?? ''));
+          const shaftComp = ctx.design.components.find((c) => partOf(c.partNumber)?.category === 'disconnect' && /^(disconnect )?(extension )?shaft\b/i.test(partOf(c.partNumber)?.description ?? ''));
           const sp = partOf(shaftComp?.partNumber ?? '');
           const sqm = /\b(\d+(?:\.\d+)?)\s*x\s*\d+(?:\.\d+)?\s*mm\b/i.exec(sp?.description ?? '');
           const sq = sqm ? clampShaft(parseFloat(sqm[1])) : 6;

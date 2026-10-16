@@ -4,7 +4,7 @@ import { useSpecStore } from '../store/useSpecStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import type { SpecSections } from '../spec/types';
 import { organizeSpec } from '../lib/ai/specAI';
-import { Spinner, ReasoningPanel } from './program/common';
+import { Spinner, ReasoningPanel } from './common';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.csv,image/*';
 

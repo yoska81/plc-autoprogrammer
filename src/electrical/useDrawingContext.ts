@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { usePlc } from '../plc/usePlc';
+import { usePlc } from '../plc/core/usePlc';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { useProjectStore } from '../store/useProjectStore';

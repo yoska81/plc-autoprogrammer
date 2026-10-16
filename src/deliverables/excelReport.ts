@@ -2,9 +2,9 @@ import type { Worksheet, Workbook } from 'exceljs';
 import type { ProjectSnapshot } from './collect';
 import { SPEC_SECTIONS } from '../spec/types';
 import { billOfMaterials, cableSchedule, designWarnings, supplyText, terminalPlan, wireNumbers } from '../electrical/derive';
-import { describeElement, describeOutput } from '../plc/clickExport';
+import { describeElement, describeOutput } from '../plc/core/clickExport';
 import { getHmi } from '../hmi/hmiCatalog';
-import { calculations } from './docs/calcs';
+import { calcWarnings, calculations } from './docs/calcs';
 import { operatorManual } from './docs/manual';
 import { docMeta, hmiText } from './docs/meta';
 import { alarmTable, interlockTable, programInfo } from './docs/program';
@@ -43,7 +43,9 @@ function tableSheet(wb: Workbook, name: string, t: DocTable, note?: string): Wor
       row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GROUP } };
       continue;
     }
-    const row = ws.addRow(r);
+    // Centred / right-aligned columns hold quantities, rungs, amps…: store plain numbers as numbers
+    // (no leading zeros, so IDs like "001" stay text).
+    const row = ws.addRow(r.map((v, i) => (t.columns[i]?.align && t.columns[i].align !== 'left' && /^-?(0|[1-9]\d*)(\.\d+)?$/.test(v.trim()) ? Number(v) : v)));
     row.alignment = { wrapText: true, vertical: 'top' };
     t.columns.forEach((c, i) => { if (c.align && c.align !== 'left') row.getCell(i + 1).alignment = { wrapText: true, vertical: 'top', horizontal: c.align }; });
   }
@@ -170,7 +172,6 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
     for (const g of billOfMaterials(p.drawingCtx)) {
       for (const l of g.lines) bom.addRow({ i: l.note ? '' : l.item, q: l.qty, pn: l.partNumber, m: l.manufacturer, d: l.description, tags: l.tags.join(', '), c: g.title });
     }
-    if (hmiModel) bom.addRow({ i: '', q: 1, pn: hmiModel.partNumber, m: 'AutomationDirect', d: hmiModel.description, tags: 'HMI1', c: 'HMI' });
 
     tableSheet(wb, 'Protective Devices', protectiveDeviceTable(p));
     const sc = sccrTable(p);
@@ -206,7 +207,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
 
     const notes = wb.addWorksheet('Design Review');
     header(notes, [{ header: 'Item to check', key: 'n', width: 140 }]);
-    for (const n of [...p.electrical!.notes, ...designWarnings(p.drawingCtx)]) notes.addRow({ n }).alignment = { wrapText: true };
+    for (const n of [...p.electrical!.notes, ...designWarnings(p.drawingCtx), ...calcWarnings(p)]) notes.addRow({ n }).alignment = { wrapText: true };
   }
 
   tableSheet(wb, 'Safety Functions', safetyFunctionTable(p, sf), 'Required performance levels (PLr) are set by the machine risk assessment (ANSI B11.0 / ISO 12100) and verified per ISO 13849-1/-2.');

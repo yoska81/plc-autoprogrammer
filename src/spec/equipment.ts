@@ -4,7 +4,7 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useStageStore } from '../store/useStageStore';
 import { useSpecStore } from '../store/useSpecStore';
 import { getPart } from '../electrical/catalog';
-import { PLC_PROFILES } from '../plc/profiles';
+import { PLC_PROFILES } from '../plc/core/profiles';
 import { fingerprint } from './types';
 import { modulesInSlotOrder, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 

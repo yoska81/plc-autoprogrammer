@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { SimHandle } from '../sim/controller';
+import type { SimHandle } from '../plc/sim/controller';
 import HmiScreenView from './HmiScreenView';
 import { getHmi } from './hmiCatalog';
 import { HmiRuntimeTracker, type HmiRuntime } from './runtime';

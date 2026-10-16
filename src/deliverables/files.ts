@@ -10,7 +10,7 @@ import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
 import { getHmi } from '../hmi/hmiCatalog';
 import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv } from '../electrical/derive';
-import { clickNicknameCsv, clickRungListing } from '../plc/clickExport';
+import { clickNicknameCsv, clickRungListing } from '../plc/core/clickExport';
 import { buildExcelReport } from './excelReport';
 import { buildEngineeringPdf } from './engineering';
 import { cabinetPng } from '../electrical/render/renderToPng';
@@ -106,13 +106,14 @@ const dataUrlToBlob = async (url: string) => (await fetch(url)).blob();
 export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step: string) => void): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
+  const pre: import('./fullPackage').Prebuilt = {};
   onProgress?.('Excel report');
   zip.file(`${p.fileBase}_report.xlsx`, await buildExcelReport(p));
   zip.file('io_list.csv', ioCsv(p));
   if (p.drawingCtx) {
     onProgress?.('Electrical drawings');
-    const pdf = await buildDrawingsPdf(p);
-    if (pdf) zip.file(`electrical/${p.fileBase}_drawings.pdf`, pdf);
+    pre.drawings = await buildDrawingsPdf(p);
+    if (pre.drawings) zip.file(`electrical/${p.fileBase}_drawings.pdf`, pre.drawings);
     zip.file('electrical/bom.csv', bomCsv(p.drawingCtx));
     zip.file('electrical/wire_list.csv', wireListCsv(p.drawingCtx));
     zip.file('electrical/terminal_plan.csv', terminalPlanCsv(p.drawingCtx));
@@ -129,12 +130,16 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     onProgress?.('HMI screens');
     const images = await buildHmiImages(p);
     for (const img of images) zip.file(`hmi/${img.name}`, await dataUrlToBlob(img.dataUrl));
-    const pdf = await buildHmiPdf(p, images);
-    if (pdf) zip.file(`hmi/${p.fileBase}_hmi_screens.pdf`, pdf);
+    pre.hmiPdf = await buildHmiPdf(p, images);
+    if (pre.hmiPdf) zip.file(`hmi/${p.fileBase}_hmi_screens.pdf`, pre.hmiPdf);
   }
   onProgress?.('Engineering package');
-  zip.file(`${p.fileBase}_engineering_package.pdf`, await buildEngineeringPdf(p, p.equipment));
+  pre.engineering = await buildEngineeringPdf(p, p.equipment);
+  zip.file(`${p.fileBase}_engineering_package.pdf`, pre.engineering);
   for (const f of programFiles(p)) zip.file(`plc/${f.name}`, f.content);
+  // Labels and the complete package PDF (reuses the PDFs built above).
+  const { addPackageToZip } = await import('./fullPackage');
+  await addPackageToZip(zip, p, pre, onProgress);
   zip.file('spec.md', `# ${p.projectName}\n\n${Object.entries(p.spec).filter(([, t]) => t.trim()).map(([k, t]) => `## ${k}\n${t}`).join('\n\n')}\n`);
   onProgress?.('Packing');
   return zip.generateAsync({ type: 'blob' });
