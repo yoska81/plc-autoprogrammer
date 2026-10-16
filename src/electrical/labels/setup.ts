@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LabelContent, LabelKind } from '../labels';
+import { supplyByPart } from './printers';
 
 /**
  * Label stock and print setup. Sizes are in millimetres. A "tape" preset is
@@ -16,21 +17,23 @@ export interface LabelSize {
   /** Label height in mm (for tape: the tape width). */
   h: number;
   tape?: boolean;
+  /** Printable area when smaller than the label, mm from the top-left corner. */
+  printable?: { x: number; y: number; w: number; h: number };
   /** What it is typically used for / which printers take it. */
   use: string;
 }
 
 export const SIZE_PRESETS: LabelSize[] = [
-  { id: '12x6', name: '12 x 6 mm', w: 12, h: 6, use: 'Small wire marker / terminal marker (Weidmüller, Phoenix Contact UC-TM, Brady)' },
-  { id: '15x5', name: '15 x 5 mm', w: 15, h: 5, use: 'Terminal block marker strip (Phoenix Contact UC-TM 5, Weidmüller Dekafix)' },
-  { id: '25x10', name: '25 x 10 mm', w: 25, h: 10, use: 'Wire marker / small device tag (Brady M-61, Weidmüller TM-I)' },
-  { id: '38x12', name: '38 x 12 mm', w: 38, h: 12, use: 'Device tag on DIN-rail parts (Brady BMP21 / M210, Brother TZe 12 mm cut)' },
-  { id: '50x12', name: '50 x 12 mm', w: 50, h: 12, use: 'Device tag with description, cable tag' },
-  { id: '60x25', name: '60 x 25 mm', w: 60, h: 25, use: 'Field device tag / junction box tag (Phoenix Contact US-EMLP, Brady B-7593)' },
-  { id: '70x30', name: '70 x 30 mm', w: 70, h: 30, use: 'Door legend plate / equipment nameplate' },
-  { id: 'tape12', name: '12 mm tape, auto length', w: 0, h: 12, tape: true, use: 'Continuous tape: Brother P-touch TZe 12 mm, Brady M21 / M210' },
-  { id: 'tape18', name: '18 mm tape, auto length', w: 0, h: 18, tape: true, use: 'Continuous tape: Brother P-touch TZe 18 mm, Brady BMP41' },
-  { id: 'tape24', name: '24 mm tape, auto length', w: 0, h: 24, tape: true, use: 'Continuous tape: Brother P-touch TZe 24 mm, Brady BMP71' },
+  { id: '12x6', name: '12 x 6 mm', w: 12, h: 6, use: 'Generic size: small wire marker or terminal marker' },
+  { id: '15x5', name: '15 x 5 mm', w: 15, h: 5, use: 'Generic size: terminal block marker (5 mm terminal pitch)' },
+  { id: '25x10', name: '25 x 10 mm', w: 25, h: 10, use: 'Generic size: wire marker or small device tag' },
+  { id: '38x12', name: '38 x 12 mm', w: 38, h: 12, use: 'Generic size: device tag on DIN-rail parts' },
+  { id: '50x12', name: '50 x 12 mm', w: 50, h: 12, use: 'Generic size: device tag with description, cable tag' },
+  { id: '60x25', name: '60 x 25 mm', w: 60, h: 25, use: 'Generic size: field device or junction box tag' },
+  { id: '70x30', name: '70 x 30 mm', w: 70, h: 30, use: 'Generic size: door legend plate or equipment nameplate' },
+  { id: 'tape12', name: '12 mm tape, auto length', w: 0, h: 12, tape: true, use: 'Generic 12 mm continuous tape; length follows the text' },
+  { id: 'tape18', name: '18 mm tape, auto length', w: 0, h: 18, tape: true, use: 'Generic 18 mm continuous tape; length follows the text' },
+  { id: 'tape24', name: '24 mm tape, auto length', w: 0, h: 24, tape: true, use: 'Generic 24 mm continuous tape; length follows the text' },
   { id: 'custom', name: 'Custom size…', w: 40, h: 15, use: 'Type the width and height of your label stock' },
 ];
 
@@ -44,6 +47,10 @@ export type Units = 'mm' | 'in';
 export type Paper = 'letter' | 'a4';
 
 export interface LabelSetup {
+  /** Chosen label printer ('' = none / generic sizes). */
+  printerId: string;
+  /** Chosen printer supply part number; when set it decides the label size. */
+  supply: string;
   sizeId: string;
   /** Custom width / height in mm (used when sizeId is 'custom'). */
   customW: number;
@@ -62,7 +69,7 @@ export interface LabelSetup {
 }
 
 export const DEFAULT_SETUP: LabelSetup = {
-  sizeId: '38x12', customW: 40, customH: 15, tapeLength: 0, units: 'mm',
+  printerId: '', supply: '', sizeId: '38x12', customW: 40, customH: 15, tapeLength: 0, units: 'mm',
   content: 'code', border: false, orientation: 'horizontal', useCopies: true, paper: 'letter', rowPerCopy: false,
 };
 
@@ -108,6 +115,16 @@ export function labelSetupFor(projectId: string | null): LabelSetup {
 export const MM_PER_IN = 25.4;
 
 export function sizeOf(setup: LabelSetup): LabelSize {
+  const sup = setup.supply ? supplyByPart(setup.supply) : undefined;
+  if (sup) {
+    const base = { id: `supply:${sup.partNumber}`, name: sup.partNumber, h: sup.heightMm, use: `${sup.brand} ${sup.partNumber}: ${sup.material}, ${sup.color}` };
+    if (sup.continuous) {
+      const w = setup.tapeLength > 0 ? setup.tapeLength : 0;
+      // Self-laminating tape: only the band is printed; w 0 here means "the whole length".
+      return { ...base, w, tape: true, printable: sup.band ? { x: 0, y: sup.band.y, w: 0, h: sup.band.h } : undefined };
+    }
+    return { ...base, w: sup.widthMm, printable: sup.printable };
+  }
   const p = SIZE_PRESETS.find((s) => s.id === setup.sizeId) ?? SIZE_PRESETS[0];
   if (p.id === 'custom') return { ...p, w: Math.max(3, setup.customW), h: Math.max(3, setup.customH) };
   if (p.tape && setup.tapeLength > 0) return { ...p, w: setup.tapeLength };
