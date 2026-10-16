@@ -16,7 +16,7 @@ import { buildEverythingZip } from '../../src/deliverables/files';
 import { drillingDxf } from '../../src/electrical/dxf';
 import {
   backPanelDrilling, billOfMaterials, cableSchedule, designWarnings, doorDrilling, motorFla, panelLayout,
-  panelNameplate, revisionState, terminalPlan, wireNumbers, buildModel,
+  panelNameplate, revisionState, spareSpace, terminalPlan, wireNumbers, buildModel,
 } from '../../src/electrical/derive';
 import { buildLabels, labelsCsv } from '../../src/electrical/labels';
 import { cabinetStepSummary } from '../../src/electrical/step/cabinetStep';
@@ -230,6 +230,7 @@ export async function build(v: Variant): Promise<Record<string, string>> {
     motors: m.motors.map((x) => ({ tag: x.motor.tag, hp: x.motor.hp, voltage: x.motor.voltage, fla: x.fla, tableFla: motorFla(x.motor.hp, x.motor.voltage) })),
     nameplate: panelNameplate(ctx),
     step: cabinetStepSummary(ctx),
+    spare: spareSpace(ctx),
   };
   out['data.json'] = text(JSON.stringify(data, null, 1));
   return out;
