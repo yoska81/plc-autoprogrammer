@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Effort } from '../../store/useSettingsStore';
 import { IS_PREVIEW } from '../../preview/mode';
 import { callClaudeAccount } from '../../preview/claudeAccount';
+import { trackAi } from './busy';
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
@@ -23,14 +24,20 @@ export interface ClaudeResult {
  * One Claude request. With `schema`, the reply is constrained to that JSON
  * schema (structured outputs) and `text` is the JSON string.
  */
-export async function callClaude(opts: {
+type ClaudeOptions = {
   apiKey: string;
   model: string;
   effort: Effort;
   system: string;
   messages: (ChatTurn | RichTurn)[];
   schema?: Record<string, unknown>;
-}): Promise<ClaudeResult> {
+};
+
+export function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
+  return trackAi(() => requestClaude(opts));
+}
+
+async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   // The preview can't reach the API; the viewer's own Claude account answers instead.
   if (IS_PREVIEW) return callClaudeAccount(opts as Parameters<typeof callClaudeAccount>[0]);
   // Keys live in the user's own browser; there is no backend to proxy through.
@@ -57,16 +64,7 @@ export async function callClaude(opts: {
       })
       .finalMessage();
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) {
-      throw new Error('Anthropic rejected the API key. Check it in Settings.', { cause: err });
-    }
-    if (err instanceof Anthropic.RateLimitError) {
-      throw new Error('Anthropic rate limit reached. Wait a moment and try again.', { cause: err });
-    }
-    if (err instanceof Anthropic.APIError) {
-      throw new Error(`Anthropic API error ${err.status ?? ''}: ${err.message}`, { cause: err });
-    }
-    throw err;
+    throw new Error(explainApiError(err, opts.model), { cause: err });
   }
 
   if (message.stop_reason === 'refusal') {
@@ -82,6 +80,21 @@ export async function callClaude(opts: {
     .join('\n\n');
   if (!text) throw new Error('Claude returned an empty response.');
   return { text, reasoning: reasoning || null };
+}
+
+/** Plain-English text for an Anthropic API failure (shared by generation and the connection test). */
+function explainApiError(err: unknown, model: string): string {
+  if (err instanceof Anthropic.AuthenticationError) return 'Anthropic rejected the key (401). It is wrong, was revoked, or was copied incompletely. Copy it again from console.anthropic.com → API keys and paste it in Settings.';
+  if (err instanceof Anthropic.PermissionDeniedError) return `The key is valid but not allowed to use ${model} (403). Check the key's workspace permissions in the console, or pick another model in Settings.`;
+  if (err instanceof Anthropic.NotFoundError) return `The model ${model} is not available to this account (404). Pick another model in Settings.`;
+  if (err instanceof Anthropic.RateLimitError) return 'The key works but the rate or spend limit is reached (429). Wait a moment and try again, or raise the limit in the console.';
+  if (err instanceof Anthropic.APIConnectionError) return 'Could not reach api.anthropic.com. Check the internet connection; a firewall, VPN or browser extension may be blocking it.';
+  if (err instanceof Anthropic.APIError) {
+    if (/credit balance|billing/i.test(err.message)) return 'The key works but the account has no credit. Add credit at console.anthropic.com → Billing.';
+    if (err.status === 529 || (err.status ?? 0) >= 500) return `The AI service is busy or having a problem right now (${err.status}). Wait a minute and try again.`;
+    return `Anthropic error ${err.status ?? ''}: ${err.message}`;
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
@@ -107,15 +120,6 @@ export async function testAnthropicConnection(apiKey: string, model: string): Pr
     await client.messages.create({ model, max_tokens: 16, messages: [{ role: 'user', content: 'Reply with OK.' }] });
     return { ok: true, message: `Connected: ${model} answered. The key works.` };
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) return { ok: false, message: 'Anthropic rejected the key (401). It is wrong, was revoked, or was copied incompletely. Copy it again from console.anthropic.com → API keys.' };
-    if (err instanceof Anthropic.PermissionDeniedError) return { ok: false, message: `The key is valid but not allowed to use ${model} (403). Check the key's workspace permissions in the console, or pick another model.` };
-    if (err instanceof Anthropic.NotFoundError) return { ok: false, message: `The model ${model} is not available to this account (404). Pick another model in the list.` };
-    if (err instanceof Anthropic.RateLimitError) return { ok: false, message: 'The key works but the rate or spend limit is reached (429). Wait, or raise the limit in the console.' };
-    if (err instanceof Anthropic.APIConnectionError) return { ok: false, message: 'Could not reach api.anthropic.com. A firewall, VPN or browser extension may be blocking it.' };
-    if (err instanceof Anthropic.APIError) {
-      if (/credit balance|billing/i.test(err.message)) return { ok: false, message: 'The key works but the account has no credit. Add credit at console.anthropic.com → Billing.' };
-      return { ok: false, message: `Anthropic error ${err.status ?? ''}: ${err.message}` };
-    }
-    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    return { ok: false, message: explainApiError(err, model) };
   }
 }
