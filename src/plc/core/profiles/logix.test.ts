@@ -130,7 +130,7 @@ assert.match(xml, /<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="33
 assert.match(xml, /ProcessorType="5069-L310ER"/);
 assert.match(xml, /<Rung Number="0" Type="N">\n\s+<Comment><!\[CDATA\[Start \/ stop seal-in\]\]><\/Comment>\n\s+<Text><!\[CDATA\[\[XIC\(Start_PB\)/);
 if (process.env.UPDATE_GOLDEN) { mkdirSync(dirname(golden), { recursive: true }); writeFileSync(golden, xml); }
-assert.equal(xml, readFileSync(golden, 'utf8'), 'L5X differs from the golden file (UPDATE_GOLDEN=1 to accept)');
+assert.equal(xml, readFileSync(golden, 'utf8').replace(/\r\n/g, '\n'), 'L5X differs from the golden file (UPDATE_GOLDEN=1 to accept)');
 
 // --- I/O mapping file (manual ch. 21 ALIAS records)
 const map = logixIoMapping(program, ctx);

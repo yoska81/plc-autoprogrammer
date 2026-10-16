@@ -74,7 +74,7 @@ assert.deepEqual(st.warnings, []);
 const type = (n: string) => st.variables.find((x) => x.name === n)?.type;
 assert.deepEqual(['Jam_Timer', 'Run_Hours', 'Part_Count', 'RT_1', 'FT_2', 'Jam_Time_SP', 'Run_Latch'].map(type), ['TON', 'RTO', 'CTU', 'R_TRIG', 'F_TRIG', 'DINT', 'BOOL']);
 if (process.env.UPDATE_GOLDEN) { mkdirSync(dirname(golden), { recursive: true }); writeFileSync(golden, st.body); }
-assert.equal(st.body, readFileSync(golden, 'utf8'), 'ST differs from the golden file (UPDATE_GOLDEN=1 to accept)');
+assert.equal(st.body, readFileSync(golden, 'utf8').replace(/\r\n/g, '\n'), 'ST differs from the golden file (UPDATE_GOLDEN=1 to accept)');
 const csv = micro800VariablesCsv(program, ctx);
 assert.ok(csv.startsWith('Name,Data Type,Comment,Micro800 I/O variable\r\n'));
 assert.ok(csv.includes('"Start_PB","BOOL","Start PB","_IO_EM_DI_00"'));
