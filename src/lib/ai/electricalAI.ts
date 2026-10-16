@@ -6,6 +6,7 @@ import type { Region } from '../../store/useProjectStore';
 import { catalogFor, VENDORS } from '../../electrical/catalogs';
 import { vendorPreference } from '../../store/useProjectStore';
 import type { CatalogPart } from '../../electrical/types';
+import { SUPPLY_INFO } from '../../standards/regions';
 import { callClaude } from './anthropic';
 import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes } from '../../components/questions/classify';
 
@@ -50,7 +51,7 @@ function designSchema(addresses: string[], CATALOG: CatalogPart[]) {
         tag: { type: 'string' },
         description: { type: 'string' },
         hp: { type: 'number' },
-        voltage: { type: 'string', enum: ['120VAC-1PH', '208VAC-3PH', '240VAC-3PH', '480VAC-3PH', '600VAC-3PH'] },
+        voltage: { type: 'string', enum: Object.keys(SUPPLY_INFO) },
         starter: { type: 'string', enum: ['contactor-overload', 'motor-protector', 'vfd'] },
         reversing: { type: 'boolean' },
       }),
@@ -71,17 +72,22 @@ function catalogText(CATALOG: CatalogPart[]): string {
   }).join('\n');
 }
 
+const IEC_RULE = (where: string) => `${where}: IEC 60204-1 (electrical equipment of machines) and IEC 61439-1/-2 (the panel as a low-voltage assembly) instead of NFPA 79 / UL 508A / NEC. Supply is 50 Hz (typically 400/230 V 3-phase + N, TN system; 230 V single-phase or 690 V for large drives). Main switch per IEC 60204-1 §5.3 (lockable, red handle on yellow when it is also the emergency switching-off device). Protect circuits with IEC 60898-1 / IEC 60947-2 MCBs — curve B for resistive loads, C for power supplies, control transformers and general use, D for high inrush — and motors with IEC 60947-2/-4-1 motor circuit breakers (motor protectors, set to the motor's rated current from IEC 60947-4-1 Annex G at the supply voltage) or contactor + overload with fuses/MCB. Size conductors in mm² per IEC 60204-1 Table 6 (copper, 40 °C; 1.5 mm² minimum for power in the enclosure, 0.75 mm² for control) and use the IEC 60204-1 §13.2 colours: black power, red AC control, blue DC control, orange for interlock circuits supplied from outside, light blue neutral, green-yellow PE. Control voltage 24 V DC (PELV). Functional safety per EN ISO 13849-1 (PL) or IEC 62061 (SIL): state the required PLr in "notes". Enclosure: give the IP rating (IEC 60529, e.g. IP54) in notes. Prefer catalog parts that carry IEC ratings (Fuji SC-E/SZ, IEC-rated breakers); say in "notes" which parts must be replaced by IEC-certified (CE-marked) equivalents.`;
+
 const REGION_RULES: Record<Region, string> = {
   US: 'United States: NEC (NFPA 70), NFPA 79 and UL 508A. Protect branch circuits with UL 489 circuit breakers (or UL 489 motor protectors / manual motor controllers listed for group installation); control circuits with UL 489 breakers or Class CC fuses. Mark the panel SCCR per UL 508A Supplement SB.',
   Canada: 'Canada: CEC (CSA C22.1) and CSA C22.2 No. 14, CSA C22.2 No. 286 panel practice. Protect branch circuits and the control transformer with HRC fuses (Class J or CC in fuse holders / fused disconnect) rather than breakers. Typical supply is 600 V 3-phase (347/600 V); size parts for 600 V. Use CSA-certified parts.',
+  EU: IEC_RULE('Europe (CE / UKCA)') + ' The machine needs CE marking (Machinery Directive 2006/42/EC, Machinery Regulation (EU) 2023/1230 from 20 January 2027; Low Voltage and EMC directives) or UKCA in Great Britain: note that the risk assessment (EN ISO 12100), technical file and declaration of conformity are needed.',
+  Israel: IEC_RULE('Israel') + ' Israel adopts IEC 60204-1 as SI 60204 part 1; supply 400/230 V 50 Hz. Note in "notes" that the site earthing system (TN-C-S/TN-S or TT under the Electricity Regulations) must be confirmed and that installation is by a licensed electrician.',
+  IEC: IEC_RULE('IEC country') + ' Note in "notes" that local wiring rules and the marking/approval the destination country requires must be confirmed.',
 };
 
-const SYSTEM = `You are a senior electrical controls engineer designing an industrial control panel for a machine in North America. Your design is turned directly into the schematic drawings, panel layout, terminal plan and bill of materials, so it must be complete and buildable.
+const SYSTEM = `You are a senior electrical controls engineer designing an industrial control panel for a machine (North America or an IEC country, see "Electrical code"). Your design is turned directly into the schematic drawings, panel layout, terminal plan and bill of materials, so it must be complete and buildable.
 
 Design practice to follow:
 - Follow the electrical code given in the request (see "Electrical code" below for the region's rules).
-- NFPA 79 / UL 508A (US) or CSA C22.2 No. 14 / CEC (Canada) practice: main disconnect with lockable handle, branch-circuit protection for every motor and for the control power supply, 24VDC control voltage, ground bar, and every field device wired through terminal blocks.
-- Size motor branch protection and starters from the motor's full-load current (NEC Table 430.250 values for 3-phase motors) and the parts' ratings in the catalog. Size the 24VDC power supply for the PLC, I/O, sensors, solenoids, pilot lights, relay and contactor coils, with at least 25% margin.
+- NFPA 79 / UL 508A (US), CSA C22.2 No. 14 / CEC (Canada) or IEC 60204-1 / IEC 61439 (IEC regions) practice: main disconnect with lockable handle, branch-circuit protection for every motor and for the control power supply, 24VDC control voltage, ground bar, and every field device wired through terminal blocks.
+- Size motor branch protection and starters from the motor's full-load current (NEC Table 430.250 values for 3-phase motors; IEC regions: IEC 60947-4-1 Annex G rated currents) and the parts' ratings in the catalog. Size the 24VDC power supply for the PLC, I/O, sensors, solenoids, pilot lights, relay and contactor coils, with at least 25% margin.
 - Choose PLC expansion modules so all I/O fits with about 20% spare points.
 - E-stop: dual-channel E-stop into a safety relay that removes power from the motion outputs (contactor coils / VFD enable). PLC monitors the safety relay status.
 - VFD motors that must stop on E-stop: dropping the PLC run signal is NOT a safety function. DURApulse GS20 (GS2x part numbers): wire Safe Torque Off STO1/STO2 from the safety relay output — put "STO from safety relay" in the VFD component's function (the factory jumper is removed; stop category 0). GS10 (GS1x) has no STO: add a contactor in that motor's branch (motorTag set) whose coil is on the safety relay output.

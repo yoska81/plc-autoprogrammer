@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import RecoverWork from '../components/RecoverWork';
+import { REGIONS } from '../standards/regions';
+import { applyRegion, regionOption } from '../standards/applyRegion';
 import { useProjectStore, currentRevision, type Region, type Revision } from '../store/useProjectStore';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
@@ -114,9 +116,8 @@ function ProjectData() {
                 <input value={info.drawingPrefix} maxLength={8} onChange={(e) => setInfo({ drawingPrefix: e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '') })} className={`${input} uppercase font-mono`} aria-label="Drawing prefix" />
               </Field>
               <Field label="Electrical code">
-                <select value={info.region} onChange={(e) => setInfo({ region: e.target.value as Region, standards: e.target.value === 'Canada' ? ['CSA C22.2 No. 14', 'CEC'] : ['NFPA 79', 'UL 508A', 'NEC'] })} className={input}>
-                  <option value="US">US — NEC / NFPA 79 / UL 508A</option>
-                  <option value="Canada">Canada — CEC / CSA C22.2 No. 14</option>
+                <select value={info.region} onChange={(e) => applyRegion(e.target.value as Region)} className={input} aria-label="Electrical code">
+                  {REGIONS.map((r) => <option key={r.value} value={r.value}>{regionOption(r.value)}</option>)}
                 </select>
               </Field>
               <Field label="Standards"><div className="py-1 text-steel-700">{info.standards.join(', ') || '—'}</div></Field>

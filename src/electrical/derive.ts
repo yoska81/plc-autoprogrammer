@@ -31,6 +31,7 @@ import type {
 import { getHmi } from '../hmi/hmiCatalog';
 import { lengthText, routedLength, withService } from './layout/geometry';
 import { CABINET, type LayoutForDesign } from './layout/types';
+import { iecMotorCurrent, regionSpec, SUPPLY_INFO, type Region } from '../standards/regions';
 
 export interface DrawingContext {
   projectName: string;
@@ -40,7 +41,7 @@ export interface DrawingContext {
   /** Project I/O resolved to PLC addresses. */
   io: { address: string; description: string; type: 'input' | 'output' }[];
   /** Installation region: drives code references (NEC/UL 508A vs CEC/CSA C22.2 No. 14). Default 'US'. */
-  region?: 'US' | 'Canada';
+  region?: Region;
   /** Door-mounted HMI chosen for the project (cutout from src/hmi/hmiCatalog). */
   hmiPartNumber?: string | null;
   /** Document control for title blocks: numbers, company, names and revision history. */
@@ -66,10 +67,9 @@ export interface DocInfo {
 }
 
 /** Electrical code references for the project region. */
-export function codeRefs(ctx: DrawingContext): { region: 'US' | 'Canada'; installation: string; panel: string; short: string } {
-  return ctx.region === 'Canada'
-    ? { region: 'Canada', installation: 'CEC (CSA C22.1)', panel: 'CSA C22.2 No. 14', short: 'NFPA 79 / CSA C22.2 No. 14 / CEC' }
-    : { region: 'US', installation: 'NEC (NFPA 70)', panel: 'UL 508A', short: 'NFPA 79 / UL 508A / NEC' };
+export function codeRefs(ctx: DrawingContext): { region: Region; installation: string; panel: string; short: string } {
+  const r = regionSpec(ctx.region);
+  return { region: r.value, ...r.codes };
 }
 
 export const WIRE_NUMBERING_NOTES: string[] = [
@@ -218,6 +218,8 @@ const FLA_1PH_115: [number, number][] = [[0.17, 4.4], [0.25, 5.8], [0.33, 7.2], 
 
 /** Motor full-load amps per NEC tables (next size up when the HP is between rows). */
 export function motorFla(hp: number, voltage: SupplyVoltage): number {
+  // IEC supplies: IEC 60947-4-1 Annex G motor currents.
+  if (SUPPLY_INFO[voltage].hz === 50) return iecMotorCurrent(hp, voltage);
   if (voltage === '120VAC-1PH') {
     const row = FLA_1PH_115.find(([h]) => h >= hp) ?? FLA_1PH_115[FLA_1PH_115.length - 1];
     return row[1];
@@ -237,16 +239,10 @@ export function awgFor(amps: number): string {
   return (table.find(([a]) => a >= amps) ?? table[table.length - 1])[1];
 }
 
-function supplyPhases(s: SupplyVoltage): 1 | 3 { return s === '120VAC-1PH' ? 1 : 3; }
+function supplyPhases(s: SupplyVoltage): 1 | 3 { return SUPPLY_INFO[s].phases; }
 
 export function supplyText(s: SupplyVoltage): string {
-  switch (s) {
-    case '120VAC-1PH': return '120VAC 1PH 60Hz';
-    case '208VAC-3PH': return '208VAC 3PH 60Hz';
-    case '240VAC-3PH': return '240VAC 3PH 60Hz';
-    case '480VAC-3PH': return '480VAC 3PH 60Hz';
-    case '600VAC-3PH': return '600VAC 3PH 60Hz';
-  }
+  return SUPPLY_INFO[s].text;
 }
 
 // ---------------------------------------------------------------------------
@@ -524,7 +520,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     }
     const overload = own.find((c) => c.category === 'overload');
     const vfd = own.find((c) => c.category === 'vfd');
-    const ph = motor.voltage === '120VAC-1PH' ? 2 : 3;
+    const ph = SUPPLY_INFO[motor.voltage].phases === 1 ? 2 : 3;
     const idx = Array.from({ length: ph }, (_, k) => k + 1);
     return {
       motor, fla, awg: awgFor(fla * 1.25), protection: prot, contactors, overload, vfd,
@@ -863,7 +859,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     else addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${g.devTag}:+V`, color: 'BU', size: '18 AWG', function: `Output supply slot ${slot}` });
   }
   // VFD control: which PLC point lands on which drive terminal (electrical/vfd.ts).
-  const MOTOR_VOLTS: Record<SupplyVoltage, number> = { '120VAC-1PH': 115, '208VAC-3PH': 200, '240VAC-3PH': 230, '480VAC-3PH': 460, '600VAC-3PH': 575 };
+  const MOTOR_VOLTS: Record<SupplyVoltage, number> = { '120VAC-1PH': 115, '208VAC-3PH': 200, '240VAC-3PH': 230, '480VAC-3PH': 460, '600VAC-3PH': 575, '400VAC-3PH': 400, '230VAC-1PH': 230, '690VAC-3PH': 690 };
   const driveOutStyle = groups.find((g) => g.type === 'output' && g.points.some((p) => p.deviceType === 'vfd-input'))?.outputStyle ?? groups.find((g) => g.type === 'output')?.outputStyle ?? 'sourcing';
   const drives = driveControls(
     motors.filter((m) => m.vfd).map((m) => ({
@@ -2056,7 +2052,7 @@ export function designWarnings(ctx: DrawingContext): string[] {
     else w.push(`${b.ps.tag}: no primary protection (breaker/fuses) found — add branch protection.`);
   }
   // A 24VDC supply's AC input must cover the voltage feeding it (phase-phase on 3-phase supplies).
-  const feedVolts = ({ '120VAC-1PH': 120, '208VAC-3PH': 208, '240VAC-3PH': 240, '480VAC-3PH': 480, '600VAC-3PH': 600 } as const)[m.supply];
+  const feedVolts = SUPPLY_INFO[m.supply].volts;
   const hasTransformer = m.rc.some((c) => c.part?.ratings.kind === 'transformer');
   for (const b of m.psBranches) {
     const range = String(b.ps.part?.ratings.inputVolts ?? '').match(/(\d+)\s*-\s*(\d+)\s*VAC/);
@@ -2279,7 +2275,7 @@ export interface NameplateData {
 /** Data for the panel nameplate (supply, full-load current, enclosure type). Estimates are flagged in the text. */
 export function panelNameplate(ctx: DrawingContext): NameplateData {
   const m = buildModel(ctx);
-  const volts = ({ '120VAC-1PH': 120, '208VAC-3PH': 208, '240VAC-3PH': 240, '480VAC-3PH': 480, '600VAC-3PH': 600 } as const)[m.supply];
+  const volts = SUPPLY_INFO[m.supply].volts;
   const motorAmps = m.motors.reduce((s, x) => s + x.fla, 0);
   const largest = m.motors.length ? Math.max(...m.motors.map((x) => x.fla)) : null;
   let controlAmps = 0;

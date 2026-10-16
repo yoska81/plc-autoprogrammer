@@ -10,6 +10,8 @@ import PartPicker from '../electrical/PartPicker';
 import { saveBlob } from '../deliverables/files';
 import { keyRatings } from '../electrical/strength';
 import { useProjectStore, useVendorPreference, type Region } from '../store/useProjectStore';
+import { REGIONS, regionSpec, SUPPLY_INFO } from '../standards/regions';
+import { applyRegion, regionOption } from '../standards/applyRegion';
 import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electrical/derive';
 import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
@@ -28,16 +30,12 @@ import { useFingerprints, useStages } from '../spec/useStages';
 import { useStageStore } from '../store/useStageStore';
 import { specToText } from '../spec/types';
 
-const SUPPLIES: SupplyVoltage[] = ['600VAC-3PH', '480VAC-3PH', '240VAC-3PH', '208VAC-3PH', '120VAC-1PH'];
 const ENCLOSURES: EnclosureRating[] = ['NEMA 12', 'NEMA 4', 'NEMA 4X', 'NEMA 1'];
 const STARTERS: { value: StarterType; label: string }[] = [
   { value: 'contactor-overload', label: 'Contactor + overload' },
   { value: 'motor-protector', label: 'Motor protector + contactor' },
   { value: 'vfd', label: 'VFD (variable speed)' },
 ];
-const SUPPLY_LABEL: Record<SupplyVoltage, string> = {
-  '600VAC-3PH': '600 V 3-phase', '480VAC-3PH': '480 V 3-phase', '240VAC-3PH': '240 V 3-phase', '208VAC-3PH': '208 V 3-phase', '120VAC-1PH': '120 V single-phase',
-};
 const CATEGORY_LABEL: Partial<Record<CatalogCategory, string>> = {
   enclosure: 'Enclosure', disconnect: 'Disconnect switch', breaker: 'Circuit breaker', fuse: 'Fuse / fuse holder', powerSupply: 'Power supply',
   contactor: 'Contactor', overload: 'Overload relay', motorProtector: 'Motor protector', vfd: 'Variable-speed drive (VFD)',
@@ -79,7 +77,6 @@ export default function ElectricalPage() {
   const [pickPart, setPickPart] = useState('');
   const [swap, setSwap] = useState<number | null>(null);
   const region = useProjectStore((s) => s.info.region);
-  const setInfo = useProjectStore((s) => s.setInfo);
 
   // "Assumptions to confirm", answered under each item.
   useSyncQuestions('electrical', el.design ? userNotes(el.design).map((n) => ({ text: n, assumption: n })) : null);
@@ -184,13 +181,12 @@ export default function ElectricalPage() {
               </p>
               <div className="flex flex-wrap gap-4">
                 <label className="text-sm text-steel-700">Electrical code<br />
-                  <select value={region} onChange={(e) => setInfo({ region: e.target.value as Region, standards: e.target.value === 'Canada' ? ['CSA C22.2 No. 14', 'CEC'] : ['NFPA 79', 'UL 508A', 'NEC'] })} className={input} aria-label="Electrical code">
-                    <option value="US">US — NEC / UL 508A (breakers)</option>
-                    <option value="Canada">Canada — CEC / CSA C22.2 No. 14 (fuses)</option>
+                  <select value={region} onChange={(e) => applyRegion(e.target.value as Region)} className={input} aria-label="Electrical code">
+                    {REGIONS.map((r) => <option key={r.value} value={r.value}>{regionOption(r.value)}</option>)}
                   </select>
                 </label>
                 <label className="text-sm text-steel-700">Supply voltage<br />
-                  <select value={inputs.supply} onChange={(e) => setInputs({ supply: e.target.value as SupplyVoltage })} className={input}>{SUPPLIES.map((s) => <option key={s} value={s}>{SUPPLY_LABEL[s] ?? s}</option>)}</select>
+                  <select value={inputs.supply} onChange={(e) => setInputs({ supply: e.target.value as SupplyVoltage })} className={input}>{regionSpec(region).supplies.map((s) => <option key={s} value={s}>{SUPPLY_INFO[s].label}</option>)}</select>
                 </label>
                 <label className="text-sm text-steel-700">Enclosure<br />
                   <select value={inputs.enclosureRating} onChange={(e) => setInputs({ enclosureRating: e.target.value as EnclosureRating })} className={input}>{ENCLOSURES.map((s) => <option key={s}>{s}</option>)}</select>
@@ -217,7 +213,7 @@ export default function ElectricalPage() {
                   <label className="text-xs text-steel-500 flex items-center gap-1">HP
                     <input type="number" min={0.1} step={0.25} value={m.hp} onChange={(e) => setMotor(i, { hp: Number(e.target.value) })} className={`${input} w-20`} />
                   </label>
-                  <select value={m.voltage} onChange={(e) => setMotor(i, { voltage: e.target.value as SupplyVoltage })} className={input} aria-label="Motor voltage">{SUPPLIES.map((s) => <option key={s} value={s}>{SUPPLY_LABEL[s] ?? s}</option>)}</select>
+                  <select value={m.voltage} onChange={(e) => setMotor(i, { voltage: e.target.value as SupplyVoltage })} className={input} aria-label="Motor voltage">{regionSpec(region).supplies.map((s) => <option key={s} value={s}>{SUPPLY_INFO[s].label}</option>)}</select>
                   <select value={m.starter} onChange={(e) => setMotor(i, { starter: e.target.value as StarterType })} className={input} aria-label="Starter">{STARTERS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
                   <label className="text-xs text-steel-600 flex items-center gap-1"><input type="checkbox" checked={m.reversing} onChange={(e) => setMotor(i, { reversing: e.target.checked })} /> Reversing</label>
                   <button onClick={() => setInputs({ motors: inputs.motors.filter((_, j) => j !== i) })} className="text-steel-400 hover:text-red-600 text-sm" aria-label="Remove motor">✕</button>
