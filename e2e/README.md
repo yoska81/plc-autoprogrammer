@@ -1,7 +1,7 @@
 # End-to-end test
 
 Drives the whole app in Chromium with the AI mocked (answers come from `fixtures.json`):
-wizard (project data, equipment chooser) → project data & revisions → I/O (filter) → electrical (part picker, machining DXF, labels: label-printer PDF page size, sheet PDF, CSV, Excel) → HMI → program (blocks) → simulation (blocks, bypasses) → resizable panels → Settings connection test → spec change + update all → second project (no data leaks, AI-busy switch guard) → deliverables (Excel, PDFs, full package PDF with bookmarks, ZIP with label files). Page or console errors fail the run.
+wizard (project data, equipment chooser) → project data & revisions → I/O (filter) → electrical (part picker, machining DXF) → labels (label-printer PDF page size, sheet PDF, CSV, Excel) → HMI → program (blocks) → simulation (blocks, bypasses) → resizable panels → Settings connection test → spec change + update all → second project (no data leaks, AI-busy switch guard, delete) → deliverables (Excel, PDFs, full package PDF with bookmarks, ZIP with label files). Page or console errors fail the run.
 
 ```bash
 npm run dev -- --port 5173 &          # app under test

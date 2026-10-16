@@ -416,7 +416,7 @@ function sse(model, text) {
   const secondId = await page.locator('select[aria-label="Open project"] option', { hasText: 'Second Cell Renamed' }).getAttribute('value');
   await page.getByText('Reading the spec…').waitFor();
   await page.locator('select[aria-label="Open project"]').selectOption(secondId);
-  check(dialogs.some((m) => /AI is still working/.test(m)), 'switch refused while the AI works');
+  check(await page.getByRole('alert').filter({ hasText: 'AI is still working' }).count() === 1, 'switch refused while the AI works');
   check(await page.locator('select[aria-label="Open project"]').inputValue() === firstId, 'still on the first project');
   const genErr = page.locator('[role=alert]').filter({ hasText: 'no credit' });
   await genErr.waitFor({ timeout: 10000 });

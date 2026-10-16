@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useProjectStore, currentRevision, type Region, type Revision } from '../store/useProjectStore';
 import { useProjectsStore } from '../store/useProjectsStore';
+import { notify } from '../store/useNoticeStore';
 
 const input = 'w-full border border-steel-300 rounded-sm px-2 py-1 bg-white focus:outline-none focus:border-brand-500';
 const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50';
@@ -69,7 +70,7 @@ function ProjectData() {
   const issue = () => {
     const rev = draft.rev.trim().toUpperCase();
     if (!rev || !draft.description.trim()) return;
-    if (info.revisions.some((r) => r.rev.toUpperCase() === rev)) { alert(`Revision ${rev} already exists.`); return; }
+    if (info.revisions.some((r) => r.rev.toUpperCase() === rev)) { notify(`Revision ${rev} already exists. Choose another letter or number.`); return; }
     const revisions = [...info.revisions, { ...draft, rev }];
     setInfo({ revisions });
     setDraft({ rev: nextRev(revisions), date: today, description: PURPOSES[1], by: draft.by });
