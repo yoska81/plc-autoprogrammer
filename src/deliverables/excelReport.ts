@@ -4,7 +4,7 @@ import { SPEC_SECTIONS } from '../spec/types';
 import { billOfMaterials, cableSchedule, designWarnings, supplyText, terminalPlan, wireNumbers } from '../electrical/derive';
 import { describeElement, describeOutput } from '../plc/clickExport';
 import { getHmi } from '../hmi/hmiCatalog';
-import { calculations } from './docs/calcs';
+import { calcWarnings, calculations } from './docs/calcs';
 import { operatorManual } from './docs/manual';
 import { docMeta, hmiText } from './docs/meta';
 import { alarmTable, interlockTable, programInfo } from './docs/program';
@@ -172,7 +172,6 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
     for (const g of billOfMaterials(p.drawingCtx)) {
       for (const l of g.lines) bom.addRow({ i: l.note ? '' : l.item, q: l.qty, pn: l.partNumber, m: l.manufacturer, d: l.description, tags: l.tags.join(', '), c: g.title });
     }
-    if (hmiModel) bom.addRow({ i: '', q: 1, pn: hmiModel.partNumber, m: 'AutomationDirect', d: hmiModel.description, tags: 'HMI1', c: 'HMI' });
 
     tableSheet(wb, 'Protective Devices', protectiveDeviceTable(p));
     const sc = sccrTable(p);
@@ -208,7 +207,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
 
     const notes = wb.addWorksheet('Design Review');
     header(notes, [{ header: 'Item to check', key: 'n', width: 140 }]);
-    for (const n of [...p.electrical!.notes, ...designWarnings(p.drawingCtx)]) notes.addRow({ n }).alignment = { wrapText: true };
+    for (const n of [...p.electrical!.notes, ...designWarnings(p.drawingCtx), ...calcWarnings(p)]) notes.addRow({ n }).alignment = { wrapText: true };
   }
 
   tableSheet(wb, 'Safety Functions', safetyFunctionTable(p, sf), 'Required performance levels (PLr) are set by the machine risk assessment (ANSI B11.0 / ISO 12100) and verified per ISO 13849-1/-2.');

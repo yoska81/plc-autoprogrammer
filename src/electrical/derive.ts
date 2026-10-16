@@ -1219,6 +1219,11 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
       description: c.part?.description ?? `${c.comp.function} (part not found in catalog — verify)`, tags: [c.tag], category: c.category,
     });
   }
+  // The project HMI (chosen on the HMI page) is on the door even when the design has no HMI component.
+  if (ctx.hmiPartNumber && !m.rc.some((c) => c.category === 'hmi')) {
+    const h = getHmi(ctx.hmiPartNumber);
+    lines.set(`hmi|${ctx.hmiPartNumber}`, { item: 0, qty: 1, partNumber: ctx.hmiPartNumber, manufacturer: 'AutomationDirect', description: h?.description ?? 'Operator touch panel', tags: ['HMI1'], category: 'hmi' });
+  }
   const notes: BomLine[] = [];
   const all = [...lines.values()];
   const isGround = (l: BomLine) => /ground|pe\b|earth/i.test(`${l.description} ${ctx.getPart(l.partNumber)?.ratings?.type ?? ''}`);
@@ -1792,7 +1797,13 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (!m.disconnect) w.push('No main disconnect in the design (NFPA 79 5.3 requires a supply disconnecting means).');
   if (!m.rc.some((c) => c.category === 'enclosure')) w.push('No enclosure selected.');
   if (!m.psBranches.length) w.push('No 24VDC power supply in the design.');
-  for (const b of m.psBranches) if (!b.protection) w.push(`${b.ps.tag}: no primary protection (breaker/fuses) found — add branch protection.`);
+  const xfmrFused = /yes/i.test(String(m.transformer?.part?.ratings.fused ?? ''));
+  for (const b of m.psBranches) {
+    if (b.protection) continue;
+    // Transformers with an integral fuse block protect their secondary (the supply feed) themselves.
+    if (b.fromXfmr && xfmrFused) w.push(`${b.ps.tag}: fed through the fuse block of ${m.transformer!.tag} — order and fit the Class CC fuses (primary and secondary) sized per the transformer label.`);
+    else w.push(`${b.ps.tag}: no primary protection (breaker/fuses) found — add branch protection.`);
+  }
   // A 24VDC supply's AC input must cover the voltage feeding it (phase-phase on 3-phase supplies).
   const feedVolts = ({ '120VAC-1PH': 120, '208VAC-3PH': 208, '240VAC-3PH': 240, '480VAC-3PH': 480, '600VAC-3PH': 600 } as const)[m.supply];
   const hasTransformer = m.rc.some((c) => c.part?.ratings.kind === 'transformer');

@@ -1,6 +1,7 @@
 import type { ProjectSnapshot } from '../collect';
 import { SPEC_SECTIONS } from '../../spec/types';
 import { buildModel, billOfMaterials, designWarnings } from '../../electrical/derive';
+import { calcWarnings } from './calcs';
 import { getHmi } from '../../hmi/hmiCatalog';
 import { alarmRows, programInfo, type ProgramInfo } from './program';
 import { makeTable, specLines, type DocRow, type DocTable } from './table';
@@ -66,7 +67,7 @@ export function bomTable(p: ProjectSnapshot): DocTable {
       for (const l of g.lines) rows.push([l.note ? '' : String(l.item), String(l.qty), l.partNumber || '(select)', l.manufacturer, l.description, l.tags.join(', ')]);
     }
   }
-  if (p.hmi) {
+  if (p.hmi && !p.drawingCtx) { // with a design, billOfMaterials already lists the HMI
     rows.push({ group: 'HMI' });
     rows.push(['', '1', p.hmi.hmiPartNumber, 'AutomationDirect', getHmi(p.hmi.hmiPartNumber)?.description ?? 'Operator touch panel', 'HMI1']);
   }
@@ -74,7 +75,7 @@ export function bomTable(p: ProjectSnapshot): DocTable {
 }
 
 export function designReviewTable(p: ProjectSnapshot): DocTable {
-  const rows = p.drawingCtx ? designWarnings(p.drawingCtx).map((w, i) => [`DR-${String(i + 1).padStart(2, '0')}`, w, '', '']) : [];
+  const rows = p.drawingCtx ? [...designWarnings(p.drawingCtx), ...calcWarnings(p)].map((w, i) => [`DR-${String(i + 1).padStart(2, '0')}`, w, '', '']) : [];
   return makeTable([['ID', 8], ['Item to check', 90], ['Resolution', 26], ['By / date', 14]], rows, 8);
 }
 
