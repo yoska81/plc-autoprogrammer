@@ -784,5 +784,49 @@ test('temperature process heats with an analog steam valve output', () => {
   assert.ok(t >= 59.5 && t < 62, `held near 60: ${t}`);
 });
 
+console.log('\ndrive simulation');
+
+test('VFD: ramps to the analog speed reference, trips and coasts, reverse', () => {
+  const io = [
+    { address: 'Y001', description: 'Belt 1 VFD run', type: 'output', category: 'Conveyor' },
+    { address: 'Y002', description: 'Belt 1 VFD reverse', type: 'output', category: 'Conveyor' },
+    { address: 'X001', description: 'Belt 1 VFD fault', type: 'input', category: 'Conveyor' },
+    { address: 'X002', description: 'Run request', type: 'input', category: 'Operator/HMI' },
+    { address: 'X003', description: 'Reverse request', type: 'input', category: 'Operator/HMI' },
+    { address: 'DF5', description: 'Belt 1 speed reference', type: 'output', category: 'Analog/Process', analog: { min: 0, max: 60, units: 'Hz' } },
+  ];
+  // run while requested and not faulted, 45 Hz
+  const p = prog(
+    rung([[NO('X002'), NC('X001'), NC('X003')]], [OUT('Y001')]),
+    rung([[NO('X003'), NC('X001')]], [OUT('Y002')]),
+    rung([[NO('X002')]], [{ type: 'COPY', source: '45', dest: 'DF5' }]),
+  );
+  const wiring = [{ address: 'Y001', deviceTag: 'VFD1', deviceType: 'vfd-input' as const, description: 'Belt 1 VFD run', location: 'Cabinet' }];
+  const ctl = new SimController(p, io, wiring);
+  const m = ctl.getSnapshot().devices.find((d): d is MotorDevice => d.kind === 'motor')!;
+  assert.ok(m.drive, 'motor on a drive');
+  assert.deepEqual([m.drive!.reverseOutput, m.drive!.speedRef, m.drive!.faultInput, m.drive!.maxHz], ['Y002', 'DF5', 'X001', 60]);
+  const hz = () => (ctl.getSnapshot().devices.find((d) => d.id === m.id) as MotorDevice).drive!.state.hz;
+  ctl.sim.setInput('X002', true);
+  ctl.advance(2_000);
+  assert.ok(hz() > 20 && hz() < 26, `ramping at 12 Hz/s: ${hz()}`);
+  ctl.advance(5_000);
+  assert.ok(Math.abs(hz() - 45) < 0.01, `at the reference: ${hz()}`);
+  ctl.setDriveFault(m.id, true);
+  ctl.sim.setInput('X002', true);
+  ctl.advance(100);
+  assert.equal(ctl.sim.readBit('X001'), true, 'fault relay R1O to the PLC');
+  assert.equal(hz(), 0, 'fault coasts to a stop');
+  assert.equal(ctl.sim.readBit('Y001'), false, 'the program drops the run command');
+  ctl.setDriveFault(m.id, false);
+  ctl.sim.setInput('X002', true); // the machine re-sync clears inputs forced on the engine
+  ctl.advance(10_000);
+  assert.ok(Math.abs(hz() - 45) < 0.01, `runs again after reset: ${hz()}`);
+  ctl.sim.setInput('X002', false);
+  ctl.sim.setInput('X003', true);
+  ctl.advance(10_000);
+  assert.ok(hz() < -40, `reverse: ${hz()}`);
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

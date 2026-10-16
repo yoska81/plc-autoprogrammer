@@ -18,6 +18,8 @@ export interface MachineActions {
   setBypass(id: string, on: boolean, value?: boolean): void;
   /** Move an analog input (engineering units). */
   setAnalog?(id: string, value: number): void;
+  /** Trip / reset a drive (fault injection). */
+  setDriveFault?(motorId: string, faulted: boolean): void;
 }
 
 interface Props {
@@ -263,7 +265,37 @@ function MotorIcon({ running, angle, size = 40 }: { running: boolean; angle: num
   );
 }
 
-function MotorCard({ d, bits, inputs, onSet }: { d: MotorDevice; bits: Map<string, boolean>; inputs: Map<string, boolean>; onSet: MachineActions['setBypass'] }) {
+/** VFD status under a motor: output frequency, direction, fault, and fault injection. */
+function DriveStatus({ d, bits, inputs, onFault }: { d: MotorDevice; bits: Map<string, boolean>; inputs: Map<string, boolean>; onFault?: MachineActions['setDriveFault'] }) {
+  const dr = d.drive!;
+  const hz = dr.state.hz;
+  const pct = Math.min(100, (Math.abs(hz) / dr.maxHz) * 100);
+  return (
+    <div className="mt-1.5 rounded border border-steel-200 bg-steel-50 px-2 py-1.5">
+      <div className="flex items-center gap-2 text-[11px]">
+        <span className="font-semibold text-steel-600">VFD</span>
+        <span className={`font-mono font-bold ${dr.state.faulted ? 'text-red-700' : 'text-steel-800'}`}>{dr.state.faulted ? 'FAULT' : `${hz < 0 ? 'REV ' : ''}${Math.abs(hz).toFixed(1)} Hz`}</span>
+        <div className="h-1.5 flex-1 overflow-hidden rounded bg-steel-200"><div className={`h-full ${dr.state.faulted ? 'bg-red-500' : 'bg-brand-600'}`} style={{ width: `${pct}%` }} /></div>
+        <span className="text-[10px] text-steel-400">0–{dr.maxHz} Hz</span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-1">
+        {dr.reverseOutput && <AddrChip address={dr.reverseOutput} on={bits.get(dr.reverseOutput) ?? false} kind="out" />}
+        {dr.presetOutputs.map((a) => <AddrChip key={a} address={a} on={bits.get(a) ?? false} kind="out" />)}
+        {dr.speedRef && <span className="font-mono text-[10px] text-steel-500">{dr.speedRef} ref</span>}
+        {dr.faultInput && <AddrChip address={dr.faultInput} on={inputs.get(dr.faultInput) ?? false} kind="in" />}
+        {onFault && (
+          <button type="button" onClick={() => onFault(d.id, !dr.state.faulted)}
+            className={`ml-auto whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-medium ${dr.state.faulted ? 'border-steel-300 bg-white text-steel-700 hover:bg-steel-50' : 'border-red-300 bg-white text-red-700 hover:bg-red-50'}`}>
+            {dr.state.faulted ? 'Reset drive' : 'Trip drive'}
+          </button>
+        )}
+      </div>
+      <div className="mt-0.5 text-[10px] text-steel-400">{dr.speedRef ? `speed from ${dr.speedRef} (${dr.refUnits})` : dr.presetOutputs.length ? 'preset speeds' : 'full speed (keypad)'} · ramp {dr.accelS} s to {dr.maxHz} Hz · fault coasts to stop</div>
+    </div>
+  );
+}
+
+function MotorCard({ d, bits, inputs, onSet, onFault }: { d: MotorDevice; bits: Map<string, boolean>; inputs: Map<string, boolean>; onSet: MachineActions['setBypass']; onFault?: MachineActions['setDriveFault'] }) {
   const on = bits.get(d.output) ?? false;
   return (
     <Card title={d.label} tag={d.tag} bypass={{ d, onSet }}>
@@ -277,6 +309,7 @@ function MotorCard({ d, bits, inputs, onSet }: { d: MotorDevice; bits: Map<strin
           </div>
         </div>
       </div>
+      {d.drive && <DriveStatus d={d} bits={bits} inputs={inputs} onFault={onFault} />}
     </Card>
   );
 }
@@ -382,6 +415,7 @@ function ConveyorCard({ d, devices, bits, inputs, actions }: {
         </div>
         {motor?.bypass && <span className="flex items-center gap-1 text-[10.5px] text-steel-500">motor <BypassControl d={motor} onSet={actions.setBypass} /></span>}
       </div>
+      {motor?.drive && <DriveStatus d={motor} bits={bits} inputs={inputs} onFault={actions.setDriveFault} />}
       <ul className="mt-1 space-y-0.5">
         {d.sensors.map((s) => (
           <li key={s.input} className="flex items-center gap-1.5 text-[11px] text-steel-600">
@@ -536,7 +570,7 @@ export default function MachinePanel({ devices: all, bits, inputs, actions, word
       {devices.map((d) => {
         switch (d.kind) {
           case 'conveyor': return <ConveyorCard key={d.id} d={d} devices={all} bits={bits} inputs={inputs} actions={actions} />;
-          case 'motor': return d.conveyorId ? null : <MotorCard key={d.id} d={d} bits={bits} inputs={inputs} onSet={actions.setBypass} />;
+          case 'motor': return d.conveyorId ? null : <MotorCard key={d.id} d={d} bits={bits} inputs={inputs} onSet={actions.setBypass} onFault={actions.setDriveFault} />;
           case 'cylinder': return <CylinderCard key={d.id} d={d} bits={bits} inputs={inputs} onSet={actions.setBypass} />;
           case 'stackLight': return <StackLightCard key={d.id} d={d} bits={bits} />;
           case 'analogIn': return <AnalogInCard key={d.id} d={d} onSet={actions.setAnalog} />;
