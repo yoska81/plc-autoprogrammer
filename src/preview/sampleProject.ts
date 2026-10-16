@@ -19,12 +19,12 @@ export const SPEC: SpecSections = {
   ...EMPTY_SECTIONS,
   overview: 'Conveyor cell that moves parts to an end station where a pneumatic pusher pushes each part off onto a take-away table. About 10 parts per minute.',
   sequence: '- Start (panel pushbutton or HMI) runs the conveyor.\n- When a part reaches the end photo-eye, stop the conveyor and extend the pusher.\n- When the pusher-extended prox turns on, retract the pusher and restart the conveyor.\n- Count every part that reaches the end.',
-  safety: '- One E-stop on the operator station, dual channel into a safety relay. Safety relay output to the PLC as Safety OK.\n- Loss of Safety OK stops the conveyor and retracts the pusher (stop category 0).',
+  safety: '- One E-stop on the operator station, dual channel into a safety relay. Safety relay output to the PLC as Safety OK.\n- Safety relay with monitored manual reset: after the E-stop is released, the blue Safety Reset pushbutton on the door (wired to the relay reset input S33-S34, in series with the contactor feedback contact) restores Safety OK. The machine never restarts by itself: Start is needed again.\n- Loss of Safety OK stops the conveyor and retracts the pusher (stop category 0).',
   modes: '- Auto: Start (panel or HMI) runs the cycle; Stop button (NC) or HMI Stop ends it. Optional batch target stops the cycle after the last part.\n- Manual (HMI, Maintenance password): selectable only while the cycle is stopped; hold-to-run Jog Conveyor and Pusher Extend, each with an interlock (Safety OK, and the other actuator off).',
   motion: 'M1 conveyor motor, 1 HP, 480 VAC 3-phase, across-the-line contactor and overload.',
   pneumatics: 'Pusher cylinder, single 5/2 solenoid valve (spring return), pusher-extended prox. Retracts when the valve is off.',
   sensing: '- Part-at-end photo-eye, PNP.\n- Pusher extended prox, PNP.',
-  operator: '- Operator station: Start (green), Stop (red, NC), E-stop.\n- 7" C-more HMI: Main screen with Start/Stop/Reset, running and fault lamps, part count with reset; Alarms screen; I/O status screen.',
+  operator: '- Operator station: Start (green), Stop (red, NC), Safety Reset (blue), E-stop.\n- 7" C-more HMI: Main screen with Start/Stop/Reset, running and fault lamps, part count with reset; Alarms screen; I/O status screen.',
   alarms: '- Pusher fault: pusher not extended within the timeout (HMI setpoint, default 3 s). Latches; Reset (panel Start or HMI Reset) clears it when the pusher is back.\n- Safety circuit open while Safety OK is off.\n- Service due warning when the run hours since the last service reach the service interval.',
   utilities: '480 VAC 3-phase, 60 Hz. NEMA 12 enclosure. Plant air 80 psi.',
 };
@@ -74,7 +74,7 @@ export const LADDER: LadderProgram = {
       [[NO('SC2'), CMP('DS1002', '<', '0')], [NO('SC2'), CMP('DS1002', '>', '9999')]], [COPY('0', 'DS1002')]),
     R('r_init_svc', 'safety', 'First scan: service interval outside 50-2000 h is set to the 500 h default',
       [[NO('SC2'), CMP('DS1003', '<', '50')], [NO('SC2'), CMP('DS1003', '>', '2000')]], [COPY('500', 'DS1003')]),
-    R('r_safe', 'safety', 'Safety OK from the E-stop safety relay output', [[NO('X001')]], [OUT('C1')]),
+    R('r_safe', 'safety', 'Safety OK from the safety relay output: ON once the E-stop is released and the blue Safety Reset (hardwired to SR1) is pressed', [[NO('X001')]], [OUT('C1')]),
     R('r_man_reject', 'safety', 'Manual mode request is refused while the cycle runs: the HMI toggle is reset',
       [[NO('C2'), NO('C1005')]], [{ type: 'RST', address: 'C1005' }]),
     R('r_man_mode', 'safety', 'Manual mode active: HMI Manual selected and the cycle stopped',
@@ -89,7 +89,7 @@ export const LADDER: LadderProgram = {
 
     // ---- Alarms
     R('r_alm_push', 'alarms', 'Pusher fault alarm latches when the pusher is not extended within the timeout', [[NO('T1')]], [{ type: 'SET', address: 'C1101' }]),
-    R('r_alm_reset', 'alarms', 'Fault reset from panel Start or HMI Reset, with Safety OK and the pusher request off',
+    R('r_alm_reset', 'alarms', 'Fault reset from panel Start or HMI Reset, only when safe: Safety OK (safety relay reset first) and the pusher request off',
       [[NO('X002'), NO('C1'), NC('C3')], [NO('C1003'), NO('C1'), NC('C3')]], [{ type: 'RST', address: 'C1101' }]),
     R('r_alm_safe', 'alarms', 'Safety circuit open alarm while Safety OK is off', [[NC('C1')]], [OUT('C1102')]),
     R('r_wrn_svc', 'alarms', 'Service due warning: hours since service reached the service interval',
@@ -403,6 +403,7 @@ export const DESIGN: ElectricalDesign = {
     c('ES1C', 'ECX1030-2', 1, 'Second NC contact for dual-channel E-stop'),
     c('PB1', 'GCX1102', 1, 'Start'),
     c('PB2', 'GCX1101', 1, 'Stop'),
+    c('PB3', 'GCX1104', 1, 'Safety reset'),
     c('PE1', 'C18D-0P-1A', 1, 'Part at end photo-eye'),
     c('LS1', 'PNK-AP-3H', 1, 'Pusher extended prox'),
     c('SOL1', '100222015324006', 1, 'Pusher valve'),
@@ -422,7 +423,7 @@ export const DESIGN: ElectricalDesign = {
     { address: 'Y001', deviceTag: 'K1', location: 'Cabinet', deviceType: 'contactor-coil', description: 'Conveyor motor contactor' },
     { address: 'Y002', deviceTag: 'SOL1', location: 'Pusher station', deviceType: 'solenoid', description: 'Pusher solenoid' },
   ],
-  notes: ['Example design. Motor FLA assumed 2.1 A at 460 V (NEC 430.250); confirm the nameplate.'],
+  notes: ['Example design. Motor FLA assumed 2.1 A at 460 V (NEC 430.250); confirm the nameplate.', 'Safety relay SR1 uses monitored manual reset: blue Safety Reset PB3 on the door, wired to S33-S34 in the feedback loop as drawn (confirm K1 has an NC auxiliary contact for it).'],
   machine: {
     zones: ['Conveyor', 'Pusher station'],
     junctionBoxes: [],
@@ -433,7 +434,7 @@ export const DESIGN: ElectricalDesign = {
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '9';
+const SEED_VERSION = '10';
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }
@@ -471,5 +472,5 @@ export function seedSampleProject() {
   });
   for (const stage of ['equipment', 'io', 'electrical', 'hmi', 'program'] as const) useStageStore.getState().markGenerated(stage, src);
   useProjectsStore.getState().renameActive('Conveyor Cell (example)');
-  useElectricalStore.getState().setDesign(DESIGN, 'generated', 'Example panel: NEMA 12, 480 VAC in through a 30 A disconnect, one 1 HP conveyor on a contactor and overload, 24 VDC control, CLICK PLC, dual-channel E-stop into a safety relay.');
+  useElectricalStore.getState().setDesign(DESIGN, 'generated', 'Example panel: NEMA 12, 480 VAC in through a 30 A disconnect, one 1 HP conveyor on a contactor and overload, 24 VDC control, CLICK PLC, dual-channel E-stop into a safety relay with a blue Safety Reset pushbutton (monitored manual reset).');
 }
