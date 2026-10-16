@@ -19,12 +19,15 @@ export default {
           900: '#24270b',
           950: '#15170a',
         },
+        // Tailwind's gray/slate-400 (2.5:1 on white) made hint text hard to read.
+        gray: { 400: '#7d8590' },
+        slate: { 400: '#7b8898' },
         steel: {
           50: '#f5f7f8',
           100: '#e9edef',
           200: '#d4dbdf',
           300: '#b3bec4',
-          400: '#8a9aa2',
+          400: '#788891', // hint text: ≥3.4:1 on white and steel-50
           500: '#6b7c85',
           600: '#55646c',
           700: '#454f56',

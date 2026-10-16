@@ -72,8 +72,10 @@ export default function NewProjectPage() {
   const [enclosure, setEnclosure] = useState<EnclosureRating>('NEMA 12');
   const [standards, setStandards] = useState<string[]>(['NFPA 79', 'UL 508A']);
 
-  const filled = SPEC_SECTIONS.filter((s) => sections[s.id]?.trim());
-  const hmi = hmiPart ? getHmi(hmiPart) : undefined;
+  // Until the new project exists the stores still hold the open project: show nothing of it here.
+  const filled = created ? SPEC_SECTIONS.filter((s) => sections[s.id]?.trim()) : [];
+  const hmi = created && hmiPart ? getHmi(hmiPart) : undefined;
+  const equipmentChosen = created && stages.equipment.status !== 'empty';
 
   const next = () => {
     if (step === 0) {
@@ -134,7 +136,7 @@ export default function NewProjectPage() {
                   <Field label="Your company"><input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Shown on drawings and documents" className={input} /></Field>
                   <Field label="Project / job number"><input value={projectNumber} onChange={(e) => setProjectNumber(e.target.value)} placeholder="e.g. 24-117" className={input} /></Field>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Drawing prefix"><input value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="e.g. WCC" maxLength={8} className={`${input} uppercase`} /></Field>
+                    <Field label="Drawing prefix"><input value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="e.g. WCC" maxLength={8} className={`${input} uppercase placeholder:normal-case`} /></Field>
                     <Field label="Engineer (initials)"><input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} placeholder="e.g. Y.S." className={input} /></Field>
                   </div>
                 </section>
@@ -214,11 +216,11 @@ export default function NewProjectPage() {
             </div>
             <div>
               <dt className="text-steel-500 text-xs">Controller</dt>
-              <dd className="font-mono">{stages.equipment.status !== 'empty' ? project.cpuId : '—'}</dd>
-              {stages.equipment.status !== 'empty' && project.modules.length > 0 && <dd className="text-xs font-mono text-steel-600">{project.modules.join(', ')}</dd>}
+              <dd className="font-mono">{equipmentChosen ? project.cpuId : '—'}</dd>
+              {equipmentChosen && project.modules.length > 0 && <dd className="text-xs font-mono text-steel-600">{project.modules.join(', ')}</dd>}
             </div>
             <div><dt className="text-steel-500 text-xs">Operator panel</dt><dd className="font-mono">{hmi ? `${hmi.partNumber} (${hmi.sizeIn}")` : '—'}</dd></div>
-            <div><dt className="text-steel-500 text-xs">Electrical</dt><dd>{electrical.inputs.requiredParts.length ? `${electrical.inputs.requiredParts.length} parts chosen so far` : '—'}</dd></div>
+            <div><dt className="text-steel-500 text-xs">Electrical</dt><dd>{created && electrical.inputs.requiredParts.length ? `${electrical.inputs.requiredParts.length} parts chosen so far` : '—'}</dd></div>
           </dl>
         </aside>
       </div>

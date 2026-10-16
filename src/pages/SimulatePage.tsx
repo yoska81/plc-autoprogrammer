@@ -9,6 +9,9 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useHmiStore } from '../store/useHmiStore';
 import { usePlc } from '../plc/usePlc';
 
+// On a 1366 px laptop a 460 px HMI pane leaves too little room for the machine, logic and I/O columns.
+const HMI_PANE_DEFAULT = Math.round(Math.max(320, Math.min(460, window.innerWidth * 0.24)));
+
 export default function SimulatePage() {
   const ladder = useProgramStore((s) => s.ladder);
   const wiring = useElectricalStore((s) => s.design?.ioWiring);
@@ -49,7 +52,7 @@ export default function SimulatePage() {
           <SimulatorPanel program={ladder} io={simIO} wiring={simWiring} labels={labels} onHandle={setHandle} />
         </div>
         {hmiDesign && (
-          <ResizablePane id="sim.hmi" defaultSize={460} min={280} max={1100} handle="left" className="border-l border-steel-200 bg-steel-50 p-4 overflow-y-auto">
+          <ResizablePane id="sim.hmi" defaultSize={HMI_PANE_DEFAULT} min={280} max={1100} handle="left" className="border-l border-steel-200 bg-steel-50 p-4 overflow-y-auto">
             <h3 className="text-sm font-semibold text-gray-800 mb-2">HMI (live)</h3>
             {handle ? <LiveHmi handle={handle} design={hmiDesign} /> : <p className="text-sm text-gray-500">Starting simulator…</p>}
           </ResizablePane>
