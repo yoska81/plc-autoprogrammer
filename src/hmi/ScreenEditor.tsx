@@ -77,7 +77,7 @@ export default function ScreenEditor({ screen, design, widthPx, heightPx, select
     const p = toPanel(e);
     if (drag.kind === 'move') setDraft(moveElements(screen, drag.ids, p.x - drag.x, p.y - drag.y, bounds, grid));
     else if (drag.kind === 'resize') {
-      const next = resizeElement(drag.start, drag.handle, p.x - drag.x, p.y - drag.y, bounds, grid);
+      const next = resizeElement(drag.start, drag.handle, p.x - drag.x, p.y - drag.y, bounds, grid, e.shiftKey);
       setDraft({ ...screen, elements: screen.elements.map((x) => (x.id === drag.id ? next : x)) });
     } else setDrag({ ...drag, x2: p.x, y2: p.y });
   };
@@ -129,6 +129,11 @@ export default function ScreenEditor({ screen, design, widthPx, heightPx, select
             style={{ cursor: 'move' }} onPointerDown={(e) => startMove(e, el)}>
             <title>{el.label || el.kind}{el.address ? ` · ${el.address}` : ''}</title>
           </rect>
+        ))}
+        {/* Selected elements get their grab area on top, so a picture (or anything) under other elements can still be dragged. */}
+        {sel.map((el) => (
+          <rect key={`g-${el.id}`} x={el.x} y={el.y} width={el.w} height={el.h} fill="transparent" data-selected-element={el.id}
+            style={{ cursor: 'move' }} onPointerDown={(e) => startMove(e, el)} />
         ))}
         {sel.map((el) => (
           <rect key={`s-${el.id}`} x={el.x - 2} y={el.y - 2} width={el.w + 4} height={el.h + 4} fill="none" stroke="#eaff46" strokeWidth={2} style={{ pointerEvents: 'none' }} />

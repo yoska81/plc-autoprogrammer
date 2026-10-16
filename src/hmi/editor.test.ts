@@ -1,6 +1,7 @@
 // Unit tests of the manual HMI editor model: npx tsx src/hmi/editor.test.ts
 import assert from 'node:assert/strict';
 import {
+  createImageElement, restack,
   alignElements, createElement, deleteElements, distributeElements, duplicateElements, elementsInRect, historyOf,
   missingTags, moveElements, newElementId, record, redo, resizeElement, snap, syncHandTags, undo,
 } from './editor';
@@ -142,6 +143,32 @@ test('tags for hand-placed addresses', () => {
     ['C1205', 'PUSHER_OUT', 'BIT', 'read'],
   ], 'physical Y001 gets no tag');
   assert.match(tags[2].description, /^Pusher extended\. Shown by "Pusher out" on screen "Main" \(placed by hand\)\.$/);
+});
+
+test('picture element: placed centred, at most half the panel, proportions kept', () => {
+  const el = createImageElement('pic_1', 'data:image/png;base64,AA', 1600, 800, 'Machine', { w: 800, h: 480 });
+  assert.equal(el.kind, 'image');
+  assert.equal(el.src, 'data:image/png;base64,AA');
+  assert.ok(el.w <= 400 && el.h <= 240);
+  assert.equal(Math.round((el.w / el.h) * 10) / 10, 2);
+  assert.ok(el.x >= 0 && el.y >= 0 && el.x + el.w <= 800 && el.y + el.h <= 480);
+});
+
+test('picture element: moves like any element and keeps aspect on corner resize (Shift = free)', () => {
+  const el = { ...createImageElement('pic_1', 'x', 400, 200, 'P', { w: 800, h: 480 }), x: 80, y: 80, w: 200, h: 100 };
+  const sc = { id: 's', name: 'S', purpose: '', elements: [el] } as HmiScreen;
+  const moved = moveElements(sc, ['pic_1'], 40, 40, { w: 800, h: 480 }).elements[0];
+  assert.deepEqual([moved.x, moved.y], [120, 120]);
+  const big = resizeElement(el, 'se', 100, 0, { w: 800, h: 480 });
+  assert.equal(big.w / big.h, 2, 'corner keeps 2:1');
+  const free = resizeElement(el, 'se', 100, 0, { w: 800, h: 480 }, 8, true);
+  assert.notEqual(free.w / free.h, 2, 'Shift stretches');
+});
+
+test('bring to front / send to back', () => {
+  const sc = { id: 's', name: 'S', purpose: '', elements: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] } as unknown as HmiScreen;
+  assert.deepEqual(restack(sc, ['a'], 'front').elements.map((e) => e.id), ['b', 'c', 'a']);
+  assert.deepEqual(restack(sc, ['c'], 'back').elements.map((e) => e.id), ['c', 'a', 'b']);
 });
 
 console.log(`\n${passed} passed`);
