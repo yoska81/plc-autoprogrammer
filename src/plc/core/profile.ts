@@ -122,6 +122,8 @@ export interface PlcProfile {
   exporters?: ProgramExporter[];
   /** Analog channels of the CPU + modules, in addressing order (empty = no analog). */
   analogChannels?(cpu: CpuModel, modules: ModuleSlot[]): AnalogChannel[];
+  /** Hardware platform (src/plc/core/platforms.ts, Dev 1): CPUs, modules, limits, protocols. */
+  platformId?: string;
   /** false = never picked by the equipment AI on its own (the user selects it). Default true. */
   autoChoose?: boolean;
   /** Vendor instruction names for the app's elements (keys: NO, NC, RISE, FALL, OUT, SET, RST, TMR_ON_DELAY, TMR_OFF_DELAY, TMR_RTO, CNT_UP, CNT_DOWN, compare ops, COPY, MATH). */

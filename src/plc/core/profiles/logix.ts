@@ -94,6 +94,7 @@ export const logixProfile: PlcProfile = {
   language: 'ladder',
   available: true,
   autoChoose: false,
+  platformId: 'ab-compactlogix-5380',
   cpuModels: LOGIX_CPUS,
   defaultCpuId: '5069-L310ER',
   autoAddresses: (io, cpu, modules) => neutralAutoAddresses(io, cpu, modules, logixAnalogChannels(cpu, modules)),
