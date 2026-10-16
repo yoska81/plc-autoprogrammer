@@ -197,8 +197,8 @@ export default function ExportPage() {
           <Card title="Cabinet machining (for the machine shop)" info={stages.electrical} to="/electrical?tab=cabinet">
             <p className="text-xs text-steel-500">DXF files in millimetres for laser / CNC / punch: every drilling and tapping hole of the back panel, and every cutout of the door (22 mm operators, HMI, disconnect handle). The same holes are on the "Back panel drilling" and "Door cutouts" drawing sheets with a hole table.</p>
             <div className="flex flex-wrap gap-2">
-              <B busy={busy} label="Back panel DXF" disabled={!hasElec} onClick={run('Back panel DXF', () => saveBlob(`${p.fileBase}_back_panel_drilling.dxf`, new Blob([backPanelDxf(p.drawingCtx!)], { type: 'application/dxf' })))} />
-              <B busy={busy} label="Door cutouts DXF" disabled={!hasElec} onClick={run('Door cutouts DXF', () => saveBlob(`${p.fileBase}_door_cutouts.dxf`, new Blob([doorDxf(p.drawingCtx!)], { type: 'application/dxf' })))} />
+              <B busy={busy} label="Back panel DXF" disabled={!hasElec} onClick={run('Back panel DXF', () => saveBlob(`${p.fileBase}_back_panel_drilling_1to1_in.dxf`, new Blob([backPanelDxf(p.drawingCtx!)], { type: 'application/dxf' })))} />
+              <B busy={busy} label="Door cutouts DXF" disabled={!hasElec} onClick={run('Door cutouts DXF', () => saveBlob(`${p.fileBase}_door_cutouts_1to1_in.dxf`, new Blob([doorDxf(p.drawingCtx!)], { type: 'application/dxf' })))} />
             </div>
           </Card>
 

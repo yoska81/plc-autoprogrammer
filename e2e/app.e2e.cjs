@@ -210,7 +210,7 @@ function sse(model, text) {
   // Machining: units, cut-only, DXF download.
   await page.goto(BASE + '/electrical?tab=machining');
   await page.getByLabel('DXF units').selectOption('in');
-  await page.getByText('X (in)').waitFor();
+  await page.getByText('X in [mm]').waitFor();
   await page.getByLabel('Cutting geometry only').check();
   {
     const [d] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Back panel DXF' }).click()]);

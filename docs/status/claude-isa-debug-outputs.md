@@ -9,7 +9,7 @@ PR: #7 (draft → `claude/optimistic-maxwell-6nfcs6`). Last integration merge: 1
 - [x] PDFs: page sizes, page x of y, TOC page numbers, no undefined/NaN; 60 dpi render of every page and visual pass (example + big).
 - [x] Excel: headers, no bad text, numbers stored as numbers.
 - [x] Cross-consistency: part numbers/qty, wires, terminals, I/O addresses, alarms, revision letter, labels; FLA vs NEC tables; 24 VDC and heat sums.
-- [ ] Machining in **inches by default** with dual dimensions `inch [mm]` (DXF text, Machining tab table, drilling / door-cutout sheets); verify inch and mm DXF geometry identical (×25.4) and = sheets.
+- [x] Machining in **inches by default** with dual dimensions `inch [mm]` (DXF text, Machining tab table, drilling / door-cutout sheets); verify inch and mm DXF geometry identical (×25.4) and = sheets. Verified: `check_dxf.py` compares every entity of inch vs mm files (×25.4, 0.005 mm) and every hole-table row parsed from the drawings PDF (31/31 us480, 64/64 big) against the plan in both inch and mm; sheets 11/12 inspected at 90–150 dpi; E2E downloads an inch cut-only DXF.
 - [ ] STEP SolidWorks readiness: AP214 schema, mm units, assembly structure (NAUO), names/colours, instanced parts, invalid/zero faces, file size, opens as assembly in OCP.
 - [ ] Re-run all checkers on the final drawing set (25 sheets) and detailed STEP (a310537).
 - [ ] Cross-check generated files of `claude/isa-dev-labels-print` and `claude/isa-dev-program-sim` every ~45 min (section "Review of …").
@@ -29,10 +29,11 @@ PR: #7 (draft → `claude/optimistic-maxwell-6nfcs6`). Last integration merge: 1
 | I-07 | Design review | false "PS1 no primary protection" behind a CT-…-1 fused transformer | low | Debug 2 | fixed | 072ade8 |
 | I-08 | Excel | qty / rung columns stored as text | low | Debug 2 | fixed | 5a6ceaf |
 | I-09 | Wire list vs sheet 6 | "RESET:13" vs "PB?:13" | low | Debug 2 | fixed (both PB?) | 5a6ceaf |
-| I-10 | Drawings (big, door detail) | legend "AUTO/MANUAL" squeezed into overlapping glyphs outside the plate (svg2pdf ignores fit-to-width) | medium | coordinator | reported | — |
+| I-10 | Drawings (big, door detail) | legend "AUTO/MANUAL" squeezed into overlapping glyphs outside the plate. Root cause: `Txt` (drawings/symbols.tsx:28) squeezes with `textLength` + `lengthAdjust="spacingAndGlyphs"`; svg2pdf only tightens spacing, so glyphs overlap. Every `maxW` overflow in the PDF set is affected; shrink the font size instead | medium | coordinator | reported | — |
 | I-11 | Example design | SR1 monitored manual reset (S33–S34) but no reset PB → cannot reset; sheet shows PB? | high | Dev 2 (sampleProject) | reported | — |
 | I-12 | Example program | HMI alarm bits C1102/C1103 and many HMI tags not driven by the ladder ("Not found in the program") | medium | Dev 2 | reported | — |
 | I-13 | Layout (big) | SR1, relays, TB1 "do not fit" while PLC rail ~60 % empty (rows share rails only as a whole group) | medium | Debug 2 / coordinator decision | open (proposal) | — |
+| I-15 | Door cutout sheet | longer dual HMI label overflowed into the handle mark; G-label on the HMI edge | low | Debug 2 | fixed (two-line label, size fits cutout; handle label right of mark) | (this batch) |
 | I-14 | STEP | shaft named after handle "DS1H — 14831111 (2)" | low | coordinator | fixed upstream | — |
 
 ## Plan
