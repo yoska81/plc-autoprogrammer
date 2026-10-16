@@ -26,3 +26,4 @@ dist-preview
 e2e/out/
 tools/out/
 tools/.venv/
+__pycache__/
