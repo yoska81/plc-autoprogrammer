@@ -25,6 +25,7 @@ import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
 import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
+import { withAnalogScale } from '../hmi/analogScale';
 
 const input = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white';
 const fieldLabel = 'block text-[11px] font-medium text-gray-500 uppercase tracking-wide';
@@ -613,7 +614,7 @@ export default function HmiPage() {
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{selectedEl ? 'Element properties' : sel.length > 1 ? `${sel.length} elements selected` : 'Screen'}</h3>
                   {selectedEl ? (
                     <ElementEditor key={selectedEl.id} el={selectedEl} screens={design.screens}
-                      onChange={(e) => updateScreen({ ...screen, elements: screen.elements.map((x) => (x.id === e.id ? e : x)) })}
+                      onChange={(e) => updateScreen({ ...screen, elements: screen.elements.map((x) => (x.id === e.id ? withAnalogScale(x, e, io, addresses) : x)) })}
                       onDelete={() => { updateScreen(deleteElements(screen, [selectedEl.id])); setSelected(null); }} />
                   ) : sel.length > 1 ? (
                     <p className="text-xs text-gray-500">Use the tools above the screen to line them up, space them evenly, duplicate or delete them. Drag any of them to move all.</p>

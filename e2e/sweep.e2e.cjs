@@ -177,6 +177,9 @@ async function analogPass(browser, problems) {
     if (addr) {
       await page.locator('input[aria-label="PLC address"]').fill(addr);
       await page.locator('input[aria-label="PLC address"]').blur();
+      // A-19: the bar takes the analog point's scale (0–150 psi).
+      const got = `${await page.getByLabel('Min', { exact: true }).inputValue()}-${await page.getByLabel('Max', { exact: true }).inputValue()} ${await page.getByLabel('Units', { exact: true }).inputValue()}`;
+      if (got !== '0-150 psi') fail(`HMI bar on ${addr} shows ${got}, expected the point's 0-150 psi`);
     }
     await check('hmi_editor');
     await page.getByRole('button', { name: 'Done editing' }).click();

@@ -66,7 +66,7 @@ PRs: #3 (merged), #12 (merged: Windows installer), next PR (draft → `claude/op
 | A-15 | Preview | the connection test asks for the `complex` model tier to get a one-word reply | open, cosmetic (`claudeAccount.ts`) | — |
 | A-18 | I/O list, analog | an analog point on a PLC without analog channels just shows address "—"; only Design review says why | open, low (Dev 2: a hint in `AnalogCell` like "no analog channel — add C0-04AD-1 on Equipment") | — |
 | A-20 | Program tree, simulator block chips | after the blue restyle the selected rung count was brand-800 on brand-600 (1.57:1) | fixed: brand-100 | 95e66ab |
-| A-19 | HMI editor, bar graph | a bar bound to an analog DF register keeps 0–100 and no units instead of the point's scale (e.g. 0–150 psi) | open, low (fill min/max/units from the I/O point when the address is set) | — |
+| A-19 | HMI editor, bar graph | a bar bound to an analog DF register keeps 0–100 and no units instead of the point's scale (e.g. 0–150 psi) | fixed: bars, numerics and trends take the point's scale unless set by hand (`hmi/analogScale.ts`) | see "A-19" commit |
 
 ## Review of claude/isa-dev-labels-print (head 6c55e83, 2026-10-16 17:30)
 - tsc/eslint clean. Their own `e2e/app.e2e.cjs` passes (labels incl. Brady i3300 page sizes, full package 72 pages / 9 bookmarks).
@@ -97,3 +97,9 @@ PRs: #3 (merged), #12 (merged: Windows installer), next PR (draft → `claude/op
 - Verified: US and Canada outputs byte-identical (wire list, BOM, terminal plan, cable schedule, warnings, nameplate); sweep IEC pass (Europe, Israel) 0 problems; A3 PDF pages 420 × 297 mm; full package builds.
 - Facts checked with sources (in regions.ts). Not confirmed: Israel's earthing system (TN-C-S/TN-S or TT by site — the app says to confirm) and which IEC 60204-1 edition SI 60204-1 adopts.
 - Open: derived terminal strips keep TB1… under IEC designations; the AutomationDirect/Fuji catalog is North American (the AI is told to name IEC/CE-marked replacements); Debug 2 owns the IEC code-rule set (`review/codeRules/rules.ts` still treats IEC as US).
+
+## Urgent: input lost between pages (user report)
+- 04e5bb2 + 5f2edc4 — `useDraft` (per-project content, in .isap) and `useUi` (per-project page state). ~70 pieces of page state moved over (list in the commit message and the coordinator report); sticky "not applied yet" banner on Equipment.
+- `e2e/persist.e2e.cjs` — 10 pages + wizard: leave and return, reload, switch projects. 22/22 checks fail on the old code, pass now.
+- Left local on purpose: Settings draft (API keys), dropped spec files (File objects), template-dialog ticks, HMI undo history, short-lived selections.
+- Found: a hand-added HMI screen has no nav button, so it can't be reached in the simulator (live HMI lost its screen list in c6cce78) — reported.
