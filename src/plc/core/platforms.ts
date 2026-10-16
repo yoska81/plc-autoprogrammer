@@ -134,6 +134,22 @@ export const PLATFORMS: Platform[] = [
     notes: 'Ultra-compact 24 VDC CPU with connector (MIL/ribbon) I/O - order I/O cables or terminal blocks separately; -TS variants use spring-clamp terminals. No built-in analog and no expansion-board slot. Right side: up to 16 extension modules; connector-type FX5-C... modules connect directly; screw-terminal cable-type modules (FX5-16EX/ES, FX5-4AD ...) need FX5-CNV-IFC connector conversion or FX5-C1PS-5V extension power supply first. Left side: up to 6 expansion adapters (max 2 comms + max 4 analog). Transistor outputs: Y0-Y3 0.3 A, Y4+ 0.1 A per point - use relays/interposing for loads. "/D" = sink inputs + sink outputs, "/DSS" = sink/source inputs + source outputs. Built-in Ethernet: SLMP, MODBUS/TCP, socket; EtherNet/IP via FX5-ENET/IP or FX5-EIP.',
     // https://dl.mitsubishielectric.co.jp/dl/fa/document/catalog/plcf/l08428eng/l08428eng-j.pdf
   },
+  {
+    id: 'delta-dvp', vendor: 'delta', name: 'Delta DVP-SE (slim, Ethernet)',
+    cpus: ['DVP12SE11T', 'DVP26SE11T'],
+    modules: ['DVP16SM11N', 'DVP16SN11T', 'DVP16SP11T', 'DVP04AD-S', 'DVP04DA-S'],
+    protocols: ['EtherNet/IP', 'Modbus TCP'],
+    notes: 'DVP-S slim modules clip onto the right side of the CPU (no backplane, no end cover listed). Delta: max. 14 right-side modules, of which -S/-S2 analog/special modules must be 8 or fewer. DVP12SE11T also accepts left-side high-speed modules (e.g. DVPEN01-SL, DVP04AD-SL); DVP26SE11T supports right-side modules only and has 1 RS-485 instead of 2. CPUs need a 24 VDC supply (e.g. DVPPS02 24 V 2 A). The newer DVP-SE2 (DVP28SE211T) exists but was not added (no maker dimensions found).',
+    // https://www.deltaww.com/IA/downloadcenter/catalogue/3.Control/DVP/DELTA_IA-PLC_DVP_TP_C_EN_20220906.pdf
+  },
+  {
+    id: 'delta-as300', vendor: 'delta', name: 'Delta AS300',
+    cpus: ['AS332T-A', 'AS332P-A', 'AS324MT-A'],
+    modules: ['AS16AM10N-A', 'AS16AN01T-A', 'AS16AP11T-A', 'AS04AD-A', 'AS04DA-A'],
+    protocols: ['EtherNet/IP', 'Modbus TCP'],
+    notes: 'Backplane-less right-side expansion: max. 32 modules (max. 16 analog / 4 communication), 1,024 I/O. CPUs take 24 VDC (AS-PS02 power module 24 V 2 A, or external 24 V). CPU built-in I/O is on MIL connectors: order UC-ET010/020/030-24D cables plus UB-10-ID16A (inputs) / UB-10-OR16A (NPN-to-relay outputs) terminal boards. AS300 CPUs have 2 function-card slots (e.g. AS-F485, AS-FCOPM CANopen, AS-F2AD/F2DA, AS-FEN02) - not catalogued here. CANopen DS301 needs the AS-FCOPM card on AS300.',
+    // https://www.deltaww.com/IA/downloadcenter/catalogue/3.Control/AS/DELTA_IA-PLC_AS_C_EN_20230116.pdf
+  },
 ];
 
 export const platformById = (id: string) => PLATFORMS.find((p) => p.id === id);
