@@ -12,6 +12,8 @@ import { WEINTEK } from './weintek';
 import { REDLION } from './redlion';
 import { MAPLE } from './maple';
 import { MITSUBISHI } from './mitsubishi';
+import { DELTA } from './delta';
+import { PROFACE } from './proface';
 
 /**
  * Multi-vendor catalogs. One file per vendor in this folder, same rule for
@@ -114,6 +116,14 @@ export const VENDORS: Vendor[] = [
   {
     id: 'mitsubishi', name: 'Mitsubishi Electric', supplier: 'Mitsubishi Electric (distributor)', parts: tag('mitsubishi', MITSUBISHI),
     notes: 'FX5 part codes: "/ES" = 100-240 VAC supply, "/DS" or "/D" = 24 VDC; "MT" transistor sink, "MT/ESS" / "MT/DSS" transistor source, "MR" relay. Up to 16 extension modules on the right, up to 6 expansion adapters on the left (max 2 communication, 4 analog). An FX5U needs an FX5-CNV-IF before connector-type FX5-C… modules; an FX5UC needs an FX5-CNV-IFC or FX5-C1PS-5V before screw-terminal modules. FX5UC transistor outputs are only 0.3 A (Y0–Y3) / 0.1 A. EtherNet/IP is not built in (needs an FX5-ENET/IP module). FR-E800 drives: size by normal-duty current (kw / outputAmps); "EPA-60" models have Ethernet (EtherNet/IP, Modbus TCP).',
+  },
+  {
+    id: 'delta', name: 'Delta Electronics', supplier: 'Delta Electronics (distributor)', parts: tag('delta', DELTA),
+    notes: 'DVP-SE: up to 14 right-side modules, at most 8 analog / special (-S) modules. AS300: up to 32 modules, at most 16 analog and 4 communication; the CPU I/O is on MIL connectors (order UC-ET0x0-24D cables with UB-10-ID16A / UB-10-OR16A terminal boards). Power the PLCs from 24 VDC (DVPPS02 / AS-PS02 or a panel supply). MS300 "ANSAA" = IP20 without EMC filter; drive currents are heavy duty. DOP-100 panels run on 24 VDC (isolated supply recommended).',
+  },
+  {
+    id: 'proface', name: 'Pro-face', supplier: 'Pro-face / Schneider Electric (distributor)', parts: tag('proface', PROFACE),
+    notes: 'Pro-face model letters: "TAD" = 24 VDC, "TAA" = 100-240 VAC. ST6000 "WADE" models are programmed with GP-Pro EX (the driver list applies to them). The PLC families each panel can talk to are in ratings.plcDrivers.',
   },
 ];
 
