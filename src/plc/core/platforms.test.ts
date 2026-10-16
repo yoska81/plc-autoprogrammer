@@ -6,7 +6,9 @@
 import assert from 'node:assert/strict';
 import { getPart } from '../../electrical/catalog';
 import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules } from './platforms';
-import type { Need } from './fit';
+import { cpuFit, hmiFit, platformOf, type Need } from './fit';
+import { PLC_PROFILES } from './profiles';
+import { HMI_MODELS } from '../../hmi/hmiCatalog';
 
 const need = (n: Partial<Need> = {}): Need => ({ digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: false, minHmiSizeIn: null, ...n });
 
@@ -76,3 +78,18 @@ const mods = suggestModules(s1500, '6ES7511-1AL03-0AB0', need({ digitalInputs: 2
 assert.deepEqual(mods, ['6ES7131-6BH01-0BA0', '6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0']);
 assert.ok(platformFit(s1500, '6ES7511-1AL03-0AB0', mods, need({ digitalInputs: 20, digitalOutputs: 8 })).ok);
 console.log('module suggestion tests passed');
+
+// Profiles with a platformId (multi-vendor profiles) use the platform fit; CLICK keeps its own.
+for (const p of PLC_PROFILES) {
+  const pid = (p as { platformId?: string }).platformId;
+  for (const c of p.cpuModels) {
+    if (!pid) { assert.equal(platformOf(c.id), undefined, `${c.id}: CLICK-style fit`); continue; }
+    const pl = platformById(pid);
+    assert.ok(pl, `${p.id}: platform ${pid} exists`);
+    assert.ok(pl!.cpus.includes(c.id), `${p.id}: cpu ${c.id} is a ${pid} CPU (catalog part number)`);
+    const n = need({ digitalInputs: 20, digitalOutputs: 10 });
+    assert.deepEqual(cpuFit(c, [], n), platformFit(pl!, c.id, [], n), `${c.id}: cpuFit = platformFit`);
+    assert.ok(!hmiFit(HMI_MODELS[0], n, c.id).ok, `${c.id}: C-more not offered for ${pid}`);
+  }
+}
+console.log('profile platform wiring tests passed');

@@ -51,7 +51,7 @@ export const PLATFORMS: Platform[] = [
   {
     id: 'ab-compactlogix-5380', vendor: 'allen-bradley', name: 'Allen-Bradley CompactLogix 5380',
     cpus: ['5069-L306ER', '5069-L310ER', '5069-L320ER'],
-    modules: ['5069-IB16', '5069-OB16', '5069-IF8', '5069-OF4'],
+    modules: ['5069-IB16', '5069-OB16', '5069-IF8', '5069-OF4', '5069-OF8'],
     protocols: ['EtherNet/IP'],
     notes: 'Every 5069 I/O module needs a 5069-RTB18-SCREW terminal block; the controller and the 5069-FPD field potential distributor need 5069-RTB64-SCREW.',
   },
