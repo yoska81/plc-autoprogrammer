@@ -24,14 +24,14 @@ function PlanView({ plan, selected, onSelect }: { plan: DrillingPlan; selected: 
           return (
             <g key={c.id} onClick={() => onSelect(c.id)} className="cursor-pointer">
               {c.kind === 'round'
-                ? <circle cx={c.x} cy={c.y} r={c.w / 2} fill={on ? '#eaff46' : '#fff'} stroke={stroke} strokeWidth={on ? 2 : 1} strokeDasharray={c.code === 'G' ? '4 3' : undefined} />
-                : <rect x={c.x - c.w / 2} y={c.y - c.h / 2} width={c.w} height={c.h} fill={on ? '#eaff46' : '#fff'} stroke={stroke} strokeWidth={on ? 2 : 1} />}
+                ? <circle cx={c.x} cy={c.y} r={c.w / 2} fill={on ? '#bcd3fd' : '#fff'} stroke={stroke} strokeWidth={on ? 2 : 1} strokeDasharray={c.code === 'G' ? '4 3' : undefined} />
+                : <rect x={c.x - c.w / 2} y={c.y - c.h / 2} width={c.w} height={c.h} fill={on ? '#bcd3fd' : '#fff'} stroke={stroke} strokeWidth={on ? 2 : 1} />}
             </g>
           );
         })}
         {plan.holes.map((h) => (
           <circle key={h.id} cx={h.x} cy={h.y} r={Math.max(h.dia / 2, 2)} onClick={() => onSelect(h.id)}
-            className="cursor-pointer" fill={selected === h.id ? '#eaff46' : '#1d2327'} stroke={selected === h.id ? '#3b4011' : 'none'} />
+            className="cursor-pointer" fill={selected === h.id ? '#bcd3fd' : '#1d2327'} stroke={selected === h.id ? '#0a52c0' : 'none'} />
         ))}
         {/* datum */}
         <path d="M -14 0 H 14 M 0 -14 V 14" stroke="#c0392b" strokeWidth={1} />
@@ -69,7 +69,7 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
         <div className="flex" role="group" aria-label="Part">
           {(['backpanel', 'door'] as const).map((k) => (
             <button key={k} onClick={() => { setWhich(k); setSelected(null); }}
-              className={`px-3 h-7 border text-[13px] ${which === k ? 'bg-brand-600 border-brand-500 text-brand-950 font-medium' : 'bg-white border-steel-300 hover:bg-steel-50'}`}>
+              className={`px-3 h-7 border text-[13px] ${which === k ? 'bg-brand-600 border-brand-500 text-white font-medium' : 'bg-white border-steel-300 hover:bg-steel-50'}`}>
               {k === 'backpanel' ? `Back panel (${plans.backpanel.holes.length} holes)` : `Front door (${plans.door.cutouts.length} cutouts)`}
             </button>
           ))}
@@ -85,10 +85,10 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
           <input type="checkbox" checked={cutOnly} onChange={(e) => setCutOnly(e.target.checked)} /> Cutting geometry only
         </label>
         <div className="ml-auto flex gap-2">
-          <button onClick={() => download('backpanel')} className="h-7 px-3 flex items-center gap-1.5 bg-brand-600 text-brand-950 font-medium rounded-sm hover:bg-brand-700">
+          <button onClick={() => download('backpanel')} className="h-7 px-3 flex items-center gap-1.5 bg-brand-600 text-white font-medium rounded-sm hover:bg-brand-700">
             <ArrowDownTrayIcon className="w-4 h-4" /> Back panel DXF
           </button>
-          <button onClick={() => download('door')} className="h-7 px-3 flex items-center gap-1.5 bg-brand-600 text-brand-950 font-medium rounded-sm hover:bg-brand-700">
+          <button onClick={() => download('door')} className="h-7 px-3 flex items-center gap-1.5 bg-brand-600 text-white font-medium rounded-sm hover:bg-brand-700">
             <ArrowDownTrayIcon className="w-4 h-4" /> Front door DXF
           </button>
         </div>

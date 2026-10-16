@@ -46,7 +46,7 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
               className="w-full rounded border border-steel-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" disabled={!draft.trim()} onClick={() => save(draft.trim(), 'answered')}
-                className="rounded bg-brand-600 px-3 py-1 text-sm font-medium text-brand-950 hover:bg-brand-700 disabled:opacity-40">Save answer</button>
+                className="rounded bg-brand-600 px-3 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">Save answer</button>
               <button type="button" onClick={() => save('', 'assumed')}
                 className="rounded border border-steel-300 bg-white px-3 py-1 text-sm hover:bg-steel-50">Don't know — use the AI's assumption</button>
               {q.status !== 'open' && <button type="button" onClick={() => { setDraft(q.answer); setEditing(false); }} className="text-sm text-steel-500 underline">Cancel</button>}

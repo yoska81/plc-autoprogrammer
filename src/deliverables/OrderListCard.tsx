@@ -6,7 +6,7 @@ import { saveBlob } from './files';
 import { Spinner } from '../components/common';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40 flex items-center gap-2';
-const primary = 'px-3 py-1.5 text-sm rounded bg-brand-600 text-brand-950 hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2';
+const primary = 'px-3 py-1.5 text-sm rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2';
 const slug = (s: string) => s.replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
 
 async function orderListXlsx(ol: OrderList, projectName: string, spares: OrderList | null): Promise<Blob> {
@@ -17,7 +17,7 @@ async function orderListXlsx(ol: OrderList, projectName: string, spares: OrderLi
   ws.addRow([`${projectName} — order list`]).font = { bold: true, size: 13 };
   const head = ws.addRow(['Supplier', 'Part number', 'Manufacturer', 'Description', 'Needed (pcs)', 'Spares (pcs)', 'Unit', 'Order qty', 'Unit price (USD)', 'Extended (USD)', 'Price source', 'Note']);
   head.font = { bold: true };
-  head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5FFC4' } };
+  head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCE8FE' } };
   for (const g of ol.groups) {
     for (const l of g.lines) {
       ws.addRow([g.supplier, l.partNumber, l.manufacturer, l.description, l.bomQty, l.spareQty, l.packQty > 1 ? `pack of ${l.packQty}` : 'each', l.orderQty,

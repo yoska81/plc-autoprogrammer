@@ -172,7 +172,7 @@ export async function labelsXlsx(labels: Label[], setup: LabelSetup, projectName
   // Copies is a number (label software maps it to a print quantity).
   ws.getColumn('copies').numFmt = '0';
   ws.getRow(1).font = { bold: true };
-  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5FFC4' } };
+  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCE8FE' } };
   ws.autoFilter = { from: 'A1', to: 'F1' };
   const info = wb.addWorksheet('How to import');
   const size = sizeOf(setup);
@@ -211,7 +211,7 @@ export async function labelsXlsx(labels: Label[], setup: LabelSetup, projectName
   info.eachRow((row) => {
     if (/^(BRADY WORKSTATION|OTHER LABEL SOFTWARE)$/.test(String(row.getCell(1).value ?? ''))) {
       row.font = { bold: true };
-      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5FFC4' } };
+      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCE8FE' } };
     }
   });
   return new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

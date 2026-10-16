@@ -32,7 +32,7 @@ export default function BlockTree({ program, issues, active, selectedRungId, onB
     ...(program.rungs.some((r) => blockOf(program, r) === GENERAL) ? [{ id: GENERAL, name: blocks.length ? 'General' : 'Rungs', description: 'Rungs without a block' }] : []),
   ];
   const toggle = (id: string) => setOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const row = (on: boolean) => `flex w-full items-center gap-1.5 rounded-sm px-1.5 py-1 text-left ${on ? 'bg-brand-600 text-brand-950' : 'text-gray-700 hover:bg-brand-50'}`;
+  const row = (on: boolean) => `flex w-full items-center gap-1.5 rounded-sm px-1.5 py-1 text-left ${on ? 'bg-brand-600 text-white' : 'text-gray-700 hover:bg-brand-50'}`;
 
   return (
     <nav aria-label="Program blocks" className="h-full overflow-y-auto bg-[#f7f8f9] p-2 text-xs">

@@ -35,7 +35,7 @@ export default function PlcSetupPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{p.vendor}</span>
                     {!p.available && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">Coming soon</span>}
-                    {selected && <span className="text-xs bg-brand-600 text-brand-950 px-2 py-0.5 rounded">Selected</span>}
+                    {selected && <span className="text-xs bg-brand-600 text-white px-2 py-0.5 rounded">Selected</span>}
                   </div>
                   <div className="text-base font-semibold text-gray-800 mt-1">{p.name}</div>
                   <div className="text-xs text-gray-500 mt-1">{p.language === 'ladder' ? 'Ladder logic' : 'Structured Text'}</div>

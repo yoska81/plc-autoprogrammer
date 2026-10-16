@@ -101,7 +101,7 @@ export function TemplateLibrary({ onClose }: Props) {
                   onClick={() => setCategoryFilter(cat)}
                   className={`w-full text-left px-3 py-1.5 rounded text-sm mb-0.5 transition-colors ${
                     categoryFilter === cat
-                      ? 'bg-brand-600 text-brand-950 font-medium'
+                      ? 'bg-brand-600 text-white font-medium'
                       : 'text-steel-600 hover:bg-steel-200'
                   }`}
                 >
@@ -229,7 +229,7 @@ export function TemplateLibrary({ onClose }: Props) {
             <button
               onClick={handleImport}
               disabled={selectedCount === 0}
-              className="px-4 py-2 text-sm font-medium text-brand-950 bg-brand-600 rounded hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Import {selectedCount > 0 ? `${selectedCount} Selected` : ''}
             </button>

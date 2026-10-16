@@ -40,7 +40,7 @@ function Card({ title, info, children, to }: { title: string; info?: StageInfo; 
 function B({ label, onClick, disabled, primary, busy }: { label: string; onClick: () => void; disabled?: boolean; primary?: boolean; busy: string | null }) {
   return (
     <button onClick={onClick} disabled={disabled || Boolean(busy)}
-      className={primary ? 'px-4 py-2 text-sm rounded bg-brand-600 text-brand-950 hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2' : btn}>
+      className={primary ? 'px-4 py-2 text-sm rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2' : btn}>
       {busy === label || (primary && busy?.startsWith('Building')) ? <><Spinner /> {busy}…</> : label}
     </button>
   );
@@ -137,7 +137,7 @@ export default function ExportPage() {
           <Card title="Full package (one PDF to print)" info={stages.spec}>
             <p className="text-xs text-steel-500">The whole project in one PDF: cover, contents with page numbers, engineering package, electrical drawings, HMI screens, PLC program listing, I/O list, bill of materials and label list. Bookmarks for every part and a package page number on every page.</p>
             <div className="flex flex-wrap items-center gap-2">
-              <button onClick={() => void fullPackage(false)} disabled={Boolean(busy)} className="px-4 py-2 text-sm rounded bg-brand-600 text-brand-950 hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2">
+              <button onClick={() => void fullPackage(false)} disabled={Boolean(busy)} className="px-4 py-2 text-sm rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2">
                 {busy === 'Download full package PDF' && <Spinner />}Download full package PDF
               </button>
               <button onClick={() => void fullPackage(true)} disabled={Boolean(busy)} className={`${btn} flex items-center gap-2`}>

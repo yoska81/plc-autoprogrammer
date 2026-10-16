@@ -458,7 +458,7 @@ export default function MachineLayoutPanel({ ctx }: { ctx: DrawingContext | null
                 {s.manifold && <div className="text-steel-500 mt-0.5">BOM: “Valve manifold {s.manifold.tag} ({s.manifold.valves.length} stations) — part to be selected”.</div>}
                 {(s.jbSplit || s.jbMerge) && <div className="text-amber-800 mt-0.5">Accepting proposes a change to the electrical design (you confirm it first).</div>}
                 <div className="flex gap-1 mt-1">
-                  {!s.info && <button className={`${btn} bg-brand-600 text-brand-950 border-brand-600`} onClick={() => decide(s, 'accepted')}>Accept</button>}
+                  {!s.info && <button className={`${btn} bg-brand-600 text-white border-brand-600`} onClick={() => decide(s, 'accepted')}>Accept</button>}
                   <button className={btn} onClick={() => decide(s, s.info ? 'accepted' : 'ignored')}>{s.info ? 'Noted' : 'Ignore'}</button>
                 </div>
               </li>

@@ -72,7 +72,7 @@ export default function HmiEditorBar(p: HmiEditorBarProps) {
         <button onClick={() => p.onDistribute('v')} disabled={p.selectedCount < 3} className={tool} title="Equal gaps top to bottom">Space down</button>
         <span className="w-px h-5 bg-steel-300 mx-1" />
         <label className="flex items-center gap-1 text-[12px] text-steel-700"><input type="checkbox" checked={p.snap} onChange={(e) => p.onSnap(e.target.checked)} /> Snap to 8 px grid</label>
-        <button onClick={p.onDone} className="ml-auto h-7 px-3 text-[12px] font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700">Done editing</button>
+        <button onClick={p.onDone} className="ml-auto h-7 px-3 text-[12px] font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700">Done editing</button>
       </div>
       {p.hint && <div role="status" className="px-2 py-1 text-[12px] bg-brand-50 border border-brand-300 text-steel-800">{p.hint}</div>}
       <div className="flex flex-wrap items-center gap-2 text-[12px] text-steel-700">

@@ -16,11 +16,11 @@ import { fatProcedure, satChecklist, satTable, testTable } from './docs/fat';
 import { pmSchedule, sparePartsTable } from './docs/maintenance';
 import { isGroup, type DocTable } from './docs/table';
 
-/** Graphite: title rows (white text) and dark text. */
-const BRAND = 'FF24270B';
-/** Light lime header fill with dark text. */
-const HEAD = 'FFF5FFC4';
-const GROUP = 'FFECEEE2';
+/** Deep blue: title rows (white text) and dark text. */
+const BRAND = 'FF0B2A5C';
+/** Light blue header fill with dark text. */
+const HEAD = 'FFDCE8FE';
+const GROUP = 'FFE5EAF2';
 
 /** Header row: brand fill, white bold text, frozen. */
 function header(ws: Worksheet, cols: { header: string; key: string; width: number }[]) {

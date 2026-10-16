@@ -137,7 +137,7 @@ export default function ElectricalPage() {
       </header>
 
       <StageBanner info={stages.electrical} action={
-        <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-brand-600 text-brand-950 rounded disabled:opacity-50">
+        <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
       {tab === 'labels' ? (
@@ -252,7 +252,7 @@ export default function ElectricalPage() {
 
             <div className="flex items-center gap-3">
               <button onClick={generate} disabled={el.isGenerating || !apiKey}
-                className="px-5 py-2.5 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
+                className="px-5 py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
                 {el.isGenerating ? <><Spinner /> Designing the panel… this can take several minutes</> : el.design ? 'Generate New Design' : 'Generate Electrical Design'}
               </button>
               {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</span>}

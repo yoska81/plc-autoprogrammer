@@ -172,7 +172,7 @@ function ProjectData() {
               </table>
               <div className="px-3 py-2 flex items-center justify-end gap-3 bg-[#f7f8f9]">
                 <span className="text-xs text-steel-500">Issuing a revision stamps it on every drawing and document you export from now on.</span>
-                <button onClick={() => issue()} className="px-4 py-1.5 font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700">Issue revision {draft.rev}</button>
+                <button onClick={() => issue()} className="px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700">Issue revision {draft.rev}</button>
               </div>
               {guard && <ConstructionGuard findings={guard} rev={draft.rev.trim().toUpperCase()} onCancel={() => setGuard(null)} onOverride={(reason) => issue(reason)} />}
             </Section>

@@ -64,7 +64,7 @@ export default function RecoverWork() {
                   <span className="block text-xs text-steel-500 truncate">{pc.text.split('\n')[0]}</span>
                 </button>
                 <button onClick={() => copy(pc.text)} className="px-2 py-1 text-xs border border-steel-300 rounded-sm hover:bg-steel-50">Copy</button>
-                <button onClick={() => startFrom(pc)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700 whitespace-nowrap">Start a new project from this</button>
+                <button onClick={() => startFrom(pc)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 whitespace-nowrap">Start a new project from this</button>
               </div>
               {openPiece === pc.id && <pre className="mt-2 p-2 bg-steel-50 border border-steel-200 text-xs whitespace-pre-wrap max-h-72 overflow-auto">{pc.text}</pre>}
             </li>
@@ -101,7 +101,7 @@ export default function RecoverWork() {
                   {w.spec && <div className="text-steel-500 italic truncate max-w-md" title={w.spec}>“{w.spec}”</div>}
                 </td>
                 <td className={`${td} text-right`}>
-                  <button onClick={() => restore(w)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700 whitespace-nowrap">Open as new project</button>
+                  <button onClick={() => restore(w)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 whitespace-nowrap">Open as new project</button>
                 </td>
               </tr>
             ))}

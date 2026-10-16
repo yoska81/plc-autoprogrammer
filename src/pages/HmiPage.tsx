@@ -443,7 +443,7 @@ export default function HmiPage() {
 
   const genButton = (label: string) => (
     <button onClick={generate} disabled={hmi.isGenerating || !apiKey || !model}
-      className="px-4 py-2 text-sm bg-brand-600 text-brand-950 font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
+      className="px-4 py-2 text-sm bg-brand-600 text-white font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
       {hmi.isGenerating ? <><Spinner /> Designing screens…</> : label}
     </button>
   );
@@ -556,7 +556,7 @@ export default function HmiPage() {
                   </div>
                   <span className="flex items-center gap-2">
                     <span className="text-xs text-gray-400 whitespace-nowrap font-mono">{model.widthPx}×{model.heightPx}</span>
-                    {!editing && <button onClick={() => { setEditing(true); setSel([]); }} className="px-3 py-1 text-xs font-medium bg-brand-600 text-brand-950 rounded hover:bg-brand-700">Edit screen</button>}
+                    {!editing && <button onClick={() => { setEditing(true); setSel([]); }} className="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded hover:bg-brand-700">Edit screen</button>}
                   </span>
                 </div>
                 {editing && (
@@ -573,7 +573,7 @@ export default function HmiPage() {
                 {proposal && proposal.screenId === screen.id && (
                   <div role="status" className="mb-2 px-3 py-2 bg-brand-50 border border-brand-300 text-sm text-steel-800 flex flex-wrap items-center gap-2">
                     <span className="flex-1 min-w-64"><b>AI proposal: {proposal.elements.length} element{proposal.elements.length === 1 ? '' : 's'}</b> (dashed on the screen). {proposal.explanation}</span>
-                    <button onClick={() => acceptProposal(false)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700">Add to the screen</button>
+                    <button onClick={() => acceptProposal(false)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700">Add to the screen</button>
                     <button onClick={() => acceptProposal(true)} className="px-3 py-1 text-xs border border-steel-300 bg-white rounded-sm hover:bg-steel-50">Replace the screen's elements</button>
                     <button onClick={() => setProposal(null)} className="px-3 py-1 text-xs border border-steel-300 bg-white rounded-sm hover:bg-steel-50">Discard</button>
                   </div>
