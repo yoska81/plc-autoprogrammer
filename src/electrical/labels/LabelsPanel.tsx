@@ -17,6 +17,9 @@ const input = 'border border-steel-300 rounded px-2 py-1 text-sm focus:outline-n
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 bg-white hover:bg-steel-50 disabled:opacity-40 flex items-center gap-2';
 const primary = 'px-3 py-1.5 text-sm rounded bg-brand-600 text-brand-950 font-medium hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2';
 const PREVIEW_MAX = 60;
+/** Fixed row height of the label list (px) and extra rows rendered above / below the view. */
+const ROW_H = 33;
+const OVERSCAN = 15;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -50,11 +53,24 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [zoom, setZoom] = useState(1);
+  // Progress (0..1) of a long PDF build; null when idle.
+  const [prog, setProg] = useState<number | null>(null);
+  const onProgress = (done: number, total: number) => setProg(total ? done / total : null);
+  // Virtualised list: only the rows in view are rendered (big projects have thousands of labels).
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scroll, setScroll] = useState({ top: 0, height: 600 });
   const last = useRef<number | null>(null);
   const measure = useMemo(() => canvasMeasure(), []);
   // Windows printers (desktop app only).
   const [winPrinters, setWinPrinters] = useState<DesktopPrinter[]>([]);
   useEffect(() => { void desktopPrinters().then(setWinPrinters); }, []);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setScroll({ top: el.scrollTop, height: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ctx]);
 
   const withCopies = (l: ListedLabel): ListedLabel => (copies.has(l.id) ? { ...l, copies: copies.get(l.id)! } : l);
   const counts = useMemo(() => {
@@ -64,6 +80,10 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   }, [all]);
   const q = filter.trim().toLowerCase();
   const shown = all.filter((l) => kinds.has(l.kind) && (!q || `${l.code} ${l.description} ${l.group}`.toLowerCase().includes(q)));
+  const win = {
+    from: Math.max(0, Math.floor(scroll.top / ROW_H) - OVERSCAN),
+    to: Math.min(shown.length, Math.ceil((scroll.top + scroll.height) / ROW_H) + OVERSCAN),
+  };
   const chosen = all.filter((l) => kinds.has(l.kind) && !off.has(l.id)).map(withCopies).filter((l) => l.copies > 0);
   const totalPrinted = chosen.reduce((s, l) => s + (setup.useCopies ? l.copies : 1), 0);
   const size = sizeOf(setup);
@@ -106,6 +126,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
       setMsg({ text: e instanceof Error ? e.message : String(e), error: true });
     } finally {
       setBusy(null);
+      setProg(null);
     }
   };
   const b = (label: string, onClick: () => Promise<string | void>, main = false) => (
@@ -235,7 +256,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
               <p className="text-xs text-steel-500">Use one per page when Brady Workstation or the printer driver is set to this supply. Use “match the roll” when printing the PDF from a generic PDF viewer onto a multi-across roll.</p>
             </fieldset>
             <div className="flex flex-col gap-2">
-              {b('Labels PDF for label printer', async () => { saveBlob(`${fileBase}_labels_${size.tape && !setup.tapeLength ? `tape${size.h}mm` : `${Math.round(size.w)}x${Math.round(size.h)}mm`}${byRoll && roll ? `_${roll.across}across` : ''}.pdf`, await labelPrinterPdf(chosen, setup, `${projectName} labels`)); }, true)}
+              {b('Labels PDF for label printer', async () => { saveBlob(`${fileBase}_labels_${size.tape && !setup.tapeLength ? `tape${size.h}mm` : `${Math.round(size.w)}x${Math.round(size.h)}mm`}${byRoll && roll ? `_${roll.across}across` : ''}.pdf`, await labelPrinterPdf(chosen, setup, `${projectName} labels`, onProgress)); }, true)}
               {desktop() && winPrinters.length > 0 && (
                 <label className="text-xs text-steel-600 flex items-center gap-2">Windows printer
                   <select aria-label="Windows printer" value={setup.windowsPrinter} onChange={(e) => set({ windowsPrinter: e.target.value })} className={`${input} flex-1 min-w-0`}>
@@ -246,7 +267,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
               )}
               {b('Print labels', async () => {
                 const first = preview[0]?.lay;
-                const r = await printLabelPdf(await labelPrinterPdf(chosen, setup, `${projectName} labels`), {
+                const r = await printLabelPdf(await labelPrinterPdf(chosen, setup, `${projectName} labels`, onProgress), {
                   fileName: `${fileBase}_labels.pdf`, jobName: `${projectName} labels`,
                   pageWidthMm: byRoll && roll ? roll.widthMm : first?.w ?? size.w, pageHeightMm: first?.h ?? size.h,
                   uniformPageSize: !tapeAuto, printerName: winPrinters.some((p) => p.name === setup.windowsPrinter) ? setup.windowsPrinter : '',
@@ -254,7 +275,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
                 return printMessage(r, 'The labels were');
               })}
               <div className="flex items-center gap-2">
-                {b('Sheet PDF', async () => { saveBlob(`${fileBase}_labels_sheet_${setup.paper}.pdf`, await labelSheetPdf(chosen, setup, projectName)); })}
+                {b('Sheet PDF', async () => { saveBlob(`${fileBase}_labels_sheet_${setup.paper}.pdf`, await labelSheetPdf(chosen, setup, projectName, onProgress)); })}
                 <select aria-label="Sheet paper" value={setup.paper} onChange={(e) => set({ paper: e.target.value as LabelSetup['paper'] })} className={input}>
                   {(Object.keys(PAPER) as LabelSetup['paper'][]).map((k) => <option key={k} value={k}>{PAPER[k].name}</option>)}
                 </select>
@@ -265,6 +286,12 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
               </div>
               <label className="flex items-center gap-2 text-xs text-steel-600"><input type="checkbox" checked={setup.rowPerCopy} onChange={(e) => set({ rowPerCopy: e.target.checked })} /> CSV / Excel: one row per printed label (instead of a copies column)</label>
             </div>
+            {prog !== null && (
+              <div role="progressbar" aria-label="Building the labels PDF" aria-valuenow={Math.round(prog * 100)} aria-valuemin={0} aria-valuemax={100} className="space-y-1">
+                <div className="h-2 bg-steel-100 rounded overflow-hidden"><div className="h-full bg-brand-600 transition-all" style={{ width: `${Math.round(prog * 100)}%` }} /></div>
+                <p className="text-xs text-steel-600">{busy}: {Math.round(prog * 100)} % of {totalPrinted} labels…</p>
+              </div>
+            )}
             {msg && <div role={msg.error ? 'alert' : 'status'} className={`text-xs rounded p-2 ${msg.error ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-brand-50 text-steel-800 border border-brand-200'}`}>{msg.text}</div>}
             <p className="text-xs text-steel-400">The label-printer PDF has one page per label and each page is exactly the label size, so Brady, Brother, Weidmüller and Phoenix Contact printer drivers print it 1:1. CSV / Excel import into Brady Workstation, P-touch Editor, M-Print PRO and PROJECT complete.</p>
           </Section>
@@ -285,7 +312,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
           <button className={btn} onClick={selectRange}>Select only these</button>
           <span className="ml-auto text-xs text-steel-400">Shift-click to select a range</span>
         </div>
-        <div className="flex-1 overflow-auto">
+        <div ref={listRef} className="flex-1 overflow-auto" onScroll={(e) => setScroll({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })}>
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-steel-100 text-xs text-steel-500 uppercase z-10">
               <tr>
@@ -299,10 +326,12 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
               </tr>
             </thead>
             <tbody className="divide-y divide-steel-100 bg-white">
-              {shown.map((l, i) => {
+              {win.from > 0 && <tr aria-hidden style={{ height: win.from * ROW_H }} />}
+              {shown.slice(win.from, win.to).map((l, k) => {
+                const i = win.from + k;
                 const on = !off.has(l.id);
                 return (
-                  <tr key={l.id} className={on ? '' : 'text-steel-400 bg-steel-50'}>
+                  <tr key={l.id} style={{ height: ROW_H }} className={on ? '' : 'text-steel-400 bg-steel-50'}>
                     <td className="pl-3 py-1"><input type="checkbox" aria-label={`Print ${l.code}`} checked={on} onClick={(e) => clickRow(i, e)} onChange={() => {}} /></td>
                     <td className="text-right pr-2 text-xs tabular-nums text-steel-400">{i + 1}</td>
                     <td className="pr-2 font-mono font-semibold whitespace-nowrap">{l.code}</td>
@@ -315,6 +344,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
                   </tr>
                 );
               })}
+              {win.to < shown.length && <tr aria-hidden style={{ height: (shown.length - win.to) * ROW_H }} />}
               {!shown.length && <tr><td colSpan={7} className="p-6 text-center text-steel-400">No labels match.</td></tr>}
             </tbody>
           </table>

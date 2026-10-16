@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowsRightLeftIcon, PrinterIcon } from '@heroicons/react/20/solid';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useReviewStore } from '../../../review/useReviewStore';
 import { useProgramStore } from '../../../store/useProgramStore';
 import { generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../ai/ladderAI';
 import { validateProgram, type ValidationIssue } from '../../core/validate';
@@ -83,10 +84,14 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
   const machineText = [specText, userPrompt.trim() && `Additional notes for the program:\n${userPrompt}`].filter(Boolean).join('\n\n');
   const recordSource = () => markGenerated('program', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, hmiFp: fp.hmiFp });
 
-  const [tab, setTab] = useState<Tab>(ladder.rungs.length ? 'fix' : 'describe');
-  const [request, setRequest] = useState('');
+  // A finding sent from the Design review page opens Fix & Ask with the request filled in.
+  const [fromReview] = useState(() => useReviewStore.getState().fixRequest?.stage === 'program' ? useReviewStore.getState().fixRequest : null);
+  useEffect(() => { if (fromReview) useReviewStore.getState().requestFix(null); }, [fromReview]);
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(ladder.rungs.length || fromReview ? 'fix' : 'describe');
+  const [request, setRequest] = useState(fromReview?.text ?? '');
   const [error, setError] = useState<string | null>(null);
-  const [selectedRungId, setSelectedRungId] = useState<string | null>(null);
+  const [selectedRungId, setSelectedRungId] = useState<string | null>(() => searchParams.get('rung'));
   /** null = whole program; '' = rungs without a block. */
   const [block, setBlock] = useState<string | null>(null);
   const blocks = ladder.blocks ?? [];
@@ -99,7 +104,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
   const [xrefOpen, setXrefOpen] = useState(false);
   const [xrefAddress, setXrefAddress] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
-  const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(null);
+  const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(() => (searchParams.get('rung') ? { id: searchParams.get('rung')!, n: 0 } : null));
   const labelOf = useMemo(() => {
     const m = new Map<string, string>();
     for (const t of ladder.tags) if (t.nickname) m.set(t.address.toUpperCase(), t.nickname);
@@ -245,6 +250,11 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
 
           {tab === 'fix' && (
             <>
+              {fromReview && request === fromReview.text && (
+                <div className="rounded border border-brand-300 bg-brand-50 px-3 py-2 text-xs text-brand-900">
+                  From the <Link to="/review" className="underline">design review</Link>: the finding is in the box below. Press Send — the AI proposes a change and you approve or reject it.
+                </div>
+              )}
               {!chat.length && (
                 <p className="text-sm text-gray-500">
                   Describe a problem or a change in plain words, e.g. <em>"The conveyor doesn't stop when the guard door opens"</em> or

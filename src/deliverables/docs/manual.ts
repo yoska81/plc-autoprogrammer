@@ -1,7 +1,7 @@
 import type { ProjectSnapshot } from '../collect';
 import { SPEC_SECTIONS } from '../../spec/types';
-import { buildModel, billOfMaterials, designWarnings } from '../../electrical/derive';
-import { calcWarnings } from './calcs';
+import { buildModel, billOfMaterials } from '../../electrical/derive';
+import { reviewRows } from '../../review/report';
 import { getHmi } from '../../hmi/hmiCatalog';
 import { alarmRows, programInfo, type ProgramInfo } from './program';
 import { makeTable, specLines, type DocRow, type DocTable } from './table';
@@ -75,8 +75,9 @@ export function bomTable(p: ProjectSnapshot): DocTable {
 }
 
 export function designReviewTable(p: ProjectSnapshot): DocTable {
-  const rows = p.drawingCtx ? [...designWarnings(p.drawingCtx), ...calcWarnings(p)].map((w, i) => [`DR-${String(i + 1).padStart(2, '0')}`, w, '', '']) : [];
-  return makeTable([['ID', 8], ['Item to check', 90], ['Resolution', 26], ['By / date', 14]], rows, 8);
+  // Design review findings (src/review): consistency checks, electrical design warnings, calculations and the AI review.
+  const rows = reviewRows(p).map((r) => [r.id, `${r.severity}`, `${r.title} — ${r.fix} (${r.area}, ${r.source})`, r.status === 'open' ? '' : `${r.status === 'resolved' ? 'Resolved' : 'Accepted'}: ${r.reason}`, r.date]);
+  return makeTable([['ID', 8], ['Severity', 12], ['Item to check — recommended fix', 78], ['Resolution', 28], ['Date', 12]], rows, 8);
 }
 
 /** Assumptions: designer notes plus the estimates this package uses. */

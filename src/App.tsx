@@ -137,6 +137,7 @@ export default function App() {
           { label: 'Simulation', to: '/simulate' },
         ],
       },
+      { label: 'Design review', to: '/review' },
       { label: 'Deliverables', to: '/export' },
     ],
   };
@@ -162,6 +163,7 @@ export default function App() {
             <MenuItem key={p.id} onClick={() => openProject(p.id)}>{p.id === activeId ? '● ' : ''}{p.name}</MenuItem>
           ))}
           <div className="border-t border-steel-200 my-1" />
+          <MenuItem onClick={() => navigate('/review')}>Design review…</MenuItem>
           <MenuItem onClick={() => navigate('/export')}>Deliverables…</MenuItem>
           <MenuItem onClick={() => navigate('/export?action=print-full')}>Print full package…</MenuItem>
           <MenuItem onClick={() => navigate('/electrical?tab=labels')}>Print labels…</MenuItem>
