@@ -29,6 +29,7 @@ import StageBanner from '../components/StageBanner';
 import { useFingerprints, useStages } from '../spec/useStages';
 import { useStageStore } from '../store/useStageStore';
 import { specToText } from '../spec/types';
+import { startAiJob, useAiJobError, useTakeResult } from '../lib/ai/jobs';
 
 const ENCLOSURES: EnclosureRating[] = ['NEMA 12', 'NEMA 4', 'NEMA 4X', 'NEMA 1'];
 const STARTERS: { value: StarterType; label: string }[] = [
@@ -60,7 +61,6 @@ export default function ElectricalPage() {
   const { projectName } = useProgramStore();
   const fp = useFingerprints();
   const stages = useStages();
-  const markGenerated = useStageStore((s) => s.markGenerated);
   const specText = specToText(fp.spec);
   const { profile, cpu, io, addresses } = usePlc();
   const ctx = useDrawingContext();
@@ -69,7 +69,10 @@ export default function ElectricalPage() {
   const urlTab = params.get('tab') as Tab | null;
   const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'layout', 'picture', 'machining', 'labels'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setError] = useState<string | null>(null);
+  // AI generation runs as a global job (keeps going across pages).
+  const jobError = useAiJobError('electrical');
+  const error = localError ?? jobError;
   const [reasoning, setReasoning] = useState<string | null>(null);
   const pref = useVendorPreference();
   const CATEGORIES = useMemo(() => [...new Set(catalogFor(pref).map((p) => p.category))].sort((a, b) => (CATEGORY_LABEL[a] ?? a).localeCompare(CATEGORY_LABEL[b] ?? b)) as CatalogCategory[], [pref]);
@@ -90,28 +93,34 @@ export default function ElectricalPage() {
   const base = projectName.trim().replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'panel';
   const apiKey = settings.anthropicApiKey;
 
-  const generate = async () => {
+  const generate = () => {
     if (!apiKey || el.isGenerating) return;
     if (el.design && !confirm('Replace the current electrical design?')) return;
-    el.setIsGenerating(true);
     setError(null);
-    try {
-      const r = await generateElectricalDesign({
-        apiKey, model: settings.anthropicModel, effort: settings.effort,
-        profile, cpu, io, addresses, machineDescription: specText, inputs, region,
-      });
-      el.setInputs(r.design.inputs);
-      el.setDesign(r.design, 'generated', r.explanation);
-      markGenerated('electrical', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp });
-      setReasoning(r.reasoning);
-      setTab('cabinet');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      el.setIsGenerating(false);
-    }
+    const snap = { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp };
+    void startAiJob({
+      kind: 'electrical', label: 'Electrical design', keepResult: true,
+      run: async (h) => {
+        useElectricalStore.getState().setIsGenerating(true);
+        try {
+          return await generateElectricalDesign({
+            apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
+            profile, cpu, io, addresses, machineDescription: specText, inputs, region,
+          });
+        } finally { useElectricalStore.getState().setIsGenerating(false); }
+      },
+      apply: (r) => {
+        const st = useElectricalStore.getState();
+        st.setInputs(r.design.inputs);
+        st.setDesign(r.design, 'generated', r.explanation);
+        useStageStore.getState().markGenerated('electrical', snap);
+      },
+    });
   };
-
+  useTakeResult<Awaited<ReturnType<typeof generateElectricalDesign>>>('electrical', (r) => {
+    setReasoning(r.reasoning);
+    setTab('cabinet');
+  });
 
   return (
     <>

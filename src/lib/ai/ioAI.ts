@@ -70,7 +70,7 @@ Rules:
 - "explanation": a short summary of the I/O list (counts and main groups).`;
 
 export async function generateIOFromSpec(opts: {
-  apiKey: string; model: string; effort: Effort;
+  apiKey: string; model: string; effort: Effort; signal?: AbortSignal;
   spec: SpecSections; existing: IOPoint[]; profile: PlcProfile; cpu: CpuModel;
 }): Promise<{ points: GeneratedPoint[]; explanation: string; questions: string[]; reasoning: string | null }> {
   const existing = opts.existing.length
@@ -86,7 +86,7 @@ ${existing}
 
 Produce the I/O list.`;
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
     system: SYSTEM, messages: [{ role: 'user', content }], schema: SCHEMA,
   });
   try {

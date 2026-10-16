@@ -16,6 +16,7 @@ import UpdateAll from './components/UpdateAll';
 import ResizablePane from './components/ResizablePane';
 import { useOpenCounts } from './components/questions/useQuestionStore';
 import { useProjectFile } from './project/useProjectFile';
+import AiJobsIndicator from './components/AiJobsIndicator';
 
 
 const DOT: Record<StageStatus | 'none', string> = {
@@ -233,7 +234,7 @@ export default function App() {
 
       {/* Status bar */}
       <div className="h-6 flex-shrink-0 bg-brand-600 text-white flex items-center gap-5 px-3 text-[11px]">
-        <span>Ready</span>
+        <AiJobsIndicator />
         <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
         <span>HMI: {hmiPart || '—'}</span>
         <span>Rev {rev.rev} · {rev.description}</span>

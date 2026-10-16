@@ -12,6 +12,8 @@ export interface AIConfig {
   apiKey: string;
   model: string;
   effort: Effort;
+  /** Aborts the request (job Cancel). */
+  signal?: AbortSignal;
 }
 
 export interface PlcContext {

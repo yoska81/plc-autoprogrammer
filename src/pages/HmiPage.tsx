@@ -23,6 +23,7 @@ import { LEVEL_LABEL, LOOK_LABEL, lookOf } from '../hmi/theme';
 import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
+import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 
 const input = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white';
 const fieldLabel = 'block text-[11px] font-medium text-gray-500 uppercase tracking-wide';
@@ -210,12 +211,14 @@ type Tab = 'tags' | 'alarms' | 'check' | 'notes';
 export default function HmiPage() {
   const hmi = useHmiStore();
   const settings = useSettingsStore();
-  const markGenerated = useStageStore((s) => s.markGenerated);
   const { profile, cpu, io, addresses } = usePlc();
   const fp = useFingerprints();
   const stages = useStages();
 
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setError] = useState<string | null>(null);
+  // AI generation and "recreate from picture" run as global jobs (they keep going across pages).
+  const genError = useAiJobError('hmi'), recreateError = useAiJobError('hmi-recreate');
+  const error = localError ?? genError ?? recreateError;
   const [reasoning, setReasoning] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
   const screenId = params.get('screen');
@@ -225,7 +228,7 @@ export default function HmiPage() {
   const setSelected = (id: string | null) => setSel(id ? [id] : []);
   const [editing, setEditing] = useState(false);
   const [snapOn, setSnapOn] = useState(true);
-  const [aiBusy, setAiBusy] = useState(false);
+  const aiBusy = useAiJobRunning('hmi-recreate');
   const [proposal, setProposal] = useState<{ screenId: string; elements: HmiElement[]; tags: HmiTag[]; explanation: string } | null>(null);
   const activeProject = useProjectsStore((s) => s.activeId);
   const [choosing, setChoosing] = useState(false);
@@ -373,22 +376,20 @@ export default function HmiPage() {
   };
   const recreate = async () => {
     if (!screen?.background || !model || !design || aiBusy) return;
-    setAiBusy(true);
     setError(null);
-    try {
-      const r = await recreateScreenFromPicture({
-        apiKey, model: settings.anthropicModel, effort: settings.effort, hmi: model,
-        panelImageJpeg: await panelImage(screen.background, W, H), screenName: screen.name,
-        io, addresses, tags: design.tags, screens: design.screens.map((x) => ({ id: x.id, name: x.name })),
-      });
-      const makeId = idMaker('ai');
-      setProposal({ screenId: screen.id, elements: r.elements.map((e) => ({ ...e, id: makeId() })), tags: r.tags, explanation: r.explanation });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setAiBusy(false);
-    }
+    const bg = screen.background, target = { id: screen.id, name: screen.name }, tags = design.tags, screens = design.screens.map((x) => ({ id: x.id, name: x.name }));
+    void startAiJob({
+      kind: 'hmi-recreate', label: `Recreating "${target.name}" from the picture`, keepResult: true,
+      run: async (h) => ({ screenId: target.id, ...(await recreateScreenFromPicture({
+        apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal, hmi: model,
+        panelImageJpeg: await panelImage(bg, W, H), screenName: target.name, io, addresses, tags, screens,
+      })) }),
+    });
   };
+  useTakeResult<{ screenId: string } & Awaited<ReturnType<typeof recreateScreenFromPicture>>>('hmi-recreate', (r) => {
+    const makeId = idMaker('ai');
+    setProposal({ screenId: r.screenId, elements: r.elements.map((e) => ({ ...e, id: makeId() })), tags: r.tags, explanation: r.explanation });
+  });
   const acceptProposal = (replace: boolean) => {
     if (!proposal || !design) return;
     const known = new Set(design.tags.map((t) => t.address.toUpperCase()));
@@ -407,27 +408,33 @@ export default function HmiPage() {
     return [...m];
   }, [io, addresses, design?.tags]);
 
-  const generate = async () => {
+  const generate = () => {
     if (!apiKey || !model || hmi.isGenerating) return;
-    hmi.setIsGenerating(true);
     setError(null);
-    try {
-      const r = await generateHmiDesign({
-        apiKey, model: settings.anthropicModel, effort: settings.effort,
-        hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: CLICK_HMI_COMMUNICATION,
-        spec: fp.spec, io, addresses, profile, cpu,
-      });
-      // Keep the look the user picked (Siemens or dark console) across a regeneration.
-      hmi.setDesign(design?.look ? { ...r.design, look: design.look } : r.design, r.explanation);
-      setReasoning(r.reasoning);
-      setScreenId(r.design.screens[0]?.id ?? null);
-      markGenerated('hmi', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, hmiFp: hmiFingerprint(r.design) });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      hmi.setIsGenerating(false);
-    }
+    const look = design?.look, snap = { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp };
+    void startAiJob({
+      kind: 'hmi', label: 'HMI screens', keepResult: true,
+      run: async (h) => {
+        useHmiStore.getState().setIsGenerating(true);
+        try {
+          return await generateHmiDesign({
+            apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
+            hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: CLICK_HMI_COMMUNICATION,
+            spec: fp.spec, io, addresses, profile, cpu,
+          });
+        } finally { useHmiStore.getState().setIsGenerating(false); }
+      },
+      apply: (r) => {
+        // Keep the look the user picked (Siemens or dark console) across a regeneration.
+        useHmiStore.getState().setDesign(look ? { ...r.design, look } : r.design, r.explanation);
+        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(r.design) });
+      },
+    });
   };
+  useTakeResult<Awaited<ReturnType<typeof generateHmiDesign>>>('hmi', (r) => {
+    setReasoning(r.reasoning);
+    setScreenId(r.design.screens[0]?.id ?? null);
+  });
 
   const setScreenLevel = (id: string, level: AccessLevel) => {
     if (!design) return;

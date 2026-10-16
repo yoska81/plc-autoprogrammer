@@ -126,7 +126,7 @@ let failPage = null;
   const req = aiRequests.at(-1);
   const img = req.messages[0].content.find((b) => b.type === 'image');
   log('AI request:', img ? `image ${img.source.media_type} ${Math.round(img.source.data.length * 0.75 / 1024)} KB` : 'NO IMAGE', '|', (await banner.innerText()).replace(/\s+/g, ' ').slice(0, 90));
-  check(img && /800x480/.test(req.system), 'picture sent at panel size');
+  check(img && /800x480/.test(JSON.stringify(req.system)), 'picture sent at panel size');
   const before = await page.locator('[data-element]').count();
   await banner.getByRole('button', { name: 'Add to the screen' }).click();
   check(await page.locator('[data-element]').count() === before + 2, 'proposal added');

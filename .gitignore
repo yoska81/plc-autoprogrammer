@@ -27,6 +27,7 @@ e2e/out/
 e2e/out-preview/
 e2e/out-sweep/
 e2e/out-layout/
+e2e/out-ai-jobs/
 tools/out/
 tools/.venv/
 __pycache__/

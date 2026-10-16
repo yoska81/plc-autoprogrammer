@@ -6,6 +6,7 @@ import { useStageStore } from '../store/useStageStore';
 import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, ioFingerprint } from '../spec/useStages';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge, type IOMergePlan } from '../lib/ai/ioAI';
+import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 import StageBanner from './StageBanner';
 import { Spinner } from './common';
 import QuestionList from './questions/QuestionList';
@@ -20,8 +21,10 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
   const fp = useFingerprints();
   const stages = useStages();
 
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The AI runs as a global job: it keeps going when the user leaves the page, and its plan is
+  // shown here when they come back.
+  const busy = useAiJobRunning('io');
+  const error = useAiJobError('io');
   const [plan, setPlan] = useState<(IOMergePlan & { explanation: string; questions: string[] }) | null>(null);
 
   const apiKey = settings.anthropicApiKey;
@@ -31,22 +34,17 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
   const openIo = ioQuestions.filter((q) => q.status === 'open');
   const specEmpty = stages.spec.status === 'empty';
 
-  const generate = async () => {
+  const generate = () => {
     if (!apiKey || specEmpty) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await generateIOFromSpec({
-        apiKey, model: settings.anthropicModel, effort: settings.effort,
-        spec: fp.spec, existing: projectIO, profile, cpu,
-      });
-      setPlan({ ...planIOMerge(projectIO, r.points), explanation: r.explanation, questions: r.questions });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    const spec = fp.spec, existing = projectIO;
+    void startAiJob({
+      kind: 'io', label: 'I/O list from the spec', keepResult: true,
+      run: (h) => generateIOFromSpec({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal, spec, existing, profile, cpu }),
+    });
   };
+  useTakeResult<Awaited<ReturnType<typeof generateIOFromSpec>>>('io', (r) => {
+    setPlan({ ...planIOMerge(useIOStore.getState().projectIO, r.points), explanation: r.explanation, questions: r.questions });
+  });
 
   const apply = () => {
     if (!plan) return;

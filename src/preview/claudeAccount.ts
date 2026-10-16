@@ -57,7 +57,8 @@ const ERRORS: Record<string, string> = {
 
 function friendly(e: unknown): Error {
   const se = e as SampleError;
-  if (se && typeof se.code === 'string') return new Error(ERRORS[se.code] ?? `Claude could not answer right now (${se.code}). Try again.`, { cause: e });
+  // keep the code on the error: callClaude retries 'rate_limited' and treats 'cancelled' as a stop
+  if (se && typeof se.code === 'string') return Object.assign(new Error(ERRORS[se.code] ?? `Claude could not answer right now (${se.code}). Try again.`, { cause: e }), { code: se.code });
   return e instanceof Error ? e : new Error(String(e));
 }
 
@@ -85,6 +86,7 @@ export async function callClaudeAccount(opts: {
   system: string;
   messages: { role: 'user' | 'assistant'; content: string | Block[] }[];
   schema?: Record<string, unknown>;
+  signal?: AbortSignal;
 }): Promise<{ text: string; reasoning: string | null }> {
   const sample = await getSample();
   if (!sample) {
@@ -117,6 +119,7 @@ export async function callClaudeAccount(opts: {
     model: opts.model.startsWith('claude-') ? opts.model : undefined,
     effort,
     cache: false,
+    ...(opts.signal ? { signal: opts.signal } : {}),
     ...(images.length ? { images } : {}),
   };
   try {
