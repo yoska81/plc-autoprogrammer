@@ -154,12 +154,17 @@ export function protocolsOf(p: CatalogPart): Protocol[] {
   return out;
 }
 
+/** Platform ids a panel's maker lists in its PLC driver list (ratings.plcDrivers, sourced in ratings.driversSource). */
+export const driversOf = (hmi: CatalogPart): string[] => String(hmi.ratings.plcDrivers ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
 /**
- * Can this touch panel talk to the platform? Same brand: yes unless its
- * protocols are stated and don't match. Another brand: only when a shared
- * Ethernet protocol is stated for the panel.
+ * Can this touch panel talk to the platform? Listed in the panel maker's PLC
+ * driver list: yes. Same brand: yes unless its protocols are stated and
+ * don't match. Another brand: only when a shared Ethernet protocol is stated
+ * for the panel.
  */
 export function hmiCompatible(platform: Platform, hmi: CatalogPart): { ok: boolean; reason: string | null } {
+  if (driversOf(hmi).includes(platform.id)) return { ok: true, reason: null };
   const hp = protocolsOf(hmi);
   const shared = hp.filter((x) => platform.protocols.includes(x));
   if (hmi.vendor === platform.vendor) {
