@@ -6,6 +6,7 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, session, shell
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { registerModbusIpc } = require('./modbus.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;
@@ -192,6 +193,9 @@ ipcMain.handle('isa:print', async (e, job) => {
 });
 
 ipcMain.on('isa:version', (e) => { e.returnValue = app.getVersion(); });
+
+// ── Connect to PLC: Modbus TCP (electron/modbus.cjs) ──
+registerModbusIpc(ipcMain);
 
 app.whenReady().then(() => {
   serveApp();
