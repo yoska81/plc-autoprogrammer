@@ -21,6 +21,7 @@ import SpecPage from './pages/SpecPage.tsx'
 import HmiPage from './pages/HmiPage.tsx'
 import ReviewPage from './review/ReviewPage.tsx'
 import SimulatePage from './plc/pages/SimulatePage.tsx'
+import OnlinePage from './online/OnlinePage.tsx'
 import EquipmentPage from './pages/EquipmentPage.tsx'
 import NewProjectPage from './pages/NewProjectPage.tsx'
 
@@ -49,6 +50,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="equipment" element={<EquipmentPage />} />
           <Route path="hmi" element={<HmiPage />} />
           <Route path="simulate" element={<SimulatePage />} />
+          <Route path="online" element={<OnlinePage />} />
           <Route path="plc" element={<PlcSetupPage />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="electrical" element={<ElectricalPage />} />

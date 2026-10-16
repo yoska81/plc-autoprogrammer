@@ -11,6 +11,8 @@ import { validateProgram } from '../plc/core/validate';
 import { getPart } from '../electrical/catalog';
 import type { DrawingContext } from '../electrical/derive';
 import { docInfo } from './docInfo';
+import { checkoutFor } from '../online/useCheckoutStore';
+import { useProjectsStore } from '../store/useProjectsStore';
 
 /** Everything the deliverables need, read once from the stores. */
 export function collectProject() {
@@ -54,6 +56,8 @@ export function collectProject() {
     drawingCtx,
     hmi: hmi.design,
     info,
+    /** Commissioning I/O check-out (Online page), by I/O id. */
+    checkout: checkoutFor(useProjectsStore.getState().activeId),
     equipment: recommendation ? {
       cpu: cpuId,
       why: recommendation.plc.cpuId === cpuId ? recommendation.plc.why : '',
