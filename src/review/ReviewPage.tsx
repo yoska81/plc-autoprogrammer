@@ -53,7 +53,7 @@ function Row({ f, onGo, onFix }: { f: Finding; onGo: () => void; onFix: (() => v
             <button type="button" onClick={onGo} className="rounded border border-steel-300 px-2 py-0.5 text-[12px] hover:bg-steel-50">Go to</button>
             {onFix && st === 'open' && (
               <button type="button" onClick={onFix} title="Opens the stage's AI fix with this finding; you approve the proposed change there"
-                className="rounded border border-brand-600 bg-brand-600 px-2 py-0.5 text-[12px] font-semibold text-brand-950 hover:bg-brand-700">Ask AI to fix</button>
+                className="rounded border border-brand-600 bg-brand-600 px-2 py-0.5 text-[12px] font-semibold text-white hover:bg-brand-700">Ask AI to fix</button>
             )}
             {st === 'open' ? (
               <>
@@ -73,7 +73,7 @@ function Row({ f, onGo, onFix }: { f: Finding; onGo: () => void; onFix: (() => v
               <label className="text-[12px] font-medium text-steel-700" htmlFor={`r-${f.id}`}>{marking === 'resolved' ? 'How was it resolved?' : 'Why is it acceptable?'}</label>
               <input id={`r-${f.id}`} autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (shown in the engineering package)"
                 className="flex-1 rounded border border-steel-300 px-2 py-1 text-[12.5px] focus:outline-none focus:ring-2 focus:ring-brand-500" />
-              <button type="submit" disabled={!reason.trim()} className="rounded bg-brand-600 px-3 py-1 text-[12px] font-semibold text-brand-950 disabled:opacity-40">Save</button>
+              <button type="submit" disabled={!reason.trim()} className="rounded bg-brand-600 px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-40">Save</button>
               <button type="button" onClick={() => setMarking(null)} className="rounded border border-steel-300 px-3 py-1 text-[12px]">Cancel</button>
             </form>
           </td>
@@ -134,7 +134,7 @@ export default function ReviewPage() {
     return null;
   };
 
-  const chip = (on: boolean) => `rounded px-2 py-0.5 text-[12px] font-semibold border ${on ? 'border-brand-600 bg-brand-600 text-brand-950' : 'border-steel-300 bg-white text-steel-600 hover:bg-steel-50'}`;
+  const chip = (on: boolean) => `rounded px-2 py-0.5 text-[12px] font-semibold border ${on ? 'border-brand-600 bg-brand-600 text-white' : 'border-steel-300 bg-white text-steel-600 hover:bg-steel-50'}`;
   const areas = [...new Set(all.map((f) => f.area))];
 
   return (
@@ -148,7 +148,7 @@ export default function ReviewPage() {
           <ArrowPathIcon className="h-4 w-4" /> Re-run checks
         </button>
         <button type="button" onClick={runAi} disabled={busy || !apiKey}
-          className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-brand-950 hover:bg-brand-700 disabled:opacity-50">
+          className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
           {busy ? <><Spinner /> Reviewing…</> : <><SparklesIcon className="h-4 w-4" /> {ai ? 'Re-run AI review' : 'Run AI review'}</>}
         </button>
       </header>

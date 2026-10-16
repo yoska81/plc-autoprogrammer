@@ -216,12 +216,15 @@ function stageChecks({ stages }: ReviewInput): Finding[] {
 }
 
 const MAJOR_WARN_RE = /\b(no reset|no safety relay|no e-stop|below the motor|transformer is required|not rated|without contactor|needs two contactors|no plc output)\b/i;
+/** Design warnings a code rule already reports (with its clause): not listed twice in the review. */
+const COVERED_BY_CODE_RULES = /safety relay has no reset pushbutton/i;
 const INFO_WARN_RE = /\b(estimated|by site|suggestions|calculate and mark|confirm with datasheets)\b/i;
 
 function electricalChecks({ p }: ReviewInput): Finding[] {
   const out: Finding[] = [];
   if (p.drawingCtx) {
     for (const w of designWarnings(p.drawingCtx)) {
+      if (COVERED_BY_CODE_RULES.test(w)) continue;
       const sev: Severity = MAJOR_WARN_RE.test(w) ? 'major' : INFO_WARN_RE.test(w) ? 'info' : 'minor';
       out.push(finding(`elec:${hash(w)}`, sev, /safety|e-stop/i.test(w) ? 'safety' : 'electrical', 'electrical', '', w.length > 90 ? `${w.slice(0, 88)}…` : w, w, 'Check the electrical design and correct it, or record why it is acceptable.'));
     }

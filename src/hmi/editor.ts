@@ -30,11 +30,11 @@ export const PALETTE: { kind: HmiElementKind; label: string }[] = [
 
 const DEFAULT_SIZE: Partial<Record<HmiElementKind, [number, number]>> = {
   button: [120, 56], nav: [120, 56], indicator: [160, 48], numeric: [160, 56], 'numeric-entry': [160, 56],
-  bar: [200, 40], multistate: [200, 48], text: [160, 32], 'alarm-banner': [480, 40], panel: [240, 160],
+  bar: [200, 40], multistate: [200, 48], text: [160, 32], 'alarm-banner': [480, 40], panel: [240, 160], image: [240, 160],
 };
 const DEFAULT_LABEL: Partial<Record<HmiElementKind, string>> = {
   button: 'Start', nav: 'Main', indicator: 'Running', numeric: 'Count', 'numeric-entry': 'Setpoint',
-  bar: 'Level', multistate: 'Mode', text: 'Label', 'alarm-banner': 'Alarms', panel: 'Group',
+  bar: 'Level', multistate: 'Mode', text: 'Label', 'alarm-banner': 'Alarms', panel: 'Group', image: 'Picture',
 };
 
 /** Unique element id within a design. */
@@ -57,6 +57,28 @@ export function createElement(kind: HmiElementKind, id: string, cx: number, cy: 
     min: kind === 'bar' ? 0 : null, max: kind === 'bar' ? 100 : null, note: null,
     ...(kind === 'multistate' ? { states: [{ value: 0, text: 'Stopped', style: 'normal' as const }, { value: 1, text: 'Running', style: 'ok' as const }] } : {}),
   };
+}
+
+/**
+ * A picture placed on the screen as an element: centred, at most half the panel
+ * (keeping its proportions), snapped and on screen.
+ */
+export function createImageElement(id: string, src: string, picW: number, picH: number, name: string, bounds: Bounds, grid = GRID): HmiElement {
+  const k = Math.min(1, (bounds.w * 0.5) / picW, (bounds.h * 0.5) / picH);
+  const w = Math.max(MIN_SIZE, Math.round(picW * k));
+  const h = Math.max(MIN_SIZE, Math.round(picH * k));
+  const base = createElement('image', id, bounds.w / 2, bounds.h / 2, bounds, grid);
+  const x = clamp(snap((bounds.w - w) / 2, grid), 0, Math.max(0, bounds.w - w));
+  const y = clamp(snap((bounds.h - h) / 2, grid), 0, Math.max(0, bounds.h - h));
+  return { ...base, label: name || 'Picture', x, y, w, h, src };
+}
+
+/** Bring the selected elements in front of the others (drawn last) or send them behind (drawn first). */
+export function restack(screen: HmiScreen, ids: string[], to: 'front' | 'back'): HmiScreen {
+  const sel = screen.elements.filter((e) => ids.includes(e.id));
+  if (!sel.length) return screen;
+  const rest = screen.elements.filter((e) => !ids.includes(e.id));
+  return { ...screen, elements: to === 'front' ? [...rest, ...sel] : [...sel, ...rest] };
 }
 
 const touch = (k: HmiElementKind) => k === 'button' || k === 'nav' || k === 'numeric-entry';
@@ -83,7 +105,7 @@ export function moveElements(screen: HmiScreen, ids: string[], dx: number, dy: n
 export type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 /** Resize one element by dragging `handle` by (dx, dy); edges snap, the size never goes below the minimum. */
-export function resizeElement(el: HmiElement, handle: Handle, dx: number, dy: number, bounds: Bounds, grid = GRID): HmiElement {
+export function resizeElement(el: HmiElement, handle: Handle, dx: number, dy: number, bounds: Bounds, grid = GRID, freeAspect = false): HmiElement {
   const s = (v: number) => (grid > 1 ? snap(v, grid) : Math.round(v));
   const minW = touch(el.kind) ? Math.min(MIN_TOUCH.w, MIN_SIZE * 4) : MIN_SIZE;
   const minH = touch(el.kind) ? Math.min(MIN_TOUCH.h, MIN_SIZE * 3) : MIN_SIZE;
@@ -92,6 +114,15 @@ export function resizeElement(el: HmiElement, handle: Handle, dx: number, dy: nu
   if (handle.includes('e')) r = clamp(s(r + dx), l + minW, bounds.w);
   if (handle.includes('n')) t = clamp(s(t + dy), 0, b - minH);
   if (handle.includes('s')) b = clamp(s(b + dy), t + minH, bounds.h);
+  // Pictures keep their proportions when dragged by a corner (unless freeAspect).
+  if (el.kind === 'image' && handle.length === 2 && !freeAspect && el.w > 0 && el.h > 0) {
+    const ratio = el.w / el.h;
+    const w = r - l;
+    let h = Math.round(w / ratio);
+    if (handle.includes('n')) { t = b - h; if (t < 0) { t = 0; h = b; } } else { b = t + h; if (b > bounds.h) { b = bounds.h; h = b - t; } }
+    const w2 = Math.round(h * ratio);
+    if (handle.includes('w')) l = r - w2; else r = l + w2;
+  }
   return { ...el, x: l, y: t, w: r - l, h: b - t };
 }
 

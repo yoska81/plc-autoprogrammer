@@ -5,6 +5,7 @@ import {
 } from '../../electrical/derive';
 import { calculations, num, type CalcSection } from './calcs';
 import { makeTable, type DocRow, type DocTable } from './table';
+import { cableTotals } from '../../electrical/layout/suggest';
 
 /**
  * Electrical design basis tables: supply, enclosure, protective devices,
@@ -262,4 +263,10 @@ export function voltageDropTable(p: ProjectSnapshot): DocTable {
 export function cableSummaryTable(p: ProjectSnapshot): DocTable {
   const rows = p.drawingCtx ? cableSchedule(p.drawingCtx).map((c) => [c.tag, c.kind, c.zone, c.from, c.to, c.type, c.partNumber ?? '—', String(c.cores.length) + (c.spareCores ? ` (+${c.spareCores} spare)` : ''), c.length]) : [];
   return makeTable([['Cable', 8], ['Kind', 8], ['Zone', 14], ['From', 18], ['To', 10], ['Type', 44], ['Part no.', 14], ['Cores', 10, 'center'], ['Length', 10]], rows);
+}
+
+/** Field cable to order per cable type, from the machine layout lengths (m, with service allowance). */
+export function cableTotalsTable(p: ProjectSnapshot): DocTable {
+  const rows = p.drawingCtx ? cableTotals(cableSchedule(p.drawingCtx)).map((t) => [t.type, t.partNumber ?? '—', String(t.count), t.lengthM ? `${t.lengthM.toFixed(1)} m (${Math.ceil(t.lengthM / 0.3048)} ft)` : '—', t.unknown ? `${t.unknown} by site` : '']) : [];
+  return makeTable([['Cable type', 60], ['Part no.', 18], ['Cables', 10, 'center'], ['Total length', 22], ['Not on the layout', 18]], rows);
 }

@@ -243,7 +243,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               <button
                 onClick={handleGenerate}
                 disabled={isGenerating || !ready || !machineText.trim()}
-                className="w-full py-2.5 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isGenerating ? <><Spinner /> Thinking & writing ladder…</> : ladder.rungs.length ? 'Generate New Program' : 'Generate Program'}
               </button>
@@ -265,7 +265,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 </p>
               )}
               {chat.map((m, i) => (
-                <div key={i} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand-600 text-brand-950 ml-6' : 'bg-gray-100 text-gray-800 mr-2'}`}>
+                <div key={i} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand-600 text-white ml-6' : 'bg-gray-100 text-gray-800 mr-2'}`}>
                   {m.text}
                   {m.outcome && (
                     <div className={`mt-1 text-xs font-medium ${m.outcome === 'applied' ? 'text-green-700' : m.outcome === 'rejected' ? 'text-red-600' : 'text-gray-500'}`}>
@@ -327,7 +327,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <button
               onClick={() => handleRevise(request)}
               disabled={isGenerating || !ready || !request.trim() || Boolean(proposal) || !ladder.rungs.length}
-              className="w-full py-2 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50"
+              className="w-full py-2 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50"
             >
               Send
             </button>
@@ -339,7 +339,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       <section className="flex-1 flex flex-col overflow-hidden bg-white">
         {!proposal && (
           <StageBanner info={stages.program} action={
-            <button onClick={updateFromSpec} disabled={isGenerating || !ready} className="px-3 py-1.5 text-sm bg-brand-600 text-brand-950 rounded disabled:opacity-50">
+            <button onClick={updateFromSpec} disabled={isGenerating || !ready} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
               {isGenerating ? 'Updating…' : 'Update program'}
             </button>} />
         )}
@@ -370,7 +370,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             )}
             <div className="ml-auto flex items-center gap-1.5">
               <button onClick={() => setXrefOpen((v) => !v)} aria-pressed={xrefOpen}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border ${xrefOpen ? 'bg-brand-600 border-brand-600 text-brand-950' : 'bg-white border-gray-300 text-gray-700 hover:bg-brand-50'}`}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border ${xrefOpen ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-brand-50'}`}
                 title="Pick an address and see every rung that reads or writes it">
                 <ArrowsRightLeftIcon className="h-3.5 w-3.5" /> Cross reference
               </button>

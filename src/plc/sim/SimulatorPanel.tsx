@@ -159,7 +159,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
             <PauseIcon className="h-4 w-4" /> Pause
           </button>
         ) : (
-          <button type="button" className={`${btn} border-brand-600 bg-brand-600 text-brand-950 hover:bg-brand-700`} onClick={() => ctl.start()}>
+          <button type="button" className={`${btn} border-brand-600 bg-brand-600 text-white hover:bg-brand-700`} onClick={() => ctl.start()}>
             <PlayIcon className="h-4 w-4" /> Run
           </button>
         )}
@@ -192,7 +192,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
         <div className="ml-1 flex items-center rounded border border-steel-300 bg-white p-0.5" role="group" aria-label="Simulation speed">
           {SPEEDS.map((s) => (
             <button key={s} type="button" onClick={() => ctl.setSpeed(s)}
-              className={`rounded px-1.5 py-0.5 text-[12px] font-semibold ${snap.speed === s ? 'bg-brand-600 text-brand-950' : 'text-steel-600 hover:bg-steel-100'}`}>
+              className={`rounded px-1.5 py-0.5 text-[12px] font-semibold ${snap.speed === s ? 'bg-brand-600 text-white' : 'text-steel-600 hover:bg-steel-100'}`}>
               {s}x
             </button>
           ))}
@@ -215,7 +215,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
             {[{ id: null as string | null, name: 'All', rungIds: program.rungs.map((r) => r.id) }, ...blocks].map((b) => (
               <button key={b.id ?? 'all'} type="button" onClick={() => ctl.selectBlock(b.id)}
                 title={b.id ? blocks.find((x) => x.id === b.id)?.description : 'Whole program'}
-                className={`rounded px-2 py-0.5 text-[12px] font-semibold ${block === b.id ? 'bg-brand-600 text-brand-950' : 'text-steel-600 hover:bg-steel-100'}`}>
+                className={`rounded px-2 py-0.5 text-[12px] font-semibold ${block === b.id ? 'bg-brand-600 text-white' : 'text-steel-600 hover:bg-steel-100'}`}>
                 {b.name} <span className={block === b.id ? 'text-brand-800' : 'text-steel-400'}>{b.rungIds.length}</span>
               </button>
             ))}

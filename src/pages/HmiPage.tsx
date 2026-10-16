@@ -14,7 +14,7 @@ import { Spinner, ReasoningPanel } from '../components/common';
 import { type AccessLevel, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
 import ScreenEditor from '../hmi/ScreenEditor';
 import HmiEditorBar from '../hmi/HmiEditorBar';
-import { alignElements, createElement, deleteElements, distributeElements, duplicateElements, syncHandTags, type Align } from '../hmi/editor';
+import { alignElements, createElement, createImageElement, deleteElements, distributeElements, duplicateElements, restack, syncHandTags, type Align } from '../hmi/editor';
 import { loadPicture, panelImage } from '../hmi/background';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
@@ -30,7 +30,7 @@ const fieldLabel = 'block text-[11px] font-medium text-gray-500 uppercase tracki
 const KIND_LABEL: Record<HmiElement['kind'], string> = {
   header: 'Header bar', panel: 'Group frame', button: 'Push button', nav: 'Screen change', indicator: 'Indicator lamp', multistate: 'Multistate text',
   numeric: 'Numeric display', 'numeric-entry': 'Numeric entry (setpoint)', bar: 'Bar graph', trend: 'Trend', machine: 'Machine graphic',
-  'alarm-list': 'Alarm table', 'alarm-banner': 'Alarm banner', datetime: 'Date / time', text: 'Static text',
+  'alarm-list': 'Alarm table', 'alarm-banner': 'Alarm banner', datetime: 'Date / time', text: 'Static text', image: 'Picture',
 };
 const READS = new Set<HmiElement['kind']>(['header', 'button', 'indicator', 'multistate', 'numeric', 'numeric-entry', 'bar', 'trend']);
 const STYLES: [HmiStyle, string][] = [['normal', 'Normal'], ['ok', 'OK (green)'], ['warning', 'Warning (amber)'], ['alarm', 'Alarm (red)']];
@@ -339,6 +339,34 @@ export default function HmiPage() {
     if (patch === null) { const next = { ...screen }; delete next.background; updateScreen(next); return; }
     if (screen.background) updateScreen({ ...screen, background: { ...screen.background, ...patch } });
   };
+  const [pictureHint, setPictureHint] = useState<string | null>(null);
+  const addPictureElement = async (file: File) => {
+    if (!screen) return;
+    try {
+      const pic = await loadPicture(file, W, H);
+      if (pic.warning) notify(pic.warning);
+      const el = createImageElement(idMaker()(), pic.src, pic.width, pic.height, file.name.replace(/\.[^.]+$/, ''), bounds);
+      updateScreen({ ...screen, elements: [...screen.elements, el] });
+      setSel([el.id]);
+      setPictureHint('Drag the picture to move it; drag a corner to resize it (hold Shift to stretch). "Send to back" puts it behind the buttons.');
+    } catch (err) { notify(err instanceof Error ? err.message : String(err)); }
+  };
+  const backgroundToPicture = () => {
+    if (!screen?.background) return;
+    const bg = screen.background;
+    const el = { ...createImageElement(idMaker()(), bg.src, W, H, bg.name?.replace(/\.[^.]+$/, '') ?? 'Picture', bounds), x: 0, y: 0, w: W, h: H };
+    const next = { ...screen, elements: [el, ...screen.elements] };
+    delete next.background;
+    updateScreen(next);
+    setSel([el.id]);
+    setPictureHint('The picture is now an element: drag it to move, drag a corner to resize. "Use as background" turns it back.');
+  };
+  const pictureToBackground = () => {
+    const el = screen?.elements.find((e) => sel.length === 1 && e.id === sel[0] && e.kind === 'image');
+    if (!screen || !el?.src) return;
+    updateScreen({ ...screen, elements: screen.elements.filter((e) => e.id !== el.id), background: { src: el.src, fit: 'fit', dim: 0.3, name: el.label } });
+    setSel([]);
+  };
   const uploadBackground = async (file: File) => {
     if (!screen) return;
     try { updateScreen({ ...screen, background: { ...(await pictureFor(file)), ...(screen.background ? { fit: screen.background.fit, dim: screen.background.dim } : {}) } }); } catch (err) { notify(err instanceof Error ? err.message : String(err)); }
@@ -415,7 +443,7 @@ export default function HmiPage() {
 
   const genButton = (label: string) => (
     <button onClick={generate} disabled={hmi.isGenerating || !apiKey || !model}
-      className="px-4 py-2 text-sm bg-brand-600 text-brand-950 font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
+      className="px-4 py-2 text-sm bg-brand-600 text-white font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
       {hmi.isGenerating ? <><Spinner /> Designing screens…</> : label}
     </button>
   );
@@ -528,7 +556,7 @@ export default function HmiPage() {
                   </div>
                   <span className="flex items-center gap-2">
                     <span className="text-xs text-gray-400 whitespace-nowrap font-mono">{model.widthPx}×{model.heightPx}</span>
-                    {!editing && <button onClick={() => { setEditing(true); setSel([]); }} className="px-3 py-1 text-xs font-medium bg-brand-600 text-brand-950 rounded hover:bg-brand-700">Edit screen</button>}
+                    {!editing && <button onClick={() => { setEditing(true); setSel([]); }} className="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded hover:bg-brand-700">Edit screen</button>}
                   </span>
                 </div>
                 {editing && (
@@ -536,13 +564,16 @@ export default function HmiPage() {
                     background={screen.background} aiReady={Boolean(apiKey)} aiBusy={aiBusy}
                     onAdd={addElement} onAlign={(a: Align) => updateScreen(alignElements(screen, sel, a))} onDistribute={(ax) => updateScreen(distributeElements(screen, sel, ax))}
                     onDuplicate={() => editorKey('duplicate')} onDelete={() => editorKey('delete')} onUndo={() => stepHistory('undo')} onRedo={() => stepHistory('redo')}
-                    onSnap={setSnapOn} onPicture={(f) => void uploadBackground(f)} onBackground={setBackground} onRecreate={() => void recreate()}
+                    onSnap={setSnapOn} onPicture={(f) => { void uploadBackground(f); setPictureHint('This picture fills the screen background. Use Move / Zoom to shift it, or "Make it a movable picture" to drag and resize it like a button.'); }} onBackground={setBackground} onRecreate={() => void recreate()}
+                    onAddPicture={(f) => void addPictureElement(f)} onRestack={(to) => updateScreen(restack(screen, sel, to))}
+                    selectedIsPicture={sel.length === 1 && screen.elements.some((e) => e.id === sel[0] && e.kind === 'image')}
+                    onPictureToBackground={pictureToBackground} onBackgroundToPicture={backgroundToPicture} hint={pictureHint}
                     onDone={() => { setEditing(false); setSel([]); setProposal(null); }} />
                 )}
                 {proposal && proposal.screenId === screen.id && (
                   <div role="status" className="mb-2 px-3 py-2 bg-brand-50 border border-brand-300 text-sm text-steel-800 flex flex-wrap items-center gap-2">
                     <span className="flex-1 min-w-64"><b>AI proposal: {proposal.elements.length} element{proposal.elements.length === 1 ? '' : 's'}</b> (dashed on the screen). {proposal.explanation}</span>
-                    <button onClick={() => acceptProposal(false)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700">Add to the screen</button>
+                    <button onClick={() => acceptProposal(false)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700">Add to the screen</button>
                     <button onClick={() => acceptProposal(true)} className="px-3 py-1 text-xs border border-steel-300 bg-white rounded-sm hover:bg-steel-50">Replace the screen's elements</button>
                     <button onClick={() => setProposal(null)} className="px-3 py-1 text-xs border border-steel-300 bg-white rounded-sm hover:bg-steel-50">Discard</button>
                   </div>

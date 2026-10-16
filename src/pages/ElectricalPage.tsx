@@ -13,6 +13,7 @@ import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electr
 import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
+import MachineLayoutPanel from '../electrical/layout/MachineLayoutPanel';
 import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
@@ -51,7 +52,7 @@ const card = 'bg-white rounded-sm border border-steel-200 p-5';
 
 const download = (name: string, content: string, mime: string) => saveBlob(name, new Blob([content], { type: mime }));
 
-type Tab = 'design' | 'cabinet' | 'machine' | 'picture' | 'machining' | 'labels';
+type Tab = 'design' | 'cabinet' | 'machine' | 'layout' | 'picture' | 'machining' | 'labels';
 
 export default function ElectricalPage() {
   const el = useElectricalStore();
@@ -66,7 +67,7 @@ export default function ElectricalPage() {
 
   const [params, setParams] = useSearchParams();
   const urlTab = params.get('tab') as Tab | null;
-  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'picture', 'machining', 'labels'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
+  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'layout', 'picture', 'machining', 'labels'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
@@ -132,15 +133,17 @@ export default function ElectricalPage() {
             </div>
           )}
         </div>
-        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('picture', 'Cabinet picture')}{tabBtn('machining', 'Machining (DXF)')}{tabBtn('labels', 'Labels')}</div>
+        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('layout', 'Machine layout')}{tabBtn('picture', 'Cabinet picture')}{tabBtn('machining', 'Machining (DXF)')}{tabBtn('labels', 'Labels')}</div>
       </header>
 
       <StageBanner info={stages.electrical} action={
-        <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-brand-600 text-brand-950 rounded disabled:opacity-50">
+        <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
       {tab === 'labels' ? (
         <LabelsPanel ctx={ctx} fileBase={base} projectName={projectName} />
+      ) : tab === 'layout' ? (
+        <MachineLayoutPanel ctx={ctx} />
       ) : tab === 'machining' ? (
         <MachiningPanel ctx={ctx} fileBase={base} />
       ) : tab === 'picture' ? (
@@ -249,7 +252,7 @@ export default function ElectricalPage() {
 
             <div className="flex items-center gap-3">
               <button onClick={generate} disabled={el.isGenerating || !apiKey}
-                className="px-5 py-2.5 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
+                className="px-5 py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
                 {el.isGenerating ? <><Spinner /> Designing the panel… this can take several minutes</> : el.design ? 'Generate New Design' : 'Generate Electrical Design'}
               </button>
               {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</span>}

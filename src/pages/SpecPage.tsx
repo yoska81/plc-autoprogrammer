@@ -20,7 +20,7 @@ export default function SpecPage() {
           <p className="text-xs text-steel-500 mt-0.5">The spec drives every step. Change it any time; the steps after it are marked out of date and can be updated in one click.</p>
         </div>
         <button onClick={() => navigate('/equipment')} disabled={!filled}
-          className="px-4 py-2 text-sm bg-brand-600 text-brand-950 rounded hover:bg-brand-700 disabled:opacity-40 whitespace-nowrap">
+          className="px-4 py-2 text-sm bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-40 whitespace-nowrap">
           Next: Equipment →
         </button>
       </header>
