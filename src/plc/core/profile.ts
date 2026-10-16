@@ -49,6 +49,8 @@ export interface CpuModel {
   builtInInputs: number;
   builtInOutputs: number;
   notes?: string;
+  /** Hardware platform of this CPU when it differs within one profile (Micro820 vs Micro850). */
+  platformId?: string;
 }
 
 /**
