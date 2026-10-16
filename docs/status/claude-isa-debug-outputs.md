@@ -62,3 +62,12 @@ How: worktree, dev server :5224, `gen-outputs.cjs us480`, checkers, `npx tsx src
 - Verified fixes: I-11 (reset PB3), I-12 (C1102/C1103 driven).
 - Consistency on this branch: 0 FAIL, 0 WARN (no more PB?).
 - No new issues found in the generated files.
+
+## Review of claude/isa-dev-labels-print — purchasing (ccd368c) and questions (ed94e39)
+How: worktree at ed94e39 (harness from integration, dev server :5214), `gen-outputs.cjs us480 big`, purchasing files from the ZIP, AutomationDirect help page https://www.automationdirect.com/help/csvupload, live product pages, a pack-size script over `PRICES` x catalog.
+- OK: order file `ItemCode,Qty` per line, no header, CRLF — exactly AutomationDirect's cart CSV upload format; quantities are in selling units (packs), as AutomationDirect sells pack items as one item.
+- OK: all 58 price entries: selling unit = catalog packQty (each / pack of 2, 10, 50, 100), source URL ends in the part number; spot checks on the live site match (DN-T10-A $87.00 per 100-pack, GS23-45P0 $399.00, CM5-T7W $499.00).
+- OK: every order line: order qty = ceil((need + spares) / pack); extended = unit x qty; CSV total = PDF total (us480 $3,895.25, big $10,381.25); "Needed" equals bom.csv for every part; unpriced parts shown as "price to confirm" and kept out of totals (SZ-A11T).
+- R-P1 (medium): the ZIP's AutomationDirect order file includes the recommended spares by default (ZIP built with spares: true). For the example it orders 2 x PLC, HMI ($499), safety relay, power supply, contactor, overload, every pushbutton and sensor — a full spare set (~$1,200 extra on a $2,700 panel). Someone uploading "the order file" to the cart buys it all. Suggest: ZIP order file = BOM only (`_order_AutomationDirect.csv`) plus a separate `_spares_AutomationDirect.csv`, or name it `_with_spares`; the summary PDF already separates Need / Spares columns.
+- R-P2 (low): big panel's "one-page" purchase summary (38 lines) puts only the price-basis note on a nearly empty page 2 (font step 5.3 pt starts at >34 lines but the notes don't fit).
+- Questions (ed94e39): unit test passes; answers are appended as "- Q: … A: …" under "Answers to open questions" in the right spec section; only answered questions are merged (pending()), so no empty "A:" lines reach the spec / spec.md.
