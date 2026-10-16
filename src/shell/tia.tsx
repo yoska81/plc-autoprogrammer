@@ -6,9 +6,9 @@
 import { useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
-  ArchiveBoxArrowDownIcon, BoltIcon, ChevronLeftIcon, CodeBracketIcon, ComputerDesktopIcon, CpuChipIcon,
+  ArchiveBoxArrowDownIcon, BoltIcon, CodeBracketIcon, ComputerDesktopIcon, CpuChipIcon,
   DocumentTextIcon, FolderIcon, ListBulletIcon, PlayCircleIcon, ShieldCheckIcon, SignalIcon, Cog6ToothIcon,
-  WrenchScrewdriverIcon, Squares2X2Icon, XMarkIcon, CheckCircleIcon,
+  WrenchScrewdriverIcon, XMarkIcon, CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -87,9 +87,6 @@ export function EditorBar({ projectName, children }: { projectName: string; chil
 
   return (
     <div className="h-8 flex-shrink-0 bg-[#e3e7ec] border-t border-steel-300 flex items-stretch text-xs" data-testid="editor-bar">
-      <button onClick={() => navigate('/portal')} className="flex items-center gap-1.5 px-3 bg-brand-950 text-white hover:bg-brand-900 whitespace-nowrap" title="Portal view">
-        <ChevronLeftIcon className="w-3.5 h-3.5" /><Squares2X2Icon className="w-4 h-4" /> Portal view
-      </button>
       <div className="flex items-stretch overflow-x-auto min-w-0">
         {open.map((e) => {
           const ed = EDITORS[e.base];
@@ -99,7 +96,7 @@ export function EditorBar({ projectName, children }: { projectName: string; chil
               <button onClick={() => navigate(e.path)} className="flex items-center gap-1.5 pl-2.5 pr-1 h-full whitespace-nowrap">
                 <ed.Icon className="w-4 h-4" />{ed.label}
               </button>
-              <button aria-label={`Close ${ed.label}`} onClick={() => { const rest = open.filter((x) => x.base !== e.base); setOpen(rest); if (on) navigate(rest.length ? rest[rest.length - 1].path : '/portal'); }} className="px-1 h-full text-steel-400 hover:text-steel-800">
+              <button aria-label={`Close ${ed.label}`} onClick={() => { const rest = open.filter((x) => x.base !== e.base); setOpen(rest); if (on) navigate(rest.length ? rest[rest.length - 1].path : '/spec'); }} className="px-1 h-full text-steel-400 hover:text-steel-800">
                 <XMarkIcon className="w-3 h-3" />
               </button>
             </div>

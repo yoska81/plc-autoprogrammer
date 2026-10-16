@@ -177,10 +177,6 @@ export default function App() {
               <MenuItem onClick={() => navigate('/export?action=print-full')}>Print full package…</MenuItem>
               <MenuItem onClick={() => navigate('/electrical?tab=labels')}>Print labels…</MenuItem>
             </Menu>
-            <Menu label="View">
-              <MenuItem onClick={() => navigate('/portal')}>Portal view</MenuItem>
-              <MenuItem onClick={() => navigate('/spec')}>Project view</MenuItem>
-            </Menu>
             <Menu label="Online">
               <MenuItem onClick={() => navigate('/simulate')}>Start simulation</MenuItem>
               <MenuItem onClick={() => navigate('/online')}>Go online (real PLC)…</MenuItem>
