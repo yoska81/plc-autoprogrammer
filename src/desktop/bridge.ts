@@ -44,6 +44,42 @@ export interface DesktopSaveResult {
   error?: string;
 }
 
+/** Modbus TCP connection settings ("Connect to PLC"). */
+export interface ModbusConnectOptions {
+  host: string;
+  /** Modbus TCP port, 502 by default. */
+  port: number;
+  /** 1–247 (CLICK default 1); 0 is accepted. */
+  unitId: number;
+  /** Per request and for connecting, e.g. 2000. */
+  timeoutMs: number;
+}
+
+/**
+ * Modbus TCP to a real PLC (electron/modbus.cjs). Addresses are 0-based protocol
+ * addresses; requests run one at a time; no retries; failures reject with a
+ * plain-English Error ("Modbus exception 2 (illegal data address) at 16384",
+ * "Timed out after 2000 ms", "Not connected"). At most 2000 bits / 125 registers per read.
+ */
+export interface ModbusBridge {
+  connect(o: ModbusConnectOptions): Promise<{ ok: true } | { ok: false; error: string }>;
+  disconnect(): Promise<void>;
+  /** FC 01 */
+  readCoils(address: number, count: number): Promise<boolean[]>;
+  /** FC 02 */
+  readDiscreteInputs(address: number, count: number): Promise<boolean[]>;
+  /** FC 03 (raw uint16) */
+  readHoldingRegisters(address: number, count: number): Promise<number[]>;
+  /** FC 04 (raw uint16) */
+  readInputRegisters(address: number, count: number): Promise<number[]>;
+  /** FC 05 */
+  writeCoil(address: number, value: boolean): Promise<void>;
+  /** FC 06 (uint16) */
+  writeRegister(address: number, value: number): Promise<void>;
+  /** Socket opened / closed / error; returns an unsubscribe function. */
+  onStatus?(cb: (s: { connected: boolean; error?: string }) => void): () => void;
+}
+
 export interface IsaDesktop {
   /** Always true inside the desktop app. */
   isDesktop?: boolean;
@@ -53,6 +89,8 @@ export interface IsaDesktop {
   listPrinters?(): Promise<DesktopPrinter[]>;
   /** Native Save dialog, then write the file. */
   saveFile?(name: string, bytes: Uint8Array): Promise<DesktopSaveResult>;
+  /** Connect to PLC over Modbus TCP (desktop app only: a browser can't open TCP sockets). */
+  modbus?: ModbusBridge;
 }
 
 declare global {

@@ -68,6 +68,42 @@ const launch = (env = {}) => electron.launch({
   const cancelled = await win.evaluate(async () => window.isaDesktop.saveFile('x.pdf', new Uint8Array([1])));
   check(cancelled.cancelled === true, 'cancel reported');
 
+  // Connect to PLC: Modbus TCP through the bridge (main process) to a fake PLC.
+  const { fakeServer } = require('./fake-modbus.cjs');
+  const plc = fakeServer();
+  const mbPort = await plc.listen();
+  plc.mem.coils[16384] = 1; plc.mem.holding[0] = 1234; plc.state.refuse.add(16400);
+  const mb = await win.evaluate(async (port) => {
+    const m = window.isaDesktop.modbus;
+    const statuses = [];
+    const off = m.onStatus((s) => statuses.push(s));
+    const out = {};
+    const err = async (p) => { try { await p; return 'no error'; } catch (e) { return e.message; } };
+    out.notConnected = await err(m.readCoils(0, 1));
+    out.badHost = await m.connect({ host: '', port, unitId: 1, timeoutMs: 1000 });
+    out.connect = await m.connect({ host: '127.0.0.1', port, unitId: 1, timeoutMs: 1000 });
+    out.coils = await m.readCoils(16384, 2);
+    out.regs = await m.readHoldingRegisters(0, 1);
+    await m.writeCoil(16385, true);
+    await m.writeRegister(1, 99);
+    out.after = [await m.readCoils(16385, 1), await m.readHoldingRegisters(1, 1)];
+    out.exception = await err(m.writeCoil(16400, true));
+    out.badCount = await err(m.readCoils(0, 5000));
+    await m.disconnect();
+    out.afterDisconnect = await err(m.readCoils(0, 1));
+    await new Promise((r) => setTimeout(r, 100));
+    off();
+    out.statuses = statuses;
+    return out;
+  }, mbPort);
+  log('Modbus via bridge:', JSON.stringify(mb));
+  check(mb.notConnected === 'Not connected' && mb.badHost.ok === false && /IP address/.test(mb.badHost.error), 'modbus: not connected / bad host');
+  check(mb.connect.ok === true && JSON.stringify(mb.coils) === '[true,false]' && mb.regs[0] === 1234, 'modbus: connect and read');
+  check(plc.mem.coils[16385] === 1 && plc.mem.holding[1] === 99 && JSON.stringify(mb.after) === '[[true],[99]]', 'modbus: writes');
+  check(mb.exception === 'Modbus exception 2 (illegal data address) at 16400' && /Count must be 1–2000/.test(mb.badCount), 'modbus: plain errors');
+  check(mb.afterDisconnect === 'Not connected' && mb.statuses.some((s) => s.connected) && !mb.statuses.at(-1).connected, 'modbus: status events');
+  await plc.close();
+
   const printers = await win.evaluate(async () => window.isaDesktop.listPrinters());
   log('Printers seen by Windows/CUPS:', printers.length ? printers.map((p) => p.name).join(', ') : 'none (no printers on this machine)');
   await win.screenshot({ path: path.join(OUT, '02_deliverables.png') });
