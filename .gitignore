@@ -24,3 +24,4 @@ dist-ssr
 *.sw?
 dist-preview
 e2e/out/
+e2e/out-preview/

@@ -67,7 +67,7 @@ export default function ElectricalPage() {
     setInputs({ motors: inputs.motors.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
 
   const warnings = useMemo(() => (ctx ? designWarnings(ctx) : []), [ctx]);
-  const base = projectName.trim().replace(/[^\w-]+/g, '_') || 'panel';
+  const base = projectName.trim().replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'panel';
   const apiKey = settings.anthropicApiKey;
 
   const generate = async () => {
