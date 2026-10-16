@@ -46,6 +46,9 @@ interface Ctx {
 
 const renderTime = () => Date.now();
 
+/** Register values: integers as-is, floating point (DF, analog in engineering units) to one decimal. */
+const showNum = (v: number) => (Number.isInteger(v) || !Number.isFinite(v) ? String(v) : v.toFixed(1));
+
 function Label({ el, children, color = C.text, size, weight = 500, spacing = 1.5, dy = 0 }: { el: HmiElement; children: string; color?: string; size?: number; weight?: number; spacing?: number; dy?: number }) {
   const fs = fitSize(children, el.w - 16, size ?? Math.max(11, Math.min(18, el.h * 0.3)), 10, spacing);
   return (
@@ -311,7 +314,7 @@ function ElementShape({ el, value, ctx }: { el: HmiElement; value: boolean | num
       const valueSize = Math.max(14, Math.min(34, el.h * 0.5));
       const unitsW = el.units ? textWidth(el.units, labelSize) + 8 : 0;
       const range = el.min !== null && el.max !== null && el.h >= 50 ? `${el.min}–${el.max}${el.units ? ` ${el.units}` : ''}` : null;
-      const valueText = String(v);
+      const valueText = showNum(v);
       const labelMax = el.w - 28 - unitsW - textWidth(valueText, valueSize) - 12;
       return (
         <g>
@@ -334,7 +337,7 @@ function ElementShape({ el, value, ctx }: { el: HmiElement; value: boolean | num
       return (
         <g>
           <text x={el.x} y={el.y + (el.h - trackH) / 2} fill={C.dim} fontSize={Math.max(10, Math.min(13, el.h * 0.24))} fontFamily={FONT} fontWeight={500} letterSpacing={1.5} dominantBaseline="central">{fitText(caps(el.label), el.w * 0.6, Math.max(10, Math.min(13, el.h * 0.24)), 1.5)}</text>
-          <text x={el.x + el.w} y={el.y + (el.h - trackH) / 2} fill={C.text} fontSize={Math.max(12, Math.min(20, el.h * 0.32))} fontFamily={FONT} fontWeight={300} textAnchor="end" dominantBaseline="central">{`${v}${el.units ? ` ${el.units}` : ''}`}</text>
+          <text x={el.x + el.w} y={el.y + (el.h - trackH) / 2} fill={C.text} fontSize={Math.max(12, Math.min(20, el.h * 0.32))} fontFamily={FONT} fontWeight={300} textAnchor="end" dominantBaseline="central">{`${showNum(v)}${el.units ? ` ${el.units}` : ''}`}</text>
           <rect x={el.x} y={ty} width={el.w} height={trackH} rx={trackH / 2} fill={C.surfaceUp} />
           <rect x={el.x} y={ty} width={el.w * frac} height={trackH} rx={trackH / 2} fill={styleColor(el.style)} />
         </g>
