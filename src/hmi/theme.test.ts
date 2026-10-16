@@ -80,11 +80,11 @@ test('every sample screen renders in both looks; the layout check still passes',
       } else assert.ok(svg.includes(C.screen), `${screen.id} dark`);
     }
   }
-  // An older saved design without `look` renders Siemens.
+  // An older saved design without `look` renders the dark console.
   const legacy = { ...HMI };
   delete legacy.look;
   const svg = renderToStaticMarkup(createElement(HmiScreenView, { screen: legacy.screens[0], widthPx: model.widthPx, heightPx: model.heightPx, design: legacy, staticTime: 0 }));
-  assert.ok(svg.includes(SIEMENS.screen));
+  assert.ok(svg.includes(C.screen));
   assert.equal(checkDesign(HMI, model.widthPx, model.heightPx).filter((i) => i.severity === 'error').length, 0);
 });
 
