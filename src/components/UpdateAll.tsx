@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStages } from '../spec/useStages';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -22,10 +22,12 @@ export default function UpdateAll() {
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<StepResult[]>([]);
   const [planned, setPlanned] = useState<UpdateStep[]>([]);
+  const stopRef = useRef(false);
+  const [stopping, setStopping] = useState(false);
 
   // A stage is updated when it is stale, or when an earlier stage it depends on will change.
   const stale = ORDER.filter((o) => stages[o.step].status === 'stale').map((o) => o.step);
-  if (!stale.length && !open) return null;
+  if (!stale.length && !open && !running) return null;
 
   const start = async () => {
     const first = ORDER.findIndex((o) => stale.includes(o.step));
@@ -34,13 +36,23 @@ export default function UpdateAll() {
     setResults([]);
     setOpen(true);
     setRunning(true);
-    await runUpdateAll(steps, (r) => setResults((prev) => [...prev, r]));
-    setRunning(false);
+    stopRef.current = false;
+    setStopping(false);
+    try {
+      await runUpdateAll(steps, (r) => setResults((prev) => [...prev, r]), () => stopRef.current);
+    } finally {
+      setRunning(false);
+    }
   };
 
   return (
     <>
-      {stale.length > 0 && (
+      {running && !open && (
+        <button onClick={() => setOpen(true)} className="px-3 py-1 text-sm font-semibold rounded bg-brand-600 text-white hover:bg-brand-700 inline-flex items-center gap-2" data-testid="update-progress">
+          <Spinner /> Updating… {results.length}/{planned.length}
+        </button>
+      )}
+      {stale.length > 0 && !running && (
         <button onClick={start} disabled={!apiKey || running}
           title={apiKey ? undefined : 'Add your Anthropic API key in Settings'}
           className="px-3 py-1 text-sm font-semibold rounded bg-amber-400 text-steel-900 hover:bg-amber-300 disabled:opacity-50">
@@ -52,7 +64,8 @@ export default function UpdateAll() {
           <div className="bg-white text-gray-800 rounded-lg shadow-xl w-full max-w-lg">
             <div className="px-5 py-4 border-b border-gray-200">
               <h3 className="text-base font-semibold">Updating the project from the spec</h3>
-              <p className="text-xs text-gray-500 mt-1">Each stage is rebuilt from the latest spec and the stages before it. Deep thinking can take several minutes per stage.</p>
+              <p className="text-xs text-gray-500 mt-1">Each stage is rebuilt from the latest spec and the stages before it. Deep thinking can take several minutes per stage.
+                You can hide this window and keep working: the update continues on every page (progress is shown in the toolbar).</p>
             </div>
             <ol className="px-5 py-4 space-y-2">
               {planned.map((step) => {
@@ -76,8 +89,13 @@ export default function UpdateAll() {
               {results.some((r) => r.status === 'proposal') && !running && (
                 <button onClick={() => { setOpen(false); navigate('/program'); }} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">Review program changes</button>
               )}
-              <button onClick={() => setOpen(false)} disabled={running} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-40">
-                {running ? 'Working…' : 'Close'}
+              {running && (
+                <button onClick={() => { stopRef.current = true; setStopping(true); }} disabled={stopping} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-40">
+                  {stopping ? 'Stopping after this stage…' : 'Stop after this stage'}
+                </button>
+              )}
+              <button onClick={() => setOpen(false)} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50">
+                {running ? 'Hide (keep working)' : 'Close'}
               </button>
             </div>
           </div>

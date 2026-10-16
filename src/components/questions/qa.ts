@@ -16,9 +16,13 @@ export function answerText(q: Question): string {
 }
 
 /** Answered questions as Q/A text, in the order asked (open questions are not part of the spec yet). */
+// A fixed order, so revisiting a page (which re-registers its questions) never changes the spec text.
+const SOURCE_ORDER = Object.keys(SOURCE_LABEL);
 export function qaText(questions: Question[]): string {
   return questions
     .filter((q) => q.status !== 'open')
+    .slice()
+    .sort((a, b) => SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((q) => `Q (${SOURCE_LABEL[q.source]}): ${q.text.trim()}\nA: ${answerText(q)}`)
     .join('\n');
 }

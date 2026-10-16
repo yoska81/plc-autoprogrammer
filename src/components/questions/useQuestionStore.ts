@@ -73,10 +73,16 @@ export const useQuestionStore = create<QuestionStore>()(
           const cur = list.find((q) => q.id === id);
           fresh.push(cur ? { ...cur, assumption: it.assumption ?? cur.assumption, section: cur.section ?? it.section } : { id, source, text, answer: '', status: 'open', date: now(), assumption: it.assumption, section: it.section, merged: false });
         }
-        // Keep answers already given (history) even when the AI no longer asks.
-        const kept = list.filter((q) => q.source === source && !ids.has(q.id) && q.status !== 'open');
-        const others = list.filter((q) => q.source !== source);
-        const next = [...others, ...fresh, ...kept];
+        // Keep answers already given (history) even when the AI no longer asks, and keep every
+        // question where it was in the list: revisiting a page must not reorder anything.
+        const byId = new Map(fresh.map((q) => [q.id, q]));
+        const next: Question[] = [];
+        for (const q of list) {
+          if (q.source !== source) next.push(q);
+          else if (byId.has(q.id)) { next.push(byId.get(q.id)!); byId.delete(q.id); }
+          else if (q.status !== 'open') next.push(q);
+        }
+        next.push(...byId.values());
         const same = next.length === list.length && next.every((q, i) => q === list[i]);
         return same ? s : { byProject: { ...s.byProject, [key(projectId)]: next } };
       }),
