@@ -13,6 +13,7 @@ import {
 import type { SpecSections } from '../../spec/types';
 import type { ReviewArea, Severity } from '../types';
 import { IEC_RULES } from './iec';
+import { isIec } from '../../standards/regions';
 
 export interface CodeInput {
   ctx: DrawingContext;
@@ -26,12 +27,9 @@ export interface CodeInput {
 /** NA = NFPA 79 / UL 508A / NEC / CSA + CEC; IEC = IEC 60204-1 (+ ISO 13849 / ISO 13850). */
 export type RuleSet = 'NA' | 'IEC';
 
-/**
- * Rule set of a region. US and Canada use the North American codes; every other region (Europe,
- * Israel …) uses IEC 60204-1. Replaced by the region profile's standards family when it lands.
- */
+/** Rule set of a region: the region profile's standards family (src/standards/regions.ts). */
 export function ruleSetOf(region: string | undefined): RuleSet {
-  return !region || /^(us|usa|canada|ca|na)$/i.test(region) ? 'NA' : 'IEC';
+  return isIec(region) ? 'IEC' : 'NA';
 }
 
 export interface CodeHit {

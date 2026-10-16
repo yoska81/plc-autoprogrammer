@@ -130,3 +130,8 @@ Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 althoug
 - [x] derive: a VFD motor with a contactor wires protection → K:L, K:T → VFD:L (M-C1..3 "line contactor to drive"); when no PLC output drives K, its coil hangs on the safety-switched supply (24+S → K:A1, K:A2 → 0V) so the safety relay drops it; K is in the EDM loop.
 - [x] Drawings: motor sheet shows K between the breaker and the drive with its coil reference; control sheet has the K coil rung on 24+S ("SAFETY STOP: DROPS WITH 24+S") with the contact mirror (main + EDM N.C.).
 - [x] src/electrical/vfdLine.test.ts (4): power path, coil + EDM + rung, PLC-driven K gets no extra coil wiring, DOL unchanged. All other suites, checkers and app E2E green (catalog.test fails only on Dev 1's data, as reported).
+
+## IEC rules keyed by the region profile (integration 4242c4c)
+- [x] ruleSetOf = isIec(region) from src/standards/regions.ts (EU, Israel, IEC → IEC 60204-1 rules; US, Canada → NA).
+- [x] Duplicate tables dropped: conductor capacity from IEC_AMPACITY (Table 6, B2), AWG read as the IEC size drawn for it (mm2FromAwg), 50 Hz supply from SUPPLY_INFO; colour rule accepts the profile's spellings (BU(LT), OG) and treats the earthed transformer secondary as AC control (RD), like iecColor.
+- [x] No assertion about Israeli earthing or the SI 60204-1 edition. iec.test 13/13 (region EU selects IEC); all suites, checkers, app E2E green. EU 400 V example: only mounting window, yellow background, coordination note, IP66 note, SCCR marking.
