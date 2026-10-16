@@ -51,8 +51,8 @@ function ForceButtons({ address, force, onForce }: { address: string; force: boo
   return (
     <div className="flex shrink-0" title="Force: override the field/program value">
       <button type="button" className={btn(force === undefined, 'bg-steel-600 text-white')} onClick={() => onForce(address, null)}>AUTO</button>
-      <button type="button" className={btn(force === true, 'bg-amber-500 text-white')} onClick={() => onForce(address, true)}>ON</button>
-      <button type="button" className={btn(force === false, 'bg-amber-500 text-white')} onClick={() => onForce(address, false)}>OFF</button>
+      <button type="button" className={btn(force === true, 'bg-amber-500 text-amber-950')} onClick={() => onForce(address, true)}>ON</button>
+      <button type="button" className={btn(force === false, 'bg-amber-500 text-amber-950')} onClick={() => onForce(address, false)}>OFF</button>
     </div>
   );
 }
@@ -65,7 +65,7 @@ function BitRow({ address, on, color, label, right, mark }: { address: string; o
       <Dot on={on} color={color} />
       <span className="w-11 shrink-0 font-mono text-[12px] font-bold text-steel-700">{address}</span>
       <span className="min-w-0 flex-1 truncate text-[12px] text-steel-600" title={label}>{label}</span>
-      {mark && <span className="shrink-0 rounded bg-amber-500 px-1 text-[9.5px] font-bold text-white" title={mark.title}>{mark.text}</span>}
+      {mark && <span className="shrink-0 rounded bg-amber-500 px-1 text-[9.5px] font-bold text-amber-950" title={mark.title}>{mark.text}</span>}
       {right}
     </div>
   );
@@ -157,7 +157,7 @@ export default function IOPanel(p: Props) {
               <div key={a} className={`flex items-center gap-2 rounded px-1.5 py-[3px] ${mark ? 'bg-amber-50 ring-1 ring-inset ring-amber-300' : ''}`}>
                 <span className="w-11 shrink-0 font-mono text-[12px] font-bold text-steel-700">{a}</span>
                 <span className="min-w-0 flex-1 truncate text-[12px] text-steel-600">{p.labelOf(a)}</span>
-                {mark && <span className="shrink-0 rounded bg-amber-500 px-1 text-[9.5px] font-bold text-white" title={mark.title}>{mark.text}</span>}
+                {mark && <span className="shrink-0 rounded bg-amber-500 px-1 text-[9.5px] font-bold text-amber-950" title={mark.title}>{mark.text}</span>}
                 <input
                   key={`${a}:${p.words.get(a) ?? 0}`}
                   type="number"

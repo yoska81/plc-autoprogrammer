@@ -14,7 +14,7 @@ export function ReviewTreeBadge() {
   if (!critical && !major) return null;
   return (
     <span title={`${critical} critical, ${major} major open design review findings`} aria-label={`${critical + major} open critical or major findings`}
-      className={`ml-auto rounded-full px-1.5 text-[10px] font-bold leading-4 ${critical ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'}`}>
+      className={`ml-auto rounded-full px-1.5 text-[10px] font-bold leading-4 ${critical ? 'bg-red-600 text-white' : 'bg-amber-500 text-amber-950'}`}>
       {critical + major}
     </span>
   );
