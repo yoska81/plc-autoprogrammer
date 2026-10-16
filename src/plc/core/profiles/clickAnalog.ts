@@ -53,8 +53,4 @@ export function clickAnalogChannels(cpu: CpuModel, modules: ModuleSlot[]): Analo
   return out;
 }
 
-/** Terminal a point with this range uses on the channel (CPU channels have separate V and I terminals). */
-export function channelTerminal(ch: AnalogChannel, range: AnalogRange): string {
-  if (ch.slot === 0) return ch.terminals.find((t) => (range.endsWith('mA') ? t.endsWith('I') : t.endsWith('V'))) ?? ch.terminals[0];
-  return ch.terminals[0];
-}
+export { channelTerminal } from '../analog';

@@ -7,6 +7,7 @@ import { useHmiStore } from '../store/useHmiStore';
 import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
+import { analogSetup } from '../plc/core/analog';
 import { validateProgram } from '../plc/core/validate';
 import { getPart } from '../electrical/catalog';
 import type { DrawingContext } from '../electrical/derive';
@@ -41,12 +42,13 @@ export function collectProject() {
     region: info.region,
     hmiPartNumber: hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null,
     doc: docInfo(info),
+    analog: analogSetup(profile, cpu, moduleSlots(modules), io),
   } : null;
 
   return {
     projectName: program.projectName,
     fileBase: program.projectName.trim().replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'plc_project',
-    profile, cpu, spec, io, addresses, labels,
+    profile, cpu, modules, spec, io, addresses, labels,
     ladder: program.ladder,
     stCode: program.generatedCode,
     issues: profile.language === 'ladder' ? validateProgram(program.ladder, profile, ioAddressSet) : [],

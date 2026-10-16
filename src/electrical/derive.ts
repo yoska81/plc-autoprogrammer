@@ -21,6 +21,8 @@
  *                                 strip to input X001; Y001 from output Y001 to the load. Segments
  *                                 after a series device get a letter suffix (Y001 -> OL1 -> Y001A).
  */
+import type { AnalogSetupRow } from '../plc/core/analog';
+import { analogWiring, type AnalogWiring } from './analog';
 import type {
   CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, JunctionBox,
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
@@ -40,6 +42,8 @@ export interface DrawingContext {
   hmiPartNumber?: string | null;
   /** Document control for title blocks: numbers, company, names and revision history. */
   doc?: DocInfo;
+  /** Analog channel setup (DF points): drawn on the analog sheet, wired on TBA with shielded cables. */
+  analog?: AnalogSetupRow[];
 }
 
 /** Document control data shared by drawings and documents (see ProjectInfo). */
@@ -347,6 +351,8 @@ export interface TerminalStrip {
 }
 
 export interface ElectricalModel {
+  /** Analog loops (empty when the project has no analog I/O). */
+  analog: AnalogWiring;
   rc: ResolvedComponent[];
   supply: SupplyVoltage;
   phases: 1 | 3;
@@ -567,7 +573,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const plcTag = plcRc?.tag ?? 'PLC1';
   const rcByTag = new Map(rc.map((c) => [c.tag, c] as const));
   const wiringByAddr = new Map(ioW.map((w) => [w.address.toUpperCase(), w] as const));
-  let rawIo = ctx.io.filter((p) => p.address);
+  // Analog points (DF registers) are wired by electrical/analog.ts, not as discrete I/O.
+  let rawIo = ctx.io.filter((p) => p.address && !/^DF\d+$/i.test(p.address));
   if (rawIo.length === 0) rawIo = ioW.map((w) => ({ address: w.address, description: w.description, type: guessIoType(w.address) }));
   const sorted = [...rawIo].sort((a, b) => (a.type === b.type ? naturalCompare(a.address, b.address) : a.type === 'input' ? -1 : 1));
   const counters = { input: 0, output: 0 };
@@ -869,9 +876,17 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   }
 
   const machine = buildMachine(ctx, mw, io, motors, groundBar?.tag ?? 'PE BAR', strips);
+  // Analog signals: TBA terminals, shielded cables, loop wiring (electrical/analog.ts).
+  const analog = analogWiring(ctx.analog ?? [], {
+    plcTag, groundBar: groundBar?.tag ?? 'PE BAR', firstCable: machine.cables.length + 1, ioWiring: ioW,
+    moduleTag: (slot, pn) => modules.find((mm) => mm.partNumber === pn)?.tag ?? `${plcTag}-S${slot}`,
+  });
+  wires.push(...analog.wires);
+  if (analog.strip) strips.push(analog.strip);
+  machine.cables.push(...analog.cables);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog,
   };
 }
 
