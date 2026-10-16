@@ -18,7 +18,7 @@ function StatusDot({ s, title }: { s: BlockStatus | undefined; title?: string })
   const color = s?.errors ? 'bg-red-500' : s?.warnings ? 'bg-amber-400' : 'bg-emerald-500';
   const text = s?.errors ? `${s.errors} error${s.errors > 1 ? 's' : ''}${s.warnings ? `, ${s.warnings} warning${s.warnings > 1 ? 's' : ''}` : ''}`
     : s?.warnings ? `${s.warnings} warning${s.warnings > 1 ? 's' : ''}` : 'Checker: OK';
-  return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${color}`} title={title ? `${title}: ${text}` : text} aria-label={text} />;
+  return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${color}`} title={title ? `${title}: ${text}` : text} aria-hidden="true" />;
 }
 
 /** Program structure as a tree: blocks with rung counts and checker status, expandable to their rungs. */
