@@ -17,6 +17,7 @@ import PrintElectricalPage from './pages/PrintElectricalPage.tsx'
 
 // The side-panel preview frame needs hash routing, blocks confirm() dialogs
 // (they always answer "cancel"), and opens with an example project.
+// eslint-disable-next-line react-refresh/only-export-components -- entry file, never hot-reloaded as a module
 const Router = IS_PREVIEW ? HashRouter : BrowserRouter
 if (IS_PREVIEW) {
   window.confirm = () => true

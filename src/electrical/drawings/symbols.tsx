@@ -280,7 +280,7 @@ export function Motor({ cx, cy, r = 8.5, leadsY }: { cx: number; cy: number; r?:
       {leadsY.map((ly, i) => {
         const dy = ly - cy;
         const dx = Math.sqrt(Math.max(0, r * r - dy * dy));
-        return <Line key={i} x1={cx - dx - 6} y1={ly} x2={cx - dx} y2={ly} />;
+        return <Line key={i} x1={cx - r - 6} y1={ly} x2={cx - dx} y2={ly} />;
       })}
       <circle cx={cx} cy={cy} r={r} strokeWidth={0.5} fill="#fff" />
       <Txt x={cx} y={cy + 1.6} size={4.5} anchor="middle" bold>M</Txt>

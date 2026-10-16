@@ -41,7 +41,9 @@ function ItemRect({ it, ox, oy, s }: { it: PlacedItem; ox: number; oy: number; s
       {isTb && Array.from({ length: Math.min(200, Math.floor(it.w / 6)) }, (_, k) => (
         <Line key={k} x1={x + (k + 1) * 6 * s} y1={y + 0.6} x2={x + (k + 1) * 6 * s} y2={y + h - 0.6} w={0.12} />
       ))}
-      <ItemLabel x={x} y={y} w={w} h={h} label={it.label} pn={isTb ? '' : it.partNumber} />
+      {it.sub
+        ? it.sub.map((p, i) => <ItemLabel key={i} x={ox + p.x * s} y={oy + p.y * s} w={p.w * s} h={p.h * s} label={it.label.split('/')[i] ?? p.tag} pn={p.partNumber} />)
+        : <ItemLabel x={x} y={y} w={w} h={h} label={it.label} pn={isTb ? '' : it.partNumber} />}
     </g>
   );
 }
@@ -180,11 +182,11 @@ function DoorDevice({ d, x, y, s, detail }: { d: DoorItem; x: number; y: number;
       {d.kind === 'selector' && <rect x={x - r * 0.18} y={y - r * 0.7} width={r * 0.36} height={r * 1.4} strokeWidth={LW_THIN} />}
       {detail && d.kind === 'estop' && (
         <>
-          <Txt x={x} y={y - plateW / 2 + 3.4} size={2.3} bold anchor="middle">EMERGENCY</Txt>
-          <Txt x={x} y={y + plateW / 2 - 1.6} size={2.3} bold anchor="middle">STOP</Txt>
+          <Txt x={x} y={y - (plateW / 2 + r) / 2 + 0.8} size={2.2} bold anchor="middle">EMERGENCY</Txt>
+          <Txt x={x} y={y + (plateW / 2 + r) / 2 + 0.8} size={2.2} bold anchor="middle">STOP</Txt>
         </>
       )}
-      <Txt x={x} y={y + (d.kind === 'estop' ? (detail ? plateW / 2 + 3.4 : r + 3.0) : r + (detail ? 3.4 : 3.0))} size={detail ? 2.5 : 2.2} mono bold anchor="middle">{d.tag}</Txt>
+      <Txt x={x} y={y + (d.kind === 'estop' ? plateW / 2 + (detail ? 3.4 : 2.8) : r + (detail ? 3.4 : 3.0))} size={detail ? 2.5 : 2.2} mono bold anchor="middle">{d.tag}</Txt>
       {detail && d.color && d.kind !== 'estop' && <Txt x={x} y={y + r + 6.6} size={2.2} anchor="middle">{d.color}</Txt>}
     </g>
   );

@@ -123,7 +123,7 @@ function InputRow({ plan, p, y }: { plan: DrawingPlan; p: IoPoint; y: number }) 
         <g>
           <Txt x={dx - 9.5} y={y + 3.4} size={2.0} mono anchor="end">BN</Txt>
           <Txt x={dx + 9.5} y={y + 3.4} size={2.0} mono>BK</Txt>
-          <Txt x={dx + 1.2} y={y + 6.6} size={2.0} mono>BU</Txt>
+          <Txt x={dx + 1.2} y={y + 5.6} size={2.0} mono>BU</Txt>
           <Line x1={dx} y1={y + 5} x2={dx} y2={y + 6} />
           <Line x1={dx} y1={y + 6} x2={p.returnTerminal ? I.TBS + 2.5 : I.R0} y2={y + 6} />
           {p.returnTerminal && <><TermBox x={I.TBS} y={y + 6} n={tn(p.returnTerminal)} /><Line x1={I.TBS - 2.5} y1={y + 6} x2={I.R0} y2={y + 6} /></>}
@@ -142,7 +142,7 @@ function InputRow({ plan, p, y }: { plan: DrawingPlan; p: IoPoint; y: number }) 
 }
 
 /** Field device symbol by device type, centred at (x, y), signal flow left→right. */
-function DeviceSymbol({ p, x, y }: { p: IoPoint; x: number; y: number }) {
+function DeviceSymbol({ p, x, y, color }: { p: IoPoint; x: number; y: number; color?: string }) {
   switch (p.deviceType) {
     case 'pushbutton-no': return <Pushbutton x={x} y={y} />;
     case 'pushbutton-nc': return <Pushbutton x={x} y={y} nc />;
@@ -155,10 +155,15 @@ function DeviceSymbol({ p, x, y }: { p: IoPoint; x: number; y: number }) {
     case 'safety-relay-output': return <Contact x={x} y={y} />;
     case 'contactor-coil': case 'relay-coil': return <Coil x={x} y={y} />;
     case 'solenoid': return <Solenoid x={x} y={y} />;
-    case 'pilot-light': case 'stack-light': return <Lamp x={x} y={y} color={colorWord(p.description)} />;
+    case 'pilot-light': case 'stack-light': return <Lamp x={x} y={y} color={colorWord(p.description) || color} />;
     case 'vfd-input': return <DevBox x={x} y={y} label="DI" w={7} />;
     default: return <DevBox x={x} y={y} label="?" w={7} />;
   }
+}
+
+function tagColor(plan: DrawingPlan, tag: string): string {
+  const rc = plan.model.rc.find((c) => c.tag === tag);
+  return colorWord(`${rc?.part?.ratings.color ?? ''} ${rc?.part?.description ?? ''}`);
 }
 
 function colorWord(s: string): string {
@@ -219,7 +224,7 @@ function OutputRow({ plan, p, y, rail, prev }: { plan: DrawingPlan; p: IoPoint; 
         <WireNo x={(start + O.DEV - 8) / 2} y={y} n={p.wire} />
         <XrefArrow x={O.DEV - 8} y={y} />
         <Txt x={O.DEV - 4} y={y + 0.9} size={2.6} mono bold>{`${tag || '?'} COIL`}</Txt>
-        <Txt x={O.DEV - 4} y={y + 4.4} size={2.2} mono>{ref ? `SEE /${ref}` : 'SEE CONTROL SHEET'}</Txt>
+        <Txt x={O.DEV - 4 + `${tag || '?'} COIL`.length * 1.56 + 2} y={y + 0.9} size={2.4} mono>{ref ? `/${ref}` : '(SEE CONTROL SHEET)'}</Txt>
         <Desc x={O.DESC} y={y} p={p} />
       </g>
     );
@@ -230,7 +235,7 @@ function OutputRow({ plan, p, y, rail, prev }: { plan: DrawingPlan; p: IoPoint; 
       {field && <><TermBox x={O.TBX} y={y} n={tn(p.signalTerminal)} /><Line x1={O.TBX + 2.5} y1={y} x2={O.DEV - half} y2={y} /></>}
       <WireNo x={field ? (start + O.TBX - 2.5) / 2 : (start + O.DEV - half) / 2} y={y} n={p.wire} />
       {field && <WireNo x={(O.TBX + 2.5 + O.DEV - half) / 2} y={y} n={p.wire} />}
-      <DeviceSymbol p={p} x={O.DEV} y={y} />
+      <DeviceSymbol p={p} x={O.DEV} y={y} color={tagColor(plan, tag)} />
       {tag && <Txt x={O.DEV + 6} y={y - 4.4} size={2.6} mono bold>{tag}</Txt>}
       {vfd && <Txt x={O.DEV} y={y + 5.4} size={2.0} anchor="middle">RUN</Txt>}
       {/* return */}

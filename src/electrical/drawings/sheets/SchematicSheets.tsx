@@ -65,7 +65,7 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const dsX = 62;
   const mbX = 84;
   const lastTap = Math.max(...sp.branches.map((b) => b.idx + b.b.feedWires.length - 1), 2 + nPh - 1);
-  const busEnd = m.motors.length ? sp.contIdx : lastTap;
+  const busEnd = m.motors.length ? sp.contIdx + 1 : lastTap;
   const gy = y(sp.groundIdx);
   const pe = m.groundBar?.tag ?? 'PE BAR';
   const grounds = [
@@ -76,8 +76,8 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   return (
     <g>
       <LineNumbers sheet={sheet.n} count={28} pitch={POWER_PITCH} />
-      <Txt x={30} y={y(0) + 0.9} size={2.8} bold>INCOMING SUPPLY {supplyText(m.supply)}</Txt>
-      <Txt x={30} y={y(0) + 4.4} size={2.3}>FROM PLANT DISTRIBUTION — CONDUCTORS {m.mainAwg} MIN. (VERIFY)</Txt>
+      <Txt x={30} y={y(0) + 0.9} size={2.8} bold>{`INCOMING SUPPLY ${supplyText(m.supply)}`}</Txt>
+      <Txt x={30} y={y(0) + 4.4} size={2.3}>{`FROM PLANT DISTRIBUTION — CONDUCTORS ${m.mainAwg} MIN. (VERIFY)`}</Txt>
       {/* incoming lines */}
       {m.incoming.map((w, k) => {
         const yy = y(2 + k);
@@ -87,7 +87,7 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
             <TermPt x={30} y={yy} />
             <Line x1={30.7} y1={yy} x2={isN ? BX[k] : dsX - 5} y2={yy} />
             <WireNo x={44} y={yy} n={w} />
-            {isN && <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(busEnd + k)} />}
+            {isN && <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(busEnd)} />}
           </g>
         );
       })}
@@ -106,7 +106,7 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
             <Line x1={dsX + 5} y1={yy} x2={m.mainBreaker ? mbX - 5 : BX[k]} y2={yy} />
             {m.mainBreaker && <Line x1={mbX + 5} y1={yy} x2={BX[k]} y2={yy} />}
             <WireNo x={m.mainBreaker ? (mbX + 5 + BX[k]) / 2 : (dsX + 5 + BX[0]) / 2} y={yy} n={m.bus[k]} />
-            <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(busEnd + k)} />
+            <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(busEnd)} />
           </g>
         );
       })}
@@ -151,9 +151,9 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
       {/* bus continuation to motor sheets */}
       {m.motors.length > 0 && (
         <g>
-          {BX.map((x, k) => <XrefArrow key={k} x={x} y={y(busEnd + k) - 0.01} dir="down" />)}
+          {BX.map((x, k) => <XrefArrow key={k} x={x} y={y(busEnd)} dir="down" />)}
           <Txt x={BX[nPh - 1] + 6} y={y(busEnd) + 2} size={2.5} mono bold>{m.bus.join(', ')}</Txt>
-          <Txt x={BX[nPh - 1] + 6} y={y(busEnd) + 5.5} size={2.5}>TO MOTOR CIRCUITS {plan.xref.get('motors') ? `/${plan.xref.get('motors')}` : ''}</Txt>
+          <Txt x={BX[nPh - 1] + 6} y={y(busEnd) + 5.5} size={2.5}>{`TO MOTOR CIRCUITS ${plan.xref.get('motors') ? `/${plan.xref.get('motors')}` : ''}`}</Txt>
         </g>
       )}
 
@@ -192,8 +192,7 @@ function PsBox({ plan, br, ys, y0, pitch }: { plan: DrawingPlan; br: { ps: Resol
   const ps = br.ps;
   const yP = y0, yN = y0 + pitch;
   const ctl = plan.xref.get('sheet:control');
-  const coilSr = plan.model.safety.relay ? plan.xref.get(`coil:${plan.model.safety.relay.tag}`) : undefined;
-  const ctlRef = coilSr ?? (ctl ? String(Number(ctl) * 100) : '');
+  const ctlRef = ctl ? String(Number(ctl) * 100) : '';
   return (
     <g>
       {ys.map((yy, k) => <Line key={k} x1={151} y1={yy} x2={bx} y2={yy} />)}
@@ -213,8 +212,8 @@ function PsBox({ plan, br, ys, y0, pitch }: { plan: DrawingPlan; br: { ps: Resol
       <WireNo x={258} y={yN} n="0V" />
       <XrefArrow x={300} y={yP} />
       <XrefArrow x={300} y={yN} />
-      <Txt x={305} y={yP + 0.9} size={2.5} mono>24+ TO CONTROL {ctlRef ? `/${ctlRef}` : ''}</Txt>
-      <Txt x={305} y={yN + 0.9} size={2.5} mono>0V  TO CONTROL {ctlRef ? `/${ctlRef}` : ''}</Txt>
+      <Txt x={305} y={yP + 0.9} size={2.5} mono>{`24+ TO CONTROL ${ctlRef ? `/${ctlRef}` : ''}`}</Txt>
+      <Txt x={305} y={yN + 0.9} size={2.5} mono>{`0V  TO CONTROL ${ctlRef ? `/${ctlRef}` : ''}`}</Txt>
       {/* 0V bond to PE */}
       <Dot x={280} y={yN} />
       <Line x1={280} y1={yN} x2={280} y2={yN + 4} />
@@ -233,7 +232,7 @@ export function MotorSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const y = (i: number) => Y0 + i * MOTOR_PITCH;
   const nPh = plan.model.phases === 3 ? 3 : 2;
   const BX = [40, 46, 52].slice(0, nPh);
-  const bottom = sp.continues ? y(MOTOR_LINES - 1) : y(sp.busEnd + nPh - 1);
+  const bottom = sp.continues ? y(MOTOR_LINES - 1) : y(sp.busEnd);
   const fromRef = sp.first ? plan.xref.get('power:cont') : undefined;
   return (
     <g>
@@ -246,7 +245,7 @@ export function MotorSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
         </g>
       ))}
       <Txt x={BX[nPh - 1] + 6} y={y(0) + 0.9} size={2.5} mono bold>{plan.model.bus.join(', ')}</Txt>
-      <Txt x={BX[nPh - 1] + 6 + 30} y={y(0) + 0.9} size={2.5}>FROM {fromRef ? `/${fromRef}` : 'PREVIOUS SHEET'}</Txt>
+      <Txt x={BX[nPh - 1] + 6 + 30} y={y(0) + 0.9} size={2.5}>{`FROM ${fromRef ? `/${fromRef}` : 'PREVIOUS SHEET'}`}</Txt>
       {sp.continues && <Txt x={BX[nPh - 1] + 6} y={bottom + 1} size={2.5}>CONTINUED ON NEXT SHEET</Txt>}
       {sp.items.map((it) => <MotorBranch key={it.m.motor.tag} plan={plan} m={it.m} idx={it.idx} y={y} BX={BX} />)}
     </g>
@@ -291,7 +290,7 @@ function MotorBranch({ plan, m, idx, y, BX }: { plan: DrawingPlan; m: MotorModel
           {ys.map((yy, k) => <Txt key={`i${k}`} x={127} y={yy + 0.9} size={2.2} mono>{`L${k + 1}`}</Txt>)}
           {ys.map((yy, k) => <Txt key={`o${k}`} x={203} y={yy + 0.9} size={2.2} mono anchor="end">{`T${k + 1}`}</Txt>)}
           <Txt x={165} y={ys[0] + 1} size={2.8} mono bold anchor="middle">{m.vfd.tag}</Txt>
-          <Txt x={165} y={ys[1] + 0.9} size={2.3} anchor="middle">AC DRIVE {ratingText(m.vfd)}</Txt>
+          <Txt x={165} y={ys[1] + 0.9} size={2.3} anchor="middle">{`AC DRIVE ${ratingText(m.vfd)}`}</Txt>
           {ph > 2 && <Txt x={165} y={ys[2] + 0.9} size={2.2} anchor="middle" maxW={60}>{ioRun ? `RUN: ${ioRun.address} /${plan.xref.get(`io:${ioRun.address}`) ?? ''}` : 'RUN CMD: SEE I/O'}</Txt>}
           <Txt x={165} y={ys[ph - 1] + 9} size={2.2} anchor="middle">STO/ENABLE PER DRIVE MANUAL</Txt>
         </g>
@@ -335,10 +334,9 @@ function MotorBranch({ plan, m, idx, y, BX }: { plan: DrawingPlan; m: MotorModel
               })}
               <Poles x={KX} ys={ysR} kind="contact" />
               <Line x1={KX} y1={ys[ph - 1] + 2.5} x2={KX} y2={ysR[0] - 2.5} w={LW_THIN} dash="0.6 0.9" />
-              <Txt x={KX + 2} y={(ys[ph - 1] + ysR[0]) / 2 + 3.4} size={2.2}>MECH. INTERLOCK</Txt>
               <Txt x={KX - 5} y={ysR[ph - 1] + 5.2} size={2.8} mono bold anchor="end">{kr.tag}</Txt>
               <Txt x={KX - 5} y={ysR[ph - 1] + 8.4} size={2.2} anchor="end">{`COIL /${coilRef(kr.tag) ?? '?'}`}</Txt>
-              <Txt x={KX + 12} y={ysR[ph - 1] + 5.2} size={2.2}>REVERSE (L1/L3 SWAPPED)</Txt>
+              <Txt x={KX + 12} y={ysR[ph - 1] + 5.2} size={2.2}>{`REVERSE: L1/L3 SWAPPED. ${kf.tag}/${kr.tag} MECHANICALLY + ELECTRICALLY INTERLOCKED`}</Txt>
             </g>
           )}
           {m.overload && (
@@ -358,7 +356,7 @@ function MotorBranch({ plan, m, idx, y, BX }: { plan: DrawingPlan; m: MotorModel
           <Line x1={loadStart} y1={yy} x2={TBX - 2.5} y2={yy} />
           <WireNo x={(Math.max(loadStart, OX + 5) + TBX) / 2} y={yy} n={m.loadWires[k]} />
           <TermBox x={TBX} y={yy} n={tbNo(m.terminals[k])} />
-          <Line x1={TBX + 2.5} y1={yy} x2={MX - 15} y2={yy} />
+          <Line x1={TBX + 2.5} y1={yy} x2={MX - 14.5} y2={yy} />
           <WireNo x={268} y={yy} n={m.loadWires[k]} />
         </g>
       ))}
@@ -392,7 +390,8 @@ export function ControlSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Planne
   const sp = sheet.spec as Extract<SheetSpec, { kind: 'control' }>;
   const y = (i: number) => Y0 + i * CONTROL_PITCH;
   const used = sp.rungs.filter((r) => r.els.length);
-  const lastRail = Math.max(1, ...used.filter((r) => r.start.kind === 'rail' || r.end.kind === 'rail').map((r) => r.idx));
+  const lastL = Math.max(1, ...used.filter((r) => r.start.kind === 'rail').map((r) => r.idx));
+  const lastR = Math.max(1, ...used.filter((r) => r.end.kind === 'rail').map((r) => r.idx));
   const ps = plan.model.psBranches[0]?.ps.tag ?? 'PS1';
   const psRef = plan.xref.get(`ps:${ps}`);
   return (
@@ -402,8 +401,8 @@ export function ControlSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Planne
       <Txt x={RAIL_L + 6} y={y(0) - 1.5} size={2.3}>{`+24VDC FROM ${ps} ${psRef ? `/${psRef}` : ''}`}</Txt>
       <Txt x={RAIL_R + 3} y={y(0) - 1.5} size={2.8} mono bold anchor="end">0V</Txt>
       <Txt x={RAIL_R - 6} y={y(0) - 1.5} size={2.3} anchor="end">{`0V FROM ${ps} ${psRef ? `/${Number(psRef) + 1}` : ''}`}</Txt>
-      <Line x1={RAIL_L} y1={y(0)} x2={RAIL_L} y2={y(lastRail)} w={0.5} />
-      <Line x1={RAIL_R} y1={y(0)} x2={RAIL_R} y2={y(lastRail)} w={0.5} />
+      <Line x1={RAIL_L} y1={y(0)} x2={RAIL_L} y2={y(lastL)} w={0.5} />
+      <Line x1={RAIL_R} y1={y(0)} x2={RAIL_R} y2={y(lastR)} w={0.5} />
       <Line x1={RAIL_R + 6} y1={AREA.y} x2={RAIL_R + 6} y2={AREA_B} w={LW_THIN} />
       <Txt x={RAIL_R + 9} y={y(0) - 1.5} size={2.5} bold>DESCRIPTION / CROSS-REFERENCE</Txt>
       {sp.rungs.map((r) => <RungView key={r.idx} plan={plan} r={r} yy={y(r.idx)} />)}
@@ -460,7 +459,7 @@ function RungView({ plan, r, yy }: { plan: DrawingPlan; r: Rung; yy: number }) {
       {segs.map(([a, b], i) => (
         <g key={i}>
           <Line x1={a + (i === 0 && r.start.kind === 'node' ? 0.7 : 0)} y1={yy} x2={b - (i === segs.length - 1 && r.end.kind === 'node' ? 0.7 : 0)} y2={yy} />
-          {b - a > 9 && <WireNo x={(a + b) / 2} y={yy} n={r.wires[i] ?? ''} maxW={b - a - 2} />}
+          {b - a > 9 && <WireNo x={wireLabelX(r, xs, i, a, b)} y={yy} n={r.wires[i] ?? ''} maxW={b - a - 2} />}
         </g>
       ))}
       {r.els.map((e, i) => <RungElement key={i} e={e} x={xs[i]} y={yy} />)}
@@ -483,6 +482,16 @@ function RungView({ plan, r, yy }: { plan: DrawingPlan; r: Rung; yy: number }) {
   );
 }
 
+/** Midpoint of a rung segment, pushed right so it clears a pushbutton tag drawn to the right of its actuator. */
+function wireLabelX(r: Rung, xs: number[], i: number, a: number, b: number): number {
+  const mid = (a + b) / 2;
+  const prev = r.els[i - 1];
+  if (!prev || prev.t !== 'contact' || (prev.dev !== 'pb' && prev.dev !== 'estop')) return mid;
+  const tagEnd = xs[i - 1] + 4.6 + prev.tag.length * 1.56 + prev.term.length * 1.32 + 1;
+  const w = (r.wires[i] ?? '').length * 1.5;
+  return Math.min(Math.max(mid, tagEnd + w / 2), b - w / 2 - 0.5);
+}
+
 function RungElement({ e, x, y }: { e: RungEl; x: number; y: number }) {
   switch (e.t) {
     case 'contact': {
@@ -490,9 +499,17 @@ function RungElement({ e, x, y }: { e: RungEl; x: number; y: number }) {
       return (
         <g>
           {isPb ? <Pushbutton x={x} y={y} nc={e.nc} mushroom={e.dev === 'estop'} /> : <Contact x={x} y={y} nc={e.nc} />}
-          <Txt x={x - 1} y={y - (isPb ? 6.3 : 4.0)} size={2.6} mono bold anchor="end">{e.tag}</Txt>
-          <Txt x={x + 0.5} y={y - (isPb ? 6.3 : 4.0)} size={2.2} mono>{e.term}</Txt>
-          {e.dev === 'ol' && <Txt x={x} y={y + 5.2} size={2.2} anchor="middle">OL</Txt>}
+          {isPb ? (
+            <>
+              <Txt x={x + 4} y={y - 3.4} size={2.6} mono bold>{e.tag}</Txt>
+              <Txt x={x + 4.6 + e.tag.length * 1.56} y={y - 3.4} size={2.2} mono>{e.term}</Txt>
+            </>
+          ) : (
+            <>
+              <Txt x={x - 1} y={y - 4.0} size={2.6} mono bold anchor="end">{e.tag}</Txt>
+              <Txt x={x + 0.5} y={y - 4.0} size={2.2} mono>{e.term}</Txt>
+            </>
+          )}
         </g>
       );
     }

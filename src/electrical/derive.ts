@@ -404,9 +404,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     const idx = Array.from({ length: ph }, (_, k) => k + 1);
     return {
       motor, fla, awg: awgFor(fla * 1.25), protection: prot, contactors, overload, vfd,
-      lineWires: idx.map((k) => `${motor.tag}-L${k}`),
-      midWires: idx.map((k) => `${motor.tag}-C${k}`),
-      loadWires: idx.map((k) => `${motor.tag}-T${k}`),
+      // 120VAC single-phase motors keep the grounded conductor numbered "N" end to end.
+      lineWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${motor.tag}-L${k}`)),
+      midWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${motor.tag}-C${k}`)),
+      loadWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${motor.tag}-T${k}`)),
       terminals: [],
     };
   });
@@ -609,20 +610,20 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     const prot = m.protection?.tag;
     const lineTo = m.vfd ? m.vfd.tag : m.contactors[0]?.tag;
     m.lineWires.forEach((w, k) => {
-      if (prot && lineTo) addWire({ wire: w, from: `${prot}:T${k + 1}`, to: `${lineTo}:L${k + 1}`, color: 'BK', size: m.awg, function: `${m.motor.tag} line side` });
-      if (m.contactors[1]) addWire({ wire: w, from: `${m.contactors[0].tag}:L${k + 1}`, to: `${m.contactors[1].tag}:L${k + 1}`, color: 'BK', size: m.awg, function: `${m.motor.tag} reversing jumper` });
+      if (prot && lineTo) addWire({ wire: w, from: `${prot}:T${k + 1}`, to: `${lineTo}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} line side` });
+      if (m.contactors[1]) addWire({ wire: w, from: `${m.contactors[0].tag}:L${k + 1}`, to: `${m.contactors[1].tag}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} reversing jumper` });
     });
     if (!m.vfd && m.overload && m.contactors[0]) m.midWires.forEach((w, k) => {
-      addWire({ wire: w, from: `${m.contactors[0].tag}:T${k + 1}`, to: `${m.overload!.tag}:L${k + 1}`, color: 'BK', size: m.awg, function: `${m.motor.tag} contactor to overload` });
+      addWire({ wire: w, from: `${m.contactors[0].tag}:T${k + 1}`, to: `${m.overload!.tag}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} contactor to overload` });
       if (m.contactors[1]) {
         const sw = m.midWires.length === 3 ? [2, 1, 0][k] : k;
-        addWire({ wire: m.midWires[sw], from: `${m.contactors[1].tag}:T${k + 1}`, to: `${m.contactors[0].tag}:T${sw + 1}`, color: 'BK', size: m.awg, function: `${m.motor.tag} reversing (phase swap)` });
+        addWire({ wire: m.midWires[sw], from: `${m.contactors[1].tag}:T${k + 1}`, to: `${m.contactors[0].tag}:T${sw + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} reversing (phase swap)` });
       }
     });
     const src = m.vfd ? m.vfd.tag : m.overload ? m.overload.tag : m.contactors[0]?.tag ?? prot ?? '?';
     m.loadWires.forEach((w, k) => {
-      addWire({ wire: w, from: `${src}:T${k + 1}`, to: m.terminals[k], color: 'BK', size: m.awg, function: `${m.motor.tag} motor leads` });
-      addWire({ wire: w, from: m.terminals[k], to: `${m.motor.tag}:T${k + 1}`, color: 'BK', size: m.awg, function: `${m.motor.tag} motor cable (field)` });
+      addWire({ wire: w, from: `${src}:T${k + 1}`, to: m.terminals[k], color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} motor leads` });
+      addWire({ wire: w, from: m.terminals[k], to: `${m.motor.tag}:T${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} motor cable (field)` });
     });
     if (m.peTerminal) addWire({ wire: 'PE', from: m.peTerminal, to: `${m.motor.tag}:PE`, color: 'GN/YE', size: m.awg, function: `${m.motor.tag} motor ground` });
   }
@@ -680,7 +681,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:BU`, color: 'BU (cable)', size: '18 AWG', function: `${tag} 0V` });
       } else {
         addWire({ wire: '24+', from: 'TB1 24+', to: `${tag}:C`, color: 'BU', size: '18 AWG', function: `${tag} supply` });
-        addWire({ wire: p.address, from: `${tag}:${p.deviceType === 'pushbutton-nc' || p.deviceType === 'estop-contact' ? 'NC' : 'NO'}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
+        addWire({ wire: p.address, from: `${tag}:${p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO'}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
       }
     } else {
       const sink = g?.outputStyle === 'sinking';
@@ -696,7 +697,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         if (p.returnTerminal) addWire({ wire: sink ? safety.outputSupply : '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       } else {
         addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: `${tag}:${p.deviceType === 'vfd-input' ? 'DI' : p.deviceType === 'pilot-light' ? 'X1' : 'A1'}`, color: 'BU', size: '18 AWG', function: p.description });
-        if (p.deviceType !== 'vfd-input') addWire({ wire: sink ? safety.outputSupply : '0V', from: `${tag}:${p.deviceType === 'pilot-light' ? 'X2' : 'A2'}`, to: `TB1 ${sink ? safety.outputSupply : '0V'}`, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
+        if (p.deviceType === 'vfd-input') addWire({ wire: '0V', from: `${tag}:DCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} digital input common` });
+        else addWire({ wire: sink ? safety.outputSupply : '0V', from: `${tag}:${p.deviceType === 'pilot-light' ? 'X2' : 'A2'}`, to: `TB1 ${sink ? safety.outputSupply : '0V'}`, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       }
     }
   }
@@ -867,6 +869,15 @@ function dims(c: ResolvedComponent): { w: number; h: number; estimated: boolean 
   return { w, h: ph ?? d[1], estimated: true };
 }
 
+/** Breakers sit side by side and CLICK modules snap onto the CPU: no gap inside those groups. */
+function gapBefore(prev: PlacedItem | undefined, it: PlacedItem): number {
+  if (!prev) return 0;
+  const grp = (c: CatalogCategory) => (c === 'breaker' || c === 'fuse' ? 'cb' : c === 'plc' || c === 'plcModule' ? 'plc' : c);
+  if (grp(prev.category) === grp(it.category) && (grp(it.category) === 'cb' || grp(it.category) === 'plc')) return 0;
+  if (prev.category === 'terminal' && it.category === 'terminal') return 10;
+  return GAP;
+}
+
 const RAIL_H = 35;
 const DUCT = 40;
 const CLEAR = 12;
@@ -919,7 +930,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     }
     if (['disconnect', 'breaker', 'fuse'].includes(c.category)) rows[0].items.push(...expand(c));
     else if (['powerSupply', 'plc', 'plcModule'].includes(c.category)) rows[1].items.push(...expand(c));
-    else if (c.category === 'groundBar') rows[3].items.push(...expand(c));
+    else if (c.category === 'groundBar') rows[0].items.push(...expand(c));
     else if (c.category === 'contactor') {
       const it = mk(c);
       const ol = bp.find((x) => x.category === 'overload' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag);
@@ -963,9 +974,9 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     let cur: PlacedItem[] = [];
     let used2 = 0;
     for (const it of row.items) {
-      const need = (cur.length ? GAP : 0) + it.w;
+      const need = gapBefore(cur[cur.length - 1], it) + it.w;
       if (cur.length && used2 + need > innerW) { bands.push({ items: cur, h: 0 }); cur = []; used2 = 0; }
-      used2 += (cur.length ? GAP : 0) + it.w;
+      used2 += gapBefore(cur[cur.length - 1], it) + it.w;
       cur.push(it);
       if (it.w > innerW) warnings.push(`${it.tag} (${it.w} mm wide) is wider than the usable back-panel width.`);
     }
@@ -979,12 +990,13 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     const cy = y + b.h / 2;
     rails.push({ x: backplate.x + MARGIN + DUCT + 4, y: cy - RAIL_H / 2, w: backplate.w - 2 * (MARGIN + DUCT + 4), h: RAIL_H });
     let x = innerX0;
-    for (const it of b.items) {
+    b.items.forEach((it, k) => {
+      x += k > 0 ? gapBefore(b.items[k - 1], it) : 0;
       it.x = x; it.y = cy - it.h / 2;
       if (it.sub) { let sy = it.y; for (const s of it.sub) { s.x = x + (it.w - s.w) / 2; s.y = sy; sy += s.h; } }
-      x += it.w + GAP;
+      x += it.w;
       items.push(it);
-    }
+    });
     y += b.h;
     ducts.push({ x: backplate.x + MARGIN, y, w: backplate.w - 2 * MARGIN, h: DUCT, orientation: 'h' });
     y += DUCT;
@@ -1061,11 +1073,13 @@ export function wrapWords(text: string, maxChars: number): string[] {
 export function designWarnings(ctx: DrawingContext): string[] {
   const m = buildModel(ctx);
   const w: string[] = [];
+  const unverified = new Map<string, string[]>();
   for (const c of m.rc) {
     if (!c.partNumber) w.push(`${c.tag}: no part number selected.`);
     else if (!c.part) w.push(`${c.tag}: part ${c.partNumber} not found in the catalog — verify the part number.`);
-    else if (!c.part.verified) w.push(`${c.tag}: ${c.partNumber} ratings/dimensions not yet verified against the datasheet.`);
+    else if (!c.part.verified) unverified.set(c.partNumber, [...(unverified.get(c.partNumber) ?? []), c.tag]);
   }
+  if (unverified.size) w.push(`${unverified.size} part number(s) have catalog data not yet verified against the datasheet: ${[...unverified].map(([pn, tags]) => `${pn} (${tags.join(', ')})`).join('; ')}.`);
   if (!m.disconnect) w.push('No main disconnect in the design (NFPA 79 5.3 requires a supply disconnecting means).');
   if (!m.rc.some((c) => c.category === 'enclosure')) w.push('No enclosure selected.');
   if (!m.psBranches.length) w.push('No 24VDC power supply in the design.');

@@ -55,6 +55,15 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
     'THIS DRAWING SET IS AI-GENERATED. ALL PARTS, RATINGS, WIRE SIZES AND LAYOUT MUST BE CHECKED AND APPROVED BY A QUALIFIED ENGINEER BEFORE PURCHASE, BUILD OR USE.',
   ];
   const idxRows = plan.sheets;
+  const noteH = notes.reduce((h, n) => h + wrapText(n, W - 8, 2.4).length * 2.4 * 1.3 + 1.2, 0);
+  const cy = AREA.y + 15 + noteH + 6;
+  const ny = cy + 5.5 + WIRE_COLORS.length * 3.6 + 5;
+  const numLines: { text: string; y: number; bullet: boolean }[] = [];
+  let yy = ny + 5.5;
+  for (const n of WIRE_NUMBERING_NOTES) {
+    wrapText(n, W - 4, 2.3).forEach((t, k) => { numLines.push({ text: t, y: yy, bullet: k === 0 }); yy += 3.1; });
+    yy += 0.8;
+  }
   const rowH = 4.6;
   const IY = 96;
   return (
@@ -86,19 +95,19 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
       {/* general notes */}
       <Line x1={RX - 4} y1={AREA.y + 4} x2={RX - 4} y2={AREA_B - 4} w={LW_THIN} />
       <Txt x={RX} y={AREA.y + 9} size={3.2} bold>GENERAL NOTES</Txt>
-      <NoteList x={RX} y={AREA.y + 15} w={W} items={notes} size={2.4} maxY={AREA.y + 128} />
-      <Txt x={RX} y={AREA.y + 134} size={3} bold>WIRE COLORS (NFPA 79 13.2.4)</Txt>
+      <NoteList x={RX} y={AREA.y + 15} w={W} items={notes} size={2.4} maxY={AREA_B} />
+      <Txt x={RX} y={cy} size={3} bold>WIRE COLORS (NFPA 79 13.2.4)</Txt>
       {WIRE_COLORS.map(([c, d], i) => (
         <g key={c}>
-          <Txt x={RX} y={AREA.y + 139.5 + i * 3.6} size={2.3} mono bold>{c}</Txt>
-          <Txt x={RX + 42} y={AREA.y + 139.5 + i * 3.6} size={2.3} maxW={W - 42}>{d}</Txt>
+          <Txt x={RX} y={cy + 5.5 + i * 3.6} size={2.3} mono bold>{c}</Txt>
+          <Txt x={RX + 42} y={cy + 5.5 + i * 3.6} size={2.3} maxW={W - 42}>{d}</Txt>
         </g>
       ))}
-      <Txt x={RX} y={AREA.y + 170} size={3} bold>WIRE NUMBERING</Txt>
-      {WIRE_NUMBERING_NOTES.map((n, i) => (
+      <Txt x={RX} y={ny} size={3} bold>WIRE NUMBERING</Txt>
+      {numLines.map((l, i) => (
         <g key={i}>
-          <Txt x={RX} y={AREA.y + 175.5 + i * 6.2} size={2.3}>•</Txt>
-          <Para x={RX + 3} y={AREA.y + 175.5 + i * 6.2} w={W - 4} size={2.3} gap={1.25} lines={wrapText(n, W - 4, 2.3).slice(0, 2)} />
+          {l.bullet && <Txt x={RX} y={l.y} size={2.3}>•</Txt>}
+          <Txt x={RX + 3} y={l.y} size={2.3} maxW={W - 4}>{l.text}</Txt>
         </g>
       ))}
     </g>
@@ -153,7 +162,7 @@ export function TerminalSheet({ sheet }: { plan: DrawingPlan; sheet: PlannedShee
                   <g key={ri}>
                     <rect x={x} y={yy - rowH} width={colW} height={rowH} fill="#e8e8e8" stroke="none" />
                     <Line x1={x} y1={yy - rowH} x2={x + colW} y2={yy - rowH} w={LW} />
-                    <Txt x={x + 1.5} y={yy - 1.4} size={2.6} bold mono maxW={colW - 3}>{`${r.strip.tag} — ${r.strip.title} (${r.strip.terminals.length} TERMINALS, ${r.strip.endPlates} END PLATE, ${r.strip.endStops} END STOPS)`}</Txt>
+                    <Txt x={x + 1.5} y={yy - 1.4} size={2.6} bold mono maxW={colW - 3}>{r.cont ? `${r.strip.tag} — ${r.strip.title} (CONTINUED)` : `${r.strip.tag} — ${r.strip.title} (${r.strip.terminals.length} TERMINALS, ${r.strip.endPlates} END PLATE, ${r.strip.endStops} END STOPS)`}</Txt>
                     <Line x1={x} y1={yy} x2={x + colW} y2={yy} w={LW_THIN} />
                   </g>
                 );

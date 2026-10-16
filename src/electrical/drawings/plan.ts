@@ -29,7 +29,7 @@ export interface Rung {
 }
 
 export type PowerBranchPlan = { type: 'ps'; b: PsBranch; idx: number } | { type: 'aux'; b: AuxBranch; idx: number };
-export type TermRow = { kind: 'header'; strip: TerminalStrip } | { kind: 'row'; t: Terminal };
+export type TermRow = { kind: 'header'; strip: TerminalStrip; cont?: boolean } | { kind: 'row'; t: Terminal };
 export type BomRow = { kind: 'group'; title: string } | { kind: 'line'; line: BomLine };
 
 export type SheetSpec =
@@ -63,7 +63,7 @@ export const IO_PITCH = 12;
 export const MOTOR_LINES = 27;
 export const CONTROL_RUNGS = 21;
 export const IO_PER_SHEET = 16;
-export const TERM_ROWS = 38;
+export const TERM_ROWS = 40;
 export const BOM_ROWS = 31;
 
 const letter = (i: number) => (i === 0 ? '' : String.fromCharCode(64 + i));
@@ -190,7 +190,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
       for (let i = 0; i < g.points.length; i += IO_PER_SHEET) {
         const pts = g.points.slice(i, i + IO_PER_SHEET);
         specs.push({
-          title: `PLC ${type === 'input' ? 'INPUTS' : 'OUTPUTS'} — ${g.label} (${pts[0].address}–${pts[pts.length - 1].address})`,
+          title: `PLC ${type === 'input' ? 'INPUTS' : 'OUTPUTS'} — ${g.label} (${pts.length > 1 ? `${pts[0].address}–${pts[pts.length - 1].address}` : pts[0].address})`,
           spec: { kind: 'io', group: g, points: pts, first: i === 0, last: i + IO_PER_SHEET >= g.points.length },
         });
       }
@@ -208,7 +208,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     let col: TermRow[] = [];
     for (const r of rows) {
       if (col.length >= TERM_ROWS || (r.kind === 'header' && col.length >= TERM_ROWS - 3)) { cols.push(col); col = []; }
-      if (r.kind === 'row' && col.length === 0) { const s = model.strips.find((x) => x.tag === r.t.strip)!; col.push({ kind: 'header', strip: s }); }
+      if (r.kind === 'row' && col.length === 0) { const s = model.strips.find((x) => x.tag === r.t.strip)!; col.push({ kind: 'header', strip: s, cont: true }); }
       col.push(r);
     }
     if (col.length) cols.push(col);
@@ -243,7 +243,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     xref.set(`sheet:${sp.kind}`, xref.get(`sheet:${sp.kind}`) ?? String(sh.n));
     if (sp.kind === 'power') {
       for (const b of sp.branches) if (b.type === 'ps') xref.set(`ps:${b.b.ps.tag}`, String(lineNo(sh.n, b.idx)));
-      xref.set('power:cont', String(lineNo(sh.n, sp.contIdx)));
+      xref.set('power:cont', String(lineNo(sh.n, sp.contIdx + 1)));
       xref.set('power:ground', String(lineNo(sh.n, sp.groundIdx)));
     } else if (sp.kind === 'motors') {
       if (sp.first) xref.set('motors', String(lineNo(sh.n, 0)));
@@ -275,7 +275,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     }
   }
   for (const [tag, list] of contacts) xref.set(`c:${tag}`, list.join(', '));
-  xref.set('s:out', outSheets.join(', '));
+  xref.set('s:out', outSheets.map((l) => `/${l}`).join(', '));
 
   const date = (ctx.design.generatedAt || '').slice(0, 10) || '—';
   return { ctx, model, layout, sheets, xref, date, docPrefix: prefix };
