@@ -41,3 +41,10 @@ export const useReviewStore = create<ReviewStore>()(
 );
 
 export const statusOf = (marks: Record<string, FindingMark>, id: string): FindingStatus => marks[id]?.status ?? 'open';
+
+/** Open findings by severity (checks + AI review, resolved/ignored excluded). */
+export function openCounts(s: Pick<ReviewStore, 'checks' | 'ai' | 'marks'>): Record<'critical' | 'major' | 'minor' | 'info', number> {
+  const out = { critical: 0, major: 0, minor: 0, info: 0 };
+  for (const f of [...s.checks, ...(s.ai?.findings ?? [])]) if (statusOf(s.marks, f.id) === 'open') out[f.severity]++;
+  return out;
+}

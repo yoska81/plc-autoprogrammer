@@ -27,6 +27,8 @@ export interface Revision {
   date: string;         // ISO date YYYY-MM-DD
   description: string;  // "Issued for review", "Issued for construction"…
   by: string;           // initials
+  /** Why it was issued despite open critical design review findings (construction override). */
+  override?: string;
 }
 
 export interface ProjectInfo {

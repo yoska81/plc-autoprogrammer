@@ -85,6 +85,14 @@ function reply(system) {
   await page.waitForTimeout(800);
   log('Preview banner:', await page.getByText('Preview with an example project').count() > 0);
 
+  // The example project reviews clean: no open critical or major design review findings.
+  await page.goto(BASE + '/#/review');
+  await page.getByText(/Checks: \d+ finding/).waitFor({ timeout: 10000 });
+  const tile = async (name) => Number(await page.locator('div', { hasText: new RegExp(`^${name} open$`) }).locator('xpath=following-sibling::div').first().innerText());
+  const crit = await tile('Critical'), major = await tile('Major');
+  log('Example review: critical', crit, '| major', major, '|', await page.getByText(/Checks: \d+ finding/).innerText());
+  check(crit === 0 && major === 0, 'example project has no open critical/major review findings');
+
   // Settings: no key needed; test connection runs through the account; runtime errors in plain English.
   await page.goto(BASE + '/#/settings');
   const keyBox = page.getByPlaceholder('Not needed in the preview');
@@ -189,6 +197,50 @@ function reply(system) {
   await notice.waitFor({ timeout: 10000 });
   log('Save error notice:', await notice.innerText());
   await page.evaluate(() => { window.__saveError = null; });
+
+  // The example project updates (new seed version) while the viewer works in their own project:
+  // their project stays open and intact, the example sits beside it, and a backup can be reopened.
+  const openSel = page.locator('select[aria-label="Open project"]');
+  const openName = () => openSel.locator('option:checked').innerText();
+  const projectNames = () => openSel.locator('option').allInnerTexts();
+  await page.goto(BASE + '/#/new');
+  await page.getByPlaceholder('e.g. Line 3 case packer').fill('My Own Cell');
+  await page.getByRole('button', { name: 'Next →' }).click();
+  await page.getByRole('button', { name: 'Close ✕' }).click();
+  await page.goto(BASE + '/#/io');
+  await page.getByRole('button', { name: 'Add input' }).click();
+  await page.getByLabel('Description of I001').fill('Own proximity sensor');
+  await page.getByLabel('Description of I001').blur();
+  await page.waitForTimeout(300);
+  check(await openName() === 'My Own Cell', 'own project open before the example update');
+  await page.evaluate(() => localStorage.setItem('plc-preview-seed', 'old'));
+  await page.reload();
+  await page.waitForTimeout(800);
+  log('After a new example version:', await openName(), '| projects', (await projectNames()).join(' | '));
+  check(await openName() === 'My Own Cell', 'own project still open after the example update');
+  check(await page.getByLabel('Description of I001').inputValue() === 'Own proximity sensor' && await page.locator('input[aria-label^="Description of"]').count() === 1, 'own project data intact');
+  check((await projectNames()).filter((n) => n === 'Conveyor Cell (example)').length === 1, 'example present once, separately');
+  const exampleId = await openSel.locator('option', { hasText: 'Conveyor Cell (example)' }).getAttribute('value');
+  const ownId = await openSel.inputValue();
+  await openSel.selectOption(exampleId);
+  await page.waitForTimeout(300);
+  const exampleIo = await page.locator('input[aria-label^="Description of"]').count();
+  check(exampleIo >= 7 && !(await page.locator('input[aria-label^="Description of"]').evaluateAll((els) => els.some((e) => e.value === 'Own proximity sensor'))), 'example has its own data');
+  await openSel.selectOption(ownId);
+  await page.waitForTimeout(300);
+  check(await page.getByLabel('Description of I001').inputValue() === 'Own proximity sensor', 'own project back after switching');
+  await page.goto(BASE + '/#/project');
+  const recover = page.locator('section', { hasText: 'Recover saved work' });
+  const backupRow = recover.locator('tr', { hasText: 'Before the example project was updated' }).filter({ hasText: 'My Own Cell' }).first();
+  await backupRow.waitFor();
+  log('Backup listed:', (await backupRow.innerText()).replace(/\s+/g, ' ').slice(0, 120));
+  await backupRow.getByRole('button', { name: 'Open as new project' }).click();
+  await page.waitForTimeout(500);
+  log('Recovered as:', await openName());
+  check(/^My Own Cell \(recovered/.test(await openName()), 'backup opened as a new project');
+  await page.goto(BASE + '/#/io');
+  check(await page.getByLabel('Description of I001').inputValue() === 'Own proximity sensor', 'recovered project has the data');
+  check((await projectNames()).includes('My Own Cell'), 'original project still listed');
 
   log('Direct API requests:', direct.length ? direct : 'none');
   log('Dialogs:', dialogs.length ? dialogs : 'none');

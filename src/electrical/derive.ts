@@ -1400,6 +1400,9 @@ const MARGIN = 10;
 const OL_STACK_H = 50;
 const GAP = 4;
 
+/** Layout group of a category (breakers / fuses together, PLC + modules together). */
+const grpOf = (c: CatalogCategory) => (c === 'breaker' || c === 'fuse' ? 'cb' : c === 'plc' || c === 'plcModule' ? 'plc' : c);
+
 /** Breakers sit side by side and CLICK modules snap onto the CPU: no gap inside those groups. */
 function gapBefore(prev: PlacedItem | undefined, it: PlacedItem): number {
   if (!prev) return 0;
@@ -1492,83 +1495,140 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   }
 
   // Pack rows into DIN-rail bands (wrapping onto extra rails when a row is too wide).
+  // Normal pass: each group (protection, power/PLC, control, terminals) on its own rails; a whole group
+  // shares the previous rail when it fits. Compact pass (only when the normal pass overflows): the
+  // disconnect first, then the other parts tallest first, each on the first partly used rail with room
+  // (preferring rails already tall enough), so tall parts share rails and fewer rails + ducts are
+  // needed; terminal strips on their own rails, or one strip moved onto a device rail with room.
   const innerX0 = backplate.x + MARGIN + DUCT + CLEAR;
   const innerW = backplate.w - 2 * (MARGIN + DUCT + CLEAR);
-  const notFit: PanelLayout['notFit'] = [];
-  const bands: { items: PlacedItem[]; h: number; terminals?: boolean }[] = [];
+  type Band = { items: PlacedItem[]; h: number; terminals?: boolean };
+  const gapOf = (b: PlacedItem[], it: PlacedItem) => (b.length ? it.gapLeft ?? gapBefore(b[b.length - 1], it) : 0);
+  const bandW = (b: PlacedItem[]) => b.reduce((a, it, k) => a + it.w + (k ? it.gapLeft ?? gapBefore(b[k - 1], it) : 0), 0);
   const rowW = (row: PlacedItem[]) => row.reduce((a, it, k) => a + it.w + (k ? gapBefore(row[k - 1], it) : 0), 0);
-  rows.forEach((row, ri) => {
-    if (!row.length) return;
-    const last = bands[bands.length - 1];
-    // A whole group that fits on the end of the previous rail shares it (never for terminal strips).
-    if (ri < 3 && last && !last.terminals && rowW(last.items) + 3 * GAP + rowW(row) <= innerW) {
-      row[0].gapLeft = 3 * GAP;
-      last.items.push(...row);
-      return;
+  /** Put an item on the best rail of `pool` that has room (tall-enough rails first). */
+  const fitInto = (pool: Band[], it: PlacedItem): boolean => {
+    const gapTo = (b: Band) => { const prev = b.items[b.items.length - 1]; return grpOf(prev.category) === grpOf(it.category) ? gapBefore(prev, it) : 3 * GAP; };
+    const fits = pool.filter((b) => b.items.length && bandW(b.items) + gapTo(b) + it.w <= innerW);
+    const b = fits.find((x) => Math.max(...x.items.map((i) => i.h)) >= it.h) ?? fits[0];
+    if (!b) return false;
+    const prev = b.items[b.items.length - 1];
+    it.gapLeft = grpOf(prev.category) === grpOf(it.category) ? undefined : 3 * GAP;
+    b.items.push(it);
+    return true;
+  };
+  /** compact: -1 = normal pass; >= 0 = compact pass, moving terminal strip `moveStrip - 1` onto a device rail (0 = none). */
+  const pack = (rowsIn: PlacedItem[][], compact: number, notFit: PanelLayout['notFit']): Band[] => {
+    const bands: Band[] = [];
+    const tooWide = (it: PlacedItem) => { if (it.w <= innerW) return false; notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h }); return true; };
+    if (compact >= 0) {
+      const dev = rowsIn.slice(0, 3).flat();
+      const ds = dev.find((i) => i.category === 'disconnect');
+      const order = [...(ds ? [ds] : []), ...dev.filter((i) => i !== ds).sort((x, y) => y.h - x.h)];
+      for (const it of order) {
+        if (tooWide(it)) continue;
+        if (!fitInto(bands, it)) { it.gapLeft = undefined; bands.push({ items: [it], h: 0 }); }
+      }
+      const termBands: Band[] = [];
+      (rowsIn[3] ?? []).forEach((t, k) => {
+        if (tooWide(t)) return;
+        if (k === compact - 1 && fitInto(bands, t)) return;
+        if (!fitInto(termBands, t)) { t.gapLeft = undefined; termBands.push({ items: [t], h: 0, terminals: true }); }
+      });
+      return [...bands, ...termBands];
     }
-    let cur: PlacedItem[] = [];
-    let w = 0;
-    for (const it of row) {
-      if (it.w > innerW) { notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h }); continue; }
-      const need = gapBefore(cur[cur.length - 1], it) + it.w;
-      if (cur.length && w + need > innerW) { bands.push({ items: cur, h: 0 }); cur = []; w = 0; }
-      w += gapBefore(cur[cur.length - 1], it) + it.w;
-      cur.push(it);
-    }
-    if (cur.length) bands.push({ items: cur, h: 0, terminals: ri === 3 });
-  });
-  for (const b of bands) b.h = Math.max(RAIL_H, ...b.items.map((i) => i.h)) + 2 * CLEAR;
-  const gbH = groundBars.length ? Math.max(...groundBars.map((g) => g.h)) + CLEAR : 0;
-  const limit = backplate.y + backplate.h - MARGIN - gbH;
-  const rails: Rect[] = [];
-  const ducts: PanelLayout['ducts'] = [];
-  const items: PlacedItem[] = [];
-  const ductX = backplate.x + MARGIN, ductW = backplate.w - 2 * MARGIN;
-  let y = backplate.y + MARGIN;
-  const ductTop = y;
-  ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
-  y += DUCT;
-  bands.forEach((b, bi) => {
-    const lastBand = bi === bands.length - 1;
-    // The duct under the bottom terminal strip is optional (field wiring enters from below).
-    if (y + b.h + (lastBand && b.terminals ? 0 : DUCT) > limit + 0.01) {
-      for (const it of b.items) notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h });
-      return;
-    }
-    const cy = y + b.h / 2;
-    rails.push({ x: backplate.x + MARGIN + DUCT + 4, y: cy - RAIL_H / 2, w: backplate.w - 2 * (MARGIN + DUCT + 4), h: RAIL_H });
-    // Main disconnect at the right-hand end of its rail (latch side of a left-hinged door), so the
-    // through-door handle is on the right as usual; the rest of the rail packs from the left.
-    const ds = b.items[0]?.category === 'disconnect' ? b.items[0] : undefined;
-    const rest = ds ? b.items.slice(1) : b.items;
-    let x = innerX0;
-    rest.forEach((it, k) => {
-      x += k > 0 ? it.gapLeft ?? gapBefore(rest[k - 1], it) : 0;
-      it.x = x; it.y = cy - it.h / 2;
-      if (it.sub) { let sy = it.y; for (const s of it.sub) { s.x = x + (it.w - s.w) / 2; s.y = sy; sy += s.h; } }
-      x += it.w;
-      items.push(it);
+    rowsIn.forEach((row, ri) => {
+      if (!row.length) return;
+      const terminals = ri === 3;
+      const last = bands[bands.length - 1];
+      // A whole group that fits on the end of the previous rail shares it (never for terminal strips).
+      if (!terminals && last && !last.terminals && rowW(last.items) + 3 * GAP + rowW(row) <= innerW) {
+        row[0].gapLeft = 3 * GAP;
+        last.items.push(...row);
+        return;
+      }
+      let cur: PlacedItem[] = [];
+      let w = 0;
+      for (const it of row) {
+        if (tooWide(it)) continue;
+        const need = gapOf(cur, it) + it.w;
+        if (cur.length && w + need > innerW) { bands.push({ items: cur, h: 0 }); cur = []; w = 0; }
+        w += gapOf(cur, it) + it.w;
+        cur.push(it);
+      }
+      if (cur.length) bands.push({ items: cur, h: 0, terminals });
     });
-    if (ds) { ds.x = innerX0 + innerW - ds.w; ds.y = cy - ds.h / 2; items.push(ds); }
-    y += b.h;
-    if (!(lastBand && b.terminals) || y + DUCT <= limit + 0.01) {
-      ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
-      y += DUCT;
+    return bands;
+  };
+  const place = (rowsIn: PlacedItem[][], gbs: PlacedItem[], compact: number) => {
+    const notFit: PanelLayout['notFit'] = [];
+    const bands = pack(rowsIn, compact, notFit);
+    for (const b of bands) b.h = Math.max(RAIL_H, ...b.items.map((i) => i.h)) + 2 * CLEAR;
+    const gbH = gbs.length ? Math.max(...gbs.map((g) => g.h)) + CLEAR : 0;
+    const limit = backplate.y + backplate.h - MARGIN - gbH;
+    const rails: Rect[] = [];
+    const ducts: PanelLayout['ducts'] = [];
+    const items: PlacedItem[] = [];
+    const ductX = backplate.x + MARGIN, ductW = backplate.w - 2 * MARGIN;
+    let y = backplate.y + MARGIN;
+    const ductTop = y;
+    ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
+    y += DUCT;
+    bands.forEach((b, bi) => {
+      const lastBand = bi === bands.length - 1;
+      // The duct under the bottom terminal strip is optional (field wiring enters from below).
+      if (y + b.h + (lastBand && b.terminals ? 0 : DUCT) > limit + 0.01) {
+        for (const it of b.items) notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h });
+        return;
+      }
+      const cy = y + b.h / 2;
+      rails.push({ x: backplate.x + MARGIN + DUCT + 4, y: cy - RAIL_H / 2, w: backplate.w - 2 * (MARGIN + DUCT + 4), h: RAIL_H });
+      // Main disconnect at the right-hand end of its rail (latch side of a left-hinged door), so the
+      // through-door handle is on the right as usual; the rest of the rail packs from the left.
+      const ds = b.items[0]?.category === 'disconnect' ? b.items[0] : undefined;
+      const rest = ds ? b.items.slice(1) : b.items;
+      let x = innerX0;
+      rest.forEach((it, k) => {
+        x += k > 0 ? it.gapLeft ?? gapBefore(rest[k - 1], it) : 0;
+        it.x = x; it.y = cy - it.h / 2;
+        if (it.sub) { let sy = it.y; for (const s of it.sub) { s.x = x + (it.w - s.w) / 2; s.y = sy; sy += s.h; } }
+        x += it.w;
+        items.push(it);
+      });
+      if (ds) { ds.x = innerX0 + innerW - ds.w; ds.y = cy - ds.h / 2; items.push(ds); }
+      y += b.h;
+      if (!(lastBand && b.terminals) || y + DUCT <= limit + 0.01) {
+        ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
+        y += DUCT;
+      }
+    });
+    const bottom = y;
+    const lastDuct = ducts[ducts.length - 1];
+    const vEnd = lastDuct.y + lastDuct.h === bottom ? bottom - DUCT : bottom;
+    ducts.push({ x: ductX, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
+    ducts.push({ x: backplate.x + backplate.w - MARGIN - DUCT, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
+    // Ground bar(s): bolted to the back panel along the bottom edge, below the last duct, right-hand side.
+    let gx = backplate.x + backplate.w - MARGIN;
+    for (const g of gbs) {
+      if (g.w > gx - (backplate.x + MARGIN) || bottom + gbH > backplate.y + backplate.h + 0.01) { notFit.push({ tag: g.label, partNumber: g.partNumber, w: g.w, h: g.h }); continue; }
+      g.x = gx - g.w; g.y = bottom + (gbH - g.h) / 2;
+      gx -= g.w + GAP;
+      items.push(g);
     }
-  });
-  const bottom = y;
-  const lastDuct = ducts[ducts.length - 1];
-  const vEnd = lastDuct.y + lastDuct.h === bottom ? bottom - DUCT : bottom;
-  ducts.push({ x: ductX, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
-  ducts.push({ x: backplate.x + backplate.w - MARGIN - DUCT, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
-  // Ground bar(s): bolted to the back panel along the bottom edge, below the last duct, right-hand side.
-  let gx = backplate.x + backplate.w - MARGIN;
-  for (const g of groundBars) {
-    if (g.w > gx - (backplate.x + MARGIN) || bottom + gbH > backplate.y + backplate.h + 0.01) { notFit.push({ tag: g.label, partNumber: g.partNumber, w: g.w, h: g.h }); continue; }
-    g.x = gx - g.w; g.y = bottom + (gbH - g.h) / 2;
-    gx -= g.w + GAP;
-    items.push(g);
+    return { notFit, rails, ducts, items, bands: bands.length };
+  };
+  // Fresh copies per attempt (placement writes x / y / gapLeft into the items).
+  const copy = (it: PlacedItem): PlacedItem => ({ ...it, sub: it.sub?.map((x) => ({ ...x })) });
+  // Least part area left off the panel wins (a terminal strip weighs more than a small relay).
+  const lost = (p: { notFit: PanelLayout['notFit'] }) => p.notFit.reduce((a, n) => a + n.w * n.h, 0);
+  let placed = place(rows.map((r) => r.map(copy)), groundBars.map(copy), -1);
+  if (placed.notFit.length) {
+    for (let k = 0; k <= rows[3].length; k++) {
+      const tight = place(rows.map((r) => r.map(copy)), groundBars.map(copy), k);
+      if (lost(tight) < lost(placed)) placed = tight;
+    }
   }
+  const { notFit, rails, ducts, items } = placed;
   const overflow = notFit.length > 0;
   if (overflow) warnings.push(`Back panel ${Math.round(backplate.w)} x ${Math.round(backplate.h)} mm is too small: ${notFit.map((n) => n.tag).join(', ')} do not fit — use a larger enclosure or rearrange.`);
   const est = items.filter((i) => i.estimated && i.category !== 'terminal').map((i) => i.label);
