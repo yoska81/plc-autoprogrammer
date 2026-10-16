@@ -1706,6 +1706,37 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   };
 }
 
+/** Spare mounting space on the back panel, for the "25 % spare" design rule. */
+export interface SpareSpace {
+  /** Per DIN rail (top to bottom): usable length, length taken by parts, spare fraction. */
+  rails: { rail: number; lengthMm: number; usedMm: number; spare: number }[];
+  /** Whole rails that still fit below the last rail (rail + clearances + duct). */
+  extraRails: number;
+  /** Spare fraction of the panel: free rail length (incl. room for extra rails) / total. */
+  panel: number;
+}
+
+export function spareSpace(ctx: DrawingContext): SpareSpace {
+  const L = panelLayout(ctx);
+  const bp = L.backplate;
+  const duct = L.ducts.find((d) => d.orientation === 'v')?.w ?? 40;
+  const usable = bp.w - 2 * (MARGIN + duct + CLEAR);
+  const parts = L.items.filter((i) => i.category !== 'groundBar');
+  const rails = L.rails.map((r, i) => {
+    const on = parts.filter((it) => it.y < r.y + r.h && it.y + it.h > r.y);
+    const usedMm = Math.min(usable, on.reduce((a, it) => a + it.w, 0));
+    return { rail: i + 1, lengthMm: usable, usedMm, spare: L.overflow ? 0 : 1 - usedMm / usable };
+  });
+  const gb = L.items.filter((i) => i.category === 'groundBar');
+  const gbH = gb.length ? Math.max(...gb.map((g) => g.h)) + CLEAR : 0;
+  const lowest = Math.max(...L.ducts.filter((d) => d.orientation === 'h').map((d) => d.y + d.h), ...parts.map((it) => it.y + it.h));
+  const free = bp.y + bp.h - MARGIN - gbH - lowest;
+  const extraRails = L.overflow ? 0 : Math.max(0, Math.floor(free / (RAIL_H + 2 * CLEAR + duct)));
+  const total = rails.reduce((a, r) => a + r.lengthMm, 0) + extraRails * usable;
+  const spareMm = rails.reduce((a, r) => a + r.lengthMm - r.usedMm, 0) + extraRails * usable;
+  return { rails, extraRails, panel: L.overflow || !total ? 0 : spareMm / total };
+}
+
 /** Door-mounted accessories that are not operator devices (contact blocks, legend plates sold separately...). */
 function isLayoutAccessoryDoor(c: ResolvedComponent): boolean {
   return /\b(contact block|legend plate|lamp module|guard|shaft)\b/i.test(c.part?.description ?? '') && !['pushbutton', 'estop', 'pilotLight', 'selector'].includes(c.category);
