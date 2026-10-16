@@ -35,3 +35,4 @@ dist-desktop
 release
 electron/vendor/
 e2e/out-desktop/
+tools/ai-quality/out/

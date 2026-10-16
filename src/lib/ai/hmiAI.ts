@@ -83,7 +83,7 @@ SCREEN SET (always produce all of these, adapted to the machine; ids in brackets
 4. Alarms [alarms] — an "alarm-list" filling most of the screen (time, message, state; the panel keeps the history), Reset button, and an alarm count/active indicators.
 5. Diagnostics [diagnostics] — I/O status lamps ("indicator" bound to every X and Y point) grouped in "panel" frames per module/slot (inputs, outputs, each card), with the address in the label (e.g. "X001 E-stop OK"); a communications panel with a PLC heartbeat indicator and comm status text.
 6. Maintenance [maintenance] — cycle counters, run hours, service interval (numeric), resettable counters with reset buttons (level "maintenance"), and a "datetime".
-Add further screens only if the machine really needs them (e.g. recipes, homing).
+Add further screens only if the machine really needs them: Recipes when the spec mentions products / recipes (a recipe number entry DS, the recipe's values as numeric-entry fields, Load and Save buttons as C bits), Homing / Axis for servo axes (home, jog, position status), and one status panel per safety zone when the machine has several (zone OK / tripped / reset needed).
 
 EVERY SCREEN has, at identical positions:
 - A "header" at x=0 y=0 w=${W} h=${b.header.h}: label = the machine name (short, e.g. "Conveyor Cell"); address = the mode status bit or mode register with "states" for its values (e.g. 0 "Auto" normal, 1 "Manual" warning); targetScreenId = "alarms". The app draws the screen name, mode pill, alarm counter and date/time inside it — do not add separate title texts or clocks in the header band.
