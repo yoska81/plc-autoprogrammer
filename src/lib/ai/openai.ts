@@ -1,15 +1,22 @@
 import type { ChatTurn } from './anthropic';
 import { IS_PREVIEW } from '../../preview/mode';
 import { callClaudeAccount } from '../../preview/claudeAccount';
+import { trackAi } from './busy';
 
 /** One OpenAI chat request; with `schema` the reply is strict JSON. */
-export async function callOpenAI(opts: {
+type OpenAIOptions = {
   apiKey: string;
   model: string;
   system: string;
   messages: ChatTurn[];
   schema?: Record<string, unknown>;
-}): Promise<string> {
+};
+
+export function callOpenAI(opts: OpenAIOptions): Promise<string> {
+  return trackAi(() => requestOpenAI(opts));
+}
+
+async function requestOpenAI(opts: OpenAIOptions): Promise<string> {
   // The preview can't reach OpenAI; the viewer's Claude account answers instead.
   if (IS_PREVIEW) return (await callClaudeAccount({ model: 'claude-opus-5-5', effort: 'high', system: opts.system, messages: opts.messages, schema: opts.schema })).text;
   // o-series reasoning models take a "developer" role and max_completion_tokens.

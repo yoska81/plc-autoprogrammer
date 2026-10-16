@@ -7,6 +7,7 @@ import { useProgramStore } from './useProgramStore';
 import { useElectricalStore } from './useElectricalStore';
 import { useHmiStore } from './useHmiStore';
 import { useStageStore } from './useStageStore';
+import { aiBusy } from '../lib/ai/busy';
 
 /**
  * Several projects in one browser. The per-stage stores always hold the
@@ -79,10 +80,18 @@ interface ProjectsStore {
   activeId: string | null;
   /** Make sure the project currently in the stores is registered. */
   ensureActive: () => void;
-  createProject: (name: string) => void;
+  /** False when the project could not be created (an AI request is still running). */
+  createProject: (name: string) => boolean;
   openProject: (id: string) => void;
   renameActive: (name: string) => void;
   deleteProject: (id: string) => void;
+}
+
+/** An AI answer still on its way would land in whichever project is open when it arrives. */
+function blockedByAi(): boolean {
+  if (!aiBusy()) return false;
+  alert('The AI is still working on this project. Wait until it finishes, then switch projects.');
+  return true;
 }
 
 const newId = () => `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -98,16 +107,18 @@ export const useProjectsStore = create<ProjectsStore>()(
         set({ projects: [{ id, name: useProgramStore.getState().projectName, createdAt: new Date().toISOString() }], activeId: id });
       },
       createProject: (name) => {
+        if (blockedByAi()) return false;
         const { activeId } = get();
         if (activeId) save(activeId);
         load(null);
         useProgramStore.getState().setProjectName(name);
         const id = newId();
         set((s) => ({ projects: [...s.projects, { id, name, createdAt: new Date().toISOString() }], activeId: id }));
+        return true;
       },
       openProject: (id) => {
         const { activeId } = get();
-        if (id === activeId) return;
+        if (id === activeId || blockedByAi()) return;
         if (activeId) save(activeId);
         load(read(id));
         set({ activeId: id });

@@ -80,7 +80,8 @@ export default function NewProjectPage() {
       if (!name.trim()) return;
       // The project is created when its basic data is confirmed; later steps fill it in.
       if (!created) {
-        createProject(name.trim());
+        // Never write the wizard's data into the project that is still open.
+        if (!createProject(name.trim())) return;
         setCreated(true);
       }
       useProjectStore.getState().setInfo({ region, customer, site, standards, company, projectNumber, drawingPrefix: prefix.trim().toUpperCase(), preparedBy });
