@@ -8,7 +8,8 @@ import { regionSpec, type Region } from './regions';
  */
 export function applyRegion(region: Region) {
   const r = regionSpec(region);
-  useProjectStore.getState().setInfo({ region: r.value, standards: r.standards });
+  // Designations, symbols and sheet size go back to the region's defaults.
+  useProjectStore.getState().setInfo({ region: r.value, standards: r.standards, drawing: undefined });
   const el = useElectricalStore.getState();
   const fix = (v: (typeof r.supplies)[number]) => (r.supplies.includes(v) ? v : r.supply);
   if (!r.supplies.includes(el.inputs.supply) || el.inputs.motors.some((m) => !r.supplies.includes(m.voltage))) {

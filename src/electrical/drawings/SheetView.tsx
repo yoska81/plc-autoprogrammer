@@ -1,7 +1,9 @@
+import { sheetOnPaper } from '../../standards/regions';
 import { codeRefs, supplyText } from '../derive';
 import type { DrawingPlan, PlannedSheet } from './plan';
 import { doorScale, drillScale, machineLayoutScale, panelScale, scaleText } from './scale';
 import SheetFrame from './SheetFrame';
+import { SymbolSetContext } from './symbolSet';
 import { IoSheet } from './sheets/IoSheet';
 import { DoorLayoutSheet, PanelLayoutSheet } from './sheets/LayoutSheets';
 import { ControlSheet, MotorSheet, PowerSheet } from './sheets/SchematicSheets';
@@ -40,7 +42,11 @@ function Content({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
 export default function SheetView({ plan, sheet, width, height }: { plan: DrawingPlan; sheet: PlannedSheet; width?: string; height?: string }) {
   const kind = sheet.spec.kind;
   const sp = sheet.spec;
-  const scale = kind === 'panel' ? scaleText(panelScale(plan)) : kind === 'door' ? scaleText(doorScale(plan)) : sp.kind === 'drill' && sp.drawing ? scaleText(drillScale(sp.drill.w, sp.drill.h)) : kind === 'layout' ? `1:${machineLayoutScale(plan) ?? '—'}` : 'NONE';
+  const ansiScale = kind === 'panel' ? scaleText(panelScale(plan)) : kind === 'door' ? scaleText(doorScale(plan)) : sp.kind === 'drill' && sp.drawing ? scaleText(drillScale(sp.drill.w, sp.drill.h)) : kind === 'layout' ? `1:${machineLayoutScale(plan) ?? '—'}` : 'NONE';
+  // On A3 the ANSI B sheet prints at 97.3 %: scale 1:5 becomes 1:5.1.
+  const f = sheetOnPaper(plan.ctx.sheet).factor;
+  const d = Number(ansiScale.slice(2)) / f;
+  const scale = f !== 1 && /^1:[\d.]+$/.test(ansiScale) ? `1:${d.toFixed(d < 10 ? 2 : 1)} (A3)` : ansiScale;
   return (
     <SheetFrame
       width={width} height={height}
@@ -50,7 +56,7 @@ export default function SheetView({ plan, sheet, width, height }: { plan: Drawin
         doc: plan.doc, rev: sheet.rev, supply: supplyText(plan.model.supply),
       }}
     >
-      <Content plan={plan} sheet={sheet} />
+      <SymbolSetContext.Provider value={plan.ctx.symbols ?? 'ansi'}><Content plan={plan} sheet={sheet} /></SymbolSetContext.Provider>
     </SheetFrame>
   );
 }

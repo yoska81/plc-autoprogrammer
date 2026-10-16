@@ -39,3 +39,17 @@ export function iecCoverNotes(region: Region | string | undefined, f: CoverFacts
     'THIS DRAWING SET IS AI-GENERATED. ALL PARTS, RATINGS, WIRE SIZES AND LAYOUT MUST BE CHECKED AND APPROVED BY A QUALIFIED ENGINEER BEFORE PURCHASE, BUILD OR USE.',
   ];
 }
+
+/** IEC 81346-2 class letters used by the designations (src/standards/designations.ts). */
+export const IEC_LETTERS: [RegExp, string, string][] = [
+  [/^-B\d/, '-B', 'SENSOR / MEASURING (PROXIMITY, PHOTO-EYE, PRESSURE)'],
+  [/^-F\d/, '-F', 'PROTECTION: FUSE, OVERLOAD RELAY'],
+  [/^-K\d/, '-K', 'PROCESSING SIGNALS: RELAY, CONTACTOR, SAFETY RELAY, PLC'],
+  [/^-M\d/, '-M', 'DRIVING MOTION: MOTOR, SOLENOID'],
+  [/^-P\d/, '-P', 'PRESENTING INFORMATION: PILOT LIGHT, HMI'],
+  [/^-Q\d/, '-Q', 'SWITCHING POWER: MAIN SWITCH, MCB, MOTOR CIRCUIT BREAKER'],
+  [/^-S\d/, '-S', 'MANUAL CONTROL: PUSHBUTTON, SELECTOR, E-STOP'],
+  [/^-T\d/, '-T', 'CONVERTING ENERGY: POWER SUPPLY, TRANSFORMER, DRIVE'],
+  [/^-U\d/, '-U', 'ENCLOSURE, BACK PANEL, JUNCTION BOX'],
+  [/^(-X|TB)\d/, '-X', 'TERMINALS (STRIPS KEEP TB1…)'],
+];

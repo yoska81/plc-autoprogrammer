@@ -30,7 +30,7 @@ import type {
 import { getHmi } from '../hmi/hmiCatalog';
 import { lengthText, routedLength, withService } from './layout/geometry';
 import { CABINET, type LayoutForDesign } from './layout/types';
-import { iecColor, iecMotorCurrent, isIec, mm2For, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type Region } from '../standards/regions';
+import { iecColor, iecMotorCurrent, isIec, mm2For, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
 
 export interface DrawingContext {
   projectName: string;
@@ -49,6 +49,10 @@ export interface DrawingContext {
   machineLayout?: LayoutForDesign;
   /** Analog channel setup (DF points): drawn on the analog sheet, wired on TBA with shielded cables. */
   analog?: AnalogSetupRow[];
+  /** Drawing choices (src/standards/drawingOptions.ts); absent = ANSI symbols on ANSI B with NFPA tags. */
+  symbols?: SymbolSet;
+  sheet?: SheetFormat;
+  designations?: DesignationStyle;
 }
 
 /** Document control data shared by drawings and documents (see ProjectInfo). */

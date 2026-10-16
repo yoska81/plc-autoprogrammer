@@ -1,5 +1,6 @@
 /** Reference sheets: symbols & abbreviations legend, device list, nameplate / label schedule. */
 import { isIec, NEMA_TO_IP, regionSpec } from '../../../standards/regions';
+import { IEC_LETTERS } from '../../../standards/iecText';
 import type { ReactNode } from 'react';
 import { codeRefs, isFuseCartridge, panelNameplate } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
@@ -137,10 +138,11 @@ export function LegendSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }
   const abHalf = Math.ceil(ABBREVIATIONS.length / 2);
   const abTop = top;
   const tpTop = abTop + abHalf * 3.5 + 12;
-  const tpHalf = Math.ceil(TAG_PREFIXES.length / 2);
+  const prefixes = plan.ctx.designations === 'iec81346' ? IEC_LETTERS : TAG_PREFIXES;
+  const tpHalf = Math.ceil(prefixes.length / 2);
   return (
     <g>
-      <Txt x={x0} y={AREA.y + 7} size={3.2} bold>{`SYMBOLS (ANSI/IEEE 315, NFPA 79 / JIC STYLE) — ${codeRefs(plan.ctx).short}`}</Txt>
+      <Txt x={x0} y={AREA.y + 7} size={3.2} bold>{plan.ctx.symbols === 'iec60617' ? `SYMBOLS (IEC 60617) — ${codeRefs(plan.ctx).short}` : `SYMBOLS (ANSI/IEEE 315, NFPA 79 / JIC STYLE) — ${codeRefs(plan.ctx).short}`}</Txt>
       <Line x1={x0} y1={AREA.y + 9.5} x2={x0 + cols * colW - 4} y2={AREA.y + 9.5} w={LW} />
       {SYMBOLS.map((s, i) => {
         const c = Math.floor(i / perCol), r = i % perCol;
@@ -167,9 +169,9 @@ export function LegendSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }
           </g>
         );
       })}
-      <Txt x={RX} y={tpTop - 5} size={3.2} bold>DEVICE TAG PREFIXES (NFPA 79 ANNEX D STYLE)</Txt>
+      <Txt x={RX} y={tpTop - 5} size={3.2} bold>{plan.ctx.designations === 'iec81346' ? 'DEVICE DESIGNATIONS (IEC 81346-2)' : 'DEVICE TAG PREFIXES (NFPA 79 ANNEX D STYLE)'}</Txt>
       <Line x1={RX} y1={tpTop - 2.5} x2={AREA_R - 3} y2={tpTop - 2.5} w={LW} />
-      {TAG_PREFIXES.map(([re, p, d], i) => {
+      {prefixes.map(([re, p, d], i) => {
         const c = Math.floor(i / tpHalf), r = i % tpHalf;
         const x = RX + c * (RW / 2);
         const used = tags.some((t) => re.test(t.toUpperCase()));
@@ -184,7 +186,7 @@ export function LegendSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }
       {(() => {
         const ny = tpTop + tpHalf * 3.5 + 4;
         const notes = [
-          'DOT = PREFIX USED IN THIS DRAWING SET. TAG = PREFIX + SEQUENCE NUMBER (K1, PB2). MULTI-DEVICE PARTS: TAG.n (TB.2).',
+          plan.ctx.designations === 'iec81346' ? 'DOT = CLASS USED IN THIS DRAWING SET. DESIGNATION = "-" + IEC 81346-2 CLASS LETTER + NUMBER (-K1, -S2); TERMINALS -K1:A1. TERMINAL STRIPS KEEP TB1…' : 'DOT = PREFIX USED IN THIS DRAWING SET. TAG = PREFIX + SEQUENCE NUMBER (K1, PB2). MULTI-DEVICE PARTS: TAG.n (TB.2).',
           'LINE REFERENCES: "SHEET.LINE" — 5.04 = SHEET 5, LINE 04. LINE NUMBERS ARE PRINTED DOWN THE LEFT EDGE OF EVERY SCHEMATIC SHEET.',
           'WIRE COLOURS AND WIRE NUMBERING: SEE COVER SHEET. SPARE PLC POINTS ARE SHOWN "SPARE" ON THE I/O SHEETS.',
         ].flatMap((n) => wrapText(n, RW, 1.9));

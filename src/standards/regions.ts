@@ -263,3 +263,20 @@ export const NEMA_TO_IP: Record<string, string> = { 'NEMA 1': 'IP20', 'NEMA 12':
 export function byRegion<T>(region: Region | string | undefined, us: T, canada: T, iec: T): T {
   return isIec(region) ? iec : region === 'Canada' ? canada : us;
 }
+
+/**
+ * Paper for the drawing set. Sheets are laid out on ANSI B (431.8 × 279.4 mm); on A3 (420 × 297 mm,
+ * ISO 216) the same sheet is printed at 420 / 431.8 = 97.3 % and centred, so scales change slightly.
+ */
+export const PAPER: Record<SheetFormat, { w: number; h: number; css: string; label: string }> = {
+  'ANSI B': { w: 431.8, h: 279.4, css: '17in 11in', label: 'ANSI B 17 × 11 in' },
+  A3: { w: 420, h: 297, css: '420mm 297mm', label: 'A3 420 × 297 mm' },
+};
+
+/** Where the ANSI B sheet sits on the paper (mm) and its scale factor. */
+export function sheetOnPaper(sheet: SheetFormat | undefined) {
+  const p = PAPER[sheet ?? 'ANSI B'];
+  const f = Math.min(p.w / 431.8, p.h / 279.4);
+  const w = 431.8 * f, h = 279.4 * f;
+  return { paper: p, factor: f, x: (p.w - w) / 2, y: (p.h - h) / 2, w, h };
+}
