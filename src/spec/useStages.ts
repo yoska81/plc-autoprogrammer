@@ -44,6 +44,7 @@ export function useStages(): Record<StageId, StageInfo> {
   const hasDesign = useElectricalStore((s) => Boolean(s.design));
   const hasHmi = useHmiStore((s) => Boolean(s.design));
   const hasProgram = useProgramStore((s) => s.ladder.rungs.length > 0 || Boolean(s.generatedCode));
+  const hasEquipment = Boolean(sources.equipment);
 
   return useMemo(() => {
     const info = (id: StageId, has: boolean, deps: { spec?: boolean; io?: boolean; hmi?: boolean }): StageInfo => {
@@ -58,10 +59,11 @@ export function useStages(): Record<StageId, StageInfo> {
     };
     return {
       spec: { id: 'spec', status: specEmpty ? 'empty' : 'ready', reason: null },
+      equipment: info('equipment', hasEquipment, { spec: true }),
       io: info('io', ioCount > 0, { spec: true }),
       electrical: info('electrical', hasDesign, { spec: true, io: true }),
       hmi: info('hmi', hasHmi, { spec: true, io: true }),
       program: info('program', hasProgram, { spec: true, io: true, hmi: true }),
     };
-  }, [fp, sources, specEmpty, ioCount, hasDesign, hasHmi, hasProgram]);
+  }, [fp, sources, specEmpty, ioCount, hasDesign, hasHmi, hasProgram, hasEquipment]);
 }

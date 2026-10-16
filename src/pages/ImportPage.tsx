@@ -135,7 +135,7 @@ export default function ImportPage() {
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
-              className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg py-8 cursor-pointer transition-colors ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400'}`}
+              className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg py-8 cursor-pointer transition-colors ${dragOver ? 'border-petrol-500 bg-petrol-50' : 'border-gray-300 hover:border-blue-400'}`}
             >
               <span className="text-sm font-medium text-gray-700">Drop schematic PDFs or cabinet photos here, or click to choose</span>
               <span className="text-xs text-gray-400 mt-1">PDF, JPG, PNG · up to {MAX_FILES} files · clear, straight-on photos of labels and terminal strips work best</span>
@@ -158,12 +158,12 @@ export default function ImportPage() {
               onChange={(e) => st.set({ note: e.target.value })}
               rows={2}
               placeholder="Optional notes, e.g. 'Palletizer on line 3. Sheet 7 is the I/O list. The photo shows the left door open.'"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-petrol-500"
             />
             <button
               onClick={analyze}
               disabled={busy || !apiKey || !st.files.length}
-              className="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              className="px-5 py-2 bg-petrol-600 text-white text-sm font-medium rounded hover:bg-petrol-700 disabled:opacity-50 flex items-center gap-2"
             >
               {busy ? <><Spinner /> Reading drawings… this can take a few minutes</> : result ? 'Analyze again' : 'Analyze'}
             </button>
@@ -247,7 +247,7 @@ export default function ImportPage() {
                 </div>
               )}
 
-              <div className="bg-white rounded-lg border border-blue-200 p-5 flex flex-wrap items-center gap-4">
+              <div className="bg-white rounded-lg border border-petrol-200 p-5 flex flex-wrap items-center gap-4">
                 <label className="flex items-center gap-2 text-sm text-gray-700">
                   <input type="radio" checked={replaceIO} onChange={() => setReplaceIO(true)} /> Replace my I/O list
                 </label>

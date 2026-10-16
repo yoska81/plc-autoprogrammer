@@ -8,16 +8,19 @@ import { useProgramStore } from '../store/useProgramStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { getCpu, getProfile } from '../plc/profiles';
 import { resolveAddresses } from '../plc/profile';
+import { moduleSlots } from '../plc/modules';
 import { validateProgram } from '../plc/validate';
 import { fingerprint, specToText, changedSections } from './types';
 import { ioFingerprint, hmiFingerprint } from './useStages';
 import { generateIOFromSpec, planIOMerge } from '../lib/ai/ioAI';
+import { recommendEquipment } from '../lib/ai/equipmentAI';
+import { applyEquipment } from './equipment';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
 import { generateHmiDesign } from '../lib/ai/hmiAI';
 import { reviseLadder, generateLadder } from '../lib/ai/ladderAI';
 import { getHmi, CLICK_HMI_COMMUNICATION, HMI_DESIGN_GUIDELINES } from '../hmi/hmiCatalog';
 
-export type UpdateStep = 'io' | 'electrical' | 'hmi' | 'program';
+export type UpdateStep = 'equipment' | 'io' | 'electrical' | 'hmi' | 'program';
 export interface StepResult { step: UpdateStep; status: 'skipped' | 'done' | 'proposal' | 'failed'; message: string }
 
 /**
@@ -31,14 +34,27 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
   const ai = { apiKey: settings.anthropicApiKey, model: settings.anthropicModel, effort: settings.effort };
   const spec = useSpecStore.getState().sections;
   const specFp = fingerprint(spec);
-  const { plcId, cpuId } = useProjectStore.getState();
-  const profile = getProfile(plcId);
-  const cpu = getCpu(profile, cpuId);
+  // PLC, CPU and modules can change in the equipment step; read them fresh each step.
+  const plc = () => {
+    const { plcId, cpuId, modules } = useProjectStore.getState();
+    const profile = getProfile(plcId);
+    return { profile, cpu: getCpu(profile, cpuId), slots: moduleSlots(modules) };
+  };
   const mark = useStageStore.getState().markGenerated;
   const ioNow = () => useIOStore.getState().projectIO;
 
   for (const step of steps) {
     try {
+      const { profile, cpu, slots } = plc();
+      if (step === 'equipment') {
+        const { rec } = await recommendEquipment({ ...ai, spec });
+        const before = useProjectStore.getState().cpuId;
+        applyEquipment(rec);
+        const after = useProjectStore.getState();
+        onStep({ step, status: 'done', message: `${after.cpuId}${after.cpuId !== before ? ` (was ${before || 'none'})` : ''}, ${after.modules.length} module(s)${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.` });
+        continue;
+      }
+
       if (step === 'io') {
         const r = await generateIOFromSpec({ ...ai, spec, existing: ioNow(), profile, cpu });
         const plan = planIOMerge(ioNow(), r.points);
@@ -54,7 +70,7 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
       if (step === 'electrical') {
         const el = useElectricalStore.getState();
         const io = ioNow();
-        const r = await generateElectricalDesign({ ...ai, profile, cpu, io, addresses: resolveAddresses(profile, cpu, io), machineDescription: specToText(spec), inputs: el.inputs });
+        const r = await generateElectricalDesign({ ...ai, profile, cpu, io, addresses: resolveAddresses(profile, cpu, io, slots), machineDescription: specToText(spec), inputs: el.inputs });
         el.setInputs(r.design.inputs);
         el.setDesign(r.design, 'generated', r.explanation);
         mark('electrical', { specFp, spec, ioFp: ioFingerprint(io) });
@@ -66,7 +82,7 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
         const model = getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
         if (!model) { onStep({ step, status: 'skipped', message: 'No HMI chosen.' }); continue; }
         const io = ioNow();
-        const r = await generateHmiDesign({ ...ai, hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: CLICK_HMI_COMMUNICATION, spec, io, addresses: resolveAddresses(profile, cpu, io), profile, cpu });
+        const r = await generateHmiDesign({ ...ai, hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: CLICK_HMI_COMMUNICATION, spec, io, addresses: resolveAddresses(profile, cpu, io, slots), profile, cpu });
         hmi.setDesign(r.design, r.explanation);
         mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(r.design) });
         onStep({ step, status: 'done', message: `${r.design.screens.length} screens, ${r.design.tags.length} tags.` });
@@ -76,7 +92,7 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
         if (profile.language !== 'ladder') { onStep({ step, status: 'skipped', message: 'Update the Structured Text program from the Program page.' }); continue; }
         const prog = useProgramStore.getState();
         const io = ioNow();
-        const addresses = resolveAddresses(profile, cpu, io);
+        const addresses = resolveAddresses(profile, cpu, io, slots);
         const wiring = new Map((useElectricalStore.getState().design?.ioWiring ?? []).map((w) => [w.address, { deviceTag: w.deviceTag, deviceType: w.deviceType }]));
         const hmi = useHmiStore.getState().design ?? undefined;
         const ctx = { profile, cpu, io, addresses, wiring, hmi };

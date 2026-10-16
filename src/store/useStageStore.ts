@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SpecSections } from '../spec/types';
 
-export type StageId = 'spec' | 'io' | 'electrical' | 'hmi' | 'program';
+export type StageId = 'spec' | 'equipment' | 'io' | 'electrical' | 'hmi' | 'program';
 
 /** What a stage was generated from, to tell when it is out of date. */
 export interface StageSource {

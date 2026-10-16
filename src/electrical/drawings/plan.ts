@@ -5,7 +5,7 @@
  */
 import {
   billOfMaterials, buildModel, designWarnings, panelLayout,
-  type AuxBranch, type BomLine, type DrawingContext, type ElectricalModel, type IoGroup, type IoPoint,
+  type AuxBranch, type Cable, type CableCore, type JbTerminal, type JunctionBoxPlan, type MachineDevice, type BomLine, type DrawingContext, type ElectricalModel, type IoGroup, type IoPoint,
   type MotorModel, type PanelLayout, type PsBranch, type Terminal, type TerminalStrip,
 } from '../derive';
 import { lineNo } from './geometry';
@@ -42,9 +42,30 @@ export type SheetSpec =
   | { kind: 'panel' }
   | { kind: 'door' }
   | { kind: 'terminals'; columns: TermRow[][] }
-  | { kind: 'bom'; rows: BomRow[]; first: boolean };
+  | { kind: 'bom'; rows: BomRow[]; first: boolean }
+  | { kind: 'machine'; zones: ZonePlan[] }
+  | { kind: 'cables'; columns: CableRow[][] }
+  | { kind: 'jb'; jb: JunctionBoxPlan; terminals: JbTerminal[]; trunk?: Cable; page: number; pages: number };
 
-export interface PlannedSheet { n: number; title: string; drawingNo: string; spec: SheetSpec }
+export type SheetSection = 'cover' | 'cabinet' | 'machine';
+export interface PlannedSheet { n: number; title: string; drawingNo: string; spec: SheetSpec; section: SheetSection }
+
+/** Machine overview: one row = a junction box (or the cabinet cable tray) with up to OV_PER_ROW devices hanging from it. */
+export interface ZoneRow { jb?: JunctionBoxPlan; trunk?: Cable; firstOfJb: boolean; devices: MachineDevice[] }
+export interface ZonePlan { zone: string; rows: ZoneRow[]; height: number }
+export type CableRow = { kind: 'head'; cable: Cable; cont?: boolean } | { kind: 'head2'; cable: Cable } | { kind: 'core'; cable: Cable; core: CableCore };
+
+export const OV_ROW_H = 29;
+export const OV_ZONE_HEAD = 10;
+export const OV_PER_ROW = 8;
+export const CABLE_ROWS = 40;
+export const JB_ROWS = 28;
+
+export function sectionOf(kind: SheetSpec['kind']): SheetSection {
+  if (kind === 'cover' || kind === 'notes') return 'cover';
+  if (kind === 'machine' || kind === 'cables' || kind === 'jb') return 'machine';
+  return 'cabinet';
+}
 
 export interface DrawingPlan {
   ctx: DrawingContext;
@@ -230,8 +251,61 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     pages.forEach((rows, i) => specs.push({ title: `BILL OF MATERIALS${pages.length > 1 ? ` (${i + 1} OF ${pages.length})` : ''}`, spec: { kind: 'bom', rows, first: i === 0 } }));
   }
 
+  // ---- machine (field) wiring section
+  const mc = model.machine;
+  const fieldDevices = mc.devices;
+  if (fieldDevices.length) {
+    const zones: ZonePlan[] = [];
+    for (const zone of mc.wiring.zones) {
+      const ds = fieldDevices.filter((d) => d.zone === zone);
+      if (!ds.length) continue;
+      const rows: ZoneRow[] = [];
+      for (const jb of mc.jbs.filter((j) => j.zone === zone && j.devices.length)) {
+        const jd = ds.filter((d) => d.jb === jb.tag);
+        const trunk = mc.cables.find((c) => c.tag === jb.trunk);
+        for (let i = 0; i < jd.length; i += OV_PER_ROW) rows.push({ jb, trunk, firstOfJb: i === 0, devices: jd.slice(i, i + OV_PER_ROW) });
+      }
+      const home = ds.filter((d) => !d.jb);
+      for (let i = 0; i < home.length; i += OV_PER_ROW) rows.push({ firstOfJb: false, devices: home.slice(i, i + OV_PER_ROW) });
+      zones.push({ zone, rows, height: OV_ZONE_HEAD + rows.length * OV_ROW_H + 3 });
+    }
+    const pages: ZonePlan[][] = [];
+    let cur: ZonePlan[] = [];
+    let h = 0;
+    for (const z of zones) {
+      if (cur.length && h + z.height + 5 > 196) { pages.push(cur); cur = []; h = 0; }
+      cur.push(z); h += z.height + 5;
+    }
+    if (cur.length) pages.push(cur);
+    pages.forEach((zs, i) => specs.push({ title: `MACHINE WIRING OVERVIEW — ZONES & CABLES${pages.length > 1 ? ` (${i + 1} OF ${pages.length})` : ''}`, spec: { kind: 'machine', zones: zs } }));
+
+    const rowsC: CableRow[] = [];
+    for (const c of mc.cables) { rowsC.push({ kind: 'head', cable: c }, { kind: 'head2', cable: c }); for (const k of c.cores) rowsC.push({ kind: 'core', cable: c, core: k }); }
+    const cols: CableRow[][] = [];
+    let col: CableRow[] = [];
+    for (const r of rowsC) {
+      if (col.length >= CABLE_ROWS || (r.kind === 'head' && col.length >= CABLE_ROWS - 3)) { cols.push(col); col = []; }
+      if (r.kind === 'core' && col.length === 0) col.push({ kind: 'head', cable: r.cable, cont: true });
+      if (r.kind === 'head2' && col.length === 0) col.push({ kind: 'head', cable: r.cable, cont: true });
+      col.push(r);
+    }
+    if (col.length) cols.push(col);
+    const cp = Math.ceil(cols.length / 2);
+    for (let i = 0; i < cols.length; i += 2) specs.push({ title: `CABLE SCHEDULE${cp > 1 ? ` (${i / 2 + 1} OF ${cp})` : ''}`, spec: { kind: 'cables', columns: cols.slice(i, i + 2) } });
+
+    for (const jb of mc.jbs.filter((j) => j.terminals.length)) {
+      const pagesJ = Math.ceil(jb.terminals.length / JB_ROWS);
+      for (let i = 0; i < jb.terminals.length; i += JB_ROWS) {
+        specs.push({
+          title: `JUNCTION BOX ${jb.tag} — ${jb.zone.toUpperCase()}${pagesJ > 1 ? ` (${i / JB_ROWS + 1} OF ${pagesJ})` : ''}`,
+          spec: { kind: 'jb', jb, terminals: jb.terminals.slice(i, i + JB_ROWS), trunk: mc.cables.find((c) => c.tag === jb.trunk), page: i / JB_ROWS + 1, pages: pagesJ },
+        });
+      }
+    }
+  }
+
   const prefix = docPrefix(ctx.projectName);
-  const sheets: PlannedSheet[] = specs.map((s, i) => ({ n: i + 1, title: s.title, drawingNo: `${prefix}-E${String(i + 1).padStart(2, '0')}`, spec: s.spec }));
+  const sheets: PlannedSheet[] = specs.map((s, i) => ({ n: i + 1, title: s.title, drawingNo: `${prefix}-E${String(i + 1).padStart(2, '0')}`, spec: s.spec, section: sectionOf(s.spec.kind) }));
 
   // ---- cross references
   const xref = new Map<string, string>();
@@ -241,6 +315,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   for (const sh of sheets) {
     const sp = sh.spec;
     xref.set(`sheet:${sp.kind}`, xref.get(`sheet:${sp.kind}`) ?? String(sh.n));
+    if (sp.kind === 'jb') xref.set(`jb:${sp.jb.tag}`, xref.get(`jb:${sp.jb.tag}`) ?? String(sh.n));
     if (sp.kind === 'power') {
       for (const b of sp.branches) if (b.type === 'ps') xref.set(`ps:${b.b.ps.tag}`, String(lineNo(sh.n, b.idx)));
       xref.set('power:cont', String(lineNo(sh.n, sp.contIdx + 1)));

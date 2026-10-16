@@ -14,6 +14,13 @@ export interface AddressInfo {
   isBit: boolean;
 }
 
+/** Discrete points of one expansion module, in slot order (slot 1 = first). */
+export interface ModuleSlot {
+  partNumber: string;
+  inputs: number;
+  outputs: number;
+}
+
 export interface CpuModel {
   id: string;
   label: string;
@@ -32,7 +39,7 @@ export interface PlcProfile {
   cpuModels: CpuModel[];
   defaultCpuId: string;
   /** Physical address a project I/O point gets on this PLC (by order). */
-  autoAddresses(io: IOPoint[], cpu: CpuModel): Map<string, string>;
+  autoAddresses(io: IOPoint[], cpu: CpuModel, modules: ModuleSlot[]): Map<string, string>;
   /** Parse an address; null = not valid on this PLC. */
   parseAddress(address: string): AddressInfo | null;
   /** PLC-specific knowledge the AI must follow, added to the system prompt. */
@@ -42,8 +49,8 @@ export interface PlcProfile {
 }
 
 /** Effective PLC address of each I/O point: manual override, else auto. */
-export function resolveAddresses(profile: PlcProfile, cpu: CpuModel, io: IOPoint[]): Map<string, string> {
-  const auto = profile.autoAddresses(io, cpu);
+export function resolveAddresses(profile: PlcProfile, cpu: CpuModel, io: IOPoint[], modules: ModuleSlot[] = []): Map<string, string> {
+  const auto = profile.autoAddresses(io, cpu, modules);
   const out = new Map<string, string>();
   for (const p of io) out.set(p.id, p.plcAddress?.trim() || auto.get(p.id) || '');
   return out;

@@ -25,7 +25,7 @@ const STARTERS: { value: StarterType; label: string }[] = [
 ];
 const CATEGORIES = [...new Set(CATALOG.map((p) => p.category))].sort() as CatalogCategory[];
 
-const input = 'border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+const input = 'border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-petrol-500';
 const card = 'bg-white rounded-lg border border-gray-200 p-5';
 
 function download(name: string, content: string, mime: string) {
@@ -88,7 +88,7 @@ export default function ElectricalPage() {
   };
 
   const tabBtn = (id: Tab, label: string) => (
-    <button onClick={() => setTab(id)} className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === id ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{label}</button>
+    <button onClick={() => setTab(id)} className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === id ? 'border-petrol-600 text-petrol-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{label}</button>
   );
 
   return (
@@ -96,7 +96,7 @@ export default function ElectricalPage() {
       <header className="px-6 pt-4 bg-white border-b border-gray-200">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">3 · Electrical Design</h2>
+            <h2 className="text-lg font-semibold text-gray-800">4 · Electrical Design</h2>
             <p className="text-xs text-gray-400 mt-0.5">Control panel design and drawings · AutomationDirect parts · {profile.name} {cpu.id}</p>
           </div>
           {el.design && (
@@ -111,7 +111,7 @@ export default function ElectricalPage() {
       </header>
 
       <StageBanner info={stages.electrical} action={
-        <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded disabled:opacity-50">
+        <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-petrol-600 text-white rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
       {tab === 'drawings' ? (
@@ -136,7 +136,7 @@ export default function ElectricalPage() {
         <div className="flex-1 overflow-auto bg-gray-50 p-6">
           <div className="max-w-5xl space-y-5">
             {el.source === 'imported' && (
-              <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-800">
+              <div className="bg-petrol-50 border border-petrol-200 rounded p-3 text-sm text-petrol-800">
                 This design was read from an existing machine (Import). Generating a new design replaces it.
               </div>
             )}
@@ -212,7 +212,7 @@ export default function ElectricalPage() {
 
             <div className="flex items-center gap-3">
               <button onClick={generate} disabled={el.isGenerating || !apiKey}
-                className="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+                className="px-5 py-2.5 bg-petrol-600 text-white text-sm font-medium rounded hover:bg-petrol-700 disabled:opacity-50 flex items-center gap-2">
                 {el.isGenerating ? <><Spinner /> Designing the panel… this can take several minutes</> : el.design ? 'Generate New Design' : 'Generate Electrical Design'}
               </button>
               {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</span>}

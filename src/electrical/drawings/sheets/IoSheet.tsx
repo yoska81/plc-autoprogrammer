@@ -21,7 +21,7 @@ const TYPE_TEXT: Record<string, string> = {
 };
 
 function locText(p: IoPoint) {
-  return p.location === 'door' ? 'DOOR' : p.location === 'field' ? 'FIELD' : 'PANEL';
+  return p.location === 'door' ? 'DOOR' : p.location === 'field' ? `FIELD, ${p.zone.toUpperCase()}${p.jb ? ` — VIA ${p.jb}` : ' — HOME-RUN'}` : 'PANEL';
 }
 
 export function IoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {

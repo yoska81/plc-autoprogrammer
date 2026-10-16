@@ -3,6 +3,7 @@ import { SPEC_SECTIONS } from '../spec/types';
 import { billOfMaterials, designWarnings, terminalPlan, wireNumbers } from '../electrical/derive';
 import { describeElement, describeOutput } from '../plc/clickExport';
 import { getHmi } from '../hmi/hmiCatalog';
+import { calculations, fatChecklist, operatorManual } from './engineering';
 
 /** Full project report as an .xlsx workbook (one sheet per deliverable). */
 export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
@@ -121,6 +122,26 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
       for (const i of p.issues) iss.addRow({ r: i.rungId ? p.ladder.rungs.findIndex((x) => x.id === i.rungId) + 1 : '', s: i.severity, m: i.message });
     }
   }
+
+  // Engineering package
+  const calcs = calculations(p);
+  if (calcs.length) {
+    const cs = wb.addWorksheet('Calculations');
+    header(cs, [{ header: 'Item', key: 'i', width: 50 }, { header: 'Value', key: 'v', width: 22 }, { header: 'Basis', key: 'b', width: 40 }, { header: 'Estimate', key: 'e', width: 10 }]);
+    for (const s of calcs) {
+      cs.addRow({ i: s.title }).font = { bold: true };
+      for (const l of s.lines) cs.addRow({ i: l.item, v: l.value, b: l.basis, e: l.estimate ? 'yes' : '' });
+      const r = cs.addRow({ i: `${s.ok ? 'OK' : 'CHECK'}: ${s.result}` });
+      r.font = { bold: true, color: { argb: s.ok ? 'FF005C60' : 'FFB00000' } };
+      r.alignment = { wrapText: true };
+    }
+  }
+  const fat = wb.addWorksheet('FAT Checklist');
+  header(fat, [{ header: '#', key: 'n', width: 5 }, { header: 'Section', key: 's', width: 14 }, { header: 'Test step', key: 't', width: 70 }, { header: 'Expected result', key: 'x', width: 55 }, { header: 'Pass', key: 'p', width: 7 }, { header: 'Notes', key: 'o', width: 30 }]);
+  fatChecklist(p).forEach((t, i) => { fat.addRow({ n: i + 1, s: t.section, t: t.step, x: t.expected }).alignment = { wrapText: true, vertical: 'top' }; });
+  const man = wb.addWorksheet('Operator Manual');
+  header(man, [{ header: 'Section', key: 's', width: 32 }, { header: 'Text', key: 't', width: 110 }]);
+  for (const s of operatorManual(p)) for (const para of s.paragraphs) man.addRow({ s: s.title, t: para }).alignment = { wrapText: true, vertical: 'top' };
 
   const buf = await wb.xlsx.writeBuffer();
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

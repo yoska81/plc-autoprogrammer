@@ -22,8 +22,8 @@
  *                                 after a series device get a letter suffix (Y001 -> OL1 -> Y001A).
  */
 import type {
-  CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring,
-  MotorSpec, MountLocation, SupplyVoltage,
+  CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, JunctionBox,
+  MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
 } from './types';
 
 export interface DrawingContext {
@@ -228,6 +228,10 @@ export interface IoPoint {
   signalTerminal?: string;
   supplyTerminal?: string;
   returnTerminal?: string;
+  /** Machine zone ("Cabinet door" for door devices, "Cabinet" for panel devices). */
+  zone: string;
+  /** Junction box the field device is wired through, or null for a home-run cable. */
+  jb: string | null;
   /** For PLC-driven coils on the control sheet: chain of series devices and wires. */
   coilChain?: { devices: { tag: string; terminals: string; nc: boolean; kind: 'ol' | 'interlock' }[]; wires: string[] };
 }
@@ -298,6 +302,7 @@ export interface ElectricalModel {
   plcPart?: CatalogPart;
   plcTag: string;
   mainAwg: string;
+  machine: MachineModel;
 }
 
 const cache = new WeakMap<DrawingContext, ElectricalModel>();
@@ -442,8 +447,13 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     const deviceTag = wiring?.deviceTag ?? '';
     const loc = ioLocation(rcByTag.get(deviceTag), deviceType);
     const i = counters[p.type]++;
-    return { address: p.address, type: p.type, description: p.description || wiring?.description || '', wiring, deviceTag, deviceType, location: loc, group: groupKey(p.address, p.type, i), wire: p.address };
+    // An explicit location overrides the default: "Cabinet door" -> door, a machine zone -> field.
+    let location = loc;
+    const where = wiring?.location?.trim();
+    if (where && loc !== 'internal') location = DOOR_RE.test(where) ? 'door' : 'field';
+    return { address: p.address, type: p.type, description: p.description || wiring?.description || '', wiring, deviceTag, deviceType, location, zone: '', jb: null, group: groupKey(p.address, p.type, i), wire: p.address };
   });
+  const mw = effectiveMachine(ctx, io, motors);
 
   // groups
   const modules = byCat(rc, 'plcModule');
@@ -544,9 +554,21 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       if (p.location !== 'field') continue;
       const tag = p.deviceTag || p.address;
       const sensor = p.deviceType === 'sensor-pnp' || p.deviceType === 'sensor-npn';
+      if (p.jb) {
+        p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${p.jb} (${tag})`, kind: 'feed', group: p.jb });
+        continue;
+      }
       p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${tag}:${sensor ? 'BK' : 'NO'}`, kind: 'feed', group: tag });
       p.supplyTerminal = add(tb2, { wire: '24+', internal: 'TB1 24+ (jumper)', external: `${tag}:${sensor ? 'BN' : 'C'}`, kind: 'feed', group: tag });
       if (sensor) p.returnTerminal = add(tb2, { wire: '0V', internal: 'TB1 0V (jumper)', external: `${tag}:BU`, kind: 'feed', group: tag });
+    }
+    // one 24+ / 0V pair per junction box, commoned inside the box
+    for (const jb of mw.wiring.junctionBoxes) {
+      const pts = ins.filter((p) => p.location === 'field' && p.jb === jb.tag);
+      if (!pts.length) continue;
+      const sup = add(tb2, { wire: '24+', internal: 'TB1 24+ (jumper)', external: `${jb.tag} 24+`, kind: 'feed', group: jb.tag });
+      const ret = add(tb2, { wire: '0V', internal: 'TB1 0V (jumper)', external: `${jb.tag} 0V`, kind: 'feed', group: jb.tag });
+      for (const p of pts) { p.supplyTerminal = sup; if (p.deviceType === 'sensor-pnp' || p.deviceType === 'sensor-npn') p.returnTerminal = ret; }
     }
     add(tb2, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: 'FIELD SHIELDS/PE', kind: 'ground', group: 'PE' });
     addSpares(tb2, 2);
@@ -560,12 +582,12 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       const g = groups.find((x) => x.key === p.group);
       const sink = g?.outputStyle === 'sinking';
       const pin = p.deviceType === 'stack-light' ? `${tag}:${(p.description.match(/red|amber|yellow|green|blue|white|horn|buzzer/i)?.[0] ?? p.address).toUpperCase()}` : `${tag}:${p.deviceType === 'pilot-light' ? 'X1' : 'A1'}`;
-      p.signalTerminal = add(tb3, { wire: p.address, internal: `${plcTag}:${p.address}`, external: pin, kind: 'feed', group: tag });
+      p.signalTerminal = add(tb3, { wire: p.address, internal: `${plcTag}:${p.address}`, external: p.jb ? `${p.jb} (${tag})` : pin, kind: 'feed', group: p.jb ?? tag });
       const retWire = sink ? safety.outputSupply : '0V';
-      const key = `${tag}|${retWire}`;
+      const key = p.jb ? `${p.jb}|${retWire}` : `${tag}|${retWire}`;
       if (retDone.has(key)) p.returnTerminal = retDone.get(key);
       else {
-        p.returnTerminal = add(tb3, { wire: retWire, internal: `TB1 ${retWire} (jumper)`, external: `${tag}:${p.deviceType === 'pilot-light' ? 'X2' : p.deviceType === 'stack-light' ? 'COM' : 'A2'}`, kind: 'feed', group: tag });
+        p.returnTerminal = add(tb3, { wire: retWire, internal: `TB1 ${retWire} (jumper)`, external: p.jb ? `${p.jb} ${retWire}` : `${tag}:${p.deviceType === 'pilot-light' ? 'X2' : p.deviceType === 'stack-light' ? 'COM' : 'A2'}`, kind: 'feed', group: p.jb ?? tag });
         retDone.set(key, p.returnTerminal);
       }
     }
@@ -705,15 +727,334 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     }
   }
 
+  const machine = buildMachine(ctx, mw, io, motors, groundBar?.tag ?? 'PE BAR', strips);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine,
   };
 }
 
 function tbExternal(strips: TerminalStrip[], label: string): string {
   for (const s of strips) for (const t of s.terminals) if (t.label === label) return t.external;
   return '?';
+}
+
+// ---------------------------------------------------------------------------
+// Machine (field) wiring: zones, junction boxes, cable schedule
+// ---------------------------------------------------------------------------
+
+/** Locations that mean "on the cabinet" (door devices / cabinet internals). */
+const DOOR_RE = /\b(door|cabinet|enclosure|control panel)\b/i;
+export const CABINET_DOOR = 'Cabinet door';
+const ZONE_WORDS = ['infeed', 'outfeed', 'discharge', 'loading', 'unloading', 'pusher', 'press', 'lift', 'elevator', 'robot', 'hopper', 'feeder', 'turntable', 'transfer', 'wrapper', 'filler', 'capper', 'labeler', 'conveyor'];
+
+function titleCase(s: string): string {
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function guessZone(text: string): string | undefined {
+  const t = text.toLowerCase();
+  for (const w of ZONE_WORDS) if (new RegExp(`\\b${w}\\b`).test(t)) return titleCase(w);
+  return undefined;
+}
+
+export interface MachineDevice {
+  tag: string;
+  zone: string;
+  jb: string | null;
+  kind: 'io' | 'motor';
+  description: string;
+  deviceType: FieldDeviceType | 'motor';
+  points: IoPoint[];
+  motor?: MotorModel;
+  partNumber?: string;
+  /** Cable tag that connects this device. */
+  cable?: string;
+  /** Zone was guessed (no explicit location). */
+  guessed: boolean;
+}
+
+export interface CableCore { core: string; color: string; wire: string; from: string; to: string }
+
+export interface Cable {
+  /** "W001" */
+  tag: string;
+  kind: 'trunk' | 'device' | 'motor';
+  zone: string;
+  /** Cabinet terminal range ("TB2-1..3"), or a junction box tag. */
+  from: string;
+  /** Device / junction box / motor tag. */
+  to: string;
+  type: string;
+  /** Only when the part exists in the design or catalog — never invented. */
+  partNumber?: string;
+  size: string;
+  /** "BY SITE" unless known. */
+  length: string;
+  cores: CableCore[];
+  spareCores: number;
+}
+
+export interface JbTerminal {
+  number: number;
+  /** "JB1:4" */
+  label: string;
+  wire: string;
+  /** Incoming trunk core ("W001/5"), "JUMPER" for commoned terminals, or "". */
+  incoming: string;
+  /** Outgoing device cable core ("W003/BK"). */
+  outgoing: string;
+  device: string;
+  kind: 'feed' | 'ground';
+}
+
+export interface JunctionBoxPlan {
+  tag: string;
+  zone: string;
+  partNumber?: string | null;
+  trunk?: string;
+  devices: string[];
+  terminals: JbTerminal[];
+}
+
+export interface MachineModel {
+  wiring: MachineWiring;
+  devices: MachineDevice[];
+  jbs: JunctionBoxPlan[];
+  cables: Cable[];
+  warnings: string[];
+}
+
+interface EffectiveMachine { wiring: MachineWiring; guessed: Set<string>; warnings: string[] }
+
+function effectiveMachine(ctx: DrawingContext, io: IoPoint[], motors: MotorModel[]): EffectiveMachine {
+  const given = ctx.design.machine;
+  const warnings: string[] = [];
+  const guessed = new Set<string>();
+  const zones: string[] = [...(given?.zones ?? [])];
+  const addZone = (z: string) => { if (!zones.some((x) => x.toLowerCase() === z.toLowerCase())) zones.push(z); return zones.find((x) => x.toLowerCase() === z.toLowerCase())!; };
+  const rcByTag = new Map(ctx.design.components.map((c) => [c.tag, c] as const));
+  // field devices, grouped by tag
+  const byTag = new Map<string, IoPoint[]>();
+  for (const p of io) {
+    if (p.location === 'door') { p.zone = CABINET_DOOR; continue; }
+    if (p.location === 'internal') { p.zone = 'Cabinet'; continue; }
+    const tag = p.deviceTag || p.address;
+    byTag.set(tag, [...(byTag.get(tag) ?? []), p]);
+  }
+  const jbs: JunctionBox[] = given?.junctionBoxes ? [...given.junctionBoxes] : [];
+  const known = (tag: string, pts: IoPoint[]) => {
+    const where = pts.map((p) => p.wiring?.location?.trim()).find((l) => l && !DOOR_RE.test(l));
+    const routedJb = given?.routing?.[tag] ? jbs.find((j) => j.tag === given.routing[tag]) : undefined;
+    return where ?? routedJb?.location;
+  };
+  // explicit locations first, so guesses can join an existing zone
+  for (const [tag, pts] of byTag) { const z = known(tag, pts); if (z) { const zz = addZone(z); for (const p of pts) p.zone = zz; } }
+  const guessInto = (text: string): string | undefined => {
+    const t = text.toLowerCase();
+    const words = ZONE_WORDS.filter((w) => new RegExp(`\\b${w}\\b`).test(t));
+    for (const w of words) { const z = zones.find((x) => new RegExp(`\\b${w}\\b`, 'i').test(x)); if (z) return z; }
+    return guessZone(text);
+  };
+  for (const [tag, pts] of byTag) {
+    if (pts[0].zone) continue;
+    guessed.add(tag);
+    const zone = addZone(guessInto(`${pts.map((p) => p.description).join(' ')} ${rcByTag.get(tag)?.function ?? ''}`) ?? 'Machine');
+    for (const p of pts) p.zone = zone;
+  }
+  const motorLocations: Record<string, string> = {};
+  for (const m of motors) {
+    const t = m.motor.tag;
+    let z = given?.motorLocations?.[t];
+    if (!z) { guessed.add(t); z = zones.find((x) => m.motor.description.toLowerCase().includes(x.toLowerCase())) ?? guessInto(m.motor.description) ?? titleCase(m.motor.description || t); }
+    motorLocations[t] = addZone(z);
+  }
+  // default junction boxes: one per zone with >= 4 field I/O devices
+  if (!given?.junctionBoxes?.length) {
+    for (const z of zones) {
+      const n = [...byTag.values()].filter((pts) => pts[0].zone === z).length;
+      if (n >= 4) jbs.push({ tag: `JB${jbs.length + 1}`, location: z, partNumber: null });
+    }
+  }
+  const routing: Record<string, string | null> = {};
+  for (const [tag, pts] of byTag) {
+    let jb: string | null;
+    if (given?.routing && tag in given.routing) {
+      jb = given.routing[tag];
+      if (jb && !jbs.some((j) => j.tag === jb)) { warnings.push(`Machine routing: ${tag} is routed to unknown junction box ${jb} — drawn as a home-run cable.`); jb = null; }
+    } else jb = jbs.find((j) => j.location.toLowerCase() === pts[0].zone.toLowerCase())?.tag ?? null;
+    routing[tag] = jb;
+    for (const p of pts) p.jb = jb;
+  }
+  return { wiring: { zones, junctionBoxes: jbs, motorLocations, routing }, guessed, warnings };
+}
+
+const STD_CORES = [3, 4, 5, 7, 12, 18, 25, 36, 50, 65];
+
+function rangeText(labels: string[]): string {
+  const parsed = [...new Set(labels.filter(Boolean))].map((l) => { const m = /^(.*)-(\d+)$/.exec(l); return m ? { s: m[1], n: Number(m[2]) } : { s: l, n: NaN }; });
+  parsed.sort((a, b) => naturalCompare(a.s, b.s) || a.n - b.n);
+  const out: string[] = [];
+  for (let i = 0; i < parsed.length; i++) {
+    const a = parsed[i];
+    if (Number.isNaN(a.n)) { out.push(a.s); continue; }
+    let j = i;
+    while (j + 1 < parsed.length && parsed[j + 1].s === a.s && parsed[j + 1].n === parsed[j].n + 1) j++;
+    out.push(j > i ? `${a.s}-${a.n}..${parsed[j].n}` : `${a.s}-${a.n}`);
+    i = j;
+  }
+  return out.join(', ');
+}
+
+const isSensor3 = (t: FieldDeviceType | 'motor') => t === 'sensor-pnp' || t === 'sensor-npn';
+
+function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], motors: MotorModel[], peBar: string, strips: TerminalStrip[]): MachineModel {
+  const warnings = [...mw.warnings];
+  const stripWire = new Map<string, string>();
+  for (const s of strips) for (const t of s.terminals) stripWire.set(t.label, t.wire);
+  /** Wire number of an output's return path (0V for sourcing, 24+/24+S for sinking outputs). */
+  const retWire = (p: IoPoint) => (p.returnTerminal ? stripWire.get(p.returnTerminal) ?? '0V' : '0V');
+  const comps = ctx.design.components;
+  const partOf = (tag: string) => { const c = comps.find((x) => x.tag === tag); return c ? ctx.getPart(c.partNumber) : undefined; };
+  const devices: MachineDevice[] = [];
+  const byTag = new Map<string, IoPoint[]>();
+  for (const p of io) if (p.location === 'field') { const t = p.deviceTag || p.address; byTag.set(t, [...(byTag.get(t) ?? []), p]); }
+  for (const [tag, pts] of byTag) {
+    devices.push({ tag, zone: pts[0].zone, jb: pts[0].jb, kind: 'io', description: pts.length > 1 ? (comps.find((c) => c.tag === tag)?.function ?? pts[0].description) : pts[0].description, deviceType: pts[0].deviceType, points: pts, partNumber: comps.find((c) => c.tag === tag)?.partNumber, guessed: mw.guessed.has(tag) });
+  }
+  for (const m of motors) devices.push({ tag: m.motor.tag, zone: mw.wiring.motorLocations[m.motor.tag], jb: null, kind: 'motor', description: m.motor.description, deviceType: 'motor', points: [], motor: m, guessed: mw.guessed.has(m.motor.tag) });
+
+  // M12 cordset part: a cable in the design first, else one named by the device's catalog data (must exist in the catalog).
+  const designCordset = comps.map((c) => ({ c, p: ctx.getPart(c.partNumber) })).find(({ p }) => p && /\bM12\b/i.test(p.description) && /cable|cordset/i.test(p.description))?.c.partNumber;
+  const cordsetFor = (tag: string): string | undefined => {
+    if (designCordset) return designCordset;
+    const ref = String(partOf(tag)?.ratings.cable ?? '');
+    for (const tok of ref.match(/[A-Z0-9]+(?:-[A-Z0-9]+)+/g) ?? []) if (ctx.getPart(tok)) return tok;
+    return undefined;
+  };
+  const isM12 = (tag: string) => /\bM12\b/i.test(`${partOf(tag)?.ratings.connection ?? ''} ${partOf(tag)?.description ?? ''}`);
+
+  const cables: Cable[] = [];
+  const jbs: JunctionBoxPlan[] = [];
+  let seq = 0;
+  const nextTag = () => `W${String(++seq).padStart(3, '0')}`;
+
+  /** Cores of the cable between `src` terminals and a field device. */
+  const deviceCable = (d: MachineDevice, from: string, term: (p: IoPoint, role: 'sig' | 'sup' | 'ret') => string): Cable => {
+    const tag = nextTag();
+    const cores: CableCore[] = [];
+    const t = d.deviceType;
+    const p0 = d.points[0];
+    let type: string;
+    let partNumber: string | undefined;
+    if (isSensor3(t)) {
+      cores.push({ core: '1', color: 'BN', wire: '24+', from: term(p0, 'sup'), to: `${d.tag}:1` });
+      cores.push({ core: '3', color: 'BU', wire: '0V', from: term(p0, 'ret'), to: `${d.tag}:3` });
+      cores.push({ core: '4', color: 'BK', wire: p0.wire, from: term(p0, 'sig'), to: `${d.tag}:4` });
+      if (isM12(d.tag)) { type = 'M12 4-pin cordset, female straight to flying leads'; partNumber = cordsetFor(d.tag); }
+      else if (/pigtail|integral cable/i.test(`${partOf(d.tag)?.ratings.connection ?? ''}`)) type = 'Integral sensor pigtail (BN/BU/BK) — check length, extend in JB';
+      else type = '3-core 18 AWG sensor cable (BN/BU/BK)';
+    } else if (p0.type === 'input') {
+      cores.push({ core: '1', color: 'BU', wire: '24+', from: term(p0, 'sup'), to: `${d.tag}:C` });
+      cores.push({ core: '2', color: 'BU', wire: p0.wire, from: term(p0, 'sig'), to: `${d.tag}:NO` });
+      cores.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: from !== 'CABINET' ? `${from}:PE` : 'PE', to: `${d.tag}:PE` });
+      type = '3-core 18 AWG control cable (2 + PE)';
+    } else {
+      d.points.forEach((p, k) => cores.push({ core: String(k + 1), color: 'BU', wire: p.wire, from: term(p, 'sig'), to: `${d.tag}:${d.points.length > 1 ? (p.description.match(/red|amber|yellow|green|blue|white|horn|buzzer/i)?.[0] ?? p.address).toUpperCase() : t === 'pilot-light' ? 'X1' : 'A1'}` }));
+      const rw = retWire(p0);
+      cores.push({ core: String(d.points.length + 1), color: rw === '0V' ? 'WH/BU' : 'BU', wire: rw, from: term(p0, 'ret'), to: `${d.tag}:${d.points.length > 1 ? 'COM' : t === 'pilot-light' ? 'X2' : 'A2'}` });
+      cores.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: from !== 'CABINET' ? `${from}:PE` : 'PE', to: `${d.tag}:PE` });
+      type = `${cores.length}-core 18 AWG control cable (${cores.length - 1} + PE)${t === 'solenoid' ? ', DIN plug end' : ''}`;
+    }
+    return { tag, kind: 'device', zone: d.zone, from, to: d.tag, type, partNumber, size: '18 AWG', length: 'BY SITE', cores, spareCores: 0 };
+  };
+
+  for (const zone of mw.wiring.zones) {
+    const zDevices = devices.filter((d) => d.zone === zone);
+    // junction boxes of this zone
+    for (const jb of mw.wiring.junctionBoxes.filter((j) => j.location.toLowerCase() === zone.toLowerCase())) {
+      const ds = zDevices.filter((d) => d.kind === 'io' && d.jb === jb.tag);
+      if (!ds.length) { jbs.push({ tag: jb.tag, zone, partNumber: jb.partNumber, devices: [], terminals: [] }); continue; }
+      const trunkTag = nextTag();
+      const terms: JbTerminal[] = [];
+      const addT = (t: Omit<JbTerminal, 'number' | 'label'>) => { const n = terms.length + 1; terms.push({ number: n, label: `${jb.tag}:${n}`, ...t }); return `${jb.tag}:${n}`; };
+      const trunk: CableCore[] = [];
+      const firstOf = new Map<string, string>();
+      const landed = new Map<string, string>();
+      const devCables: Cable[] = [];
+      for (const d of ds) {
+        const roles = new Map<string, string>();
+        for (const p of d.points) {
+          roles.set(`sig:${p.address}`, addT({ wire: p.wire, incoming: '', outgoing: '', device: d.tag, kind: 'feed' }));
+          trunk.push({ core: String(trunk.length + 1), color: 'BU', wire: p.wire, from: p.signalTerminal ?? '?', to: roles.get(`sig:${p.address}`)! });
+          terms[terms.length - 1].incoming = `${trunkTag}/${trunk.length}`;
+        }
+        const p0 = d.points[0];
+        const commons: [string, 'sup' | 'ret'][] = p0.type === 'input' ? [['24+', 'sup'], ...(isSensor3(d.deviceType) ? [['0V', 'ret'] as [string, 'ret']] : [])] : [[retWire(p0), 'ret']];
+        for (const [w, role] of commons) {
+          const lab = addT({ wire: w, incoming: '', outgoing: '', device: d.tag, kind: 'feed' });
+          roles.set(role, lab);
+          const cabTerm = role === 'sup' ? p0.supplyTerminal : p0.returnTerminal;
+          if (!firstOf.has(w)) {
+            firstOf.set(w, lab);
+            trunk.push({ core: String(trunk.length + 1), color: w === '0V' ? 'WH/BU' : 'BU', wire: w, from: cabTerm ?? `TB1 ${w}`, to: lab });
+            terms[terms.length - 1].incoming = `${trunkTag}/${trunk.length}`;
+            landed.set(w, lab);
+          } else terms[terms.length - 1].incoming = `JUMPER ${firstOf.get(w)}`;
+        }
+        const c = deviceCable(d, jb.tag, (p, role) => (role === 'sig' ? roles.get(`sig:${p.address}`) : roles.get(role)) ?? '?');
+        d.cable = c.tag;
+        for (const core of c.cores) { const t = terms.find((x) => x.label === core.from); if (t) t.outgoing = `${c.tag}/${core.color === 'GN/YE' ? 'PE' : core.core}`; }
+        devCables.push(c);
+      }
+      const pe = addT({ wire: 'PE', incoming: '', outgoing: devCables.filter((c) => c.cores.some((k) => k.wire === 'PE')).map((c) => `${c.tag}/PE`).join(', '), device: 'PE', kind: 'ground' });
+      trunk.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: peBar, to: pe });
+      terms[terms.length - 1].incoming = `${trunkTag}/PE`;
+      for (const c of devCables) for (const k of c.cores) if (k.from === 'PE' || k.from === `${jb.tag}:PE`) k.from = pe;
+      const need = trunk.length;
+      const std = STD_CORES.find((n) => n >= Math.ceil(need * 1.1)) ?? need;
+      const cabTerms = trunk.filter((k) => k.wire !== 'PE').map((k) => k.from);
+      cables.push({ tag: trunkTag, kind: 'trunk', zone, from: rangeText(cabTerms), to: jb.tag, type: `${std}-core 18 AWG multi-conductor control cable, numbered cores + GN/YE`, size: '18 AWG', length: 'BY SITE', cores: trunk, spareCores: std - need });
+      cables.push(...devCables);
+      jbs.push({ tag: jb.tag, zone, partNumber: jb.partNumber, trunk: trunkTag, devices: ds.map((d) => d.tag), terminals: terms });
+    }
+    // home-run devices
+    for (const d of zDevices.filter((x) => x.kind === 'io' && !x.jb)) {
+      const c = deviceCable(d, 'CABINET', (p, role) => (role === 'sig' ? p.signalTerminal : role === 'sup' ? p.supplyTerminal : p.returnTerminal) ?? '?');
+      const stripPe = strips.find((st) => st.tag === (d.points[0].signalTerminal ?? '').split('-')[0])?.terminals.find((t) => t.kind === 'ground')?.label;
+      for (const k of c.cores) if (k.from === 'PE') k.from = stripPe ?? peBar;
+      c.from = rangeText(c.cores.map((k) => k.from).filter((f) => /^TB\d+-\d+$/.test(f)));
+      d.cable = c.tag;
+      cables.push(c);
+    }
+    // motors
+    for (const d of zDevices.filter((x) => x.kind === 'motor')) {
+      const m = d.motor!;
+      const tag = nextTag();
+      const cores: CableCore[] = m.loadWires.map((w, k) => ({ core: String(k + 1), color: w === 'N' ? 'WH' : 'BK', wire: w, from: m.terminals[k] ?? '?', to: `${m.motor.tag}:T${k + 1}` }));
+      cores.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: m.peTerminal ?? peBar, to: `${m.motor.tag}:PE` });
+      const n = cores.length;
+      cables.push({
+        tag, kind: 'motor', zone, from: rangeText([...m.terminals, m.peTerminal ?? '']), to: m.motor.tag,
+        type: m.vfd ? `${n}-core ${m.awg} VFD-rated shielded motor cable (${n - 1} + PE), 600V` : `${n}-core ${m.awg} power cable (${n - 1} + PE), 600V TC-ER`,
+        size: m.awg, length: 'BY SITE', cores, spareCores: 0,
+      });
+      d.cable = tag;
+    }
+  }
+
+  const guessedDev = devices.filter((d) => d.kind === 'io' && d.guessed).map((d) => d.tag);
+  const guessedMot = devices.filter((d) => d.kind === 'motor' && d.guessed).map((d) => d.tag);
+  if (guessedDev.length) warnings.push(`Machine wiring: ${guessedDev.length} field device(s) have no location (${guessedDev.slice(0, 8).join(', ')}${guessedDev.length > 8 ? '…' : ''}) — zone guessed from the description; set IOWiring.location.`);
+  if (guessedMot.length) warnings.push(`Machine wiring: motor location not given for ${guessedMot.join(', ')} — zone guessed; set machine.motorLocations.`);
+  for (const j of jbs) {
+    if (!j.devices.length) warnings.push(`Junction box ${j.tag} (${j.zone}) has no devices routed to it.`);
+    if (!j.partNumber) warnings.push(`Junction box ${j.tag} (${j.zone}): enclosure part not selected (${j.terminals.length} terminals required).`);
+  }
+  if (cables.some((c) => c.length === 'BY SITE')) warnings.push('Cable lengths are "by site": measure routes and add service loops before ordering cable.');
+  const tooBig = cables.filter((c) => c.kind === 'trunk' && c.cores.length > 36);
+  if (tooBig.length) warnings.push(`Trunk cable(s) ${tooBig.map((c) => c.tag).join(', ')} exceed 36 cores — consider splitting the junction box.`);
+  return { wiring: mw.wiring, devices, jbs, cables, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -1202,6 +1543,7 @@ export function designWarnings(ctx: DrawingContext): string[] {
   }
   for (const p of m.io) if (!p.deviceTag && p.wiring) w.push(`${p.address}: wiring has no device tag.`);
   w.push(...panelLayout(ctx).warnings);
+  w.push(...m.machine.warnings);
   w.push('Wire sizes are suggestions (75°C copper); verify against NFPA 79 Table 12.5.1 / UL 508A and the protective device ratings.');
   w.push('Calculate and mark the panel SCCR (UL 508A SB) and verify available fault current.');
   return w;
@@ -1222,6 +1564,27 @@ function csv(rows: (string | number)[][]): string {
 export function bomCsv(ctx: DrawingContext): string {
   const rows: (string | number)[][] = [['Item', 'Qty', 'Part Number', 'Manufacturer', 'Description', 'Device Tags', 'Category']];
   for (const g of billOfMaterials(ctx)) for (const l of g.lines) rows.push([l.item, l.qty, l.partNumber, l.manufacturer, l.description, l.tags.join(' '), g.title]);
+  return csv(rows);
+}
+
+/** Effective machine wiring (design.machine completed with defaults). */
+export function machineWiring(ctx: DrawingContext): MachineWiring {
+  return buildModel(ctx).machine.wiring;
+}
+
+/** Field cables W001…: trunks cabinet→JB, device cables, motor cables. */
+export function cableSchedule(ctx: DrawingContext): Cable[] {
+  return buildModel(ctx).machine.cables;
+}
+
+/** Junction box terminal plans (incoming trunk cores, outgoing device cables). */
+export function junctionBoxPlans(ctx: DrawingContext): JunctionBoxPlan[] {
+  return buildModel(ctx).machine.jbs;
+}
+
+export function cableScheduleCsv(ctx: DrawingContext): string {
+  const rows: (string | number)[][] = [['Cable', 'Kind', 'Zone', 'From', 'To', 'Type', 'Part Number', 'Size', 'Length', 'Spare Cores', 'Core', 'Color', 'Wire', 'Core From', 'Core To']];
+  for (const c of cableSchedule(ctx)) for (const k of c.cores) rows.push([c.tag, c.kind, c.zone, c.from, c.to, c.type, c.partNumber ?? '', c.size, c.length, c.spareCores, k.core, k.color, k.wire, k.from, k.to]);
   return csv(rows);
 }
 

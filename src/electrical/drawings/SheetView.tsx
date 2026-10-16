@@ -4,6 +4,7 @@ import SheetFrame from './SheetFrame';
 import { IoSheet } from './sheets/IoSheet';
 import { DoorLayoutSheet, PanelLayoutSheet } from './sheets/LayoutSheets';
 import { ControlSheet, MotorSheet, PowerSheet } from './sheets/SchematicSheets';
+import { CableScheduleSheet, JunctionBoxSheet, MachineOverviewSheet } from './sheets/MachineSheets';
 import { BomSheet, CoverSheet, NotesSheet, TerminalSheet } from './sheets/TableSheets';
 
 function Content({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
@@ -18,6 +19,9 @@ function Content({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
     case 'door': return <DoorLayoutSheet plan={plan} sheet={sheet} />;
     case 'terminals': return <TerminalSheet plan={plan} sheet={sheet} />;
     case 'bom': return <BomSheet plan={plan} sheet={sheet} />;
+    case 'machine': return <MachineOverviewSheet plan={plan} sheet={sheet} />;
+    case 'cables': return <CableScheduleSheet plan={plan} sheet={sheet} />;
+    case 'jb': return <JunctionBoxSheet plan={plan} sheet={sheet} />;
   }
 }
 

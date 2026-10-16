@@ -30,8 +30,15 @@ function designSchema(addresses: string[]) {
         deviceTag: { type: 'string' },
         deviceType: { type: 'string', enum: DEVICE_TYPES },
         description: { type: 'string' },
+        location: { type: 'string' },
       }),
     },
+    machine: obj({
+      zones: { type: 'array', items: { type: 'string' } },
+      junctionBoxes: { type: 'array', items: obj({ tag: { type: 'string' }, location: { type: 'string' }, partNumber: { anyOf: [{ type: 'string', enum: CATALOG.filter((c) => c.category === 'enclosure' && c.ratings.kind !== 'subpanel').map((c) => c.partNumber) }, { type: 'null' }] } }) },
+      motorLocations: { type: 'array', items: obj({ motorTag: { type: 'string' }, location: { type: 'string' } }) },
+      routing: { type: 'array', items: obj({ deviceTag: { type: 'string' }, junctionBox: { type: ['string', 'null'] } }) },
+    }),
     notes: { type: 'array', items: { type: 'string' } },
     motors: {
       type: 'array',
@@ -67,7 +74,8 @@ Design practice to follow:
 - Catalog specifics: an enclosure needs its matching subpanel (enclosure category, ratings kind=subpanel). The rotary disconnect needs its switch, a handle and a shaft. A reversing starter is two contactors plus SZ-RM, SZ-ERW1A and SZ-ERW1B. For a dual-channel E-stop into a safety relay, add an ECX1030-2 contact block to the E-stop. Order terminal end covers/brackets and markers with the terminal blocks.
 - Use only part numbers from the catalog. If something needed is not in the catalog, leave it out and say so in "notes".
 - Tags: CB (breakers), DS (disconnect), PS (power supply), K (contactors), OL (overloads), MP (motor protectors), VFD, CR (relays), SR (safety relay), TB (terminal strips), PB (pushbuttons), ES (E-stop), SS (selectors), PL (pilot lights), LS/PRS (sensors), SOL (solenoids), M (motors), PLC, ENC (enclosure).
-- ioWiring: one entry for every PLC I/O point in the I/O list, with the field device tag and type.
+- ioWiring: one entry for every PLC I/O point in the I/O list, with the field device tag, type, and "location": "Cabinet door" for pushbuttons, selectors, pilot lights and the E-stop on the panel; "Cabinet" for devices inside it (safety relay status, overload contacts); otherwise the machine zone where the device is mounted (e.g. "Infeed conveyor", "Pusher station").
+- machine: the field (machine) wiring outside the cabinet. "zones" = the machine areas from the specification in order. Put a junction box (tags JB1, JB2…) in each zone that has 4 or more field devices, so one multi-core trunk cable runs from the cabinet to the box; other devices get a home-run cable straight to the cabinet terminals. "routing" gives every field device tag its junction box tag or null. "motorLocations" gives each motor's zone. A junction box partNumber may be a small catalog enclosure, else null.
 - "notes": every assumption the engineer must confirm (motor FLA, cable lengths, sensor types, SCCR, local codes).
 - "motors": every motor the panel drives: the designer's motor list exactly as given, plus any other motor the specification mentions (estimate HP from the description when not stated and say so in "notes").
 - "explanation": a short plain-language summary of the panel for the customer.`;
@@ -111,14 +119,31 @@ Design the complete control panel.`;
     system: SYSTEM, messages: [{ role: 'user', content }], schema: designSchema(ioAddrs),
   });
 
-  let parsed: { explanation: string; motors: MotorSpec[] } & Pick<ElectricalDesign, 'components' | 'ioWiring' | 'notes'>;
+  let parsed: { explanation: string; motors: MotorSpec[]; machine: {
+    zones: string[];
+    junctionBoxes: { tag: string; location: string; partNumber: string | null }[];
+    motorLocations: { motorTag: string; location: string }[];
+    routing: { deviceTag: string; junctionBox: string | null }[];
+  } } & Pick<ElectricalDesign, 'components' | 'ioWiring' | 'notes'>;
   try {
     parsed = JSON.parse(text);
   } catch (err) {
     throw new Error('The AI returned a design the app could not read. Please try again.', { cause: err });
   }
   return {
-    design: { inputs: { ...opts.inputs, motors: parsed.motors }, components: parsed.components, ioWiring: parsed.ioWiring, notes: parsed.notes, generatedAt: new Date().toISOString() },
+    design: {
+      inputs: { ...opts.inputs, motors: parsed.motors },
+      components: parsed.components,
+      ioWiring: parsed.ioWiring,
+      notes: parsed.notes,
+      machine: {
+        zones: parsed.machine.zones,
+        junctionBoxes: parsed.machine.junctionBoxes,
+        motorLocations: Object.fromEntries(parsed.machine.motorLocations.map((m) => [m.motorTag, m.location])),
+        routing: Object.fromEntries(parsed.machine.routing.map((r) => [r.deviceTag, r.junctionBox])),
+      },
+      generatedAt: new Date().toISOString(),
+    },
     explanation: parsed.explanation,
     reasoning,
   };

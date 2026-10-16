@@ -48,14 +48,14 @@ export default function StProgramView({ ai, io, ready }: { ai: AIConfig; io: IOP
             onChange={(e) => setUserPrompt(e.target.value)}
             rows={10}
             placeholder="e.g. When the start button is pressed and all safety inputs are OK, run Conveyor 1..."
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-petrol-500 resize-y"
           />
         </div>
         {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800"><span className="font-semibold">Generation failed:</span> {error}</div>}
         <button
           onClick={handleGenerate}
           disabled={isGenerating || !ready || !userPrompt.trim()}
-          className="w-full py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full py-2.5 bg-petrol-600 text-white text-sm font-medium rounded hover:bg-petrol-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {isGenerating ? <><Spinner /> Thinking & generating…</> : 'Generate Program'}
         </button>

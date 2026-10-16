@@ -35,7 +35,7 @@ export default function ProgramPage() {
             value={projectName}
             onChange={(e) => renameProject(e.target.value)}
             aria-label="Project name"
-            className="text-lg font-semibold text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none bg-transparent"
+            className="text-lg font-semibold text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-petrol-500 focus:outline-none bg-transparent"
           />
           <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
             {lastGeneratedAt && <span>Last generated: {new Date(lastGeneratedAt).toLocaleString()}</span>}

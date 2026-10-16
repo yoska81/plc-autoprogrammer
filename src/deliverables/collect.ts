@@ -6,6 +6,7 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useHmiStore } from '../store/useHmiStore';
 import { getCpu, getProfile } from '../plc/profiles';
 import { resolveAddresses } from '../plc/profile';
+import { moduleSlots } from '../plc/modules';
 import { validateProgram } from '../plc/validate';
 import { getPart } from '../electrical/catalog';
 import type { DrawingContext } from '../electrical/derive';
@@ -14,14 +15,14 @@ import type { DrawingContext } from '../electrical/derive';
 export function collectProject() {
   const program = useProgramStore.getState();
   const io = useIOStore.getState().projectIO;
-  const { plcId, cpuId } = useProjectStore.getState();
+  const { plcId, cpuId, modules, recommendation, info } = useProjectStore.getState();
   const spec = useSpecStore.getState().sections;
   const electrical = useElectricalStore.getState();
   const hmi = useHmiStore.getState();
 
   const profile = getProfile(plcId);
   const cpu = getCpu(profile, cpuId);
-  const addresses = resolveAddresses(profile, cpu, io);
+  const addresses = resolveAddresses(profile, cpu, io, moduleSlots(modules));
   const ioAddressSet = new Set([...addresses.values()].filter(Boolean));
   const labels = new Map<string, string>();
   for (const t of program.ladder.tags) labels.set(t.address, t.nickname);
@@ -48,6 +49,13 @@ export function collectProject() {
     electrical: electrical.design,
     drawingCtx,
     hmi: hmi.design,
+    info,
+    equipment: recommendation ? {
+      cpu: cpuId,
+      why: recommendation.plc.cpuId === cpuId ? recommendation.plc.why : '',
+      modules,
+      hmi: hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null,
+    } : null,
   };
 }
 

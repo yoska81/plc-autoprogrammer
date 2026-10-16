@@ -84,6 +84,30 @@ export interface IOWiring {
   deviceTag: string;
   deviceType: FieldDeviceType;
   description: string;
+  /** Where the device is: "Cabinet door", or a machine zone like "Infeed conveyor". */
+  location?: string;
+}
+
+/** Field junction box collecting devices of one machine zone. */
+export interface JunctionBox {
+  tag: string;          // "JB1"
+  location: string;     // machine zone
+  /** Catalog part number of the box when one is chosen. */
+  partNumber?: string | null;
+}
+
+/**
+ * Machine (field) wiring: everything outside the cabinet. Device locations
+ * come from IOWiring.location; motors from inputs.motors (+ motorLocations).
+ */
+export interface MachineWiring {
+  /** Machine zones in order, e.g. ["Infeed conveyor", "Pusher station"]. */
+  zones: string[];
+  junctionBoxes: JunctionBox[];
+  /** Motor tag -> zone. */
+  motorLocations: Record<string, string>;
+  /** Device tag -> junction box tag, or null for a home-run cable to the cabinet. */
+  routing: Record<string, string | null>;
 }
 
 export interface ElectricalDesign {
@@ -92,5 +116,7 @@ export interface ElectricalDesign {
   ioWiring: IOWiring[];
   /** Design notes and assumptions for the engineer to check. */
   notes: string[];
+  /** Field wiring outside the cabinet; derived with defaults when absent. */
+  machine?: MachineWiring;
   generatedAt: string;
 }

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useStages, type StageInfo } from '../spec/useStages';
 import { collectProject } from '../deliverables/collect';
 import { buildExcelReport } from '../deliverables/excelReport';
+import { buildEngineeringPdf } from '../deliverables/engineering';
 import { buildDrawingsPdf, buildEverythingZip, buildHmiImages, buildHmiPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
 import { Spinner } from '../components/program/common';
@@ -34,7 +35,7 @@ function Card({ title, info, children, to }: { title: string; info?: StageInfo; 
 function B({ label, onClick, disabled, primary, busy }: { label: string; onClick: () => void; disabled?: boolean; primary?: boolean; busy: string | null }) {
   return (
     <button onClick={onClick} disabled={disabled || Boolean(busy)}
-      className={primary ? 'px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 flex items-center gap-2' : btn}>
+      className={primary ? 'px-4 py-2 text-sm rounded bg-petrol-600 text-white hover:bg-petrol-700 disabled:opacity-40 flex items-center gap-2' : btn}>
       {busy === label || (primary && busy?.startsWith('Building')) ? <><Spinner /> {busy}…</> : label}
     </button>
   );
@@ -67,7 +68,7 @@ export default function ExportPage() {
   return (
     <>
       <header className="px-6 py-4 bg-white border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">7 · Deliverables</h2>
+        <h2 className="text-lg font-semibold text-gray-800">8 · Deliverables</h2>
         <p className="text-xs text-gray-400 mt-0.5">{p.projectName} · {p.profile.vendor} {p.profile.name} {p.cpu.id}</p>
       </header>
 
@@ -80,7 +81,7 @@ export default function ExportPage() {
           )}
           {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
 
-          <div className="bg-white rounded-lg border-2 border-blue-200 p-5 flex flex-wrap items-center gap-4">
+          <div className="bg-white rounded-lg border-2 border-petrol-200 p-5 flex flex-wrap items-center gap-4">
             <div className="flex-1 min-w-64">
               <h3 className="text-sm font-semibold text-gray-800">Everything in one ZIP</h3>
               <p className="text-xs text-gray-500">Excel report, electrical drawings PDF with BOM / wire list / terminal plan, HMI screens (PDF + PNG), PLC program files, I/O list and the spec.</p>
@@ -89,6 +90,14 @@ export default function ExportPage() {
               saveBlob(`${p.fileBase}_deliverables.zip`, await buildEverythingZip(collectProject(), (s) => setBusy(`Building ${s.toLowerCase()}`)));
             })} />
           </div>
+
+          <Card title="Engineering package (PDF)" info={stages.spec}>
+            <p className="text-xs text-steel-500">What an engineer hands over: why each piece of equipment was chosen, power supply / motor circuit / cabinet heat calculations, the factory acceptance test checklist, the operator manual and a program summary.</p>
+            <B busy={busy} label="Engineering package" onClick={run('Engineering package', async () => {
+              const snap = collectProject();
+              saveBlob(`${p.fileBase}_engineering_package.pdf`, await buildEngineeringPdf(snap, snap.equipment));
+            })} />
+          </Card>
 
           <Card title="Project report (Excel)" info={stages.spec}>
             <p className="text-xs text-gray-500">One workbook: summary, specification, I/O list, BOM, wire list, terminal plan, design review items, HMI tags/alarms/screens, PLC program and tags, program check.</p>

@@ -14,7 +14,7 @@ export default function PrintPage() {
           <h1 className="text-2xl font-bold">{projectName}</h1>
           <p className="text-sm text-gray-600">{profile.vendor} {profile.name} · {cpu.label} · printed {new Date().toLocaleString()}</p>
         </div>
-        <button onClick={() => window.print()} className="no-print px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+        <button onClick={() => window.print()} className="no-print px-4 py-2 bg-petrol-600 text-white text-sm rounded hover:bg-petrol-700">
           Print / Save as PDF
         </button>
       </div>

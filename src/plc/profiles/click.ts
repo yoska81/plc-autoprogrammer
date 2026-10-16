@@ -1,4 +1,4 @@
-import type { AddressInfo, AddressKind, CpuModel, PlcProfile } from '../profile';
+import type { AddressInfo, AddressKind, CpuModel, ModuleSlot, PlcProfile } from '../profile';
 import type { IOPoint } from '../../types/io';
 import type { Rung } from '../ladder';
 import { CLICK_CPUS, CLICK_KNOWLEDGE } from './clickData';
@@ -44,19 +44,25 @@ function parseAddress(raw: string): AddressInfo | null {
   return null;
 }
 
-/** Fill CPU built-in points first, then expansion slots 1..8 (16 points assumed per module). */
-function* ioAddresses(letter: 'X' | 'Y', builtIn: number) {
+/**
+ * Fill CPU built-in points first, then expansion slots 1..8 using each
+ * module's real point count. With no modules chosen yet, assume 16-point
+ * modules so addresses can still be previewed.
+ */
+function* ioAddresses(letter: 'X' | 'Y', builtIn: number, modules: ModuleSlot[]) {
   for (let p = 1; p <= builtIn; p++) yield `${letter}0${String(p).padStart(2, '0')}`;
   for (let slot = 1; slot <= 8; slot++) {
-    for (let p = 1; p <= 16; p++) yield `${letter}${slot}${String(p).padStart(2, '0')}`;
+    const m = modules[slot - 1];
+    const count = modules.length ? (m ? (letter === 'X' ? m.inputs : m.outputs) : 0) : 16;
+    for (let p = 1; p <= count; p++) yield `${letter}${slot}${String(p).padStart(2, '0')}`;
   }
 }
 
-function autoAddresses(io: IOPoint[], cpu: CpuModel): Map<string, string> {
+function autoAddresses(io: IOPoint[], cpu: CpuModel, modules: ModuleSlot[]): Map<string, string> {
   const out = new Map<string, string>();
   // Manually-addressed points keep their address; skip it in the auto sequence.
   const taken = new Set(io.map((p) => p.plcAddress?.trim().toUpperCase()).filter(Boolean));
-  const gens = { input: ioAddresses('X', cpu.builtInInputs), output: ioAddresses('Y', cpu.builtInOutputs) };
+  const gens = { input: ioAddresses('X', cpu.builtInInputs, modules), output: ioAddresses('Y', cpu.builtInOutputs, modules) };
   for (const p of io) {
     if (p.plcAddress?.trim()) continue;
     const gen = gens[p.type];

@@ -6,7 +6,7 @@ export default function IOPage() {
   return (
     <>
       <header className="px-6 py-4 bg-white border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">2 · I/O List</h2>
+        <h2 className="text-lg font-semibold text-gray-800">3 · I/O List</h2>
         <p className="text-xs text-gray-400 mt-0.5">Manage project inputs and outputs</p>
       </header>
       <IOFromSpec />

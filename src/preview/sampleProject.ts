@@ -11,6 +11,7 @@ import { useHmiStore } from '../store/useHmiStore';
 import { useStageStore } from '../store/useStageStore';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { ioFingerprint, hmiFingerprint } from '../spec/useStages';
+import type { EquipmentRecommendation } from '../lib/ai/equipmentAI';
 
 /** Example project shown in the side-panel preview (only when nothing is saved yet). */
 
@@ -26,6 +27,19 @@ export const SPEC: SpecSections = {
   operator: '- Operator station: Start (green), Stop (red, NC), E-stop.\n- 7" C-more HMI: Main screen with Start/Stop/Reset, running and fault lamps, part count with reset; Alarms screen; I/O status screen.',
   alarms: '- Pusher fault: pusher not extended within 3 s. Latches; Reset (panel Start or HMI Reset) clears it when the pusher is back.',
   utilities: '480 VAC 3-phase, 60 Hz. NEMA 12 enclosure. Plant air 80 psi.',
+};
+
+export const RECOMMENDATION: EquipmentRecommendation = {
+  summary: 'A small conveyor cell: 5 inputs and 2 outputs plus a 7-inch operator panel. The smallest CLICK CPU with Ethernet covers it with room to spare, so no expansion modules are needed.',
+  estimatedIO: { digitalInputs: 5, digitalOutputs: 2, analogInputs: 0, analogOutputs: 0, motionAxes: 0 },
+  plc: { profileId: 'click', cpuId: 'C0-10DD1E-D', why: 'Its 8 inputs and 6 sinking outputs cover the 5 inputs and 2 outputs with 40% spare, and its Ethernet port connects the touch panel.' },
+  modules: [],
+  hmi: { partNumber: 'CM5-T7W', why: 'Three simple screens (run, alarms, I/O) fit comfortably on 7 inches; the CM5 is the current C-more model and talks to CLICK over Ethernet.' },
+  alternatives: [
+    { label: 'Lower cost, no touch panel', cpuId: 'C0-10DD1E-D', hmiPartNumber: null, tradeoff: 'Pushbuttons and lights only; no part count or alarm text for the operator.' },
+    { label: 'Room to grow', cpuId: 'C0-11DD1E-D', hmiPartNumber: 'CM5-T10W', tradeoff: 'More inputs and a larger 10-inch screen if stations are added later; costs more.' },
+  ],
+  cautions: ['The photo-eye and prox must be PNP (sourcing) to match the CPU inputs wired sinking; confirm with the sensor part numbers.'],
 };
 
 export const LADDER: LadderProgram = {
@@ -165,20 +179,26 @@ export const DESIGN: ElectricalDesign = {
     c('GB1', 'SCE-GB10', 1, 'Ground bar'),
   ],
   ioWiring: [
-    { address: 'X001', deviceTag: 'SR1', deviceType: 'safety-relay-output', description: 'E-Stop OK (safety relay)' },
-    { address: 'X002', deviceTag: 'PB1', deviceType: 'pushbutton-no', description: 'Start PB' },
-    { address: 'X003', deviceTag: 'PB2', deviceType: 'pushbutton-nc', description: 'Stop PB' },
-    { address: 'X004', deviceTag: 'PE1', deviceType: 'sensor-pnp', description: 'Part at end photo-eye' },
-    { address: 'X005', deviceTag: 'LS1', deviceType: 'sensor-pnp', description: 'Pusher extended' },
-    { address: 'Y001', deviceTag: 'K1', deviceType: 'contactor-coil', description: 'Conveyor motor contactor' },
-    { address: 'Y002', deviceTag: 'SOL1', deviceType: 'solenoid', description: 'Pusher solenoid' },
+    { address: 'X001', deviceTag: 'SR1', location: 'Cabinet', deviceType: 'safety-relay-output', description: 'E-Stop OK (safety relay)' },
+    { address: 'X002', deviceTag: 'PB1', location: 'Cabinet door', deviceType: 'pushbutton-no', description: 'Start PB' },
+    { address: 'X003', deviceTag: 'PB2', location: 'Cabinet door', deviceType: 'pushbutton-nc', description: 'Stop PB' },
+    { address: 'X004', deviceTag: 'PE1', location: 'Pusher station', deviceType: 'sensor-pnp', description: 'Part at end photo-eye' },
+    { address: 'X005', deviceTag: 'LS1', location: 'Pusher station', deviceType: 'sensor-pnp', description: 'Pusher extended' },
+    { address: 'Y001', deviceTag: 'K1', location: 'Cabinet', deviceType: 'contactor-coil', description: 'Conveyor motor contactor' },
+    { address: 'Y002', deviceTag: 'SOL1', location: 'Pusher station', deviceType: 'solenoid', description: 'Pusher solenoid' },
   ],
   notes: ['Example design. Motor FLA assumed 2.1 A at 460 V (NEC 430.250); confirm the nameplate.'],
+  machine: {
+    zones: ['Conveyor', 'Pusher station'],
+    junctionBoxes: [],
+    motorLocations: { M1: 'Conveyor' },
+    routing: { PE1: null, LS1: null, SOL1: null },
+  },
   generatedAt: new Date().toISOString(),
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '2';
+const SEED_VERSION = '3';
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }
@@ -207,7 +227,10 @@ export function seedSampleProject() {
   useHmiStore.getState().setDesign(HMI, 'Example HMI for a 7" CM5: Main (run/stop/reset, lamps, part count), Alarms and I/O Status screens with the same navigation bar and alarm banner.');
   // Mark every stage as built from this spec so the example opens fully up to date.
   const src = { specFp: fingerprint(SPEC), spec: SPEC, ioFp: ioFingerprint(useIOStore.getState().projectIO), hmiFp: hmiFingerprint(HMI) };
-  for (const stage of ['io', 'electrical', 'hmi', 'program'] as const) useStageStore.getState().markGenerated(stage, src);
+  useProjectStore.getState().setRecommendation(RECOMMENDATION);
+  useProjectStore.getState().setModules([]);
+  useProjectStore.getState().setInfo({ customer: 'Example Foods Inc.', site: 'Line 3', standards: ['NFPA 79', 'UL 508A'] });
+  for (const stage of ['equipment', 'io', 'electrical', 'hmi', 'program'] as const) useStageStore.getState().markGenerated(stage, src);
   useProjectsStore.getState().renameActive('Conveyor Cell (example)');
   useElectricalStore.getState().setDesign(DESIGN, 'generated', 'Example panel: NEMA 12, 480 VAC in through a 30 A disconnect, one 1 HP conveyor on a contactor and overload, 24 VDC control, CLICK PLC, dual-channel E-stop into a safety relay.');
 }

@@ -8,6 +8,7 @@ import { getHmi } from '../hmi/hmiCatalog';
 import { bomCsv, wireListCsv, terminalPlanCsv } from '../electrical/derive';
 import { clickNicknameCsv, clickRungListing } from '../plc/clickExport';
 import { buildExcelReport } from './excelReport';
+import { buildEngineeringPdf } from './engineering';
 
 /** Render React content off-screen, let the caller read the DOM, then clean up. */
 async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) => Promise<T>): Promise<T> {
@@ -118,6 +119,8 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     const pdf = await buildHmiPdf(p, images);
     if (pdf) zip.file(`hmi/${p.fileBase}_hmi_screens.pdf`, pdf);
   }
+  onProgress?.('Engineering package');
+  zip.file(`${p.fileBase}_engineering_package.pdf`, await buildEngineeringPdf(p, p.equipment));
   for (const f of programFiles(p)) zip.file(`plc/${f.name}`, f.content);
   zip.file('spec.md', `# ${p.projectName}\n\n${Object.entries(p.spec).filter(([, t]) => t.trim()).map(([k, t]) => `## ${k}\n${t}`).join('\n\n')}\n`);
   onProgress?.('Packing');

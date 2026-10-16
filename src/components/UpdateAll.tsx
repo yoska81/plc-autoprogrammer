@@ -6,6 +6,7 @@ import { runUpdateAll, type StepResult, type UpdateStep } from '../spec/updateAl
 import { Spinner } from './program/common';
 
 const ORDER: { step: UpdateStep; label: string }[] = [
+  { step: 'equipment', label: 'Equipment' },
   { step: 'io', label: 'I/O list' },
   { step: 'electrical', label: 'Electrical design' },
   { step: 'hmi', label: 'HMI screens' },
@@ -42,7 +43,7 @@ export default function UpdateAll() {
       {stale.length > 0 && (
         <button onClick={start} disabled={!apiKey || running}
           title={apiKey ? undefined : 'Add your Anthropic API key in Settings'}
-          className="mt-3 w-full px-3 py-2 text-xs font-semibold rounded bg-amber-500 text-gray-900 hover:bg-amber-400 disabled:opacity-50">
+          className="px-3 py-1 text-sm font-semibold rounded bg-amber-400 text-steel-900 hover:bg-amber-300 disabled:opacity-50">
           Update out-of-date stages ({stale.length})
         </button>
       )}

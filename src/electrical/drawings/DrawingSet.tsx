@@ -8,7 +8,12 @@ import { SHEET_H, SHEET_W } from './geometry';
 import { planDrawings } from './plan';
 import SheetView from './SheetView';
 
-interface DrawingSetProps { ctx: DrawingContext; printMode?: boolean }
+interface DrawingSetProps {
+  ctx: DrawingContext;
+  printMode?: boolean;
+  /** Show only the cabinet or machine (field) wiring sheets; the cover sheet is always included. Sheet numbers stay those of the full set. */
+  section?: 'all' | 'cabinet' | 'machine';
+}
 
 type Zoom = 'fit' | 1 | 2;
 
@@ -22,18 +27,19 @@ const PRINT_CSS = `
 }
 `;
 
-export default function DrawingSet({ ctx, printMode }: DrawingSetProps) {
+export default function DrawingSet({ ctx, printMode, section = 'all' }: DrawingSetProps) {
   const plan = useMemo(() => planDrawings(ctx), [ctx]);
+  const shown = useMemo(() => plan.sheets.filter((s) => section === 'all' || s.section === 'cover' || s.section === section), [plan, section]);
   const [active, setActive] = useState(0);
   const [zoom, setZoom] = useState<Zoom>('fit');
-  const idx = Math.min(active, plan.sheets.length - 1);
-  const sheet = plan.sheets[idx];
+  const idx = Math.min(active, shown.length - 1);
+  const sheet = shown[idx];
 
   if (printMode) {
     return (
       <div className="drawing-print bg-white">
         <style>{PRINT_CSS}</style>
-        {plan.sheets.map((s) => (
+        {shown.map((s) => (
           <div key={s.n} className="dwg-page" style={{ width: '17in', height: '11in', overflow: 'hidden' }}>
             <SheetView plan={plan} sheet={s} width="17in" height="11in" />
           </div>
@@ -48,7 +54,7 @@ export default function DrawingSet({ ctx, printMode }: DrawingSetProps) {
     <div className="flex flex-col h-full min-h-0 bg-gray-100">
       <div className="flex items-center gap-2 px-2 py-1.5 border-b border-gray-300 bg-white">
         <div className="flex-1 flex gap-1 overflow-x-auto" role="tablist" aria-label="Drawing sheets">
-          {plan.sheets.map((s, i) => (
+          {shown.map((s, i) => (
             <button
               key={s.n} role="tab" aria-selected={i === idx} title={`${s.drawingNo} — ${s.title}`}
               onClick={() => setActive(i)}

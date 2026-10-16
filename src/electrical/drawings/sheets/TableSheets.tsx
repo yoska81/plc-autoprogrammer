@@ -54,7 +54,14 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
     'LINE NUMBERS: SHEET x 100 + LINE. CROSS-REFERENCES "/405" REFER TO LINE 405. DEVICE TAGS PER NFPA 79 ANNEX D.',
     'THIS DRAWING SET IS AI-GENERATED. ALL PARTS, RATINGS, WIRE SIZES AND LAYOUT MUST BE CHECKED AND APPROVED BY A QUALIFIED ENGINEER BEFORE PURCHASE, BUILD OR USE.',
   ];
-  const idxRows = plan.sheets;
+  type IdxRow = { head: string } | { sheet: (typeof plan.sheets)[number] };
+  const idxRows: IdxRow[] = [];
+  for (const [sec, head] of [['cover', ''], ['cabinet', 'CABINET WIRING'], ['machine', 'MACHINE WIRING']] as const) {
+    const list = plan.sheets.filter((x) => x.section === sec);
+    if (!list.length) continue;
+    if (head) idxRows.push({ head });
+    for (const sh of list) idxRows.push({ sheet: sh });
+  }
   const noteH = notes.reduce((h, n) => h + wrapText(n, W - 8, 2.4).length * 2.4 * 1.3 + 1.2, 0);
   const cy = AREA.y + 15 + noteH + 6;
   const ny = cy + 5.5 + WIRE_COLORS.length * 3.6 + 5;
@@ -64,8 +71,8 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
     wrapText(n, W - 4, 2.3).forEach((t, k) => { numLines.push({ text: t, y: yy, bullet: k === 0 }); yy += 3.1; });
     yy += 0.8;
   }
-  const rowH = 4.6;
   const IY = 96;
+  const rowH = Math.min(4.6, (AREA_B - 4 - (IY + 6)) / Math.max(1, idxRows.length));
   return (
     <g>
       <Txt x={x0} y={AREA.y + 18} size={7} bold maxW={RX - x0 - 10}>{ctx.projectName.toUpperCase() || 'UNTITLED PROJECT'}</Txt>
@@ -84,13 +91,18 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
       <Txt x={x0 + 16} y={IY + 0.6} size={2.3} bold>DRAWING NO.</Txt>
       <Txt x={x0 + 46} y={IY + 0.6} size={2.3} bold>TITLE</Txt>
       <Line x1={x0} y1={IY + 2} x2={RX - 10} y2={IY + 2} w={LW_THIN} />
-      {idxRows.map((s, i) => (
-        <g key={s.n}>
-          <Txt x={x0 + 5} y={IY + 6 + i * rowH} size={2.4} mono anchor="middle">{s.n}</Txt>
-          <Txt x={x0 + 16} y={IY + 6 + i * rowH} size={2.4} mono>{s.drawingNo}</Txt>
-          <Txt x={x0 + 46} y={IY + 6 + i * rowH} size={2.4} maxW={RX - x0 - 58}>{s.title}</Txt>
+      {idxRows.map((r, i) => ('head' in r ? (
+        <g key={`h${i}`}>
+          <Txt x={x0} y={IY + 6 + i * rowH} size={2.5} bold>{r.head}</Txt>
+          <Line x1={x0 + 32} y1={IY + 5 + i * rowH} x2={RX - 10} y2={IY + 5 + i * rowH} w={LW_THIN} />
         </g>
-      ))}
+      ) : (
+        <g key={r.sheet.n}>
+          <Txt x={x0 + 5} y={IY + 6 + i * rowH} size={2.4} mono anchor="middle">{r.sheet.n}</Txt>
+          <Txt x={x0 + 16} y={IY + 6 + i * rowH} size={2.4} mono>{r.sheet.drawingNo}</Txt>
+          <Txt x={x0 + 46} y={IY + 6 + i * rowH} size={2.4} maxW={RX - x0 - 58}>{r.sheet.title}</Txt>
+        </g>
+      )))}
 
       {/* general notes */}
       <Line x1={RX - 4} y1={AREA.y + 4} x2={RX - 4} y2={AREA_B - 4} w={LW_THIN} />
