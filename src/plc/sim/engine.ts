@@ -16,6 +16,8 @@
  * Everything is in plain Maps so a UI, a test or an HMI can read it directly.
  */
 import type { CompareOp, LadderElement, LadderOutput, LadderProgram, Rung, TimeUnit } from '../core/ladder';
+import type { SimSemantics } from '../core/profile';
+import { CLICK_SIM, clickRetentive } from '../core/profiles/click';
 
 export interface TimerState {
   /** Elapsed time in ms (internal resolution, TD shows it in the timer's unit). */
@@ -222,17 +224,17 @@ function emptyState(): SimState {
 }
 
 export interface SimOptions {
-  /** Memory that survives a power cycle. Default: CLICK defaults (DS, DD, DH, DF registers and counters CT / CTD). */
+  /** Memory that survives a power cycle. Default: the scan semantics' rule (CLICK: DS, DD, DH, DF registers and counters CT / CTD). */
   retentive?: (address: string) => boolean;
+  /** System bits and retentive defaults of the target PLC (default CLICK). */
+  semantics?: SimSemantics;
 }
 
-/** CLICK default retentive memory: data registers and counters keep their value through a power cycle. */
-export function clickRetentive(address: string): boolean {
-  return /^(DS|DD|DH|DF|CTD|CT)\d+$/.test(address);
-}
+export { clickRetentive };
 
 export function createSimulator(program: LadderProgram, options: SimOptions = {}): Simulator {
-  const retentive = options.retentive ?? clickRetentive;
+  const sem = options.semantics ?? CLICK_SIM;
+  const retentive = options.retentive ?? sem.retentive;
   const state = emptyState();
   /** Previous value per edge contact instance / counter instance. */
   let edges = new Map<string, boolean>();
@@ -373,9 +375,9 @@ export function createSimulator(program: LadderProgram, options: SimOptions = {}
     const before = new Map(state.bits);
     state.timeMs += dtMs;
     // system bits
-    state.bits.set('SC1', true);
-    state.bits.set('SC2', state.scanCount === 0);
-    state.bits.set('SC7', Math.floor(state.timeMs / 500) % 2 === 1);
+    if (sem.alwaysOn) state.bits.set(sem.alwaysOn, true);
+    if (sem.firstScan) state.bits.set(sem.firstScan, state.scanCount === 0);
+    if (sem.clock1s) state.bits.set(sem.clock1s, Math.floor(state.timeMs / 500) % 2 === 1);
     // input image
     for (const [a, v] of state.inputs) state.bits.set(a, v);
     applyForces();
