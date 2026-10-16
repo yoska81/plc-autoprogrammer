@@ -13,6 +13,7 @@ import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electr
 import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
+import MachineLayoutPanel from '../electrical/layout/MachineLayoutPanel';
 import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
@@ -51,7 +52,7 @@ const card = 'bg-white rounded-sm border border-steel-200 p-5';
 
 const download = (name: string, content: string, mime: string) => saveBlob(name, new Blob([content], { type: mime }));
 
-type Tab = 'design' | 'cabinet' | 'machine' | 'picture' | 'machining' | 'labels';
+type Tab = 'design' | 'cabinet' | 'machine' | 'layout' | 'picture' | 'machining' | 'labels';
 
 export default function ElectricalPage() {
   const el = useElectricalStore();
@@ -66,7 +67,7 @@ export default function ElectricalPage() {
 
   const [params, setParams] = useSearchParams();
   const urlTab = params.get('tab') as Tab | null;
-  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'picture', 'machining', 'labels'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
+  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'layout', 'picture', 'machining', 'labels'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
@@ -132,7 +133,7 @@ export default function ElectricalPage() {
             </div>
           )}
         </div>
-        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('picture', 'Cabinet picture')}{tabBtn('machining', 'Machining (DXF)')}{tabBtn('labels', 'Labels')}</div>
+        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('layout', 'Machine layout')}{tabBtn('picture', 'Cabinet picture')}{tabBtn('machining', 'Machining (DXF)')}{tabBtn('labels', 'Labels')}</div>
       </header>
 
       <StageBanner info={stages.electrical} action={
@@ -141,6 +142,8 @@ export default function ElectricalPage() {
         </button>} />
       {tab === 'labels' ? (
         <LabelsPanel ctx={ctx} fileBase={base} projectName={projectName} />
+      ) : tab === 'layout' ? (
+        <MachineLayoutPanel ctx={ctx} />
       ) : tab === 'machining' ? (
         <MachiningPanel ctx={ctx} fileBase={base} />
       ) : tab === 'picture' ? (

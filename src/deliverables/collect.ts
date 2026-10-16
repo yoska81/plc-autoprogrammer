@@ -12,6 +12,8 @@ import { validateProgram } from '../plc/core/validate';
 import { getPart } from '../electrical/catalog';
 import type { DrawingContext } from '../electrical/derive';
 import { docInfo } from './docInfo';
+import { layoutFor } from '../electrical/layout/useLayoutStore';
+import { layoutForDesign } from '../electrical/layout/geometry';
 import { checkoutFor } from '../online/useCheckoutStore';
 import { useQuestionStore } from '../components/questions/useQuestionStore';
 import { useProjectsStore } from '../store/useProjectsStore';
@@ -45,6 +47,7 @@ export function collectProject() {
     region: info.region,
     hmiPartNumber: hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null,
     doc: docInfo(info),
+    machineLayout: layoutForDesign(layoutFor(useProjectsStore.getState().activeId)),
     analog: analogSetup(profile, cpu, moduleSlots(modules), io),
   } : null;
 
