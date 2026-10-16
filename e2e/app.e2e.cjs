@@ -29,6 +29,7 @@ const IO_POINTS = [
 ].map(([description, type, category, deviceType]) => ({ description, type, category, deviceType, reason: 'spec' }));
 
 const counts = {};
+const lastUser = {};
 function reply(system, body = {}) {
   const k = system.includes('checks a machine control design') ? 'review'
     : system.includes('functional specification') ? 'spec'
@@ -38,16 +39,12 @@ function reply(system, body = {}) {
     : system.includes('HMI designer') ? 'hmi'
     : system.includes('ladder logic') ? 'ladder' : 'unknown';
   counts[k] = (counts[k] ?? 0) + 1;
+  // Last prompt text sent per stage (user messages), so steps can check what the AI was given.
+  lastUser[k] = (body.messages ?? []).flatMap((x) => (Array.isArray(x.content) ? x.content : [{ text: x.content }])).map((c) => c.text ?? '').join('\n');
   const m = F.DESIGN.machine;
   switch (k) {
     case 'review': return F.REVIEW;
-    case 'spec': {
-      // Answers to open questions are merged into the overview (like the real spec AI would).
-      const user = (body.messages ?? []).flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }])).map((c) => c.text ?? '').join('\n');
-      const answers = user.includes('Answers to open questions') ? user.split('\n').filter((l) => l.startsWith('- Q: ')) : [];
-      if (answers.length) return { sections: { ...F.SPEC, overview: `${F.SPEC.overview}\n${answers.map((l) => `- ${l.replace(/^- Q: .*? A: /, '')}`).join('\n')}` }, questions: [], summary: `Added ${answers.length} answer(s).` };
-      return { sections: F.SPEC, questions: ['How many parts per minute at most?'], summary: 'Organized the description into 10 sections.' };
-    }
+    case 'spec': return { sections: F.SPEC, questions: ['How many parts per minute at most?'], summary: 'Organized the description into 10 sections.' };
     case 'equipment': return F.RECOMMENDATION;
     case 'io': return { explanation: '5 inputs, 2 outputs.', points: IO_POINTS, questions: [] };
     case 'electrical': return {
@@ -378,17 +375,24 @@ function sse(model, text) {
   await snap(page, 'settings');
 
   // Spec change → update all
-  // Open questions: answer right under the question; the answer is merged into the spec and the tree count clears
+  // Open questions: answer right under the question; it stays as a Q/A pair below the description,
+  // is part of the spec (fingerprint changes, later stages go out of date) and the AI gets it.
   await page.goto(BASE + '/spec');
   const qBox = page.getByLabel('Answer to: How many parts per minute at most?');
   await qBox.waitFor({ timeout: 10000 });
   log('Open questions in tree:', await page.locator('nav [aria-label$="open questions"]').allInnerTexts());
+  const staleBefore = await page.locator('nav [title="Out of date"]').count();
   await qBox.fill('60 parts per minute');
-  await page.getByRole('button', { name: 'Save answer' }).first().click();
-  await page.getByText(/Added to the spec ·/).first().waitFor({ timeout: 20000 });
+  await page.locator('li', { has: qBox }).getByRole('button', { name: 'Save answer' }).click();
+  const qa = page.locator('#questions-and-answers');
+  await qa.locator('[data-answer]', { hasText: '60 parts per minute' }).waitFor({ timeout: 20000 });
+  const qaText = await qa.innerText();
   const overview = await page.locator('#spec-overview').inputValue();
-  log('Answer merged into spec:', overview.includes('60 parts per minute'), '| tree badges left:', await page.locator('nav [aria-label$="open questions"]').count());
-  if (!overview.includes('60 parts per minute')) throw new Error('answer was not merged into the spec');
+  const staleAfter = await page.locator('nav [title="Out of date"]').count();
+  log('Q/A below description:', qaText.includes('How many parts per minute at most?') && qaText.includes('60 parts per minute'), '| copied into overview:', overview.includes('60 parts per minute'), '| out of date', staleBefore, '→', staleAfter, '| tree badges left:', await page.locator('nav [aria-label$="open questions"]').count());
+  check(qaText.includes('How many parts per minute at most?') && qaText.includes('60 parts per minute'), 'answer stays as Q/A below the description');
+  check(!overview.includes('60 parts per minute'), 'answer is not copied into the spec sections');
+  check(staleAfter > staleBefore, 'answering changes the spec fingerprint (later stages out of date)');
   await snap(page, 'questions');
   await page.locator('#spec-alarms').fill('- Pusher fault: pusher not extended within 5 s.');
   log('Out of date after edit:', await page.locator('nav [title="Out of date"]').count());
@@ -399,6 +403,8 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Approve' }).click();
   await page.waitForTimeout(300);
   log('After approve out of date:', await page.locator('nav [title="Out of date"]').count());
+  log('I/O prompt has Q&A block:', /Questions and answers/.test(lastUser.io ?? '') && (lastUser.io ?? '').includes('60 parts per minute'));
+  check(/Questions and answers/.test(lastUser.io ?? '') && (lastUser.io ?? '').includes('60 parts per minute'), 'I/O prompt contains the Questions and answers block');
 
   // A second project starts empty, then the first comes back intact; rename shows everywhere.
   const firstId = await page.locator('select[aria-label="Open project"]').inputValue();

@@ -6,6 +6,7 @@ import { useSettingsStore } from './store/useSettingsStore'
 import { seedSampleProject } from './preview/sampleProject'
 import './index.css'
 import App from './App.tsx'
+import { installQaSync } from './components/questions/qa'
 import Notice from './components/Notice.tsx'
 import IOPage from './pages/IOPage.tsx'
 import ProgramPage from './plc/pages/ProgramPage.tsx'
@@ -36,6 +37,9 @@ if (IS_PREVIEW) {
   const settings = useSettingsStore.getState()
   if (!settings.anthropicApiKey) settings.setAnthropicApiKey(PREVIEW_ACCOUNT_KEY)
 }
+
+// Questions & answers are part of the spec (sections.qa), kept in step with the question list.
+installQaSync()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -12,6 +12,7 @@ import { getPart } from '../electrical/catalog';
 import type { DrawingContext } from '../electrical/derive';
 import { docInfo } from './docInfo';
 import { checkoutFor } from '../online/useCheckoutStore';
+import { useQuestionStore } from '../components/questions/useQuestionStore';
 import { useProjectsStore } from '../store/useProjectsStore';
 
 /** Everything the deliverables need, read once from the stores. */
@@ -58,6 +59,8 @@ export function collectProject() {
     info,
     /** Commissioning I/O check-out (Online page), by I/O id. */
     checkout: checkoutFor(useProjectsStore.getState().activeId),
+    /** Questions and answers (part of the specification). */
+    questions: useQuestionStore.getState().byProject[useProjectsStore.getState().activeId ?? 'default'] ?? [],
     equipment: recommendation ? {
       cpu: cpuId,
       why: recommendation.plc.cpuId === cpuId ? recommendation.plc.why : '',

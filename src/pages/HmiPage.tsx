@@ -467,7 +467,7 @@ export default function HmiPage() {
                 )}
                 {tab === 'notes' && (
                   hmiQuestions.length ? <QuestionList questions={hmiQuestions} title="To confirm"
-                    intro="Confirm each item or type the correct answer under it; answers are added to the machine description (operator station) and the HMI becomes out of date so Update uses them." /> : <p className="text-sm text-gray-500">Nothing to confirm.</p>
+                    intro="Confirm each item or type the correct answer under it; answers are saved in the Questions & answers of the machine description (part of the spec) and the HMI becomes out of date so Update uses them." /> : <p className="text-sm text-gray-500">Nothing to confirm.</p>
                 )}
               </div>
             </section>

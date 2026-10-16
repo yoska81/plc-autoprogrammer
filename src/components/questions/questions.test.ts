@@ -4,8 +4,8 @@
  */
 import assert from 'node:assert/strict';
 import { guessSection, quickChoices } from './parse';
-import { appendAnswers, answerLine } from './merge';
-import { EMPTY_SECTIONS } from '../../spec/types';
+import { qaText, answerText } from './qa';
+import { EMPTY_SECTIONS, fingerprint, specToText, changedSections } from '../../spec/types';
 import { questionId, type Question } from './useQuestionStore';
 
 // Quick choices
@@ -17,21 +17,35 @@ assert.deepEqual(quickChoices('Does the clamp need both open and closed sensors?
 assert.deepEqual(quickChoices('How many parts per minute at most?'), []);
 assert.deepEqual(quickChoices('Assumed 480 VAC 3-phase supply with 65 kA available fault current.'), ['Correct as stated']);
 
-// Sections
+// Sections (still used to group answers in documents)
 assert.equal(guessSection('How is the lift axis homed: home switch or hard stop?', 'spec'), 'homing');
 assert.equal(guessSection('What stop category for the guard door?', 'spec'), 'guarding');
 assert.equal(guessSection('How many parts per minute at most?', 'spec'), 'overview');
 assert.equal(guessSection('Anything else we should know?', 'spec'), 'other');
 
-// Plain merge: under a heading in the matching section, once.
-const q = (text: string, answer: string, status: Question['status'] = 'answered'): Question =>
-  ({ id: questionId('spec', text), source: 'spec', text, answer, status, date: '2026-10-16 12:00', merged: false });
-const a = q('How is the lift axis homed: home switch or hard stop?', 'home switch');
-const s1 = appendAnswers({ ...EMPTY_SECTIONS, homing: '- Z axis homes first.' }, [a]);
-assert.equal(s1.homing, `- Z axis homes first.\n\nAnswers to open questions:\n${answerLine(a)}`);
-const b = q('Which homing speed?', '', 'assumed');
-const s2 = appendAnswers(appendAnswers(s1, [a]), [{ ...b, section: 'homing' }]);
-assert.equal(s2.homing.split('Answers to open questions:').length, 2, 'one heading per section');
-assert.ok(s2.homing.includes("A: no preference — use the engineer's assumption"));
+// Q&A text: answered and assumed questions in the order asked; open ones are not part of the spec yet.
+const q = (text: string, answer: string, status: Question['status'], source: Question['source'] = 'spec', assumption?: string): Question =>
+  ({ id: questionId(source, text), source, text, answer, status, date: '2026-10-16 12:00', merged: false, assumption });
+const list = [
+  q('How many parts per minute at most?', '60 parts per minute', 'answered'),
+  q('Which homing speed?', '', 'open'),
+  q('Assumed 480 VAC supply.', '', 'assumed', 'electrical', 'Assumed 480 VAC supply.'),
+  q('Air dump valve on E-stop?', '', 'assumed', 'review', 'Add a dump valve'),
+];
+assert.equal(qaText(list), [
+  'Q (Machine description): How many parts per minute at most?\nA: 60 parts per minute',
+  "Q (Electrical design): Assumed 480 VAC supply.\nA: (AI's assumption: use the engineer's judgement)",
+  "Q (Design review): Air dump valve on E-stop?\nA: (AI's assumption: Add a dump valve)",
+].join('\n'));
+assert.equal(answerText(list[0]), '60 parts per minute');
+
+// The Q&A is part of the spec text and fingerprint, but not copied into the sections.
+const base = { ...EMPTY_SECTIONS, overview: 'Conveyor with a pusher.' };
+const withQa = { ...base, qa: qaText(list) };
+assert.ok(specToText(withQa).includes('## Questions and answers\nQ (Machine description): How many parts per minute at most?\nA: 60 parts per minute'));
+assert.equal(withQa.overview, 'Conveyor with a pusher.');
+assert.notEqual(fingerprint(base), fingerprint(withQa), 'answering changes the spec fingerprint');
+assert.deepEqual(changedSections(base, withQa), ['Questions and answers']);
+assert.equal(specToText(base).includes('Questions and answers'), false);
 assert.equal(questionId('spec', ' Same? '), questionId('spec', 'same?'));
 console.log('question tests passed');

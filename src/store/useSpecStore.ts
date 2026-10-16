@@ -19,7 +19,8 @@ export const useSpecStore = create<SpecStore>()(
     (set) => ({
       sections: EMPTY_SECTIONS,
       setSection: (id, text) => set((s) => ({ sections: { ...s.sections, [id]: text } })),
-      setSections: (sections) => set({ sections: { ...EMPTY_SECTIONS, ...sections } }),
+      // The Q&A (sections.qa) is kept from the question list; a re-organised spec from the AI keeps it.
+      setSections: (sections) => set((s) => ({ sections: { ...EMPTY_SECTIONS, ...sections, qa: sections.qa ?? s.sections.qa } })),
       documents: [],
       addDocument: (name) => set((s) => ({ documents: [...s.documents, { name, addedAt: new Date().toISOString() }] })),
       questions: [],

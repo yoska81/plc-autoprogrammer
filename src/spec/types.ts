@@ -30,7 +30,13 @@ export const SPEC_SECTIONS: SpecSectionDef[] = [
   { id: 'other', title: 'Other requirements', hint: 'Interfaces to other machines, recipes, data logging, customer standards.' },
 ];
 
-export type SpecSections = Record<SpecSectionId, string>;
+/**
+ * The spec sections, plus `qa`: the project's questions and answers as text
+ * (kept in sync from the question list). The Q&A is part of the spec: it is
+ * in the fingerprint (answering makes later stages out of date) and in the
+ * text every AI prompt reads, without being copied into the sections.
+ */
+export type SpecSections = Record<SpecSectionId, string> & { qa?: string };
 
 export const EMPTY_SECTIONS: SpecSections = Object.fromEntries(SPEC_SECTIONS.map((s) => [s.id, ''])) as SpecSections;
 
@@ -51,12 +57,14 @@ export function fingerprint(value: unknown): string {
 }
 
 export function specToText(sections: SpecSections): string {
-  return SPEC_SECTIONS.filter((d) => sections[d.id]?.trim())
-    .map((d) => `## ${d.title}\n${sections[d.id].trim()}`)
-    .join('\n\n');
+  const parts = SPEC_SECTIONS.filter((d) => sections[d.id]?.trim()).map((d) => `## ${d.title}\n${sections[d.id].trim()}`);
+  if (sections.qa?.trim()) parts.push(`## Questions and answers\n${sections.qa.trim()}`);
+  return parts.join('\n\n');
 }
 
 /** Section titles whose text differs between two versions of the spec. */
 export function changedSections(before: SpecSections | null, after: SpecSections): string[] {
-  return SPEC_SECTIONS.filter((d) => (before?.[d.id] ?? '').trim() !== (after[d.id] ?? '').trim()).map((d) => d.title);
+  const out = SPEC_SECTIONS.filter((d) => (before?.[d.id] ?? '').trim() !== (after[d.id] ?? '').trim()).map((d) => d.title);
+  if ((before?.qa ?? '').trim() !== (after.qa ?? '').trim()) out.push('Questions and answers');
+  return out;
 }
