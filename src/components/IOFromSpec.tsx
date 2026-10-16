@@ -8,6 +8,8 @@ import { useFingerprints, useStages, ioFingerprint } from '../spec/useStages';
 import { generateIOFromSpec, planIOMerge, type IOMergePlan } from '../lib/ai/ioAI';
 import StageBanner from './StageBanner';
 import { Spinner } from './common';
+import QuestionList from './questions/QuestionList';
+import { useQuestions, useSyncQuestions } from './questions/useQuestionStore';
 
 /** Generate / update the I/O list from the spec, with a review step before applying. */
 export default function IOFromSpec({ children }: { children: (generateButton: ReactNode) => ReactNode }) {
@@ -23,6 +25,10 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
   const [plan, setPlan] = useState<(IOMergePlan & { explanation: string; questions: string[] }) | null>(null);
 
   const apiKey = settings.anthropicApiKey;
+  // The AI's questions about the I/O, answered under each question (kept per project after the dialog closes).
+  useSyncQuestions('io', plan ? plan.questions.map((text) => ({ text })) : null);
+  const ioQuestions = useQuestions('io');
+  const openIo = ioQuestions.filter((q) => q.status === 'open' || !q.merged);
   const specEmpty = stages.spec.status === 'empty';
 
   const generate = async () => {
@@ -73,6 +79,10 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
           Describe the machine on the <Link to="/spec" className="underline">Machine description</Link> step to generate I/O automatically.
         </div>
       )}
+      {!plan && openIo.length > 0 && (
+        <div className="mx-4 mt-3 max-h-[40vh] overflow-y-auto flex-shrink-0"><QuestionList questions={ioQuestions} title="Questions about the I/O"
+          intro="Answer each question in the box under it. Answers are added to the machine description; then run Update I/O from spec again." /></div>
+      )}
       {children(button)}
       {error && <div role="alert" className="mx-4 mt-3 bg-red-50 border border-red-200 p-3 text-red-800">{error}</div>}
 
@@ -107,11 +117,8 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
                 <p className="text-steel-500">{plan.kept.map((k) => k.point.description).join(' · ') || 'none'}</p>
               </section>
               {plan.questions.length > 0 && (
-                <section className="bg-amber-50 border border-amber-200 p-3">
-                  <h4 className="font-semibold text-amber-900 mb-1">Questions</h4>
-                  <ul className="list-disc pl-5 text-amber-900">{plan.questions.map((q, i) => <li key={i}>{q}</li>)}</ul>
-                  <p className="text-xs text-amber-800 mt-1">Answer them in the spec (Describe) and update again.</p>
-                </section>
+                <QuestionList questions={ioQuestions} title="Questions about the I/O"
+                  intro="Answer each question in the box under it. Answers are added to the machine description; then run Update I/O again to use them." />
               )}
             </div>
             <div className="px-4 py-2 border-t border-steel-200 bg-[#f7f8f9] flex justify-end gap-2">

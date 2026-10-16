@@ -27,7 +27,7 @@ const IO_POINTS = [
 ].map(([description, type, category, deviceType]) => ({ description, type, category, deviceType, reason: 'spec' }));
 
 const counts = {};
-function reply(system) {
+function reply(system, body = {}) {
   const k = system.includes('checks a machine control design') ? 'review'
     : system.includes('functional specification') ? 'spec'
     : system.includes('choosing the control equipment') ? 'equipment'
@@ -39,7 +39,13 @@ function reply(system) {
   const m = F.DESIGN.machine;
   switch (k) {
     case 'review': return F.REVIEW;
-    case 'spec': return { sections: F.SPEC, questions: ['How many parts per minute at most?'], summary: 'Organized the description into 10 sections.' };
+    case 'spec': {
+      // Answers to open questions are merged into the overview (like the real spec AI would).
+      const user = (body.messages ?? []).flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }])).map((c) => c.text ?? '').join('\n');
+      const answers = user.includes('Answers to open questions') ? user.split('\n').filter((l) => l.startsWith('- Q: ')) : [];
+      if (answers.length) return { sections: { ...F.SPEC, overview: `${F.SPEC.overview}\n${answers.map((l) => `- ${l.replace(/^- Q: .*? A: /, '')}`).join('\n')}` }, questions: [], summary: `Added ${answers.length} answer(s).` };
+      return { sections: F.SPEC, questions: ['How many parts per minute at most?'], summary: 'Organized the description into 10 sections.' };
+    }
     case 'equipment': return F.RECOMMENDATION;
     case 'io': return { explanation: '5 inputs, 2 outputs.', points: IO_POINTS, questions: [] };
     case 'electrical': return {
@@ -78,7 +84,7 @@ function sse(model, text) {
   page.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
-    await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, JSON.stringify(reply(body.system))) });
+    await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, JSON.stringify(reply(body.system, body))) });
   });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
 
@@ -370,7 +376,18 @@ function sse(model, text) {
   await snap(page, 'settings');
 
   // Spec change → update all
+  // Open questions: answer right under the question; the answer is merged into the spec and the tree count clears
   await page.goto(BASE + '/spec');
+  const qBox = page.getByLabel('Answer to: How many parts per minute at most?');
+  await qBox.waitFor({ timeout: 10000 });
+  log('Open questions in tree:', await page.locator('nav [aria-label$="open questions"]').allInnerTexts());
+  await qBox.fill('60 parts per minute');
+  await page.getByRole('button', { name: 'Save answer' }).first().click();
+  await page.getByText(/Added to the spec ·/).first().waitFor({ timeout: 20000 });
+  const overview = await page.locator('#spec-overview').inputValue();
+  log('Answer merged into spec:', overview.includes('60 parts per minute'), '| tree badges left:', await page.locator('nav [aria-label$="open questions"]').count());
+  if (!overview.includes('60 parts per minute')) throw new Error('answer was not merged into the spec');
+  await snap(page, 'questions');
   await page.locator('#spec-alarms').fill('- Pusher fault: pusher not extended within 5 s.');
   log('Out of date after edit:', await page.locator('nav [title="Out of date"]').count());
   await page.getByRole('button', { name: /Update out-of-date stages/ }).click();
@@ -447,10 +464,12 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 10000 });
   await rowOf('Air is not dumped on an E-stop').getByRole('button', { name: 'Resolved' }).click();
   await page.getByPlaceholder(/Reason/).fill('Dump valve added to the pneumatic design');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   check(await rowOf('Air is not dumped on an E-stop').count() === 0, 'resolved finding leaves the open list');
   await rowOf('Pusher retract is not confirmed').getByRole('button', { name: 'Ask AI to fix' }).click();
   await page.waitForURL(/\/program/);
+  // Wait for the program's request box (the review page also has answer boxes until it unmounts).
+  await page.waitForFunction(() => [...document.querySelectorAll('textarea')].some((t) => t.value.includes('Pusher retract is not confirmed')), null, { timeout: 10000 }).catch(() => {});
   const req = await page.locator('textarea').last().inputValue();
   check(req.includes('Pusher retract is not confirmed'), 'finding handed to the program Fix & Ask');
   log('Program request from review:', req.split('\n')[0]);

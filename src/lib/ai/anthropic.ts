@@ -24,7 +24,7 @@ export interface ClaudeResult {
  * One Claude request. With `schema`, the reply is constrained to that JSON
  * schema (structured outputs) and `text` is the JSON string.
  */
-type ClaudeOptions = {
+export type ClaudeOptions = {
   apiKey: string;
   model: string;
   effort: Effort;
@@ -33,8 +33,17 @@ type ClaudeOptions = {
   schema?: Record<string, unknown>;
 };
 
+/**
+ * Test hook (AI quality harness, tools/ai-quality): when set, every request goes
+ * through it; it may answer from a recording or call `real` and record the reply.
+ * Never set in the app.
+ */
+export type ClaudeInterceptor = (opts: ClaudeOptions, real: (o: ClaudeOptions) => Promise<ClaudeResult>) => Promise<ClaudeResult>;
+let interceptor: ClaudeInterceptor | null = null;
+export function setClaudeInterceptor(fn: ClaudeInterceptor | null) { interceptor = fn; }
+
 export function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
-  return trackAi(() => requestClaude(opts));
+  return trackAi(() => (interceptor ? interceptor(opts, requestClaude) : requestClaude(opts)));
 }
 
 async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {

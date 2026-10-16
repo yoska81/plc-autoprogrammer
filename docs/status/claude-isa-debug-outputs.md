@@ -45,7 +45,8 @@ Integration d78b221 + batch 3: tsc, eslint, 4 unit tests, sim_example, e2e, chec
 
 ## Plan
 1. Periodic review of the dev branches.
-2. Note: there is no '25 % spare space' rule in the code today (coordinator mentioned one) — if wanted, it should be a design check (used rail length / total) rather than a packing limit; awaiting decision.
+2. [x] 25 % spare space: `derive.spareSpace` + review finding (minor < 25 %, info otherwise). Example 30 %, ca600 36 %, big 12 % (warned), us120 0 % (overflow).
+3. Review Dev 1 purchasing outputs (order CSV vs AutomationDirect format, prices vs pack sizes, purchase summary PDF) and the questions feature when they land.
 
 ## Review of claude/isa-dev-labels-print (c9f4f5c, 262d3ff)
 How: worktree of the branch, dev server :5214, `tools/gen-outputs.cjs us480 big`, all checkers, plus a roll-layout harness (labelPrinterPdf with pageLayout 'roll' for B33-80-427 horizontal/vertical and THT-14-498-10), renders at 300–1200 dpi.

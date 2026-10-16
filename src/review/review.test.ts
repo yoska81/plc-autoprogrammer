@@ -5,16 +5,14 @@
 import assert from 'node:assert/strict';
 import { seedSampleProject, LADDER } from '../preview/sampleProject';
 import { collectProject } from '../deliverables/collect';
-import { stagesNow } from '../spec/useStages';
-import { useProjectStore } from '../store/useProjectStore';
 import { useProgramStore } from '../store/useProgramStore';
+import { useProjectStore } from '../store/useProjectStore';
 import { useIOStore } from '../store/useIOStore';
 import { useSpecStore } from '../store/useSpecStore';
 import { useReviewStore } from './useReviewStore';
-import { runChecks } from './checks';
 import { projectSummary, REVIEW_SCHEMA } from './reviewAI';
 import { reviewRows } from './report';
-import { acceptCriticalForConstruction, openCriticalFindings } from './actions';
+import { acceptCriticalForConstruction, checksFor, openCriticalFindings } from './actions';
 import { openCounts } from './useReviewStore';
 import { designReviewTable } from '../deliverables/docs/manual';
 import { pageRoute } from './types';
@@ -31,7 +29,7 @@ function test(name: string, fn: () => void) {
   catch (e) { failures.push(name); console.log(`  FAIL ${name}\n       ${(e as Error).message.split('\n').join('\n       ')}`); }
 }
 
-const check = () => runChecks({ p: collectProject(), stages: stagesNow(), modules: useProjectStore.getState().modules });
+const check = () => checksFor(collectProject());
 const ids = () => check().map((f) => f.id);
 
 console.log('design review');
@@ -117,6 +115,22 @@ test('construction guard: open criticals block, override marks them accepted', (
   assert.equal(openCriticalFindings().length, 0);
   assert.match(useReviewStore.getState().marks['out-unsafe:Y001'].reason, /rev B.*Interlock added/);
   assert.equal(openCounts(useReviewStore.getState()).critical, 0);
+});
+
+test('spec coverage: analog, guarding, motors, VFD and servo the design misses', () => {
+  seedSampleProject();
+  const sp = useSpecStore.getState();
+  sp.setSections({ ...sp.sections,
+    sensing: sp.sections.sensing + '\n- Tank level transmitter, 4-20 mA.',
+    guarding: '- Light curtain at the operator opening.',
+    motion: sp.sections.motion + '\n- M2 agitator 5 HP on a variable speed drive.\n- Servo for the sideways move.' });
+  useIOStore.getState().importPoints([{ description: 'Tank level transmitter 4-20 mA', type: 'input', category: 'Analog/Process' }], false);
+  const got = ids();
+  for (const id of ['spec-analog', 'analog-on-discrete:', 'spec-guard', 'spec-motors', 'spec-vfd', 'spec-servo']) assert.ok(got.some((g) => g.startsWith(id)), `expected ${id} in ${got.join(', ')}`);
+  assert.equal(check().find((f) => f.id.startsWith('analog-on-discrete:'))!.severity, 'critical');
+  // an equipment caution about servo motion answers the servo check
+  useProjectStore.getState().setRecommendation({ ...useProjectStore.getState().recommendation!, cautions: ['Servo motion needs a drive with an indexer.'] });
+  assert.ok(!ids().includes('spec-servo'));
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

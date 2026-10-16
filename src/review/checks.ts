@@ -6,7 +6,7 @@
  * HMI ↔ program, approvals.
  */
 import type { ProjectSnapshot } from '../deliverables/collect';
-import { designWarnings } from '../electrical/derive';
+import { designWarnings, spareSpace } from '../electrical/derive';
 import { calcWarnings } from '../deliverables/docs/calcs';
 import { ioCapacity, moduleSlots } from '../plc/core/modules';
 import { rungWrites, type LadderProgram } from '../plc/core/ladder';
@@ -20,6 +20,8 @@ export interface ReviewInput {
   stages: Record<StageId, StageInfo>;
   /** Expansion module part numbers in slot order. */
   modules: string[];
+  /** Equipment recommendation cautions (servo, safety PLC … that CLICK can't do), if any. */
+  cautions?: string[];
 }
 
 /** Short stable hash for ids built from free text. */
@@ -209,6 +211,18 @@ function electricalChecks({ p }: ReviewInput): Finding[] {
       const sev: Severity = MAJOR_WARN_RE.test(w) ? 'major' : INFO_WARN_RE.test(w) ? 'info' : 'minor';
       out.push(finding(`elec:${hash(w)}`, sev, /safety|e-stop/i.test(w) ? 'safety' : 'electrical', 'electrical', '', w.length > 90 ? `${w.slice(0, 88)}…` : w, w, 'Check the electrical design and correct it, or record why it is acceptable.'));
     }
+    // Spare mounting space (customer / panel-shop rule: at least 25 % for later additions).
+    const sp = spareSpace(p.drawingCtx);
+    const pct = (f: number) => `${Math.round(f * 100)} %`;
+    const perRail = sp.rails.map((r) => `rail ${r.rail}: ${pct(r.spare)}`).join(', ');
+    if (sp.rails.length && sp.panel < 0.25) {
+      out.push(finding('elec:spare-space', 'minor', 'electrical', 'electrical', '', `Back panel has only ${pct(sp.panel)} spare space (25 % recommended)`,
+        `Spare DIN-rail length: ${perRail || 'none'}${sp.extraRails ? `; room for ${sp.extraRails} more rail(s)` : ''}. Panels are normally built with at least 25 % spare space for later changes.`,
+        'Choose a larger enclosure / back panel, or record that the customer accepts less spare space.'));
+    } else if (sp.rails.length) {
+      out.push(finding('elec:spare-space-info', 'info', 'electrical', 'electrical', '', `Back panel spare space ${pct(sp.panel)}`,
+        `Spare DIN-rail length: ${perRail}${sp.extraRails ? `; room for ${sp.extraRails} more rail(s)` : ''}.`, 'No action needed (25 % or more is free).'));
+    }
     for (const w of calcWarnings(p)) {
       out.push(finding(`calc:${hash(w)}`, 'minor', 'electrical', 'electrical', '', w.length > 90 ? `${w.slice(0, 88)}…` : w, w, 'Review the calculation in the engineering package and change the design if needed.'));
     }
@@ -236,10 +250,72 @@ function projectChecks({ p }: ReviewInput): Finding[] {
   return out;
 }
 
+const ANALOG_RE = /\b(4\s*-\s*20\s*ma|0\s*-\s*10\s*v|analog|transmitter|rtd|thermocouple|proportional|modulating|open(?:s)? partly|variable speed|speed (?:from|on) the screen|set the speed)\b/i;
+const GUARD_RE = /\b(light curtains?|safety mats?|guard doors?|door switch(?:es)?|interlocked (?:door|gate|guard)s?|gate switch(?:es)?|doors? around it)\b/i;
+const VFD_RE = /\b(vfds?|variable speed|variable frequency|drives? so we can set the speed|inverters?|speed drives?)\b/i;
+const SERVO_RE = /\bservo\b/i;
+const HP_RE = /(\d+(?:\.\d+)?|\d+\/\d+)\s*hp\b/gi;
+
+/**
+ * Spec coverage: things the machine description asks for that the generated
+ * design is missing. These catch the typical AI misses on real machines.
+ */
+function specCoverage({ p, cautions = [] }: ReviewInput): Finding[] {
+  const out: Finding[] = [];
+  const spec = Object.values(p.spec).join('\n');
+  if (!spec.trim()) return out;
+  const io = p.io;
+  const comps = p.electrical?.components ?? [];
+  const catOf = (pn: string) => p.drawingCtx?.getPart(pn)?.category;
+  // analog signals
+  const analogLine = spec.split('\n').find((l) => ANALOG_RE.test(l));
+  if (analogLine && io.length) {
+    const onDiscrete = io.filter((pt) => /\b(transmitter|4\s*-\s*20|0\s*-\s*10\s*v|rtd|thermocouple|analog|proportional)\b/i.test(pt.description));
+    for (const pt of onDiscrete) {
+      const a = p.addresses.get(pt.id) ?? '';
+      out.push(finding(`analog-on-discrete:${pt.id}`, 'critical', 'io', 'io', '', `Analog signal on a discrete ${pt.type}: ${a} ${pt.description}`,
+        `"${pt.description}" is an analog signal but the I/O list gives it a discrete ${pt.type} (${a}). A 4-20 mA / 0-10 V / RTD signal cannot be wired to a 24 V on/off point.`,
+        'Remove it from the discrete I/O list; add an analog module channel for it (the app lists discrete I/O only today — record the analog channel in the design notes and wire it by hand).'));
+    }
+    out.push(finding('spec-analog', 'major', 'io', 'io', '', 'The spec needs analog signals the I/O list cannot hold',
+      `The specification asks for analog measurement or control ("${analogLine.trim().slice(0, 120)}"), but the I/O list, drawings and program in this app handle discrete (on/off) points only.`,
+      'Choose analog modules on the Equipment page, list each analog channel (signal, range, scaling) in the electrical design notes and program them by hand, or confirm that on/off switches are enough.'));
+  }
+  // guarding devices in the safety circuit
+  const guard = GUARD_RE.exec(spec);
+  if (guard && io.length) {
+    const word = guard[1].toLowerCase().replace(/s$/, '').split(' ')[0];
+    const inSafety = io.some((pt) => (pt.category === 'Safety' || SAFETY_RE.test(pt.description)) && new RegExp(`\\b(${word}|curtain|door|guard|gate|zone|mat)`, 'i').test(pt.description))
+      || comps.some((c) => new RegExp(`\\b(${word}|curtain|door|guard|gate|mat)`, 'i').test(c.function));
+    if (!inSafety) {
+      out.push(finding('spec-guard', 'major', 'safety', 'electrical', '', `Spec guarding (${guard[1]}) is not in the safety circuit`,
+        `The specification has ${guard[1]}, but no safety input, safety relay channel or device in the design covers it, so opening it would not stop the machine.`,
+        'Wire the guard devices (light curtain OSSDs, door switches) into a safety relay channel and give the PLC a status input per safety zone.'));
+    }
+  }
+  // motors and drives
+  const specHp = [...spec.matchAll(HP_RE)].length;
+  const designMotors = p.electrical?.inputs.motors.length ?? 0;
+  if (p.electrical && specHp > designMotors) {
+    out.push(finding('spec-motors', 'major', 'electrical', 'electrical', '', `The spec names ${specHp} motor rating${specHp > 1 ? 's' : ''}, the panel has ${designMotors} motor${designMotors === 1 ? '' : 's'}`,
+      'Some motors described in the specification have no starter, overload or drive in the electrical design.', 'Add every motor (HP, voltage, starter or VFD) to the electrical design inputs and regenerate.'));
+  }
+  if (p.electrical && VFD_RE.test(spec) && !comps.some((c) => catOf(c.partNumber) === 'vfd')) {
+    out.push(finding('spec-vfd', 'major', 'electrical', 'electrical', '', 'The spec asks for variable-speed drives; the panel has none',
+      'The specification wants adjustable speed / soft starting, but every motor is on a contactor.', 'Set those motors to "VFD" in the electrical design inputs and regenerate.'));
+  }
+  if (SERVO_RE.test(spec) && !io.some((pt) => pt.category === 'Servo/Axis') && !cautions.some((c) => SERVO_RE.test(c))) {
+    out.push(finding('spec-servo', 'major', 'equipment', 'equipment', '', 'Servo motion is in the spec but not in the design',
+      'The specification needs a servo axis, but there is no motion hardware, axis I/O or equipment caution for it. A CLICK PLC cannot close a servo position loop by itself.',
+      'Add a servo drive with built-in indexer (or a motion controller) and its handshake I/O (enable, home, start move, in position, fault), or record why it is not needed.'));
+  }
+  return out;
+}
+
 /** Every deterministic finding for the project. */
 export function runChecks(input: ReviewInput): Finding[] {
   const all = [
-    ...stageChecks(input), ...specVsIo(input), ...equipmentChecks(input), ...electricalChecks(input),
+    ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input),
     ...programChecks(input), ...hmiChecks(input), ...projectChecks(input),
   ];
   const seen = new Set<string>();
