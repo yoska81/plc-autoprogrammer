@@ -33,14 +33,9 @@ jobs:
         shell: bash
         run: |
           npx eslint src
-          npx tsx src/plc/sim/engine.test.ts
-          npx tsx src/electrical/strength.test.ts
-          npx tsx src/electrical/step/cabinetStep.test.ts
-          npx tsx src/electrical/labels/layout.test.ts
-          npx tsx src/electrical/prices.test.ts
-          npx tsx src/components/questions/questions.test.ts
+          # Every unit-test suite in the repo (each exits non-zero on a failure).
+          for t in $(find src -name '*.test.ts' | sort); do echo "== $t"; npx tsx "$t"; done
           node e2e/modbus.test.cjs
-          npx tsx src/hmi/editor.test.ts
 
       - name: Build installer
         run: npm run dist:win

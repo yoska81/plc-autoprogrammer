@@ -68,6 +68,124 @@ function audit() {
   return out;
 }
 
+/**
+ * Analog points on the example project: an input and an output switched to analog with a range and units in
+ * the I/O list, then the analog drawing sheet, the simulator slider and an HMI bar graph bound to the input.
+ */
+async function analogPass(browser, problems) {
+  const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  page.on('dialog', (d) => d.accept());
+  await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
+  const check = async (name) => {
+    await page.screenshot({ path: `${OUT}analog_${name}.png` });
+    const found = await page.evaluate(audit);
+    for (const e of errors.splice(0)) found.push('error: ' + e.slice(0, 200));
+    if (found.length) { problems.push([`analog_${name}`, found]); log(`analog_${name}`, '\n   - ' + found.slice(0, 12).join('\n   - ')); }
+  };
+  const fail = (msg) => { problems.push(['analog', [msg]]); log('analog:', msg); };
+
+  await page.goto(BASE + '/spec');
+  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.goto(BASE + '/spec');
+  await page.locator('select[aria-label="Open project"]').selectOption('p_example');
+
+  // An analog input and an analog output module (the example CPU has no analog channels).
+  await page.goto(BASE + '/equipment');
+  await page.waitForTimeout(800);
+  for (const part of ['C0-04AD-1', 'C0-04DA-1']) {
+    await page.getByRole('button', { name: '+ Add module' }).click();
+    await page.locator('select').filter({ has: page.locator(`option[value="${part}"]`) }).last().selectOption(part);
+  }
+  await page.getByRole('button', { name: 'Use this selection' }).click();
+  await page.waitForTimeout(500);
+  await check('equipment');
+
+  // I/O list: a (non-safety) input and an output become analog, with range, scale and units.
+  await page.goto(BASE + '/io');
+  await page.waitForTimeout(800);
+  const made = [];
+  for (const kind of ['input', 'output']) {
+    const id = await page.evaluate((kind) => {
+      const rows = [...document.querySelectorAll('tr')].filter((r) => [...r.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Discrete'));
+      const re = kind === 'input' ? /^I\d/ : /^Q\d/;
+      const row = rows.find((r) => re.test(r.querySelector('td')?.textContent.trim() ?? '') && !/Safety/.test(r.querySelector('select')?.value ?? ''));
+      return row?.querySelector('td')?.textContent.trim() ?? null;
+    }, kind);
+    if (!id) { fail(`no discrete ${kind} row to switch`); continue; }
+    const row = page.locator('tr', { has: page.locator(`[aria-label="Description of ${id}"]`) });
+    await row.getByRole('button', { name: 'Discrete' }).click();
+    await page.locator(`select[aria-label="Signal range of ${id}"]`).selectOption('4-20mA');
+    await page.locator(`input[aria-label="Scale minimum of ${id}"]`).fill('0');
+    await page.locator(`input[aria-label="Scale minimum of ${id}"]`).blur();
+    await page.locator(`input[aria-label="Scale maximum of ${id}"]`).fill(kind === 'input' ? '150' : '60');
+    await page.locator(`input[aria-label="Scale maximum of ${id}"]`).blur();
+    await page.locator(`input[aria-label="Units of ${id}"]`).fill(kind === 'input' ? 'psi' : 'Hz');
+    await page.locator(`input[aria-label="Units of ${id}"]`).blur();
+    const desc = await page.locator(`[aria-label="Description of ${id}"]`).inputValue();
+    const address = (await page.locator(`[aria-label="PLC address for ${id}"]`).getAttribute('placeholder')) || '';
+    made.push({ kind, id, desc, address });
+  }
+  const stored = await page.evaluate(() => Object.entries(localStorage).filter(([k]) => /io/i.test(k)).map(([, v]) => v).join(' '));
+  if (!/"units":"psi"/.test(stored) || !/"max":150/.test(stored)) fail('analog range/units not saved in the I/O store');
+  log('analog points:', made.map((m) => `${m.kind} ${m.id} ${m.address} "${m.desc}"`).join('; '));
+  await check('io');
+
+  // Drawings: an analog loop sheet exists and renders.
+  for (const tab of ['cabinet', 'machine']) {
+    await page.goto(`${BASE}/electrical?tab=${tab}`);
+    await page.waitForTimeout(1200);
+    const t = page.locator('[role="tab"][title*="ANALOG"]');
+    if (await t.count()) {
+      await t.first().click();
+      await page.waitForTimeout(800);
+      const svgText = await page.locator('main svg').first().textContent().catch(() => '');
+      if (!svgText.includes('psi') && !svgText.includes(made[0]?.address ?? '§')) fail('analog sheet does not show the analog input');
+      await check(`drawing_${tab}`);
+      break;
+    }
+    if (tab === 'machine') fail('no ANALOG drawing sheet');
+  }
+
+  // Simulator: a slider for the analog input; moving it changes the shown value.
+  await page.goto(BASE + '/simulate');
+  await page.waitForTimeout(1500);
+  const slider = page.locator('input[type="range"][aria-label$=" value"]');
+  if (!(await slider.count())) fail('no analog slider in the simulator');
+  else {
+    const s = slider.first();
+    if ((await s.getAttribute('max')) !== '150') fail(`slider max is ${await s.getAttribute('max')}, expected 150`);
+    await s.evaluate((el) => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(el, '75'); el.dispatchEvent(new Event('input', { bubbles: true })); });
+    await page.waitForTimeout(300);
+    if (Number(await s.inputValue()) !== 75) fail('slider did not take the value');
+  }
+  await check('simulate');
+
+  // HMI: add a bar graph bound to the analog input's address.
+  await page.goto(BASE + '/hmi');
+  await page.waitForTimeout(1500);
+  const edit = page.getByRole('button', { name: 'Edit screen' });
+  if (!(await edit.count())) fail('HMI has no Edit screen button');
+  else {
+    await edit.click();
+    await page.getByRole('button', { name: 'Add Bar graph' }).click();
+    await page.waitForTimeout(300);
+    const addr = made.find((m) => m.kind === 'input')?.address;
+    if (addr) {
+      await page.locator('input[aria-label="PLC address"]').fill(addr);
+      await page.locator('input[aria-label="PLC address"]').blur();
+    }
+    await check('hmi_editor');
+    await page.getByRole('button', { name: 'Done editing' }).click();
+    await page.waitForTimeout(500);
+    await check('hmi');
+  }
+  await ctx.close();
+}
+
 (async () => {
   const browser = await chromium.launch();
   const problems = [];
@@ -107,6 +225,7 @@ function audit() {
       await ctx.close();
     }
   }
+  if (!HASH) await analogPass(browser, problems);
   await browser.close();
   log(`${problems.length} page(s) with problems`);
   if (problems.length) process.exit(1);
