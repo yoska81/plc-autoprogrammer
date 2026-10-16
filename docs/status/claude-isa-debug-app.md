@@ -1,6 +1,6 @@
 # Debug 1 — app & workflow QA (`claude/isa-debug-app`)
 
-PRs: #3 (merged), #12 (draft → `claude/optimistic-maxwell-6nfcs6`). Dev server / test port: 5203.
+PRs: #3 (merged), #12 (merged: Windows installer), next PR (draft → `claude/optimistic-maxwell-6nfcs6`). Dev server / test port: 5203.
 
 ## Tasks (my own words)
 - [x] **TOP PRIORITY — Windows program with an installer** (details below). Windows CI on PR #12 is green: run 38944010761 on windows-latest (lint, unit tests, `npm run dist:win`) uploaded the artifact `ISA-Auto-Programmer-Setup` (112.8 MB).
@@ -10,6 +10,8 @@ PRs: #3 (merged), #12 (draft → `claude/optimistic-maxwell-6nfcs6`). Dev server
 - [x] Test the claude.ai preview build with a fake `window.claude` (AI without a key, prompt shape and size, error wording, how files are saved).
 - [x] Click through every page at 1366×768 and 1920×1080. Look for errors, clipping, unreadable text (nothing light on lime), empty states, buttons that do nothing, and data leaking between projects. Check that older saved projects still open.
 - [x] Keep tsc, eslint, unit tests and the E2E green. Small commits.
+- [x] E2E for the preview example update (manager): own project stays open and intact, example separate, backup reopens. Old-data `HASH=1` covers it for 4 older versions. Found and fixed duplicate "Conveyor Cell (example)" names (95dbe29).
+- [x] ISA icon everywhere: `build/icon.svg` (graphite tile, lime "ISA") is now also the web favicon. It is readable at 16 px. The Electron window and the installer already used it.
 - [x] Cross-check the UI of `claude/isa-dev-labels-print` and `claude/isa-dev-program-sim` (round 1, see "Review of …" below). Repeat every ~45 min.
 
 ## Windows desktop app — decisions and evidence
@@ -59,6 +61,7 @@ PRs: #3 (merged), #12 (draft → `claude/optimistic-maxwell-6nfcs6`). Dev server
 | A-12 | Preview | `alert()` is blocked in the preview frame, so save failures, the AI-busy refusal and the duplicate-revision message were invisible | fixed: on-page notice (`components/Notice.tsx`) | 623c651 |
 | A-13 | Electrical / Deliverables headers | with no CPU chosen they name the default CPU (C0-10DD1E-D) while the status bar says "PLC: —" | open, low (`usePlc` falls back to a default CPU; the ExportPage header is Dev 1's) | — |
 | A-14 | Preview | "Print / PDF" on the Electrical page opens a new tab (`target=_blank`), which the preview frame may block | open, needs a check in the real preview (coordinator) | — |
+| A-16 | Preview example update | viewers of older previews got two projects named "Conveyor Cell (example)" | fixed: their copy becomes "Conveyor Cell (your copy)" | 95dbe29 |
 | A-15 | Preview | the connection test asks for the `complex` model tier to get a one-word reply | open, cosmetic (`claudeAccount.ts`) | — |
 
 ## Review of claude/isa-dev-labels-print (head 6c55e83, 2026-10-16 17:30)
