@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useHmiStore } from '../store/useHmiStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useStageStore } from '../store/useStageStore';
@@ -62,7 +62,9 @@ export default function HmiPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
-  const [screenId, setScreenId] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+  const screenId = params.get('screen');
+  const setScreenId = (id: string | null) => setParams(id ? { screen: id } : {}, { replace: true });
   const [selected, setSelected] = useState<string | null>(null);
   const [choosing, setChoosing] = useState(false);
 
@@ -118,9 +120,9 @@ export default function HmiPage() {
 
   return (
     <>
-      <header className="px-6 py-4 bg-white border-b border-gray-200 flex items-center justify-between gap-4">
+      <header className="px-4 py-2.5 bg-white border-b border-gray-200 flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-gray-800">5 · HMI design</h2>
+          <h2 className="text-base font-semibold text-gray-800">5 · HMI design</h2>
           <p className="text-xs text-gray-400 mt-0.5">
             {model ? `${model.partNumber} · ${model.sizeIn}" · ${model.widthPx}×${model.heightPx}` : 'Choose your HMI'} · every button and lamp is linked to a PLC address the program implements
           </p>

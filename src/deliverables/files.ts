@@ -9,6 +9,7 @@ import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv } from '../elect
 import { clickNicknameCsv, clickRungListing } from '../plc/clickExport';
 import { buildExcelReport } from './excelReport';
 import { buildEngineeringPdf } from './engineering';
+import { cabinetPng } from '../electrical/render/renderToPng';
 
 /** Render React content off-screen, let the caller read the DOM, then clean up. */
 async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) => Promise<T>): Promise<T> {
@@ -73,7 +74,7 @@ export async function buildHmiPdf(p: ProjectSnapshot, images: { name: string; da
     doc.text(`${p.projectName} — HMI ${model.partNumber} — ${screen.name}`, margin, margin);
     doc.setFontSize(9);
     doc.text(screen.purpose.slice(0, 160), margin, margin + 6);
-    doc.addImage(img.dataUrl, 'PNG', margin, margin + 10, model.widthPx * scale, model.heightPx * scale);
+    doc.addImage(img.dataUrl, 'PNG', margin, margin + 10, model.widthPx * scale, model.heightPx * scale, undefined, 'FAST');
   });
   return doc.output('blob');
 }
@@ -112,6 +113,10 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     zip.file('electrical/wire_list.csv', wireListCsv(p.drawingCtx));
     zip.file('electrical/terminal_plan.csv', terminalPlanCsv(p.drawingCtx));
     zip.file('electrical/cable_schedule.csv', cableScheduleCsv(p.drawingCtx));
+    onProgress?.('Cabinet pictures');
+    const hmiPart = p.hmi?.hmiPartNumber ?? null;
+    zip.file('electrical/cabinet_inside.png', await dataUrlToBlob(await cabinetPng(p.drawingCtx, 'inside', hmiPart, 2400)));
+    zip.file('electrical/cabinet_door.png', await dataUrlToBlob(await cabinetPng(p.drawingCtx, 'door', hmiPart, 2400)));
   }
   if (p.hmi) {
     onProgress?.('HMI screens');

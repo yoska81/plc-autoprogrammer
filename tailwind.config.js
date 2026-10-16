@@ -32,7 +32,8 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['"IBM Plex Sans"', 'system-ui', '"Segoe UI"', 'Roboto', 'sans-serif'],
+        // Desktop engineering-tool look: the Windows UI font, Arial fallback.
+        sans: ['"Segoe UI"', 'Arial', 'Helvetica', 'system-ui', 'sans-serif'],
         mono: ['"IBM Plex Mono"', 'ui-monospace', 'Consolas', 'monospace'],
       },
     },

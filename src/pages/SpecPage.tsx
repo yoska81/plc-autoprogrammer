@@ -10,9 +10,9 @@ export default function SpecPage() {
 
   return (
     <>
-      <header className="px-6 py-4 bg-white border-b border-steel-200 flex items-center justify-between gap-4">
+      <header className="px-4 py-2.5 bg-white border-b border-steel-200 flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-steel-900">1 · Describe the machine</h2>
+          <h2 className="text-base font-semibold text-steel-900">1 · Describe the machine</h2>
           <p className="text-xs text-steel-500 mt-0.5">The spec drives every step. Change it any time; the steps after it are marked out of date and can be updated in one click.</p>
         </div>
         <button onClick={() => navigate('/equipment')} disabled={!filled}

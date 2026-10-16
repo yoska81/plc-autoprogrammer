@@ -67,8 +67,8 @@ export default function ExportPage() {
 
   return (
     <>
-      <header className="px-6 py-4 bg-white border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">8 · Deliverables</h2>
+      <header className="px-4 py-2.5 bg-white border-b border-gray-200">
+        <h2 className="text-base font-semibold text-gray-800">8 · Deliverables</h2>
         <p className="text-xs text-gray-400 mt-0.5">{p.projectName} · {p.profile.vendor} {p.profile.name} {p.cpu.id}</p>
       </header>
 
@@ -112,6 +112,14 @@ export default function ExportPage() {
               })} />
               <B busy={busy} label="BOM CSV" disabled={!hasElec} onClick={run('BOM CSV', () => saveBlob(`${p.fileBase}_BOM.csv`, csv(bomCsv(p.drawingCtx!))))} />
               <B busy={busy} label="Wire list CSV" disabled={!hasElec} onClick={run('Wire list CSV', () => saveBlob(`${p.fileBase}_wire_list.csv`, csv(wireListCsv(p.drawingCtx!))))} />
+              <B busy={busy} label="Cabinet pictures (PNG)" disabled={!hasElec} onClick={run('Cabinet pictures (PNG)', async () => {
+                const { cabinetPng } = await import('../electrical/render/renderToPng');
+                const snap = collectProject();
+                for (const v of ['inside', 'door'] as const) {
+                  const url = await cabinetPng(snap.drawingCtx!, v, snap.hmi?.hmiPartNumber ?? null, 2400);
+                  saveBlob(`${p.fileBase}_cabinet_${v}.png`, await (await fetch(url)).blob());
+                }
+              })} />
               <B busy={busy} label="Terminal plan CSV" disabled={!hasElec} onClick={run('Terminal plan CSV', () => saveBlob(`${p.fileBase}_terminal_plan.csv`, csv(terminalPlanCsv(p.drawingCtx!))))} />
             </div>
           </Card>

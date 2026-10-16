@@ -8,9 +8,9 @@ export default function EquipmentPage() {
   const navigate = useNavigate();
   return (
     <>
-      <header className="px-6 py-4 bg-white border-b border-steel-200 flex items-center justify-between gap-4">
+      <header className="px-4 py-2.5 bg-white border-b border-steel-200 flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-steel-900">2 · Equipment</h2>
+          <h2 className="text-base font-semibold text-steel-900">2 · Equipment</h2>
           <p className="text-xs text-steel-500 mt-0.5">PLC, I/O modules and operator panel, chosen from your description</p>
         </div>
         <button onClick={() => navigate('/io')} disabled={stages.equipment.status === 'empty'}

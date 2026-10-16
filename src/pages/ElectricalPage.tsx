@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useProgramStore } from '../store/useProgramStore';
@@ -51,7 +51,10 @@ export default function ElectricalPage() {
   const { profile, cpu, io, addresses } = usePlc();
   const ctx = useDrawingContext();
 
-  const [tab, setTab] = useState<Tab>(el.design ? 'cabinet' : 'design');
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab') as Tab | null;
+  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'picture'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
+  const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
   const [pickCat, setPickCat] = useState<CatalogCategory>(CATEGORIES[0]);
@@ -97,7 +100,7 @@ export default function ElectricalPage() {
       <header className="px-6 pt-4 bg-white border-b border-gray-200">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">4 · Electrical Design</h2>
+            <h2 className="text-base font-semibold text-gray-800">4 · Electrical Design</h2>
             <p className="text-xs text-gray-400 mt-0.5">Control panel design and drawings · AutomationDirect parts · {profile.name} {cpu.id}</p>
           </div>
           {el.design && (

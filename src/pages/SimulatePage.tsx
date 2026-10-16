@@ -65,8 +65,8 @@ export default function SimulatePage() {
   }] : [])), [wiring, io, addresses]);
 
   const header = (
-    <header className="px-6 py-4 bg-white border-b border-gray-200">
-      <h2 className="text-lg font-semibold text-gray-800">7 · Simulate</h2>
+    <header className="px-4 py-2.5 bg-white border-b border-gray-200">
+      <h2 className="text-base font-semibold text-gray-800">7 · Simulate</h2>
       <p className="text-xs text-gray-400 mt-0.5">Run the PLC program against a model of the machine. Press buttons, trip the E-stop, watch parts move and the logic light up.</p>
     </header>
   );

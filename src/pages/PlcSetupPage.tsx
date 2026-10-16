@@ -9,8 +9,8 @@ export default function PlcSetupPage() {
 
   return (
     <>
-      <header className="px-6 py-4 bg-white border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">PLC Setup</h2>
+      <header className="px-4 py-2.5 bg-white border-b border-gray-200">
+        <h2 className="text-base font-semibold text-gray-800">PLC Setup</h2>
         <p className="text-xs text-gray-400 mt-0.5">Choose the controller. The AI writes the program in that PLC's own language and addresses.</p>
       </header>
 

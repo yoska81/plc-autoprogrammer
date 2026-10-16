@@ -4,6 +4,7 @@ import { getHmi } from '../hmi/hmiCatalog';
 import { awgFor, motorFla } from '../electrical/derive';
 import { SPEC_SECTIONS } from '../spec/types';
 import { describeOutput } from '../plc/clickExport';
+import { cabinetPng } from '../electrical/render/renderToPng';
 import type { CatalogCategory } from '../electrical/types';
 
 /**
@@ -241,6 +242,33 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
     if (equipment.modules.length) text(`Expansion modules (slot order): ${equipment.modules.join(', ')}`);
     if (equipment.hmi) text(`Operator panel: ${equipment.hmi}`);
   } else text('Chosen manually.');
+
+  if (p.drawingCtx) {
+    page();
+    h1('Control cabinet');
+    text('Pictures drawn to scale from the panel layout. See the drawing set for dimensions.', 9);
+    const hmiPart = p.hmi?.hmiPartNumber ?? null;
+    for (const view of ['inside', 'door'] as const) {
+      const png = await cabinetPng(p.drawingCtx, view, hmiPart, 1600);
+      const img = new Image();
+      img.src = png;
+      await img.decode();
+      // Re-encode as JPEG: an uncompressed PNG makes the PDF tens of MB.
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const g = canvas.getContext('2d')!;
+      g.fillStyle = '#ffffff';
+      g.fillRect(0, 0, canvas.width, canvas.height);
+      g.drawImage(img, 0, 0);
+      const jpg = canvas.toDataURL('image/jpeg', 0.85);
+      const h = Math.min(105, (maxW * img.height) / img.width);
+      const w = (h * img.width) / img.height;
+      need(h + 4);
+      doc.addImage(jpg, 'JPEG', M + (maxW - w) / 2, y, w, h);
+      y += h + 4;
+    }
+  }
 
   h1('2. Calculations');
   for (const s of calculations(p)) {

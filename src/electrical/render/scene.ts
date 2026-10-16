@@ -216,8 +216,9 @@ function wireColors(d: DeviceView, pins: PinLayout, m: ElectricalModel): { top: 
       return { top: fill(T), bottom: fill(B, ...n3('BK')) };
     case 'contactor': {
       const coil: WireColor = /vac|ac\b/i.test(String(d.part?.ratings.coil ?? d.part?.ratings.coilVoltage ?? '')) && !/dc/i.test(String(d.part?.ratings.coil ?? '')) ? 'RD' : 'BU';
-      const pw = n3('BK');
-      return { top: [...pw, coil].slice(0, T), bottom: B ? [...pw, coil === 'RD' ? 'WH' : 'WH/BU'].slice(0, B) : [] };
+      const pw: WireColor[] = n3('BK');
+      const ret: WireColor = coil === 'RD' ? 'WH' : 'WH/BU';
+      return { top: [...pw, coil].slice(0, T), bottom: B ? [...pw, ret].slice(0, B) : [] };
     }
     case 'overload':
       return { top: d.stack === 'lower' ? [] : fill(T, 'BK', 'BK', 'BK'), bottom: fill(B, 'BK', 'BK', 'BK', 'BU') };
@@ -245,7 +246,9 @@ function wireColors(d: DeviceView, pins: PinLayout, m: ElectricalModel): { top: 
     case 'groundBar': {
       const pe = m.wires.filter((w) => /^GN/.test(w.color) && (w.from.startsWith(d.tag) || w.to.startsWith(d.tag))).length;
       const n = Math.max(2, Math.min(T, pe || Math.ceil(T / 2)));
-      return { top: fill(T, ...Array.from({ length: n }, () => 'GN/YE' as WireColor)), bottom: [] };
+      const top = fill(T);
+      for (let i = 0; i < n; i++) top[Math.min(T - 1, Math.round(((i + 0.5) * T) / n - 0.5))] = 'GN/YE';
+      return { top, bottom: [] };
     }
     case 'terminal': {
       const ts = d.strip?.terminals ?? [];
@@ -320,6 +323,25 @@ class Router {
             });
           }
         }
+        // into the open end of a vertical duct from the side (e.g. ground bar under the duct end)
+        const end = dir === 'up' ? d.y + d.h : d.y;
+        if (!inX && (dir === 'up' ? end <= p.y - 3 : end >= p.y + 3) && Math.abs(p.x - (d.x + d.w / 2)) < 160) {
+          const near = p.x < d.x ? d.x + 4 : d.x + d.w - 4;
+          const span = { x: Math.min(near, p.x) + 0.5, y: Math.min(end, p.y) + 0.5, w: Math.abs(near - p.x) - 1, h: Math.abs(end - p.y) - 1 };
+          if (!this.blocked(span, self)) {
+            cands.push({
+              cost: Math.abs(end - p.y) + Math.abs(near - p.x) * 1.3 + 6,
+              make: () => {
+                const id = `${di}end${dir}`;
+                const c = this.used.get(id) ?? 0;
+                this.used.set(id, c + 1);
+                const tx = Math.min(d.x + d.w - 3, Math.max(d.x + 3, near + (p.x < d.x ? 1 : -1) * (c % 10) * 3));
+                const inside = end + sgn * 12;
+                return `M${f(p.x)} ${f(p.y)} C${f(p.x)} ${f(p.y + (end - p.y) * 0.9)} ${f(tx)} ${f(p.y + (end - p.y) * 0.4)} ${f(tx)} ${f(end)} L${f(tx)} ${f(inside)}`;
+              },
+            });
+          }
+        }
       }
     });
     cands.sort((a, b) => a.cost - b.cost);
@@ -360,7 +382,7 @@ export interface DoorScene {
   nameLines: string[];
   hmiOverflow: boolean;
   /** Text shown on the HMI screen. */
-  hmiScreen: { title: string; lamps: { text: string; color: string }[] };
+  hmiScreen: { title: string; lamps: { text: string; color: string }[]; buttons: { text: string; color: string }[] };
   finish: 'painted' | 'stainless' | 'nonmetal';
 }
 
@@ -431,6 +453,8 @@ export interface Scene {
   door: DoorScene;
   /** Bundle of door wires: path from the open door across the hinge into the left duct. */
   doorBundle?: string;
+  /** Individual wires on the open door from each device back to the bundle. */
+  doorWires: WirePath[];
   notShown: string[];
   title: string;
 }
@@ -448,7 +472,7 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
 
   // --- devices
   const shaftPart = m.rc.some((c) => c.category === 'disconnect' && /shaft/i.test(`${c.part?.description ?? ''} ${c.comp.function}`));
-  const handleRc = m.rc.find((c) => c.category === 'disconnect' && /handle/i.test(`${c.part?.description ?? ''} ${c.comp.function}`) && !/shaft/i.test(c.part?.description ?? ''));
+  const handleRc = m.rc.find((c) => c.category === 'disconnect' && (c.mount === 'door' || /\bhandle\b/i.test(`${c.part?.description ?? ''} ${c.comp.function}`)) && !/^(disconnect )?shaft/i.test(c.part?.description ?? '') && !/\bswitch\b/i.test(c.part?.description ?? ''));
   const devices: DeviceView[] = [];
   for (const it of L.items) {
     const parts = it.sub ?? [it];
@@ -483,6 +507,7 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
   const router = new Router(ducts, obstacles);
   const pins = new Map<string, PinLayout>();
   const wires: WirePath[] = [];
+  const wired = new Map<string, { top: boolean; bottom: boolean }>();
   for (const d of devices) {
     const pl = pinLayout(d);
     pins.set(d.key, pl);
@@ -491,37 +516,34 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
     const width = (c: WireColor) => (c === 'BK' && d.category !== 'terminal' ? 2.5 : 2.1);
     pl.top.forEach((p, i) => { const c = cols.top[i]; if (c) wires.push({ d: router.route(p, 'up', self), color: c, w: width(c) }); });
     pl.bottom.forEach((p, i) => { const c = cols.bottom[i]; if (c) wires.push({ d: router.route(p, 'down', self), color: c, w: width(c) }); });
+    wired.set(d.key, { top: cols.top.some(Boolean), bottom: cols.bottom.some(Boolean) });
   }
 
-  // --- tag plates
+  // --- tag plates: on the back panel next to the device when that side is free of wires,
+  // otherwise on the wire-duct cover (upper half for the device above, lower half for the one below).
   const plates: TagPlate[] = [];
   const hd = ducts.filter((d) => d.orientation === 'h');
-  const below = (r: Rect) => Math.min(...hd.filter((d) => d.y >= r.y + r.h - 0.1 && d.x <= r.x + r.w / 2 && d.x + d.w >= r.x + r.w / 2).map((d) => d.y), Infinity);
-  const ductBelow = (r: Rect) => hd.find((d) => d.y === below(r));
-  const ductAbove = (r: Rect) => hd.filter((d) => d.y + d.h <= r.y + 0.1 && d.x <= r.x + r.w / 2 && d.x + d.w >= r.x + r.w / 2).sort((a, b) => b.y - a.y)[0];
+  const spans = (d: Duct, r: Rect) => d.x <= r.x + r.w / 2 && d.x + d.w >= r.x + r.w / 2;
+  const ductBelow = (r: Rect) => hd.filter((d) => d.y >= r.y + r.h - 0.1 && spans(d, r)).sort((a, b) => a.y - b.y)[0];
+  const ductAbove = (r: Rect) => hd.filter((d) => d.y + d.h <= r.y + 0.1 && spans(d, r)).sort((a, b) => b.y - a.y)[0];
   const rowPlates: TagPlate[] = [];
   for (const d of devices) {
     const r = d.rect;
+    const w = wired.get(d.key)!;
     const maxW = d.category === 'terminal' ? Math.min(30, r.w) : r.w + 2;
-    if (d.category === 'terminal') {
-      const a = ductAbove(r);
-      const cx = r.x + Math.min(r.w / 2, 18);
-      rowPlates.push(plateFor(d.tag, cx, a ? a.y + a.h / 2 - PLATE_H / 2 : r.y - PLATE_H - 2, maxW));
-      continue;
-    }
-    if (d.stack === 'upper') {
+    const cx = d.category === 'terminal' ? r.x + Math.min(r.w / 2, 18) : r.x + r.w / 2;
+    const useTop = d.stack === 'upper' || d.category === 'terminal';
+    if (useTop) {
       const a = ductAbove(r);
       const room = a ? r.y - (a.y + a.h) : 99;
-      rowPlates.push(plateFor(d.tag, r.x + r.w / 2, room >= PLATE_H + 2 ? r.y - PLATE_H - 1.5 : a ? a.y + a.h / 2 - PLATE_H / 2 : r.y - PLATE_H - 1.5, maxW));
+      const y = !w.top && room >= PLATE_H + 3 ? r.y - PLATE_H - 1.5 : a ? a.y + a.h * 0.75 - PLATE_H / 2 : r.y - PLATE_H - 1.5;
+      rowPlates.push(plateFor(d.tag, cx, y, maxW));
       continue;
     }
-    const by = below(r);
-    const room = by - (r.y + r.h);
-    if (room >= PLATE_H + 2.5) rowPlates.push(plateFor(d.tag, r.x + r.w / 2, r.y + r.h + 1.5, maxW));
-    else {
-      const db = ductBelow(r);
-      rowPlates.push(plateFor(d.tag, r.x + r.w / 2, db ? db.y + db.h / 2 - PLATE_H / 2 : r.y + r.h + 1.5, maxW));
-    }
+    const db = ductBelow(r);
+    const room = (db ? db.y : Infinity) - (r.y + r.h);
+    const y = !w.bottom && room >= PLATE_H + 3 ? r.y + r.h + 1.5 : db ? db.y + db.h * 0.25 - PLATE_H / 2 : r.y + r.h + 1.5;
+    rowPlates.push(plateFor(d.tag, cx, y, maxW));
   }
   // keep plates on the same line from overlapping
   rowPlates.sort((a, b) => a.y - b.y || a.x - b.x);
@@ -572,11 +594,16 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
   const lamps = items.filter((d) => d.kind === 'pilot').slice(0, 3).map((d) => ({ text: d.legend.join(' '), color: d.color }));
   const door: DoorScene = {
     w: W, h: H, items, handle, latch, latchY: H * 0.62, warning, nameplate, nameLines, hmiOverflow, finish,
-    hmiScreen: { title: (ctx.projectName || 'MACHINE').toUpperCase(), lamps: lamps.length ? lamps : [{ text: 'RUNNING', color: 'GREEN' }, { text: 'FAULT', color: 'RED' }] },
+    hmiScreen: {
+      title: (ctx.projectName || 'MACHINE').toUpperCase(),
+      lamps,
+      buttons: items.filter((d) => d.kind === 'pushbutton').slice(0, 3).map((d) => ({ text: d.legend.join(' '), color: d.color })),
+    },
   };
 
   // --- door bundle (open door -> hinge -> left vertical duct)
   let doorBundle: string | undefined;
+  const doorWires: WirePath[] = [];
   const leftV = ducts.filter((d) => d.orientation === 'v' && d.h > 20).sort((a, b) => a.x - b.x)[0];
   if (items.length && leftV) {
     const ys = items.map((d) => d.cy);
@@ -585,13 +612,22 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
     const a = projectDoor(W, H, nearU, vy);
     const b = projectDoor(W, H, 22, vy + 12);
     const tx = leftV.x + leftV.w / 2;
+    for (const d of items) {
+      const q = projectDoor(W, H, d.cx, d.cy + (d.kind === 'hmi' ? d.h * 0.3 : 0));
+      const cols: WireColor[] = d.kind === 'pilot' ? ['BU', 'WH/BU'] : d.kind === 'hmi' ? ['BU', 'WH/BU'] : ['BU', 'BU'];
+      cols.forEach((c, k) => {
+        const ox = (k - 0.5) * 2.4 * q.sx, oy = (k - 0.5) * 2.4;
+        const mx = (q.x + a.x) / 2;
+        doorWires.push({ d: `M${f(q.x + ox)} ${f(q.y + oy)} C${f(mx)} ${f(q.y + oy + (a.y - q.y) * 0.1)} ${f(mx)} ${f(a.y + oy * 0.4)} ${f(a.x)} ${f(a.y + oy * 0.4)}`, color: c, w: 1.5 });
+      });
+    }
     doorBundle = `M${f(a.x)} ${f(a.y)} C${f(b.x - 10)} ${f(b.y)} ${f(b.x)} ${f(b.y + 18)} ${f(-4)} ${f(vy + 22)} S${f(tx - 30)} ${f(vy + 6)} ${f(tx)} ${f(vy + 4)}`;
   }
 
   const notShown = [...L.notFit.map((n) => `${n.tag} (${n.partNumber}) — does not fit`), ...L.unplaced.map((u) => `${u.tag} (${u.partNumber}) — ${u.reason}`)];
   const encColor = finish === 'stainless' ? '#c9cdd1' : finish === 'nonmetal' ? '#d9dad6' : '#cfd2cd';
   return {
-    layout: L, enc: { w: W, h: H, finish, color: encColor }, backplateFinish, devices, pins, wires, plates, door, doorBundle, notShown,
+    layout: L, enc: { w: W, h: H, finish, color: encColor }, backplateFinish, devices, pins, wires, plates, door, doorBundle, doorWires, notShown,
     title: ctx.projectName || 'Control panel',
   };
 }

@@ -19,7 +19,7 @@ export default function PrintPage() {
         </button>
       </div>
 
-      <h2 className="text-lg font-semibold mb-2">I/O list</h2>
+      <h2 className="text-base font-semibold mb-2">I/O list</h2>
       <table className="w-full text-sm border border-gray-300 mb-8">
         <thead className="bg-gray-100">
           <tr>
@@ -38,7 +38,7 @@ export default function PrintPage() {
         </tbody>
       </table>
 
-      <h2 className="text-lg font-semibold mb-2">Ladder program ({ladder.rungs.length} rungs + END)</h2>
+      <h2 className="text-base font-semibold mb-2">Ladder program ({ladder.rungs.length} rungs + END)</h2>
       <LadderView program={ladder} labels={labels} />
     </div>
   );
