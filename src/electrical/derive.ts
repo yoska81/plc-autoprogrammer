@@ -762,7 +762,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     };
     chain('S11', 'S12', '11-12');
     chain('S21', 'S22', '21-22');
-    const rs = [reset ?? 'RESET', ...edm];
+    const rs = [reset ?? 'PB?', ...edm]; // same placeholder as the drawings until a reset button is assigned
     rs.forEach((tag, k) => addWire({ wire: k === 0 ? 'S33' : `S33${letter(k)}`, from: k === 0 ? `${relay.tag}:S33` : `${rs[k - 1]}:${k - 1 === 0 ? '14' : '22'}`, to: `${tag}:${k === 0 ? '13' : '21'}`, color: 'BU', size: '18 AWG', function: k === 0 ? 'Safety reset' : 'Feedback (EDM) loop' }));
     addWire({ wire: 'S34', from: `${rs[rs.length - 1]}:${rs.length === 1 ? '14' : '22'}`, to: `${relay.tag}:S34`, color: 'BU', size: '18 AWG', function: 'Feedback (EDM) loop' });
     addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:13`, color: 'BU', size: '18 AWG', function: 'Safety output supply' });

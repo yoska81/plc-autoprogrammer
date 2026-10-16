@@ -43,7 +43,9 @@ function tableSheet(wb: Workbook, name: string, t: DocTable, note?: string): Wor
       row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GROUP } };
       continue;
     }
-    const row = ws.addRow(r);
+    // Centred / right-aligned columns hold quantities, rungs, amps…: store plain numbers as numbers
+    // (no leading zeros, so IDs like "001" stay text).
+    const row = ws.addRow(r.map((v, i) => (t.columns[i]?.align && t.columns[i].align !== 'left' && /^-?(0|[1-9]\d*)(\.\d+)?$/.test(v.trim()) ? Number(v) : v)));
     row.alignment = { wrapText: true, vertical: 'top' };
     t.columns.forEach((c, i) => { if (c.align && c.align !== 'left') row.getCell(i + 1).alignment = { wrapText: true, vertical: 'top', horizontal: c.align }; });
   }
