@@ -227,7 +227,7 @@ export default function App() {
         <span>HMI: {hmiPart || '—'}</span>
         <span>Rev {rev.rev} · {rev.description}</span>
         <span className="ml-auto" />
-        <span>v0.7.0</span>
+        <span>v{__APP_VERSION__}</span>
       </div>
     </div>
   );

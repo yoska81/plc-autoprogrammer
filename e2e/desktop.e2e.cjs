@@ -1,0 +1,114 @@
+// Desktop (Electron) app: launches the built app, checks the window, that projects survive a restart,
+// that saving goes through the native Save dialog, and that printing lays the PDF out at its real size.
+//
+//   npm run build:desktop
+//   xvfb-run -a node e2e/desktop.e2e.cjs        # Linux without a display
+const { _electron: electron } = require('/opt/node22/lib/node_modules/playwright');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { PDFDocument, rgb } = require('pdf-lib');
+
+const ROOT = path.join(__dirname, '..');
+const OUT = path.join(__dirname, 'out-desktop');
+fs.rmSync(OUT, { recursive: true, force: true });
+fs.mkdirSync(OUT, { recursive: true });
+const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'isa-desktop-'));
+const log = (...a) => console.log('•', ...a);
+const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what); };
+
+const launch = (env = {}) => electron.launch({
+  executablePath: require(path.join(ROOT, 'node_modules', 'electron')),
+  args: [ROOT, '--no-sandbox'],
+  env: { ...process.env, ISA_USER_DATA: PROFILE, ...env },
+});
+
+(async () => {
+  const errors = [];
+  // ── First run ──
+  let app = await launch();
+  let win = await app.firstWindow();
+  win.on('pageerror', (e) => errors.push(e.message));
+  win.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  await win.waitForSelector('text=Project navigation', { timeout: 30000 });
+  const title = await win.title();
+  const bridge = await win.evaluate(() => ({ isDesktop: window.isaDesktop?.isDesktop, version: window.isaDesktop?.version, keys: Object.keys(window.isaDesktop ?? {}), node: typeof require !== 'undefined' || typeof process !== 'undefined' }));
+  const status = await win.locator('div.h-6').last().innerText();
+  log('Window title:', title, '| url', win.url(), '| bridge', JSON.stringify(bridge), '| status bar', status.replace(/\s+/g, ' '));
+  check(win.url().startsWith('app://isa/'), 'app served from app://isa');
+  check(bridge.isDesktop && bridge.keys.includes('print') && bridge.keys.includes('saveFile') && bridge.keys.includes('listPrinters'), 'desktop bridge exposed');
+  check(!bridge.node, 'no Node in the page');
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  check(bridge.version === pkg.version && status.includes(`v${pkg.version}`), 'version from package.json');
+  await win.screenshot({ path: path.join(OUT, '01_main_window.png') });
+
+  // Create a project through the wizard; it must survive a restart.
+  await win.getByRole('button', { name: 'New project' }).first().click();
+  await win.getByPlaceholder('e.g. Line 3 case packer').fill('Desktop Test Cell');
+  await win.getByRole('button', { name: 'Next →' }).click();
+  await win.getByRole('button', { name: 'Close ✕' }).click();
+  await win.waitForTimeout(500);
+  const projects1 = await win.locator('select[aria-label="Open project"] option').allInnerTexts();
+  log('Projects before restart:', projects1.join(' | '));
+
+  // Native Save dialog (stubbed in the main process: no dialog can be clicked headless).
+  const savePath = path.join(OUT, 'saved_io_list.csv');
+  await app.evaluate(({ dialog }, p) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: p }); }, savePath);
+  const saved = await win.evaluate(async () => window.isaDesktop.saveFile('io_list.csv', new TextEncoder().encode('Tag,Address\nI001,X001\n')));
+  log('saveFile:', JSON.stringify(saved), '| file', fs.existsSync(savePath) ? fs.readFileSync(savePath, 'utf8').split('\n')[1] : 'missing');
+  check(saved.ok && fs.readFileSync(savePath, 'utf8').includes('I001,X001'), 'file saved through the Save dialog');
+  // Through the app's own Deliverables button (saveBlob → bridge).
+  const csvPath = path.join(OUT, 'from_button.csv');
+  await app.evaluate(({ dialog }, p) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: p }); }, csvPath);
+  await win.locator('nav a', { hasText: 'Deliverables' }).click();
+  await win.getByRole('button', { name: 'Excel report', exact: true }).click();
+  await win.getByRole('alert').filter({ hasText: 'Saved:' }).waitFor({ timeout: 60000 });
+  log('Excel report via Save dialog:', fs.statSync(csvPath).size, 'bytes,', (await win.getByRole('alert').innerText()).split('\n')[0]);
+  await app.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => ({ canceled: true }); });
+  const cancelled = await win.evaluate(async () => window.isaDesktop.saveFile('x.pdf', new Uint8Array([1])));
+  check(cancelled.cancelled === true, 'cancel reported');
+
+  const printers = await win.evaluate(async () => window.isaDesktop.listPrinters());
+  log('Printers seen by Windows/CUPS:', printers.length ? printers.map((p) => p.name).join(', ') : 'none (no printers on this machine)');
+  await win.screenshot({ path: path.join(OUT, '02_deliverables.png') });
+  await app.close();
+
+  // ── Second run: projects kept; window size remembered ──
+  app = await launch();
+  win = await app.firstWindow();
+  await win.waitForSelector('text=Project navigation', { timeout: 30000 });
+  const projects2 = await win.locator('select[aria-label="Open project"] option').allInnerTexts();
+  log('Projects after restart:', projects2.join(' | '));
+  check(projects2.includes('Desktop Test Cell'), 'project kept after restart');
+  check(fs.existsSync(path.join(PROFILE, 'window-state.json')), 'window size remembered');
+  await app.close();
+
+  // ── Printing: a 2-label PDF (38 x 12 mm) and a mixed-size PDF, laid out by the print window ──
+  for (const [name, sizesMm, uniform] of [['labels', [[38, 12], [38, 12]], true], ['mixed', [[215.9, 279.4], [431.8, 279.4]], false]]) {
+    const doc = await PDFDocument.create();
+    for (const [w, h] of sizesMm) {
+      const page = doc.addPage([w / 25.4 * 72, h / 25.4 * 72]);
+      page.drawRectangle({ x: 2, y: 2, width: page.getWidth() - 4, height: page.getHeight() - 4, borderWidth: 1, borderColor: rgb(0, 0, 0) });
+      page.drawText(name.toUpperCase(), { x: 6, y: page.getHeight() / 2 - 4, size: 8 });
+    }
+    const bytes = await doc.save();
+    const outPdf = path.join(OUT, `print_${name}.pdf`);
+    app = await launch({ ISA_PRINT_TO_PDF: outPdf });
+    win = await app.firstWindow();
+    await win.waitForSelector('text=Project navigation', { timeout: 30000 });
+    const r = await win.evaluate(async ({ b, w, h, u }) => window.isaDesktop.print({ pdf: new Uint8Array(b), jobName: 'test', pageWidthMm: w, pageHeightMm: h, uniformPageSize: u, printerName: '', showDialog: true, scale: 'actual', copies: 1 }),
+      { b: [...bytes], w: sizesMm[0][0], h: sizesMm[0][1], u: uniform });
+    await app.close();
+    const printed = await PDFDocument.load(fs.readFileSync(outPdf));
+    const mm = printed.getPages().map((p) => [p.getWidth() / 72 * 25.4, p.getHeight() / 72 * 25.4]);
+    const got = mm.map(([w, h]) => `${w.toFixed(1)}x${h.toFixed(1)}`);
+    log(`Print ${name}:`, JSON.stringify(r), '| printed pages', got.join(', '));
+    check(r.ok, `print ${name} ok`);
+    // Print-to-PDF rounds the page to whole points (≤ 0.2 mm); the printer gets the exact size in microns.
+    check(mm.length === sizesMm.length && mm.every(([w, h], i) => Math.abs(w - sizesMm[i][0]) < 0.3 && Math.abs(h - sizesMm[i][1]) < 0.3), `print ${name} at actual page sizes`);
+  }
+
+  log('Page errors:', errors.length ? errors : 'none');
+  fs.rmSync(PROFILE, { recursive: true, force: true });
+  if (errors.length) throw new Error(`${errors.length} page/console error(s)`);
+})().catch((e) => { console.error('FAILED:', e.message.split('\n').slice(0, 8).join('\n')); process.exit(1); });

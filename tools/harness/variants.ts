@@ -64,6 +64,7 @@ const COMMON_DOOR = [
   c('ES1C', 'ECX1030-2', 1, 'Second NC contact for dual-channel E-stop'),
   c('PB1', 'GCX1102', 1, 'Start'),
   c('PB2', 'GCX1101', 1, 'Stop'),
+  c('PB4', 'GCX1104', 1, 'Safety Reset'),
   c('PE1', 'C18D-0P-1A', 1, 'Part at end photo-eye'),
   c('LS1', 'PNK-AP-3H', 1, 'Pusher extended prox'),
   c('SOL1', '100222015324006', 1, 'Pusher valve'),
