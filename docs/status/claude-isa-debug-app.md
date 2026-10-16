@@ -62,6 +62,7 @@ PRs: #3 (merged), #12 (merged: Windows installer), next PR (draft → `claude/op
 | A-13 | Electrical / Deliverables headers | with no CPU chosen they name the default CPU (C0-10DD1E-D) while the status bar says "PLC: —" | open, low (`usePlc` falls back to a default CPU; the ExportPage header is Dev 1's) | — |
 | A-14 | Preview | "Print / PDF" on the Electrical page opens a new tab (`target=_blank`), which the preview frame may block | open, needs a check in the real preview (coordinator) | — |
 | A-16 | Preview example update | viewers of older previews got two projects named "Conveyor Cell (example)" | fixed: their copy becomes "Conveyor Cell (your copy)" | 95dbe29 |
+| A-17 | Design review badge, simulator force/bypass | white text on amber-500 (2.15:1) on every page | fixed: dark text on amber | see "Readable text on amber badges" |
 | A-15 | Preview | the connection test asks for the `complex` model tier to get a one-word reply | open, cosmetic (`claudeAccount.ts`) | — |
 
 ## Review of claude/isa-dev-labels-print (head 6c55e83, 2026-10-16 17:30)
@@ -74,3 +75,7 @@ PRs: #3 (merged), #12 (merged: Windows installer), next PR (draft → `claude/op
 - tsc/eslint clean. Their own E2E passes (program blocks, simulation, full package).
 - Sweep: 0 problems. Old-data: all pass.
 - No UI bugs found. (Fixed earlier in my branch, now in src/plc/sim: at 1366 px the simulator clipped the I/O column and Live logic drew coils over contacts; see A-07/A-08.)
+
+## Review round 2 (2026-10-16 18:30): labels-print ccd368c (purchasing), program-sim 31f4fe5
+- Both heads are already merged into my branch. Web E2E, sweep (now with /review and the purchasing card on Deliverables) and old-data (15 pages) pass.
+- Found A-17: the design-review badge used white text on amber (2.15:1) on every page. Fixed, together with the same pattern in the simulator force/bypass controls.
