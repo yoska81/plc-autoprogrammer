@@ -1479,14 +1479,19 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     }
     const cy = y + b.h / 2;
     rails.push({ x: backplate.x + MARGIN + DUCT + 4, y: cy - RAIL_H / 2, w: backplate.w - 2 * (MARGIN + DUCT + 4), h: RAIL_H });
+    // Main disconnect at the right-hand end of its rail (latch side of a left-hinged door), so the
+    // through-door handle is on the right as usual; the rest of the rail packs from the left.
+    const ds = b.items[0]?.category === 'disconnect' ? b.items[0] : undefined;
+    const rest = ds ? b.items.slice(1) : b.items;
     let x = innerX0;
-    b.items.forEach((it, k) => {
-      x += k > 0 ? it.gapLeft ?? gapBefore(b.items[k - 1], it) : 0;
+    rest.forEach((it, k) => {
+      x += k > 0 ? it.gapLeft ?? gapBefore(rest[k - 1], it) : 0;
       it.x = x; it.y = cy - it.h / 2;
       if (it.sub) { let sy = it.y; for (const s of it.sub) { s.x = x + (it.w - s.w) / 2; s.y = sy; sy += s.h; } }
       x += it.w;
       items.push(it);
     });
+    if (ds) { ds.x = innerX0 + innerW - ds.w; ds.y = cy - ds.h / 2; items.push(ds); }
     y += b.h;
     if (!(lastBand && b.terminals) || y + DUCT <= limit + 0.01) {
       ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
