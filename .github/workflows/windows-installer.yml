@@ -46,6 +46,7 @@ jobs:
           npx tsx src/review/codeRules/iec.test.ts
           npx tsx src/electrical/layout/layout.test.ts
           npx tsx src/electrical/catalog.test.ts
+          npx tsx src/electrical/vfdLine.test.ts
 
       - name: Build installer
         run: npm run dist:win

@@ -793,7 +793,16 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   for (const b of auxBranches) b.feedWires.forEach((w, k) => addWire({ wire: w, from: `${b.protection.tag}:T${k + 1}`, to: b.protection.comp.function || 'LOAD', color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: b.protection.comp.function }));
   for (const m of motors) {
     const prot = m.protection?.tag;
-    const lineTo = m.vfd ? m.vfd.tag : m.contactors[0]?.tag;
+    // VFD with a line contactor (safety stop by contactor): protection -> K:L, K:T -> VFD:L
+    const lineK = m.vfd ? m.contactors[0] : undefined;
+    const lineTo = lineK ? lineK.tag : m.vfd ? m.vfd.tag : m.contactors[0]?.tag;
+    if (lineK && m.vfd) m.midWires.forEach((w, k) => addWire({ wire: w, from: `${lineK.tag}:T${k + 1}`, to: `${m.vfd!.tag}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} line contactor to drive` }));
+    if (lineK && !io.some((p) => p.deviceTag === lineK.tag)) {
+      const safetyOut = safety.outputSupply;
+      // not switched by a PLC output: the coil is held by the safety-switched supply, so the safety relay drops it
+      addWire({ wire: safetyOut, from: `TB1 ${safetyOut}`, to: `${lineK.tag}:A1`, color: 'BU', size: '18 AWG', function: `${lineK.tag} line contactor coil (safety stop of ${m.vfd!.tag})` });
+      addWire({ wire: '0V', from: `${lineK.tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${lineK.tag} line contactor coil` });
+    }
     m.lineWires.forEach((w, k) => {
       if (prot && lineTo) addWire({ wire: w, from: `${prot}:T${k + 1}`, to: `${lineTo}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} line side` });
       if (m.contactors[1]) addWire({ wire: w, from: `${m.contactors[0].tag}:L${k + 1}`, to: `${m.contactors[1].tag}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: m.awg, function: `${m.motor.tag} reversing jumper` });
