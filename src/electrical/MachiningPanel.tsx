@@ -4,6 +4,7 @@ import { backPanelDrilling, doorDrilling, dualDim, dualSize, type DrawingContext
 import { drillingDxf, type DxfOptions } from './dxf';
 import ResizablePane from '../components/ResizablePane';
 import { saveBlob } from '../deliverables/files';
+import { useUi } from '../store/useUiStore';
 
 const th = 'text-left font-medium text-steel-500 px-2 py-1 border-b border-steel-200 bg-steel-50 whitespace-nowrap';
 const td = 'px-2 py-1 border-b border-steel-100 whitespace-nowrap';
@@ -47,9 +48,9 @@ function PlanView({ plan, selected, onSelect }: { plan: DrillingPlan; selected: 
  * 1:1 DXF downloads (inch by default, or mm), plus the hole tables in dual dimensions inch [mm].
  */
 export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext | null; fileBase: string }) {
-  const [which, setWhich] = useState<'backpanel' | 'door'>('backpanel');
-  const [units, setUnits] = useState<'mm' | 'in'>('in');
-  const [cutOnly, setCutOnly] = useState(false);
+  const [which, setWhich] = useUi<'backpanel' | 'door'>('machining.which', 'backpanel');
+  const [units, setUnits] = useUi<'mm' | 'in'>('machining.units', 'in');
+  const [cutOnly, setCutOnly] = useUi('machining.cutOnly', false);
   const [selected, setSelected] = useState<string | null>(null);
 
   const plans = useMemo(() => (ctx ? { backpanel: backPanelDrilling(ctx), door: doorDrilling(ctx) } : null), [ctx]);

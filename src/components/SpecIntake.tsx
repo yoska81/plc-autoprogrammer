@@ -6,6 +6,8 @@ import type { SpecSections } from '../spec/types';
 import { organizeSpec } from '../lib/ai/specAI';
 import { Spinner, ReasoningPanel } from './common';
 import { useSyncQuestions } from './questions/useQuestionStore';
+import { useDraft } from '../store/useDraftStore';
+import { useUi } from '../store/useUiStore';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.csv,image/*';
@@ -14,14 +16,14 @@ const ACCEPT = '.pdf,.docx,.txt,.md,.csv,image/*';
 export default function SpecIntake() {
   const spec = useSpecStore();
   const settings = useSettingsStore();
-  const [newText, setNewText] = useState('');
+  const [newText, setNewText] = useDraft('spec.newText', '');
   const [files, setFiles] = useState<File[]>([]);
   // Global AI job: the spec is updated even if the user leaves this page meanwhile.
   const busy = useAiJobRunning('spec');
   const error = useAiJobError('spec');
-  const [summary, setSummary] = useState<string | null>(null);
+  const [summary, setSummary] = useUi<string | null>('spec.summary', null);
   const [reasoning, setReasoning] = useState<string | null>(null);
-  const [undo, setUndo] = useState<SpecSections | null>(null);
+  const [undo, setUndo] = useDraft<SpecSections | null>('spec.undo', null);
   const [dragOver, setDragOver] = useState(false);
   const apiKey = settings.anthropicApiKey;
   // The AI's open questions, each answered right under it (saved per project, merged into the spec).

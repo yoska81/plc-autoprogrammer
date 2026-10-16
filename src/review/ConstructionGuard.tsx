@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Finding } from './types';
+import { useDraft } from '../store/useDraftStore';
 
 /**
  * Shown instead of issuing a revision "for construction" while critical design
@@ -9,7 +9,7 @@ import type { Finding } from './types';
 export default function ConstructionGuard({ findings, rev, onCancel, onOverride }: {
   findings: Finding[]; rev: string; onCancel: () => void; onOverride: (reason: string) => void;
 }) {
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useDraft('construction.reason', '');
   return (
     <div role="alertdialog" aria-label="Critical findings open" className="mx-3 mb-3 border border-red-300 bg-red-50 p-3 text-sm text-red-900">
       <p className="font-semibold">Revision {rev} cannot be issued for construction: {findings.length} critical design review finding{findings.length === 1 ? ' is' : 's are'} open.</p>

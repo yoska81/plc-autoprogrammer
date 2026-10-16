@@ -4,6 +4,7 @@ import { ALL_TEMPLATES } from '../data/ioTemplates';
 import type { IOCategory } from '../types/io';
 import { useIOStore } from '../store/useIOStore';
 import { CategoryBadge } from './CategoryBadge';
+import { useUi } from '../store/useUiStore';
 
 const CATEGORIES: (IOCategory | 'All')[] = [
   'All', 'Safety', 'Operator/HMI', 'External Machine', 'Product Detection',
@@ -19,9 +20,9 @@ interface Props {
 
 export function TemplateLibrary({ onClose }: Props) {
   const { projectIO, importFromTemplate } = useIOStore();
-  const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<IOCategory | 'All'>('All');
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [search, setSearch] = useUi('templates.search', '');
+  const [categoryFilter, setCategoryFilter] = useUi<IOCategory | 'All'>('templates.category', 'All');
+  const [typeFilter, setTypeFilter] = useUi<TypeFilter>('templates.type', 'all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Track by template ID so renaming an imported point doesn't allow re-importing it.

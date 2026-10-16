@@ -23,6 +23,9 @@ import { LEVEL_LABEL, LOOK_LABEL, lookOf } from '../hmi/theme';
 import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
+import { useDraft } from '../store/useDraftStore';
+import { useUi } from '../store/useUiStore';
+import { withAnalogScale } from '../hmi/analogScale';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 
 const input = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white';
@@ -221,19 +224,21 @@ export default function HmiPage() {
   const error = localError ?? genError ?? recreateError;
   const [reasoning, setReasoning] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
-  const screenId = params.get('screen');
-  const setScreenId = (id: string | null) => setParams(id ? { screen: id } : {}, { replace: true });
-  const [sel, setSel] = useState<string[]>([]);
+  // ?screen= wins; without it (navigating back from another page) the last screen shown.
+  const [lastScreen, setLastScreen] = useUi<string | null>('hmi.screen', null);
+  const screenId = params.get('screen') ?? lastScreen;
+  const setScreenId = (id: string | null) => { setLastScreen(id); setParams(id ? { screen: id } : {}, { replace: true }); };
+  const [sel, setSel] = useUi<string[]>('hmi.selection', []);
   const selected = sel.length === 1 ? sel[0] : null;
   const setSelected = (id: string | null) => setSel(id ? [id] : []);
-  const [editing, setEditing] = useState(false);
-  const [snapOn, setSnapOn] = useState(true);
+  const [editing, setEditing] = useUi('hmi.editing', false);
+  const [snapOn, setSnapOn] = useUi('hmi.snap', true);
   const aiBusy = useAiJobRunning('hmi-recreate');
-  const [proposal, setProposal] = useState<{ screenId: string; elements: HmiElement[]; tags: HmiTag[]; explanation: string } | null>(null);
+  const [proposal, setProposal] = useDraft<{ screenId: string; elements: HmiElement[]; tags: HmiTag[]; explanation: string } | null>('hmi.proposal', null);
   const activeProject = useProjectsStore((s) => s.activeId);
   const [choosing, setChoosing] = useState(false);
-  const [tab, setTab] = useState<Tab>('tags');
-  const [tagFilter, setTagFilter] = useState('');
+  const [tab, setTab] = useUi<Tab>('hmi.tab', 'tags');
+  const [tagFilter, setTagFilter] = useUi('hmi.tagFilter', '');
 
   const model = getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
   const apiKey = settings.anthropicApiKey;
@@ -616,7 +621,7 @@ export default function HmiPage() {
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{selectedEl ? 'Element properties' : sel.length > 1 ? `${sel.length} elements selected` : 'Screen'}</h3>
                   {selectedEl ? (
                     <ElementEditor key={selectedEl.id} el={selectedEl} screens={design.screens}
-                      onChange={(e) => updateScreen({ ...screen, elements: screen.elements.map((x) => (x.id === e.id ? e : x)) })}
+                      onChange={(e) => updateScreen({ ...screen, elements: screen.elements.map((x) => (x.id === e.id ? withAnalogScale(x, e, io, addresses) : x)) })}
                       onDelete={() => { updateScreen(deleteElements(screen, [selectedEl.id])); setSelected(null); }} />
                   ) : sel.length > 1 ? (
                     <p className="text-xs text-gray-500">Use the tools above the screen to line them up, space them evenly, duplicate or delete them. Drag any of them to move all.</p>

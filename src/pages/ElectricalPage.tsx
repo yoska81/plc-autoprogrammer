@@ -29,6 +29,8 @@ import StageBanner from '../components/StageBanner';
 import { useFingerprints, useStages } from '../spec/useStages';
 import { useStageStore } from '../store/useStageStore';
 import { specToText } from '../spec/types';
+import { useDraft } from '../store/useDraftStore';
+import { useUi } from '../store/useUiStore';
 import { startAiJob, useAiJobError, useTakeResult } from '../lib/ai/jobs';
 
 const ENCLOSURES: EnclosureRating[] = ['NEMA 12', 'NEMA 4', 'NEMA 4X', 'NEMA 1'];
@@ -78,8 +80,8 @@ export default function ElectricalPage() {
   const [reasoning, setReasoning] = useState<string | null>(null);
   const pref = useVendorPreference();
   const CATEGORIES = useMemo(() => [...new Set(catalogFor(pref).map((p) => p.category))].sort((a, b) => (CATEGORY_LABEL[a] ?? a).localeCompare(CATEGORY_LABEL[b] ?? b)) as CatalogCategory[], [pref]);
-  const [pickCat, setPickCat] = useState<CatalogCategory>('breaker');
-  const [pickPart, setPickPart] = useState('');
+  const [pickCat, setPickCat] = useUi<CatalogCategory>('electrical.pickCat', 'breaker');
+  const [pickPart, setPickPart] = useDraft('electrical.pickPart', '');
   const [swap, setSwap] = useState<number | null>(null);
   const region = useProjectStore((s) => s.info.region);
 

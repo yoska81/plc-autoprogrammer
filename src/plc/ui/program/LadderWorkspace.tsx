@@ -18,6 +18,8 @@ import BlockTree from './BlockTree';
 import CrossRefPanel from './CrossRefPanel';
 import ProgramPrint from './ProgramPrint';
 import type { AnalogSetupRow } from '../../core/analog';
+import { useDraft } from '../../../store/useDraftStore';
+import { useUi } from '../../../store/useUiStore';
 import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 
 type Tab = 'describe' | 'fix' | 'history';
@@ -90,16 +92,22 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
 
   // A finding sent from the Design review page opens Fix & Ask with the request filled in.
   const [fromReview] = useState(() => useReviewStore.getState().fixRequest?.stage === 'program' ? useReviewStore.getState().fixRequest : null);
-  useEffect(() => { if (fromReview) useReviewStore.getState().requestFix(null); }, [fromReview]);
   const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(ladder.rungs.length || fromReview ? 'fix' : 'describe');
-  const [request, setRequest] = useState(fromReview?.text ?? '');
+  const [tab, setTab] = useUi<Tab>('program.tab', ladder.rungs.length || fromReview ? 'fix' : 'describe');
+  const [request, setRequest] = useDraft('program.request', fromReview?.text ?? '');
+  // A request from the review replaces whatever was remembered.
+  useEffect(() => {
+    if (!fromReview) return;
+    useReviewStore.getState().requestFix(null);
+    setTab('fix');
+    setRequest(fromReview.text);
+  }, [fromReview, setTab, setRequest]);
   const [localError, setError] = useState<string | null>(null);
   const genError = useAiJobError('program'), reviseError = useAiJobError('program-revise');
   const error = localError ?? genError ?? reviseError;
   const [selectedRungId, setSelectedRungId] = useState<string | null>(() => searchParams.get('rung'));
   /** null = whole program; '' = rungs without a block. */
-  const [block, setBlock] = useState<string | null>(null);
+  const [block, setBlock] = useUi<string | null>('program.block', null);
   const blocks = ladder.blocks ?? [];
   const blockOf = (r: Rung) => (r.block && blocks.some((b) => b.id === r.block) ? r.block : GENERAL);
   const hasGeneral = blocks.length > 0 && ladder.rungs.some((r) => blockOf(r) === GENERAL);
@@ -107,7 +115,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const blockName = activeBlock === null ? '' : blocks.find((b) => b.id === activeBlock)?.name ?? 'General';
   const shown: LadderProgram = activeBlock === null ? ladder : { ...ladder, rungs: ladder.rungs.filter((r) => blockOf(r) === activeBlock) };
   const realNumber = (id: string) => ladder.rungs.findIndex((r) => r.id === id) + 1;
-  const [xrefOpen, setXrefOpen] = useState(false);
+  const [xrefOpen, setXrefOpen] = useUi('program.xrefOpen', false);
   const [xrefAddress, setXrefAddress] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(() => (searchParams.get('rung') ? { id: searchParams.get('rung')!, n: 0 } : null));

@@ -9,6 +9,7 @@ import { notify } from '../store/useNoticeStore';
 import ConstructionGuard from '../review/ConstructionGuard';
 import { acceptCriticalForConstruction, openCriticalFindings } from '../review/actions';
 import type { Finding } from '../review/types';
+import { useDraft } from '../store/useDraftStore';
 
 const input = 'w-full border border-steel-300 rounded-sm px-2 py-1 bg-white focus:outline-none focus:border-brand-500';
 const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50';
@@ -67,7 +68,7 @@ function ProjectData() {
   const { projects, activeId, renameActive, openProject, deleteProject } = useProjectsStore();
   const name = projects.find((p) => p.id === activeId)?.name ?? '';
   const today = new Date().toISOString().slice(0, 10);
-  const [draft, setDraft] = useState<Revision>({ rev: nextRev(info.revisions), date: today, description: PURPOSES[0], by: info.preparedBy });
+  const [draft, setDraft] = useDraft<Revision>('revision.draft', { rev: nextRev(info.revisions), date: today, description: PURPOSES[0], by: info.preparedBy });
   const cur = currentRevision(info);
   const issuedForConstruction = info.revisions.some((r) => /construction|as built/i.test(r.description));
 

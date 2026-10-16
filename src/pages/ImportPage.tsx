@@ -8,6 +8,7 @@ import { useElectricalStore, DEFAULT_INPUTS } from '../store/useElectricalStore'
 import { analyzeExistingSystem, type Confidence, type ImportResult } from '../lib/ai/importAI';
 import { PLC_PROFILES } from '../plc/core/profiles';
 import { Spinner, ReasoningPanel } from '../components/common';
+import { useUi } from '../store/useUiStore';
 import { startAiJob, useAiJobError, useAiJobRunning } from '../lib/ai/jobs';
 
 /** Kept in memory (not persisted) so switching pages doesn't lose an analysis. */
@@ -53,7 +54,7 @@ export default function ImportPage() {
   const jobError = useAiJobError('import');
   const [fileError, setError] = useState<string | null>(null);
   const error = fileError ?? jobError;
-  const [replaceIO, setReplaceIO] = useState(true);
+  const [replaceIO, setReplaceIO] = useUi('import.replaceIO', true);
   const [dragOver, setDragOver] = useState(false);
 
   const apiKey = settings.anthropicApiKey;

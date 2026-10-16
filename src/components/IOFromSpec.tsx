@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useIOStore } from '../store/useIOStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -11,6 +11,7 @@ import StageBanner from './StageBanner';
 import { Spinner } from './common';
 import QuestionList from './questions/QuestionList';
 import { useQuestions, useSyncQuestions } from './questions/useQuestionStore';
+import { useDraft } from '../store/useDraftStore';
 
 /** Generate / update the I/O list from the spec, with a review step before applying. */
 export default function IOFromSpec({ children }: { children: (generateButton: ReactNode) => ReactNode }) {
@@ -25,7 +26,7 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
   // shown here when they come back.
   const busy = useAiJobRunning('io');
   const error = useAiJobError('io');
-  const [plan, setPlan] = useState<(IOMergePlan & { explanation: string; questions: string[] }) | null>(null);
+  const [plan, setPlan] = useDraft<(IOMergePlan & { explanation: string; questions: string[] }) | null>('io.plan', null);
 
   const apiKey = settings.anthropicApiKey;
   // The AI's questions about the I/O, answered under each question (kept per project after the dialog closes).

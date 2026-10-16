@@ -5,6 +5,7 @@ import { getHmi } from './hmiCatalog';
 import { HmiRuntimeTracker, type HmiRuntime } from './runtime';
 import type { HmiDesign, HmiElement } from './types';
 import { LEVEL_LABEL } from './theme';
+import { useUi } from '../store/useUiStore';
 
 /**
  * The HMI running against the simulated PLC: buttons write bits, lamps and
@@ -12,7 +13,7 @@ import { LEVEL_LABEL } from './theme';
  */
 export default function LiveHmi({ handle, design }: { handle: SimHandle; design: HmiDesign }) {
   const model = getHmi(design.hmiPartNumber);
-  const [screenId, setScreenId] = useState(design.screens[0]?.id ?? '');
+  const [screenId, setScreenId] = useUi('liveHmi.screen', design.screens[0]?.id ?? '');
   const tracker = useMemo(() => new HmiRuntimeTracker(design), [design]);
   const [runtime, setRuntime] = useState<HmiRuntime | null>(null);
 

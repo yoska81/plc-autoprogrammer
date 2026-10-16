@@ -1,15 +1,15 @@
-import { useState } from 'react';
 import type { DrawingContext } from './derive';
 import CabinetRender from './render/CabinetRender';
 import { useHmiStore } from '../store/useHmiStore';
+import { useUi } from '../store/useUiStore';
 
 type View = 'both' | 'inside' | 'door';
 
 /** Realistic pictures of the designed cabinet: open (inside) and closed (door). */
 export default function CabinetPictures({ ctx }: { ctx: DrawingContext | null }) {
   const hmiPart = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
-  const [view, setView] = useState<View>('both');
-  const [labels, setLabels] = useState(true);
+  const [view, setView] = useUi<View>('pictures.view', 'both');
+  const [labels, setLabels] = useUi('pictures.labels', true);
 
   if (!ctx) {
     return <div className="flex-1 flex items-center justify-center text-sm text-steel-500">No design yet. Fill in the Design tab and click Generate.</div>;

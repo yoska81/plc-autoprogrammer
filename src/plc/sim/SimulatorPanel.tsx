@@ -4,7 +4,7 @@
  * bypasses and per-block testing.
  */
 import ResizablePane from '../../components/ResizablePane';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { ArrowPathIcon, ExclamationTriangleIcon, ForwardIcon, PauseIcon, PlayIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import type { IOWiring } from '../../electrical/types';
 import type { LadderProgram } from '../core/ladder';
@@ -22,6 +22,7 @@ import MachinePanel from './MachinePanel';
 import type { MachineActions } from './MachinePanel';
 import LiveLadder from './LiveLadder';
 import IOPanel from './IOPanel';
+import { useUi } from '../../store/useUiStore';
 
 export type { SimHandle } from './controller';
 
@@ -77,7 +78,7 @@ function bypassItems(snap: SimSnapshot, ctl: SimController, program: LadderProgr
 
 export default function SimulatorPanel({ program, io, wiring, labels, onHandle }: SimulatorPanelProps) {
   const { ctl, snap } = useSimulation(program, io, wiring);
-  const [view, setView] = useState<'live' | 'drawing'>('live');
+  const [view, setView] = useUi<'live' | 'drawing'>('sim.view', 'live');
 
   useEffect(() => { onHandle?.(ctl.handle); }, [ctl, onHandle]);
 
