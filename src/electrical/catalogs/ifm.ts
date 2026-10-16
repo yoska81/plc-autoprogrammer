@@ -224,6 +224,8 @@ export const IFM: CatalogPart[] = [
     family: 'ifm IO-Link master',
     url: 'https://www.ifm.com/us/en/product/AL1920',
     mount: 'backplate',
+    widthMm: 50,
+    heightMm: 125.7,
     ratings: { kind: 'io-link master', ports: 8, protocols: 'EtherNet/IP, MQTT JSON (IoT port)', volts: '20...30 DC', ip: 'IP20' },
     verified: true,
   },

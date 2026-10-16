@@ -1,11 +1,11 @@
 /**
  * nVent HOFFMAN enclosures and subpanels.
  *
- * Verification (October 2026): nvent.com does not load outside a browser; each part is
- * from its Elliott Electric product page (the page in `url`). Subpanels are catalogued
- * as enclosures with ratings kind = 'subpanel' (same as the AutomationDirect catalog);
- * enclosure widthMm/heightMm = usable subpanel size. `nema` holds the rating the listing
- * states for sure; `nemaNote` keeps the full listing text — confirm with nVent.
+ * Verification (October 2026): each part from its own nVent product page
+ * (https://www.nvent.com/en-us/hoffman/products/enc<catalog number>, stored in `url`);
+ * subpanel sizes from nVent's panel data sheet linked there. Subpanels are catalogued as
+ * enclosures with ratings kind = 'subpanel' (same as the AutomationDirect catalog);
+ * enclosure widthMm/heightMm = usable subpanel size.
  */
 import type { CatalogPart } from '../types';
 
@@ -16,13 +16,12 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN single-door wall-mount continuous-hinge enclosure with clamps, 12x10x5 in, gray mild steel',
     manufacturer: 'Hoffman',
     family: 'Hoffman CHNF continuous-hinge',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A1210CHNF/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca1210chnf',
     mount: 'backplate',
     widthMm: 225.6,
     heightMm: 273.1,
-    ratings: { kind: 'enclosure', heightIn: 12, widthIn: 10, depthIn: 5, nema: '4', material: 'mild steel, gray powder coat', subpanel: 'A12P10', panelHeightIn: 10.75, panelWidthIn: 8.88, nemaNote: 'Type 4 (listing also shows NEMA 12), IP66' },
-    verified: false,
-    verify: 'Elliott page lists A1210CHNF as 12x10x5 Type 4 junction box; confirm A12P10 panel fits CHNF body (A12P10 page says \'fits 12X10 Encl\') and the listed 49 lb weight looks wrong.',
+    ratings: { kind: 'enclosure', heightIn: 12, widthIn: 10, depthIn: 5, nema: '4', material: 'mild steel, gray powder coat', subpanel: 'A12P10', panelHeightIn: 10.75, panelWidthIn: 8.88, nemaNote: 'Type 4, 12, 13 (UL 50/50E, UL 508A)' },
+    verified: true,
   },
   {
     partNumber: 'A12P10',
@@ -30,11 +29,11 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN steel subpanel 10.75 x 8.88 in for 12x10 in enclosure, white',
     manufacturer: 'Hoffman',
     family: 'Hoffman A-P panels',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A12P10/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca12p10',
     mount: 'backplate',
     widthMm: 225.6,
     heightMm: 273.1,
-    ratings: { kind: 'subpanel', panelHeightIn: 10.75, panelWidthIn: 8.88, forUse: '12x10 in enclosure', material: 'steel, white' },
+    ratings: { kind: 'subpanel', panelHeightIn: 10.75, panelWidthIn: 8.88, forUse: '12x10 in enclosure', material: 'steel, white', heightIn: 10.75, widthIn: 8.88 },
     verified: true,
   },
   {
@@ -43,7 +42,7 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN single-door wall-mount continuous-hinge enclosure with clamps, 16x12x6 in, gray mild steel',
     manufacturer: 'Hoffman',
     family: 'Hoffman LP continuous-hinge with clamps',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A161206LP/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca161206lp',
     mount: 'backplate',
     widthMm: 228.6,
     heightMm: 330.2,
@@ -56,11 +55,11 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN steel subpanel 13 x 9 in for 16x12 in enclosure, white',
     manufacturer: 'Hoffman',
     family: 'Hoffman A-P panels',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A16P12/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca16p12',
     mount: 'backplate',
     widthMm: 228.6,
     heightMm: 330.2,
-    ratings: { kind: 'subpanel', panelHeightIn: 13, panelWidthIn: 9, forUse: '16x12 in enclosure', material: 'steel, white' },
+    ratings: { kind: 'subpanel', panelHeightIn: 13, panelWidthIn: 9, forUse: '16x12 in enclosure', material: 'steel, white', heightIn: 13, widthIn: 9 },
     verified: true,
   },
   {
@@ -69,7 +68,7 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN single-door wall-mount continuous-hinge enclosure with clamps, 20x16x8 in, gray mild steel',
     manufacturer: 'Hoffman',
     family: 'Hoffman LP continuous-hinge with clamps',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A201608LP/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca201608lp',
     mount: 'backplate',
     widthMm: 330.2,
     heightMm: 431.8,
@@ -82,11 +81,11 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN steel subpanel 17 x 13 in for 20x16 in enclosure, white',
     manufacturer: 'Hoffman',
     family: 'Hoffman A-P panels',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A20P16/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca20p16',
     mount: 'backplate',
     widthMm: 330.2,
     heightMm: 431.8,
-    ratings: { kind: 'subpanel', panelHeightIn: 17, panelWidthIn: 13, forUse: '20x16 in enclosure', material: 'steel, white' },
+    ratings: { kind: 'subpanel', panelHeightIn: 17, panelWidthIn: 13, forUse: '20x16 in enclosure', material: 'steel, white', heightIn: 17, widthIn: 13 },
     verified: true,
   },
   {
@@ -95,7 +94,7 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN single-door wall-mount continuous-hinge enclosure with clamps, 24x20x8 in, gray mild steel',
     manufacturer: 'Hoffman',
     family: 'Hoffman LP continuous-hinge with clamps',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A242008LP/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca242008lp',
     mount: 'backplate',
     widthMm: 431.8,
     heightMm: 533.4,
@@ -108,11 +107,11 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN steel subpanel 21 x 17 in for 24x20 in enclosure, white',
     manufacturer: 'Hoffman',
     family: 'Hoffman A-P panels',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A24P20/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca24p20',
     mount: 'backplate',
     widthMm: 431.8,
     heightMm: 533.4,
-    ratings: { kind: 'subpanel', panelHeightIn: 21, panelWidthIn: 17, forUse: '24x20 in enclosure', material: 'steel, white' },
+    ratings: { kind: 'subpanel', panelHeightIn: 21, panelWidthIn: 17, forUse: '24x20 in enclosure', material: 'steel, white', heightIn: 21, widthIn: 17 },
     verified: true,
   },
   {
@@ -121,7 +120,7 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN single-door wall-mount continuous-hinge enclosure with clamps, 30x24x8 in, gray mild steel',
     manufacturer: 'Hoffman',
     family: 'Hoffman LP continuous-hinge with clamps',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A302408LP/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca302408lp',
     mount: 'backplate',
     widthMm: 533.4,
     heightMm: 685.8,
@@ -134,11 +133,11 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN steel subpanel 27 x 21 in for 30x24 in enclosure, white',
     manufacturer: 'Hoffman',
     family: 'Hoffman A-P panels',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A30P24/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca30p24',
     mount: 'backplate',
     widthMm: 533.4,
     heightMm: 685.8,
-    ratings: { kind: 'subpanel', panelHeightIn: 27, panelWidthIn: 21, forUse: '30x24 in enclosure', material: 'steel, white' },
+    ratings: { kind: 'subpanel', panelHeightIn: 27, panelWidthIn: 21, forUse: '30x24 in enclosure', material: 'steel, white', heightIn: 27, widthIn: 21 },
     verified: true,
   },
   {
@@ -147,7 +146,7 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN single-door wall-mount continuous-hinge enclosure with clamps, 36x30x10 in, gray mild steel',
     manufacturer: 'Hoffman',
     family: 'Hoffman LP continuous-hinge with clamps',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A363010LP/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca363010lp',
     mount: 'backplate',
     widthMm: 685.8,
     heightMm: 838.2,
@@ -160,11 +159,11 @@ export const HOFFMAN: CatalogPart[] = [
     description: 'nVent HOFFMAN steel subpanel 33 x 27 in for 36x30 in enclosure, white',
     manufacturer: 'Hoffman',
     family: 'Hoffman A-P panels',
-    url: 'https://www.elliottelectric.com/P/Item/HOF/A36P30/',
+    url: 'https://www.nvent.com/en-us/hoffman/products/enca36p30',
     mount: 'backplate',
     widthMm: 685.8,
     heightMm: 838.2,
-    ratings: { kind: 'subpanel', panelHeightIn: 33, panelWidthIn: 27, forUse: '36x30 in enclosure', material: 'steel, white' },
+    ratings: { kind: 'subpanel', panelHeightIn: 33, panelWidthIn: 27, forUse: '36x30 in enclosure', material: 'steel, white', heightIn: 33, widthIn: 27 },
     verified: true,
   },
 ];

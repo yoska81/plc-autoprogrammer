@@ -49,7 +49,7 @@ test('mm² parsing and Table 6 capacity', () => {
 
 test('iec-supply: 400 V 50 Hz ok, 480 V 60 Hz fails', () => {
   assert.equal(run('iec-supply').length, 1);
-  const eu = { ...DESIGN, inputs: { ...DESIGN.inputs, supply: '400VAC-3PH-50Hz' as never } };
+  const eu = { ...DESIGN, inputs: { ...DESIGN.inputs, supply: '400VAC-3PH' as const } };
   assert.equal(run('iec-supply', { ctx: ctxOf(eu) }).length, 0);
 });
 

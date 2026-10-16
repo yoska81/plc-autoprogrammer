@@ -559,7 +559,20 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Close', exact: true }).first().click();
   await page.goto(BASE + '/equipment');
   await page.getByLabel(/^Panel parts .*: Allen-Bradley$/).uncheck();
+  // An Allen-Bradley PLC + HMI preference shows that brand's CPUs with the modules they'd need and the fit (comparison only).
+  await page.getByLabel(/^PLC and I\/O: Allen-Bradley$/).check();
+  await page.getByLabel(/^Operator panel \(HMI\): Allen-Bradley$/).check();
+  const abCard = page.getByRole('region', { name: 'Preferred PLC brands for this machine' });
+  await abCard.waitFor();
+  const m820 = await abCard.locator('tr[data-cpu="2080-L20E-20QBB"]').innerText();
+  log('Allen-Bradley comparison:', (await abCard.locator('tr[data-cpu]').count()), 'CPUs | Micro820:', m820.replace(/\s+/g, ' '));
+  check(/Yes ·/.test(m820), 'Micro820 fits the conveyor cell');
+  const panels = await abCard.getByText(/^Touch panels:/).first().innerText();
+  log('Touch panels for Allen-Bradley:', panels);
+  check(panels.includes('2713P-T7WD1 (7")'), 'PanelView 5310 listed as a compatible touch panel');
   await snap(page, 'brands');
+  await page.getByLabel(/^PLC and I\/O: Allen-Bradley$/).uncheck();
+  await page.getByLabel(/^Operator panel \(HMI\): Allen-Bradley$/).uncheck();
 
   // Deliverables
   await page.goto(BASE + '/export');

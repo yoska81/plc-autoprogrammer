@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { useProjectStore, type Region } from '../store/useProjectStore';
+import { isIec, NEMA_TO_IP, REGIONS, regionSpec, SUPPLY_INFO } from '../standards/regions';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useSpecStore } from '../store/useSpecStore';
 import { useHmiStore } from '../store/useHmiStore';
@@ -14,17 +15,6 @@ import EquipmentPanel from '../components/EquipmentPanel';
 
 const STEPS = ['Project data', 'Describe the machine', 'Equipment', 'Summary'];
 
-const REGIONS: { value: Region; label: string; hint: string; standards: string[]; supply: SupplyVoltage }[] = [
-  { value: 'US', label: 'United States', hint: 'NEC, NFPA 79, UL 508A · circuit breakers', standards: ['NFPA 79', 'UL 508A', 'NEC'], supply: '480VAC-3PH' },
-  { value: 'Canada', label: 'Canada', hint: 'CEC, CSA C22.2 No. 14 · fuses', standards: ['CSA C22.2 No. 14', 'CEC'], supply: '600VAC-3PH' },
-];
-const SUPPLIES: { value: SupplyVoltage; label: string; hint: string }[] = [
-  { value: '600VAC-3PH', label: '600 V 3-phase', hint: 'Most Canadian factories' },
-  { value: '480VAC-3PH', label: '480 V 3-phase', hint: 'Most US factories' },
-  { value: '240VAC-3PH', label: '240 V 3-phase', hint: 'Smaller plants, shops' },
-  { value: '208VAC-3PH', label: '208 V 3-phase', hint: 'Commercial buildings' },
-  { value: '120VAC-1PH', label: '120 V single-phase', hint: 'Small machines, plug-in' },
-];
 const ENCLOSURES: { value: EnclosureRating; label: string; hint: string }[] = [
   { value: 'NEMA 12', label: 'NEMA 12', hint: 'Indoor, dust and drips' },
   { value: 'NEMA 4', label: 'NEMA 4', hint: 'Hose-down, outdoor' },
@@ -143,25 +133,25 @@ export default function NewProjectPage() {
                 </section>
                 <section className="space-y-2">
                   <h3 className="text-sm font-semibold text-steel-800">Where the machine will be installed</h3>
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     {REGIONS.map((r) => (
                       <Choice key={r.value} selected={region === r.value} title={r.label} hint={r.hint}
                         onClick={() => { setRegion(r.value); setStandards(r.standards); setSupply(r.supply); }} />
                     ))}
                   </div>
-                  <p className="text-xs text-steel-500">Sets the electrical code: US designs protect circuits with UL 489 breakers, Canadian designs with HRC fuses.</p>
+                  <p className="text-xs text-steel-500">Sets the electrical code: US designs protect circuits with UL 489 breakers, Canadian designs with HRC fuses, IEC designs (Europe, Israel, other IEC countries) follow IEC 60204-1 with MCBs, mm² wiring and IEC colours.</p>
                 </section>
                 <section className="space-y-2">
                   <h3 className="text-sm font-semibold text-steel-800">Power available at the machine</h3>
                   <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                    {SUPPLIES.map((s) => <Choice key={s.value} selected={supply === s.value} onClick={() => setSupply(s.value)} title={s.label} hint={s.hint} />)}
+                    {regionSpec(region).supplies.map((v) => <Choice key={v} selected={supply === v} onClick={() => setSupply(v)} title={SUPPLY_INFO[v].label} hint={SUPPLY_INFO[v].hint} />)}
                   </div>
                   <p className="text-xs text-steel-500">Not sure? Ask the plant electrician, or check the nameplate of a similar machine.</p>
                 </section>
                 <section className="space-y-2">
                   <h3 className="text-sm font-semibold text-steel-800">Where the control cabinet will stand</h3>
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                    {ENCLOSURES.map((e) => <Choice key={e.value} selected={enclosure === e.value} onClick={() => setEnclosure(e.value)} title={e.label} hint={e.hint} />)}
+                    {ENCLOSURES.map((e) => <Choice key={e.value} selected={enclosure === e.value} onClick={() => setEnclosure(e.value)} title={isIec(region) ? `${NEMA_TO_IP[e.value] ?? e.label} (${e.label})` : e.label} hint={e.hint} />)}
                   </div>
                 </section>
                 <section className="space-y-2">
@@ -209,7 +199,7 @@ export default function NewProjectPage() {
           <dl className="space-y-3 text-sm">
             <div><dt className="text-steel-500 text-xs">Project</dt><dd className="font-medium">{name || '—'}</dd></div>
             <div><dt className="text-steel-500 text-xs">Customer · site</dt><dd>{[customer, site].filter(Boolean).join(' · ') || '—'}</dd></div>
-            <div><dt className="text-steel-500 text-xs">Power · enclosure</dt><dd>{SUPPLIES.find((s) => s.value === supply)?.label} · {enclosure}</dd></div>
+            <div><dt className="text-steel-500 text-xs">Power · enclosure</dt><dd>{SUPPLY_INFO[supply].label} · {isIec(region) ? `${NEMA_TO_IP[enclosure] ?? enclosure} (${enclosure})` : enclosure}</dd></div>
             <div>
               <dt className="text-steel-500 text-xs">Description</dt>
               <dd>{filled.length ? `${filled.length} of ${SPEC_SECTIONS.length} sections` : '—'}</dd>

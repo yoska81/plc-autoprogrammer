@@ -8,7 +8,7 @@ import type { CatalogPart } from '../types';
 
 export const RITTAL: CatalogPart[] = [
   {
-    partNumber: 'AX 1033.000',
+    partNumber: '1033.000',
     category: 'enclosure',
     description: 'Rittal AX compact wall-mounted enclosure, WHD 300x300x210 mm, carbon steel, single door, mounting panel included',
     manufacturer: 'Rittal',
@@ -21,7 +21,7 @@ export const RITTAL: CatalogPart[] = [
     verified: true,
   },
   {
-    partNumber: 'AX 1045.000',
+    partNumber: '1045.000',
     category: 'enclosure',
     description: 'Rittal AX compact wall-mounted enclosure, WHD 400x500x210 mm, carbon steel, single door, mounting panel included',
     manufacturer: 'Rittal',
@@ -34,7 +34,7 @@ export const RITTAL: CatalogPart[] = [
     verified: true,
   },
   {
-    partNumber: 'AX 1050.000',
+    partNumber: '1050.000',
     category: 'enclosure',
     description: 'Rittal AX compact wall-mounted enclosure, WHD 500x500x210 mm, carbon steel, single door, mounting panel included',
     manufacturer: 'Rittal',
@@ -47,7 +47,7 @@ export const RITTAL: CatalogPart[] = [
     verified: true,
   },
   {
-    partNumber: 'AX 1060.000',
+    partNumber: '1060.000',
     category: 'enclosure',
     description: 'Rittal AX compact wall-mounted enclosure, WHD 600x600x210 mm, carbon steel, single door, mounting panel included',
     manufacturer: 'Rittal',
@@ -60,7 +60,7 @@ export const RITTAL: CatalogPart[] = [
     verified: true,
   },
   {
-    partNumber: 'AX 1076.000',
+    partNumber: '1076.000',
     category: 'enclosure',
     description: 'Rittal AX compact wall-mounted enclosure, WHD 600x760x210 mm, carbon steel, single door, mounting panel included',
     manufacturer: 'Rittal',
@@ -73,7 +73,7 @@ export const RITTAL: CatalogPart[] = [
     verified: true,
   },
   {
-    partNumber: 'AX 1077.000',
+    partNumber: '1077.000',
     category: 'enclosure',
     description: 'Rittal AX compact wall-mounted enclosure, WHD 760x760x210 mm, carbon steel, single door, mounting panel included',
     manufacturer: 'Rittal',
