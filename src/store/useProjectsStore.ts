@@ -6,6 +6,7 @@ import { DEFAULT_INFO, useProjectStore } from './useProjectStore';
 import { useProgramStore } from './useProgramStore';
 import { useElectricalStore } from './useElectricalStore';
 import { useHmiStore } from './useHmiStore';
+import { useReviewStore } from '../review/useReviewStore';
 import { useStageStore } from './useStageStore';
 import { aiBusy } from '../lib/ai/busy';
 
@@ -24,6 +25,7 @@ const PROJECT_STORES = {
   electrical: useElectricalStore,
   hmi: useHmiStore,
   stages: useStageStore,
+  review: useReviewStore,
 } as const;
 
 type StoreKey = keyof typeof PROJECT_STORES;

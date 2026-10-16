@@ -5,7 +5,8 @@ import { billOfMaterials, cableSchedule, designWarnings, supplyText, terminalPla
 import { describeElement, describeOutput } from '../plc/core/clickExport';
 import { getHmi } from '../hmi/hmiCatalog';
 import { calcWarnings, calculations } from './docs/calcs';
-import { operatorManual } from './docs/manual';
+import { designReviewTable, operatorManual } from './docs/manual';
+import { aiReviewNote } from '../review/report';
 import { docMeta, hmiText } from './docs/meta';
 import { alarmTable, interlockTable, programInfo } from './docs/program';
 import { protectiveDeviceTable, sccrTable } from './docs/electrical';
@@ -209,6 +210,8 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
     header(notes, [{ header: 'Item to check', key: 'n', width: 140 }]);
     for (const n of [...p.electrical!.notes, ...designWarnings(p.drawingCtx), ...calcWarnings(p)]) notes.addRow({ n }).alignment = { wrapText: true };
   }
+
+  tableSheet(wb, 'Review Findings', designReviewTable(p), aiReviewNote());
 
   tableSheet(wb, 'Safety Functions', safetyFunctionTable(p, sf), 'Required performance levels (PLr) are set by the machine risk assessment (ANSI B11.0 / ISO 12100) and verified per ISO 13849-1/-2.');
 

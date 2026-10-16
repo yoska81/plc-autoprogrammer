@@ -12,6 +12,7 @@ import { hazardTable, lotoTable, residualRisks, riskStatement, safetyFunctionTab
 import { fatProcedure, satChecklist, satTable, testTable } from './docs/fat';
 import { pmSchedule, sparePartsTable } from './docs/maintenance';
 import { assumptionsTable, bomTable, designReviewTable, operatorManual } from './docs/manual';
+import { aiReviewNote } from '../review/report';
 import { ACCENT, BRAND, INFO_FILL, INK, MUTED, RED, WARN_FILL, PdfWriter, pdfSafe } from './docs/pdfWriter';
 import { makeTable } from './docs/table';
 
@@ -443,8 +444,9 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
     w.table(cableSummaryTable(p), { fontSize: 7 });
   } else noElec();
   w.h1('Appendix C — Design review items');
-  w.para('Items the checking engineer must resolve before the design is approved for construction.');
-  if (hasElec) w.table(designReviewTable(p), { fontSize: 7.4 }); else noElec();
+  w.para('Items the checking engineer must resolve before the design is approved for construction: the design review findings (consistency checks, electrical design warnings, calculations and the AI review) with how each was resolved or why it was accepted.');
+  w.para(aiReviewNote());
+  w.table(designReviewTable(p), { fontSize: 7.4 });
   w.h1('Appendix D — Assumptions to confirm');
   w.table(assumptionsTable(p), { fontSize: 7.6 });
   if (pics.cabinet.length) {
