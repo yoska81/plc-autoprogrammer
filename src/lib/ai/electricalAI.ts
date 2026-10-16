@@ -66,7 +66,8 @@ function vendorNotes(parts: CatalogPart[]): string {
 
 function catalogText(CATALOG: CatalogPart[]): string {
   return CATALOG.map((p) => {
-    const r = Object.entries(p.ratings).map(([k, v]) => `${k}=${v}`).join(', ');
+    // Source URLs (ratingsSource / footprintSource) are for people checking the data, not for the AI.
+    const r = Object.entries(p.ratings).filter(([k]) => !k.endsWith('Source')).map(([k, v]) => `${k}=${v}`).join(', ');
     return `${p.partNumber} | ${p.category} | ${p.manufacturer ? `${p.manufacturer} ` : ''}${p.description}${r ? ` | ${r}` : ''}${p.verified ? '' : ' | (ratings unverified)'}`;
   }).join('\n');
 }
