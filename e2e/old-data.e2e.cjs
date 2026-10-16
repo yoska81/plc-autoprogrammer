@@ -9,7 +9,7 @@ const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const DIR = __dirname + '/old-data/';
 const log = (...a) => console.log('•', ...a);
 const ROUTES = ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine',
-  '/electrical?tab=picture', '/electrical?tab=machining', '/hmi', '/program', '/simulate', '/export'];
+  '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/export'];
 
 (async () => {
   const browser = await chromium.launch();
