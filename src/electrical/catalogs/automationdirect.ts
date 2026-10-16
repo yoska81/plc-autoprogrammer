@@ -1954,7 +1954,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 229,
     heightMm: 330,
-    ratings: { kind: 'subpanel', heightIn: 13, widthIn: 9, material: 'carbon steel', gauge: '12 gauge', forUse: 'SCE-16EL120xxxx, SCE-16H12xxxxLP and SCE-16R120xLP enclosures' },
+    ratings: { kind: 'subpanel', heightIn: 13, widthIn: 9, panelHeightIn: 13, panelWidthIn: 9, material: 'carbon steel', gauge: '12 gauge', forUse: 'SCE-16EL120xxxx, SCE-16H12xxxxLP and SCE-16R120xLP enclosures' },
     verified: true,
   },
   {
@@ -1966,7 +1966,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 330,
     heightMm: 432,
-    ratings: { kind: 'subpanel', heightIn: 17, widthIn: 13, material: 'carbon steel', gauge: '12 gauge', forUse: 'SCE-16EL20xxxx, SCE-20EL16xxxx, SCE-16H20xxxx and SCE-20H16xxxx enclosures' },
+    ratings: { kind: 'subpanel', heightIn: 17, widthIn: 13, panelHeightIn: 17, panelWidthIn: 13, material: 'carbon steel', gauge: '12 gauge', forUse: 'SCE-16EL20xxxx, SCE-20EL16xxxx, SCE-16H20xxxx and SCE-20H16xxxx enclosures' },
     verified: true,
   },
   {
@@ -1978,7 +1978,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 432,
     heightMm: 533,
-    ratings: { kind: 'subpanel', heightIn: 21, widthIn: 17, material: 'carbon steel', gauge: '11 gauge', forUse: 'SCE-20EL24xxxx, SCE-24EL20xxxx, SCE-24XEL21xxxx, SCE-24SA22xxxx, SCE-20H24xxxx and SCE-24H20xxxx enclosures' },
+    ratings: { kind: 'subpanel', heightIn: 21, widthIn: 17, panelHeightIn: 21, panelWidthIn: 17, material: 'carbon steel', gauge: '11 gauge', forUse: 'SCE-20EL24xxxx, SCE-24EL20xxxx, SCE-24XEL21xxxx, SCE-24SA22xxxx, SCE-20H24xxxx and SCE-24H20xxxx enclosures' },
     verified: true,
   },
   {
@@ -1990,7 +1990,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 533,
     heightMm: 686,
-    ratings: { kind: 'subpanel', heightIn: 27, widthIn: 21, material: 'carbon steel', gauge: '11 gauge', forUse: 'SCE-402516Sxxxx, SCE-24EL30xxxx, SCE-30EL24xxxx, SCE-30XEL25xxxx, SCE-30SA26xxxx, SCE-35VR2412, SCE-30R24xxxx, SCE-24H30xxxx and SCE-30H24xxxx enclosures' },
+    ratings: { kind: 'subpanel', heightIn: 27, widthIn: 21, panelHeightIn: 27, panelWidthIn: 21, material: 'carbon steel', gauge: '11 gauge', forUse: 'SCE-402516Sxxxx, SCE-24EL30xxxx, SCE-30EL24xxxx, SCE-30XEL25xxxx, SCE-30SA26xxxx, SCE-35VR2412, SCE-30R24xxxx, SCE-24H30xxxx and SCE-30H24xxxx enclosures' },
     verified: true,
   },
   {
@@ -2002,7 +2002,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 686,
     heightMm: 838,
-    ratings: { kind: 'subpanel', heightIn: 33, widthIn: 27, material: 'carbon steel', gauge: '11 gauge', forUse: 'SCE-403716xxxx, SCE-30EL36xxxx, SCE-36EL30xxxx, SCE-36XEL31xxxx, SCE-36SA32xxLPPL, SCE-36R30xxLP, SCE-30H36xxxx and SCE-36H30xxxx enclosures' },
+    ratings: { kind: 'subpanel', heightIn: 33, widthIn: 27, panelHeightIn: 33, panelWidthIn: 27, material: 'carbon steel', gauge: '11 gauge', forUse: 'SCE-403716xxxx, SCE-30EL36xxxx, SCE-36EL30xxxx, SCE-36XEL31xxxx, SCE-36SA32xxLPPL, SCE-36R30xxLP, SCE-30H36xxxx and SCE-36H30xxxx enclosures' },
     verified: true,
   },
   {

@@ -1477,6 +1477,8 @@ export function isLayoutAccessory(c: ResolvedComponent): boolean {
   if (['enclosure', 'dinRail', 'wireDuct', 'terminal', 'terminalAccessory'].includes(c.category)) return true;
   if (isFuseCartridge(c)) return true;
   if (c.mount !== 'backplate') return true;
+  // Plug into the CPU (memory cards, plug-in I/O modules); no place of their own on the back panel.
+  if (/\bmemory card\b/i.test(c.part?.description ?? '') || /plug-in slot/i.test(String(c.part?.ratings.forUse ?? ''))) return true;
   if (num(c.part?.ratings, 'lengthMm') !== undefined && c.category !== 'groundBar') return true;
   const ACC = /^(disconnect |terminal |din rail |terminal block )?(shaft|external (rotary )?handle|handle|contact block|jumper|marker|marking tags?|end cover|end plate|end stop|end bracket|end anchor)\b/i;
   return ACC.test(c.part?.description ?? '') || ACC.test(c.comp.function);

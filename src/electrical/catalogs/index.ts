@@ -76,7 +76,7 @@ export const VENDORS: Vendor[] = [
   },
   {
     id: 'yaskawa', name: 'Yaskawa', supplier: 'Yaskawa (distributor)', parts: tag('yaskawa', YASKAWA), otherGroup: 'drives',
-    notes: 'GA500 / GA800 US model numbers; size the drive by output current (Normal Duty hp480 / hp230, Heavy Duty *HD). GA500 network option cards (SI-EN3 EtherNet/IP, SI-EP3 PROFINET) need the JOHB-GA50 carrier.',
+    notes: 'GA500 / GA800 US model numbers; size the drive by output current (Normal Duty hp480 / hp230, Heavy Duty *HD). Network option cards are not in the catalog: when the drive must be on EtherNet/IP or PROFINET, say in "notes" that the option card (and on the GA500 the JOHB-GA50 carrier) is ordered with the drive.',
   },
   {
     id: 'ifm', name: 'ifm', supplier: 'ifm (distributor)', parts: tag('ifm', IFM), otherGroup: 'field',
