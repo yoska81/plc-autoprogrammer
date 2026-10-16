@@ -1,6 +1,6 @@
 /**
  * ASCII DXF (R12 / AC1009) export of the machining drawings for laser / CNC CAM.
- * Scale 1:1 in millimetres (default) or inches. Datum: lower-left corner of the panel / door (X right, Y up) —
+ * Scale 1:1 in inches (default) or millimetres; all text shows dual dimensions `inch [mm]`. Datum: lower-left corner of the panel / door (X right, Y up) —
  * the same coordinates as the BACK PANEL DRILLING and DOOR CUTOUTS sheets.
  *
  * Layers: OUTLINE (part outline), HOLES (drilled/tapped holes, CIRCLE),
@@ -10,7 +10,7 @@
  * TEXT (labels, title, units) and DIMS (ordinate reference marks).
  * Pure TypeScript, no dependencies.
  */
-import { backPanelDrilling, doorDrilling, type DrawingContext, type DrillingPlan } from './derive';
+import { backPanelDrilling, doorDrilling, dualDim, dualSize, type DrawingContext, type DrillingPlan } from './derive';
 
 const LAYERS: [string, number][] = [['OUTLINE', 7], ['HOLES', 1], ['CUTOUTS', 5], ['NOTCH_OPTIONAL', 6], ['TEMPLATE', 8], ['TEXT', 3], ['DIMS', 4]];
 
@@ -18,7 +18,7 @@ const f = (v: number) => (Math.round(v * 10000) / 10000).toString();
 
 /** Export options. Geometry is always true size (1:1); only the drawing unit changes. */
 export interface DxfOptions {
-  /** 'mm' (default) or 'in' — coordinates are converted, the part stays full size. */
+  /** 'in' (default) or 'mm' — coordinates are converted, the part stays full size. */
   units?: 'mm' | 'in';
   /** Only what the machine cuts: outline, holes and cutouts (no text, centre marks or optional notches). */
   cutOnly?: boolean;
@@ -29,7 +29,7 @@ class DxfWriter {
   private readonly k: number;
   private readonly units: 'mm' | 'in';
   private readonly cutOnly: boolean;
-  constructor(k = 1, units: 'mm' | 'in' = 'mm', cutOnly = false) { this.k = k; this.units = units; this.cutOnly = cutOnly; }
+  constructor(k = 1, units: 'mm' | 'in' = 'in', cutOnly = false) { this.k = k; this.units = units; this.cutOnly = cutOnly; }
   private out: string[] = [];
   private minX = Infinity; private minY = Infinity; private maxX = -Infinity; private maxY = -Infinity;
   private pair(code: number, value: string | number) { this.out.push(String(code), typeof value === 'number' ? f(value) : value); }
@@ -106,13 +106,12 @@ class DxfWriter {
 
 /** Builds the DXF for one machining plan (shared by back panel and door). */
 export function drillingDxf(plan: DrillingPlan, projectName = '', opts: DxfOptions = {}): string {
-  const units = opts.units ?? 'mm';
+  const units = opts.units ?? 'in';
   const w = new DxfWriter(units === 'in' ? 1 / 25.4 : 1, units, Boolean(opts.cutOnly));
-  const size = units === 'in' ? `${f(plan.w / 25.4)} x ${f(plan.h / 25.4)} IN` : `${plan.w} x ${plan.h} MM`;
   w.poly('OUTLINE', [[0, 0], [plan.w, 0], [plan.w, plan.h], [0, plan.h]]);
   for (const h of plan.holes) {
     w.circle('HOLES', h.x, h.y, h.dia / 2);
-    w.text('TEXT', h.x + h.dia / 2 + 1, h.y + h.dia / 2 + 0.5, 2.5, h.id);
+    w.text('TEXT', h.x + h.dia / 2 + 1, h.y + h.dia / 2 + 0.5, 2.5, `${h.id} Ø${dualDim(h.dia)}`);
   }
   for (const c of plan.cutouts) {
     if (c.code === 'G') {
@@ -127,24 +126,24 @@ export function drillingDxf(plan: DrillingPlan, projectName = '', opts: DxfOptio
       w.circle('CUTOUTS', c.x, c.y, c.w / 2);
       if (c.notch) w.poly('NOTCH_OPTIONAL', [[c.x - c.notch.w / 2, c.y + c.w / 2 - 0.3], [c.x + c.notch.w / 2, c.y + c.w / 2 - 0.3], [c.x + c.notch.w / 2, c.y + c.w / 2 + c.notch.d], [c.x - c.notch.w / 2, c.y + c.w / 2 + c.notch.d]]);
     } else w.rect('CUTOUTS', c.x, c.y, c.w, c.h);
-    w.text('TEXT', c.x - c.w / 2, c.y - c.h / 2 - 5, 3, `${c.id} ${c.tag}`);
+    w.text('TEXT', c.x - c.w / 2, c.y - c.h / 2 - 5, 3, `${c.id} ${c.tag} ${c.kind === 'round' ? `Ø${dualDim(c.w)}` : dualSize(c.w, c.h)}`);
   }
   // datum mark and title
   w.line('DIMS', -10, 0, 10, 0);
   w.line('DIMS', 0, -10, 0, 10);
   w.text('TEXT', 2, -8, 3, 'DATUM 0,0');
   w.text('TEXT', 0, -20, 5, `${plan.title} - ${plan.part}${projectName ? ` - ${projectName}` : ''}`);
-  w.text('TEXT', 0, -28, 3.5, `SCALE 1:1   UNITS: ${units === 'in' ? 'INCH' : 'MM'}   SIZE ${size}   HOLES ${plan.holes.length}   CUTOUTS ${plan.cutouts.length}`);
+  w.text('TEXT', 0, -28, 3.5, `SCALE 1:1   DRAWING UNITS: ${units === 'in' ? 'INCH' : 'MM'}   DIMENSIONS INCH [MM]   SIZE ${dualSize(plan.w, plan.h)}   HOLES ${plan.holes.length}   CUTOUTS ${plan.cutouts.length}`);
   plan.codes.forEach((c, i) => w.text('TEXT', 0, -35 - i * 5, 2.5, `${c.code} (${c.count}x): ${c.spec}${c.verified ? '' : ' - VERIFY WITH DATASHEET'}`));
   return w.toString();
 }
 
-/** Back-panel drilling DXF (mm, lower-left datum). */
+/** Back-panel drilling DXF (inches unless opts.units = 'mm', lower-left datum). */
 export function backPanelDxf(ctx: DrawingContext, opts?: DxfOptions): string {
   return drillingDxf(backPanelDrilling(ctx), ctx.projectName, opts);
 }
 
-/** Door cutout DXF (mm, lower-left datum, outside view). */
+/** Door cutout DXF (inches unless opts.units = 'mm', lower-left datum, outside view). */
 export function doorDxf(ctx: DrawingContext, opts?: DxfOptions): string {
   return drillingDxf(doorDrilling(ctx), ctx.projectName, opts);
 }

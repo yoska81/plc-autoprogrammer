@@ -45,7 +45,7 @@ export function collectProject() {
 
   return {
     projectName: program.projectName,
-    fileBase: program.projectName.trim().replace(/[^\w-]+/g, '_') || 'plc_project',
+    fileBase: program.projectName.trim().replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'plc_project',
     profile, cpu, spec, io, addresses, labels,
     ladder: program.ladder,
     stCode: program.generatedCode,

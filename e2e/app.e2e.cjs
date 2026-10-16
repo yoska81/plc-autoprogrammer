@@ -210,7 +210,7 @@ function sse(model, text) {
   // Machining: units, cut-only, DXF download.
   await page.goto(BASE + '/electrical?tab=machining');
   await page.getByLabel('DXF units').selectOption('in');
-  await page.getByText('X (in)').waitFor();
+  await page.getByText('X in [mm]').waitFor();
   await page.getByLabel('Cutting geometry only').check();
   {
     const [d] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Back panel DXF' }).click()]);
@@ -253,6 +253,13 @@ function sse(model, text) {
   const bboxes = [...bpdf.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number));
   log('Brady i3300 B33-80-427 PDF:', bboxes.length, 'pages | sizes', [...new Set(bboxes.map(mm))].join(', '));
   if (bboxes.some((b) => mm(b) !== '12.7x19.1')) throw new Error('Brady supply page size is not 12.7 x 19.05 mm');
+  // Match the roll: B33-80-427 is 4 across on a 63.5 mm liner -> one page per row of 4
+  await page.getByLabel(/^Match the roll/).check();
+  const rpdf = fs.readFileSync(await dl('Labels PDF for label printer'), 'latin1');
+  const rboxes = [...rpdf.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number));
+  log('Match the roll PDF:', rboxes.length, 'pages | sizes', [...new Set(rboxes.map(mm))].join(', '));
+  if (rboxes.length !== Math.ceil(bboxes.length / 4) || rboxes.some((b) => mm(b) !== '63.5x19.1')) throw new Error('roll layout pages are not 63.5 x 19.05 mm rows of 4');
+  await page.getByLabel(/^One label per page/).check();
   await page.getByLabel('Label printer').selectOption('');
   await page.getByLabel('Label size').selectOption('38x12');
 
@@ -379,6 +386,11 @@ function sse(model, text) {
   check(await ioRows() === 7, 'first project I/O back');
   check((await statusBar()).includes('C0-11DD1E-D') && (await statusBar()).includes('Rev A · Issued for review'), 'first project CPU and revision back');
   log('Projects:', (await page.locator('select[aria-label="Open project"] option').allInnerTexts()).join(' | '));
+  await page.goto(BASE + '/project');
+  check(await page.getByRole('button', { name: 'Delete project Wizard Conveyor Cell' }).count() === 0, 'open project cannot be deleted');
+  await page.getByRole('button', { name: 'Delete project My PLC Project' }).click();
+  check(!(await page.locator('select[aria-label="Open project"] option').allInnerTexts()).includes('My PLC Project'), 'project deleted');
+  await page.goto(BASE + '/io');
 
   // While the AI is working the project can't be switched (its answer would land in the other project);
   // generation errors are plain English.

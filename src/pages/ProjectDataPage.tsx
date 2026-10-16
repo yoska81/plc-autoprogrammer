@@ -55,7 +55,7 @@ export default function ProjectDataPage() {
 function ProjectData() {
   const info = useProjectStore((s) => s.info);
   const setInfo = useProjectStore((s) => s.setInfo);
-  const { projects, activeId, renameActive } = useProjectsStore();
+  const { projects, activeId, renameActive, openProject, deleteProject } = useProjectsStore();
   const name = projects.find((p) => p.id === activeId)?.name ?? '';
   const today = new Date().toISOString().slice(0, 10);
   const [draft, setDraft] = useState<Revision>({ rev: nextRev(info.revisions), date: today, description: PURPOSES[0], by: info.preparedBy });
@@ -161,6 +161,31 @@ function ProjectData() {
                 <span className="text-xs text-steel-500">Issuing a revision stamps it on every drawing and document you export from now on.</span>
                 <button onClick={issue} className="px-4 py-1.5 font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700">Issue revision {draft.rev}</button>
               </div>
+            </Section>
+          </div>
+
+          <div className="xl:col-span-2">
+            <Section title={`Projects in this browser (${projects.length})`}>
+              <table className="w-full">
+                <tbody>
+                  {projects.map((p) => (
+                    <tr key={p.id}>
+                      <td className={td}>{p.id === activeId ? <span className="font-semibold">{p.name || '(no name)'} <span className="font-normal text-steel-500">· open now</span></span> : p.name || '(no name)'}</td>
+                      <td className={`${td} w-40 text-steel-500`}>{p.createdAt ? `created ${p.createdAt.slice(0, 10)}` : ''}</td>
+                      <td className={`${td} w-44 text-right whitespace-nowrap`}>
+                        {p.id !== activeId && (
+                          <>
+                            <button onClick={() => openProject(p.id)} className="px-2 py-0.5 border border-steel-300 rounded-sm hover:bg-brand-50">Open</button>
+                            <button onClick={() => { if (confirm(`Delete the project "${p.name}"? This cannot be undone.`)) deleteProject(p.id); }}
+                              className="ml-2 px-2 py-0.5 border border-steel-300 rounded-sm text-red-700 hover:bg-red-50" aria-label={`Delete project ${p.name}`}>Delete</button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="px-3 py-2 text-xs text-steel-500">Projects are saved in this browser only. The open project can't be deleted: open another one first.</p>
             </Section>
           </div>
         </div>

@@ -180,7 +180,7 @@ function LiveRung({ rung, index, p, bypassed, skippedByBlock, onBypass, ...rest 
         {/* left rail */}
         <div className="w-[3px] shrink-0 rounded" style={{ background: ON, height: Math.max(rows, outs) * ROW }} />
         {/* branches */}
-        <div className="relative flex min-w-0 flex-1 flex-col">
+        <div className="relative flex flex-1 flex-col">
           {rung.branches.length === 0 && <div className="flex items-center" style={{ height: ROW }}><HWire on grow /></div>}
           {rung.branches.map((br, b) => (
             <div key={b} className="flex items-center" style={{ height: ROW }}>
