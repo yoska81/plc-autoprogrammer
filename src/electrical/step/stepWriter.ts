@@ -6,21 +6,42 @@
  * CYLINDRICAL_SURFACE with LINE / CIRCLE edges, the subset every CAD importer reads.
  * Assemblies use the standard AP214 pattern: PRODUCT -> PRODUCT_DEFINITION, children linked by
  * NEXT_ASSEMBLY_USAGE_OCCURRENCE and placed by CONTEXT_DEPENDENT_SHAPE_REPRESENTATION +
- * ITEM_DEFINED_TRANSFORMATION (translation only). Colours via STYLED_ITEM / COLOUR_RGB in a
- * MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION.
+ * ITEM_DEFINED_TRANSFORMATION (translation only). A part may hold several solids (a multi-body
+ * part in SolidWorks / Inventor / Fusion); every solid has its own colour (STYLED_ITEM /
+ * COLOUR_RGB in a MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION).
+ *
+ * Solids are simple primitives (box, tray, plate with through-holes, extruded polygon, coaxial
+ * stack, tube) with optional blind pockets (round or rectangular) sunk into their planar faces,
+ * placed inside the part by a translation and an axis-permutation rotation.
  *
  * Output is deterministic: entities are numbered in creation order and no clock is read.
  */
 
 export type V3 = readonly [number, number, number];
 export type Rgb = readonly [number, number, number];
+/** Rotation as the images of the local X, Y and Z axes (orthonormal, right-handed). */
+export type Mat3 = readonly [V3, V3, V3];
 
 // ---------------------------------------------------------------------------
-// Solid geometry specifications (all in the part's local frame, mm)
+// Solid geometry specifications (all in the solid's local frame, mm)
 // ---------------------------------------------------------------------------
+
+/** Blind pocket outline: circle centred at (a, b) or rectangle (a0, b0)-(a1, b1), in face coordinates. */
+export type PocketShape = { kind: 'circle'; a: number; b: number; r: number } | { kind: 'rect'; a0: number; b0: number; a1: number; b1: number };
+export type BoxFace = '-x' | '+x' | '-y' | '+y' | '-z' | '+z';
+/**
+ * Pocket sunk into a box face. Face coordinates (a, b) are the two remaining local axes in X, Y, Z
+ * order: ±x faces use (y, z), ±y faces (x, z), ±z faces (x, y).
+ */
+export type BoxPocket = PocketShape & { face: BoxFace; depth: number };
+/**
+ * Pocket sunk into a side face of an extrusion: `edge` is the polygon edge index (edge i runs from
+ * poly[i] to poly[i+1]); face coordinates are a = x (along the extrusion), b = distance along the edge.
+ */
+export type EdgePocket = PocketShape & { edge: number; depth: number };
 
 /** Axis-aligned box from the origin to (w, d, h) along X, Y, Z. */
-export interface BoxGeom { type: 'box'; w: number; d: number; h: number }
+export interface BoxGeom { type: 'box'; w: number; d: number; h: number; pockets?: BoxPocket[] }
 /** Open-front box shell: outer (0..w, 0..d, 0..h), walls of thickness t, open face at y = 0. */
 export interface TrayGeom { type: 'tray'; w: number; d: number; h: number; t: number }
 /** Plate (0..w, 0..t, 0..h) in the XZ plane with through-holes along Y. */
@@ -29,7 +50,7 @@ export interface PlateGeom {
   holes: ({ kind: 'circle'; cx: number; cz: number; r: number } | { kind: 'rect'; x0: number; z0: number; x1: number; z1: number })[];
 }
 /** Polygon in the local (y, z) plane extruded along X from 0 to length. */
-export interface ExtrudeXGeom { type: 'extrudeX'; length: number; poly: [number, number][] }
+export interface ExtrudeXGeom { type: 'extrudeX'; length: number; poly: [number, number][]; pockets?: EdgePocket[] }
 /** Coaxial stack along +Y centred on the Y axis; adjacent sections must differ in size. */
 export interface StackGeom {
   type: 'stack';
@@ -37,7 +58,18 @@ export interface StackGeom {
   /** circle: w = diameter (h ignored); rect: w along X, h along Z. Sections must be contiguous in y. */
   sections: { w: number; h: number; y0: number; y1: number }[];
 }
-export type SolidGeom = BoxGeom | TrayGeom | PlateGeom | ExtrudeXGeom | StackGeom;
+/** Round tube (ring) along +Y centred on the Y axis, from y0 to y1. */
+export interface TubeGeom { type: 'tube'; ro: number; ri: number; y0: number; y1: number }
+export type SolidGeom = BoxGeom | TrayGeom | PlateGeom | ExtrudeXGeom | StackGeom | TubeGeom;
+
+/** One solid body of a part, placed in the part frame by `rot` (about the solid origin) then `at`. */
+export interface StepSolid {
+  name: string;
+  color: Rgb;
+  geom: SolidGeom;
+  at?: V3;
+  rot?: Mat3;
+}
 
 // ---------------------------------------------------------------------------
 // Assembly tree
@@ -47,8 +79,8 @@ export interface StepPart {
   kind: 'part';
   name: string;
   description: string;
-  color: Rgb;
-  geom: SolidGeom;
+  /** One or more solids (a multi-body part). */
+  solids: StepSolid[];
   /** Translation of the part origin in the parent frame. */
   at: V3;
 }
@@ -117,6 +149,203 @@ const len = (a: V3) => Math.sqrt(dot(a, a));
 const unit = (a: V3): V3 => mul(a, 1 / len(a));
 const perp = (n: V3): V3 => unit(cross(n, Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
 
+export const IDENTITY: Mat3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+/** Rotation whose local +Y axis points along global +Z (local X stays X): stacks/tubes standing upright. */
+export const ROT_Y_TO_Z: Mat3 = [[1, 0, 0], [0, 0, 1], [0, -1, 0]];
+/** Rotation whose local +Y axis points along global +X: stacks/tubes lying along X. */
+export const ROT_Y_TO_X: Mat3 = [[0, 1, 0], [1, 0, 0], [0, 0, -1]];
+/** Rotation for extrusions along global Z: local (X, Y, Z) -> global (Z, X, Y); the polygon is in global (x, y). */
+export const ROT_EXTRUDE_Z: Mat3 = [[0, 0, 1], [1, 0, 0], [0, 1, 0]];
+
+/** Applies rotation then translation to a point. */
+export function xfPoint(p: V3, rot: Mat3 = IDENTITY, at: V3 = [0, 0, 0]): V3 {
+  return [
+    at[0] + rot[0][0] * p[0] + rot[1][0] * p[1] + rot[2][0] * p[2],
+    at[1] + rot[0][1] * p[0] + rot[1][1] * p[1] + rot[2][1] * p[2],
+    at[2] + rot[0][2] * p[0] + rot[1][2] * p[1] + rot[2][2] * p[2],
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Bounds and validation (used by callers to keep every body inside its envelope)
+// ---------------------------------------------------------------------------
+
+export interface Bounds { min: [number, number, number]; max: [number, number, number] }
+
+function localBounds(g: SolidGeom): Bounds {
+  switch (g.type) {
+    case 'box': case 'tray': return { min: [0, 0, 0], max: [g.w, g.d, g.h] };
+    case 'plate': return { min: [0, 0, 0], max: [g.w, g.t, g.h] };
+    case 'extrudeX': {
+      const ys = g.poly.map((p) => p[0]), zs = g.poly.map((p) => p[1]);
+      return { min: [0, Math.min(...ys), Math.min(...zs)], max: [g.length, Math.max(...ys), Math.max(...zs)] };
+    }
+    case 'stack': {
+      const rw = Math.max(...g.sections.map((s) => s.w)) / 2;
+      const rh = g.profile === 'circle' ? rw : Math.max(...g.sections.map((s) => s.h)) / 2;
+      return { min: [-rw, g.sections[0].y0, -rh], max: [rw, g.sections[g.sections.length - 1].y1, rh] };
+    }
+    case 'tube': return { min: [-g.ro, g.y0, -g.ro], max: [g.ro, g.y1, g.ro] };
+  }
+}
+
+/** Axis-aligned bounds of a solid in its part frame. */
+export function solidBounds(s: StepSolid): Bounds {
+  const b = localBounds(s.geom);
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < 8; i++) {
+    const p = xfPoint([i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2]], s.rot, s.at);
+    for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], p[k]); max[k] = Math.max(max[k], p[k]); }
+  }
+  return { min, max };
+}
+
+/** Union of solid bounds. */
+export function unionBounds(list: Bounds[]): Bounds {
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (const b of list) for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], b.min[k]); max[k] = Math.max(max[k], b.max[k]); }
+  return { min, max };
+}
+
+const EPS = 0.15; // minimum wall left around pockets and holes (mm)
+
+interface Frame { o: V3; u: V3; v: V3; n: V3 }
+
+/** Face frames of a box: origin, in-face axes u (a) and v (b), outward normal, and the face extents. */
+function boxFace(g: BoxGeom, f: BoxFace): Frame & { ua: number; vb: number; thick: number } {
+  const { w, d, h } = g;
+  switch (f) {
+    case '-x': return { o: [0, 0, 0], u: [0, 1, 0], v: [0, 0, 1], n: [-1, 0, 0], ua: d, vb: h, thick: w };
+    case '+x': return { o: [w, 0, 0], u: [0, 1, 0], v: [0, 0, 1], n: [1, 0, 0], ua: d, vb: h, thick: w };
+    case '-y': return { o: [0, 0, 0], u: [1, 0, 0], v: [0, 0, 1], n: [0, -1, 0], ua: w, vb: h, thick: d };
+    case '+y': return { o: [0, d, 0], u: [1, 0, 0], v: [0, 0, 1], n: [0, 1, 0], ua: w, vb: h, thick: d };
+    case '-z': return { o: [0, 0, 0], u: [1, 0, 0], v: [0, 1, 0], n: [0, 0, -1], ua: w, vb: d, thick: h };
+    case '+z': return { o: [0, 0, h], u: [1, 0, 0], v: [0, 1, 0], n: [0, 0, 1], ua: w, vb: d, thick: h };
+  }
+}
+
+/** Side-face frame of an extrusion edge. */
+function edgeFrame(g: ExtrudeXGeom, i: number, sign: number): Frame & { length: number } {
+  const [y, z] = g.poly[i], [y2, z2] = g.poly[(i + 1) % g.poly.length];
+  const e: V3 = [0, y2 - y, z2 - z];
+  const L = len(e);
+  return { o: [0, y, z], u: [1, 0, 0], v: mul(e, 1 / L), n: unit([0, sign * (z2 - z), -sign * (y2 - y)]), length: L };
+}
+
+const polyArea2 = (poly: [number, number][]) => poly.reduce((a, [y, z], i) => { const [y2, z2] = poly[(i + 1) % poly.length]; return a + y * z2 - y2 * z; }, 0);
+
+/** Point strictly inside a polygon (even-odd rule). */
+function inPoly(poly: [number, number][], y: number, z: number): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [yi, zi] = poly[i], [yj, zj] = poly[j];
+    if ((zi > z) !== (zj > z) && y < ((yj - yi) * (z - zi)) / (zj - zi) + yi) inside = !inside;
+  }
+  return inside;
+}
+
+const shapeExtent = (p: PocketShape): [number, number, number, number] => (p.kind === 'circle' ? [p.a - p.r, p.b - p.r, p.a + p.r, p.b + p.r] : [Math.min(p.a0, p.a1), Math.min(p.b0, p.b1), Math.max(p.a0, p.a1), Math.max(p.b0, p.b1)]);
+
+/** World-space (solid-local) AABB of a pocket volume. */
+function pocketBox(fr: Frame, p: PocketShape, depth: number): Bounds {
+  const [a0, b0, a1, b1] = shapeExtent(p);
+  const pts: V3[] = [];
+  for (const a of [a0, a1]) for (const b of [b0, b1]) for (const t of [0, depth]) pts.push(add(add(add(fr.o, mul(fr.u, a)), mul(fr.v, b)), mul(fr.n, -t)));
+  return unionBounds(pts.map((p3) => ({ min: [...p3] as [number, number, number], max: [...p3] as [number, number, number] })));
+}
+
+const boxesOverlap = (a: Bounds, b: Bounds, m: number) => [0, 1, 2].every((k) => a.min[k] < b.max[k] + m && b.min[k] < a.max[k] + m);
+
+/**
+ * Checks that a solid can be written as a valid B-rep: positive sizes, pockets inside their faces
+ * and inside the material, pockets not touching each other. Returns an error text or null.
+ */
+export function validateSolid(s: StepSolid): string | null {
+  const g = s.geom;
+  const pos = (...v: number[]) => v.every((x) => Number.isFinite(x) && x > 0.05);
+  if (s.rot) {
+    const [x, y, z] = s.rot;
+    if (Math.abs(dot(cross(x, y), z) - 1) > 1e-9 || [x, y, z].some((a) => Math.abs(len(a) - 1) > 1e-9)) return 'rotation is not a proper rotation';
+  }
+  const checkPocketSet = (items: { fr: Frame; p: PocketShape; depth: number }[]): string | null => {
+    const vols = items.map((it) => pocketBox(it.fr, it.p, it.depth));
+    for (let i = 0; i < vols.length; i++) for (let j = i + 1; j < vols.length; j++) if (boxesOverlap(vols[i], vols[j], EPS)) return 'pockets overlap';
+    return null;
+  };
+  const shapeOk = (p: PocketShape) => (p.kind === 'circle' ? pos(p.r) : pos(Math.abs(p.a1 - p.a0), Math.abs(p.b1 - p.b0)));
+  switch (g.type) {
+    case 'box': {
+      if (!pos(g.w, g.d, g.h)) return 'box size';
+      const items = (g.pockets ?? []).map((p) => {
+        const fr = boxFace(g, p.face);
+        const [a0, b0, a1, b1] = shapeExtent(p);
+        if (!shapeOk(p) || !pos(p.depth) || a0 < EPS || b0 < EPS || a1 > fr.ua - EPS || b1 > fr.vb - EPS || p.depth > fr.thick - EPS) return null;
+        return { fr, p, depth: p.depth };
+      });
+      if (items.some((x) => !x)) return 'box pocket outside its face';
+      return checkPocketSet(items as { fr: Frame; p: PocketShape; depth: number }[]);
+    }
+    case 'tray': return pos(g.w, g.d, g.h, g.t) && 2 * g.t < Math.min(g.w, g.h) && g.t < g.d ? null : 'tray size';
+    case 'plate': {
+      if (!pos(g.w, g.h, g.t)) return 'plate size';
+      const ext = g.holes.map((o) => (o.kind === 'circle' ? [o.cx - o.r, o.cz - o.r, o.cx + o.r, o.cz + o.r] : [o.x0, o.z0, o.x1, o.z1]));
+      if (ext.some(([x0, z0, x1, z1]) => !(x0 > EPS && z0 > EPS && x1 < g.w - EPS && z1 < g.h - EPS && x1 - x0 > 0.05 && z1 - z0 > 0.05))) return 'plate hole outside the plate';
+      for (let i = 0; i < ext.length; i++) for (let j = i + 1; j < ext.length; j++) {
+        const a = ext[i], b = ext[j];
+        if (a[0] < b[2] + EPS && b[0] < a[2] + EPS && a[1] < b[3] + EPS && b[1] < a[3] + EPS) return 'plate holes overlap';
+      }
+      return null;
+    }
+    case 'extrudeX': {
+      const P = g.poly;
+      if (!pos(g.length) || P.length < 3 || Math.abs(polyArea2(P)) < 0.01) return 'extrusion size';
+      for (let i = 0; i < P.length; i++) {
+        const [y, z] = P[i], [y2, z2] = P[(i + 1) % P.length];
+        if (Math.hypot(y2 - y, z2 - z) < 0.05) return 'extrusion has a degenerate edge';
+      }
+      const sign = polyArea2(P) > 0 ? 1 : -1;
+      const items: { fr: Frame; p: PocketShape; depth: number }[] = [];
+      for (const p of g.pockets ?? []) {
+        if (!(p.edge >= 0 && p.edge < P.length) || !shapeOk(p) || !pos(p.depth)) return 'extrusion pocket';
+        const fr = edgeFrame(g, p.edge, sign);
+        const [a0, b0, a1, b1] = shapeExtent(p);
+        if (a0 < EPS || a1 > g.length - EPS || b0 < EPS || b1 > fr.length - EPS) return 'extrusion pocket outside its face';
+        // The pocket's cross-section quad (in y, z) must lie inside the profile material.
+        const at = (b: number, t: number): [number, number] => { const q = add(add(fr.o, mul(fr.v, b)), mul(fr.n, -t)); return [q[1], q[2]]; };
+        const quad = [at(b0, 0.01), at(b1, 0.01), at(b1, p.depth), at(b0, p.depth)];
+        if (!quad.every(([y, z]) => inPoly(P, y, z))) return 'extrusion pocket leaves the material';
+        const qa = quad.map(([y, z]) => [y, z] as [number, number]);
+        if (P.some(([y, z]) => inPoly(qa, y, z))) return 'extrusion pocket cuts a profile corner';
+        // A second profile edge must not cross the pocket (checked with a sampled interior grid).
+        for (let si = 1; si < 6; si++) for (let ti = 1; ti < 6; ti++) {
+          const [y, z] = at(b0 + ((b1 - b0) * si) / 6, (p.depth * ti) / 6);
+          if (!inPoly(P, y, z)) return 'extrusion pocket leaves the material';
+        }
+        items.push({ fr, p, depth: p.depth });
+      }
+      return checkPocketSet(items);
+    }
+    case 'stack': {
+      const ss = g.sections;
+      if (!ss.length) return 'empty stack';
+      for (let i = 0; i < ss.length; i++) {
+        const sc = ss[i];
+        if (!pos(sc.w, sc.y1 - sc.y0) || (g.profile === 'rect' && !pos(sc.h))) return 'stack section size';
+        const nx = ss[i + 1];
+        if (nx) {
+          if (Math.abs(nx.y0 - sc.y1) > 1e-9) return 'stack sections not contiguous';
+          const big = (a: typeof sc, c: typeof sc) => (g.profile === 'circle' ? a.w > c.w + 0.05 : a.w > c.w + 0.05 && a.h > c.h + 0.05);
+          if (!big(sc, nx) && !big(nx, sc)) return 'stack sections not nested';
+        }
+      }
+      return null;
+    }
+    case 'tube': return pos(g.ri, g.ro - g.ri - 0.05, g.y1 - g.y0) ? null : 'tube size';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Entity writer
 // ---------------------------------------------------------------------------
@@ -157,8 +386,12 @@ class SolidBuilder {
   private circles = new Map<string, number>();
   private faces: number[] = [];
   private readonly w: EntityWriter;
-  constructor(w: EntityWriter) { this.w = w; }
+  private readonly rot: Mat3;
+  private readonly at: V3;
+  constructor(w: EntityWriter, rot: Mat3 = IDENTITY, at: V3 = [0, 0, 0]) { this.w = w; this.rot = rot; this.at = at; }
 
+  private P(p: V3): V3 { return xfPoint(p, this.rot, this.at); }
+  private D(d: V3): V3 { return xfPoint(d, this.rot); }
   private key(p: V3): string { return p.map((v) => (Math.round(v * 1e5) / 1e5).toFixed(5)).join(','); }
 
   private vertex(p: V3): { id: number; pid: number } {
@@ -172,7 +405,7 @@ class SolidBuilder {
     return v;
   }
 
-  /** Oriented edge for the straight segment a -> b. */
+  /** Oriented edge for the straight segment a -> b (world coordinates). */
   private line(a: V3, b: V3): number {
     const va = this.vertex(a), vb = this.vertex(b);
     if (va.id === vb.id) throw new Error('STEP: degenerate edge');
@@ -221,17 +454,25 @@ class SolidBuilder {
     return this.w.add(`${outer ? 'FACE_OUTER_BOUND' : 'FACE_BOUND'}('',#${el},.T.)`);
   }
 
-  /** Planar face with outward normal n; first loop is the outer boundary, the rest are holes. */
+  private xLoop(l: Loop): Loop {
+    return 'circle' in l
+      ? { circle: { c: this.P(l.circle.c), axis: this.D(l.circle.axis), ref: this.D(l.circle.ref), r: l.circle.r } }
+      : { pts: l.pts.map((p) => this.P(p)) };
+  }
+
+  /** Planar face with outward normal n (local frame); first loop is the outer boundary, the rest are holes. */
   plane(n: V3, outer: Loop, holes: Loop[] = []): void {
-    const nu = unit(n);
-    const bounds = [this.loop(outer, nu, true), ...holes.map((h) => this.loop(h, nu, false))];
-    const origin = 'circle' in outer ? outer.circle.c : outer.pts[0];
+    const nu = unit(this.D(n));
+    const o = this.xLoop(outer);
+    const bounds = [this.loop(o, nu, true), ...holes.map((h) => this.loop(this.xLoop(h), nu, false))];
+    const origin = 'circle' in o ? o.circle.c : o.pts[0];
     const pl = this.w.add(`PLANE('',#${this.w.axis(origin, nu, perp(nu))})`);
     this.faces.push(this.w.add(`ADVANCED_FACE('',(${bounds.map((b) => `#${b}`).join(',')}),#${pl},.T.)`));
   }
 
-  /** Cylindrical face from c0 along axis for length; outward = solid inside (peg) vs. outside (hole). */
-  cylinder(c0: V3, axis: V3, ref: V3, r: number, length: number, outward: boolean): void {
+  /** Cylindrical face (local frame) from c0 along axis for length; outward = solid inside (peg) vs. outside (hole). */
+  cylinder(c0L: V3, axisL: V3, refL: V3, r: number, length: number, outward: boolean): void {
+    const c0 = this.P(c0L), axis = unit(this.D(axisL)), ref = unit(this.D(refL));
     const c1 = add(c0, mul(axis, length));
     const e0 = this.circleEdge({ c: c0, axis, ref, r });
     const e1 = this.circleEdge({ c: c1, axis, ref, r });
@@ -246,6 +487,30 @@ class SolidBuilder {
     this.faces.push(this.w.add(`ADVANCED_FACE('',(#${fb}),#${cs},${outward ? '.T.' : '.F.'})`));
   }
 
+  /** Planar face given by a frame with blind pockets: the face itself, then every pocket's walls and floor. */
+  pocketedFace(fr: Frame, outer: V3[], pockets: { p: PocketShape; depth: number }[]): void {
+    const at = (a: number, b: number, t = 0): V3 => add(add(add(fr.o, mul(fr.u, a)), mul(fr.v, b)), mul(fr.n, -t));
+    const loops: Loop[] = pockets.map(({ p }) => (p.kind === 'circle'
+      ? { circle: { c: at(p.a, p.b), axis: fr.n, ref: fr.u, r: p.r } }
+      : { pts: [at(p.a0, p.b0), at(p.a1, p.b0), at(p.a1, p.b1), at(p.a0, p.b1)] }));
+    this.plane(fr.n, { pts: outer }, loops);
+    for (const { p, depth } of pockets) {
+      if (p.kind === 'circle') {
+        const c0 = at(p.a, p.b, depth);
+        this.cylinder(c0, fr.n, fr.u, p.r, depth, false);
+        this.plane(fr.n, { circle: { c: c0, axis: fr.n, ref: fr.u, r: p.r } });
+        continue;
+      }
+      const a0 = Math.min(p.a0, p.a1), a1 = Math.max(p.a0, p.a1), b0 = Math.min(p.b0, p.b1), b1 = Math.max(p.b0, p.b1);
+      const wall = (n: V3, q: [number, number][]) => this.plane(n, { pts: [at(q[0][0], q[0][1]), at(q[1][0], q[1][1]), at(q[1][0], q[1][1], depth), at(q[0][0], q[0][1], depth)] });
+      wall(fr.u, [[a0, b0], [a0, b1]]);
+      wall(mul(fr.u, -1), [[a1, b0], [a1, b1]]);
+      wall(fr.v, [[a0, b0], [a1, b0]]);
+      wall(mul(fr.v, -1), [[a0, b1], [a1, b1]]);
+      this.plane(fr.n, { pts: [at(a0, b0, depth), at(a1, b0, depth), at(a1, b1, depth), at(a0, b1, depth)] });
+    }
+  }
+
   finish(name: string): number {
     const shell = this.w.add(`CLOSED_SHELL('',(${this.faces.map((f) => `#${f}`).join(',')}))`);
     return this.w.add(`MANIFOLD_SOLID_BREP(${p21String(name)},#${shell})`);
@@ -255,13 +520,13 @@ class SolidBuilder {
 const rectPts = (x0: number, z0: number, x1: number, z1: number, y: number): V3[] => [[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]];
 
 function buildBox(b: SolidBuilder, g: BoxGeom) {
-  const { w, d, h } = g;
-  b.plane([0, -1, 0], { pts: rectPts(0, 0, w, h, 0) });
-  b.plane([0, 1, 0], { pts: rectPts(0, 0, w, h, d) });
-  b.plane([-1, 0, 0], { pts: [[0, 0, 0], [0, d, 0], [0, d, h], [0, 0, h]] });
-  b.plane([1, 0, 0], { pts: [[w, 0, 0], [w, d, 0], [w, d, h], [w, 0, h]] });
-  b.plane([0, 0, -1], { pts: [[0, 0, 0], [w, 0, 0], [w, d, 0], [0, d, 0]] });
-  b.plane([0, 0, 1], { pts: [[0, 0, h], [w, 0, h], [w, d, h], [0, d, h]] });
+  const faces: BoxFace[] = ['-y', '+y', '-x', '+x', '-z', '+z'];
+  for (const f of faces) {
+    const fr = boxFace(g, f);
+    const corner = (a: number, c: number): V3 => add(add(fr.o, mul(fr.u, a)), mul(fr.v, c));
+    const outer = [corner(0, 0), corner(fr.ua, 0), corner(fr.ua, fr.vb), corner(0, fr.vb)];
+    b.pocketedFace(fr, outer, (g.pockets ?? []).filter((p) => p.face === f).map((p) => ({ p, depth: p.depth })));
+  }
 }
 
 function buildTray(b: SolidBuilder, g: TrayGeom) {
@@ -306,14 +571,13 @@ function buildPlate(b: SolidBuilder, g: PlateGeom) {
 
 function buildExtrudeX(b: SolidBuilder, g: ExtrudeXGeom) {
   const { length: L, poly } = g;
-  let area2 = 0;
-  poly.forEach(([y, z], i) => { const [y2, z2] = poly[(i + 1) % poly.length]; area2 += y * z2 - y2 * z; });
-  const s = area2 > 0 ? 1 : -1;
+  const s = polyArea2(poly) > 0 ? 1 : -1;
   b.plane([-1, 0, 0], { pts: poly.map(([y, z]) => [0, y, z] as V3) });
   b.plane([1, 0, 0], { pts: poly.map(([y, z]) => [L, y, z] as V3) });
   poly.forEach(([y, z], i) => {
     const [y2, z2] = poly[(i + 1) % poly.length];
-    b.plane([0, s * (z2 - z), -s * (y2 - y)], { pts: [[0, y, z], [0, y2, z2], [L, y2, z2], [L, y, z]] });
+    const fr = edgeFrame(g, i, s);
+    b.pocketedFace(fr, [[0, y, z], [0, y2, z2], [L, y2, z2], [L, y, z]], (g.pockets ?? []).filter((p) => p.edge === i).map((p) => ({ p, depth: p.depth })));
   });
 }
 
@@ -346,14 +610,25 @@ function buildStack(b: SolidBuilder, g: StackGeom) {
   b.plane([0, 1, 0], prof(last, last.y1));
 }
 
-function buildSolid(w: EntityWriter, g: SolidGeom, name: string): number {
-  const b = new SolidBuilder(w);
+function buildTube(b: SolidBuilder, g: TubeGeom) {
+  const Y: V3 = [0, 1, 0], X: V3 = [1, 0, 0];
+  const c = (r: number, y: number): Loop => ({ circle: { c: [0, y, 0], axis: Y, ref: X, r } });
+  b.plane([0, -1, 0], c(g.ro, g.y0), [c(g.ri, g.y0)]);
+  b.plane([0, 1, 0], c(g.ro, g.y1), [c(g.ri, g.y1)]);
+  b.cylinder([0, g.y0, 0], Y, X, g.ro, g.y1 - g.y0, true);
+  b.cylinder([0, g.y0, 0], Y, X, g.ri, g.y1 - g.y0, false);
+}
+
+function buildSolid(w: EntityWriter, s: StepSolid, name: string): number {
+  const b = new SolidBuilder(w, s.rot, s.at);
+  const g = s.geom;
   switch (g.type) {
     case 'box': buildBox(b, g); break;
     case 'tray': buildTray(b, g); break;
     case 'plate': buildPlate(b, g); break;
     case 'extrudeX': buildExtrudeX(b, g); break;
     case 'stack': buildStack(b, g); break;
+    case 'tube': buildTube(b, g); break;
   }
   return b.finish(name);
 }
@@ -406,9 +681,12 @@ export function writeStepAssembly(root: StepAssembly, header: StepHeader): strin
     const origin = w.axis([0, 0, 0]);
     let rep: number;
     if (node.kind === 'part') {
-      const brep = buildSolid(w, node.geom, node.name);
-      rep = w.add(`ADVANCED_BREP_SHAPE_REPRESENTATION(${nm},(#${brep},#${origin}),#${ctx})`);
-      styled.push(w.add(`STYLED_ITEM('color',(#${style(node.color)}),#${brep})`));
+      const breps = node.solids.map((s) => {
+        const brep = buildSolid(w, s, s.name);
+        styled.push(w.add(`STYLED_ITEM('color',(#${style(s.color)}),#${brep})`));
+        return brep;
+      });
+      rep = w.add(`ADVANCED_BREP_SHAPE_REPRESENTATION(${nm},(${breps.map((b) => `#${b},`).join('')}#${origin}),#${ctx})`);
     } else {
       const kids = node.children.map((c) => ({ c, r: emit(c) }));
       const places = kids.map(({ c }) => w.axis(c.at));

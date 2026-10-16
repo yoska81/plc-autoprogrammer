@@ -49,5 +49,8 @@ export function wrapText(text: string, maxW: number, size: number, mono = false)
   return out;
 }
 
-/** Schematic line number for a sheet: sheet*100 + line index. */
-export const lineNo = (sheet: number, idx: number) => sheet * 100 + idx;
+/** Schematic line reference "sheet.line", e.g. sheet 3 line 12 -> "3.12". */
+export const lineNo = (sheet: number, idx: number): string => `${sheet}.${String(idx).padStart(2, '0')}`;
+
+/** Standard text heights (mm) used across the set. */
+export const TXT = { title: 3.2, head: 2.6, body: 2.3, small: 2.0, tiny: 1.7 } as const;

@@ -6,10 +6,12 @@ import { useProgramStore } from '../store/useProgramStore';
 import { usePlc } from '../plc/usePlc';
 import { CATALOG, getPart, partsIn } from '../electrical/catalog';
 import PartPicker from '../electrical/PartPicker';
+import { saveBlob } from '../deliverables/files';
 import { keyRatings } from '../electrical/strength';
 import { useProjectStore, type Region } from '../store/useProjectStore';
 import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electrical/derive';
 import CabinetPictures from '../electrical/CabinetPictures';
+import MachiningPanel from '../electrical/MachiningPanel';
 import { useDrawingContext } from '../electrical/useDrawingContext';
 import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
@@ -32,16 +34,9 @@ const CATEGORIES = [...new Set(CATALOG.map((p) => p.category))].sort() as Catalo
 const input = 'border border-steel-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 const card = 'bg-white rounded-sm border border-steel-200 p-5';
 
-function download(name: string, content: string, mime: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: mime }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+const download = (name: string, content: string, mime: string) => saveBlob(name, new Blob([content], { type: mime }));
 
-type Tab = 'design' | 'cabinet' | 'machine' | 'picture';
+type Tab = 'design' | 'cabinet' | 'machine' | 'picture' | 'machining';
 
 export default function ElectricalPage() {
   const el = useElectricalStore();
@@ -56,7 +51,7 @@ export default function ElectricalPage() {
 
   const [params, setParams] = useSearchParams();
   const urlTab = params.get('tab') as Tab | null;
-  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'picture'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
+  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'picture', 'machining'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
@@ -118,14 +113,16 @@ export default function ElectricalPage() {
             </div>
           )}
         </div>
-        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('picture', 'Cabinet picture')}</div>
+        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('picture', 'Cabinet picture')}{tabBtn('machining', 'Machining (DXF)')}</div>
       </header>
 
       <StageBanner info={stages.electrical} action={
         <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-brand-600 text-brand-950 rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
-      {tab === 'picture' ? (
+      {tab === 'machining' ? (
+        <MachiningPanel ctx={ctx} fileBase={base} />
+      ) : tab === 'picture' ? (
         <CabinetPictures ctx={ctx} />
       ) : tab === 'cabinet' || tab === 'machine' ? (
         <div className="flex-1 overflow-hidden flex flex-col bg-steel-100">

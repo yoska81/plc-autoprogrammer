@@ -58,7 +58,7 @@ export default function DrawingSet({ ctx, printMode, section = 'all' }: DrawingS
             <button
               key={s.n} role="tab" aria-selected={i === idx} title={`${s.drawingNo} — ${s.title}`}
               onClick={() => setActive(i)}
-              className={`shrink-0 px-2 py-1 text-xs rounded border whitespace-nowrap ${i === idx ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+              className={`shrink-0 px-2 py-1 text-xs rounded border whitespace-nowrap ${i === idx ? 'bg-brand-600 text-brand-950 border-brand-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
             >
               <span className="font-mono font-semibold">{s.n}</span>
               <span className="ml-1 hidden md:inline">{shortTitle(s.title)}</span>

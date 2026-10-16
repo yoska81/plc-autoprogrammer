@@ -2,10 +2,12 @@
  * Sheet planning: decides which sheets exist, their order/numbering, the line
  * (rung) every element sits on, and resolves cross-references. Pure data — the
  * sheet components only draw what is planned here.
+ *
+ * Line references use the "sheet.line" notation ("5.04" = sheet 5, line 4).
  */
 import {
-  billOfMaterials, buildModel, designWarnings, panelLayout,
-  backPanelDrilling, doorDrilling, type DrillingPlan,
+  billOfMaterials, buildModel, designWarnings, drawingPrefix, naturalCompare, panelLayout, plcRack, revisionState,
+  backPanelDrilling, doorDrilling, type DrillingPlan, type PlcRackSlot, type RevisionState,
   type AuxBranch, type Cable, type CableCore, type JbTerminal, type JunctionBoxPlan, type MachineDevice, type BomLine, type DrawingContext, type ElectricalModel, type IoGroup, type IoPoint,
   type MotorModel, type PanelLayout, type XfmrBranch, type PsBranch, type Terminal, type TerminalStrip,
 } from '../derive';
@@ -32,18 +34,25 @@ export interface Rung {
 export type PowerBranchPlan = { type: 'ps'; b: PsBranch; idx: number } | { type: 'aux'; b: AuxBranch; idx: number } | { type: 'xfmr'; b: XfmrBranch; idx: number };
 export type TermRow = { kind: 'header'; strip: TerminalStrip; cont?: boolean } | { kind: 'row'; t: Terminal };
 export type BomRow = { kind: 'group'; title: string } | { kind: 'line'; line: BomLine };
+/** One PLC terminal on an I/O sheet: a used point or a spare. */
+export interface IoRow { address: string; point?: IoPoint }
+/** One line of the device list. */
+export interface DeviceRow { tag: string; fn: string; partNumber: string; manufacturer: string; description: string; qty: number; location: string; refs: string }
 
 export type SheetSpec =
   | { kind: 'cover' }
+  | { kind: 'legend' }
   | { kind: 'notes'; notes: string[]; warnings: string[] }
   | { kind: 'power'; branches: PowerBranchPlan[]; contIdx: number; groundIdx: number }
   | { kind: 'motors'; items: { m: MotorModel; idx: number }[]; busEnd: number; continues: boolean; first: boolean }
   | { kind: 'control'; rungs: Rung[] }
-  | { kind: 'io'; group: IoGroup; points: IoPoint[]; first: boolean; last: boolean }
+  | { kind: 'io'; group: IoGroup; rows: IoRow[]; points: IoPoint[]; first: boolean; last: boolean; rack?: PlcRackSlot; page: number; pages: number }
   | { kind: 'panel' }
   | { kind: 'door' }
   | { kind: 'terminals'; columns: TermRow[][] }
+  | { kind: 'devices'; rows: DeviceRow[]; page: number; pages: number }
   | { kind: 'bom'; rows: BomRow[]; first: boolean }
+  | { kind: 'labels' }
   | { kind: 'machine'; zones: ZonePlan[] }
   | { kind: 'cables'; columns: CableRow[][] }
   | { kind: 'jb'; jb: JunctionBoxPlan; terminals: JbTerminal[]; trunk?: Cable; page: number; pages: number }
@@ -54,7 +63,15 @@ export const DRILL_ROWS_FIRST = 44;
 export const DRILL_ROWS_CONT = 52;
 
 export type SheetSection = 'cover' | 'cabinet' | 'machine';
-export interface PlannedSheet { n: number; title: string; drawingNo: string; spec: SheetSpec; section: SheetSection }
+export interface PlannedSheet {
+  n: number;
+  title: string;
+  drawingNo: string;
+  spec: SheetSpec;
+  section: SheetSection;
+  /** Revision of this sheet (the set is issued as a whole: the current revision). */
+  rev: string;
+}
 
 /** Machine overview: one row = a junction box (or the cabinet cable tray) with up to OV_PER_ROW devices hanging from it. */
 export interface ZoneRow { jb?: JunctionBoxPlan; trunk?: Cable; firstOfJb: boolean; devices: MachineDevice[] }
@@ -68,9 +85,27 @@ export const CABLE_ROWS = 40;
 export const JB_ROWS = 28;
 
 export function sectionOf(kind: SheetSpec['kind']): SheetSection {
-  if (kind === 'cover' || kind === 'notes') return 'cover';
+  if (kind === 'cover' || kind === 'notes' || kind === 'legend') return 'cover';
   if (kind === 'machine' || kind === 'cables' || kind === 'jb') return 'machine';
   return 'cabinet';
+}
+
+/** A contact of a coil-operated (or overload) device, for the contact mirror under its coil. */
+export interface ContactRef { tag: string; term: string; nc: boolean; line: string; main?: boolean }
+
+/** Document control resolved for the title blocks (blanks stay blank). */
+export interface DocState {
+  company: string;
+  customer: string;
+  site: string;
+  projectNumber: string;
+  prefix: string;
+  preparedBy: string;
+  checkedBy: string;
+  approvedBy: string;
+  /** Date the set was drawn: first revision date, else the design date. */
+  drawnDate: string;
+  rs: RevisionState;
 }
 
 export interface DrawingPlan {
@@ -79,33 +114,36 @@ export interface DrawingPlan {
   layout: PanelLayout;
   sheets: PlannedSheet[];
   xref: Map<string, string>;
+  /** Contacts per device tag (coil contact mirrors). */
+  contacts: Map<string, ContactRef[]>;
+  /** Sheets each device tag is drawn on. */
+  where: Map<string, number[]>;
+  /** BOM item number per device tag (layout callout balloons). */
+  bomItem: Map<string, number>;
   date: string;
   docPrefix: string;
+  doc: DocState;
 }
 
 export const POWER_PITCH = 7.5;
 export const MOTOR_PITCH = 7.5;
-export const CONTROL_PITCH = 10;
+export const CONTROL_PITCH = 15;
 export const IO_PITCH = 12;
 export const MOTOR_LINES = 27;
-export const CONTROL_RUNGS = 21;
+export const CONTROL_RUNGS = 14;
 export const IO_PER_SHEET = 16;
 export const TERM_ROWS = 40;
 export const BOM_ROWS = 31;
+export const DEVICE_ROWS = 38;
 
 const letter = (i: number) => (i === 0 ? '' : String.fromCharCode(64 + i));
-
-function docPrefix(name: string): string {
-  const words = name.toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean);
-  if (!words.length) return 'PRJ';
-  if (words.length === 1) return words[0].slice(0, 6);
-  return words.slice(0, 4).map((w) => w[0]).join('');
-}
+const pad2 = (n: number) => String(n).padStart(2, '0');
 
 function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   const out: Omit<Rung, 'idx'>[] = [];
   const s = model.safety;
   const rail: RungEnd = { kind: 'rail' };
+  const toOutputs: RungEnd = { kind: 'xref', label: '24+S TO {=s:out}' };
   if (s.relay) {
     const sr = s.relay.tag;
     out.push({ start: rail, end: rail, els: [{ t: 'box', tag: sr, left: 'A1', right: 'A2' }], wires: ['24+', '0V'], desc: [`SAFETY RELAY ${sr} SUPPLY`, `CONTACTS: {c:${sr}}`], key: `coil:${sr}` });
@@ -127,16 +165,16 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
     });
     if (s.mcr) {
       out.push({ start: rail, end: rail, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }, { t: 'coil', tag: s.mcr.tag }], wires: ['24+', 'SR14', '0V'], desc: [`MASTER CONTROL RELAY ${s.mcr.tag}`, `CONTACTS: {c:${s.mcr.tag}}`], key: `coil:${s.mcr.tag}` });
-      out.push({ start: rail, end: { kind: 'xref', label: '24+S TO PLC OUTPUTS' }, els: [{ t: 'contact', nc: false, tag: s.mcr.tag, term: '13-14', dev: 'relay' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', 'FEEDS OUTPUT SUPPLY {s:out}'], key: 'rung:24+S' });
+      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: s.mcr.tag, term: '13-14', dev: 'relay' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', 'FEEDS PLC OUTPUT SUPPLY {=s:out}'], key: 'rung:24+S' });
     } else {
-      out.push({ start: rail, end: { kind: 'xref', label: '24+S TO PLC OUTPUTS' }, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', 'FEEDS OUTPUT SUPPLY {s:out}'], key: 'rung:24+S' });
+      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', 'FEEDS PLC OUTPUT SUPPLY {=s:out}'], key: 'rung:24+S' });
     }
   } else if (s.estops.length) {
     const es = s.estops;
     const els: RungEl[] = es.map((tag) => ({ t: 'contact', nc: true, tag, term: '11-12', dev: 'estop' }));
     if (s.mcr) els.push({ t: 'coil', tag: s.mcr.tag });
     out.push({
-      start: rail, end: s.mcr ? rail : { kind: 'xref', label: '24+S TO PLC OUTPUTS' }, els,
+      start: rail, end: s.mcr ? rail : toOutputs, els,
       wires: ['24+', ...es.slice(1).map((_, k) => `ES${k + 1}`), '24+S', ...(s.mcr ? ['0V'] : [])],
       desc: ['E-STOP CHAIN (HARDWIRED, NO SAFETY RELAY)', 'REVIEW REQUIRED — SEE NOTES'], key: s.mcr ? `coil:${s.mcr.tag}` : 'rung:24+S',
     });
@@ -154,12 +192,42 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   for (const p of coils) {
     const ch = p.coilChain!;
     out.push({
-      start: { kind: 'xref', label: `${p.address} {io:${p.address}}` }, end: rail,
+      start: { kind: 'xref', label: `${p.address} FROM {=io:${p.address}}` }, end: rail,
       els: [...ch.devices.map((d) => ({ t: 'contact' as const, nc: d.nc, tag: d.tag, term: d.terminals, dev: d.kind === 'ol' ? 'ol' as const : 'relay' as const })), { t: 'coil', tag: p.deviceTag || '?' }],
       wires: [...ch.wires, '0V'],
       desc: [p.description.toUpperCase(), `${p.deviceTag} CONTACTS: {c:${p.deviceTag}}`], key: `coil:${p.deviceTag}`,
     });
   }
+  return out;
+}
+
+/** I/O sheets: one block per CPU / module and type, every point of the module (spares included). */
+function ioBlocks(ctx: DrawingContext, model: ElectricalModel): { group: IoGroup; rows: IoRow[]; rack?: PlcRackSlot }[] {
+  const rack = plcRack(ctx);
+  const byKey = new Map(model.groups.map((g) => [g.key, g] as const));
+  const used = new Set<string>();
+  const out: { group: IoGroup; rows: IoRow[]; rack?: PlcRackSlot }[] = [];
+  for (const slot of rack) {
+    for (const type of ['input', 'output'] as const) {
+      const key = `${type}:${slot.slot}`;
+      const g = byKey.get(key);
+      const cap = type === 'input' ? slot.inputs : slot.outputs;
+      if (!g && !cap) continue;
+      used.add(key);
+      const L = type === 'input' ? 'X' : 'Y';
+      const pts = g?.points ?? [];
+      const addrs = Array.from({ length: Math.min(cap, 16) }, (_, k) => `${L}${slot.slot}${pad2(k + 1)}`);
+      for (const p of pts) if (!addrs.includes(p.address.toUpperCase())) addrs.push(p.address.toUpperCase());
+      addrs.sort(naturalCompare);
+      const group: IoGroup = g ?? {
+        key, type, label: slot.slot === 0 ? `CPU ${slot.partNumber}` : `SLOT ${slot.slot} ${slot.partNumber}`, devTag: slot.tag, partNumber: slot.partNumber,
+        outputStyle: slot.outputStyle, commonTo: '0V', points: [],
+      };
+      out.push({ group, rows: addrs.map((a) => ({ address: a, point: pts.find((p) => p.address.toUpperCase() === a) })), rack: slot });
+    }
+  }
+  // groups outside the CLICK slot scheme (generic addresses): used points only
+  for (const g of model.groups) if (!used.has(g.key)) out.push({ group: g, rows: g.points.map((p) => ({ address: p.address, point: p })) });
   return out;
 }
 
@@ -169,6 +237,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   const specs: { title: string; spec: SheetSpec }[] = [];
 
   specs.push({ title: 'COVER SHEET, DRAWING INDEX & GENERAL NOTES', spec: { kind: 'cover' } });
+  specs.push({ title: 'SYMBOLS, ABBREVIATIONS & DEVICE TAGS', spec: { kind: 'legend' } });
   const warnings = designWarnings(ctx);
   if (ctx.design.notes.length || warnings.length) specs.push({ title: 'DESIGN NOTES & ENGINEERING REVIEW ITEMS', spec: { kind: 'notes', notes: ctx.design.notes, warnings } });
 
@@ -212,16 +281,17 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     }
   }
 
-  // IO
-  for (const type of ['input', 'output'] as const) {
-    for (const g of model.groups.filter((x) => x.type === type)) {
-      for (let i = 0; i < g.points.length; i += IO_PER_SHEET) {
-        const pts = g.points.slice(i, i + IO_PER_SHEET);
-        specs.push({
-          title: `PLC ${type === 'input' ? 'INPUTS' : 'OUTPUTS'} — ${g.label} (${pts.length > 1 ? `${pts[0].address}–${pts[pts.length - 1].address}` : pts[0].address})`,
-          spec: { kind: 'io', group: g, points: pts, first: i === 0, last: i + IO_PER_SHEET >= g.points.length },
-        });
-      }
+  // IO: one block per CPU / module, inputs then outputs, spares included
+  for (const blk of ioBlocks(ctx, model)) {
+    const g = blk.group;
+    const pages = Math.max(1, Math.ceil(blk.rows.length / IO_PER_SHEET));
+    for (let i = 0; i < Math.max(1, blk.rows.length); i += IO_PER_SHEET) {
+      const rows = blk.rows.slice(i, i + IO_PER_SHEET);
+      const range = rows.length > 1 ? `${rows[0].address}–${rows[rows.length - 1].address}` : rows[0]?.address ?? '';
+      specs.push({
+        title: `PLC ${g.type === 'input' ? 'INPUTS' : 'OUTPUTS'} — ${g.devTag} ${g.label} (${range})`,
+        spec: { kind: 'io', group: g, rows, points: rows.flatMap((r) => (r.point ? [r.point] : [])), first: i === 0, last: i + IO_PER_SHEET >= blk.rows.length, rack: blk.rack, page: i / IO_PER_SHEET + 1, pages },
+      });
     }
   }
 
@@ -256,9 +326,15 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     for (let i = 0; i < cols.length; i += 2) specs.push({ title: `TERMINAL PLAN${pages > 1 ? ` (${i / 2 + 1} OF ${pages})` : ''}`, spec: { kind: 'terminals', columns: cols.slice(i, i + 2) } });
   }
 
+  // device list (rows filled after numbering, when sheet references are known)
+  const devRowsCount = deviceTags(ctx, model).length;
+  const devPages = Math.max(1, Math.ceil(devRowsCount / DEVICE_ROWS));
+  for (let i = 0; i < devPages; i++) specs.push({ title: `DEVICE LIST${devPages > 1 ? ` (${i + 1} OF ${devPages})` : ''}`, spec: { kind: 'devices', rows: [], page: i + 1, pages: devPages } });
+
   // BOM
+  const bom = billOfMaterials(ctx);
   const bomRows: BomRow[] = [];
-  for (const g of billOfMaterials(ctx)) { bomRows.push({ kind: 'group', title: g.title }); for (const l of g.lines) bomRows.push({ kind: 'line', line: l }); }
+  for (const g of bom) { bomRows.push({ kind: 'group', title: g.title }); for (const l of g.lines) bomRows.push({ kind: 'line', line: l }); }
   if (bomRows.length) {
     const pages: BomRow[][] = [];
     let cur: BomRow[] = [];
@@ -269,6 +345,8 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     if (cur.length) pages.push(cur);
     pages.forEach((rows, i) => specs.push({ title: `BILL OF MATERIALS${pages.length > 1 ? ` (${i + 1} OF ${pages.length})` : ''}`, spec: { kind: 'bom', rows, first: i === 0 } }));
   }
+
+  specs.push({ title: 'NAMEPLATE, LEGEND PLATE & LABEL SCHEDULE', spec: { kind: 'labels' } });
 
   // ---- machine (field) wiring section
   const mc = model.machine;
@@ -323,64 +401,185 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     }
   }
 
-  const prefix = docPrefix(ctx.projectName);
-  const sheets: PlannedSheet[] = specs.map((s, i) => ({ n: i + 1, title: s.title, drawingNo: `${prefix}-E${String(i + 1).padStart(2, '0')}`, spec: s.spec, section: sectionOf(s.spec.kind) }));
+  const prefix = drawingPrefix(ctx.doc);
+  const rs = revisionState(ctx.doc);
+  const sheets: PlannedSheet[] = specs.map((s, i) => ({ n: i + 1, title: s.title, drawingNo: `${prefix}-E-${pad2(i + 1)}`, spec: s.spec, section: sectionOf(s.spec.kind), rev: rs.rev }));
 
   // ---- cross references
   const xref = new Map<string, string>();
-  const contacts = new Map<string, string[]>();
-  const addContact = (tag: string, text: string) => { const l = contacts.get(tag) ?? []; if (!l.includes(text)) l.push(text); contacts.set(tag, l); };
-  const outSheets: number[] = [];
+  const contacts = new Map<string, ContactRef[]>();
+  const addContact = (c: ContactRef) => {
+    if (!c.tag) return;
+    const l = contacts.get(c.tag) ?? [];
+    if (!l.some((x) => x.term === c.term && x.line === c.line)) l.push(c);
+    contacts.set(c.tag, l);
+  };
+  const outLines: string[] = [];
   for (const sh of sheets) {
     const sp = sh.spec;
-    xref.set(`sheet:${sp.kind}`, xref.get(`sheet:${sp.kind}`) ?? String(sh.n));
-    if (sp.kind === 'jb') xref.set(`jb:${sp.jb.tag}`, xref.get(`jb:${sp.jb.tag}`) ?? String(sh.n));
+    if (!xref.has(`sheet:${sp.kind}`)) xref.set(`sheet:${sp.kind}`, String(sh.n));
+    if (sp.kind === 'jb' && !xref.has(`jb:${sp.jb.tag}`)) xref.set(`jb:${sp.jb.tag}`, String(sh.n));
     if (sp.kind === 'power') {
       for (const b of sp.branches) {
-        if (b.type === 'ps') xref.set(`ps:${b.b.ps.tag}`, String(lineNo(sh.n, b.idx)));
-        if (b.type === 'xfmr') xref.set('xfmr', String(lineNo(sh.n, b.idx)));
+        if (b.type === 'ps') { xref.set(`ps:${b.b.ps.tag}`, lineNo(sh.n, b.idx)); xref.set(`ps0:${b.b.ps.tag}`, lineNo(sh.n, b.idx + 1)); }
+        if (b.type === 'xfmr') xref.set('xfmr', lineNo(sh.n, b.idx));
       }
-      xref.set('power:cont', String(lineNo(sh.n, sp.contIdx + 1)));
-      xref.set('power:ground', String(lineNo(sh.n, sp.groundIdx)));
+      xref.set('power:cont', lineNo(sh.n, sp.contIdx + 1));
+      xref.set('power:ground', lineNo(sh.n, sp.groundIdx));
     } else if (sp.kind === 'motors') {
-      if (sp.first) xref.set('motors', String(lineNo(sh.n, 0)));
+      if (sp.first) xref.set('motors', lineNo(sh.n, 0));
       for (const it of sp.items) {
         const m = it.m;
         const rev = m.motor.reversing && m.contactors.length >= 2 && !m.vfd;
         m.contactors.forEach((c, k) => {
           const l = lineNo(sh.n, it.idx + 1 + (k === 1 && rev ? 4 : 0));
-          xref.set(`contacts:${c.tag}`, String(l));
-          addContact(c.tag, `MAIN ${l}`);
+          xref.set(`contacts:${c.tag}`, l);
+          addContact({ tag: c.tag, term: '1-2/3-4/5-6', nc: false, line: l, main: true });
         });
-        if (m.overload) addContact(m.overload.tag, `HEATERS ${lineNo(sh.n, it.idx + 1)}`);
-        xref.set(`motor:${m.motor.tag}`, String(lineNo(sh.n, it.idx)));
+        if (m.overload) xref.set(`heater:${m.overload.tag}`, lineNo(sh.n, it.idx + 1));
+        xref.set(`motor:${m.motor.tag}`, lineNo(sh.n, it.idx));
       }
     } else if (sp.kind === 'control') {
+      if (!xref.has('ctl:first')) xref.set('ctl:first', lineNo(sh.n, 1));
       for (const r of sp.rungs) {
         const l = lineNo(sh.n, r.idx);
-        if (r.key) xref.set(r.key, String(l));
-        for (const e of r.els) if (e.t === 'contact') addContact(e.tag, `${e.term}${e.nc ? ' NC' : ''} ${l}`);
+        if (r.key) xref.set(r.key, l);
+        for (const e of r.els) if (e.t === 'contact' && e.dev !== 'pb' && e.dev !== 'estop') addContact({ tag: e.tag, term: e.term, nc: e.nc, line: l });
       }
     } else if (sp.kind === 'io') {
-      sp.points.forEach((p, i) => {
+      sp.rows.forEach((r, i) => {
         const l = lineNo(sh.n, i + 1);
-        xref.set(`io:${p.address}`, String(l));
-        if (p.deviceType === 'safety-relay-output') addContact(p.deviceTag || model.safety.relay?.tag || '', `23-24 ${l}`);
-        if (p.deviceType === 'estop-contact') addContact(p.deviceTag, `13-14 ${l}`);
+        const p = r.point;
+        if (!p) return;
+        xref.set(`io:${p.address}`, l);
+        if (p.deviceType === 'safety-relay-output') addContact({ tag: p.deviceTag || model.safety.relay?.tag || '', term: '23-24', nc: false, line: l });
       });
-      if (sp.group.type === 'output' && sp.first) outSheets.push(lineNo(sh.n, 0));
+      if (sp.group.type === 'output' && sp.last && sp.group.outputStyle !== 'sinking') outLines.push(lineNo(sh.n, sp.rows.length + 1));
     }
   }
-  for (const [tag, list] of contacts) xref.set(`c:${tag}`, list.join(', '));
-  xref.set('s:out', outSheets.map((l) => `/${l}`).join(', '));
+  for (const [tag, list] of contacts) xref.set(`c:${tag}`, list.map((c) => `${c.main ? 'MAIN' : c.term}${c.nc ? ' NC' : ''} ${c.line}`).join(', '));
+  xref.set('s:out', outLines.join(', ') || 'PLC OUTPUTS');
+
+  // ---- where each tag is drawn
+  const whereSets = new Map<string, Set<number>>();
+  const mark = (tag: string | undefined, n: number) => { if (!tag) return; const s = whereSets.get(tag) ?? new Set<number>(); s.add(n); whereSets.set(tag, s); };
+  for (const sh of sheets) {
+    const sp = sh.spec, n = sh.n;
+    switch (sp.kind) {
+      case 'power':
+        mark(model.disconnect?.tag, n); mark(model.mainBreaker?.tag, n); mark(model.groundBar?.tag, n);
+        for (const b of sp.branches) { mark(b.b.protection?.tag, n); if (b.type === 'ps') mark(b.b.ps.tag, n); if (b.type === 'xfmr') mark(b.b.xfmr.tag, n); }
+        break;
+      case 'motors':
+        for (const it of sp.items) { const m = it.m; [m.protection, m.overload, m.vfd, ...m.contactors].forEach((c) => mark(c?.tag, n)); mark(m.motor.tag, n); }
+        mark('TB1', n);
+        break;
+      case 'control':
+        for (const r of sp.rungs) for (const e of r.els) mark(e.tag, n);
+        break;
+      case 'io':
+        mark(sp.group.devTag, n);
+        for (const p of sp.points) { mark(p.deviceTag, n); for (const t of [p.signalTerminal, p.supplyTerminal, p.returnTerminal]) mark(t?.split('-')[0], n); }
+        break;
+      case 'panel':
+        for (const it of layout.items) for (const t of it.label.split('/')) mark(t.replace(/\s*\(.*$/, '').replace(/\.\d+$/, ''), n);
+        mark(layout.enclosure.tag, n); mark(layout.backplate.tag, n);
+        break;
+      case 'door':
+        for (const d of layout.door.items) mark(d.tag, n);
+        mark(layout.door.handle?.tag, n);
+        break;
+      case 'terminals':
+        for (const c of sp.columns) for (const r of c) if (r.kind === 'header') mark(r.strip.tag, n);
+        break;
+      case 'machine':
+        for (const z of sp.zones) for (const r of z.rows) { mark(r.jb?.tag, n); for (const d of r.devices) mark(d.tag, n); }
+        break;
+      case 'jb':
+        mark(sp.jb.tag, n);
+        for (const t of sp.terminals) mark(t.device, n);
+        break;
+      default:
+        break;
+    }
+  }
+  const where = new Map<string, number[]>([...whereSets].map(([k, v]) => [k, [...v].sort((a, b) => a - b)] as const));
+
+  const bomItem = new Map<string, number>();
+  for (const g of bom) for (const l of g.lines) {
+    for (const t of l.tags) if (!bomItem.has(t)) bomItem.set(t, l.item);
+    if (l.partNumber && !bomItem.has(`pn:${l.partNumber}`)) bomItem.set(`pn:${l.partNumber}`, l.item);
+  }
 
   const date = (ctx.design.generatedAt || '').slice(0, 10) || '—';
-  return { ctx, model, layout, sheets, xref, date, docPrefix: prefix };
+  const d = ctx.doc;
+  const doc: DocState = {
+    company: d?.company?.trim() ?? '', customer: d?.customer?.trim() ?? '', site: d?.site?.trim() ?? '', projectNumber: d?.projectNumber?.trim() ?? '',
+    prefix, preparedBy: d?.preparedBy?.trim() ?? '', checkedBy: d?.checkedBy?.trim() ?? '', approvedBy: d?.approvedBy?.trim() ?? '',
+    drawnDate: rs.revisions[0]?.date?.trim() || date, rs,
+  };
+  const plan: DrawingPlan = { ctx, model, layout, sheets, xref, contacts, where, bomItem, date, docPrefix: prefix, doc };
+
+  // device list rows (need `where`)
+  const devRows = deviceRows(plan);
+  for (const sh of sheets) {
+    if (sh.spec.kind !== 'devices') continue;
+    const i = sh.spec.page - 1;
+    sh.spec = { ...sh.spec, rows: devRows.slice(i * DEVICE_ROWS, (i + 1) * DEVICE_ROWS) };
+  }
+  return plan;
 }
 
-/** Replaces `{key}` placeholders with cross-reference values ("?" when unknown). */
+/** All device tags listed on the device list (components, field devices without a part, motors, junction boxes). */
+function deviceTags(ctx: DrawingContext, model: ElectricalModel): string[] {
+  const tags = new Set<string>(model.rc.map((c) => c.tag));
+  for (const p of model.io) if (p.deviceTag) tags.add(p.deviceTag);
+  for (const m of ctx.design.inputs.motors) tags.add(m.tag);
+  for (const j of model.machine.jbs) tags.add(j.tag);
+  return [...tags].sort(naturalCompare);
+}
+
+function deviceRows(plan: DrawingPlan): DeviceRow[] {
+  const { ctx, model } = plan;
+  const rcBy = new Map(model.rc.map((c) => [c.tag, c] as const));
+  const devBy = new Map(model.machine.devices.map((d) => [d.tag, d] as const));
+  const coilRef = (tag: string) => plan.xref.get(`coil:${tag}`) ?? plan.xref.get(`ps:${tag}`) ?? plan.xref.get(`motor:${tag}`) ?? plan.xref.get(`heater:${tag}`) ?? plan.xref.get(`contacts:${tag}`);
+  return deviceTags(ctx, model).map((tag) => {
+    const c = rcBy.get(tag);
+    const md = devBy.get(tag);
+    const io = model.io.find((p) => p.deviceTag === tag);
+    const motor = ctx.design.inputs.motors.find((m) => m.tag === tag);
+    const jb = model.machine.jbs.find((j) => j.tag === tag);
+    let location: string;
+    if (c?.category === 'enclosure') location = 'ENCLOSURE';
+    else if (c?.mount === 'door' || io?.location === 'door') location = 'DOOR';
+    else if (md || motor || jb) location = `FIELD — ${(md?.zone ?? jb?.zone ?? model.machine.wiring.motorLocations[tag] ?? 'MACHINE').toUpperCase()}`;
+    else if (c?.mount === 'field' || io?.location === 'field') location = 'FIELD';
+    else if (c?.category === 'fan') location = 'ENCLOSURE (SIDE/DOOR)';
+    else location = 'BACK PANEL';
+    const sheetsOf = plan.where.get(tag) ?? [];
+    const ref = coilRef(tag);
+    const refs = [...(ref ? [`/${ref}`] : []), ...sheetsOf.filter((n) => !ref || String(n) !== ref.split('.')[0]).map(String)].join(', ');
+    return {
+      tag,
+      fn: (c?.comp.function || motor?.description || io?.description || (jb ? `Junction box, ${jb.zone}` : '')).toUpperCase(),
+      partNumber: c?.partNumber || md?.partNumber || (jb?.partNumber ?? '') || '',
+      manufacturer: c?.part?.manufacturer ?? '',
+      description: c?.part?.description ?? (motor ? `${motor.hp} HP ${motor.voltage.replace('-', ' ')} MOTOR (BY OTHERS)` : jb ? 'ENCLOSURE TO BE SELECTED' : c ? 'PART NOT IN CATALOG — VERIFY' : 'NO PART SELECTED'),
+      qty: c?.comp.quantity ?? 1,
+      location,
+      refs: refs || '—',
+    };
+  });
+}
+
+/**
+ * Replaces `{key}` placeholders with cross-reference values. `{=key}` inserts the bare value
+ * ("?" when unknown); line keys (io:, coil:, ps:, contacts:, rung:) get a "/" pointer prefix.
+ */
 export function resolveRefs(text: string, xref: Map<string, string>): string {
   return text.replace(/\{([^}]+)\}/g, (_, k: string) => {
+    if (k.startsWith('=')) return xref.get(k.slice(1)) ?? '?';
     const v = xref.get(k);
     if (k.startsWith('io:') || k.startsWith('coil:') || k.startsWith('ps:') || k.startsWith('contacts:') || k.startsWith('rung:')) return v ? `/${v}` : '';
     return v ?? '—';

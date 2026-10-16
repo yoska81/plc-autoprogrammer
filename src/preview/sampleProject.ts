@@ -4,7 +4,7 @@ import { useProgramStore } from '../store/useProgramStore';
 import { useElectricalStore } from '../store/useElectricalStore';
 import type { LadderProgram } from '../plc/ladder';
 import type { DesignInputs, ElectricalDesign } from '../electrical/types';
-import type { HmiDesign, HmiElement } from '../hmi/types';
+import type { HmiDesign, HmiElement, HmiState } from '../hmi/types';
 import { EMPTY_SECTIONS, fingerprint, type SpecSections } from '../spec/types';
 import { useSpecStore } from '../store/useSpecStore';
 import { useHmiStore } from '../store/useHmiStore';
@@ -87,60 +87,171 @@ export const LADDER: LadderProgram = {
 const el = (id: string, kind: HmiElement['kind'], label: string, x: number, y: number, w: number, h: number, more: Partial<HmiElement> = {}): HmiElement => ({
   id, kind, label, x, y, w, h, address: null, action: null, targetScreenId: null, onText: null, offText: null, style: 'normal', units: null, min: null, max: null, note: null, ...more,
 });
-const navBar = (prefix: string) => [
-  el(`${prefix}-nav1`, 'nav', 'Main', 8, 416, 254, 56, { targetScreenId: 'main' }),
-  el(`${prefix}-nav2`, 'nav', 'Alarms', 273, 416, 254, 56, { targetScreenId: 'alarms' }),
-  el(`${prefix}-nav3`, 'nav', 'I/O Status', 538, 416, 254, 56, { targetScreenId: 'io' }),
+// 800x480 CM5-T7W: header 0-44, content 52-416, navigation 428-476 (same on every screen).
+const NAV: [string, string][] = [['main', 'Main'], ['manual', 'Manual'], ['setup', 'Setup'], ['alarms', 'Alarms'], ['diag', 'Diagnostics'], ['maint', 'Maintenance']];
+const frame = (p: string) => [
+  el(`${p}-hdr`, 'header', 'Conveyor Cell', 0, 0, 800, 44, {
+    address: 'C1201', targetScreenId: 'alarms',
+    states: [{ value: 0, text: 'Auto', style: 'normal' }, { value: 1, text: 'Manual', style: 'warning' }],
+  }),
+  ...NAV.map(([id, name], i) => el(`${p}-nav-${id}`, 'nav', name, 8 + i * 132, 428, 124, 48, { targetScreenId: id })),
 ];
-const banner = (prefix: string) => el(`${prefix}-banner`, 'alarm-banner', 'Alarms', 0, 0, 800, 40);
+const MACHINE_STATES: HmiState[] = [
+  { value: 0, text: 'Stopped', style: 'normal' },
+  { value: 1, text: 'Running', style: 'ok' },
+  { value: 2, text: 'Pushing Part', style: 'ok' },
+  { value: 3, text: 'Faulted', style: 'alarm' },
+  { value: 4, text: 'Manual', style: 'warning' },
+  { value: 5, text: 'Safety Stop', style: 'alarm' },
+];
 
 export const HMI: HmiDesign = {
   hmiPartNumber: 'CM5-T7W',
+  machineName: 'Conveyor Cell',
   screens: [
-    { id: 'main', name: 'Main', purpose: 'Run the cell and watch its state.', elements: [
-      banner('m'),
-      el('m-title', 'text', 'Conveyor Cell', 16, 52, 300, 36),
-      el('m-run', 'indicator', 'Running', 16, 100, 240, 44, { address: 'C2', style: 'ok', onText: 'Running', offText: 'Stopped' }),
-      el('m-safe', 'indicator', 'Safety OK', 16, 152, 240, 44, { address: 'C1', style: 'normal', onText: 'Safety OK', offText: 'E-stop active' }),
-      el('m-flt', 'indicator', 'Pusher fault', 16, 204, 240, 44, { address: 'C1101', style: 'alarm' }),
-      el('m-count', 'numeric', 'Parts', 16, 264, 300, 50, { address: 'CTD1' }),
-      el('m-start', 'button', 'Start', 452, 100, 160, 72, { address: 'C1001', action: 'momentary' }),
-      el('m-stop', 'button', 'Stop', 624, 100, 160, 72, { address: 'C1002', action: 'momentary' }),
-      el('m-reset', 'button', 'Reset fault', 452, 184, 160, 72, { address: 'C1003', action: 'momentary' }),
-      el('m-creset', 'button', 'Reset count', 624, 184, 160, 72, { address: 'C1004', action: 'momentary', note: 'Hold to reset the part count' }),
-      ...navBar('m'),
+    { id: 'main', name: 'Main', purpose: 'Overview: machine schematic, state, production counts and the run controls.', elements: [
+      ...frame('m'),
+      el('m-mach', 'machine', 'Conveyor Cell · Top View', 16, 52, 480, 196, { symbols: [
+        { kind: 'motor', label: 'M1', address: 'Y001', x: 24, y: 34, w: 36, h: 36 },
+        { kind: 'sensor', label: 'PE1', address: 'X004', x: 356, y: 104, w: 44, h: 12 },
+        { kind: 'cylinder', label: 'Pusher', address: 'Y002', x: 300, y: 28, w: 24, h: 60 },
+        { kind: 'light', label: 'Ext', address: 'X005', x: 392, y: 40, w: 14, h: 14 },
+        { kind: 'conveyor', label: 'Conveyor', address: 'Y001', x: 20, y: 92, w: 330, h: 36 },
+        { kind: 'part', label: '', address: 'X004', x: 300, y: 98, w: 24, h: 24 },
+        { kind: 'station', label: 'Take-away', address: null, x: 290, y: 140, w: 170, h: 48 },
+      ] }),
+      el('m-state', 'multistate', 'Machine State', 504, 52, 280, 64, { address: 'DS1101', states: MACHINE_STATES }),
+      el('m-start', 'button', 'Start', 504, 124, 136, 64, { address: 'C1001', action: 'momentary', style: 'ok', note: 'Starts the cycle when safety is OK, no fault and Auto mode' }),
+      el('m-stop', 'button', 'Stop', 648, 124, 136, 64, { address: 'C1002', action: 'momentary', style: 'alarm' }),
+      el('m-reset', 'button', 'Reset Fault', 504, 196, 136, 52, { address: 'C1003', action: 'momentary' }),
+      el('m-safe', 'indicator', 'Safety OK', 648, 196, 136, 52, { address: 'C1', style: 'ok', onText: 'Safety OK', offText: 'E-stop' }),
+      el('m-count', 'numeric', 'Parts', 16, 256, 152, 56, { address: 'CTD1' }),
+      el('m-rate', 'numeric', 'Rate', 176, 256, 152, 56, { address: 'DS1103', units: '/min' }),
+      el('m-creset', 'button', 'Reset Count', 336, 256, 160, 56, { address: 'C1004', action: 'momentary', note: 'Hold to reset the part count' }),
+      el('m-run', 'indicator', 'Running', 16, 320, 152, 56, { address: 'C2', style: 'ok', onText: 'Running', offText: 'Stopped' }),
+      el('m-flt', 'indicator', 'Pusher Fault', 176, 320, 152, 56, { address: 'C1101', style: 'alarm', onText: 'Pusher Fault', offText: 'Pusher OK' }),
+      el('m-batch', 'numeric', 'Batch', 336, 320, 160, 56, { address: 'DS1002', units: 'pcs' }),
+      el('m-trend', 'trend', 'Parts · Last 60 s', 504, 256, 280, 120, { address: 'CTD1', style: 'normal' }),
+      el('m-banner', 'alarm-banner', 'Alarms', 16, 384, 768, 32),
     ] },
-    { id: 'alarms', name: 'Alarms', purpose: 'See active faults and reset them.', elements: [
-      banner('a'),
-      el('a-title', 'text', 'Alarms', 16, 52, 200, 36),
-      el('a-1', 'indicator', 'Pusher did not extend in 3 s', 16, 104, 500, 44, { address: 'C1101', style: 'alarm' }),
-      el('a-reset', 'button', 'Reset', 624, 104, 160, 72, { address: 'C1003', action: 'momentary' }),
-      ...navBar('a'),
+    { id: 'manual', name: 'Manual', purpose: 'Jog each actuator by hand in Manual mode; every button shows its interlock.', level: 'maintenance', elements: [
+      ...frame('n'),
+      el('n-mode', 'panel', 'Mode', 16, 52, 768, 84),
+      el('n-sel', 'button', 'Manual Mode', 32, 78, 160, 50, { address: 'C1005', action: 'toggle', onText: 'Manual On', offText: 'Select Manual', level: 'maintenance', note: 'Accepted by the PLC only while the cycle is stopped' }),
+      el('n-man', 'indicator', 'Manual Active', 208, 80, 184, 46, { address: 'C1201', style: 'warning', onText: 'Manual Active', offText: 'Auto Mode' }),
+      el('n-safe', 'indicator', 'Safety OK', 408, 80, 176, 46, { address: 'C1', style: 'ok', onText: 'Safety OK', offText: 'E-stop' }),
+      el('n-hint', 'text', 'Hold-to-run buttons', 600, 93, 168, 20, { style: 'warning' }),
+      el('n-conv', 'panel', 'Conveyor M1', 16, 144, 768, 128),
+      el('n-jog', 'button', 'Jog Conveyor', 32, 176, 160, 80, { address: 'C1006', action: 'momentary', interlock: 'C1204', level: 'maintenance', note: 'Hold to run' }),
+      el('n-y1', 'indicator', 'Motor', 208, 180, 184, 44, { address: 'Y001', style: 'ok', onText: 'Motor On', offText: 'Motor Off' }),
+      el('n-p1', 'indicator', 'Jog Permitted', 408, 180, 176, 44, { address: 'C1204', style: 'ok', onText: 'Jog Permitted', offText: 'Not Permitted' }),
+      el('n-x4', 'indicator', 'Part at End', 600, 180, 168, 44, { address: 'X004', onText: 'Part at End', offText: 'No Part' }),
+      el('n-c1', 'text', 'Needs Manual mode, Safety OK and pusher retracted', 208, 236, 560, 20),
+      el('n-push', 'panel', 'Pusher Cylinder', 16, 280, 768, 128),
+      el('n-ext', 'button', 'Extend', 32, 312, 160, 80, { address: 'C1007', action: 'momentary', interlock: 'C1205', level: 'maintenance', note: 'Hold to extend; spring return retracts on release' }),
+      el('n-y2', 'indicator', 'Valve', 208, 316, 184, 44, { address: 'Y002', style: 'ok', onText: 'Valve On', offText: 'Valve Off' }),
+      el('n-x5', 'indicator', 'Position', 408, 316, 176, 44, { address: 'X005', onText: 'Extended', offText: 'Retracted' }),
+      el('n-p2', 'indicator', 'Extend Permitted', 600, 316, 168, 44, { address: 'C1205', style: 'ok', onText: 'Permitted', offText: 'Not Permitted' }),
+      el('n-c2', 'text', 'Spring return: retracts on release · needs conveyor stopped', 208, 372, 560, 20),
     ] },
-    { id: 'io', name: 'I/O Status', purpose: 'Check every input and output.', elements: [
-      banner('i'),
-      el('i-x1', 'indicator', 'X001 E-stop OK', 16, 56, 360, 40, { address: 'X001' }),
-      el('i-x2', 'indicator', 'X002 Start PB', 16, 102, 360, 40, { address: 'X002' }),
-      el('i-x3', 'indicator', 'X003 Stop PB (NC)', 16, 148, 360, 40, { address: 'X003' }),
-      el('i-x4', 'indicator', 'X004 Part at end', 16, 194, 360, 40, { address: 'X004' }),
-      el('i-x5', 'indicator', 'X005 Pusher extended', 16, 240, 360, 40, { address: 'X005' }),
-      el('i-y1', 'indicator', 'Y001 Conveyor motor', 420, 56, 360, 40, { address: 'Y001' }),
-      el('i-y2', 'indicator', 'Y002 Pusher valve', 420, 102, 360, 40, { address: 'Y002' }),
-      ...navBar('i'),
+    { id: 'setup', name: 'Setup', purpose: 'Machine setpoints with units and limits (Maintenance password).', level: 'maintenance', elements: [
+      ...frame('s'),
+      el('s-pg', 'panel', 'Pusher', 16, 52, 376, 172),
+      el('s-tmo', 'numeric-entry', 'Pusher Timeout', 32, 84, 344, 60, { address: 'DS1001', units: 's', min: 1, max: 10, level: 'maintenance', note: 'Fault if the pusher is not extended within this time (default 3 s)' }),
+      el('s-td1', 'numeric', 'Timer Now', 32, 152, 344, 56, { address: 'TD1', units: 's' }),
+      el('s-prod', 'panel', 'Production', 408, 52, 376, 172),
+      el('s-batch', 'numeric-entry', 'Batch Target', 424, 84, 344, 60, { address: 'DS1002', units: 'pcs', min: 0, max: 9999, level: 'maintenance', note: '0 = no batch limit' }),
+      el('s-parts', 'numeric', 'Parts Done', 424, 152, 344, 56, { address: 'CTD1', units: 'pcs' }),
+      el('s-mg', 'panel', 'Service', 16, 232, 376, 112),
+      el('s-svc', 'numeric-entry', 'Service Interval', 32, 264, 344, 64, { address: 'DS1003', units: 'h', min: 50, max: 2000, level: 'engineer', note: 'Run hours between pusher/conveyor services' }),
+      el('s-acc', 'panel', 'Access', 408, 232, 376, 112),
+      el('s-n1', 'text', 'Maintenance password to change values', 424, 266, 344, 20),
+      el('s-n2', 'text', 'Service interval: Engineer password', 424, 292, 344, 20),
+      el('s-n3', 'text', 'Changes apply on the next cycle', 424, 318, 344, 20),
+    ] },
+    { id: 'alarms', name: 'Alarms', purpose: 'Active alarms with time stamps and the alarm history; reset once the cause is cleared.', elements: [
+      ...frame('a'),
+      el('a-list', 'alarm-list', 'Message', 16, 52, 560, 356),
+      el('a-reset', 'button', 'Reset', 592, 52, 192, 72, { address: 'C1003', action: 'momentary', note: 'Clears latched faults once the cause is gone' }),
+      el('a-1', 'indicator', 'Pusher Fault', 592, 140, 192, 48, { address: 'C1101', style: 'alarm' }),
+      el('a-2', 'indicator', 'Safety Open', 592, 196, 192, 48, { address: 'C1102', style: 'alarm' }),
+      el('a-3', 'indicator', 'Service Due', 592, 252, 192, 48, { address: 'C1103', style: 'warning' }),
+      el('a-n', 'text', 'Latched until reset', 592, 316, 192, 20),
+    ] },
+    { id: 'diag', name: 'Diagnostics', purpose: 'Every input and output by module, plus PLC communication status.', elements: [
+      ...frame('d'),
+      el('d-in', 'panel', 'CPU Inputs  X001–X008', 16, 52, 376, 290),
+      el('d-x1', 'indicator', 'X001 E-stop OK', 32, 84, 344, 40, { address: 'X001' }),
+      el('d-x2', 'indicator', 'X002 Start PB', 32, 132, 344, 40, { address: 'X002' }),
+      el('d-x3', 'indicator', 'X003 Stop PB (NC)', 32, 180, 344, 40, { address: 'X003' }),
+      el('d-x4', 'indicator', 'X004 Part at End', 32, 228, 344, 40, { address: 'X004' }),
+      el('d-x5', 'indicator', 'X005 Pusher Extended', 32, 276, 344, 40, { address: 'X005' }),
+      el('d-out', 'panel', 'CPU Outputs  Y001–Y006', 408, 52, 376, 136),
+      el('d-y1', 'indicator', 'Y001 Conveyor Motor', 424, 84, 344, 40, { address: 'Y001' }),
+      el('d-y2', 'indicator', 'Y002 Pusher Valve', 424, 132, 344, 40, { address: 'Y002' }),
+      el('d-com', 'panel', 'Communications', 408, 196, 376, 146),
+      el('d-hb', 'indicator', 'PLC Heartbeat', 424, 228, 344, 40, { address: 'C1203', style: 'ok', note: 'Blinks once a second while the PLC runs and the link is up' }),
+      el('d-c1', 'text', 'CLICK Ethernet · Modbus TCP port 502', 424, 280, 344, 20),
+      el('d-c2', 'text', 'PLC C0-10DD1E-D · HMI CM5-T7W', 424, 306, 344, 20),
+      el('d-state', 'multistate', 'Machine State', 16, 352, 376, 56, { address: 'DS1101', states: MACHINE_STATES }),
+      el('d-safe', 'indicator', 'Safety OK', 408, 352, 376, 56, { address: 'C1', style: 'ok', onText: 'Safety OK', offText: 'Safety Open' }),
+    ] },
+    { id: 'maint', name: 'Maintenance', purpose: 'Cycle counters, run hours and service reminder; counter resets need the Maintenance password.', elements: [
+      ...frame('t'),
+      el('t-cg', 'panel', 'Counters', 16, 52, 376, 228),
+      el('t-cyc', 'numeric', 'Pusher Cycles', 32, 84, 344, 56, { address: 'CTD2' }),
+      el('t-rcyc', 'button', 'Reset Cycles', 32, 148, 168, 56, { address: 'C1008', action: 'momentary', level: 'maintenance' }),
+      el('t-rpart', 'button', 'Reset Parts', 208, 148, 168, 56, { address: 'C1004', action: 'momentary', level: 'maintenance' }),
+      el('t-parts', 'numeric', 'Parts', 32, 212, 344, 56, { address: 'CTD1' }),
+      el('t-rg', 'panel', 'Run Time', 408, 52, 376, 228),
+      el('t-hrs', 'numeric', 'Run Hours', 424, 84, 344, 56, { address: 'DS1102', units: 'h' }),
+      el('t-svc', 'numeric', 'Since Service', 424, 148, 344, 56, { address: 'DS1104', units: 'h' }),
+      el('t-done', 'button', 'Service Done', 424, 212, 168, 56, { address: 'C1009', action: 'momentary', level: 'maintenance', note: 'Resets the hours since service' }),
+      el('t-due', 'indicator', 'Service Due', 600, 212, 168, 56, { address: 'C1103', style: 'warning', onText: 'Service Due', offText: 'Service OK' }),
+      el('t-clock', 'datetime', 'Date / Time', 16, 288, 376, 56),
+      el('t-int', 'numeric', 'Service Interval', 408, 288, 376, 56, { address: 'DS1003', units: 'h' }),
+      el('t-note', 'text', 'Counters and hours are retentive in the PLC', 16, 360, 768, 20),
     ] },
   ],
-  alarms: [{ address: 'C1101', message: 'Pusher did not extend in 3 s', severity: 'alarm' }],
+  alarms: [
+    { address: 'C1101', message: 'Pusher did not extend in time', severity: 'alarm' },
+    { address: 'C1102', message: 'Safety circuit open (E-stop)', severity: 'alarm' },
+    { address: 'C1103', message: 'Service due: run hours reached', severity: 'warning' },
+  ],
   tags: [
     { name: 'HMI_Start', address: 'C1001', dataType: 'BIT', access: 'write', description: 'Momentary Start; starts the cycle when safe.' },
     { name: 'HMI_Stop', address: 'C1002', dataType: 'BIT', access: 'write', description: 'Momentary Stop; ends the cycle.' },
     { name: 'HMI_Reset', address: 'C1003', dataType: 'BIT', access: 'write', description: 'Resets the pusher fault.' },
     { name: 'HMI_Count_Reset', address: 'C1004', dataType: 'BIT', access: 'write', description: 'Resets the part counter CT1.' },
+    { name: 'HMI_Manual_Select', address: 'C1005', dataType: 'BIT', access: 'read-write', description: 'Toggle from the HMI: ON requests Manual mode. PLC accepts it only while the cycle is stopped (C2 OFF).' },
+    { name: 'HMI_Jog_Conveyor', address: 'C1006', dataType: 'BIT', access: 'write', description: 'Hold-to-run: PLC runs Y001 while ON and C1204 (jog permitted) is ON.' },
+    { name: 'HMI_Pusher_Extend', address: 'C1007', dataType: 'BIT', access: 'write', description: 'Hold-to-run: PLC energizes Y002 while ON and C1205 (extend permitted) is ON.' },
+    { name: 'HMI_Pusher_Cycles_Reset', address: 'C1008', dataType: 'BIT', access: 'write', description: 'Resets the pusher cycle counter CT2.' },
+    { name: 'HMI_Service_Done', address: 'C1009', dataType: 'BIT', access: 'write', description: 'Resets the hours-since-service register DS1104 to 0.' },
     { name: 'ALM_Pusher_Fault', address: 'C1101', dataType: 'BIT', access: 'read', description: 'Set by the PLC when the pusher times out.' },
+    { name: 'ALM_Safety_Open', address: 'C1102', dataType: 'BIT', access: 'read', description: 'PLC sets ON while Safety OK (C1) is OFF.' },
+    { name: 'WRN_Service_Due', address: 'C1103', dataType: 'BIT', access: 'read', description: 'PLC sets ON when DS1104 (hours since service) ≥ DS1003 (service interval).' },
+    { name: 'STS_Manual_Mode', address: 'C1201', dataType: 'BIT', access: 'read', description: 'PLC sets ON when Manual mode is active (C1005 ON and cycle stopped); Start is blocked while ON.' },
+    { name: 'STS_Heartbeat', address: 'C1203', dataType: 'BIT', access: 'read', description: 'PLC toggles every second (comms watchdog shown on Diagnostics).' },
+    { name: 'STS_Jog_Permit', address: 'C1204', dataType: 'BIT', access: 'read', description: 'PLC sets ON when C1201 Manual, C1 Safety OK and Y002 pusher valve OFF.' },
+    { name: 'STS_Extend_Permit', address: 'C1205', dataType: 'BIT', access: 'read', description: 'PLC sets ON when C1201 Manual, C1 Safety OK and Y001 conveyor OFF.' },
+    { name: 'SP_Pusher_Timeout', address: 'DS1001', dataType: 'INT', access: 'read-write', description: 'Pusher timeout in seconds (1–10, default 3); preset of timer T1.' },
+    { name: 'SP_Batch_Target', address: 'DS1002', dataType: 'INT', access: 'read-write', description: 'Batch size in parts (0 = off); PLC stops the cycle when CTD1 reaches it.' },
+    { name: 'SP_Service_Interval', address: 'DS1003', dataType: 'INT', access: 'read-write', description: 'Run hours between services (50–2000).' },
+    { name: 'Machine_State', address: 'DS1101', dataType: 'INT', access: 'read', description: 'PLC writes 0 Stopped, 1 Running, 2 Pushing, 3 Faulted, 4 Manual, 5 Safety stop (highest applicable).' },
+    { name: 'Run_Hours', address: 'DS1102', dataType: 'INT', access: 'read', description: 'Retentive conveyor run hours (count while Y001 is ON).' },
+    { name: 'Parts_Per_Min', address: 'DS1103', dataType: 'INT', access: 'read', description: 'Parts counted in the last 60 s.' },
+    { name: 'Hours_Since_Service', address: 'DS1104', dataType: 'INT', access: 'read', description: 'Retentive run hours since the last Service Done.' },
     { name: 'Cycle_Running', address: 'C2', dataType: 'BIT', access: 'read', description: 'Cycle running status.' },
     { name: 'Safety_OK', address: 'C1', dataType: 'BIT', access: 'read', description: 'Safety relay healthy.' },
     { name: 'Part_Count', address: 'CTD1', dataType: 'INT2', access: 'read', description: 'Parts delivered.' },
+    { name: 'Pusher_Cycles', address: 'CTD2', dataType: 'INT2', access: 'read', description: 'Counter CT2 counts each Y002 rising edge; reset by C1008.' },
+    { name: 'Push_Timer', address: 'TD1', dataType: 'INT', access: 'read', description: 'Pusher timeout timer T1 current value (s).' },
   ],
-  notes: ['Example HMI design.'],
+  notes: [
+    'Example HMI design: Main, Manual, Setup, Alarms, Diagnostics and Maintenance screens with a common header and navigation bar.',
+    'Passwords: Maintenance (C-more group 2) for Manual, Setup and counter resets; Engineer (group 3) for the service interval. Confirm the numbers with the customer.',
+  ],
   generatedAt: new Date().toISOString(),
 };
 
@@ -203,7 +314,7 @@ export const DESIGN: ElectricalDesign = {
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '6';
+const SEED_VERSION = '7';
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }

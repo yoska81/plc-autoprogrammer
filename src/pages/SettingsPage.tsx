@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { testAnthropicConnection } from '../lib/ai/anthropic';
+import { IS_PREVIEW, PREVIEW_ACCOUNT_KEY } from '../preview/mode';
 import {
   useSettingsStore,
   ANTHROPIC_MODELS,
@@ -72,6 +74,11 @@ export default function SettingsPage() {
     openaiModel: s.openaiModel,
   });
   const [saved, setSaved] = useState(false);
+  const [test, setTest] = useState<{ busy: boolean; ok?: boolean; message?: string }>({ busy: false });
+  const runTest = async () => {
+    setTest({ busy: true });
+    setTest({ busy: false, ...(await testAnthropicConnection(draft.anthropicApiKey, draft.anthropicModel)) });
+  };
   const update = <K extends keyof typeof draft>(k: K, v: (typeof draft)[K]) => {
     setDraft((d) => ({ ...d, [k]: v }));
     setSaved(false);
@@ -79,10 +86,10 @@ export default function SettingsPage() {
 
   const handleSave = () => {
     s.setProvider(draft.provider);
-    s.setAnthropicApiKey(draft.anthropicApiKey);
+    s.setAnthropicApiKey(draft.anthropicApiKey.trim() || (IS_PREVIEW ? PREVIEW_ACCOUNT_KEY : ''));
     s.setAnthropicModel(draft.anthropicModel);
     s.setEffort(draft.effort);
-    s.setOpenaiApiKey(draft.openaiApiKey);
+    s.setOpenaiApiKey(draft.openaiApiKey.trim());
     s.setOpenaiModel(draft.openaiModel.trim() || 'gpt-4o');
     setSaved(true);
   };
@@ -113,10 +120,28 @@ export default function SettingsPage() {
             </p>
           </div>
 
+          {IS_PREVIEW && (
+            <div className="bg-brand-50 border border-brand-300 p-4 text-sm text-steel-800">
+              <span className="font-semibold">In this preview no API key is needed.</span> AI requests run on your own Claude account;
+              the first one asks you to allow it. The API key below is only used when the app runs on your PC.
+            </div>
+          )}
           <ProviderCard title="Anthropic (Claude)" active={draft.provider === 'anthropic'}>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">API Key</label>
-              <KeyInput value={draft.anthropicApiKey} onChange={(v) => update('anthropicApiKey', v)} placeholder="sk-ant-..." />
+              <KeyInput value={IS_PREVIEW && draft.anthropicApiKey === PREVIEW_ACCOUNT_KEY ? '' : draft.anthropicApiKey} onChange={(v) => update('anthropicApiKey', v)} placeholder={IS_PREVIEW ? 'Not needed in the preview' : 'sk-ant-...'} />
+              <div className="flex items-center gap-2 mt-2">
+                <button type="button" onClick={runTest} disabled={test.busy}
+                  className="px-3 py-1 text-xs border border-steel-300 rounded-sm bg-white hover:bg-brand-50 disabled:opacity-50">
+                  {test.busy ? 'Testing…' : 'Test connection'}
+                </button>
+                <span className="text-[11px] text-steel-400">Sends one tiny request with the key and model shown (not yet saved).</span>
+              </div>
+              {test.message && (
+                <div role="status" className={`mt-2 px-3 py-2 text-xs border ${test.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                  {test.ok ? '✓ ' : '✗ '}{test.message}
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Model</label>

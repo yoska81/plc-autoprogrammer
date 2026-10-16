@@ -1,6 +1,6 @@
 /**
  * ASCII DXF (R12 / AC1009) export of the machining drawings for laser / CNC CAM.
- * Units: millimetres. Datum: lower-left corner of the panel / door (X right, Y up) —
+ * Scale 1:1 in millimetres (default) or inches. Datum: lower-left corner of the panel / door (X right, Y up) —
  * the same coordinates as the BACK PANEL DRILLING and DOOR CUTOUTS sheets.
  *
  * Layers: OUTLINE (part outline), HOLES (drilled/tapped holes, CIRCLE),
@@ -14,9 +14,22 @@ import { backPanelDrilling, doorDrilling, type DrawingContext, type DrillingPlan
 
 const LAYERS: [string, number][] = [['OUTLINE', 7], ['HOLES', 1], ['CUTOUTS', 5], ['NOTCH_OPTIONAL', 6], ['TEMPLATE', 8], ['TEXT', 3], ['DIMS', 4]];
 
-const f = (v: number) => (Math.round(v * 1000) / 1000).toString();
+const f = (v: number) => (Math.round(v * 10000) / 10000).toString();
+
+/** Export options. Geometry is always true size (1:1); only the drawing unit changes. */
+export interface DxfOptions {
+  /** 'mm' (default) or 'in' — coordinates are converted, the part stays full size. */
+  units?: 'mm' | 'in';
+  /** Only what the machine cuts: outline, holes and cutouts (no text, centre marks or optional notches). */
+  cutOnly?: boolean;
+}
 
 class DxfWriter {
+  /** mm -> drawing units. */
+  private readonly k: number;
+  private readonly units: 'mm' | 'in';
+  private readonly cutOnly: boolean;
+  constructor(k = 1, units: 'mm' | 'in' = 'mm', cutOnly = false) { this.k = k; this.units = units; this.cutOnly = cutOnly; }
   private out: string[] = [];
   private minX = Infinity; private minY = Infinity; private maxX = -Infinity; private maxY = -Infinity;
   private pair(code: number, value: string | number) { this.out.push(String(code), typeof value === 'number' ? f(value) : value); }
@@ -24,16 +37,23 @@ class DxfWriter {
   private entities: string[][] = [];
   private ent(fn: () => void) { const save = this.out; this.out = []; fn(); this.entities.push(this.out); this.out = save; }
 
+  private skip(layer: string) { return this.cutOnly && !['OUTLINE', 'HOLES', 'CUTOUTS'].includes(layer); }
   line(layer: string, x1: number, y1: number, x2: number, y2: number) {
+    if (this.skip(layer)) return;
+    const k = this.k; x1 *= k; y1 *= k; x2 *= k; y2 *= k;
     this.ext(x1, y1); this.ext(x2, y2);
     this.ent(() => { this.pair(0, 'LINE'); this.pair(8, layer); this.pair(10, x1); this.pair(20, y1); this.pair(30, 0); this.pair(11, x2); this.pair(21, y2); this.pair(31, 0); });
   }
   circle(layer: string, x: number, y: number, r: number) {
+    if (this.skip(layer)) return;
+    const k = this.k; x *= k; y *= k; r *= k;
     this.ext(x - r, y - r); this.ext(x + r, y + r);
     this.ent(() => { this.pair(0, 'CIRCLE'); this.pair(8, layer); this.pair(10, x); this.pair(20, y); this.pair(30, 0); this.pair(40, r); });
   }
   /** Closed 2D polyline (R12 POLYLINE / VERTEX / SEQEND). */
   poly(layer: string, pts: [number, number][]) {
+    if (this.skip(layer)) return;
+    pts = pts.map(([x, y]) => [x * this.k, y * this.k]);
     for (const [x, y] of pts) this.ext(x, y);
     this.ent(() => {
       this.pair(0, 'POLYLINE'); this.pair(8, layer); this.pair(66, 1); this.pair(10, 0); this.pair(20, 0); this.pair(30, 0); this.pair(70, 1);
@@ -45,6 +65,8 @@ class DxfWriter {
     this.poly(layer, [[cx - w / 2, cy - h / 2], [cx + w / 2, cy - h / 2], [cx + w / 2, cy + h / 2], [cx - w / 2, cy + h / 2]]);
   }
   text(layer: string, x: number, y: number, h: number, s: string) {
+    if (this.skip(layer)) return;
+    const k = this.k; x *= k; y *= k; h *= k;
     this.ext(x, y);
     const clean = s.replace(/[^\x20-\x7E]/g, (c) => (c === 'Ø' ? '%%c' : c === '±' ? '%%p' : c === '°' ? '%%d' : '-'));
     this.ent(() => { this.pair(0, 'TEXT'); this.pair(8, layer); this.pair(10, x); this.pair(20, y); this.pair(30, 0); this.pair(40, h); this.pair(1, clean); });
@@ -61,7 +83,9 @@ class DxfWriter {
     p(9, '$EXTMAX'); p(10, ex[2]); p(20, ex[3]); p(30, 0);
     p(9, '$LIMMIN'); p(10, ex[0]); p(20, ex[1]);
     p(9, '$LIMMAX'); p(10, ex[2]); p(20, ex[3]);
-    p(9, '$MEASUREMENT'); p(70, 1);
+    // Units for CAM import: $INSUNITS 4 = mm, 1 = inch (newer readers); $MEASUREMENT 1 = metric, 0 = imperial.
+    p(9, '$INSUNITS'); p(70, this.units === 'in' ? 1 : 4);
+    p(9, '$MEASUREMENT'); p(70, this.units === 'in' ? 0 : 1);
     p(0, 'ENDSEC');
     p(0, 'SECTION'); p(2, 'TABLES');
     p(0, 'TABLE'); p(2, 'LTYPE'); p(70, 1);
@@ -81,8 +105,10 @@ class DxfWriter {
 }
 
 /** Builds the DXF for one machining plan (shared by back panel and door). */
-export function drillingDxf(plan: DrillingPlan, projectName = ''): string {
-  const w = new DxfWriter();
+export function drillingDxf(plan: DrillingPlan, projectName = '', opts: DxfOptions = {}): string {
+  const units = opts.units ?? 'mm';
+  const w = new DxfWriter(units === 'in' ? 1 / 25.4 : 1, units, Boolean(opts.cutOnly));
+  const size = units === 'in' ? `${f(plan.w / 25.4)} x ${f(plan.h / 25.4)} IN` : `${plan.w} x ${plan.h} MM`;
   w.poly('OUTLINE', [[0, 0], [plan.w, 0], [plan.w, plan.h], [0, plan.h]]);
   for (const h of plan.holes) {
     w.circle('HOLES', h.x, h.y, h.dia / 2);
@@ -108,17 +134,17 @@ export function drillingDxf(plan: DrillingPlan, projectName = ''): string {
   w.line('DIMS', 0, -10, 0, 10);
   w.text('TEXT', 2, -8, 3, 'DATUM 0,0');
   w.text('TEXT', 0, -20, 5, `${plan.title} - ${plan.part}${projectName ? ` - ${projectName}` : ''}`);
-  w.text('TEXT', 0, -28, 3.5, `UNITS: MM   SIZE ${plan.w} x ${plan.h}   HOLES ${plan.holes.length}   CUTOUTS ${plan.cutouts.length}`);
+  w.text('TEXT', 0, -28, 3.5, `SCALE 1:1   UNITS: ${units === 'in' ? 'INCH' : 'MM'}   SIZE ${size}   HOLES ${plan.holes.length}   CUTOUTS ${plan.cutouts.length}`);
   plan.codes.forEach((c, i) => w.text('TEXT', 0, -35 - i * 5, 2.5, `${c.code} (${c.count}x): ${c.spec}${c.verified ? '' : ' - VERIFY WITH DATASHEET'}`));
   return w.toString();
 }
 
 /** Back-panel drilling DXF (mm, lower-left datum). */
-export function backPanelDxf(ctx: DrawingContext): string {
-  return drillingDxf(backPanelDrilling(ctx), ctx.projectName);
+export function backPanelDxf(ctx: DrawingContext, opts?: DxfOptions): string {
+  return drillingDxf(backPanelDrilling(ctx), ctx.projectName, opts);
 }
 
 /** Door cutout DXF (mm, lower-left datum, outside view). */
-export function doorDxf(ctx: DrawingContext): string {
-  return drillingDxf(doorDrilling(ctx), ctx.projectName);
+export function doorDxf(ctx: DrawingContext, opts?: DxfOptions): string {
+  return drillingDxf(doorDrilling(ctx), ctx.projectName, opts);
 }

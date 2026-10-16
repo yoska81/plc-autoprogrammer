@@ -121,6 +121,7 @@ export default function App() {
           { label: 'Cabinet wiring', to: '/electrical?tab=cabinet' },
           { label: 'Machine wiring', to: '/electrical?tab=machine' },
           { label: 'Cabinet picture', to: '/electrical?tab=picture' },
+          { label: 'Machining (DXF)', to: '/electrical?tab=machining' },
         ],
       },
       {
@@ -201,7 +202,7 @@ export default function App() {
         <main className="flex-1 flex flex-col overflow-hidden">
           {IS_PREVIEW && (
             <div className="px-4 py-1 bg-brand-700 text-brand-950 text-xs">
-              Preview with an example project. Everything is clickable and editable; AI generation and file downloads work when the app runs on your PC.
+              Preview with an example project. Everything is clickable and editable. AI runs on your Claude account (it asks once); files are saved through Claude.
             </div>
           )}
           <Outlet />

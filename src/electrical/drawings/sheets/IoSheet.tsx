@@ -1,7 +1,7 @@
 /** PLC input / output wiring sheets: PLC terminal column, wire numbers, terminal strip, field device. */
 import type { IoGroup, IoPoint } from '../../derive';
-import { AREA, AREA_R, LW_THIN } from '../geometry';
-import { IO_PITCH, type DrawingPlan, type PlannedSheet, type SheetSpec } from '../plan';
+import { AREA, AREA_B, AREA_R, LW_THIN } from '../geometry';
+import { IO_PITCH, type DrawingPlan, type IoRow, type PlannedSheet, type SheetSpec } from '../plan';
 import {
   Coil, Contact, DevBox, Dot, Lamp, LimitSwitch, Line, PressureSwitch, Pushbutton, Selector, Sensor3W, Solenoid,
   TermBox, TermPt, Txt, WireNo, XrefArrow,
@@ -20,15 +20,75 @@ const TYPE_TEXT: Record<string, string> = {
   'pilot-light': 'PILOT LIGHT', 'stack-light': 'STACK LIGHT', 'vfd-input': 'VFD DIGITAL INPUT', other: 'DEVICE (NOT SPECIFIED)',
 };
 
-function locText(p: IoPoint) {
-  return p.location === 'door' ? 'DOOR' : p.location === 'field' ? `FIELD, ${p.zone.toUpperCase()}${p.jb ? ` — VIA ${p.jb}` : ' — HOME-RUN'}` : 'PANEL';
-}
-
 export function IoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
   const sp = sheet.spec as Extract<SheetSpec, { kind: 'io' }>;
-  return sp.group.type === 'input'
-    ? <InputSheet plan={plan} sheet={sheet} g={sp.group} pts={sp.points} last={sp.last} />
-    : <OutputSheet plan={plan} sheet={sheet} g={sp.group} pts={sp.points} last={sp.last} />;
+  return (
+    <g>
+      {sp.group.type === 'input'
+        ? <InputSheet plan={plan} sheet={sheet} g={sp.group} rows={sp.rows} last={sp.last} />
+        : <OutputSheet plan={plan} sheet={sheet} g={sp.group} rows={sp.rows} last={sp.last} />}
+      <ModuleNote plan={plan} sp={sp} />
+    </g>
+  );
+}
+
+/** Module identification and terminal-name note along the bottom of the sheet. */
+function ModuleNote({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, { kind: 'io' }> }) {
+  const r = sp.rack;
+  const g = sp.group;
+  const used = sp.points.length;
+  const spare = sp.rows.length - used;
+  const desc = r ? (r.description ?? '').replace(/^FIXTURE — /, '') : '';
+  const line1 = `${g.devTag}  ${g.partNumber ?? ''}  ${r ? (r.slot === 0 ? 'CPU (SLOT 0)' : `SLOT ${r.slot}`) : ''}  —  ${desc.toUpperCase()}`;
+  const line2 = `${g.type === 'input' ? 'INPUTS' : 'OUTPUTS'} ON THIS SHEET: ${used} USED, ${spare} SPARE${sp.pages > 1 ? ` (PAGE ${sp.page} OF ${sp.pages})` : ''}. TERMINAL NAMES = PLC ADDRESSES; COMMON TERMINALS SHADED (${g.type === 'input' ? 'COM' : g.outputStyle === 'sinking' ? 'C' : '+V'}). VERIFY TERMINAL ARRANGEMENT AGAINST THE ${plan.ctx.plc.name} MODULE WIRING DIAGRAM.`;
+  return (
+    <g>
+      <Line x1={AREA.x + 14} y1={AREA_B - 10} x2={AREA_R} y2={AREA_B - 10} w={LW_THIN} />
+      <Txt x={AREA.x + 17} y={AREA_B - 6} size={2.5} bold maxW={AREA_R - AREA.x - 20}>{line1}</Txt>
+      <Txt x={AREA.x + 17} y={AREA_B - 2.4} size={2.0} maxW={AREA_R - AREA.x - 20}>{line2}</Txt>
+    </g>
+  );
+}
+
+/** Field-side columns on the right: terminals used, cable, and location. */
+const T = { DESC: 232, TERM: 334, CABLE: 366, ZONE: 384 };
+
+function TableHead() {
+  return (
+    <g>
+      <Txt x={T.TERM} y={yOf(0) + 0.9} size={2.5} bold>TERMINALS</Txt>
+      <Txt x={T.CABLE} y={yOf(0) + 0.9} size={2.5} bold>CABLE</Txt>
+      <Txt x={T.ZONE} y={yOf(0) + 0.9} size={2.5} bold>LOCATION</Txt>
+      <Line x1={T.TERM - 2} y1={yOf(0) - 3} x2={T.TERM - 2} y2={AREA_B - 10} w={0.12} />
+    </g>
+  );
+}
+
+function TableCells({ plan, p, y }: { plan: DrawingPlan; p: IoPoint; y: number }) {
+  const terms = [p.signalTerminal, p.supplyTerminal, p.returnTerminal].filter(Boolean) as string[];
+  const cable = plan.model.machine.devices.find((d) => d.tag === (p.deviceTag || p.address))?.cable ?? '';
+  const loc = p.location === 'door' ? 'DOOR' : p.location === 'internal' ? 'PANEL' : (p.zone || 'FIELD').toUpperCase();
+  return (
+    <g>
+      <Txt x={T.TERM} y={y + 0.2} size={2.3} mono bold maxW={T.CABLE - T.TERM - 2}>{terms[0] ?? '—'}</Txt>
+      {terms.length > 1 && <Txt x={T.TERM} y={y + 3.6} size={2.0} mono maxW={T.CABLE - T.TERM - 2}>{terms.slice(1).join(' ')}</Txt>}
+      <Txt x={T.CABLE} y={y + 0.2} size={2.3} mono>{cable || '—'}</Txt>
+      <Txt x={T.ZONE} y={y + 0.2} size={2.2} maxW={AREA_R - T.ZONE - 2}>{loc}</Txt>
+      {p.jb && <Txt x={T.ZONE} y={y + 3.6} size={2.0} mono maxW={AREA_R - T.ZONE - 2}>{`VIA ${p.jb}`}</Txt>}
+    </g>
+  );
+}
+
+/** Unused PLC point: short stub and "SPARE". */
+function SpareRow({ y, x, dir, desc }: { y: number; x: number; dir: 1 | -1; desc: number }) {
+  return (
+    <g>
+      <Line x1={x} y1={y} x2={x + dir * 10} y2={y} w={LW_THIN} />
+      <Txt x={x + dir * 12} y={y + 0.9} size={2.4} mono anchor={dir === 1 ? 'start' : 'end'}>SPARE</Txt>
+      <Txt x={desc} y={y + 0.2} size={2.6} bold>SPARE</Txt>
+      <Txt x={desc} y={y + 3.6} size={2.2}>NOT WIRED — AVAILABLE FOR FUTURE USE</Txt>
+    </g>
+  );
 }
 
 function Header({ cols }: { cols: [number, string, ('start' | 'middle')?][] }) {
@@ -40,12 +100,13 @@ function Header({ cols }: { cols: [number, string, ('start' | 'middle')?][] }) {
   );
 }
 
-function PlcColumn({ x, w, rows, labels, title, terminalSide }: { x: number; w: number; rows: number; labels: string[]; title: string; terminalSide: 'left' | 'right' }) {
+function PlcColumn({ x, w, rows, labels, title, terminalSide, common }: { x: number; w: number; rows: number; labels: string[]; title: string; terminalSide: 'left' | 'right'; common?: boolean }) {
   const top = yOf(1) - IO_PITCH / 2 + 1;
   const bot = yOf(rows) + IO_PITCH / 2 - 1.5;
   return (
     <g>
       <rect x={x} y={top} width={w} height={bot - top} strokeWidth={0.5} fill="#fff" />
+      {common && <rect x={x + 0.3} y={yOf(rows) - IO_PITCH / 2 + 0.3} width={w - 0.6} height={IO_PITCH - 2.1} fill="#d9d9d9" stroke="none" />}
       {labels.map((l, i) => (
         <g key={i}>
           {i > 0 && <Line x1={x} y1={yOf(i + 1) - IO_PITCH / 2} x2={x + w} y2={yOf(i + 1) - IO_PITCH / 2} w={LW_THIN} dash="0.8 0.8" />}
@@ -53,7 +114,7 @@ function PlcColumn({ x, w, rows, labels, title, terminalSide }: { x: number; w: 
           <TermPt x={terminalSide === 'left' ? x : x + w} y={yOf(i + 1)} />
         </g>
       ))}
-      <Txt x={x + w / 2} y={bot + 3.4} size={2.3} anchor="middle" mono maxW={w + 20}>{title}</Txt>
+      {bot + 3.4 < AREA_B - 11 && <Txt x={x + w / 2} y={bot + 3.4} size={2.3} anchor="middle" mono maxW={w + 20}>{title}</Txt>}
     </g>
   );
 }
@@ -61,8 +122,8 @@ function PlcColumn({ x, w, rows, labels, title, terminalSide }: { x: number; w: 
 function Desc({ x, y, p }: { x: number; y: number; p: IoPoint }) {
   return (
     <g>
-      <Txt x={x} y={y + 0.2} size={2.6} bold maxW={AREA_R - x - 2}>{`${p.deviceTag || '—'}  ${p.description.toUpperCase()}`}</Txt>
-      <Txt x={x} y={y + 3.6} size={2.2} maxW={AREA_R - x - 2}>{`${TYPE_TEXT[p.deviceType] ?? p.deviceType.toUpperCase()} — ${locText(p)}${p.wiring ? '' : ' — NO WIRING INFO, VERIFY'}`}</Txt>
+      <Txt x={x} y={y + 0.2} size={2.6} bold maxW={T.TERM - x - 4}>{`${p.deviceTag || '—'}  ${p.description.toUpperCase()}`}</Txt>
+      <Txt x={x} y={y + 3.6} size={2.2} maxW={T.TERM - x - 4}>{`${TYPE_TEXT[p.deviceType] ?? p.deviceType.toUpperCase()}${p.wiring ? '' : ' — NO WIRING INFO, VERIFY'}`}</Txt>
     </g>
   );
 }
@@ -73,21 +134,30 @@ function Desc({ x, y, p }: { x: number; y: number; p: IoPoint }) {
 
 const I = { R24: 34, R0: 42, TBS: 58, DEV: 100, TBX: 150, PLC: 190, PLCW: 32, DESC: 232 };
 
-function InputSheet({ plan, sheet, g, pts, last }: { plan: DrawingPlan; sheet: PlannedSheet; g: IoGroup; pts: IoPoint[]; last: boolean }) {
-  const rows = pts.length + (last ? 1 : 0);
-  const labels = [...pts.map((p) => p.address), ...(last ? ['COM'] : [])];
+function InputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan; sheet: PlannedSheet; g: IoGroup; rows: IoRow[]; last: boolean }) {
+  const pts = ioRows.flatMap((r) => (r.point ? [r.point] : []));
+  const rows = ioRows.length + (last ? 1 : 0);
+  const labels = [...ioRows.map((r) => r.address), ...(last ? ['COM'] : [])];
   const strip = stripOf(pts.find((p) => p.signalTerminal)?.signalTerminal) || 'TB2';
-  const railEnd = yOf(rows) + (last ? 0 : 6);
-  const ref24 = plan.xref.get(`ps:${plan.model.psBranches[0]?.ps.tag ?? ''}`);
+  const lastUsed = Math.max(0, ...ioRows.map((r, i) => (r.point ? i + 1 : 0)));
+  const railEnd = last ? yOf(rows) : yOf(lastUsed) + 6;
+  const psTag = plan.model.psBranches[0]?.ps.tag ?? '';
+  const ref24 = plan.xref.get(`ps:${psTag}`);
+  const ref0 = plan.xref.get(`ps0:${psTag}`);
   return (
     <g>
       <LineNumbers sheet={sheet.n} count={rows + 1} pitch={IO_PITCH} y0={Y0} />
-      <Header cols={[[I.R24, '24+'], [I.R0 + 1, '0V'], [I.TBS, strip], [I.DEV, 'FIELD / DOOR DEVICE'], [I.TBX, strip], [I.PLC + I.PLCW / 2, 'PLC INPUT'], [I.DESC, 'DESCRIPTION', 'start']]} />
+      <Header cols={[[I.R24, '24+'], [I.R0 + 1, '0V'], [I.TBS, strip], [I.DEV, 'FIELD / DOOR DEVICE'], [I.TBX, strip], [I.PLC + I.PLCW / 2, 'PLC INPUT'], [I.DESC, 'DEVICE / DESCRIPTION', 'start']]} />
+      <TableHead />
       <Line x1={I.R24} y1={yOf(0) + 4} x2={I.R24} y2={railEnd} w={0.5} />
       <Line x1={I.R0} y1={yOf(0) + 4} x2={I.R0} y2={railEnd} w={0.5} />
-      <Txt x={I.R24 + 1} y={yOf(0) + 7.6} size={2.0} mono>{ref24 ? `/${ref24}` : ''}</Txt>
-      <PlcColumn x={I.PLC} w={I.PLCW} rows={rows} labels={labels} title={`${g.devTag} — ${g.label}`} terminalSide="left" />
-      {pts.map((p, i) => <InputRow key={p.address} plan={plan} p={p} y={yOf(i + 1)} />)}
+      <Txt x={I.R24 - 1} y={yOf(0) + 7.0} size={1.8} mono anchor="end">{ref24 ? `FROM ${ref24}` : ''}</Txt>
+      <Txt x={I.R0 + 1} y={yOf(0) + 7.0} size={1.8} mono>{ref0 ? `FROM ${ref0}` : ''}</Txt>
+      <PlcColumn x={I.PLC} w={I.PLCW} rows={rows} labels={labels} title={`${g.devTag} — ${g.label}`} terminalSide="left" common={last} />
+      {ioRows.map((r, i) => (r.point
+        ? <InputRow key={r.address} plan={plan} p={r.point} y={yOf(i + 1)} />
+        : <SpareRow key={r.address} y={yOf(i + 1)} x={I.PLC} dir={-1} desc={I.DESC} />))}
+      {pts.length === 0 && <Txt x={I.DEV} y={yOf(1) - 5} size={2.2} italic anchor="middle">ALL POINTS SPARE</Txt>}
       {last && (
         <g>
           <Dot x={g.commonTo === '0V' ? I.R0 : I.R24} y={yOf(rows)} />
@@ -137,6 +207,7 @@ function InputRow({ plan, p, y }: { plan: DrawingPlan; p: IoPoint; y: number }) 
       <WireNo x={field ? (dx + half + I.TBX - 2.5) / 2 + 2 : (dx + half + I.PLC) / 2} y={y} n={p.wire} />
       {field && <WireNo x={(I.TBX + 2.5 + I.PLC) / 2} y={y} n={p.wire} />}
       <Desc x={I.DESC} y={y} p={p} />
+      <TableCells plan={plan} p={p} y={y} />
     </g>
   );
 }
@@ -176,31 +247,37 @@ function colorWord(s: string): string {
 
 const O = { PLC: 44, PLCW: 32, TBX: 112, DEV: 150, TBR: 190, RAIL: 214, DESC: 226 };
 
-function OutputSheet({ plan, sheet, g, pts, last }: { plan: DrawingPlan; sheet: PlannedSheet; g: IoGroup; pts: IoPoint[]; last: boolean }) {
+function OutputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan; sheet: PlannedSheet; g: IoGroup; rows: IoRow[]; last: boolean }) {
+  const pts = ioRows.flatMap((r) => (r.point ? [r.point] : []));
   const sink = g.outputStyle === 'sinking';
   const supply = plan.model.safety.outputSupply;
   const rail = sink ? supply : '0V';
-  const rows = pts.length + (last ? 1 : 0);
+  const rows = ioRows.length + (last ? 1 : 0);
   const comLabel = sink ? 'C' : g.outputStyle === 'relay' ? 'C' : '+V';
-  const labels = [...pts.map((p) => p.address), ...(last ? [comLabel] : [])];
+  const labels = [...ioRows.map((r) => r.address), ...(last ? [comLabel] : [])];
   const strip = stripOf(pts.find((p) => p.signalTerminal)?.signalTerminal) || 'TB3';
-  const supplyRef = plan.xref.get('rung:24+S');
+  const supplyRef = supply === '24+S' ? plan.xref.get('rung:24+S') : plan.xref.get(`ps:${plan.model.psBranches[0]?.ps.tag ?? ''}`);
+  const zeroRef = plan.xref.get(`ps0:${plan.model.psBranches[0]?.ps.tag ?? ''}`);
   const railUsers = pts.filter((p) => !(p.coilChain || (p.location === 'internal' && p.deviceType !== 'vfd-input')));
-  const lastRailRow = Math.max(0, ...pts.map((p, i) => (railUsers.includes(p) ? i + 1 : 0)));
+  const lastRailRow = Math.max(0, ...ioRows.map((r, i) => (r.point && railUsers.includes(r.point) ? i + 1 : 0)));
   return (
     <g>
       <LineNumbers sheet={sheet.n} count={rows + 1} pitch={IO_PITCH} y0={Y0} />
-      <Header cols={[[O.PLC + O.PLCW / 2, 'PLC OUTPUT'], [O.TBX, strip], [O.DEV, 'FIELD / DOOR / PANEL DEVICE'], [O.TBR, strip], [O.RAIL, rail], [O.DESC, 'DESCRIPTION', 'start']]} />
+      <Header cols={[[O.PLC + O.PLCW / 2, 'PLC OUTPUT'], [O.TBX, strip], [O.DEV, 'FIELD / DOOR / PANEL DEVICE'], [O.TBR, strip], [O.RAIL, rail], [O.DESC, 'DEVICE / DESCRIPTION', 'start']]} />
+      <TableHead />
       {lastRailRow > 0 && <Line x1={O.RAIL} y1={yOf(0) + 4} x2={O.RAIL} y2={yOf(lastRailRow)} w={0.5} />}
-      {sink && supplyRef && <Txt x={O.RAIL + 1} y={yOf(0) + 7.6} size={2.0} mono>{`/${supplyRef}`}</Txt>}
-      <PlcColumn x={O.PLC} w={O.PLCW} rows={rows} labels={labels} title={`${g.devTag} — ${g.label} (${g.outputStyle.toUpperCase()})`} terminalSide="right" />
-      {pts.map((p, i) => <OutputRow key={p.address} plan={plan} p={p} y={yOf(i + 1)} rail={rail} prev={pts[i - 1]} />)}
+      {lastRailRow > 0 && <Txt x={O.RAIL - 1} y={yOf(0) + 7.0} size={1.8} mono anchor="end">{sink ? (supplyRef ? `FROM ${supplyRef}` : '') : (zeroRef ? `FROM ${zeroRef}` : '')}</Txt>}
+      <PlcColumn x={O.PLC} w={O.PLCW} rows={rows} labels={labels} title={`${g.devTag} — ${g.label} (${g.outputStyle.toUpperCase()})`} terminalSide="right" common={last} />
+      {ioRows.map((r, i) => (r.point
+        ? <OutputRow key={r.address} plan={plan} p={r.point} y={yOf(i + 1)} rail={rail} prev={ioRows[i - 1]?.point} />
+        : <SpareRow key={r.address} y={yOf(i + 1)} x={O.PLC + O.PLCW} dir={1} desc={O.DESC} />))}
+      {pts.length === 0 && <Txt x={O.DEV} y={yOf(1) - 5} size={2.2} italic anchor="middle">ALL POINTS SPARE</Txt>}
       {last && (
         <g>
           <Line x1={O.PLC + O.PLCW} y1={yOf(rows)} x2={O.TBX + 8} y2={yOf(rows)} />
           <XrefArrow x={O.TBX + 8} y={yOf(rows)} dir={sink ? 'right' : 'left'} />
           <WireNo x={(O.PLC + O.PLCW + O.TBX + 8) / 2} y={yOf(rows)} n={sink ? '0V' : supply} />
-          <Txt x={O.TBX + 12} y={yOf(rows) + 0.9} size={2.5} mono>{sink ? '0V TB1' : `${supply} ${supplyRef ? `/${supplyRef}` : 'TB1'}`}</Txt>
+          <Txt x={O.TBX + 12} y={yOf(rows) + 0.9} size={2.5} mono>{sink ? `0V FROM ${zeroRef ?? 'TB1'}` : `${supply} FROM ${supplyRef ?? 'TB1'}`}</Txt>
           <Txt x={O.DESC} y={yOf(rows) + 0.2} size={2.6} bold>{sink ? 'OUTPUT COMMON TO 0V (SINKING OUTPUTS, LOADS FROM +24V)' : `OUTPUT SUPPLY ${supply}${supply === '24+S' ? ' (SAFETY-SWITCHED +24V)' : ''}`}</Txt>
         </g>
       )}
@@ -224,8 +301,9 @@ function OutputRow({ plan, p, y, rail, prev }: { plan: DrawingPlan; p: IoPoint; 
         <WireNo x={(start + O.DEV - 8) / 2} y={y} n={p.wire} />
         <XrefArrow x={O.DEV - 8} y={y} />
         <Txt x={O.DEV - 4} y={y + 0.9} size={2.6} mono bold>{`${tag || '?'} COIL`}</Txt>
-        <Txt x={O.DEV - 4 + `${tag || '?'} COIL`.length * 1.56 + 2} y={y + 0.9} size={2.4} mono>{ref ? `/${ref}` : '(SEE CONTROL SHEET)'}</Txt>
+        <Txt x={O.DEV - 4 + `${tag || '?'} COIL`.length * 1.56 + 2} y={y + 0.9} size={2.4} mono>{ref ? `TO ${ref}` : '(SEE CONTROL SHEET)'}</Txt>
         <Desc x={O.DESC} y={y} p={p} />
+        <TableCells plan={plan} p={p} y={y} />
       </g>
     );
   }
@@ -255,6 +333,7 @@ function OutputRow({ plan, p, y, rail, prev }: { plan: DrawingPlan; p: IoPoint; 
         </g>
       )}
       <Desc x={O.DESC} y={y} p={p} />
+      <TableCells plan={plan} p={p} y={y} />
     </g>
   );
 }

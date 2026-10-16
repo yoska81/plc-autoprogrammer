@@ -1692,7 +1692,7 @@ export function backPanelDrilling(ctx: DrawingContext): DrillingPlan {
     w: r1(bp.w), h: r1(bp.h), holes: ids, cutouts: [], codes: finishCodes(ids, [], specs),
     notes: [
       'DATUM: LOWER-LEFT CORNER OF BACK PANEL (FRONT VIEW). ALL DIMENSIONS IN mm. TOLERANCE ±0.5 mm UNLESS NOTED.',
-      'DIN RAIL: HOLES 25 mm FROM RAIL ENDS, ≤150 mm PITCH. WIRE DUCT: ≤300 mm PITCH, 50 mm FROM ENDS.',
+      'DIN RAIL: HOLES 25 mm FROM RAIL ENDS, 150 mm MAX. PITCH. WIRE DUCT: 300 mm MAX. PITCH, 50 mm FROM ENDS.',
       ...(unverified.length ? [`VERIFY WITH DATASHEET: ${unverified.join(', ')} — HOLE PATTERN ESTIMATED (NO MOUNTING DIMENSIONS IN CATALOG).`] : []),
       ...(panelMount.length ? [`DIN RAIL INTERRUPTED BEHIND ${panelMount.map((p) => p.tag).join(', ')} (PANEL-MOUNTED).`] : []),
       ...(L.notFit.length ? [`NOT DRILLED (DOES NOT FIT): ${L.notFit.map((n) => n.tag).join(', ')}.`] : []),
@@ -1887,4 +1887,125 @@ export function terminalPlanCsv(ctx: DrawingContext): string {
   const rows: (string | number)[][] = [['Strip', 'Terminal', 'Wire', 'Internal', 'External', 'Type']];
   for (const s of terminalPlan(ctx)) for (const t of s.terminals) rows.push([s.tag, t.number, t.wire, t.internal, t.external, t.kind]);
   return csv(rows);
+}
+
+// ---------------------------------------------------------------------------
+// Document control, PLC rack and nameplate data (used by the drawing set)
+// ---------------------------------------------------------------------------
+
+export type RevisionEntry = DocInfo['revisions'][number];
+
+export interface RevisionState {
+  /** Current revision letter ("A" when nothing has been issued yet). */
+  rev: string;
+  /** Date of the current revision ("" when not issued). */
+  date: string;
+  /** True until a revision whose description mentions "construction" (and not "not for construction") exists. */
+  preliminary: boolean;
+  /** Stamp text, e.g. "PRELIMINARY — NOT FOR CONSTRUCTION" or "ISSUED FOR CONSTRUCTION". */
+  status: string;
+  /** All revisions, oldest first (empty when not yet issued). */
+  revisions: RevisionEntry[];
+  current?: RevisionEntry;
+}
+
+const FOR_CONSTRUCTION = (d: string) => /construction|\bIFC\b/i.test(d) && !/not\s+for\s+construction/i.test(d);
+
+/** Current revision, issue status and history from the project's document control data. */
+export function revisionState(doc: DocInfo | undefined): RevisionState {
+  const revisions = (doc?.revisions ?? []).filter((r) => r && (r.rev || r.description || r.date));
+  const current = revisions[revisions.length - 1];
+  const preliminary = !revisions.some((r) => FOR_CONSTRUCTION(r.description ?? ''));
+  const rev = current?.rev?.trim() || 'A';
+  let status = 'PRELIMINARY — NOT FOR CONSTRUCTION';
+  if (!preliminary) status = /as[- ]?built/i.test(current?.description ?? '') ? 'AS-BUILT' : 'ISSUED FOR CONSTRUCTION';
+  return { rev, date: current?.date?.trim() ?? '', preliminary, status, revisions, current };
+}
+
+/** Drawing / document number prefix: the user's prefix (upper case) or "PRJ". */
+export function drawingPrefix(doc: DocInfo | undefined): string {
+  return (doc?.prefix ?? '').trim().toUpperCase().replace(/\s+/g, '-') || 'PRJ';
+}
+
+export interface PlcRackSlot {
+  /** 0 = CPU, 1..8 = expansion slots (CLICK numbering: X101 = slot 1 point 01). */
+  slot: number;
+  tag: string;
+  partNumber: string;
+  part?: CatalogPart;
+  description: string;
+  /** Discrete input / output point counts from the catalog (0 when unknown). */
+  inputs: number;
+  outputs: number;
+  outputStyle: IoGroup['outputStyle'];
+  /** True when the catalog gives the point counts (spare points can be listed). */
+  known: boolean;
+}
+
+/** CPU + discrete I/O modules in slot order, with point counts from the catalog. */
+export function plcRack(ctx: DrawingContext): PlcRackSlot[] {
+  const m = buildModel(ctx);
+  const ins = (p?: CatalogPart) => num(p?.ratings, 'inputs', 'discreteInputs', 'di', 'dcInputs');
+  const outs = (p?: CatalogPart) => num(p?.ratings, 'outputs', 'discreteOutputs', 'do', 'dcOutputs');
+  const out: PlcRackSlot[] = [];
+  const cpu = m.plcPart;
+  out.push({
+    slot: 0, tag: m.plcTag, partNumber: ctx.plc.cpuPartNumber, part: cpu, description: cpu?.description ?? ctx.plc.cpuLabel,
+    inputs: ins(cpu) ?? 0, outputs: outs(cpu) ?? 0, outputStyle: outputStyleOf(ctx.plc.cpuPartNumber, cpu), known: ins(cpu) !== undefined || outs(cpu) !== undefined,
+  });
+  const modules = byCat(m.rc, 'plcModule');
+  let free = 0;
+  for (const mod of modules) {
+    const fixed = num(mod.part?.ratings, 'slot');
+    const slot = fixed ?? ++free;
+    const i = ins(mod.part), o = outs(mod.part);
+    if (i === undefined && o === undefined) continue; // analog / specialty modules: not discrete I/O
+    out.push({ slot, tag: mod.tag, partNumber: mod.partNumber, part: mod.part, description: mod.part?.description ?? mod.comp.function, inputs: i ?? 0, outputs: o ?? 0, outputStyle: outputStyleOf(mod.partNumber, mod.part), known: true });
+  }
+  return out.sort((a, b) => a.slot - b.slot);
+}
+
+export interface NameplateData {
+  supplyText: string;
+  volts: number;
+  phases: 1 | 3;
+  hz: number;
+  /** Largest motor full-load current (NEC/CEC table), null without motors. */
+  largestMotorFla: number | null;
+  /** Panel full-load current: motors + estimated control load (A). */
+  fullLoadAmps: number;
+  motorAmps: number;
+  controlAmps: number;
+  enclosureType: string;
+  /** Short-circuit current rating is not calculated — always "to be determined". */
+  sccr: string;
+  /** Circuits supplied from outside the main disconnect (none are modelled: false unless a component says so). */
+  multipleSources: boolean;
+  disconnectTag: string;
+}
+
+/** Data for the panel nameplate (supply, full-load current, enclosure type). Estimates are flagged in the text. */
+export function panelNameplate(ctx: DrawingContext): NameplateData {
+  const m = buildModel(ctx);
+  const volts = ({ '120VAC-1PH': 120, '208VAC-3PH': 208, '240VAC-3PH': 240, '480VAC-3PH': 480, '600VAC-3PH': 600 } as const)[m.supply];
+  const motorAmps = m.motors.reduce((s, x) => s + x.fla, 0);
+  const largest = m.motors.length ? Math.max(...m.motors.map((x) => x.fla)) : null;
+  let controlAmps = 0;
+  if (m.transformer) {
+    const va = num(m.transformer.part?.ratings, 'va') ?? 0;
+    controlAmps = va / volts;
+  } else {
+    for (const b of m.psBranches) {
+      const w = num(b.ps.part?.ratings, 'watts') ?? (num(b.ps.part?.ratings, 'outputAmps', 'amps') ?? 0) * 24;
+      const three = b.feedWires.length === 3;
+      controlAmps += w / 0.85 / (three ? Math.sqrt(3) * volts : volts);
+    }
+  }
+  const r1v = (v: number) => Math.round(v * 10) / 10;
+  const multipleSources = m.rc.some((c) => /\b(separate|external|foreign|second) (supply|source)|\bups\b|multiple sources/i.test(`${c.comp.function} ${c.part?.description ?? ''}`));
+  return {
+    supplyText: supplyText(m.supply), volts, phases: m.phases, hz: 60, largestMotorFla: largest,
+    fullLoadAmps: r1v(motorAmps + controlAmps), motorAmps: r1v(motorAmps), controlAmps: r1v(controlAmps),
+    enclosureType: ctx.design.inputs.enclosureRating, sccr: 'TBD — CALCULATE', multipleSources, disconnectTag: m.disconnect?.tag ?? 'DS1',
+  };
 }

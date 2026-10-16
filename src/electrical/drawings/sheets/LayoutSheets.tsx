@@ -28,6 +28,17 @@ function Dim({ x1, y1, x2, y2, text, vertical }: { x1: number; y1: number; x2: n
 }
 
 const inch = (mm: number) => `${(mm / 25.4).toFixed(1)}"`;
+const mmIn = (mm: number) => `${Math.round(mm)} (${inch(mm)})`;
+
+/** BOM item balloon. */
+function Balloon({ x, y, n }: { x: number; y: number; n: number }) {
+  return (
+    <g>
+      <circle cx={x} cy={y} r={2.1} fill="#fff" strokeWidth={LW_THIN} />
+      <Txt x={x} y={y + 0.7} size={n > 99 ? 1.5 : 1.9} anchor="middle" bold>{n}</Txt>
+    </g>
+  );
+}
 
 function ItemRect({ it, ox, oy, s }: { it: PlacedItem; ox: number; oy: number; s: number }) {
   const x = ox + it.x * s, y = oy + it.y * s, w = it.w * s, h = it.h * s;
@@ -107,11 +118,37 @@ export function PanelLayoutSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Pl
   const bp = L.backplate;
   const pid = `hatch${sheet.n}`;
   const legend = [...L.items].sort((a, b) => a.label.localeCompare(b.label, 'en', { numeric: true }));
-  const LX = 300;
-  const NX = Math.max(ox + e.w * s + 12, 150);
-  const rowH = 4.4;
-  const maxRows = Math.floor((AREA_B - (AREA.y + 14) - 30) / rowH);
-  const rows = legend.flatMap((it) => (it.sub ?? [it]).map((p, i) => ({ tag: it.sub ? it.label.split('/')[i] : it.label, pn: p.partNumber, size: `${Math.round(p.w)} x ${Math.round(p.h)}${p.estimated ? '*' : ''}` })));
+  const LX = 304;
+  const CHX = ox + e.w * s + 3;
+  const NX = Math.max(CHX + 26, 150);
+  const rowH = 4.2;
+  const maxRows = Math.floor((AREA_B - (AREA.y + 14) - 12) / rowH);
+  const itemOf = (tag: string, pn?: string) => plan.bomItem.get(tag) ?? plan.bomItem.get(tag.replace(/\.\d+$/, '').replace(/\s*\(.*$/, '')) ?? (pn ? plan.bomItem.get(`pn:${pn}`) : undefined);
+  // callout balloons above each part, staggered upward when neighbours are too close (leader to the part)
+  const side = L.items.flatMap((it) => (it.sub ?? []).slice(1).map((p, k) => ({ n: itemOf(it.label.split('/')[k + 1] ?? p.tag, p.partNumber), ax: ox + p.x * s, top: oy + (p.y + p.h / 2) * s })))
+    .filter((r): r is { n: number; ax: number; top: number } => r.n !== undefined)
+    .map((r) => ({ ...r, bx: r.ax - 2.3, by: r.top }));
+  const reqs = L.items.flatMap((it) => (it.sub ?? [it]).slice(0, 1).map((p, i) => ({ n: itemOf(it.sub ? it.label.split('/')[i] ?? p.tag : it.tag, p.partNumber), ax: ox + (p.x + p.w / 2) * s, top: oy + it.y * s })))
+    .filter((r): r is { n: number; ax: number; top: number } => r.n !== undefined)
+    .sort((a, b) => a.top - b.top || a.ax - b.ax);
+  const balloons: { n: number; ax: number; top: number; bx: number; by: number }[] = [...side];
+  for (const r of reqs) {
+    let lvl = 0;
+    const bx = r.ax;
+    while (balloons.some((b) => !side.includes(b) && Math.abs(b.top - r.top) < 1 && Math.abs(b.bx - bx) < 4.5 && Math.abs(b.by - (r.top - 2.4 - lvl * 4.6)) < 1)) lvl++;
+    balloons.push({ ...r, bx, by: r.top - 2.4 - lvl * 4.6 });
+  }
+  const rows = legend.flatMap((it) => (it.sub ?? [it]).map((p, i) => {
+    const tag = it.sub ? it.label.split('/')[i] : it.label;
+    return { tag, item: itemOf(it.sub ? tag : it.tag, p.partNumber), pn: p.partNumber, size: `${Math.round(p.w)} x ${Math.round(p.h)}${p.estimated ? '*' : ''}` };
+  }));
+  // rails & ducts schedule (positions from the top-left corner of the back panel)
+  const sched = [
+    ...L.rails.map((r, i) => ({ id: `R${i + 1}`, type: '35 mm DIN RAIL', len: r.w, pos: `Y ${mmIn(r.y + r.h / 2 - bp.y)}`, x: r.x, y: r.y + r.h / 2 })),
+    ...L.ducts.map((d, i) => ({ id: `D${i + 1}`, type: `DUCT ${Math.round(Math.min(d.w, d.h))} mm ${d.orientation === 'h' ? 'HORIZ.' : 'VERT.'}`, len: Math.max(d.w, d.h), pos: d.orientation === 'h' ? `Y ${mmIn(d.y + d.h / 2 - bp.y)}` : `X ${mmIn(d.x + d.w / 2 - bp.x)}`, x: d.x, y: d.y + (d.orientation === 'h' ? d.h / 2 : 6) })),
+  ];
+  const SY = AREA_B - 6 - sched.length * 3.4;
+  const chain = [...L.rails.map((r, i) => ({ id: `R${i + 1}`, y: r.y + r.h / 2 })), ...L.ducts.filter((d) => d.orientation === 'h').map((d) => ({ id: `D${L.ducts.indexOf(d) + 1}`, y: d.y + d.h / 2 }))].sort((a, b) => a.y - b.y);
   return (
     <g>
       <defs>
@@ -134,6 +171,33 @@ export function PanelLayoutSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Pl
         </g>
       ))}
       {L.items.map((it, i) => <ItemRect key={i} it={it} ox={ox} oy={oy} s={s} />)}
+      {balloons.map((b, i) => (
+        <g key={`bl${i}`}>
+          {b.by < b.top - 2.2 && <Line x1={b.ax} y1={b.top} x2={b.bx} y2={b.by + 2.1} w={0.12} />}
+          <Balloon x={b.bx} y={b.by} n={b.n} />
+        </g>
+      ))}
+      {/* rail / duct identifiers */}
+      {sched.map((r) => (
+        <g key={r.id}>
+          <rect x={ox + r.x * s + 0.3} y={oy + r.y * s - 1.3} width={r.id.length * 1.3 + 1} height={2.6} fill="#fff" strokeWidth={0.1} />
+          <Txt x={ox + r.x * s + 0.8} y={oy + r.y * s + 0.7} size={1.8} mono bold>{r.id}</Txt>
+        </g>
+      ))}
+      {/* ordinate dimensions of rail / duct centrelines from the top of the back panel */}
+      <Line x1={CHX} y1={oy + bp.y * s} x2={CHX + 4} y2={oy + bp.y * s} w={0.12} />
+      <Txt x={CHX + 5} y={oy + bp.y * s + 0.7} size={1.8} mono>0</Txt>
+      {chain.map((c, i) => {
+        const yy = oy + c.y * s;
+        const prev = i > 0 ? oy + chain[i - 1].y * s : -99;
+        const ty = Math.max(yy + 0.7, prev + 3.0 + 0.7);
+        return (
+          <g key={c.id}>
+            <Line x1={ox + (bp.x + bp.w) * s} y1={yy} x2={CHX + 4} y2={yy} w={0.1} dash="0.6 0.6" />
+            <Txt x={CHX + 5} y={ty} size={1.8} mono>{`${c.id} ${mmIn(c.y - bp.y)}`}</Txt>
+          </g>
+        );
+      })}
       {/* dimensions */}
       <Dim x1={ox} y1={oy + e.h * s + 7} x2={ox + e.w * s} y2={oy + e.h * s + 7} text={`ENCLOSURE ${inch(e.w)} (${Math.round(e.w)} mm)`} />
       <Line x1={ox} y1={oy + e.h * s + 1} x2={ox} y2={oy + e.h * s + 9} w={0.12} />
@@ -145,23 +209,39 @@ export function PanelLayoutSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Pl
       <Line x1={ox + bp.x * s} y1={oy + (bp.y + bp.h) * s + 1} x2={ox + bp.x * s} y2={oy + e.h * s + 17} w={0.12} />
       <Line x1={ox + (bp.x + bp.w) * s} y1={oy + (bp.y + bp.h) * s + 1} x2={ox + (bp.x + bp.w) * s} y2={oy + e.h * s + 17} w={0.12} />
       <PanelNotes plan={plan} x={NX} w={LX - NX - 6} y={oy + 2} />
+      {/* DIN rail & duct schedule */}
+      <g>
+        <Txt x={NX} y={SY - 8} size={2.6} bold>DIN RAIL & WIRE DUCT SCHEDULE</Txt>
+        {['ID', 'TYPE', 'LENGTH mm (in)', 'CENTRELINE mm (in)'].map((h, i) => <Txt key={h} x={NX + [0, 8, 40, 64][i]} y={SY - 3.6} size={1.9} bold>{h}</Txt>)}
+        <Line x1={NX} y1={SY - 2.4} x2={LX - 6} y2={SY - 2.4} w={LW_THIN} />
+        {sched.map((r, i) => (
+          <g key={r.id}>
+            <Txt x={NX} y={SY + 0.8 + i * 3.4} size={1.9} mono bold>{r.id}</Txt>
+            <Txt x={NX + 8} y={SY + 0.8 + i * 3.4} size={1.9} maxW={31}>{r.type}</Txt>
+            <Txt x={NX + 40} y={SY + 0.8 + i * 3.4} size={1.9} mono maxW={23}>{mmIn(r.len)}</Txt>
+            <Txt x={NX + 64} y={SY + 0.8 + i * 3.4} size={1.9} mono maxW={LX - NX - 70}>{r.pos}</Txt>
+          </g>
+        ))}
+      </g>
       {/* legend */}
       <g>
-        <Txt x={LX} y={AREA.y + 7} size={3} bold>PARTS LEGEND</Txt>
+        <Txt x={LX} y={AREA.y + 7} size={3} bold>COMPONENT CALLOUTS</Txt>
         <Line x1={LX} y1={AREA.y + 10} x2={AREA_R - 2} y2={AREA.y + 10} w={LW} />
-        <Txt x={LX} y={AREA.y + 13.4} size={2.3} bold>TAG</Txt>
-        <Txt x={LX + 22} y={AREA.y + 13.4} size={2.3} bold>PART NUMBER</Txt>
+        <Txt x={LX} y={AREA.y + 13.4} size={2.1} bold>ITEM</Txt>
+        <Txt x={LX + 10} y={AREA.y + 13.4} size={2.3} bold>TAG</Txt>
+        <Txt x={LX + 30} y={AREA.y + 13.4} size={2.3} bold>PART NUMBER</Txt>
         <Txt x={AREA_R - 3} y={AREA.y + 13.4} size={2.3} bold anchor="end">W x H mm</Txt>
         <Line x1={LX} y1={AREA.y + 15} x2={AREA_R - 2} y2={AREA.y + 15} w={LW_THIN} />
         {rows.slice(0, maxRows).map((r, i) => (
           <g key={i}>
-            <Txt x={LX} y={AREA.y + 18.6 + i * rowH} size={2.3} mono bold maxW={21}>{r.tag}</Txt>
-            <Txt x={LX + 22} y={AREA.y + 18.6 + i * rowH} size={2.3} mono maxW={68}>{r.pn || '—'}</Txt>
+            {r.item !== undefined && <Balloon x={LX + 3} y={AREA.y + 17.9 + i * rowH} n={r.item} />}
+            <Txt x={LX + 10} y={AREA.y + 18.6 + i * rowH} size={2.3} mono bold maxW={19}>{r.tag}</Txt>
+            <Txt x={LX + 30} y={AREA.y + 18.6 + i * rowH} size={2.3} mono maxW={58}>{r.pn || '—'}</Txt>
             <Txt x={AREA_R - 3} y={AREA.y + 18.6 + i * rowH} size={2.3} mono anchor="end">{r.size}</Txt>
           </g>
         ))}
         {rows.length > maxRows && <Txt x={LX} y={AREA.y + 18.6 + maxRows * rowH} size={2.3} italic>{`+${rows.length - maxRows} MORE — SEE BILL OF MATERIALS`}</Txt>}
-        <Txt x={LX} y={AREA_B - 3} size={2.2} italic>* ESTIMATED — CONFIRM WITH DATASHEET</Txt>
+        <Txt x={LX} y={AREA_B - 3} size={2.0} italic maxW={AREA_R - LX - 3}>BALLOON = BILL OF MATERIALS ITEM. * ESTIMATED — CONFIRM WITH DATASHEET</Txt>
       </g>
     </g>
   );
@@ -225,7 +305,7 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
   const minY = Math.min(...ops.map((d) => d.cy - (d.kind === 'estop' ? 40 : 35))), maxY = Math.max(...ops.map((d) => d.cy + (d.kind === 'estop' ? 40 : 30)));
   const DX0 = ox + D.w * s + 24;
   const tableRows = D.items.length;
-  const tableH = 12 + tableRows * 4.4;
+  const tableH = 15 + tableRows * 4.4;
   const availW = AREA_R - DX0 - 4, availH = AREA_B - oy - tableH - 14;
   const ds = ops.length ? niceScale(Math.min(1, availW / (maxX - minX), availH / (maxY - minY))) : 1;
   const dox = DX0 + (availW - (maxX - minX) * ds) / 2 - minX * ds;
@@ -269,14 +349,15 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
       <g>
         <Txt x={DX0} y={TY + 3} size={3} bold>LEGEND PLATES & OPERATOR DEVICES</Txt>
         <Line x1={DX0} y1={TY + 5} x2={AREA_R - 2} y2={TY + 5} w={LW} />
-        {['TAG', 'LEGEND', 'COLOR', 'PART NUMBER'].map((h, i) => <Txt key={h} x={DX0 + [0, 18, 80, 104][i]} y={TY + 8.6} size={2.3} bold>{h}</Txt>)}
+        {['TAG', 'LEGEND', 'COLOR', 'CENTRE X / Y FROM LOWER-LEFT, mm (in)', 'PART NUMBER'].map((h, i) => <Txt key={h} x={DX0 + [0, 16, 60, 80, 152][i]} y={TY + 8.6} size={2.1} bold>{h}</Txt>)}
         <Line x1={DX0} y1={TY + 10} x2={AREA_R - 2} y2={TY + 10} w={LW_THIN} />
         {D.items.map((d, i) => (
           <g key={d.tag}>
             <Txt x={DX0} y={TY + 13.6 + i * 4.4} size={2.3} mono bold>{d.tag}</Txt>
-            <Txt x={DX0 + 18} y={TY + 13.6 + i * 4.4} size={2.3} maxW={60}>{d.kind === 'hmi' ? 'HMI' : d.legend.join(' ')}</Txt>
-            <Txt x={DX0 + 80} y={TY + 13.6 + i * 4.4} size={2.3} maxW={22}>{d.color || '—'}</Txt>
-            <Txt x={DX0 + 104} y={TY + 13.6 + i * 4.4} size={2.3} mono maxW={AREA_R - DX0 - 108}>{d.partNumber}</Txt>
+            <Txt x={DX0 + 16} y={TY + 13.6 + i * 4.4} size={2.2} maxW={42}>{d.kind === 'hmi' ? 'HMI' : d.legend.join(' ')}</Txt>
+            <Txt x={DX0 + 60} y={TY + 13.6 + i * 4.4} size={2.2} maxW={18}>{d.color || '—'}</Txt>
+            <Txt x={DX0 + 80} y={TY + 13.6 + i * 4.4} size={2.1} mono maxW={70}>{`X ${mmIn(d.cx)}  Y ${mmIn(D.h - d.cy)}`}</Txt>
+            <Txt x={DX0 + 152} y={TY + 13.6 + i * 4.4} size={2.2} mono maxW={AREA_R - DX0 - 155}>{d.partNumber}</Txt>
           </g>
         ))}
       </g>

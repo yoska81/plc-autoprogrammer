@@ -1,4 +1,4 @@
-import { codeRefs } from '../derive';
+import { codeRefs, supplyText } from '../derive';
 import type { DrawingPlan, PlannedSheet } from './plan';
 import { doorScale, drillScale, panelScale, scaleText } from './scale';
 import SheetFrame from './SheetFrame';
@@ -8,11 +8,15 @@ import { ControlSheet, MotorSheet, PowerSheet } from './sheets/SchematicSheets';
 import { DrillingSheet } from './sheets/DrillingSheet';
 import { CableScheduleSheet, JunctionBoxSheet, MachineOverviewSheet } from './sheets/MachineSheets';
 import { BomSheet, CoverSheet, NotesSheet, TerminalSheet } from './sheets/TableSheets';
+import { DeviceListSheet, LabelSheet, LegendSheet } from './sheets/ReferenceSheets';
 
 function Content({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
   switch (sheet.spec.kind) {
     case 'cover': return <CoverSheet plan={plan} sheet={sheet} />;
+    case 'legend': return <LegendSheet plan={plan} sheet={sheet} />;
     case 'notes': return <NotesSheet plan={plan} sheet={sheet} />;
+    case 'devices': return <DeviceListSheet plan={plan} sheet={sheet} />;
+    case 'labels': return <LabelSheet plan={plan} sheet={sheet} />;
     case 'power': return <PowerSheet plan={plan} sheet={sheet} />;
     case 'motors': return <MotorSheet plan={plan} sheet={sheet} />;
     case 'control': return <ControlSheet plan={plan} sheet={sheet} />;
@@ -39,6 +43,7 @@ export default function SheetView({ plan, sheet, width, height }: { plan: Drawin
       info={{
         projectName: plan.ctx.projectName, title: sheet.title, n: sheet.n, total: plan.sheets.length,
         drawingNo: sheet.drawingNo, date: plan.date, scale, cpu: plan.ctx.plc.cpuPartNumber, codes: codeRefs(plan.ctx).short,
+        doc: plan.doc, rev: sheet.rev, supply: supplyText(plan.model.supply),
       }}
     >
       <Content plan={plan} sheet={sheet} />

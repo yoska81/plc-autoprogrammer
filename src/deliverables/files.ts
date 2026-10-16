@@ -1,3 +1,5 @@
+import { IS_PREVIEW } from '../preview/mode';
+import { saveViaAccount } from '../preview/claudeAccount';
 import { backPanelDxf, doorDxf } from '../electrical/dxf';
 import { cabinetStep } from '../electrical/step/cabinetStep';
 import { createElement, type ReactElement } from 'react';
@@ -53,7 +55,7 @@ export async function buildHmiImages(p: ProjectSnapshot): Promise<{ name: string
   const out: { name: string; dataUrl: string }[] = [];
   for (const [i, screen] of p.hmi.screens.entries()) {
     const dataUrl = await renderOffscreen(
-      createElement(HmiScreenView, { screen, widthPx: model.widthPx, heightPx: model.heightPx }),
+      createElement(HmiScreenView, { screen, widthPx: model.widthPx, heightPx: model.heightPx, design: p.hmi }),
       async (host) => svgToPngDataUrl(host.querySelector('svg')!, model.widthPx, model.heightPx),
     );
     out.push({ name: `${String(i + 1).padStart(2, '0')}_${screen.name.replace(/[^\w-]+/g, '_')}.png`, dataUrl });
@@ -139,6 +141,12 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
 }
 
 export function saveBlob(name: string, blob: Blob) {
+  // The preview can't download directly: the viewer's Claude app offers the file.
+  if (IS_PREVIEW) {
+    void saveViaAccount(name, blob).then((ok) => { if (!ok) alert('Saving files is not available in this view. Run the app on your PC to download.'); })
+      .catch((e: unknown) => alert(e instanceof Error ? e.message : String(e)));
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

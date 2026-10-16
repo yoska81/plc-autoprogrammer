@@ -1,314 +1,459 @@
 import type { ProjectSnapshot } from './collect';
-import { getPart } from '../electrical/catalog';
 import { getHmi } from '../hmi/hmiCatalog';
-import { awgFor, motorFla } from '../electrical/derive';
-import { SPEC_SECTIONS } from '../spec/types';
-import { describeOutput } from '../plc/clickExport';
+import { supplyText } from '../electrical/derive';
 import { cabinetPng } from '../electrical/render/renderToPng';
-import type { CatalogCategory } from '../electrical/types';
+import { calculations } from './docs/calcs';
+import { docMeta, hmiText, referenceDocuments, type DocMeta } from './docs/meta';
+import { abbreviationsTable, standardsTable } from './docs/codes';
+import { equipmentTable, hmiElementTable, hmiScreenTable, hmiTagTable, ioListTable, operatingModes, sequenceTable, systemDescription } from './docs/fds';
+import { alarmTable, blockTable, checkerTable, controllerTable, interlockTable, ioCrossRefTable, programInfo, rungTable, tagTable } from './docs/program';
+import { calcTable, cableSummaryTable, conductorTable, enclosureTable, protectiveDeviceTable, sccrTable, supplyTable, voltageDropTable } from './docs/electrical';
+import { hazardTable, lotoTable, residualRisks, riskStatement, safetyFunctionTable, safetyFunctions } from './docs/safety';
+import { fatProcedure, satChecklist, satTable, testTable } from './docs/fat';
+import { pmSchedule, sparePartsTable } from './docs/maintenance';
+import { assumptionsTable, bomTable, designReviewTable, operatorManual } from './docs/manual';
+import { ACCENT, BRAND, INFO_FILL, INK, MUTED, RED, WARN_FILL, PdfWriter, pdfSafe } from './docs/pdfWriter';
+import { makeTable } from './docs/table';
 
 /**
- * The engineering package a controls engineer hands over: calculations,
- * factory acceptance test checklist and operator manual. Everything is
- * computed from project data; values not published for a part are typical
- * figures and are labelled "estimate".
+ * The controls engineering package a North American controls firm hands
+ * over: a controlled document (cover, approvals, revision history, TOC)
+ * with introduction, functional design specification, electrical design
+ * basis, safety, PLC and HMI description, FAT / SAT procedures, operator
+ * manual, maintenance and appendices. Every table is built in ./docs from the
+ * project data and shared with the Excel report.
  */
 
-export interface CalcLine { item: string; value: string; basis: string; estimate: boolean }
-export interface CalcSection { title: string; lines: CalcLine[]; result: string; ok: boolean }
+export { calculations, type CalcLine, type CalcSection } from './docs/calcs';
+export { operatorManual, type ManualSection } from './docs/manual';
 
-// Typical values used when the catalog doesn't publish one (labelled as estimates).
-const DC_LOAD_A: Partial<Record<CatalogCategory, number>> = {
-  plc: 0.3, plcModule: 0.05, safetyRelay: 0.1, relay: 0.03, pilotLight: 0.02, stackLight: 0.1, sensor: 0.03, contactor: 0.1,
-};
-const HEAT_W: Partial<Record<CatalogCategory, number>> = {
-  plc: 5, plcModule: 2, safetyRelay: 2, relay: 0.6, contactor: 2.5, overload: 2, motorProtector: 3, breaker: 1.5, terminal: 0.1,
-};
+interface Raster { url: string; w: number; h: number }
 
-function num(v: unknown): number | null {
-  const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
-  return Number.isFinite(n) ? n : null;
+/** Re-encode a PNG data URL as JPEG (an uncompressed PNG makes the PDF tens of MB). */
+async function toJpeg(src: string, maxW: number): Promise<Raster> {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  const scale = Math.min(1, maxW / img.width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.width * scale);
+  canvas.height = Math.round(img.height * scale);
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, canvas.width, canvas.height);
+  g.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return { url: canvas.toDataURL('image/jpeg', 0.85), w: canvas.width, h: canvas.height };
 }
 
-export function calculations(p: ProjectSnapshot): CalcSection[] {
-  const d = p.electrical;
-  if (!d) return [];
-  const sections: CalcSection[] = [];
-  const parts = d.components.map((c) => ({ c, part: getPart(c.partNumber) }));
-
-  // 1. 24 VDC power supply load
-  const lines: CalcLine[] = [];
-  let loadA = 0;
-  for (const { c, part } of parts) {
-    if (!part) continue;
-    let a: number | null = null;
-    let basis = '';
-    if (part.category === 'solenoidValve' && num(part.ratings.watts)) {
-      a = (num(part.ratings.watts)! / 24) * c.quantity;
-      basis = `${part.ratings.watts} W coil (catalog)`;
-    } else if (part.category === 'contactor' && !String(part.ratings.coilVoltage ?? part.ratings.coil ?? '').includes('24')) {
-      continue; // AC coil, not on the 24 VDC supply
-    } else if (DC_LOAD_A[part.category] !== undefined) {
-      a = DC_LOAD_A[part.category]! * c.quantity;
-      basis = `${DC_LOAD_A[part.category]} A each (typical)`;
+/** Cabinet pictures and HMI screens (browser only; skipped where there is no DOM). */
+async function pictures(p: ProjectSnapshot): Promise<{ cabinet: { view: string; img: Raster }[]; hmi: { name: string; img: Raster }[] }> {
+  const out = { cabinet: [] as { view: string; img: Raster }[], hmi: [] as { name: string; img: Raster }[] };
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return out;
+  if (p.drawingCtx) {
+    for (const view of ['inside', 'door'] as const) {
+      try {
+        out.cabinet.push({ view, img: await toJpeg(await cabinetPng(p.drawingCtx, view, p.hmi?.hmiPartNumber ?? null, 1600), 1600) });
+      } catch { /* picture is optional */ }
     }
-    if (a === null) continue;
-    loadA += a;
-    lines.push({ item: `${c.tag} ${part.partNumber}${c.quantity > 1 ? ` ×${c.quantity}` : ''}`, value: `${a.toFixed(2)} A`, basis, estimate: !basis.includes('catalog') });
   }
-  const hmi = p.hmi ? getHmi(p.hmi.hmiPartNumber) : undefined;
-  if (hmi) {
-    const a = hmi.sizeIn >= 10 ? 1.0 : 0.6;
-    loadA += a;
-    lines.push({ item: `HMI ${hmi.partNumber}`, value: `${a.toFixed(2)} A`, basis: 'typical for this screen size', estimate: true });
-  }
-  const supplies = parts.filter(({ part }) => part?.category === 'powerSupply');
-  const capA = supplies.reduce((s, { c, part }) => s + (num(part!.ratings.outputAmps) ?? 0) * c.quantity, 0);
-  const needA = loadA * 1.25;
-  sections.push({
-    title: '24 VDC power supply sizing',
-    lines,
-    result: `Load ${loadA.toFixed(2)} A + 25% margin = ${needA.toFixed(2)} A; supply rated ${capA.toFixed(1)} A (${supplies.map(({ part }) => part!.partNumber).join(', ') || 'none'}).`,
-    ok: capA >= needA,
-  });
-
-  // 2. Motor branch circuits
-  for (const m of d.inputs.motors) {
-    const fla = motorFla(m.hp, m.voltage);
-    const mine = parts.filter(({ c }) => c.motorTag === m.tag);
-    const prot = mine.find(({ part }) => part && ['breaker', 'motorProtector', 'fuse'].includes(part.category));
-    const ol = mine.find(({ part }) => part?.category === 'overload');
-    const protA = prot?.part ? num(prot.part.ratings.amps ?? prot.part.ratings.maxAmps) : null;
-    const olMin = ol?.part ? num(ol.part.ratings.minAmps) : null;
-    const olMax = ol?.part ? num(ol.part.ratings.maxAmps) : null;
-    const olOk = olMin !== null && olMax !== null ? fla >= olMin && fla <= olMax : true;
-    sections.push({
-      title: `Motor ${m.tag} — ${m.description || 'motor'} (${m.hp} HP, ${m.voltage})`,
-      lines: [
-        { item: 'Full-load current', value: `${fla} A`, basis: 'NEC Table 430.250 / 430.248', estimate: false },
-        { item: 'Conductors (125% FLA, NEC 430.22)', value: awgFor(fla * 1.25), basis: `${(fla * 1.25).toFixed(1)} A`, estimate: false },
-        { item: 'Branch protection', value: prot?.part ? `${prot.part.partNumber}${protA ? ` (${protA} A)` : ''}` : 'not assigned', basis: 'NEC 430.52 limits', estimate: false },
-        { item: 'Overload setting', value: ol?.part ? `${ol.part.partNumber}, set to ${fla} A` : m.starter === 'vfd' ? 'VFD electronic overload, set to FLA' : 'not assigned', basis: olMin !== null ? `range ${olMin}–${olMax} A` : '', estimate: false },
-      ],
-      result: olOk ? 'Overload range covers the motor FLA.' : `Overload range ${olMin}–${olMax} A does not include FLA ${fla} A.`,
-      ok: olOk && Boolean(prot) ,
-    });
-  }
-
-  // 3. Cabinet heat
-  const heatLines: CalcLine[] = [];
-  let heat = 0;
-  for (const { c, part } of parts) {
-    if (!part || part.mount !== 'backplate') continue;
-    let w: number | null = null;
-    let basis = '';
-    if (part.category === 'powerSupply' && num(part.ratings.watts)) { w = num(part.ratings.watts)! * 0.12; basis = '~12% loss of rated output'; }
-    else if (part.category === 'vfd') { const hp = num(part.ratings.hp480 ?? part.ratings.hp230 ?? part.ratings.hp) ?? 1; w = hp * 746 * 0.04; basis = '~4% of drive rating'; }
-    else if (part.ratings.kind === 'transformer' && num(part.ratings.va)) { w = num(part.ratings.va)! * 0.05; basis = '~5% of VA'; }
-    else if (HEAT_W[part.category] !== undefined) { w = HEAT_W[part.category]!; basis = 'typical'; }
-    if (w === null) continue;
-    w *= c.quantity;
-    heat += w;
-    heatLines.push({ item: `${c.tag} ${part.partNumber}${c.quantity > 1 ? ` ×${c.quantity}` : ''}`, value: `${w.toFixed(1)} W`, basis, estimate: true });
-  }
-  const enc = parts.find(({ part }) => part?.category === 'enclosure' && part.ratings.kind === 'enclosure')?.part;
-  if (enc) {
-    const h = (num(enc.ratings.heightIn) ?? 24) * 0.0254, w = (num(enc.ratings.widthIn) ?? 20) * 0.0254, dd = (num(enc.ratings.depthIn) ?? 8) * 0.0254;
-    // Wall-mounted: back not counted (IEC/TR 60890 style effective area, simplified).
-    const area = h * w + 2 * h * dd + 2 * w * dd;
-    const rise = heat / (5.5 * area);
-    sections.push({
-      title: 'Cabinet temperature rise',
-      lines: [...heatLines, { item: 'Effective surface area', value: `${area.toFixed(2)} m²`, basis: `${enc.partNumber}, wall mounted`, estimate: false }],
-      result: `${heat.toFixed(0)} W in ${area.toFixed(2)} m² → about ${rise.toFixed(1)} °C above room temperature (painted steel, k ≈ 5.5 W/m²K). ${rise > 15 ? 'Above 15 °C: add a filter fan or a larger enclosure.' : 'Natural cooling is enough at normal room temperatures (≤ 40 °C).'}`,
-      ok: rise <= 15,
-    });
-  }
-
-  sections.push({
-    title: 'Short-circuit current rating (SCCR)',
-    lines: [],
-    result: 'Determine the panel SCCR per UL 508A Supplement SB from the component ratings and the available fault current at the site; mark it on the panel nameplate.',
-    ok: true,
-  });
-  return sections;
-}
-
-export interface TestStep { section: string; step: string; expected: string }
-
-/** Factory acceptance test checklist, one line per thing to prove. */
-export function fatChecklist(p: ProjectSnapshot): TestStep[] {
-  const steps: TestStep[] = [];
-  const add = (section: string, step: string, expected: string) => steps.push({ section, step, expected });
-  add('Pre-power', 'Check every wire against the wire list and every terminal for tightness.', 'No loose or mislabeled wires.');
-  add('Pre-power', 'Check protective earth continuity from the ground bar to the door, back panel and every PE terminal.', '< 0.1 Ω.');
-  add('Pre-power', 'Megger the incoming power circuits with all loads disconnected.', '> 1 MΩ.');
-  add('Power-up', 'Close the main disconnect and each branch breaker in turn.', 'Correct voltage at each branch; 24 VDC supply reads 24 V ±5%.');
-  add('Power-up', 'Download the PLC program and the HMI project.', 'PLC in RUN, no error lamp; HMI communicates (no comm error).');
-  for (const x of p.io.filter((i) => i.type === 'input')) {
-    add('Inputs', `Actuate ${p.addresses.get(x.id) || x.id} — ${x.description}.`, 'PLC input lamp and HMI I/O screen turn ON; OFF when released.');
-  }
-  for (const y of p.io.filter((i) => i.type === 'output')) {
-    add('Outputs', `Force ${p.addresses.get(y.id) || y.id} — ${y.description} (motion area clear).`, 'Device operates; output lamp ON.');
-  }
-  const safety = p.spec.safety?.trim();
-  add('Safety', 'Press each E-stop during automatic operation.', 'All motion stops immediately; machine cannot restart until the E-stop is released and reset.');
-  if (safety) add('Safety', 'Verify every safety function listed in the specification (doors, light curtains, stop categories).', safety.split('\n').map((l) => l.replace(/^-\s*/, '')).join('; '));
-  for (const a of p.hmi?.alarms ?? []) add('Alarms', `Create the condition for: ${a.message}.`, `HMI shows "${a.message}" (${a.address}); reset clears it once the cause is removed.`);
-  for (const s of p.hmi?.screens ?? []) add('HMI', `Open the ${s.name} screen and press every button.`, `${s.purpose} All buttons respond and lamps reflect the machine state.`);
-  const seq = p.spec.sequence?.trim();
-  if (seq) seq.split('\n').filter((l) => l.trim()).forEach((l) => add('Sequence', `Automatic cycle: ${l.replace(/^-\s*/, '')}`, 'Happens as described, with no faults.'));
-  const homing = p.spec.homing?.trim();
-  if (homing) add('Start-up', `Homing / start-up: ${homing.replace(/\n-?\s*/g, ' ')}`, 'Completes in the specified order; Auto only possible afterwards.');
-  add('Run test', 'Run the machine in automatic for at least 30 minutes (or the agreed number of cycles).', 'No faults; record cycle time and throughput.');
-  return steps;
-}
-
-export interface ManualSection { title: string; paragraphs: string[] }
-
-/** Operator manual assembled from the spec, operator devices, HMI and alarms. */
-export function operatorManual(p: ProjectSnapshot): ManualSection[] {
-  const spec = (id: (typeof SPEC_SECTIONS)[number]['id']) => p.spec[id]?.trim() ?? '';
-  const lines = (t: string) => t.split('\n').map((l) => l.replace(/^-\s*/, '').trim()).filter(Boolean);
-  const out: ManualSection[] = [];
-  out.push({ title: '1. About this machine', paragraphs: lines(spec('overview')).length ? lines(spec('overview')) : ['See the machine specification.'] });
-  out.push({ title: '2. Safety', paragraphs: [
-    'Only trained operators may run this machine. Never reach into the machine while it can move.',
-    ...lines(spec('safety')), ...lines(spec('guarding')),
-    'Before maintenance: switch the main disconnect OFF and lock it out (lockout/tagout).',
-  ] });
-  const doorDevices = (p.electrical?.ioWiring ?? []).filter((w) => /door/i.test(w.location ?? '') || ['pushbutton-no', 'pushbutton-nc', 'selector', 'estop-contact', 'pilot-light'].includes(w.deviceType));
-  out.push({ title: '3. Controls on the cabinet', paragraphs: doorDevices.length
-    ? doorDevices.map((w) => `${w.deviceTag}: ${w.description}`)
-    : lines(spec('operator')) });
   if (p.hmi) {
-    out.push({ title: '4. Operator panel screens', paragraphs: p.hmi.screens.map((s) => {
-      const buttons = s.elements.filter((e) => e.kind === 'button').map((e) => e.label);
-      return `${s.name}: ${s.purpose}${buttons.length ? ` Buttons: ${buttons.join(', ')}.` : ''}`;
-    }) });
+    try {
+      const { buildHmiImages } = await import('./files');
+      for (const [i, im] of (await buildHmiImages(p)).entries()) out.hmi.push({ name: p.hmi.screens[i]?.name ?? im.name, img: await toJpeg(im.dataUrl, 900) });
+    } catch { /* screens are optional */ }
   }
-  out.push({ title: '5. Starting the machine', paragraphs: [
-    'Check that guards are closed, air is on, and nobody is inside the machine.',
-    ...lines(spec('homing')),
-    ...lines(spec('modes')),
-  ] });
-  out.push({ title: '6. Normal operation', paragraphs: lines(spec('sequence')) });
-  const alarms = p.hmi?.alarms ?? [];
-  out.push({ title: '7. Alarms and what to do', paragraphs: [
-    ...alarms.map((a) => `${a.message} — find and remove the cause, then press Reset.`),
-    ...lines(spec('alarms')),
-  ] });
-  out.push({ title: '8. Stopping and shutting down', paragraphs: ['Press Stop to end the cycle. For an emergency, press the E-stop.', 'At the end of the shift: Stop, then switch the main disconnect OFF.'] });
-  return out.filter((s) => s.paragraphs.length);
+  return out;
 }
 
-/** Everything above plus equipment reasons and the program summary, as one PDF. */
+function cover(w: PdfWriter, p: ProjectSnapshot, m: DocMeta) {
+  const doc = w.doc;
+  // Brand band
+  doc.setFillColor(...BRAND);
+  doc.rect(0, 0, w.W, 34, 'F');
+  doc.setFillColor(...ACCENT);
+  doc.rect(0, 34, w.W, 2.2, 'F');
+  w.font(15, true, [255, 255, 255]);
+  if (m.company) doc.text(pdfSafe(m.company), w.M, 15);
+  w.font(8.5, false, [214, 218, 190]);
+  doc.text('CONTROLS ENGINEERING', w.M, m.company ? 22 : 15);
+  w.font(9, true, [255, 255, 255]);
+  doc.text(pdfSafe(m.docNo), w.W - w.M, 15, { align: 'right' });
+  w.font(8.5, false, [214, 218, 190]);
+  doc.text(pdfSafe(`Rev ${m.rev.rev}  ·  ${m.rev.date}`), w.W - w.M, 22, { align: 'right' });
+
+  w.y = 46;
+  w.text('Controls Engineering Package', { size: 24, bold: true, color: BRAND, gap: 1 });
+  w.text(p.projectName, { size: 16, bold: true, gap: 1 });
+  w.text('Functional design specification · electrical design basis · safety · PLC and HMI description · FAT / SAT · operator manual · maintenance', { size: 9, color: MUTED, gap: 4 });
+
+  const d = p.electrical;
+  w.keyValue([
+    ['Customer', m.customer],
+    ['Site', m.site],
+    ['Project number', m.projectNumber],
+    ['Document number', m.docNo],
+    ['Revision / date', `${m.rev.rev} — ${m.rev.date} — ${m.rev.description}`],
+    ['Controller', `${p.profile.vendor} ${p.profile.name} ${p.cpu.id}`],
+    ['Operator interface', hmiText(m.hmiPart)],
+    ['Supply', d ? `${supplyText(d.inputs.supply)}, ${d.inputs.enclosureRating} enclosure` : 'electrical design not generated'],
+    ['Code basis', `${m.region === 'Canada' ? 'Canada' : 'United States'} — ${m.codes.installation}, ${m.codes.panel}, NFPA 79`],
+  ], 26);
+
+  w.callout(m.approved ? `STATUS: ${m.status}` : `STATUS: ${m.status}. Prepared with ISA Auto Programmer (AI-generated). A qualified engineer must check and approve this document before purchase, construction or use.`, m.approved ? BRAND : RED, m.approved ? INFO_FILL : WARN_FILL);
+
+  w.h3('Approvals');
+  w.table(makeTable([['Role', 18], ['Name', 34], ['Signature', 34], ['Date', 16]], [
+    ['Prepared by', m.preparedBy, '', m.preparedBy ? m.rev.date : ''],
+    ['Checked by', m.checkedBy, '', ''],
+    ['Approved by', m.approvedBy, '', ''],
+  ], 9), { fontSize: 8.5, zebra: false });
+
+  w.h3('Revision history');
+  w.table(makeTable([['Rev', 8, 'center'], ['Date', 16], ['Description', 60], ['By', 12, 'center']], m.revisions.map((r) => [r.rev, r.date, r.description, r.by])), { fontSize: 8.2 });
+
+  w.h3('Distribution');
+  w.table(makeTable([['Copy', 8, 'center'], ['Recipient', 36], ['Purpose', 56]], [
+    ['1', m.customer ? `${m.customer} (customer)` : 'Customer', m.approved ? 'Information / records' : 'Review and approval'],
+    ['2', 'Panel builder', m.approved ? 'Construction and FAT' : 'Information only — not for construction'],
+    ['3', 'Commissioning / site', 'SAT, training, handover'],
+    ['4', 'Project file', 'Master copy (controlled)'],
+  ]), { fontSize: 8.2 });
+}
+
+function headerFooter(w: PdfWriter, p: ProjectSnapshot, m: DocMeta) {
+  const doc = w.doc;
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    if (i > 1) {
+      w.font(8, true, BRAND);
+      if (m.company) doc.text(pdfSafe(m.company), w.M, 13);
+      w.font(8, false, INK);
+      const name = pdfSafe(p.projectName);
+      doc.text(name.length > 60 ? `${name.slice(0, 57)}...` : name, w.W / 2, 13, { align: 'center' });
+      w.font(8, true, INK);
+      doc.text(pdfSafe(`${m.docNo}  Rev ${m.rev.rev}`), w.W - w.M, 13, { align: 'right' });
+      w.font(7, false, MUTED);
+      doc.text('Controls Engineering Package', w.M, 17.5);
+      if (m.projectNumber) doc.text(pdfSafe(`Project ${m.projectNumber}`), w.W - w.M, 17.5, { align: 'right' });
+      doc.setDrawColor(...BRAND);
+      doc.setLineWidth(0.5);
+      doc.line(w.M, 19.5, w.W - w.M, 19.5);
+      doc.setFillColor(...ACCENT);
+      doc.rect(w.M, 19.8, 18, 1, 'F');
+    }
+    doc.setDrawColor(184, 192, 204);
+    doc.setLineWidth(0.2);
+    doc.line(w.M, w.H - 14, w.W - w.M, w.H - 14);
+    w.font(6.6, true, m.approved ? MUTED : RED);
+    doc.text(pdfSafe(m.status), w.M, w.H - 10);
+    w.font(6.4, false, MUTED);
+    doc.text('Uncontrolled when printed. Verify the current revision before use.', w.M, w.H - 6.8);
+    w.font(8, true, INK);
+    doc.text(pdfSafe(`Doc ${m.docNo} Rev ${m.rev.rev} — Page ${i} of ${n}`), w.W - w.M, w.H - 8.5, { align: 'right' });
+  }
+}
+
+/** Insert the table of contents after the cover, with real page numbers and links. */
+function tableOfContents(w: PdfWriter) {
+  const doc = w.doc;
+  const entries = w.headings;
+  const lh = 5.0;
+  const perFirst = Math.floor((w.bottom - w.top - 14) / lh);
+  const perNext = Math.floor((w.bottom - w.top) / lh);
+  const pages = entries.length <= perFirst ? 1 : 1 + Math.ceil((entries.length - perFirst) / perNext);
+  for (let k = 0; k < pages; k++) doc.insertPage(2 + k);
+  for (const e of entries) e.page += pages;
+  let page = 2;
+  doc.setPage(page);
+  w.y = w.top;
+  w.font(15, true, BRAND);
+  doc.text('Table of contents', w.M, w.y + 5);
+  w.y += 7.5;
+  doc.setDrawColor(...BRAND);
+  doc.setLineWidth(0.6);
+  doc.line(w.M, w.y, w.W - w.M, w.y);
+  w.y += 6.5;
+  for (const e of entries) {
+    if (w.y + lh > w.bottom) { page++; doc.setPage(page); w.y = w.top; }
+    const x = w.M + (e.level === 1 ? 0 : 7);
+    const size = e.level === 1 ? 9.6 : 8.8;
+    w.font(size, e.level === 1, e.level === 1 ? BRAND : INK);
+    const title = pdfSafe(e.title);
+    const pg = String(e.page);
+    const tw = doc.getTextWidth(title);
+    const pw = doc.getTextWidth(pg);
+    const yy = w.y + 3.6;
+    doc.text(title, x, yy);
+    doc.text(pg, w.W - w.M, yy, { align: 'right' });
+    w.font(size, false, MUTED);
+    const dotW = doc.getTextWidth('.');
+    const from = x + tw + 2, to = w.W - w.M - pw - 2;
+    if (to > from) doc.text('.'.repeat(Math.max(0, Math.floor((to - from) / dotW))), from, yy);
+    doc.link(x, w.y, w.W - w.M - x, lh, { pageNumber: e.page });
+    w.y += lh;
+  }
+  // PDF bookmarks
+  let parent: unknown = null;
+  for (const e of entries) {
+    if (e.level === 1) parent = doc.outline.add(null, pdfSafe(e.title), { pageNumber: e.page });
+    else doc.outline.add(parent, pdfSafe(e.title), { pageNumber: e.page });
+  }
+}
+
+/** The complete engineering package as one PDF. */
 export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: string; why: string; modules: string[]; hmi: string | null } | null): Promise<Blob> {
   const { jsPDF } = await import('jspdf');
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
-  const W = 215.9, M = 18, maxW = W - 2 * M;
-  let y = M;
-  const page = () => { doc.addPage(); y = M; };
-  const need = (h: number) => { if (y + h > 279.4 - M) page(); };
-  // The built-in PDF font covers WinAnsi only; swap the few symbols it can't draw.
-  const pdfSafe = (t: string) => t.replace(/☐/g, '[ ]').replace(/→/g, '->').replace(/≈/g, '~').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/Ω/g, ' ohm').replace(/[^\x20-\xff\n—–’‘“”•…]/g, '?');
-  const text = (raw: string, size = 10, bold = false, color: [number, number, number] = [30, 35, 39]) => {
-    const t = pdfSafe(raw);
-    doc.setFont('helvetica', bold ? 'bold' : 'normal');
-    doc.setFontSize(size);
-    doc.setTextColor(...color);
-    for (const line of doc.splitTextToSize(t, maxW) as string[]) {
-      need(size * 0.45);
-      doc.text(line, M, y);
-      y += size * 0.45;
-    }
-    y += 1.5;
-  };
-  const h1 = (t: string) => { need(14); y += 3; text(t, 15, true, [28, 56, 115]); };
-  const h2 = (t: string) => { need(10); y += 1; text(t, 11.5, true); };
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  const m = docMeta(p);
+  doc.setProperties({ title: `${m.docNo} — Controls Engineering Package — ${p.projectName}`, subject: 'Controls engineering package', author: m.preparedBy || m.company || 'ISA Auto Programmer', creator: 'ISA Auto Programmer', keywords: `${m.docNo} Rev ${m.rev.rev}` });
+  const w = new PdfWriter(doc);
+  const pics = await pictures(p);
+  const info = programInfo(p);
+  const sf = safetyFunctions(p);
+  const calcs = calculations(p);
+  const ca = m.region === 'Canada';
+  const hasElec = Boolean(p.drawingCtx && p.electrical);
+  const noElec = () => w.callout('The electrical design has not been generated yet. Generate it to complete this section.', RED, WARN_FILL);
 
-  // Cover
-  text('ENGINEERING PACKAGE', 10, true, [34, 68, 140]);
-  text(p.projectName, 22, true);
-  text(`${p.profile.vendor} ${p.profile.name} ${p.cpu.id}${p.hmi ? ` · HMI ${p.hmi.hmiPartNumber}` : ''}`, 11);
-  text(`Prepared ${new Date().toLocaleDateString()} by PLC Autoprogrammer (AI-generated). To be checked and approved by a qualified engineer before purchase, build or use.`, 9, false, [107, 124, 133]);
-  y += 4;
-  text('Contents: 1 Equipment selection · 2 Calculations · 3 Factory acceptance test · 4 Operator manual · 5 Program summary', 9);
+  cover(w, p, m);
 
-  h1('1. Equipment selection');
+  // 1. Introduction
+  w.h1('1. Introduction');
+  w.h2('1.1 Purpose');
+  w.para(`This document describes the control system of "${p.projectName}"${m.customer ? ` for ${m.customer}` : ''}${m.site ? `, ${m.site}` : ''}. It is the single reference for how the machine is controlled, how the control panel is designed and protected, how the safety functions work, how the system is tested at the factory (FAT) and on site (SAT), and how it is operated and maintained.`);
+  w.h2('1.2 Scope');
+  w.h3('Included');
+  w.bullets([
+    `Control panel design: ${hasElec ? `${p.electrical!.components.length} components, ${p.electrical!.inputs.enclosureRating} enclosure, ${supplyText(p.electrical!.inputs.supply)} supply` : 'to be generated'}; electrical drawings, BOM, wire list, terminal plan and field cable schedule.`,
+    `PLC program for ${p.profile.vendor} ${p.profile.name} ${p.cpu.id} (${p.io.filter((x) => x.type === 'input').length} inputs, ${p.io.filter((x) => x.type === 'output').length} outputs).`,
+    ...(p.hmi ? [`HMI application for ${hmiText(p.hmi.hmiPartNumber)}: ${p.hmi.screens.length} screens, ${p.hmi.alarms.length} alarm(s).`] : []),
+    'Hardwired emergency stop / safety circuit as drawn.',
+    'FAT and SAT procedures, operator manual, maintenance schedule and spare parts list.',
+  ]);
+  w.h3('Excluded (by others unless agreed otherwise)');
+  w.bullets([
+    'Machine risk assessment and determination of required performance levels (PLr).',
+    'Mechanical design, guarding, pneumatic circuit and air preparation.',
+    'Supply feeder, upstream protection, available fault current study and arc-flash study.',
+    'Field cable installation, cable tray / conduit and junction box mounting.',
+    'Motors and field devices supplied with the machine unless listed in the BOM.',
+    'Network integration with plant systems beyond the PLC-HMI link.',
+  ]);
+  w.h2('1.3 Codes and standards');
+  w.para(`The design follows North American practice for ${ca ? 'Canada' : 'the United States'}. Where editions are not stated, the edition adopted by the authority having jurisdiction at the site applies.`);
+  w.table(standardsTable(p, m));
+  w.h2('1.4 Reference documents');
+  w.table(makeTable([['Number', 26], ['Document', 70], ['File', 46]], referenceDocuments(p, m)));
+  if (m.drawings) {
+    w.h3('Drawing list');
+    w.table(makeTable([['Drawing', 16], ['Title', 84]], m.drawings.sheets.map((s) => [s.no, s.title])), { fontSize: 7.4 });
+  }
+  w.h2('1.5 Abbreviations');
+  w.table(abbreviationsTable(p), { fontSize: 7.4 });
+
+  // 2. FDS
+  w.h1('2. Functional design specification');
+  w.h2('2.1 System description');
+  for (const t of systemDescription(p)) w.para(t);
   if (equipment) {
-    text(`PLC: ${equipment.cpu}`, 10, true);
-    if (equipment.why) text(equipment.why);
-    if (equipment.modules.length) text(`Expansion modules (slot order): ${equipment.modules.join(', ')}`);
-    if (equipment.hmi) text(`Operator panel: ${equipment.hmi}`);
-  } else text('Chosen manually.');
+    w.h3('Equipment selection');
+    w.keyValue([
+      ['PLC CPU', `${p.profile.vendor} ${p.profile.name} ${equipment.cpu}`],
+      ['Reason', equipment.why || 'Chosen manually.'],
+      ['Expansion modules', equipment.modules.length ? equipment.modules.join(', ') : 'none'],
+      ['Operator panel', hmiText(equipment.hmi)],
+    ], 22);
+  }
+  w.h2('2.2 Equipment list');
+  w.table(equipmentTable(p), { fontSize: 7.2 });
+  w.h2('2.3 Operating modes');
+  const om = operatingModes(p);
+  w.bullets(om.modes);
+  if (om.startup.length) { w.h3('Start-up and homing'); w.bullets(om.startup, { numbered: true }); }
+  w.h2('2.4 Sequence of operation');
+  const seq = sequenceTable(p);
+  if (seq.rows.length) w.table(seq, { fontSize: 8.2 }); else w.para('No sequence of operation in the specification.');
+  w.h2('2.5 Interlocks and permissives');
+  w.para('Conditions that must be true for each output or machine state, taken from the PLC program, followed by the hardwired interlocks in the electrical design. "Permissives" must all be true; "Initiated by" lists the alternative start conditions.');
+  w.table(interlockTable(p, info), { fontSize: 7.1 });
+  w.h2('2.6 Alarms');
+  w.table(alarmTable(p, info), { fontSize: 7.1 });
+  if (p.hmi) {
+    w.h2('2.7 HMI screens');
+    w.table(hmiScreenTable(p), { fontSize: 7.8 });
+  }
+  w.h2(p.hmi ? '2.8 I/O list' : '2.7 I/O list');
+  w.table(ioListTable(p), { fontSize: 7.2 });
 
-  if (p.drawingCtx) {
-    page();
-    h1('Control cabinet');
-    text('Pictures drawn to scale from the panel layout. See the drawing set for dimensions.', 9);
-    const hmiPart = p.hmi?.hmiPartNumber ?? null;
-    for (const view of ['inside', 'door'] as const) {
-      const png = await cabinetPng(p.drawingCtx, view, hmiPart, 1600);
-      const img = new Image();
-      img.src = png;
-      await img.decode();
-      // Re-encode as JPEG: an uncompressed PNG makes the PDF tens of MB.
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const g = canvas.getContext('2d')!;
-      g.fillStyle = '#ffffff';
-      g.fillRect(0, 0, canvas.width, canvas.height);
-      g.drawImage(img, 0, 0);
-      const jpg = canvas.toDataURL('image/jpeg', 0.85);
-      const h = Math.min(105, (maxW * img.height) / img.width);
-      const w = (h * img.width) / img.height;
-      need(h + 4);
-      doc.addImage(jpg, 'JPEG', M + (maxW - w) / 2, y, w, h);
-      y += h + 4;
+  // 3. Electrical design basis
+  w.h1('3. Electrical design basis');
+  if (!hasElec) noElec();
+  else {
+    w.h2('3.1 Supply and control voltages');
+    w.table(supplyTable(p), { fontSize: 7.8 });
+    w.h2('3.2 Enclosure selection');
+    w.table(enclosureTable(p, calcs), { fontSize: 7.8 });
+    w.h2('3.3 Protective device schedule');
+    w.table(protectiveDeviceTable(p), { fontSize: 6.9 });
+    const motorCalcs = calcs.filter((s) => s.title.startsWith('Motor '));
+    if (motorCalcs.length) {
+      w.h2('3.4 Motor branch circuits');
+      for (const s of motorCalcs) {
+        w.h3(s.title);
+        w.table(calcTable(s), { fontSize: 7.8 });
+        w.callout(`${s.ok ? 'OK' : 'CHECK'} — ${s.result}`, s.ok ? BRAND : RED, s.ok ? INFO_FILL : WARN_FILL);
+      }
     }
+    let k = motorCalcs.length ? 5 : 4;
+    w.h2(`3.${k++} Conductor colours and sizes`);
+    w.table(conductorTable(p), { fontSize: 7.4 });
+    for (const title of ['24 VDC power supply sizing', 'Cabinet temperature rise']) {
+      const s = calcs.find((x) => x.title === title);
+      if (!s) continue;
+      w.h2(`3.${k++} ${title === 'Cabinet temperature rise' ? 'Heat dissipation and cabinet temperature rise' : '24 VDC load and power supply sizing'}`);
+      w.table(calcTable(s), { fontSize: 7.6 });
+      w.callout(`${s.ok ? 'OK' : 'CHECK'} — ${s.result}`, s.ok ? BRAND : RED, s.ok ? INFO_FILL : WARN_FILL);
+    }
+    w.h2(`3.${k++} Short-circuit current rating (SCCR)`);
+    w.para(`Determined by the UL 508A Supplement SB method: the panel SCCR is the lowest rating of the components in the power circuit, raised only by tested combinations or current-limiting devices${ca ? '; the panel is marked per CSA C22.2 No. 14' : ''}.`);
+    const sc = sccrTable(p);
+    w.table(sc.table, { fontSize: 7.2 });
+    w.callout(sc.result, sc.unknown.length ? RED : BRAND, sc.unknown.length ? WARN_FILL : INFO_FILL);
+    w.h2(`3.${k} Voltage drop`);
+    w.para('Field cable lengths are not known yet ("BY SITE"). The table gives the longest one-way run that keeps the voltage drop within the limit (3% for motor circuits, 5% for 24 VDC circuits) using NEC Chapter 9 Table 8 conductor resistance at 75 °C. Loads marked typical / assumed are estimates.');
+    w.table(voltageDropTable(p), { fontSize: 7.1 });
   }
 
-  h1('2. Calculations');
-  for (const s of calculations(p)) {
-    h2(s.title);
-    for (const l of s.lines) text(`• ${l.item}: ${l.value}${l.basis ? ` (${l.basis}${l.estimate ? ', estimate' : ''})` : ''}`, 9);
-    text(`${s.ok ? 'OK' : 'CHECK'} — ${s.result}`, 9.5, true, s.ok ? [28, 56, 115] : [176, 0, 0]);
-  }
+  // 4. Safety
+  w.h1('4. Safety');
+  w.h2('4.1 Hazard summary');
+  w.table(hazardTable(p), { fontSize: 7.4 });
+  w.h2('4.2 Safety functions');
+  w.para(`Stop categories per NFPA 79 9.2.2 / IEC 60204-1 (0 = immediate removal of power, 1 = controlled stop then removal of power). Architecture and category per ISO 13849-1. ${sf.length ? '' : 'No safety functions were found in the design or the specification.'}`);
+  if (sf.length) w.table(safetyFunctionTable(p, sf), { fontSize: 6.9 });
+  w.h2('4.3 Lockout / tagout points');
+  w.para(`Hazardous energy must be isolated per ${ca ? 'CSA Z460' : 'OSHA 29 CFR 1910.147'} and the site lockout procedure before maintenance.`);
+  w.table(lotoTable(p), { fontSize: 7.4 });
+  w.h2('4.4 Residual risks');
+  w.bullets(residualRisks(p));
+  w.h2('4.5 Risk assessment');
+  w.callout(riskStatement(p), RED, WARN_FILL);
 
-  page();
-  h1('3. Factory acceptance test');
-  text('Tick each line, record the result, sign and date at the end.', 9);
-  let section = '';
-  for (const t of fatChecklist(p)) {
-    if (t.section !== section) { section = t.section; h2(section); }
-    text(`☐ ${t.step}  →  ${t.expected}`, 9);
-  }
-  y += 6;
-  text('Tested by: ____________________   Date: __________   Customer witness: ____________________', 9);
-
-  page();
-  h1('4. Operator manual');
-  for (const s of operatorManual(p)) {
-    h2(s.title);
-    for (const para of s.paragraphs) text(para, 9.5);
-  }
-
+  // 5. PLC program
+  w.h1('5. PLC program description');
+  w.h2('5.1 Controller and modules');
+  w.table(controllerTable(p), { fontSize: 7.8 });
   if (p.profile.language === 'ladder' && p.ladder.rungs.length) {
-    page();
-    h1('5. Program summary');
-    const label = (a: string) => (p.labels.get(a) ? ` (${p.labels.get(a)})` : '');
-    p.ladder.rungs.forEach((r, i) => text(`Rung ${i + 1}: ${r.comment} → ${r.outputs.map((o) => describeOutput(o, label)).join('; ')}`, 9));
+    w.h2('5.2 Program structure');
+    w.table(blockTable(p), { fontSize: 7.8 });
+    w.h2('5.3 Rung description');
+    w.table(rungTable(p, info), { fontSize: 6.9 });
+    w.h2('5.4 Memory map and tag table');
+    w.table(tagTable(p, info), { fontSize: 7.1 });
+    w.h2('5.5 I/O cross reference');
+    w.table(ioCrossRefTable(p, info), { fontSize: 7.4 });
+  } else if (p.stCode) {
+    w.h2('5.2 Program');
+    w.para(`Structured Text program, ${p.stCode.split('\n').length} lines. See the program file listed in the reference documents.`);
+  } else {
+    w.h2('5.2 Program');
+    w.callout('The PLC program has not been generated yet.', RED, WARN_FILL);
+  }
+  w.h2(p.profile.language === 'ladder' && p.ladder.rungs.length ? '5.6 Communication' : '5.3 Communication');
+  w.bullets([
+    p.hmi ? `HMI ${p.hmi.hmiPartNumber} <-> PLC ${p.cpu.id}: Ethernet (CLICK Ethernet driver / Modbus TCP), ${p.hmi.tags.length} tags. HMI command bits use internal C memory; the PLC never relies on the HMI for safety.` : 'No HMI communication.',
+    'Programming port: Ethernet (or serial) from the engineering laptop.',
+    'IP addresses, subnet and gateway: to be assigned by the site; record them on the drawings.',
+    'No connection to plant networks is included; if one is added, use a managed switch / firewall and keep the safety circuit hardwired.',
+  ]);
+  if (p.profile.language === 'ladder' && p.ladder.rungs.length) {
+    w.h2('5.7 Program check');
+    if (p.issues.length) w.table(checkerTable(p), { fontSize: 7.6 });
+    else w.callout(`Program checker: no errors or warnings (${p.ladder.rungs.length} rungs checked against the ${p.profile.name} address rules and the I/O list).`);
   }
 
-  // Page footers
-  const pages = doc.getNumberOfPages();
-  for (let i = 1; i <= pages; i++) {
-    doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(138, 154, 162);
-    doc.text(`${p.projectName} — engineering package — page ${i} of ${pages}`, M, 279.4 - 8);
+  // 6. HMI
+  if (p.hmi) {
+    const model = getHmi(p.hmi.hmiPartNumber);
+    w.h1('6. HMI description');
+    w.h2('6.1 Operator panel');
+    w.keyValue([
+      ['Model', hmiText(p.hmi.hmiPartNumber)],
+      ['Description', model?.description ?? ''],
+      ['Communication', model ? `${model.ethernet ? 'Ethernet' : 'no Ethernet'}; serial: ${model.serial}` : ''],
+      ['Mounting', model?.cutoutMm ? `Panel door, cut-out ${model.cutoutMm.width} x ${model.cutoutMm.height} mm` : 'Panel door'],
+      ['Design style', 'ISA-101 style: grey background, colour only for abnormal states (red = alarm, amber = warning, green = running), same navigation bar on every screen.'],
+    ], 22);
+    w.h2('6.2 Screens');
+    w.table(hmiScreenTable(p), { fontSize: 7.8 });
+    for (const s of pics.hmi) w.image(s.img.url, 'JPEG', s.img.w, s.img.h, 70, `HMI screen: ${s.name}`);
+    w.h2('6.3 Screen elements');
+    w.table(hmiElementTable(p), { fontSize: 7.2 });
+    w.h2('6.4 HMI tag list');
+    w.table(hmiTagTable(p), { fontSize: 7.4 });
+    w.h2('6.5 Alarm handling');
+    w.bullets([
+      `${p.hmi.alarms.length} alarm(s) are configured (see 2.6). Each alarm is a PLC bit; the HMI shows the message in the alarm banner on every screen and on the Alarms screen.`,
+      'Alarms latch in the PLC until the cause is removed and the operator resets; the reset conditions are given in the alarm table.',
+      'Alarm history: enable the C-more alarm log (date / time, acknowledge) during commissioning if the customer requires it.',
+    ]);
   }
+
+  // 7. FAT
+  const sec = (n: number) => (p.hmi ? n : n - 1);
+  w.h1(`${sec(7)}. Factory acceptance test (FAT) procedure`);
+  const fat = fatProcedure(p, m, info, sf);
+  w.para(`Perform the tests in order with the panel at the builder's shop. Record Pass (P) or Fail (F) and initials for each test; list every failure on the punch list. ${fat.length} tests.`);
+  w.keyValue([['Panel / serial no.', ''], ['Test date', ''], ['Test supply', ''], ['Program / HMI revision', '']], 26);
+  w.table(testTable(fat), { fontSize: 7 });
+  w.h3('FAT result and sign-off');
+  w.table(makeTable([['Role', 26], ['Name', 30], ['Company', 26], ['Signature', 28], ['Date', 14]], [['Tested by (panel builder)', '', '', '', ''], ['Witnessed by (customer)', '', '', '', ''], ['Accepted by (engineer)', '', '', '', '']], 10), { fontSize: 8, zebra: false });
+  w.text('Result:  [ ] Accepted     [ ] Accepted with punch list     [ ] Rejected        Open punch-list items: ______', { size: 9 });
+
+  // 8. SAT
+  w.h1(`${sec(8)}. Site acceptance test (SAT) and commissioning checklist`);
+  const sat = satChecklist(p, sf);
+  w.table(satTable(sat), { fontSize: 7 });
+  w.h3('SAT sign-off');
+  w.table(makeTable([['Role', 26], ['Name', 30], ['Company', 26], ['Signature', 28], ['Date', 14]], [['Commissioned by', '', '', '', ''], ['Accepted by (customer)', '', '', '', '']], 10), { fontSize: 8, zebra: false });
+
+  // 9. Operator manual
+  w.h1(`${sec(9)}. Operator manual`);
+  for (const s of operatorManual(p, info)) {
+    w.h2(s.title, false);
+    if (/Normal operation/.test(s.title)) w.bullets(s.paragraphs, { numbered: true });
+    else w.bullets(s.paragraphs);
+  }
+
+  // 10. Maintenance
+  w.h1(`${sec(10)}. Maintenance`);
+  w.h2(`${sec(10)}.1 Preventive maintenance schedule`);
+  w.para('Perform maintenance only after lockout / tagout (chapter 4.3). Intervals are typical starting points; adjust them to the manufacturers’ manuals and site experience.');
+  w.table(pmSchedule(p), { fontSize: 7.6 });
+  w.h2(`${sec(10)}.2 Recommended spare parts`);
+  w.table(sparePartsTable(p), { fontSize: 7.2 });
+
+  // Appendices
+  w.h1('Appendix A — Bill of materials');
+  if (hasElec) w.table(bomTable(p), { fontSize: 7 }); else noElec();
+  w.h1('Appendix B — Field cable schedule');
+  if (hasElec) {
+    w.para('Summary, one line per cable. Core-by-core details are in the drawing set and the Excel report.');
+    w.table(cableSummaryTable(p), { fontSize: 7 });
+  } else noElec();
+  w.h1('Appendix C — Design review items');
+  w.para('Items the checking engineer must resolve before the design is approved for construction.');
+  if (hasElec) w.table(designReviewTable(p), { fontSize: 7.4 }); else noElec();
+  w.h1('Appendix D — Assumptions to confirm');
+  w.table(assumptionsTable(p), { fontSize: 7.6 });
+  if (pics.cabinet.length) {
+    w.h1('Appendix E — Control cabinet arrangement');
+    w.para('Pictures drawn to scale from the panel layout. See the drawing set for dimensions.');
+    for (const c of pics.cabinet) w.image(c.img.url, 'JPEG', c.img.w, c.img.h, 105, c.view === 'inside' ? 'Back panel (door removed)' : 'Door, front view');
+  }
+
+  tableOfContents(w);
+  headerFooter(w, p, m);
   return doc.output('blob');
 }

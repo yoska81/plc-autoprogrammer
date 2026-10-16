@@ -151,7 +151,7 @@ export function CableScheduleSheet({ sheet }: { plan: DrawingPlan; sheet: Planne
                     <rect x={x} y={yy - rowH} width={colW} height={rowH} fill="#e8e8e8" stroke="none" />
                     <Line x1={x} y1={yy - rowH} x2={x + colW} y2={yy - rowH} w={LW} />
                     <Txt x={x + 1.5} y={yy - 1.4} size={2.6} mono bold>{c.tag}</Txt>
-                    <Txt x={x + 14} y={yy - 1.4} size={2.4} mono bold maxW={colW - 16}>{`${c.from} → ${c.to}${r.cont ? '  (CONTINUED)' : `   ${c.zone.toUpperCase()}`}`}</Txt>
+                    <Txt x={x + 14} y={yy - 1.4} size={2.4} mono bold maxW={colW - 16}>{`${c.from} TO ${c.to}${r.cont ? '  (CONTINUED)' : `   ${c.zone.toUpperCase()}`}`}</Txt>
                   </g>
                 );
               }

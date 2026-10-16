@@ -10,19 +10,29 @@
  *
  * Assembly tree:
  *   "<project> cabinet"
- *     ├─ enclosure shell (5 walls, open front)
+ *     ├─ enclosure (shell, front flange, back-panel studs, wall-mount feet when wall-mount)
  *     ├─ "<ENC> door assembly"  (origin on the hinge line: rotate about its Z axis to open)
- *     │    ├─ door plate with cutouts, door operators, HMI, disconnect handle
+ *     │    ├─ door (plate with cutouts, gasket, hinges, latches), operators, HMI, handle
  *     └─ "<ENC> back panel assembly" (origin = front face of the back panel, bottom-left corner)
- *          ├─ back panel, DIN rails, wire ducts, every back-panel component
+ *          ├─ back panel, DIN rails, wire ducts, every back-panel component, disconnect shaft
  *
- * Components are envelope boxes (width/height from the layout, depth from the catalog or a
- * per-category default); door operators are coaxial cylinders, the HMI a bezel + body.
+ * Each component is one part made of several solids (see shapes.ts): a recognisable model of
+ * its product family that fills exactly the layout footprint x depth envelope. Depth comes from
+ * the catalog or a per-category default. A shape that cannot be built for unusual sizes falls
+ * back to the plain envelope box.
  */
-import { panelLayout, type DoorItem, type DrawingContext, type PlacedItem } from '../derive';
+import { panelLayout, terminalPlan, type DoorItem, type DrawingContext, type PlacedItem } from '../derive';
 import type { CatalogCategory, CatalogPart } from '../types';
 import { getHmi } from '../../hmi/hmiCatalog';
-import { writeStepAssembly, type Rgb, type SolidGeom, type StepAssembly, type StepPart, type V3 } from './stepWriter';
+import {
+  solidBounds, unionBounds, validateSolid, writeStepAssembly,
+  type Bounds, type Rgb, type SolidGeom, type StepAssembly, type StepPart, type StepSolid, type V3,
+} from './stepWriter';
+import {
+  COL, breakerShape, bx, contactorShape, cylY, cylZ, disconnectShape, ductShape, fuseHolderShape, genericShape, groundBarShape,
+  handleShape, hmiShape, motorProtectorShape, operatorShape, overloadShape, plcShape, powerSupplyShape, px, railSlots, relayShape,
+  safetyRelayShape, terminalStripShape, transformerShape, vfdShape, type OperatorKind, type ShapeInput, type StripPiece,
+} from './shapes';
 
 export interface CabinetStepOptions {
   /** HMI to put on the door when the design itself has no HMI component. */
@@ -50,8 +60,12 @@ export interface CabinetStepBody {
   sizeEstimated: boolean;
   /** Depth not from catalog data (per-category default). */
   depthEstimated: boolean;
-  /** Display colour, #rrggbb. */
+  /** Display colour (main body), #rrggbb. */
   color: string;
+  /** Number of solids in the part (multi-body part). */
+  solids?: number;
+  /** Detailed shape could not be built for this size: the part is a plain envelope box. */
+  simplified?: boolean;
 }
 
 export interface CabinetStepSummary {
@@ -78,6 +92,10 @@ const RAIL_D = 7.5;        // TS35 x 7.5 DIN rail
 const HOLE_22 = 22.5 / 2;  // 22 mm operator mounting hole radius
 const HMI_BODY_D = 55;     // HMI depth behind the door when unknown
 const DEFAULT_DUCT_D = 76; // 3" wire duct
+const GASKET_T = 3;        // door gasket (the body flange sits behind it)
+const FLANGE_W = 20;       // enclosure front flange width
+/** Terminal slices above this count are modelled without screw/wire pockets and markers (file size). */
+const DETAILED_TERMINALS_MAX = 160;
 
 /** Realistic default depths (mm, from the mounting surface) when the catalog has none. */
 const DEFAULT_DEPTH: Partial<Record<CatalogCategory, number>> = {
@@ -85,20 +103,6 @@ const DEFAULT_DEPTH: Partial<Record<CatalogCategory, number>> = {
   powerSupply: 115, plc: 70, plcModule: 70, relay: 65, safetyRelay: 115, terminal: 45, groundBar: 20, other: 80,
 };
 
-const COLORS = {
-  enclosure: [0.84, 0.85, 0.83] as Rgb,     // RAL 7035 light grey
-  backPanel: [0.94, 0.94, 0.92] as Rgb,     // white subpanel
-  rail: [0.76, 0.77, 0.79] as Rgb,          // zinc plated
-  duct: [0.58, 0.59, 0.61] as Rgb,
-  component: [0.26, 0.27, 0.29] as Rgb,
-  plc: [0.82, 0.82, 0.80] as Rgb,
-  safety: [0.95, 0.78, 0.08] as Rgb,
-  terminal: [0.55, 0.56, 0.58] as Rgb,
-  ground: [0.72, 0.45, 0.20] as Rgb,
-  hmi: [0.16, 0.17, 0.19] as Rgb,
-  operator: [0.18, 0.18, 0.20] as Rgb,
-  handle: [0.12, 0.12, 0.13] as Rgb,
-};
 const LENS: Record<string, Rgb> = {
   RED: [0.80, 0.08, 0.08], GREEN: [0.10, 0.62, 0.20], AMBER: [0.95, 0.60, 0.05], YELLOW: [0.95, 0.85, 0.10],
   BLUE: [0.10, 0.30, 0.80], WHITE: [0.95, 0.95, 0.95], BLACK: [0.10, 0.10, 0.10], CLEAR: [0.85, 0.90, 0.95],
@@ -128,16 +132,10 @@ function catalogDepth(p: CatalogPart | undefined): number | undefined {
   return inch ? inch * 25.4 : undefined;
 }
 
-function componentColor(cat: CatalogCategory): Rgb {
-  if (cat === 'plc' || cat === 'plcModule') return COLORS.plc;
-  if (cat === 'safetyRelay') return COLORS.safety;
-  if (cat === 'terminal') return COLORS.terminal;
-  if (cat === 'groundBar') return COLORS.ground;
-  return COLORS.component;
-}
+const isTransformerPart = (p: CatalogPart | undefined) => p?.ratings?.kind === 'transformer' || /\btransformer\b/i.test(p?.description ?? '');
 
 function defaultDepth(cat: CatalogCategory, p: CatalogPart | undefined): number {
-  if (/transformer/i.test(p?.description ?? '')) return 100;
+  if (isTransformerPart(p)) return 100;
   return DEFAULT_DEPTH[cat] ?? 80;
 }
 
@@ -156,6 +154,52 @@ function ductDepth(p: CatalogPart | undefined): { d: number; estimated: boolean 
 const HAT: [number, number][] = [
   [7.5, 4], [7.5, 31], [1, 31], [1, 35], [0, 35], [0, 30], [6.5, 30], [6.5, 5], [0, 5], [0, 0], [1, 0], [1, 4],
 ];
+
+/** True when every solid is valid and (if given) the solids fill exactly the envelope 0..size. */
+function solidsOk(solids: StepSolid[], size?: V3): boolean {
+  if (!solids.length || solids.some((s) => validateSolid(s) !== null)) return false;
+  if (!size) return true;
+  const u = unionBounds(solids.map(solidBounds));
+  return [0, 1, 2].every((k) => Math.abs(u.min[k]) < 1e-6 && Math.abs(u.max[k] - size[k]) < 1e-6);
+}
+
+/** The detailed shape of a back-panel component, in its envelope frame (front at y = 0). */
+function componentSolids(cat: CatalogCategory, p: CatalogPart | undefined, s: ShapeInput, strip?: { pieces: StripPiece[]; detail: boolean }): StepSolid[] {
+  if (cat === 'terminal' && strip) return terminalStripShape(s, strip.pieces, strip.detail);
+  switch (cat) {
+    case 'breaker': return breakerShape(s);
+    case 'fuse': return fuseHolderShape(s);
+    case 'motorProtector': return motorProtectorShape(s);
+    case 'contactor': return contactorShape(s);
+    case 'overload': return overloadShape(s);
+    case 'powerSupply': return /\bclick\b/.test(s.text) ? plcShape(s, false) : powerSupplyShape(s);
+    case 'plc': return plcShape(s, true);
+    case 'plcModule': return plcShape(s, false);
+    case 'relay': return relayShape(s);
+    case 'safetyRelay': return safetyRelayShape(s);
+    case 'vfd': return vfdShape(s);
+    case 'disconnect': return disconnectShape(s);
+    case 'groundBar': return groundBarShape(s);
+    default: return isTransformerPart(p) ? transformerShape(s) : genericShape(s);
+  }
+}
+
+/** Main colour of a component category (summary / fallback box). */
+function componentColor(cat: CatalogCategory, p: CatalogPart | undefined): Rgb {
+  switch (cat) {
+    case 'plc': case 'plcModule': return COL.plc;
+    case 'safetyRelay': return COL.safety;
+    case 'terminal': return /\bblue\b/i.test(p?.description ?? '') ? COL.terminalBlue : COL.terminalGrey;
+    case 'groundBar': return /copper/i.test(p?.description ?? '') && !/\btin/i.test(p?.description ?? '') ? COL.copper : COL.tin;
+    case 'breaker': case 'fuse': return COL.moduleWhite;
+    case 'contactor': case 'overload': case 'powerSupply': return COL.lightGrey;
+    case 'vfd': case 'relay': return COL.charcoal;
+    default: return isTransformerPart(p) ? COL.laminations : COL.darkGrey;
+  }
+}
+
+const clampShaft = (v: number) => Math.max(4, Math.min(12, v));
+const offset = (b: Bounds, o: V3): Bounds => ({ min: [b.min[0] + o[0], b.min[1] + o[1], b.min[2] + o[2]], max: [b.max[0] + o[0], b.max[1] + o[1], b.max[2] + o[2]] });
 
 // ---------------------------------------------------------------------------
 // Model building
@@ -200,22 +244,49 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
   const zOf = (y: number, h: number) => H - y - h; // layout (top-down) -> cabinet Z of the bottom edge
 
   const named = (tag: string, pn: string) => uniqueName(`${tag} — ${pn || 'no part number'}`);
-  const push = (b: Omit<CabinetStepBody, 'color'>, color: Rgb) => bodies.push({ ...b, color: hex(color), min: b.min.map(r1) as [number, number, number], size: b.size.map(r1) as [number, number, number] });
-
-  // ---- Enclosure shell ---------------------------------------------------------------------------
-  const encName = named(encTag, encPn);
-  const shell: StepPart = {
-    kind: 'part', name: encName, description: encPart?.description ?? 'Enclosure (estimated size)', color: COLORS.enclosure,
-    geom: { type: 'tray', w: W, d: D, h: H, t: WALL }, at: [0, 0, 0],
+  /** Records a part in the summary; `origin` is the part's parent-assembly origin in the cabinet frame. */
+  const record = (part: StepPart, origin: V3, meta: Omit<CabinetStepBody, 'name' | 'description' | 'min' | 'size' | 'color' | 'solids'>, color: Rgb) => {
+    const b = offset(unionBounds(part.solids.map(solidBounds)), [origin[0] + part.at[0], origin[1] + part.at[1], origin[2] + part.at[2]]);
+    bodies.push({
+      ...meta, name: part.name, description: part.description, color: hex(color), solids: part.solids.length,
+      min: b.min.map(r1) as [number, number, number], size: [0, 1, 2].map((k) => r1(b.max[k] - b.min[k])) as [number, number, number],
+    });
   };
-  push({ name: encName, tag: encTag, partNumber: encPn, description: shell.description, kind: 'enclosure', category: 'enclosure', assembly: 'cabinet', min: [0, 0, 0], size: [W, D, H], sizeEstimated: L.enclosure.estimated, depthEstimated }, COLORS.enclosure);
+
+  // ---- Enclosure (shell, front flange, back-panel studs, wall-mount feet) -----------------------
+  const encName = named(encTag, encPn);
+  const encSolids: StepSolid[] = [{ name: 'enclosure body', color: COL.enclosure, geom: { type: 'tray', w: W, d: D, h: H, t: WALL } }];
+  const flange: StepSolid = {
+    name: 'front flange', color: COL.enclosure, at: [WALL, GASKET_T, WALL],
+    geom: { type: 'plate', w: W - 2 * WALL, h: H - 2 * WALL, t: WALL, holes: [{ kind: 'rect', x0: FLANGE_W - WALL, z0: FLANGE_W - WALL, x1: W - WALL - FLANGE_W, z1: H - WALL - FLANGE_W }] },
+  };
+  if (W > 3 * FLANGE_W && H > 3 * FLANGE_W && D > GASKET_T + 3 * WALL && solidsOk([flange])) encSolids.push(flange);
+  const bpZ0 = zOf(bp.y, bp.h);
+  if (bp.w > 60 && bp.h > 60) {
+    for (const [sx, sz] of [[12, 12], [bp.w - 12, 12], [12, bp.h - 12], [bp.w - 12, bp.h - 12]]) {
+      encSolids.push(cylY('back panel stud', COL.zinc, bp.x + sx, bpZ0 + sz, [[8, yPanel + PANEL_T, D - WALL]]));
+    }
+  }
+  const wallMount = /wall[- ]?mount/i.test(encPart?.description ?? '') || /wall/i.test(String(encPart?.ratings?.mounting ?? ''));
+  if (wallMount && W >= 150) {
+    for (const fx of [15, W - 55]) for (const top of [true, false]) {
+      encSolids.push({
+        name: 'mounting foot', color: COL.enclosure, at: [fx, D - 3, top ? H : -25],
+        geom: { type: 'plate', w: 40, h: 25, t: 3, holes: [{ kind: 'rect', x0: 16, z0: top ? 7 : 6, x1: 24, z1: top ? 19 : 18 }] },
+      });
+    }
+  }
+  const shell: StepPart = { kind: 'part', name: encName, description: encPart?.description ?? 'Enclosure (estimated size)', solids: encSolids, at: [0, 0, 0] };
+  record(shell, [0, 0, 0], { tag: encTag, partNumber: encPn, kind: 'enclosure', category: 'enclosure', assembly: 'cabinet', sizeEstimated: L.enclosure.estimated, depthEstimated }, COL.enclosure);
 
   // ---- Back panel assembly -----------------------------------------------------------------------
-  const bpOrigin: V3 = [bp.x, yPanel, zOf(bp.y, bp.h)];
+  const bpOrigin: V3 = [bp.x, yPanel, bpZ0];
   const bpKids: StepPart[] = [];
-  const addBp = (p: Omit<StepPart, 'kind'>, meta: Omit<CabinetStepBody, 'name' | 'description' | 'min' | 'size' | 'assembly' | 'color'>, size: V3) => {
-    bpKids.push({ kind: 'part', ...p });
-    push({ ...meta, name: p.name, description: p.description, assembly: 'backPanel', min: [bpOrigin[0] + p.at[0], bpOrigin[1] + p.at[1], bpOrigin[2] + p.at[2]], size: [...size] }, p.color);
+  const addBp = (p: Omit<StepPart, 'kind'>, meta: Omit<CabinetStepBody, 'name' | 'description' | 'min' | 'size' | 'assembly' | 'color' | 'solids'>, color: Rgb) => {
+    const part: StepPart = { kind: 'part', ...p };
+    bpKids.push(part);
+    record(part, bpOrigin, { ...meta, assembly: 'backPanel' }, color);
+    return part;
   };
   /** Layout rect -> back-panel-assembly local X/Z of the bottom-left corner. */
   const local = (x: number, y: number, h: number): [number, number] => [x - bp.x, bp.y + bp.h - y - h];
@@ -225,20 +296,26 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
   if (bp.w > W - 2 * WALL || bp.h > H - 2 * WALL) warnings.push(`Back panel ${Math.round(bp.w)} x ${Math.round(bp.h)} mm does not fit inside the enclosure walls.`);
   addBp({
     name: named(bpTag, bpPn), description: partOf(bp.partNumber ?? '')?.description ?? `Back panel for ${encPn || 'enclosure'}${bp.estimated ? ' (estimated size)' : ''}`,
-    color: COLORS.backPanel, geom: { type: 'box', w: bp.w, d: PANEL_T, h: bp.h }, at: [0, 0, 0],
-  }, { tag: bpTag, partNumber: bpPn, kind: 'backPanel', sizeEstimated: bp.estimated, depthEstimated: false }, [bp.w, PANEL_T, bp.h]);
+    solids: [bx('back panel', COL.backPanel, 0, 0, 0, bp.w, PANEL_T, bp.h)], at: [0, 0, 0],
+  }, { tag: bpTag, partNumber: bpPn, kind: 'backPanel', sizeEstimated: bp.estimated, depthEstimated: false }, COL.backPanel);
 
   const railComp = ctx.design.components.find((c) => partOf(c.partNumber)?.category === 'dinRail');
+  const railDesc = partOf(railComp?.partNumber ?? '')?.description ?? '';
+  const slotted = !/\b(solid|unslotted|un-slotted)\b/i.test(railDesc);
   L.rails.forEach((r, i) => {
     const [lx, lz] = local(r.x, r.y, r.h);
+    const plain = [px('rail', COL.zinc, 0, r.w, HAT)];
+    const withSlots = slotted ? [px('rail', COL.zinc, 0, r.w, HAT, railSlots(r.w))] : plain;
     addBp({
-      name: named(`DIN RAIL ${i + 1}`, railComp?.partNumber ?? ''), description: partOf(railComp?.partNumber ?? '')?.description ?? '35 mm DIN rail (TS35 x 7.5)',
-      color: COLORS.rail, geom: { type: 'extrudeX', length: r.w, poly: HAT }, at: [lx, -RAIL_D, lz],
-    }, { tag: `DIN RAIL ${i + 1}`, partNumber: railComp?.partNumber ?? '', kind: 'dinRail', category: 'dinRail', sizeEstimated: false, depthEstimated: false }, [r.w, RAIL_D, 35]);
+      name: named(`DIN RAIL ${i + 1}`, railComp?.partNumber ?? ''), description: railDesc || '35 mm DIN rail (TS35 x 7.5)',
+      solids: solidsOk(withSlots) ? withSlots : plain, at: [lx, -RAIL_D, lz],
+    }, { tag: `DIN RAIL ${i + 1}`, partNumber: railComp?.partNumber ?? '', kind: 'dinRail', category: 'dinRail', sizeEstimated: false, depthEstimated: false }, COL.zinc);
   });
 
   const ductComp = ctx.design.components.find((c) => partOf(c.partNumber)?.category === 'wireDuct');
-  const dd = ductDepth(partOf(ductComp?.partNumber ?? ''));
+  const ductPart = partOf(ductComp?.partNumber ?? '');
+  const ductColor = /\bwhite\b/i.test(ductPart?.description ?? '') ? COL.backPanel : COL.duct;
+  const dd = ductDepth(ductPart);
   // The 2D layout draws vertical ducts through the horizontal runs (T-junctions); in 3D split them
   // into segments between the horizontal ducts so no two bodies overlap.
   const hDucts = L.ducts.filter((r) => r.orientation === 'h');
@@ -254,11 +331,35 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
   runs.forEach((r, i) => {
     if (r.w <= 0 || r.h <= 0) return;
     const [lx, lz] = local(r.x, r.y, r.h);
+    let solids = ductShape(r.w, dd.d, r.h, r.orientation === 'h', ductColor);
+    const simplified = !solidsOk(solids, [r.w, dd.d, r.h]);
+    if (simplified) solids = [bx('wire duct', ductColor, 0, 0, 0, r.w, dd.d, r.h)];
     addBp({
-      name: named(`WIRE DUCT ${i + 1}`, ductComp?.partNumber ?? ''), description: partOf(ductComp?.partNumber ?? '')?.description ?? 'Slotted wire duct with cover',
-      color: COLORS.duct, geom: { type: 'box', w: r.w, d: dd.d, h: r.h }, at: [lx, -dd.d, lz],
-    }, { tag: `WIRE DUCT ${i + 1}`, partNumber: ductComp?.partNumber ?? '', kind: 'wireDuct', category: 'wireDuct', sizeEstimated: !ductComp, depthEstimated: dd.estimated }, [r.w, dd.d, r.h]);
+      name: named(`WIRE DUCT ${i + 1}`, ductComp?.partNumber ?? ''), description: ductPart?.description ?? 'Slotted wire duct with cover',
+      solids, at: [lx, -dd.d, lz],
+    }, { tag: `WIRE DUCT ${i + 1}`, partNumber: ductComp?.partNumber ?? '', kind: 'wireDuct', category: 'wireDuct', sizeEstimated: !ductComp, depthEstimated: dd.estimated, simplified: simplified || undefined }, ductColor);
   });
+
+  // Terminal strips: slices from the terminal plan (ground terminals green-yellow).
+  const strips = new Map(terminalPlan(ctx).map((s) => [s.tag, s] as const));
+  const totalTerminals = L.items.filter((i) => i.category === 'terminal').reduce((a, it) => a + (strips.get(it.tag)?.terminals.length ?? 0), 0);
+  const stripPieces = (it: PlacedItem, p: CatalogPart | undefined): StripPiece[] | null => {
+    const s = strips.get(it.tag);
+    const n = s?.terminals.length ?? parseInt(/\((\d+)\)/.exec(it.label)?.[1] ?? '0', 10);
+    if (!(n > 0)) return null;
+    const plates = s?.endPlates ?? 0, stops = s?.endStops ?? 0;
+    const tw = (it.w - plates * 1.5 - stops * 9) / n;
+    if (!(tw >= 2 && tw <= 20)) return null;
+    const base = componentColor('terminal', p);
+    const kinds = s?.terminals.map((t) => t.kind) ?? Array.from({ length: n }, () => 'feed' as const);
+    const left = Math.ceil(stops / 2);
+    return [
+      ...Array.from({ length: left }, () => ({ kind: 'endStop' as const, w: 9 })),
+      ...kinds.map((k) => ({ kind: 'terminal' as const, w: tw, ground: k === 'ground', color: k === 'ground' ? COL.groundGreen : base })),
+      ...Array.from({ length: plates }, () => ({ kind: 'endPlate' as const, w: 1.5, color: base })),
+      ...Array.from({ length: stops - left }, () => ({ kind: 'endStop' as const, w: 9 })),
+    ];
+  };
 
   const placeItem = (it: PlacedItem) => {
     const p = partOf(it.partNumber);
@@ -270,10 +371,19 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
     const tag = it.category === 'terminal' ? it.tag : it.label;
     let desc = p?.description ?? compByTag.get(it.tag)?.function ?? it.category;
     if (it.category === 'terminal') desc = `${it.label.replace(/^\S+\s*/, '').replace(/[()]/g, '')} terminals — ${desc}`;
-    addBp({
-      name: named(tag, it.partNumber), description: desc, color: componentColor(it.category),
-      geom: { type: 'box', w: it.w, d: depth, h: it.h }, at: [lx, back - depth, lz],
-    }, { tag, partNumber: it.partNumber, kind: 'component', category: it.category, sizeEstimated: it.estimated, depthEstimated: cd === undefined }, [it.w, depth, it.h]);
+    const color = componentColor(it.category, p);
+    const input: ShapeInput = { w: it.w, d: depth, h: it.h, text: `${p?.description ?? ''} ${compByTag.get(it.tag)?.function ?? ''}`.toLowerCase(), ratings: p?.ratings ?? {} };
+    let solids: StepSolid[] = [];
+    try {
+      const pieces = it.category === 'terminal' ? stripPieces(it, p) : null;
+      if (it.category !== 'terminal' || pieces) solids = componentSolids(it.category, p, input, pieces ? { pieces, detail: totalTerminals <= DETAILED_TERMINALS_MAX } : undefined);
+    } catch {
+      solids = [];
+    }
+    const simplified = !solidsOk(solids, [it.w, depth, it.h]);
+    if (simplified) solids = [bx('housing', color, 0, 0, 0, it.w, depth, it.h)];
+    addBp({ name: named(tag, it.partNumber), description: desc, solids, at: [lx, back - depth, lz] },
+      { tag, partNumber: it.partNumber, kind: 'component', category: it.category, sizeEstimated: it.estimated, depthEstimated: cd === undefined, simplified: simplified || undefined }, color);
     if (yPanel + back - depth < 0) warnings.push(`${tag} (${Math.round(depth)} mm deep) sticks out of the enclosure front — needs a deeper enclosure.`);
   };
   for (const it of L.items) for (const s of it.sub ?? [it]) placeItem(s);
@@ -309,10 +419,13 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
       else { holes.push(h); holeBoxes.push({ ...b, tag }); }
       return true;
     };
-    const pushDoor = (p: Omit<StepPart, 'kind'>, meta: Omit<CabinetStepBody, 'name' | 'description' | 'min' | 'size' | 'assembly' | 'color'>, min: V3, size: V3) => {
-      doorKids.push({ kind: 'part', ...p });
-      push({ ...meta, name: p.name, description: p.description, assembly: 'door', min: [...min], size: [...size] }, p.color);
+    const pushDoor = (p: Omit<StepPart, 'kind'>, meta: Omit<CabinetStepBody, 'name' | 'description' | 'min' | 'size' | 'assembly' | 'color' | 'solids'>, color: Rgb) => {
+      const part: StepPart = { kind: 'part', ...p };
+      doorKids.push(part);
+      record(part, [0, 0, 0], { ...meta, assembly: 'door' }, color);
     };
+    /** Front-view footprints of the door devices (for placing the latches clear of them). */
+    const doorFoot: { x0: number; z0: number; x1: number; z1: number }[] = [];
 
     for (const d of doorItems) {
       const cz = H - d.cy;
@@ -322,54 +435,94 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
         const m = getHmi(d.partNumber);
         const bw = m?.bezelMm?.width ?? d.w, bh = m?.bezelMm?.height ?? d.h;
         const cw = m?.cutoutMm?.width ?? Math.max(20, bw - 16), ch = m?.cutoutMm?.height ?? Math.max(20, bh - 16);
-        const front = 6;
         if (!addHole(d.tag, d.partNumber, { kind: 'rect', x0: d.cx - cw / 2, z0: cz - ch / 2, x1: d.cx + cw / 2, z1: cz + ch / 2 })) continue;
-        pushDoor({
-          name: named(d.tag, d.partNumber), description: m?.description ?? desc, color: COLORS.hmi,
-          geom: { type: 'stack', profile: 'rect', sections: [{ w: bw, h: bh, y0: -front, y1: 0 }, { w: cw - 1, h: ch - 1, y0: 0, y1: DOOR_T + HMI_BODY_D }] },
-          at: [d.cx, -DOOR_T, cz],
-        }, { tag: d.tag, partNumber: d.partNumber, kind: 'hmi', category: 'hmi', sizeEstimated: !m?.bezelMm, depthEstimated: true },
-        [d.cx - bw / 2, -DOOR_T - front, cz - bh / 2], [bw, front + DOOR_T + HMI_BODY_D, bh]);
+        let solids = hmiShape(bw, bh, cw, ch, 6, HMI_BODY_D, DOOR_T);
+        if (!solidsOk(solids)) solids = [{ name: 'HMI', color: COL.charcoal, geom: { type: 'stack', profile: 'rect', sections: [{ w: bw, h: bh, y0: -6, y1: 0 }, { w: cw - 1, h: ch - 1, y0: 0, y1: DOOR_T + HMI_BODY_D }] } }];
+        pushDoor({ name: named(d.tag, d.partNumber), description: m?.description ?? desc, solids, at: [d.cx, -DOOR_T, cz] },
+          { tag: d.tag, partNumber: d.partNumber, kind: 'hmi', category: 'hmi', sizeEstimated: !m?.bezelMm, depthEstimated: true }, COL.charcoal);
+        doorFoot.push({ x0: d.cx - bw / 2, z0: cz - bh / 2, x1: d.cx + bw / 2, z1: cz + bh / 2 });
         continue;
       }
-      // 22 mm operator: front bezel / mushroom, stem through the Ø22.5 hole, contact-block body behind.
-      const estop = d.kind === 'estop';
-      const sections = estop
-        ? [{ w: 40, h: 0, y0: -32, y1: -20 }, { w: 30, h: 0, y0: -20, y1: 0 }, { w: 22, h: 0, y0: 0, y1: DOOR_T }, { w: 30, h: 0, y0: DOOR_T, y1: DOOR_T + 45 }]
-        : [{ w: Math.max(22.6, Math.min(d.w, 40)), h: 0, y0: -12, y1: 0 }, { w: 22, h: 0, y0: 0, y1: DOOR_T }, { w: 30, h: 0, y0: DOOR_T, y1: DOOR_T + 40 }];
+      // 22 mm operator: bezel and operator in front, stem through the Ø22.5 hole, latch + contact block behind.
       if (!addHole(d.tag, d.partNumber, { kind: 'circle', cx: d.cx, cz, r: HOLE_22 })) continue;
-      const col = LENS[d.color] ?? (estop ? LENS.RED : COLORS.operator);
-      const maxD = Math.max(...sections.map((s) => s.w));
-      const y0 = sections[0].y0, y1 = sections[sections.length - 1].y1;
-      pushDoor({
-        name: named(d.tag, d.partNumber), description: desc, color: col,
-        geom: { type: 'stack', profile: 'circle', sections }, at: [d.cx, -DOOR_T, cz],
-      }, { tag: d.tag, partNumber: d.partNumber, kind: 'doorDevice', category: p?.category, sizeEstimated: !p?.widthMm, depthEstimated: true },
-      [d.cx - maxD / 2, -DOOR_T + y0, cz - maxD / 2], [maxD, y1 - y0, maxD]);
+      const estop = d.kind === 'estop';
+      const col = LENS[d.color] ?? (estop ? LENS.RED : COL.charcoal);
+      let solids = operatorShape(d.kind as OperatorKind, col, DOOR_T);
+      if (!solidsOk(solids)) solids = [cylY('operator', col, 0, 0, [[30, -12, 0], [22, 0, DOOR_T], [30, DOOR_T, DOOR_T + 40]])];
+      pushDoor({ name: named(d.tag, d.partNumber), description: desc, solids, at: [d.cx, -DOOR_T, cz] },
+        { tag: d.tag, partNumber: d.partNumber, kind: 'doorDevice', category: p?.category, sizeEstimated: !p?.widthMm, depthEstimated: true }, col);
+      const rr = estop ? 28 : 15;
+      doorFoot.push({ x0: d.cx - rr, z0: cz - rr, x1: d.cx + rr, z1: cz + rr });
     }
 
-    // Through-door disconnect handle, centred on the disconnect's shaft.
+    // Through-door disconnect handle, centred on the disconnect's shaft, and the shaft itself.
     if (L.door.handle) {
       const ds = L.items.find((i) => i.category === 'disconnect');
       if (ds) {
-        const hw = 60, hd = 30, cx = ds.x + ds.w / 2, cz = H - (ds.y + ds.h / 2);
+        const cx = ds.x + ds.w / 2, cz = H - (ds.y + ds.h / 2);
         const hp = partOf(L.door.handle.partNumber);
         const htag = L.door.handle.tag === ds.tag ? `${ds.tag} HANDLE` : L.door.handle.tag;
-        pushDoor({
-          name: named(htag, L.door.handle.partNumber), description: hp && hp.category !== 'disconnect' ? hp.description : 'Disconnect through-door operating handle',
-          color: COLORS.handle, geom: { type: 'box', w: hw, d: hd, h: hw }, at: [cx - hw / 2, -DOOR_T - hd, cz - hw / 2],
-        }, { tag: htag, partNumber: L.door.handle.partNumber, kind: 'handle', category: hp?.category, sizeEstimated: true, depthEstimated: true },
-        [cx - hw / 2, -DOOR_T - hd, cz - hw / 2], [hw, hd, hw]);
+        const red = /red|yellow/i.test(hp?.description ?? '');
+        if (addHole(htag, L.door.handle.partNumber, { kind: 'circle', cx, cz, r: HOLE_22 })) {
+          pushDoor({
+            name: named(htag, L.door.handle.partNumber), description: hp && hp.category !== 'disconnect' ? hp.description : hp?.description ?? 'Disconnect through-door operating handle',
+            solids: handleShape(DOOR_T, red ? COL.redButton : COL.black), at: [cx, -DOOR_T, cz],
+          }, { tag: htag, partNumber: L.door.handle.partNumber, kind: 'handle', category: hp?.category, sizeEstimated: true, depthEstimated: true }, red ? COL.redButton : COL.black);
+          doorFoot.push({ x0: cx - 30, z0: cz - 30, x1: cx + 30, z1: cz + 30 });
+          // Shaft from the switch front to just behind the handle coupling.
+          const dsDepth = itemDepth(ds);
+          const yFront = yPanel - RAIL_D - dsDepth; // cabinet Y of the switch front
+          const y0 = DOOR_T + 14 + 2;
+          const shaftComp = ctx.design.components.find((c) => partOf(c.partNumber)?.category === 'disconnect' && /\bshaft\b/i.test(partOf(c.partNumber)?.description ?? '') && !/\bswitch\b/i.test(partOf(c.partNumber)?.description ?? ''));
+          const sp = partOf(shaftComp?.partNumber ?? '');
+          const sqm = /\b(\d+(?:\.\d+)?)\s*x\s*\d+(?:\.\d+)?\s*mm\b/i.exec(sp?.description ?? '');
+          const sq = sqm ? clampShaft(parseFloat(sqm[1])) : 6;
+          if (yFront - y0 > 5) {
+            const [lx, lz] = local(cx, ds.y + ds.h / 2, 0);
+            addBp({
+              name: named(shaftComp?.tag ?? `${ds.tag} SHAFT`, shaftComp?.partNumber ?? ''), description: sp?.description ?? 'Disconnect extension shaft (cut to length)',
+              solids: [bx('shaft', COL.zinc, -sq / 2, 0, -sq / 2, sq / 2, yFront - y0, sq / 2)], at: [lx, y0 - yPanel, lz],
+            }, { tag: shaftComp?.tag ?? `${ds.tag} SHAFT`, partNumber: shaftComp?.partNumber ?? '', kind: 'component', category: 'disconnect', sizeEstimated: !sp, depthEstimated: false }, COL.zinc);
+          }
+        }
       } else notModelled.push({ tag: L.door.handle.tag, partNumber: L.door.handle.partNumber, reason: 'No disconnect on the back panel to align the handle with' });
     }
     if (doorItems.some((d) => d.cy + d.h / 2 > H - 15)) warnings.push('Door devices run past the bottom of the door — check the door layout.');
 
+    // Door: plate with cutouts, gasket, hinges on the left, quarter-turn latches on the right.
     const doorName = named(`${encTag}-DOOR`, encPn);
-    const door: StepPart = {
-      kind: 'part', name: doorName, description: `Door${encPart ? ` of ${encPart.description}` : ''} — ${holes.length} cutout(s)`, color: COLORS.enclosure,
-      geom: { type: 'plate', w: W, h: H, t: DOOR_T, holes }, at: [0, -DOOR_T, 0],
+    const doorSolids: StepSolid[] = [{ name: 'door', color: COL.enclosure, at: [0, -DOOR_T, 0], geom: { type: 'plate', w: W, h: H, t: DOOR_T, holes } }];
+    const gasket: StepSolid = {
+      name: 'door gasket', color: COL.gasket, at: [3, 0, 3],
+      geom: { type: 'plate', w: W - 6, h: H - 6, t: GASKET_T, holes: [{ kind: 'rect', x0: 8, z0: 8, x1: W - 14, z1: H - 14 }] },
     };
-    bodies.splice(1, 0, { name: doorName, tag: `${encTag}-DOOR`, partNumber: encPn, description: door.description, kind: 'door', category: 'enclosure', assembly: 'door', min: [0, -DOOR_T, 0], size: [r1(W), DOOR_T, r1(H)], sizeEstimated: L.enclosure.estimated, depthEstimated: false, color: hex(COLORS.enclosure) });
+    if (W > 60 && H > 60 && solidsOk([gasket])) doorSolids.push(gasket);
+    if (H > 150 && W > 100) {
+      const hl = Math.min(80, Math.max(30, H * 0.1));
+      const zs = H > 1000 ? [H * 0.1, (H - hl) / 2, H * 0.9 - hl] : [H * 0.1, H * 0.9 - hl];
+      for (const z0 of zs) {
+        doorSolids.push(cylZ('hinge knuckle', COL.charcoal, 4, -DOOR_T - 4, z0, z0 + hl, 8));
+        doorSolids.push(bx('hinge leaf', COL.charcoal, 8.6, -DOOR_T - 2, z0 + 4, 30, -DOOR_T, z0 + hl - 4));
+      }
+      const lx = W - 22;
+      const free = (z: number) => doorFoot.every((f) => lx + 13 < f.x0 || lx - 13 > f.x1 || z + 13 < f.z0 || z - 13 > f.z1);
+      const want = H > 1000 ? 2 : 1;
+      const latchZ: number[] = [];
+      for (const f of [0.5, 0.3, 0.7, 0.2, 0.8, 0.12, 0.88]) {
+        const z = H * f;
+        if (latchZ.length < want && free(z) && latchZ.every((q) => Math.abs(q - z) > 60)) latchZ.push(z);
+      }
+      for (const z of latchZ) {
+        doorSolids.push(cylY('quarter-turn latch', COL.charcoal, lx, z, [[14, -DOOR_T - 8, -DOOR_T - 4], [24, -DOOR_T - 4, -DOOR_T]]));
+        doorSolids.push(bx('latch slot bar', COL.black, lx - 5, -DOOR_T - 9, z - 1.5, lx + 5, -DOOR_T - 8, z + 1.5));
+      }
+    }
+    const door: StepPart = {
+      kind: 'part', name: doorName, description: `Door${encPart ? ` of ${encPart.description}` : ''} — ${holes.length} cutout(s)`, solids: doorSolids, at: [0, 0, 0],
+    };
+    const doorBody = { tag: `${encTag}-DOOR`, partNumber: encPn, kind: 'door' as const, category: 'enclosure' as const, assembly: 'door' as const, sizeEstimated: L.enclosure.estimated, depthEstimated: false };
+    record(door, [0, 0, 0], doorBody, COL.enclosure);
+    bodies.splice(1, 0, bodies.pop()!);
     children.push({ kind: 'assembly', name: uniqueName(`${encTag} door assembly`), description: 'Door with operator devices (closed; hinge line on the left edge along Z)', at: [0, 0, 0], children: [door, ...doorKids] });
   }
 
@@ -408,7 +561,7 @@ export function cabinetStep(ctx: DrawingContext, opts?: CabinetStepOptions): str
   const { root } = build(ctx, opts);
   return writeStepAssembly(root, {
     fileName: `${ctx.projectName || 'project'} cabinet.stp`,
-    description: `${ctx.projectName || 'Project'} control cabinet 3D model (envelope geometry, mm)`,
+    description: `${ctx.projectName || 'Project'} control cabinet 3D model (parametric component shapes, mm)`,
     timeStamp: ctx.design.generatedAt || '2000-01-01T00:00:00',
     author: '',
     organization: '',
