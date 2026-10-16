@@ -246,6 +246,8 @@ function sse(model, text) {
   log('Labels CSV rows:', fs.readFileSync(await dl('CSV'), 'utf8').trim().split('\n').length - 1);
   const lx = await JSZip.loadAsync(fs.readFileSync(await dl('Excel')));
   log('Labels Excel sheets:', [...(await lx.file('xl/workbook.xml').async('string')).matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
+  const lxSheet = await lx.file('xl/worksheets/sheet1.xml').async('string');
+  if (/<c r="D2"[^>]*t="s"/.test(lxSheet) || !/<c r="D2"[^>]*>\s*<v>\d+<\/v>/.test(lxSheet)) throw new Error('labels Excel Copies is not a number');
   const howTo = await lx.file('xl/sharedStrings.xml').async('string');
   if (!howTo.includes('Excel Import') || !howTo.includes('Use first row as header')) throw new Error('Brady Workstation steps missing from the labels Excel');
   // Desktop app: "Print labels" goes to window.isaDesktop.print with the label page size at actual scale
