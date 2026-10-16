@@ -2159,7 +2159,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     manufacturer: 'AutomationDirect',
     url: 'https://www.automationdirect.com/adc/shopping/catalog/sensors_-z-_encoders/photoelectric_sensors/diffuse/c18d-0p-1a',
     mount: 'field',
-    ratings: { type: 'photoelectric diffuse', output: 'PNP', sensingMm: 600, mode: 'light-on/dark-on (complementary)', diameterMm: 18, connection: 'pigtail' },
+    ratings: { volts: '10-36VDC', type: 'photoelectric diffuse', output: 'PNP', sensingMm: 600, mode: 'light-on/dark-on (complementary)', diameterMm: 18, connection: 'pigtail' },
     verified: true,
   },
   {
@@ -2169,7 +2169,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     manufacturer: 'AutomationDirect',
     url: 'https://www.automationdirect.com/adc/shopping/catalog/sensors_-z-_encoders/photoelectric_sensors/diffuse/c18d-0n-1a',
     mount: 'field',
-    ratings: { type: 'photoelectric diffuse', output: 'NPN', sensingMm: 600, mode: 'light-on/dark-on (complementary)', diameterMm: 18, connection: 'pigtail' },
+    ratings: { volts: '10-36VDC', type: 'photoelectric diffuse', output: 'NPN', sensingMm: 600, mode: 'light-on/dark-on (complementary)', diameterMm: 18, connection: 'pigtail' },
     verified: true,
   },
   {

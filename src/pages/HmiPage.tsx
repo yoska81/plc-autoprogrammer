@@ -11,7 +11,7 @@ import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
 import ResizablePane from '../components/ResizablePane';
 import { Spinner, ReasoningPanel } from '../components/common';
-import { type AccessLevel, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
+import { type AccessLevel, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiLook, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
 import ScreenEditor from '../hmi/ScreenEditor';
 import HmiEditorBar from '../hmi/HmiEditorBar';
 import { alignElements, createElement, createImageElement, deleteElements, distributeElements, duplicateElements, restack, syncHandTags, type Align } from '../hmi/editor';
@@ -19,7 +19,7 @@ import { loadPicture, panelImage } from '../hmi/background';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
 import { checkDesign, layoutBands, MIN_TOUCH, type LayoutIssue } from '../hmi/layout';
-import { LEVEL_LABEL } from '../hmi/theme';
+import { LEVEL_LABEL, LOOK_LABEL, lookOf } from '../hmi/theme';
 import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
@@ -417,7 +417,8 @@ export default function HmiPage() {
         hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: CLICK_HMI_COMMUNICATION,
         spec: fp.spec, io, addresses, profile, cpu,
       });
-      hmi.setDesign(r.design, r.explanation);
+      // Keep the look the user picked (Siemens or dark console) across a regeneration.
+      hmi.setDesign(design?.look ? { ...r.design, look: design.look } : r.design, r.explanation);
       setReasoning(r.reasoning);
       setScreenId(r.design.screens[0]?.id ?? null);
       markGenerated('hmi', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, hmiFp: hmiFingerprint(r.design) });
@@ -620,6 +621,13 @@ export default function HmiPage() {
                 </section>
                 <section className="bg-white rounded-lg border border-gray-200 p-4">
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Panel</h3>
+                  <label className="flex items-center justify-between gap-3 mb-3 text-xs">
+                    <span className="text-gray-500">Look</span>
+                    <select aria-label="HMI look" value={lookOf(design)} onChange={(e) => commit({ ...design, look: e.target.value as HmiLook })}
+                      className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 bg-white text-gray-800">
+                      {(['dark', 'siemens'] as HmiLook[]).map((l) => <option key={l} value={l}>{LOOK_LABEL[l]}</option>)}
+                    </select>
+                  </label>
                   <PanelSpecs model={model} design={design} />
                 </section>
               </aside>
