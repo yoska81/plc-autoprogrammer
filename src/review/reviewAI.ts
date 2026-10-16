@@ -3,6 +3,7 @@
  * whole project (plus the deterministic findings) and raises what a checker
  * would raise. Structured output; findings link back to the app's pages.
  */
+import { byRegion, regionSpec } from '../standards/regions';
 import type { ProjectSnapshot } from '../deliverables/collect';
 import { billOfMaterials, wireNumbers } from '../electrical/derive';
 import { calculations } from '../deliverables/docs/calcs';
@@ -52,7 +53,7 @@ Look for, in this order of importance:
 3. Failure modes: a sensor that fails ON or OFF, loss of air, loss of power and the restart afterwards, a motor overload trip, communications loss to the HMI — is each detected, alarmed and safe?
 4. Missing alarms and operator information: faults without an alarm, alarms without a reset, unclear alarm texts.
 5. Maintainability: manual mode for maintenance, diagnostics, documentation, spare I/O, labelling.
-6. Code compliance for the region given (US: NFPA 79, UL 508A, NEC; Canada: CSA C22.2 No. 14, CEC): disconnect, branch protection, SCCR, wire sizing, enclosure rating.
+6. Code compliance for the region given (US: NFPA 79, UL 508A, NEC; Canada: CSA C22.2 No. 14, CEC; Europe / Israel / other IEC countries: IEC 60204-1, IEC 61439, EN ISO 13849-1 or IEC 62061, CE/UKCA where it applies): disconnect / main switch, branch protection, SCCR or Icc, wire sizing (AWG or mm²) and colours, enclosure rating (NEMA or IP).
 
 Rules:
 - Base every finding on the project data you are given. Quote the address, rung, device tag or spec sentence it is about. Do not invent equipment that is not in the data.
@@ -65,7 +66,7 @@ Rules:
 /** Compact, readable text of the whole project for the reviewer. */
 export function projectSummary(p: ProjectSnapshot, deterministic: Finding[]): string {
   const parts: string[] = [];
-  parts.push(`# Project: ${p.projectName}\nRegion: ${p.info.region === 'Canada' ? 'Canada (CSA C22.2 No. 14, CEC)' : 'US (NFPA 79, UL 508A, NEC)'} · Standards: ${(p.info.standards ?? []).join(', ') || '—'}`);
+  parts.push(`# Project: ${p.projectName}\nRegion: ${byRegion(p.info.region, 'US (NFPA 79, UL 508A, NEC)', 'Canada (CSA C22.2 No. 14, CEC)', `${regionSpec(p.info.region).label} (${regionSpec(p.info.region).codes.short})`)} · Standards: ${(p.info.standards ?? []).join(', ') || '—'}`);
   parts.push(`# Specification\n${specToText(p.spec) || '(empty)'}`);
   const wiring = new Map((p.electrical?.ioWiring ?? []).map((w) => [w.address.toUpperCase(), w]));
   parts.push(`# I/O list (address, type, category, description, field device)\n${p.io.map((pt) => {

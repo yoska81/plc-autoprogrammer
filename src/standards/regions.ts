@@ -197,7 +197,7 @@ export function iecColor(nfpa: string, fn = ''): string {
   if (c === 'GN/YE' || c === 'GN') return 'GN/YE';
   // NFPA white is the grounded conductor: the supply neutral (IEC light blue), or the earthed side of
   // the control transformer secondary, which is part of the AC control circuit (IEC red).
-  if (c === 'WH' || c === 'WH/BK') return /secondary/i.test(fn) ? 'RD' : 'BU(LT)';
+  if (c === 'WH' || c === 'WH/BK') return /secondary|120VAC/i.test(fn) ? 'RD' : 'BU(LT)';
   if (c === 'RD') return 'RD';
   if (c === 'BU' || c === 'WH/BU') return 'BU';
   if (c === 'OR' || c === 'YE') return 'OG';
@@ -258,3 +258,8 @@ export function mcbFor(amps: number, factor = 1.25): number {
 
 /** IEC enclosure IP rating closest to a NEMA type (IEC 60529; NEMA→IP is one-way, approximate). */
 export const NEMA_TO_IP: Record<string, string> = { 'NEMA 1': 'IP20', 'NEMA 12': 'IP54', 'NEMA 4': 'IP66', 'NEMA 4X': 'IP66 (corrosion resistant)' };
+
+/** Pick the US, Canadian or IEC variant of a text or value for a region. */
+export function byRegion<T>(region: Region | string | undefined, us: T, canada: T, iec: T): T {
+  return isIec(region) ? iec : region === 'Canada' ? canada : us;
+}

@@ -1,3 +1,4 @@
+import { isIec, regionSpec } from '../standards/regions';
 import type { ProjectSnapshot } from './collect';
 import { getHmi } from '../hmi/hmiCatalog';
 import { supplyText } from '../electrical/derive';
@@ -98,7 +99,7 @@ function cover(w: PdfWriter, p: ProjectSnapshot, m: DocMeta) {
     ['Controller', `${p.profile.vendor} ${p.profile.name} ${p.cpu.id}`],
     ['Operator interface', hmiText(m.hmiPart)],
     ['Supply', d ? `${supplyText(d.inputs.supply)}, ${d.inputs.enclosureRating} enclosure` : 'electrical design not generated'],
-    ['Code basis', `${m.region === 'Canada' ? 'Canada' : 'United States'} — ${m.codes.installation}, ${m.codes.panel}, NFPA 79`],
+    ['Code basis', isIec(m.region) ? `${regionSpec(m.region).label} — ${m.codes.short}, ${m.codes.installation}` : `${m.region === 'Canada' ? 'Canada' : 'United States'} — ${m.codes.installation}, ${m.codes.panel}, NFPA 79`],
   ], 26);
 
   w.callout(m.approved ? `STATUS: ${m.status}` : `STATUS: ${m.status}. Prepared with ISA Auto Programmer (AI-generated). A qualified engineer must check and approve this document before purchase, construction or use.`, m.approved ? BRAND : RED, m.approved ? INFO_FILL : WARN_FILL);
@@ -215,6 +216,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
   const sf = safetyFunctions(p);
   const calcs = calculations(p);
   const ca = m.region === 'Canada';
+  const iec = isIec(m.region);
   const hasElec = Boolean(p.drawingCtx && p.electrical);
   const noElec = () => w.callout('The electrical design has not been generated yet. Generate it to complete this section.', RED, WARN_FILL);
 
@@ -243,7 +245,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
     'Network integration with plant systems beyond the PLC-HMI link.',
   ]);
   w.h2('1.3 Codes and standards');
-  w.para(`The design follows North American practice for ${ca ? 'Canada' : 'the United States'}. Where editions are not stated, the edition adopted by the authority having jurisdiction at the site applies.`);
+  w.para(iec ? `The design follows IEC practice (IEC 60204-1, IEC 61439) for ${regionSpec(m.region).label}. ${regionSpec(m.region).marking}. Where editions are not stated, the edition adopted in the country of use applies.` : `The design follows North American practice for ${ca ? 'Canada' : 'the United States'}. Where editions are not stated, the edition adopted by the authority having jurisdiction at the site applies.`);
   w.table(standardsTable(p, m));
   w.h2('1.4 Reference documents');
   w.table(makeTable([['Number', 26], ['Document', 70], ['File', 46]], referenceDocuments(p, m)));
@@ -322,7 +324,8 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
       w.table(calcTable(s), { fontSize: 7.6 });
       w.callout(`${s.ok ? 'OK' : 'CHECK'} — ${s.result}`, s.ok ? BRAND : RED, s.ok ? INFO_FILL : WARN_FILL);
     }
-    w.h2(`3.${k++} Short-circuit current rating (SCCR)`);
+    w.h2(`3.${k++} ${iec ? 'Short-circuit rating (Icc)' : 'Short-circuit current rating (SCCR)'}`);
+    if (iec) w.para('IEC 61439-1 §5.3: the assembly is rated for a conditional short-circuit current (Icc) that the panel builder verifies by design (tested reference designs, rules or calculation) for the prospective fault current at the site. The component ratings below are the starting point; the UL 508A Supplement SB method is shown for reference.');
     w.para(`Determined by the UL 508A Supplement SB method: the panel SCCR is the lowest rating of the components in the power circuit, raised only by tested combinations or current-limiting devices${ca ? '; the panel is marked per CSA C22.2 No. 14' : ''}.`);
     const sc = sccrTable(p);
     w.table(sc.table, { fontSize: 7.2 });
@@ -340,7 +343,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
   w.para(`Stop categories per NFPA 79 9.2.2 / IEC 60204-1 (0 = immediate removal of power, 1 = controlled stop then removal of power). Architecture and category per ISO 13849-1. ${sf.length ? '' : 'No safety functions were found in the design or the specification.'}`);
   if (sf.length) w.table(safetyFunctionTable(p, sf), { fontSize: 6.9 });
   w.h2('4.3 Lockout / tagout points');
-  w.para(`Hazardous energy must be isolated per ${ca ? 'CSA Z460' : 'OSHA 29 CFR 1910.147'} and the site lockout procedure before maintenance.`);
+  w.para(`Hazardous energy must be isolated per ${iec ? 'IEC 60204-1 §5.5 (lockable main switch) and EN 1037 / ISO 14118' : ca ? 'CSA Z460' : 'OSHA 29 CFR 1910.147'} and the site lockout procedure before maintenance.`);
   w.table(lotoTable(p), { fontSize: 7.4 });
   w.h2('4.4 Residual risks');
   w.bullets(residualRisks(p));
