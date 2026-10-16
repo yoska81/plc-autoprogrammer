@@ -14,6 +14,9 @@ import type { LadderElement, LadderOutput, LadderProgram, Rung } from '../../cor
 import type { RungChange } from '../../core/diff';
 import type { ValidationIssue } from '../../core/validate';
 import { ElementCell, OutputCell } from './RungSymbol';
+import { MnemonicsContext } from './mnemonics';
+import { useProjectStore } from '../../../store/useProjectStore';
+import { getProfile } from '../../core/profiles';
 import ElementEditor from './ElementEditor';
 import type { Anchor } from './ElementEditor';
 import {
@@ -385,6 +388,7 @@ export default function LadderView({
   const [editing, setEditing] = useState<EditPath | null>(null);
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const editable = !!onChange;
+  const mnemonics = getProfile(useProjectStore((s) => s.plcId)).mnemonics;
 
   const apply = useCallback(
     (fn: (p: LadderProgram) => LadderProgram) => { if (onChange) onChange(fn(program)); },
@@ -431,6 +435,7 @@ export default function LadderView({
   }
 
   return (
+    <MnemonicsContext.Provider value={mnemonics}>
     <div className="h-full overflow-auto bg-white">
       {globalIssues.length > 0 && (
         <div className="sticky left-0 m-2 rounded border border-slate-200 bg-slate-50 px-3 py-2">
@@ -509,5 +514,6 @@ export default function LadderView({
       </div>
       {editorEl}
     </div>
+    </MnemonicsContext.Provider>
   );
 }

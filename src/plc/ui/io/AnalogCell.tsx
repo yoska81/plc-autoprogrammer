@@ -1,11 +1,22 @@
 import { ANALOG_RANGES, type AnalogRange, type AnalogSpec, type IOPoint } from '../../../types/io';
 import { useIOStore } from '../../../store/useIOStore';
+import { useProjectStore } from '../../../store/useProjectStore';
 
 const DEFAULT: AnalogSpec = { range: '4-20mA', min: 0, max: 100, units: '%' };
 const box = 'rounded-sm border border-steel-300 bg-white px-1 py-0.5 text-xs focus:border-brand-500 focus:outline-none';
 
-/** Discrete / analog switch for an I/O point, with range and engineering-unit scaling when analog. */
-export default function AnalogCell({ point }: { point: IOPoint }) {
+/** Analog modules to suggest when the PLC has no free analog channel, per PLC family. */
+const ANALOG_MODULES: Record<string, { input: string; output: string }> = {
+  click: { input: 'C0-04AD-1', output: 'C0-04DA-1' },
+  logix: { input: '5069-IF8', output: '5069-OF8' },
+};
+
+/**
+ * Discrete / analog switch for an I/O point, with range and engineering-unit scaling when analog.
+ * `address` = the resolved PLC address: empty for an analog point means no free analog channel.
+ */
+export default function AnalogCell({ point, address }: { point: IOPoint; address?: string }) {
+  const plcId = useProjectStore((s) => s.plcId);
   const setAnalog = useIOStore((s) => s.setAnalog);
   const a = point.signal === 'analog' ? point.analog ?? DEFAULT : null;
   const set = (patch: Partial<AnalogSpec>) => setAnalog(point.id, { ...(a ?? DEFAULT), ...patch });
@@ -26,6 +37,12 @@ export default function AnalogCell({ point }: { point: IOPoint }) {
           <span className="text-xs text-steel-400">–</span>
           <input aria-label={`Scale maximum of ${point.id}`} defaultValue={a.max} key={`max${a.max}`} onBlur={(e) => set({ max: num(e.target.value, a.max) })} className={`${box} w-14 text-right`} />
           <input aria-label={`Units of ${point.id}`} defaultValue={a.units} key={`u${a.units}`} onBlur={(e) => set({ units: e.target.value.trim() })} placeholder="units" className={`${box} w-12`} />
+          {address === '' && (
+            <span role="note" className="basis-full text-[11px] text-amber-800">
+              No analog channel for this point: add an analog {point.type} module
+              {ANALOG_MODULES[plcId] ? ` (${point.type === 'input' ? ANALOG_MODULES[plcId].input : ANALOG_MODULES[plcId].output})` : ''} on the Equipment page.
+            </span>
+          )}
         </>
       )}
     </div>
