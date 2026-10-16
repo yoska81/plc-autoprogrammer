@@ -44,7 +44,7 @@ export interface CabinetStepOptions {
 export type CabinetBodyKind = 'enclosure' | 'door' | 'backPanel' | 'dinRail' | 'wireDuct' | 'component' | 'doorDevice' | 'hmi' | 'handle';
 
 export interface CabinetStepBody {
-  /** Product name in the STEP file: "TAG — PARTNUMBER". */
+  /** Product name in the STEP file: "TAG - PARTNUMBER". */
   name: string;
   tag: string;
   partNumber: string;
@@ -240,7 +240,8 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
   const yPanel = D - WALL - STANDOFF - PANEL_T; // front face of the back panel (cabinet frame)
   const zOf = (y: number, h: number) => H - y - h; // layout (top-down) -> cabinet Z of the bottom edge
 
-  const named = (tag: string, pn: string) => uniqueName(`${tag} — ${pn || 'no part number'}`);
+  // ASCII separator: SolidWorks uses product names as part file names.
+  const named = (tag: string, pn: string) => uniqueName(`${tag} - ${pn || 'no part number'}`);
   /** Records a part in the summary; `origin` is the part's parent-assembly origin in the cabinet frame. */
   const record = (part: { name: string; description: string; solids: StepSolid[]; at: V3 }, origin: V3, meta: Omit<CabinetStepBody, 'name' | 'description' | 'min' | 'size' | 'color' | 'solids'>, color: Rgb) => {
     const b = offset(unionBounds(part.solids.map(solidBounds)), [origin[0] + part.at[0], origin[1] + part.at[1], origin[2] + part.at[2]]);
@@ -609,7 +610,7 @@ export function cabinetStep(ctx: DrawingContext, opts?: CabinetStepOptions): str
     timeStamp: ctx.design.generatedAt || '2000-01-01T00:00:00',
     author: '',
     organization: '',
-    system: 'PLC Autoprogrammer cabinet STEP export',
+    system: 'ISA Auto Programmer cabinet STEP export',
   });
 }
 
