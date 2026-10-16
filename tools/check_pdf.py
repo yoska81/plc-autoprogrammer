@@ -55,17 +55,20 @@ def check_pdf(path: Path, kind: str, render: bool, vname: str):
             for m in re.finditer(pat, t):
                 ctx = t[max(0, m.start() - 40):m.end() + 40].replace('\n', ' ')
                 report('FAIL', where, f'p{i + 1}: "{m.group(0)}" in "…{ctx}…"')
-        if len(t.strip()) < 20 and kind != 'hmi':
+        if len(t.strip()) < 20 and kind not in ('hmi', 'labels'):
             report('WARN', where, f'p{i + 1}: almost no text ({len(t.strip())} chars)')
-    want = {'drawings': 'ANSI B', 'doc': 'Letter', 'hmi': 'Letter'}[kind]
+    want = {'drawings': {'ANSI B'}, 'doc': {'Letter portrait', 'Letter'}, 'hmi': {'Letter'},
+            'bundle': {'Letter portrait', 'Letter', 'ANSI B'}, 'labels': None}[kind]
     for s, pages in sizes.items():
-        if s != want and not (kind == 'doc' and s == 'Letter portrait'):
-            report('FAIL', where, f'pages {pages[:8]} are {s}, expected {want}')
+        if want is not None and s not in want:
+            report('FAIL', where, f'pages {pages[:8]} are {s}, expected {sorted(want)}')
     print(f'{where}: {n} pages, sizes {{{", ".join(f"{k}: {len(v)}" for k, v in sizes.items())}}}')
     # Page x of y / Sheet x of y
     for i, t in enumerate(texts):
         for m in re.finditer(r'(?:Page|Sheet|SHEET)\s+(\d+)\s+(?:of|OF)\s+(\d+)' if kind == 'drawings' else r'(?:Page|PAGE)\s+(\d+)\s+(?:of|OF)\s+(\d+)', t):
             a, b = int(m.group(1)), int(m.group(2))
+            if kind in ('bundle', 'labels'):
+                continue  # merged documents keep their own numbering
             if kind != 'drawings' and (a != i + 1 or b != n):
                 report('FAIL', where, f'p{i + 1}: says "{m.group(0)}" (document has {n} pages)')
             if kind == 'drawings' and (b != n or a < 1 or a > n):
@@ -106,7 +109,8 @@ def main():
     for v in names:
         z = OUT / v / 'zip'
         for p in sorted(z.rglob('*.pdf')):
-            kind = 'drawings' if p.name.endswith('_drawings.pdf') else 'hmi' if 'hmi' in p.name else 'doc'
+            kind = ('drawings' if p.name.endswith('_drawings.pdf') else 'hmi' if 'hmi' in p.name
+                    else 'bundle' if p.name.endswith('_full_package.pdf') else 'labels' if 'labels' in p.name else 'doc')
             check_pdf(p, kind, render, v)
     for lvl, where, msg in results:
         print(f'{lvl:4} {where}: {msg}')

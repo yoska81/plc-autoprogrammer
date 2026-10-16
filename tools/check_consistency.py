@@ -101,6 +101,16 @@ def check(vdir: Path):
         if l['Type'] == 'Cabinet device tags' and l['Number'] not in bom_tags:
             report('FAIL', v, f'device label {l["Number"]} has no BOM line')
 
+    # ---- Label PDFs: one label-printer page per label copy; ZIP labels CSV = labels data
+    lp = next((z / 'labels').glob('*_label_printer.pdf'), None) if (z / 'labels').exists() else None
+    zl = next((z / 'labels').glob('*_labels.csv'), None) if (z / 'labels').exists() else None
+    if zl:
+        zrows = read_csv(zl)
+        copies = sum(int(r.get('Copies') or 1) for r in zrows)
+        if {(r['Type'], r['Number']) for r in zrows} != {(r['Type'], r['Number']) for r in labels}:
+            report('FAIL', v, 'ZIP labels CSV differs from the labels data')
+        if lp and len(PdfReader(lp).pages) != copies:
+            report('FAIL', v, f'label printer PDF has {len(PdfReader(lp).pages)} labels, CSV copies total {copies}')
     # ---- Wires
     wl = read_csv(z / 'electrical' / 'wire_list.csv')
     wires_csv = {r['Wire'] for r in wl if r['Wire']}
