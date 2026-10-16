@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { guessSection, quickChoices } from './parse';
 import { qaText, answerText } from './qa';
 import { EMPTY_SECTIONS, fingerprint, specToText, changedSections } from '../../spec/types';
-import { questionId, type Question } from './useQuestionStore';
+import { questionId, useQuestionStore, type Question } from './useQuestionStore';
+import { isIssueNote, isTechnicalIssue, normalizeNotes, userNotes } from './classify';
 
 // Quick choices
 assert.deepEqual(quickChoices('How is the lift axis homed: home switch or hard stop?'), ['home switch', 'hard stop']);
@@ -48,4 +49,31 @@ assert.notEqual(fingerprint(base), fingerprint(withQa), 'answering changes the s
 assert.deepEqual(changedSections(base, withQa), ['Questions and answers']);
 assert.equal(specToText(base).includes('Questions and answers'), false);
 assert.equal(questionId('spec', ' Same? '), questionId('spec', 'same?'));
+
+// Only real questions / assumptions reach the Q&A; technical issues go to the design review.
+for (const t of [
+  'I/O Status: no header bar and the top band is in use; add one on the HMI page.',
+  'Layout check: No header bar (title, alarm banner, time) on this screen.',
+  'Main: “Start” overlaps “Stop” and could not be moved automatically; adjust it on the HMI page.',
+  'Main: 2 touch target(s) enlarged to at least 60×40 px.',
+  'A safety controller is needed but not in the catalog.',
+]) assert.ok(isTechnicalIssue(t), t);
+for (const t of ['How many parts per minute at most?', 'Motor M1 assumed 2 HP; confirm the nameplate.', 'Which operator password levels are needed?']) assert.ok(!isTechnicalIssue(t), t);
+const notes = normalizeNotes([
+  { kind: 'question', text: 'Which operator password levels are needed?' },
+  { kind: 'assumption', text: 'Motor M1 assumed 2 HP; confirm the nameplate.' },
+  { kind: 'issue', text: 'Interposing relay K5 sized for 10 A.' },
+  'Main: header bar added.',
+  'Recipe screen assumed not needed.',
+]);
+assert.deepEqual(notes.map((n) => n.kind), ['question', 'assumption', 'issue', 'issue', 'assumption']);
+const design = { notes: [...notes.map((n) => n.text), 'Layout check: No header bar.'], askUser: notes.filter((n) => n.kind !== 'issue').map((n) => n.text) };
+assert.deepEqual(userNotes(design), ['Which operator password levels are needed?', 'Motor M1 assumed 2 HP; confirm the nameplate.', 'Recipe screen assumed not needed.']);
+assert.ok(isIssueNote(design, 'Interposing relay K5 sized for 10 A.') && isIssueNote(design, 'Layout check: No header bar.'));
+assert.ok(!isIssueNote(design, 'Recipe screen assumed not needed.'));
+// Older designs without askUser: everything that is not a technical issue.
+assert.deepEqual(userNotes({ notes: ['Example HMI design.', 'I/O Status: no header bar and the top band is in use; add one on the HMI page.'] }), ['Example HMI design.']);
+// The store never takes a technical issue as a question.
+useQuestionStore.getState().sync('t', 'hmi', [{ text: 'Main: header bar added.' }, { text: 'Which operator password levels are needed?' }]);
+assert.deepEqual(useQuestionStore.getState().byProject.t.map((x) => x.text), ['Which operator password levels are needed?']);
 console.log('question tests passed');

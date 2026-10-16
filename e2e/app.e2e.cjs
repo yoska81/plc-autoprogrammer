@@ -51,7 +51,7 @@ function reply(system, body = {}) {
       explanation: 'NEMA 12 panel, 480 VAC.', components: F.DESIGN.components, ioWiring: F.DESIGN.ioWiring, notes: F.DESIGN.notes, motors: F.DESIGN.inputs.motors,
       machine: { zones: m.zones, junctionBoxes: m.junctionBoxes, motorLocations: Object.entries(m.motorLocations).map(([motorTag, location]) => ({ motorTag, location })), routing: Object.entries(m.routing).map(([deviceTag, junctionBox]) => ({ deviceTag, junctionBox })) },
     };
-    case 'hmi': return { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [] };
+    case 'hmi': return { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [{ kind: 'question', text: 'Which operator password levels are needed?' }, { kind: 'issue', text: 'Alarm banner colour chosen for contrast with the header.' }] };
     case 'ladder': {
       if (counts.ladder === 1) return { explanation: 'Program written from the spec.', program: F.LADDER };
       const p = JSON.parse(JSON.stringify(F.LADDER));
@@ -393,6 +393,20 @@ function sse(model, text) {
   check(qaText.includes('How many parts per minute at most?') && qaText.includes('60 parts per minute'), 'answer stays as Q/A below the description');
   check(!overview.includes('60 parts per minute'), 'answer is not copied into the spec sections');
   check(staleAfter > staleBefore, 'answering changes the spec fingerprint (later stages out of date)');
+  // Only real questions: the HMI question is listed, the HMI issue and the layout-check messages are not.
+  check(qaText.includes('Which operator password levels are needed?'), 'AI question (kind "question") is in the Q&A');
+  check(!/Alarm banner colour|header bar|on the HMI page|Layout check|touch target|overlaps/i.test(qaText), 'technical issues are not questions: ' + qaText.split('\n').filter((l) => /header bar|Layout check|Alarm banner/i.test(l)).join(' | '));
+  // Older versions stored layout messages as questions: they are dropped on load.
+  await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem('isa-questions'));
+    const k = Object.keys(st.state.byProject)[0];
+    st.state.byProject[k].push({ id: 'hmi:legacy', source: 'hmi', text: 'I/O Status: no header bar and the top band is in use; add one on the HMI page.', answer: '', status: 'open', date: '2026-10-01 10:00', merged: false });
+    localStorage.setItem('isa-questions', JSON.stringify(st));
+  });
+  await page.reload();
+  await qa.waitFor();
+  check(!(await qa.innerText()).includes('no header bar'), 'stored layout messages are removed from the questions on load');
+  await qa.scrollIntoViewIfNeeded();
   await snap(page, 'questions');
   await page.locator('#spec-alarms').fill('- Pusher fault: pusher not extended within 5 s.');
   log('Out of date after edit:', await page.locator('nav [title="Out of date"]').count());
@@ -457,6 +471,7 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 15000 });
   log('Review verdict shown:', await page.getByText(/Reviewer's verdict/).count() > 0, '| critical open:', await page.locator('div', { hasText: /^Critical open$/ }).locator('xpath=following-sibling::div').first().innerText());
   const rowOf = (t) => page.locator('tr', { hasText: t });
+  check(await rowOf('HMI: Alarm banner colour').count() === 1, 'HMI technical issue is a design review finding (not a question)');
   const badge = page.locator('nav a', { hasText: 'Design review' }).locator('span[aria-label$="open critical or major findings"]');
   log('Review badge / status bar:', await badge.innerText(), '|', await page.getByRole('link', { name: /^Review: / }).innerText());
   check(Number(await badge.innerText()) >= 1, 'tree badge counts open critical/major findings');

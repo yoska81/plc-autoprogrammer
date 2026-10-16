@@ -14,6 +14,7 @@ import { rungWrites, type LadderProgram } from '../plc/core/ladder';
 import { rungReads } from '../plc/sim/blocks';
 import type { StageId } from '../store/useStageStore';
 import type { StageInfo } from '../spec/useStages';
+import { isIssueNote } from '../components/questions/classify';
 import type { Finding, ReviewArea, ReviewPage, Severity } from './types';
 import { isAnalog } from '../types/io';
 import { analogMap, analogNeed } from '../plc/core/analog';
@@ -240,10 +241,19 @@ function electricalChecks({ p }: ReviewInput): Finding[] {
       out.push(finding(`calc:${hash(w)}`, 'minor', 'electrical', 'electrical', '', w.length > 90 ? `${w.slice(0, 88)}…` : w, w, 'Review the calculation in the engineering package and change the design if needed.'));
     }
   }
+  // Notes for the customer are "To confirm"; technical issues from the AI or the layout checker are findings to fix.
   for (const n of p.electrical?.notes ?? []) {
+    if (isIssueNote(p.electrical!, n)) {
+      out.push(finding(`eissue:${hash(n)}`, 'minor', 'electrical', 'electrical', '', `Electrical: ${n.length > 80 ? `${n.slice(0, 78)}…` : n}`, n, 'Change the electrical design (or use "Ask AI to fix").'));
+      continue;
+    }
     out.push(finding(`enote:${hash(n)}`, 'info', 'electrical', 'electrical', '', `To confirm (electrical): ${n.length > 70 ? `${n.slice(0, 68)}…` : n}`, n, 'Confirm with the customer or the datasheet and record the answer.'));
   }
   for (const n of p.hmi?.notes ?? []) {
+    if (isIssueNote(p.hmi!, n)) {
+      out.push(finding(`hissue:${hash(n)}`, 'minor', 'hmi', 'hmi', '', `HMI: ${n.length > 80 ? `${n.slice(0, 78)}…` : n}`, n, 'Change the screens on the HMI page (or use "Ask AI to fix").'));
+      continue;
+    }
     out.push(finding(`hnote:${hash(n)}`, 'info', 'hmi', 'hmi', '', `To confirm (HMI): ${n.length > 70 ? `${n.slice(0, 68)}…` : n}`, n, 'Confirm with the customer and record the answer.'));
   }
   return out;

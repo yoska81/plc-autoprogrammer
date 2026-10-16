@@ -133,6 +133,8 @@ export interface HmiDesign {
   alarms: HmiAlarm[];
   tags: HmiTag[];
   notes: string[];
+  /** The notes that are questions / assumptions for the customer (the rest are technical issues for the design review). Absent on older designs. */
+  askUser?: string[];
   generatedAt: string;
   /** Machine name shown in the header bar. */
   machineName?: string;
