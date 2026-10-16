@@ -1,6 +1,6 @@
 # Debug 2 — deliverables QA (`claude/isa-debug-outputs`)
 
-PR: #7 (draft → `claude/optimistic-maxwell-6nfcs6`). Last integration merge: 1795268 (src/plc refactor).
+PR #7 merged (batches 1–2). Branch restarted from integration d78b221. Last integration merge: 1795268 (src/plc refactor).
 
 ## Tasks (my own words)
 - [x] Repeatable checkers in `tools/` (`tools/check-all.sh`, README): generate every output through the real app for 4 projects — `us480` (example), `ca600` (Canada 600 V, Class CC fuses, fused CPT, rev B), `us120` (120 V 1-ph, small enclosure, no HMI), `big` (4 VFDs, 54 I/O, modules, 10" HMI, JBs).
@@ -29,19 +29,23 @@ PR: #7 (draft → `claude/optimistic-maxwell-6nfcs6`). Last integration merge: 1
 | I-07 | Design review | false "PS1 no primary protection" behind a CT-…-1 fused transformer | low | Debug 2 | fixed | 072ade8 |
 | I-08 | Excel | qty / rung columns stored as text | low | Debug 2 | fixed | 5a6ceaf |
 | I-09 | Wire list vs sheet 6 | "RESET:13" vs "PB?:13" | low | Debug 2 | fixed (both PB?) | 5a6ceaf |
-| I-10 | Drawings (big, door detail) | legend "AUTO/MANUAL" squeezed into overlapping glyphs outside the plate. Root cause: `Txt` (drawings/symbols.tsx:28) squeezes with `textLength` + `lengthAdjust="spacingAndGlyphs"`; svg2pdf only tightens spacing, so glyphs overlap. Every `maxW` overflow in the PDF set is affected; shrink the font size instead | medium | coordinator | reported | — |
+| I-10 (fixed by coordinator, verified p15) | Drawings (big, door detail) | legend "AUTO/MANUAL" squeezed into overlapping glyphs outside the plate. Root cause: `Txt` (drawings/symbols.tsx:28) squeezes with `textLength` + `lengthAdjust="spacingAndGlyphs"`; svg2pdf only tightens spacing, so glyphs overlap. Every `maxW` overflow in the PDF set is affected; shrink the font size instead | medium | coordinator | reported | — |
 | I-11 | Example design | SR1 monitored manual reset (S33–S34) but no reset PB → cannot reset; sheet shows PB? | high | Dev 2 (sampleProject) | fixed on claude/isa-dev-program-sim 46dfc43 (verified: PB3 on S33/S33A, door cutout E3, warning gone) | 46dfc43 |
 | I-12 | Example program | HMI alarm bits C1102/C1103 not driven by the ladder ("Not found in the program") | medium | Dev 2 | fixed on claude/isa-dev-program-sim (rungs 10–11 drive C1102/C1103) | — |
 | I-13 | Layout (big) | SR1, relays, TB1 "do not fit" while PLC rail ~60 % empty (rows share rails only as a whole group) | medium | Debug 2 / coordinator decision | open (proposal) | — |
 | I-15 | Door cutout sheet | longer dual HMI label overflowed into the handle mark; G-label on the HMI edge | low | Debug 2 | fixed (two-line label, size fits cutout; handle label right of mark) | (this batch) |
 | I-16 | STEP header | FILE_NAME originating system / preprocessor = "PLC Autoprogrammer cabinet STEP export" (old brand) | low | coordinator | reported | — |
 | I-17 | STEP names | product names use an em dash (`\\X2\\2014\\X0\\`): valid, but SolidWorks uses product names as part file names on Save As — an ASCII " - " is safer | low | coordinator | suggestion | — |
+| I-18 | Wire list, sheet 6, BOM | EDM loop / reversing interlock wired to K1:21-22, but Fuji SC-E02(G)..E4(G) have no internal auxiliary contact (AD Fuji SC-E spec note 1); front block SZ-A11T is 53-54 / 61-62, side block SZ-AS1T 71-72 / 83-84 | high | Debug 2 | fixed: N.C. resolved per contactor, SZ-A11T added to BOM when missing, wires + sheet 6 show 61-62 | (batch 3) |
+| I-19 | Safety reset | first pushbutton with 'reset' in its function was taken as the relay reset (big: PLC fault-reset PB3) | medium | Debug 2 | fixed: explicit 'safety reset' preferred | (batch 3) |
 | I-14 | STEP | shaft named after handle "DS1H — 14831111 (2)" | low | coordinator | fixed upstream | — |
 
+## Batch 3 verification
+Integration d78b221 + batch 3: tsc, eslint, 4 unit tests, sim_example, e2e, check-all → DXF/STEP/PDF/XLSX/consistency 0 FAIL 0 WARN; I-10 AUTO/MANUAL fits its plate; no 'Not found in the program' in the package.
+
 ## Plan
-1. Inches by default + dual dimensions (dxf.ts, MachiningPanel.tsx, drilling/door-cutout sheets), checker for inch≡mm geometry.
-2. STEP SolidWorks checks on a310537.
-3. Re-run everything on the integration head; review the dev branches.
+1. I-13 layout packing (panelLayout): fill partly used rails before 'does not fit', keep ducts between rows; before/after for all variants; keep drilling/DXF/STEP/pictures consistent.
+2. Periodic review of the dev branches.
 
 ## Review of claude/isa-dev-labels-print (c9f4f5c, 262d3ff)
 How: worktree of the branch, dev server :5214, `tools/gen-outputs.cjs us480 big`, all checkers, plus a roll-layout harness (labelPrinterPdf with pageLayout 'roll' for B33-80-427 horizontal/vertical and THT-14-498-10), renders at 300–1200 dpi.

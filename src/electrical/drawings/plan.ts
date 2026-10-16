@@ -159,7 +159,7 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
     const rs = s.reset ?? 'PB?';
     out.push({
       start: { kind: 'node', label: `${sr} S33` }, end: { kind: 'node', label: `${sr} S34` },
-      els: [{ t: 'contact', nc: false, tag: rs, term: '13-14', dev: 'pb' }, ...s.edm.map((tag) => ({ t: 'contact' as const, nc: true, tag, term: '21-22', dev: 'relay' as const }))],
+      els: [{ t: 'contact', nc: false, tag: rs, term: '13-14', dev: 'pb' }, ...s.edm.map((tag, k) => ({ t: 'contact' as const, nc: true, tag, term: s.edmTerms?.[k] ?? '21-22', dev: 'relay' as const }))],
       wires: ['S33', ...s.edm.map((_, k) => `S33${letter(k + 1)}`), 'S34'],
       desc: ['SAFETY RESET (MONITORED, MANUAL)', s.edm.length ? `FEEDBACK (EDM): ${s.edm.join(', ')}` : ''],
     });

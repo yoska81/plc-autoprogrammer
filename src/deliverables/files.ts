@@ -1,6 +1,7 @@
 import { IS_PREVIEW } from '../preview/mode';
 import { saveViaAccount } from '../preview/claudeAccount';
 import { notify } from '../store/useNoticeStore';
+import { desktopBridge } from '../desktop/bridge';
 import { backPanelDxf, doorDxf } from '../electrical/dxf';
 import { cabinetStep } from '../electrical/step/cabinetStep';
 import { createElement, type ReactElement } from 'react';
@@ -153,6 +154,14 @@ export function saveBlob(name: string, blob: Blob) {
   // The preview can't download directly: the viewer's Claude app offers the file.
   if (IS_PREVIEW) {
     void saveViaAccount(name, blob).then((ok) => { if (!ok) notify('Saving files is not available in this view. Run the app on your PC to download.'); })
+      .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
+    return;
+  }
+  // Windows app: native Save dialog.
+  const save = desktopBridge()?.saveFile;
+  if (save) {
+    void blob.arrayBuffer().then((buf) => save(name, new Uint8Array(buf)))
+      .then((r) => { if (r.ok) notify(`Saved: ${r.path ?? name}`); else if (!r.cancelled) notify(`The file could not be saved: ${r.error ?? 'unknown error'}`); })
       .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
     return;
   }

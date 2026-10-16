@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import RecoverWork from '../components/RecoverWork';
 import { useProjectStore, currentRevision, type Region, type Revision } from '../store/useProjectStore';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
@@ -200,6 +201,9 @@ function ProjectData() {
               </table>
               <p className="px-3 py-2 text-xs text-steel-500">Projects are saved in this browser only. The open project can't be deleted: open another one first.</p>
             </Section>
+          </div>
+          <div className="xl:col-span-2" id="recover">
+            <RecoverWork />
           </div>
         </div>
       </div>

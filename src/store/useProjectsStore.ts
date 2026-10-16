@@ -140,3 +140,99 @@ export const useProjectsStore = create<ProjectsStore>()(
     { name: 'plc-projects' }
   )
 );
+
+// ---------------------------------------------------------------------------
+// Safety net: backups and recovery of work saved in this browser.
+
+const BACKUP_PREFIX = 'plc-backup:';
+const MAX_BACKUPS = 15;
+
+/** Save the open project's data under its own key (as switching does). */
+export function saveActiveProject(): void {
+  const { activeId } = useProjectsStore.getState();
+  if (activeId) save(activeId);
+}
+
+/** Copy of the open project, kept before anything is written over the stores. */
+export function backupActiveProject(reason: string): void {
+  const { activeId, projects } = useProjectsStore.getState();
+  const name = projects.find((p) => p.id === activeId)?.name ?? useProgramStore.getState().projectName;
+  try {
+    const at = new Date().toISOString();
+    localStorage.setItem(`${BACKUP_PREFIX}${at}`, JSON.stringify({ name, at, reason, projectId: activeId, data: snapshot() }));
+    const keys = Object.keys(localStorage).filter((k) => k.startsWith(BACKUP_PREFIX)).sort();
+    for (const k of keys.slice(0, Math.max(0, keys.length - MAX_BACKUPS))) localStorage.removeItem(k);
+  } catch {
+    // storage full or blocked: nothing more we can do here
+  }
+}
+
+/** Write the current stores as the saved data of project `id`, then load project `restoreId` back. */
+export function storeStateAs(id: string, restoreId: string | null): void {
+  save(id);
+  if (restoreId) load(read(restoreId));
+}
+
+export interface SavedWork {
+  key: string;
+  kind: 'project' | 'backup';
+  name: string;
+  at: string | null;
+  reason: string | null;
+  io: number;
+  rungs: number;
+  spec: string;
+  open: boolean;
+}
+
+function summarise(data: Snapshot): Pick<SavedWork, 'io' | 'rungs' | 'spec'> {
+  const io = (data.io as { projectIO?: unknown[] } | undefined)?.projectIO?.length ?? 0;
+  const rungs = (data.program as { ladder?: { rungs?: unknown[] } } | undefined)?.ladder?.rungs?.length ?? 0;
+  const sections = (data.spec as { sections?: Record<string, string> } | undefined)?.sections ?? {};
+  const spec = Object.values(sections).find((t) => t?.trim())?.trim().slice(0, 140) ?? '';
+  return { io, rungs, spec };
+}
+
+/** Every project copy and backup saved in this browser, newest first. */
+export function listSavedWork(): SavedWork[] {
+  const { projects, activeId } = useProjectsStore.getState();
+  const out: SavedWork[] = [];
+  let keys: string[];
+  try { keys = Object.keys(localStorage); } catch { return out; }
+  for (const k of keys) {
+    try {
+      if (k.startsWith('plc-project-data:')) {
+        const id = k.slice('plc-project-data:'.length);
+        const data = JSON.parse(localStorage.getItem(k) ?? 'null') as Snapshot | null;
+        if (!data) continue;
+        const name = projects.find((p) => p.id === id)?.name ?? (data.program as { projectName?: string } | undefined)?.projectName ?? 'Unnamed project';
+        out.push({ key: k, kind: 'project', name, at: null, reason: id === activeId ? 'Last saved copy of the open project' : null, open: id === activeId, ...summarise(data) });
+      } else if (k.startsWith(BACKUP_PREFIX)) {
+        const b = JSON.parse(localStorage.getItem(k) ?? 'null') as { name: string; at: string; reason: string; data: Snapshot } | null;
+        if (!b) continue;
+        out.push({ key: k, kind: 'backup', name: b.name, at: b.at, reason: b.reason, open: false, ...summarise(b.data) });
+      }
+    } catch {
+      // unreadable entry: skip
+    }
+  }
+  return out.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''));
+}
+
+/** Open a saved copy or backup as a NEW project (nothing existing is overwritten). */
+export function restoreAsNewProject(key: string, name: string): boolean {
+  let data: Snapshot | null;
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) ?? 'null') as Snapshot | { data: Snapshot } | null;
+    data = raw && 'data' in raw && key.startsWith(BACKUP_PREFIX) ? (raw as { data: Snapshot }).data : (raw as Snapshot | null);
+  } catch {
+    data = null;
+  }
+  if (!data) return false;
+  const st = useProjectsStore.getState();
+  if (!st.createProject(name)) return false;
+  load(data);
+  useProgramStore.getState().setProjectName(name);
+  saveActiveProject();
+  return true;
+}

@@ -1,13 +1,20 @@
 {
   "name": "plc-autoprogrammer",
+  "productName": "ISA Auto Programmer",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.7.0",
   "type": "module",
+  "description": "ISA Auto Programmer: control panel, HMI and PLC program design for AutomationDirect equipment",
+  "author": "ISA",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:desktop": "tsc -b && vite build --outDir dist-desktop --emptyOutDir && node scripts/desktop-prepare.cjs",
+    "desktop": "npm run build:desktop && electron .",
+    "dist:win": "npm run build:desktop && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
@@ -31,15 +38,64 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.5.0",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "pdfjs-dist": "6.3.289",
     "postcss": "^8.5.15",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
     "vite-plugin-singlefile": "^2.3.3"
+  },
+  "build": {
+    "appId": "com.isa.autoprogrammer",
+    "productName": "ISA Auto Programmer",
+    "copyright": "ISA",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist-desktop/**/*",
+      "electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "ISA-Auto-Programmer-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ISA Auto Programmer",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ],
+      "icon": "build/icon.png",
+      "category": "Development"
+    }
   }
 }
