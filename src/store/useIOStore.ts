@@ -65,7 +65,7 @@ export const useIOStore = create<IOStore>()(
               t.type === 'input' ? nextInputId(current) : nextOutputId(current);
             current = [
               ...current,
-              { id, description: t.description, type: t.type, category: t.category },
+              { id, description: t.description, type: t.type, category: t.category, templateId: t.templateId },
             ];
           }
           return { projectIO: current };

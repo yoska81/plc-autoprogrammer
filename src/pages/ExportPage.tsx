@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy } from 'react';
 import { useProgramStore } from '../store/useProgramStore';
 import { useIOStore } from '../store/useIOStore';
 import { Link } from 'react-router-dom';
@@ -8,22 +8,23 @@ const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 export default function ExportPage() {
   const { generatedCode, projectName } = useProgramStore();
   const { projectIO } = useIOStore();
-  const [readOnly, setReadOnly] = useState(true);
 
   const downloadFile = (ext: string, content: string, mime: string) => {
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${projectName.replace(/\s+/g, '_')}.${ext}`;
+    a.download = `${projectName.trim().replace(/[^\w-]+/g, '_') || 'plc_program'}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const exportCSV = () => {
     const header = 'ID,Type,Category,Description\n';
+    // RFC 4180: quote every field and double any embedded quotes.
+    const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const rows = projectIO
-      .map((p) => `${p.id},${p.type},${p.category},"${p.description}"`)
+      .map((p) => [p.id, p.type, p.category, p.description].map(cell).join(','))
       .join('\n');
     downloadFile('csv', header + rows, 'text/csv');
   };
@@ -74,15 +75,10 @@ export default function ExportPage() {
               >
                 Copy to Clipboard
               </button>
-              <label className="ml-auto flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={readOnly}
-                  onChange={(e) => setReadOnly(e.target.checked)}
-                  className="rounded"
-                />
-                Read-only
-              </label>
+              <span className="ml-auto text-xs text-gray-400">
+                Read-only preview — edit the code in{' '}
+                <Link to="/program" className="underline">Program Generator</Link>
+              </span>
             </div>
 
             {/* Monaco editor */}
@@ -94,7 +90,7 @@ export default function ExportPage() {
                   value={generatedCode}
                   theme="vs-dark"
                   options={{
-                    readOnly,
+                    readOnly: true,
                     fontSize: 12,
                     minimap: { enabled: false },
                     scrollBeyondLastLine: false,

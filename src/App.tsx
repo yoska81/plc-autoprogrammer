@@ -36,7 +36,7 @@ export default function App() {
           ))}
         </nav>
         <div className="px-5 py-4 border-t border-gray-700">
-          <p className="text-xs text-gray-600">v0.2.0</p>
+          <p className="text-xs text-gray-600">v0.3.0</p>
         </div>
       </aside>
 

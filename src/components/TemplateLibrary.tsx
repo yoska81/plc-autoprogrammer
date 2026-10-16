@@ -24,8 +24,9 @@ export function TemplateLibrary({ onClose }: Props) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const importedDescriptions = useMemo(
-    () => new Set(projectIO.map((p) => p.description)),
+  // Track by template ID so renaming an imported point doesn't allow re-importing it.
+  const importedTemplateIds = useMemo(
+    () => new Set(projectIO.flatMap((p) => (p.templateId ? [p.templateId] : []))),
     [projectIO]
   );
 
@@ -38,7 +39,7 @@ export function TemplateLibrary({ onClose }: Props) {
     });
   }, [search, categoryFilter, typeFilter]);
 
-  const availableVisible = visible.filter((t) => !importedDescriptions.has(t.description));
+  const availableVisible = visible.filter((t) => !importedTemplateIds.has(t.templateId));
   const allVisibleSelected = availableVisible.length > 0 && availableVisible.every((t) => selected.has(t.templateId));
 
   function toggleSelect(id: string) {
@@ -164,7 +165,7 @@ export function TemplateLibrary({ onClose }: Props) {
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-gray-100">
                     {visible.map((t) => {
-                      const alreadyImported = importedDescriptions.has(t.description);
+                      const alreadyImported = importedTemplateIds.has(t.templateId);
                       const isSelected = selected.has(t.templateId);
                       return (
                         <tr

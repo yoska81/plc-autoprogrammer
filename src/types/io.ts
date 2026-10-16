@@ -19,6 +19,8 @@ export interface IOPoint {
   description: string;
   type: IOType;
   category: IOCategory;
+  /** Set when the point was imported from the template library. */
+  templateId?: string;
 }
 
 export interface TemplatePoint {
