@@ -347,7 +347,7 @@ export function seedSampleProject() {
   useProjectStore.getState().setModules([]);
   useProjectStore.getState().setInfo({
     customer: 'Example Foods Inc.', site: 'Line 3', standards: ['NFPA 79', 'UL 508A', 'NEC'],
-    company: 'Example Controls Co.', projectNumber: '24-117', drawingPrefix: 'CNV', preparedBy: 'AI', checkedBy: '', approvedBy: '',
+    company: 'ISA', projectNumber: '24-117', drawingPrefix: 'CNV', preparedBy: 'AI', checkedBy: '', approvedBy: '',
     revisions: [{ rev: 'A', date: new Date().toISOString().slice(0, 10), description: 'Issued for review', by: 'AI' }],
   });
   for (const stage of ['equipment', 'io', 'electrical', 'hmi', 'program'] as const) useStageStore.getState().markGenerated(stage, src);

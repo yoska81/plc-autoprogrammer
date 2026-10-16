@@ -356,40 +356,38 @@ export function plcShape(s: ShapeInput, cpu: boolean): StepSolid[] {
 /** Terminal strip slice layout: what sits at each X position along the strip. */
 export type StripPiece = { kind: 'terminal'; w: number; ground: boolean; color: Rgb } | { kind: 'endPlate'; w: number; color: Rgb } | { kind: 'endStop'; w: number };
 
-/** Terminal strip: individual feed-through slices with screw and wire entries, markers, end plates and end stops. */
-export function terminalStripShape(s: ShapeInput, pieces: StripPiece[], detail: boolean): StepSolid[] {
+/**
+ * One piece of a terminal strip in its own frame (X 0..piece width): a feed-through or ground
+ * terminal slice with screw and wire entries and a marker, an end plate or an end stop.
+ */
+export function terminalPieceShape(s: ShapeInput, p: StripPiece): StepSolid[] {
   const { d, h } = s;
+  const x1 = p.w;
   const yS = d * 0.47, sH = h * 0.24, yR = d * 0.25, zr1 = h / 2 + h * 0.14, zr0 = h / 2 - h * 0.14, yM = Math.min(0.8, d * 0.03);
   const prof: [number, number][] = [[d, 0], [d, h], [yS, h], [yS, h - sH], [yR, zr1], [yM, zr1], [yM, zr0], [yR, zr0], [yS, sH], [yS, 0]];
-  const out: StepSolid[] = [];
-  let x = 0, k = 0;
-  for (const p of pieces) {
-    const x0 = x, x1 = x + p.w;
-    x = x1;
-    if (p.kind === 'endStop') {
-      const sy = d * 0.3;
-      const poly: [number, number][] = [[d, h * 0.06], [d, h * 0.9], [d * 0.48, h * 0.9], [sy, h * 0.68], [sy, h * 0.32], [d * 0.48, h * 0.06]];
-      out.push(px('end stop', COL.charcoal, x0, x1, poly, [{ x: (x0 + x1) / 2, y: sy, z: h / 2, r: Math.min(2.4, p.w * 0.3), depth: 2 }]));
-      continue;
-    }
-    if (p.kind === 'endPlate') { out.push(px('end plate', p.color, x0, x1, prof)); continue; }
-    k++;
-    const tw = p.w;
-    const pk: PPocket[] = [];
-    if (detail && tw >= 3) {
-      const r = Math.min(1.9, tw * 0.32, sH * 0.3);
-      const dx = Math.min(tw * 0.3, 2.2);
-      const ds = Math.min(3, (d - yS) * 0.18);
-      const xc = (x0 + x1) / 2;
-      for (const top of [true, false]) {
-        pk.push({ x: xc, y: yS, z: top ? h - sH / 2 : sH / 2, r, depth: 1.5 });
-        pk.push({ x: xc, y: yS + 2 + ds, z: top ? h : 0, dx, ds, depth: Math.min(8, sH * 0.65) });
-      }
-    }
-    out.push(px(`terminal ${k}`, p.color, x0, x1, prof, pk));
-    if (detail && tw >= 2) out.push(bx(`marker ${k}`, p.ground ? COL.groundYellow : COL.marker, x0 + Math.min(0.4, tw * 0.1), 0, zr0 + 1, x1 - Math.min(0.4, tw * 0.1), yM, zr1 - 1));
+  if (p.kind === 'endStop') {
+    // End stops sit only on the rail: they never reach the top/bottom or the front of the envelope.
+    const sy = d * 0.3;
+    const poly: [number, number][] = [[d, h * 0.06], [d, h * 0.9], [d * 0.48, h * 0.9], [sy, h * 0.68], [sy, h * 0.32], [d * 0.48, h * 0.06]];
+    return [px('end stop', COL.charcoal, 0, x1, poly, [{ x: x1 / 2, y: sy, z: h / 2, r: Math.min(2.4, p.w * 0.3), depth: 2 }])];
   }
-  return out;
+  if (p.kind === 'endPlate') return [px('end plate', p.color, 0, x1, prof)];
+  const tw = p.w;
+  const pk: PPocket[] = [];
+  if (tw >= 3) {
+    const r = Math.min(1.9, tw * 0.32, sH * 0.3);
+    const dx = Math.min(tw * 0.3, 2.2);
+    const ds = Math.min(3, (d - yS) * 0.18);
+    for (const top of [true, false]) {
+      pk.push({ x: tw / 2, y: yS, z: top ? h - sH / 2 : sH / 2, r, depth: 1.5 });
+      pk.push({ x: tw / 2, y: yS + 2 + ds, z: top ? h : 0, dx, ds, depth: Math.min(8, sH * 0.65) });
+    }
+  }
+  const m = Math.min(0.4, tw * 0.1);
+  return [
+    px(p.ground ? 'ground terminal' : 'terminal', p.color, 0, x1, prof, pk),
+    bx('marker', p.ground ? COL.groundYellow : COL.marker, m, 0, zr0 + 1, x1 - m, yM, zr1 - 1),
+  ];
 }
 
 /** Relay: plug-in cube relay on its socket, socket alone, or slim interface relay. */
