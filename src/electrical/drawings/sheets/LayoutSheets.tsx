@@ -1,6 +1,6 @@
 /** Panel (backplate) layout and door layout, drawn to scale. */
 import type { DoorItem, PlacedItem } from '../../derive';
-import { AREA, AREA_B, AREA_R, LW, LW_THIN, textWidth } from '../geometry';
+import { AREA, AREA_B, AREA_R, LW, LW_THIN, textWidth, wrapText } from '../geometry';
 import type { DrawingPlan, PlannedSheet } from '../plan';
 import { Line, Txt } from '../symbols';
 import { doorScale, niceScale, panelScale, scaleText } from '../scale';
@@ -65,6 +65,40 @@ function ItemLabel({ x, y, w, h, label, pn }: { x: number; y: number; w: number;
   return <Txt x={x + w / 2 + 0.8} y={y + h / 2} size={Math.min(size, w - 0.4)} mono bold anchor="middle" rotate={-90} maxW={h - 1}>{label}</Txt>;
 }
 
+function PanelNotes({ plan, x, w, y }: { plan: DrawingPlan; x: number; w: number; y: number }) {
+  const L = plan.layout;
+  const e = L.enclosure, bp = L.backplate;
+  const duct = plan.model.rc.find((c) => c.category === 'wireDuct');
+  const blocks: { title: string; lines: string[]; box?: boolean }[] = [
+    { title: 'ENCLOSURE', lines: [`${e.tag ?? '—'} ${e.partNumber ?? '(NOT SPECIFIED)'} — ${plan.ctx.design.inputs.enclosureRating}`, `${inch(e.w)} W x ${inch(e.h)} H${e.d ? ` x ${inch(e.d)} D` : ''} (${Math.round(e.w)} x ${Math.round(e.h)}${e.d ? ` x ${Math.round(e.d)}` : ''} mm)${e.estimated ? ' — SIZE ESTIMATED' : ''}`] },
+    { title: 'BACK PANEL', lines: [`${bp.tag ? `${bp.tag} ${bp.partNumber}` : 'PER ENCLOSURE DATA'}${bp.estimated ? ' (SIZE ESTIMATED)' : ''}`, `${inch(bp.w)} x ${inch(bp.h)} (${Math.round(bp.w)} x ${Math.round(bp.h)} mm)`] },
+    { title: 'NOTES', lines: [
+      `HATCHED = SLOTTED WIRE DUCT${duct ? ` ${duct.partNumber}` : ''}. 35 mm DIN RAIL. DASHED OUTLINE / * = ESTIMATED DIMENSIONS.`,
+      'KEEP 25 mm (1") MIN. FROM DUCT TO DEVICE TERMINALS; VERIFY VFD / POWER SUPPLY HEAT CLEARANCES.',
+      'GROUND BAR BOLTED TO BACK PANEL; BOND BACK PANEL AND DOOR TO ENCLOSURE.',
+      ...(L.unplaced.length ? [`NOT ON BACK PANEL: ${L.unplaced.map((u) => `${u.tag} (${u.reason})`).join(', ')}`] : []),
+    ] },
+  ];
+  if (L.notFit.length) blocks.push({ title: 'DOES NOT FIT — NOT DRAWN', box: true, lines: [...L.notFit.map((n) => `${n.tag}  ${n.partNumber}  ${Math.round(n.w)} x ${Math.round(n.h)} mm`), 'USE A LARGER ENCLOSURE OR REARRANGE.'] });
+  let yy = y;
+  return (
+    <g>
+      {blocks.map((b) => {
+        const lines = b.lines.flatMap((l) => wrapText(l, w - (b.box ? 4 : 0), 2.3));
+        const y0 = yy;
+        yy += 4.4 + lines.length * 3.3 + 4;
+        return (
+          <g key={b.title}>
+            {b.box && <rect x={x - 1.5} y={y0 - 4} width={w} height={lines.length * 3.3 + 7.5} strokeWidth={0.6} />}
+            <Txt x={x} y={y0} size={2.6} bold>{b.title}</Txt>
+            {lines.map((l, i) => <Txt key={i} x={x} y={y0 + 4.2 + i * 3.3} size={2.3} maxW={w - (b.box ? 4 : 0)}>{l}</Txt>)}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 export function PanelLayoutSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
   const L = plan.layout;
   const s = panelScale(plan);
@@ -74,6 +108,7 @@ export function PanelLayoutSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Pl
   const pid = `hatch${sheet.n}`;
   const legend = [...L.items].sort((a, b) => a.label.localeCompare(b.label, 'en', { numeric: true }));
   const LX = 300;
+  const NX = Math.max(ox + e.w * s + 12, 150);
   const rowH = 4.4;
   const maxRows = Math.floor((AREA_B - (AREA.y + 14) - 30) / rowH);
   const rows = legend.flatMap((it) => (it.sub ?? [it]).map((p, i) => ({ tag: it.sub ? it.label.split('/')[i] : it.label, pn: p.partNumber, size: `${Math.round(p.w)} x ${Math.round(p.h)}${p.estimated ? '*' : ''}` })));
@@ -100,29 +135,16 @@ export function PanelLayoutSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Pl
       ))}
       {L.items.map((it, i) => <ItemRect key={i} it={it} ox={ox} oy={oy} s={s} />)}
       {/* dimensions */}
-      <Dim x1={ox} y1={oy + e.h * s + 7} x2={ox + e.w * s} y2={oy + e.h * s + 7} text={`${Math.round(e.w)} mm (${inch(e.w)}) ENCLOSURE WIDTH`} />
+      <Dim x1={ox} y1={oy + e.h * s + 7} x2={ox + e.w * s} y2={oy + e.h * s + 7} text={`ENCLOSURE ${inch(e.w)} (${Math.round(e.w)} mm)`} />
       <Line x1={ox} y1={oy + e.h * s + 1} x2={ox} y2={oy + e.h * s + 9} w={0.12} />
       <Line x1={ox + e.w * s} y1={oy + e.h * s + 1} x2={ox + e.w * s} y2={oy + e.h * s + 9} w={0.12} />
-      <Dim x1={ox - 8} y1={oy} x2={ox - 8} y2={oy + e.h * s} text={`${Math.round(e.h)} mm (${inch(e.h)})`} vertical />
+      <Dim x1={ox - 8} y1={oy} x2={ox - 8} y2={oy + e.h * s} text={`${inch(e.h)} (${Math.round(e.h)} mm)`} vertical />
       <Line x1={ox - 10} y1={oy} x2={ox - 1} y2={oy} w={0.12} />
       <Line x1={ox - 10} y1={oy + e.h * s} x2={ox - 1} y2={oy + e.h * s} w={0.12} />
-      <Dim x1={ox + bp.x * s} y1={oy + e.h * s + 14} x2={ox + (bp.x + bp.w) * s} y2={oy + e.h * s + 14} text={`BACK PANEL ${Math.round(bp.w)} x ${Math.round(bp.h)} mm${bp.estimated ? ' (EST.)' : ''}`} />
-      {/* notes */}
-      <g>
-        {[
-          `ENCLOSURE: ${e.tag ?? '—'} ${e.partNumber ?? 'NOT SPECIFIED'} ${plan.ctx.design.inputs.enclosureRating}${e.d ? `, DEPTH ${Math.round(e.d)} mm` : ''}${e.estimated ? ' (SIZE ESTIMATED)' : ''}`,
-          'HATCHED = SLOTTED WIRE DUCT (40 mm). 35 mm DIN RAIL. DASHED OUTLINE = ESTIMATED DIMENSIONS (*).',
-          'KEEP 25 mm (1") MIN. FROM DUCT TO DEVICE TERMINALS; VERIFY VFD/POWER SUPPLY HEAT CLEARANCES.',
-          ...(L.unplaced.length ? [`NOT ON BACK PANEL: ${L.unplaced.map((u) => `${u.tag} (${u.reason})`).join(', ')}`] : []),
-        ].map((t, i) => <Txt key={i} x={ox + e.w * s + 12} y={AREA_B - 18 + i * 3.6} size={2.3} maxW={LX - (ox + e.w * s + 12) - 4 + 120}>{t}</Txt>)}
-        {(L.overflow || L.door.overflow) && (
-          <g>
-            <rect x={ox + e.w * s + 10} y={oy} width={LX - (ox + e.w * s) - 16} height={14} strokeWidth={0.6} />
-            <Txt x={ox + e.w * s + 13} y={oy + 5} size={2.8} bold>WARNING: LAYOUT OVERFLOW</Txt>
-            <Txt x={ox + e.w * s + 13} y={oy + 9.5} size={2.2} maxW={LX - (ox + e.w * s) - 22}>COMPONENTS DO NOT FIT — LARGER ENCLOSURE NEEDED</Txt>
-          </g>
-        )}
-      </g>
+      <Dim x1={ox + bp.x * s} y1={oy + e.h * s + 15} x2={ox + (bp.x + bp.w) * s} y2={oy + e.h * s + 15} text={`BACK PANEL ${inch(bp.w)} x ${inch(bp.h)} (${Math.round(bp.w)} x ${Math.round(bp.h)} mm)${bp.estimated ? ' EST.' : ''}`} />
+      <Line x1={ox + bp.x * s} y1={oy + (bp.y + bp.h) * s + 1} x2={ox + bp.x * s} y2={oy + e.h * s + 17} w={0.12} />
+      <Line x1={ox + (bp.x + bp.w) * s} y1={oy + (bp.y + bp.h) * s + 1} x2={ox + (bp.x + bp.w) * s} y2={oy + e.h * s + 17} w={0.12} />
+      <PanelNotes plan={plan} x={NX} w={LX - NX - 6} y={oy + 2} />
       {/* legend */}
       <g>
         <Txt x={LX} y={AREA.y + 7} size={3} bold>PARTS LEGEND</Txt>
@@ -197,7 +219,7 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
   const s = doorScale(plan);
   const ox = AREA.x + 30, oy = AREA.y + 14;
   const ops = D.items.filter((d) => d.kind !== 'hmi');
-  const dis = plan.model.disconnect;
+  const dis = plan.layout.door.handle ?? plan.model.disconnect;
   // detail of the operator station
   const minX = Math.min(...ops.map((d) => d.cx - 35)), maxX = Math.max(...ops.map((d) => d.cx + 35));
   const minY = Math.min(...ops.map((d) => d.cy - (d.kind === 'estop' ? 40 : 35))), maxY = Math.max(...ops.map((d) => d.cy + (d.kind === 'estop' ? 40 : 30)));
@@ -258,7 +280,9 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
           </g>
         ))}
       </g>
-      <Txt x={ox} y={AREA_B - 2} size={2.2} italic>22 mm OPERATORS ON 60 x 75 mm GRID; E-STOP WITH YELLOW 60 mm LEGEND (NFPA 79 10.7). VERIFY DOOR CUTOUTS AGAINST DATASHEETS.</Txt>
+      {wrapText('22 mm OPERATORS ON 60 x 75 mm GRID; E-STOP WITH YELLOW 60 mm LEGEND (NFPA 79 10.7). VERIFY DOOR CUTOUTS AGAINST DATASHEETS.', DX0 - ox - 8, 2.2).map((l, i, arr) => (
+        <Txt key={i} x={ox} y={AREA_B - 2 - (arr.length - 1 - i) * 3} size={2.2} italic>{l}</Txt>
+      ))}
     </g>
   );
 }

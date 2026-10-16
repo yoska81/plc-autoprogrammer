@@ -1,7 +1,7 @@
 import type { Effort } from '../../store/useSettingsStore';
 import type { CpuModel, PlcProfile } from '../../plc/profile';
 import type { IOPoint } from '../../types/io';
-import type { DesignInputs, ElectricalDesign, FieldDeviceType } from '../../electrical/types';
+import type { DesignInputs, ElectricalDesign, FieldDeviceType, MotorSpec } from '../../electrical/types';
 import { CATALOG } from '../../electrical/catalog';
 import { callClaude } from './anthropic';
 
@@ -33,6 +33,17 @@ function designSchema(addresses: string[]) {
       }),
     },
     notes: { type: 'array', items: { type: 'string' } },
+    motors: {
+      type: 'array',
+      items: obj({
+        tag: { type: 'string' },
+        description: { type: 'string' },
+        hp: { type: 'number' },
+        voltage: { type: 'string', enum: ['120VAC-1PH', '208VAC-3PH', '240VAC-3PH', '480VAC-3PH'] },
+        starter: { type: 'string', enum: ['contactor-overload', 'motor-protector', 'vfd'] },
+        reversing: { type: 'boolean' },
+      }),
+    },
   });
 }
 
@@ -51,12 +62,14 @@ Design practice to follow:
 - Choose PLC expansion modules so all I/O fits with about 20% spare points.
 - E-stop: dual-channel E-stop into a safety relay that removes power from the motion outputs (contactor coils / VFD enable). PLC monitors the safety relay status.
 - Choose the enclosure and back panel so the layout fits with about 25% spare space, and include DIN rail, wire duct, terminal blocks (feed-through, ground, end plates/stops), operator devices for each pushbutton/selector/pilot light input or output, and the field devices (sensors, solenoid valves) for the I/O list.
+- Check every part's input voltage against what feeds it. The 24VDC power supplies take single-phase ~90–276 VAC: on a 208/240 V supply feed one from two phases or line-neutral; on a 480 V supply use a control power transformer (480→120 VAC, sized for the load with margin) or a 3-phase 480 V power supply if the catalog has one. Never connect a part to a voltage above its rating; if the catalog has no suitable part, say so in "notes".
 - Use the designer's required parts exactly as given.
 - Catalog specifics: an enclosure needs its matching subpanel (enclosure category, ratings kind=subpanel). The rotary disconnect needs its switch, a handle and a shaft. A reversing starter is two contactors plus SZ-RM, SZ-ERW1A and SZ-ERW1B. For a dual-channel E-stop into a safety relay, add an ECX1030-2 contact block to the E-stop. Order terminal end covers/brackets and markers with the terminal blocks.
 - Use only part numbers from the catalog. If something needed is not in the catalog, leave it out and say so in "notes".
 - Tags: CB (breakers), DS (disconnect), PS (power supply), K (contactors), OL (overloads), MP (motor protectors), VFD, CR (relays), SR (safety relay), TB (terminal strips), PB (pushbuttons), ES (E-stop), SS (selectors), PL (pilot lights), LS/PRS (sensors), SOL (solenoids), M (motors), PLC, ENC (enclosure).
 - ioWiring: one entry for every PLC I/O point in the I/O list, with the field device tag and type.
 - "notes": every assumption the engineer must confirm (motor FLA, cable lengths, sensor types, SCCR, local codes).
+- "motors": every motor the panel drives: the designer's motor list exactly as given, plus any other motor the specification mentions (estimate HP from the description when not stated and say so in "notes").
 - "explanation": a short plain-language summary of the panel for the customer.`;
 
 export async function generateElectricalDesign(opts: {
@@ -98,14 +111,14 @@ Design the complete control panel.`;
     system: SYSTEM, messages: [{ role: 'user', content }], schema: designSchema(ioAddrs),
   });
 
-  let parsed: { explanation: string } & Pick<ElectricalDesign, 'components' | 'ioWiring' | 'notes'>;
+  let parsed: { explanation: string; motors: MotorSpec[] } & Pick<ElectricalDesign, 'components' | 'ioWiring' | 'notes'>;
   try {
     parsed = JSON.parse(text);
   } catch (err) {
     throw new Error('The AI returned a design the app could not read. Please try again.', { cause: err });
   }
   return {
-    design: { inputs: opts.inputs, components: parsed.components, ioWiring: parsed.ioWiring, notes: parsed.notes, generatedAt: new Date().toISOString() },
+    design: { inputs: { ...opts.inputs, motors: parsed.motors }, components: parsed.components, ioWiring: parsed.ioWiring, notes: parsed.notes, generatedAt: new Date().toISOString() },
     explanation: parsed.explanation,
     reasoning,
   };

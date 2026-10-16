@@ -23,7 +23,11 @@ function toNickname(text: string, used: Set<string>): string {
 
 const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
 
-export function clickNicknameCsv(program: LadderProgram, io: IOPoint[], addresses: Map<string, string>): string {
+/**
+ * The same CSV loads into C-more (Tag import, ".csv Format = CLICK"), so HMI
+ * tags passed in `extra` get nicknames for the HMI too.
+ */
+export function clickNicknameCsv(program: LadderProgram, io: IOPoint[], addresses: Map<string, string>, extra: { address: string; nickname: string; comment: string }[] = []): string {
   const used = new Set<string>();
   const rows: string[] = ['Address,Data Type,Nickname,Initial Value,Retentive,Address Comment'];
   const seen = new Set<string>();
@@ -38,6 +42,7 @@ export function clickNicknameCsv(program: LadderProgram, io: IOPoint[], addresse
     if (a) add(a, p.description || p.id, `${p.id} ${p.category}`);
   }
   for (const t of program.tags) add(t.address, t.nickname, t.comment);
+  for (const t of extra) add(t.address, t.nickname, t.comment);
   return rows.join('\r\n') + '\r\n';
 }
 

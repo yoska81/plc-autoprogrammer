@@ -14,6 +14,8 @@ interface IOStore {
   setPlcAddress: (id: string, address: string) => void;
   /** Add points read from an existing machine; replace=true clears the list first. */
   importPoints: (points: Omit<IOPoint, 'id'>[], replace: boolean) => void;
+  /** Apply a reviewed AI I/O update: update kept points, add new ones, remove dropped ones. */
+  applyIOUpdate: (kept: Pick<IOPoint, 'id' | 'category' | 'deviceType'>[], added: Omit<IOPoint, 'id'>[], removedIds: string[]) => void;
 }
 
 function nextInputId(existing: IOPoint[]): string {
@@ -103,6 +105,21 @@ export const useIOStore = create<IOStore>()(
         set((s) => {
           let current = replace ? [] : [...s.projectIO];
           for (const p of points) {
+            const id = p.type === 'input' ? nextInputId(current) : nextOutputId(current);
+            current = [...current, { ...p, id }];
+          }
+          return { projectIO: current };
+        });
+      },
+
+      applyIOUpdate: (kept, added, removedIds) => {
+        set((s) => {
+          const keptById = new Map(kept.map((k) => [k.id, k]));
+          const removed = new Set(removedIds);
+          let current = s.projectIO
+            .filter((p) => !removed.has(p.id))
+            .map((p) => (keptById.has(p.id) ? { ...p, ...keptById.get(p.id) } : p));
+          for (const p of added) {
             const id = p.type === 'input' ? nextInputId(current) : nextOutputId(current);
             current = [...current, { ...p, id }];
           }

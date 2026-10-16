@@ -11,6 +11,10 @@ import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
 import type { CatalogCategory, DesignInputs, EnclosureRating, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
 import { Spinner, ReasoningPanel } from '../components/program/common';
+import StageBanner from '../components/StageBanner';
+import { useFingerprints, useStages } from '../spec/useStages';
+import { useStageStore } from '../store/useStageStore';
+import { specToText } from '../spec/types';
 
 const SUPPLIES: SupplyVoltage[] = ['480VAC-3PH', '240VAC-3PH', '208VAC-3PH', '120VAC-1PH'];
 const ENCLOSURES: EnclosureRating[] = ['NEMA 12', 'NEMA 4', 'NEMA 4X', 'NEMA 1'];
@@ -38,7 +42,11 @@ type Tab = 'design' | 'drawings';
 export default function ElectricalPage() {
   const el = useElectricalStore();
   const settings = useSettingsStore();
-  const { userPrompt, projectName } = useProgramStore();
+  const { projectName } = useProgramStore();
+  const fp = useFingerprints();
+  const stages = useStages();
+  const markGenerated = useStageStore((s) => s.markGenerated);
+  const specText = specToText(fp.spec);
   const { profile, cpu, io, addresses } = usePlc();
   const ctx = useDrawingContext();
 
@@ -65,9 +73,11 @@ export default function ElectricalPage() {
     try {
       const r = await generateElectricalDesign({
         apiKey, model: settings.anthropicModel, effort: settings.effort,
-        profile, cpu, io, addresses, machineDescription: userPrompt, inputs,
+        profile, cpu, io, addresses, machineDescription: specText, inputs,
       });
+      el.setInputs(r.design.inputs);
       el.setDesign(r.design, 'generated', r.explanation);
+      markGenerated('electrical', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp });
       setReasoning(r.reasoning);
       setTab('drawings');
     } catch (err) {
@@ -86,7 +96,7 @@ export default function ElectricalPage() {
       <header className="px-6 pt-4 bg-white border-b border-gray-200">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">Electrical Design</h2>
+            <h2 className="text-lg font-semibold text-gray-800">3 · Electrical Design</h2>
             <p className="text-xs text-gray-400 mt-0.5">Control panel design and drawings · AutomationDirect parts · {profile.name} {cpu.id}</p>
           </div>
           {el.design && (
@@ -100,6 +110,10 @@ export default function ElectricalPage() {
         <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('drawings', 'Drawings')}</div>
       </header>
 
+      <StageBanner info={stages.electrical} action={
+        <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded disabled:opacity-50">
+          {el.isGenerating ? 'Updating…' : 'Update design'}
+        </button>} />
       {tab === 'drawings' ? (
         <div className="flex-1 overflow-hidden flex flex-col bg-gray-100">
           {ctx ? (
@@ -131,8 +145,8 @@ export default function ElectricalPage() {
             <div className={`${card} space-y-4`}>
               <h3 className="text-sm font-semibold text-gray-800">1. Machine and power</h3>
               <p className="text-xs text-gray-500">
-                The design uses the machine description from the <Link to="/program" className="underline">Program</Link> page
-                {userPrompt ? '' : ' (still empty: add one there for a better design)'} and the <Link to="/io" className="underline">I/O List</Link> ({io.length} points).
+                The design is made from your <Link to="/spec" className="underline">spec</Link>
+                {specText ? '' : ' (still empty: describe the machine first)'} and the <Link to="/io" className="underline">I/O List</Link> ({io.length} points). Motors and voltages below are filled in from the spec when you generate; adjust them if needed.
               </p>
               <div className="flex flex-wrap gap-4">
                 <label className="text-sm text-gray-700">Supply voltage<br />

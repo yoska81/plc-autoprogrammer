@@ -21,6 +21,8 @@ export interface Proposal {
   program: LadderProgram;
   explanation: string;
   reasoning: string | null;
+  /** Made to follow a spec/I/O/HMI change; approving it brings the program up to date. */
+  specUpdate?: boolean;
 }
 
 const MAX_VERSIONS = 50;

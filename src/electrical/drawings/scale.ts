@@ -15,10 +15,10 @@ export function scaleText(s: number): string {
 
 export function panelScale(plan: DrawingPlan): number {
   const e = plan.layout.enclosure;
-  return niceScale(Math.min(250 / e.w, 196 / e.h));
+  return niceScale(Math.min(250 / e.w, 176 / e.h));
 }
 
 export function doorScale(plan: DrawingPlan): number {
   const e = plan.layout.door;
-  return niceScale(Math.min(160 / e.w, 196 / e.h));
+  return niceScale(Math.min(160 / e.w, 176 / e.h));
 }

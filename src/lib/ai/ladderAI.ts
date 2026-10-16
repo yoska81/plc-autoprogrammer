@@ -22,6 +22,8 @@ export interface PlcContext {
   addresses: Map<string, string>;
   /** Field wiring from the electrical design (address -> device), when known. */
   wiring?: Map<string, { deviceTag: string; deviceType: string }>;
+  /** HMI tags and alarms the program must implement. */
+  hmi?: { tags: { name: string; address: string; dataType: string; access: string; description: string }[]; alarms: { address: string; message: string }[] };
 }
 
 export interface LadderAIResult {
@@ -54,6 +56,13 @@ When you change an existing program:
 - If the request is only a question, answer it and return "program": null.
 
 "explanation": plain language for the operator, no code. Say what the program does or what you changed and why, list any assumptions, and list what to check on the machine before running it.`;
+}
+
+function hmiText(ctx: PlcContext): string {
+  if (!ctx.hmi?.tags.length) return '';
+  const tags = ctx.hmi.tags.map((t) => `${t.address}\t${t.dataType}\t${t.access === 'write' ? 'HMI writes' : t.access === 'read' ? 'HMI reads' : 'HMI reads/writes'}\t${t.name}: ${t.description}`).join('\n');
+  const alarms = ctx.hmi.alarms.map((a) => `${a.address}\t${a.message}`).join('\n');
+  return `\n\nHMI tags the program must implement (address, type, direction, meaning). HMI buttons are momentary unless stated; treat HMI-written bits as commands and use them in the logic. Set every alarm bit from the matching fault condition:\n${tags}${alarms ? `\n\nHMI alarm bits (address, message):\n${alarms}` : ''}`;
 }
 
 function ioTable(ctx: PlcContext): string {
@@ -118,7 +127,7 @@ async function run(ai: AIConfig, system: string, messages: ChatTurn[]): Promise<
 }
 
 export function generateLadder(ai: AIConfig, ctx: PlcContext, description: string): Promise<LadderAIResult> {
-  const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}\n\nWhat the machine must do:\n${description}\n\nWrite the complete program.`;
+  const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}${hmiText(ctx)}\n\nWhat the machine must do:\n${description}\n\nWrite the complete program.`;
   return run(ai, systemPrompt(ctx), [{ role: 'user', content }]);
 }
 
@@ -138,6 +147,6 @@ export function reviseLadder(
   const issueText = issues.length
     ? issues.map((i) => `- [${i.severity}] ${i.rungId ? `rung ${i.rungId}: ` : ''}${i.message}`).join('\n')
     : '(none)';
-  const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}\n\nCurrent program (JSON, includes any manual edits):\n${JSON.stringify(program)}\n\nIssues the app's checker found:\n${issueText}\n\nRequest:\n${request}`;
+  const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}${hmiText(ctx)}\n\nCurrent program (JSON, includes any manual edits):\n${JSON.stringify(program)}\n\nIssues the app's checker found:\n${issueText}\n\nRequest:\n${request}`;
   return run(ai, systemPrompt(ctx), [...history, { role: 'user', content }]);
 }

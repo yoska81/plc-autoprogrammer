@@ -112,11 +112,13 @@ export function ratingText(rc: ResolvedComponent | undefined): string {
   if (!rc?.part) return '';
   const r = rc.part.ratings;
   const parts: string[] = [];
-  const amps = num(r, 'amps', 'current', 'ampRating');
-  const range = str(r, 'range', 'setting', 'ampRange');
+  const amps = num(r, 'amps', 'outputAmps', 'current', 'ampRating');
+  const minA = num(r, 'minAmps'), maxA = num(r, 'maxAmps');
+  const range = str(r, 'range', 'setting', 'ampRange') ?? (minA !== undefined && maxA !== undefined ? `${minA}-${maxA}` : undefined);
   const poles = num(r, 'poles');
   const watts = num(r, 'watts');
-  const volts = str(r, 'outputVoltage', 'output');
+  const ov = num(r, 'outputVolts');
+  const volts = str(r, 'outputVoltage', 'output') ?? (ov !== undefined ? `${ov}VDC` : undefined);
   const hp = num(r, 'hp480', 'hp', 'hp230');
   switch (rc.category) {
     case 'powerSupply':
@@ -363,7 +365,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const wires: WireRecord[] = [];
   const addWire = (w: WireRecord) => wires.push(w);
 
-  const disconnect = byCat(rc, 'disconnect')[0];
+  const disconnect = byCat(rc, 'disconnect').filter((c) => c.mount === 'backplate' && !isLayoutAccessory(c))[0];
   const looseProt = byCat(rc, 'breaker', 'fuse').filter((c) => !c.comp.motorTag);
   const mainBreaker = looseProt.find((c) => /main/i.test(c.comp.function) && c.category === 'breaker');
   const rest = looseProt.filter((c) => c !== mainBreaker);
@@ -827,6 +829,8 @@ export interface PlacedItem extends Rect {
   estimated: boolean;
   /** Stacked sub-items (direct-mount overload under a contactor). */
   sub?: PlacedItem[];
+  /** Extra spacing before this item when a group shares the previous rail. */
+  gapLeft?: number;
 }
 export interface DoorItem {
   tag: string;
@@ -842,22 +846,27 @@ export interface DoorItem {
   estimated: boolean;
 }
 export interface PanelLayout {
+  /** Outer enclosure size (mm). */
   enclosure: { w: number; h: number; d?: number; partNumber?: string; tag?: string; estimated: boolean };
-  backplate: Rect & { estimated: boolean };
+  /** Back panel (subpanel) placed centred in the enclosure. */
+  backplate: Rect & { estimated: boolean; partNumber?: string; tag?: string };
   rails: Rect[];
   ducts: (Rect & { orientation: 'h' | 'v' })[];
   items: PlacedItem[];
   /** Mounted elsewhere (fans, side-mounted) — listed only. */
   unplaced: { tag: string; partNumber: string; reason: string }[];
+  /** Back-panel parts that could not be placed inside the back panel. */
+  notFit: { tag: string; partNumber: string; w: number; h: number }[];
   overflow: boolean;
-  door: { w: number; h: number; items: DoorItem[]; overflow: boolean };
+  door: { w: number; h: number; items: DoorItem[]; overflow: boolean; handle?: { tag: string; partNumber: string } };
   warnings: string[];
 }
 
+/** Realistic default footprints (W x H mm) by category, used when the catalog has no dimensions. */
 const DEFAULT_DIMS: Partial<Record<CatalogCategory, [number, number]>> = {
-  disconnect: [90, 120], breaker: [18, 85], fuse: [18, 80], motorProtector: [45, 95], contactor: [45, 80], overload: [45, 70],
-  vfd: [100, 180], powerSupply: [50, 100], plc: [60, 90], plcModule: [25, 90], relay: [16, 80], safetyRelay: [22.5, 100],
-  groundBar: [100, 25], other: [50, 50], terminal: [6.2, 45], hmi: [200, 150],
+  disconnect: [54, 90], breaker: [18, 90], fuse: [18, 85], motorProtector: [45, 90], contactor: [45, 75], overload: [45, 70],
+  vfd: [100, 180], powerSupply: [50, 125], plc: [60, 90], plcModule: [25, 90], relay: [16, 80], safetyRelay: [23, 100],
+  groundBar: [100, 25], other: [50, 50], terminal: [6.2, 50], hmi: [200, 150],
 };
 
 function dims(c: ResolvedComponent): { w: number; h: number; estimated: boolean } {
@@ -869,6 +878,29 @@ function dims(c: ResolvedComponent): { w: number; h: number; estimated: boolean 
   return { w, h: ph ?? d[1], estimated: true };
 }
 
+const inMm = (v: number | undefined) => (v === undefined ? undefined : v * 25.4);
+
+/** Subpanels are catalogued as enclosures with ratings.kind = 'subpanel'. */
+export function isSubpanel(c: ResolvedComponent): boolean {
+  return c.category === 'enclosure' && (str(c.part?.ratings, 'kind') === 'subpanel' || /\b(sub ?panel|back ?panel)\b/i.test(c.part?.description ?? '') && !/enclosure/i.test(c.part?.description ?? ''));
+}
+
+/** Accessories that are not drawn as back-panel components (shafts, handles, jumpers, markers, end covers...). */
+export function isLayoutAccessory(c: ResolvedComponent): boolean {
+  if (['enclosure', 'dinRail', 'wireDuct', 'terminal', 'terminalAccessory'].includes(c.category)) return true;
+  if (c.mount !== 'backplate') return true;
+  if (num(c.part?.ratings, 'lengthMm') !== undefined && c.category !== 'groundBar') return true;
+  const ACC = /^(disconnect |terminal |din rail |terminal block )?(shaft|external (rotary )?handle|handle|contact block|jumper|marker|marking tags?|end cover|end plate|end stop|end bracket|end anchor)\b/i;
+  return ACC.test(c.part?.description ?? '') || ACC.test(c.comp.function);
+}
+
+const RAIL_H = 35;
+const CLEAR = 10;
+const MARGIN = 10;
+/** Height a direct-mount overload adds below its contactor when the catalog has no height. */
+const OL_STACK_H = 50;
+const GAP = 4;
+
 /** Breakers sit side by side and CLICK modules snap onto the CPU: no gap inside those groups. */
 function gapBefore(prev: PlacedItem | undefined, it: PlacedItem): number {
   if (!prev) return 0;
@@ -878,42 +910,48 @@ function gapBefore(prev: PlacedItem | undefined, it: PlacedItem): number {
   return GAP;
 }
 
-const RAIL_H = 35;
-const DUCT = 40;
-const CLEAR = 12;
-const MARGIN = 15;
-const GAP = 4;
-
 export function panelLayout(ctx: DrawingContext): PanelLayout {
   const m = buildModel(ctx);
   const warnings: string[] = [];
-  const enc = byCat(m.rc, 'enclosure')[0];
-  let encW = enc?.part?.widthMm, encH = enc?.part?.heightMm;
+  const encs = byCat(m.rc, 'enclosure');
+  const enc = encs.find((c) => !isSubpanel(c));
+  const sub = encs.find((c) => isSubpanel(c));
+  const er = enc?.part?.ratings;
+  // Outer enclosure: ratings in inches first (catalog widthMm/heightMm may be the usable subpanel size).
+  let encW = inMm(num(er, 'widthIn')) ?? enc?.part?.widthMm;
+  let encH = inMm(num(er, 'heightIn')) ?? enc?.part?.heightMm;
   let encEst = false;
-  if (!encW || !encH) { encW = 610; encH = 762; encEst = true; warnings.push(enc ? `Enclosure ${enc.partNumber}: dimensions missing — layout uses an estimated 610 x 762 mm (24" x 30").` : 'No enclosure part in the design — layout uses an estimated 610 x 762 mm (24" x 30") enclosure.'); }
-  const bpW0 = num(enc?.part?.ratings, 'backPanelWidthMm', 'panelWidthMm', 'subpanelWidthMm');
-  const bpH0 = num(enc?.part?.ratings, 'backPanelHeightMm', 'panelHeightMm', 'subpanelHeightMm');
-  const bpEst = !bpW0 || !bpH0;
-  const bpW = bpW0 ?? encW - 76, bpH = bpH0 ?? encH - 76;
-  const backplate = { x: (encW - bpW) / 2, y: (encH - bpH) / 2, w: bpW, h: bpH, estimated: bpEst };
-  if (bpEst && !encEst) warnings.push(`Back-panel size not in catalog data for ${enc?.partNumber ?? 'enclosure'} — estimated as enclosure minus 76 mm.`);
+  if (!encW || !encH) {
+    encW = 610; encH = 762; encEst = true;
+    warnings.push(enc ? `Enclosure ${enc.partNumber}: dimensions missing — layout uses an estimated 24" x 30" (610 x 762 mm).` : 'No enclosure part in the design — layout uses an estimated 24" x 30" (610 x 762 mm) enclosure.');
+  }
+  // Back panel: subpanel part > enclosure panel ratings > enclosure widthMm/heightMm (when outer size came from inches) > estimate.
+  const sr = sub?.part?.ratings;
+  let bpW = inMm(num(sr, 'widthIn')) ?? sub?.part?.widthMm ?? inMm(num(er, 'panelWidthIn')) ?? num(er, 'backPanelWidthMm', 'panelWidthMm', 'subpanelWidthMm');
+  let bpH = inMm(num(sr, 'heightIn')) ?? sub?.part?.heightMm ?? inMm(num(er, 'panelHeightIn')) ?? num(er, 'backPanelHeightMm', 'panelHeightMm', 'subpanelHeightMm');
+  if ((!bpW || !bpH) && num(er, 'widthIn') !== undefined && enc?.part?.widthMm && enc.part.heightMm) { bpW = enc.part.widthMm; bpH = enc.part.heightMm; }
+  const bpEst = !bpW || !bpH;
+  if (bpEst) { bpW = encW - 76; bpH = encH - 76; if (!encEst) warnings.push(`Back-panel size not in catalog data for ${enc?.partNumber ?? 'enclosure'} — estimated as enclosure minus 76 mm (3").`); }
+  bpW = Math.min(bpW!, encW); bpH = Math.min(bpH!, encH);
+  const backplate = { x: (encW - bpW) / 2, y: (encH - bpH) / 2, w: bpW, h: bpH, estimated: bpEst, partNumber: sub?.partNumber, tag: sub?.tag };
+  const ductPart = m.rc.find((c) => c.category === 'wireDuct');
+  const DUCT = ductPart?.part?.widthMm ?? inMm(num(ductPart?.part?.ratings, 'widthIn')) ?? 40;
 
-  const bp = m.rc.filter((c) => c.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminal', 'terminalAccessory'].includes(c.category));
+  const bp = m.rc.filter((c) => !isLayoutAccessory(c));
   const unplaced: PanelLayout['unplaced'] = [];
   const mk = (c: ResolvedComponent): PlacedItem => {
     const d = dims(c);
     return { tag: c.tag, partNumber: c.partNumber, category: c.category, label: c.tag, estimated: d.estimated, x: 0, y: 0, w: d.w, h: d.h };
   };
-  const expand = (c: ResolvedComponent): PlacedItem[] => Array.from({ length: Math.max(1, c.comp.quantity) }, (_, k) => {
+  const expand = (c: ResolvedComponent): PlacedItem[] => Array.from({ length: Math.max(1, Math.min(c.comp.quantity, 20)) }, (_, k) => {
     const it = mk(c);
     if (c.comp.quantity > 1) it.label = `${c.tag}${k > 0 ? `.${k + 1}` : ''}`;
     return it;
   });
-  const rows: { name: string; items: PlacedItem[] }[] = [
-    { name: 'power', items: [] }, { name: 'control', items: [] }, { name: 'starters', items: [] }, { name: 'terminals', items: [] },
-  ];
+  const rows: PlacedItem[][] = [[], [], [], []];
+  const groundBars: PlacedItem[] = [];
   const sortKey = (c: ResolvedComponent) => {
-    const order: CatalogCategory[] = ['disconnect', 'breaker', 'fuse', 'powerSupply', 'plc', 'plcModule', 'motorProtector', 'contactor', 'vfd', 'safetyRelay', 'relay', 'other', 'groundBar'];
+    const order: CatalogCategory[] = ['disconnect', 'breaker', 'fuse', 'powerSupply', 'plc', 'plcModule', 'motorProtector', 'contactor', 'vfd', 'safetyRelay', 'relay', 'other'];
     const i = order.indexOf(c.category);
     return i < 0 ? 99 : i;
   };
@@ -923,14 +961,10 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     if (used.has(c)) continue;
     used.add(c);
     if (c.category === 'fan') { unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Enclosure side/door mounted' }); continue; }
-    if (c.category === 'overload') {
-      // stacked under its contactor when one exists
-      const k = bp.find((x) => x.category === 'contactor' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag);
-      if (k) continue;
-    }
-    if (['disconnect', 'breaker', 'fuse'].includes(c.category)) rows[0].items.push(...expand(c));
-    else if (['powerSupply', 'plc', 'plcModule'].includes(c.category)) rows[1].items.push(...expand(c));
-    else if (c.category === 'groundBar') rows[0].items.push(...expand(c));
+    if (c.category === 'overload' && bp.some((x) => x.category === 'contactor' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag)) continue;
+    if (c.category === 'groundBar') groundBars.push(...expand(c));
+    else if (['disconnect', 'breaker', 'fuse'].includes(c.category)) rows[0].push(...expand(c));
+    else if (['powerSupply', 'plc', 'plcModule'].includes(c.category)) rows[1].push(...expand(c));
     else if (c.category === 'contactor') {
       const it = mk(c);
       const ol = bp.find((x) => x.category === 'overload' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag);
@@ -938,79 +972,107 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
       const isRev = mm && mm.contactors[1]?.tag === c.tag;
       if (ol && !isRev) {
         const o = mk(ol);
+        if (!ol.part?.heightMm) o.h = OL_STACK_H;
         used.add(ol);
         it.sub = [{ ...it }, o];
         it.w = Math.max(it.w, o.w); it.h = it.h + o.h; it.estimated = it.estimated || o.estimated;
         it.label = `${c.tag}/${ol.tag}`;
       }
-      rows[2].items.push(it);
-    } else rows[2].items.push(...expand(c));
+      rows[2].push(it);
+    } else rows[2].push(...expand(c));
   }
-  // PLC parts not in components (cpu from ctx)
   if (!m.rc.some((c) => c.category === 'plc') && m.plcPart) {
-    rows[1].items.unshift({ tag: m.plcTag, partNumber: m.plcPart.partNumber, category: 'plc', label: m.plcTag, estimated: !(m.plcPart.widthMm && m.plcPart.heightMm), x: 0, y: 0, w: m.plcPart.widthMm ?? 60, h: m.plcPart.heightMm ?? 90 });
+    rows[1].unshift({ tag: m.plcTag, partNumber: m.plcPart.partNumber, category: 'plc', label: m.plcTag, estimated: !(m.plcPart.widthMm && m.plcPart.heightMm), x: 0, y: 0, w: m.plcPart.widthMm ?? 60, h: m.plcPart.heightMm ?? 90 });
   }
-  // terminal strips
   const termPart = m.rc.find((c) => c.category === 'terminal');
   const tw = termPart?.part?.widthMm ?? 6.2;
-  const th = termPart?.part?.heightMm ?? 45;
+  const th = termPart?.part?.heightMm ?? DEFAULT_DIMS.terminal![1];
   for (const s of m.strips) {
     const w = s.terminals.length * tw + s.endPlates * 1.5 + s.endStops * 9;
-    rows[3].items.unshift({ tag: s.tag, partNumber: termPart?.partNumber ?? '', category: 'terminal', label: `${s.tag} (${s.terminals.length})`, estimated: !(termPart?.part?.widthMm), x: 0, y: 0, w, h: th });
+    rows[3].push({ tag: s.tag, partNumber: termPart?.partNumber ?? '', category: 'terminal', label: `${s.tag} (${s.terminals.length})`, estimated: !termPart?.part?.widthMm || !termPart?.part?.heightMm, x: 0, y: 0, w, h: th });
   }
-  // keep terminal strips in TB order, ground bar last
-  rows[3].items.sort((a, b) => (a.category === 'groundBar' ? 1 : 0) - (b.category === 'groundBar' ? 1 : 0) || naturalCompare(a.tag, b.tag));
 
-  // Place rows into rails
+  // Pack rows into DIN-rail bands (wrapping onto extra rails when a row is too wide).
   const innerX0 = backplate.x + MARGIN + DUCT + CLEAR;
   const innerW = backplate.w - 2 * (MARGIN + DUCT + CLEAR);
+  const notFit: PanelLayout['notFit'] = [];
+  const bands: { items: PlacedItem[]; h: number; terminals?: boolean }[] = [];
+  const rowW = (row: PlacedItem[]) => row.reduce((a, it, k) => a + it.w + (k ? gapBefore(row[k - 1], it) : 0), 0);
+  rows.forEach((row, ri) => {
+    if (!row.length) return;
+    const last = bands[bands.length - 1];
+    // A whole group that fits on the end of the previous rail shares it (never for terminal strips).
+    if (ri < 3 && last && !last.terminals && rowW(last.items) + 3 * GAP + rowW(row) <= innerW) {
+      row[0].gapLeft = 3 * GAP;
+      last.items.push(...row);
+      return;
+    }
+    let cur: PlacedItem[] = [];
+    let w = 0;
+    for (const it of row) {
+      if (it.w > innerW) { notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h }); continue; }
+      const need = gapBefore(cur[cur.length - 1], it) + it.w;
+      if (cur.length && w + need > innerW) { bands.push({ items: cur, h: 0 }); cur = []; w = 0; }
+      w += gapBefore(cur[cur.length - 1], it) + it.w;
+      cur.push(it);
+    }
+    if (cur.length) bands.push({ items: cur, h: 0, terminals: ri === 3 });
+  });
+  for (const b of bands) b.h = Math.max(RAIL_H, ...b.items.map((i) => i.h)) + 2 * CLEAR;
+  const gbH = groundBars.length ? Math.max(...groundBars.map((g) => g.h)) + CLEAR : 0;
+  const limit = backplate.y + backplate.h - MARGIN - gbH;
   const rails: Rect[] = [];
   const ducts: PanelLayout['ducts'] = [];
   const items: PlacedItem[] = [];
+  const ductX = backplate.x + MARGIN, ductW = backplate.w - 2 * MARGIN;
   let y = backplate.y + MARGIN;
-  const bands: { items: PlacedItem[]; h: number }[] = [];
-  for (const row of rows) {
-    if (!row.items.length) continue;
-    let cur: PlacedItem[] = [];
-    let used2 = 0;
-    for (const it of row.items) {
-      const need = gapBefore(cur[cur.length - 1], it) + it.w;
-      if (cur.length && used2 + need > innerW) { bands.push({ items: cur, h: 0 }); cur = []; used2 = 0; }
-      used2 += gapBefore(cur[cur.length - 1], it) + it.w;
-      cur.push(it);
-      if (it.w > innerW) warnings.push(`${it.tag} (${it.w} mm wide) is wider than the usable back-panel width.`);
-    }
-    if (cur.length) bands.push({ items: cur, h: 0 });
-  }
-  for (const b of bands) b.h = Math.max(RAIL_H, ...b.items.map((i) => i.h)) + 2 * CLEAR;
   const ductTop = y;
-  ducts.push({ x: backplate.x + MARGIN, y, w: backplate.w - 2 * MARGIN, h: DUCT, orientation: 'h' });
+  ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
   y += DUCT;
-  for (const b of bands) {
+  bands.forEach((b, bi) => {
+    const lastBand = bi === bands.length - 1;
+    // The duct under the bottom terminal strip is optional (field wiring enters from below).
+    if (y + b.h + (lastBand && b.terminals ? 0 : DUCT) > limit + 0.01) {
+      for (const it of b.items) notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h });
+      return;
+    }
     const cy = y + b.h / 2;
     rails.push({ x: backplate.x + MARGIN + DUCT + 4, y: cy - RAIL_H / 2, w: backplate.w - 2 * (MARGIN + DUCT + 4), h: RAIL_H });
     let x = innerX0;
     b.items.forEach((it, k) => {
-      x += k > 0 ? gapBefore(b.items[k - 1], it) : 0;
+      x += k > 0 ? it.gapLeft ?? gapBefore(b.items[k - 1], it) : 0;
       it.x = x; it.y = cy - it.h / 2;
       if (it.sub) { let sy = it.y; for (const s of it.sub) { s.x = x + (it.w - s.w) / 2; s.y = sy; sy += s.h; } }
       x += it.w;
       items.push(it);
     });
     y += b.h;
-    ducts.push({ x: backplate.x + MARGIN, y, w: backplate.w - 2 * MARGIN, h: DUCT, orientation: 'h' });
-    y += DUCT;
-  }
+    if (!(lastBand && b.terminals) || y + DUCT <= limit + 0.01) {
+      ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
+      y += DUCT;
+    }
+  });
   const bottom = y;
-  ducts.push({ x: backplate.x + MARGIN, y: ductTop + DUCT, w: DUCT, h: Math.max(0, bottom - ductTop - 2 * DUCT), orientation: 'v' });
-  ducts.push({ x: backplate.x + backplate.w - MARGIN - DUCT, y: ductTop + DUCT, w: DUCT, h: Math.max(0, bottom - ductTop - 2 * DUCT), orientation: 'v' });
-  const overflow = bottom + MARGIN > backplate.y + backplate.h + 0.01;
-  if (overflow) warnings.push(`Back-panel layout overflows: needs ${Math.round(bottom + MARGIN - backplate.y)} mm of height, ${Math.round(backplate.h)} mm available — use a larger enclosure or rearrange.`);
-  const est = items.filter((i) => i.estimated && i.category !== 'terminal').map((i) => i.tag);
+  const lastDuct = ducts[ducts.length - 1];
+  const vEnd = lastDuct.y + lastDuct.h === bottom ? bottom - DUCT : bottom;
+  ducts.push({ x: ductX, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
+  ducts.push({ x: backplate.x + backplate.w - MARGIN - DUCT, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
+  // Ground bar(s): bolted to the back panel along the bottom edge, below the last duct, right-hand side.
+  let gx = backplate.x + backplate.w - MARGIN;
+  for (const g of groundBars) {
+    if (g.w > gx - (backplate.x + MARGIN) || bottom + gbH > backplate.y + backplate.h + 0.01) { notFit.push({ tag: g.label, partNumber: g.partNumber, w: g.w, h: g.h }); continue; }
+    g.x = gx - g.w; g.y = bottom + (gbH - g.h) / 2;
+    gx -= g.w + GAP;
+    items.push(g);
+  }
+  const overflow = notFit.length > 0;
+  if (overflow) warnings.push(`Back panel ${Math.round(backplate.w)} x ${Math.round(backplate.h)} mm is too small: ${notFit.map((n) => n.tag).join(', ')} do not fit — use a larger enclosure or rearrange.`);
+  const est = items.filter((i) => i.estimated && i.category !== 'terminal').map((i) => i.label);
   if (est.length) warnings.push(`Estimated dimensions used for: ${est.join(', ')} — confirm with datasheets before releasing the layout.`);
 
   // Door
-  const doorRc = m.rc.filter((c) => c.mount === 'door' && c.category !== 'fan');
+  const doorRc = m.rc.filter((c) => c.mount === 'door' && c.category !== 'fan' && c.category !== 'disconnect');
+  const handleRc = m.rc.find((c) => c.mount === 'door' && c.category === 'disconnect');
   const doorItems: DoorItem[] = [];
   const colorOf = (c: ResolvedComponent) => {
     const s = `${str(c.part?.ratings, 'color', 'lensColor', 'buttonColor') ?? ''} ${c.part?.description ?? ''} ${c.comp.function}`.toLowerCase();
@@ -1018,10 +1080,10 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   };
   const legendOf = (c: ResolvedComponent) => wrapWords((str(c.part?.ratings, 'legend') ?? c.comp.function ?? c.tag).toUpperCase(), 12).slice(0, 2);
   const hmis = doorRc.filter((c) => c.category === 'hmi');
-  const ops = doorRc.filter((c) => c.category !== 'hmi');
+  const ops = doorRc.filter((c) => c.category !== 'hmi' && !isLayoutAccessoryDoor(c));
   const kindOf = (c: ResolvedComponent): DoorItem['kind'] => c.category === 'pushbutton' ? 'pushbutton' : c.category === 'estop' ? 'estop' : c.category === 'pilotLight' ? 'pilot' : c.category === 'selector' ? 'selector' : 'other';
   const order: DoorItem['kind'][] = ['pilot', 'selector', 'pushbutton', 'other', 'estop'];
-  let dy = 90;
+  let dy = Math.min(90, encH * 0.15);
   let doorOverflow = false;
   for (const h of hmis) {
     const d = dims(h);
@@ -1042,13 +1104,18 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
       dy += pitchY + (kind === 'estop' ? 10 : 0);
     }
   }
-  if (dy > encH - 40) { doorOverflow = true; warnings.push('Door layout: operator devices do not fit on the door at the standard spacing.'); }
+  if (dy > encH - 30) { doorOverflow = true; warnings.push('Door layout: operator devices do not fit on the door at the standard spacing.'); }
 
   return {
-    enclosure: { w: encW, h: encH, d: enc?.part ? num(enc.part.ratings, 'depthMm', 'depth') : undefined, partNumber: enc?.partNumber, tag: enc?.tag, estimated: encEst },
-    backplate, rails, ducts, items, unplaced, overflow,
-    door: { w: encW, h: encH, items: doorItems, overflow: doorOverflow }, warnings,
+    enclosure: { w: encW, h: encH, d: inMm(num(er, 'depthIn')) ?? num(er, 'depthMm', 'depth'), partNumber: enc?.partNumber, tag: enc?.tag, estimated: encEst },
+    backplate, rails, ducts, items, unplaced, notFit, overflow,
+    door: { w: encW, h: encH, items: doorItems, overflow: doorOverflow, handle: handleRc ? { tag: handleRc.tag, partNumber: handleRc.partNumber } : undefined }, warnings,
   };
+}
+
+/** Door-mounted accessories that are not operator devices (contact blocks, legend plates sold separately...). */
+function isLayoutAccessoryDoor(c: ResolvedComponent): boolean {
+  return /\b(contact block|legend plate|lamp module|guard|shaft)\b/i.test(c.part?.description ?? '') && !['pushbutton', 'estop', 'pilotLight', 'selector'].includes(c.category);
 }
 
 /** Greedy word wrap by character count. */
@@ -1084,6 +1151,15 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (!m.rc.some((c) => c.category === 'enclosure')) w.push('No enclosure selected.');
   if (!m.psBranches.length) w.push('No 24VDC power supply in the design.');
   for (const b of m.psBranches) if (!b.protection) w.push(`${b.ps.tag}: no primary protection (breaker/fuses) found — add branch protection.`);
+  // A 24VDC supply's AC input must cover the voltage feeding it (phase-phase on 3-phase supplies).
+  const feedVolts = { '120VAC-1PH': 120, '208VAC-3PH': 208, '240VAC-3PH': 240, '480VAC-3PH': 480 }[m.supply];
+  const hasTransformer = m.rc.some((c) => c.part?.ratings.kind === 'transformer');
+  for (const b of m.psBranches) {
+    const range = String(b.ps.part?.ratings.inputVolts ?? '').match(/(\d+)\s*-\s*(\d+)\s*VAC/);
+    if (range && (feedVolts > Number(range[2]) || feedVolts < Number(range[1])) && !hasTransformer) {
+      w.push(`${b.ps.tag}: input rated ${range[1]}–${range[2]} VAC but the supply is ${m.supply}. Use a power supply rated for ${feedVolts} V, or feed it from a control power transformer.`);
+    }
+  }
   if (!m.groundBar) w.push('No ground bar in the design.');
   for (const mm of m.motors) {
     const t = mm.motor.tag;
@@ -1114,7 +1190,7 @@ export function designWarnings(ctx: DrawingContext): string[] {
   let inCap = 0, outCap = 0, capKnown = false;
   const caps = [m.plcPart, ...m.rc.filter((c) => c.category === 'plcModule').map((c) => c.part)];
   for (const p of caps) {
-    const i = num(p?.ratings, 'inputs', 'di', 'dcInputs'); const o = num(p?.ratings, 'outputs', 'do', 'dcOutputs');
+    const i = num(p?.ratings, 'inputs', 'discreteInputs', 'di', 'dcInputs'); const o = num(p?.ratings, 'outputs', 'discreteOutputs', 'do', 'dcOutputs');
     if (i !== undefined || o !== undefined) capKnown = true;
     inCap += i ?? 0; outCap += o ?? 0;
   }

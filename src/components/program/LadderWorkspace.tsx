@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useProgramStore } from '../../store/useProgramStore';
 import { generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../lib/ai/ladderAI';
 import { validateProgram, type ValidationIssue } from '../../plc/validate';
@@ -6,6 +7,10 @@ import { diffPrograms, summarizeDiff, type RungChange } from '../../plc/diff';
 import type { LadderProgram } from '../../plc/ladder';
 import LadderView from '../ladder/LadderView';
 import { Spinner, ReasoningPanel } from './common';
+import StageBanner from '../StageBanner';
+import { useFingerprints, useStages } from '../../spec/useStages';
+import { useStageStore } from '../../store/useStageStore';
+import { changedSections, specToText } from '../../spec/types';
 
 type Tab = 'describe' | 'fix' | 'history';
 
@@ -49,11 +54,27 @@ function IssueList({ issues, rungNumber }: { issues: ValidationIssue[]; rungNumb
 export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }: Props) {
   const store = useProgramStore();
   const { ladder, proposal, chat, versions, isGenerating, userPrompt } = store;
+  const fp = useFingerprints();
+  const stages = useStages();
+  const { sources, markGenerated } = useStageStore();
+  const specText = specToText(fp.spec);
+  const machineText = [specText, userPrompt.trim() && `Additional notes for the program:\n${userPrompt}`].filter(Boolean).join('\n\n');
+  const recordSource = () => markGenerated('program', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, hmiFp: fp.hmiFp });
 
   const [tab, setTab] = useState<Tab>(ladder.rungs.length ? 'fix' : 'describe');
   const [request, setRequest] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [selectedRungId, setSelectedRungId] = useState<string | null>(null);
+
+  const updateFromSpec = () => {
+    const changed = changedSections(sources.program?.spec ?? null, fp.spec);
+    setTab('fix');
+    return handleRevise(
+      `The machine specification and/or I/O list changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. ` +
+      `Update the program so it matches the current specification below, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specText}`,
+      true,
+    );
+  };
 
   const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet), [ladder, ctx.profile, ioAddressSet]);
 
@@ -87,23 +108,24 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
   };
 
   const handleGenerate = () => {
-    if (!userPrompt.trim()) return;
+    if (!machineText.trim()) return;
     if (ladder.rungs.length && !confirm('Replace the current program with a new one? (The current one is kept in History.)')) return;
     return runAI(async () => {
-      const r = await generateLadder(ai, ctx, userPrompt);
+      const r = await generateLadder(ai, ctx, machineText);
       if (!r.program) throw new Error('The AI did not return a program. Add more detail and try again.');
       store.setGeneratedLadder(r.program, r.explanation, r.reasoning);
+      recordSource();
       setTab('fix');
     });
   };
 
-  const handleRevise = (text: string) => {
+  const handleRevise = (text: string, specUpdate = false) => {
     const req = text.trim();
     if (!req || proposal) return;
     // Earlier turns as plain text; the current program is attached fresh by reviseLadder.
     // The conversation must open with a user turn, so lead with the original request.
     const history = [
-      { role: 'user' as const, content: `Original machine description:\n${userPrompt || '(program was drawn by hand)'}` },
+      { role: 'user' as const, content: `Machine specification:\n${machineText || '(program was drawn by hand)'}` },
       ...chat.map((m) => ({ role: m.role, content: m.text })),
     ];
     return runAI(async () => {
@@ -112,7 +134,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
       const r = await reviseLadder(ai, ctx, ladder, issues, history, req);
       if (r.program) {
         store.addChat({ role: 'assistant', text: r.explanation });
-        store.setProposal({ program: r.program, explanation: r.explanation, reasoning: r.reasoning });
+        store.setProposal({ program: r.program, explanation: r.explanation, reasoning: r.reasoning, specUpdate });
       } else {
         store.addChat({ role: 'assistant', text: r.explanation, outcome: 'no-change' });
       }
@@ -142,23 +164,27 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {tab === 'describe' && (
             <>
-              <label htmlFor="prompt" className="block text-sm font-medium text-gray-700">What should the machine do?</label>
+              <p className="text-sm text-gray-600">
+                The program is written from your <Link to="/spec" className="underline">spec</Link>, the I/O list and the HMI design.
+                {specText ? '' : ' The spec is empty: describe the machine first, or type the requirements below.'}
+              </p>
+              <label htmlFor="prompt" className="block text-sm font-medium text-gray-700">Notes for the program <span className="font-normal text-gray-400">(optional)</span></label>
               <textarea
                 id="prompt"
                 value={userPrompt}
                 onChange={(e) => store.setUserPrompt(e.target.value)}
-                rows={12}
-                placeholder="e.g. Press Start: if E-stop and guard door are OK, run Conveyor 1. When the product reaches the end sensor, stop the conveyor, extend Cylinder 1, wait for Extended, retract, then restart. Stop button stops everything. Fault if a cylinder takes more than 3 seconds."
+                rows={6}
+                placeholder="Anything program-specific that isn't in the spec, e.g. 'Use DS1 as the step register', 'Keep rung comments short'."
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
               />
               <button
                 onClick={handleGenerate}
-                disabled={isGenerating || !ready || !userPrompt.trim()}
+                disabled={isGenerating || !ready || !machineText.trim()}
                 className="w-full py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isGenerating ? <><Spinner /> Thinking & writing ladder…</> : ladder.rungs.length ? 'Generate New Program' : 'Generate Program'}
               </button>
-              <p className="text-xs text-gray-400">Uses your I/O list and the {ctx.profile.name} {ctx.cpu.id} rules. Deep thinking can take a few minutes.</p>
+              <p className="text-xs text-gray-400">Uses the {ctx.profile.name} {ctx.cpu.id} rules. Deep thinking can take a few minutes.</p>
             </>
           )}
 
@@ -243,6 +269,12 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
 
       {/* Ladder area */}
       <section className="flex-1 flex flex-col overflow-hidden bg-white">
+        {!proposal && (
+          <StageBanner info={stages.program} action={
+            <button onClick={updateFromSpec} disabled={isGenerating || !ready} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded disabled:opacity-50">
+              {isGenerating ? 'Updating…' : 'Update program'}
+            </button>} />
+        )}
         {review ? (
           <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-200 flex items-center gap-3">
             <div className="flex-1 text-sm text-indigo-900">
@@ -251,7 +283,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
               <span className="block text-xs text-indigo-700 mt-0.5">Green = added, amber = changed, red = removed.</span>
             </div>
             <button onClick={store.rejectProposal} className="px-3 py-1.5 text-sm border border-gray-300 bg-white rounded hover:bg-gray-50">Reject</button>
-            <button onClick={store.applyProposal} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700">Approve</button>
+            <button onClick={() => { const fromSpec = proposal?.specUpdate; store.applyProposal(); if (fromSpec) recordSource(); }} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700">Approve</button>
           </div>
         ) : (
           ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} />

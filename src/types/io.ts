@@ -23,6 +23,8 @@ export interface IOPoint {
   templateId?: string;
   /** Manual PLC address override (e.g. "X103"); empty = assigned automatically. */
   plcAddress?: string;
+  /** Field device type when known (from the spec or the electrical design), e.g. "sensor-pnp". */
+  deviceType?: string;
 }
 
 export interface TemplatePoint {
