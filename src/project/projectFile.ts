@@ -79,8 +79,8 @@ export async function readProjectFile(file: Blob): Promise<{ manifest: ProjectMa
   return { manifest, body };
 }
 
-/** Open a project file as a new project. Returns the new project's name. */
-export async function openProjectFile(file: Blob): Promise<string> {
+/** Open a project file as a new project. Returns the new project's id and name. */
+export async function openProjectFile(file: Blob): Promise<{ id: string; name: string }> {
   const { manifest, body } = await readProjectFile(file);
   const existing = new Set(useProjectsStore.getState().projects.map((p) => p.name));
   let name = manifest.name || 'Opened project';
@@ -92,5 +92,5 @@ export async function openProjectFile(file: Blob): Promise<string> {
   if (pp.questions) useQuestionStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.questions as never } }));
   if (pp.checkout) useCheckoutStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.checkout as never } }));
   if (pp.labels) useLabelSetupStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.labels as never } }));
-  return name;
+  return { id, name };
 }

@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SpecSectionId } from '../../spec/types';
 import { isTechnicalIssue } from './classify';
-import { useProjectsStore } from '../../store/useProjectsStore';
+import { useProjectsStore, runDerived } from '../../store/useProjectsStore';
 
 /**
  * Open questions the AI asks at every stage, with the user's answers.
@@ -129,6 +129,7 @@ export function useSyncQuestions(source: QuestionSource, items: { text: string; 
   const sync = useQuestionStore((s) => s.sync);
   const sig = items ? JSON.stringify(items) : null;
   useEffect(() => {
-    if (sig !== null) sync(projectId, source, JSON.parse(sig) as { text: string; assumption?: string; section?: SpecSectionId }[]);
+    // Registering the questions a stage asked is derived data, not a user change.
+    if (sig !== null) runDerived(() => sync(projectId, source, JSON.parse(sig) as { text: string; assumption?: string; section?: SpecSectionId }[]));
   }, [projectId, source, sig, sync]);
 }

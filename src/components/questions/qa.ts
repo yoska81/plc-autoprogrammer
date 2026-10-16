@@ -1,5 +1,5 @@
 import { useSpecStore } from '../../store/useSpecStore';
-import { useProjectsStore } from '../../store/useProjectsStore';
+import { runDerived, useProjectsStore } from '../../store/useProjectsStore';
 import { SOURCE_LABEL, useQuestionStore, type Question } from './useQuestionStore';
 
 /**
@@ -30,7 +30,8 @@ export function syncQaIntoSpec(): void {
   const qa = qaText(listFor(useProjectsStore.getState().activeId));
   const spec = useSpecStore.getState();
   if ((spec.sections.qa ?? '') === qa) return;
-  useSpecStore.setState({ sections: { ...spec.sections, qa } });
+  // Derived from the question list (the answers themselves are the user's change).
+  runDerived(() => useSpecStore.setState({ sections: { ...spec.sections, qa } }));
 }
 
 let installed = false;
