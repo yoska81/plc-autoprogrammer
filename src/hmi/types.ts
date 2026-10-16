@@ -90,6 +90,18 @@ export interface HmiElement {
   symbols?: MachineSymbol[];
 }
 
+/** A picture behind a screen (photo of the machine, screenshot of an existing HMI, drawing). */
+export interface HmiBackground {
+  /** Image as a data URL, already scaled down to the panel resolution. */
+  src: string;
+  /** fit = whole picture visible, fill = cover the screen (edges cropped), stretch = exactly the screen size. */
+  fit: 'fit' | 'fill' | 'stretch';
+  /** 0 (as is) … 0.9 (very dark), so elements on top stay readable. */
+  dim: number;
+  /** Original file name, for the user. */
+  name?: string;
+}
+
 export interface HmiScreen {
   id: string;
   name: string;
@@ -97,6 +109,8 @@ export interface HmiScreen {
   elements: HmiElement[];
   /** Password level needed to open the screen. */
   level?: AccessLevel;
+  /** Picture drawn behind the elements. */
+  background?: HmiBackground;
 }
 
 export interface HmiAlarm {
