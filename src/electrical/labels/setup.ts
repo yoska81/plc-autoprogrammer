@@ -66,11 +66,13 @@ export interface LabelSetup {
   paper: Paper;
   /** Exports: one row per copy instead of one row with a count. */
   rowPerCopy: boolean;
+  /** Label-printer PDF: one label per page, or a full liner row (N across) per page. */
+  pageLayout: 'single' | 'roll';
 }
 
 export const DEFAULT_SETUP: LabelSetup = {
   printerId: '', supply: '', sizeId: '38x12', customW: 40, customH: 15, tapeLength: 0, units: 'mm',
-  content: 'code', border: false, orientation: 'horizontal', useCopies: true, paper: 'letter', rowPerCopy: false,
+  content: 'code', border: false, orientation: 'horizontal', useCopies: true, paper: 'letter', rowPerCopy: false, pageLayout: 'single',
 };
 
 interface SetupStore {
@@ -129,6 +131,13 @@ export function sizeOf(setup: LabelSetup): LabelSize {
   if (p.id === 'custom') return { ...p, w: Math.max(3, setup.customW), h: Math.max(3, setup.customH) };
   if (p.tape && setup.tapeLength > 0) return { ...p, w: setup.tapeLength };
   return p;
+}
+
+/** Liner row for a "match the roll" PDF, or null when the supply has no confirmed liner data. */
+export function rollOf(setup: LabelSetup): { across: number; widthMm: number; gapMm: number; marginMm: number } | null {
+  const sup = setup.supply ? supplyByPart(setup.supply) : undefined;
+  if (!sup?.liner || !sup.across || sup.across < 2 || sup.continuous) return null;
+  return { across: sup.across, widthMm: sup.liner.widthMm, gapMm: sup.liner.gapMm, marginMm: sup.liner.marginMm };
 }
 
 /** "38 x 12 mm" or "1.50 x 0.47 in" */

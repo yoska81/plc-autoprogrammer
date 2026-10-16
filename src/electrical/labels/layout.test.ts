@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import type { Label, LabelKind } from '../labels';
 import { expandCopies, layoutLabel, PT, type Measure } from './layout';
-import { DEFAULT_SETUP, SIZE_PRESETS, type LabelSetup } from './setup';
+import { DEFAULT_SETUP, rollOf, SIZE_PRESETS, type LabelSetup } from './setup';
 import { PRINTERS, SUPPLIES } from './printers';
 
 // Helvetica-like widths: ~0.6 em bold, ~0.52 em regular.
@@ -70,6 +70,15 @@ for (const sup of SUPPLIES) {
     }
   }
 }
+
+// "Match the roll": the row of N labels fits the liner with equal margins.
+for (const sup of SUPPLIES.filter((x) => x.liner)) {
+  const roll = rollOf({ ...DEFAULT_SETUP, supply: sup.partNumber, pageLayout: 'roll' });
+  assert.ok(roll && roll.across === sup.across, `${sup.partNumber}: roll layout`);
+  const right = roll.widthMm - (roll.marginMm + roll.across * sup.widthMm + (roll.across - 1) * roll.gapMm);
+  assert.ok(roll.gapMm >= 0 && roll.marginMm >= 0 && Math.abs(right - roll.marginMm) < 0.05, `${sup.partNumber}: row does not fit the liner`);
+}
+assert.equal(rollOf({ ...DEFAULT_SETUP, supply: 'M21-750-499', pageLayout: 'roll' }), null, 'continuous supply has no roll layout');
 
 // Copies.
 assert.equal(expandCopies(samples, true).length, samples.length * 2);
