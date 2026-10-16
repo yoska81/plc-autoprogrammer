@@ -89,6 +89,26 @@ export interface MotorDevice extends Base {
   /** Shown inside a conveyor card. */
   conveyorId: string | null;
   state: { running: boolean; feedback: boolean; fbTimerMs: number; angle: number };
+  /** Set when the motor is on a variable frequency drive. */
+  drive?: DriveSim;
+}
+
+/**
+ * VFD behind a motor, wired like electrical/vfd.ts: output = FWD/DI1 (run forward), reverseOutput =
+ * REV/DI2 (two-wire mode 1: both on = stop), preset outputs = DI3.. multi-step speeds (binary), speedRef =
+ * analog speed reference (DF, Hz or %), faultInput = relay R1O (ON while faulted). The frequency ramps
+ * to the commanded speed in accelS (0 → maxHz); a fault coasts the motor to a stop until reset.
+ */
+export interface DriveSim {
+  reverseOutput: string | null;
+  presetOutputs: string[];
+  speedRef: string | null;
+  /** Units of the speed reference: 'Hz' or '%'. */
+  refUnits: string;
+  maxHz: number;
+  accelS: number;
+  faultInput: string | null;
+  state: { hz: number; faulted: boolean };
 }
 
 export interface ConveyorSensor { input: string; label: string; position: number }
@@ -162,6 +182,8 @@ const has = (s: string, re: RegExp) => re.test(s.toLowerCase());
 const EXTENDED_RE = /\b(extended|extend|advanced|advance|out|forward|fwd|down|lowered|work|clamped|closed)\b/;
 const RETRACTED_RE = /\b(retracted|retract|returned|return|home|in|back|up|raised|unclamped|opened|open)\b/;
 const RUNNING_RE = /\b(running|run|feedback|fb|aux|status|on)\b/;
+const REVERSE_RE = /\b(rev|reverse|backward)\b/;
+const PRESET_RE = /\b(preset|speed select|multi.?speed|step speed|high speed|low speed|fast|slow)\b/;
 const PART_RE = /\b(part|parts|product|box|item|carton|bottle|tray|piece|case|bag|photo|eye|photoeye|pe|present|presence|detect)\b/;
 const CONVEYOR_RE = /\b(conveyor|conveyors|conv|belt|roller|indexer)\b/;
 const PUSHER_RE = /\b(push|pusher|kick|kicker|eject|ejector|reject|divert|diverter|sweep|transfer)\b/;
@@ -296,13 +318,42 @@ export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): Machine
   }
 
   const motors: MotorDevice[] = [];
-  for (const m of outputs.filter((p) => outKinds.get(p.address) === 'motor')) {
+  // Drives: run outputs, plus their reverse / preset-speed outputs and analog speed reference.
+  const motorOuts = outputs.filter((p) => outKinds.get(p.address) === 'motor');
+  const isDrive = (p: SimIOPoint) => wireBy.get(p.address)?.deviceType === 'vfd-input' || has(descOf(p), /\b(vfd\d*|drive|inverter)\b/);
+  const sameDev = (a: SimIOPoint, b: { address: string; description: string }) => {
+    const ta = tagOf(a.address), tb = tagOf(b.address);
+    return ta && tb ? ta === tb : (overlap(descOf(a), b.description) ?? 0) > 0;
+  };
+  const driveRuns = motorOuts.filter((p) => isDrive(p) && !has(descOf(p), REVERSE_RE) && !has(descOf(p), PRESET_RE));
+  const driveExtra = new Map<string, { rev: string | null; presets: string[] }>();
+  const usedByDrive = new Set<string>();
+  for (const r of driveRuns) {
+    const e = { rev: null as string | null, presets: [] as string[] };
+    for (const o of motorOuts) {
+      if (o === r || driveRuns.includes(o) || usedByDrive.has(o.address) || !sameDev(r, { address: o.address, description: descOf(o) })) continue;
+      if (has(descOf(o), REVERSE_RE) && !e.rev) { e.rev = o.address; usedByDrive.add(o.address); }
+      else if (has(descOf(o), PRESET_RE)) { e.presets.push(o.address); usedByDrive.add(o.address); }
+    }
+    driveExtra.set(r.address, e);
+  }
+  const analogOuts = allPts.filter((p) => isAnalogPt(p) && p.type === 'output');
+  for (const m of motorOuts.filter((p) => !usedByDrive.has(p.address))) {
     const d = descOf(m);
+    const extra = driveExtra.get(m.address);
+    const fault = extra ? pick(d, /\b(fault|trip|tripped|alarm|error)\b/) : null;
     const fb = pick(d, RUNNING_RE, /\b(fault|overload|trip|tripped|alarm|error)\b/);
+    const ref = extra ? analogOuts.find((a) => sameDev(m, { address: a.address, description: descOf(a) })) ?? (driveRuns.length === 1 && analogOuts.length === 1 ? analogOuts[0] : undefined) : undefined;
+    const refUnits = ref?.analog?.units === '%' ? '%' : 'Hz';
     const motor: MotorDevice = {
       id: id('mtr'), kind: 'motor', label: d, tag: tagOf(m.address), output: m.address,
       feedbackInput: fb?.address ?? null, feedbackDelayMs: 200, conveyorId: null,
       state: { running: false, feedback: false, fbTimerMs: 0, angle: 0 },
+      drive: extra ? {
+        reverseOutput: extra.rev, presetOutputs: extra.presets, speedRef: ref?.address ?? null, refUnits,
+        maxHz: refUnits === 'Hz' && ref?.analog?.max ? ref.analog.max : 60, accelS: 5, faultInput: fault?.address ?? null,
+        state: { hz: 0, faulted: false },
+      } : undefined,
     };
     motors.push(motor);
     devices.push(motor);
@@ -453,7 +504,10 @@ export function machineInputs(model: MachineModel): Map<string, boolean> {
         if (d.extendedInput) out.set(d.extendedInput, d.state.pos >= 0.999);
         if (d.retractedInput) out.set(d.retractedInput, d.state.pos <= 0.001);
         break;
-      case 'motor': if (d.feedbackInput) out.set(d.feedbackInput, d.state.feedback); break;
+      case 'motor':
+        if (d.feedbackInput) out.set(d.feedbackInput, d.state.feedback);
+        if (d.drive?.faultInput) out.set(d.drive.faultInput, held === undefined ? d.drive.state.faulted : false);
+        break;
       case 'conveyor':
         for (const s of d.sensors) out.set(s.input, held ?? d.state.parts.some((p) => Math.abs(p.pos - s.position) <= SENSOR_WINDOW));
         break;
@@ -482,9 +536,10 @@ export function stepMachine(model: MachineModel, plcOutputs: OutputReader, dtMs:
       if (ext && !ret) d.state.pos = Math.min(1, d.state.pos + v);
       else if (ret && !ext) d.state.pos = Math.max(0, d.state.pos - v);
     } else if (d.kind === 'motor') {
-      const on = out(d.output);
+      let on = out(d.output);
+      if (d.drive) on = stepDrive(d.drive, on, out, plcWords, dtMs);
       d.state.running = on;
-      if (on) d.state.angle = (d.state.angle + dtMs * 0.6) % 360;
+      if (on) d.state.angle = (d.state.angle + dtMs * 0.6 * (d.drive ? Math.abs(d.drive.state.hz) / d.drive.maxHz : 1)) % 360;
       if (d.bypass?.on) { d.state.feedback = on; d.state.fbTimerMs = 0; }
       else if (on !== d.state.feedback) {
         d.state.fbTimerMs += dtMs;
@@ -496,10 +551,12 @@ export function stepMachine(model: MachineModel, plcOutputs: OutputReader, dtMs:
     if (d.kind !== 'conveyor') continue;
     const motor = byId.get(d.motorId);
     const running = motor?.kind === 'motor' && motor.state.running;
+    // belt speed follows the drive frequency
+    const speed = motor?.kind === 'motor' && motor.drive ? Math.abs(motor.drive.state.hz) / motor.drive.maxHz : 1;
     const st = d.state;
     if (running) {
-      st.belt = (st.belt + dtMs / d.travelMs) % 1;
-      const v = dtMs / Math.max(1, d.travelMs);
+      st.belt = (st.belt + (dtMs * speed) / d.travelMs) % 1;
+      const v = (dtMs * speed) / Math.max(1, d.travelMs);
       // front part first so followers queue behind it
       st.parts.sort((a, b) => b.pos - a.pos);
       for (let i = 0; i < st.parts.length; i++) {
@@ -526,6 +583,39 @@ export function stepMachine(model: MachineModel, plcOutputs: OutputReader, dtMs:
   for (const [a, v] of now) if (model.inputs.get(a) !== v) changes.set(a, v);
   model.inputs = now;
   return changes;
+}
+
+/**
+ * One drive step: commanded frequency from the run / reverse / preset outputs and the speed reference,
+ * ramped at maxHz per accelS. Returns whether the motor turns.
+ */
+function stepDrive(dr: DriveSim, fwd: boolean, out: (a: string) => boolean, word: (a: string) => number, dtMs: number): boolean {
+  const st = dr.state;
+  const rev = dr.reverseOutput ? out(dr.reverseOutput) : false;
+  let target = 0;
+  if (!st.faulted && fwd !== rev) {
+    if (dr.speedRef) {
+      const v = word(dr.speedRef);
+      target = dr.refUnits === '%' ? (v / 100) * dr.maxHz : v;
+    } else if (dr.presetOutputs.length) {
+      const step = dr.presetOutputs.reduce((n, a, k) => n + (out(a) ? 2 ** k : 0), 0);
+      const steps = 2 ** dr.presetOutputs.length - 1;
+      target = step ? (dr.maxHz * step) / steps : dr.maxHz;
+    } else target = dr.maxHz;
+    target = Math.max(0, Math.min(dr.maxHz, target)) * (rev ? -1 : 1);
+  }
+  if (st.faulted) st.hz = 0; // coast to stop
+  else {
+    const dv = (dr.maxHz / Math.max(0.1, dr.accelS)) * (dtMs / 1000);
+    st.hz = st.hz < target ? Math.min(target, st.hz + dv) : Math.max(target, st.hz - dv);
+  }
+  return Math.abs(st.hz) > 0.05;
+}
+
+/** Trip (fault) or reset a drive (fault injection in the simulator). */
+export function setDriveFault(model: MachineModel, motorId: string, faulted: boolean): void {
+  const d = model.devices.find((x) => x.id === motorId);
+  if (d?.kind === 'motor' && d.drive) d.drive.state.faulted = faulted;
 }
 
 /** Load a part at the start of a conveyor (manual). */
@@ -556,7 +646,10 @@ export function deviceAddresses(d: SimDevice): { inputs: string[]; outputs: stri
       inputs: [d.extendedInput, d.retractedInput].filter((x): x is string => !!x),
       outputs: [d.extendOutput, d.retractOutput].filter((x): x is string => !!x),
     };
-    case 'motor': return { inputs: d.feedbackInput ? [d.feedbackInput] : [], outputs: [d.output] };
+    case 'motor': return {
+      inputs: [d.feedbackInput, d.drive?.faultInput].filter((x): x is string => !!x),
+      outputs: [d.output, d.drive?.reverseOutput, ...(d.drive?.presetOutputs ?? []), d.drive?.speedRef].filter((x): x is string => !!x),
+    };
     case 'conveyor': return { inputs: d.sensors.map((s) => s.input), outputs: [] };
     case 'indicator': return { inputs: [], outputs: [d.output] };
     case 'stackLight': return { inputs: [], outputs: d.segments.map((s) => s.output) };

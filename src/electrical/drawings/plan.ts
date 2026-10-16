@@ -58,7 +58,8 @@ export type SheetSpec =
   | { kind: 'cables'; columns: CableRow[][] }
   | { kind: 'jb'; jb: JunctionBoxPlan; terminals: JbTerminal[]; trunk?: Cable; page: number; pages: number }
   | { kind: 'drill'; drill: DrillingPlan; rows: DrillRow[]; drawing: boolean; page: number; pages: number }
-  | { kind: 'analog'; from: number; page: number; pages: number };
+  | { kind: 'analog'; from: number; page: number; pages: number }
+  | { kind: 'drive'; index: number };
 
 export type DrillRow = { id: string; tag: string; x: number; y: number; size: string; verified: boolean };
 export const DRILL_ROWS_FIRST = 44;
@@ -302,6 +303,9 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   for (let i = 0, pages = Math.ceil(nAnalog / 6); i < nAnalog; i += 6) {
     specs.push({ title: `ANALOG I/O — 4–20 mA / 0–10 V LOOPS${pages > 1 ? ` (${i / 6 + 1} OF ${pages})` : ''}`, spec: { kind: 'analog', from: i, page: i / 6 + 1, pages } });
   }
+
+  // VFD control wiring + parameters (electrical/vfd.ts): one sheet per drive.
+  model.drives.forEach((c, i) => specs.push({ title: `${c.drive.tag} — DRIVE CONTROL & PARAMETERS`, spec: { kind: 'drive', index: i } }));
 
   specs.push({ title: 'PANEL LAYOUT — BACKPLATE', spec: { kind: 'panel' } });
   if (layout.door.items.length) specs.push({ title: 'DOOR LAYOUT — OPERATOR DEVICES', spec: { kind: 'door' } });

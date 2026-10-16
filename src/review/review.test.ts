@@ -134,6 +134,39 @@ test('spec coverage: analog, guarding, motors, VFD and servo the design misses',
   assert.ok(!ids().includes('spec-servo'));
 });
 
+test('drives: undersized VFD, unmonitored fault, commissioning values', () => {
+  seedSampleProject();
+  const el = useElectricalStore.getState();
+  const d = el.design!;
+  // M1 (2 HP, 3.4 A at 480 V) on a GS10 rated 2.7 A, no fault input
+  el.setDesign({
+    ...d,
+    inputs: { ...d.inputs, motors: d.inputs.motors.map((m) => (m.tag === 'M1' ? { ...m, hp: 2, starter: 'vfd' as const } : m)) },
+    components: [...d.components, { tag: 'VFD1', partNumber: 'GS13N-41P0', quantity: 1, function: 'Conveyor drive', motorTag: 'M1' }],
+  }, 'generated', 'test');
+  const f = check();
+  const size = f.find((x) => x.id === 'drive:size:VFD1');
+  assert.equal(size?.severity, 'critical', f.map((x) => x.id).join(', '));
+  assert.ok(f.some((x) => x.id === 'drive:fault:VFD1'));
+  assert.ok(f.some((x) => x.id === 'drive:commission:VFD1' && /P05\.03/.test(x.detail)));
+  assert.ok(!f.some((x) => x.id === 'drive:sto:VFD1'), 'K1 in the motor branch is the safety stop');
+});
+
+test('drives: E-stop must remove torque (STO or contactor)', () => {
+  seedSampleProject();
+  const el = useElectricalStore.getState();
+  const d = el.design!;
+  const motors = d.inputs.motors.map((m) => (m.tag === 'M1' ? { ...m, starter: 'vfd' as const } : m));
+  const base = d.components.filter((c) => !(c.motorTag === 'M1' && /contactor|overload/i.test(c.function)));
+  const vfd = (fn: string) => ({ tag: 'VFD1', partNumber: 'GS23-41P0', quantity: 1, function: fn, motorTag: 'M1' });
+  el.setDesign({ ...d, inputs: { ...d.inputs, motors }, components: [...base, vfd('Conveyor drive')] }, 'generated', 'test');
+  const sto = check().find((x) => x.id === 'drive:sto:VFD1');
+  assert.equal(sto?.severity, 'major');
+  assert.match(sto!.fix, /STO1 and STO2/);
+  el.setDesign({ ...d, inputs: { ...d.inputs, motors }, components: [...base, vfd('Conveyor drive, STO from safety relay')] }, 'generated', 'test');
+  assert.ok(!ids().includes('drive:sto:VFD1'));
+});
+
 test('no safety reset is reported once (code rule), not again as a design warning', () => {
   seedSampleProject();
   const el = useElectricalStore.getState();
