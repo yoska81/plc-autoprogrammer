@@ -1,6 +1,7 @@
 import type { ProjectSnapshot } from './collect';
 import { billOfMaterials } from '../electrical/derive';
 import { getPart } from '../electrical/catalog';
+import { supplierOfPart } from '../electrical/catalogs';
 import { getHmi } from '../hmi/hmiCatalog';
 import { sparePartsTable } from './docs/maintenance';
 import { isGroup } from './docs/table';
@@ -74,9 +75,8 @@ export const SPARES_ORDER: OrderOptions = { spares: true, labels: false, sparesO
 
 /** Supplier of a catalog part: the shop its product page is on. */
 function supplierOf(partNumber: string): string {
-  const url = getPart(partNumber)?.url ?? '';
-  if (/automationdirect\.com/i.test(url) || getHmi(partNumber)) return 'AutomationDirect';
-  return 'Supplier to confirm';
+  if (getHmi(partNumber)) return 'AutomationDirect';
+  return supplierOfPart(getPart(partNumber)) ?? 'Supplier to confirm';
 }
 
 const packOf = (partNumber: string): number => {
