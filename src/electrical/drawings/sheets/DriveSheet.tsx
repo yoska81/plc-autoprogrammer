@@ -23,7 +23,8 @@ export function DriveSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const y0 = AREA.y + 24;
   const pitch = 11;
   const rows = c.terminals;
-  const boxH = Math.max(40, rows.length * pitch + 14);
+  const sto = c.safetyStop === 'sto' ? [['STO1', '24+S', 'SAFE TORQUE OFF CH 1 (SAFETY RELAY OUTPUT)'], ['STO2', '24+S', 'SAFE TORQUE OFF CH 2 (SAFETY RELAY OUTPUT)'], ['SCM', '0V', 'STO COMMON']] : [];
+  const boxH = Math.max(40, (rows.length + sto.length) * pitch + 14);
   return (
     <g>
       <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`${d.tag} — ${d.partNumber} (${c.series === 'other' ? 'DRIVE' : `DURAPULSE ${c.series}`}) · MOTOR ${d.motorTag}: ${d.motorDescription.toUpperCase()}`}</Txt>
@@ -49,10 +50,23 @@ export function DriveSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
           </g>
         );
       })}
-      {!rows.length && <Txt x={X.drv + 15} y={y0 + 20} size={2.2} anchor="middle">NO PLC I/O</Txt>}
+      {sto.map(([term, wire, fn], i) => {
+        const y = y0 + 8 + (rows.length + i) * pitch;
+        return (
+          <g key={term}>
+            <Txt x={X.plc} y={y + 0.9} size={2.3} mono bold>{`TB1 ${wire}`}</Txt>
+            <Line x1={X.plc + 20.7} y1={y} x2={X.drv} y2={y} />
+            <WireNo x={(X.plc + X.drv) / 2 + 6} y={y} n={wire} />
+            <Txt x={X.drv + 2} y={y + 0.9} size={2.4} mono bold>{term}</Txt>
+            <Txt x={X.fn} y={y + 0.9} size={2.3} bold maxW={tableX - X.fn - 4}>{fn}</Txt>
+          </g>
+        );
+      })}
+      {!rows.length && !sto.length && <Txt x={X.drv + 15} y={y0 + 20} size={2.2} anchor="middle">NO PLC I/O</Txt>}
+      <Txt x={X.drv + 15} y={y0 + boxH + 4} size={2.0} anchor="middle" bold>{c.safetyStop === 'sto' ? 'SAFETY STOP: STO' : c.safetyStop === 'contactor' ? 'SAFETY STOP: MOTOR CONTACTOR' : 'NO SAFE STOP (STO JUMPERED)'}</Txt>
       {/* notes */}
       {c.notes.map((n, i) => (
-        <Txt key={i} x={AREA.x + 6} y={y0 + boxH + 10 + i * 5} size={2.0} maxW={tableX - AREA.x - 14}>{`${i + 1}. ${n.toUpperCase()}`}</Txt>
+        <Txt key={i} x={AREA.x + 6} y={y0 + boxH + 12 + i * 5} size={2.0} maxW={tableX - AREA.x - 14}>{`${i + 1}. ${n.toUpperCase()}`}</Txt>
       ))}
       {/* parameter table */}
       <Txt x={tableX} y={AREA.y + 20} size={2.6} bold>DRIVE PARAMETERS</Txt>

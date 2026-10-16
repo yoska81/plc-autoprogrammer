@@ -266,8 +266,18 @@ function electricalChecks({ p }: ReviewInput): Finding[] {
 function driveChecks({ p }: ReviewInput): Finding[] {
   if (!p.drawingCtx) return [];
   const out: Finding[] = [];
-  for (const c of buildModel(p.drawingCtx).drives) {
+  const model = buildModel(p.drawingCtx);
+  const safetyStop = !!(model.safety.relay || model.safety.estops.length);
+  for (const c of model.drives) {
     const d = c.drive, t = d.tag;
+    // Dropping the run command (even from 24+S) is not a safety function while STO is jumpered.
+    if (safetyStop && c.safetyStop === 'none') {
+      out.push(finding(`drive:sto:${t}`, 'major', 'safety', 'electrical', t, `${t}: E-stop does not remove motor torque`,
+        `Motor ${d.motorTag} on ${t} stops on an E-stop only because the PLC run signal drops. With the drive's Safe Torque Off ${c.series === 'GS20' ? 'jumpered (factory setting)' : 'not available'} and no contactor, that is not a safety function: a drive fault or wiring error could keep the motor turning.`,
+        c.series === 'GS20'
+          ? `Wire ${t} STO1 and STO2 from the safety relay outputs (remove the factory jumper) — write "STO from safety relay" in the ${t} component function and regenerate — or add a motor contactor controlled by the safety relay.`
+          : `Add a contactor in the ${d.motorTag} branch controlled by the safety relay (${c.series} has no STO terminals), or choose a GS20 drive and wire its STO from the safety relay.`));
+    }
     if (d.outputAmps !== undefined && d.outputAmps < d.fla) {
       out.push(finding(`drive:size:${t}`, 'critical', 'electrical', 'electrical', t, `${t} output ${d.outputAmps} A is below motor ${d.motorTag} FLA ${d.fla.toFixed(1)} A`,
         `${d.partNumber} is rated ${d.outputAmps} A output; motor ${d.motorTag} (${d.motorHp} HP, ${d.motorVolts} V) draws ${d.fla.toFixed(1)} A at full load (NEC 430.250). The drive would trip on overload or fail.`,

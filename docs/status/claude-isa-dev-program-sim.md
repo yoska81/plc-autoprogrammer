@@ -1,6 +1,6 @@
 # Dev 2 — program & simulation (`claude/isa-dev-program-sim`)
 
-Draft PR #27 (HMI bar option + variable-speed drives) → `claude/optimistic-maxwell-6nfcs6`. No blockers (real-AI scores still wait for an API key).
+Draft PR (variable-speed drives + STO; #27 merged only the HMI bar commit) → `claude/optimistic-maxwell-6nfcs6`. No blockers (real-AI scores still wait for an API key).
 
 ## Task list (restated, in priority order)
 
@@ -74,3 +74,4 @@ Draft PR #27 (HMI bar option + variable-speed drives) → `claude/optimistic-max
 - [x] Simulator: motors on drives ramp (5 s to max) to the analog reference / preset step / full speed, two-wire FWD/REV, belt speed follows the frequency, "Trip drive" / "Reset drive" fault injection (R1O input ON, coast to stop).
 - [x] Tests: `src/electrical/vfd.test.ts`, review test (undersized drive, unmonitored fault, commissioning), engine drive test (40 total). Harness `big` gains a 4–20 mA "Belt 1 speed reference" on a C0-04DA-1 → VFD1 AI2. `tools/check-all.sh us480 analog big` 0 FAIL / 0 WARN; tsc, eslint, E2E green.
 - Edits outside src/plc: `electrical/derive.ts` (drive terminal wiring, model.drives, VFD warning text), `electrical/analog.ts` + `AnalogSheet.tsx` (in-panel loops), `drawings/plan.ts` + `SheetView.tsx` + new `sheets/DriveSheet.tsx`, `deliverables/files.ts`, `review/checks.ts`, `lib/ai/hmiAI.ts`, `tools/harness/variants.ts`, `tools/ai-quality/CHANGELOG.md`, `e2e/README.md`.
+- [x] Safety stop for drives (manager requirement): the run signal dropping with 24+S is not a safety function. `DriveControl.safetyStop` = 'sto' (GS20 with "STO from safety relay" in the component function: STO1/STO2 wired from 24+S, SCM to 0V, shown on the drive sheet and in the safety function table as stop category 0), 'contactor' (motor-branch contactor) or 'none' → MAJOR review finding `drive:sto:<tag>` with the plain-English fix (GS20: wire STO; GS10: contactor). Electrical AI rule: GS20 → STO from the safety relay, GS10 → contactor. Harness `big`: VFD1 with STO. Open for the manager: a contactor upstream of a VFD is detected but not drawn in the power branch (derive's VFD branch goes protection → VFD).

@@ -42,6 +42,10 @@ export interface DriveSpec {
   /** Full-load current used for sizing (NEC 430.250 table value). */
   fla: number;
   reversing: boolean;
+  /** Design asks for Safe Torque Off from the safety relay (component function mentions STO). */
+  sto?: boolean;
+  /** The motor branch has a contactor (it can be dropped by the safety relay). */
+  contactor?: boolean;
 }
 
 export type DriveRole = 'run' | 'reverse' | 'preset' | 'fault' | 'running' | 'speed';
@@ -76,6 +80,11 @@ export interface DriveControl {
   speedSource: 'analog' | 'presets' | 'keypad';
   /** Highest speed the PLC may command (Hz). */
   maxHz: number;
+  /**
+   * How a safety stop removes torque: STO1/STO2 from the safety relay output (GS20, factory jumper
+   * removed), a contactor in the motor branch, or nothing (the run command dropping is not a safety function).
+   */
+  safetyStop: 'sto' | 'contactor' | 'none';
 }
 
 const seriesOf = (s: DriveSpec): DriveSeries => {
@@ -188,13 +197,18 @@ export function driveControls(drives: DriveSpec[], io: DriveIoPoint[], analog: A
       P('P05.04', 'Motor poles', 'NAMEPLATE', 'nameplate', 'Default 4'),
     );
     if (series === 'other') notes.push('Parameter numbers are for DURApulse GS10/GS20; check this drive\'s manual.');
-    if (series === 'GS20') notes.push('STO1/STO2 are factory-jumpered to +24 V (Safe Torque Off not used). Use STO only per the risk assessment and GS20 manual App. E.');
+    const sto = !!d.sto && series === 'GS20';
+    const safetyStop: DriveControl['safetyStop'] = sto ? 'sto' : d.contactor ? 'contactor' : 'none';
+    if (sto) notes.push(`Safe Torque Off: STO1 and STO2 from the safety relay output (${outputSupply}), factory jumper removed; SCM to 0V. A safety stop removes motor torque (stop category 0); GS20 manual App. E.`);
+    else if (d.sto) notes.push(`${series} has no STO terminals: the safety stop needs a contactor in the motor branch dropped by the safety relay.`);
+    else if (series === 'GS20') notes.push('STO1/STO2 are factory-jumpered to +24 V (Safe Torque Off not used). Use STO only per the risk assessment and GS20 manual App. E.');
+    if (safetyStop === 'contactor') notes.push('Safety stop: the motor-branch contactor dropped by the safety relay removes power from the motor.');
     notes.push(sinking
       ? `Drive inputs wired for a sinking PLC output (GS20 manual App. D-4): ${outputSupply} to DCM, each DI to its PLC output; the safety circuit removes the run command.`
       : 'Drive inputs wired for a sourcing PLC output (GS20 manual App. D-4): PLC output to the DI, DCM to 0V.');
     if (/\b(hoist|lift|elevat\w*|vertical|crane|winch|incline)\b/i.test(d.motorDescription)) notes.push('Vertical / overhauling load: a braking resistor (B1-B2) and a mechanical brake are needed; size per the drive manual.');
     if (!run) notes.push('No PLC output runs this drive.');
-    return { drive: d, series, terminals, params, notes, speedSource, maxHz: hzMax };
+    return { drive: d, series, terminals, params, notes, speedSource, maxHz: hzMax, safetyStop };
   });
 }
 

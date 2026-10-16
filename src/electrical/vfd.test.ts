@@ -61,6 +61,17 @@ const [h] = driveControls([drive({ motorDescription: 'Hoist motor' })], [], [], 
 assert.ok(h.notes.some((n) => /braking resistor/i.test(n)));
 assert.ok(h.notes.some((n) => /No PLC output runs/.test(n)));
 
+// Safety stop: STO on GS20, contactor, nothing.
+assert.equal(a.safetyStop, 'none');
+const [s1] = driveControls([drive({ sto: true })], [], [], 'sinking', '24+S');
+assert.equal(s1.safetyStop, 'sto');
+assert.ok(s1.notes.some((n) => /STO1 and STO2 from the safety relay/.test(n)));
+const [s2] = driveControls([drive({ partNumber: 'GS13N-42P0', series: 'GS10', sto: true })], [], [], 'sinking', '24+S');
+assert.equal(s2.safetyStop, 'none', 'GS10 has no STO');
+assert.ok(s2.notes.some((n) => /no STO terminals/.test(n)));
+const [s3] = driveControls([drive({ contactor: true })], [], [], 'sinking', '24+S');
+assert.equal(s3.safetyStop, 'contactor');
+
 const csv = driveParamsCsv([a]);
 assert.match(csv.split('\r\n')[0], /^Drive,Part number,Motor,Parameter/);
 assert.ok(csv.includes('"VFD1","GS23-45P0","M3","P00.20"'));

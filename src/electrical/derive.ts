@@ -860,6 +860,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     motors.filter((m) => m.vfd).map((m) => ({
       tag: m.vfd!.tag, partNumber: m.vfd!.partNumber, series: String(m.vfd!.part?.ratings?.series ?? ''), outputAmps: num(m.vfd!.part?.ratings, 'outputAmps'),
       motorTag: m.motor.tag, motorDescription: m.motor.description, motorHp: m.motor.hp, motorVolts: MOTOR_VOLTS[m.motor.voltage], fla: m.fla, reversing: m.motor.reversing,
+      sto: /\b(STO|safe torque)\b/i.test(m.vfd!.comp.function), contactor: m.contactors.length > 0,
     })),
     io.map((p) => ({ address: p.address, type: p.type, description: p.description, deviceTag: p.deviceTag, deviceType: p.deviceType })),
     ctx.analog ?? [], driveOutStyle, safety.outputSupply,
@@ -873,6 +874,11 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       else addWire({ wire: '0V', from: `${tag}:DCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} digital input common` });
     }
     if (c.terminals.some((t) => t.role === 'fault')) addWire({ wire: '24+', from: 'TB1 24+', to: `${tag}:R1`, color: 'BU', size: '18 AWG', function: `${tag} fault relay common` });
+    if (c.safetyStop === 'sto') {
+      // Safe Torque Off from the safety relay output (factory STO jumper removed), GS20 manual App. E.
+      for (const ch of ['STO1', 'STO2']) addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${tag}:${ch}`, color: 'BU', size: '18 AWG', function: `${tag} Safe Torque Off ${ch} (safety relay output)` });
+      addWire({ wire: '0V', from: `${tag}:SCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} STO common` });
+    }
     if (c.terminals.some((t) => t.role === 'running')) addWire({ wire: '0V', from: `${tag}:DOC`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} DO1 common` });
   }
 

@@ -172,7 +172,7 @@ export function setupVariant(v: Variant) {
   ];
   const vfd = [3, 4, 5, 6].flatMap((n, i) => [
     c(`CB${n}`, 'GMCBU-3C-15', 1, `Motor M${n} branch protection`, `M${n}`),
-    c(`VFD${i + 1}`, 'GS23-45P0', 1, `Belt ${i + 1} drive`, `M${n}`),
+    c(`VFD${i + 1}`, 'GS23-45P0', 1, `Belt ${i + 1} drive${i === 0 ? ', STO from safety relay' : ''}`, `M${n}`),
   ]);
   elec.setDesign(design({
     supply: '480VAC-3PH', motors, ioWiring: io,

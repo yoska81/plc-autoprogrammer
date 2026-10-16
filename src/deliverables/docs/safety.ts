@@ -53,6 +53,10 @@ export function safetyFunctions(p: ProjectSnapshot): SafetyFunction[] {
     if (s.mcr) finals.push(`${s.mcr.tag} master control relay`);
     const conts = m.motors.flatMap((x) => x.contactors.map((c) => c.tag));
     if (conts.length) finals.push(`Motor contactor(s) ${conts.join(', ')}`);
+    const sto = m.drives.filter((c) => c.safetyStop === 'sto').map((c) => c.drive.tag);
+    if (sto.length) finals.push(`Safe Torque Off STO1/STO2 of ${sto.join(', ')} (stop category 0)`);
+    const noSafeStop = m.drives.filter((c) => c.safetyStop === 'none').map((c) => c.drive.tag);
+    if (noSafeStop.length) finals.push(`NOT A SAFETY FUNCTION: ${noSafeStop.join(', ')} stop only by the PLC run signal (STO jumpered, no contactor)`);
     const channels = Number(s.relay?.part?.ratings.channels ?? 0);
     const arch = s.relay
       ? `${channels === 2 ? 'Dual-channel' : 'Single-channel'} E-stop input to ${s.relay.tag}; ${s.edm.length ? `EDM monitoring of ${s.edm.join(', ')}` : 'no EDM'}; ${conts.length <= 1 && !s.mcr ? 'single-channel output stage' : 'output stage per drawings'}. Category / PL to be verified per ISO 13849-1/-2.`
