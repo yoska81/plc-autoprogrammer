@@ -27,3 +27,16 @@ export function doorScale(plan: DrawingPlan): number {
 export function drillScale(w: number, h: number): number {
   return niceScale(Math.min(240 / w, 168 / h));
 }
+
+/** Machine layout sheet drawing window (mm). */
+export const LAYOUT_DW = 272;
+export const LAYOUT_DH = 187;
+const LAYOUT_DENOM = [10, 20, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000, 1500, 2000];
+
+/** Scale denominator (1:n) of the machine layout sheet, or null without a layout. */
+export function machineLayoutScale(plan: DrawingPlan): number | null {
+  const ml = plan.ctx.machineLayout;
+  if (!ml || ml.sizeM.w <= 0 || ml.sizeM.h <= 0) return null;
+  const mmPerM = Math.min(LAYOUT_DW / ml.sizeM.w, LAYOUT_DH / ml.sizeM.h);
+  return LAYOUT_DENOM.find((d) => 1000 / d <= mmPerM) ?? LAYOUT_DENOM[LAYOUT_DENOM.length - 1];
+}

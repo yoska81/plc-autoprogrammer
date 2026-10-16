@@ -14,7 +14,7 @@ export default function AnalogCell({ point }: { point: IOPoint }) {
     <div className="flex flex-wrap items-center gap-1">
       <button type="button" onClick={() => setAnalog(point.id, a ? null : DEFAULT)} aria-pressed={Boolean(a)}
         title={a ? 'Analog signal (4-20 mA / 0-10 V) on an analog channel — click for discrete' : 'Discrete on/off point — click to make it analog'}
-        className={`rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold ${a ? 'border-brand-600 bg-brand-600 text-brand-950' : 'border-steel-300 bg-white text-steel-500 hover:bg-steel-50'}`}>
+        className={`rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold ${a ? 'border-brand-600 bg-brand-600 text-white' : 'border-steel-300 bg-white text-steel-500 hover:bg-steel-50'}`}>
         {a ? 'Analog' : 'Discrete'}
       </button>
       {a && (

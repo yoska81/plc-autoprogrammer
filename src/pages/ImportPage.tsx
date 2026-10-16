@@ -163,7 +163,7 @@ export default function ImportPage() {
             <button
               onClick={analyze}
               disabled={busy || !apiKey || !st.files.length}
-              className="px-5 py-2 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2"
+              className="px-5 py-2 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2"
             >
               {busy ? <><Spinner /> Reading drawings… this can take a few minutes</> : result ? 'Analyze again' : 'Analyze'}
             </button>

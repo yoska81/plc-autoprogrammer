@@ -8,6 +8,7 @@ import { checkDesign, fixDesignLayout, layoutBands, MIN_TOUCH, GAP } from '../..
 import { specToText, type SpecSections } from '../../spec/types';
 import { callClaude, type RichTurn } from './anthropic';
 import type { HmiTag } from '../../hmi/types';
+import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes } from '../../components/questions/classify';
 
 const obj = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 const ns = { type: ['string', 'null'] };
@@ -69,7 +70,7 @@ const SCHEMA = obj({
       description: { type: 'string' },
     }),
   },
-  notes: { type: 'array', items: { type: 'string' } },
+  notes: { type: 'array', items: NOTE_SCHEMA },
 });
 
 function system(hmi: HmiModel, guidelines: string, comms: string) {
@@ -116,7 +117,9 @@ PLC ADDRESSING (the PLC program will be written to match these tags exactly)
 - "alarms": one entry per alarm bit with a clear operator message (what happened + where), severity alarm (stops the machine) or warning.
 
 ${guidelines ? `Guidelines:\n${guidelines}\n` : ''}${comms ? `PLC communication notes:\n${comms}\n` : ''}
-"machineName": short machine name for the header. "notes": what the engineer must confirm (passwords per level, recipe needs, missing information). "explanation": a short summary of the screens for the customer.`;
+"machineName": short machine name for the header. "notes": what must be confirmed (passwords per level, recipe needs, missing information).
+${NOTE_KINDS_RULE}
+"explanation": a short summary of the screens for the customer.`;
 }
 
 type RawElement = Omit<HmiElement, 'level' | 'interlock' | 'states' | 'symbols'> & {
@@ -157,7 +160,7 @@ ${opts.profile.id === 'click' ? 'CLICK I/O module grouping for the Diagnostics s
     apiKey: opts.apiKey, model: opts.model, effort: opts.effort,
     system: system(opts.hmi, opts.guidelines, opts.comms), messages: [{ role: 'user', content }], schema: SCHEMA,
   });
-  let parsed: Omit<HmiDesign, 'hmiPartNumber' | 'generatedAt' | 'screens'> & { explanation: string; machineName: string; screens: RawScreen[] };
+  let parsed: Omit<HmiDesign, 'hmiPartNumber' | 'generatedAt' | 'screens' | 'notes'> & { notes: unknown; explanation: string; machineName: string; screens: RawScreen[] };
   try {
     parsed = JSON.parse(text);
   } catch (err) {
@@ -167,9 +170,10 @@ ${opts.profile.id === 'click' ? 'CLICK I/O module grouping for the Diagnostics s
     const { level, elements, ...rest } = sc;
     return { ...rest, ...(level && level !== 'operator' ? { level } : {}), elements: elements.map(normalizeElement) };
   });
+  const notes = normalizeNotes(parsed.notes);
   const draft: HmiDesign = {
     hmiPartNumber: opts.hmi.partNumber, machineName: parsed.machineName || undefined, screens,
-    alarms: parsed.alarms, tags: parsed.tags, notes: parsed.notes, generatedAt: new Date().toISOString(),
+    alarms: parsed.alarms, tags: parsed.tags, notes: notes.map((n) => n.text), askUser: notes.filter((n) => n.kind !== 'issue').map((n) => n.text), generatedAt: new Date().toISOString(),
   };
   // Validate and repair the layout; report what was changed or is still wrong.
   const { design, notes: fixes } = fixDesignLayout(draft, opts.hmi.widthPx, opts.hmi.heightPx);

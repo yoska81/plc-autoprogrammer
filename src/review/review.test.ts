@@ -151,5 +151,15 @@ test('drives: undersized VFD, unmonitored fault, commissioning values', () => {
   assert.ok(f.some((x) => x.id === 'drive:commission:VFD1' && /P05\.03/.test(x.detail)));
 });
 
+test('no safety reset is reported once (code rule), not again as a design warning', () => {
+  seedSampleProject();
+  const el = useElectricalStore.getState();
+  const d = el.design!;
+  const resetTag = d.components.find((c) => /safety reset/i.test(c.function))?.tag;
+  el.setDesign({ ...d, components: d.components.filter((c) => c.tag !== resetTag) }, 'generated', null);
+  const reset = check().filter((f) => /no reset pushbutton/i.test(f.title));
+  assert.equal(reset.length, 1, JSON.stringify(reset.map((f) => f.id)));
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

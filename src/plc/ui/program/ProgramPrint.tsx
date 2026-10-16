@@ -64,7 +64,7 @@ export default function ProgramPrint({ program, projectName, plcName, issues, la
       <style>{PRINT_CSS}</style>
       <div className="no-print sticky top-0 z-10 flex items-center gap-2 border-b border-gray-200 bg-white px-6 py-2 shadow-sm">
         <span className="flex-1 text-sm font-semibold">Print program · {program.rungs.length} rungs in {blocks.length} blocks</span>
-        <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-brand-950 hover:bg-brand-700">
+        <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">
           <PrinterIcon className="h-4 w-4" /> Print / Save as PDF
         </button>
         <button type="button" onClick={onClose} className="inline-flex items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50">

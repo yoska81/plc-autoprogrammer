@@ -14,11 +14,11 @@ export const C = {
   text: '#eef0f3',
   dim: '#8b929d',
   faint: '#5a616c',
-  accent: '#EAFF46',
+  accent: '#1f7bff',
   /** Text on an accent fill. */
-  onAccent: '#0a0c0f',
-  /** Pressed (momentary) button fill: dark lime tint. */
-  pressed: '#2c3210',
+  onAccent: '#ffffff',
+  /** Pressed (momentary) button fill: dark blue tint. */
+  pressed: '#10264a',
   ok: '#33c47a',
   warning: '#f2a93b',
   alarm: '#e5484d',

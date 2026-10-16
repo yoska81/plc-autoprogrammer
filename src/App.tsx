@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   DocumentPlusIcon, ArrowUpTrayIcon, PlayIcon, ArrowDownTrayIcon, Cog6ToothIcon,
-  FolderOpenIcon, ChevronDownIcon, ChevronRightIcon,
+  FolderOpenIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, DocumentIcon, InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { IS_PREVIEW } from './preview/mode';
 import { useAutoReview } from './review/useAutoReview';
@@ -74,6 +74,7 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
       <span className="w-3.5 flex-shrink-0" onClick={(e) => { if (hasChildren) { e.preventDefault(); e.stopPropagation(); setOpen((v) => !v); } }}>
         {hasChildren && (open ? <ChevronDownIcon className="w-3.5 h-3.5" /> : <ChevronRightIcon className="w-3.5 h-3.5" />)}
       </span>
+      {hasChildren ? <FolderIcon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-steel-500'}`} /> : <DocumentIcon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-steel-400'}`} />}
       <span className={`truncate ${node.mono ? 'font-mono text-xs' : ''}`}>{node.label}</span>
       {node.questions ? <span className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900" title={`${node.questions} open question${node.questions === 1 ? '' : 's'}`} aria-label={`${node.questions} open questions`}>{node.questions}?</span> : null}
       {node.badge}
@@ -84,7 +85,7 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
     <li>
       {node.to ? (
         <NavLink to={node.to} style={{ paddingLeft: 8 + depth * 14 }}
-          className={`block pr-2 py-[3px] ${active ? 'bg-brand-600 text-brand-950' : 'text-steel-800 hover:bg-brand-50'}`}>{row}</NavLink>
+          className={`block pr-2 py-[3px] ${active ? 'bg-brand-600 text-white' : 'text-steel-800 hover:bg-brand-50'}`}>{row}</NavLink>
       ) : (
         <div style={{ paddingLeft: 8 + depth * 14 }} className="pr-2 py-[3px] text-steel-600 cursor-default" onClick={() => setOpen((v) => !v)}>{row}</div>
       )}
@@ -127,6 +128,7 @@ export default function App() {
         children: [
           { label: 'Cabinet wiring', to: '/electrical?tab=cabinet' },
           { label: 'Machine wiring', to: '/electrical?tab=machine' },
+          { label: 'Machine layout', to: '/electrical?tab=layout' },
           { label: 'Cabinet picture', to: '/electrical?tab=picture' },
           { label: 'Machining (DXF)', to: '/electrical?tab=machining' },
           { label: 'Labels', to: '/electrical?tab=labels' },
@@ -153,10 +155,11 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-[#f0f2f3] font-sans text-steel-900 text-[13px]">
       {/* Title bar */}
-      <div className="h-7 flex-shrink-0 bg-brand-950 text-white flex items-center px-3 text-xs">
-        <span className="font-semibold tracking-[0.18em] text-brand-600">ISA AUTO PROGRAMMER</span>
-        <span className="mx-2 text-brand-300">—</span>
-        <span className="truncate text-brand-100">{projectName}</span>
+      <div className="h-9 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-3 gap-2" data-testid="title-bar">
+        <span className="h-5 px-1 flex items-center bg-brand-600 text-white text-[10px] font-bold tracking-wider rounded-[3px]" aria-hidden>ISA</span>
+        <span className="font-semibold tracking-[0.14em] text-steel-900 text-sm" aria-label="ISA AUTO PROGRAMMER">AUTO PROGRAMMER</span>
+        <span className="mx-1 text-steel-300">|</span>
+        <span className="truncate text-steel-600 text-xs">{projectName}</span>
       </div>
 
       {/* Menu bar */}
@@ -211,17 +214,19 @@ export default function App() {
           <nav className="flex-1 overflow-y-auto py-1">
             <ul><TreeItem node={tree} depth={0} stages={stages} /></ul>
           </nav>
-          <div className="border-t border-steel-200 px-2 py-1.5 flex gap-3 text-[11px] text-steel-500">
+          <div className="border-t border-steel-200 px-2 py-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-steel-500">
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-600" /> done</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> out of date</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-steel-300" /> to do</span>
+            <span className="flex items-center gap-1" title="Questions the AI asked; answer them on the page or in Design review"><span className="rounded-full bg-amber-100 px-1 text-[10px] font-semibold text-amber-900">2?</span> questions</span>
           </div>
         </ResizablePane>
 
         <main className="flex-1 flex flex-col overflow-hidden">
           {IS_PREVIEW && (
-            <div className="px-4 py-1 bg-brand-700 text-brand-950 text-xs">
-              Preview with an example project. Everything is clickable and editable. AI runs on your Claude account (it asks once); files are saved through Claude.
+            <div className="px-4 py-1.5 bg-brand-50 border-b border-brand-200 text-brand-900 text-xs flex items-center gap-2">
+              <InformationCircleIcon className="w-4 h-4 text-brand-600 flex-shrink-0" />
+              Preview: everything is clickable and editable, and the example project is in the project list (top right). AI runs on your Claude account (it asks once); files are saved through Claude.
             </div>
           )}
           <Outlet />
@@ -229,7 +234,7 @@ export default function App() {
       </div>
 
       {/* Status bar */}
-      <div className="h-6 flex-shrink-0 bg-brand-950 text-brand-50 flex items-center gap-5 px-3 text-[11px]">
+      <div className="h-6 flex-shrink-0 bg-brand-600 text-white flex items-center gap-5 px-3 text-[11px]">
         <span>Ready</span>
         <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
         <span>HMI: {hmiPart || '—'}</span>

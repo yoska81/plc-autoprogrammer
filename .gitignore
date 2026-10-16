@@ -26,6 +26,7 @@ dist-preview
 e2e/out/
 e2e/out-preview/
 e2e/out-sweep/
+e2e/out-layout/
 tools/out/
 tools/.venv/
 __pycache__/
@@ -37,3 +38,5 @@ electron/vendor/
 e2e/out-desktop/
 tools/ai-quality/out/
 e2e/out-hmi-editor/
+installer/
+e2e/out-walkthrough/

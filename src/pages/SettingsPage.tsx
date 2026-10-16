@@ -18,7 +18,7 @@ function ProviderTab({ label, active, onSelect }: { label: string; active: boole
     <button
       onClick={onSelect}
       className={`flex-1 py-2.5 text-sm font-medium rounded transition-colors ${
-        active ? 'bg-brand-600 text-brand-950 shadow' : 'text-gray-600 hover:bg-gray-200'
+        active ? 'bg-brand-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'
       }`}
     >
       {label}
@@ -189,7 +189,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={handleSave}
-              className="px-5 py-2 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 transition-colors"
+              className="px-5 py-2 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 transition-colors"
             >
               Save Settings
             </button>

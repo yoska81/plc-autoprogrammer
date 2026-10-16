@@ -15,7 +15,7 @@ import { BRANDS, PRINTERS, printerById, SUPPLY_KIND_TITLE, supplyByPart, supplie
 
 const input = 'border border-steel-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 bg-white hover:bg-steel-50 disabled:opacity-40 flex items-center gap-2';
-const primary = 'px-3 py-1.5 text-sm rounded bg-brand-600 text-brand-950 font-medium hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2';
+const primary = 'px-3 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2';
 const PREVIEW_MAX = 60;
 /** Fixed row height of the label list (px) and extra rows rendered above / below the view. */
 const ROW_H = 33;

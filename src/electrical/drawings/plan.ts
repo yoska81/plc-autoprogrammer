@@ -54,6 +54,7 @@ export type SheetSpec =
   | { kind: 'bom'; rows: BomRow[]; first: boolean }
   | { kind: 'labels' }
   | { kind: 'machine'; zones: ZonePlan[] }
+  | { kind: 'layout' }
   | { kind: 'cables'; columns: CableRow[][] }
   | { kind: 'jb'; jb: JunctionBoxPlan; terminals: JbTerminal[]; trunk?: Cable; page: number; pages: number }
   | { kind: 'drill'; drill: DrillingPlan; rows: DrillRow[]; drawing: boolean; page: number; pages: number }
@@ -88,7 +89,7 @@ export const JB_ROWS = 28;
 
 export function sectionOf(kind: SheetSpec['kind']): SheetSection {
   if (kind === 'cover' || kind === 'notes' || kind === 'legend') return 'cover';
-  if (kind === 'machine' || kind === 'cables' || kind === 'jb') return 'machine';
+  if (kind === 'machine' || kind === 'layout' || kind === 'cables' || kind === 'jb') return 'machine';
   return 'cabinet';
 }
 
@@ -386,6 +387,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     }
     if (cur.length) pages.push(cur);
     pages.forEach((zs, i) => specs.push({ title: `MACHINE WIRING OVERVIEW — ZONES & CABLES${pages.length > 1 ? ` (${i + 1} OF ${pages.length})` : ''}`, spec: { kind: 'machine', zones: zs } }));
+    if (ctx.machineLayout) specs.push({ title: 'MACHINE LAYOUT — CABLE ROUTES & LENGTHS', spec: { kind: 'layout' } });
 
     const rowsC: CableRow[] = [];
     for (const c of mc.cables) { rowsC.push({ kind: 'head', cable: c }, { kind: 'head2', cable: c }); for (const k of c.cores) rowsC.push({ kind: 'core', cable: c, core: k }); }

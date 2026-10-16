@@ -1,3 +1,4 @@
+import { bgBox } from './background';
 import type { HmiDesign, HmiElement, HmiScreen, HmiState } from './types';
 import type { HmiRuntime } from './runtime';
 import { C, FONT, MONO, caps, fitSize, fitText, fmtDate, fmtTime, LEVEL_SHORT, stateTextColor, styleColor, textWidth } from './theme';
@@ -210,6 +211,9 @@ function ElementShape({ el, value, ctx }: { el: HmiElement; value: boolean | num
   switch (el.kind) {
     case 'header':
       return <Header el={el} ctx={ctx} />;
+    case 'image':
+      return el.src ? <image href={el.src} x={el.x} y={el.y} width={el.w} height={el.h} preserveAspectRatio="none" style={{ pointerEvents: 'none' }} />
+        : <rect x={el.x} y={el.y} width={el.w} height={el.h} fill="none" stroke={C.lineSoft} strokeDasharray="4 3" />;
     case 'panel':
       return (
         <g>
@@ -431,7 +435,8 @@ export default function HmiScreenView({ screen, widthPx, heightPx, read, onPress
       <rect x={0} y={0} width={widthPx} height={heightPx} fill={`url(#${gradId})`} />
       {screen.background && (
         <g style={{ pointerEvents: 'none' }} data-background="">
-          <image href={screen.background.src} x={0} y={0} width={widthPx} height={heightPx}
+          <image href={screen.background.src}
+            {...bgBox(screen.background, widthPx, heightPx)}
             preserveAspectRatio={screen.background.fit === 'stretch' ? 'none' : screen.background.fit === 'fill' ? 'xMidYMid slice' : 'xMidYMid meet'} />
           {screen.background.dim > 0 && <rect x={0} y={0} width={widthPx} height={heightPx} fill="#000" opacity={Math.min(0.9, screen.background.dim)} />}
         </g>

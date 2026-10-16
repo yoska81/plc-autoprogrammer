@@ -5,6 +5,8 @@
  * data so the Python checkers can cross-check the files.
  */
 import { seedSampleProject, DESIGN, HMI, EXAMPLE_ID } from '../../src/preview/sampleProject';
+import { useLayoutStore } from '../../src/electrical/layout/useLayoutStore';
+import { EMPTY_LAYOUT, type LayoutItem, type LayoutItemKind } from '../../src/electrical/layout/types';
 import { useProjectsStore } from '../../src/store/useProjectsStore';
 import { useIOStore } from '../../src/store/useIOStore';
 import { useProjectStore } from '../../src/store/useProjectStore';
@@ -87,6 +89,7 @@ export type Variant = typeof VARIANTS[number];
 
 export function setupVariant(v: Variant) {
   try { localStorage.clear(); } catch { /* ignore */ }
+  useLayoutStore.setState({ byProject: {} });
   seedSampleProject();
   // The example lives in its own project now; make sure it is the open one.
   if (useProjectsStore.getState().activeId !== EXAMPLE_ID) useProjectsStore.getState().openProject(EXAMPLE_ID);
@@ -196,6 +199,21 @@ export function setupVariant(v: Variant) {
     ],
   }), 'generated', 'variant big');
   useProgramStore.getState().setProjectName('Sorter Line (big test)');
+  // machine layout: 30 x 12 m plan, 100 units per metre, one cable tray along the line, a manifold for SOL2..SOL5
+  const item = (tag: string, kind: LayoutItemKind, x: number, y: number): LayoutItem => ({ id: tag, tag, kind, x, y });
+  useLayoutStore.getState().update(EXAMPLE_ID, () => ({
+    ...EMPTY_LAYOUT,
+    canvas: { w: 3000, h: 1200 },
+    scale: { unitsPerMeter: 100, a: [0, 1100], b: [1000, 1100], value: 10, unit: 'm' },
+    items: [
+      item('CABINET', 'cabinet', 200, 1000), item('AIR', 'air', 300, 1000), item('JB1', 'jb', 800, 600), item('JB2', 'jb', 2200, 600),
+      ...Array.from({ length: 24 }, (_, i) => item(`PX${i + 1}`, 'device', i < 12 ? 500 + i * 50 : 1900 + (i - 12) * 50, 500)),
+      ...Array.from({ length: 8 }, (_, i) => item(`SOL${i + 2}`, 'device', i < 4 ? 700 + i * 50 : 2100 + (i - 4) * 50, 400)),
+      ...['M1', 'M2', 'M3', 'M4', 'M5', 'M6'].map((t, i) => item(t, 'motor', [600, 2300, 900, 1200, 2500, 2800][i], 700)),
+    ],
+    routes: [{ id: 'r1', kind: 'tray', points: [[200, 900], [2900, 900]] }, { id: 'r2', kind: 'chain', points: [[1200, 900], [1200, 650]] }],
+    manifolds: [{ tag: 'MV1', valves: ['SOL2', 'SOL3', 'SOL4', 'SOL5'], x: 775, y: 350 }],
+  }));
 }
 
 const b64 = async (blob: Blob) => {

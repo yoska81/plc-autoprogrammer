@@ -369,7 +369,7 @@ export const RULES: CodeRule[] = [
         const d = `${c.part?.description ?? ''} ${c.part?.ratings.color ?? ''}`;
         const out: ReturnType<CodeRule['run']> = [];
         if (!/red/i.test(d) || !/mushroom|palm|e-?stop/i.test(d)) out.push({ subject: c.tag, severity: 'major', area: 'safety', title: `${c.tag} is not a red mushroom operator`, detail: `${c.partNumber}: ${c.part?.description ?? ''}`, fix: 'Use a red mushroom-head, latching E-stop operator.' });
-        if (!yellow) out.push({ subject: `${c.tag}-bg`, severity: 'minor', area: 'safety', title: `No yellow background for ${c.tag}`, detail: 'The E-stop actuator must be red on a yellow background (legend plate or enclosure area); no yellow legend plate is in the BOM.', fix: 'Add a yellow E-stop legend plate (e.g. 60 mm "EMERGENCY STOP").' });
+        if (!yellow) out.push({ subject: `${c.tag}-bg`, severity: 'minor', area: 'safety', title: `No yellow background for ${c.tag}`, detail: 'The E-stop actuator must be red on a yellow background (legend plate or enclosure area); no yellow legend plate is in the BOM.', fix: 'Add a yellow E-stop legend plate under the E-stop (e.g. AutomationDirect ECX1651, "EMERGENCY STOP").' });
         return out;
       });
     },

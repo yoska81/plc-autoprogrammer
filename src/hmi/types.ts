@@ -19,7 +19,8 @@ export type HmiElementKind =
   | 'datetime'        // panel clock
   | 'trend'           // sparkline of a register over time
   | 'machine'         // simple machine schematic: symbols bound to bits
-  | 'panel';          // titled group frame drawn behind the elements it contains
+  | 'panel'           // titled group frame drawn behind the elements it contains
+  | 'image';          // a picture placed on the screen like any element (move, resize, front/back)
 
 export const HMI_ELEMENT_KINDS: HmiElementKind[] = [
   'header', 'panel', 'button', 'nav', 'indicator', 'multistate', 'numeric', 'numeric-entry', 'bar', 'trend',
@@ -88,6 +89,8 @@ export interface HmiElement {
   interlock?: string | null;
   /** Symbols of a 'machine' element. */
   symbols?: MachineSymbol[];
+  /** 'image' elements: the picture as a data URL. */
+  src?: string;
 }
 
 /** A picture behind a screen (photo of the machine, screenshot of an existing HMI, drawing). */
@@ -100,6 +103,10 @@ export interface HmiBackground {
   dim: number;
   /** Original file name, for the user. */
   name?: string;
+  /** Move & zoom: shift in panel pixels and zoom factor (1 = as fitted). */
+  offsetX?: number;
+  offsetY?: number;
+  zoom?: number;
 }
 
 export interface HmiScreen {
@@ -133,6 +140,8 @@ export interface HmiDesign {
   alarms: HmiAlarm[];
   tags: HmiTag[];
   notes: string[];
+  /** The notes that are questions / assumptions for the customer (the rest are technical issues for the design review). Absent on older designs. */
+  askUser?: string[];
   generatedAt: string;
   /** Machine name shown in the header bar. */
   machineName?: string;

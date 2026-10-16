@@ -116,6 +116,8 @@ export interface ElectricalDesign {
   ioWiring: IOWiring[];
   /** Design notes and assumptions for the engineer to check. */
   notes: string[];
+  /** The notes that are questions / assumptions for the customer (the rest are technical issues for the design review). Absent on older designs. */
+  askUser?: string[];
   /** Field wiring outside the cabinet; derived with defaults when absent. */
   machine?: MachineWiring;
   generatedAt: string;

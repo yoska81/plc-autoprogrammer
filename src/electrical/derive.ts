@@ -29,6 +29,8 @@ import type {
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
 } from './types';
 import { getHmi } from '../hmi/hmiCatalog';
+import { lengthText, routedLength, withService } from './layout/geometry';
+import { CABINET, type LayoutForDesign } from './layout/types';
 
 export interface DrawingContext {
   projectName: string;
@@ -43,6 +45,8 @@ export interface DrawingContext {
   hmiPartNumber?: string | null;
   /** Document control for title blocks: numbers, company, names and revision history. */
   doc?: DocInfo;
+  /** Machine layout (metres): placed items and cable routes, for cable lengths and suggestions. */
+  machineLayout?: LayoutForDesign;
   /** Analog channel setup (DF points): drawn on the analog sheet, wired on TBA with shielded cables. */
   analog?: AnalogSetupRow[];
 }
@@ -1247,6 +1251,26 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
     if (!j.devices.length) warnings.push(`Junction box ${j.tag} (${j.zone}) has no devices routed to it.`);
     if (!j.partNumber) warnings.push(`Junction box ${j.tag} (${j.zone}): enclosure part not selected (${j.terminals.length} terminals required).`);
   }
+  // Cable lengths from the machine layout: routed length + slack + a service loop at each end.
+  const ml = ctx.machineLayout;
+  if (ml) {
+    const jbTags = new Set(jbs.map((j) => j.tag));
+    const onManifold = new Map(ml.manifolds.flatMap((mf) => mf.valves.map((v) => [v, mf] as const)));
+    const at = (tag: string): [number, number] | null => {
+      const mf = onManifold.get(tag);
+      if (mf) return [mf.x, mf.y];
+      const p = ml.pos[tag];
+      return p ? [p.x, p.y] : null;
+    };
+    for (const c of cables) {
+      const from = c.kind === 'device' && jbTags.has(c.from) ? at(c.from) : at(CABINET);
+      const to = at(c.to);
+      if (!from || !to) continue;
+      c.length = lengthText(withService(routedLength(from, to, ml.routes).len, ml.service));
+    }
+    const unplaced = cables.filter((c) => c.length === 'BY SITE').map((c) => c.to);
+    if (unplaced.length && unplaced.length < cables.length) warnings.push(`Machine layout: ${unplaced.length} cable end(s) not placed (${unplaced.slice(0, 8).join(', ')}${unplaced.length > 8 ? '…' : ''}) — their lengths stay "by site".`);
+  }
   if (cables.some((c) => c.length === 'BY SITE')) warnings.push('Cable lengths are "by site": measure routes and add service loops before ordering cable.');
   const tooBig = cables.filter((c) => c.kind === 'trunk' && c.cores.length > 36);
   if (tooBig.length) warnings.push(`Trunk cable(s) ${tooBig.map((c) => c.tag).join(', ')} exceed 36 cores — consider splitting the junction box.`);
@@ -1309,6 +1333,7 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
   const m = buildModel(ctx);
   const tc = terminalCounts(ctx);
   const lines = new Map<string, BomLine>();
+  const notesFromLayout: BomLine[] = [];
   for (const c of m.rc) {
     const key = `${c.category}|${c.partNumber}`;
     const l = lines.get(key);
@@ -1318,6 +1343,9 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
       description: c.part?.description ?? `${c.comp.function} (part not found in catalog — verify)`, tags: [c.tag], category: c.category,
     });
   }
+  // Accepted machine-layout suggestions: parts still to be selected (never an invented part number).
+  for (const mf of ctx.machineLayout?.manifolds ?? []) notesFromLayout.push({ item: 0, qty: 1, partNumber: '', manufacturer: '', description: `Valve manifold ${mf.tag}: ${mf.valves.length} stations for ${mf.valves.join(', ')} (machine layout) — part to be selected`, tags: [mf.tag], category: 'note', note: true });
+  for (const r of ctx.machineLayout?.remoteIo ?? []) notesFromLayout.push({ item: 0, qty: 1, partNumber: '', manufacturer: '', description: `Remote I/O / IO-Link block ${r.tag} for ${r.devices.length} devices near ${r.devices.slice(0, 4).join(', ')}${r.devices.length > 4 ? '…' : ''} (machine layout) — part to be selected`, tags: [r.tag], category: 'note', note: true });
   // Contactors without an internal auxiliary contact need an add-on block for the EDM / interlock N.C. contact.
   const auxMissing = [...m.auxNc].filter(([, a]) => a.missing).map(([tag]) => tag);
   if (auxMissing.length) {
@@ -1332,7 +1360,7 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
     const h = getHmi(ctx.hmiPartNumber);
     lines.set(`hmi|${ctx.hmiPartNumber}`, { item: 0, qty: 1, partNumber: ctx.hmiPartNumber, manufacturer: 'AutomationDirect', description: h?.description ?? 'Operator touch panel', tags: ['HMI1'], category: 'hmi' });
   }
-  const notes: BomLine[] = [];
+  const notes: BomLine[] = [...notesFromLayout];
   const all = [...lines.values()];
   const isGround = (l: BomLine) => /ground|pe\b|earth/i.test(`${l.description} ${ctx.getPart(l.partNumber)?.ratings?.type ?? ''}`);
   const feedLine = all.find((l) => l.category === 'terminal' && !isGround(l));

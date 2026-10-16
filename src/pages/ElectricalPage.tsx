@@ -13,6 +13,8 @@ import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electr
 import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
+import MachineLayoutPanel from '../electrical/layout/MachineLayoutPanel';
+import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
 import { useDrawingContext } from '../electrical/useDrawingContext';
@@ -32,14 +34,25 @@ const STARTERS: { value: StarterType; label: string }[] = [
   { value: 'motor-protector', label: 'Motor protector + contactor' },
   { value: 'vfd', label: 'VFD (variable speed)' },
 ];
-const CATEGORIES = [...new Set(CATALOG.map((p) => p.category))].sort() as CatalogCategory[];
+const SUPPLY_LABEL: Record<SupplyVoltage, string> = {
+  '600VAC-3PH': '600 V 3-phase', '480VAC-3PH': '480 V 3-phase', '240VAC-3PH': '240 V 3-phase', '208VAC-3PH': '208 V 3-phase', '120VAC-1PH': '120 V single-phase',
+};
+const CATEGORY_LABEL: Partial<Record<CatalogCategory, string>> = {
+  enclosure: 'Enclosure', disconnect: 'Disconnect switch', breaker: 'Circuit breaker', fuse: 'Fuse / fuse holder', powerSupply: 'Power supply',
+  contactor: 'Contactor', overload: 'Overload relay', motorProtector: 'Motor protector', vfd: 'Variable-speed drive (VFD)',
+  relay: 'Relay', safetyRelay: 'Safety relay', terminal: 'Terminal block', terminalAccessory: 'Terminal accessory',
+  pushbutton: 'Pushbutton', estop: 'E-stop', pilotLight: 'Pilot light', selector: 'Selector switch', stackLight: 'Stack light',
+  plc: 'PLC CPU', plcModule: 'PLC I/O module', hmi: 'Touch panel (HMI)', sensor: 'Sensor', solenoidValve: 'Solenoid valve',
+  dinRail: 'DIN rail', wireDuct: 'Wire duct', groundBar: 'Ground bar', fan: 'Fan / filter', other: 'Other',
+};
+const CATEGORIES = [...new Set(CATALOG.map((p) => p.category))].sort((a, b) => (CATEGORY_LABEL[a] ?? a).localeCompare(CATEGORY_LABEL[b] ?? b)) as CatalogCategory[];
 
 const input = 'border border-steel-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 const card = 'bg-white rounded-sm border border-steel-200 p-5';
 
 const download = (name: string, content: string, mime: string) => saveBlob(name, new Blob([content], { type: mime }));
 
-type Tab = 'design' | 'cabinet' | 'machine' | 'picture' | 'machining' | 'labels';
+type Tab = 'design' | 'cabinet' | 'machine' | 'layout' | 'picture' | 'machining' | 'labels';
 
 export default function ElectricalPage() {
   const el = useElectricalStore();
@@ -54,7 +67,7 @@ export default function ElectricalPage() {
 
   const [params, setParams] = useSearchParams();
   const urlTab = params.get('tab') as Tab | null;
-  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'picture', 'machining', 'labels'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
+  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'layout', 'picture', 'machining', 'labels'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
@@ -65,7 +78,7 @@ export default function ElectricalPage() {
   const setInfo = useProjectStore((s) => s.setInfo);
 
   // "Assumptions to confirm", answered under each item.
-  useSyncQuestions('electrical', el.design ? el.design.notes.map((n) => ({ text: n, assumption: n })) : null);
+  useSyncQuestions('electrical', el.design ? userNotes(el.design).map((n) => ({ text: n, assumption: n })) : null);
   const elecQuestions = useQuestions('electrical');
   const { inputs } = el;
   const setInputs = (patch: Partial<DesignInputs>) => el.setInputs({ ...inputs, ...patch });
@@ -120,15 +133,17 @@ export default function ElectricalPage() {
             </div>
           )}
         </div>
-        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('picture', 'Cabinet picture')}{tabBtn('machining', 'Machining (DXF)')}{tabBtn('labels', 'Labels')}</div>
+        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('layout', 'Machine layout')}{tabBtn('picture', 'Cabinet picture')}{tabBtn('machining', 'Machining (DXF)')}{tabBtn('labels', 'Labels')}</div>
       </header>
 
       <StageBanner info={stages.electrical} action={
-        <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-brand-600 text-brand-950 rounded disabled:opacity-50">
+        <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
       {tab === 'labels' ? (
         <LabelsPanel ctx={ctx} fileBase={base} projectName={projectName} />
+      ) : tab === 'layout' ? (
+        <MachineLayoutPanel ctx={ctx} />
       ) : tab === 'machining' ? (
         <MachiningPanel ctx={ctx} fileBase={base} />
       ) : tab === 'picture' ? (
@@ -175,7 +190,7 @@ export default function ElectricalPage() {
                   </select>
                 </label>
                 <label className="text-sm text-steel-700">Supply voltage<br />
-                  <select value={inputs.supply} onChange={(e) => setInputs({ supply: e.target.value as SupplyVoltage })} className={input}>{SUPPLIES.map((s) => <option key={s}>{s}</option>)}</select>
+                  <select value={inputs.supply} onChange={(e) => setInputs({ supply: e.target.value as SupplyVoltage })} className={input}>{SUPPLIES.map((s) => <option key={s} value={s}>{SUPPLY_LABEL[s] ?? s}</option>)}</select>
                 </label>
                 <label className="text-sm text-steel-700">Enclosure<br />
                   <select value={inputs.enclosureRating} onChange={(e) => setInputs({ enclosureRating: e.target.value as EnclosureRating })} className={input}>{ENCLOSURES.map((s) => <option key={s}>{s}</option>)}</select>
@@ -202,7 +217,7 @@ export default function ElectricalPage() {
                   <label className="text-xs text-steel-500 flex items-center gap-1">HP
                     <input type="number" min={0.1} step={0.25} value={m.hp} onChange={(e) => setMotor(i, { hp: Number(e.target.value) })} className={`${input} w-20`} />
                   </label>
-                  <select value={m.voltage} onChange={(e) => setMotor(i, { voltage: e.target.value as SupplyVoltage })} className={input} aria-label="Motor voltage">{SUPPLIES.map((s) => <option key={s}>{s}</option>)}</select>
+                  <select value={m.voltage} onChange={(e) => setMotor(i, { voltage: e.target.value as SupplyVoltage })} className={input} aria-label="Motor voltage">{SUPPLIES.map((s) => <option key={s} value={s}>{SUPPLY_LABEL[s] ?? s}</option>)}</select>
                   <select value={m.starter} onChange={(e) => setMotor(i, { starter: e.target.value as StarterType })} className={input} aria-label="Starter">{STARTERS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
                   <label className="text-xs text-steel-600 flex items-center gap-1"><input type="checkbox" checked={m.reversing} onChange={(e) => setMotor(i, { reversing: e.target.checked })} /> Reversing</label>
                   <button onClick={() => setInputs({ motors: inputs.motors.filter((_, j) => j !== i) })} className="text-steel-400 hover:text-red-600 text-sm" aria-label="Remove motor">✕</button>
@@ -214,7 +229,7 @@ export default function ElectricalPage() {
               <h3 className="text-sm font-semibold text-steel-800">3. Parts you already chose <span className="font-normal text-steel-400">(optional; the AI picks the rest)</span></h3>
               <div className="flex flex-wrap gap-2">
                 <select value={pickCat} onChange={(e) => { setPickCat(e.target.value as CatalogCategory); setPickPart(''); }} className={input} aria-label="Category">
-                  {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c] ?? c}</option>)}
                 </select>
                 <select value={pickPart} onChange={(e) => setPickPart(e.target.value)} className={`${input} flex-1 min-w-64`} aria-label="Part">
                   <option value="">Choose a part…</option>
@@ -237,7 +252,7 @@ export default function ElectricalPage() {
 
             <div className="flex items-center gap-3">
               <button onClick={generate} disabled={el.isGenerating || !apiKey}
-                className="px-5 py-2.5 bg-brand-600 text-brand-950 text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
+                className="px-5 py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
                 {el.isGenerating ? <><Spinner /> Designing the panel… this can take several minutes</> : el.design ? 'Generate New Design' : 'Generate Electrical Design'}
               </button>
               {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</span>}
