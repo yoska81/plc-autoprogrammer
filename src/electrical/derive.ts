@@ -2051,7 +2051,7 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (m.safety.relay && !m.safety.reset) w.push('Safety relay has no reset pushbutton assigned (function "Reset").');
   const auxMissing = [...m.auxNc].filter(([, a]) => a.missing);
   if (auxMissing.length) w.push(`${auxMissing.map(([t, a]) => `${t} (${a.family})`).join(', ')}: no built-in auxiliary contact — an SZ-A11T front block (1 N.O. + 1 N.C.) is added to the BOM; the feedback / interlock uses its N.C. 61-62. Add it to the design or choose another block.`);
-  if (m.motors.some((x) => x.vfd)) w.push('VFD: confirm Safe Torque Off / enable wiring and drive parameter settings (not shown in detail).');
+  if (m.motors.some((x) => x.vfd)) w.push('VFD: enter the drive parameters marked NAMEPLATE / SET ON SITE on the drive sheets at commissioning; Safe Torque Off is not used (factory jumper) unless the risk assessment calls for it.');
   const noWiring = m.io.filter((p) => !p.wiring);
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
   const extra = ctx.design.ioWiring.filter((x) => !m.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase()));

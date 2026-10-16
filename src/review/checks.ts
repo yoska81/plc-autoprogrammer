@@ -6,7 +6,7 @@
  * HMI ↔ program, approvals.
  */
 import type { ProjectSnapshot } from '../deliverables/collect';
-import { designWarnings, spareSpace } from '../electrical/derive';
+import { buildModel, designWarnings, spareSpace } from '../electrical/derive';
 import { codeRuleFindings } from './codeRules';
 import { calcWarnings } from '../deliverables/docs/calcs';
 import { ioCapacity, moduleSlots } from '../plc/core/modules';
@@ -249,6 +249,37 @@ function electricalChecks({ p }: ReviewInput): Finding[] {
   return out;
 }
 
+/** Variable frequency drives (electrical/vfd.ts): size, control I/O, braking, commissioning values. */
+function driveChecks({ p }: ReviewInput): Finding[] {
+  if (!p.drawingCtx) return [];
+  const out: Finding[] = [];
+  for (const c of buildModel(p.drawingCtx).drives) {
+    const d = c.drive, t = d.tag;
+    if (d.outputAmps !== undefined && d.outputAmps < d.fla) {
+      out.push(finding(`drive:size:${t}`, 'critical', 'electrical', 'electrical', t, `${t} output ${d.outputAmps} A is below motor ${d.motorTag} FLA ${d.fla.toFixed(1)} A`,
+        `${d.partNumber} is rated ${d.outputAmps} A output; motor ${d.motorTag} (${d.motorHp} HP, ${d.motorVolts} V) draws ${d.fla.toFixed(1)} A at full load (NEC 430.250). The drive would trip on overload or fail.`,
+        'Choose a drive whose rated output current is at least the motor full-load current (nameplate) and regenerate.'));
+    }
+    if (!c.terminals.some((x) => x.role === 'run')) {
+      out.push(finding(`drive:run:${t}`, 'major', 'io', 'io', t, `${t} has no PLC run output`, `No PLC output is wired to ${t} FWD/DI1, so the program cannot start or stop motor ${d.motorTag}.`,
+        `Add a "${d.motorDescription} run" output (device ${t}) to the I/O list, then update the electrical design and program.`));
+    }
+    if (!c.terminals.some((x) => x.role === 'fault')) {
+      out.push(finding(`drive:fault:${t}`, 'minor', 'io', 'io', t, `${t} fault is not monitored`, `No PLC input reads ${t} relay R1 (fault). The PLC cannot stop the sequence or show an alarm when the drive trips.`,
+        `Add a "${d.motorDescription} drive fault" input (device ${t}) wired to R1O / R1.`));
+    }
+    for (const n of c.notes.filter((x) => /braking resistor/i.test(x))) {
+      out.push(finding(`drive:brake:${t}`, 'major', 'electrical', 'electrical', t, `${t}: braking resistor needed`, n, 'Add the braking resistor (and a mechanical brake for a vertical load) to the design, sized from the drive manual.'));
+    }
+    const site = c.params.filter((x) => x.source === 'nameplate' || x.source === 'on site');
+    if (site.length) {
+      out.push(finding(`drive:commission:${t}`, 'info', 'electrical', 'electrical', t, `${t}: ${site.length} drive parameters to set at commissioning`,
+        `${site.map((x) => `${x.param} ${x.name}`).join(', ')} come from the motor nameplate or the load and are marked on the drive sheet.`, 'Enter them during commissioning and record the values.'));
+    }
+  }
+  return out;
+}
+
 function projectChecks({ p }: ReviewInput): Finding[] {
   const out: Finding[] = [];
   if (!p.info.revisions?.length) {
@@ -330,7 +361,7 @@ function specCoverage({ p, cautions = [] }: ReviewInput): Finding[] {
 /** Every deterministic finding for the project. */
 export function runChecks(input: ReviewInput): Finding[] {
   const all = [
-    ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input),
+    ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input), ...driveChecks(input),
     ...programChecks(input), ...hmiChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
   ];
   const seen = new Set<string>();

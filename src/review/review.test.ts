@@ -9,6 +9,7 @@ import { useProgramStore } from '../store/useProgramStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useIOStore } from '../store/useIOStore';
 import { useSpecStore } from '../store/useSpecStore';
+import { useElectricalStore } from '../store/useElectricalStore';
 import { useReviewStore } from './useReviewStore';
 import { projectSummary, REVIEW_SCHEMA } from './reviewAI';
 import { reviewRows } from './report';
@@ -131,6 +132,23 @@ test('spec coverage: analog, guarding, motors, VFD and servo the design misses',
   // an equipment caution about servo motion answers the servo check
   useProjectStore.getState().setRecommendation({ ...useProjectStore.getState().recommendation!, cautions: ['Servo motion needs a drive with an indexer.'] });
   assert.ok(!ids().includes('spec-servo'));
+});
+
+test('drives: undersized VFD, unmonitored fault, commissioning values', () => {
+  seedSampleProject();
+  const el = useElectricalStore.getState();
+  const d = el.design!;
+  // M1 (2 HP, 3.4 A at 480 V) on a GS10 rated 2.7 A, no fault input
+  el.setDesign({
+    ...d,
+    inputs: { ...d.inputs, motors: d.inputs.motors.map((m) => (m.tag === 'M1' ? { ...m, hp: 2, starter: 'vfd' as const } : m)) },
+    components: [...d.components, { tag: 'VFD1', partNumber: 'GS13N-41P0', quantity: 1, function: 'Conveyor drive', motorTag: 'M1' }],
+  }, 'generated', 'test');
+  const f = check();
+  const size = f.find((x) => x.id === 'drive:size:VFD1');
+  assert.equal(size?.severity, 'critical', f.map((x) => x.id).join(', '));
+  assert.ok(f.some((x) => x.id === 'drive:fault:VFD1'));
+  assert.ok(f.some((x) => x.id === 'drive:commission:VFD1' && /P05\.03/.test(x.detail)));
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
