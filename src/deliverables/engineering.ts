@@ -224,11 +224,11 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
     }
     y += 1.5;
   };
-  const h1 = (t: string) => { need(14); y += 3; text(t, 15, true, [0, 92, 96]); };
+  const h1 = (t: string) => { need(14); y += 3; text(t, 15, true, [0, 47, 154]); };
   const h2 = (t: string) => { need(10); y += 1; text(t, 11.5, true); };
 
   // Cover
-  text('ENGINEERING PACKAGE', 10, true, [0, 140, 143]);
+  text('ENGINEERING PACKAGE', 10, true, [0, 56, 184]);
   text(p.projectName, 22, true);
   text(`${p.profile.vendor} ${p.profile.name} ${p.cpu.id}${p.hmi ? ` · HMI ${p.hmi.hmiPartNumber}` : ''}`, 11);
   text(`Prepared ${new Date().toLocaleDateString()} by PLC Autoprogrammer (AI-generated). To be checked and approved by a qualified engineer before purchase, build or use.`, 9, false, [107, 124, 133]);
@@ -274,7 +274,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
   for (const s of calculations(p)) {
     h2(s.title);
     for (const l of s.lines) text(`• ${l.item}: ${l.value}${l.basis ? ` (${l.basis}${l.estimate ? ', estimate' : ''})` : ''}`, 9);
-    text(`${s.ok ? 'OK' : 'CHECK'} — ${s.result}`, 9.5, true, s.ok ? [0, 92, 96] : [176, 0, 0]);
+    text(`${s.ok ? 'OK' : 'CHECK'} — ${s.result}`, 9.5, true, s.ok ? [0, 47, 154] : [176, 0, 0]);
   }
 
   page();

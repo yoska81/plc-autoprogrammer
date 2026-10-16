@@ -145,7 +145,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
     <button
       key={id}
       onClick={() => setTab(id)}
-      className={`flex-1 py-2 text-xs font-medium border-b-2 ${tab === id ? 'border-petrol-600 text-petrol-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+      className={`flex-1 py-2 text-xs font-medium border-b-2 ${tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
     >
       {label}
     </button>
@@ -175,12 +175,12 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
                 onChange={(e) => store.setUserPrompt(e.target.value)}
                 rows={6}
                 placeholder="Anything program-specific that isn't in the spec, e.g. 'Use DS1 as the step register', 'Keep rung comments short'."
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-petrol-500 resize-y"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
               />
               <button
                 onClick={handleGenerate}
                 disabled={isGenerating || !ready || !machineText.trim()}
-                className="w-full py-2.5 bg-petrol-600 text-white text-sm font-medium rounded hover:bg-petrol-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isGenerating ? <><Spinner /> Thinking & writing ladder…</> : ladder.rungs.length ? 'Generate New Program' : 'Generate Program'}
               </button>
@@ -197,7 +197,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
                 </p>
               )}
               {chat.map((m, i) => (
-                <div key={i} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-petrol-600 text-white ml-6' : 'bg-gray-100 text-gray-800 mr-2'}`}>
+                <div key={i} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand-600 text-white ml-6' : 'bg-gray-100 text-gray-800 mr-2'}`}>
                   {m.text}
                   {m.outcome && (
                     <div className={`mt-1 text-xs font-medium ${m.outcome === 'applied' ? 'text-green-700' : m.outcome === 'rejected' ? 'text-red-600' : 'text-gray-500'}`}>
@@ -254,12 +254,12 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
               rows={3}
               disabled={Boolean(proposal) || !ladder.rungs.length}
               placeholder={proposal ? 'Approve or reject the proposed change first' : ladder.rungs.length ? 'Describe a problem or change… (Enter to send)' : 'Generate a program first'}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-petrol-500 resize-none disabled:bg-gray-50"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none disabled:bg-gray-50"
             />
             <button
               onClick={() => handleRevise(request)}
               disabled={isGenerating || !ready || !request.trim() || Boolean(proposal) || !ladder.rungs.length}
-              className="w-full py-2 bg-petrol-600 text-white text-sm font-medium rounded hover:bg-petrol-700 disabled:opacity-50"
+              className="w-full py-2 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50"
             >
               Send
             </button>
@@ -271,7 +271,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
       <section className="flex-1 flex flex-col overflow-hidden bg-white">
         {!proposal && (
           <StageBanner info={stages.program} action={
-            <button onClick={updateFromSpec} disabled={isGenerating || !ready} className="px-3 py-1.5 text-sm bg-petrol-600 text-white rounded disabled:opacity-50">
+            <button onClick={updateFromSpec} disabled={isGenerating || !ready} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
               {isGenerating ? 'Updating…' : 'Update program'}
             </button>} />
         )}
@@ -303,7 +303,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready }
             />
           ) : isGenerating ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-gray-500">
-              <Spinner className="h-8 w-8 text-petrol-500" />
+              <Spinner className="h-8 w-8 text-brand-500" />
               <p className="text-sm">The AI is reasoning through your machine logic — this can take a few minutes.</p>
             </div>
           ) : (

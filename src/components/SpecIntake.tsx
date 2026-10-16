@@ -52,17 +52,17 @@ export default function SpecIntake() {
     <div className="space-y-5">
 
           {/* Add information */}
-          <div className="bg-white rounded-lg border border-petrol-200 p-5 space-y-3">
+          <div className="bg-white rounded-lg border border-brand-200 p-5 space-y-3">
             <h3 className="text-sm font-semibold text-steel-800">Add to the spec</h3>
             <p className="text-xs text-steel-500">Describe the machine in your own words, paste notes, or upload a spec document. The AI sorts it into the sections below and keeps everything already there.</p>
             <textarea value={newText} onChange={(e) => setNewText(e.target.value)} rows={6}
               placeholder="e.g. Pick and place cell. Operator loads trays at the front. Two guard doors with locking switches; opening a door during Auto stops all motion (category 1 stop) and the robot gripper holds the part. Homing: Z axis up first to its home switch, then X to home. Modes: Auto, Manual jog from the HMI, Setup with doors open at low speed..."
-              className="w-full border border-steel-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-petrol-500" />
+              className="w-full border border-steel-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
             <label
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => { e.preventDefault(); setDragOver(false); setFiles((f) => [...f, ...e.dataTransfer.files]); }}
-              className={`flex items-center justify-center border-2 border-dashed rounded py-4 text-sm cursor-pointer ${dragOver ? 'border-petrol-500 bg-petrol-50' : 'border-steel-300 text-steel-600 hover:border-petrol-400'}`}
+              className={`flex items-center justify-center border-2 border-dashed rounded py-4 text-sm cursor-pointer ${dragOver ? 'border-brand-500 bg-brand-50' : 'border-steel-300 text-steel-600 hover:border-brand-400'}`}
             >
               Drop spec documents here or click to choose (PDF, Word .docx, text)
               <input type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { setFiles((f) => [...f, ...(e.target.files ?? [])]); e.target.value = ''; }} />
@@ -79,7 +79,7 @@ export default function SpecIntake() {
             )}
             <div className="flex items-center gap-3">
               <button onClick={organize} disabled={busy || !apiKey || (!newText.trim() && !files.length)}
-                className="px-4 py-2 text-sm bg-petrol-600 text-white rounded hover:bg-petrol-700 disabled:opacity-50 flex items-center gap-2">
+                className="px-4 py-2 text-sm bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
                 {busy ? <><Spinner /> Organizing the spec…</> : 'Add to spec'}
               </button>
               {undo && !busy && (

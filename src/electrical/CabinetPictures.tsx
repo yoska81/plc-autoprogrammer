@@ -15,7 +15,7 @@ export default function CabinetPictures({ ctx }: { ctx: DrawingContext | null })
     return <div className="flex-1 flex items-center justify-center text-sm text-steel-500">No design yet. Fill in the Design tab and click Generate.</div>;
   }
   const btn = (v: View, label: string) => (
-    <button onClick={() => setView(v)} className={`px-3 py-1 text-xs border ${view === v ? 'bg-petrol-600 text-white border-petrol-600' : 'bg-white border-steel-300 hover:bg-steel-50'}`}>{label}</button>
+    <button onClick={() => setView(v)} className={`px-3 py-1 text-xs border ${view === v ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-steel-300 hover:bg-steel-50'}`}>{label}</button>
   );
   return (
     <div className="flex-1 flex flex-col overflow-hidden">

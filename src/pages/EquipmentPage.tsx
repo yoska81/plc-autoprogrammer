@@ -14,7 +14,7 @@ export default function EquipmentPage() {
           <p className="text-xs text-steel-500 mt-0.5">PLC, I/O modules and operator panel, chosen from your description</p>
         </div>
         <button onClick={() => navigate('/io')} disabled={stages.equipment.status === 'empty'}
-          className="px-4 py-2 text-sm bg-petrol-600 text-white rounded hover:bg-petrol-700 disabled:opacity-40">Next: I/O →</button>
+          className="px-4 py-2 text-sm bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-40">Next: I/O →</button>
       </header>
       <StageBanner info={stages.equipment} />
       <div className="flex-1 overflow-auto p-6">

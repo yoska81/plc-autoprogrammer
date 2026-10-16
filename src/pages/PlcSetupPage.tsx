@@ -26,16 +26,16 @@ export default function PlcSetupPage() {
                   onClick={() => setPlc(p.id, p.defaultCpuId)}
                   className={`text-left rounded-lg border p-4 transition-colors ${
                     selected
-                      ? 'border-petrol-500 bg-petrol-50 ring-2 ring-petrol-200'
+                      ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-200'
                       : p.available
-                        ? 'border-gray-200 bg-white hover:border-petrol-300'
+                        ? 'border-gray-200 bg-white hover:border-brand-300'
                         : 'border-gray-200 bg-gray-100 opacity-60 cursor-not-allowed'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{p.vendor}</span>
                     {!p.available && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">Coming soon</span>}
-                    {selected && <span className="text-xs bg-petrol-600 text-white px-2 py-0.5 rounded">Selected</span>}
+                    {selected && <span className="text-xs bg-brand-600 text-white px-2 py-0.5 rounded">Selected</span>}
                   </div>
                   <div className="text-base font-semibold text-gray-800 mt-1">{p.name}</div>
                   <div className="text-xs text-gray-500 mt-1">{p.language === 'ladder' ? 'Ladder logic' : 'Structured Text'}</div>
@@ -51,7 +51,7 @@ export default function PlcSetupPage() {
                 id="cpu"
                 value={cpu.id}
                 onChange={(e) => setPlc(profile.id, e.target.value)}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-petrol-500"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 {profile.cpuModels.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
               </select>

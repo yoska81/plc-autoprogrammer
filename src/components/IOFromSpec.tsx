@@ -56,7 +56,7 @@ export default function IOFromSpec() {
 
   const button = (
     <button onClick={generate} disabled={busy || !apiKey || specEmpty}
-      className="px-3 py-1.5 text-sm bg-petrol-600 text-white rounded hover:bg-petrol-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
+      className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
       {busy ? <><Spinner /> Reading the spec…</> : projectIO.length ? 'Update I/O from spec' : 'Generate I/O from spec'}
     </button>
   );

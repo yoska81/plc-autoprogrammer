@@ -37,7 +37,7 @@ function Menu({ label, children }: { label: string; children: ReactNode }) {
   }, [open]);
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen((v) => !v)} className={`px-2.5 py-0.5 rounded-sm ${open ? 'bg-petrol-100' : 'hover:bg-steel-200'}`}>{label}</button>
+      <button onClick={() => setOpen((v) => !v)} className={`px-2.5 py-0.5 rounded-sm ${open ? 'bg-brand-100' : 'hover:bg-steel-200'}`}>{label}</button>
       {open && (
         <div onClick={() => setOpen(false)} className="absolute left-0 top-full mt-0.5 z-50 min-w-56 bg-white border border-steel-300 shadow-lg py-1">
           {children}
@@ -48,13 +48,13 @@ function Menu({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function MenuItem({ onClick, children }: { onClick: () => void; children: ReactNode }) {
-  return <button onClick={onClick} className="w-full text-left px-4 py-1.5 hover:bg-petrol-50 hover:text-petrol-800">{children}</button>;
+  return <button onClick={onClick} className="w-full text-left px-4 py-1.5 hover:bg-brand-50 hover:text-brand-800">{children}</button>;
 }
 
 function ToolButton({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
   return (
     <button title={title} aria-label={title} onClick={onClick}
-      className="w-8 h-8 flex items-center justify-center rounded-sm text-steel-700 hover:bg-petrol-50 hover:text-petrol-700 border border-transparent hover:border-petrol-200">
+      className="w-8 h-8 flex items-center justify-center rounded-sm text-steel-700 hover:bg-brand-50 hover:text-brand-700 border border-transparent hover:border-brand-200">
       {children}
     </button>
   );
@@ -79,7 +79,7 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
     <li>
       {node.to ? (
         <NavLink to={node.to} style={{ paddingLeft: 8 + depth * 14 }}
-          className={`block pr-2 py-[3px] ${active ? 'bg-petrol-600 text-white' : 'text-steel-800 hover:bg-petrol-50'}`}>{row}</NavLink>
+          className={`block pr-2 py-[3px] ${active ? 'bg-brand-600 text-white' : 'text-steel-800 hover:bg-brand-50'}`}>{row}</NavLink>
       ) : (
         <div style={{ paddingLeft: 8 + depth * 14 }} className="pr-2 py-[3px] text-steel-600 cursor-default" onClick={() => setOpen((v) => !v)}>{row}</div>
       )}
@@ -135,10 +135,10 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-[#f0f2f3] font-sans text-steel-900 text-[13px]">
       {/* Title bar */}
-      <div className="h-7 flex-shrink-0 bg-petrol-800 text-white flex items-center px-3 text-xs">
+      <div className="h-7 flex-shrink-0 bg-brand-800 text-white flex items-center px-3 text-xs">
         <span className="font-semibold">PLC Autoprogrammer</span>
-        <span className="mx-2 text-petrol-300">—</span>
-        <span className="truncate text-petrol-100">{projectName}</span>
+        <span className="mx-2 text-brand-300">—</span>
+        <span className="truncate text-brand-100">{projectName}</span>
       </div>
 
       {/* Menu bar */}
@@ -198,7 +198,7 @@ export default function App() {
 
         <main className="flex-1 flex flex-col overflow-hidden">
           {IS_PREVIEW && (
-            <div className="px-4 py-1 bg-petrol-700 text-white text-xs">
+            <div className="px-4 py-1 bg-brand-700 text-white text-xs">
               Preview with an example project. Everything is clickable and editable; AI generation and file downloads work when the app runs on your PC.
             </div>
           )}
@@ -207,7 +207,7 @@ export default function App() {
       </div>
 
       {/* Status bar */}
-      <div className="h-6 flex-shrink-0 bg-petrol-800 text-petrol-50 flex items-center gap-5 px-3 text-[11px]">
+      <div className="h-6 flex-shrink-0 bg-brand-800 text-brand-50 flex items-center gap-5 px-3 text-[11px]">
         <span>Ready</span>
         <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
         <span>HMI: {hmiPart || '—'}</span>

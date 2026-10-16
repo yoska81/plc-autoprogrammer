@@ -9,14 +9,14 @@ import {
 } from '../store/useSettingsStore';
 
 const inputClass =
-  'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-petrol-500';
+  'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 
 function ProviderTab({ label, active, onSelect }: { label: string; active: boolean; onSelect: () => void }) {
   return (
     <button
       onClick={onSelect}
       className={`flex-1 py-2.5 text-sm font-medium rounded transition-colors ${
-        active ? 'bg-petrol-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'
+        active ? 'bg-brand-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'
       }`}
     >
       {label}
@@ -49,10 +49,10 @@ function KeyInput({ value, onChange, placeholder }: { value: string; onChange: (
 
 function ProviderCard({ title, active, children }: { title: string; active: boolean; children: React.ReactNode }) {
   return (
-    <div className={`bg-white rounded-lg border p-5 space-y-4 ${active ? 'border-petrol-300' : 'border-gray-200 opacity-60'}`}>
+    <div className={`bg-white rounded-lg border p-5 space-y-4 ${active ? 'border-brand-300' : 'border-gray-200 opacity-60'}`}>
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-gray-700">{title}</span>
-        {active && <span className="text-xs bg-petrol-100 text-petrol-700 px-2 py-0.5 rounded font-medium">Active</span>}
+        {active && <span className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded font-medium">Active</span>}
       </div>
       {children}
     </div>
@@ -164,7 +164,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={handleSave}
-              className="px-5 py-2 bg-petrol-600 text-white text-sm font-medium rounded hover:bg-petrol-700 transition-colors"
+              className="px-5 py-2 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 transition-colors"
             >
               Save Settings
             </button>

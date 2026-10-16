@@ -3,20 +3,20 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      // Industrial configurator palette: petrol/teal primary, cool greys.
+      // Brand palette built around the blue of the Israeli flag (#0038B8 = 600), cool greys.
       colors: {
-        petrol: {
-          50: '#eef8f8',
-          100: '#d3eeee',
-          200: '#a7dcdc',
-          300: '#6fc3c4',
-          400: '#2ea6a8',
-          500: '#008c8f',
-          600: '#007376',
-          700: '#005c60',
-          800: '#00454a',
-          900: '#002e33',
-          950: '#001d21',
+        brand: {
+          50: '#eef3fc',
+          100: '#d6e2f8',
+          200: '#adc4f0',
+          300: '#7a9ee5',
+          400: '#4673d6',
+          500: '#1a4fc6',
+          600: '#0038b8',
+          700: '#002f9a',
+          800: '#00267b',
+          900: '#001c5c',
+          950: '#00123d',
         },
         steel: {
           50: '#f5f7f8',

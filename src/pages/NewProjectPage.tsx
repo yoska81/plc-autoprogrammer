@@ -31,7 +31,7 @@ const STANDARDS = ['NFPA 79', 'UL 508A', 'CSA C22.2 No. 14', 'NEC'];
 function Choice({ selected, onClick, title, hint }: { selected: boolean; onClick: () => void; title: string; hint: string }) {
   return (
     <button type="button" onClick={onClick}
-      className={`text-left rounded-md border p-3 transition-colors ${selected ? 'border-petrol-600 bg-petrol-50 ring-1 ring-petrol-600' : 'border-steel-200 bg-white hover:border-petrol-300'}`}>
+      className={`text-left rounded-md border p-3 transition-colors ${selected ? 'border-brand-600 bg-brand-50 ring-1 ring-brand-600' : 'border-steel-200 bg-white hover:border-brand-300'}`}>
       <div className="text-sm font-medium text-steel-900">{title}</div>
       <div className="text-xs text-steel-500">{hint}</div>
     </button>
@@ -42,7 +42,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="block text-sm text-steel-700"><span className="block mb-1 font-medium">{label}</span>{children}</label>;
 }
 
-const input = 'w-full border border-steel-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-petrol-500';
+const input = 'w-full border border-steel-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 
 export default function NewProjectPage() {
   const navigate = useNavigate();
@@ -88,10 +88,10 @@ export default function NewProjectPage() {
 
   return (
     <div className="flex flex-col h-screen bg-steel-50 font-sans text-steel-900">
-      <header className="h-12 flex-shrink-0 bg-petrol-900 text-white flex items-center px-4 gap-4">
+      <header className="h-12 flex-shrink-0 bg-brand-900 text-white flex items-center px-4 gap-4">
         <span className="font-semibold">PLC Autoprogrammer</span>
-        <span className="text-petrol-200 text-sm">New project</span>
-        <button onClick={() => navigate(-1)} className="ml-auto text-sm text-petrol-100 hover:text-white">Close ✕</button>
+        <span className="text-brand-200 text-sm">New project</span>
+        <button onClick={() => navigate(-1)} className="ml-auto text-sm text-brand-100 hover:text-white">Close ✕</button>
       </header>
 
       {/* Step indicator */}
@@ -100,8 +100,8 @@ export default function NewProjectPage() {
           {STEPS.map((label, i) => (
             <li key={label} className="flex-1">
               <button type="button" disabled={i > step || (i > 0 && !created)} onClick={() => setStep(i)}
-                className={`w-full flex items-center gap-2 py-3 border-b-4 text-sm ${i === step ? 'border-petrol-600 text-petrol-800 font-semibold' : i < step ? 'border-petrol-200 text-steel-700' : 'border-transparent text-steel-400'}`}>
-                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${i < step ? 'bg-petrol-500 text-white' : i === step ? 'bg-petrol-600 text-white' : 'bg-steel-100 text-steel-500'}`}>
+                className={`w-full flex items-center gap-2 py-3 border-b-4 text-sm ${i === step ? 'border-brand-600 text-brand-800 font-semibold' : i < step ? 'border-brand-200 text-steel-700' : 'border-transparent text-steel-400'}`}>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${i < step ? 'bg-brand-500 text-white' : i === step ? 'bg-brand-600 text-white' : 'bg-steel-100 text-steel-500'}`}>
                   {i < step ? '✓' : i + 1}
                 </span>
                 {label}
@@ -203,7 +203,7 @@ export default function NewProjectPage() {
         <div className="flex items-center gap-3">
           {step === 2 && stages.equipment.status === 'empty' && <span className="text-xs text-steel-500">You can also choose equipment later.</span>}
           <button onClick={next} disabled={!canNext}
-            className="px-5 py-2 text-sm font-medium bg-petrol-600 text-white rounded hover:bg-petrol-700 disabled:opacity-40">
+            className="px-5 py-2 text-sm font-medium bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-40">
             {step === STEPS.length - 1 ? 'Open project →' : 'Next →'}
           </button>
         </div>

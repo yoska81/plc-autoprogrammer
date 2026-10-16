@@ -2,7 +2,7 @@ import type { IOCategory } from '../types/io';
 
 const CATEGORY_COLORS: Record<IOCategory, string> = {
   'Safety': 'bg-red-100 text-red-800',
-  'Operator/HMI': 'bg-petrol-100 text-petrol-800',
+  'Operator/HMI': 'bg-brand-100 text-brand-800',
   'External Machine': 'bg-purple-100 text-purple-800',
   'Product Detection': 'bg-green-100 text-green-800',
   'Conveyor': 'bg-orange-100 text-orange-800',

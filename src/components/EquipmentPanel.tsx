@@ -27,7 +27,7 @@ function Glyph({ kind }: { kind: 'plc' | 'module' | 'hmi' }) {
       {kind === 'hmi' ? (
         <>
           <rect x="3" y="8" width="42" height="30" rx="3" fill="#2f373c" />
-          <rect x="7" y="12" width="34" height="22" rx="1" fill="#8fd0d1" />
+          <rect x="7" y="12" width="34" height="22" rx="1" fill="#9db8ee" />
           <rect x="10" y="15" width="12" height="6" fill="#e9edef" />
           <rect x="26" y="15" width="12" height="6" fill="#e9edef" />
           <rect x="10" y="25" width="28" height="5" fill="#d4dbdf" />
@@ -60,7 +60,7 @@ function ProductCard({ kind, title, subtitle, specs, why, badge }: { kind: 'plc'
             {specs.map((s) => <li key={s} className="text-xs bg-steel-100 text-steel-700 rounded px-1.5 py-0.5">{s}</li>)}
           </ul>
         )}
-        {why && <p className="mt-2 text-sm text-steel-700"><span className="font-medium text-petrol-700">Why: </span>{why}</p>}
+        {why && <p className="mt-2 text-sm text-steel-700"><span className="font-medium text-brand-700">Why: </span>{why}</p>}
       </div>
     </div>
   );
@@ -77,7 +77,7 @@ function CapacityBar({ label, need, have }: { label: string; need: number; have:
         <span className={ok ? 'text-steel-700' : 'text-red-700 font-medium'}>{need} needed · {have} available{ok ? ` · ${spare} spare` : ` · ${-spare} short`}</span>
       </div>
       <div className="h-2 rounded bg-steel-100 overflow-hidden">
-        <div className={`h-full ${ok ? 'bg-petrol-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
+        <div className={`h-full ${ok ? 'bg-brand-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -138,7 +138,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
           <p className="text-sm text-steel-600">It reads your description, counts the inputs and outputs, adds spare capacity, and picks the PLC, I/O modules and operator panel. You can switch to an alternative before accepting.</p>
         </div>
         <button onClick={recommend} disabled={busy || !apiKey || specEmpty}
-          className="px-4 py-2 text-sm font-medium bg-petrol-600 text-white rounded hover:bg-petrol-700 disabled:opacity-50 flex items-center gap-2">
+          className="px-4 py-2 text-sm font-medium bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
           {busy ? <><Spinner /> Selecting equipment…</> : rec ? 'Recommend again' : 'Recommend equipment'}
         </button>
         {specEmpty && <p className="w-full text-sm text-amber-800">Describe the machine first on the <Link to="/spec" className="underline">Describe</Link> step.</p>}
@@ -152,7 +152,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
           <div className="xl:col-span-2 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-steel-500">{isApplied ? 'Your configuration' : 'Recommended configuration'}</h3>
-              {isApplied && <span className="text-xs bg-petrol-100 text-petrol-800 rounded px-2 py-0.5">Applied to the project</span>}
+              {isApplied && <span className="text-xs bg-brand-100 text-brand-800 rounded px-2 py-0.5">Applied to the project</span>}
             </div>
             <p className="text-sm text-steel-700">{rec.summary}</p>
             <ProductCard kind="plc" title={found.cpu.id} subtitle={`${found.profile.vendor} ${found.profile.name} CPU`}
@@ -182,7 +182,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
               )}
               {rec.estimatedIO.motionAxes > 0 && <p className="text-xs text-amber-800">{rec.estimatedIO.motionAxes} motion axes in the spec</p>}
               {!isApplied && (
-                <button onClick={() => accept()} className="w-full px-4 py-2 text-sm font-medium bg-petrol-600 text-white rounded hover:bg-petrol-700">
+                <button onClick={() => accept()} className="w-full px-4 py-2 text-sm font-medium bg-brand-600 text-white rounded hover:bg-brand-700">
                   Use this configuration
                 </button>
               )}
@@ -195,7 +195,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                     <div className="text-sm font-medium text-steel-800">{a.label}</div>
                     <div className="text-xs font-mono text-steel-600">{a.cpuId}{a.hmiPartNumber ? ` · ${a.hmiPartNumber}` : ''}</div>
                     <p className="text-xs text-steel-600 mt-1">{a.tradeoff}</p>
-                    <button onClick={() => accept(a.cpuId, a.hmiPartNumber)} className="mt-1.5 text-xs text-petrol-700 font-medium hover:underline">Use this instead</button>
+                    <button onClick={() => accept(a.cpuId, a.hmiPartNumber)} className="mt-1.5 text-xs text-brand-700 font-medium hover:underline">Use this instead</button>
                   </div>
                 ))}
               </div>

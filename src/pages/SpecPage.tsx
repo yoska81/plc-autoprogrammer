@@ -16,7 +16,7 @@ export default function SpecPage() {
           <p className="text-xs text-steel-500 mt-0.5">The spec drives every step. Change it any time; the steps after it are marked out of date and can be updated in one click.</p>
         </div>
         <button onClick={() => navigate('/equipment')} disabled={!filled}
-          className="px-4 py-2 text-sm bg-petrol-600 text-white rounded hover:bg-petrol-700 disabled:opacity-40 whitespace-nowrap">
+          className="px-4 py-2 text-sm bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-40 whitespace-nowrap">
           Next: Equipment →
         </button>
       </header>
@@ -40,7 +40,7 @@ export default function SpecPage() {
                   onChange={(e) => spec.setSection(s.id, e.target.value)}
                   placeholder={s.hint}
                   rows={Math.min(12, Math.max(2, (spec.sections[s.id] ?? '').split('\n').length + 1))}
-                  className="mt-1 w-full border border-steel-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-petrol-500 placeholder:text-steel-400"
+                  className="mt-1 w-full border border-steel-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder:text-steel-400"
                 />
               </div>
             ))}
