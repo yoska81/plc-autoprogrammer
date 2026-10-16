@@ -127,6 +127,7 @@ export default function App() {
         children: [
           { label: 'Cabinet wiring', to: '/electrical?tab=cabinet' },
           { label: 'Machine wiring', to: '/electrical?tab=machine' },
+          { label: 'Machine layout', to: '/electrical?tab=layout' },
           { label: 'Cabinet picture', to: '/electrical?tab=picture' },
           { label: 'Machining (DXF)', to: '/electrical?tab=machining' },
           { label: 'Labels', to: '/electrical?tab=labels' },

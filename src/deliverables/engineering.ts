@@ -7,7 +7,7 @@ import { docMeta, hmiText, referenceDocuments, type DocMeta } from './docs/meta'
 import { abbreviationsTable, standardsTable } from './docs/codes';
 import { equipmentTable, hmiElementTable, hmiScreenTable, hmiTagTable, ioListTable, operatingModes, sequenceTable, systemDescription } from './docs/fds';
 import { alarmTable, blockTable, checkerTable, controllerTable, interlockTable, ioCrossRefTable, programInfo, rungTable, tagTable } from './docs/program';
-import { calcTable, cableSummaryTable, conductorTable, enclosureTable, protectiveDeviceTable, sccrTable, supplyTable, voltageDropTable } from './docs/electrical';
+import { calcTable, cableSummaryTable, cableTotalsTable, conductorTable, enclosureTable, protectiveDeviceTable, sccrTable, supplyTable, voltageDropTable } from './docs/electrical';
 import { hazardTable, lotoTable, residualRisks, riskStatement, safetyFunctionTable, safetyFunctions } from './docs/safety';
 import { fatProcedure, satChecklist, satTable, testTable } from './docs/fat';
 import { pmSchedule, sparePartsTable } from './docs/maintenance';
@@ -442,6 +442,17 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
   if (hasElec) {
     w.para('Summary, one line per cable. Core-by-core details are in the drawing set and the Excel report.');
     w.table(cableSummaryTable(p), { fontSize: 7 });
+    const ml = p.drawingCtx?.machineLayout;
+    if (ml) {
+      w.h2('Cable lengths from the machine layout');
+      w.para(`Lengths are measured along the cable routes drawn on the machine layout (sheet "Machine layout" in the drawing set), plus ${ml.service.pct} % routing slack and ${ml.service.endM} m service loop at each end. Verify on site before cutting. Totals per cable type for purchasing:`);
+      w.table(cableTotalsTable(p), { fontSize: 7.4 });
+      const extra = [
+        ...ml.manifolds.map((m) => `Valve manifold ${m.tag}: ${m.valves.length} stations for ${m.valves.join(', ')} — part to be selected.`),
+        ...ml.remoteIo.map((r) => `Remote I/O block ${r.tag} near ${r.devices.join(', ')} — part to be selected; PLC addresses change.`),
+      ];
+      if (extra.length) w.bullets(extra);
+    }
   } else noElec();
   w.h1('Appendix C — Design review items');
   w.para('Items the checking engineer must resolve before the design is approved for construction: the design review findings (consistency checks, electrical design warnings, calculations and the AI review) with how each was resolved or why it was accepted.');

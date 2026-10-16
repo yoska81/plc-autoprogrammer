@@ -13,7 +13,7 @@ const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const HASH = process.env.HASH === '1'; // preview build (hash routing, example project seeded)
 const log = (...a) => console.log('•', ...a);
 
-const ROUTES = ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine',
+const ROUTES = ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=layout',
   '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/review', '/export', '/settings', '/plc', '/import', '/new'];
 const VIEWPORTS = [[1366, 768], [1920, 1080]];
 
@@ -86,7 +86,14 @@ function audit() {
         if (scenario === 'example') {
           // The dev build has no example project: load the preview seed through the module graph.
           await page.goto(BASE + '/spec');
-          await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+          // The app has already opened an empty project of its own: seed, then open the example.
+          await page.evaluate(async () => {
+            const m = await import('/src/preview/sampleProject.ts');
+            const ps = await import('/src/store/useProjectsStore.ts');
+            localStorage.clear();
+            m.seedSampleProject?.();
+            ps.useProjectsStore.getState().openProject(m.EXAMPLE_ID);
+          });
         }
       }
       for (const route of ROUTES) {

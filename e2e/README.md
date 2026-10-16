@@ -11,7 +11,7 @@ node e2e/app.e2e.cjs                  # BASE_URL=http://localhost:5173 by defaul
 Screenshots and downloaded files land in `e2e/out/` (git-ignored).
 Playwright is loaded from the global install (`/opt/node22/lib/node_modules/playwright`, Chromium in `/opt/pw-browsers`).
 
-Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts` , `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts` and `npx tsx src/components/questions/questions.test.ts`.
+Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts` , `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/electrical/layout/layout.test.ts` and `npx tsx src/components/questions/questions.test.ts`.
 
 ## Preview build
 
@@ -24,6 +24,13 @@ VITE_PREVIEW=1 npx vite build --config vite.preview.config.ts
 npx http-server dist-preview -p 5203 -s &
 BASE_URL=http://localhost:5203 node e2e/preview.e2e.cjs     # saved files land in e2e/out-preview/
 ```
+
+## Machine layout
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/layout.e2e.cjs   # scale, cabinet + motor + two valves, a tray, routed lengths, JB + manifold suggestions, CSV/BOM, reload, drawing sheet
+```
+Screenshots land in `e2e/out-layout/`.
 
 ## Page sweep and old projects
 

@@ -7,6 +7,8 @@ import { useHmiStore } from '../store/useHmiStore';
 import { getPart } from './catalog';
 import type { DrawingContext } from './derive';
 import { docInfo } from '../deliverables/docInfo';
+import { useMachineLayout } from './layout/useLayoutStore';
+import { layoutForDesign } from './layout/geometry';
 
 /** Everything the drawing engine needs, or null when there is no design yet. */
 export function useDrawingContext(): DrawingContext | null {
@@ -15,6 +17,8 @@ export function useDrawingContext(): DrawingContext | null {
   const { profile, cpu, io, addresses } = usePlc();
   const info = useProjectStore((s) => s.info);
   const hmiPartNumber = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
+  const [layout] = useMachineLayout();
+  const machineLayout = useMemo(() => layoutForDesign(layout), [layout]);
 
   return useMemo(() => {
     if (!design) return null;
@@ -27,6 +31,7 @@ export function useDrawingContext(): DrawingContext | null {
       region: info.region,
       hmiPartNumber,
       doc: docInfo(info),
+      machineLayout,
     };
-  }, [design, projectName, profile, cpu, io, addresses, info, hmiPartNumber]);
+  }, [design, projectName, profile, cpu, io, addresses, info, hmiPartNumber, machineLayout]);
 }
