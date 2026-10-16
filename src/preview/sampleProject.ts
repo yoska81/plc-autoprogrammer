@@ -198,7 +198,7 @@ export const DESIGN: ElectricalDesign = {
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '3';
+const SEED_VERSION = '4';
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }
