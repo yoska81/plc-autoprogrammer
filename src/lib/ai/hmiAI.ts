@@ -6,7 +6,8 @@ import { HMI_ELEMENT_KINDS, MACHINE_SYMBOL_KINDS } from '../../hmi/types';
 import type { HmiModel } from '../../hmi/hmiCatalog';
 import { checkDesign, fixDesignLayout, layoutBands, MIN_TOUCH, GAP } from '../../hmi/layout';
 import { specToText, type SpecSections } from '../../spec/types';
-import { callClaude } from './anthropic';
+import { callClaude, type RichTurn } from './anthropic';
+import type { HmiTag } from '../../hmi/types';
 import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes } from '../../components/questions/classify';
 
 const obj = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
@@ -17,6 +18,32 @@ const LEVEL = { type: 'string', enum: ['operator', 'maintenance', 'engineer'] };
 
 // New fields are non-nullable (empty string / empty array / "operator" mean
 // "not used") to keep the number of union types in the schema small.
+const ELEMENT = obj({
+  id: { type: 'string' },
+  kind: { type: 'string', enum: HMI_ELEMENT_KINDS },
+  label: { type: 'string' },
+  x: { type: 'integer' }, y: { type: 'integer' }, w: { type: 'integer' }, h: { type: 'integer' },
+  address: ns,
+  action: { anyOf: [{ type: 'string', enum: ['momentary', 'set', 'reset', 'toggle'] }, { type: 'null' }] },
+  targetScreenId: ns,
+  onText: ns, offText: ns,
+  style: STYLE,
+  units: ns, min: nn, max: nn,
+  note: ns,
+  level: LEVEL,
+  interlock: { type: 'string' },
+  states: { type: 'array', items: obj({ value: { type: 'integer' }, text: { type: 'string' }, style: STYLE }) },
+  symbols: {
+    type: 'array',
+    items: obj({
+      kind: { type: 'string', enum: MACHINE_SYMBOL_KINDS },
+      label: { type: 'string' },
+      address: { type: 'string' },
+      x: { type: 'integer' }, y: { type: 'integer' }, w: { type: 'integer' }, h: { type: 'integer' },
+    }),
+  },
+});
+
 const SCHEMA = obj({
   explanation: { type: 'string' },
   machineName: { type: 'string' },
@@ -29,31 +56,7 @@ const SCHEMA = obj({
       level: LEVEL,
       elements: {
         type: 'array',
-        items: obj({
-          id: { type: 'string' },
-          kind: { type: 'string', enum: HMI_ELEMENT_KINDS },
-          label: { type: 'string' },
-          x: { type: 'integer' }, y: { type: 'integer' }, w: { type: 'integer' }, h: { type: 'integer' },
-          address: ns,
-          action: { anyOf: [{ type: 'string', enum: ['momentary', 'set', 'reset', 'toggle'] }, { type: 'null' }] },
-          targetScreenId: ns,
-          onText: ns, offText: ns,
-          style: STYLE,
-          units: ns, min: nn, max: nn,
-          note: ns,
-          level: LEVEL,
-          interlock: { type: 'string' },
-          states: { type: 'array', items: obj({ value: { type: 'integer' }, text: { type: 'string' }, style: STYLE }) },
-          symbols: {
-            type: 'array',
-            items: obj({
-              kind: { type: 'string', enum: MACHINE_SYMBOL_KINDS },
-              label: { type: 'string' },
-              address: { type: 'string' },
-              x: { type: 'integer' }, y: { type: 'integer' }, w: { type: 'integer' }, h: { type: 'integer' },
-            }),
-          },
-        }),
+        items: ELEMENT,
       },
     }),
   },
@@ -179,4 +182,62 @@ ${opts.profile.id === 'click' ? 'CLICK I/O module grouping for the Diagnostics s
     explanation: parsed.explanation,
     reasoning,
   };
+}
+
+const RECREATE_SCHEMA = obj({
+  explanation: { type: 'string' },
+  elements: { type: 'array', items: ELEMENT },
+  tags: {
+    type: 'array',
+    items: obj({
+      name: { type: 'string' }, address: { type: 'string' },
+      dataType: { type: 'string', enum: ['BIT', 'INT', 'INT2', 'FLOAT'] },
+      access: { type: 'string', enum: ['read', 'write', 'read-write'] },
+      description: { type: 'string' },
+    }),
+  },
+});
+
+/**
+ * Recreate an existing HMI screen from a picture of it (screenshot or photo).
+ * The picture is sent exactly as it lies on the panel (W×H px), so the proposed
+ * elements sit on top of what they copy. Always a proposal: the user accepts it.
+ */
+export async function recreateScreenFromPicture(opts: {
+  apiKey: string; model: string; effort: Effort;
+  hmi: HmiModel; panelImageJpeg: string; screenName: string;
+  io: IOPoint[]; addresses: Map<string, string>;
+  tags: HmiTag[]; screens: { id: string; name: string }[];
+}): Promise<{ elements: HmiElement[]; tags: HmiTag[]; explanation: string; reasoning: string | null }> {
+  const W = opts.hmi.widthPx, H = opts.hmi.heightPx;
+  const io = opts.io.map((p) => `${opts.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.description}`).join('\n') || '(none)';
+  const tags = opts.tags.map((t) => `${t.address}\t${t.name}\t${t.description}`).join('\n') || '(none)';
+  const sys = `You recreate an existing operator-panel screen for an AutomationDirect ${opts.hmi.partNumber} (${W}x${H} px touch panel) from a picture of it.
+The image you get is exactly ${W}x${H} px and shows the panel area: element coordinates are image pixels.
+Find every operator element in the picture (push buttons, screen-change buttons, indicator lamps, numeric displays and entries, bar graphs, multistate texts, alarm banners, static texts and group frames) and return one element per item at the position and size where it appears.
+Element kinds: ${HMI_ELEMENT_KINDS.join(', ')}; prefer button, nav, indicator, numeric, numeric-entry, bar, multistate, text, alarm-banner, panel. Keep each element's label as written in the picture (short).
+PLC addresses: bind each element to the matching physical I/O point or existing HMI tag when the meaning is clear. Otherwise use the HMI ranges: commands C1001–C1100, setpoints DS1001–DS1100, status words DS1101–DS1200, alarms C1101–C1200, status bits C1201–C1300, choosing numbers not used by existing tags. Add a "tags" entry (name, address, data type, access, what the PLC must do) for every new address you introduce. Static texts, nav buttons, group frames and alarm banners have address null.
+Screen-change buttons: targetScreenId = one of the existing screen ids if the label matches (${opts.screens.map((s) => `${s.id} "${s.name}"`).join(', ') || 'none'}), else null.
+Unused fields: address/action/targetScreenId/onText/offText/units/min/max/note null, "states" [], "symbols" [], "interlock" "", level "operator". Keep elements inside 0..${W} x 0..${H}; touch targets at least ${MIN_TOUCH.w}x${MIN_TOUCH.h} px where the picture allows.
+"explanation": one or two plain-English sentences on what you recognised and anything unclear.`;
+  const content: RichTurn['content'] = [
+    { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: opts.panelImageJpeg.slice(opts.panelImageJpeg.indexOf(',') + 1) } },
+    { type: 'text', text: `Screen name: ${opts.screenName}\n\nPhysical I/O (address, type, description):\n${io}\n\nExisting HMI tags (address, name, description):\n${tags}\n\nRecreate this screen.` },
+  ];
+  const { text, reasoning } = await callClaude({
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, system: sys, messages: [{ role: 'user', content }], schema: RECREATE_SCHEMA,
+  });
+  let parsed: { explanation: string; elements: RawElement[]; tags: HmiTag[] };
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error('The AI returned a screen the app could not read. Please try again.', { cause: err });
+  }
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)));
+  const elements = parsed.elements.map(normalizeElement).map((e) => {
+    const w = clamp(e.w, 8, W);
+    const h = clamp(e.h, 8, H);
+    return { ...e, w, h, x: clamp(e.x, 0, W - w), y: clamp(e.y, 0, H - h) };
+  });
+  return { elements, tags: parsed.tags.map((t) => ({ ...t, address: t.address.trim().toUpperCase() })), explanation: parsed.explanation, reasoning };
 }
