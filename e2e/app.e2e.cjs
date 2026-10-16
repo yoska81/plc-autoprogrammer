@@ -490,10 +490,13 @@ function sse(model, text) {
   check(wbXml.includes('name="Review Findings"'), 'Excel has the design review findings');
   // Purchasing: order list by supplier, AutomationDirect cart CSV ("PartNumber,Quantity", no header), one-page summary
   await page.getByText('Purchasing — order list').waitFor();
-  log('Order list:', (await page.locator('#order-list .bg-steel-50 span.text-xs').first().innerText()), '|', await page.getByText(/^Total of verified prices/).innerText());
+  log('Order list:', (await page.locator('#order-list .bg-steel-50 span.text-xs').first().innerText()), '|', await page.getByText(/^Panel parts, total of verified prices/).innerText());
   const adCsv = fs.readFileSync(await dl('AutomationDirect order file (CSV)'), 'utf8').trim().split(/\r?\n/);
   if (!adCsv.length || !adCsv.every((l) => /^[A-Z0-9][A-Z0-9-]*,\d+$/i.test(l))) throw new Error('AutomationDirect order file is not "PartNumber,Quantity" lines: ' + adCsv.slice(0, 3).join(' | '));
   log('AutomationDirect order file:', adCsv.length, 'lines, e.g.', adCsv.slice(0, 3).join(' | '));
+  // Panel parts only: the CPU is ordered once (spares are a separate, optional order, off by default)
+  if (!adCsv.some((l) => /^C0-1\dDD1E-D,1$/.test(l))) throw new Error('order file should hold one CPU (no spares): ' + adCsv.filter((l) => l.startsWith('C0-')).join(' | '));
+  if (await page.getByLabel('Show recommended spares (separate order)').isChecked()) throw new Error('spares should be off by default');
   const ps = await PDFDocument.load(fs.readFileSync(await dl('Purchase summary PDF')));
   log('Purchase summary PDF pages:', ps.getPageCount());
   if (ps.getPageCount() !== 1) throw new Error('purchase summary is not one page');
@@ -508,6 +511,7 @@ function sse(model, text) {
   const zip = await JSZip.loadAsync(fs.readFileSync(zipPath));
   log('ZIP:', Object.keys(zip.files).filter((f) => !f.endsWith('/')).join(', '));
   if (!Object.keys(zip.files).some((f) => f.startsWith('purchasing/') && f.endsWith('_purchase_summary.pdf'))) throw new Error('ZIP has no purchase summary');
+  if (!Object.keys(zip.files).some((f) => /^purchasing\/.*_spares_order\.csv$/.test(f))) throw new Error('ZIP has no separate spares order file');
   await snap(page, 'deliverables');
 
   log('AI calls:', JSON.stringify(counts));

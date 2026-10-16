@@ -60,9 +60,17 @@ export interface OrderList {
 }
 
 export interface OrderOptions {
+  /** Add the recommended spares to the panel parts. */
   spares: boolean;
   labels: boolean;
+  /** Only the recommended spares (a separate order). */
+  sparesOnly?: boolean;
 }
+
+/** What the order file and the summary hold by default: the panel parts and label supplies, no spares. */
+export const PANEL_ORDER: OrderOptions = { spares: false, labels: true };
+/** The recommended spares on their own. */
+export const SPARES_ORDER: OrderOptions = { spares: true, labels: false, sparesOnly: true };
 
 /** Supplier of a catalog part: the shop its product page is on. */
 function supplierOf(partNumber: string): string {
@@ -93,7 +101,9 @@ export function buildOrderList(p: ProjectSnapshot, o: OrderOptions): OrderList {
     });
   };
 
-  if (p.drawingCtx) {
+  if (o.sparesOnly) {
+    // Spares only: no panel parts, no label supplies.
+  } else if (p.drawingCtx) {
     for (const g of billOfMaterials(p.drawingCtx)) for (const l of g.lines) {
       if (l.note || !l.partNumber) { toSelect.push(l.description); continue; }
       add(l.partNumber, l.manufacturer, l.description, l.qty, l.tags, 'bom');
@@ -124,7 +134,7 @@ export function buildOrderList(p: ProjectSnapshot, o: OrderOptions): OrderList {
   });
 
   // Label supplies chosen on the Labels tab (printer consumables).
-  if (o.labels && p.drawingCtx) {
+  if (o.labels && !o.sparesOnly && p.drawingCtx) {
     const setup = labelSetupFor(useProjectsStore.getState().activeId);
     const sup = setup.supply ? supplyByPart(setup.supply) : undefined;
     if (sup) {
