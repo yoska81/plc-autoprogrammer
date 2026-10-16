@@ -47,7 +47,26 @@ function snapshot(): Snapshot {
   return out;
 }
 
+// True while a project's data is being loaded into the stores (not a user change).
+let loadingProject = false;
+let derivedDepth = 0;
+export const isProjectLoading = () => loadingProject || derivedDepth > 0;
+
+/** Run a write that only recomputes data from other data (not a user change: no "unsaved changes"). */
+export function runDerived(fn: () => void): void {
+  derivedDepth++;
+  try { fn(); } finally { derivedDepth--; }
+}
+
+/** The stores that hold the open project's own data (for change tracking). */
+export const PROJECT_STORE_LIST = Object.entries(PROJECT_STORES).map(([key, store]) => ({ key, store }));
+
 function load(data: Snapshot | null) {
+  loadingProject = true;
+  try { loadInto(data); } finally { loadingProject = false; }
+}
+
+function loadInto(data: Snapshot | null) {
   for (const [key, store] of Object.entries(PROJECT_STORES) as [StoreKey, (typeof PROJECT_STORES)[StoreKey]][]) {
     // Start from the store's defaults so nothing leaks from the previous project.
     const initial = store.getInitialState();

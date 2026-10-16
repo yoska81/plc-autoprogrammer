@@ -20,6 +20,7 @@ import ProgramPrint from './ProgramPrint';
 import type { AnalogSetupRow } from '../../core/analog';
 import { useDraft } from '../../../store/useDraftStore';
 import { useUi } from '../../../store/useUiStore';
+import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 
 type Tab = 'describe' | 'fix' | 'history';
 
@@ -101,7 +102,9 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     setTab('fix');
     setRequest(fromReview.text);
   }, [fromReview, setTab, setRequest]);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setError] = useState<string | null>(null);
+  const genError = useAiJobError('program'), reviseError = useAiJobError('program-revise');
+  const error = localError ?? genError ?? reviseError;
   const [selectedRungId, setSelectedRungId] = useState<string | null>(() => searchParams.get('rung'));
   /** null = whole program; '' = rungs without a block. */
   const [block, setBlock] = useUi<string | null>('program.block', null);
@@ -164,28 +167,31 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
 
   const rungNumber = (id: string) => (review?.display ?? ladder).rungs.findIndex((r) => r.id === id) + 1;
 
-  const runAI = async (fn: () => Promise<void>) => {
+  /** Run an AI step as a global job: it keeps going (and its result is applied) when the user leaves the page. */
+  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal) => Promise<T>, apply: (r: T) => void) => {
     if (!ready || isGenerating) return;
-    store.setIsGenerating(true);
     setError(null);
-    try {
-      await fn();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      store.setIsGenerating(false);
-    }
+    void startAiJob({
+      kind, label,
+      run: async (h) => {
+        useProgramStore.getState().setIsGenerating(true);
+        try { return await run(h.signal); } finally { useProgramStore.getState().setIsGenerating(false); }
+      },
+      apply,
+    });
   };
 
   const handleGenerate = () => {
     if (!machineText.trim()) return;
     if (ladder.rungs.length && !confirm('Replace the current program with a new one? (The current one is kept in History.)')) return;
-    return runAI(async () => {
-      const r = await generateLadder(ai, ctx, machineText);
+    setTab('fix');
+    return runAI('program', 'PLC program', async (signal) => {
+      const r = await generateLadder({ ...ai, signal }, ctx, machineText);
       if (!r.program) throw new Error('The AI did not return a program. Add more detail and try again.');
-      store.setGeneratedLadder(r.program, r.explanation, r.reasoning);
+      return { ...r, program: r.program };
+    }, (r) => {
+      useProgramStore.getState().setGeneratedLadder(r.program, r.explanation, r.reasoning);
       recordSource();
-      setTab('fix');
     });
   };
 
@@ -199,15 +205,15 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       ...chat.map((m) => ({ role: m.role, content: m.text })),
     ];
     const scoped = activeBlock !== null && !specUpdate ? `[Block: ${blockName}${activeBlock ? ` (id "${activeBlock}")` : ''}] ${req}` : req;
-    return runAI(async () => {
-      store.addChat({ role: 'user', text: scoped });
-      setRequest('');
-      const r = await reviseLadder(ai, ctx, ladder, issues, history, scoped);
+    store.addChat({ role: 'user', text: scoped });
+    setRequest('');
+    return runAI('program-revise', 'PLC program change', (signal) => reviseLadder({ ...ai, signal }, ctx, ladder, issues, history, scoped), (r) => {
+      const st = useProgramStore.getState();
       if (r.program) {
-        store.addChat({ role: 'assistant', text: r.explanation });
-        store.setProposal({ program: r.program, explanation: r.explanation, reasoning: r.reasoning, specUpdate });
+        st.addChat({ role: 'assistant', text: r.explanation });
+        st.setProposal({ program: r.program, explanation: r.explanation, reasoning: r.reasoning, specUpdate });
       } else {
-        store.addChat({ role: 'assistant', text: r.explanation, outcome: 'no-change' });
+        st.addChat({ role: 'assistant', text: r.explanation, outcome: 'no-change' });
       }
     });
   };

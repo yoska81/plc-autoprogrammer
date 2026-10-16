@@ -239,7 +239,7 @@ async function iecPass(browser, problems, region) {
       const errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
-      page.on('dialog', (d) => d.dismiss());
+      page.on('dialog', (d) => (d.type() === 'beforeunload' ? d.accept() : d.dismiss()));
       await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
       await page.goto(BASE);
       if (!HASH) {

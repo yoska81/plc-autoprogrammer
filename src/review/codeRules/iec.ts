@@ -7,32 +7,27 @@
  * Clauses not confirmed against the standard text carry "(verify clause)".
  */
 import { panelNameplate, type ResolvedComponent, type WireRecord } from '../../electrical/derive';
-import { AC_POWER, awgOf, num, ratingA, type CodeRule, type Env } from './rules';
+import { IEC_AMPACITY, mm2FromAwg, SUPPLY_INFO } from '../../standards/regions';
+import { AC_POWER, num, ratingA, type CodeRule, type Env } from './rules';
 
 // ---------------------------------------------------------------------------
 // Tables
 // ---------------------------------------------------------------------------
 
-/** Cross-section (mm²) of AWG sizes (ASTM B258). */
-const AWG_MM2: Record<number, number> = { 22: 0.326, 20: 0.518, 18: 0.823, 16: 1.31, 14: 2.08, 12: 3.31, 10: 5.26, 8: 8.37, 6: 13.3, 4: 21.2, 3: 26.7, 2: 33.6, 1: 42.4, 0: 53.5, [-1]: 67.4, [-2]: 85, [-3]: 107 };
-
-/** Conductor cross-section in mm² from "1.5 mm²", "1,5 mm2" or an AWG size; null when unknown. */
+/** Conductor cross-section in mm² from "1.5 mm²", "1,5 mm2", or an AWG size as the IEC size drawn for it; null when unknown. */
 export function mm2Of(size: string): number | null {
   const m = /([\d.,]+)\s*mm(?:²|2|\^2)/i.exec(size);
   if (m) return parseFloat(m[1].replace(',', '.'));
-  const awg = awgOf(size);
-  return awg === null ? null : AWG_MM2[awg] ?? null;
+  return mm2FromAwg(size);
 }
 
 /**
- * Current-carrying capacity (A) of PVC-insulated copper at 40 °C ambient, installation method B2
- * (conductors / cables in ducting), IEC 60204-1 Table 6 (verify values). Sizes between table
- * steps use the next smaller step.
+ * Current-carrying capacity (A), PVC copper at 40 °C, method B2 (in trunking): IEC 60204-1 Table 6
+ * (IEC_AMPACITY in the region profile). Sizes between table steps use the next smaller step.
  */
-const TABLE6_B2: [number, number][] = [[0.75, 7.6], [1, 10.1], [1.5, 15.1], [2.5, 20.2], [4, 27], [6, 34], [10, 46], [16, 62], [25, 80], [35, 99], [50, 118], [70, 149], [95, 179]];
 export function iecAmpacity(mm2: number): number {
   let a = 0;
-  for (const [s, i] of TABLE6_B2) if (mm2 + 1e-6 >= s) a = i;
+  for (const [s, b2] of IEC_AMPACITY) if (mm2 + 1e-6 >= s) a = b2;
   return a;
 }
 
@@ -53,9 +48,10 @@ export const IEC_RULES: CodeRule[] = [
     clause: { US: '', Canada: '', IEC: 'IEC 60204-1 4.3 / IEC 60038 (verify clause)' },
     run: (input) => {
       const s = input.ctx.design.inputs.supply;
-      if (/\b(400|230|415|690)\s*V/i.test(s) || /50\s*hz/i.test(s)) return [];
-      return [{ subject: 'supply', severity: 'major', area: 'electrical', title: `Supply ${s.replace(/-/g, ' ')} is not a 50 Hz IEC supply`,
-        detail: 'Sites in Europe and Israel are supplied at 400/230 V 50 Hz. Motors, transformers, power supplies and protective devices must be rated for the actual supply.', fix: 'Confirm the site supply and select the voltage (e.g. 400 V 3-phase 50 Hz); re-check motor currents and device ratings.' }];
+      const info = SUPPLY_INFO[s as keyof typeof SUPPLY_INFO];
+      if (info?.hz === 50) return [];
+      return [{ subject: 'supply', severity: 'major', area: 'electrical', title: `Supply ${info?.label ?? s.replace(/-/g, ' ')} is not a 50 Hz IEC supply`,
+        detail: 'Sites in Europe and Israel are supplied at 400/230 V 50 Hz. Motors, transformers, power supplies and protective devices must be rated for the actual supply.', fix: 'Confirm the site supply and select it in the project (e.g. 400 V 3-phase 50 Hz); re-check motor currents and device ratings.' }];
     },
   },
   {
@@ -158,10 +154,11 @@ export const IEC_RULES: CodeRule[] = [
       const expect = (w: WireRecord): string[] | null => {
         if (isCable(w)) return null;
         if (isPe(w)) return ['GN/YE'];
-        if (/^(X2|N)$/.test(w.wire) || /neutral|grounded conductor/i.test(w.function)) return ['LBU', 'BU'];
+        if (/secondary/i.test(w.function) && /^(X2)$/.test(w.wire)) return ['RD']; // earthed side of the control transformer: AC control
+        if (/^(X2|N)$/.test(w.wire) || /neutral|grounded conductor/i.test(w.function)) return ['BU(LT)', 'LBU', 'BU'];
         if (/^X1$/.test(w.wire) || /secondary 1[12]0VAC|1[12]0VAC feed|230VAC feed/i.test(w.function)) return ['RD'];
         if (AC_POWER.test(w.function)) return ['BK'];
-        if (/foreign|external source/i.test(w.function)) return ['OR'];
+        if (/foreign|external source/i.test(w.function)) return ['OG', 'OR'];
         if (/^0V/.test(w.wire) || /^24\+/.test(w.wire)) return ['BU', 'WH/BU', 'DBU'];
         return null;
       };
@@ -171,7 +168,7 @@ export const IEC_RULES: CodeRule[] = [
         if (want && !want.includes(w.color) && !bad.has(w.wire)) bad.set(w.wire, { w, want });
       }
       return [...bad.values()].map(({ w, want }) => ({ subject: w.wire, severity: 'minor' as const, area: 'electrical' as const, title: `Wire ${w.wire} is ${w.color}, expected ${want[0]}`,
-        detail: `${w.function}: ${want[0] === 'LBU' ? 'light blue (neutral)' : want[0]} is the colour for this conductor under IEC 60204-1${want[0] === 'LBU' ? '; white is the North American neutral colour' : ''}.`, fix: `Use ${want[0]} insulation for ${w.wire}.` }));
+        detail: `${w.function}: ${want[0] === 'BU(LT)' ? 'light blue (neutral)' : want[0]} is the colour for this conductor under IEC 60204-1${want[0] === 'BU(LT)' ? '; white is the North American neutral colour' : ''}.`, fix: `Use ${want[0]} insulation for ${w.wire}.` }));
     },
   },
   {
@@ -241,7 +238,7 @@ export const IEC_RULES: CodeRule[] = [
       const n = panelNameplate(input.ctx);
       const missing: string[] = [];
       if (/tbd/i.test(n.sccr)) missing.push(`rated short-circuit current${input.sccr?.unknown.length ? ` (no rating yet for ${input.sccr.unknown.join(', ')})` : ''}`);
-      if (n.hz !== 50 && !/50\s*hz/i.test(input.ctx.design.inputs.supply)) missing.push('frequency for the site (50 Hz)');
+      if (SUPPLY_INFO[input.ctx.design.inputs.supply as keyof typeof SUPPLY_INFO]?.hz !== 50 && n.hz !== 50) missing.push('frequency for the site (50 Hz)');
       return missing.length ? [{ subject: 'nameplate', severity: 'minor' as const, area: 'electrical' as const, title: `Nameplate incomplete: ${missing.join(', ')}`,
         detail: 'The equipment must be marked with the supplier, type, serial number, rated voltage, phases, frequency, full-load current, rated short-circuit current and the main document number.', fix: 'Complete the nameplate data (determine the short-circuit rating per IEC 61439-1 / the component ratings).' }] : [];
     },

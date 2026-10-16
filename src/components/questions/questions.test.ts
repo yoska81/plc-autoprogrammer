@@ -76,4 +76,19 @@ assert.deepEqual(userNotes({ notes: ['Example HMI design.', 'I/O Status: no head
 // The store never takes a technical issue as a question.
 useQuestionStore.getState().sync('t', 'hmi', [{ text: 'Main: header bar added.' }, { text: 'Which operator password levels are needed?' }]);
 assert.deepEqual(useQuestionStore.getState().byProject.t.map((x) => x.text), ['Which operator password levels are needed?']);
+// Revisiting a page re-registers its questions: the list order and the Q&A text in the spec must not change
+// (otherwise every stage turns "out of date: the spec changed" by itself).
+{
+  const st = useQuestionStore.getState();
+  st.sync('r', 'io', [{ text: 'How many parts per minute at most?' }]);
+  st.sync('r', 'electrical', [{ text: 'Which supply voltage is on site?' }, { text: 'Motor M1 assumed 2 HP; confirm the nameplate.' }]);
+  for (const q of useQuestionStore.getState().byProject.r) useQuestionStore.getState().answer('r', q.id, 'yes', 'answered');
+  const before = qaText(useQuestionStore.getState().byProject.r);
+  const order = useQuestionStore.getState().byProject.r.map((q) => q.id).join();
+  useQuestionStore.getState().sync('r', 'io', [{ text: 'How many parts per minute at most?' }]);
+  useQuestionStore.getState().sync('r', 'electrical', [{ text: 'Motor M1 assumed 2 HP; confirm the nameplate.' }, { text: 'Which supply voltage is on site?' }]);
+  assert.equal(useQuestionStore.getState().byProject.r.map((q) => q.id).join(), order, 'list order kept');
+  assert.equal(qaText(useQuestionStore.getState().byProject.r), before, 'Q&A text unchanged');
+  assert.equal(qaText([...useQuestionStore.getState().byProject.r].reverse()), before, 'Q&A text does not depend on list order');
+}
 console.log('question tests passed');

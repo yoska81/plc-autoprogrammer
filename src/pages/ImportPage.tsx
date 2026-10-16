@@ -9,6 +9,7 @@ import { analyzeExistingSystem, type Confidence, type ImportResult } from '../li
 import { PLC_PROFILES } from '../plc/core/profiles';
 import { Spinner, ReasoningPanel } from '../components/common';
 import { useUi } from '../store/useUiStore';
+import { startAiJob, useAiJobError, useAiJobRunning } from '../lib/ai/jobs';
 
 /** Kept in memory (not persisted) so switching pages doesn't lose an analysis. */
 const useImportState = create<{
@@ -48,8 +49,11 @@ export default function ImportPage() {
   const setPlc = useProjectStore((s) => s.setPlc);
   const electrical = useElectricalStore();
 
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Global AI job: the analysis keeps running when the user leaves this page.
+  const busy = useAiJobRunning('import');
+  const jobError = useAiJobError('import');
+  const [fileError, setError] = useState<string | null>(null);
+  const error = fileError ?? jobError;
   const [replaceIO, setReplaceIO] = useUi('import.replaceIO', true);
   const [dragOver, setDragOver] = useState(false);
 
@@ -64,20 +68,15 @@ export default function ImportPage() {
     if (ok.length < list.length) setError('Only PDF and image files can be read.');
   };
 
-  const analyze = async () => {
+  const analyze = () => {
     if (!apiKey || !st.files.length) return;
-    setBusy(true);
     setError(null);
-    try {
-      const { result, reasoning } = await analyzeExistingSystem({
-        apiKey, model: settings.anthropicModel, effort: settings.effort, files: st.files, note: st.note,
-      });
-      st.set({ result, reasoning, included: result.io.map((p) => p.confidence !== 'low') });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    const files = st.files, note = st.note;
+    void startAiJob({
+      kind: 'import', label: 'Reading the existing system',
+      run: (h) => analyzeExistingSystem({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal, files, note }),
+      apply: ({ result, reasoning }) => useImportState.getState().set({ result, reasoning, included: result.io.map((p) => p.confidence !== 'low') }),
+    });
   };
 
   const updateIO = (i: number, patch: Partial<ImportResult['io'][number]>) => {

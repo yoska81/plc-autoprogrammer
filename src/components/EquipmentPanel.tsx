@@ -9,13 +9,14 @@ import { PLC_PROFILES } from '../plc/core/profiles';
 import { getPart, partsIn } from '../electrical/catalog';
 import { HMI_MODELS, getHmi } from '../hmi/hmiCatalog';
 import { moduleSlots, ioCapacity } from '../plc/core/modules';
-import { cpuFit, findCpu, hmiFit, type Need } from '../plc/core/fit';
+import { cpuFit, findCpu, hmiFit, platformOf, type Need } from '../plc/core/fit';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, type EquipmentChoice } from '../spec/equipment';
 import VendorPreferenceCard from './VendorPreferenceCard';
 import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
 import { useDraft } from '../store/useDraftStore';
+import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 
 const MAX_MODULES = 8;
 
@@ -61,8 +62,9 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const project = useProjectStore();
   const appliedHmi = useHmiStore((s) => s.hmiPartNumber);
   const ioPoints = useIOStore((s) => s.projectIO);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Global AI job: keeps running across pages; the recommendation is shown here when it arrives.
+  const busy = useAiJobRunning('equipment');
+  const error = useAiJobError('equipment');
   const [reasoning, setReasoning] = useState<string | null>(null);
   // A new AI suggestion stays with the project until applied; dropped if the applied one changes.
   const recBasis = JSON.stringify(project.recommendation);
@@ -98,24 +100,23 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     };
   }, [ioPoints, rec, choice?.hmiPartNumber]);
 
-  const recommend = async () => {
+  const recommend = () => {
     if (!apiKey || specEmpty) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await recommendEquipment({ apiKey, model: settings.anthropicModel, effort: settings.effort, spec });
-      setRec(r.rec);
-      setChoice(recommendedChoice(r.rec));
-      setReasoning(r.reasoning);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    void startAiJob({
+      kind: 'equipment', label: 'Equipment selection', keepResult: true,
+      run: (h) => recommendEquipment({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal, spec }),
+    });
   };
+  useTakeResult<Awaited<ReturnType<typeof recommendEquipment>>>('equipment', (r) => {
+    setRec(r.rec);
+    setChoice(recommendedChoice(r.rec));
+    setReasoning(r.reasoning);
+  });
 
   const cpus = PLC_PROFILES.filter((p) => p.available && p.language === 'ladder').flatMap((p) => p.cpuModels);
-  const modules = partsIn('plcModule');
+  // Expansion modules of the chosen CPU's platform (multi-vendor profiles); CLICK modules otherwise.
+  const platform = choice ? platformOf(choice.cpuId) : undefined;
+  const modules = platform ? platform.modules.map((m) => getPart(m)).filter((p): p is NonNullable<typeof p> => Boolean(p)) : partsIn('plcModule');
   const hmis = HMI_MODELS.filter((h) => h.touch);
   const cpu = choice ? findCpu(choice.cpuId) : null;
   const fit = cpu && choice ? cpuFit(cpu, choice.modules, need) : null;
@@ -221,7 +222,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                     <td className={td} colSpan={4}>No touch panel (pushbuttons and lights only)</td>
                   </tr>
                   {hmis.map((h) => {
-                    const f = hmiFit(h, need);
+                    const f = hmiFit(h, need, choice?.cpuId);
                     const selected = choice?.hmiPartNumber === h.partNumber;
                     return (
                       <tr key={h.partNumber} onClick={() => f.ok && set({ hmiPartNumber: h.partNumber })}

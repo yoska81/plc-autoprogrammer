@@ -81,5 +81,5 @@ export function deepScan(example: { ladder: LadderProgram; spec: Record<string, 
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  });
+  }).map((p, i) => ({ ...p, id: `${p.id}#${i}` })); // several saved copies share a label
 }

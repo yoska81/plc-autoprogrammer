@@ -34,7 +34,8 @@ console.log('IEC 60204-1 rules');
 
 test('rule set by region: US / Canada = NA, Europe / Israel = IEC', () => {
   assert.equal(ruleSetOf('US'), 'NA'); assert.equal(ruleSetOf('Canada'), 'NA'); assert.equal(ruleSetOf(undefined), 'NA');
-  assert.equal(ruleSetOf('Europe'), 'IEC'); assert.equal(ruleSetOf('Israel'), 'IEC');
+  assert.equal(ruleSetOf('EU'), 'IEC'); assert.equal(ruleSetOf('Israel'), 'IEC'); assert.equal(ruleSetOf('IEC'), 'IEC');
+  assert.equal(makeEnv({ ...base, region: 'EU' }).iec, true, 'project region EU runs the IEC rules');
   const iec = rulesFor('IEC').map((r) => r.id);
   for (const id of ['motor-scpd', 'transformer-protection', 'min-conductor', 'branch-conductor-ocpd', 'wire-colours', 'sccr', 'enclosure-type']) assert.ok(!iec.includes(id), `${id} is NA only`);
   for (const id of ['disconnect', 'estop-device', 'safety-reset', 'iec-supply', 'iec-wire-colours']) assert.ok(iec.includes(id), id);
@@ -43,8 +44,8 @@ test('rule set by region: US / Canada = NA, Europe / Israel = IEC', () => {
 });
 
 test('mm² parsing and Table 6 capacity', () => {
-  assert.equal(mm2Of('1,5 mm²'), 1.5); assert.equal(mm2Of('2.5 mm2'), 2.5); assert.equal(mm2Of('14 AWG'), 2.08);
-  assert.equal(iecAmpacity(1.5), 15.1); assert.equal(iecAmpacity(2.08), 15.1, 'between steps: next smaller');
+  assert.equal(mm2Of('1,5 mm²'), 1.5); assert.equal(mm2Of('2.5 mm2'), 2.5); assert.equal(mm2Of('14 AWG'), 2.5, 'AWG read as the IEC size drawn for it');
+  assert.equal(iecAmpacity(1.5), 13.1); assert.equal(iecAmpacity(2), 13.1, 'between steps: next smaller'); assert.equal(iecAmpacity(2.5), 17.4);
 });
 
 test('iec-supply: 400 V 50 Hz ok, 480 V 60 Hz fails', () => {
@@ -83,7 +84,7 @@ test('iec-wire-colours: GN/YE PE ok; white neutral and black AC control fail', (
   env.wires.push({ wire: 'X1', from: 'T1', to: 'FU', color: 'BK', size: '1.5 mm²', function: 'Control transformer secondary 120VAC' });
   const hits = run('iec-wire-colours', {}, env);
   assert.deepEqual(hits.map((h) => h.subject).sort(), ['N', 'X1']);
-  assert.match(hits.find((h) => h.subject === 'N')!.title, /expected LBU/);
+  assert.match(hits.find((h) => h.subject === 'N')!.title, /expected BU\(LT\)/);
 });
 
 test('iec-dc-control-protection: 5 A supply on 0.75 mm² ok, 10 A supply fails', () => {

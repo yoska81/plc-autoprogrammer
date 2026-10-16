@@ -36,6 +36,14 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)rittal\.(com|us)$/, makers: /rittal/i },
   { host: /(^|\.)phoenixcontact\.com$/, makers: /phoenix/i },
   { host: /(^|\.)eaton\.com$/, makers: /eaton/i },
+  { host: /(^|\.)(omron\.com|omron\.eu)$/, makers: /omron/i },
+  { host: /(^|\.)weintek\.com$/, makers: /weintek/i },
+  // Red Lion is part of HMS Networks: redlion.net now redirects to hms-networks.com
+  { host: /(^|\.)(redlion\.net|hms-networks\.com)$/, makers: /red ?lion/i },
+  { host: /(^|\.)maplesystems\.com$/, makers: /maple/i },
+  { host: /(^|\.)(mitsubishielectric\.com|mitsubishielectric\.co\.jp)$/, makers: /mitsubishi/i },
+  { host: /(^|\.)(deltaww\.com|delta-americas\.com)$/, makers: /delta/i },
+  { host: /(^|\.)(proface\.com|pro-face\.com)$/, makers: /pro-?face/i },
 ];
 
 /** Key ratings a part of each category must state (the design and calculations use them). */

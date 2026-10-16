@@ -18,7 +18,7 @@ export interface EquipmentRecommendation {
 const obj = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 
 function choices() {
-  const profiles = PLC_PROFILES.filter((p) => p.available && p.language === 'ladder');
+  const profiles = PLC_PROFILES.filter((p) => p.available && p.language === 'ladder' && p.autoChoose !== false);
   const cpus = profiles.flatMap((p) => p.cpuModels.map((c) => ({ profile: p, cpu: c })));
   const modules = partsIn('plcModule');
   const hmis = HMI_MODELS.filter((h) => h.touch);
@@ -78,9 +78,9 @@ How to choose:
 8. "modules" are in slot order (slot 1 first). quantity ≥ 1.`;
 }
 
-export async function recommendEquipment(opts: { apiKey: string; model: string; effort: Effort; spec: SpecSections }): Promise<{ rec: EquipmentRecommendation; reasoning: string | null }> {
+export async function recommendEquipment(opts: { apiKey: string; model: string; effort: Effort; signal?: AbortSignal; spec: SpecSections }): Promise<{ rec: EquipmentRecommendation; reasoning: string | null }> {
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
     system: system(),
     messages: [{ role: 'user', content: `Machine specification:\n${specToText(opts.spec) || '(empty)'}\n\nRecommend the control equipment.` }],
     schema: schema(),

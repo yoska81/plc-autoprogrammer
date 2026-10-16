@@ -16,6 +16,8 @@ import UpdateAll from './components/UpdateAll';
 import ResizablePane from './components/ResizablePane';
 import { useOpenCounts } from './components/questions/useQuestionStore';
 import { useProjectFile } from './project/useProjectFile';
+import AiJobsIndicator from './components/AiJobsIndicator';
+import { useFileStore } from './project/useFileStore';
 
 
 const DOT: Record<StageStatus | 'none', string> = {
@@ -106,6 +108,9 @@ export default function App() {
   useAutoReview();
 
   const projectName = projects.find((p) => p.id === activeId)?.name ?? 'Project';
+  const fileInfo = useFileStore((s) => (activeId ? s.byProject[activeId] : undefined));
+  const dirty = Boolean(fileInfo?.dirty);
+  useEffect(() => { document.title = `${dirty ? '*' : ''}${projectName}${fileInfo?.name ? ` (${fileInfo.name})` : ''} - ISA Auto Programmer`; }, [dirty, projectName, fileInfo?.name]);
   const equipmentDone = stages.equipment.status !== 'empty';
 
   const tree: TreeNode = {
@@ -156,7 +161,8 @@ export default function App() {
         <span className="h-5 px-1 flex items-center bg-brand-600 text-white text-[10px] font-bold tracking-wider rounded-[3px]" aria-hidden>ISA</span>
         <span className="font-semibold tracking-[0.14em] text-steel-900 text-sm" aria-label="ISA AUTO PROGRAMMER">AUTO PROGRAMMER</span>
         <span className="mx-1 text-steel-300">|</span>
-        <span className="truncate text-steel-600 text-xs">{projectName}</span>
+        <span className="truncate text-steel-600 text-xs" data-testid="window-title">{projectName}{dirty ? ' *' : ''}</span>
+        {fileInfo?.name && <span className="truncate text-steel-400 text-xs">— {fileInfo.name}</span>}
       </div>
 
       {/* Menu bar */}
@@ -164,7 +170,8 @@ export default function App() {
         <Menu label="Project">
           <MenuItem onClick={() => navigate('/new')}>New project…</MenuItem>
           <MenuItem onClick={projectFile.open}>Open project file (.isap)…<span className="float-right pl-6 text-steel-400">Ctrl+O</span></MenuItem>
-          <MenuItem onClick={projectFile.save}>Save project to file (.isap)…<span className="float-right pl-6 text-steel-400">Ctrl+S</span></MenuItem>
+          <MenuItem onClick={projectFile.save}>Save<span className="float-right pl-6 text-steel-400">Ctrl+S</span></MenuItem>
+          <MenuItem onClick={projectFile.saveAs}>Save as…<span className="float-right pl-6 text-steel-400">Ctrl+Shift+S</span></MenuItem>
           <div className="border-t border-steel-200 my-1" />
           <MenuItem onClick={() => navigate('/import')}>Import existing system…</MenuItem>
           <MenuItem onClick={() => navigate('/project')}>Project data and revisions…</MenuItem>
@@ -187,7 +194,9 @@ export default function App() {
       <div className="h-10 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-2 gap-1">
         <ToolButton title="New project" onClick={() => navigate('/new')}><DocumentPlusIcon className="w-5 h-5" /></ToolButton>
         <ToolButton title="Open project file (Ctrl+O)" onClick={projectFile.open}><FolderOpenIcon className="w-5 h-5" /></ToolButton>
-        <ToolButton title="Save project to file (Ctrl+S)" onClick={projectFile.save}><ArrowDownOnSquareIcon className="w-5 h-5" /></ToolButton>
+        <ToolButton title={dirty ? 'Save (Ctrl+S) — unsaved changes' : 'Save (Ctrl+S)'} onClick={projectFile.save}>
+          <span className="relative"><ArrowDownOnSquareIcon className="w-5 h-5" />{dirty && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500" />}</span>
+        </ToolButton>
         <ToolButton title="Import existing system" onClick={() => navigate('/import')}><ArrowUpTrayIcon className="w-5 h-5" /></ToolButton>
         {projectFile.input}
         <span className="w-px h-6 bg-steel-200 mx-1" />
@@ -233,7 +242,8 @@ export default function App() {
 
       {/* Status bar */}
       <div className="h-6 flex-shrink-0 bg-brand-600 text-white flex items-center gap-5 px-3 text-[11px]">
-        <span>Ready</span>
+        <span data-testid="save-state">{dirty ? 'Unsaved changes' : fileInfo?.savedAt ? `Saved ${new Date(fileInfo.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Ready'}</span>
+        <AiJobsIndicator />
         <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
         <span>HMI: {hmiPart || '—'}</span>
         <span>Rev {rev.rev} · {rev.description}</span>

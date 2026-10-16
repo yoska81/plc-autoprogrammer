@@ -8,6 +8,7 @@ import { Spinner, ReasoningPanel } from './common';
 import { useSyncQuestions } from './questions/useQuestionStore';
 import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
+import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.csv,image/*';
 
@@ -17,8 +18,9 @@ export default function SpecIntake() {
   const settings = useSettingsStore();
   const [newText, setNewText] = useDraft('spec.newText', '');
   const [files, setFiles] = useState<File[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Global AI job: the spec is updated even if the user leaves this page meanwhile.
+  const busy = useAiJobRunning('spec');
+  const error = useAiJobError('spec');
   const [summary, setSummary] = useUi<string | null>('spec.summary', null);
   const [reasoning, setReasoning] = useState<string | null>(null);
   const [undo, setUndo] = useDraft<SpecSections | null>('spec.undo', null);
@@ -27,29 +29,27 @@ export default function SpecIntake() {
   // The AI's open questions, each answered right under it (saved per project, merged into the spec).
   useSyncQuestions('spec', spec.questions.map((text) => ({ text })));
 
-  const organize = async () => {
+  const organize = () => {
     if (!apiKey || (!newText.trim() && !files.length)) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await organizeSpec({
-        apiKey, model: settings.anthropicModel, effort: settings.effort,
-        current: spec.sections, newText, files,
-      });
-      setUndo(spec.sections);
-      spec.setSections(r.sections);
-      spec.setQuestions(r.questions);
-      files.forEach((f) => spec.addDocument(f.name));
-      setSummary(r.summary);
-      setReasoning(r.reasoning);
-      setNewText('');
-      setFiles([]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    const current = spec.sections, text = newText, sent = files;
+    void startAiJob({
+      kind: 'spec', label: 'Organizing the spec', keepResult: true,
+      run: async (h) => ({ before: current, sent, ...(await organizeSpec({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal, current, newText: text, files: sent })) }),
+      apply: (r) => {
+        const st = useSpecStore.getState();
+        st.setSections(r.sections);
+        st.setQuestions(r.questions);
+        r.sent.forEach((f) => st.addDocument(f.name));
+      },
+    });
   };
+  useTakeResult<{ before: SpecSections; sent: File[]; summary: string; reasoning: string | null }>('spec', (r) => {
+    setUndo(r.before);
+    setSummary(r.summary);
+    setReasoning(r.reasoning);
+    setNewText('');
+    setFiles([]);
+  });
 
   return (
     <div className="space-y-5">

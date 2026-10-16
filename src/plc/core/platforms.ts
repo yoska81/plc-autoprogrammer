@@ -11,7 +11,8 @@ import type { Fit, Need } from './fit';
  * CLICK keeps its own fit (./fit.ts).
  */
 
-export type Protocol = 'EtherNet/IP' | 'PROFINET' | 'Modbus TCP';
+/** Ethernet protocols built into a PLC (Omron FINS: Omron's own, spoken by most third-party panels' Omron drivers). */
+export type Protocol = 'EtherNet/IP' | 'PROFINET' | 'Modbus TCP' | 'Omron FINS';
 
 export interface Platform {
   id: string;
@@ -51,7 +52,7 @@ export const PLATFORMS: Platform[] = [
   {
     id: 'ab-compactlogix-5380', vendor: 'allen-bradley', name: 'Allen-Bradley CompactLogix 5380',
     cpus: ['5069-L306ER', '5069-L310ER', '5069-L320ER'],
-    modules: ['5069-IB16', '5069-OB16', '5069-IF8', '5069-OF4'],
+    modules: ['5069-IB16', '5069-OB16', '5069-IF8', '5069-OF4', '5069-OF8'],
     protocols: ['EtherNet/IP'],
     notes: 'Every 5069 I/O module needs a 5069-RTB18-SCREW terminal block; the controller and the 5069-FPD field potential distributor need 5069-RTB64-SCREW.',
   },
@@ -89,6 +90,65 @@ export const PLATFORMS: Platform[] = [
     modules: ['TM3DI16', 'TM3DQ16T', 'TM3DQ16R', 'TM3AI4', 'TM3AQ2', 'TM3AM6'],
     protocols: ['EtherNet/IP', 'Modbus TCP'],
     notes: 'Up to 7 local TM3 modules (more through a TM3BCEIP coupler). EtherNet/IP scanner and Modbus TCP client built in.',
+  },
+  {
+    id: 'omron-cp2e', vendor: 'omron', name: 'Omron CP2E',
+    cpus: ['CP2E-N20DT-D', 'CP2E-N30DT-D', 'CP2E-N30DT1-D', 'CP2E-N40DT-D', 'CP2E-N40DT1-D', 'CP2E-N60DT-D'],
+    modules: ['CP1W-8ED', 'CP1W-16ER', 'CP1W-16ET', 'CP1W-16ET1', 'CP1W-20EDR1', 'CP1W-20EDT', 'CP1W-20EDT1', 'CP1W-AD041', 'CP1W-DA041', 'CP1W-MAD11', 'CP1W-MAD42'],
+    protocols: ['Omron FINS'],
+    notes: 'CP2E-N (network type) CPUs have built-in Ethernet (N20: 1 port; N30/40/60: 2 ports with switch) for FINS/TCP, FINS/UDP and socket services - Omron does not list EtherNet/IP or Modbus TCP for CP2E. CP2E-N20 takes NO expansion units; N30/40/60 take up to 3 CP1W expansion I/O / expansion units (each comes with a short horizontal connecting cable; CP1W-CN811 80 cm cable for a second row). Option board slots: N20 1, N30/40/60 2 - serial boards CP1W-CIF01/CIF11/CIF12-V1, CP2W-CIFD1/2/3, and max. one analog option board CP1W-ADB21/DAB21V/MAB221 (not in this catalog: no maker footprint). Option battery CP2W-BAT02. "DT" = sinking (NPN) transistor outputs, "DT1" = sourcing (PNP); "-D" = 24 VDC supply. Program with CX-Programmer 9.72+ (CX-One 4.51+).',
+    // https://assets.omron.com/m/79b5d624707bfd69/original/CP2E-Series-Programmable-Controller-Datasheet.pdf
+  },
+  {
+    id: 'omron-cp1e', vendor: 'omron', name: 'Omron CP1E',
+    cpus: ['CP1E-N30DT-D', 'CP1E-N30DT1-D', 'CP1E-N40DT-D', 'CP1E-N40DT1-D'],
+    modules: ['CP1W-8ED', 'CP1W-16ER', 'CP1W-16ET', 'CP1W-16ET1', 'CP1W-20EDR1', 'CP1W-20EDT', 'CP1W-20EDT1', 'CP1W-AD041', 'CP1W-DA041', 'CP1W-MAD11', 'CP1W-MAD42'],
+    protocols: [],
+    notes: 'CP1E-N CPUs have NO built-in Ethernet (USB programming port + RS-232C); Ethernet needs the CP1W-CIF41 version 2.0+ option board (FINS) in the single option board slot. N30/40/60 take up to 3 CP1W expansion I/O / expansion units (N14/N20 none). Analog option boards CP1W-ADB21/DAB21V/MAB221 need CPU unit version 1.2+. "DT" = sinking, "DT1" = sourcing transistor outputs, "-D" = 24 VDC supply. Omron positions CP2E as the replacement (CP1E-to-CP2E replacement guide); CP1E is still Active on Omron Americas but no longer listed on Omron Europe.',
+    // https://assets.omron.com/m/00c4c2eb278c16b3/original/CP1E-Datasheet.pdf
+  },
+  {
+    id: 'omron-nx1p2', vendor: 'omron', name: 'Omron NX1P2',
+    cpus: ['NX1P2-9024DT', 'NX1P2-9024DT1', 'NX1P2-1040DT', 'NX1P2-1040DT1', 'NX1P2-1140DT', 'NX1P2-1140DT1'],
+    modules: ['NX-ID5342', 'NX-ID5442', 'NX-OD5256', 'NX-AD3603', 'NX-AD3203', 'NX-DA3603', 'NX-DA3203', 'NX-PF0630'],
+    plugIns: ['NX1W-ADB21', 'NX1W-DAB21V', 'NX1W-MAB221'],
+    protocols: ['EtherNet/IP'],
+    notes: 'Up to 8 NX I/O units on the CPU NX bus (24 total incl. 16 on EtherCAT slave terminals). The NX-END02 end cover is included with the CPU. The CPU does NOT supply I/O power to NX units: add an NX-PF0630 (4 A) / NX-PF0730 (10 A) additional I/O power supply unit (counts as an NX unit) or wire I/O power directly. Option board slots: 40-point CPUs 2, 24-point CPUs 1 (NX1W-CIF01/11/12 serial, NX1W-ADB21/DAB21V/MAB221 analog). Built-in ports: 1 EtherNet/IP + 1 EtherCAT master. "DT" = NPN, "DT1" = PNP outputs. Program with Sysmac Studio. NX-OD5121 (16 x NPN out) exists but is omitted here (no maker footprint found).',
+    // https://assets.omron.com/m/26af8e730226b1c1/original/NX1P-Machine-Automation-Controller-Datasheet.pdf
+  },
+  {
+    id: 'mitsubishi-fx5u', vendor: 'mitsubishi', name: 'Mitsubishi Electric MELSEC iQ-F FX5U',
+    cpus: ['FX5U-32MT/ES', 'FX5U-64MT/ES', 'FX5U-80MT/ES', 'FX5U-32MR/ES', 'FX5U-32MT/DS'],
+    modules: ['FX5-16EX/ES', 'FX5-16EYT/ES', 'FX5-16EYR/ES', 'FX5-16ER/ES', 'FX5-16ET/ES', 'FX5-4AD', 'FX5-4DA', 'FX5-8AD', 'FX5-C16EX/DS', 'FX5-C32EX/DS', 'FX5-C32EYT/D', 'FX5-C32ET/DSS'],
+    plugIns: ['FX5-4AD-ADP', 'FX5-4DA-ADP', 'FX5-4A-ADP'],
+    protocols: ['Modbus TCP'],
+    notes: 'All-in-one CPU (built-in PSU, 2 AI + 1 AO, Ethernet, RS-485, SD slot). Right side: up to 16 extension modules (512 control points incl. remote, 256 local); screw-terminal "cable type" modules (FX5-16EX/ES etc.) connect directly; connector-type FX5-C... modules need the FX5-CNV-IF connector conversion module first. Large systems may need an extension power supply module (FX5-1PSU-5V) - check the 5 V / 24 V power budget in the hardware manual. Left side: up to 6 expansion adapters (max 2 communication FX5-232ADP/485ADP + max 4 analog FX5-4AD-ADP/4DA-ADP/4A-ADP/4AD-PT-ADP/4AD-TC-ADP). Front: 1 expansion board slot (FX5-232-BD / 485-BD / 422-BD-GOT / FX5-3A-BD). Built-in Ethernet does SLMP, MODBUS/TCP, socket, FTP, CC-Link IE Field Basic master; EtherNet/IP needs FX5-ENET/IP or FX5-EIP module (not built in). Optional battery FX3U-32BL for latch retention. "/ES" = 100-240 VAC supply, "/DS" = 24 VDC supply; MT = transistor sink, MT/ESS & MT/DSS = transistor source, MR = relay. Program with GX Works3.',
+    // https://dl.mitsubishielectric.co.jp/dl/fa/document/catalog/plcf/l08428eng/l08428eng-j.pdf
+  },
+  {
+    id: 'mitsubishi-fx5uc', vendor: 'mitsubishi', name: 'Mitsubishi Electric MELSEC iQ-F FX5UC',
+    cpus: ['FX5UC-32MT/D', 'FX5UC-32MT/DSS', 'FX5UC-64MT/D', 'FX5UC-96MT/D'],
+    modules: ['FX5-C16EX/DS', 'FX5-C32EX/DS', 'FX5-C32EYT/D', 'FX5-C32ET/DSS', 'FX5-16EX/ES', 'FX5-16EYT/ES', 'FX5-16EYR/ES', 'FX5-16ER/ES', 'FX5-16ET/ES', 'FX5-4AD', 'FX5-4DA', 'FX5-8AD'],
+    plugIns: ['FX5-4AD-ADP', 'FX5-4DA-ADP', 'FX5-4A-ADP'],
+    protocols: ['Modbus TCP'],
+    notes: 'Ultra-compact 24 VDC CPU with connector (MIL/ribbon) I/O - order I/O cables or terminal blocks separately; -TS variants use spring-clamp terminals. No built-in analog and no expansion-board slot. Right side: up to 16 extension modules; connector-type FX5-C... modules connect directly; screw-terminal cable-type modules (FX5-16EX/ES, FX5-4AD ...) need FX5-CNV-IFC connector conversion or FX5-C1PS-5V extension power supply first. Left side: up to 6 expansion adapters (max 2 comms + max 4 analog). Transistor outputs: Y0-Y3 0.3 A, Y4+ 0.1 A per point - use relays/interposing for loads. "/D" = sink inputs + sink outputs, "/DSS" = sink/source inputs + source outputs. Built-in Ethernet: SLMP, MODBUS/TCP, socket; EtherNet/IP via FX5-ENET/IP or FX5-EIP.',
+    // https://dl.mitsubishielectric.co.jp/dl/fa/document/catalog/plcf/l08428eng/l08428eng-j.pdf
+  },
+  {
+    id: 'delta-dvp', vendor: 'delta', name: 'Delta DVP-SE (slim, Ethernet)',
+    cpus: ['DVP12SE11T', 'DVP26SE11T'],
+    modules: ['DVP16SM11N', 'DVP16SN11T', 'DVP16SP11T', 'DVP04AD-S', 'DVP04DA-S'],
+    protocols: ['EtherNet/IP', 'Modbus TCP'],
+    notes: 'DVP-S slim modules clip onto the right side of the CPU (no backplane, no end cover listed). Delta: max. 14 right-side modules, of which -S/-S2 analog/special modules must be 8 or fewer. DVP12SE11T also accepts left-side high-speed modules (e.g. DVPEN01-SL, DVP04AD-SL); DVP26SE11T supports right-side modules only and has 1 RS-485 instead of 2. CPUs need a 24 VDC supply (e.g. DVPPS02 24 V 2 A). The newer DVP-SE2 (DVP28SE211T) exists but was not added (no maker dimensions found).',
+    // https://www.deltaww.com/IA/downloadcenter/catalogue/3.Control/DVP/DELTA_IA-PLC_DVP_TP_C_EN_20220906.pdf
+  },
+  {
+    id: 'delta-as300', vendor: 'delta', name: 'Delta AS300',
+    cpus: ['AS332T-A', 'AS332P-A', 'AS324MT-A'],
+    modules: ['AS16AM10N-A', 'AS16AN01T-A', 'AS16AP11T-A', 'AS04AD-A', 'AS04DA-A'],
+    protocols: ['EtherNet/IP', 'Modbus TCP'],
+    notes: 'Backplane-less right-side expansion: max. 32 modules (max. 16 analog / 4 communication), 1,024 I/O. CPUs take 24 VDC (AS-PS02 power module 24 V 2 A, or external 24 V). CPU built-in I/O is on MIL connectors: order UC-ET010/020/030-24D cables plus UB-10-ID16A (inputs) / UB-10-OR16A (NPN-to-relay outputs) terminal boards. AS300 CPUs have 2 function-card slots (e.g. AS-F485, AS-FCOPM CANopen, AS-F2AD/F2DA, AS-FEN02) - not catalogued here. CANopen DS301 needs the AS-FCOPM card on AS300.',
+    // https://www.deltaww.com/IA/downloadcenter/catalogue/3.Control/AS/DELTA_IA-PLC_AS_C_EN_20230116.pdf
   },
 ];
 
@@ -154,12 +214,20 @@ export function protocolsOf(p: CatalogPart): Protocol[] {
   return out;
 }
 
+/** Platform ids a panel's maker lists in its PLC driver list (ratings.plcDrivers, sourced in ratings.driversSource). */
+export const driversOf = (hmi: CatalogPart): string[] => String(hmi.ratings.plcDrivers ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
 /**
- * Can this touch panel talk to the platform? Same brand: yes unless its
- * protocols are stated and don't match. Another brand: only when a shared
- * Ethernet protocol is stated for the panel.
+ * Can this touch panel talk to the platform? Panels with a maker's PLC driver
+ * list: only the families on it. Same brand: yes unless its protocols are stated and
+ * don't match. Another brand: only when a shared Ethernet protocol is stated
+ * for the panel.
  */
 export function hmiCompatible(platform: Platform, hmi: CatalogPart): { ok: boolean; reason: string | null } {
+  // A panel with a maker's driver list: that list alone decides (no guessing from protocol names).
+  if (hmi.ratings.plcDrivers !== undefined) {
+    return driversOf(hmi).includes(platform.id) ? { ok: true, reason: null } : { ok: false, reason: `Not in ${hmi.manufacturer}'s driver list for the ${platform.name}.` };
+  }
   const hp = protocolsOf(hmi);
   const shared = hp.filter((x) => platform.protocols.includes(x));
   if (hmi.vendor === platform.vendor) {

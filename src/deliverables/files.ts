@@ -102,9 +102,19 @@ export function programFiles(p: ProjectSnapshot): { name: string; content: strin
   if (p.profile.language === 'st') return p.stCode ? [{ name: `${p.fileBase}.st`, content: p.stCode }] : [];
   if (!p.ladder.rungs.length) return [];
   const header = `${p.projectName} — ${p.profile.name} ${p.cpu.id}`;
+  const hmiTags = (p.hmi?.tags ?? []).map((t) => ({ address: t.address, nickname: t.name, comment: `HMI: ${t.description}` }));
+  // Tag-based PLCs (Logix …): the profile's own exporters write the vendor files.
+  if (p.profile.id !== 'click' && p.profile.exporters?.length) {
+    const ctx = { io: p.io, addresses: p.addresses, labels: p.labels, header, extraTags: hmiTags, cpuId: p.cpu.id, modules: moduleSlots(p.modules), projectName: p.projectName };
+    return [
+      ...p.profile.exporters.map((e) => ({ name: e.fileName(p.fileBase), content: e.build(p.ladder, ctx) })),
+      { name: `${p.fileBase}_program.json`, content: JSON.stringify(p.ladder, null, 2) },
+      ...analogFiles(p),
+    ];
+  }
   return [
     { name: `${p.fileBase}_rungs.txt`, content: clickRungListing(p.ladder, p.labels, header) },
-    { name: `${p.fileBase}_nicknames.csv`, content: clickNicknameCsv(p.ladder, p.io, p.addresses, (p.hmi?.tags ?? []).map((t) => ({ address: t.address, nickname: t.name, comment: `HMI: ${t.description}` }))) },
+    { name: `${p.fileBase}_nicknames.csv`, content: clickNicknameCsv(p.ladder, p.io, p.addresses, hmiTags) },
     { name: `${p.fileBase}_program.json`, content: JSON.stringify(p.ladder, null, 2) },
     ...analogFiles(p),
   ];
@@ -165,20 +175,19 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
   return zip.generateAsync({ type: 'blob' });
 }
 
-export function saveBlob(name: string, blob: Blob) {
+/** Save a file: download in the browser, Save dialog in the Windows app, the account's save in the preview. */
+export function saveBlobResult(name: string, blob: Blob): Promise<{ ok: boolean; path?: string }> {
   // The preview can't download directly: the viewer's Claude app offers the file.
   if (IS_PREVIEW) {
-    void saveViaAccount(name, blob).then((ok) => { if (!ok) notify('Saving files is not available in this view. Run the app on your PC to download.'); })
-      .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
-    return;
+    return saveViaAccount(name, blob).then((ok) => { if (!ok) notify('Saving files is not available in this view. Run the app on your PC to download.'); return { ok }; })
+      .catch((e: unknown) => { notify(e instanceof Error ? e.message : String(e)); return { ok: false }; });
   }
   // Windows app: native Save dialog.
   const save = desktopBridge()?.saveFile;
   if (save) {
-    void blob.arrayBuffer().then((buf) => save(name, new Uint8Array(buf)))
-      .then((r) => { if (r.ok) notify(`Saved: ${r.path ?? name}`); else if (!r.cancelled) notify(`The file could not be saved: ${r.error ?? 'unknown error'}`); })
-      .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
-    return;
+    return blob.arrayBuffer().then((buf) => save(name, new Uint8Array(buf)))
+      .then((r) => { if (r.ok) notify(`Saved: ${r.path ?? name}`); else if (!r.cancelled) notify(`The file could not be saved: ${r.error ?? 'unknown error'}`); return { ok: r.ok, path: r.path }; })
+      .catch((e: unknown) => { notify(e instanceof Error ? e.message : String(e)); return { ok: false }; });
   }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -186,4 +195,9 @@ export function saveBlob(name: string, blob: Blob) {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return Promise.resolve({ ok: true });
+}
+
+export function saveBlob(name: string, blob: Blob): void {
+  void saveBlobResult(name, blob);
 }

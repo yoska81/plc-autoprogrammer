@@ -116,6 +116,7 @@ export async function analyzeExistingSystem(opts: {
   apiKey: string;
   model: string;
   effort: Effort;
+  signal?: AbortSignal;
   files: File[];
   /** Optional context from the user, e.g. "This is the palletizer on line 3". */
   note: string;
@@ -127,7 +128,7 @@ export async function analyzeExistingSystem(opts: {
     { type: 'text', text: `Files (in the order attached):\n${names}\n\n${opts.note ? `Notes from the engineer:\n${opts.note}\n\n` : ''}Build the inventory of this machine's control system.` },
   ];
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
     system: SYSTEM, messages: [{ role: 'user', content }], schema: IMPORT_SCHEMA,
   });
   try {

@@ -7,6 +7,13 @@ import { YASKAWA } from './yaskawa';
 import { IFM } from './ifm';
 import { HOFFMAN } from './hoffman';
 import { RITTAL } from './rittal';
+import { OMRON } from './omron';
+import { WEINTEK } from './weintek';
+import { REDLION } from './redlion';
+import { MAPLE } from './maple';
+import { MITSUBISHI } from './mitsubishi';
+import { DELTA } from './delta';
+import { PROFACE } from './proface';
 
 /**
  * Multi-vendor catalogs. One file per vendor in this folder, same rule for
@@ -90,6 +97,34 @@ export const VENDORS: Vendor[] = [
     id: 'rittal', name: 'Rittal', supplier: 'Rittal (distributor)', parts: tag('rittal', RITTAL),
     notes: 'Rittal AX enclosures include their mounting panel: no separate subpanel part.',
   },
+  {
+    id: 'omron', name: 'Omron', supplier: 'Omron (distributor)', parts: tag('omron', OMRON),
+    notes: 'Omron part codes: "DT" = sinking (NPN) transistor outputs, "DT1" = sourcing (PNP), "-D" = 24 VDC supply. CP2E-N20 takes no expansion units; CP2E / CP1E N30/40/60 take up to 3 CP1W expansion units. CP1E has no built-in Ethernet (needs a CP1W-CIF41 option board). NX1P2 takes up to 8 NX I/O units; the NX bus I/O power comes from an NX-PF0630 power supply unit, not from the CPU; the NX-END02 end cover ships with the CPU. 3G3M1 drives: size by heavy-duty current; Modbus RS-485 and Safe Torque Off built in.',
+  },
+  {
+    id: 'weintek', name: 'Weintek', supplier: 'Weintek (distributor)', parts: tag('weintek', WEINTEK),
+    notes: 'Weintek touch panels run 24 VDC; the PLC families each panel can talk to are in ratings.plcDrivers (from Weintek\'s driver list).',
+  },
+  {
+    id: 'redlion', name: 'Red Lion', supplier: 'Red Lion / HMS Networks (distributor)', parts: tag('redlion', REDLION),
+    notes: 'Red Lion order numbers are the 16-character form without hyphens. Graphite and CR3000 run on 10-30 VDC, CR1000 on 24 VDC; the PLC families each panel can talk to are in ratings.plcDrivers (from the Crimson driver list).',
+  },
+  {
+    id: 'maple', name: 'Maple Systems', supplier: 'Maple Systems', parts: tag('maple', MAPLE),
+    notes: 'Maple Systems touch panels run 24 VDC; the PLC families each panel can talk to are in ratings.plcDrivers (from Maple\'s EBPro connection guides).',
+  },
+  {
+    id: 'mitsubishi', name: 'Mitsubishi Electric', supplier: 'Mitsubishi Electric (distributor)', parts: tag('mitsubishi', MITSUBISHI),
+    notes: 'FX5 part codes: "/ES" = 100-240 VAC supply, "/DS" or "/D" = 24 VDC; "MT" transistor sink, "MT/ESS" / "MT/DSS" transistor source, "MR" relay. Up to 16 extension modules on the right, up to 6 expansion adapters on the left (max 2 communication, 4 analog). An FX5U needs an FX5-CNV-IF before connector-type FX5-C… modules; an FX5UC needs an FX5-CNV-IFC or FX5-C1PS-5V before screw-terminal modules. FX5UC transistor outputs are only 0.3 A (Y0–Y3) / 0.1 A. EtherNet/IP is not built in (needs an FX5-ENET/IP module). FR-E800 drives: size by normal-duty current (kw / outputAmps); "EPA-60" models have Ethernet (EtherNet/IP, Modbus TCP).',
+  },
+  {
+    id: 'delta', name: 'Delta Electronics', supplier: 'Delta Electronics (distributor)', parts: tag('delta', DELTA),
+    notes: 'DVP-SE: up to 14 right-side modules, at most 8 analog / special (-S) modules. AS300: up to 32 modules, at most 16 analog and 4 communication; the CPU I/O is on MIL connectors (order UC-ET0x0-24D cables with UB-10-ID16A / UB-10-OR16A terminal boards). Power the PLCs from 24 VDC (DVPPS02 / AS-PS02 or a panel supply). MS300 "ANSAA" = IP20 without EMC filter; drive currents are heavy duty. DOP-100 panels run on 24 VDC (isolated supply recommended).',
+  },
+  {
+    id: 'proface', name: 'Pro-face', supplier: 'Pro-face / Schneider Electric (distributor)', parts: tag('proface', PROFACE),
+    notes: 'Pro-face model letters: "TAD" = 24 VDC, "TAA" = 100-240 VAC. ST6000 "WADE" models are programmed with GP-Pro EX (the driver list applies to them). The PLC families each panel can talk to are in ratings.plcDrivers.',
+  },
 ];
 
 export const vendorById = (id: VendorId | undefined): Vendor | undefined => VENDORS.find((v) => v.id === (id ?? 'automationdirect'));
@@ -162,4 +197,4 @@ export function fallbackCategories(pref: VendorPreference): CatalogCategory[] {
 export const supplierOfPart = (p: CatalogPart | undefined): string | undefined => (p ? vendorById(p.vendor)?.supplier : undefined);
 
 /** Plain-English rule shown with the brand choice. */
-export const CATALOG_GROUPS_NOTE = 'Only real part numbers checked on the manufacturer\'s or a distributor\'s page are offered; parts still to be checked are marked "verify".';
+export const CATALOG_GROUPS_NOTE = 'Only real part numbers checked on the maker\'s own page or datasheet are offered.';

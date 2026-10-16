@@ -3,6 +3,8 @@ import type { Effort } from '../../store/useSettingsStore';
 import { IS_PREVIEW } from '../../preview/mode';
 import { callClaudeAccount } from '../../preview/claudeAccount';
 import { trackAi } from './busy';
+import { KIND_TEXT, withRetries, type AiErrorInfo } from './errors';
+import { reportRetry } from './jobs';
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
@@ -31,6 +33,8 @@ export type ClaudeOptions = {
   system: string;
   messages: (ChatTurn | RichTurn)[];
   schema?: Record<string, unknown>;
+  /** Aborts the request (job Cancel). */
+  signal?: AbortSignal;
 };
 
 /**
@@ -42,39 +46,53 @@ export type ClaudeInterceptor = (opts: ClaudeOptions, real: (o: ClaudeOptions) =
 let interceptor: ClaudeInterceptor | null = null;
 export function setClaudeInterceptor(fn: ClaudeInterceptor | null) { interceptor = fn; }
 
+/**
+ * One Claude request with automatic retries: a dropped connection, an overloaded service (429 / 529 /
+ * 5xx) or a timeout is retried up to 3 times with backoff ("retrying (2/3)…" in the status bar), then
+ * reported in plain English. `opts.signal` stops it (job Cancel).
+ */
 export function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
-  return trackAi(() => (interceptor ? interceptor(opts, requestClaude) : requestClaude(opts)));
+  return trackAi(() => withRetries(() => (interceptor ? interceptor(opts, requestClaude) : requestClaude(opts)), {
+    signal: opts.signal,
+    onRetry: (n) => reportRetry(opts.signal, n),
+    explain: (err, info) => explainFailure(err, info, opts.model),
+  }));
+}
+
+/** Final message for a failed request (after any retries). */
+function explainFailure(err: unknown, info: AiErrorInfo, model: string): string {
+  if (err instanceof Anthropic.APIError || err instanceof Anthropic.APIConnectionError) return explainApiError(err, model);
+  const msg = err instanceof Error ? err.message : String(err);
+  if (info.kind === 'network' || info.kind === 'timeout') return `${KIND_TEXT[info.kind]} before the answer was complete. Check the internet connection and try again.`;
+  return msg;
 }
 
 async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   // The preview can't reach the API; the viewer's own Claude account answers instead.
   if (IS_PREVIEW) return callClaudeAccount(opts as Parameters<typeof callClaudeAccount>[0]);
   // Keys live in the user's own browser; there is no backend to proxy through.
-  const client = new Anthropic({ apiKey: opts.apiKey, dangerouslyAllowBrowser: true });
+  // Retries are done by callClaude (also for streams that drop half-way), not by the SDK.
+  const client = new Anthropic({ apiKey: opts.apiKey, dangerouslyAllowBrowser: true, maxRetries: 0 });
 
-  let message;
-  try {
-    // Streamed so long, deep-thinking generations don't hit HTTP timeouts.
-    // `fallbacks: 'default'` lets the API retry on another model if a safety
-    // classifier declines the request instead of returning nothing.
-    message = await client.beta.messages
-      .stream({
-        model: opts.model,
-        max_tokens: 64000,
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
-        thinking: { type: 'adaptive', display: 'summarized' },
-        output_config: {
-          effort: opts.effort,
-          ...(opts.schema ? { format: { type: 'json_schema' as const, schema: opts.schema } } : {}),
-        },
-        system: opts.system,
-        messages: opts.messages,
-      })
-      .finalMessage();
-  } catch (err) {
-    throw new Error(explainApiError(err, opts.model), { cause: err });
-  }
+  // Streamed so long, deep-thinking generations don't hit HTTP timeouts.
+  // `fallbacks: 'default'` lets the API retry on another model if a safety
+  // classifier declines the request instead of returning nothing.
+  const message = await client.beta.messages
+    .stream({
+      model: opts.model,
+      max_tokens: 64000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      thinking: { type: 'adaptive', display: 'summarized' },
+      output_config: {
+        effort: opts.effort,
+        ...(opts.schema ? { format: { type: 'json_schema' as const, schema: opts.schema } } : {}),
+      },
+      // The system prompt is static per stage: cached across calls (5 min) when it is long enough.
+      system: [{ type: 'text', text: opts.system, cache_control: { type: 'ephemeral' } }],
+      messages: opts.messages,
+    }, { signal: opts.signal })
+    .finalMessage();
 
   if (message.stop_reason === 'refusal') {
     throw new Error('Claude declined this request. Try rephrasing it.');

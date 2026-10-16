@@ -62,6 +62,9 @@ function reply(system, body = {}) {
   }
 }
 
+/** System prompt text (the app sends it as cacheable content blocks). */
+const sysText = (s) => (Array.isArray(s) ? s.map((b) => b.text).join('\n') : s);
+
 function sse(model, text) {
   const ev = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
   return ev('message_start', { message: { id: 'm', type: 'message', role: 'assistant', model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } })
@@ -83,7 +86,7 @@ function sse(model, text) {
   page.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
-    await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, JSON.stringify(reply(body.system, body))) });
+    await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, JSON.stringify(reply(sysText(body.system), body))) });
   });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
 
@@ -547,10 +550,26 @@ function sse(model, text) {
   // the electrical AI was given the catalog notes of the brands in use (AutomationDirect by default).
   check(/Catalog specifics per brand:\n- AutomationDirect:/.test(lastUser.electrical ?? '') && !/Allen-Bradley:/.test(lastUser.electrical ?? ''), 'electrical prompt has only the default brand notes');
   await page.goto(BASE + '/equipment');
-  const abPanel = page.getByLabel(/^Panel parts .*: Allen-Bradley$/);
-  await abPanel.check();
+  // Searchable brand list per group: type, pick from the list; chips show the choice, × removes it.
+  const addBrand = async (group, name) => {
+    const box = page.getByRole('combobox', { name: new RegExp(`^Add a brand for ${group}`) });
+    await box.fill(name.slice(0, 5));
+    await page.getByRole('listbox', { name: new RegExp(`^Brands for ${group}`) }).getByRole('option', { name: new RegExp(`^${name}`) }).click();
+  };
+  const hasBrand = async (group, name) => (await page.getByRole('group', { name: new RegExp(`^${group}`) }).getByText(name).count()) > 0;
+  const removeBrand = (group, name) => page.getByRole('button', { name: new RegExp(`^Remove ${name} from ${group}`) }).click();
+  await addBrand('Panel parts', 'Allen-Bradley');
   await page.reload();
-  check(await page.getByLabel(/^Panel parts .*: Allen-Bradley$/).isChecked(), 'brand preference is saved with the project');
+  check(await hasBrand('Panel parts', 'Allen-Bradley'), 'brand preference is saved with the project');
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const card = page.getByRole('region', { name: 'Preferred brands' });
+  const cardBox = await card.boundingBox();
+  log('Brand card at 1366x768:', Math.round(cardBox.width), "x", Math.round(cardBox.height), "px");
+  check(cardBox.width <= 1366 && cardBox.height < 520, 'brand card fits at 1366x768');
+  await page.getByRole('combobox', { name: /^Add a brand for Motor drives/ }).click();
+  await snap(page, 'brands_1366');
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1600, height: 950 });
   await page.goto(BASE + '/electrical?tab=design');
   await page.getByRole('button', { name: 'Change K1' }).click();
   const abChoices = await page.getByLabel(/^Choose 100-C\d\dEJ10$/).count();
@@ -558,10 +577,10 @@ function sse(model, text) {
   check(abChoices >= 3, 'Allen-Bradley contactors offered when the brand is preferred');
   await page.getByRole('button', { name: 'Close', exact: true }).first().click();
   await page.goto(BASE + '/equipment');
-  await page.getByLabel(/^Panel parts .*: Allen-Bradley$/).uncheck();
+  await removeBrand('Panel parts', 'Allen-Bradley');
   // An Allen-Bradley PLC + HMI preference shows that brand's CPUs with the modules they'd need and the fit (comparison only).
-  await page.getByLabel(/^PLC and I\/O: Allen-Bradley$/).check();
-  await page.getByLabel(/^Operator panel \(HMI\): Allen-Bradley$/).check();
+  await addBrand('PLC and I/O', 'Allen-Bradley');
+  await addBrand('Operator panel', 'Allen-Bradley');
   const abCard = page.getByRole('region', { name: 'Preferred PLC brands for this machine' });
   await abCard.waitFor();
   const m820 = await abCard.locator('tr[data-cpu="2080-L20E-20QBB"]').innerText();
@@ -571,8 +590,8 @@ function sse(model, text) {
   log('Touch panels for Allen-Bradley:', panels);
   check(panels.includes('2713P-T7WD1 (7")'), 'PanelView 5310 listed as a compatible touch panel');
   await snap(page, 'brands');
-  await page.getByLabel(/^PLC and I\/O: Allen-Bradley$/).uncheck();
-  await page.getByLabel(/^Operator panel \(HMI\): Allen-Bradley$/).uncheck();
+  await removeBrand('PLC and I/O', 'Allen-Bradley');
+  await removeBrand('Operator panel', 'Allen-Bradley');
 
   // Deliverables
   await page.goto(BASE + '/export');
@@ -619,7 +638,7 @@ function sse(model, text) {
     name: document.querySelector('select[aria-label="Open project"] option:checked').textContent,
   }));
   await page.getByRole('button', { name: 'Project', exact: true }).click();
-  const [isapDl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Save project to file \(\.isap\)/ }).click()]);
+  const [isapDl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /^Save\s*Ctrl\+S$/ }).click()]);
   const isapPath = OUT + isapDl.suggestedFilename();
   await isapDl.saveAs(isapPath);
   check(isapPath.endsWith('.isap'), 'project file has the .isap extension');
@@ -627,8 +646,10 @@ function sse(model, text) {
   const manifest = JSON.parse(await isap.file('manifest.json').async('string'));
   check(manifest.format === 'isa-auto-programmer-project' && manifest.formatVersion === 1, 'project file manifest');
   check(!(await isap.file('project.json').async('string')).includes('sk-ant-test'), 'API key is not in the project file');
+  page.on('console', (m) => { if (m.text().startsWith('DIRTY')) log(m.text().slice(0, 900)); });
   await page.locator('[data-testid="open-project-file"]').setInputFiles(isapPath);
   await page.waitForTimeout(1500);
+  check(!(await page.locator('[data-testid="window-title"]').innerText()).includes('*'), 'an opened project has no unsaved changes');
   const pfAfter = await page.evaluate(() => ({
     io: JSON.parse(localStorage.getItem('plc-io-store')).state.projectIO.length,
     rungs: JSON.parse(localStorage.getItem('plc-program-store')).state.ladder.rungs.length,
@@ -639,6 +660,16 @@ function sse(model, text) {
   log('Project file:', Math.round(fs.statSync(isapPath).size / 1024), 'KB |', JSON.stringify(pfBefore), '→', JSON.stringify(pfAfter));
   check(pfAfter.name === `${pfBefore.name} (2)`, 'opened as a new project with a new name');
   check(pfAfter.io === pfBefore.io && pfAfter.rungs === pfBefore.rungs && pfAfter.hasDesign === pfBefore.hasDesign && pfAfter.screens === pfBefore.screens, 'project file round trip keeps the data');
+  // Unsaved-changes marker: an edit sets it, Save clears it.
+  await page.goto(BASE + '/project');
+  await page.getByLabel('preparedBy').fill('Q.A.');
+  await page.waitForTimeout(300);
+  check((await page.locator('[data-testid="window-title"]').innerText()).endsWith('*'), 'an edit marks the project unsaved');
+  check((await page.locator('[data-testid="save-state"]').innerText()) === 'Unsaved changes', 'status bar shows unsaved changes');
+  await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+s')]);
+  await page.waitForTimeout(300);
+  check(!(await page.locator('[data-testid="window-title"]').innerText()).includes('*'), 'Ctrl+S saves and clears the marker');
+  log('Save state:', await page.locator('[data-testid="save-state"]').innerText(), '| title:', await page.title());
   await page.locator('[data-testid="open-project-file"]').setInputFiles({ name: 'bad.isap', mimeType: 'application/octet-stream', buffer: Buffer.from('not a zip') });
   await page.waitForTimeout(500);
   check((await page.locator('body').innerText()).includes('not an ISA Auto Programmer project file'), 'a wrong file is refused with a clear message');

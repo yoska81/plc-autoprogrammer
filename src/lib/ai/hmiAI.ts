@@ -141,7 +141,7 @@ function normalizeElement(e: RawElement): HmiElement {
 }
 
 export async function generateHmiDesign(opts: {
-  apiKey: string; model: string; effort: Effort;
+  apiKey: string; model: string; effort: Effort; signal?: AbortSignal;
   hmi: HmiModel; guidelines: string; comms: string;
   spec: SpecSections; io: IOPoint[]; addresses: Map<string, string>;
   profile: PlcProfile; cpu: CpuModel;
@@ -157,7 +157,7 @@ ${io}
 
 ${opts.profile.id === 'click' ? 'CLICK I/O module grouping for the Diagnostics screen: X001–X0xx / Y001–Y0xx are the CPU\'s built-in points, X1xx/Y1xx slot 1, X2xx/Y2xx slot 2, and so on.\n\n' : ''}Design the complete HMI screen set.`;
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
     system: system(opts.hmi, opts.guidelines, opts.comms), messages: [{ role: 'user', content }], schema: SCHEMA,
   });
   let parsed: Omit<HmiDesign, 'hmiPartNumber' | 'generatedAt' | 'screens' | 'notes'> & { notes: unknown; explanation: string; machineName: string; screens: RawScreen[] };
@@ -206,7 +206,7 @@ const RECREATE_SCHEMA = obj({
  * elements sit on top of what they copy. Always a proposal: the user accepts it.
  */
 export async function recreateScreenFromPicture(opts: {
-  apiKey: string; model: string; effort: Effort;
+  apiKey: string; model: string; effort: Effort; signal?: AbortSignal;
   hmi: HmiModel; panelImageJpeg: string; screenName: string;
   io: IOPoint[]; addresses: Map<string, string>;
   tags: HmiTag[]; screens: { id: string; name: string }[];
@@ -227,7 +227,7 @@ Unused fields: address/action/targetScreenId/onText/offText/units/min/max/note n
     { type: 'text', text: `Screen name: ${opts.screenName}\n\nPhysical I/O (address, type, description):\n${io}\n\nExisting HMI tags (address, name, description):\n${tags}\n\nRecreate this screen.` },
   ];
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, system: sys, messages: [{ role: 'user', content }], schema: RECREATE_SCHEMA,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, system: sys, messages: [{ role: 'user', content }], schema: RECREATE_SCHEMA,
   });
   let parsed: { explanation: string; elements: RawElement[]; tags: HmiTag[] };
   try {
