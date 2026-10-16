@@ -9,15 +9,21 @@ import ExportPage from './pages/ExportPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
 import PlcSetupPage from './pages/PlcSetupPage.tsx'
 import PrintPage from './pages/PrintPage.tsx'
+import ImportPage from './pages/ImportPage.tsx'
+import ElectricalPage from './pages/ElectricalPage.tsx'
+import PrintElectricalPage from './pages/PrintElectricalPage.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <Routes>
         <Route path="/print" element={<PrintPage />} />
+        <Route path="/print-electrical" element={<PrintElectricalPage />} />
         <Route path="/" element={<App />}>
           <Route index element={<Navigate to="/plc" replace />} />
           <Route path="plc" element={<PlcSetupPage />} />
+          <Route path="import" element={<ImportPage />} />
+          <Route path="electrical" element={<ElectricalPage />} />
           <Route path="io" element={<IOPage />} />
           <Route path="program" element={<ProgramPage />} />
           <Route path="export" element={<ExportPage />} />

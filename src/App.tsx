@@ -2,8 +2,10 @@ import { NavLink, Outlet } from 'react-router-dom';
 
 const NAV_ITEMS = [
   { to: '/plc', label: 'PLC Setup', icon: '▣' },
+  { to: '/import', label: 'Import Existing', icon: '⇪' },
   { to: '/io', label: 'I/O List', icon: '⊞' },
   { to: '/program', label: 'Program', icon: '⚡' },
+  { to: '/electrical', label: 'Electrical', icon: '⌁' },
   { to: '/export', label: 'Export', icon: '↓' },
   { to: '/settings', label: 'Settings', icon: '⚙' },
 ];
@@ -37,7 +39,7 @@ export default function App() {
           ))}
         </nav>
         <div className="px-5 py-4 border-t border-gray-700">
-          <p className="text-xs text-gray-600">v0.3.0</p>
+          <p className="text-xs text-gray-600">v0.4.0</p>
         </div>
       </aside>
 

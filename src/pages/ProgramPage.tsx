@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useProgramStore } from '../store/useProgramStore';
 import { useSettingsStore, activeCredentials, ANTHROPIC_MODELS, EFFORT_LEVELS } from '../store/useSettingsStore';
 import { usePlc } from '../plc/usePlc';
+import { useElectricalStore } from '../store/useElectricalStore';
 import type { AIConfig } from '../lib/ai/ladderAI';
 import LadderWorkspace from '../components/program/LadderWorkspace';
 import StProgramView from '../components/program/StProgramView';
@@ -10,6 +11,8 @@ export default function ProgramPage() {
   const { projectName, setProjectName, lastGeneratedAt } = useProgramStore();
   const settings = useSettingsStore();
   const { profile, cpu, io, addresses, ioAddressSet, labels } = usePlc();
+  const ioWiring = useElectricalStore((s) => s.design?.ioWiring);
+  const wiring = new Map((ioWiring ?? []).map((w) => [w.address, { deviceTag: w.deviceTag, deviceType: w.deviceType }]));
 
   const { apiKey, model } = activeCredentials(settings);
   const ai: AIConfig = { provider: settings.provider, apiKey, model, effort: settings.effort };
@@ -44,7 +47,7 @@ export default function ProgramPage() {
       {profile.language === 'ladder' ? (
         <LadderWorkspace
           ai={ai}
-          ctx={{ profile, cpu, io, addresses }}
+          ctx={{ profile, cpu, io, addresses, wiring }}
           ioAddressSet={ioAddressSet}
           labels={labels}
           ready={ready}

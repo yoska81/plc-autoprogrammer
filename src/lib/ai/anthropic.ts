@@ -6,6 +6,12 @@ export interface ChatTurn {
   content: string;
 }
 
+/** A user turn with images/PDFs (used by Import). */
+export interface RichTurn {
+  role: 'user';
+  content: Anthropic.Beta.Messages.BetaContentBlockParam[];
+}
+
 export interface ClaudeResult {
   text: string;
   reasoning: string | null;
@@ -20,7 +26,7 @@ export async function callClaude(opts: {
   model: string;
   effort: Effort;
   system: string;
-  messages: ChatTurn[];
+  messages: (ChatTurn | RichTurn)[];
   schema?: Record<string, unknown>;
 }): Promise<ClaudeResult> {
   // Keys live in the user's own browser; there is no backend to proxy through.

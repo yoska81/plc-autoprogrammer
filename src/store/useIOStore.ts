@@ -12,6 +12,8 @@ interface IOStore {
   deletePoint: (id: string) => void;
   /** Manual PLC address override; empty string = automatic. */
   setPlcAddress: (id: string, address: string) => void;
+  /** Add points read from an existing machine; replace=true clears the list first. */
+  importPoints: (points: Omit<IOPoint, 'id'>[], replace: boolean) => void;
 }
 
 function nextInputId(existing: IOPoint[]): string {
@@ -95,6 +97,17 @@ export const useIOStore = create<IOStore>()(
         set((s) => ({
           projectIO: s.projectIO.map((p) => (p.id === id ? { ...p, plcAddress } : p)),
         }));
+      },
+
+      importPoints: (points, replace) => {
+        set((s) => {
+          let current = replace ? [] : [...s.projectIO];
+          for (const p of points) {
+            const id = p.type === 'input' ? nextInputId(current) : nextOutputId(current);
+            current = [...current, { ...p, id }];
+          }
+          return { projectIO: current };
+        });
       },
 
       deletePoint: (id: string) => {

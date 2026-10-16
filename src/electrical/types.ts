@@ -1,0 +1,96 @@
+/**
+ * Electrical design model. The AI fills the engineering decisions (parts,
+ * sizes, what each I/O point is wired to); code derives wire numbers,
+ * terminals and drawings from it so the sheet set is always consistent.
+ * North American practice (NFPA 79 / UL 508A style), AutomationDirect parts.
+ */
+
+export type CatalogCategory =
+  | 'enclosure' | 'disconnect' | 'breaker' | 'fuse' | 'powerSupply'
+  | 'contactor' | 'overload' | 'motorProtector' | 'vfd'
+  | 'relay' | 'safetyRelay' | 'terminal' | 'terminalAccessory'
+  | 'pushbutton' | 'estop' | 'pilotLight' | 'selector' | 'stackLight'
+  | 'plc' | 'plcModule' | 'hmi' | 'sensor' | 'solenoidValve'
+  | 'dinRail' | 'wireDuct' | 'groundBar' | 'fan' | 'other';
+
+/** Where the part is mounted; drives which layout sheet it appears on. */
+export type MountLocation = 'backplate' | 'door' | 'field';
+
+export interface CatalogPart {
+  /** AutomationDirect part number, exactly as on automationdirect.com. */
+  partNumber: string;
+  category: CatalogCategory;
+  description: string;
+  manufacturer: string;
+  /** Product page used to verify the part. */
+  url: string;
+  mount: MountLocation;
+  /** Mounting footprint in mm (width along the DIN rail × height), for layout. */
+  widthMm?: number;
+  heightMm?: number;
+  /** Key ratings used for selection, e.g. { amps: 10, poles: 1, coil: '24VDC', hp480: 5 }. */
+  ratings: Record<string, string | number>;
+  /** false = some data (ratings/dimensions) still needs checking against the datasheet. */
+  verified: boolean;
+}
+
+export type SupplyVoltage = '120VAC-1PH' | '208VAC-3PH' | '240VAC-3PH' | '480VAC-3PH';
+export type EnclosureRating = 'NEMA 1' | 'NEMA 12' | 'NEMA 4' | 'NEMA 4X';
+
+/** What the designer decides before generation. */
+export interface DesignInputs {
+  supply: SupplyVoltage;
+  enclosureRating: EnclosureRating;
+  /** Extra requirements in plain words (spare space, HMI, stack light, standards...). */
+  notes: string;
+  motors: MotorSpec[];
+  /** Parts the designer already chose; the AI must use them. */
+  requiredParts: { partNumber: string; quantity: number }[];
+}
+
+export type StarterType = 'contactor-overload' | 'motor-protector' | 'vfd';
+
+export interface MotorSpec {
+  tag: string;            // "M1"
+  description: string;    // "Conveyor 1 motor"
+  hp: number;
+  voltage: SupplyVoltage;
+  starter: StarterType;
+  reversing: boolean;
+}
+
+/** One placed component in the design (BOM line + drawing symbol). */
+export interface DesignComponent {
+  /** Device tag on the drawings, e.g. "CB1", "K1", "PS1", "PB2". */
+  tag: string;
+  partNumber: string;
+  quantity: number;
+  /** What it does in this machine. */
+  function: string;
+  /** Motor it belongs to, for motor circuit sheets. */
+  motorTag?: string | null;
+}
+
+export type FieldDeviceType =
+  | 'pushbutton-no' | 'pushbutton-nc' | 'selector' | 'estop-contact'
+  | 'sensor-pnp' | 'sensor-npn' | 'limit-switch' | 'pressure-switch' | 'safety-relay-output'
+  | 'contactor-coil' | 'relay-coil' | 'solenoid' | 'pilot-light' | 'stack-light' | 'vfd-input' | 'other';
+
+/** How one PLC I/O point is wired in the field. */
+export interface IOWiring {
+  /** PLC address, e.g. "X001". */
+  address: string;
+  /** Field device tag, e.g. "PB1", "PRS3", "SOL2". */
+  deviceTag: string;
+  deviceType: FieldDeviceType;
+  description: string;
+}
+
+export interface ElectricalDesign {
+  inputs: DesignInputs;
+  components: DesignComponent[];
+  ioWiring: IOWiring[];
+  /** Design notes and assumptions for the engineer to check. */
+  notes: string[];
+  generatedAt: string;
+}

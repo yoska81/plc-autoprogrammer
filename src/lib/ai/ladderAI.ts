@@ -20,6 +20,8 @@ export interface PlcContext {
   io: IOPoint[];
   /** I/O point id -> PLC address. */
   addresses: Map<string, string>;
+  /** Field wiring from the electrical design (address -> device), when known. */
+  wiring?: Map<string, { deviceTag: string; deviceType: string }>;
 }
 
 export interface LadderAIResult {
@@ -57,7 +59,11 @@ When you change an existing program:
 function ioTable(ctx: PlcContext): string {
   if (!ctx.io.length) return '(no I/O defined yet)';
   return ctx.io
-    .map((p) => `${ctx.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.category}\t${p.description || '(no description)'}`)
+    .map((p) => {
+      const a = ctx.addresses.get(p.id) || '';
+      const w = a ? ctx.wiring?.get(a) : undefined;
+      return `${a || '(unassigned)'}\t${p.type}\t${p.category}\t${p.description || '(no description)'}${w ? `\tfield device ${w.deviceTag} (${w.deviceType})` : ''}`;
+    })
     .join('\n');
 }
 
@@ -112,7 +118,7 @@ async function run(ai: AIConfig, system: string, messages: ChatTurn[]): Promise<
 }
 
 export function generateLadder(ai: AIConfig, ctx: PlcContext, description: string): Promise<LadderAIResult> {
-  const content = `I/O list (address, type, category, description):\n${ioTable(ctx)}\n\nWhat the machine must do:\n${description}\n\nWrite the complete program.`;
+  const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}\n\nWhat the machine must do:\n${description}\n\nWrite the complete program.`;
   return run(ai, systemPrompt(ctx), [{ role: 'user', content }]);
 }
 
@@ -132,6 +138,6 @@ export function reviseLadder(
   const issueText = issues.length
     ? issues.map((i) => `- [${i.severity}] ${i.rungId ? `rung ${i.rungId}: ` : ''}${i.message}`).join('\n')
     : '(none)';
-  const content = `I/O list (address, type, category, description):\n${ioTable(ctx)}\n\nCurrent program (JSON, includes any manual edits):\n${JSON.stringify(program)}\n\nIssues the app's checker found:\n${issueText}\n\nRequest:\n${request}`;
+  const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}\n\nCurrent program (JSON, includes any manual edits):\n${JSON.stringify(program)}\n\nIssues the app's checker found:\n${issueText}\n\nRequest:\n${request}`;
   return run(ai, systemPrompt(ctx), [...history, { role: 'user', content }]);
 }
