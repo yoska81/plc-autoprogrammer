@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { normalizePreference, type VendorPreference } from '../electrical/catalogs';
 import type { EquipmentRecommendation } from '../lib/ai/equipmentAI';
 
 interface ProjectStore {
@@ -47,6 +49,8 @@ export interface ProjectInfo {
   approvedBy: string;
   /** Oldest first; the last entry is the current revision. */
   revisions: Revision[];
+  /** Preferred brands per equipment group ("customer standard"); AutomationDirect when absent. */
+  vendors?: Partial<VendorPreference>;
 }
 
 export const DEFAULT_INFO: ProjectInfo = {
@@ -84,3 +88,12 @@ export const useProjectStore = create<ProjectStore>()(
     }
   )
 );
+
+/** The project's preferred vendors per equipment group (non-React callers). */
+export const vendorPreference = (): VendorPreference => normalizePreference(useProjectStore.getState().info.vendors);
+
+/** The project's preferred vendors per equipment group. */
+export function useVendorPreference(): VendorPreference {
+  const v = useProjectStore((s) => s.info.vendors);
+  return useMemo(() => normalizePreference(v), [v]);
+}

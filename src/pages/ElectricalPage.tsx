@@ -4,11 +4,12 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { usePlc } from '../plc/core/usePlc';
-import { CATALOG, getPart, partsIn } from '../electrical/catalog';
+import { getPart, partsIn } from '../electrical/catalog';
+import { catalogFor } from '../electrical/catalogs';
 import PartPicker from '../electrical/PartPicker';
 import { saveBlob } from '../deliverables/files';
 import { keyRatings } from '../electrical/strength';
-import { useProjectStore, type Region } from '../store/useProjectStore';
+import { useProjectStore, useVendorPreference, type Region } from '../store/useProjectStore';
 import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electrical/derive';
 import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
@@ -45,7 +46,6 @@ const CATEGORY_LABEL: Partial<Record<CatalogCategory, string>> = {
   plc: 'PLC CPU', plcModule: 'PLC I/O module', hmi: 'Touch panel (HMI)', sensor: 'Sensor', solenoidValve: 'Solenoid valve',
   dinRail: 'DIN rail', wireDuct: 'Wire duct', groundBar: 'Ground bar', fan: 'Fan / filter', other: 'Other',
 };
-const CATEGORIES = [...new Set(CATALOG.map((p) => p.category))].sort((a, b) => (CATEGORY_LABEL[a] ?? a).localeCompare(CATEGORY_LABEL[b] ?? b)) as CatalogCategory[];
 
 const input = 'border border-steel-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 const card = 'bg-white rounded-sm border border-steel-200 p-5';
@@ -73,7 +73,9 @@ export default function ElectricalPage() {
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
-  const [pickCat, setPickCat] = useState<CatalogCategory>(CATEGORIES[0]);
+  const pref = useVendorPreference();
+  const CATEGORIES = useMemo(() => [...new Set(catalogFor(pref).map((p) => p.category))].sort((a, b) => (CATEGORY_LABEL[a] ?? a).localeCompare(CATEGORY_LABEL[b] ?? b)) as CatalogCategory[], [pref]);
+  const [pickCat, setPickCat] = useState<CatalogCategory>('breaker');
   const [pickPart, setPickPart] = useState('');
   const [swap, setSwap] = useState<number | null>(null);
   const region = useProjectStore((s) => s.info.region);
@@ -231,7 +233,7 @@ export default function ElectricalPage() {
                 </select>
                 <select value={pickPart} onChange={(e) => setPickPart(e.target.value)} className={`${input} flex-1 min-w-64`} aria-label="Part">
                   <option value="">Choose a part…</option>
-                  {partsIn(pickCat).map((p) => <option key={p.partNumber} value={p.partNumber}>{p.partNumber} — {p.description}</option>)}
+                  {partsIn(pickCat, pref).map((p) => <option key={p.partNumber} value={p.partNumber}>{p.partNumber} — {p.description}</option>)}
                 </select>
                 <button disabled={!pickPart} onClick={() => { setInputs({ requiredParts: [...inputs.requiredParts, { partNumber: pickPart, quantity: 1 }] }); setPickPart(''); }}
                   className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-40">Add</button>
@@ -270,7 +272,7 @@ export default function ElectricalPage() {
                     <tbody className="divide-y divide-steel-100">
                       {el.design.components.map((c, i) => {
                         const part = getPart(c.partNumber);
-                        const options = part ? partsIn(part.category) : [];
+                        const options = part ? [...new Map([...partsIn(part.category, pref), part].map((x) => [x.partNumber, x])).values()] : [];
                         return (
                           <tr key={i}>
                             <td className="py-1 pr-2"><input value={c.tag} onChange={(e) => el.updateComponent(i, { ...c, tag: e.target.value.toUpperCase() })} className={`${input} w-20 font-mono`} aria-label="Tag" /></td>

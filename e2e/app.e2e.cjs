@@ -543,6 +543,24 @@ function sse(model, text) {
   await mb.disconnect();
   await plc.close();
 
+  // Preferred brands (customer standard): Allen-Bradley panel parts become choices next to the design's own parts;
+  // the electrical AI was given the catalog notes of the brands in use (AutomationDirect by default).
+  check(/Catalog specifics per brand:\n- AutomationDirect:/.test(lastUser.electrical ?? '') && !/Allen-Bradley:/.test(lastUser.electrical ?? ''), 'electrical prompt has only the default brand notes');
+  await page.goto(BASE + '/equipment');
+  const abPanel = page.getByLabel(/^Panel parts .*: Allen-Bradley$/);
+  await abPanel.check();
+  await page.reload();
+  check(await page.getByLabel(/^Panel parts .*: Allen-Bradley$/).isChecked(), 'brand preference is saved with the project');
+  await page.goto(BASE + '/electrical?tab=design');
+  await page.getByRole('button', { name: 'Change K1' }).click();
+  const abChoices = await page.getByLabel(/^Choose 100-C\d\dEJ10$/).count();
+  log('Allen-Bradley contactors offered for K1:', abChoices);
+  check(abChoices >= 3, 'Allen-Bradley contactors offered when the brand is preferred');
+  await page.getByRole('button', { name: 'Close', exact: true }).first().click();
+  await page.goto(BASE + '/equipment');
+  await page.getByLabel(/^Panel parts .*: Allen-Bradley$/).uncheck();
+  await snap(page, 'brands');
+
   // Deliverables
   await page.goto(BASE + '/export');
   const eng = await dl('Engineering package');

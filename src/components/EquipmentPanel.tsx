@@ -12,6 +12,7 @@ import { moduleSlots, ioCapacity } from '../plc/core/modules';
 import { cpuFit, findCpu, hmiFit, type Need } from '../plc/core/fit';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, type EquipmentChoice } from '../spec/equipment';
+import VendorPreferenceCard from './VendorPreferenceCard';
 import { Spinner, ReasoningPanel } from './common';
 
 const MAX_MODULES = 8;
@@ -119,6 +120,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
 
   return (
     <div className="space-y-4">
+      <VendorPreferenceCard />
       <div className="bg-white border border-steel-200 p-4 flex flex-wrap items-center gap-4">
         <div className="flex-1 min-w-64">
           <h3 className="font-semibold text-steel-900">Control equipment</h3>

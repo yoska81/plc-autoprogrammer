@@ -3,7 +3,9 @@ import type { CpuModel, PlcProfile } from '../../plc/core/profile';
 import type { IOPoint } from '../../types/io';
 import type { DesignInputs, ElectricalDesign, FieldDeviceType, MotorSpec } from '../../electrical/types';
 import type { Region } from '../../store/useProjectStore';
-import { CATALOG } from '../../electrical/catalog';
+import { catalogFor, VENDORS } from '../../electrical/catalogs';
+import { vendorPreference } from '../../store/useProjectStore';
+import type { CatalogPart } from '../../electrical/types';
 import { callClaude } from './anthropic';
 import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes } from '../../components/questions/classify';
 
@@ -12,7 +14,7 @@ const DEVICE_TYPES: FieldDeviceType[] = ['pushbutton-no', 'pushbutton-nc', 'sele
 const obj = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 
 /** Part numbers and I/O addresses are enums, so the AI cannot invent either. */
-function designSchema(addresses: string[]) {
+function designSchema(addresses: string[], CATALOG: CatalogPart[]) {
   return obj({
     explanation: { type: 'string' },
     components: {
@@ -56,10 +58,16 @@ function designSchema(addresses: string[]) {
   });
 }
 
-function catalogText(): string {
+/** Notes of the vendors whose parts are in the catalog given to the AI. */
+function vendorNotes(parts: CatalogPart[]): string {
+  const ids = new Set(parts.map((p) => p.vendor ?? 'automationdirect'));
+  return VENDORS.filter((v) => ids.has(v.id)).map((v) => `- ${v.name}: ${v.notes}`).join('\n');
+}
+
+function catalogText(CATALOG: CatalogPart[]): string {
   return CATALOG.map((p) => {
     const r = Object.entries(p.ratings).map(([k, v]) => `${k}=${v}`).join(', ');
-    return `${p.partNumber} | ${p.category} | ${p.description}${r ? ` | ${r}` : ''}${p.verified ? '' : ' | (ratings unverified)'}`;
+    return `${p.partNumber} | ${p.category} | ${p.manufacturer ? `${p.manufacturer} ` : ''}${p.description}${r ? ` | ${r}` : ''}${p.verified ? '' : ' | (ratings unverified)'}`;
   }).join('\n');
 }
 
@@ -84,7 +92,8 @@ Design practice to follow:
 - Check every part's input voltage against what feeds it. The 24VDC power supplies take single-phase ~90–276 VAC: on a 208/240 V supply feed one from two phases or line-neutral; on a 480 V or 600 V supply use a control power transformer (480/600→120 VAC, sized for the load with margin, with primary fuses) or a 3-phase power supply rated for that voltage if the catalog has one. Most catalog breakers and motor protectors are not rated for 600 V: on 600 V use fuses and parts whose catalog voltage rating is 600 V. Never connect a part to a voltage above its rating; if the catalog has no suitable part, say so in "notes".
 - 24VDC distribution protection: a supply that can deliver more current than the 24VDC wiring is rated for needs branch protection on its outputs (fused terminal blocks or DC-rated miniature breakers from the catalog). Rule of thumb: 18 AWG control wiring max 7 A, 16 AWG max 10 A, 14 AWG max 15 A — protect each 24VDC branch at or below its wire rating, and say in "notes" which branches you protected.
 - Use the designer's required parts exactly as given.
-- Catalog specifics: an enclosure needs its matching subpanel (enclosure category, ratings kind=subpanel). The rotary disconnect needs its switch, a handle and a shaft. A reversing starter is two contactors plus SZ-RM, SZ-ERW1A and SZ-ERW1B. For a dual-channel E-stop into a safety relay, add an ECX1030-2 contact block to the E-stop, and a yellow "EMERGENCY STOP" legend plate ECX1651 under every E-stop operator (red on yellow, NFPA 79 10.7.2 / IEC 60204-1 10.7.2). Order terminal end covers/brackets and markers with the terminal blocks.
+- Catalog specifics: follow the per-brand notes given with the catalog.
+- Every E-stop operator gets a yellow "EMERGENCY STOP" legend plate behind it (red on yellow, NFPA 79 10.7.2 / IEC 60204-1 10.7.2) when the catalog has one.
 - Use only part numbers from the catalog. If something needed is not in the catalog, leave it out and say so in "notes".
 - Tags: CB (breakers), DS (disconnect), PS (power supply), K (contactors), OL (overloads), MP (motor protectors), VFD, CR (relays), SR (safety relay), TB (terminal strips), PB (pushbuttons), ES (E-stop), SS (selectors), PL (pilot lights), LS/PRS (sensors), SOL (solenoids), M (motors), PLC, ENC (enclosure).
 - ioWiring: one entry for every PLC I/O point in the I/O list, with the field device tag, type, and "location": "Cabinet door" for pushbuttons, selectors, pilot lights and the E-stop on the panel; "Cabinet" for devices inside it (safety relay status, overload contacts); otherwise the machine zone where the device is mounted (e.g. "Infeed conveyor", "Pusher station").
@@ -102,7 +111,11 @@ export async function generateElectricalDesign(opts: {
   inputs: DesignInputs;
   /** Electrical code region; default US. */
   region?: Region;
+  /** Parts the AI may use; default: the project's preferred vendors. */
+  catalog?: CatalogPart[];
 }): Promise<{ design: ElectricalDesign; explanation: string; reasoning: string | null }> {
+  // Only the project's preferred brands (AutomationDirect where they offer nothing in a category).
+  const catalog = opts.catalog ?? catalogFor(vendorPreference());
   const ioAddrs = opts.io.map((p) => opts.addresses.get(p.id) || '').filter(Boolean);
   const ioText = opts.io.map((p) => `${opts.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.category}\t${p.description || '(no description)'}`).join('\n') || '(no I/O yet)';
   const motors = opts.inputs.motors.map((m) => `${m.tag}: ${m.description}, ${m.hp} HP, ${m.voltage}, ${m.starter}${m.reversing ? ', reversing' : ''}`).join('\n') || '(none)';
@@ -127,14 +140,17 @@ ${required}
 I/O list (address, type, category, description):
 ${ioText}
 
-Catalog (part number | category | description | ratings):
-${catalogText()}
+Catalog (part number | category | manufacturer description | ratings):
+${catalogText(catalog)}
+
+Catalog specifics per brand:
+${vendorNotes(catalog)}
 
 Design the complete control panel.`;
 
   const { text, reasoning } = await callClaude({
     apiKey: opts.apiKey, model: opts.model, effort: opts.effort,
-    system: SYSTEM, messages: [{ role: 'user', content }], schema: designSchema(ioAddrs),
+    system: SYSTEM, messages: [{ role: 'user', content }], schema: designSchema(ioAddrs, catalog),
   });
 
   let parsed: { explanation: string; motors: MotorSpec[]; machine: {
