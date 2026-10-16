@@ -2,7 +2,7 @@ import type { jsPDF } from 'jspdf';
 import { LABEL_KINDS, labelText, type Label } from '../labels';
 import { pdfSafe } from '../../deliverables/docs/pdfWriter';
 import { expandCopies, layoutLabel, PT, type LabelLayout, type Measure } from './layout';
-import { fmtSize, sizeOf, type LabelSetup } from './setup';
+import { fmtSize, rollOf, sizeOf, type LabelSetup } from './setup';
 
 /**
  * Label outputs: a PDF for label printers (one page per label, page size =
@@ -48,29 +48,33 @@ function drawLabel(doc: jsPDF, lay: LabelLayout, ox: number, oy: number, border:
 
 const orient = (w: number, h: number) => (w > h ? 'landscape' : 'portrait');
 
-/** One PDF page per printed label, each page exactly the label size. */
+/**
+ * Label-printer PDF. Default: one page per label, page = label size. With
+ * "match the roll" (supplies with confirmed liner data): one page per liner
+ * row, page width = liner width, N labels across at their real positions.
+ */
 export async function labelPrinterPdf(labels: Label[], setup: LabelSetup, title = 'Labels'): Promise<Blob> {
   const { jsPDF } = await import('jspdf');
   const items = expandCopies(labels.map(printable), setup.useCopies);
   if (!items.length) throw new Error('No labels selected.');
-  let doc: jsPDF | null = null;
-  let measure: Measure | null = null;
-  for (const l of items) {
-    if (!doc) {
-      // Measure with a scratch document first so the first page gets the right size.
-      const scratch = new jsPDF({ unit: 'mm' });
-      const lay0 = layoutLabel(l, setup, pdfMeasure(scratch));
-      doc = new jsPDF({ unit: 'mm', format: [lay0.w, lay0.h], orientation: orient(lay0.w, lay0.h) });
-      doc.setProperties({ title, subject: `Label printer file, ${fmtSize(lay0.w, lay0.h, setup.units)}`, creator: 'ISA Auto Programmer' });
-      measure = pdfMeasure(doc);
-      drawLabel(doc, layoutLabel(l, setup, measure), 0, 0, setup.border, measure);
-      continue;
+  const measure = pdfMeasure(new jsPDF({ unit: 'mm' }));
+  const lays = items.map((l) => layoutLabel(l, setup, measure));
+  const roll = setup.pageLayout === 'roll' ? rollOf(setup) : null;
+  const pages: { w: number; h: number; at: { lay: LabelLayout; x: number }[] }[] = [];
+  if (roll) {
+    for (let i = 0; i < lays.length; i += roll.across) {
+      const row = lays.slice(i, i + roll.across);
+      pages.push({ w: roll.widthMm, h: row[0].h, at: row.map((lay, k) => ({ lay, x: roll.marginMm + k * (lay.w + roll.gapMm) })) });
     }
-    const lay = layoutLabel(l, setup, measure!);
-    doc.addPage([lay.w, lay.h], orient(lay.w, lay.h));
-    drawLabel(doc, lay, 0, 0, setup.border, measure!);
-  }
-  return doc!.output('blob');
+  } else for (const lay of lays) pages.push({ w: lay.w, h: lay.h, at: [{ lay, x: 0 }] });
+  const doc = new jsPDF({ unit: 'mm', format: [pages[0].w, pages[0].h], orientation: orient(pages[0].w, pages[0].h) });
+  doc.setProperties({ title, subject: `Label printer file, ${roll ? `${roll.across} across, liner ${roll.widthMm} mm` : fmtSize(pages[0].w, pages[0].h, setup.units)}`, creator: 'ISA Auto Programmer' });
+  const m = pdfMeasure(doc);
+  pages.forEach((pg, i) => {
+    if (i > 0) doc.addPage([pg.w, pg.h], orient(pg.w, pg.h));
+    for (const a of pg.at) drawLabel(doc, a.lay, a.x, 0, setup.border, m);
+  });
+  return doc.output('blob');
 }
 
 export const PAPER = { letter: { w: 215.9, h: 279.4, name: 'Letter' }, a4: { w: 210, h: 297, name: 'A4' } } as const;

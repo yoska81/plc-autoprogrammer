@@ -57,6 +57,12 @@ export interface LabelSupply {
   band?: { y: number; h: number };
   /** Labels side by side on the liner (die-cut rolls). */
   across?: number;
+  /**
+   * Liner geometry for "match the roll" PDFs (N labels across per page). Only
+   * set when the liner width, gap and margin were confirmed; otherwise that
+   * page layout is not offered for the supply.
+   */
+  liner?: { widthMm: number; gapMm: number; marginMm: number; source: string; derived?: string };
   material: string;
   color: string;
   perRoll?: number;
