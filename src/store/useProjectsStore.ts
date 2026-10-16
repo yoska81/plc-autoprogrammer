@@ -48,7 +48,7 @@ function load(data: Snapshot | null) {
   }
   // Projects saved before newer project-data fields existed.
   const info = useProjectStore.getState().info;
-  useProjectStore.setState({ info: { ...DEFAULT_INFO, ...info } });
+  useProjectStore.setState({ info: { ...DEFAULT_INFO, ...info, company: info.company || DEFAULT_INFO.company } });
 }
 
 function save(id: string) {
