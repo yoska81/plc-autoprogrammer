@@ -252,7 +252,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
         </div>
         <div className="flex-1 overflow-auto p-3">
           <div className="mb-3 flex items-end gap-2 text-[10px] text-steel-500">
-            <div style={{ width: `${50 * zoom}mm` }} className="h-2 border-x border-b border-steel-600" />
+            <div style={{ width: `${50 * zoom}mm` }} className="h-2 flex-shrink-0 border-x border-b border-steel-600" />
             <span>50 mm{zoom === 1 ? ' — hold a ruler to the screen; most screens are close to actual size' : ` at ${zoom * 100} %`}</span>
           </div>
           <div className="flex flex-wrap gap-2 items-start" data-testid="label-preview">
