@@ -14,7 +14,7 @@ import { layoutForDesign } from './layout/geometry';
 export function useDrawingContext(): DrawingContext | null {
   const design = useElectricalStore((s) => s.design);
   const projectName = useProgramStore((s) => s.projectName);
-  const { profile, cpu, io, addresses } = usePlc();
+  const { profile, cpu, io, addresses, analog } = usePlc();
   const info = useProjectStore((s) => s.info);
   const hmiPartNumber = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
   const [layout] = useMachineLayout();
@@ -32,6 +32,7 @@ export function useDrawingContext(): DrawingContext | null {
       hmiPartNumber,
       doc: docInfo(info),
       machineLayout,
+      analog,
     };
-  }, [design, projectName, profile, cpu, io, addresses, info, hmiPartNumber, machineLayout]);
+  }, [design, projectName, profile, cpu, io, addresses, info, hmiPartNumber, machineLayout, analog]);
 }

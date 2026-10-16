@@ -5,7 +5,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useStageStore } from '../store/useStageStore';
 import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, ioFingerprint } from '../spec/useStages';
-import { generateIOFromSpec, planIOMerge, type IOMergePlan } from '../lib/ai/ioAI';
+import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge, type IOMergePlan } from '../lib/ai/ioAI';
 import StageBanner from './StageBanner';
 import { Spinner } from './common';
 import QuestionList from './questions/QuestionList';
@@ -28,7 +28,7 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
   // The AI's questions about the I/O, answered under each question (kept per project after the dialog closes).
   useSyncQuestions('io', plan ? plan.questions.map((text) => ({ text })) : null);
   const ioQuestions = useQuestions('io');
-  const openIo = ioQuestions.filter((q) => q.status === 'open' || !q.merged);
+  const openIo = ioQuestions.filter((q) => q.status === 'open');
   const specEmpty = stages.spec.status === 'empty';
 
   const generate = async () => {
@@ -51,8 +51,8 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
   const apply = () => {
     if (!plan) return;
     applyIOUpdate(
-      plan.kept.map(({ point, next }) => ({ id: point.id, category: next.category, deviceType: next.deviceType })),
-      plan.added.map((g) => ({ description: g.description, type: g.type, category: g.category, deviceType: g.deviceType })),
+      plan.kept.map(({ point, next }) => keptUpdate(point, next)),
+      plan.added.map(generatedToPoint),
       plan.removed.map((p) => p.id),
     );
     // Record what the I/O list was built from (read the store after the update).
@@ -81,7 +81,7 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
       )}
       {!plan && openIo.length > 0 && (
         <div className="mx-4 mt-3 max-h-[40vh] overflow-y-auto flex-shrink-0"><QuestionList questions={ioQuestions} title="Questions about the I/O"
-          intro="Answer each question in the box under it. Answers are added to the machine description; then run Update I/O from spec again." /></div>
+          intro="Answer each question in the box under it. Answers are saved in the Questions & answers of the machine description (part of the spec); then run Update I/O from spec again." /></div>
       )}
       {children(button)}
       {error && <div role="alert" className="mx-4 mt-3 bg-red-50 border border-red-200 p-3 text-red-800">{error}</div>}
@@ -118,7 +118,7 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
               </section>
               {plan.questions.length > 0 && (
                 <QuestionList questions={ioQuestions} title="Questions about the I/O"
-                  intro="Answer each question in the box under it. Answers are added to the machine description; then run Update I/O again to use them." />
+                  intro="Answer each question in the box under it. Answers are saved in the Questions & answers of the machine description (part of the spec); then run Update I/O again to use them." />
               )}
             </div>
             <div className="px-4 py-2 border-t border-steel-200 bg-[#f7f8f9] flex justify-end gap-2">

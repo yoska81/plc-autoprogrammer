@@ -7,12 +7,15 @@ import { useHmiStore } from '../store/useHmiStore';
 import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
+import { analogSetup } from '../plc/core/analog';
 import { validateProgram } from '../plc/core/validate';
 import { getPart } from '../electrical/catalog';
 import type { DrawingContext } from '../electrical/derive';
 import { docInfo } from './docInfo';
 import { layoutFor } from '../electrical/layout/useLayoutStore';
 import { layoutForDesign } from '../electrical/layout/geometry';
+import { checkoutFor } from '../online/useCheckoutStore';
+import { useQuestionStore } from '../components/questions/useQuestionStore';
 import { useProjectsStore } from '../store/useProjectsStore';
 
 /** Everything the deliverables need, read once from the stores. */
@@ -45,12 +48,13 @@ export function collectProject() {
     hmiPartNumber: hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null,
     doc: docInfo(info),
     machineLayout: layoutForDesign(layoutFor(useProjectsStore.getState().activeId)),
+    analog: analogSetup(profile, cpu, moduleSlots(modules), io),
   } : null;
 
   return {
     projectName: program.projectName,
     fileBase: program.projectName.trim().replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'plc_project',
-    profile, cpu, spec, io, addresses, labels,
+    profile, cpu, modules, spec, io, addresses, labels,
     ladder: program.ladder,
     stCode: program.generatedCode,
     issues: profile.language === 'ladder' ? validateProgram(program.ladder, profile, ioAddressSet) : [],
@@ -58,6 +62,10 @@ export function collectProject() {
     drawingCtx,
     hmi: hmi.design,
     info,
+    /** Commissioning I/O check-out (Online page), by I/O id. */
+    checkout: checkoutFor(useProjectsStore.getState().activeId),
+    /** Questions and answers (part of the specification). */
+    questions: useQuestionStore.getState().byProject[useProjectsStore.getState().activeId ?? 'default'] ?? [],
     equipment: recommendation ? {
       cpu: cpuId,
       why: recommendation.plc.cpuId === cpuId ? recommendation.plc.why : '',

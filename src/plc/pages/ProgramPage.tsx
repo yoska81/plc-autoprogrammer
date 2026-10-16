@@ -13,7 +13,7 @@ export default function ProgramPage() {
   const { projectName, lastGeneratedAt } = useProgramStore();
   const renameProject = useProjectsStore((s) => s.renameActive);
   const settings = useSettingsStore();
-  const { profile, cpu, io, addresses, ioAddressSet, labels } = usePlc();
+  const { profile, cpu, io, addresses, ioAddressSet, labels, analog } = usePlc();
   const ioWiring = useElectricalStore((s) => s.design?.ioWiring);
   const hmiDesign = useHmiStore((s) => s.design);
   const wiring = new Map((ioWiring ?? []).map((w) => [w.address, { deviceTag: w.deviceTag, deviceType: w.deviceType }]));
@@ -49,6 +49,7 @@ export default function ProgramPage() {
           ioAddressSet={ioAddressSet}
           labels={labels}
           ready={ready}
+          analog={analog}
         />
       ) : (
         <StProgramView ai={ai} io={io} ready={ready} />

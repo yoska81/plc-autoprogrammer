@@ -84,7 +84,7 @@ const COMMON_ACC = [
   c('GB1', 'SCE-GB10', 1, 'Ground bar'),
 ];
 
-export const VARIANTS = ['us480', 'ca600', 'us120', 'big'] as const;
+export const VARIANTS = ['us480', 'ca600', 'us120', 'big', 'analog'] as const;
 export type Variant = typeof VARIANTS[number];
 
 export function setupVariant(v: Variant) {
@@ -95,6 +95,18 @@ export function setupVariant(v: Variant) {
   if (useProjectsStore.getState().activeId !== EXAMPLE_ID) useProjectsStore.getState().openProject(EXAMPLE_ID);
   const elec = useElectricalStore.getState();
   if (v === 'us480') return;
+  if (v === 'analog') {
+    // The example plus a tank: 4-20 mA level and temperature transmitters on a C0-04AD-1, pump speed reference on a C0-04DA-1.
+    useIOStore.getState().importPoints([
+      { description: 'Tank level', type: 'input', category: 'Analog/Process', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 100, units: '%' } },
+      { description: 'Tank temperature', type: 'input', category: 'Analog/Process', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 150, units: '°C' } },
+      { description: 'Pump speed reference', type: 'output', category: 'Analog/Process', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 60, units: 'Hz' } },
+    ], false);
+    useProjectStore.getState().setModules(['C0-04AD-1', 'C0-04DA-1']);
+    const d = useElectricalStore.getState().design!;
+    elec.setDesign({ ...d, components: [...d.components, c('AI1', 'C0-04AD-1', 1, 'Analog input module'), c('AO1', 'C0-04DA-1', 1, 'Analog output module')] }, 'generated', 'variant analog');
+    return;
+  }
   if (v === 'ca600') {
     useProjectStore.getState().setInfo({ region: 'Canada', standards: ['NFPA 79', 'CSA C22.2 No. 14', 'CEC'], revisions: [{ rev: 'A', date: '2026-01-10', description: 'Issued for review', by: 'AI' }, { rev: 'B', date: '2026-02-01', description: 'Fuses, 600 V', by: 'AI' }] });
     const io = applyIo(SAMPLE_POINTS, []);

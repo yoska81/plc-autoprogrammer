@@ -57,7 +57,8 @@ export type SheetSpec =
   | { kind: 'layout' }
   | { kind: 'cables'; columns: CableRow[][] }
   | { kind: 'jb'; jb: JunctionBoxPlan; terminals: JbTerminal[]; trunk?: Cable; page: number; pages: number }
-  | { kind: 'drill'; drill: DrillingPlan; rows: DrillRow[]; drawing: boolean; page: number; pages: number };
+  | { kind: 'drill'; drill: DrillingPlan; rows: DrillRow[]; drawing: boolean; page: number; pages: number }
+  | { kind: 'analog'; from: number; page: number; pages: number };
 
 export type DrillRow = { id: string; tag: string; x: number; y: number; size: string; verified: boolean };
 export const DRILL_ROWS_FIRST = 44;
@@ -294,6 +295,12 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
         spec: { kind: 'io', group: g, rows, points: rows.flatMap((r) => (r.point ? [r.point] : [])), first: i === 0, last: i + IO_PER_SHEET >= blk.rows.length, rack: blk.rack, page: i / IO_PER_SHEET + 1, pages },
       });
     }
+  }
+
+  // Analog loops (electrical/analog.ts): six per sheet.
+  const nAnalog = model.analog.circuits.length;
+  for (let i = 0, pages = Math.ceil(nAnalog / 6); i < nAnalog; i += 6) {
+    specs.push({ title: `ANALOG I/O — 4–20 mA / 0–10 V LOOPS${pages > 1 ? ` (${i / 6 + 1} OF ${pages})` : ''}`, spec: { kind: 'analog', from: i, page: i / 6 + 1, pages } });
   }
 
   specs.push({ title: 'PANEL LAYOUT — BACKPLATE', spec: { kind: 'panel' } });

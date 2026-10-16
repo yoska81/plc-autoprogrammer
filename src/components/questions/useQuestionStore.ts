@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SpecSectionId } from '../../spec/types';
+import { isTechnicalIssue } from './classify';
 import { useProjectsStore } from '../../store/useProjectsStore';
 
 /**
@@ -31,16 +32,10 @@ export interface Question {
   assumption?: string;
   /** Spec section the answer belongs in (guessed when not given). */
   section?: SpecSectionId;
-  /** The answer has been written into the spec. */
+  /** Legacy: answers used to be merged into the spec sections (kept for old data). */
   merged: boolean;
 }
 
-export interface MergeState {
-  busy: boolean;
-  error: string | null;
-  /** Plain-English result of the last merge. */
-  note: string | null;
-}
 
 export function questionId(source: QuestionSource, text: string): string {
   let h = 2166136261;
@@ -51,13 +46,11 @@ export function questionId(source: QuestionSource, text: string): string {
 
 interface QuestionStore {
   byProject: Record<string, Question[]>;
-  merge: MergeState;
   /** Register a stage's current questions: new ones are added as open, answered ones are kept, open ones that disappeared are dropped. */
   sync: (projectId: string | null, source: QuestionSource, items: { text: string; assumption?: string; section?: SpecSectionId }[]) => void;
   answer: (projectId: string | null, id: string, answer: string, status: Exclude<QuestionStatus, 'open'>) => void;
   reopen: (projectId: string | null, id: string) => void;
   markMerged: (projectId: string | null, ids: string[]) => void;
-  setMerge: (m: Partial<MergeState>) => void;
 }
 
 const key = (projectId: string | null) => projectId ?? 'default';
@@ -67,14 +60,13 @@ export const useQuestionStore = create<QuestionStore>()(
   persist(
     (set) => ({
       byProject: {},
-      merge: { busy: false, error: null, note: null },
       sync: (projectId, source, items) => set((s) => {
         const list = s.byProject[key(projectId)] ?? [];
         const ids = new Set<string>();
         const fresh: Question[] = [];
         for (const it of items) {
           const text = it.text.trim();
-          if (!text) continue;
+          if (!text || isTechnicalIssue(text)) continue;
           const id = questionId(source, text);
           if (ids.has(id)) continue;
           ids.add(id);
@@ -97,9 +89,16 @@ export const useQuestionStore = create<QuestionStore>()(
       markMerged: (projectId, ids) => set((s) => ({
         byProject: { ...s.byProject, [key(projectId)]: (s.byProject[key(projectId)] ?? []).map((q) => (ids.includes(q.id) ? { ...q, merged: true } : q)) },
       })),
-      setMerge: (m) => set((s) => ({ merge: { ...s.merge, ...m } })),
     }),
-    { name: 'isa-questions', partialize: (s) => ({ byProject: s.byProject }) },
+    {
+      name: 'isa-questions',
+      // Technical issues (HMI layout checks, wiring / catalog remarks) stored as questions by older versions are dropped on load.
+      merge: (persisted, current) => {
+        const byProject = (persisted as Partial<QuestionStore> | undefined)?.byProject ?? {};
+        const clean = Object.fromEntries(Object.entries(byProject).map(([k, list]) => [k, (list ?? []).filter((q) => !isTechnicalIssue(q.text))]));
+        return { ...current, byProject: clean };
+      },
+    },
   ),
 );
 

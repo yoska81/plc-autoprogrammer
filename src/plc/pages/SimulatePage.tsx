@@ -19,7 +19,7 @@ export default function SimulatePage() {
   const { profile, io, addresses, labels } = usePlc();
   const [handle, setHandle] = useState<SimHandle | null>(null);
 
-  const simIO = useMemo(() => io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type, category: p.category })), [io, addresses]);
+  const simIO = useMemo(() => io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type, category: p.category, analog: p.signal === 'analog' ? p.analog ?? { min: 0, max: 100, units: '' } : null })), [io, addresses]);
 
   // Without an electrical design, use the device types the spec/I-O stage found.
   const simWiring = useMemo(() => wiring ?? io.flatMap((p) => (p.deviceType ? [{

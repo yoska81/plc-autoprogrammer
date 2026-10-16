@@ -4,6 +4,8 @@
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const JSZip = require('jszip');
 const { PDFDocument, PDFName } = require('pdf-lib');
+const { fakeServer } = require('./fake-modbus.cjs');
+const { createModbusClient } = require('../electron/modbus.cjs');
 const fs = require('fs');
 const SP = __dirname + '/';
 const OUT = SP + 'out/';
@@ -27,6 +29,7 @@ const IO_POINTS = [
 ].map(([description, type, category, deviceType]) => ({ description, type, category, deviceType, reason: 'spec' }));
 
 const counts = {};
+const lastUser = {};
 function reply(system, body = {}) {
   const k = system.includes('checks a machine control design') ? 'review'
     : system.includes('functional specification') ? 'spec'
@@ -36,23 +39,19 @@ function reply(system, body = {}) {
     : system.includes('HMI designer') ? 'hmi'
     : system.includes('ladder logic') ? 'ladder' : 'unknown';
   counts[k] = (counts[k] ?? 0) + 1;
+  // Last prompt text sent per stage (user messages), so steps can check what the AI was given.
+  lastUser[k] = (body.messages ?? []).flatMap((x) => (Array.isArray(x.content) ? x.content : [{ text: x.content }])).map((c) => c.text ?? '').join('\n');
   const m = F.DESIGN.machine;
   switch (k) {
     case 'review': return F.REVIEW;
-    case 'spec': {
-      // Answers to open questions are merged into the overview (like the real spec AI would).
-      const user = (body.messages ?? []).flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }])).map((c) => c.text ?? '').join('\n');
-      const answers = user.includes('Answers to open questions') ? user.split('\n').filter((l) => l.startsWith('- Q: ')) : [];
-      if (answers.length) return { sections: { ...F.SPEC, overview: `${F.SPEC.overview}\n${answers.map((l) => `- ${l.replace(/^- Q: .*? A: /, '')}`).join('\n')}` }, questions: [], summary: `Added ${answers.length} answer(s).` };
-      return { sections: F.SPEC, questions: ['How many parts per minute at most?'], summary: 'Organized the description into 10 sections.' };
-    }
+    case 'spec': return { sections: F.SPEC, questions: ['How many parts per minute at most?'], summary: 'Organized the description into 10 sections.' };
     case 'equipment': return F.RECOMMENDATION;
     case 'io': return { explanation: '5 inputs, 2 outputs.', points: IO_POINTS, questions: [] };
     case 'electrical': return {
       explanation: 'NEMA 12 panel, 480 VAC.', components: F.DESIGN.components, ioWiring: F.DESIGN.ioWiring, notes: F.DESIGN.notes, motors: F.DESIGN.inputs.motors,
       machine: { zones: m.zones, junctionBoxes: m.junctionBoxes, motorLocations: Object.entries(m.motorLocations).map(([motorTag, location]) => ({ motorTag, location })), routing: Object.entries(m.routing).map(([deviceTag, junctionBox]) => ({ deviceTag, junctionBox })) },
     };
-    case 'hmi': return { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [] };
+    case 'hmi': return { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [{ kind: 'question', text: 'Which operator password levels are needed?' }, { kind: 'issue', text: 'Alarm banner colour chosen for contrast with the header.' }] };
     case 'ladder': {
       if (counts.ladder === 1) return { explanation: 'Program written from the spec.', program: F.LADDER };
       const p = JSON.parse(JSON.stringify(F.LADDER));
@@ -376,17 +375,38 @@ function sse(model, text) {
   await snap(page, 'settings');
 
   // Spec change → update all
-  // Open questions: answer right under the question; the answer is merged into the spec and the tree count clears
+  // Open questions: answer right under the question; it stays as a Q/A pair below the description,
+  // is part of the spec (fingerprint changes, later stages go out of date) and the AI gets it.
   await page.goto(BASE + '/spec');
   const qBox = page.getByLabel('Answer to: How many parts per minute at most?');
   await qBox.waitFor({ timeout: 10000 });
   log('Open questions in tree:', await page.locator('nav [aria-label$="open questions"]').allInnerTexts());
+  const staleBefore = await page.locator('nav [title="Out of date"]').count();
   await qBox.fill('60 parts per minute');
-  await page.getByRole('button', { name: 'Save answer' }).first().click();
-  await page.getByText(/Added to the spec ·/).first().waitFor({ timeout: 20000 });
+  await page.locator('li', { has: qBox }).getByRole('button', { name: 'Save answer' }).click();
+  const qa = page.locator('#questions-and-answers');
+  await qa.locator('[data-answer]', { hasText: '60 parts per minute' }).waitFor({ timeout: 20000 });
+  const qaText = await qa.innerText();
   const overview = await page.locator('#spec-overview').inputValue();
-  log('Answer merged into spec:', overview.includes('60 parts per minute'), '| tree badges left:', await page.locator('nav [aria-label$="open questions"]').count());
-  if (!overview.includes('60 parts per minute')) throw new Error('answer was not merged into the spec');
+  const staleAfter = await page.locator('nav [title="Out of date"]').count();
+  log('Q/A below description:', qaText.includes('How many parts per minute at most?') && qaText.includes('60 parts per minute'), '| copied into overview:', overview.includes('60 parts per minute'), '| out of date', staleBefore, '→', staleAfter, '| tree badges left:', await page.locator('nav [aria-label$="open questions"]').count());
+  check(qaText.includes('How many parts per minute at most?') && qaText.includes('60 parts per minute'), 'answer stays as Q/A below the description');
+  check(!overview.includes('60 parts per minute'), 'answer is not copied into the spec sections');
+  check(staleAfter > staleBefore, 'answering changes the spec fingerprint (later stages out of date)');
+  // Only real questions: the HMI question is listed, the HMI issue and the layout-check messages are not.
+  check(qaText.includes('Which operator password levels are needed?'), 'AI question (kind "question") is in the Q&A');
+  check(!/Alarm banner colour|header bar|on the HMI page|Layout check|touch target|overlaps/i.test(qaText), 'technical issues are not questions: ' + qaText.split('\n').filter((l) => /header bar|Layout check|Alarm banner/i.test(l)).join(' | '));
+  // Older versions stored layout messages as questions: they are dropped on load.
+  await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem('isa-questions'));
+    const k = Object.keys(st.state.byProject)[0];
+    st.state.byProject[k].push({ id: 'hmi:legacy', source: 'hmi', text: 'I/O Status: no header bar and the top band is in use; add one on the HMI page.', answer: '', status: 'open', date: '2026-10-01 10:00', merged: false });
+    localStorage.setItem('isa-questions', JSON.stringify(st));
+  });
+  await page.reload();
+  await qa.waitFor();
+  check(!(await qa.innerText()).includes('no header bar'), 'stored layout messages are removed from the questions on load');
+  await qa.scrollIntoViewIfNeeded();
   await snap(page, 'questions');
   await page.locator('#spec-alarms').fill('- Pusher fault: pusher not extended within 5 s.');
   log('Out of date after edit:', await page.locator('nav [title="Out of date"]').count());
@@ -397,6 +417,8 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Approve' }).click();
   await page.waitForTimeout(300);
   log('After approve out of date:', await page.locator('nav [title="Out of date"]').count());
+  log('I/O prompt has Q&A block:', /Questions and answers/.test(lastUser.io ?? '') && (lastUser.io ?? '').includes('60 parts per minute'));
+  check(/Questions and answers/.test(lastUser.io ?? '') && (lastUser.io ?? '').includes('60 parts per minute'), 'I/O prompt contains the Questions and answers block');
 
   // A second project starts empty, then the first comes back intact; rename shows everywhere.
   const firstId = await page.locator('select[aria-label="Open project"]').inputValue();
@@ -449,6 +471,7 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 15000 });
   log('Review verdict shown:', await page.getByText(/Reviewer's verdict/).count() > 0, '| critical open:', await page.locator('div', { hasText: /^Critical open$/ }).locator('xpath=following-sibling::div').first().innerText());
   const rowOf = (t) => page.locator('tr', { hasText: t });
+  check(await rowOf('HMI: Alarm banner colour').count() === 1, 'HMI technical issue is a design review finding (not a question)');
   const badge = page.locator('nav a', { hasText: 'Design review' }).locator('span[aria-label$="open critical or major findings"]');
   log('Review badge / status bar:', await badge.innerText(), '|', await page.getByRole('link', { name: /^Review: / }).innerText());
   check(Number(await badge.innerText()) >= 1, 'tree badge counts open critical/major findings');
@@ -478,6 +501,47 @@ function sse(model, text) {
   await page.getByRole('combobox', { name: 'Status' }).selectOption('all');
   check(await rowOf('Air is not dumped on an E-stop').getByText('resolved').count() === 1, 'resolution kept');
   await snap(page, 'review');
+
+  // Online with a real PLC (desktop bridge = the desktop app's own Modbus client, called from the page, talking to a fake CLICK on localhost):
+  // read-only by default, live values, writes only to C/DS after "Allow writes", I/O check-out feeds the SAT and ZIP
+  const plc = fakeServer();
+  plc.mem.discrete[0] = 1; plc.mem.discrete[45056] = 1; plc.mem.coils[16385] = 1; plc.mem.holding[0] = 7;
+  const plcPort = await plc.listen();
+  const mb = createModbusClient();
+  await page.exposeFunction('__modbus', (method, args) => mb[method](...args));
+  await ctx.addInitScript(() => {
+    const call = (m) => (...a) => window.__modbus(m, a);
+    window.isaDesktop = { ...(window.isaDesktop ?? {}), modbus: Object.fromEntries(['connect', 'disconnect', 'readCoils', 'readDiscreteInputs', 'readHoldingRegisters', 'readInputRegisters', 'writeCoil', 'writeRegister'].map((m) => [m, call(m)])) };
+  });
+  await page.goto(BASE + '/online');
+  await page.getByLabel('PLC IP address').fill('127.0.0.1');
+  await page.getByLabel('Modbus port').fill(String(plcPort));
+  await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await page.getByText(/Connected · \d+ reads/).waitFor({ timeout: 10000 });
+  await page.waitForTimeout(800);
+  const val = (a) => page.getByLabel(`Value of ${a}`).innerText();
+  log('Online values:', 'X001', await val('X001'), '| X002', await val('X002'), '| Y001', await val('Y001'), '| C2', await val('C2'), '| T1', await val('T1'));
+  if (await val('X001') !== 'ON' || await val('C2') !== 'ON' || await val('Y001') !== 'OFF') throw new Error('online values do not match the PLC');
+  check(!(await page.getByLabel('Allow writes').isChecked()) && plc.state.log.every((l) => l.fc <= 4), 'read-only by default (no write requests)');
+  await page.getByLabel('Allow writes').check();
+  await page.getByRole('alert').filter({ hasText: 'WRITES ENABLED' }).waitFor();
+  check(await page.locator('tr[data-address="Y001"] button').count() === 0 && await page.locator('tr[data-address="X001"] button').count() === 0, 'X / Y cannot be written');
+  await page.locator('tr[data-address="C1"]').getByRole('button', { name: 'Set ON' }).click();
+  await page.getByText('C1 written.').waitFor({ timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Value of C1"]')?.textContent === 'ON', null, { timeout: 5000 });
+  const writes = plc.state.log.filter((l) => l.fc === 5 || l.fc === 6);
+  log('PLC writes:', JSON.stringify(writes));
+  if (writes.length !== 1 || writes[0].address !== 16384 || writes[0].value !== true) throw new Error('unexpected PLC writes');
+  await page.getByRole('button', { name: 'Live ladder' }).click();
+  await snap(page, 'online_ladder');
+  await page.getByRole('button', { name: /^I\/O check-out/ }).click();
+  await page.getByLabel('Technician').fill('J.D.');
+  await page.getByLabel('Verified X001').check();
+  log('Check-out:', await page.getByText(/points verified/).first().innerText());
+  await snap(page, 'online_checkout');
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  await mb.disconnect();
+  await plc.close();
 
   // Deliverables
   await page.goto(BASE + '/export');
@@ -512,6 +576,7 @@ function sse(model, text) {
   log('ZIP:', Object.keys(zip.files).filter((f) => !f.endsWith('/')).join(', '));
   if (!Object.keys(zip.files).some((f) => f.startsWith('purchasing/') && f.endsWith('_purchase_summary.pdf'))) throw new Error('ZIP has no purchase summary');
   if (!Object.keys(zip.files).some((f) => /^purchasing\/.*_spares_order\.csv$/.test(f))) throw new Error('ZIP has no separate spares order file');
+  if (!Object.keys(zip.files).some((f) => /^commissioning\/.*_IO_checkout\.pdf$/.test(f))) throw new Error('ZIP has no I/O check-out sheet');
   await snap(page, 'deliverables');
 
   log('AI calls:', JSON.stringify(counts));

@@ -1,6 +1,6 @@
 # Dev 2 — program & simulation (`claude/isa-dev-program-sim`)
 
-Draft PR #5 → `claude/optimistic-maxwell-6nfcs6`. No blockers.
+Draft PR (analog I/O) → `claude/optimistic-maxwell-6nfcs6`. No blockers (real-AI scores still wait for an API key).
 
 ## Task list (restated, in priority order)
 
@@ -55,3 +55,13 @@ Draft PR #5 → `claude/optimistic-maxwell-6nfcs6`. No blockers.
 - BLOCKED (partly): no API key in this environment, so no real-AI recordings and no before/after scores for m1–m6 (m0 fixture replay 97 → 97). Needs `ANTHROPIC_API_KEY` set in the cloud environment (user) or a run on a machine with a key: `ANTHROPIC_API_KEY=… npx tsx tools/ai-quality/run.ts` then commit `tools/ai-quality/recordings/`.
 - Finding for the manager: analog I/O is not representable (I/O model, CLICK addressing, drawings, ladder are discrete-only) — m5/m6 cannot be right first time. Proposed as its own milestone.
 - Also in this push: K1-AUX for the example (31f4fe5, not yet merged).
+
+## Analog I/O end-to-end (assignment after PR #19)
+- [x] Model: `IOPoint.signal = 'analog'` + `analog {range 4-20mA|0-20mA|0-5V|0-10V, min, max, units}`; Discrete/Analog editor in the I/O list ("Device / signal" column); AI I/O list returns signal/analog and keeps the user's setting.
+- [x] CLICK analog channels, cited (C0-04AD-1 / C0-04DA-1 spec sheets, analog CPU spec sheets C0-12xxE-D / C0-02xx-D, CLICK help 096/209): `profiles/clickAnalog.ts`; every channel gets a DF register in slot order (CPU first, inputs before outputs); scaling to engineering units is set in the CPU (System Configuration), so the ladder works in units. `core/analog.ts`: assignment, capacity need, analog setup table → program print "Analog setup" section and `plc/<file>_analog_setup.csv`.
+- [x] Review: analog capacity check, analog-on-discrete only for discrete points, spec-analog only when no analog points exist, safety gating skips analog outputs.
+- [x] Ladder AI: DF already scaled; CMP to read, COPY/MATH to write; HMI analog setpoints DF101–DF200; high/low alarms with deadband; broken-loop alarm. HMI AI: numeric displays/entries, a "bar" option for fill-type values (tank level, % open) and trend on the scaled DF; HMI numeric/bar values show floating point to one decimal (`hmi/HmiScreenView.tsx`).
+- [x] Simulator: analog input slider cards, analog output bar cards; process models (tank level fill/drain, temperature heat/cool to ambient, manual) driven by discrete outputs or analog outputs in proportion.
+- [x] Electrical: `electrical/analog.ts` → strip TBA "ANALOG SIGNALS (SHIELDED)" (+, −, shield per signal), wires DFn+/DFn-/DFnSH (2-wire loop-powered from 24+, voltage, sourcing output), shield to the PE bar at the panel end only, one shielded twisted pair cable per signal (cores WH/BK/DRAIN) in the cable schedule; flows into wire list, terminal plan, BOM terminal counts and labels. New sheet `drawings/sheets/AnalogSheet.tsx` "ANALOG I/O — 4–20 mA / 0–10 V LOOPS" (6 loops/sheet, before the panel layout).
+- [x] Tests: `src/plc/core/analog.test.ts` (4), `src/electrical/analog.test.ts`, engine analog tests (39 total), harness variant `analog` (example + tank level/temperature on C0-04AD-1, pump speed on C0-04DA-1): `tools/check-all.sh us480 analog big` 0 FAIL / 0 WARN (checker: DF points must be in the analog setup CSV — the nickname CSV is BIT-only by design). tsc, eslint, E2E green.
+- Edits outside src/plc (for the manager): `electrical/derive.ts` (DrawingContext.analog, DF excluded from discrete I/O, analog wires/strip/cables appended, model.analog), `electrical/useDrawingContext.ts`, `electrical/drawings/plan.ts` + `SheetView.tsx` (sheet kind 'analog'), `deliverables/collect.ts` + `files.ts`, `components/IORow.tsx` / `IOTable.tsx`, `store/useIOStore.ts`, `types/io.ts`, `lib/ai/ioAI.ts` + `hmiAI.ts`, `review/checks.ts`, `tools/harness/variants.ts`, `tools/gen-outputs.cjs`, `tools/check_consistency.py`, `e2e/README.md`.

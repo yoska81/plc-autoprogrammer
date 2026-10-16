@@ -1,4 +1,4 @@
-import type { ModbusBridge } from './bridge';
+import type { ModbusBridge } from '../desktop/bridge';
 
 /** Where a PLC address lives in the Modbus map. */
 export type ModbusTable = 'coil' | 'discrete' | 'holding' | 'input';
@@ -48,9 +48,12 @@ export function planReads(refs: ModbusRef[]): ReadBlock[] {
   return out;
 }
 
-/** Decode 1 or 2 registers. CLICK stores 32-bit values low word first. */
-export function decodeWord(regs: number[], type: ModbusType): number {
-  const lo = regs[0] ?? 0, hi = regs[1] ?? 0;
+/**
+ * Decode 1 or 2 registers. The word order of 32-bit values is not documented
+ * for CLICK; low word first is the usual case, `swapWords` reads high word first.
+ */
+export function decodeWord(regs: number[], type: ModbusType, swapWords = false): number {
+  const lo = (swapWords ? regs[1] : regs[0]) ?? 0, hi = (swapWords ? regs[0] : regs[1]) ?? 0;
   switch (type) {
     case 'int16': return lo >= 0x8000 ? lo - 0x10000 : lo;
     case 'int32': { const v = (hi << 16) | lo; return v | 0; }
@@ -73,7 +76,7 @@ export interface PollResult {
 }
 
 /** Read every block once. A failing block only fails its own addresses. */
-export async function pollOnce(bridge: ModbusBridge, blocks: ReadBlock[]): Promise<PollResult> {
+export async function pollOnce(bridge: ModbusBridge, blocks: ReadBlock[], swapWords = false): Promise<PollResult> {
   const res: PollResult = { bits: new Map(), words: new Map(), failed: new Map() };
   for (const b of blocks) {
     try {
@@ -82,7 +85,7 @@ export async function pollOnce(bridge: ModbusBridge, blocks: ReadBlock[]): Promi
         for (const r of b.refs) res.bits.set(r.address, Boolean(v[r.register - b.start]));
       } else {
         const v = b.table === 'holding' ? await bridge.readHoldingRegisters(b.start, b.count) : await bridge.readInputRegisters(b.start, b.count);
-        for (const r of b.refs) res.words.set(r.address, decodeWord(v.slice(r.register - b.start, r.register - b.start + r.words), r.type));
+        for (const r of b.refs) res.words.set(r.address, decodeWord(v.slice(r.register - b.start, r.register - b.start + r.words), r.type, swapWords));
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

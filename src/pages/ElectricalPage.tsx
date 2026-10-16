@@ -14,6 +14,7 @@ import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
 import MachineLayoutPanel from '../electrical/layout/MachineLayoutPanel';
+import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
 import { useDrawingContext } from '../electrical/useDrawingContext';
@@ -66,7 +67,7 @@ export default function ElectricalPage() {
   const setInfo = useProjectStore((s) => s.setInfo);
 
   // "Assumptions to confirm", answered under each item.
-  useSyncQuestions('electrical', el.design ? el.design.notes.map((n) => ({ text: n, assumption: n })) : null);
+  useSyncQuestions('electrical', el.design ? userNotes(el.design).map((n) => ({ text: n, assumption: n })) : null);
   const elecQuestions = useQuestions('electrical');
   const { inputs } = el;
   const setInputs = (patch: Partial<DesignInputs>) => el.setInputs({ ...inputs, ...patch });
@@ -293,7 +294,7 @@ export default function ElectricalPage() {
                 )}
 
                 <QuestionList questions={elecQuestions} title="Assumptions to confirm"
-                  intro="The AI made these assumptions. Confirm each one, or type the correct value in the box under it; answers are added to the machine description and the design becomes out of date so Update uses them." />
+                  intro="The AI made these assumptions. Confirm each one, or type the correct value in the box under it; answers are saved in the Questions & answers of the machine description (part of the spec) and the design becomes out of date so Update uses them." />
               </>
             )}
           </div>

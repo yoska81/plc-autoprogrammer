@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { IOPoint, IOCategory, TemplatePoint } from '../types/io';
+import type { AnalogSpec, IOPoint, IOCategory, TemplatePoint } from '../types/io';
 
 interface IOStore {
   projectIO: IOPoint[];
@@ -12,10 +12,12 @@ interface IOStore {
   deletePoint: (id: string) => void;
   /** Manual PLC address override; empty string = automatic. */
   setPlcAddress: (id: string, address: string) => void;
+  /** Make a point analog (with its range and scaling) or discrete again (null). */
+  setAnalog: (id: string, analog: AnalogSpec | null) => void;
   /** Add points read from an existing machine; replace=true clears the list first. */
   importPoints: (points: Omit<IOPoint, 'id'>[], replace: boolean) => void;
   /** Apply a reviewed AI I/O update: update kept points, add new ones, remove dropped ones. */
-  applyIOUpdate: (kept: Pick<IOPoint, 'id' | 'category' | 'deviceType'>[], added: Omit<IOPoint, 'id'>[], removedIds: string[]) => void;
+  applyIOUpdate: (kept: Pick<IOPoint, 'id' | 'category' | 'deviceType' | 'signal' | 'analog'>[], added: Omit<IOPoint, 'id'>[], removedIds: string[]) => void;
 }
 
 function nextInputId(existing: IOPoint[]): string {
@@ -93,6 +95,14 @@ export const useIOStore = create<IOStore>()(
           ),
         }));
       },
+
+      setAnalog: (id, analog) => set((s) => ({
+        projectIO: s.projectIO.map((p) => {
+          if (p.id !== id) return p;
+          if (!analog) { const { analog: _a, signal: _s, ...rest } = p; void _a; void _s; return rest; }
+          return { ...p, signal: 'analog' as const, analog, plcAddress: p.plcAddress?.toUpperCase().startsWith('DF') ? p.plcAddress : undefined };
+        }),
+      })),
 
       setPlcAddress: (id: string, address: string) => {
         const plcAddress = address.trim().toUpperCase();

@@ -15,6 +15,7 @@ import { assumptionsTable, bomTable, designReviewTable, operatorManual } from '.
 import { aiReviewNote } from '../review/report';
 import { ACCENT, BRAND, INFO_FILL, INK, MUTED, RED, WARN_FILL, PdfWriter, pdfSafe } from './docs/pdfWriter';
 import { makeTable } from './docs/table';
+import { qaTable } from '../components/questions/qaTable';
 
 /**
  * The controls engineering package a North American controls firm hands
@@ -288,6 +289,11 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
   w.table(ioListTable(p), { fontSize: 7.2 });
 
   // 3. Electrical design basis
+  if (p.questions.length) {
+    w.h2(p.hmi ? '2.9 Questions and answers' : '2.8 Questions and answers');
+    w.para('Questions raised during design and the customer\'s answers. They are part of this specification.');
+    w.table(qaTable(p.questions), { fontSize: 7.8 });
+  }
   w.h1('3. Electrical design basis');
   if (!hasElec) noElec();
   else {

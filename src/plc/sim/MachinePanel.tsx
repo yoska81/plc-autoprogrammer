@@ -4,7 +4,7 @@
  * all interaction goes through the callbacks.
  */
 import type {
-  ConveyorDevice, CylinderDevice, EstopDevice, IndicatorDevice, LightColor, MotorDevice,
+  AnalogInDevice, AnalogOutDevice, ConveyorDevice, CylinderDevice, EstopDevice, IndicatorDevice, LightColor, MotorDevice,
   PushbuttonDevice, SafetyRelayDevice, SelectorDevice, SensorDevice, SimDevice, StackLightDevice,
 } from './machineModel';
 import { PART_END } from './machineModel';
@@ -16,6 +16,8 @@ export interface MachineActions {
   removePart(id: string): void;
   /** Bypass a device (healthy without the plant model); value = held input value. */
   setBypass(id: string, on: boolean, value?: boolean): void;
+  /** Move an analog input (engineering units). */
+  setAnalog?(id: string, value: number): void;
 }
 
 interface Props {
@@ -23,6 +25,8 @@ interface Props {
   bits: Map<string, boolean>;
   inputs: Map<string, boolean>;
   actions: MachineActions;
+  /** Word memory (analog outputs are read from their DF registers). */
+  words?: Map<string, number>;
   /** Only show these device ids (block view); null/undefined = all. */
   visible?: Set<string> | null;
 }
@@ -480,7 +484,49 @@ function StackLightCard({ d, bits }: { d: StackLightDevice; bits: Map<string, bo
   );
 }
 
-export default function MachinePanel({ devices: all, bits, inputs, actions, visible }: Props) {
+const fmt = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
+
+function Bar({ value, min, max }: { value: number; min: number; max: number }) {
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min || 1)) * 100));
+  return (
+    <div className="h-2.5 w-full overflow-hidden rounded-full bg-steel-100" role="meter" aria-valuemin={min} aria-valuemax={max} aria-valuenow={value}>
+      <div className="h-full rounded-full bg-sky-500 transition-[width] duration-200" style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+function AnalogInCard({ d, onSet }: { d: AnalogInDevice; onSet?: (id: string, v: number) => void }) {
+  const step = (d.max - d.min) / 200 || 0.1;
+  const how = d.process === 'level' ? `Level model: rises with ${d.raise.join(', ') || '—'}, falls with ${d.lower.join(', ') || '—'}`
+    : d.process === 'temperature' ? `Temperature model: heats with ${d.raise.join(', ') || '—'}, cools to ambient` : 'Set by hand';
+  return (
+    <Card title={d.label} tag={d.input}>
+      <div className="flex items-baseline justify-between">
+        <span className="font-mono text-lg font-semibold text-steel-900">{fmt(d.state.value)}</span>
+        <span className="text-[11px] text-steel-500">{d.units} · {fmt(d.min)}–{fmt(d.max)}</span>
+      </div>
+      <input type="range" min={d.min} max={d.max} step={step} value={d.state.value} aria-label={`${d.label} value`}
+        onChange={(e) => onSet?.(d.id, Number(e.target.value))} className="mt-1 w-full accent-sky-600" />
+      <p className="mt-0.5 text-[11px] text-steel-500">{how}</p>
+    </Card>
+  );
+}
+
+function AnalogOutCard({ d, words }: { d: AnalogOutDevice; words?: Map<string, number> }) {
+  const v = words?.get(d.output) ?? 0;
+  return (
+    <Card title={d.label} tag={d.output}>
+      <div className="flex items-baseline justify-between">
+        <span className="font-mono text-lg font-semibold text-steel-900">{fmt(v)}</span>
+        <span className="text-[11px] text-steel-500">{d.units} · {fmt(d.min)}–{fmt(d.max)}</span>
+      </div>
+      <Bar value={v} min={d.min} max={d.max} />
+      <p className="mt-0.5 text-[11px] text-steel-500">Analog output written by the PLC</p>
+    </Card>
+  );
+}
+
+export default function MachinePanel({ devices: all, bits, inputs, actions, words, visible }: Props) {
   const devices = visible ? all.filter((d) => visible.has(d.id)) : all;
   const sensors = devices.filter((d): d is SensorDevice => d.kind === 'sensor');
   const indicators = devices.filter((d): d is IndicatorDevice => d.kind === 'indicator');
@@ -493,6 +539,8 @@ export default function MachinePanel({ devices: all, bits, inputs, actions, visi
           case 'motor': return d.conveyorId ? null : <MotorCard key={d.id} d={d} bits={bits} inputs={inputs} onSet={actions.setBypass} />;
           case 'cylinder': return <CylinderCard key={d.id} d={d} bits={bits} inputs={inputs} onSet={actions.setBypass} />;
           case 'stackLight': return <StackLightCard key={d.id} d={d} bits={bits} />;
+          case 'analogIn': return <AnalogInCard key={d.id} d={d} onSet={actions.setAnalog} />;
+          case 'analogOut': return <AnalogOutCard key={d.id} d={d} words={words} />;
           default: return null;
         }
       })}

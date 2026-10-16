@@ -6,6 +6,7 @@ import { useSettingsStore } from './store/useSettingsStore'
 import { seedSampleProject } from './preview/sampleProject'
 import './index.css'
 import App from './App.tsx'
+import { installQaSync } from './components/questions/qa'
 import Notice from './components/Notice.tsx'
 import IOPage from './pages/IOPage.tsx'
 import ProgramPage from './plc/pages/ProgramPage.tsx'
@@ -21,6 +22,7 @@ import SpecPage from './pages/SpecPage.tsx'
 import HmiPage from './pages/HmiPage.tsx'
 import ReviewPage from './review/ReviewPage.tsx'
 import SimulatePage from './plc/pages/SimulatePage.tsx'
+import OnlinePage from './online/OnlinePage.tsx'
 import EquipmentPage from './pages/EquipmentPage.tsx'
 import NewProjectPage from './pages/NewProjectPage.tsx'
 
@@ -36,6 +38,9 @@ if (IS_PREVIEW) {
   if (!settings.anthropicApiKey) settings.setAnthropicApiKey(PREVIEW_ACCOUNT_KEY)
 }
 
+// Questions & answers are part of the spec (sections.qa), kept in step with the question list.
+installQaSync()
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <Router>
@@ -49,6 +54,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="equipment" element={<EquipmentPage />} />
           <Route path="hmi" element={<HmiPage />} />
           <Route path="simulate" element={<SimulatePage />} />
+          <Route path="online" element={<OnlinePage />} />
           <Route path="plc" element={<PlcSetupPage />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="electrical" element={<ElectricalPage />} />

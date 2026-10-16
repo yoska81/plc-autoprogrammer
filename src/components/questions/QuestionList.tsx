@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Spinner } from '../common';
 import { quickChoices } from './parse';
-import { scheduleMerge } from './merge';
+import { answerText } from './qa';
 import { SOURCE_LABEL, useActiveProjectId, useQuestionStore, type Question } from './useQuestionStore';
 
 const STATUS: Record<Question['status'], { text: string; cls: string }> = {
@@ -10,7 +9,7 @@ const STATUS: Record<Question['status'], { text: string; cls: string }> = {
   assumed: { text: "AI's assumption used", cls: 'bg-steel-200 text-steel-700' },
 };
 
-/** One question with its own answer box directly under it. */
+/** One question with its answer directly under it (Q, then A). */
 function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource: boolean }) {
   const projectId = useActiveProjectId();
   const { answer, reopen } = useQuestionStore();
@@ -20,18 +19,17 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
   const save = (text: string, status: 'answered' | 'assumed') => {
     answer(projectId, q.id, text, status);
     setEditing(false);
-    scheduleMerge();
   };
   const st = STATUS[q.status];
   return (
     <li className={`rounded-sm border bg-white ${q.status === 'open' ? 'border-amber-300' : 'border-steel-200'}`} data-question={q.id}>
       <div className="flex items-start gap-2 px-3 pt-2.5">
         <span className="text-xs font-semibold text-steel-400 tabular-nums pt-0.5">{n}.</span>
-        <p className="flex-1 text-sm font-medium text-steel-900">{q.text}</p>
+        <p className="flex-1 text-sm font-medium text-steel-900"><span className="text-steel-500 font-semibold mr-1">Q:</span>{q.text}</p>
         <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold ${st.cls}`}>{st.text}</span>
       </div>
-      {showSource && <p className="px-3 pl-8 text-[11px] text-steel-400">From: {SOURCE_LABEL[q.source]}</p>}
-      {q.assumption && q.assumption !== q.text && <p className="px-3 pl-8 text-xs text-steel-500">AI's assumption: {q.assumption}</p>}
+      {showSource && <p className="px-3 pl-8 text-[11px] text-steel-400">Asked in: {SOURCE_LABEL[q.source]}</p>}
+      {q.assumption && q.assumption !== q.text && q.status === 'open' && <p className="px-3 pl-8 text-xs text-steel-500">AI's assumption: {q.assumption}</p>}
       <div className="px-3 pb-3 pt-2 pl-8 space-y-2">
         {editing ? (
           <>
@@ -56,9 +54,9 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
           </>
         ) : (
           <div className="flex items-start gap-2">
-            <div className="flex-1 rounded bg-steel-50 border-l-4 border-brand-600 px-2.5 py-1.5 text-sm text-steel-800">
-              {q.status === 'assumed' ? <em>No preference — the AI's assumption is used.</em> : q.answer}
-              <div className="text-[11px] text-steel-400 mt-0.5">{q.merged ? `Added to the spec · ${q.date}` : 'Being added to the spec…'}</div>
+            <div className="flex-1 rounded bg-steel-50 border-l-4 border-brand-600 px-2.5 py-1.5 text-sm text-steel-800" data-answer>
+              <span className="text-steel-500 font-semibold mr-1">A:</span>{q.status === 'assumed' ? <em>{answerText(q)}</em> : q.answer}
+              <div className="text-[11px] text-steel-400 mt-0.5">Part of the specification · {q.date}</div>
             </div>
             <button type="button" onClick={() => { setDraft(q.answer); setEditing(true); reopen(projectId, q.id); }} className="text-xs text-steel-500 underline pt-1.5">Change</button>
           </div>
@@ -70,31 +68,31 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
 
 /**
  * Questions with their answers right under them. Answers are saved per
- * project and merged into the spec automatically (see ./merge).
+ * project and are part of the specification as a Q&A list (see ./qa) —
+ * nothing is copied into the spec sections.
+ * `all`: show every question (answered ones stay as Q/A pairs); otherwise
+ * answered ones can be hidden behind "Show answered".
  */
-export default function QuestionList({ questions, title = 'Questions to answer', intro, showSource = false }: { questions: Question[]; title?: string; intro?: string; showSource?: boolean }) {
-  const merge = useQuestionStore((s) => s.merge);
+export default function QuestionList({ questions, title = 'Questions to answer', intro, showSource = false, all = false }: { questions: Question[]; title?: string; intro?: string; showSource?: boolean; all?: boolean }) {
   const [showDone, setShowDone] = useState(false);
   if (!questions.length) return null;
   const open = questions.filter((q) => q.status === 'open');
   const done = questions.filter((q) => q.status !== 'open');
-  const shown = showDone ? questions : open.length ? [...open, ...done.filter((q) => !q.merged)] : questions;
+  // Open ones first (with their answer box), then the answered Q/A pairs, each group in the order asked.
+  const shown = all || showDone || !open.length ? [...open, ...done] : open;
   return (
     <section className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 space-y-3" aria-label={title}>
       <div className="flex flex-wrap items-baseline gap-2">
         <h3 className="text-sm font-semibold text-steel-900">{title}</h3>
         <span className="text-xs text-steel-600">{open.length} open · {done.length} answered</span>
-        {done.length > 0 && open.length > 0 && (
+        {!all && done.length > 0 && open.length > 0 && (
           <button type="button" onClick={() => setShowDone((v) => !v)} className="ml-auto text-xs text-steel-600 underline">{showDone ? 'Hide answered' : `Show answered (${done.length})`}</button>
         )}
       </div>
-      <p className="text-xs text-steel-600">{intro ?? 'Answer each question in the box right under it. Answers are saved and added to the machine description automatically; the stages that depend on them become out of date so "Update" uses them.'}</p>
+      <p className="text-xs text-steel-600">{intro ?? 'Answer each question in the box right under it. Your answers are saved as questions and answers in the machine description and are part of the specification, so the later stages become out of date and "Update" uses them.'}</p>
       <ol className="space-y-2">
         {shown.map((q) => <QuestionCard key={q.id} q={q} n={questions.indexOf(q) + 1} showSource={showSource} />)}
       </ol>
-      {merge.busy && <p role="status" className="flex items-center gap-2 text-xs text-steel-700"><Spinner /> Adding your answers to the spec…</p>}
-      {!merge.busy && merge.note && <p role="status" className="text-xs text-green-900 bg-green-50 border border-green-200 rounded p-2">{merge.note}</p>}
-      {merge.error && <p role="alert" className="text-xs text-red-800 bg-red-50 border border-red-200 rounded p-2">{merge.error}</p>}
     </section>
   );
 }

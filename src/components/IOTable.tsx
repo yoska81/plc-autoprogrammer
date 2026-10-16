@@ -58,7 +58,7 @@ export function IOTable({ filter }: { filter: IOFilter }) {
               <th className={`${ioTh} w-28`} title="Address on the selected PLC. Type to override.">Address</th>
               <th className={ioTh}>Description</th>
               <th className={`${ioTh} w-40`}>Category</th>
-              <th className={`${ioTh} w-32`}>Device</th>
+              <th className={`${ioTh} w-32`} title="Field device type; Discrete / Analog with range and engineering units">Device / signal</th>
               <th className={`${ioTh} w-8`} />
             </tr>
           </thead>

@@ -6,6 +6,7 @@ import { IoSheet } from './sheets/IoSheet';
 import { DoorLayoutSheet, PanelLayoutSheet } from './sheets/LayoutSheets';
 import { ControlSheet, MotorSheet, PowerSheet } from './sheets/SchematicSheets';
 import { DrillingSheet } from './sheets/DrillingSheet';
+import { AnalogSheet } from './sheets/AnalogSheet';
 import { CableScheduleSheet, JunctionBoxSheet, MachineOverviewSheet } from './sheets/MachineSheets';
 import { MachineLayoutSheet } from './sheets/MachineLayoutSheet';
 import { BomSheet, CoverSheet, NotesSheet, TerminalSheet } from './sheets/TableSheets';
@@ -31,6 +32,7 @@ function Content({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
     case 'cables': return <CableScheduleSheet plan={plan} sheet={sheet} />;
     case 'jb': return <JunctionBoxSheet plan={plan} sheet={sheet} />;
     case 'drill': return <DrillingSheet plan={plan} sheet={sheet} />;
+    case 'analog': return <AnalogSheet plan={plan} sheet={sheet} />;
   }
 }
 

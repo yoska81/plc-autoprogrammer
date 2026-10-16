@@ -46,7 +46,7 @@ Rules:
 - Write in clear, short engineering sentences or bullet lines ("- "). Keep the customer's terms and device names.
 - Leave a section as an empty string when nothing is known about it. Do not invent requirements.
 - Write the facts the design steps need explicitly, one per line, whenever the material gives them: every motor (name, HP, voltage, starter / VFD / servo), every sensor and actuator (what it detects or moves), every safety device and exactly what it must stop (per zone when there are several, e.g. "Light curtain at pallet position 1 stops the robot only while it works at position 1"), every analog signal with its range (e.g. "Tank level transmitter 4-20 mA, 0–500 gal"), every interface to other equipment (robot, other machine: each handshake signal and its direction), recipes (how many, which values), and the supply voltage and country.
-- "questions": the specific missing information an engineer needs before designing (e.g. "How is the lift axis homed: home switch or hard stop?", "What stop category for the guard door?"). Max 12, most important first.
+- "questions": the specific missing information an engineer needs before designing (e.g. "How is the lift axis homed: home switch or hard stop?", "What stop category for the guard door?"). Max 12, most important first. Never repeat a question that is already answered in "Questions already answered".
 - "summary": two or three sentences on what you organized and what changed.`;
 
 export async function organizeSpec(opts: {
@@ -58,9 +58,11 @@ export async function organizeSpec(opts: {
 }): Promise<{ sections: SpecSections; questions: string[]; summary: string; reasoning: string | null }> {
   const fileBlocks = (await Promise.all(opts.files.map(specFileToBlocks))).flat();
   const current = SPEC_SECTIONS.map((s) => `### ${s.id}\n${opts.current[s.id]?.trim() || '(empty)'}`).join('\n\n');
+  // The project's questions and answers (part of the spec, kept outside the sections).
+  const qa = opts.current.qa?.trim() ? `\n\nQuestions already answered by the customer (use these answers; do not ask these questions again):\n${opts.current.qa.trim()}` : '';
   const content: Anthropic.Beta.Messages.BetaContentBlockParam[] = [
     ...fileBlocks,
-    { type: 'text', text: `Current spec:\n${current}\n\n${opts.newText.trim() ? `New information from the engineer:\n${opts.newText}\n\n` : ''}${fileBlocks.length ? 'Merge the attached documents into the spec.' : 'Merge the new information into the spec.'}` },
+    { type: 'text', text: `Current spec:\n${current}${qa}\n\n${opts.newText.trim() ? `New information from the engineer:\n${opts.newText}\n\n` : ''}${fileBlocks.length ? 'Merge the attached documents into the spec.' : 'Merge the new information into the spec.'}` },
   ];
   const { text, reasoning } = await callClaude({
     apiKey: opts.apiKey, model: opts.model, effort: opts.effort,

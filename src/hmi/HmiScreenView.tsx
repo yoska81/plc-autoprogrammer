@@ -46,6 +46,9 @@ interface Ctx {
 
 const renderTime = () => Date.now();
 
+/** Register values: integers as-is, floating point (DF, analog in engineering units) to one decimal. */
+const showNum = (v: number) => (Number.isInteger(v) || !Number.isFinite(v) ? String(v) : v.toFixed(1));
+
 function Label({ el, children, color = C.text, size, weight = 500, spacing = 1.5, dy = 0 }: { el: HmiElement; children: string; color?: string; size?: number; weight?: number; spacing?: number; dy?: number }) {
   const fs = fitSize(children, el.w - 16, size ?? Math.max(11, Math.min(18, el.h * 0.3)), 10, spacing);
   return (
@@ -311,7 +314,7 @@ function ElementShape({ el, value, ctx }: { el: HmiElement; value: boolean | num
       const valueSize = Math.max(14, Math.min(34, el.h * 0.5));
       const unitsW = el.units ? textWidth(el.units, labelSize) + 8 : 0;
       const range = el.min !== null && el.max !== null && el.h >= 50 ? `${el.min}–${el.max}${el.units ? ` ${el.units}` : ''}` : null;
-      const valueText = String(v);
+      const valueText = showNum(v);
       const labelMax = el.w - 28 - unitsW - textWidth(valueText, valueSize) - 12;
       return (
         <g>
@@ -334,7 +337,7 @@ function ElementShape({ el, value, ctx }: { el: HmiElement; value: boolean | num
       return (
         <g>
           <text x={el.x} y={el.y + (el.h - trackH) / 2} fill={C.dim} fontSize={Math.max(10, Math.min(13, el.h * 0.24))} fontFamily={FONT} fontWeight={500} letterSpacing={1.5} dominantBaseline="central">{fitText(caps(el.label), el.w * 0.6, Math.max(10, Math.min(13, el.h * 0.24)), 1.5)}</text>
-          <text x={el.x + el.w} y={el.y + (el.h - trackH) / 2} fill={C.text} fontSize={Math.max(12, Math.min(20, el.h * 0.32))} fontFamily={FONT} fontWeight={300} textAnchor="end" dominantBaseline="central">{`${v}${el.units ? ` ${el.units}` : ''}`}</text>
+          <text x={el.x + el.w} y={el.y + (el.h - trackH) / 2} fill={C.text} fontSize={Math.max(12, Math.min(20, el.h * 0.32))} fontFamily={FONT} fontWeight={300} textAnchor="end" dominantBaseline="central">{`${showNum(v)}${el.units ? ` ${el.units}` : ''}`}</text>
           <rect x={el.x} y={ty} width={el.w} height={trackH} rx={trackH / 2} fill={C.surfaceUp} />
           <rect x={el.x} y={ty} width={el.w * frac} height={trackH} rx={trackH / 2} fill={styleColor(el.style)} />
         </g>
@@ -426,6 +429,13 @@ export default function HmiScreenView({ screen, widthPx, heightPx, read, onPress
         </radialGradient>
       </defs>
       <rect x={0} y={0} width={widthPx} height={heightPx} fill={`url(#${gradId})`} />
+      {screen.background && (
+        <g style={{ pointerEvents: 'none' }} data-background="">
+          <image href={screen.background.src} x={0} y={0} width={widthPx} height={heightPx}
+            preserveAspectRatio={screen.background.fit === 'stretch' ? 'none' : screen.background.fit === 'fill' ? 'xMidYMid slice' : 'xMidYMid meet'} />
+          {screen.background.dim > 0 && <rect x={0} y={0} width={widthPx} height={heightPx} fill="#000" opacity={Math.min(0.9, screen.background.dim)} />}
+        </g>
+      )}
       {ordered.map((el) => {
         const value = el.address && read ? read(el.address) : undefined;
         const navTarget = el.kind === 'nav' || el.kind === 'header' ? el.targetScreenId : null;
@@ -437,11 +447,13 @@ export default function HmiScreenView({ screen, widthPx, heightPx, read, onPress
             style={{ cursor: interactive ? 'pointer' : 'default' }}
             onPointerDown={thumbnail ? undefined : (e) => {
               if (onSelect) { e.stopPropagation(); onSelect(el.id); return; }
-              if (el.kind === 'button' && onPress) { (e.target as Element).setPointerCapture?.(e.pointerId); onPress(el, true); }
+              // Capture on the element's group: its shapes are re-drawn while pressed, and a lost capture would lose the release.
+              if (el.kind === 'button' && onPress) { (e.currentTarget as Element).setPointerCapture?.(e.pointerId); onPress(el, true); }
               if (navTarget && onNavigate && (el.kind === 'nav' || (e.target as Element).closest?.('[data-nav]'))) onNavigate(navTarget);
             }}
             onPointerUp={() => { if (!onSelect && el.kind === 'button' && onPress) onPress(el, false); }}
             onPointerCancel={() => { if (!onSelect && el.kind === 'button' && onPress) onPress(el, false); }}
+            onLostPointerCapture={() => { if (!onSelect && el.kind === 'button' && onPress) onPress(el, false); }}
           >
             <ElementShape el={el} value={value} ctx={ctx} />
             {lock && <LockBadge x={el.x + el.w - 6} y={el.y + 5} letter={LEVEL_SHORT[lock]} />}

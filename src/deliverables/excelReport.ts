@@ -1,6 +1,7 @@
 import type { Worksheet, Workbook } from 'exceljs';
 import type { ProjectSnapshot } from './collect';
 import { SPEC_SECTIONS } from '../spec/types';
+import { qaTable } from '../components/questions/qaTable';
 import { billOfMaterials, cableSchedule, designWarnings, supplyText, terminalPlan, wireNumbers } from '../electrical/derive';
 import { describeElement, describeOutput } from '../plc/core/clickExport';
 import { getHmi } from '../hmi/hmiCatalog';
@@ -146,6 +147,13 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
   const spec = wb.addWorksheet('Specification');
   header(spec, [{ header: 'Section', key: 's', width: 28 }, { header: 'Requirements', key: 't', width: 120 }]);
   for (const d of SPEC_SECTIONS) if (p.spec[d.id]?.trim()) spec.addRow({ s: d.title, t: p.spec[d.id].trim() }).alignment = { wrapText: true, vertical: 'top' };
+  if (p.questions.length) {
+    // Questions and answers are part of the specification.
+    spec.addRow({});
+    const h = spec.addRow({ s: 'Questions and answers', t: '' });
+    h.font = { bold: true };
+    for (const [n, q, a, src] of qaTable(p.questions).rows as string[][]) spec.addRow({ s: `Q${n} (${src})`, t: `Q: ${q}\nA: ${a}` }).alignment = { wrapText: true, vertical: 'top' };
+  }
 
   // I/O
   const io = wb.addWorksheet('I-O List');

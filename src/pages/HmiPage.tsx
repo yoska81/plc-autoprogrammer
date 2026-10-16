@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useHmiStore } from '../store/useHmiStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -6,14 +6,21 @@ import { useStageStore } from '../store/useStageStore';
 import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, hmiFingerprint } from '../spec/useStages';
 import { HMI_MODELS, getHmi, CLICK_HMI_COMMUNICATION, HMI_DESIGN_GUIDELINES, type HmiModel } from '../hmi/hmiCatalog';
-import { generateHmiDesign } from '../lib/ai/hmiAI';
+import { generateHmiDesign, recreateScreenFromPicture } from '../lib/ai/hmiAI';
 import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
 import ResizablePane from '../components/ResizablePane';
 import { Spinner, ReasoningPanel } from '../components/common';
-import { type AccessLevel, type HmiDesign, type HmiElement, type HmiScreen, type HmiState, type HmiStyle, type MachineSymbol } from '../hmi/types';
+import { type AccessLevel, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
+import ScreenEditor from '../hmi/ScreenEditor';
+import HmiEditorBar from '../hmi/HmiEditorBar';
+import { alignElements, createElement, deleteElements, distributeElements, duplicateElements, syncHandTags, type Align } from '../hmi/editor';
+import { loadPicture, panelImage } from '../hmi/background';
+import { useProjectsStore } from '../store/useProjectsStore';
+import { notify } from '../store/useNoticeStore';
 import { checkDesign, layoutBands, MIN_TOUCH, type LayoutIssue } from '../hmi/layout';
 import { LEVEL_LABEL } from '../hmi/theme';
+import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
 
@@ -67,7 +74,7 @@ function ElementEditor({ el, screens, onChange, onDelete }: { el: HmiElement; sc
       </label>
       {READS.has(el.kind) && (
         <label className={fieldLabel}>{el.kind === 'header' ? 'Mode bit / register' : 'PLC address'}
-          <input value={el.address ?? ''} onChange={(e) => onChange({ ...el, address: e.target.value.toUpperCase() || null })} className={`${input} w-full font-mono`} placeholder="e.g. C1001, DS1001" />
+          <input value={el.address ?? ''} onChange={(e) => onChange({ ...el, address: e.target.value.toUpperCase().trim() || null })} className={`${input} w-full font-mono`} placeholder="e.g. C1001, DS1001" list="hmi-address-options" aria-label="PLC address" />
         </label>
       )}
       {el.kind === 'button' && (
@@ -78,7 +85,7 @@ function ElementEditor({ el, screens, onChange, onDelete }: { el: HmiElement; sc
             </select>
           </label>
           <label className={fieldLabel}>Interlock bit
-            <input value={el.interlock ?? ''} onChange={(e) => onChange({ ...el, interlock: e.target.value.toUpperCase() || null })} className={`${input} w-full font-mono`} placeholder="none" />
+            <input value={el.interlock ?? ''} onChange={(e) => onChange({ ...el, interlock: e.target.value.toUpperCase().trim() || null })} className={`${input} w-full font-mono`} placeholder="none" list="hmi-address-options" />
           </label>
         </div>
       )}
@@ -136,16 +143,16 @@ function ElementEditor({ el, screens, onChange, onDelete }: { el: HmiElement; sc
   );
 }
 
-function ScreenInfo({ screen, issues, onLevel }: { screen: HmiScreen; issues: LayoutIssue[]; onLevel: (l: AccessLevel) => void }) {
+function ScreenInfo({ screen, issues, onLevel, onRename, onDelete }: { screen: HmiScreen; issues: LayoutIssue[]; onLevel: (l: AccessLevel) => void; onRename: (name: string) => void; onDelete?: () => void }) {
   const counts = new Map<string, number>();
   for (const e of screen.elements) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
   const addresses = new Set(screen.elements.flatMap((e) => [e.address, e.interlock ?? null].filter(Boolean)));
   return (
     <div className="space-y-3 text-sm">
-      <div>
-        <div className="text-xs font-semibold text-gray-800">{screen.name}</div>
-        <p className="text-xs text-gray-500 mt-0.5">{screen.purpose}</p>
-      </div>
+      <label className={fieldLabel}>Screen name
+        <input value={screen.name} onChange={(e) => onRename(e.target.value)} className={`${input} w-full normal-case`} aria-label="Screen name" />
+      </label>
+      {screen.purpose && <p className="text-xs text-gray-500">{screen.purpose}</p>}
       <label className={fieldLabel}>Screen access
         <select value={screen.level ?? 'operator'} onChange={(e) => onLevel(e.target.value as AccessLevel)} className={`${input} w-full`}>
           {(Object.keys(LEVEL_LABEL) as AccessLevel[]).map((l) => <option key={l} value={l}>{LEVEL_LABEL[l]}{l === 'operator' ? ' (open)' : ' password'}</option>)}
@@ -161,6 +168,7 @@ function ScreenInfo({ screen, issues, onLevel }: { screen: HmiScreen; issues: La
         {[...counts].map(([k, n]) => <span key={k} className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{n} × {KIND_LABEL[k as HmiElement['kind']] ?? k}</span>)}
       </div>
       <p className="text-xs text-gray-400">Click an element on the screen to edit it.</p>
+      {onDelete && <button onClick={onDelete} className="text-xs text-red-600 hover:underline">Delete this screen</button>}
     </div>
   );
 }
@@ -185,6 +193,18 @@ function PanelSpecs({ model, design }: { model: HmiModel; design: HmiDesign }) {
   );
 }
 
+function PictureButton({ label, onFile, small }: { label: string; onFile: (f: File) => void; small?: boolean }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input ref={ref} type="file" accept="image/*" className="hidden" aria-label={label}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
+      <button onClick={() => ref.current?.click()}
+        className={small ? 'px-2 py-1 text-xs border border-gray-300 rounded bg-white hover:bg-brand-50' : 'px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50'}>{label}</button>
+    </>
+  );
+}
+
 type Tab = 'tags' | 'alarms' | 'check' | 'notes';
 
 export default function HmiPage() {
@@ -200,7 +220,14 @@ export default function HmiPage() {
   const [params, setParams] = useSearchParams();
   const screenId = params.get('screen');
   const setScreenId = (id: string | null) => setParams(id ? { screen: id } : {}, { replace: true });
-  const [selected, setSelected] = useState<string | null>(null);
+  const [sel, setSel] = useState<string[]>([]);
+  const selected = sel.length === 1 ? sel[0] : null;
+  const setSelected = (id: string | null) => setSel(id ? [id] : []);
+  const [editing, setEditing] = useState(false);
+  const [snapOn, setSnapOn] = useState(true);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [proposal, setProposal] = useState<{ screenId: string; elements: HmiElement[]; tags: HmiTag[]; explanation: string } | null>(null);
+  const activeProject = useProjectsStore((s) => s.activeId);
   const [choosing, setChoosing] = useState(false);
   const [tab, setTab] = useState<Tab>('tags');
   const [tagFilter, setTagFilter] = useState('');
@@ -209,7 +236,7 @@ export default function HmiPage() {
   const apiKey = settings.anthropicApiKey;
   const design = hmi.design;
   // "To confirm" items, answered under each one.
-  useSyncQuestions('hmi', design ? design.notes.map((n) => ({ text: n, assumption: n, section: 'operator' as const })) : null);
+  useSyncQuestions('hmi', design ? userNotes(design).map((n) => ({ text: n, assumption: n, section: 'operator' as const })) : null);
   const hmiQuestions = useQuestions('hmi');
   const screen = design?.screens.find((s) => s.id === screenId) ?? design?.screens[0] ?? null;
   const selectedEl = screen?.elements.find((e) => e.id === selected) ?? null;
@@ -227,6 +254,130 @@ export default function HmiPage() {
     }
     return m;
   }, [design]);
+
+  // ── Manual editing: every change is one undo step; hand-placed addresses become HMI tags ──
+  const ioDesc = useMemo(() => new Map(io.map((p) => [(addresses.get(p.id) ?? '').toUpperCase(), p.description])), [io, addresses]);
+  const [hist, setHist] = useState<{ project: string | null; past: HmiDesign[]; future: HmiDesign[] }>({ project: activeProject, past: [], future: [] });
+  // Undo never reaches into another project.
+  if (hist.project !== activeProject) setHist({ project: activeProject, past: [], future: [] });
+  const W = model?.widthPx ?? 800;
+  const H = model?.heightPx ?? 480;
+  const bounds = { w: W, h: H };
+  const commit = (next: HmiDesign) => {
+    if (design) setHist((h) => ({ ...h, past: [...h.past, design].slice(-100), future: [] }));
+    hmi.setDesign(syncHandTags(next, (a) => ioDesc.get(a)), hmi.explanation);
+  };
+  const stepHistory = (dir: 'undo' | 'redo') => {
+    const from = dir === 'undo' ? hist.past : hist.future;
+    if (!from.length || !design) return;
+    const target = from[from.length - 1];
+    setHist(dir === 'undo'
+      ? { ...hist, past: hist.past.slice(0, -1), future: [...hist.future, design] }
+      : { ...hist, future: hist.future.slice(0, -1), past: [...hist.past, design] });
+    hmi.setDesign(target, hmi.explanation);
+  };
+  const updateScreen = (next: HmiScreen) => { if (design) commit({ ...design, screens: design.screens.map((x) => (x.id === next.id ? next : x)) }); };
+  const usedIds = () => new Set((design?.screens ?? []).flatMap((x) => x.elements.map((e) => e.id)));
+  const idMaker = (prefix = 'el') => {
+    const used = usedIds();
+    let n = 1;
+    return () => { while (used.has(`${prefix}_${n}`)) n++; const id = `${prefix}_${n}`; used.add(id); return id; };
+  };
+  const addElement = (kind: HmiElementKind) => {
+    if (!screen) return;
+    const el = createElement(kind, idMaker()(), W / 2, H / 2, bounds, snapOn ? 8 : 1);
+    updateScreen({ ...screen, elements: [...screen.elements, el] });
+    setSel([el.id]);
+  };
+  const editorKey = (action: 'delete' | 'duplicate' | 'undo' | 'redo') => {
+    if (!screen) return;
+    if (action === 'undo' || action === 'redo') { stepHistory(action); return; }
+    if (!sel.length) return;
+    if (action === 'delete') { updateScreen(deleteElements(screen, sel)); setSel([]); return; }
+    const d = duplicateElements(screen, sel, idMaker(), bounds);
+    updateScreen(d.screen);
+    setSel(d.ids);
+  };
+  const pictureFor = async (file: File) => {
+    const pic = await loadPicture(file, W, H);
+    if (pic.warning) notify(pic.warning);
+    return { src: pic.src, fit: 'fit' as const, dim: 0.3, name: file.name } satisfies HmiBackground;
+  };
+  const addScreen = async (file?: File) => {
+    if (!model) return;
+    try {
+      const background = file ? await pictureFor(file) : undefined;
+      const base: HmiDesign = design ?? { hmiPartNumber: model.partNumber, screens: [], alarms: [], tags: [], notes: [], generatedAt: new Date().toISOString() };
+      const ids = new Set(base.screens.map((x) => x.id));
+      let n = base.screens.length + 1;
+      while (ids.has(`screen_${n}`)) n++;
+      const makeId = idMaker();
+      // A blank screen keeps the header and navigation bar of the first screen; a picture screen starts empty.
+      const frame = !file && base.screens[0] ? base.screens[0].elements.filter((e) => e.kind === 'header' || e.kind === 'nav').map((e) => ({ ...structuredClone(e), id: makeId() })) : [];
+      const name = file ? file.name.replace(/\.[^.]+$/, '').slice(0, 24) || `Screen ${n}` : `Screen ${n}`;
+      const sc: HmiScreen = { id: `screen_${n}`, name, purpose: file ? 'Made by hand on top of a picture.' : 'Made by hand.', elements: frame, ...(background ? { background } : {}) };
+      commit({ ...base, screens: [...base.screens, sc] });
+      setScreenId(sc.id);
+      setSel([]);
+      setEditing(true);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const deleteScreen = (id: string) => {
+    if (!design || design.screens.length < 2) return;
+    if (!confirm(`Delete the screen "${design.screens.find((x) => x.id === id)?.name}"? You can undo this while the page is open.`)) return;
+    commit({
+      ...design,
+      screens: design.screens.filter((x) => x.id !== id).map((x) => ({ ...x, elements: x.elements.map((e) => (e.targetScreenId === id ? { ...e, targetScreenId: null } : e)) })),
+    });
+    setScreenId(null);
+    setSel([]);
+  };
+  const setBackground = (patch: Partial<HmiBackground> | null) => {
+    if (!screen) return;
+    if (patch === null) { const next = { ...screen }; delete next.background; updateScreen(next); return; }
+    if (screen.background) updateScreen({ ...screen, background: { ...screen.background, ...patch } });
+  };
+  const uploadBackground = async (file: File) => {
+    if (!screen) return;
+    try { updateScreen({ ...screen, background: { ...(await pictureFor(file)), ...(screen.background ? { fit: screen.background.fit, dim: screen.background.dim } : {}) } }); } catch (err) { notify(err instanceof Error ? err.message : String(err)); }
+  };
+  const recreate = async () => {
+    if (!screen?.background || !model || !design || aiBusy) return;
+    setAiBusy(true);
+    setError(null);
+    try {
+      const r = await recreateScreenFromPicture({
+        apiKey, model: settings.anthropicModel, effort: settings.effort, hmi: model,
+        panelImageJpeg: await panelImage(screen.background, W, H), screenName: screen.name,
+        io, addresses, tags: design.tags, screens: design.screens.map((x) => ({ id: x.id, name: x.name })),
+      });
+      const makeId = idMaker('ai');
+      setProposal({ screenId: screen.id, elements: r.elements.map((e) => ({ ...e, id: makeId() })), tags: r.tags, explanation: r.explanation });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+  const acceptProposal = (replace: boolean) => {
+    if (!proposal || !design) return;
+    const known = new Set(design.tags.map((t) => t.address.toUpperCase()));
+    commit({
+      ...design,
+      screens: design.screens.map((x) => (x.id === proposal.screenId ? { ...x, elements: [...(replace ? x.elements.filter((e) => e.kind === 'header' || e.kind === 'nav') : x.elements), ...proposal.elements] } : x)),
+      tags: [...design.tags, ...proposal.tags.filter((t) => t.address && !known.has(t.address.toUpperCase()))],
+    });
+    setSel(proposal.elements.map((e) => e.id));
+    setProposal(null);
+  };
+  const addressOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of io) { const a = addresses.get(p.id); if (a) m.set(a.toUpperCase(), `${p.type === 'input' ? 'Input' : 'Output'}: ${p.description}`); }
+    for (const t of design?.tags ?? []) if (!m.has(t.address.toUpperCase())) m.set(t.address.toUpperCase(), `${t.name}: ${t.description}`);
+    return [...m];
+  }, [io, addresses, design?.tags]);
 
   const generate = async () => {
     if (!apiKey || !model || hmi.isGenerating) return;
@@ -317,8 +468,11 @@ export default function HmiPage() {
       <div className="flex-1 overflow-auto bg-gray-50 p-5 space-y-4">
         {(!design || choosing) && picker}
         {!design && (
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {genButton('Design the HMI screens')}
+            {model && <span className="text-sm text-gray-500">or make screens yourself:</span>}
+            {model && <button onClick={() => void addScreen()} className="px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50">New blank screen</button>}
+            {model && <PictureButton label="New screen from picture…" onFile={(f) => void addScreen(f)} />}
             {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</span>}
             {!model && <span className="text-sm text-gray-500">Choose an HMI above first.</span>}
           </div>
@@ -353,6 +507,10 @@ export default function HmiPage() {
                   );
                 })}
               </nav>
+              <div className="flex flex-col gap-1 mt-2 pr-1">
+                <button onClick={() => void addScreen()} className="px-2 py-1 text-xs border border-gray-300 rounded bg-white hover:bg-brand-50">+ New blank screen</button>
+                <PictureButton label="+ New screen from picture…" small onFile={(f) => void addScreen(f)} />
+              </div>
               </ResizablePane>
 
               {/* Screen */}
@@ -362,32 +520,65 @@ export default function HmiPage() {
                     <h3 className="text-sm font-semibold text-gray-800">{screen.name}{screen.level ? <span className="ml-2 text-xs font-normal text-gray-500">· {LEVEL_LABEL[screen.level]} password</span> : null}</h3>
                     <p className="text-xs text-gray-500 truncate">{screen.purpose}</p>
                   </div>
-                  <span className="text-xs text-gray-400 whitespace-nowrap font-mono">{model.widthPx}×{model.heightPx}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 whitespace-nowrap font-mono">{model.widthPx}×{model.heightPx}</span>
+                    {!editing && <button onClick={() => { setEditing(true); setSel([]); }} className="px-3 py-1 text-xs font-medium bg-brand-600 text-brand-950 rounded hover:bg-brand-700">Edit screen</button>}
+                  </span>
                 </div>
+                {editing && (
+                  <HmiEditorBar selectedCount={sel.length} canUndo={hist.past.length > 0} canRedo={hist.future.length > 0} snap={snapOn}
+                    background={screen.background} aiReady={Boolean(apiKey)} aiBusy={aiBusy}
+                    onAdd={addElement} onAlign={(a: Align) => updateScreen(alignElements(screen, sel, a))} onDistribute={(ax) => updateScreen(distributeElements(screen, sel, ax))}
+                    onDuplicate={() => editorKey('duplicate')} onDelete={() => editorKey('delete')} onUndo={() => stepHistory('undo')} onRedo={() => stepHistory('redo')}
+                    onSnap={setSnapOn} onPicture={(f) => void uploadBackground(f)} onBackground={setBackground} onRecreate={() => void recreate()}
+                    onDone={() => { setEditing(false); setSel([]); setProposal(null); }} />
+                )}
+                {proposal && proposal.screenId === screen.id && (
+                  <div role="status" className="mb-2 px-3 py-2 bg-brand-50 border border-brand-300 text-sm text-steel-800 flex flex-wrap items-center gap-2">
+                    <span className="flex-1 min-w-64"><b>AI proposal: {proposal.elements.length} element{proposal.elements.length === 1 ? '' : 's'}</b> (dashed on the screen). {proposal.explanation}</span>
+                    <button onClick={() => acceptProposal(false)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700">Add to the screen</button>
+                    <button onClick={() => acceptProposal(true)} className="px-3 py-1 text-xs border border-steel-300 bg-white rounded-sm hover:bg-steel-50">Replace the screen's elements</button>
+                    <button onClick={() => setProposal(null)} className="px-3 py-1 text-xs border border-steel-300 bg-white rounded-sm hover:bg-steel-50">Discard</button>
+                  </div>
+                )}
                 <div className="rounded-2xl p-3 pb-2 shadow-xl" style={{ background: 'linear-gradient(180deg,#2a2e35,#1a1d22)' }}>
-                  <div className="rounded-md overflow-hidden ring-1 ring-black" onPointerDown={() => setSelected(null)}>
-                    <HmiScreenView screen={screen} widthPx={model.widthPx} heightPx={model.heightPx} design={design}
-                      onNavigate={(id) => { setScreenId(id); setSelected(null); }}
-                      selectedId={selected} onSelect={setSelected} />
+                  <div className="rounded-md overflow-hidden ring-1 ring-black" onPointerDown={editing ? undefined : () => setSelected(null)}>
+                    {editing ? (
+                      <ScreenEditor key={screen.id} screen={screen} design={design} widthPx={model.widthPx} heightPx={model.heightPx}
+                        selected={sel} onSelect={setSel} onChange={updateScreen} snapToGrid={snapOn} onKey={editorKey}
+                        proposal={proposal?.screenId === screen.id ? proposal.elements : null} />
+                    ) : (
+                      <HmiScreenView screen={screen} widthPx={model.widthPx} heightPx={model.heightPx} design={design}
+                        onNavigate={(id) => { setScreenId(id); setSelected(null); }}
+                        selectedId={selected} onSelect={setSelected} />
+                    )}
                   </div>
                   <div className="flex justify-between items-center mt-1.5 px-1 text-[10px] tracking-widest text-gray-500 uppercase">
                     <span>C-more {model.family === 'C-more' ? model.partNumber.split('-')[0] : model.family}</span>
                     <span>{model.sizeIn}"</span>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Static design view: lamps show OFF and values 0. Use <Link to="/simulate" className="underline">Simulate</Link> to press the buttons against the PLC program.</p>
+                <p className="text-xs text-gray-500 mt-2">{editing
+                  ? 'Click to select (Shift adds), drag to move, drag the yellow handles to resize, drag on empty space to select an area. Arrows nudge 1 px (Shift: 8 px), Del deletes, Ctrl+D duplicates, Ctrl+Z undoes.'
+                  : <>Static design view: lamps show OFF and values 0. Use <Link to="/simulate" className="underline">Simulate</Link> to press the buttons against the PLC program.</>}</p>
+                <datalist id="hmi-address-options">{addressOptions.map(([a, t]) => <option key={a} value={a}>{t}</option>)}</datalist>
               </div>
 
               {/* Properties */}
               <ResizablePane id="hmi.props" defaultSize={320} min={240} max={560} handle="left">
               <aside className="space-y-4 pl-1">
                 <section className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{selectedEl ? 'Element properties' : 'Screen'}</h3>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{selectedEl ? 'Element properties' : sel.length > 1 ? `${sel.length} elements selected` : 'Screen'}</h3>
                   {selectedEl ? (
                     <ElementEditor key={selectedEl.id} el={selectedEl} screens={design.screens}
-                      onChange={(e) => hmi.updateElement(screen.id, e)} onDelete={() => { hmi.removeElement(screen.id, selectedEl.id); setSelected(null); }} />
+                      onChange={(e) => updateScreen({ ...screen, elements: screen.elements.map((x) => (x.id === e.id ? e : x)) })}
+                      onDelete={() => { updateScreen(deleteElements(screen, [selectedEl.id])); setSelected(null); }} />
+                  ) : sel.length > 1 ? (
+                    <p className="text-xs text-gray-500">Use the tools above the screen to line them up, space them evenly, duplicate or delete them. Drag any of them to move all.</p>
                   ) : (
-                    <ScreenInfo screen={screen} issues={screenIssues} onLevel={(l) => setScreenLevel(screen.id, l)} />
+                    <ScreenInfo screen={screen} issues={screenIssues} onLevel={(l) => setScreenLevel(screen.id, l)}
+                      onRename={(name) => updateScreen({ ...screen, name })}
+                      onDelete={design.screens.length > 1 ? () => deleteScreen(screen.id) : undefined} />
                   )}
                 </section>
                 <section className="bg-white rounded-lg border border-gray-200 p-4">
@@ -467,7 +658,7 @@ export default function HmiPage() {
                 )}
                 {tab === 'notes' && (
                   hmiQuestions.length ? <QuestionList questions={hmiQuestions} title="To confirm"
-                    intro="Confirm each item or type the correct answer under it; answers are added to the machine description (operator station) and the HMI becomes out of date so Update uses them." /> : <p className="text-sm text-gray-500">Nothing to confirm.</p>
+                    intro="Confirm each item or type the correct answer under it; answers are saved in the Questions & answers of the machine description (part of the spec) and the HMI becomes out of date so Update uses them." /> : <p className="text-sm text-gray-500">Nothing to confirm.</p>
                 )}
               </div>
             </section>

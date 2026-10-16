@@ -5,6 +5,7 @@ import type { DesignInputs, ElectricalDesign, FieldDeviceType, MotorSpec } from 
 import type { Region } from '../../store/useProjectStore';
 import { CATALOG } from '../../electrical/catalog';
 import { callClaude } from './anthropic';
+import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes } from '../../components/questions/classify';
 
 const DEVICE_TYPES: FieldDeviceType[] = ['pushbutton-no', 'pushbutton-nc', 'selector', 'estop-contact', 'sensor-pnp', 'sensor-npn', 'limit-switch', 'pressure-switch', 'safety-relay-output', 'contactor-coil', 'relay-coil', 'solenoid', 'pilot-light', 'stack-light', 'vfd-input', 'other'];
 
@@ -40,7 +41,7 @@ function designSchema(addresses: string[]) {
       motorLocations: { type: 'array', items: obj({ motorTag: { type: 'string' }, location: { type: 'string' } }) },
       routing: { type: 'array', items: obj({ deviceTag: { type: 'string' }, junctionBox: { type: ['string', 'null'] } }) },
     }),
-    notes: { type: 'array', items: { type: 'string' } },
+    notes: { type: 'array', items: NOTE_SCHEMA },
     motors: {
       type: 'array',
       items: obj({
@@ -81,13 +82,15 @@ Design practice to follow:
 - Contactor feedback (EDM): every contactor switched by a safety relay feeds back through one of its N.C. auxiliary contacts. Fuji SC-E02(G)…SC-E4(G) contactors have NO built-in auxiliary contact, so add an SZ-A11T front auxiliary block (N.O. 53-54 / N.C. 61-62) for each such contactor: tag <contactor>-AUX (e.g. K1-AUX), function "<contactor> aux contact", motorTag = that contactor's motor, quantity 1. Reversing interlocks need the same blocks.
 - Choose the enclosure and back panel so the layout fits with about 25% spare space, and include DIN rail, wire duct, terminal blocks (feed-through, ground, end plates/stops), operator devices for each pushbutton/selector/pilot light input or output, and the field devices (sensors, solenoid valves) for the I/O list.
 - Check every part's input voltage against what feeds it. The 24VDC power supplies take single-phase ~90–276 VAC: on a 208/240 V supply feed one from two phases or line-neutral; on a 480 V or 600 V supply use a control power transformer (480/600→120 VAC, sized for the load with margin, with primary fuses) or a 3-phase power supply rated for that voltage if the catalog has one. Most catalog breakers and motor protectors are not rated for 600 V: on 600 V use fuses and parts whose catalog voltage rating is 600 V. Never connect a part to a voltage above its rating; if the catalog has no suitable part, say so in "notes".
+- 24VDC distribution protection: a supply that can deliver more current than the 24VDC wiring is rated for needs branch protection on its outputs (fused terminal blocks or DC-rated miniature breakers from the catalog). Rule of thumb: 18 AWG control wiring max 7 A, 16 AWG max 10 A, 14 AWG max 15 A — protect each 24VDC branch at or below its wire rating, and say in "notes" which branches you protected.
 - Use the designer's required parts exactly as given.
 - Catalog specifics: an enclosure needs its matching subpanel (enclosure category, ratings kind=subpanel). The rotary disconnect needs its switch, a handle and a shaft. A reversing starter is two contactors plus SZ-RM, SZ-ERW1A and SZ-ERW1B. For a dual-channel E-stop into a safety relay, add an ECX1030-2 contact block to the E-stop. Order terminal end covers/brackets and markers with the terminal blocks.
 - Use only part numbers from the catalog. If something needed is not in the catalog, leave it out and say so in "notes".
 - Tags: CB (breakers), DS (disconnect), PS (power supply), K (contactors), OL (overloads), MP (motor protectors), VFD, CR (relays), SR (safety relay), TB (terminal strips), PB (pushbuttons), ES (E-stop), SS (selectors), PL (pilot lights), LS/PRS (sensors), SOL (solenoids), M (motors), PLC, ENC (enclosure).
 - ioWiring: one entry for every PLC I/O point in the I/O list, with the field device tag, type, and "location": "Cabinet door" for pushbuttons, selectors, pilot lights and the E-stop on the panel; "Cabinet" for devices inside it (safety relay status, overload contacts); otherwise the machine zone where the device is mounted (e.g. "Infeed conveyor", "Pusher station").
 - machine: the field (machine) wiring outside the cabinet. "zones" = the machine areas from the specification in order. Put a junction box (tags JB1, JB2…) in each zone that has 4 or more field devices, so one multi-core trunk cable runs from the cabinet to the box; other devices get a home-run cable straight to the cabinet terminals. "routing" gives every field device tag its junction box tag or null. "motorLocations" gives each motor's zone. A junction box partNumber may be a small catalog enclosure, else null.
-- "notes": every assumption the engineer must confirm (motor FLA, cable lengths, sensor types, SCCR, local codes).
+- "notes": every assumption that must be confirmed (motor FLA, cable lengths, sensor types, SCCR, local codes).
+${NOTE_KINDS_RULE}
 - "motors": every motor the panel drives: the designer's motor list exactly as given, plus any other motor the specification mentions (estimate HP from the description when not stated and say so in "notes").
 - "explanation": a short plain-language summary of the panel for the customer.`;
 
@@ -139,18 +142,20 @@ Design the complete control panel.`;
     junctionBoxes: { tag: string; location: string; partNumber: string | null }[];
     motorLocations: { motorTag: string; location: string }[];
     routing: { deviceTag: string; junctionBox: string | null }[];
-  } } & Pick<ElectricalDesign, 'components' | 'ioWiring' | 'notes'>;
+  } } & Pick<ElectricalDesign, 'components' | 'ioWiring'> & { notes: unknown };
   try {
     parsed = JSON.parse(text);
   } catch (err) {
     throw new Error('The AI returned a design the app could not read. Please try again.', { cause: err });
   }
+  const notes = normalizeNotes(parsed.notes);
   return {
     design: {
       inputs: { ...opts.inputs, motors: parsed.motors },
       components: parsed.components,
       ioWiring: parsed.ioWiring,
-      notes: parsed.notes,
+      notes: notes.map((n) => n.text),
+      askUser: notes.filter((n) => n.kind !== 'issue').map((n) => n.text),
       machine: {
         zones: parsed.machine.zones,
         junctionBoxes: parsed.machine.junctionBoxes,
