@@ -9,6 +9,7 @@ import IOPage from './pages/IOPage.tsx'
 import ProgramPage from './pages/ProgramPage.tsx'
 import ExportPage from './pages/ExportPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
+import ProjectDataPage from './pages/ProjectDataPage.tsx'
 import PlcSetupPage from './pages/PlcSetupPage.tsx'
 import PrintPage from './pages/PrintPage.tsx'
 import ImportPage from './pages/ImportPage.tsx'
@@ -49,6 +50,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="program" element={<ProgramPage />} />
           <Route path="export" element={<ExportPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="project" element={<ProjectDataPage />} />
         </Route>
       </Routes>
     </Router>

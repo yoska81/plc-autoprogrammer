@@ -38,6 +38,22 @@ export interface DrawingContext {
   region?: 'US' | 'Canada';
   /** Door-mounted HMI chosen for the project (cutout from src/hmi/hmiCatalog). */
   hmiPartNumber?: string | null;
+  /** Document control for title blocks: numbers, company, names and revision history. */
+  doc?: DocInfo;
+}
+
+/** Document control data shared by drawings and documents (see ProjectInfo). */
+export interface DocInfo {
+  company: string;
+  customer: string;
+  site: string;
+  projectNumber: string;
+  /** Drawing / document number prefix, e.g. "WCC". */
+  prefix: string;
+  preparedBy: string;
+  checkedBy: string;
+  approvedBy: string;
+  revisions: { rev: string; date: string; description: string; by: string }[];
 }
 
 /** Electrical code references for the project region. */

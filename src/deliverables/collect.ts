@@ -10,6 +10,7 @@ import { moduleSlots } from '../plc/modules';
 import { validateProgram } from '../plc/validate';
 import { getPart } from '../electrical/catalog';
 import type { DrawingContext } from '../electrical/derive';
+import { docInfo } from './docInfo';
 
 /** Everything the deliverables need, read once from the stores. */
 export function collectProject() {
@@ -39,6 +40,7 @@ export function collectProject() {
     io: io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type })),
     region: info.region,
     hmiPartNumber: hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null,
+    doc: docInfo(info),
   } : null;
 
   return {

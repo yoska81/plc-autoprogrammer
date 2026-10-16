@@ -203,7 +203,7 @@ export const DESIGN: ElectricalDesign = {
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '5';
+const SEED_VERSION = '6';
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }
@@ -234,7 +234,11 @@ export function seedSampleProject() {
   const src = { specFp: fingerprint(SPEC), spec: SPEC, ioFp: ioFingerprint(useIOStore.getState().projectIO), hmiFp: hmiFingerprint(HMI) };
   useProjectStore.getState().setRecommendation(RECOMMENDATION);
   useProjectStore.getState().setModules([]);
-  useProjectStore.getState().setInfo({ customer: 'Example Foods Inc.', site: 'Line 3', standards: ['NFPA 79', 'UL 508A'] });
+  useProjectStore.getState().setInfo({
+    customer: 'Example Foods Inc.', site: 'Line 3', standards: ['NFPA 79', 'UL 508A', 'NEC'],
+    company: 'Example Controls Co.', projectNumber: '24-117', drawingPrefix: 'CNV', preparedBy: 'AI', checkedBy: '', approvedBy: '',
+    revisions: [{ rev: 'A', date: new Date().toISOString().slice(0, 10), description: 'Issued for review', by: 'AI' }],
+  });
   for (const stage of ['equipment', 'io', 'electrical', 'hmi', 'program'] as const) useStageStore.getState().markGenerated(stage, src);
   useProjectsStore.getState().renameActive('Conveyor Cell (example)');
   useElectricalStore.getState().setDesign(DESIGN, 'generated', 'Example panel: NEMA 12, 480 VAC in through a 30 A disconnect, one 1 HP conveyor on a contactor and overload, 24 VDC control, CLICK PLC, dual-channel E-stop into a safety relay.');

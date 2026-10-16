@@ -63,6 +63,10 @@ export default function NewProjectPage() {
   const [name, setName] = useState('');
   const [customer, setCustomer] = useState('');
   const [site, setSite] = useState('');
+  const [company, setCompany] = useState('');
+  const [projectNumber, setProjectNumber] = useState('');
+  const [prefix, setPrefix] = useState('');
+  const [preparedBy, setPreparedBy] = useState('');
   const [region, setRegion] = useState<Region>('US');
   const [supply, setSupply] = useState<SupplyVoltage>('480VAC-3PH');
   const [enclosure, setEnclosure] = useState<EnclosureRating>('NEMA 12');
@@ -79,7 +83,7 @@ export default function NewProjectPage() {
         createProject(name.trim());
         setCreated(true);
       }
-      useProjectStore.getState().setInfo({ region, customer, site, standards });
+      useProjectStore.getState().setInfo({ region, customer, site, standards, company, projectNumber, drawingPrefix: prefix.trim().toUpperCase(), preparedBy });
       const el = useElectricalStore.getState();
       el.setInputs({ ...el.inputs, supply, enclosureRating: enclosure });
     }
@@ -126,6 +130,12 @@ export default function NewProjectPage() {
                   <Field label="Project name *"><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Line 3 case packer" className={input} /></Field>
                   <Field label="Customer"><input value={customer} onChange={(e) => setCustomer(e.target.value)} className={input} /></Field>
                   <Field label="Site / location"><input value={site} onChange={(e) => setSite(e.target.value)} className={input} /></Field>
+                  <Field label="Your company"><input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Shown on drawings and documents" className={input} /></Field>
+                  <Field label="Project / job number"><input value={projectNumber} onChange={(e) => setProjectNumber(e.target.value)} placeholder="e.g. 24-117" className={input} /></Field>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Drawing prefix"><input value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="e.g. WCC" maxLength={8} className={`${input} uppercase`} /></Field>
+                    <Field label="Engineer (initials)"><input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} placeholder="e.g. Y.S." className={input} /></Field>
+                  </div>
                 </section>
                 <section className="space-y-2">
                   <h3 className="text-sm font-semibold text-steel-800">Where the machine will be installed</h3>

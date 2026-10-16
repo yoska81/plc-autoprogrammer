@@ -7,7 +7,7 @@ import {
 import { IS_PREVIEW } from './preview/mode';
 import { useStages, type StageStatus } from './spec/useStages';
 import { useProjectsStore } from './store/useProjectsStore';
-import { useProjectStore } from './store/useProjectStore';
+import { currentRevision, useProjectStore } from './store/useProjectStore';
 import { useHmiStore } from './store/useHmiStore';
 import { useSettingsStore } from './store/useSettingsStore';
 import type { StageId } from './store/useStageStore';
@@ -96,6 +96,7 @@ export default function App() {
   const hmiPart = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber);
   const hmiScreens = useHmiStore((s) => s.design?.screens) ?? NO_SCREENS;
   const model = useSettingsStore((s) => s.anthropicModel);
+  const rev = currentRevision(useProjectStore((s) => s.info));
   useEffect(() => { ensureActive(); }, [ensureActive]);
 
   const projectName = projects.find((p) => p.id === activeId)?.name ?? 'Project';
@@ -104,6 +105,7 @@ export default function App() {
   const tree: TreeNode = {
     label: projectName,
     children: [
+      { label: 'Project data', to: '/project' },
       { label: 'Machine description', to: '/spec', stage: 'spec' },
       {
         label: 'Equipment', to: '/equipment', stage: 'equipment',
@@ -146,6 +148,7 @@ export default function App() {
         <Menu label="Project">
           <MenuItem onClick={() => navigate('/new')}>New project…</MenuItem>
           <MenuItem onClick={() => navigate('/import')}>Import existing system…</MenuItem>
+          <MenuItem onClick={() => navigate('/project')}>Project data and revisions…</MenuItem>
           <div className="border-t border-steel-200 my-1" />
           <div className="px-4 py-1 text-xs text-steel-500">Open project</div>
           {projects.map((p) => (
@@ -211,6 +214,7 @@ export default function App() {
         <span>Ready</span>
         <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
         <span>HMI: {hmiPart || '—'}</span>
+        <span>Rev {rev.rev} · {rev.description}</span>
         <span className="ml-auto">AI: {model}</span>
         <span>v0.7.0</span>
       </div>

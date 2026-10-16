@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useSpecStore } from './useSpecStore';
 import { useIOStore } from './useIOStore';
-import { useProjectStore } from './useProjectStore';
+import { DEFAULT_INFO, useProjectStore } from './useProjectStore';
 import { useProgramStore } from './useProgramStore';
 import { useElectricalStore } from './useElectricalStore';
 import { useHmiStore } from './useHmiStore';
@@ -46,6 +46,9 @@ function load(data: Snapshot | null) {
     const initial = store.getInitialState();
     (store.setState as (s: unknown, replace: true) => void)({ ...initial, ...((data?.[key] as object) ?? {}) }, true);
   }
+  // Projects saved before newer project-data fields existed.
+  const info = useProjectStore.getState().info;
+  useProjectStore.setState({ info: { ...DEFAULT_INFO, ...info } });
 }
 
 function save(id: string) {
