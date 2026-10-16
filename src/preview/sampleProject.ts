@@ -10,6 +10,7 @@ import { useSpecStore } from '../store/useSpecStore';
 import { useHmiStore } from '../store/useHmiStore';
 import { useStageStore } from '../store/useStageStore';
 import { useProjectsStore } from '../store/useProjectsStore';
+import { useReviewStore } from '../review/useReviewStore';
 import { ioFingerprint, hmiFingerprint } from '../spec/useStages';
 import type { EquipmentRecommendation } from '../lib/ai/equipmentAI';
 
@@ -444,6 +445,7 @@ export function seedSampleProject() {
   // Keep the viewer's own work once they have the current example.
   if (readSeedVersion() === SEED_VERSION && useIOStore.getState().projectIO.length) return;
   try { localStorage.setItem('plc-preview-seed', SEED_VERSION); } catch { /* storage blocked: seed anyway */ }
+  useReviewStore.setState(useReviewStore.getInitialState(), true);
   useProjectStore.getState().setPlc('click', 'C0-10DD1E-D');
   useIOStore.getState().importPoints([
     { description: 'E-Stop OK (safety relay)', type: 'input', category: 'Safety' },

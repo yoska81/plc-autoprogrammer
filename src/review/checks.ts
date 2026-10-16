@@ -1,0 +1,247 @@
+/**
+ * Deterministic design checks (no AI, instant). They reuse the app's own
+ * checkers — program checker, electrical design warnings, calculations,
+ * I/O capacity, stage status — and add the cross-stage consistency checks a
+ * checking engineer does by hand: spec ↔ I/O, I/O ↔ program, safety gating,
+ * HMI ↔ program, approvals.
+ */
+import type { ProjectSnapshot } from '../deliverables/collect';
+import { designWarnings } from '../electrical/derive';
+import { calcWarnings } from '../deliverables/docs/calcs';
+import { ioCapacity, moduleSlots } from '../plc/core/modules';
+import { rungWrites, type LadderProgram } from '../plc/core/ladder';
+import { rungReads } from '../plc/sim/blocks';
+import type { StageId } from '../store/useStageStore';
+import type { StageInfo } from '../spec/useStages';
+import type { Finding, ReviewArea, ReviewPage, Severity } from './types';
+
+export interface ReviewInput {
+  p: ProjectSnapshot;
+  stages: Record<StageId, StageInfo>;
+  /** Expansion module part numbers in slot order. */
+  modules: string[];
+}
+
+/** Short stable hash for ids built from free text. */
+function hash(s: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+
+function finding(id: string, severity: Severity, area: ReviewArea, page: ReviewPage, item: string, title: string, detail: string, fix: string): Finding {
+  return { id, source: 'check', severity, area, page, item, title, detail, fix };
+}
+
+const STOP = new Set(['with', 'from', 'that', 'this', 'when', 'into', 'each', 'every', 'then', 'only', 'part', 'parts', 'single', 'phase', 'line', 'across', 'about', 'the', 'and', 'for', 'off', 'until', 'once', 'after', 'before', 'while', 'retracts', 'return', 'spring', 'other', 'output', 'input', 'signal', 'status', 'type']);
+const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')
+  .map((w) => w.replace(/(es|s)$/, '')).filter((w) => w.length >= 4 && !STOP.has(w) && !/^\d/.test(w));
+
+/** Spec bullet lines that describe field devices (sensing, pneumatics, motion). */
+function deviceLines(spec: ProjectSnapshot['spec']): string[] {
+  return [spec.sensing, spec.pneumatics, spec.motion].flatMap((t) => (t ?? '').split(/\n+/))
+    .map((l) => l.replace(/^\s*[-*•]\s*/, '').trim()).filter((l) => l.length > 3);
+}
+
+function specVsIo({ p }: ReviewInput): Finding[] {
+  const out: Finding[] = [];
+  if (!p.io.length) return out;
+  const ioWords = p.io.map((pt) => new Set(words(pt.description)));
+  for (const line of deviceLines(p.spec)) {
+    const w = words(line);
+    if (!w.length || ioWords.some((s) => w.some((x) => s.has(x)))) continue;
+    out.push(finding(`spec-io:${hash(line)}`, 'minor', 'io', 'io', '', `Spec device may have no I/O point: "${line.slice(0, 60)}"`,
+      `The specification describes "${line}", but no I/O point mentions it.`, 'Add the sensor / actuator to the I/O list, or reword the spec if it needs no PLC signal.'));
+  }
+  const specWords = new Set(words(Object.values(p.spec).join('\n')));
+  for (const pt of p.io) {
+    const w = words(pt.description);
+    if (!w.length || w.some((x) => specWords.has(x))) continue;
+    const a = p.addresses.get(pt.id) ?? '';
+    out.push(finding(`io-spec:${pt.id}`, 'minor', 'spec', 'spec', '', `I/O point not described in the spec: ${a} ${pt.description}`,
+      `"${pt.description}" is in the I/O list but the specification does not mention it, so the program and documents have nothing to base its behaviour on.`, 'Describe the device and what it does in the machine description.'));
+  }
+  return out;
+}
+
+/** Bits/words read by the rungs that write `addr`, following internal memory back to the inputs. */
+function dependsOn(program: LadderProgram, addr: string): Set<string> {
+  const writers = new Map<string, string[]>();
+  for (const r of program.rungs) for (const w of rungWrites(r)) {
+    const k = w.trim().toUpperCase();
+    writers.set(k, [...(writers.get(k) ?? []), ...rungReads(r).map((x) => x.address)]);
+  }
+  const seen = new Set<string>();
+  const todo = [addr];
+  while (todo.length) {
+    const a = todo.pop()!;
+    for (const d of writers.get(a) ?? []) if (!seen.has(d)) { seen.add(d); todo.push(d); }
+  }
+  return seen;
+}
+
+const SAFETY_RE = /\b(e-?stop|emergency|safety|guard|light curtain|interlock switch)\b/i;
+const NON_MOTION_RE = /\b(light|lamp|indicator|beacon|horn|buzzer|stack|pilot)\b/i;
+
+function programChecks({ p }: ReviewInput): Finding[] {
+  const out: Finding[] = [];
+  if (p.profile.language !== 'ladder' || !p.ladder.rungs.length) return out;
+  const rungNo = (id: string) => p.ladder.rungs.findIndex((r) => r.id === id) + 1;
+  for (const i of p.issues) {
+    out.push(finding(`chk:${i.rungId ?? ''}:${hash(i.message)}`, i.severity === 'error' ? 'major' : 'minor', 'program', 'program', i.rungId ?? '',
+      `Program checker${i.rungId ? ` (rung ${rungNo(i.rungId)})` : ''}: ${i.message}`, i.message, 'Fix the rung by hand or ask the AI to fix the checker issues on the PLC Program page.'));
+  }
+  const reads = new Set(p.ladder.rungs.flatMap((r) => rungReads(r).map((x) => x.address)));
+  const writes = new Set(p.ladder.rungs.flatMap((r) => rungWrites(r).map((w) => w.trim().toUpperCase())));
+  const safetyInputs = p.io.filter((pt) => pt.type === 'input' && (pt.category === 'Safety' || SAFETY_RE.test(pt.description))).map((pt) => p.addresses.get(pt.id) ?? '').filter(Boolean);
+  for (const pt of p.io) {
+    const a = (p.addresses.get(pt.id) ?? '').toUpperCase();
+    if (!a) continue;
+    if (pt.type === 'input' && !reads.has(a)) {
+      out.push(finding(`in-unused:${a}`, 'minor', 'program', 'program', '', `Input ${a} "${pt.description}" is not used by the program`,
+        'The input is wired but no rung reads it, so the machine ignores this device.', 'Use the input in the logic (or remove it from the I/O list if it is not needed).'));
+    }
+    if (pt.type === 'output' && !writes.has(a)) {
+      out.push(finding(`out-undriven:${a}`, 'major', 'program', 'program', '', `Output ${a} "${pt.description}" is never driven`,
+        'No rung writes this output, so the device can never turn on.', 'Add the output rung (one OUT coil) to the program.'));
+    }
+    if (pt.type === 'output' && writes.has(a) && safetyInputs.length && !NON_MOTION_RE.test(pt.description)) {
+      const deps = dependsOn(p.ladder, a);
+      if (!safetyInputs.some((s) => deps.has(s.toUpperCase()))) {
+        out.push(finding(`out-unsafe:${a}`, 'critical', 'safety', 'program', '', `Output ${a} "${pt.description}" is not gated by Safety OK`,
+          `Nothing in the logic that drives ${a} depends on the safety input${safetyInputs.length > 1 ? 's' : ''} (${safetyInputs.join(', ')}), so the PLC could energize it with the safety circuit open.`,
+          'Put the Safety OK bit in series in every rung (auto and manual) that drives this output, and drop the output when safety is lost.'));
+      }
+    }
+  }
+  return out;
+}
+
+function hmiChecks({ p }: ReviewInput): Finding[] {
+  const out: Finding[] = [];
+  if (!p.hmi || p.profile.language !== 'ladder' || !p.ladder.rungs.length) return out;
+  const writes = new Set<string>();
+  const sets = new Set<string>();
+  const resets = new Set<string>();
+  for (const r of p.ladder.rungs) {
+    for (const w of rungWrites(r)) writes.add(w.trim().toUpperCase());
+    for (const o of r.outputs) {
+      if (o.type === 'TMR') writes.add(`TD${o.address.trim().toUpperCase().slice(1)}`);
+      if (o.type === 'CNT') writes.add(`CTD${o.address.trim().toUpperCase().slice(2)}`);
+      if (o.type === 'SET') sets.add(o.address.trim().toUpperCase());
+      if (o.type === 'RST') resets.add(o.address.trim().toUpperCase());
+    }
+  }
+  const reads = new Set(p.ladder.rungs.flatMap((r) => rungReads(r).map((x) => x.address)));
+  for (const t of p.hmi.tags) {
+    const a = t.address.trim().toUpperCase();
+    if (/^[XY]\d/.test(a)) continue;
+    if (t.access === 'read' && !writes.has(a)) {
+      out.push(finding(`hmi-unwritten:${a}`, 'major', 'hmi', 'program', '', `HMI tag ${a} ${t.name} is never written by the PLC`,
+        `The HMI shows ${t.name} (${t.description}) but no rung writes ${a}, so the screen would always show 0 / OFF.`, 'Implement the tag in the program as its description says.'));
+    } else if (t.access !== 'read' && !reads.has(a)) {
+      out.push(finding(`hmi-unused:${a}`, 'major', 'hmi', 'program', '', `HMI command/setpoint ${a} ${t.name} is not used by the PLC`,
+        `The operator can press or enter ${t.name} (${t.description}) but no rung reads ${a}, so it does nothing.`, 'Use the tag in the program as its description says.'));
+    }
+  }
+  for (const al of p.hmi.alarms) {
+    const a = al.address.trim().toUpperCase();
+    if (!writes.has(a)) {
+      out.push(finding(`alm-unset:${a}`, 'major', 'hmi', 'program', '', `Alarm ${a} "${al.message}" is never set`,
+        'The alarm is on the HMI alarm list but no rung turns the bit on, so the operator is never warned.', 'Set the alarm bit from its fault condition in the Alarms block.'));
+    } else if (sets.has(a) && !resets.has(a)) {
+      out.push(finding(`alm-noreset:${a}`, 'major', 'hmi', 'program', '', `Latched alarm ${a} "${al.message}" can never be reset`,
+        'The alarm is latched with SET but no rung resets it, so the machine stays faulted until the PLC is power-cycled.', 'Add a reset rung (Reset button, only when the cause is gone).'));
+    }
+  }
+  for (const s of p.hmi.screens) for (const e of s.elements) {
+    const il = e.interlock?.trim().toUpperCase();
+    if (il && !writes.has(il)) {
+      out.push(finding(`hmi-interlock:${il}`, 'major', 'hmi', 'program', '', `Permissive ${il} for "${e.label}" is never written`,
+        `The ${s.name} screen enables "${e.label}" only while ${il} is ON, but no rung writes it, so the button can never be used.`, 'Compute the permissive in the Manual block.'));
+    }
+  }
+  return out;
+}
+
+function equipmentChecks({ p, modules }: ReviewInput): Finding[] {
+  if (!p.io.length || p.profile.id === 'generic-st') return [];
+  const cap = ioCapacity(p.cpu, moduleSlots(modules));
+  const out: Finding[] = [];
+  for (const kind of ['inputs', 'outputs'] as const) {
+    const used = p.io.filter((pt) => pt.type === (kind === 'inputs' ? 'input' : 'output')).length;
+    const have = cap[kind];
+    if (used > have) {
+      out.push(finding(`cap:${kind}`, 'critical', 'equipment', 'equipment', '', `Not enough PLC ${kind}: ${used} needed, ${have} available`,
+        `The CPU ${p.cpu.id}${modules.length ? ` and its modules` : ''} has ${have} ${kind}, the I/O list needs ${used}.`, 'Add an expansion module or choose a larger CPU on the Equipment page.'));
+    } else if (have && (have - used) / have < 0.1) {
+      out.push(finding(`spare:${kind}`, 'minor', 'equipment', 'equipment', '', `Little spare PLC ${kind}: ${have - used} of ${have} free`,
+        'Less than 10% spare points leaves no room for changes during commissioning.', 'Consider an extra module or a larger CPU (about 20% spare is usual).'));
+    }
+  }
+  return out;
+}
+
+const STAGE_PAGE: Record<StageId, ReviewPage> = { spec: 'spec', equipment: 'equipment', io: 'io', electrical: 'electrical', hmi: 'hmi', program: 'program' };
+const STAGE_NAME: Record<StageId, string> = { spec: 'Machine description', equipment: 'Equipment', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI screens', program: 'PLC program' };
+
+function stageChecks({ stages }: ReviewInput): Finding[] {
+  const out: Finding[] = [];
+  for (const s of Object.values(stages)) {
+    if (s.status === 'stale') {
+      out.push(finding(`stale:${s.id}`, 'major', s.id === 'spec' ? 'spec' : s.id, STAGE_PAGE[s.id], '', `${STAGE_NAME[s.id]} is out of date`,
+        s.reason ?? 'It was made from an older version of its inputs.', 'Update it on its page (or "Update out-of-date stages" on the Machine description page).'));
+    } else if (s.status === 'empty') {
+      out.push(finding(`empty:${s.id}`, s.id === 'equipment' ? 'info' : 'major', s.id === 'spec' ? 'spec' : s.id, STAGE_PAGE[s.id], '', `${STAGE_NAME[s.id]} has not been made yet`,
+        'This part of the project is missing, so the design cannot be complete.', `Create it on the ${STAGE_NAME[s.id]} page.`));
+    }
+  }
+  return out;
+}
+
+const MAJOR_WARN_RE = /\b(no reset|no safety relay|no e-stop|below the motor|transformer is required|not rated|without contactor|needs two contactors|no plc output)\b/i;
+const INFO_WARN_RE = /\b(estimated|by site|suggestions|calculate and mark|confirm with datasheets)\b/i;
+
+function electricalChecks({ p }: ReviewInput): Finding[] {
+  const out: Finding[] = [];
+  if (p.drawingCtx) {
+    for (const w of designWarnings(p.drawingCtx)) {
+      const sev: Severity = MAJOR_WARN_RE.test(w) ? 'major' : INFO_WARN_RE.test(w) ? 'info' : 'minor';
+      out.push(finding(`elec:${hash(w)}`, sev, /safety|e-stop/i.test(w) ? 'safety' : 'electrical', 'electrical', '', w.length > 90 ? `${w.slice(0, 88)}…` : w, w, 'Check the electrical design and correct it, or record why it is acceptable.'));
+    }
+    for (const w of calcWarnings(p)) {
+      out.push(finding(`calc:${hash(w)}`, 'minor', 'electrical', 'electrical', '', w.length > 90 ? `${w.slice(0, 88)}…` : w, w, 'Review the calculation in the engineering package and change the design if needed.'));
+    }
+  }
+  for (const n of p.electrical?.notes ?? []) {
+    out.push(finding(`enote:${hash(n)}`, 'info', 'electrical', 'electrical', '', `To confirm (electrical): ${n.length > 70 ? `${n.slice(0, 68)}…` : n}`, n, 'Confirm with the customer or the datasheet and record the answer.'));
+  }
+  for (const n of p.hmi?.notes ?? []) {
+    out.push(finding(`hnote:${hash(n)}`, 'info', 'hmi', 'hmi', '', `To confirm (HMI): ${n.length > 70 ? `${n.slice(0, 68)}…` : n}`, n, 'Confirm with the customer and record the answer.'));
+  }
+  return out;
+}
+
+function projectChecks({ p }: ReviewInput): Finding[] {
+  const out: Finding[] = [];
+  if (!p.info.revisions?.length) {
+    out.push(finding('doc:revision', 'minor', 'project', 'project', '', 'No revision issued yet', 'Drawings and documents carry no revision history.', 'Issue revision A on the Project data page when the design is sent for review.'));
+  }
+  if (!p.info.checkedBy?.trim()) {
+    out.push(finding('doc:checked', 'minor', 'project', 'project', '', 'Design not checked by a named engineer', 'The "Checked by" field is empty on every title block.', 'Have a qualified engineer check the design and enter their name on the Project data page.'));
+  }
+  if (!p.info.approvedBy?.trim()) {
+    out.push(finding('doc:approved', 'minor', 'project', 'project', '', 'Design not approved', 'The "Approved by" field is empty, so the package is not released for construction.', 'Enter the approver on the Project data page once the open findings are resolved.'));
+  }
+  return out;
+}
+
+/** Every deterministic finding for the project. */
+export function runChecks(input: ReviewInput): Finding[] {
+  const all = [
+    ...stageChecks(input), ...specVsIo(input), ...equipmentChecks(input), ...electricalChecks(input),
+    ...programChecks(input), ...hmiChecks(input), ...projectChecks(input),
+  ];
+  const seen = new Set<string>();
+  return all.filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)));
+}

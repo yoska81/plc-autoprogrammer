@@ -10,6 +10,7 @@ import { Spinner } from '../components/common';
 import { backPanelDxf, doorDxf } from '../electrical/dxf';
 import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep';
 import { printLabelPdf, printMessage } from '../electrical/labels/print';
+import ReviewCard from '../review/ReviewCard';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40';
 const csv = (s: string) => new Blob([s], { type: 'text/csv' });
@@ -107,7 +108,7 @@ export default function ExportPage() {
   return (
     <>
       <header className="px-4 py-2.5 bg-white border-b border-steel-200">
-        <h2 className="text-base font-semibold text-steel-800">8 · Deliverables</h2>
+        <h2 className="text-base font-semibold text-steel-800">9 · Deliverables</h2>
         <p className="text-xs text-steel-400 mt-0.5">{p.projectName} · {p.profile.vendor} {p.profile.name} {p.cpu.id}</p>
       </header>
 
@@ -119,6 +120,8 @@ export default function ExportPage() {
             </div>
           )}
           {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
+
+          <ReviewCard />
 
           <div className="bg-white rounded-sm border-2 border-brand-200 p-5 flex flex-wrap items-center gap-4">
             <div className="flex-1 min-w-64">

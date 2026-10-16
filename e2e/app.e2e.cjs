@@ -28,7 +28,8 @@ const IO_POINTS = [
 
 const counts = {};
 function reply(system) {
-  const k = system.includes('functional specification') ? 'spec'
+  const k = system.includes('checks a machine control design') ? 'review'
+    : system.includes('functional specification') ? 'spec'
     : system.includes('choosing the control equipment') ? 'equipment'
     : system.includes('complete discrete PLC I/O list') ? 'io'
     : system.includes('industrial control panel') ? 'electrical'
@@ -37,6 +38,7 @@ function reply(system) {
   counts[k] = (counts[k] ?? 0) + 1;
   const m = F.DESIGN.machine;
   switch (k) {
+    case 'review': return F.REVIEW;
     case 'spec': return { sections: F.SPEC, questions: ['How many parts per minute at most?'], summary: 'Organized the description into 10 sections.' };
     case 'equipment': return F.RECOMMENDATION;
     case 'io': return { explanation: '5 inputs, 2 outputs.', points: IO_POINTS, questions: [] };
@@ -422,6 +424,29 @@ function sse(model, text) {
   await page.unroute('https://api.anthropic.com/v1/messages?*');
   check(await ioRows() === 7, 'first project I/O untouched');
 
+  // Design review
+  await page.goto(BASE + '/review');
+  await page.getByText(/Checks: \d+ finding/).waitFor({ timeout: 10000 });
+  log('Review checks:', await page.getByText(/Checks: \d+ finding/).innerText());
+  await page.getByRole('button', { name: /Run AI review/ }).click();
+  await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 15000 });
+  log('Review verdict shown:', await page.getByText(/Reviewer's verdict/).count() > 0, '| critical open:', await page.locator('div', { hasText: /^Critical open$/ }).locator('xpath=following-sibling::div').first().innerText());
+  const rowOf = (t) => page.locator('tr', { hasText: t });
+  await rowOf('Air is not dumped on an E-stop').getByRole('button', { name: 'Resolved' }).click();
+  await page.getByPlaceholder(/Reason/).fill('Dump valve added to the pneumatic design');
+  await page.getByRole('button', { name: 'Save' }).click();
+  check(await rowOf('Air is not dumped on an E-stop').count() === 0, 'resolved finding leaves the open list');
+  await rowOf('Pusher retract is not confirmed').getByRole('button', { name: 'Ask AI to fix' }).click();
+  await page.waitForURL(/\/program/);
+  const req = await page.locator('textarea').last().inputValue();
+  check(req.includes('Pusher retract is not confirmed'), 'finding handed to the program Fix & Ask');
+  log('Program request from review:', req.split('\n')[0]);
+  await snap(page, 'review_fix');
+  await page.goto(BASE + '/review');
+  await page.getByRole('combobox', { name: 'Status' }).selectOption('all');
+  check(await rowOf('Air is not dumped on an E-stop').getByText('resolved').count() === 1, 'resolution kept');
+  await snap(page, 'review');
+
   // Deliverables
   await page.goto(BASE + '/export');
   const eng = await dl('Engineering package');
@@ -430,6 +455,7 @@ function sse(model, text) {
   const xlsx = await dl('Excel report');
   const wbXml = await (await JSZip.loadAsync(fs.readFileSync(xlsx))).file('xl/workbook.xml').async('string');
   log('Excel sheets:', [...wbXml.matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
+  check(wbXml.includes('name="Review Findings"'), 'Excel has the design review findings');
   const full = await dl('Download full package PDF');
   const fullDoc = await PDFDocument.load(fs.readFileSync(full));
   const outlines = fullDoc.catalog.lookup(PDFName.of('Outlines'));
