@@ -405,6 +405,7 @@ export const DESIGN: ElectricalDesign = {
     c('PS1', 'PSR-24-120-3', 1, '24VDC control power supply, 3-phase 480 VAC input'),
     c('K1', 'SC-E02PG-24VDC', 1, 'Conveyor motor contactor', 'M1'),
     c('OL1', 'TK-E02-220', 1, 'Conveyor motor overload', 'M1'),
+    c('K1-AUX', 'SZ-A11T', 1, 'K1 aux contact', 'M1'),
     c('PLC', 'C0-10DD1E-D', 1, 'PLC CPU'),
     c('SR1', 'LG5925-48-61-24', 1, 'E-stop safety relay'),
     c('ES1', 'GCX1131', 1, 'Emergency stop'),
@@ -435,7 +436,7 @@ export const DESIGN: ElectricalDesign = {
     { address: 'Y002', deviceTag: 'SOL1', location: 'Pusher station', deviceType: 'solenoid', description: 'Pusher solenoid' },
     { address: 'Y003', deviceTag: 'SOL2', location: 'Pusher station', deviceType: 'solenoid', description: 'Main air dump valve' },
   ],
-  notes: ['Example design. Motor FLA assumed 2.1 A at 460 V (NEC 430.250); confirm the nameplate.', 'Main air dump valve SOL2 (3/2 N.C. spring return, catalog part, not safety-rated) on Y003, supplied from the safety-switched 24+S output supply: loss of safety exhausts the pusher air. If the risk assessment requires a safety-rated dump valve (redundant, monitored, e.g. PL d), specify it as a field item from the pneumatics supplier.', 'Safety relay SR1 uses monitored manual reset: blue Safety Reset PB3 on the door, wired to S33-S34 in the feedback loop as drawn (confirm K1 has an NC auxiliary contact for it).'],
+  notes: ['Example design. Motor FLA assumed 2.1 A at 460 V (NEC 430.250); confirm the nameplate.', 'Main air dump valve SOL2 (3/2 N.C. spring return, catalog part, not safety-rated) on Y003, supplied from the safety-switched 24+S output supply: loss of safety exhausts the pusher air. If the risk assessment requires a safety-rated dump valve (redundant, monitored, e.g. PL d), specify it as a field item from the pneumatics supplier.', 'Safety relay SR1 uses monitored manual reset: blue Safety Reset PB3 on the door, wired to S33-S34 in series with the K1 feedback contact. The SC-E02 contactor has no built-in auxiliary contact, so K1-AUX (SZ-A11T front block, N.C. 61-62) provides it.'],
   machine: {
     zones: ['Conveyor', 'Pusher station'],
     junctionBoxes: [{ tag: 'JB1', location: 'Pusher station', partNumber: 'SCE-16EL1206LP' }],
