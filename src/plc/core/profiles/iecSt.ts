@@ -16,8 +16,8 @@ type BlockType = 'TON' | 'TOF' | 'RTO' | 'CTU' | 'CTD' | 'R_TRIG' | 'F_TRIG' | '
 export interface StDialect {
   /** Second header line. */
   title: string;
-  /** Vendor I/O variable / tag for a physical neutral address; null = not known (TODO line). */
-  ioVar(base: string): string | null;
+  /** Vendor I/O variable / tag for a physical neutral address (name = the variable's name); null = not known (TODO line). */
+  ioVar(base: string, name: string): string | null;
   ioTodo(base: string, name: string, isInput: boolean): string;
   /** How the program references one of its variables (Micro800: Name; SCL: #Name). */
   ref(name: string): string;
@@ -32,6 +32,8 @@ export interface StDialect {
   prologue?: string[];
   /** Statements after the outputs. */
   epilogue?: string[];
+  /** Extra I/O statements once every variable is known (e.g. analog scaling); inputs go first, outputs last. */
+  ioExtra?(vars: Map<string, StVariable>): { inputs: string[]; outputs: string[] };
 }
 
 const UNIT_MS: Record<string, number> = { ms: 1, sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 };
@@ -58,8 +60,8 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     const have = vars.get(base);
     if (have) return d.ref(have.name);
     const n = nick.get(base), label = ctx.labels.get(base);
-    const io = d.ioVar(base);
     const name = logixName(n?.nickname || label || (base === 'SC7' ? 'Clock_1s' : base), used, base);
+    const io = d.ioVar(base, name);
     vars.set(base, { name, type: d.types[type], comment: [label, n?.comment].filter(Boolean).join(' — ') || base, base, ...(io ? { io } : {}) });
     return d.ref(name);
   }
@@ -158,6 +160,8 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     if (x.io) (isIn ? inputs : outputs).push(isIn ? `${ref} := ${x.io};` : `${x.io} := ${ref};`);
     else (isIn ? inputs : outputs).push(d.ioTodo(base, ref, isIn));
   }
+  const extra = d.ioExtra?.(vars);
+  if (extra) { inputs.push(...extra.inputs); outputs.push(...extra.outputs); }
   const clock = usesClock ? [
     '(* 1-second clock: ON 0.5 s, OFF 0.5 s *)',
     `${v('CLOCK_TMR', 'TON')}(IN := NOT ${refOf('CLOCK_TMR')}.Q, PT := T#1s);`,
