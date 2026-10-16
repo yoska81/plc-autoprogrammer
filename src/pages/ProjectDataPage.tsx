@@ -47,6 +47,12 @@ function nextRev(revs: Revision[]): string {
 
 /** Project data and document control: names, numbers, approvals and revision history on every drawing and document. */
 export default function ProjectDataPage() {
+  // Start a fresh revision draft whenever another project is opened.
+  const activeId = useProjectsStore((s) => s.activeId);
+  return <ProjectData key={activeId ?? ''} />;
+}
+
+function ProjectData() {
   const info = useProjectStore((s) => s.info);
   const setInfo = useProjectStore((s) => s.setInfo);
   const { projects, activeId, renameActive } = useProjectsStore();
@@ -61,11 +67,19 @@ export default function ProjectDataPage() {
   );
 
   const issue = () => {
-    if (!draft.rev.trim() || !draft.description.trim()) return;
-    if (info.revisions.some((r) => r.rev === draft.rev.trim())) { alert(`Revision ${draft.rev} already exists.`); return; }
-    const revisions = [...info.revisions, { ...draft, rev: draft.rev.trim().toUpperCase() }];
+    const rev = draft.rev.trim().toUpperCase();
+    if (!rev || !draft.description.trim()) return;
+    if (info.revisions.some((r) => r.rev.toUpperCase() === rev)) { alert(`Revision ${rev} already exists.`); return; }
+    const revisions = [...info.revisions, { ...draft, rev }];
     setInfo({ revisions });
     setDraft({ rev: nextRev(revisions), date: today, description: PURPOSES[1], by: draft.by });
+  };
+  const withdraw = (r: Revision) => {
+    if (!confirm(`Withdraw revision ${r.rev}?`)) return;
+    const revisions = info.revisions.slice(0, -1);
+    setInfo({ revisions });
+    // The withdrawn letter is free again.
+    setDraft((d) => ({ ...d, rev: nextRev(revisions) }));
   };
 
   return (
@@ -125,7 +139,7 @@ export default function ProjectDataPage() {
                       <td className={`${td} w-24`}>{r.by}</td>
                       <td className={`${td} w-8`}>
                         {i === info.revisions.length - 1 && (
-                          <button onClick={() => { if (confirm(`Withdraw revision ${r.rev}?`)) setInfo({ revisions: info.revisions.slice(0, -1) }); }}
+                          <button onClick={() => withdraw(r)}
                             className="text-steel-400 hover:text-red-600" aria-label={`Withdraw revision ${r.rev}`}>✕</button>
                         )}
                       </td>
