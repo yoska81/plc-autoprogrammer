@@ -9,7 +9,7 @@ import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
 import { Spinner } from '../components/common';
 import { backPanelDxf, doorDxf } from '../electrical/dxf';
 import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep';
-import { printPdf } from '../deliverables/printPdf';
+import { printLabelPdf, printMessage } from '../electrical/labels/print';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40';
 const csv = (s: string) => new Blob([s], { type: 'text/csv' });
@@ -76,8 +76,9 @@ export default function ExportPage() {
       const pdf = await buildFullPackagePdf(snap, (step, done, total) => setPkg({ step, done, total }));
       const name = `${snap.fileBase}_full_package.pdf`;
       if (print) {
-        const r = await printPdf(pdf, name);
-        setPkgNote(r === 'printed' ? 'Print dialog opened.' : r === 'opened' ? 'The package opened in a new tab; print it from there.' : 'Printing is not available in this window, so the PDF was saved. Open it and print from your PDF reader.');
+        // Mixed page sizes (Letter documents, ANSI B drawings): the Windows dialog picks the paper.
+        const r = await printLabelPdf(pdf, { fileName: name, jobName: `${snap.projectName} full package`, pageWidthMm: 215.9, pageHeightMm: 279.4, uniformPageSize: false });
+        setPkgNote(printMessage(r, 'The full package was'));
       } else saveBlob(name, pdf);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

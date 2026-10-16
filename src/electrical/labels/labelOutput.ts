@@ -148,18 +148,43 @@ export async function labelsXlsx(labels: Label[], setup: LabelSetup, projectName
   ws.autoFilter = { from: 'A1', to: 'F1' };
   const info = wb.addWorksheet('How to import');
   const size = sizeOf(setup);
-  info.columns = [{ width: 28 }, { width: 90 }];
-  [
+  const two = setup.content !== 'code';
+  info.columns = [{ width: 30 }, { width: 100 }];
+  const rows: string[][] = [
     ['Project', projectName],
-    ['Label printer / supply', setup.supply ? `${size.use}` : 'Generic size (no printer supply chosen)'],
+    ['Label printer / supply', setup.supply ? size.use : 'Generic size (no printer supply chosen)'],
     ['Label stock', size.tape && !setup.tapeLength ? `${size.h} mm continuous tape` : fmtSize(size.w, size.h, setup.units)],
-    ['Content', setup.content === 'code' ? 'Number only (column "Number")' : 'Number + description (columns "Number" and "Description", or "Text")'],
-    ['Rows', setup.rowPerCopy ? 'One row per printed label' : 'One row per label; print the "Copies" count of each'],
-    ['Brady Workstation', 'Import this workbook as a data source (sheet "Labels") and link the label text to "Number" (and "Description" for two-field labels). Print the "Copies" count of each row.'],
+    ['Content', two ? 'Number + description (columns "Number" and "Description", or "Text" for both in one field)' : 'Number only (column "Number")'],
+    ['Rows', setup.rowPerCopy ? 'One row per printed label (every copy has its own row)' : 'One row per label, with a "Copies" column'],
+    [],
+    ['BRADY WORKSTATION', 'Step by step (Custom Designer)'],
+    ['Before you start', setup.rowPerCopy
+      ? 'This file has one row per printed label, which is what Brady Workstation expects: every row becomes one label.'
+      : 'Brady Workstation prints one label per row and does not read the "Copies" column. In ISA Auto Programmer tick "one row per printed label" and export the Excel file again, so every copy has its own row.'],
+    ['Step 1', `Open Brady Workstation and start Custom Designer. Create a new label file for your printer and choose the label ${setup.supply ? `part number ${setup.supply}` : 'that is loaded in the printer'}.`],
+    ['Step 2', 'Click the "Excel Import" icon, then "Select Excel File", and choose this file.'],
+    ['Step 3', 'Tick "Use first row as header" (the first row holds the column names Number, Description, Text...). If you are asked for a sheet, choose "Labels".'],
+    ['Step 4', two
+      ? 'Drag the "Number" field onto the label and make it large and bold; drag "Description" beside it in a smaller font. (Or drag the single "Text" field.)'
+      : 'Drag the "Number" field onto the label and size it to fill the label.'],
+    ['Step 5', 'Check a few labels in the preview, then print. Every row of the "Labels" sheet becomes one label.'],
+    ['When the design changes', 'Export the Excel file again from ISA Auto Programmer with the same file name and click "Check for updates" in Custom Designer: the labels refresh without opening the label file again.'],
+    ['Tips', 'Text that should be the same on every label (e.g. a logo) can be set to "Show On Every Label". Import into a barcode, or from a CSV file, needs Brady Workstation "Advanced Import".'],
+    ['Brady help pages', 'https://support.bradyid.com/articles/en_US/Knowledge/How-to-Import-Excel-Data-into-a-Label-File-in-Custom-Designer  ·  https://support.bradyid.com/articles/en_US/Knowledge/How-to-format-Excel-files-for-importing-into-Brady-software'],
+    [],
+    ['OTHER LABEL SOFTWARE', ''],
     ['Brother P-touch Editor', 'Connect this workbook as a database and place the "Number" / "Description" fields on the label layout.'],
     ['Weidmüller M-Print PRO', 'Import the workbook (or the CSV) and map "Number" to the marker text.'],
     ['Phoenix Contact PROJECT complete', 'Import the workbook (or the CSV) and map "Number" to the marking text.'],
-  ].forEach((r) => info.addRow(r));
+  ];
+  rows.forEach((r) => info.addRow(r));
   info.getColumn(1).font = { bold: true };
+  info.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
+  info.eachRow((row) => {
+    if (/^(BRADY WORKSTATION|OTHER LABEL SOFTWARE)$/.test(String(row.getCell(1).value ?? ''))) {
+      row.font = { bold: true };
+      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5FFC4' } };
+    }
+  });
   return new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }

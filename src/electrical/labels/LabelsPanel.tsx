@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DrawingContext } from '../derive';
 import { LABEL_KINDS, labelsCsv, type LabelKind } from '../labels';
 import { listLabels, type ListedLabel } from './list';
 import { saveBlob } from '../../deliverables/files';
-import { printPdf } from '../../deliverables/printPdf';
+import { desktop, desktopPrinters, printLabelPdf, printMessage, type DesktopPrinter } from './print';
 import ResizablePane from '../../components/ResizablePane';
 import { Spinner } from '../../components/common';
 import { canvasMeasure, expandCopies, layoutLabel } from './layout';
@@ -52,6 +52,9 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   const [zoom, setZoom] = useState(1);
   const last = useRef<number | null>(null);
   const measure = useMemo(() => canvasMeasure(), []);
+  // Windows printers (desktop app only).
+  const [winPrinters, setWinPrinters] = useState<DesktopPrinter[]>([]);
+  useEffect(() => { void desktopPrinters().then(setWinPrinters); }, []);
 
   const withCopies = (l: ListedLabel): ListedLabel => (copies.has(l.id) ? { ...l, copies: copies.get(l.id)! } : l);
   const counts = useMemo(() => {
@@ -233,11 +236,22 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
             </fieldset>
             <div className="flex flex-col gap-2">
               {b('Labels PDF for label printer', async () => { saveBlob(`${fileBase}_labels_${size.tape && !setup.tapeLength ? `tape${size.h}mm` : `${Math.round(size.w)}x${Math.round(size.h)}mm`}${byRoll && roll ? `_${roll.across}across` : ''}.pdf`, await labelPrinterPdf(chosen, setup, `${projectName} labels`)); }, true)}
+              {desktop() && winPrinters.length > 0 && (
+                <label className="text-xs text-steel-600 flex items-center gap-2">Windows printer
+                  <select aria-label="Windows printer" value={setup.windowsPrinter} onChange={(e) => set({ windowsPrinter: e.target.value })} className={`${input} flex-1 min-w-0`}>
+                    <option value="">Choose when printing</option>
+                    {winPrinters.map((p) => <option key={p.name} value={p.name}>{p.name}{p.isDefault ? ' (default)' : ''}</option>)}
+                  </select>
+                </label>
+              )}
               {b('Print labels', async () => {
-                const r = await printPdf(await labelPrinterPdf(chosen, setup, `${projectName} labels`), `${fileBase}_labels.pdf`);
-                return r === 'printed' ? 'Print dialog opened. Choose the label printer and print at 100 % (actual size).'
-                  : r === 'opened' ? 'The labels PDF opened in a new tab. Print it from there at 100 % (actual size).'
-                  : 'Printing is not available in this window, so the labels PDF was saved. Open it and print to the label printer at 100 %.';
+                const first = preview[0]?.lay;
+                const r = await printLabelPdf(await labelPrinterPdf(chosen, setup, `${projectName} labels`), {
+                  fileName: `${fileBase}_labels.pdf`, jobName: `${projectName} labels`,
+                  pageWidthMm: byRoll && roll ? roll.widthMm : first?.w ?? size.w, pageHeightMm: first?.h ?? size.h,
+                  uniformPageSize: !tapeAuto, printerName: winPrinters.some((p) => p.name === setup.windowsPrinter) ? setup.windowsPrinter : '',
+                });
+                return printMessage(r, 'The labels were');
               })}
               <div className="flex items-center gap-2">
                 {b('Sheet PDF', async () => { saveBlob(`${fileBase}_labels_sheet_${setup.paper}.pdf`, await labelSheetPdf(chosen, setup, projectName)); })}
