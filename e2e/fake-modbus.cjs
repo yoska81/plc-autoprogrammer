@@ -1,16 +1,17 @@
-// Fake Modbus TCP server for the desktop tests (FC 1–6, exceptions, silent and late modes).
-// Dev 1's tools/modbus/fake-server.cjs is the full-featured one for the Online page.
+// Fake Modbus TCP server for the desktop and Online page tests (FC 1–6, exceptions, silent and late modes).
+// `state.log` records every request ({ fc, address, count } or, for writes, { fc, address, value }).
 const net = require('node:net');
 
 /** Minimal Modbus TCP server (FC 1–6). mode: 'normal' | 'silent' (never answers) | 'late' (answers after 300 ms). */
 function fakeServer() {
   const mem = { coils: new Uint8Array(65536), discrete: new Uint8Array(65536), holding: new Uint16Array(65536), input: new Uint16Array(65536) };
-  const state = { mode: 'normal', refuse: new Set(), units: [], sockets: new Set() };
+  const state = { mode: 'normal', refuse: new Set(), units: [], sockets: new Set(), log: [] };
   const handle = (pdu) => {
     const fc = pdu[0];
     const ex = (c) => Buffer.from([fc | 0x80, c]);
     const a = pdu.readUInt16BE(1);
     const n = pdu.readUInt16BE(3);
+    state.log.push(fc === 5 ? { fc, address: a, value: n === 0xff00 } : fc === 6 ? { fc, address: a, value: n } : { fc, address: a, count: n });
     if (state.refuse.has(a)) return ex(2);
     if (fc === 1 || fc === 2) {
       const src = fc === 1 ? mem.coils : mem.discrete;
