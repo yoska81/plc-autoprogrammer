@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 dist-preview
 e2e/out/
+tools/out/
+tools/.venv/
