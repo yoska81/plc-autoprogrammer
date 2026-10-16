@@ -150,7 +150,7 @@ let failPage = null;
   // In the simulator: the screen with its picture; pressing the button sets C1050
   await page.goto(BASE + '/simulate');
   await page.getByRole('button', { name: /^Run$/ }).first().click();
-  await page.locator('aside, div').getByRole('button', { name: screenName, exact: true }).first().click();
+  await page.locator('select[aria-label="HMI screen"]').selectOption({ label: screenName });
   const live = page.locator('svg[aria-label^="HMI screen"]').last();
   check(await live.locator('g[data-background] image').count() === 1, 'picture in the live HMI');
   const lamp = async () => (await live.locator('text').allTextContents()).map((t) => t.trim().toUpperCase()).find((t) => t === 'PRESSED' || t === 'IDLE');

@@ -44,6 +44,13 @@ export default function LiveHmi({ handle, design }: { handle: SimHandle; design:
 
   return (
     <div className="space-y-2">
+      {/* The panel's own navigation bar switches screens; this reaches screens that have no button to them. */}
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        Screen
+        <select aria-label="HMI screen" value={screen.id} onChange={(e) => setScreenId(e.target.value)} className="border border-gray-300 rounded px-1.5 py-0.5 bg-white">
+          {design.screens.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </label>
       <div className="bg-gray-900 rounded-xl p-2 shadow-lg ring-1 ring-black/40">
         <HmiScreenView screen={screen} widthPx={model.widthPx} heightPx={model.heightPx} design={design}
           read={handle.read} onPress={press} onNavigate={setScreenId} runtime={runtime ?? undefined} />
