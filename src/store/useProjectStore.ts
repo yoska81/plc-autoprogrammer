@@ -18,8 +18,9 @@ interface ProjectStore {
   setInfo: (info: Partial<ProjectInfo>) => void;
 }
 
-/** Electrical code region: US (NEC / UL 508A) or Canada (CEC / CSA C22.2 No. 14). */
-export type Region = 'US' | 'Canada';
+/** Installation region: US (NEC / UL 508A), Canada (CEC / CSA C22.2 No. 14) or an IEC region (src/standards/regions.ts). */
+export type { Region } from '../standards/regions';
+import type { Region } from '../standards/regions';
 
 /** One line of the document revision history (drawings and documents share it). */
 export interface Revision {
