@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { EquipmentRecommendation } from '../lib/ai/equipmentAI';
 
 interface ProjectStore {
-  /** Selected PLC profile id (see src/plc/profiles). */
+  /** Selected PLC profile id (see src/plc/core/profiles). */
   plcId: string;
   cpuId: string;
   setPlc: (plcId: string, cpuId: string) => void;

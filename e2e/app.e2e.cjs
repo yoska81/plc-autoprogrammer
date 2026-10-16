@@ -246,6 +246,14 @@ function sse(model, text) {
   log('Labels CSV rows:', fs.readFileSync(await dl('CSV'), 'utf8').trim().split('\n').length - 1);
   const lx = await JSZip.loadAsync(fs.readFileSync(await dl('Excel')));
   log('Labels Excel sheets:', [...(await lx.file('xl/workbook.xml').async('string')).matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
+  // Brady printer + supply: the PDF pages take the supply's real size (B33-80-427 = 12.7 x 19.05 mm)
+  await page.getByLabel('Label printer').selectOption('brady-i3300');
+  await page.getByLabel('Printer labels').selectOption('B33-80-427');
+  const bpdf = fs.readFileSync(await dl('Labels PDF for label printer'), 'latin1');
+  const bboxes = [...bpdf.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number));
+  log('Brady i3300 B33-80-427 PDF:', bboxes.length, 'pages | sizes', [...new Set(bboxes.map(mm))].join(', '));
+  if (bboxes.some((b) => mm(b) !== '12.7x19.1')) throw new Error('Brady supply page size is not 12.7 x 19.05 mm');
+  await page.getByLabel('Label printer').selectOption('');
   await page.getByLabel('Label size').selectOption('38x12');
 
   // HMI (part preselected by equipment)

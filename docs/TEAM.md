@@ -12,7 +12,7 @@ push your branch after each finished, tested step, so the coordinator can merge 
 | Session | Branch | Owns (edit freely) | Must not edit (owned elsewhere) |
 |---|---|---|---|
 | Dev 1 — labels & printing | `claude/isa-dev-labels-print` | `src/electrical/labels.ts`, new `src/electrical/labels/**`, `src/pages/LabelsPage.tsx`, full-package print code (new `src/deliverables/fullPackage.ts`), the Labels/Print entries in `ElectricalPage.tsx`, `ExportPage.tsx`, `App.tsx` | drawings, step, hmi, sim |
-| Dev 2 — program & simulation | `claude/isa-dev-program-sim` | `src/preview/sampleProject.ts` (LADDER and the rest outside the HMI constant), `src/sim/**`, `src/lib/ai/ladderAI.ts`, `src/plc/**`, `src/components/program/**` | drawings, step, deliverables, labels |
+| Dev 2 — program & simulation | `claude/isa-dev-program-sim` | `src/plc/**` (all PLC code: core, ai, sim, ui, pages — see `src/plc/README.md`), `src/preview/sampleProject.ts` (LADDER and the rest outside the HMI constant) | drawings, step, deliverables, labels |
 | Debug 1 — app & workflow QA | `claude/isa-debug-app` | bug fixes anywhere in the UI flow (`src/pages/**`, `src/components/**`, `src/store/**`, `src/spec/**`), `e2e/**` | large rewrites of files another session owns: fix minimally and say so in the commit |
 | Debug 2 — deliverables QA | `claude/isa-debug-outputs` | bug fixes in generated outputs: `src/deliverables/**`, `src/electrical/dxf.ts`, `src/electrical/derive.ts` (minimal, compatible fixes), new checker scripts under `tools/` | same rule: minimal fixes in other owners' files |
 | Coordinator | `claude/optimistic-maxwell-6nfcs6` | drawings (`src/electrical/drawings/**`), 3D STEP (`src/electrical/step/**`), HMI (`src/hmi/**`), merges, preview, PR | — |

@@ -1,5 +1,5 @@
 import type { Effort } from '../../store/useSettingsStore';
-import { PLC_PROFILES } from '../../plc/profiles';
+import { PLC_PROFILES } from '../../plc/core/profiles';
 import { partsIn } from '../../electrical/catalog';
 import { HMI_MODELS } from '../../hmi/hmiCatalog';
 import { specToText, type SpecSections } from '../../spec/types';

@@ -32,6 +32,8 @@ export interface LabelLayout {
   /** Text is turned 90° (reads bottom to top); runs are in the rotated box (width h, height w). */
   rotate: boolean;
   runs: TextRun[];
+  /** Printable area (page mm) when smaller than the label; drawn as a guide in the preview. */
+  printable?: { x: number; y: number; w: number; h: number };
 }
 
 const MIN_PT = 3.5;
@@ -176,8 +178,9 @@ export function layoutLabel(label: Label, setup: LabelSetup, measure: Measure): 
   const { main, side } = labelText(label, setup.content);
   const tape = Boolean(size.tape) && !setup.tapeLength;
   if (tape) {
-    // Continuous tape: text fills the tape width; the length follows the text.
-    const lh = size.h;
+    // Continuous tape: text fills the tape width (or its printable band); the length follows the text.
+    const band = size.printable;
+    const lh = band ? band.h : size.h;
     const m = margin(100, lh, true);
     const ih = lh - 2 * m;
     const sMain = (ih * 0.78) / PT;
@@ -193,12 +196,19 @@ export function layoutLabel(label: Label, setup: LabelSetup, measure: Measure): 
       frac = (mainW + gap / 2) / (lw - 2 * m);
     }
     lw = Math.max(15, Math.ceil(lw + 1));
-    return { w: lw, h: lh, rotate: false, runs: layoutBox(main, side, lw, lh, m, measure, frac) };
+    const runs = layoutBox(main, side, lw, lh, m, measure, frac);
+    if (!band) return { w: lw, h: lh, rotate: false, runs };
+    return { w: lw, h: size.h, rotate: false, runs: runs.map((r) => ({ ...r, y: r.y + band.y })), printable: { x: 0, y: band.y, w: lw, h: band.h } };
   }
   const w = size.w, h = size.h;
   const rotate = setup.orientation === 'vertical';
-  const lw = rotate ? h : w, lhh = rotate ? w : h;
-  return { w, h, rotate, runs: layoutBox(main, side, lw, lhh, margin(lw, lhh, false), measure) };
+  // Text goes in the printable area (all of a plain label, the white part of a self-laminating wrap).
+  const pa = size.printable ? { ...size.printable, w: size.printable.w || w } : { x: 0, y: 0, w, h };
+  const lw = rotate ? pa.h : pa.w, lhh = rotate ? pa.w : pa.h;
+  // Offset of the printable area in the (possibly rotated) text coordinates.
+  const dx = rotate ? h - pa.y - pa.h : pa.x, dy = rotate ? pa.x : pa.y;
+  const runs = layoutBox(main, side, lw, lhh, margin(lw, lhh, false), measure).map((r) => ({ ...r, x: r.x + dx, y: r.y + dy }));
+  return { w, h, rotate, runs, printable: size.printable ? pa : undefined };
 }
 
 /** Labels repeated by their copies count when the setup asks for it. */

@@ -2,7 +2,7 @@ import { useIOStore } from '../store/useIOStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { useElectricalStore } from '../store/useElectricalStore';
-import type { LadderProgram } from '../plc/ladder';
+import type { CompareOp, LadderElement, LadderOutput, LadderProgram, Rung } from '../plc/core/ladder';
 import type { DesignInputs, ElectricalDesign } from '../electrical/types';
 import type { HmiDesign, HmiElement, HmiState } from '../hmi/types';
 import { EMPTY_SECTIONS, fingerprint, type SpecSections } from '../spec/types';
@@ -20,12 +20,12 @@ export const SPEC: SpecSections = {
   overview: 'Conveyor cell that moves parts to an end station where a pneumatic pusher pushes each part off onto a take-away table. About 10 parts per minute.',
   sequence: '- Start (panel pushbutton or HMI) runs the conveyor.\n- When a part reaches the end photo-eye, stop the conveyor and extend the pusher.\n- When the pusher-extended prox turns on, retract the pusher and restart the conveyor.\n- Count every part that reaches the end.',
   safety: '- One E-stop on the operator station, dual channel into a safety relay. Safety relay output to the PLC as Safety OK.\n- Loss of Safety OK stops the conveyor and retracts the pusher (stop category 0).',
-  modes: 'Auto only. Stop button (NC) or HMI Stop ends the cycle.',
+  modes: '- Auto: Start (panel or HMI) runs the cycle; Stop button (NC) or HMI Stop ends it. Optional batch target stops the cycle after the last part.\n- Manual (HMI, Maintenance password): selectable only while the cycle is stopped; hold-to-run Jog Conveyor and Pusher Extend, each with an interlock (Safety OK, and the other actuator off).',
   motion: 'M1 conveyor motor, 1 HP, 480 VAC 3-phase, across-the-line contactor and overload.',
   pneumatics: 'Pusher cylinder, single 5/2 solenoid valve (spring return), pusher-extended prox. Retracts when the valve is off.',
   sensing: '- Part-at-end photo-eye, PNP.\n- Pusher extended prox, PNP.',
   operator: '- Operator station: Start (green), Stop (red, NC), E-stop.\n- 7" C-more HMI: Main screen with Start/Stop/Reset, running and fault lamps, part count with reset; Alarms screen; I/O status screen.',
-  alarms: '- Pusher fault: pusher not extended within 3 s. Latches; Reset (panel Start or HMI Reset) clears it when the pusher is back.',
+  alarms: '- Pusher fault: pusher not extended within the timeout (HMI setpoint, default 3 s). Latches; Reset (panel Start or HMI Reset) clears it when the pusher is back.\n- Safety circuit open while Safety OK is off.\n- Service due warning when the run hours since the last service reach the service interval.',
   utilities: '480 VAC 3-phase, 60 Hz. NEMA 12 enclosure. Plant air 80 psi.',
 };
 
@@ -42,45 +42,164 @@ export const RECOMMENDATION: EquipmentRecommendation = {
   cautions: ['The photo-eye and prox must be PNP (sourcing) to match the CPU inputs wired sinking; confirm with the sensor part numbers.'],
 };
 
+const NO = (address: string): LadderElement => ({ type: 'NO', address });
+const NC = (address: string): LadderElement => ({ type: 'NC', address });
+const RISE = (address: string): LadderElement => ({ type: 'RISE', address });
+const CMP = (left: string, op: CompareOp, right: string): LadderElement => ({ type: 'CMP', left, op, right });
+const OUT = (address: string): LadderOutput => ({ type: 'OUT', address });
+const COPY = (source: string, dest: string): LadderOutput => ({ type: 'COPY', source, dest });
+const MATH = (dest: string, expression: string): LadderOutput => ({ type: 'MATH', dest, expression });
+const R = (id: string, block: string, comment: string, branches: LadderElement[][], outputs: LadderOutput[]): Rung => ({ id, block, comment, branches, outputs });
+
+/**
+ * Example CLICK program. Implements every tag the example HMI uses:
+ * modes and permissives (C1201-C1205), alarms (C1101-C1103), setpoints
+ * (DS1001-DS1003) and status words (DS1101-DS1104).
+ */
 export const LADDER: LadderProgram = {
   blocks: [
-    { id: 'safety', name: 'Safety & modes', description: 'Safety OK bit and the cycle start/stop seal-in.' },
-    { id: 'conveyor', name: 'Conveyor', description: 'Runs the belt while cycling and counts delivered parts.' },
-    { id: 'pusher', name: 'Pusher', description: 'Pushes the part at the end of the belt, with timeout fault and reset.' },
+    { id: 'safety', name: 'Safety & modes', description: 'First-scan defaults, Safety OK, Auto/Manual mode and the cycle start/stop seal-in.' },
+    { id: 'alarms', name: 'Alarms', description: 'Pusher fault latch and reset, safety-open alarm and the service-due warning.' },
+    { id: 'conveyor', name: 'Conveyor', description: 'Automatic conveyor run request, part counter and batch complete.' },
+    { id: 'pusher', name: 'Pusher', description: 'Pushes the part at the end of the belt, timeout timer and end-of-batch stop.' },
+    { id: 'manual', name: 'Manual', description: 'Manual-mode permissives and hold-to-run jog / extend requests from the HMI.' },
+    { id: 'outputs', name: 'Outputs', description: 'One coil per output: combines the automatic and manual requests.' },
+    { id: 'status', name: 'HMI & status', description: 'Heartbeat, machine state word, pusher cycle counter, run hours, service hours and parts per minute.' },
   ],
   rungs: [
-    { id: 'r_safe', block: 'safety', comment: 'Safety OK from the E-stop safety relay', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'C1' }] },
-    { id: 'r_run', block: 'safety', comment: 'Cycle running: panel or HMI Start seals in; Stop (NC button), HMI Stop, safety loss or pusher fault drops it',
-      branches: [
-        [{ type: 'NO', address: 'X002' }, { type: 'NO', address: 'X003' }, { type: 'NC', address: 'C1002' }, { type: 'NO', address: 'C1' }, { type: 'NC', address: 'C1101' }],
-        [{ type: 'NO', address: 'C1001' }, { type: 'NO', address: 'X003' }, { type: 'NC', address: 'C1002' }, { type: 'NO', address: 'C1' }, { type: 'NC', address: 'C1101' }],
-        [{ type: 'NO', address: 'C2' }, { type: 'NO', address: 'X003' }, { type: 'NC', address: 'C1002' }, { type: 'NO', address: 'C1' }, { type: 'NC', address: 'C1101' }],
+    // ---- Safety & modes
+    R('r_init_tmo', 'safety', 'First scan: pusher timeout setpoint outside 1-10 s is loaded with the 3 s default',
+      [[NO('SC2'), CMP('DS1001', '<', '1')], [NO('SC2'), CMP('DS1001', '>', '10')]], [COPY('3', 'DS1001')]),
+    R('r_init_batch', 'safety', 'First scan: batch target outside 0-9999 is set to 0 (no batch limit)',
+      [[NO('SC2'), CMP('DS1002', '<', '0')], [NO('SC2'), CMP('DS1002', '>', '9999')]], [COPY('0', 'DS1002')]),
+    R('r_init_svc', 'safety', 'First scan: service interval outside 50-2000 h is set to the 500 h default',
+      [[NO('SC2'), CMP('DS1003', '<', '50')], [NO('SC2'), CMP('DS1003', '>', '2000')]], [COPY('500', 'DS1003')]),
+    R('r_safe', 'safety', 'Safety OK from the E-stop safety relay output', [[NO('X001')]], [OUT('C1')]),
+    R('r_man_reject', 'safety', 'Manual mode request is refused while the cycle runs: the HMI toggle is reset',
+      [[NO('C2'), NO('C1005')]], [{ type: 'RST', address: 'C1005' }]),
+    R('r_man_mode', 'safety', 'Manual mode active: HMI Manual selected and the cycle stopped',
+      [[NO('C1005'), NC('C2')]], [OUT('C1201')]),
+    R('r_run', 'safety', 'Cycle running: panel or HMI Start seals in. Stop (NC button), HMI Stop, safety loss, pusher fault, Manual mode or batch complete drops it',
+      [
+        [RISE('X002'), NO('X003'), NC('C1002'), NO('C1'), NC('C1101'), NC('C1201'), NC('C5')],
+        [RISE('C1001'), NO('X003'), NC('C1002'), NO('C1'), NC('C1101'), NC('C1201'), NC('C5')],
+        [NO('C2'), NO('X003'), NC('C1002'), NO('C1'), NC('C1101'), NC('C1201'), NC('C5')],
       ],
-      outputs: [{ type: 'OUT', address: 'C2' }] },
-    { id: 'r_conv', block: 'conveyor', comment: 'Conveyor runs while cycling and no part is being pushed', branches: [[{ type: 'NO', address: 'C2' }, { type: 'NC', address: 'C3' }]], outputs: [{ type: 'OUT', address: 'Y001' }] },
-    { id: 'r_cnt', block: 'conveyor', comment: 'Part counter (shown on the HMI), reset from the HMI', branches: [[{ type: 'NO', address: 'X004' }]],
-      outputs: [{ type: 'CNT', address: 'CT1', direction: 'UP', preset: '9999', resetAddress: 'C1004' }] },
-    { id: 'r_push', block: 'pusher', comment: 'Part at end: push it, hold until the pusher is out',
-      branches: [[{ type: 'NO', address: 'C2' }, { type: 'RISE', address: 'X004' }], [{ type: 'NO', address: 'C3' }, { type: 'NC', address: 'X005' }, { type: 'NO', address: 'C2' }]],
-      outputs: [{ type: 'OUT', address: 'C3' }, { type: 'OUT', address: 'Y002' }] },
-    { id: 'r_tmo', block: 'pusher', comment: 'Pusher timeout: 3 s to reach extended', branches: [[{ type: 'NO', address: 'C3' }]],
-      outputs: [{ type: 'TMR', address: 'T1', mode: 'ON_DELAY', preset: '3', unit: 'sec', accumulate: false, resetAddress: null }] },
-    { id: 'r_flt', block: 'pusher', comment: 'Pusher fault alarm (HMI alarm bit) latches on timeout', branches: [[{ type: 'NO', address: 'T1' }]], outputs: [{ type: 'SET', address: 'C1101' }] },
-    { id: 'r_rst', block: 'pusher', comment: 'Fault reset from panel Start or HMI Reset, with safety OK and pusher back',
-      branches: [[{ type: 'NO', address: 'X002' }, { type: 'NO', address: 'C1' }, { type: 'NC', address: 'C3' }], [{ type: 'NO', address: 'C1003' }, { type: 'NO', address: 'C1' }, { type: 'NC', address: 'C3' }]],
-      outputs: [{ type: 'RST', address: 'C1101' }] },
+      [OUT('C2')]),
+
+    // ---- Alarms
+    R('r_alm_push', 'alarms', 'Pusher fault alarm latches when the pusher is not extended within the timeout', [[NO('T1')]], [{ type: 'SET', address: 'C1101' }]),
+    R('r_alm_reset', 'alarms', 'Fault reset from panel Start or HMI Reset, with Safety OK and the pusher request off',
+      [[NO('X002'), NO('C1'), NC('C3')], [NO('C1003'), NO('C1'), NC('C3')]], [{ type: 'RST', address: 'C1101' }]),
+    R('r_alm_safe', 'alarms', 'Safety circuit open alarm while Safety OK is off', [[NC('C1')]], [OUT('C1102')]),
+    R('r_wrn_svc', 'alarms', 'Service due warning: hours since service reached the service interval',
+      [[CMP('DS1104', '>=', 'DS1003'), CMP('DS1003', '>', '0')]], [OUT('C1103')]),
+
+    // ---- Conveyor
+    R('r_conv_auto', 'conveyor', 'Automatic conveyor request: cycle running and no part being pushed', [[NO('C2'), NC('C3')]], [OUT('C10')]),
+    R('r_cnt', 'conveyor', 'Part counter: each part reaching the end photo-eye (shown on the HMI), reset from the HMI',
+      [[NO('X004')]], [{ type: 'CNT', address: 'CT1', direction: 'UP', preset: '9999', resetAddress: 'C1004' }]),
+    R('r_batch', 'conveyor', 'Batch complete: a batch target is set and the part count reached it',
+      [[CMP('DS1002', '>', '0'), CMP('CTD1', '>=', 'DS1002')]], [OUT('C4')]),
+
+    // ---- Pusher
+    R('r_push', 'pusher', 'Automatic push request: a new part at the end starts it, held until the pusher is extended',
+      [[NO('C2'), RISE('X004')], [NO('C3'), NC('X005'), NO('C2')]], [OUT('C3')]),
+    R('r_tmo', 'pusher', 'Pusher timeout: preset is the HMI setpoint DS1001 (seconds)', [[NO('C3')]],
+      [{ type: 'TMR', address: 'T1', mode: 'ON_DELAY', preset: 'DS1001', unit: 'sec', accumulate: false, resetAddress: null }]),
+    R('r_batch_stop', 'pusher', 'End of batch: stop the cycle once the last part has been pushed', [[NO('C4'), NC('C3')]], [OUT('C5')]),
+
+    // ---- Manual
+    R('r_jog_perm', 'manual', 'Jog permitted: Manual mode, Safety OK and the pusher valve off', [[NO('C1201'), NO('C1'), NC('Y002')]], [OUT('C1204')]),
+    R('r_ext_perm', 'manual', 'Extend permitted: Manual mode, Safety OK and the conveyor off', [[NO('C1201'), NO('C1'), NC('Y001')]], [OUT('C1205')]),
+    R('r_jog_req', 'manual', 'Manual jog request: HMI Jog Conveyor held while permitted', [[NO('C1006'), NO('C1204')]], [OUT('C21')]),
+    R('r_ext_req', 'manual', 'Manual extend request: HMI Extend held while permitted; a jog request has priority',
+      [[NO('C1007'), NO('C1205'), NC('C21')]], [OUT('C22')]),
+
+    // ---- Outputs
+    R('r_y1', 'outputs', 'Conveyor motor contactor K1: automatic run or manual jog', [[NO('C10')], [NO('C21')]], [OUT('Y001')]),
+    R('r_y2', 'outputs', 'Pusher solenoid SOL1: automatic push or manual extend (spring return when off)', [[NO('C3')], [NO('C22')]], [OUT('Y002')]),
+
+    // ---- HMI & status
+    R('r_hb_pulse', 'status', 'One-scan pulse on each rising edge of the 1 s system clock SC7', [[RISE('SC7')]], [OUT('C12')]),
+    R('r_hb', 'status', 'PLC heartbeat for the HMI: changes state every second', [[NO('C12'), NC('C1203')], [NC('C12'), NO('C1203')]], [OUT('C1203')]),
+    R('r_st0', 'status', 'Machine state DS1101: 0 Stopped (default, overwritten below by higher states)', [[NO('SC1')]], [COPY('0', 'DS1101')]),
+    R('r_st1', 'status', 'Machine state 1 Running', [[NO('C2')]], [COPY('1', 'DS1101')]),
+    R('r_st2', 'status', 'Machine state 2 Pushing part', [[NO('C3')]], [COPY('2', 'DS1101')]),
+    R('r_st4', 'status', 'Machine state 4 Manual (outranks Running and Pushing)', [[NO('C1201')]], [COPY('4', 'DS1101')]),
+    R('r_st3', 'status', 'Machine state 3 Faulted (outranks Manual)', [[NO('C1101')]], [COPY('3', 'DS1101')]),
+    R('r_st5', 'status', 'Machine state 5 Safety stop (highest)', [[NC('C1')]], [COPY('5', 'DS1101')]),
+    R('r_cyc', 'status', 'Pusher cycle counter: every time the pusher valve turns on, reset from the HMI Maintenance screen',
+      [[NO('Y002')]], [{ type: 'CNT', address: 'CT2', direction: 'UP', preset: '32767', resetAddress: 'C1008' }]),
+    R('r_hr_tmr', 'status', 'Run-hour timer: accumulates while the conveyor runs, restarts after each full hour',
+      [[NO('Y001')]], [{ type: 'TMR', address: 'T2', mode: 'ON_DELAY', preset: '3600', unit: 'sec', accumulate: true, resetAddress: 'C11' }]),
+    R('r_hr_pulse', 'status', 'One full run hour reached', [[NO('T2')]], [OUT('C11')]),
+    R('r_hr_add', 'status', 'Add the hour to the retentive run hours and hours since service', [[NO('C11')]],
+      [MATH('DS1102', 'DS1102 + 1'), MATH('DS1104', 'DS1104 + 1')]),
+    R('r_svc_done', 'status', 'HMI Service Done clears the hours since service', [[NO('C1009')]], [COPY('0', 'DS1104')]),
+    R('r_rate_tmr', 'status', 'Rate window timer: 10 s, restarts itself (T3 is ON for one scan)', [[NC('T3')]],
+      [{ type: 'TMR', address: 'T3', mode: 'ON_DELAY', preset: '10', unit: 'sec', accumulate: false, resetAddress: null }]),
+    R('r_rate_shift', 'status', 'Every 10 s: shift the six 10 s buckets and store the parts counted in the last 10 s', [[NO('T3')]],
+      [COPY('DS1125', 'DS1126'), COPY('DS1124', 'DS1125'), COPY('DS1123', 'DS1124'), COPY('DS1122', 'DS1123'), COPY('DS1121', 'DS1122'),
+        MATH('DS1121', 'CTD1 - DS1119'), COPY('CTD1', 'DS1119')]),
+    R('r_rate_clamp', 'status', 'A part count reset makes the newest bucket negative: count it as 0', [[NO('T3'), CMP('DS1121', '<', '0')]], [COPY('0', 'DS1121')]),
+    R('r_rate', 'status', 'Parts per minute DS1103: parts counted in the last 60 s (six 10 s buckets)', [[NO('T3')]],
+      [MATH('DS1103', 'DS1121 + DS1122 + DS1123 + DS1124 + DS1125 + DS1126')]),
   ],
   tags: [
     { address: 'C1', nickname: 'Safety_OK', comment: 'Safety relay output healthy' },
-    { address: 'C2', nickname: 'Cycle_Running', comment: 'Machine running' },
-    { address: 'C3', nickname: 'Push_Active', comment: 'Pusher extending' },
-    { address: 'T1', nickname: 'Push_Timeout', comment: '3 s pusher timeout' },
+    { address: 'C2', nickname: 'Cycle_Running', comment: 'Automatic cycle running' },
+    { address: 'C3', nickname: 'Push_Request', comment: 'Automatic push in progress' },
+    { address: 'C4', nickname: 'Batch_Complete', comment: 'Part count reached the batch target DS1002' },
+    { address: 'C5', nickname: 'Batch_Stop', comment: 'Batch complete and last part pushed: cycle stops' },
+    { address: 'C10', nickname: 'Conv_Auto_Req', comment: 'Conveyor run request from the automatic cycle' },
+    { address: 'C11', nickname: 'Run_Hour_Pulse', comment: 'One scan each full run hour' },
+    { address: 'C12', nickname: 'Clock_1s_Pulse', comment: 'One scan on each SC7 rising edge' },
+    { address: 'C21', nickname: 'Man_Jog_Req', comment: 'Manual jog conveyor request (permitted)' },
+    { address: 'C22', nickname: 'Man_Extend_Req', comment: 'Manual pusher extend request (permitted)' },
+    { address: 'T1', nickname: 'Push_Timeout', comment: 'Pusher timeout, preset DS1001 s' },
+    { address: 'T2', nickname: 'Run_Hour_Timer', comment: 'Accumulates conveyor run time, 3600 s' },
+    { address: 'T3', nickname: 'Rate_Window', comment: '10 s parts-per-minute window' },
+    { address: 'TD1', nickname: 'Push_Timer_Value', comment: 'T1 elapsed seconds' },
+    { address: 'TD2', nickname: 'Run_Hour_Seconds', comment: 'T2 elapsed seconds in the current hour' },
+    { address: 'TD3', nickname: 'Rate_Window_Value', comment: 'T3 elapsed seconds' },
     { address: 'CT1', nickname: 'Part_Count', comment: 'Parts delivered' },
+    { address: 'CT2', nickname: 'Pusher_Cycles', comment: 'Pusher valve operations' },
+    { address: 'CTD1', nickname: 'Part_Count_Value', comment: 'Parts delivered (HMI)' },
+    { address: 'CTD2', nickname: 'Pusher_Cycles_Value', comment: 'Pusher cycles (HMI)' },
+    { address: 'SC1', nickname: '_Always_ON', comment: 'CLICK system bit: always ON' },
+    { address: 'SC2', nickname: '_1st_SCAN', comment: 'CLICK system bit: ON for the first scan only' },
+    { address: 'SC7', nickname: '_1sec_Clock', comment: 'CLICK system bit: 1 s clock (0.5 s ON / 0.5 s OFF)' },
     { address: 'C1001', nickname: 'HMI_Start', comment: 'HMI Start button' },
     { address: 'C1002', nickname: 'HMI_Stop', comment: 'HMI Stop button' },
     { address: 'C1003', nickname: 'HMI_Reset', comment: 'HMI fault reset' },
     { address: 'C1004', nickname: 'HMI_Count_Reset', comment: 'HMI part count reset' },
-    { address: 'C1101', nickname: 'ALM_Pusher_Fault', comment: 'Pusher did not extend in 3 s' },
+    { address: 'C1005', nickname: 'HMI_Manual_Select', comment: 'HMI Manual mode toggle (refused while running)' },
+    { address: 'C1006', nickname: 'HMI_Jog_Conveyor', comment: 'HMI hold-to-run jog conveyor' },
+    { address: 'C1007', nickname: 'HMI_Pusher_Extend', comment: 'HMI hold-to-run pusher extend' },
+    { address: 'C1008', nickname: 'HMI_Pusher_Cycles_Reset', comment: 'HMI reset of pusher cycle counter CT2' },
+    { address: 'C1009', nickname: 'HMI_Service_Done', comment: 'HMI service done: clears DS1104' },
+    { address: 'C1101', nickname: 'ALM_Pusher_Fault', comment: 'Pusher not extended within DS1001 s' },
+    { address: 'C1102', nickname: 'ALM_Safety_Open', comment: 'Safety circuit open (E-stop)' },
+    { address: 'C1103', nickname: 'WRN_Service_Due', comment: 'Hours since service reached the interval' },
+    { address: 'C1201', nickname: 'STS_Manual_Mode', comment: 'Manual mode active' },
+    { address: 'C1203', nickname: 'STS_Heartbeat', comment: 'Changes state every second' },
+    { address: 'C1204', nickname: 'STS_Jog_Permit', comment: 'Manual jog conveyor permitted' },
+    { address: 'C1205', nickname: 'STS_Extend_Permit', comment: 'Manual pusher extend permitted' },
+    { address: 'DS1001', nickname: 'SP_Pusher_Timeout', comment: 'Pusher timeout s (1-10, default 3)' },
+    { address: 'DS1002', nickname: 'SP_Batch_Target', comment: 'Batch size in parts (0 = off)' },
+    { address: 'DS1003', nickname: 'SP_Service_Interval', comment: 'Run hours between services (50-2000, default 500)' },
+    { address: 'DS1101', nickname: 'Machine_State', comment: '0 Stopped 1 Running 2 Pushing 3 Faulted 4 Manual 5 Safety stop' },
+    { address: 'DS1102', nickname: 'Run_Hours', comment: 'Retentive conveyor run hours' },
+    { address: 'DS1103', nickname: 'Parts_Per_Min', comment: 'Parts counted in the last 60 s' },
+    { address: 'DS1104', nickname: 'Hours_Since_Service', comment: 'Retentive run hours since Service Done' },
+    { address: 'DS1119', nickname: 'Rate_Count_Snapshot', comment: 'CTD1 at the start of the current 10 s window' },
+    { address: 'DS1121', nickname: 'Rate_Bucket_1', comment: 'Parts in the newest 10 s window' },
+    { address: 'DS1122', nickname: 'Rate_Bucket_2', comment: 'Parts 10-20 s ago' },
+    { address: 'DS1123', nickname: 'Rate_Bucket_3', comment: 'Parts 20-30 s ago' },
+    { address: 'DS1124', nickname: 'Rate_Bucket_4', comment: 'Parts 30-40 s ago' },
+    { address: 'DS1125', nickname: 'Rate_Bucket_5', comment: 'Parts 40-50 s ago' },
+    { address: 'DS1126', nickname: 'Rate_Bucket_6', comment: 'Parts 50-60 s ago' },
   ],
 };
 
@@ -314,7 +433,7 @@ export const DESIGN: ElectricalDesign = {
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '7';
+const SEED_VERSION = '8';
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }
@@ -336,7 +455,7 @@ export function seedSampleProject() {
   ], true);
   const prog = useProgramStore.getState();
   prog.setProjectName('Conveyor Cell (example)');
-  prog.setGeneratedLadder(LADDER, 'Example program: safety bit, start/stop seal-in, conveyor, pusher with 3 s timeout fault and reset.', null);
+  prog.setGeneratedLadder(LADDER, 'Example program in 7 blocks: safety and Auto/Manual modes, alarms, conveyor with part and batch counting, pusher with an adjustable timeout fault, manual jog with permissives, one coil per output, and HMI status (machine state, heartbeat, run hours, service hours, parts per minute).', null);
   useElectricalStore.getState().setInputs(INPUTS);
   useSpecStore.getState().setSections(SPEC);
   useHmiStore.getState().setHmiPartNumber(HMI.hmiPartNumber);

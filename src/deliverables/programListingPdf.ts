@@ -1,5 +1,5 @@
 import type { ProjectSnapshot } from './collect';
-import { describeElement, describeOutput } from '../plc/clickExport';
+import { describeElement, describeOutput } from '../plc/core/clickExport';
 import { blockTable, checkerTable, programInfo, tagTable } from './docs/program';
 import { docMeta } from './docs/meta';
 import { ACCENT, BRAND, INK, MUTED, PdfWriter, pdfSafe } from './docs/pdfWriter';

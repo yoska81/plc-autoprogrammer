@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { EMPTY_PROGRAM, type LadderProgram } from '../plc/ladder';
+import { EMPTY_PROGRAM, type LadderProgram } from '../plc/core/ladder';
 
 export interface ProgramVersion {
   id: string;

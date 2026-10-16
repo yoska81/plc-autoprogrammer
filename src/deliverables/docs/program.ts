@@ -1,7 +1,7 @@
 import type { ProjectSnapshot } from '../collect';
-import type { LadderElement, LadderOutput, Rung } from '../../plc/ladder';
-import { rungWrites } from '../../plc/ladder';
-import { describeOutput } from '../../plc/clickExport';
+import type { LadderElement, LadderOutput, Rung } from '../../plc/core/ladder';
+import { rungWrites } from '../../plc/core/ladder';
+import { describeOutput } from '../../plc/core/clickExport';
 import { buildModel, naturalCompare } from '../../electrical/derive';
 import { getPart } from '../../electrical/catalog';
 import { makeTable, specLines, pad, type DocRow, type DocTable } from './table';
