@@ -22,18 +22,24 @@ export function MachineLayoutSheet({ plan }: { plan: DrawingPlan; sheet: Planned
   const motors = new Set(plan.model.machine.devices.filter((d) => d.kind === 'motor').map((d) => d.tag));
   const items = Object.entries(ml.pos);
   const labelOf = (tag: string) => (tag === CABINET ? 'CONTROL CABINET' : tag === AIR ? 'AIR SUPPLY' : tag);
-  // label above the symbol, else below, else further out: no two labels on top of each other
+  // labels: above the symbol, else below, else further out; when every spot is taken, the one
+  // that overlaps least (dense layouts). Manifolds and remote I/O take part too.
+  const marks: { key: string; text: string; x: number; y: number; r: number }[] = [
+    ...items.map(([tag, p]) => { const [x, y] = P(p.x, p.y); return { key: tag, text: labelOf(tag), x, y, r: tag === CABINET ? 4.2 : 3 }; }),
+    ...ml.manifolds.map((m) => { const [x, y] = P(m.x, m.y); return { key: `mf:${m.tag}`, text: `${m.tag} (${m.valves.length})`, x, y, r: 2.6 }; }),
+    ...ml.remoteIo.map((m) => { const [x, y] = P(m.x, m.y); return { key: `rio:${m.tag}`, text: m.tag, x, y, r: 3 }; }),
+  ];
   const labelY = new Map<string, number>();
-  const boxes = items.map(([tag, p]) => { const [x, y] = P(p.x, p.y); const r = tag === CABINET ? 5 : 2.4; return { x0: x - r, x1: x + r, y0: y - r, y1: y + r }; });
-  for (const [tag, p] of [...items].sort((a, b) => a[1].y - b[1].y || a[1].x - b[1].x)) {
-    const [x, y] = P(p.x, p.y);
-    const w = labelOf(tag).length * 1.45 + 1, h = 3;
-    const off = tag === CABINET ? 4.2 : 3;
-    const cands = [y - off, y + off + 2, y - off - 3, y + off + 5, y - off - 6, y + off + 8];
-    const fits = (ly: number) => !boxes.some((b) => x - w / 2 < b.x1 && x + w / 2 > b.x0 && ly - h < b.y1 && ly > b.y0);
-    const ly = cands.find(fits) ?? cands[0];
-    boxes.push({ x0: x - w / 2, x1: x + w / 2, y0: ly - h, y1: ly });
-    labelY.set(tag, ly);
+  type Box = { x0: number; x1: number; y0: number; y1: number };
+  const boxes: Box[] = marks.map((m) => ({ x0: m.x - m.r + 0.6, x1: m.x + m.r - 0.6, y0: m.y - m.r + 0.6, y1: m.y + m.r - 0.6 }));
+  const overlap = (a: Box) => boxes.reduce((t, b) => t + Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)), 0);
+  for (const m of [...marks].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const w = m.text.length * 1.45 + 1, h = 3;
+    const box = (ly: number): Box => ({ x0: m.x - w / 2, x1: m.x + w / 2, y0: ly - h, y1: ly });
+    const cands = [m.y - m.r, m.y + m.r + 2, m.y - m.r - 3, m.y + m.r + 5, m.y - m.r - 6, m.y + m.r + 8];
+    const ly = cands.find((c) => overlap(box(c)) === 0) ?? cands.reduce((best, c) => (overlap(box(c)) < overlap(box(best)) ? c : best), cands[0]);
+    boxes.push(box(ly));
+    labelY.set(m.key, ly);
   }
   // scale bar: a round length close to a fifth of the drawing width
   const barM = [0.5, 1, 2, 5, 10, 20, 50].reduce((b, v) => (v * k <= LAYOUT_DW / 8 ? v : b), 0.5);
@@ -61,12 +67,12 @@ export function MachineLayoutSheet({ plan }: { plan: DrawingPlan; sheet: Planned
           <g key={m.tag}>
             {m.valves.map((v) => { const p = ml.pos[v]; if (!p) return null; const [vx, vy] = P(p.x, p.y); return <line key={v} x1={x} y1={y} x2={vx} y2={vy} strokeWidth={LW_THIN} strokeDasharray="1 1" />; })}
             <rect x={x - 3} y={y - 1.6} width={6} height={3.2} fill="#ddd" strokeWidth={LW} />
-            <Txt x={x} y={y + 4.6} size={2} bold anchor="middle">{`${m.tag} (${m.valves.length})`}</Txt>
+            <Txt x={x} y={labelY.get(`mf:${m.tag}`) ?? y + 4.6} size={2} bold anchor="middle">{`${m.tag} (${m.valves.length})`}</Txt>
           </g>
         );
       })}
       {ml.remoteIo.map((m) => { const [x, y] = P(m.x, m.y); return (
-        <g key={m.tag}><rect x={x - 2.2} y={y - 2.2} width={4.4} height={4.4} fill="#bbb" strokeWidth={LW} /><Txt x={x} y={y + 5.4} size={2} bold anchor="middle">{m.tag}</Txt></g>
+        <g key={m.tag}><rect x={x - 2.2} y={y - 2.2} width={4.4} height={4.4} fill="#bbb" strokeWidth={LW} /><Txt x={x} y={labelY.get(`rio:${m.tag}`) ?? y + 5.4} size={2} bold anchor="middle">{m.tag}</Txt></g>
       ); })}
       {items.map(([tag, p]) => {
         const [x, y] = P(p.x, p.y);
