@@ -87,6 +87,10 @@ function audit() {
           // The dev build has no example project: load the preview seed through the module graph.
           await page.goto(BASE + '/spec');
           await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+          // The example is its own project: open it.
+          await page.goto(BASE + '/spec');
+          await page.locator('select[aria-label="Open project"]').selectOption('p_example');
+          if ((await page.locator('select[aria-label="Open project"]').inputValue()) !== 'p_example') throw new Error('example project not opened');
         }
       }
       for (const route of ROUTES) {
