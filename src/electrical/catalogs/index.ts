@@ -162,4 +162,4 @@ export function fallbackCategories(pref: VendorPreference): CatalogCategory[] {
 export const supplierOfPart = (p: CatalogPart | undefined): string | undefined => (p ? vendorById(p.vendor)?.supplier : undefined);
 
 /** Plain-English rule shown with the brand choice. */
-export const CATALOG_GROUPS_NOTE = 'Only real part numbers checked on the manufacturer\'s or a distributor\'s page are offered; parts still to be checked are marked "verify".';
+export const CATALOG_GROUPS_NOTE = 'Only real part numbers checked on the maker\'s own page or datasheet are offered.';
