@@ -109,3 +109,8 @@ Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 althoug
 ## Machine layout polish (after #29 merged)
 - [x] Drawing sheet labels: manifolds and remote I/O join the label placement; symbols are kept clear; on very dense layouts the label goes to the spot that overlaps least (big variant: all labels readable, MV1 label visible). Checkers 0/0, layout E2E OK.
 - Next: vendor catalog cross-check (+ a test that fails a catalog entry without a datasheet-backed rating).
+
+## Vendor catalog cross-check — milestone 0 (checker)
+- [x] src/electrical/catalog.test.ts (9 checks): unique, real-looking part numbers; https source page on the maker's site or the distributor that sells it (vendor host table: AD, Rockwell, Siemens, Schneider, ifm, Yaskawa, nVent Hoffman, Rittal, Phoenix, Eaton); the page is that part's page; verified = checked against the datasheet; key ratings per category; plausible numeric ranges; part-number ratings agree (GMCB poles/amps, PSx watts/amps); non-AD back-panel parts must give a datasheet footprint; prices belong to catalog/HMI parts and come from the same site. A fake part (invented PN, wrong site, unverified, 4800 A, no footprint) fails 7 of 9.
+- [x] Found: C18D-0P-1A / C18D-0N-1A had no supply voltage — added 10-36VDC from AutomationDirect's item name on each product page.
+- Note: 157 AutomationDirect back-panel parts (breakers, contactors, VFDs, power supplies…) have no widthMm/heightMm and use the category footprint estimate (e.g. every VFD 100 × 180 mm) — layout sizes are estimates until filled from the datasheets.
