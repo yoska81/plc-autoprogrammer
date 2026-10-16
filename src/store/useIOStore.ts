@@ -17,7 +17,7 @@ interface IOStore {
   /** Add points read from an existing machine; replace=true clears the list first. */
   importPoints: (points: Omit<IOPoint, 'id'>[], replace: boolean) => void;
   /** Apply a reviewed AI I/O update: update kept points, add new ones, remove dropped ones. */
-  applyIOUpdate: (kept: Pick<IOPoint, 'id' | 'category' | 'deviceType'>[], added: Omit<IOPoint, 'id'>[], removedIds: string[]) => void;
+  applyIOUpdate: (kept: Pick<IOPoint, 'id' | 'category' | 'deviceType' | 'signal' | 'analog'>[], added: Omit<IOPoint, 'id'>[], removedIds: string[]) => void;
 }
 
 function nextInputId(existing: IOPoint[]): string {

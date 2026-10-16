@@ -7,7 +7,7 @@ import type { IOWiring } from '../../electrical/types';
 import type { LadderProgram } from '../core/ladder';
 import { createSimulator, normAddress } from './engine';
 import type { CounterState, RungPower, Simulator, TimerState } from './engine';
-import { addPart, buildMachineModel, machineInputs, removePart, setDeviceBypass, stepMachine } from './machineModel';
+import { addPart, buildMachineModel, machineAnalogValues, machineInputs, removePart, setAnalogValue, setDeviceBypass, stepMachine } from './machineModel';
 import type { MachineModel, SimDevice, SimIOPoint } from './machineModel';
 import { blockOfRung, externalSignals } from './blocks';
 import type { ExternalSignal } from './blocks';
@@ -162,7 +162,8 @@ export class SimController {
   }
 
   private scan(dt = SCAN_MS) {
-    for (const [a, v] of stepMachine(this.machine, (a) => this.sim.readBit(a), dt)) this.sim.setInput(a, v);
+    for (const [a, v] of stepMachine(this.machine, (a) => this.sim.readBit(a), dt, (a) => this.sim.readWord(a))) this.sim.setInput(a, v);
+    for (const [a, v] of machineAnalogValues(this.machine)) this.sim.write(a, v);
     const changes = this.sim.step(dt);
     for (const c of changes) {
       if (!LOGGED.test(c.address)) continue;
@@ -336,6 +337,13 @@ export class SimController {
     else if (d.kind === 'selector' || d.kind === 'sensor') d.state.on = !d.state.on;
     else return;
     this.syncInputs();
+    this.emit();
+  }
+
+  /** Move an analog input (machine slider). */
+  setAnalog(id: string, value: number) {
+    setAnalogValue(this.machine, id, value);
+    for (const [a, v] of machineAnalogValues(this.machine)) this.sim.write(a, v);
     this.emit();
   }
 

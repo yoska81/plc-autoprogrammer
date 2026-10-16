@@ -141,6 +141,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
     addPart: (id) => ctl.addPart(id),
     removePart: (id) => ctl.removePart(id),
     setBypass: (id, on, value) => ctl.setDeviceBypass(id, on, value),
+    setAnalog: (id, v) => ctl.setAnalog(id, v),
   }), [ctl]);
 
   const groups = hasBlocks ? (block ? blocks.filter((b) => b.id === block) : blocks) : undefined;
@@ -263,7 +264,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
           <h2 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-steel-500">
             Machine{block ? ` · ${blockName(block)}` : ''}
           </h2>
-          <MachinePanel devices={snap.devices} bits={snap.bits} inputs={snap.inputs} actions={actions} visible={visibleDevices} />
+          <MachinePanel devices={snap.devices} bits={snap.bits} inputs={snap.inputs} words={snap.words} actions={actions} visible={visibleDevices} />
         </ResizablePane>
 
         <div className="flex min-w-[260px] flex-1 flex-col overflow-hidden rounded-lg border border-steel-200 bg-white shadow-sm">

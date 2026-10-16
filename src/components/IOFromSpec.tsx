@@ -5,7 +5,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useStageStore } from '../store/useStageStore';
 import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, ioFingerprint } from '../spec/useStages';
-import { generateIOFromSpec, planIOMerge, type IOMergePlan } from '../lib/ai/ioAI';
+import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge, type IOMergePlan } from '../lib/ai/ioAI';
 import StageBanner from './StageBanner';
 import { Spinner } from './common';
 
@@ -45,8 +45,8 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
   const apply = () => {
     if (!plan) return;
     applyIOUpdate(
-      plan.kept.map(({ point, next }) => ({ id: point.id, category: next.category, deviceType: next.deviceType })),
-      plan.added.map((g) => ({ description: g.description, type: g.type, category: g.category, deviceType: g.deviceType })),
+      plan.kept.map(({ point, next }) => keptUpdate(point, next)),
+      plan.added.map(generatedToPoint),
       plan.removed.map((p) => p.id),
     );
     // Record what the I/O list was built from (read the store after the update).

@@ -14,6 +14,8 @@ import { rungReads } from '../plc/sim/blocks';
 import type { StageId } from '../store/useStageStore';
 import type { StageInfo } from '../spec/useStages';
 import type { Finding, ReviewArea, ReviewPage, Severity } from './types';
+import { isAnalog } from '../types/io';
+import { analogMap, analogNeed } from '../plc/core/analog';
 
 export interface ReviewInput {
   p: ProjectSnapshot;
@@ -107,7 +109,7 @@ function programChecks({ p }: ReviewInput): Finding[] {
       out.push(finding(`out-undriven:${a}`, 'major', 'program', 'program', '', `Output ${a} "${pt.description}" is never driven`,
         'No rung writes this output, so the device can never turn on.', 'Add the output rung (one OUT coil) to the program.'));
     }
-    if (pt.type === 'output' && writes.has(a) && safetyInputs.length && !NON_MOTION_RE.test(pt.description)) {
+    if (pt.type === 'output' && !isAnalog(pt) && writes.has(a) && safetyInputs.length && !NON_MOTION_RE.test(pt.description)) {
       const deps = dependsOn(p.ladder, a);
       if (!safetyInputs.some((s) => deps.has(s.toUpperCase()))) {
         out.push(finding(`out-unsafe:${a}`, 'critical', 'safety', 'program', '', `Output ${a} "${pt.description}" is not gated by Safety OK`,
@@ -171,7 +173,7 @@ function equipmentChecks({ p, modules }: ReviewInput): Finding[] {
   const cap = ioCapacity(p.cpu, moduleSlots(modules));
   const out: Finding[] = [];
   for (const kind of ['inputs', 'outputs'] as const) {
-    const used = p.io.filter((pt) => pt.type === (kind === 'inputs' ? 'input' : 'output')).length;
+    const used = p.io.filter((pt) => !isAnalog(pt) && pt.type === (kind === 'inputs' ? 'input' : 'output')).length;
     const have = cap[kind];
     if (used > have) {
       out.push(finding(`cap:${kind}`, 'critical', 'equipment', 'equipment', '', `Not enough PLC ${kind}: ${used} needed, ${have} available`,
@@ -181,8 +183,18 @@ function equipmentChecks({ p, modules }: ReviewInput): Finding[] {
         'Less than 10% spare points leaves no room for changes during commissioning.', 'Consider an extra module or a larger CPU (about 20% spare is usual).'));
     }
   }
+  const { channels } = analogMap(p.profile, p.cpu, moduleSlots(modules), p.io);
+  const a = analogNeed(p.io, channels);
+  for (const kind of ['input', 'output'] as const) {
+    if (a.need[kind] > a.have[kind]) {
+      out.push(finding(`cap:analog-${kind}s`, 'critical', 'equipment', 'equipment', '', `Not enough analog ${kind}s: ${a.need[kind]} needed, ${a.have[kind]} available`,
+        `The I/O list has ${a.need[kind]} analog ${kind}${a.need[kind] === 1 ? '' : 's'}, the CPU ${p.cpu.id}${modules.length ? ' and its modules' : ''} provide ${a.have[kind]}.`,
+        `Add an analog ${kind} module (e.g. ${kind === 'input' ? 'C0-04AD-1' : 'C0-04DA-1'}) or an analog CPU on the Equipment page.`));
+    }
+  }
   return out;
 }
+
 
 const STAGE_PAGE: Record<StageId, ReviewPage> = { spec: 'spec', equipment: 'equipment', io: 'io', electrical: 'electrical', hmi: 'hmi', program: 'program' };
 const STAGE_NAME: Record<StageId, string> = { spec: 'Machine description', equipment: 'Equipment', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI screens', program: 'PLC program' };
@@ -258,16 +270,18 @@ function specCoverage({ p, cautions = [] }: ReviewInput): Finding[] {
   // analog signals
   const analogLine = spec.split('\n').find((l) => ANALOG_RE.test(l));
   if (analogLine && io.length) {
-    const onDiscrete = io.filter((pt) => /\b(transmitter|4\s*-\s*20|0\s*-\s*10\s*v|rtd|thermocouple|analog|proportional)\b/i.test(pt.description));
+    const onDiscrete = io.filter((pt) => !isAnalog(pt) && /\b(transmitter|4\s*-\s*20|0\s*-\s*10\s*v|rtd|thermocouple|analog|proportional|speed reference)\b/i.test(pt.description));
     for (const pt of onDiscrete) {
       const a = p.addresses.get(pt.id) ?? '';
       out.push(finding(`analog-on-discrete:${pt.id}`, 'critical', 'io', 'io', '', `Analog signal on a discrete ${pt.type}: ${a} ${pt.description}`,
         `"${pt.description}" is an analog signal but the I/O list gives it a discrete ${pt.type} (${a}). A 4-20 mA / 0-10 V / RTD signal cannot be wired to a 24 V on/off point.`,
-        'Remove it from the discrete I/O list; add an analog module channel for it (the app lists discrete I/O only today — record the analog channel in the design notes and wire it by hand).'));
+        'Switch the point to "Analog" in the I/O list (range and engineering units) so it gets an analog channel.'));
     }
-    out.push(finding('spec-analog', 'major', 'io', 'io', '', 'The spec needs analog signals the I/O list cannot hold',
-      `The specification asks for analog measurement or control ("${analogLine.trim().slice(0, 120)}"), but the I/O list, drawings and program in this app handle discrete (on/off) points only.`,
-      'Choose analog modules on the Equipment page, list each analog channel (signal, range, scaling) in the electrical design notes and program them by hand, or confirm that on/off switches are enough.'));
+    if (!io.some(isAnalog)) {
+      out.push(finding('spec-analog', 'major', 'io', 'io', '', 'The spec needs analog signals but the I/O list has none',
+        `The specification asks for analog measurement or control ("${analogLine.trim().slice(0, 120)}"), but every I/O point is discrete (on/off).`,
+        'Add the analog points (switch them to "Analog" with range and engineering units) or regenerate the I/O list; confirm that on/off switches are enough otherwise.'));
+    }
   }
   // guarding devices in the safety circuit
   const guard = GUARD_RE.exec(spec);
