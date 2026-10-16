@@ -9,7 +9,7 @@ import { EMPTY_SECTIONS, fingerprint, type SpecSections } from '../spec/types';
 import { useSpecStore } from '../store/useSpecStore';
 import { useHmiStore } from '../store/useHmiStore';
 import { useStageStore } from '../store/useStageStore';
-import { useProjectsStore } from '../store/useProjectsStore';
+import { backupActiveProject, saveActiveProject, storeStateAs, useProjectsStore } from '../store/useProjectsStore';
 import { useReviewStore } from '../review/useReviewStore';
 import { ioFingerprint, hmiFingerprint } from '../spec/useStages';
 import type { EquipmentRecommendation } from '../lib/ai/equipmentAI';
@@ -441,10 +441,36 @@ function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }
 }
 
+/** The example lives in its own project and never overwrites the viewer's projects. */
+export const EXAMPLE_ID = 'p_example';
+const EXAMPLE_NAME = 'Conveyor Cell (example)';
+
 export function seedSampleProject() {
-  // Keep the viewer's own work once they have the current example.
-  if (readSeedVersion() === SEED_VERSION && useIOStore.getState().projectIO.length) return;
+  const ps = useProjectsStore.getState();
+  const hasExample = ps.projects.some((p) => p.id === EXAMPLE_ID);
+  if (readSeedVersion() === SEED_VERSION && hasExample) return;
   try { localStorage.setItem('plc-preview-seed', SEED_VERSION); } catch { /* storage blocked: seed anyway */ }
+  const active = ps.activeId;
+  const ownProjectOpen = Boolean(active && active !== EXAMPLE_ID);
+  // Never lose work: copy whatever is open before anything is written.
+  if (active) backupActiveProject('Before the example project was updated');
+  if (ownProjectOpen) saveActiveProject();
+  writeExample();
+  const entry = { id: EXAMPLE_ID, name: EXAMPLE_NAME, createdAt: new Date().toISOString() };
+  if (ownProjectOpen) {
+    // Store the example under its own id and put the viewer's project back in the stores.
+    storeStateAs(EXAMPLE_ID, active);
+    useProjectsStore.setState((s) => ({ projects: hasExample ? s.projects : [entry, ...s.projects] }));
+  } else {
+    useProjectsStore.setState((s) => ({
+      projects: hasExample ? s.projects.map((p) => (p.id === EXAMPLE_ID ? { ...p, name: EXAMPLE_NAME } : p)) : [entry, ...s.projects],
+      activeId: EXAMPLE_ID,
+    }));
+    storeStateAs(EXAMPLE_ID, null);
+  }
+}
+
+function writeExample() {
   useReviewStore.setState(useReviewStore.getInitialState(), true);
   useProjectStore.getState().setPlc('click', 'C0-10DD1E-D');
   useIOStore.getState().importPoints([
@@ -457,7 +483,7 @@ export function seedSampleProject() {
     { description: 'Pusher solenoid', type: 'output', category: 'Pneumatic' },
   ], true);
   const prog = useProgramStore.getState();
-  prog.setProjectName('Conveyor Cell (example)');
+  prog.setProjectName(EXAMPLE_NAME);
   prog.setGeneratedLadder(LADDER, 'Example program in 7 blocks: safety and Auto/Manual modes, alarms, conveyor with part and batch counting, pusher with an adjustable timeout fault, manual jog with permissives, one coil per output, and HMI status (machine state, heartbeat, run hours, service hours, parts per minute).', null);
   useElectricalStore.getState().setInputs(INPUTS);
   useSpecStore.getState().setSections(SPEC);
@@ -473,6 +499,5 @@ export function seedSampleProject() {
     revisions: [{ rev: 'A', date: new Date().toISOString().slice(0, 10), description: 'Issued for review', by: 'AI' }],
   });
   for (const stage of ['equipment', 'io', 'electrical', 'hmi', 'program'] as const) useStageStore.getState().markGenerated(stage, src);
-  useProjectsStore.getState().renameActive('Conveyor Cell (example)');
   useElectricalStore.getState().setDesign(DESIGN, 'generated', 'Example panel: NEMA 12, 480 VAC in through a 30 A disconnect, one 1 HP conveyor on a contactor and overload, 24 VDC control, CLICK PLC, dual-channel E-stop into a safety relay with a blue Safety Reset pushbutton (monitored manual reset).');
 }
