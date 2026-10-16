@@ -80,7 +80,7 @@ const COMMON_ACC = [
 export const VARIANTS = ['us480', 'ca600', 'us120', 'big'] as const;
 export type Variant = typeof VARIANTS[number];
 
-function setupVariant(v: Variant) {
+export function setupVariant(v: Variant) {
   try { localStorage.clear(); } catch { /* ignore */ }
   seedSampleProject();
   const elec = useElectricalStore.getState();

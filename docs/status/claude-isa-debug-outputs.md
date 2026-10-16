@@ -11,8 +11,8 @@ PR: #7 (draft → `claude/optimistic-maxwell-6nfcs6`). Last integration merge: 1
 - [x] Cross-consistency: part numbers/qty, wires, terminals, I/O addresses, alarms, revision letter, labels; FLA vs NEC tables; 24 VDC and heat sums.
 - [x] Machining in **inches by default** with dual dimensions `inch [mm]` (DXF text, Machining tab table, drilling / door-cutout sheets); verify inch and mm DXF geometry identical (×25.4) and = sheets. Verified: `check_dxf.py` compares every entity of inch vs mm files (×25.4, 0.005 mm) and every hole-table row parsed from the drawings PDF (31/31 us480, 64/64 big) against the plan in both inch and mm; sheets 11/12 inspected at 90–150 dpi; E2E downloads an inch cut-only DXF.
 - [x] STEP SolidWorks readiness (detailed model a310537): AP214 `AUTOMOTIVE_DESIGN`, `SI_UNIT(.MILLI.,.METRE.)`, assembly tree (40–61 products, 31–121 NAUO; root opens as an assembly in OCP/XCAF), every solid valid (BRepCheck) with positive volume, no zero-area faces / edges below 2× tolerance, colours as STYLED_ITEM inside MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION (SolidWorks reads these), terminals instanced (57 occurrences of one DN-T10-A part in `big`), product names valid as Windows file names, 1.0–5.3 MB. Checker: `tools/check_step.py`. Only remarks: I-16, I-17.
-- [ ] Re-run all checkers on the final drawing set (25 sheets) and detailed STEP (a310537).
-- [ ] Cross-check generated files of `claude/isa-dev-labels-print` and `claude/isa-dev-program-sim` every ~45 min (section "Review of …").
+- [x] Re-run all checkers on the integration head (1795268: final drawing set, detailed STEP a310537, labels, full package): all 0 FAIL.
+- [~] Cross-check generated files of `claude/isa-dev-labels-print` and `claude/isa-dev-program-sim` every ~45 min (section "Review of …").
 
 ## Verification so far
 `npx tsc -b`, `npx eslint src`, unit tests, `node e2e/app.e2e.cjs` (BASE_URL=http://localhost:5204) pass; `tools/check-all.sh` → DXF 0 FAIL, STEP 0 FAIL, PDF 0 FAIL, XLSX 0 FAIL, consistency 0 FAIL (6 WARN = unassigned reset button `PB?`, see I-11).
@@ -30,8 +30,8 @@ PR: #7 (draft → `claude/optimistic-maxwell-6nfcs6`). Last integration merge: 1
 | I-08 | Excel | qty / rung columns stored as text | low | Debug 2 | fixed | 5a6ceaf |
 | I-09 | Wire list vs sheet 6 | "RESET:13" vs "PB?:13" | low | Debug 2 | fixed (both PB?) | 5a6ceaf |
 | I-10 | Drawings (big, door detail) | legend "AUTO/MANUAL" squeezed into overlapping glyphs outside the plate. Root cause: `Txt` (drawings/symbols.tsx:28) squeezes with `textLength` + `lengthAdjust="spacingAndGlyphs"`; svg2pdf only tightens spacing, so glyphs overlap. Every `maxW` overflow in the PDF set is affected; shrink the font size instead | medium | coordinator | reported | — |
-| I-11 | Example design | SR1 monitored manual reset (S33–S34) but no reset PB → cannot reset; sheet shows PB? | high | Dev 2 (sampleProject) | reported | — |
-| I-12 | Example program | HMI alarm bits C1102/C1103 and many HMI tags not driven by the ladder ("Not found in the program") | medium | Dev 2 | reported | — |
+| I-11 | Example design | SR1 monitored manual reset (S33–S34) but no reset PB → cannot reset; sheet shows PB? | high | Dev 2 (sampleProject) | fixed on claude/isa-dev-program-sim 46dfc43 (verified: PB3 on S33/S33A, door cutout E3, warning gone) | 46dfc43 |
+| I-12 | Example program | HMI alarm bits C1102/C1103 not driven by the ladder ("Not found in the program") | medium | Dev 2 | fixed on claude/isa-dev-program-sim (rungs 10–11 drive C1102/C1103) | — |
 | I-13 | Layout (big) | SR1, relays, TB1 "do not fit" while PLC rail ~60 % empty (rows share rails only as a whole group) | medium | Debug 2 / coordinator decision | open (proposal) | — |
 | I-15 | Door cutout sheet | longer dual HMI label overflowed into the handle mark; G-label on the HMI edge | low | Debug 2 | fixed (two-line label, size fits cutout; handle label right of mark) | (this batch) |
 | I-16 | STEP header | FILE_NAME originating system / preprocessor = "PLC Autoprogrammer cabinet STEP export" (old brand) | low | coordinator | reported | — |
@@ -42,3 +42,18 @@ PR: #7 (draft → `claude/optimistic-maxwell-6nfcs6`). Last integration merge: 1
 1. Inches by default + dual dimensions (dxf.ts, MachiningPanel.tsx, drilling/door-cutout sheets), checker for inch≡mm geometry.
 2. STEP SolidWorks checks on a310537.
 3. Re-run everything on the integration head; review the dev branches.
+
+## Review of claude/isa-dev-labels-print (c9f4f5c, 262d3ff)
+How: worktree of the branch, dev server :5214, `tools/gen-outputs.cjs us480 big`, all checkers, plus a roll-layout harness (labelPrinterPdf with pageLayout 'roll' for B33-80-427 horizontal/vertical and THT-14-498-10), renders at 300–1200 dpi.
+- OK: label-printer PDF page = label size exactly (38.0 x 12.0 mm default; 199 pages = sum of copies in the labels CSV, 865 in `big`); text fits with ~1.8 mm margin on the longest legends (EMERGENCY STOP, AUTO/MANUAL, RUNNING).
+- OK: match-the-roll PDF: page = liner width x label height exactly (63.5 x 19.05 mm, 74.93 x 5.08 mm); labels at margin + k x (width + gap); 9 labels -> 3 rows; liner arithmetic of all 4 rolls adds up (margin + N x width + (N-1) x gap + margin = liner width, B33-5-422 within 0.01 mm). Unit test `labels/layout.test.ts` passes.
+- OK: full package (us480, 86 pages): contents page counts sum to 86, every part starts on the page the contents and bookmarks give (engineering 3, drawings 48, HMI 67, listing 73, I/O 80, BOM 81, labels 83), 30 bookmarks incl. one per drawing sheet, no blank or duplicate pages.
+- R-L1 (low): labels Excel stores **Copies** as text ('2'), not a number — label software that maps Copies to a quantity may ignore it. Repro: open labels/*_labels.xlsx, column Copies, cell type str.
+- R-L2 (low): with "border" on, the first label of every page has a ~0.3 mm spike at the top-left corner of the rounded border (jsPDF roundedRect start point). Repro: labelPrinterPdf(labels, {...DEFAULT_SETUP, supply: 'THT-14-498-10', pageLayout: 'roll', border: true}), page 1/2 at 1200 dpi, top-left of label 1.
+- Not this branch's (fixed on mine, pending merge): Excel qty/rung as text, BOM CSV without HMI, heat failure not in design review.
+
+## Review of claude/isa-dev-program-sim (46dfc43)
+How: worktree, dev server :5224, `gen-outputs.cjs us480`, checkers, `npx tsx src/plc/sim/engine.test.ts` (34 passed), and `tools/sim_example.ts` (example program vs the written sequence: start, part -> push + count, prox -> retract + restart, 3 s pusher timeout fault, HMI reset, safety drop with no auto restart, stop): all steps pass; DS1001 = 3 s on power-up.
+- Verified fixes: I-11 (reset PB3), I-12 (C1102/C1103 driven).
+- Consistency on this branch: 0 FAIL, 0 WARN (no more PB?).
+- No new issues found in the generated files.

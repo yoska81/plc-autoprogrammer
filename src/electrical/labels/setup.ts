@@ -68,11 +68,13 @@ export interface LabelSetup {
   rowPerCopy: boolean;
   /** Label-printer PDF: one label per page, or a full liner row (N across) per page. */
   pageLayout: 'single' | 'roll';
+  /** Desktop app: Windows printer to send labels to ('' = choose in the print dialog). */
+  windowsPrinter: string;
 }
 
 export const DEFAULT_SETUP: LabelSetup = {
   printerId: '', supply: '', sizeId: '38x12', customW: 40, customH: 15, tapeLength: 0, units: 'mm',
-  content: 'code', border: false, orientation: 'horizontal', useCopies: true, paper: 'letter', rowPerCopy: false, pageLayout: 'single',
+  content: 'code', border: false, orientation: 'horizontal', useCopies: true, paper: 'letter', rowPerCopy: false, pageLayout: 'single', windowsPrinter: '',
 };
 
 interface SetupStore {
