@@ -58,7 +58,7 @@ test('broken variant: every cross-stage problem is found', () => {
     ...['Horn', 'Valve A', 'Valve B', 'Valve C', 'Valve D'].map((d) => ({ description: d, type: 'output' as const, category: 'Pneumatic' as const })),
   ], false);
   const got = ids();
-  for (const id of ['out-unsafe:Y001', 'out-undriven:Y002', 'alm-noreset:C1101', 'hmi-unwritten:C1203', 'in-unused:X006', 'io-spec:', 'cap:outputs', 'stale:program']) {
+  for (const id of ['out-unsafe:Y001', 'out-undriven:Y002', 'alm-noreset:C1101', 'hmi-unwritten:C1203', 'in-unused:X007', 'io-spec:', 'cap:outputs', 'stale:program']) {
     assert.ok(got.some((g) => g.startsWith(id)), `expected ${id} in ${got.join(', ')}`);
   }
   const unsafe = check().find((f) => f.id === 'out-unsafe:Y001')!;
