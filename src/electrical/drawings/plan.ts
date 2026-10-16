@@ -182,8 +182,15 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
       desc: ['E-STOP CHAIN (HARDWIRED, NO SAFETY RELAY)', 'REVIEW REQUIRED — SEE NOTES'], key: s.mcr ? `coil:${s.mcr.tag}` : 'rung:24+S',
     });
   }
-  // pilot lights not driven by the PLC, e.g. "control power on"
+  // VFD line contactors held by the safety-switched supply (safety stop by contactor, not by a PLC output)
   const ioTags = new Set(model.io.map((p) => p.deviceTag));
+  for (const mm of model.motors) {
+    const k = mm.vfd ? mm.contactors[0] : undefined;
+    if (!k || ioTags.has(k.tag)) continue;
+    out.push({ start: { kind: 'node', label: s.outputSupply }, end: rail, els: [{ t: 'coil', tag: k.tag }], wires: [s.outputSupply, '0V'],
+      desc: [`${k.tag} LINE CONTACTOR FOR ${mm.vfd!.tag} (${mm.motor.tag})`, s.outputSupply === '24+S' ? 'SAFETY STOP: DROPS WITH 24+S' : 'NO SAFETY RELAY — REVIEW'], key: `coil:${k.tag}` });
+  }
+  // pilot lights not driven by the PLC, e.g. "control power on"
   const lamps = model.rc.filter((c) => c.category === 'pilotLight' && !ioTags.has(c.tag));
   if (lamps.length && out.length) out.push({ start: { kind: 'node', label: '' }, end: { kind: 'node', label: '' }, els: [], wires: [], desc: [] });
   for (const l of lamps) {

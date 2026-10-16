@@ -217,7 +217,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
               <button key={b.id ?? 'all'} type="button" onClick={() => ctl.selectBlock(b.id)}
                 title={b.id ? blocks.find((x) => x.id === b.id)?.description : 'Whole program'}
                 className={`rounded px-2 py-0.5 text-[12px] font-semibold ${block === b.id ? 'bg-brand-600 text-white' : 'text-steel-600 hover:bg-steel-100'}`}>
-                {b.name} <span className={block === b.id ? 'text-brand-800' : 'text-steel-400'}>{b.rungIds.length}</span>
+                {b.name} <span className={block === b.id ? 'text-brand-100' : 'text-steel-400'}>{b.rungIds.length}</span>
               </button>
             ))}
           </div>

@@ -3,6 +3,7 @@ import type { Effort } from '../../store/useSettingsStore';
 import type { IOCategory } from '../../types/io';
 import type { CatalogCategory, FieldDeviceType, StarterType, SupplyVoltage } from '../../electrical/types';
 import { callClaude } from './anthropic';
+import { SUPPLY_INFO } from '../../standards/regions';
 
 export type Confidence = 'high' | 'medium' | 'low';
 
@@ -52,7 +53,7 @@ const IMPORT_SCHEMA = obj({
   summary: str,
   plc: { anyOf: [obj({ vendor: str, model: str, cpuPartNumber: nullable('string') }), { type: 'null' }] },
   modules: { type: 'array', items: obj({ slot: nullable('integer'), partNumber: str, description: str }) },
-  supply: { anyOf: [en(['120VAC-1PH', '208VAC-3PH', '240VAC-3PH', '480VAC-3PH', '600VAC-3PH']), { type: 'null' }] },
+  supply: { anyOf: [en(Object.keys(SUPPLY_INFO)), { type: 'null' }] },
   io: {
     type: 'array',
     items: obj({
