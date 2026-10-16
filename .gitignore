@@ -40,3 +40,4 @@ tools/ai-quality/out/
 e2e/out-hmi-editor/
 installer/
 e2e/out-walkthrough/
+.claude/worktrees/
