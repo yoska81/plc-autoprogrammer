@@ -22,8 +22,22 @@ export interface PlcContext {
   addresses: Map<string, string>;
   /** Field wiring from the electrical design (address -> device), when known. */
   wiring?: Map<string, { deviceTag: string; deviceType: string }>;
-  /** HMI tags and alarms the program must implement. */
-  hmi?: { tags: { name: string; address: string; dataType: string; access: string; description: string }[]; alarms: { address: string; message: string }[] };
+  /** HMI tags and alarms the program must implement; screens add state tables, setpoint limits and permissives. */
+  hmi?: {
+    tags: { name: string; address: string; dataType: string; access: string; description: string }[];
+    alarms: { address: string; message: string; severity?: string }[];
+    screens?: HmiScreenFacts[];
+  };
+}
+
+/** The parts of an HMI screen the program has to match (structurally an HmiScreen). */
+interface HmiScreenFacts {
+  name: string;
+  elements: {
+    kind: string; label: string; address: string | null; action: string | null;
+    onText: string | null; offText: string | null; units: string | null; min: number | null; max: number | null; note: string | null;
+    states?: { value: number; text: string }[]; interlock?: string | null;
+  }[];
 }
 
 export interface LadderAIResult {
@@ -52,7 +66,23 @@ How to write the program:
 - Professional structure, in this block order (skip what the machine doesn't need): 1) Safety & modes — safety-OK bit, first-scan initialisation (reset step registers and latches on the first scan), Auto/Manual mode selection (mutually exclusive, Manual only when not cycling), cycle start/stop/reset; 2) Alarms — one latched bit per fault (set by the fault condition, cleared by reset only when the cause is gone), a summary "any alarm" bit and a summary "stop-category" bit that stops the cycle; 3) one block per station/sequence; 4) Manual — hold-to-run jog commands per actuator, interlocked (e.g. cylinder vs conveyor, end-of-travel), active only in Manual mode and with safety OK; 5) Outputs — final output rungs combining Auto and Manual requests, so each output has exactly one OUT coil; 6) HMI & status — status bits for the HMI (running, stopped, faulted, mode), counters, timers and run-hour/cycle counting if the HMI shows them.
 - Sequences: a step register (DS) per station with step numbers 0 (idle), 10, 20, 30… so steps can be inserted later; each step's rung comment names the step ("Step 20: extend pusher, wait for extended"); a step-timeout timer and alarm on every step that waits for feedback; return to step 0 on stop or fault.
 - Rung comments in the style "<Block> – <what this rung does>"; every tag nickname in PascalCase_With_Underscores, prefixed by its role where useful (Cmd_, Sts_, Alm_, Tmr_, Cnt_, Step_).
+- HMI tags: when the request lists HMI tags, implement every one of them exactly as described (see "Implementing the HMI tags" below); never leave an HMI tag unused or unwritten, and never move an HMI tag to another address.
 - Split the program into blocks, one per machine section or station (e.g. "safety" Safety & modes, "infeed" Infeed conveyor, "pusher" Pusher station, "alarms" Alarms & HMI). List them in "blocks" in program order (id: short lower-case, name: 1–3 words, description: one sentence) and set every rung's "block" to its block id. Rungs of one block stay together. A small machine may have only 2–3 blocks. Signals passed between blocks go through internal bits so each block can be tested on its own.
+
+Implementing the HMI tags (standard ranges: commands C1001–C1100, setpoints DS1001–DS1100, status words DS1101–DS1200, alarms C1101–C1200, status bits C1201–C1300). For each kind the HMI design uses:
+- Command buttons (HMI writes, momentary): use them as commands in the logic. Start: rising edge (RISE) in parallel with the panel Start, sealed in; Stop: NC in series. Reset: clears latched alarms only when the cause is gone. Count/cycle resets: the counter's reset bit.
+- Mode select (a toggle the HMI reads and writes, e.g. HMI_Manual_Select): Manual is accepted only while the automatic cycle is not running — a rung "cycle running AND select → RST select" refuses it while running. The mode status bit (e.g. STS_Manual_Mode) = select AND NOT running. Start is blocked while Manual is active (NC of the mode status bit in the run seal-in), and the cycle drops if Manual turns on.
+- Permissive bits (status bits shown as a button's interlock, e.g. STS_Jog_Permit): compute them every scan exactly as the tag description says (typically Manual mode AND safety OK AND the conflicting actuator OFF). Hold-to-run commands (Jog/Extend …): the manual request bit = command AND its permissive; when two manual requests conflict, give one priority (NC of the other request) so they cannot both energize in the same scan. Combine the Auto and Manual requests in the Outputs block: one OUT coil per output.
+- Setpoints (DS, HMI reads/writes): use the register directly — as the timer preset (CLICK timer presets may be a DS register), counter preset or compare value. DS registers are retentive, so on the first scan (SC2) load the documented default only when the value is outside its min–max limits.
+- Machine state word (e.g. DS1101 Machine_State): must use exactly the values of the HMI state table below. Write it every scan with one COPY rung per state, ordered from the lowest to the highest priority (an SC1 rung copies the default first), so the highest applicable state wins.
+- Heartbeat (e.g. STS_Heartbeat): changes state every second: a one-scan pulse on the rising edge of SC7 (CLICK 1 s clock), then OUT heartbeat with branches (pulse AND NOT heartbeat) OR (NOT pulse AND heartbeat).
+- Counters shown on the HMI (CTD): CNT on the event (part sensor, actuator output turning ON) with the HMI reset bit as reset; CTD holds the value the HMI reads.
+- Run hours (retentive DS): an accumulating ON-delay timer, 3600 sec, enabled while the motor output is ON and reset by a one-scan "hour reached" bit; that bit adds 1 (MATH) to the run-hours register and to the hours-since-service register.
+- Service interval: warning bit ON when hours since service >= the interval setpoint (and the interval > 0); the Service Done command COPYs 0 into hours since service.
+- Rates (e.g. Parts_Per_Min): a self-restarting 10 s timer; every 10 s shift six bucket registers, store the parts counted in the last 10 s (count minus a snapshot, negative after a count reset → 0) and sum the six buckets.
+- Batch target (setpoint, 0 = off): a batch-complete bit when target > 0 and count >= target; stop the cycle only once the last part has been handled, and block Start until the count is reset.
+- Alarm bits: one per HMI alarm. Faults latch (SET on the fault, RST on reset when the cause is gone) and stop the cycle; condition alarms (e.g. safety open) and warnings (service due) are plain OUT coils that follow the condition.
+- Status bits/words the HMI reads that are not covered above: write them from the condition their description gives.
 
 When you change an existing program:
 - Keep the "id" of every rung you keep (edited or not). Give new rungs ids like "new-1", "new-2".
@@ -63,11 +93,37 @@ When you change an existing program:
 "explanation": plain language for the operator, no code. Say what the program does or what you changed and why, list any assumptions, and list what to check on the machine before running it.`;
 }
 
+/** Facts from the HMI screens the program must match: state tables, setpoint limits, permissives, toggles. */
+export function hmiScreenFacts(screens: HmiScreenFacts[] | undefined): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const once = (key: string, line: string) => { if (!seen.has(key)) { seen.add(key); out.push(line); } };
+  for (const s of screens ?? []) for (const e of s.elements) {
+    const a = e.address?.trim().toUpperCase();
+    if (!a) continue;
+    if (e.states?.length && /^(DS|DD|DH)\d+$/.test(a)) {
+      once(`st:${a}`, `${a} state table (HMI "${e.label}"): ${e.states.map((x) => `${x.value} = ${x.text}`).join(', ')}`);
+    }
+    if (e.kind === 'numeric-entry') {
+      const lim = [e.min !== null ? `min ${e.min}` : '', e.max !== null ? `max ${e.max}` : '', e.units ? `units ${e.units}` : ''].filter(Boolean).join(', ');
+      once(`sp:${a}`, `${a} setpoint "${e.label}"${lim ? ` (${lim})` : ''}${e.note ? ` — ${e.note}` : ''}`);
+    }
+    if (e.kind === 'button' && e.interlock) {
+      once(`il:${a}`, `${a} "${e.label}" (${e.action ?? 'momentary'}${e.note ? `, ${e.note}` : ''}) is only enabled while permissive ${e.interlock.toUpperCase()} is ON — the PLC must also require ${e.interlock.toUpperCase()}`);
+    }
+    if (e.kind === 'button' && e.action === 'toggle') {
+      once(`tg:${a}`, `${a} "${e.label}" is a toggle (HMI writes ON/OFF and shows the bit)${e.note ? ` — ${e.note}` : ''}`);
+    }
+  }
+  return out;
+}
+
 function hmiText(ctx: PlcContext): string {
   if (!ctx.hmi?.tags.length) return '';
   const tags = ctx.hmi.tags.map((t) => `${t.address}\t${t.dataType}\t${t.access === 'write' ? 'HMI writes' : t.access === 'read' ? 'HMI reads' : 'HMI reads/writes'}\t${t.name}: ${t.description}`).join('\n');
-  const alarms = ctx.hmi.alarms.map((a) => `${a.address}\t${a.message}`).join('\n');
-  return `\n\nHMI tags the program must implement (address, type, direction, meaning). HMI buttons are momentary unless stated; treat HMI-written bits as commands and use them in the logic. Set every alarm bit from the matching fault condition:\n${tags}${alarms ? `\n\nHMI alarm bits (address, message):\n${alarms}` : ''}`;
+  const alarms = ctx.hmi.alarms.map((a) => `${a.address}\t${a.severity ? `${a.severity}\t` : ''}${a.message}`).join('\n');
+  const facts = hmiScreenFacts(ctx.hmi.screens);
+  return `\n\nHMI tags the program must implement — every one, at exactly these addresses (address, type, direction, name: what the PLC does). HMI buttons are momentary unless stated; treat HMI-written bits as commands and use them in the logic; write every bit/word the HMI reads. Follow "Implementing the HMI tags":\n${tags}${alarms ? `\n\nHMI alarm bits (address, severity, message) — set each from its condition:\n${alarms}` : ''}${facts.length ? `\n\nFrom the HMI screens (the program must match these):\n${facts.map((f) => `- ${f}`).join('\n')}` : ''}`;
 }
 
 function ioTable(ctx: PlcContext): string {

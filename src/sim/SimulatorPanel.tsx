@@ -36,6 +36,7 @@ export interface SimulatorPanelProps {
 }
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
+const SKIPS: [string, number][] = [['1 min', 60_000], ['10 min', 600_000], ['1 h', 3_600_000]];
 
 function natural(a: string, b: string) {
   return a.localeCompare(b, undefined, { numeric: true });
@@ -164,9 +165,29 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
         <button type="button" className={`${btn} border-steel-300 bg-white text-steel-700 hover:bg-steel-50`} disabled={snap.running} onClick={() => ctl.stepOnce()} title="Run exactly one 10 ms scan">
           <ForwardIcon className="h-4 w-4" /> Step scan
         </button>
-        <button type="button" className={`${btn} border-steel-300 bg-white text-steel-700 hover:bg-steel-50`} onClick={() => ctl.reset()} title="Power-cycle the PLC and reset the machine (forces and bypasses stay)">
+        <button type="button" className={`${btn} border-steel-300 bg-white text-steel-700 hover:bg-steel-50`} onClick={() => ctl.reset()}
+          title="Power-cycle the PLC and reset the machine. Retentive memory (DS registers, counters) keeps its value like a real CLICK; forces and bypasses stay">
           <ArrowPathIcon className="h-4 w-4" /> Reset
         </button>
+        <button type="button" className={`${btn} border-steel-300 bg-white text-steel-700 hover:bg-steel-50`} onClick={() => ctl.reset(true)}
+          title="Power-cycle and also clear retentive memory (setpoints, counters, run hours) — like a new PLC">
+          Clear memory
+        </button>
+        <div className="flex items-center rounded border border-steel-300 bg-white p-0.5" role="group" aria-label="Skip ahead"
+          title="Fast-forward simulated time (run hours, parts per minute, service interval). Long skips use 100 ms scans.">
+          <span className="px-1 text-[11px] font-semibold text-steel-500">Skip</span>
+          {SKIPS.map(([label, ms]) => (
+            <button key={label} type="button" disabled={snap.skipLeftMs > 0} onClick={() => ctl.skipAhead(ms)}
+              className="rounded px-1.5 py-0.5 text-[12px] font-semibold text-steel-600 hover:bg-steel-100 disabled:opacity-40">
+              +{label}
+            </button>
+          ))}
+          {snap.skipLeftMs > 0 && (
+            <button type="button" onClick={() => ctl.cancelSkip()} className="rounded bg-amber-100 px-1.5 py-0.5 text-[12px] font-semibold text-amber-800">
+              {Math.ceil(snap.skipLeftMs / 1000)} s left · cancel
+            </button>
+          )}
+        </div>
         <div className="ml-1 flex items-center rounded border border-steel-300 bg-white p-0.5" role="group" aria-label="Simulation speed">
           {SPEEDS.map((s) => (
             <button key={s} type="button" onClick={() => ctl.setSpeed(s)}

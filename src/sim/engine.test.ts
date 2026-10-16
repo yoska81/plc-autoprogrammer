@@ -10,6 +10,12 @@ import { blockAddresses, devicesInBlock, externalSignals, programBlocks } from '
 import { SimController } from './controller';
 import type { ConveyorDevice, CylinderDevice, MotorDevice } from './machineModel';
 import { CONVEYOR_IO, CONVEYOR_PROGRAM, CONVEYOR_WIRING } from './__fixtures__/conveyor';
+import { DESIGN, HMI, LADDER } from '../preview/sampleProject';
+import { validateProgram } from '../plc/validate';
+import { getProfile } from '../plc/profiles';
+import { rungAddresses, rungWrites } from '../plc/ladder';
+import { rungReads } from './blocks';
+import { crossReference, issueStatus } from '../components/program/programIndex';
 
 let passed = 0;
 const failures: string[] = [];
@@ -430,6 +436,260 @@ test('controller: pusher block alone with held signals, block-only run, clear al
   assert.ok(!s.devices.some((d) => d.bypass?.on));
   ctl.selectBlock(null);
   assert.equal(ctl.getSnapshot().block, null);
+});
+
+console.log('\nretentive memory, register presets, HMI presses');
+
+test('power cycle keeps DS registers and counters, clears bits and timers', () => {
+  const sim = createSimulator(prog(
+    rung([[NO('X001')]], [{ type: 'CNT', address: 'CT1', direction: 'UP', preset: '100', resetAddress: null }]),
+    rung([[NO('X002')]], [{ type: 'MATH', dest: 'DS5', expression: 'DS5 + 7' }]),
+    rung([[NO('X002')]], [OUT('C1')]),
+    rung([[NO('X002')]], [{ type: 'TMR', address: 'T1', mode: 'ON_DELAY', preset: '10', unit: 'sec', accumulate: false, resetAddress: null }]),
+  ));
+  sim.setInput('X001', true); sim.step(); sim.setInput('X001', false); sim.step();
+  sim.setInput('X001', true); sim.step();
+  sim.setInput('X002', true); sim.step(); sim.run(1000);
+  const ds5 = sim.readWord('DS5');
+  assert.ok(ds5 > 0);
+  sim.reset();
+  assert.equal(sim.readWord('CTD1'), 2, 'counter value is retentive');
+  assert.equal(sim.readWord('DS5'), ds5, 'DS is retentive');
+  assert.equal(sim.readBit('C1'), false, 'C bits are not');
+  assert.equal(sim.readWord('TD1'), 0, 'timers are not');
+  sim.step();
+  assert.equal(sim.readWord('CTD1'), 2, 'no count after the power cycle without an edge');
+  sim.reset({ clearRetentive: true });
+  assert.equal(sim.readWord('CTD1'), 0);
+  assert.equal(sim.readWord('DS5'), 0);
+});
+
+test('custom retentive ranges', () => {
+  const sim = createSimulator(prog(rung([[NO('SC1')]], [{ type: 'COPY', source: '5', dest: 'DS1' }, { type: 'COPY', source: '6', dest: 'DD1' }])), { retentive: (a) => a === 'DD1' });
+  sim.step(); sim.reset();
+  assert.equal(sim.readWord('DS1'), 0);
+  assert.equal(sim.readWord('DD1'), 6);
+});
+
+test('timer preset from a DS register, changed while running', () => {
+  const sim = createSimulator(prog(
+    rung([[NO('SC2')]], [{ type: 'COPY', source: '3', dest: 'DS1' }]),
+    rung([[NO('X001')]], [{ type: 'TMR', address: 'T1', mode: 'ON_DELAY', preset: 'DS1', unit: 'sec', accumulate: false, resetAddress: null }]),
+  ));
+  sim.setInput('X001', true);
+  sim.run(2990);
+  assert.equal(sim.readBit('T1'), false);
+  assert.equal(sim.readWord('TD1'), 2);
+  sim.run(20);
+  assert.equal(sim.readBit('T1'), true, '3 s from DS1');
+  sim.write('DS1', 5);
+  sim.step();
+  assert.equal(sim.readBit('T1'), false, 'new setpoint applies at once');
+  sim.run(2000);
+  assert.equal(sim.readBit('T1'), true);
+});
+
+test('SC7 rising edge flips a heartbeat every second', () => {
+  const sim = createSimulator(prog(
+    rung([[{ type: 'RISE', address: 'SC7' }]], [OUT('C12')]),
+    rung([[NO('C12'), NC('C1203')], [NC('C12'), NO('C1203')]], [OUT('C1203')]),
+  ));
+  const seen: boolean[] = [];
+  for (let i = 0; i < 4; i++) { sim.run(1000); seen.push(sim.readBit('C1203')); }
+  assert.deepEqual(seen, [true, false, true, false]);
+});
+
+test('controller: HMI momentary press shorter than a scan is still seen once', () => {
+  const ctl = new SimController(prog(rung([[NO('C1001')]], [{ type: 'CNT', address: 'CT1', direction: 'UP', preset: '99', resetAddress: null }])), [], []);
+  ctl.handle.write('C1001', true);
+  ctl.handle.write('C1001', false);
+  assert.equal(ctl.sim.readBit('C1001'), true, 'held until a scan ran');
+  ctl.stepOnce();
+  assert.equal(ctl.sim.readWord('CTD1'), 1);
+  assert.equal(ctl.sim.readBit('C1001'), false, 'released after the scan');
+  ctl.stepOnce();
+  ctl.handle.write('C1001', true); ctl.stepOnce(); ctl.handle.write('C1001', false);
+  assert.equal(ctl.sim.readBit('C1001'), false, 'normal release once a scan saw it');
+  assert.equal(ctl.sim.readWord('CTD1'), 2);
+});
+
+console.log('\nexample project program');
+
+const exIO = DESIGN.ioWiring.map((w) => ({ address: w.address, description: w.description, type: (w.address.startsWith('X') ? 'input' : 'output') as 'input' | 'output', category: '' }));
+const exCtl = () => {
+  const ctl = new SimController(LADDER, exIO, DESIGN.ioWiring);
+  ctl.advance(100);
+  return ctl;
+};
+const press = (ctl: SimController, a: string) => { ctl.handle.write(a, true); ctl.advance(50); ctl.handle.write(a, false); ctl.advance(50); };
+
+test('example program passes the program checker', () => {
+  const issues = validateProgram(LADDER, getProfile('click'), new Set(DESIGN.ioWiring.map((w) => w.address)));
+  assert.deepEqual(issues, []);
+  const blocks = LADDER.blocks!.map((b) => b.name);
+  assert.deepEqual(blocks, ['Safety & modes', 'Alarms', 'Conveyor', 'Pusher', 'Manual', 'Outputs', 'HMI & status']);
+  assert.ok(LADDER.rungs.every((r) => r.comment && r.block));
+  const tagged = new Set(LADDER.tags.map((t) => t.address));
+  for (const r of LADDER.rungs) for (const a of rungAddresses(r)) {
+    if (/^[XY]\d+$/.test(a) || /^[-\d.]+$/.test(a)) continue;
+    assert.ok(tagged.has(a), `${a} has a nickname`);
+  }
+  // one OUT coil per output
+  for (const y of ['Y001', 'Y002']) assert.equal(LADDER.rungs.filter((r) => rungWrites(r).includes(y)).length, 1);
+});
+
+test('example program implements every HMI tag', () => {
+  const writes = new Set(LADDER.rungs.flatMap(rungWrites));
+  for (const r of LADDER.rungs) for (const o of r.outputs) {
+    if (o.type === 'TMR') writes.add(`TD${o.address.slice(1)}`);
+    if (o.type === 'CNT') writes.add(`CTD${o.address.slice(2)}`);
+  }
+  const reads = new Set(LADDER.rungs.flatMap((r) => rungReads(r).map((x) => x.address)));
+  for (const t of HMI.tags) {
+    if (/^X|^Y/.test(t.address)) continue;
+    if (t.access === 'read') assert.ok(writes.has(t.address), `${t.name} ${t.address} written by the PLC`);
+    else assert.ok(reads.has(t.address), `${t.name} ${t.address} used by the PLC`);
+  }
+  for (const a of HMI.alarms) assert.ok(writes.has(a.address), `alarm ${a.address}`);
+  for (const s of HMI.screens) for (const e of s.elements) {
+    if (e.interlock) assert.ok(writes.has(e.interlock), `interlock ${e.interlock}`);
+  }
+});
+
+test('example: first scan defaults, Stopped -> Running -> Pushing -> Running', () => {
+  const ctl = exCtl();
+  const r = (a: string) => ctl.sim.read(a);
+  assert.equal(r('DS1001'), 3);
+  assert.equal(r('DS1003'), 500);
+  assert.equal(r('DS1101'), 0, 'stopped');
+  press(ctl, 'C1001');
+  assert.equal(r('C2'), true);
+  assert.equal(r('DS1101'), 1, 'running');
+  assert.equal(r('Y001'), true);
+  const states = new Set<number>();
+  for (let i = 0; i < 1000; i++) { ctl.advance(10); states.add(Number(r('DS1101'))); }
+  assert.ok(states.has(2), 'pushing seen');
+  assert.ok(Number(r('CTD1')) >= 1 && Number(r('CTD2')) >= 1, 'parts and pusher cycles counted');
+  assert.equal(r('C1101'), false, 'no fault');
+  press(ctl, 'C1002');
+  assert.equal(r('C2'), false);
+});
+
+test('example: safety stop and pusher fault set alarms and the state word', () => {
+  const ctl = exCtl();
+  const r = (a: string) => ctl.sim.read(a);
+  press(ctl, 'C1001');
+  const es = ctl.getSnapshot().devices.find((d) => d.kind === 'estop')!;
+  ctl.toggle(es.id); ctl.advance(100);
+  assert.equal(r('C1102'), true, 'safety open alarm');
+  assert.equal(r('DS1101'), 5, 'safety stop');
+  assert.equal(r('C2'), false);
+  ctl.toggle(es.id); ctl.advance(100);
+  assert.equal(r('C1102'), false);
+  // pusher never reaches extended -> fault after DS1001 s
+  ctl.handle.write('DS1001', 2);
+  const cyl = ctl.getSnapshot().devices.find((d) => d.kind === 'cylinder')!;
+  ctl.setDeviceBypass(cyl.id, true, false);
+  ctl.force('X005', false);
+  press(ctl, 'C1001');
+  ctl.advance(12_000);
+  assert.equal(r('C1101'), true, 'pusher fault');
+  assert.equal(r('DS1101'), 3, 'faulted');
+  assert.equal(r('C2'), false);
+  ctl.force('X005', null);
+  press(ctl, 'C1003');
+  assert.equal(r('C1101'), false, 'reset');
+});
+
+test('example: manual mode, permissives and hold-to-run', () => {
+  const ctl = exCtl();
+  const r = (a: string) => ctl.sim.read(a);
+  press(ctl, 'C1001');
+  ctl.handle.write('C1005', true); ctl.advance(50);
+  assert.equal(r('C1005'), false, 'manual refused while running');
+  assert.equal(r('C1201'), false);
+  press(ctl, 'C1002');
+  ctl.handle.write('C1005', true); ctl.advance(50);
+  assert.equal(r('C1201'), true, 'manual active');
+  assert.equal(r('DS1101'), 4);
+  press(ctl, 'C1001');
+  assert.equal(r('C2'), false, 'start blocked in manual');
+  assert.equal(r('C1204'), true);
+  assert.equal(r('C1205'), true);
+  ctl.handle.write('C1006', true); ctl.advance(100);
+  assert.equal(r('Y001'), true, 'jog runs the conveyor');
+  assert.equal(r('C1205'), false, 'extend not permitted while jogging');
+  ctl.handle.write('C1007', true); ctl.advance(100);
+  assert.equal(r('Y002'), false, 'no extend while jogging');
+  ctl.handle.write('C1006', false); ctl.advance(100);
+  assert.equal(r('Y001'), false, 'jog stops on release');
+  assert.equal(r('Y002'), true, 'extend once the conveyor is off');
+  assert.equal(r('C1204'), false, 'jog not permitted while extended');
+  ctl.handle.write('C1007', false); ctl.advance(100);
+  assert.equal(r('Y002'), false);
+  const es = ctl.getSnapshot().devices.find((d) => d.kind === 'estop')!;
+  ctl.toggle(es.id); ctl.advance(100);
+  ctl.handle.write('C1006', true); ctl.advance(100);
+  assert.equal(r('Y001'), false, 'no jog without Safety OK');
+  assert.equal(r('DS1101'), 5);
+});
+
+test('example: batch target stops the cycle after the last part', () => {
+  const ctl = exCtl();
+  const r = (a: string) => ctl.sim.read(a);
+  ctl.handle.write('DS1002', 2);
+  press(ctl, 'C1001');
+  ctl.advance(30_000);
+  assert.equal(r('CTD1'), 2);
+  assert.equal(r('C2'), false, 'stopped at the batch target');
+  assert.equal(r('Y002'), false, 'last part pushed');
+  press(ctl, 'C1001');
+  assert.equal(r('C2'), false, 'start blocked until the count is reset');
+  press(ctl, 'C1004');
+  press(ctl, 'C1001');
+  assert.equal(r('C2'), true);
+});
+
+test('example: parts per minute, run hours, service due and retentive hours', () => {
+  const ctl = exCtl();
+  const r = (a: string) => ctl.sim.read(a);
+  press(ctl, 'C1001');
+  ctl.advance(65_000);
+  assert.ok(Number(r('DS1103')) >= 8 && Number(r('DS1103')) <= 16, `rate ${r('DS1103')}`);
+  // run hours: engine only, conveyor forced on, 1 s scans
+  const sim = createSimulator(LADDER);
+  sim.setInput('X001', true); sim.setInput('X003', true);
+  sim.step();
+  sim.write('DS1003', 50);
+  sim.force('Y001', true);
+  sim.run(3_600_000 * 2 + 5000, 1000);
+  assert.equal(sim.readWord('DS1102'), 2);
+  assert.equal(sim.readWord('DS1104'), 2);
+  sim.reset();
+  assert.equal(sim.readWord('DS1102'), 2, 'run hours survive a power cycle');
+  sim.step();
+  assert.equal(sim.readWord('DS1003'), 50, 'valid setpoint kept on first scan');
+  sim.write('DS1104', 50); sim.step();
+  assert.equal(sim.readBit('C1103'), true, 'service due');
+  sim.write('C1009', true); sim.step(); sim.write('C1009', false); sim.step();
+  assert.equal(sim.readWord('DS1104'), 0);
+  assert.equal(sim.readBit('C1103'), false);
+  // heartbeat
+  const hb = new Set<boolean>();
+  for (let i = 0; i < 4; i++) { sim.run(1000, 10); hb.add(sim.readBit('C1203')); }
+  assert.equal(hb.size, 2, 'heartbeat toggles');
+});
+
+test('program page cross reference and block status', () => {
+  const x = crossReference(LADDER);
+  const c1204 = x.get('C1204')!;
+  assert.deepEqual(c1204.map((u) => [u.kind, u.how, u.block]), [['write', 'OUT coil', 'manual'], ['read', 'NO contact', 'manual']]);
+  assert.ok(x.get('TD1')!.some((u) => u.kind === 'write' && u.how === 'Timer value'));
+  assert.ok(x.get('DS1001')!.some((u) => u.how === 'Timer preset'));
+  assert.ok(x.get('CTD1')!.some((u) => u.how === 'MATH operand'));
+  const st = issueStatus(LADDER, [{ rungId: 'r_y1', severity: 'error', message: 'x' }, { rungId: null, severity: 'warning', message: 'y' }]);
+  assert.deepEqual(st.byBlock.get('outputs'), { errors: 1, warnings: 0 });
+  assert.equal(st.byBlock.size, 1);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
