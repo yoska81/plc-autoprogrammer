@@ -14,9 +14,9 @@
  * exported as named variables with a TODO line to map them in CCW.
  */
 import type { CpuModel, ExportContext, PlcProfile, ProgramExporter } from '../profile';
-import type { CompareElement, LadderElement, LadderOutput, LadderProgram } from '../ladder';
+import type { LadderProgram } from '../ladder';
 import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress } from './click';
-import { logixName } from './logixExport';
+import { toIecSt, type StDialect, type StProgram } from './iecSt';
 
 const cpu = (id: string, series: 'Micro820' | 'Micro850', inputs: number, outputs: number, out: string): CpuModel => ({
   id, label: `${id} — ${series}, ${inputs} DC in / ${outputs} ${out} out, Ethernet`, builtInInputs: inputs, builtInOutputs: outputs,
@@ -40,138 +40,22 @@ export function micro800IoVar(address: string): string | null {
   return m ? `_IO_EM_${m[1] === 'X' ? 'DI' : 'DO'}_${pt(Number(m[2]) - 1)}` : null;
 }
 
-const UNIT_MS: Record<string, number> = { ms: 1, sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 };
-const NUM_RE = /^-?\d+(\.\d+)?$/;
-const OPERAND_RE = /\b(CTD|TXT|DS|DD|DH|DF|TD|SD|CT|SC|C|T|X|Y)(\d+)\b/gi;
-
-export interface StVariable { name: string; type: string; comment: string; io?: string }
-export interface StProgram { body: string; variables: StVariable[]; warnings: string[] }
+/** Micro800 dialect of the shared IEC Structured Text generator (iecSt.ts). */
+export const MICRO800_ST: StDialect = {
+  title: 'Micro800 Structured Text for one CCW program; declare the variables listed in the variable file.',
+  ioVar: micro800IoVar,
+  ioTodo: (base, name, isIn) => `(* TODO map ${base} (expansion slot ${base[1]}, point ${pt(Number(base.slice(2)) - 1)}) in CCW: ${isIn ? `${name} := <expansion input>;` : `<expansion output> := ${name};`} *)`,
+  ref: (n) => n,
+  firstScan: '_SYSVA_FIRST_SCAN',
+  types: { TON: 'TON', TOF: 'TOF', RTO: 'RTO', CTU: 'CTU', CTD: 'CTD', R_TRIG: 'R_TRIG', F_TRIG: 'F_TRIG', BOOL: 'BOOL', DINT: 'DINT', REAL: 'REAL' },
+  params: { rtoReset: 'RST', ctuReset: 'RESET', ctdLoad: 'LOAD' },
+  msToTime: (e) => `ANY_TO_TIME(${e})`,
+  timeToMs: (e) => `ANY_TO_DINT(${e})`,
+};
 
 /** Neutral ladder → Micro800 Structured Text (one statement block per rung, in program order). */
 export function toMicro800St(program: LadderProgram, ctx: ExportContext): StProgram {
-  const used = new Set<string>();
-  const warnings: string[] = [];
-  const vars = new Map<string, StVariable>();
-  const nick = new Map<string, { nickname: string; comment: string }>();
-  for (const t of [...ctx.extraTags, ...program.tags]) nick.set(t.address.toUpperCase(), { nickname: t.nickname, comment: t.comment });
-  const timerUnit = new Map<string, number>();
-  for (const r of program.rungs) for (const o of r.outputs) if (o.type === 'TMR') timerUnit.set(o.address.toUpperCase(), UNIT_MS[o.unit] ?? 1000);
-  const timerType = new Map<string, string>();
-  for (const r of program.rungs) for (const o of r.outputs) if (o.type === 'TMR') timerType.set(o.address.toUpperCase(), o.accumulate ? 'RTO' : o.mode === 'OFF_DELAY' ? 'TOF' : 'TON');
-  for (const r of program.rungs) for (const o of r.outputs) if (o.type === 'CNT') timerType.set(o.address.toUpperCase(), o.direction === 'DOWN' ? 'CTD' : 'CTU');
-  let edges = 0;
-  let usesClock = false;
-
-  function v(base: string, type: string): string {
-    const have = vars.get(base);
-    if (have) return have.name;
-    const n = nick.get(base), label = ctx.labels.get(base);
-    const io = micro800IoVar(base);
-    const name = logixName(n?.nickname || label || (base === 'SC7' ? 'Clock_1s' : base), used, base);
-    vars.set(base, { name, type, comment: [label, n?.comment].filter(Boolean).join(' — ') || base, ...(io ? { io } : {}) });
-    return name;
-  }
-  function op(raw: string, value = false): string {
-    const a = raw.trim().toUpperCase();
-    if (NUM_RE.test(a)) return a;
-    const m = /^(CTD|TXT|DS|DD|DH|DF|TD|SD|CT|SC|C|T|X|Y)(\d+)$/.exec(a);
-    if (!m) { warnings.push(`Unknown operand "${raw}".`); return raw; }
-    const [, p, n] = m;
-    switch (p) {
-      case 'X': case 'Y': case 'C': return v(a, 'BOOL');
-      case 'T': return `${v(a, timerType.get(a) ?? 'TON')}.Q`;
-      case 'TD': {
-        const t = v(`T${n}`, timerType.get(`T${n}`) ?? 'TON'), unit = timerUnit.get(`T${n}`) ?? 1000;
-        return value && unit !== 1 ? `(ANY_TO_DINT(${t}.ET) / ${unit})` : `ANY_TO_DINT(${t}.ET)`;
-      }
-      case 'CT': return `${v(a, timerType.get(a) ?? 'CTU')}.Q`;
-      case 'CTD': return `${v(`CT${n}`, timerType.get(`CT${n}`) ?? 'CTU')}.CV`;
-      case 'DS': case 'DD': case 'DH': return v(a, 'DINT');
-      case 'DF': return v(a, 'REAL');
-      case 'SC':
-        if (n === '1') return 'TRUE';
-        if (n === '2') return '_SYSVA_FIRST_SCAN';
-        if (n === '7') { usesClock = true; return v('SC7', 'BOOL'); }
-        warnings.push(`${a}: no Micro800 equivalent.`); return 'FALSE';
-      default: warnings.push(`${a}: no Micro800 equivalent.`); return a;
-    }
-  }
-  const CMP: Record<CompareElement['op'], string> = { '==': '=', '<>': '<>', '>': '>', '>=': '>=', '<': '<', '<=': '<=' };
-
-  function rungSt(r: { comment: string; branches: LadderElement[][]; outputs: LadderOutput[] }): string[] {
-    const pre: string[] = [];
-    const el = (e: LadderElement): string => {
-      if (e.type === 'CMP') return `(${op(e.left, true)} ${CMP[e.op]} ${op(e.right, true)})`;
-      const a = op(e.address);
-      if (e.type === 'NO') return a;
-      if (e.type === 'NC') return `NOT ${a}`;
-      const inst = v(`${e.type === 'RISE' ? 'RT' : 'FT'}_${++edges}`, e.type === 'RISE' ? 'R_TRIG' : 'F_TRIG');
-      pre.push(`${inst}(CLK := ${a});`);
-      return `${inst}.Q`;
-    };
-    const cond = r.branches.length ? r.branches.map((b) => (b.length ? b.map(el).join(' AND ') : 'TRUE')).map((s, _i, all) => (all.length > 1 && s.includes(' AND ') ? `(${s})` : s)).join(' OR ') : 'TRUE';
-    const out: string[] = [];
-    // COPY / MATH execute only while the rung is true.
-    const when = (stmt: string) => (cond === 'TRUE' ? stmt : `IF ${cond} THEN ${stmt} END_IF;`);
-    for (const o of r.outputs) {
-      switch (o.type) {
-        case 'OUT': out.push(`${op(o.address)} := ${cond};`); break;
-        case 'SET': out.push(`IF ${cond} THEN ${op(o.address)} := TRUE; END_IF;`); break;
-        case 'RST': {
-          const a = o.address.toUpperCase();
-          if (/^(T|CT)\d+$/.test(a)) { out.push(`IF ${cond} THEN ${v(`${a}_RST`, 'BOOL')} := TRUE; END_IF;`); break; }
-          out.push(`IF ${cond} THEN ${op(o.address)} := FALSE; END_IF;`); break;
-        }
-        case 'TMR': {
-          const a = o.address.toUpperCase(), t = v(a, timerType.get(a)!), unit = UNIT_MS[o.unit] ?? 1000;
-          const ptv = NUM_RE.test(o.preset.trim()) ? `ANY_TO_TIME(${Math.round(Number(o.preset) * unit)})` : `ANY_TO_TIME(${op(o.preset)} * ${unit})`;
-          if (o.accumulate) out.push(`${t}(IN := ${cond}, RST := ${o.resetAddress ? op(o.resetAddress) : 'FALSE'}, PT := ${ptv});`);
-          else out.push(`${t}(IN := ${cond}, PT := ${ptv});`);
-          break;
-        }
-        case 'CNT': {
-          const a = o.address.toUpperCase(), c = v(a, timerType.get(a)!);
-          const pv = NUM_RE.test(o.preset.trim()) ? o.preset.trim() : op(o.preset);
-          const rstVar = vars.get(`${a}_RST`)?.name;
-          const rst = [o.resetAddress ? op(o.resetAddress) : '', rstVar ?? ''].filter(Boolean).join(' OR ') || 'FALSE';
-          out.push(o.direction === 'DOWN' ? `${c}(CD := ${cond}, LOAD := ${rst}, PV := ${pv});` : `${c}(CU := ${cond}, RESET := ${rst}, PV := ${pv});`);
-          if (rstVar) out.push(`${rstVar} := FALSE;`);
-          break;
-        }
-        case 'COPY': out.push(when(`${op(o.dest)} := ${op(o.source, true)};`)); break;
-        case 'MATH': out.push(when(`${op(o.dest)} := ${o.expression.replace(OPERAND_RE, (t) => op(t, true))};`)); break;
-      }
-    }
-    return [...(r.comment ? [`(* ${r.comment.replace(/\*\)/g, '* )')} *)`] : []), ...pre, ...out];
-  }
-
-  // Counter/timer reset coils (RST T/CT) must exist before the block call that reads them: declare first.
-  for (const r of program.rungs) for (const o of r.outputs) if (o.type === 'RST' && /^(T|CT)\d+$/i.test(o.address)) v(`${o.address.toUpperCase()}_RST`, 'BOOL');
-
-  const blocks = program.blocks ?? [];
-  const sections: string[] = [];
-  const order = [...blocks.map((b) => ({ id: b.id, name: b.name })), { id: '', name: 'General' }];
-  for (const b of order) {
-    const rungs = program.rungs.filter((r) => (b.id ? r.block === b.id : !r.block || !blocks.some((x) => x.id === r.block)));
-    if (!rungs.length) continue;
-    sections.push(`(* ===== ${b.name} ===== *)`, ...rungs.flatMap(rungSt), '');
-  }
-  // I/O copy at the start / end of the scan: named variables ↔ Micro800 I/O variables.
-  const inputs: string[] = [], outputs: string[] = [];
-  for (const [base, x] of vars) {
-    if (!/^[XY]\d{3}$/.test(base)) continue;
-    const isIn = base.startsWith('X');
-    if (x.io) (isIn ? inputs : outputs).push(isIn ? `${x.name} := ${x.io};` : `${x.io} := ${x.name};`);
-    else (isIn ? inputs : outputs).push(`(* TODO map ${base} (expansion slot ${base[1]}, point ${pt(Number(base.slice(2)) - 1)}) in CCW: ${isIn ? `${x.name} := <expansion input>;` : `<expansion output> := ${x.name};`} *)`);
-  }
-  const clock = usesClock ? [
-    '(* 1-second clock: ON 0.5 s, OFF 0.5 s *)',
-    `${v('CLOCK_TMR', 'TON')}(IN := NOT ${vars.get('CLOCK_TMR')!.name}.Q, PT := T#1s);`,
-    `${vars.get('SC7')!.name} := ANY_TO_DINT(${vars.get('CLOCK_TMR')!.name}.ET) < 500;`, '',
-  ] : [];
-  const header = `(* ${ctx.header} *)\n(* Micro800 Structured Text for one CCW program; declare the variables listed in the variable file. *)`;
-  const body = [header, '', '(* ===== Inputs ===== *)', ...inputs, '', ...clock, ...sections, '(* ===== Outputs ===== *)', ...outputs, ''].join('\n');
-  return { body, variables: [...vars.values()], warnings };
+  return toIecSt(program, ctx, MICRO800_ST);
 }
 
 /** Variable list for the CCW variable grid (CCW's own CSV import format is not documented). */
