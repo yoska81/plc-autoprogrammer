@@ -258,7 +258,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
       )}
 
       {/* body */}
-      <div className="flex min-h-0 flex-1 overflow-hidden p-3">
+      <div className="flex min-h-0 flex-1 overflow-y-hidden overflow-x-auto p-3">
         <ResizablePane id="sim.machine" defaultSize={300} min={220} max={760} className="min-h-0 overflow-y-auto pr-3">
           <h2 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-steel-500">
             Machine{block ? ` · ${blockName(block)}` : ''}

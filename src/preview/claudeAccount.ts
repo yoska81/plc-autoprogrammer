@@ -146,7 +146,7 @@ export async function saveViaAccount(filename: string, data: Blob): Promise<bool
     // e.g. .dxf / .step: delivered inside a zip with the original name
     const zip = new JSZip();
     zip.file(filename, data);
-    blob = await zip.generateAsync({ type: 'blob' });
+    blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
     name = `${filename}.zip`;
   }
   try {
