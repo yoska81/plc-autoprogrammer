@@ -90,7 +90,7 @@ export default function SimulatePage() {
           <SimulatorPanel program={ladder} io={simIO} wiring={simWiring} labels={labels} onHandle={setHandle} />
         </div>
         {hmiDesign && (
-          <aside className="w-[540px] flex-shrink-0 border-l border-gray-200 bg-gray-50 p-4 overflow-y-auto">
+          <aside className="w-[34%] max-w-[540px] min-w-[300px] flex-shrink-0 border-l border-gray-200 bg-gray-50 p-4 overflow-y-auto">
             <h3 className="text-sm font-semibold text-gray-800 mb-2">HMI (live)</h3>
             {handle ? <LiveHmi handle={handle} design={hmiDesign} /> : <p className="text-sm text-gray-500">Starting simulator…</p>}
           </aside>

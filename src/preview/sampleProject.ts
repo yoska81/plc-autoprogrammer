@@ -177,8 +177,17 @@ export const DESIGN: ElectricalDesign = {
   generatedAt: new Date().toISOString(),
 };
 
+/** Bump when the example changes so returning preview viewers get the new one. */
+const SEED_VERSION = '2';
+
+function readSeedVersion(): string | null {
+  try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }
+}
+
 export function seedSampleProject() {
-  if (useIOStore.getState().projectIO.length) return; // keep anything the viewer already made
+  // Keep the viewer's own work once they have the current example.
+  if (readSeedVersion() === SEED_VERSION && useIOStore.getState().projectIO.length) return;
+  try { localStorage.setItem('plc-preview-seed', SEED_VERSION); } catch { /* storage blocked: seed anyway */ }
   useProjectStore.getState().setPlc('click', 'C0-10DD1E-D');
   useIOStore.getState().importPoints([
     { description: 'E-Stop OK (safety relay)', type: 'input', category: 'Safety' },
