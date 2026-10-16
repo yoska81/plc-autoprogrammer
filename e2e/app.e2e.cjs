@@ -456,6 +456,17 @@ function sse(model, text) {
   const wbXml = await (await JSZip.loadAsync(fs.readFileSync(xlsx))).file('xl/workbook.xml').async('string');
   log('Excel sheets:', [...wbXml.matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
   check(wbXml.includes('name="Review Findings"'), 'Excel has the design review findings');
+  // Purchasing: order list by supplier, AutomationDirect cart CSV ("PartNumber,Quantity", no header), one-page summary
+  await page.getByText('Purchasing — order list').waitFor();
+  log('Order list:', (await page.locator('#order-list .bg-steel-50 span.text-xs').first().innerText()), '|', await page.getByText(/^Total of verified prices/).innerText());
+  const adCsv = fs.readFileSync(await dl('AutomationDirect order file (CSV)'), 'utf8').trim().split(/\r?\n/);
+  if (!adCsv.length || !adCsv.every((l) => /^[A-Z0-9][A-Z0-9-]*,\d+$/i.test(l))) throw new Error('AutomationDirect order file is not "PartNumber,Quantity" lines: ' + adCsv.slice(0, 3).join(' | '));
+  log('AutomationDirect order file:', adCsv.length, 'lines, e.g.', adCsv.slice(0, 3).join(' | '));
+  const ps = await PDFDocument.load(fs.readFileSync(await dl('Purchase summary PDF')));
+  log('Purchase summary PDF pages:', ps.getPageCount());
+  if (ps.getPageCount() !== 1) throw new Error('purchase summary is not one page');
+  const ox = await JSZip.loadAsync(fs.readFileSync(await dl('Order list (Excel)')));
+  log('Order list Excel sheets:', [...(await ox.file('xl/workbook.xml').async('string')).matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
   const full = await dl('Download full package PDF');
   const fullDoc = await PDFDocument.load(fs.readFileSync(full));
   const outlines = fullDoc.catalog.lookup(PDFName.of('Outlines'));
@@ -464,6 +475,7 @@ function sse(model, text) {
   const zipPath = await dl('Download everything');
   const zip = await JSZip.loadAsync(fs.readFileSync(zipPath));
   log('ZIP:', Object.keys(zip.files).filter((f) => !f.endsWith('/')).join(', '));
+  if (!Object.keys(zip.files).some((f) => f.startsWith('purchasing/') && f.endsWith('_purchase_summary.pdf'))) throw new Error('ZIP has no purchase summary');
   await snap(page, 'deliverables');
 
   log('AI calls:', JSON.stringify(counts));

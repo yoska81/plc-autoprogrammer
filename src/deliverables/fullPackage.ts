@@ -14,6 +14,8 @@ import { listLabels } from '../electrical/labels/list';
 import { labelPrinterPdf, labelSheetPdf, labelsXlsx } from '../electrical/labels/labelOutput';
 import { labelSetupFor } from '../electrical/labels/setup';
 import { useProjectsStore } from '../store/useProjectsStore';
+import { buildPurchaseSummaryPdf } from './purchaseSummaryPdf';
+import { buildOrderList, orderListCsv, supplierCsv } from './purchasing';
 
 /**
  * The whole project as one printable PDF: cover, contents with page numbers,
@@ -83,6 +85,7 @@ export async function buildPackageParts(p: ProjectSnapshot, onProgress?: Progres
   steps.push({ title: 'I/O list', description: `${p.io.length} I/O points with addresses, devices and terminals`, run: () => (p.io.length ? ioListPdf(p) : Promise.resolve(null)) });
   if (p.drawingCtx) {
     steps.push({ title: 'Bill of materials', description: 'Parts list with part numbers and tags', run: () => bomPdf(p) });
+    steps.push({ title: 'Purchase summary', description: 'What to order from each supplier, order quantities, verified list prices and totals', run: () => buildPurchaseSummaryPdf(p) });
     steps.push({ title: 'Label list', description: 'Wire, terminal, device, cable and door labels', run: () => labelListPdf(p) });
   }
   const parts: PackagePart[] = [];
@@ -256,6 +259,13 @@ export async function labelFiles(p: ProjectSnapshot): Promise<{ name: string; da
 export async function addPackageToZip(zip: JSZip, p: ProjectSnapshot, pre: Prebuilt, onProgress?: (step: string) => void): Promise<void> {
   onProgress?.('Labels');
   for (const f of await labelFiles(p)) zip.file(`labels/${f.name}`, f.data);
+  if (p.drawingCtx || p.hmi) {
+    onProgress?.('Purchasing');
+    zip.file(`purchasing/${p.fileBase}_purchase_summary.pdf`, await buildPurchaseSummaryPdf(p));
+    const ol = buildOrderList(p, { spares: true, labels: true });
+    zip.file(`purchasing/${p.fileBase}_order_list.csv`, orderListCsv(ol));
+    for (const g of ol.groups) zip.file(`purchasing/${p.fileBase}_order_${g.supplier.replace(/[^\w]+/g, '_').replace(/^_|_$/g, '')}.csv`, supplierCsv(g));
+  }
   onProgress?.('Full package PDF');
   zip.file(`${p.fileBase}_full_package.pdf`, await buildFullPackagePdf(p, undefined, pre));
 }

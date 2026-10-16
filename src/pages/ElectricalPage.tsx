@@ -109,6 +109,7 @@ export default function ElectricalPage() {
             <div className="flex gap-2">
               <Link to="/print-electrical" target="_blank" className="px-3 py-1.5 text-sm bg-steel-800 text-white rounded hover:bg-steel-900">Print / PDF</Link>
               {ctx && <button onClick={() => download(`${base}_BOM.csv`, bomCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">BOM CSV</button>}
+              {ctx && <Link to="/export#order-list" className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Order list</Link>}
               {ctx && <button onClick={() => download(`${base}_cable_schedule.csv`, cableScheduleCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Cable schedule CSV</button>}
               {ctx && <button onClick={() => download(`${base}_wire_list.csv`, wireListCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Wire list CSV</button>}
             </div>
