@@ -1,4 +1,4 @@
-import type { IOPoint } from '../../types/io';
+import type { AnalogRange, IOPoint } from '../../types/io';
 import type { LadderProgram, Rung } from './ladder';
 
 export type ProgramLanguage = 'ladder' | 'st';
@@ -19,6 +19,28 @@ export interface ModuleSlot {
   partNumber: string;
   inputs: number;
   outputs: number;
+  /** Analog channels (0 for discrete modules). */
+  analogInputs?: number;
+  analogOutputs?: number;
+}
+
+/** One physical analog channel of the PLC (CPU built-in or an expansion module). */
+export interface AnalogChannel {
+  kind: 'input' | 'output';
+  /** 0 = CPU built-in, 1… = expansion slot. */
+  slot: number;
+  /** Channel number on that CPU / module, from 1. */
+  channel: number;
+  /** Part number of the CPU or module. */
+  partNumber: string;
+  /** Human label, e.g. "CPU AD1" or "Slot 2 CH3". */
+  label: string;
+  /** Signal ranges this channel accepts. */
+  ranges: AnalogRange[];
+  /** Terminal(s) a field device connects to, e.g. ["AD1I"] or ["CH3", "0V"]. */
+  terminals: string[];
+  /** Register that holds the scaled value in the program, e.g. "DF3". */
+  address: string;
 }
 
 export interface CpuModel {
@@ -91,6 +113,8 @@ export interface PlcProfile {
   simSemantics?: SimSemantics;
   /** Program files this PLC's software can import (or that are typed in from). */
   exporters?: ProgramExporter[];
+  /** Analog channels of the CPU + modules, in addressing order (empty = no analog). */
+  analogChannels?(cpu: CpuModel, modules: ModuleSlot[]): AnalogChannel[];
 }
 
 /** Effective PLC address of each I/O point: manual override, else auto. */
