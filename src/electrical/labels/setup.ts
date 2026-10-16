@@ -67,20 +67,43 @@ export const DEFAULT_SETUP: LabelSetup = {
 };
 
 interface SetupStore {
-  setup: LabelSetup;
-  set: (patch: Partial<LabelSetup>) => void;
+  /** Setup of each project, by project id. */
+  byProject: Record<string, LabelSetup>;
+  /** Last setup used anywhere: the starting point for a project without its own. */
+  last: LabelSetup;
+  set: (projectId: string | null, patch: Partial<LabelSetup>) => void;
 }
 
-/** Remembered per browser: a user keeps the same printer and stock. */
-export const useLabelSetup = create<SetupStore>()(
+/** Remembered per project; a new project starts with the printer and stock used last. */
+export const useLabelSetupStore = create<SetupStore>()(
   persist(
     (set) => ({
-      setup: DEFAULT_SETUP,
-      set: (patch) => set((s) => ({ setup: { ...s.setup, ...patch } })),
+      byProject: {},
+      last: DEFAULT_SETUP,
+      set: (projectId, patch) => set((s) => {
+        const next = { ...(projectId ? s.byProject[projectId] ?? s.last : s.last), ...patch };
+        return { last: next, byProject: projectId ? { ...s.byProject, [projectId]: next } : s.byProject };
+      }),
     }),
-    { name: 'isa-label-setup', merge: (persisted, current) => ({ ...current, setup: { ...DEFAULT_SETUP, ...((persisted as Partial<SetupStore>)?.setup ?? {}) } }) },
+    {
+      name: 'isa-label-setup',
+      version: 1,
+      // Version 0 stored a single { setup }.
+      migrate: (old, v) => (v === 0 ? { byProject: {}, last: { ...DEFAULT_SETUP, ...((old as { setup?: Partial<LabelSetup> })?.setup ?? {}) } } : old) as SetupStore,
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<SetupStore>;
+        const fill = (x?: Partial<LabelSetup>) => ({ ...DEFAULT_SETUP, ...(x ?? {}) });
+        return { ...current, last: fill(p.last), byProject: Object.fromEntries(Object.entries(p.byProject ?? {}).map(([k, v]) => [k, fill(v)])) };
+      },
+    },
   ),
 );
+
+/** Setup for a project (non-React callers, e.g. the ZIP). */
+export function labelSetupFor(projectId: string | null): LabelSetup {
+  const s = useLabelSetupStore.getState();
+  return (projectId && s.byProject[projectId]) || s.last;
+}
 
 export const MM_PER_IN = 25.4;
 
