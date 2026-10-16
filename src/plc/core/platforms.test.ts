@@ -81,8 +81,8 @@ console.log('module suggestion tests passed');
 
 // Profiles with a platformId (multi-vendor profiles) use the platform fit; CLICK keeps its own.
 for (const p of PLC_PROFILES) {
-  const pid = (p as { platformId?: string }).platformId;
   for (const c of p.cpuModels) {
+    const pid = (c as { platformId?: string }).platformId ?? (p as { platformId?: string }).platformId;
     if (!pid) { assert.equal(platformOf(c.id), undefined, `${c.id}: CLICK-style fit`); continue; }
     const pl = platformById(pid);
     assert.ok(pl, `${p.id}: platform ${pid} exists`);

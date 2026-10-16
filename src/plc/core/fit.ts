@@ -31,8 +31,11 @@ export function findCpu(id: string): CpuModel | null {
  * `platformId`, see ./platforms.ts); CLICK CPUs have none and use the fit below.
  */
 export function platformOf(cpuId: string): Platform | undefined {
-  const profile = PLC_PROFILES.find((p) => p.cpuModels.some((c) => c.id === cpuId)) as { platformId?: string } | undefined;
-  return profile?.platformId ? platformById(profile.platformId) : undefined;
+  const profile = PLC_PROFILES.find((p) => p.cpuModels.some((c) => c.id === cpuId));
+  // A CPU model may name its own platform (e.g. Micro820 vs Micro850 in one profile); else the profile's.
+  const cpu = profile?.cpuModels.find((c) => c.id === cpuId) as { platformId?: string } | undefined;
+  const id = cpu?.platformId ?? (profile as { platformId?: string } | undefined)?.platformId;
+  return id ? platformById(id) : undefined;
 }
 
 const hasEthernet = (cpu: CpuModel) => /ethernet/i.test(cpu.label) || /^C2-0[13]/.test(cpu.id);
