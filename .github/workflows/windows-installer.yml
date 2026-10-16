@@ -1,0 +1,62 @@
+# Builds the Windows installer (Setup .exe) of ISA Auto Programmer.
+# Every push to the integration branch: the installer is attached to the run as an artifact.
+# A tag v* (e.g. v0.7.0): also published as a GitHub Release with the Setup .exe.
+name: Windows installer
+
+on:
+  push:
+    branches: [claude/optimistic-maxwell-6nfcs6]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint and unit tests
+        shell: bash
+        run: |
+          npx eslint src
+          npx tsx src/plc/sim/engine.test.ts
+          npx tsx src/electrical/strength.test.ts
+          npx tsx src/electrical/step/cabinetStep.test.ts
+          npx tsx src/electrical/labels/layout.test.ts
+
+      - name: Build installer
+        run: npm run dist:win
+        env:
+          # Unsigned for now (see docs/INSTALL-WINDOWS.md); don't look for a certificate.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ISA-Auto-Programmer-Setup
+          path: |
+            release/*.exe
+            release/latest.yml
+          if-no-files-found: error
+
+      - name: Publish release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/*.exe release/latest.yml \
+            --title "ISA Auto Programmer $GITHUB_REF_NAME" \
+            --notes "Windows installer. Download ISA-Auto-Programmer-Setup-*.exe and double-click it. See docs/INSTALL-WINDOWS.md."
