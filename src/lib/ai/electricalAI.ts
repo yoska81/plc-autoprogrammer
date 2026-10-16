@@ -93,6 +93,7 @@ Design practice to follow:
 - 24VDC distribution protection: a supply that can deliver more current than the 24VDC wiring is rated for needs branch protection on its outputs (fused terminal blocks or DC-rated miniature breakers from the catalog). Rule of thumb: 18 AWG control wiring max 7 A, 16 AWG max 10 A, 14 AWG max 15 A — protect each 24VDC branch at or below its wire rating, and say in "notes" which branches you protected.
 - Use the designer's required parts exactly as given.
 - Catalog specifics: follow the per-brand notes given with the catalog.
+- Every E-stop operator gets a yellow \"EMERGENCY STOP\" legend plate behind it (red on yellow, NFPA 79 10.7.2 / IEC 60204-1 10.7.2) when the catalog has one.
 - Use only part numbers from the catalog. If something needed is not in the catalog, leave it out and say so in "notes".
 - Tags: CB (breakers), DS (disconnect), PS (power supply), K (contactors), OL (overloads), MP (motor protectors), VFD, CR (relays), SR (safety relay), TB (terminal strips), PB (pushbuttons), ES (E-stop), SS (selectors), PL (pilot lights), LS/PRS (sensors), SOL (solenoids), M (motors), PLC, ENC (enclosure).
 - ioWiring: one entry for every PLC I/O point in the I/O list, with the field device tag, type, and "location": "Cabinet door" for pushbuttons, selectors, pilot lights and the E-stop on the panel; "Cabinet" for devices inside it (safety relay status, overload contacts); otherwise the machine zone where the device is mounted (e.g. "Infeed conveyor", "Pusher station").

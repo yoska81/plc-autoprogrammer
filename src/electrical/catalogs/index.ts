@@ -60,7 +60,7 @@ const tag = (vendor: VendorId, parts: CatalogPart[]) => parts.map((p) => ({ ...p
 export const VENDORS: Vendor[] = [
   {
     id: 'automationdirect', name: 'AutomationDirect', supplier: 'AutomationDirect', parts: tag('automationdirect', AUTOMATIONDIRECT),
-    notes: 'An enclosure needs its matching subpanel (enclosure category, ratings kind=subpanel). The rotary disconnect needs its switch, a handle and a shaft. A reversing starter is two contactors plus SZ-RM, SZ-ERW1A and SZ-ERW1B. For a dual-channel E-stop into a safety relay, add an ECX1030-2 contact block to the E-stop. Order terminal end covers/brackets and markers with the terminal blocks.',
+    notes: 'An enclosure needs its matching subpanel (enclosure category, ratings kind=subpanel). The rotary disconnect needs its switch, a handle and a shaft. A reversing starter is two contactors plus SZ-RM, SZ-ERW1A and SZ-ERW1B. For a dual-channel E-stop into a safety relay, add an ECX1030-2 contact block to the E-stop, and the yellow "EMERGENCY STOP" legend plate ECX1651 under every E-stop operator. Order terminal end covers/brackets and markers with the terminal blocks.',
   },
   {
     id: 'allen-bradley', name: 'Allen-Bradley', supplier: 'Allen-Bradley (Rockwell Automation distributor)', parts: tag('allen-bradley', ALLEN_BRADLEY),

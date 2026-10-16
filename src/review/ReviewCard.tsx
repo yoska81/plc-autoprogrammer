@@ -20,7 +20,7 @@ export default function ReviewCard() {
           {' · '}{ai ? `AI review run ${new Date(ai.at).toLocaleDateString()}` : 'AI review not run yet'}. The findings and their resolutions are printed in the engineering package (Appendix C) and the Excel report.
         </p>
       </div>
-      <Link to="/review" className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-brand-950 hover:bg-brand-700">Open design review</Link>
+      <Link to="/review" className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Open design review</Link>
     </div>
   );
 }

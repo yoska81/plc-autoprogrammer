@@ -3,21 +3,21 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      // Brand palette: lime accent #EAFF46 for actions and selection (dark text on it),
-      // graphite-olive 800–950 for the title/status bars and for brand-coloured text.
+      // Brand palette: bright blue #0d6efd for actions and selection (white text on it),
+      // deep blue 800–950 for brand-coloured text.
       colors: {
         brand: {
-          50: '#fbffe6',
-          100: '#f5ffc4',
-          200: '#ecff94',
-          300: '#e1f866',
-          400: '#cfe83a',
-          500: '#b3cc1c',
-          600: '#eaff46',
-          700: '#d6ef2c',
-          800: '#3b4011',
-          900: '#24270b',
-          950: '#15170a',
+          50: '#eef4ff',
+          100: '#dce8fe',
+          200: '#bcd3fd',
+          300: '#8fb6fb',
+          400: '#5a93f8',
+          500: '#2f7bf5',
+          600: '#0d6efd',
+          700: '#0b5ed7',
+          800: '#0a52c0',
+          900: '#0a3f8f',
+          950: '#0b2a5c',
         },
         // Tailwind's gray/slate-400 (2.5:1 on white) made hint text hard to read.
         gray: { 400: '#7d8590' },

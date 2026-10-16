@@ -59,7 +59,7 @@ export async function loadPicture(file: File, widthPx: number, heightPx: number)
  * The background as it lies on the panel (fit / fill / stretch, no dimming), as a
  * W×H JPEG: what the AI sees when it recreates a screen, so its coordinates are panel pixels.
  */
-export async function panelImage(bg: { src: string; fit: 'fit' | 'fill' | 'stretch' }, widthPx: number, heightPx: number): Promise<string> {
+export async function panelImage(bg: { src: string; fit: 'fit' | 'fill' | 'stretch'; offsetX?: number; offsetY?: number; zoom?: number }, widthPx: number, heightPx: number): Promise<string> {
   const img = new Image();
   img.src = bg.src;
   await img.decode();
@@ -70,12 +70,25 @@ export async function panelImage(bg: { src: string; fit: 'fit' | 'fill' | 'stret
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, widthPx, heightPx);
   const iw = img.naturalWidth, ih = img.naturalHeight;
+  // Same box as the screen view: zoom around the centre, then the Move offset.
+  const z = bg.zoom && bg.zoom > 0 ? bg.zoom : 1;
+  const bw = widthPx * z, bh = heightPx * z;
+  const bx = (widthPx - bw) / 2 + (bg.offsetX ?? 0), by = (heightPx - bh) / 2 + (bg.offsetY ?? 0);
   if (bg.fit === 'stretch') {
-    ctx.drawImage(img, 0, 0, widthPx, heightPx);
+    ctx.drawImage(img, bx, by, bw, bh);
   } else {
-    const s = bg.fit === 'fill' ? Math.max(widthPx / iw, heightPx / ih) : Math.min(widthPx / iw, heightPx / ih);
+    const s = bg.fit === 'fill' ? Math.max(bw / iw, bh / ih) : Math.min(bw / iw, bh / ih);
     const w = iw * s, h = ih * s;
-    ctx.drawImage(img, (widthPx - w) / 2, (heightPx - h) / 2, w, h);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(bx, by, bw, bh); ctx.clip();
+    ctx.drawImage(img, bx + (bw - w) / 2, by + (bh - h) / 2, w, h);
+    ctx.restore();
   }
   return canvas.toDataURL('image/jpeg', 0.9);
+}
+
+/** Where the background picture box sits after Move & zoom (zoom around the panel centre, then shift). */
+export function bgBox(bg: { offsetX?: number; offsetY?: number; zoom?: number }, w: number, h: number) {
+  const z = bg.zoom && bg.zoom > 0 ? bg.zoom : 1;
+  return { x: (w - w * z) / 2 + (bg.offsetX ?? 0), y: (h - h * z) / 2 + (bg.offsetY ?? 0), width: w * z, height: h * z };
 }

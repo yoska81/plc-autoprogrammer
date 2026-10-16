@@ -10,6 +10,7 @@ export default function SpecPage() {
   const spec = useSpecStore();
   const questions = useQuestions();
   const filled = SPEC_SECTIONS.filter((s) => spec.sections[s.id]?.trim()).length;
+  const open = questions.filter((q) => q.status === 'open').length;
 
   return (
     <>
@@ -19,13 +20,20 @@ export default function SpecPage() {
           <p className="text-xs text-steel-500 mt-0.5">The spec drives every step. Change it any time; the steps after it are marked out of date and can be updated in one click.</p>
         </div>
         <button onClick={() => navigate('/equipment')} disabled={!filled}
-          className="px-4 py-2 text-sm bg-brand-600 text-brand-950 rounded hover:bg-brand-700 disabled:opacity-40 whitespace-nowrap">
+          className="px-4 py-2 text-sm bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-40 whitespace-nowrap">
           Next: Equipment →
         </button>
       </header>
 
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-4xl space-y-5">
+          {open > 0 && (
+            <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 text-sm text-amber-900">
+              <span className="flex-1">The AI has <b>{open} question{open === 1 ? '' : 's'}</b> about your machine. Answers make the design more accurate; every step also works without them (the AI then uses its assumption).</span>
+              <button onClick={() => document.getElementById('questions-and-answers')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="px-3 py-1 text-xs font-medium bg-white border border-amber-300 rounded-sm hover:bg-amber-100">Answer them ↓</button>
+            </div>
+          )}
           <SpecIntake />
 
           {/* Sections */}

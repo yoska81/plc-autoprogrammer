@@ -13,7 +13,7 @@ const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const HASH = process.env.HASH === '1'; // preview build (hash routing, example project seeded)
 const log = (...a) => console.log('•', ...a);
 
-const ROUTES = ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine',
+const ROUTES = ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=layout',
   '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/review', '/export', '/settings', '/plc', '/import', '/new'];
 const VIEWPORTS = [[1366, 768], [1920, 1080]];
 

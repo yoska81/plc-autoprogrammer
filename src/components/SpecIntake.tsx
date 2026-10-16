@@ -80,7 +80,7 @@ export default function SpecIntake() {
             )}
             <div className="flex items-center gap-3">
               <button onClick={organize} disabled={busy || !apiKey || (!newText.trim() && !files.length)}
-                className="px-4 py-2 text-sm bg-brand-600 text-brand-950 rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
+                className="px-4 py-2 text-sm bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
                 {busy ? <><Spinner /> Organizing the spec…</> : 'Add to spec'}
               </button>
               {undo && !busy && (

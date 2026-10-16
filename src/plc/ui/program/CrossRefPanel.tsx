@@ -41,7 +41,7 @@ export default function CrossRefPanel({ program, labelOf, address, onAddress, se
           <div className="flex flex-wrap gap-1">
             {selAddrs.map((a) => (
               <button key={a} type="button" onClick={() => onAddress(a)}
-                className={`rounded border px-1.5 py-0.5 font-mono ${address === a ? 'border-brand-600 bg-brand-600 text-brand-950' : 'border-gray-300 hover:bg-brand-50'}`}>{a}</button>
+                className={`rounded border px-1.5 py-0.5 font-mono ${address === a ? 'border-brand-600 bg-brand-600 text-white' : 'border-gray-300 hover:bg-brand-50'}`}>{a}</button>
             ))}
           </div>
         </div>
@@ -92,7 +92,7 @@ export default function CrossRefPanel({ program, labelOf, address, onAddress, se
           return (
             <li key={a}>
               <button type="button" onClick={() => onAddress(address === a ? null : a)}
-                className={`flex w-full items-center gap-2 rounded-sm px-1.5 py-0.5 text-left ${address === a ? 'bg-brand-600 text-brand-950' : 'hover:bg-brand-50'}`}>
+                className={`flex w-full items-center gap-2 rounded-sm px-1.5 py-0.5 text-left ${address === a ? 'bg-brand-600 text-white' : 'hover:bg-brand-50'}`}>
                 <span className="w-14 shrink-0 font-mono font-semibold">{a}</span>
                 <span className={`flex-1 truncate ${address === a ? '' : 'text-gray-600'}`}>{labelOf(a)}</span>
                 <span className={`shrink-0 font-mono text-[10.5px] ${address === a ? 'text-brand-800' : 'text-gray-400'}`} title="reads / writes">{u.length - w}R {w}W</span>

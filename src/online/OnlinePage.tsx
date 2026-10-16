@@ -113,7 +113,7 @@ export default function OnlinePage() {
           <input aria-label="Unit id" type="number" min={0} max={255} value={st.settings.unitId} onChange={(e) => st.setSettings({ unitId: Math.max(0, Math.min(255, Number(e.target.value) || 0)) })} disabled={connected} className={`${input} w-16`} /></label>
         {connected || st.status === 'connecting'
           ? <button className={btn} onClick={() => void disconnectPlc()}>Disconnect</button>
-          : <button className="px-4 py-1.5 text-sm rounded bg-brand-600 text-brand-950 font-medium hover:bg-brand-700 disabled:opacity-40" disabled={!desktop || !isClick} onClick={() => void connectPlc(all)}>Connect</button>}
+          : <button className="px-4 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700 disabled:opacity-40" disabled={!desktop || !isClick} onClick={() => void connectPlc(all)}>Connect</button>}
         <span className="flex items-center gap-2 text-xs" role="status">
           <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-600' : st.status === 'connecting' ? 'bg-amber-500' : st.status === 'error' ? 'bg-red-600' : 'bg-steel-300'}`} />
           {st.status === 'connecting' ? <><Spinner /> Connecting…</> : connected ? `Connected · ${st.polls} reads · ${st.lastUpdate ? new Date(st.lastUpdate).toLocaleTimeString() : ''}` : st.status === 'error' ? 'Not connected' : 'Offline'}
@@ -192,7 +192,7 @@ export default function OnlinePage() {
           hmi && model && screen ? (
             <div className="space-y-2">
               <div className="flex flex-wrap gap-1">{hmi.screens.map((s) => (
-                <button key={s.id} onClick={() => setScreenId(s.id)} className={`rounded px-2.5 py-1 text-xs border ${s.id === screen.id ? 'border-brand-600 bg-brand-600 text-brand-950' : 'border-steel-300 bg-white'}`}>{s.name}</button>
+                <button key={s.id} onClick={() => setScreenId(s.id)} className={`rounded px-2.5 py-1 text-xs border ${s.id === screen.id ? 'border-brand-600 bg-brand-600 text-white' : 'border-steel-300 bg-white'}`}>{s.name}</button>
               ))}</div>
               <div className="max-w-4xl">
                 <HmiScreenView screen={screen} widthPx={model.widthPx} heightPx={model.heightPx} design={hmi}

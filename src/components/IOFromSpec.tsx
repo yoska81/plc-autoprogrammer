@@ -63,7 +63,7 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
   const button = (
     <button onClick={generate} disabled={busy || !apiKey || specEmpty}
       title={specEmpty ? 'Describe the machine first' : !apiKey ? 'Add your Anthropic API key in Settings' : undefined}
-      className="h-7 px-3 text-[13px] font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
+      className="h-7 px-3 text-[13px] font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
       {busy ? <><Spinner /> Reading the spec…</> : projectIO.length ? 'Update I/O from spec' : 'Generate I/O from spec'}
     </button>
   );
@@ -123,7 +123,7 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
             </div>
             <div className="px-4 py-2 border-t border-steel-200 bg-[#f7f8f9] flex justify-end gap-2">
               <button onClick={() => setPlan(null)} className="px-4 py-1.5 border border-steel-300 bg-white rounded-sm hover:bg-steel-50">Cancel</button>
-              <button onClick={apply} className="px-4 py-1.5 font-medium bg-brand-600 text-brand-950 rounded-sm hover:bg-brand-700">Apply changes</button>
+              <button onClick={apply} className="px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700">Apply changes</button>
             </div>
           </div>
         </div>

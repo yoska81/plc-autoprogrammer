@@ -1691,6 +1691,17 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     verified: true,
   },
   {
+    // Accessory under the E-stop (no hole of its own): not a door device, so no cutout is drawn for it.
+    partNumber: 'ECX1651',
+    category: 'other',
+    description: 'Oversized legend plate, round, yellow, black engraved "EMERGENCY STOP", plastic, for 22mm pilot devices (E-stop yellow background)',
+    manufacturer: 'AutomationDirect',
+    url: 'https://www.automationdirect.com/adc/shopping/catalog/pushbuttons_-z-_switches_-z-_indicators/legend_plates/ecx1651',
+    mount: 'field',
+    ratings: { color: 'yellow', legend: 'EMERGENCY STOP', size: '22mm', kind: 'legend plate' },
+    verified: true,
+  },
+  {
     partNumber: 'GCX1136',
     category: 'estop',
     description: '22mm E-stop, red 60mm mushroom, twist-to-release, (1) N.C., metal',

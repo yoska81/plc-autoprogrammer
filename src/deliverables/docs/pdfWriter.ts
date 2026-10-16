@@ -9,20 +9,20 @@ import { isGroup, type DocTable } from './table';
  */
 
 export type RGB = [number, number, number];
-/** Graphite: headings, rules, title text. */
-export const BRAND: RGB = [36, 39, 11];
-/** Lime brand accent — small accents only, never text on white. */
-export const ACCENT: RGB = [234, 255, 70];
-/** Light lime: table header fill (dark text). */
-export const HEAD_FILL: RGB = [245, 255, 196];
+/** Deep blue: headings, rules, title text. */
+export const BRAND: RGB = [11, 42, 92];
+/** Blue brand accent — small accents only. */
+export const ACCENT: RGB = [13, 110, 253];
+/** Light blue: table header fill (dark text). */
+export const HEAD_FILL: RGB = [220, 232, 254];
 /** Neutral tint for call-outs. */
-export const INFO_FILL: RGB = [248, 250, 236];
+export const INFO_FILL: RGB = [238, 244, 255];
 export const WARN_FILL: RGB = [253, 236, 236];
 export const INK: RGB = [30, 35, 39];
 export const MUTED: RGB = [100, 112, 124];
 export const RED: RGB = [176, 0, 0];
-const GROUP_FILL: RGB = [236, 238, 226];
-const ZEBRA: RGB = [248, 249, 244];
+const GROUP_FILL: RGB = [229, 234, 242];
+const ZEBRA: RGB = [246, 248, 251];
 const RULE: RGB = [184, 192, 204];
 
 const PT = 0.3528; // mm per point

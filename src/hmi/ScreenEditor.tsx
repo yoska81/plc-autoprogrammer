@@ -77,7 +77,7 @@ export default function ScreenEditor({ screen, design, widthPx, heightPx, select
     const p = toPanel(e);
     if (drag.kind === 'move') setDraft(moveElements(screen, drag.ids, p.x - drag.x, p.y - drag.y, bounds, grid));
     else if (drag.kind === 'resize') {
-      const next = resizeElement(drag.start, drag.handle, p.x - drag.x, p.y - drag.y, bounds, grid);
+      const next = resizeElement(drag.start, drag.handle, p.x - drag.x, p.y - drag.y, bounds, grid, e.shiftKey);
       setDraft({ ...screen, elements: screen.elements.map((x) => (x.id === drag.id ? next : x)) });
     } else setDrag({ ...drag, x2: p.x, y2: p.y });
   };
@@ -117,7 +117,7 @@ export default function ScreenEditor({ screen, design, widthPx, heightPx, select
           <>
             <defs>
               <pattern id="hmi-grid" width={GRID * 4} height={GRID * 4} patternUnits="userSpaceOnUse">
-                <path d={`M ${GRID * 4} 0 L 0 0 0 ${GRID * 4}`} fill="none" stroke="#eaff46" strokeOpacity={0.12} strokeWidth={1} />
+                <path d={`M ${GRID * 4} 0 L 0 0 0 ${GRID * 4}`} fill="none" stroke="#3b8bff" strokeOpacity={0.12} strokeWidth={1} />
               </pattern>
             </defs>
             <rect width={widthPx} height={heightPx} fill="url(#hmi-grid)" style={{ pointerEvents: 'none' }} />
@@ -130,32 +130,37 @@ export default function ScreenEditor({ screen, design, widthPx, heightPx, select
             <title>{el.label || el.kind}{el.address ? ` · ${el.address}` : ''}</title>
           </rect>
         ))}
+        {/* Selected elements get their grab area on top, so a picture (or anything) under other elements can still be dragged. */}
         {sel.map((el) => (
-          <rect key={`s-${el.id}`} x={el.x - 2} y={el.y - 2} width={el.w + 4} height={el.h + 4} fill="none" stroke="#eaff46" strokeWidth={2} style={{ pointerEvents: 'none' }} />
+          <rect key={`g-${el.id}`} x={el.x} y={el.y} width={el.w} height={el.h} fill="transparent" data-selected-element={el.id}
+            style={{ cursor: 'move' }} onPointerDown={(e) => startMove(e, el)} />
+        ))}
+        {sel.map((el) => (
+          <rect key={`s-${el.id}`} x={el.x - 2} y={el.y - 2} width={el.w + 4} height={el.h + 4} fill="none" stroke="#3b8bff" strokeWidth={2} style={{ pointerEvents: 'none' }} />
         ))}
         {sel.length === 1 && HANDLES.map((h) => {
           const el = sel[0];
           const cx = h.includes('w') ? el.x : h.includes('e') ? el.x + el.w : el.x + el.w / 2;
           const cy = h.includes('n') ? el.y : h.includes('s') ? el.y + el.h : el.y + el.h / 2;
           return (
-            <rect key={h} x={cx - hs / 2} y={cy - hs / 2} width={hs} height={hs} fill="#eaff46" stroke="#15170a" strokeWidth={1}
+            <rect key={h} x={cx - hs / 2} y={cy - hs / 2} width={hs} height={hs} fill="#3b8bff" stroke="#15170a" strokeWidth={1}
               style={{ cursor: CURSOR[h] }} data-handle={h} onPointerDown={(e) => startResize(e, el, h)} />
           );
         })}
         {sel.length === 1 && (
-          <text x={sel[0].x} y={Math.max(12, sel[0].y - 6)} fill="#eaff46" fontSize={11} fontFamily="ui-monospace, monospace" style={{ pointerEvents: 'none' }}>
+          <text x={sel[0].x} y={Math.max(12, sel[0].y - 6)} fill="#3b8bff" fontSize={11} fontFamily="ui-monospace, monospace" style={{ pointerEvents: 'none' }}>
             {sel[0].x},{sel[0].y} · {sel[0].w}×{sel[0].h}
           </text>
         )}
         {(proposal ?? []).map((el) => (
           <g key={`p-${el.id}`} style={{ pointerEvents: 'none' }}>
-            <rect x={el.x} y={el.y} width={el.w} height={el.h} fill="#eaff46" fillOpacity={0.12} stroke="#eaff46" strokeWidth={2} strokeDasharray="6 4" />
-            <text x={el.x + 4} y={el.y + 13} fill="#eaff46" fontSize={11} fontFamily="ui-sans-serif, sans-serif">{el.label || el.kind}</text>
+            <rect x={el.x} y={el.y} width={el.w} height={el.h} fill="#3b8bff" fillOpacity={0.12} stroke="#3b8bff" strokeWidth={2} strokeDasharray="6 4" />
+            <text x={el.x + 4} y={el.y + 13} fill="#3b8bff" fontSize={11} fontFamily="ui-sans-serif, sans-serif">{el.label || el.kind}</text>
           </g>
         ))}
         {drag?.kind === 'marquee' && (
           <rect x={Math.min(drag.x, drag.x2)} y={Math.min(drag.y, drag.y2)} width={Math.abs(drag.x2 - drag.x)} height={Math.abs(drag.y2 - drag.y)}
-            fill="#eaff46" fillOpacity={0.08} stroke="#eaff46" strokeDasharray="4 3" style={{ pointerEvents: 'none' }} />
+            fill="#3b8bff" fillOpacity={0.08} stroke="#3b8bff" strokeDasharray="4 3" style={{ pointerEvents: 'none' }} />
         )}
       </svg>
     </div>
