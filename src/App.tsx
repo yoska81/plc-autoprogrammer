@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   DocumentPlusIcon, ArrowUpTrayIcon, PlayIcon, ArrowDownTrayIcon, Cog6ToothIcon,
-  FolderOpenIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, DocumentIcon, InformationCircleIcon,
+  FolderOpenIcon, ArrowDownOnSquareIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, DocumentIcon, InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { IS_PREVIEW } from './preview/mode';
 import { useAutoReview } from './review/useAutoReview';
@@ -15,6 +15,7 @@ import type { StageId } from './store/useStageStore';
 import UpdateAll from './components/UpdateAll';
 import ResizablePane from './components/ResizablePane';
 import { useOpenCounts } from './components/questions/useQuestionStore';
+import { useProjectFile } from './project/useProjectFile';
 
 
 const DOT: Record<StageStatus | 'none', string> = {
@@ -101,6 +102,7 @@ export default function App() {
   const hmiPart = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber);
   const rev = currentRevision(useProjectStore((s) => s.info));
   useEffect(() => { ensureActive(); }, [ensureActive]);
+  const projectFile = useProjectFile();
   useAutoReview();
 
   const projectName = projects.find((p) => p.id === activeId)?.name ?? 'Project';
@@ -161,6 +163,9 @@ export default function App() {
       <div className="h-7 flex-shrink-0 bg-[#f7f8f9] border-b border-steel-200 flex items-center px-1 gap-0.5">
         <Menu label="Project">
           <MenuItem onClick={() => navigate('/new')}>New project…</MenuItem>
+          <MenuItem onClick={projectFile.open}>Open project file (.isap)…<span className="float-right pl-6 text-steel-400">Ctrl+O</span></MenuItem>
+          <MenuItem onClick={projectFile.save}>Save project to file (.isap)…<span className="float-right pl-6 text-steel-400">Ctrl+S</span></MenuItem>
+          <div className="border-t border-steel-200 my-1" />
           <MenuItem onClick={() => navigate('/import')}>Import existing system…</MenuItem>
           <MenuItem onClick={() => navigate('/project')}>Project data and revisions…</MenuItem>
           <div className="border-t border-steel-200 my-1" />
@@ -181,7 +186,10 @@ export default function App() {
       {/* Toolbar */}
       <div className="h-10 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-2 gap-1">
         <ToolButton title="New project" onClick={() => navigate('/new')}><DocumentPlusIcon className="w-5 h-5" /></ToolButton>
+        <ToolButton title="Open project file (Ctrl+O)" onClick={projectFile.open}><FolderOpenIcon className="w-5 h-5" /></ToolButton>
+        <ToolButton title="Save project to file (Ctrl+S)" onClick={projectFile.save}><ArrowDownOnSquareIcon className="w-5 h-5" /></ToolButton>
         <ToolButton title="Import existing system" onClick={() => navigate('/import')}><ArrowUpTrayIcon className="w-5 h-5" /></ToolButton>
+        {projectFile.input}
         <span className="w-px h-6 bg-steel-200 mx-1" />
         <ToolButton title="Simulation" onClick={() => navigate('/simulate')}><PlayIcon className="w-5 h-5" /></ToolButton>
         <ToolButton title="Deliverables" onClick={() => navigate('/export')}><ArrowDownTrayIcon className="w-5 h-5" /></ToolButton>
