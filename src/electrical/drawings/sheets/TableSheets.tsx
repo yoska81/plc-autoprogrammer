@@ -3,6 +3,8 @@ import { WIRE_NUMBERING_NOTES, codeRefs, ratingText, supplyText } from '../../de
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
 import { TERM_ROWS, type DrawingPlan, type PlannedSheet, type SheetSpec } from '../plan';
 import { Line, Txt } from '../symbols';
+import { isIec, NEMA_TO_IP, SUPPLY_INFO } from '../../../standards/regions';
+import { IEC_WIRE_COLORS, iecCoverNotes } from '../../../standards/iecText';
 
 const WIRE_COLORS: [string, string][] = [
   ['BK  BLACK', 'AC/DC power circuits — line and load (ungrounded)'],
@@ -47,7 +49,14 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   const hasFuses = model.rc.some((c) => c.category === 'fuse');
   const hasCb = model.rc.some((c) => c.category === 'breaker');
   const protText = hasFuses && !hasCb ? 'FUSES (CLASS PER FUSE HOLDER), SPARE FUSES TO BE SUPPLIED' : hasFuses ? 'CIRCUIT BREAKERS AND FUSES' : 'CIRCUIT BREAKERS';
-  const notes = [
+  const iec = isIec(ctx.region);
+  const colors = iec ? IEC_WIRE_COLORS : WIRE_COLORS;
+  const notes = iec ? iecCoverNotes(ctx.region, {
+    supply: supplyText(inp.supply), threePhase: model.phases === 3, neutral: SUPPLY_INFO[inp.supply].neutral, disconnect: model.disconnect?.tag ?? '(NOT SPECIFIED)',
+    supplies: model.psBranches.map((b) => b.ps.tag).join(', ') || 'POWER SUPPLY', enclosure: `${NEMA_TO_IP[inp.enclosureRating] ?? inp.enclosureRating} (≈ ${inp.enclosureRating})`,
+    protection: hasFuses && !hasCb ? 'FUSES (gG / aM)' : hasFuses ? 'MINIATURE CIRCUIT BREAKERS AND FUSES' : 'MINIATURE CIRCUIT BREAKERS (MCB)',
+    transformer: model.transformer ? `${model.transformer.tag} (${ratingText(model.transformer)})` : null,
+  }) : [
     `SUPPLY: ${supplyText(inp.supply)}${model.phases === 3 ? ', 3-WIRE + PE' : ', L1 + N + PE'}. MAIN DISCONNECT ${model.disconnect?.tag ?? '(NOT SPECIFIED)'} LOCKABLE IN OFF POSITION.`,
     `CONTROL VOLTAGE: 24VDC FROM ${model.psBranches.map((b) => b.ps.tag).join(', ') || 'POWER SUPPLY'}. 0V IS A GROUNDED CONDUCTOR, BONDED TO PE AT ONE POINT (NFPA 79 9.4.3).`,
     `ENCLOSURE: ${inp.enclosureRating}. CONTROL PANEL TO BE BUILT AND LABELED PER ${codes.panel}${codes.region === 'Canada' ? ' (CSA/cUL CERTIFIED)' : ''}; MARK SCCR, SUPPLY VOLTAGE, FLA OF LARGEST MOTOR AND FULL-LOAD CURRENT ON THE NAMEPLATE.`,
@@ -72,7 +81,7 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   }
   const noteH = notes.reduce((h, n) => h + wrapText(n, W - 8, 2.4).length * 2.4 * 1.3 + 1.2, 0);
   const cy = AREA.y + 15 + noteH + 6;
-  const ny = cy + 5.5 + WIRE_COLORS.length * 3.6 + 5;
+  const ny = cy + 5.5 + colors.length * 3.6 + 5;
   const numLines: { text: string; y: number; bullet: boolean }[] = [];
   let yy = ny + 5.5;
   for (const n of WIRE_NUMBERING_NOTES) {
@@ -92,7 +101,7 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
     <g>
       <Txt x={x0} y={AREA.y + 18} size={7} bold maxW={RX - x0 - 10}>{ctx.projectName.toUpperCase() || 'UNTITLED PROJECT'}</Txt>
       <Txt x={x0} y={AREA.y + 27} size={4.2}>ELECTRICAL CONTROL PANEL — DRAWING SET</Txt>
-      <Txt x={x0} y={AREA.y + 34} size={2.8}>{`${supplyText(inp.supply)}  •  24VDC CONTROL  •  ${inp.enclosureRating}  •  ${model.motors.length} MOTOR${model.motors.length === 1 ? '' : 'S'}`}</Txt>
+      <Txt x={x0} y={AREA.y + 34} size={2.8}>{`${supplyText(inp.supply)}  •  24VDC CONTROL  •  ${iec ? `${NEMA_TO_IP[inp.enclosureRating] ?? inp.enclosureRating}` : inp.enclosureRating}  •  ${model.motors.length} MOTOR${model.motors.length === 1 ? '' : 'S'}`}</Txt>
       <Txt x={x0} y={AREA.y + 39} size={2.8} maxW={RX - x0 - 10}>{`PLC: ${ctx.plc.vendor} ${ctx.plc.name} — ${ctx.plc.cpuLabel}`}</Txt>
       <Txt x={x0} y={AREA.y + 44} size={2.8}>{`I/O: ${model.io.filter((p) => p.type === 'input').length} INPUTS, ${model.io.filter((p) => p.type === 'output').length} OUTPUTS   •   ${rs.revisions.length ? `REV ${rs.rev} ${rs.date}` : `REV ${rs.rev} — NOT YET ISSUED`}   •   ${plan.sheets.length} SHEETS`}</Txt>
       {/* project data */}
@@ -133,8 +142,8 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
       <Line x1={RX - 4} y1={AREA.y + 4} x2={RX - 4} y2={AREA_B - 4} w={LW_THIN} />
       <Txt x={RX} y={AREA.y + 9} size={3.2} bold>GENERAL NOTES</Txt>
       <NoteList x={RX} y={AREA.y + 15} w={W} items={notes} size={2.4} maxY={AREA_B} />
-      <Txt x={RX} y={cy} size={3} bold>WIRE COLORS (NFPA 79 13.2.4)</Txt>
-      {WIRE_COLORS.map(([c, d], i) => (
+      <Txt x={RX} y={cy} size={3} bold>{iec ? 'CONDUCTOR COLOURS (IEC 60204-1 13.2)' : 'WIRE COLORS (NFPA 79 13.2.4)'}</Txt>
+      {colors.map(([c, d], i) => (
         <g key={c}>
           <Txt x={RX} y={cy + 5.5 + i * 3.6} size={2.3} mono bold>{c}</Txt>
           <Txt x={RX + 42} y={cy + 5.5 + i * 3.6} size={2.3} maxW={W - 42}>{d}</Txt>

@@ -1,3 +1,4 @@
+import { regionSpec, type Region } from '../../standards/regions';
 import type { ProjectSnapshot } from '../collect';
 import { currentRevision, type Revision } from '../../store/useProjectStore';
 import { codeRefs, type DrawingContext } from '../../electrical/derive';
@@ -26,7 +27,7 @@ export interface DocMeta {
   /** True when the current revision is an approved / for-construction issue with an approver named. */
   approved: boolean;
   status: string;
-  region: 'US' | 'Canada';
+  region: Region;
   codes: ReturnType<typeof codeRefs>;
   /** Drawing set reference: number range and sheet list (when an electrical design exists). */
   drawings: { first: string; last: string; sheets: { no: string; title: string }[] } | null;
@@ -68,7 +69,7 @@ export function docMeta(p: ProjectSnapshot): DocMeta {
     approvedBy: info.approvedBy?.trim() ?? '',
     approved,
     status: approved ? `ISSUED — Rev ${rev.rev}: ${rev.description}` : PRELIMINARY,
-    region: info.region === 'Canada' ? 'Canada' : 'US',
+    region: regionSpec(info.region).value,
     codes: codeRefs(ctx),
     drawings,
     hmiPart: p.hmi?.hmiPartNumber ?? p.equipment?.hmi ?? null,

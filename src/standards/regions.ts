@@ -186,7 +186,7 @@ export function awgNear(mm2: number): string {
   return best;
 }
 
-export const mm2Text = (mm2: number) => `${String(mm2).replace('.', ',')} mm²`;
+export const mm2Text = (mm2: number) => `${mm2} mm²`;
 
 /**
  * NFPA 79 wire colour (as drawn by the electrical engine) → IEC 60204-1 §13.2 colour for the same
@@ -197,7 +197,7 @@ export function iecColor(nfpa: string, fn = ''): string {
   if (c === 'GN/YE' || c === 'GN') return 'GN/YE';
   // NFPA white is the grounded conductor: the supply neutral (IEC light blue), or the earthed side of
   // the control transformer secondary, which is part of the AC control circuit (IEC red).
-  if (c === 'WH' || c === 'WH/BK') return /secondary/i.test(fn) ? 'RD' : 'BU(LT)';
+  if (c === 'WH' || c === 'WH/BK') return /secondary|120VAC/i.test(fn) ? 'RD' : 'BU(LT)';
   if (c === 'RD') return 'RD';
   if (c === 'BU' || c === 'WH/BU') return 'BU';
   if (c === 'OR' || c === 'YE') return 'OG';
@@ -258,3 +258,25 @@ export function mcbFor(amps: number, factor = 1.25): number {
 
 /** IEC enclosure IP rating closest to a NEMA type (IEC 60529; NEMA→IP is one-way, approximate). */
 export const NEMA_TO_IP: Record<string, string> = { 'NEMA 1': 'IP20', 'NEMA 12': 'IP54', 'NEMA 4': 'IP66', 'NEMA 4X': 'IP66 (corrosion resistant)' };
+
+/** Pick the US, Canadian or IEC variant of a text or value for a region. */
+export function byRegion<T>(region: Region | string | undefined, us: T, canada: T, iec: T): T {
+  return isIec(region) ? iec : region === 'Canada' ? canada : us;
+}
+
+/**
+ * Paper for the drawing set. Sheets are laid out on ANSI B (431.8 × 279.4 mm); on A3 (420 × 297 mm,
+ * ISO 216) the same sheet is printed at 420 / 431.8 = 97.3 % and centred, so scales change slightly.
+ */
+export const PAPER: Record<SheetFormat, { w: number; h: number; css: string; label: string }> = {
+  'ANSI B': { w: 431.8, h: 279.4, css: '17in 11in', label: 'ANSI B 17 × 11 in' },
+  A3: { w: 420, h: 297, css: '420mm 297mm', label: 'A3 420 × 297 mm' },
+};
+
+/** Where the ANSI B sheet sits on the paper (mm) and its scale factor. */
+export function sheetOnPaper(sheet: SheetFormat | undefined) {
+  const p = PAPER[sheet ?? 'ANSI B'];
+  const f = Math.min(p.w / 431.8, p.h / 279.4);
+  const w = 431.8 * f, h = 279.4 * f;
+  return { paper: p, factor: f, x: (p.w - w) / 2, y: (p.h - h) / 2, w, h };
+}

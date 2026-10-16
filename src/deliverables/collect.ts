@@ -1,3 +1,4 @@
+import { withDrawingOptions } from '../standards/drawingOptions';
 import { useProgramStore } from '../store/useProgramStore';
 import { useIOStore } from '../store/useIOStore';
 import { useProjectStore } from '../store/useProjectStore';
@@ -38,7 +39,7 @@ export function collectProject() {
     if (a && p.description) labels.set(a, p.description);
   }
 
-  const drawingCtx: DrawingContext | null = electrical.design ? {
+  const drawingCtx: DrawingContext | null = electrical.design ? withDrawingOptions({
     projectName: program.projectName,
     design: electrical.design,
     getPart,
@@ -49,7 +50,7 @@ export function collectProject() {
     doc: docInfo(info),
     machineLayout: layoutForDesign(layoutFor(useProjectsStore.getState().activeId)),
     analog: analogSetup(profile, cpu, moduleSlots(modules), io),
-  } : null;
+  }, info) : null;
 
   return {
     projectName: program.projectName,

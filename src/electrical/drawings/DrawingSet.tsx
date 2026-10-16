@@ -2,6 +2,7 @@
  * Electrical drawing set viewer: ANSI B sheets rendered as SVG.
  * Normal mode = sheet tabs + one sheet with zoom; printMode = every sheet on its own page.
  */
+import { sheetOnPaper } from '../../standards/regions';
 import { useMemo, useState } from 'react';
 import type { DrawingContext } from '../derive';
 import { SHEET_H, SHEET_W } from './geometry';
@@ -18,8 +19,8 @@ interface DrawingSetProps {
 type Zoom = 'fit' | 1 | 2;
 
 // CSS `size` takes either lengths or a keyword + orientation; 17in x 11in is already landscape.
-const PRINT_CSS = `
-@page { size: 17in 11in; margin: 0; }
+const printCss = (size: string) => `
+@page { size: ${size}; margin: 0; }
 @media print {
   html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
   .dwg-page { break-after: page; page-break-after: always; box-shadow: none !important; margin: 0 !important; }
@@ -29,6 +30,7 @@ const PRINT_CSS = `
 
 export default function DrawingSet({ ctx, printMode, section = 'all' }: DrawingSetProps) {
   const plan = useMemo(() => planDrawings(ctx), [ctx]);
+  const paper = sheetOnPaper(ctx.sheet);
   const shown = useMemo(() => plan.sheets.filter((s) => section === 'all' || s.section === 'cover' || s.section === section), [plan, section]);
   const [active, setActive] = useState(0);
   const [zoom, setZoom] = useState<Zoom>('fit');
@@ -38,10 +40,10 @@ export default function DrawingSet({ ctx, printMode, section = 'all' }: DrawingS
   if (printMode) {
     return (
       <div className="drawing-print bg-white">
-        <style>{PRINT_CSS}</style>
+        <style>{printCss(paper.paper.css)}</style>
         {shown.map((s) => (
-          <div key={s.n} className="dwg-page" style={{ width: '17in', height: '11in', overflow: 'hidden' }}>
-            <SheetView plan={plan} sheet={s} width="17in" height="11in" />
+          <div key={s.n} className="dwg-page" style={{ width: `${paper.paper.w}mm`, height: `${paper.paper.h}mm`, overflow: 'hidden', paddingTop: `${paper.y}mm`, paddingLeft: `${paper.x}mm`, boxSizing: 'border-box' }}>
+            <SheetView plan={plan} sheet={s} width={`${paper.w}mm`} height={`${paper.h}mm`} />
           </div>
         ))}
       </div>

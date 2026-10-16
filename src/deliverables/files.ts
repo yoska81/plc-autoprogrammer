@@ -1,3 +1,4 @@
+import { sheetOnPaper } from '../standards/regions';
 import { IS_PREVIEW } from '../preview/mode';
 import { saveViaAccount } from '../preview/claudeAccount';
 import { notify } from '../store/useNoticeStore';
@@ -36,18 +37,20 @@ async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) =>
   }
 }
 
-/** Electrical drawing set as a vector PDF, one ANSI B (17x11) page per sheet. */
+/** Electrical drawing set as a vector PDF, one page per sheet on the project's paper (ANSI B 17x11 or A3). */
 export async function buildDrawingsPdf(p: ProjectSnapshot): Promise<Blob | null> {
   if (!p.drawingCtx) return null;
   const [{ jsPDF }] = await Promise.all([import('jspdf'), import('svg2pdf.js')]);
   const W = 431.8, H = 279.4;
+  const on = sheetOnPaper(p.drawingCtx.sheet);
+  const PW = on.paper.w, PH = on.paper.h;
   return renderOffscreen(createElement(DrawingSet, { ctx: p.drawingCtx, printMode: true }), async (host) => {
     const sheets = [...host.querySelectorAll<SVGSVGElement>(`svg[viewBox="0 0 ${W} ${H}"]`)];
     if (!sheets.length) throw new Error('No drawing sheets were produced.');
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [W, H] });
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [PW, PH] });
     for (let i = 0; i < sheets.length; i++) {
-      if (i > 0) doc.addPage([W, H], 'landscape');
-      await doc.svg(sheets[i], { x: 0, y: 0, width: W, height: H });
+      if (i > 0) doc.addPage([PW, PH], 'landscape');
+      await doc.svg(sheets[i], { x: on.x, y: on.y, width: on.w, height: on.h });
     }
     return doc.output('blob');
   });

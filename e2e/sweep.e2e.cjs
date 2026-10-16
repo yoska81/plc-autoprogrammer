@@ -186,6 +186,46 @@ async function analogPass(browser, problems) {
   await ctx.close();
 }
 
+/** IEC regions: the example switched to Europe / Israel at 400 V; every electrical page, Project data and Deliverables. */
+async function iecPass(browser, problems, region) {
+  const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
+  await page.goto(BASE + '/spec');
+  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.goto(BASE + '/spec');
+  await page.locator('select[aria-label="Open project"]').selectOption('p_example');
+  await page.goto(BASE + '/project');
+  await page.locator('select[aria-label="Electrical code"]').selectOption(region);
+  const opts = await page.evaluate(() => ['Device designations', 'Drawing symbols', 'Sheet size'].map((l) => document.querySelector(`select[aria-label="${l}"]`)?.value));
+  if (opts.join() !== 'iec81346,iec60617,A3') problems.push([`iec_${region}`, [`region defaults not applied: ${opts.join()}`]]);
+  // Stand-in for a design regenerated for the region: the example's design at 400 V 50 Hz.
+  await page.evaluate(async () => {
+    const { useElectricalStore: E } = await import('/src/store/useElectricalStore.ts');
+    const d = E.getState().design;
+    E.setState({ design: { ...d, inputs: { ...d.inputs, supply: '400VAC-3PH', motors: d.inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' })) } } });
+  });
+  for (const route of ['/project', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=labels', '/review', '/export']) {
+    await page.goto(BASE + route);
+    await page.waitForTimeout(route.includes('electrical') ? 1500 : 800);
+    const name = `iec_${region}_${route.replace(/\W+/g, '_').replace(/^_|_$/g, '')}`;
+    await page.screenshot({ path: `${OUT}${name}.png` });
+    const found = await page.evaluate(audit);
+    if (route === '/electrical?tab=cabinet') {
+      const svg = await page.locator('main svg').first().textContent();
+      if (!/400\/230V 50Hz/.test(svg) || !/IEC 60204-1/.test(svg)) found.push('cover sheet is not IEC (supply / IEC 60204-1 notes missing)');
+      if (/NFPA 79 13\.2\.4/.test(svg)) found.push('cover sheet still shows the NFPA colour table');
+    }
+    for (const e of errors.splice(0)) found.push('error: ' + e.slice(0, 200));
+    if (found.length) { problems.push([name, found]); log(name, '\n   - ' + found.slice(0, 12).join('\n   - ')); }
+  }
+  log(`iec ${region}: done`);
+  await ctx.close();
+}
+
 (async () => {
   const browser = await chromium.launch();
   const problems = [];
@@ -226,6 +266,7 @@ async function analogPass(browser, problems) {
     }
   }
   if (!HASH) await analogPass(browser, problems);
+  if (!HASH) for (const region of ['EU', 'Israel']) await iecPass(browser, problems, region);
   await browser.close();
   log(`${problems.length} page(s) with problems`);
   if (problems.length) process.exit(1);

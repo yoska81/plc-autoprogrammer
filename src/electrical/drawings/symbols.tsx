@@ -1,11 +1,13 @@
 /**
- * JIC / NFPA 79 style schematic symbols as small SVG components (units: mm).
+ * JIC / NFPA 79 style schematic symbols as small SVG components (units: mm), with IEC 60617
+ * variants when the sheet's symbol set is IEC (SymbolSetContext, set per project).
  * All device symbols are drawn for left-to-right signal flow, centred on (x, y);
  * the caller draws the connecting wires up to x ± half the symbol length
  * (see SYM in geometry.ts). Parent groups set stroke="#000" fill="none".
  */
 import type { ReactNode } from 'react';
 import { FONT_MONO, FONT_SANS, LW, LW_THIN, textWidth } from './geometry';
+import { useIecSymbols } from './symbolSet';
 
 type Anchor = 'start' | 'middle' | 'end';
 
@@ -73,6 +75,8 @@ export function TermPt({ x, y }: { x: number; y: number }) {
 
 /** Normally-open / normally-closed relay contact "| |" (8 mm long). */
 export function Contact({ x, y, nc }: { x: number; y: number; nc?: boolean }) {
+  const iec = useIecSymbols();
+  if (iec) return <IecContact x={x} y={y} nc={nc} lead={4} />;
   return (
     <g>
       <Line x1={x - 4} y1={y} x2={x - 1.25} y2={y} />
@@ -84,10 +88,44 @@ export function Contact({ x, y, nc }: { x: number; y: number; nc?: boolean }) {
   );
 }
 
+/**
+ * IEC 60617 make (S00227) / break (S00229) contact for horizontal flow: the moving blade pivots on
+ * the left terminal; a break contact rests against a stop on the right.
+ */
+function IecContact({ x, y, nc, lead }: { x: number; y: number; nc?: boolean; lead: number }) {
+  return (
+    <g>
+      <Line x1={x - lead} y1={y} x2={x - 3} y2={y} />
+      <Line x1={x + 3} y1={y} x2={x + lead} y2={y} />
+      {nc ? <>
+        <Line x1={x + 3} y1={y} x2={x + 3} y2={y - 2.6} />
+        <Line x1={x - 3} y1={y} x2={x + 3.6} y2={y - 1.9} />
+      </> : <Line x1={x - 3} y1={y} x2={x + 2.6} y2={y - 2.8} />}
+    </g>
+  );
+}
+
+/** IEC actuator above a contact: dashed linkage from the blade to the operator drawn by `head`. */
+function IecActuated({ x, y, nc, head }: { x: number; y: number; nc?: boolean; head: ReactNode }) {
+  return (
+    <g>
+      <IecContact x={x} y={y} nc={nc} lead={5} />
+      <Line x1={x} y1={nc ? y - 1 : y - 1.4} x2={x} y2={y - 4.6} w={LW_THIN} dash="0.8 0.6" />
+      {head}
+    </g>
+  );
+}
+
 /** Pushbutton (10 mm long). NO: bridge above the terminals; NC: bridge under them. mushroom = E-stop head. */
 export function Pushbutton({ x, y, nc, mushroom }: { x: number; y: number; nc?: boolean; mushroom?: boolean }) {
+  const iec = useIecSymbols();
   const by = nc ? y + 1.0 : y - 2.0;
   const top = y - 5.2;
+  if (iec) return (
+    <IecActuated x={x} y={y} nc={nc} head={mushroom
+      ? <path d={`M ${x - 3} ${y - 4.6} A 3 2.2 0 0 1 ${x + 3} ${y - 4.6} Z`} strokeWidth={LW} />
+      : <path d={`M ${x - 1.6} ${y - 6} V ${y - 4.6} H ${x + 1.6} V ${y - 6}`} strokeWidth={LW} />} />
+  );
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />
@@ -105,7 +143,9 @@ export function Pushbutton({ x, y, nc, mushroom }: { x: number; y: number; nc?: 
 
 /** Limit switch (10 mm). */
 export function LimitSwitch({ x, y, nc }: { x: number; y: number; nc?: boolean }) {
+  const iec = useIecSymbols();
   const ey = nc ? y + 1.4 : y - 2.6;
+  if (iec) return <IecActuated x={x} y={y} nc={nc} head={<path d={`M ${x - 1.4} ${y - 4.6} L ${x} ${y - 6.4} L ${x + 1.4} ${y - 4.6} Z`} strokeWidth={LW_THIN} />} />;
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />
@@ -120,7 +160,9 @@ export function LimitSwitch({ x, y, nc }: { x: number; y: number; nc?: boolean }
 
 /** Pressure switch (10 mm): contact blade with a diaphragm. */
 export function PressureSwitch({ x, y, nc }: { x: number; y: number; nc?: boolean }) {
+  const iec = useIecSymbols();
   const ey = nc ? y + 1.4 : y - 2.6;
+  if (iec) return <IecActuated x={x} y={y} nc={nc} head={<g><rect x={x - 1.8} y={y - 8.2} width={3.6} height={3.6} strokeWidth={LW_THIN} /><Txt x={x} y={y - 5.5} size={2.4} anchor="middle">p</Txt></g>} />;
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />
@@ -136,6 +178,8 @@ export function PressureSwitch({ x, y, nc }: { x: number; y: number; nc?: boolea
 
 /** Two-position selector switch contact (10 mm). */
 export function Selector({ x, y }: { x: number; y: number }) {
+  const iec = useIecSymbols();
+  if (iec) return <IecActuated x={x} y={y} head={<path d={`M ${x - 1.6} ${y - 6} L ${x - 1.6} ${y - 4.6} H ${x + 1.6} L ${x + 1.6} ${y - 3.4}`} strokeWidth={LW} />} />;
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />
@@ -152,11 +196,12 @@ export function Selector({ x, y }: { x: number; y: number }) {
 
 /** Relay / contactor coil: circle, 7 mm. */
 export function Coil({ x, y }: { x: number; y: number }) {
+  const iec = useIecSymbols();
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - 3} y2={y} />
       <Line x1={x + 3} y1={y} x2={x + 5} y2={y} />
-      <circle cx={x} cy={y} r={3} strokeWidth={LW} />
+      {iec ? <rect x={x - 3} y={y - 2} width={6} height={4} strokeWidth={LW} /> /* IEC 60617 S00305 */ : <circle cx={x} cy={y} r={3} strokeWidth={LW} />}
     </g>
   );
 }
@@ -178,6 +223,18 @@ export function Lamp({ x, y, color }: { x: number; y: number; color?: string }) 
   const r = 3;
   const d = 0.7071;
   const letter = (color ?? '').slice(0, 1).toUpperCase();
+  const iec = useIecSymbols();
+  // IEC 60617 S00965: circle with a cross; colour code next to it (RD, GN…).
+  if (iec) return (
+    <g>
+      <Line x1={x - 5} y1={y} x2={x - r} y2={y} />
+      <Line x1={x + r} y1={y} x2={x + 5} y2={y} />
+      <circle cx={x} cy={y} r={r} strokeWidth={LW} />
+      <Line x1={x - r * d} y1={y - r * d} x2={x + r * d} y2={y + r * d} w={LW_THIN} />
+      <Line x1={x - r * d} y1={y + r * d} x2={x + r * d} y2={y - r * d} w={LW_THIN} />
+      {letter && <Txt x={x + r + 0.6} y={y - r + 0.4} size={2} bold>{letter}</Txt>}
+    </g>
+  );
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - r} y2={y} />
@@ -220,6 +277,15 @@ export function DevBox({ x, y, label, w = 12 }: { x: number; y: number; label: s
 
 /** Circuit-breaker pole (10 mm): two contacts bridged by an arc. */
 export function BreakerPole({ x, y }: { x: number; y: number }) {
+  const iec = useIecSymbols();
+  // IEC 60617 S00287: make contact with the circuit-breaker cross on the fixed contact.
+  if (iec) return (
+    <g>
+      <IecContact x={x} y={y} lead={5} />
+      <Line x1={x + 2.2} y1={y - 0.8} x2={x + 3.8} y2={y + 0.8} w={LW_THIN} />
+      <Line x1={x + 2.2} y1={y + 0.8} x2={x + 3.8} y2={y - 0.8} w={LW_THIN} />
+    </g>
+  );
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - 3.6} y2={y} />
@@ -233,6 +299,15 @@ export function BreakerPole({ x, y }: { x: number; y: number }) {
 
 /** Disconnect switch pole (10 mm). */
 export function SwitchPole({ x, y }: { x: number; y: number }) {
+  const iec = useIecSymbols();
+  // IEC 60617 S00290 switch-disconnector: make contact with the isolating bar and load-switch ring.
+  if (iec) return (
+    <g>
+      <IecContact x={x} y={y} lead={5} />
+      <Line x1={x + 3} y1={y - 1} x2={x + 3} y2={y + 1} />
+      <circle cx={x + 3} cy={y} r={0.6} strokeWidth={LW_THIN} />
+    </g>
+  );
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - 3.6} y2={y} />
@@ -257,6 +332,16 @@ export function Fuse({ x, y }: { x: number; y: number }) {
 
 /** Thermal overload heater element (10 mm). */
 export function OverloadHeater({ x, y }: { x: number; y: number }) {
+  const iec = useIecSymbols();
+  // IEC 60617 S00379 thermal overload element: box with the thermal step.
+  if (iec) return (
+    <g>
+      <Line x1={x - 5} y1={y} x2={x - 3} y2={y} />
+      <Line x1={x + 3} y1={y} x2={x + 5} y2={y} />
+      <rect x={x - 3} y={y - 1.8} width={6} height={3.6} strokeWidth={LW} fill="#fff" />
+      <path d={`M ${x - 1.8} ${y + 0.8} H ${x - 0.6} V ${y - 0.8} H ${x + 0.6} V ${y + 0.8} H ${x + 1.8}`} strokeWidth={LW_THIN} />
+    </g>
+  );
   return (
     <path d={`M ${x - 5} ${y} H ${x - 2.2} V ${y - 2.4} H ${x + 2.2} V ${y} H ${x + 5}`} strokeWidth={LW} />
   );
@@ -264,8 +349,10 @@ export function OverloadHeater({ x, y }: { x: number; y: number }) {
 
 /** Protective-earth symbol hanging below (x, y). */
 export function Ground({ x, y }: { x: number; y: number }) {
+  const iec = useIecSymbols();
   return (
     <g>
+      {iec && <circle cx={x} cy={y + 2.9} r={3.1} strokeWidth={LW_THIN} /> /* IEC 60417-5019 protective earth */}
       <Line x1={x} y1={y} x2={x} y2={y + 2} />
       <Line x1={x - 2.4} y1={y + 2} x2={x + 2.4} y2={y + 2} />
       <Line x1={x - 1.6} y1={y + 2.9} x2={x + 1.6} y2={y + 2.9} />

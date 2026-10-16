@@ -89,3 +89,11 @@ PRs: #3 (merged), #12 (merged: Windows installer), next PR (draft → `claude/op
 - Found A-18 and A-19 (both low, see table).
 - The Windows installer CI now runs every `src/**/*.test.ts`.
 - Re-run after merging integration c633ca0 (blue restyle, coordinator's movable-picture fix 5c5c5f7): tsc, eslint, 12 unit suites, Modbus 14, web E2E, sweep (+ analog), old-data, hmi-editor, preview E2E, HASH=1 sweep and old-data all pass. Found and fixed A-20. My unpushed `local/movable-picture` (2408468) is superseded by 5c5c5f7 and will be dropped.
+
+## Regions & standards (Europe / IEC, Israel, other IEC countries)
+- e473ad1 — region model `src/standards/regions.ts` (+ tests): five regions; 400 V 3-ph + N / 230 V / 690 V 50 Hz supplies; IEC 60204-1 §13.2 colours, Table 6 mm² sizing, AWG↔mm², IEC 60947-4-1 Annex G motor currents, MCB curves, IEC 81346 letters, NEMA→IP. Wizard, Project data, Electrical page and the electrical AI prompt use it.
+- 0b5a8bf — IEC drawings and documents: mm² and IEC colours in the model (wire list, cables), kW/Ie on motor sheets, 50 Hz nameplate with Icc and IP, IEC cover notes and colour legend, CE/UKCA or Israeli notes, IEC standards list and abbreviations, IEC clauses in calcs, protection table, FAT, safety, maintenance and the review prompt. A design made for another region's supply is flagged.
+- e7d07b1 — per-project drawing options (default from the region): IEC 81346 designations (design + layout renamed in the drawing context), IEC 60617 symbols, A3 paper (ANSI B layout at 97.3 %, scales corrected).
+- Verified: US and Canada outputs byte-identical (wire list, BOM, terminal plan, cable schedule, warnings, nameplate); sweep IEC pass (Europe, Israel) 0 problems; A3 PDF pages 420 × 297 mm; full package builds.
+- Facts checked with sources (in regions.ts). Not confirmed: Israel's earthing system (TN-C-S/TN-S or TT by site — the app says to confirm) and which IEC 60204-1 edition SI 60204-1 adopts.
+- Open: derived terminal strips keep TB1… under IEC designations; the AutomationDirect/Fuji catalog is North American (the AI is told to name IEC/CE-marked replacements); Debug 2 owns the IEC code-rule set (`review/codeRules/rules.ts` still treats IEC as US).

@@ -31,7 +31,7 @@ import type {
 import { getHmi } from '../hmi/hmiCatalog';
 import { lengthText, routedLength, withService } from './layout/geometry';
 import { CABINET, type LayoutForDesign } from './layout/types';
-import { iecMotorCurrent, regionSpec, SUPPLY_INFO, type Region } from '../standards/regions';
+import { iecColor, iecMotorCurrent, isIec, mm2For, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
 
 export interface DrawingContext {
   projectName: string;
@@ -50,6 +50,10 @@ export interface DrawingContext {
   machineLayout?: LayoutForDesign;
   /** Analog channel setup (DF points): drawn on the analog sheet, wired on TBA with shielded cables. */
   analog?: AnalogSetupRow[];
+  /** Drawing choices (src/standards/drawingOptions.ts); absent = ANSI symbols on ANSI B with NFPA tags. */
+  symbols?: SymbolSet;
+  sheet?: SheetFormat;
+  designations?: DesignationStyle;
 }
 
 /** Document control data shared by drawings and documents (see ProjectInfo). */
@@ -464,6 +468,8 @@ function outputStyleOf(pn: string | undefined, part: CatalogPart | undefined): I
 function letter(i: number): string { return i === 0 ? '' : String.fromCharCode(64 + i); }
 
 function computeModel(ctx: DrawingContext): ElectricalModel {
+  // IEC regions: mm² sizes (IEC 60204-1 Table 6) and IEC colours, applied at the end (toIec).
+  const iec = isIec(ctx.region);
   const rc = resolveComponents(ctx);
   const supply = ctx.design.inputs.supply;
   const phases = supplyPhases(supply);
@@ -523,7 +529,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     const ph = SUPPLY_INFO[motor.voltage].phases === 1 ? 2 : 3;
     const idx = Array.from({ length: ph }, (_, k) => k + 1);
     return {
-      motor, fla, awg: awgFor(fla * 1.25), protection: prot, contactors, overload, vfd,
+      motor, fla, awg: iec ? mm2Text(mm2For(fla * 1.25)) : awgFor(fla * 1.25), protection: prot, contactors, overload, vfd,
       // 120VAC single-phase motors keep the grounded conductor numbered "N" end to end.
       lineWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${motor.tag}-L${k}`)),
       midWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${motor.tag}-C${k}`)),
@@ -741,7 +747,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const loadPhase = (k: number) => (phases === 1 && k === 1 ? 'N' : `T${k + 1}`);
   const fullLoad = motors.reduce((s, m) => s + m.fla, 0);
   const largest = motors.reduce((s, m) => Math.max(s, m.fla), 0);
-  const mainAwg = awgFor(fullLoad + largest * 0.25 + psBranches.length * 2);
+  const mainAwg = iec ? mm2Text(mm2For(fullLoad + largest * 0.25 + psBranches.length * 2)) : awgFor(fullLoad + largest * 0.25 + psBranches.length * 2);
   incoming.forEach((w, k) => addWire({ wire: w, from: 'SUPPLY', to: phases === 1 && k === 1 ? `${pe} (N)` : `${dsTag}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: mainAwg, function: `Incoming supply ${supplyText(supply)}` }));
   addWire({ wire: 'PE', from: 'SUPPLY PE', to: pe, color: 'GN/YE', size: mainAwg, function: 'Incoming protective earth' });
   // bus chain
@@ -939,10 +945,20 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   wires.push(...analog.wires);
   if (analog.strip) strips.push(analog.strip);
   machine.cables.push(...analog.cables);
+  if (iec) toIec(wires, machine.cables);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
     motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives,
   };
+}
+
+/**
+ * IEC regions: the fixed AWG sizes above become the IEC size with at least the same copper (IEC
+ * 60228; e.g. 14 AWG → 2,5 mm², 18 AWG → 1 mm²) and NFPA 79 colours become IEC 60204-1 §13.2 ones.
+ */
+function toIec(wires: WireRecord[], cables: { size: string }[]) {
+  for (const w of wires) { w.color = iecColor(w.color, w.function); w.size = regionSize(w.size, 'IEC'); }
+  for (const c of cables) c.size = regionSize(c.size, 'IEC');
 }
 
 function tbExternal(strips: TerminalStrip[], label: string): string {
@@ -2034,6 +2050,8 @@ export function wrapWords(text: string, maxChars: number): string[] {
 export function designWarnings(ctx: DrawingContext): string[] {
   const m = buildModel(ctx);
   const w: string[] = [];
+  const r = regionSpec(ctx.region);
+  if (!r.supplies.includes(ctx.design.inputs.supply)) w.push(`The design is for ${SUPPLY_INFO[ctx.design.inputs.supply].label} ${SUPPLY_INFO[ctx.design.inputs.supply].hz} Hz but the project region is ${r.label} (${r.supplies.map((v) => SUPPLY_INFO[v].label).join(', ')}): update the design for the region.`);
   const unverified = new Map<string, string[]>();
   for (const c of m.rc) {
     if (!c.partNumber) w.push(`${c.tag}: no part number selected.`);
@@ -2292,7 +2310,7 @@ export function panelNameplate(ctx: DrawingContext): NameplateData {
   const r1v = (v: number) => Math.round(v * 10) / 10;
   const multipleSources = m.rc.some((c) => /\b(separate|external|foreign|second) (supply|source)|\bups\b|multiple sources/i.test(`${c.comp.function} ${c.part?.description ?? ''}`));
   return {
-    supplyText: supplyText(m.supply), volts, phases: m.phases, hz: 60, largestMotorFla: largest,
+    supplyText: supplyText(m.supply), volts, phases: m.phases, hz: SUPPLY_INFO[m.supply].hz, largestMotorFla: largest,
     fullLoadAmps: r1v(motorAmps + controlAmps), motorAmps: r1v(motorAmps), controlAmps: r1v(controlAmps),
     enclosureType: ctx.design.inputs.enclosureRating, sccr: 'TBD — CALCULATE', multipleSources, disconnectTag: m.disconnect?.tag ?? 'DS1',
   };
