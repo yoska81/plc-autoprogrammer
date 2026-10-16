@@ -343,6 +343,11 @@ function sse(model, text) {
   check(await ioRows() === 7, 'first project I/O back');
   check((await statusBar()).includes('C0-11DD1E-D') && (await statusBar()).includes('Rev A · Issued for review'), 'first project CPU and revision back');
   log('Projects:', (await page.locator('select[aria-label="Open project"] option').allInnerTexts()).join(' | '));
+  await page.goto(BASE + '/project');
+  check(await page.getByRole('button', { name: 'Delete project Wizard Conveyor Cell' }).count() === 0, 'open project cannot be deleted');
+  await page.getByRole('button', { name: 'Delete project My PLC Project' }).click();
+  check(!(await page.locator('select[aria-label="Open project"] option').allInnerTexts()).includes('My PLC Project'), 'project deleted');
+  await page.goto(BASE + '/io');
 
   // While the AI is working the project can't be switched (its answer would land in the other project);
   // generation errors are plain English.
