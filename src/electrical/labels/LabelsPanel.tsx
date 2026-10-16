@@ -11,6 +11,7 @@ import { labelPrinterPdf, labelSheetPdf, labelsXlsx, PAPER, printable } from './
 import { fmtSize, MM_PER_IN, SIZE_PRESETS, sizeOf, useLabelSetupStore, type LabelSetup } from './setup';
 import { useProjectsStore } from '../../store/useProjectsStore';
 import LabelSvg from './LabelSvg';
+import { BRANDS, PRINTERS, printerById, SUPPLY_KIND_TITLE, supplyByPart, suppliesFor, supplyText, type SupplyKind } from './printers';
 
 const input = 'border border-steel-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 bg-white hover:bg-steel-50 disabled:opacity-40 flex items-center gap-2';
@@ -63,6 +64,8 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   const chosen = all.filter((l) => kinds.has(l.kind) && !off.has(l.id)).map(withCopies).filter((l) => l.copies > 0);
   const totalPrinted = chosen.reduce((s, l) => s + (setup.useCopies ? l.copies : 1), 0);
   const size = sizeOf(setup);
+  const printer = printerById(setup.printerId);
+  const supply = setup.supply ? supplyByPart(setup.supply) : undefined;
   const tapeAuto = Boolean(size.tape) && !setup.tapeLength;
 
   const preview = expandCopies(chosen, setup.useCopies).slice(0, PREVIEW_MAX).map((l) => ({ l, lay: layoutLabel(printable(l), setup, measure) }));
@@ -110,7 +113,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
     return <div className="flex-1 flex items-center justify-center text-sm text-steel-500 bg-steel-50">No design yet. Generate the electrical design first; the labels come from it.</div>;
   }
 
-  const sizeName = tapeAuto ? `${size.h} mm tape` : fmtSize(size.w, size.h, setup.units);
+  const sizeName = `${supply ? `${supply.partNumber} · ` : ''}${tapeAuto ? `${size.h} mm tape` : fmtSize(size.w, size.h, setup.units)}`;
   const allShownOn = shown.length > 0 && shown.every((l) => !off.has(l.id));
 
   return (
@@ -136,16 +139,59 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
             </div>
           </Section>
 
-          <Section title="3. Label size">
-            <select aria-label="Label size" value={setup.sizeId} onChange={(e) => set({ sizeId: e.target.value })} className={`${input} w-full`}>
-              {SIZE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.tape || s.id === 'custom' ? s.name : `${s.name}${setup.units === 'in' ? ` (${fmtSize(s.w, s.h, 'in')})` : ''}`}</option>)}
-            </select>
-            <p className="text-xs text-steel-500">{size.use}</p>
+          <Section title="3. Printer and label size">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 text-sm">
+              <span className="text-steel-600">Printer</span>
+              <select aria-label="Label printer" value={setup.printerId} onChange={(e) => set({ printerId: e.target.value, supply: suppliesFor(e.target.value).some((x) => x.partNumber === setup.supply) ? setup.supply : '' })} className={`${input} w-full min-w-0`}>
+                <option value="">Any printer (generic sizes)</option>
+                {BRANDS.map((b) => (
+                  <optgroup key={b.brand} label={b.available ? b.brand : `${b.brand} (coming later)`}>
+                    {PRINTERS.filter((p) => p.brand === b.brand).map((p) => <option key={p.id} value={p.id}>{p.brand} {p.model}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              {printer && (
+                <>
+                  <span className="text-steel-600">Labels</span>
+                  <select aria-label="Printer labels" value={setup.supply} onChange={(e) => set({ supply: e.target.value })} className={`${input} w-full min-w-0`}>
+                    <option value="">Generic size (below)</option>
+                    {(Object.keys(SUPPLY_KIND_TITLE) as SupplyKind[]).map((k) => {
+                      const list = suppliesFor(printer.id).filter((x) => x.kind === k);
+                      return list.length ? (
+                        <optgroup key={k} label={SUPPLY_KIND_TITLE[k]}>
+                          {list.map((x) => <option key={x.partNumber} value={x.partNumber}>{x.partNumber} — {x.continuous ? `${x.heightMm} mm tape` : `${x.widthMm} x ${x.heightMm} mm`}</option>)}
+                        </optgroup>
+                      ) : null;
+                    })}
+                  </select>
+                </>
+              )}
+            </div>
+            {printer && <p className="text-xs text-steel-500">{printer.brand} {printer.model}{printer.dpi ? ` · ${printer.dpi} dpi` : ''}{printer.maxWidthMm ? ` · supplies up to ${printer.maxWidthMm} mm wide` : ''}{printer.note ? ` · ${printer.note}` : ''} · <a href={printer.source} target="_blank" rel="noreferrer" className="underline">source</a></p>}
+            {supply ? (
+              <div className="text-xs bg-steel-50 border border-steel-200 rounded p-2 space-y-0.5">
+                <div><b>{supply.partNumber}</b> · {SUPPLY_KIND_TITLE[supply.kind]}</div>
+                <div>{supplyText(supply)}</div>
+                {supply.printable && <div>Printable area {supply.printable.w} x {supply.printable.h} mm (dashed in the preview)</div>}
+                {supply.band && <div>Printable band {supply.band.h} mm of the {supply.heightMm} mm tape (dashed in the preview)</div>}
+                {supply.across && supply.across > 1 && <div>{supply.across} labels across the liner: the printer driver places them; the PDF still has one label per page.</div>}
+                {supply.note && <div className="text-steel-500">{supply.note}</div>}
+                {supply.check && <div className="text-amber-800">To check: {supply.check}</div>}
+                <a href={supply.source} target="_blank" rel="noreferrer" className="underline text-steel-500">Source</a>
+              </div>
+            ) : (
+              <>
+                <select aria-label="Label size" value={setup.sizeId} onChange={(e) => set({ sizeId: e.target.value })} className={`${input} w-full`}>
+                  {SIZE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.tape || s.id === 'custom' ? s.name : `${s.name}${setup.units === 'in' ? ` (${fmtSize(s.w, s.h, 'in')})` : ''}`}</option>)}
+                </select>
+                <p className="text-xs text-steel-500">{size.use}</p>
+              </>
+            )}
             <div className="flex items-center gap-3 text-sm">
               <span className="text-steel-600">Units</span>
               {(['mm', 'in'] as const).map((u) => <label key={u} className="flex items-center gap-1"><input type="radio" name="units" checked={setup.units === u} onChange={() => set({ units: u })} />{u === 'mm' ? 'mm' : 'inches'}</label>)}
             </div>
-            {setup.sizeId === 'custom' && (
+            {!supply && setup.sizeId === 'custom' && (
               <div className="flex items-center gap-2 text-sm">
                 <MmInput label="Label width" mm={setup.customW} units={setup.units} onChange={(v) => set({ customW: v })} /> x
                 <MmInput label="Label height" mm={setup.customH} units={setup.units} onChange={(v) => set({ customH: v })} />

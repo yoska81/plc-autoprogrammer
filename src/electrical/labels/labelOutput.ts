@@ -32,8 +32,9 @@ function drawLabel(doc: jsPDF, lay: LabelLayout, ox: number, oy: number, border:
   if (border) {
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.25);
-    const r = Math.min(1.2, Math.min(lay.w, lay.h) * 0.08);
-    doc.roundedRect(ox + 0.35, oy + 0.35, lay.w - 0.7, lay.h - 0.7, r, r, 'S');
+    const b = lay.printable ?? { x: 0, y: 0, w: lay.w, h: lay.h };
+    const r = Math.min(1.2, Math.min(b.w, b.h) * 0.08);
+    doc.roundedRect(ox + b.x + 0.35, oy + b.y + 0.35, b.w - 0.7, b.h - 0.7, r, r, 'S');
   }
   doc.setTextColor(0, 0, 0);
   for (const run of lay.runs) {
@@ -146,13 +147,14 @@ export async function labelsXlsx(labels: Label[], setup: LabelSetup, projectName
   info.columns = [{ width: 28 }, { width: 90 }];
   [
     ['Project', projectName],
+    ['Label printer / supply', setup.supply ? `${size.use}` : 'Generic size (no printer supply chosen)'],
     ['Label stock', size.tape && !setup.tapeLength ? `${size.h} mm continuous tape` : fmtSize(size.w, size.h, setup.units)],
     ['Content', setup.content === 'code' ? 'Number only (column "Number")' : 'Number + description (columns "Number" and "Description", or "Text")'],
     ['Rows', setup.rowPerCopy ? 'One row per printed label' : 'One row per label; print the "Copies" count of each'],
-    ['Brady Workstation', 'Data → Import data → choose this file, sheet "Labels"; link the text object to "Number" (and "Description").'],
-    ['Brother P-touch Editor', 'File → Database → Connect → this file; drag "Number" / "Description" onto the label layout; set copies from "Copies".'],
-    ['Weidmüller M-Print PRO', 'Import → Excel; map "Number" to the marker text.'],
-    ['Phoenix Contact PROJECT complete', 'Import → Excel / CSV; map "Number" to the marking text.'],
+    ['Brady Workstation', 'Import this workbook as a data source (sheet "Labels") and link the label text to "Number" (and "Description" for two-field labels). Print the "Copies" count of each row.'],
+    ['Brother P-touch Editor', 'Connect this workbook as a database and place the "Number" / "Description" fields on the label layout.'],
+    ['Weidmüller M-Print PRO', 'Import the workbook (or the CSV) and map "Number" to the marker text.'],
+    ['Phoenix Contact PROJECT complete', 'Import the workbook (or the CSV) and map "Number" to the marking text.'],
   ].forEach((r) => info.addRow(r));
   info.getColumn(1).font = { bold: true };
   return new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
