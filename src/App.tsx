@@ -75,8 +75,8 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
         {hasChildren && (open ? <ChevronDownIcon className="w-3.5 h-3.5" /> : <ChevronRightIcon className="w-3.5 h-3.5" />)}
       </span>
       <span className={`truncate ${node.mono ? 'font-mono text-xs' : ''}`}>{node.label}</span>
-      {node.badge}
       {node.questions ? <span className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900" title={`${node.questions} open question${node.questions === 1 ? '' : 's'}`} aria-label={`${node.questions} open questions`}>{node.questions}?</span> : null}
+      {node.badge}
       <span className={`ml-auto w-2 h-2 rounded-full flex-shrink-0 ${DOT[status]}`} title={status === 'none' ? undefined : status === 'ready' ? 'Done' : status === 'stale' ? 'Out of date' : 'Not started'} />
     </span>
   );
@@ -144,7 +144,7 @@ export default function App() {
           { label: 'Simulation', to: '/simulate' },
         ],
       },
-      { label: 'Design review', to: '/review', badge: <ReviewTreeBadge />, questions: openQ.spec + openQ.io + openQ.electrical + openQ.hmi + openQ.review },
+      { label: 'Design review', to: '/review', badge: <ReviewTreeBadge />, questions: openQ.review },
       { label: 'Deliverables', to: '/export' },
     ],
   };
