@@ -147,7 +147,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
 
   // power distribution
   const branches: PowerBranchPlan[] = [];
-  let idx = 6;
+  let idx = 7;
   for (const b of model.psBranches) { branches.push({ type: 'ps', b, idx }); idx += 4; }
   for (const b of model.auxBranches) { branches.push({ type: 'aux', b, idx }); idx += 4; }
   const contIdx = model.motors.length ? idx : idx - 1;

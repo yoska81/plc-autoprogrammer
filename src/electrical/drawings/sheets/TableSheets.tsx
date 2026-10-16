@@ -1,0 +1,226 @@
+/** Cover, notes, terminal plan and bill of materials sheets (tabular). */
+import { WIRE_NUMBERING_NOTES, supplyText } from '../../derive';
+import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
+import { TERM_ROWS, type DrawingPlan, type PlannedSheet, type SheetSpec } from '../plan';
+import { Line, Txt } from '../symbols';
+
+const WIRE_COLORS: [string, string][] = [
+  ['BK  BLACK', 'AC/DC power circuits — line and load (ungrounded)'],
+  ['RD  RED', 'AC control circuits (120VAC, only if used)'],
+  ['BU  BLUE', 'DC control circuits (+24VDC, 24+ / 24+S, I/O)'],
+  ['WH/BU  WHITE/BLUE', 'DC grounded control conductor (0V)'],
+  ['WH  WHITE', 'AC grounded neutral conductor'],
+  ['GN/YE  GREEN/YELLOW', 'Protective earth (PE) — equipment grounding'],
+  ['OG  ORANGE', 'Foreign voltage: circuits that stay live with DS off'],
+];
+
+function Para({ x, y, w, lines, size = 2.5, gap = 1.25, bold }: { x: number; y: number; w: number; lines: string[]; size?: number; gap?: number; bold?: boolean }) {
+  return <g>{lines.map((l, i) => <Txt key={i} x={x} y={y + i * size * gap} size={size} maxW={w} bold={bold}>{l}</Txt>)}</g>;
+}
+
+/** Numbered note list with wrapping; returns rows used via the y offsets it renders. */
+function NoteList({ x, y, w, items, size = 2.5, maxY }: { x: number; y: number; w: number; items: string[]; size?: number; maxY: number }) {
+  const out: { n: string; l: string; y: number }[] = [];
+  let yy = y;
+  let cut = 0;
+  items.forEach((it, i) => {
+    const lines = wrapText(it, w - 8, size);
+    if (yy + lines.length * size * 1.3 > maxY) { cut++; return; }
+    lines.forEach((l, k) => out.push({ n: k === 0 ? `${i + 1}.` : '', l, y: yy + k * size * 1.3 }));
+    yy += lines.length * size * 1.3 + size * 0.5;
+  });
+  return (
+    <g>
+      {out.map((o, i) => <g key={i}><Txt x={x} y={o.y} size={size} bold>{o.n}</Txt><Txt x={x + 7} y={o.y} size={size} maxW={w - 8}>{o.l}</Txt></g>)}
+      {cut > 0 && <Txt x={x + 7} y={Math.min(yy, maxY)} size={size} italic>{`+${cut} more item(s) — see the Electrical page in the app.`}</Txt>}
+    </g>
+  );
+}
+
+export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }) {
+  const { ctx, model } = plan;
+  const inp = ctx.design.inputs;
+  const x0 = AREA.x + 10;
+  const RX = 222;
+  const W = AREA_R - RX - 4;
+  const notes = [
+    `SUPPLY: ${supplyText(inp.supply)}${model.phases === 3 ? ', 3-WIRE + PE' : ', L1 + N + PE'}. MAIN DISCONNECT ${model.disconnect?.tag ?? '(NOT SPECIFIED)'} LOCKABLE IN OFF POSITION.`,
+    `CONTROL VOLTAGE: 24VDC FROM ${model.psBranches.map((b) => b.ps.tag).join(', ') || 'POWER SUPPLY'}. 0V IS A GROUNDED CONDUCTOR, BONDED TO PE AT ONE POINT (NFPA 79 9.4.3).`,
+    `ENCLOSURE: ${inp.enclosureRating}. CONTROL PANEL TO BE BUILT AND LABELED PER UL 508A; MARK SCCR, SUPPLY VOLTAGE, FLA OF LARGEST MOTOR AND FULL-LOAD CURRENT ON THE NAMEPLATE.`,
+    'ALL WIRING 600V, 90°C MTW/TEW/SIS COPPER (NFPA 79 CH. 12). POWER CONDUCTORS SIZED PER MOTOR SHEETS; CONTROL 18 AWG MIN., I/O 18 AWG MIN. UNLESS NOTED.',
+    'EVERY CONDUCTOR IDENTIFIED AT BOTH ENDS WITH ITS WIRE NUMBER (NFPA 79 13.2.1). ONE WIRE NUMBER PER ELECTRICALLY COMMON POTENTIAL; SUFFIX LETTER AFTER EACH SERIES DEVICE.',
+    'FIELD WIRING VIA TERMINAL STRIPS TB2 (INPUTS) / TB3 (OUTPUTS); MOTOR LEADS VIA TB1. ~15% SPARE TERMINALS PROVIDED.',
+    'E-STOP IS STOP CATEGORY 0 VIA SAFETY RELAY REMOVING 24+S FROM PLC OUTPUTS; PERFORM RISK ASSESSMENT AND VALIDATE (ISO 13849-1 / NFPA 79 9.2.5.4).',
+    'LINE NUMBERS: SHEET x 100 + LINE. CROSS-REFERENCES "/405" REFER TO LINE 405. DEVICE TAGS PER NFPA 79 ANNEX D.',
+    'THIS DRAWING SET IS AI-GENERATED. ALL PARTS, RATINGS, WIRE SIZES AND LAYOUT MUST BE CHECKED AND APPROVED BY A QUALIFIED ENGINEER BEFORE PURCHASE, BUILD OR USE.',
+  ];
+  const idxRows = plan.sheets;
+  const rowH = 4.6;
+  const IY = 96;
+  return (
+    <g>
+      <Txt x={x0} y={AREA.y + 18} size={7} bold maxW={RX - x0 - 10}>{ctx.projectName.toUpperCase() || 'UNTITLED PROJECT'}</Txt>
+      <Txt x={x0} y={AREA.y + 27} size={4.2}>ELECTRICAL CONTROL PANEL — DRAWING SET</Txt>
+      <Txt x={x0} y={AREA.y + 34} size={2.8}>{`${supplyText(inp.supply)}  •  24VDC CONTROL  •  ${inp.enclosureRating}  •  ${model.motors.length} MOTOR${model.motors.length === 1 ? '' : 'S'}`}</Txt>
+      <Txt x={x0} y={AREA.y + 39} size={2.8} maxW={RX - x0 - 10}>{`PLC: ${ctx.plc.vendor} ${ctx.plc.name} — ${ctx.plc.cpuLabel}`}</Txt>
+      <Txt x={x0} y={AREA.y + 44} size={2.8}>{`I/O: ${model.io.filter((p) => p.type === 'input').length} INPUTS, ${model.io.filter((p) => p.type === 'output').length} OUTPUTS   •   ISSUED ${plan.date}   •   REV A`}</Txt>
+      <rect x={x0} y={AREA.y + 49} width={RX - x0 - 10} height={20} strokeWidth={0.8} />
+      <Txt x={x0 + 4} y={AREA.y + 56} size={3.4} bold>AI-GENERATED — PRELIMINARY, NOT FOR CONSTRUCTION</Txt>
+      <Para x={x0 + 4} y={AREA.y + 61.5} w={RX - x0 - 18} size={2.5} lines={wrapText('Generated by PLC Autoprogrammer. Must be checked and approved by a qualified engineer before use. Part numbers, ratings, dimensions and wire sizes are suggestions only.', RX - x0 - 18, 2.5)} />
+
+      {/* drawing index */}
+      <Txt x={x0} y={IY - 5} size={3.2} bold>DRAWING INDEX</Txt>
+      <Line x1={x0} y1={IY - 3} x2={RX - 10} y2={IY - 3} w={LW} />
+      <Txt x={x0} y={IY + 0.6} size={2.3} bold>SHEET</Txt>
+      <Txt x={x0 + 16} y={IY + 0.6} size={2.3} bold>DRAWING NO.</Txt>
+      <Txt x={x0 + 46} y={IY + 0.6} size={2.3} bold>TITLE</Txt>
+      <Line x1={x0} y1={IY + 2} x2={RX - 10} y2={IY + 2} w={LW_THIN} />
+      {idxRows.map((s, i) => (
+        <g key={s.n}>
+          <Txt x={x0 + 5} y={IY + 6 + i * rowH} size={2.4} mono anchor="middle">{s.n}</Txt>
+          <Txt x={x0 + 16} y={IY + 6 + i * rowH} size={2.4} mono>{s.drawingNo}</Txt>
+          <Txt x={x0 + 46} y={IY + 6 + i * rowH} size={2.4} maxW={RX - x0 - 58}>{s.title}</Txt>
+        </g>
+      ))}
+
+      {/* general notes */}
+      <Line x1={RX - 4} y1={AREA.y + 4} x2={RX - 4} y2={AREA_B - 4} w={LW_THIN} />
+      <Txt x={RX} y={AREA.y + 9} size={3.2} bold>GENERAL NOTES</Txt>
+      <NoteList x={RX} y={AREA.y + 15} w={W} items={notes} size={2.4} maxY={AREA.y + 128} />
+      <Txt x={RX} y={AREA.y + 134} size={3} bold>WIRE COLORS (NFPA 79 13.2.4)</Txt>
+      {WIRE_COLORS.map(([c, d], i) => (
+        <g key={c}>
+          <Txt x={RX} y={AREA.y + 139.5 + i * 3.6} size={2.3} mono bold>{c}</Txt>
+          <Txt x={RX + 42} y={AREA.y + 139.5 + i * 3.6} size={2.3} maxW={W - 42}>{d}</Txt>
+        </g>
+      ))}
+      <Txt x={RX} y={AREA.y + 170} size={3} bold>WIRE NUMBERING</Txt>
+      {WIRE_NUMBERING_NOTES.map((n, i) => (
+        <g key={i}>
+          <Txt x={RX} y={AREA.y + 175.5 + i * 6.2} size={2.3}>•</Txt>
+          <Para x={RX + 3} y={AREA.y + 175.5 + i * 6.2} w={W - 4} size={2.3} gap={1.25} lines={wrapText(n, W - 4, 2.3).slice(0, 2)} />
+        </g>
+      ))}
+    </g>
+  );
+}
+
+export function NotesSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
+  const sp = sheet.spec as Extract<SheetSpec, { kind: 'notes' }>;
+  const half = (AREA.w - 30) / 2;
+  const x1 = AREA.x + 8, x2 = x1 + half + 14;
+  return (
+    <g>
+      <Txt x={x1} y={AREA.y + 9} size={3.2} bold>DESIGN NOTES & ASSUMPTIONS</Txt>
+      <Line x1={x1} y1={AREA.y + 11.5} x2={x1 + half} y2={AREA.y + 11.5} w={LW} />
+      {sp.notes.length
+        ? <NoteList x={x1} y={AREA.y + 17} w={half} items={sp.notes} maxY={AREA_B - 6} />
+        : <Txt x={x1} y={AREA.y + 17} size={2.5} italic>No design notes.</Txt>}
+      <Line x1={x2 - 7} y1={AREA.y + 4} x2={x2 - 7} y2={AREA_B - 4} w={LW_THIN} />
+      <Txt x={x2} y={AREA.y + 9} size={3.2} bold>ENGINEERING REVIEW ITEMS (AUTO-CHECKED)</Txt>
+      <Line x1={x2} y1={AREA.y + 11.5} x2={x2 + half} y2={AREA.y + 11.5} w={LW} />
+      <NoteList x={x2} y={AREA.y + 17} w={half} items={sp.warnings} size={2.4} maxY={AREA_B - 6} />
+      <Txt x={x1} y={AREA_B - 2} size={2.3} italic>{`Review items are generated from the design data (${plan.model.rc.length} components, ${plan.model.io.length} I/O points). Resolve or accept each item before release.`}</Txt>
+    </g>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Terminal plan
+// ---------------------------------------------------------------------------
+
+export function TerminalSheet({ sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
+  const sp = sheet.spec as Extract<SheetSpec, { kind: 'terminals' }>;
+  const colW = (AREA.w - 24) / 2;
+  const rowH = 5.1;
+  const cols = [0, 14, 36, 98, 160];
+  const heads = ['TERM', 'WIRE', 'INTERNAL (PANEL SIDE)', 'EXTERNAL (FIELD SIDE)', 'TYPE'];
+  return (
+    <g>
+      {sp.columns.map((col, ci) => {
+        const x = AREA.x + 8 + ci * (colW + 8);
+        const y0 = AREA.y + 8;
+        return (
+          <g key={ci}>
+            <rect x={x} y={y0 - 4.5} width={colW} height={(TERM_ROWS + 1) * rowH + 1} strokeWidth={LW_HEAVY} />
+            {heads.map((h, i) => <Txt key={h} x={x + cols[i] + 1.5} y={y0} size={2.3} bold>{h}</Txt>)}
+            <Line x1={x} y1={y0 + 1.6} x2={x + colW} y2={y0 + 1.6} w={LW} />
+            {cols.slice(1).map((c) => <Line key={c} x1={x + c} y1={y0 - 4.5} x2={x + c} y2={y0 - 4.5 + (TERM_ROWS + 1) * rowH + 1} w={LW_THIN} />)}
+            {col.map((r, ri) => {
+              const yy = y0 + 1.6 + (ri + 1) * rowH;
+              if (r.kind === 'header') {
+                return (
+                  <g key={ri}>
+                    <rect x={x} y={yy - rowH} width={colW} height={rowH} fill="#e8e8e8" stroke="none" />
+                    <Line x1={x} y1={yy - rowH} x2={x + colW} y2={yy - rowH} w={LW} />
+                    <Txt x={x + 1.5} y={yy - 1.4} size={2.6} bold mono maxW={colW - 3}>{`${r.strip.tag} — ${r.strip.title} (${r.strip.terminals.length} TERMINALS, ${r.strip.endPlates} END PLATE, ${r.strip.endStops} END STOPS)`}</Txt>
+                    <Line x1={x} y1={yy} x2={x + colW} y2={yy} w={LW_THIN} />
+                  </g>
+                );
+              }
+              const t = r.t;
+              return (
+                <g key={ri}>
+                  <Txt x={x + cols[0] + 7} y={yy - 1.4} size={2.4} mono bold anchor="middle">{t.number}</Txt>
+                  <Txt x={x + cols[1] + 1.5} y={yy - 1.4} size={2.4} mono bold maxW={cols[2] - cols[1] - 3}>{t.wire || '—'}</Txt>
+                  <Txt x={x + cols[2] + 1.5} y={yy - 1.4} size={2.3} mono maxW={cols[3] - cols[2] - 3}>{t.internal}</Txt>
+                  <Txt x={x + cols[3] + 1.5} y={yy - 1.4} size={2.3} mono maxW={cols[4] - cols[3] - 3}>{t.external}</Txt>
+                  <Txt x={x + cols[4] + 1.5} y={yy - 1.4} size={2.2} maxW={colW - cols[4] - 3}>{t.kind === 'ground' ? 'PE (GN/YE)' : t.kind === 'spare' ? 'SPARE' : t.group === t.wire ? 'JUMPERED' : 'FEED'}</Txt>
+                  <Line x1={x} y1={yy} x2={x + colW} y2={yy} w={0.12} />
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+      <Txt x={AREA.x + 8} y={AREA_B - 2} size={2.3} italic>TERMINALS IN A "JUMPERED" GROUP (24+, 24+S, 0V) ARE COMMONED WITH PLUG-IN JUMPER BARS. SENSOR 24+/0V TERMINALS ON TB2 ARE JUMPERED TO TB1. ONE CONDUCTOR PER TERMINAL CLAMP.</Txt>
+    </g>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// BOM
+// ---------------------------------------------------------------------------
+
+export function BomSheet({ sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
+  const sp = sheet.spec as Extract<SheetSpec, { kind: 'bom' }>;
+  const x = AREA.x + 8;
+  const w = AREA.w - 16;
+  const cols = [0, 12, 24, 72, 108, 318];
+  const heads = ['ITEM', 'QTY', 'PART NUMBER', 'MANUFACTURER', 'DESCRIPTION', 'DEVICE TAGS'];
+  const rowH = 6.2;
+  const y0 = AREA.y + 8;
+  return (
+    <g>
+      <rect x={x} y={y0 - 4.8} width={w} height={(sp.rows.length + 1) * rowH + 1.2} strokeWidth={LW_HEAVY} />
+      {heads.map((h, i) => <Txt key={h} x={x + cols[i] + 1.5} y={y0} size={2.5} bold>{h}</Txt>)}
+      <Line x1={x} y1={y0 + 1.6} x2={x + w} y2={y0 + 1.6} w={LW} />
+      {sp.rows.map((r, i) => {
+        const yy = y0 + 1.6 + (i + 1) * rowH;
+        if (r.kind === 'group') {
+          return (
+            <g key={i}>
+              <rect x={x} y={yy - rowH} width={w} height={rowH} fill="#e8e8e8" stroke="none" />
+              <Txt x={x + 1.5} y={yy - 1.8} size={2.7} bold>{r.title.toUpperCase()}</Txt>
+              <Line x1={x} y1={yy} x2={x + w} y2={yy} w={LW_THIN} />
+            </g>
+          );
+        }
+        const l = r.line;
+        return (
+          <g key={i}>
+            {cols.slice(1).map((c) => <Line key={c} x1={x + c} y1={yy - rowH} x2={x + c} y2={yy} w={LW_THIN} />)}
+            <Txt x={x + cols[0] + 6} y={yy - 1.8} size={2.5} mono anchor="middle">{l.item}</Txt>
+            <Txt x={x + cols[1] + 6} y={yy - 1.8} size={2.5} mono bold anchor="middle">{l.qty}</Txt>
+            <Txt x={x + cols[2] + 1.5} y={yy - 1.8} size={2.5} mono bold maxW={cols[3] - cols[2] - 3}>{l.partNumber || '—'}</Txt>
+            <Txt x={x + cols[3] + 1.5} y={yy - 1.8} size={2.4} maxW={cols[4] - cols[3] - 3}>{l.manufacturer || '—'}</Txt>
+            <Txt x={x + cols[4] + 1.5} y={yy - 1.8} size={2.4} maxW={cols[5] - cols[4] - 3} italic={l.note}>{l.description}</Txt>
+            <Txt x={x + cols[5] + 1.5} y={yy - 1.8} size={2.4} mono maxW={w - cols[5] - 3}>{l.tags.join(', ')}</Txt>
+            <Line x1={x} y1={yy} x2={x + w} y2={yy} w={0.12} />
+          </g>
+        );
+      })}
+      {sp.first && <Txt x={x} y={AREA_B - 2} size={2.3} italic>LINES WITHOUT A PART NUMBER ARE DERIVED QUANTITIES — SELECT A PART. VERIFY ALL PART NUMBERS AND PRICING AT AUTOMATIONDIRECT.COM BEFORE ORDERING.</Txt>}
+    </g>
+  );
+}

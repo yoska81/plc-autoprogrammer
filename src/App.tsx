@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { IS_PREVIEW } from './preview/mode';
 
 const NAV_ITEMS = [
   { to: '/plc', label: 'PLC Setup', icon: '▣' },
@@ -45,6 +46,11 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden">
+        {IS_PREVIEW && (
+          <div className="px-6 py-2 bg-indigo-600 text-white text-xs">
+            Preview with an example project. Everything is clickable and editable here; AI generation and file downloads work when the app runs on your PC.
+          </div>
+        )}
         <Outlet />
       </main>
     </div>

@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { IS_PREVIEW } from './preview/mode'
+import { seedSampleProject } from './preview/sampleProject'
 import './index.css'
 import App from './App.tsx'
 import IOPage from './pages/IOPage.tsx'
@@ -13,9 +15,17 @@ import ImportPage from './pages/ImportPage.tsx'
 import ElectricalPage from './pages/ElectricalPage.tsx'
 import PrintElectricalPage from './pages/PrintElectricalPage.tsx'
 
+// The side-panel preview frame needs hash routing, blocks confirm() dialogs
+// (they always answer "cancel"), and opens with an example project.
+const Router = IS_PREVIEW ? HashRouter : BrowserRouter
+if (IS_PREVIEW) {
+  window.confirm = () => true
+  seedSampleProject()
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    <Router>
       <Routes>
         <Route path="/print" element={<PrintPage />} />
         <Route path="/print-electrical" element={<PrintElectricalPage />} />
@@ -30,6 +40,6 @@ createRoot(document.getElementById('root')!).render(
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>
-    </BrowserRouter>
+    </Router>
   </StrictMode>,
 )

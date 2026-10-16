@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Effort } from '../../store/useSettingsStore';
+import { IS_PREVIEW, PREVIEW_AI_MESSAGE } from '../../preview/mode';
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
@@ -29,6 +30,7 @@ export async function callClaude(opts: {
   messages: (ChatTurn | RichTurn)[];
   schema?: Record<string, unknown>;
 }): Promise<ClaudeResult> {
+  if (IS_PREVIEW) throw new Error(PREVIEW_AI_MESSAGE);
   // Keys live in the user's own browser; there is no backend to proxy through.
   const client = new Anthropic({ apiKey: opts.apiKey, dangerouslyAllowBrowser: true });
 

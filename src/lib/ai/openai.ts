@@ -1,4 +1,5 @@
 import type { ChatTurn } from './anthropic';
+import { IS_PREVIEW, PREVIEW_AI_MESSAGE } from '../../preview/mode';
 
 /** One OpenAI chat request; with `schema` the reply is strict JSON. */
 export async function callOpenAI(opts: {
@@ -8,6 +9,7 @@ export async function callOpenAI(opts: {
   messages: ChatTurn[];
   schema?: Record<string, unknown>;
 }): Promise<string> {
+  if (IS_PREVIEW) throw new Error(PREVIEW_AI_MESSAGE);
   // o-series reasoning models take a "developer" role and max_completion_tokens.
   const isReasoningModel = /^o\d/.test(opts.model);
 
