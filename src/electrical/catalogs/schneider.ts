@@ -3,8 +3,12 @@
  *
  * Verification (October 2026): each part number was confirmed on its own official US
  * product data sheet on download.schneider-electric.com (the PDF in `url`); every rating
- * is copied from that data sheet. Not stated there and therefore left out: UL Type E/F,
- * SCCR and horsepower of GV2 motor circuit breakers, AWG range of Linergy terminals.
+ * is copied from that data sheet. GV2 horsepower / SCCR are from Schneider bulletin
+ * 8536DB0901 (GV2ME is for group motor installation with an LC1D, not UL Type E; Type E is
+ * the GV2P with a GV1G09 / GV2GH7 line spacer). Not stated: AWG range of Linergy terminals.
+ *
+ * Ratings added later from a manufacturer publication other than the part's page carry that
+ * publication in ratings.ratingsSource (e.g. horsepower tables, module limits, SCCR).
  */
 import type { CatalogPart } from '../types';
 
@@ -615,7 +619,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 0.63, maxAmps: 1, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 0.63, maxAmps: 1, poles: 3, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {
@@ -628,7 +632,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 1, maxAmps: 1.6, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 1, maxAmps: 1.6, poles: 3, hp480: 0.75, hp1ph: 0.1, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {
@@ -641,7 +645,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 1.6, maxAmps: 2.5, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 1.6, maxAmps: 2.5, poles: 3, hp480: 1, hp230: 0.5, hp1ph: 0.167, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {
@@ -654,7 +658,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 2.5, maxAmps: 4, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 2.5, maxAmps: 4, poles: 3, hp480: 2, hp230: 0.75, hp1ph: 0.333, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {
@@ -667,7 +671,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 4, maxAmps: 6.3, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 4, maxAmps: 6.3, poles: 3, hp480: 3, hp230: 1.5, hp1ph: 0.5, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {
@@ -680,7 +684,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 6, maxAmps: 10, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 6, maxAmps: 10, poles: 3, hp480: 5, hp230: 3, hp1ph: 1.5, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {
@@ -693,7 +697,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 9, maxAmps: 14, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 9, maxAmps: 14, poles: 3, hp480: 10, hp230: 3, hp1ph: 2, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {
@@ -706,7 +710,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 13, maxAmps: 18, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 13, maxAmps: 18, poles: 3, hp480: 10, hp230: 5, hp1ph: 3, sccrKA480: 22, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {
@@ -719,7 +723,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 17, maxAmps: 23, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 17, maxAmps: 23, poles: 3, hp480: 15, hp230: 7.5, hp1ph: 3, sccrKA480: 10, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {
@@ -732,7 +736,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2ME', minAmps: 20, maxAmps: 25, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2ME', minAmps: 20, maxAmps: 25, poles: 3, hp480: 15, hp230: 7.5, sccrKA480: 10, ul: '60947-4-1 group motor installation (with LC1D contactor); not Type E', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {
@@ -745,7 +749,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 89,
-    ratings: { family: 'TeSys Deca GV2P', minAmps: 6, maxAmps: 10, poles: 3 },
+    ratings: { family: 'TeSys Deca GV2P', minAmps: 6, maxAmps: 10, poles: 3, hp480: 5, hp230: 3, hp1ph: 1.5, sccrKA480: 100, ul: '60947-4-1 Type E (with GV1G09 or GV2GH7 line spacer)', ratingsSource: 'https://www.crescentelectric.com/globalassets/catalogs/crescentelectric.com/c/c89/c895e/c895eb5f-ec49-4ef4-a471-285c6e90da647/c895eb5f-ec49-4ef4-a471-285c6e90da64701/sqd-lc1d18e7-technicalbulletin-252.pdf' },
     verified: true,
   },
   {

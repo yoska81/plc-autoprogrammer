@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { DESIGN } from '../../preview/sampleProject';
 import { getPart } from '../catalog';
-import { VENDORS, supplierOfPart } from './index';
+import { DEFAULT_PREFERENCE, VENDORS, partsFor, supplierOfPart } from './index';
 import {
   backPanelDrilling, billOfMaterials, cableSchedule, designWarnings, doorDrilling, panelLayout, spareSpace, terminalPlan, wireNumbers,
   type DrawingContext,
@@ -24,8 +24,7 @@ const SWAPS: Record<string, Record<string, string | null>> = {
     TB1: '1492-J4', TBG: '1492-JG4', TBE: '1492-EBJ3',
   },
   siemens: {
-    // No 3RU2 range contains this motor's 2.1 A FLA (1.4–2 / 2.8–4 A): the code rules must say so.
-    CB1: '5SJ4316-7HG42', CB2: '5SJ4316-7HG42', PS1: '6EP3333-7SB00-0AX0', K1: '3RT2016-1BB41', OL1: '3RU2116-1BB0', 'K1-AUX': null,
+    CB1: '5SJ4306-7HG42', CB2: '5SJ4206-7HG41', PS1: '6EP3333-7SB00-0AX0', K1: '3RT2016-1BB41', OL1: '3RU2116-1CB0', 'K1-AUX': null,
     SR1: '3SK1111-1AB30', ES1: '3SU1150-1HB20-1CG0', ES1C: null, PB1: '3SU1100-0AB40-1BA0', PB2: '3SU1100-0AB20-1CA0', PB3: '3SU1100-0AB40-1BA0',
     TB1: '8WH1000-0AF00', TBG: '8WH1000-0CF07', TBE: '8WH9000-1PA00',
   },
@@ -35,8 +34,7 @@ const SWAPS: Record<string, Record<string, string | null>> = {
     TB1: 'NSYTRV22', TBG: 'NSYTRV22PE', TBE: 'NSYTRAC22',
   },
 };
-/** Vendors whose test overload deliberately does not fit the motor. */
-const OVERLOAD_MISFIT = new Set(['siemens']);
+
 
 for (const [vendor, swaps] of Object.entries(SWAPS)) {
   const v = VENDORS.find((x) => x.id === vendor);
@@ -63,7 +61,13 @@ for (const [vendor, swaps] of Object.entries(SWAPS)) {
   const warnings = designWarnings(ctx);
   const hits = runCodeRules({ ctx, spec: undefined as never }, makeEnv(ctx));
   assert.equal(supplierOfPart(getPart(swaps.K1!)), v.supplier);
-  assert.equal(hits.some((h) => h.rule === 'motor-overload'), OVERLOAD_MISFIT.has(vendor), `${vendor}: overload range check`);
+  assert.ok(!hits.some((h) => h.rule === 'motor-overload'), `${vendor}: overload range fits the 1 HP / 480 V motor`);
+  // A range that does not contain the motor current is caught for every brand.
+  const tooSmall = partsFor('overload', { ...DEFAULT_PREFERENCE, panel: [v.id] }).parts.find((p) => Number(p.ratings.maxAmps) < 2);
+  if (tooSmall) {
+    const small: DrawingContext = { ...ctx, design: { ...design, components: design.components.map((c) => (c.tag === 'OL1' ? { ...c, partNumber: tooSmall.partNumber } : c)) } };
+    assert.ok(runCodeRules({ ctx: small, spec: undefined as never }, makeEnv(small)).some((h) => h.rule === 'motor-overload'), `${vendor}: too-small overload ${tooSmall.partNumber} is flagged`);
+  }
   console.log(`  ${v.name}: ${own.length} BOM lines from ${v.name}, ${warnings.length} design warnings, ${hits.length} code-rule hits`);
   for (const w of warnings) console.log(`    warning: ${w}`);
   for (const h of hits) console.log(`    rule ${h.rule}: ${h.detail}`);

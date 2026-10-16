@@ -7,8 +7,11 @@
  * Discontinued numbers were replaced by Rockwell's current ones (Micro820/850
  * 2080-L20E / -L50E, E100 193-1EE overloads, 140MT-C3E motor protectors).
  *
- * Not published on those pages and therefore left out: 100-C horsepower ratings,
- * 1489-M interrupting rating (kA), 140MT horsepower / SCCR / UL Type E.
+ * Not published on those pages and therefore left out: 1489-M interrupting rating (kA),
+ * 140MT horsepower / SCCR / UL Type E. 100-C horsepower is from publication 100-TD013.
+ *
+ * Ratings added later from a manufacturer publication other than the part's page carry that
+ * publication in ratings.ratingsSource (e.g. horsepower tables, module limits, SCCR).
  */
 import type { CatalogPart } from '../types';
 
@@ -21,7 +24,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: 'Micro820',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2080-L20E-20QBB.html',
     mount: 'backplate',
-    ratings: { family: 'Micro800', series: 'Micro820', discreteInputs: 12, inputType: '24VDC', discreteOutputs: 7, outputType: 'sourcing', outputVolts: 24, analogInputs: 4, analogOutputs: 1, ethernet: 'yes', ports: 'Ethernet, RS-232/485 serial, microSD', protocols: 'EtherNet/IP' },
+    ratings: { family: 'Micro800', series: 'Micro820', discreteInputs: 12, inputType: '24VDC', discreteOutputs: 7, outputType: 'sourcing', outputVolts: 24, analogInputs: 4, analogOutputs: 1, ethernet: 'yes', ports: 'Ethernet, RS-232/485 serial, microSD', protocols: 'EtherNet/IP', maxExpansionModules: 0, plugInSlots: 2, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/sg/2080-sg001_-en-p.pdf' },
     verified: true,
   },
   {
@@ -32,7 +35,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: 'Micro820',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2080-L20E-20QWB.html',
     mount: 'backplate',
-    ratings: { family: 'Micro800', series: 'Micro820', discreteInputs: 12, inputType: '24VDC', discreteOutputs: 7, outputType: 'relay', analogInputs: 4, analogOutputs: 1, ethernet: 'yes', ports: 'Ethernet, RS-232/485 serial, microSD', protocols: 'EtherNet/IP' },
+    ratings: { family: 'Micro800', series: 'Micro820', discreteInputs: 12, inputType: '24VDC', discreteOutputs: 7, outputType: 'relay', analogInputs: 4, analogOutputs: 1, ethernet: 'yes', ports: 'Ethernet, RS-232/485 serial, microSD', protocols: 'EtherNet/IP', maxExpansionModules: 0, plugInSlots: 2, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/sg/2080-sg001_-en-p.pdf' },
     verified: true,
   },
   {
@@ -43,7 +46,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: 'Micro850',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2080-L50E-24QBB.html',
     mount: 'backplate',
-    ratings: { family: 'Micro800', series: 'Micro850', discreteInputs: 14, inputType: '24V DC/AC', discreteOutputs: 10, outputType: 'sourcing', outputVolts: 24, ethernet: 'yes', protocols: 'EtherNet/IP' },
+    ratings: { family: 'Micro800', series: 'Micro850', discreteInputs: 14, inputType: '24V DC/AC', discreteOutputs: 10, outputType: 'sourcing', outputVolts: 24, ethernet: 'yes', protocols: 'EtherNet/IP', maxExpansionModules: 4, plugInSlots: 3, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/sg/2080-sg001_-en-p.pdf' },
     verified: true,
   },
   {
@@ -54,7 +57,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: 'Micro850',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2080-L50E-24QWB.html',
     mount: 'backplate',
-    ratings: { family: 'Micro800', series: 'Micro850', discreteInputs: 14, inputType: '24V DC/AC', discreteOutputs: 10, outputType: 'relay', ethernet: 'yes', protocols: 'EtherNet/IP' },
+    ratings: { family: 'Micro800', series: 'Micro850', discreteInputs: 14, inputType: '24V DC/AC', discreteOutputs: 10, outputType: 'relay', ethernet: 'yes', protocols: 'EtherNet/IP', maxExpansionModules: 4, plugInSlots: 3, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/sg/2080-sg001_-en-p.pdf' },
     verified: true,
   },
   {
@@ -65,7 +68,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: 'Micro850',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2080-L50E-48QBB.html',
     mount: 'backplate',
-    ratings: { family: 'Micro800', series: 'Micro850', discreteInputs: 28, inputType: '24V DC/AC', discreteOutputs: 20, outputType: 'sourcing', outputVolts: 24, ethernet: 'yes', protocols: 'EtherNet/IP' },
+    ratings: { family: 'Micro800', series: 'Micro850', discreteInputs: 28, inputType: '24V DC/AC', discreteOutputs: 20, outputType: 'sourcing', outputVolts: 24, ethernet: 'yes', protocols: 'EtherNet/IP', maxExpansionModules: 4, plugInSlots: 5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/sg/2080-sg001_-en-p.pdf' },
     verified: true,
   },
   {
@@ -495,7 +498,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '100-C',
     url: 'https://www.rockwellautomation.com/en-us/products/details.100-C09EJ10.html',
     mount: 'backplate',
-    ratings: { family: '100-C', amps: 9, poles: 3, coilVoltage: '24VDC', coil: 'EJ (24V DC electronic coil)', aux: '1 N.O.' },
+    ratings: { family: '100-C', amps: 9, poles: 3, coilVoltage: '24VDC', coil: 'EJ (24V DC electronic coil)', aux: '1 N.O.', hp230: 2, hp480: 5, hp575: 7.5, hp1ph: 1.5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/100-td013_-en-p.pdf' },
     verified: true,
   },
   {
@@ -506,7 +509,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '100-C',
     url: 'https://www.rockwellautomation.com/en-us/products/details.100-C12EJ10.html',
     mount: 'backplate',
-    ratings: { family: '100-C', amps: 12, poles: 3, coilVoltage: '24VDC', coil: 'EJ (24V DC electronic coil)', aux: '1 N.O.' },
+    ratings: { family: '100-C', amps: 12, poles: 3, coilVoltage: '24VDC', coil: 'EJ (24V DC electronic coil)', aux: '1 N.O.', hp230: 3, hp480: 7.5, hp575: 10, hp1ph: 2, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/100-td013_-en-p.pdf' },
     verified: true,
   },
   {
@@ -517,7 +520,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '100-C',
     url: 'https://www.rockwellautomation.com/en-us/products/details.100-C16EJ10.html',
     mount: 'backplate',
-    ratings: { family: '100-C', amps: 16, poles: 3, coilVoltage: '24VDC', coil: 'EJ (24V DC electronic coil)', aux: '1 N.O.' },
+    ratings: { family: '100-C', amps: 16, poles: 3, coilVoltage: '24VDC', coil: 'EJ (24V DC electronic coil)', aux: '1 N.O.', hp230: 5, hp480: 10, hp575: 15, hp1ph: 3, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/100-td013_-en-p.pdf' },
     verified: true,
   },
   {
@@ -528,7 +531,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '100-C',
     url: 'https://www.rockwellautomation.com/en-us/products/details.100-C23EJ10.html',
     mount: 'backplate',
-    ratings: { family: '100-C', amps: 23, poles: 3, coilVoltage: '24VDC', coil: 'EJ (24V DC electronic coil)', aux: '1 N.O.' },
+    ratings: { family: '100-C', amps: 23, poles: 3, coilVoltage: '24VDC', coil: 'EJ (24V DC electronic coil)', aux: '1 N.O.', hp230: 7.5, hp480: 15, hp575: 15, hp1ph: 3, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/100-td013_-en-p.pdf' },
     verified: true,
   },
   {
@@ -539,7 +542,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '100-C',
     url: 'https://www.rockwellautomation.com/en-us/products/details.100-C30EJ10.html',
     mount: 'backplate',
-    ratings: { family: '100-C', amps: 30, poles: 3, coilVoltage: '24VDC', coil: 'EJ (24V DC electronic coil)', aux: '1 N.O.' },
+    ratings: { family: '100-C', amps: 30, poles: 3, coilVoltage: '24VDC', coil: 'EJ (24V DC electronic coil)', aux: '1 N.O.', hp230: 10, hp480: 20, hp575: 25, hp1ph: 5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/100-td013_-en-p.pdf' },
     verified: true,
   },
   {
@@ -1055,6 +1058,39 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FM-P3MN3G.html',
     mount: 'door',
     ratings: { family: '800F', size: '22mm', color: 'green', volts: '24V AC/DC', led: 'yes' },
+    verified: true,
+  },
+  {
+    partNumber: '140MT-C3E-A40',
+    category: 'motorProtector',
+    description: '140MT motor protection circuit breaker 0.25-0.4 A, standard magnetic trip (fixed 14 x Ie), frame C',
+    manufacturer: 'Allen-Bradley',
+    family: '140MT',
+    url: 'https://www.rockwellautomation.com/en-us/products/details.140MT-C3E-A40.html',
+    mount: 'backplate',
+    ratings: { family: '140MT', minAmps: 0.25, maxAmps: 0.4 },
+    verified: true,
+  },
+  {
+    partNumber: '140MT-C3E-A63',
+    category: 'motorProtector',
+    description: '140MT motor protection circuit breaker 0.4-0.63 A, standard magnetic trip (fixed 14 x Ie), frame C',
+    manufacturer: 'Allen-Bradley',
+    family: '140MT',
+    url: 'https://www.rockwellautomation.com/en-us/products/details.140MT-C3E-A63.html',
+    mount: 'backplate',
+    ratings: { family: '140MT', minAmps: 0.4, maxAmps: 0.63 },
+    verified: true,
+  },
+  {
+    partNumber: '140MT-C3E-B10',
+    category: 'motorProtector',
+    description: '140MT motor protection circuit breaker 0.63-1 A, standard magnetic trip (fixed 14 x Ie), frame C',
+    manufacturer: 'Allen-Bradley',
+    family: '140MT',
+    url: 'https://www.rockwellautomation.com/en-us/products/details.140MT-C3E-B10.html',
+    mount: 'backplate',
+    ratings: { family: '140MT', minAmps: 0.63, maxAmps: 1 },
     verified: true,
   },
 ];
