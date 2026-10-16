@@ -105,3 +105,7 @@ Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 althoug
 - [x] "No safety reset" no longer listed twice in the review: the design warning is skipped when the code rule reports it (checks.ts COVERED_BY_CODE_RULES); review.test.ts 8/8 with a new test (fails without the fix).
 - [x] Yellow E-stop background: AutomationDirect ECX1651 oversized legend plate, yellow, "EMERGENCY STOP", for 22 mm devices (product page + cut sheet; $3.25 read 2026-10-16) added to the catalog (no door cutout of its own) and prices; the estop-device rule names it in its fix and passes when it is in the design. The 60 mm diameter is not on AD's page or cut sheet, so it is not claimed.
 - [ ] SCCR ratings for PS / CT / VFD parts: left "unknown" — needs each AD datasheet's SCCR statement (to do with the vendor-catalog cross-check).
+
+## Machine layout polish (after #29 merged)
+- [x] Drawing sheet labels: manifolds and remote I/O join the label placement; symbols are kept clear; on very dense layouts the label goes to the spot that overlaps least (big variant: all labels readable, MV1 label visible). Checkers 0/0, layout E2E OK.
+- Next: vendor catalog cross-check (+ a test that fails a catalog entry without a datasheet-backed rating).
