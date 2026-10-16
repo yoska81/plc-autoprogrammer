@@ -433,7 +433,7 @@ export const DESIGN: ElectricalDesign = {
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '8';
+const SEED_VERSION = '9';
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }
@@ -459,7 +459,7 @@ export function seedSampleProject() {
   useElectricalStore.getState().setInputs(INPUTS);
   useSpecStore.getState().setSections(SPEC);
   useHmiStore.getState().setHmiPartNumber(HMI.hmiPartNumber);
-  useHmiStore.getState().setDesign(HMI, 'Example HMI for a 7" CM5: Main (run/stop/reset, lamps, part count), Alarms and I/O Status screens with the same navigation bar and alarm banner.');
+  useHmiStore.getState().setDesign(HMI, 'Example HMI for a 7" CM5 with six screens sharing one header (machine, mode, alarm count, clock) and navigation bar: Main (machine view, machine state, Start/Stop/Reset, parts, rate, batch, trend, alarm banner), Manual (Manual mode and hold-to-run jog/extend with interlocks), Setup (pusher timeout, batch target, service interval), Alarms (active alarms and history with reset), Diagnostics (every input and output, PLC heartbeat) and Maintenance (pusher cycles, run hours, service reminder). Manual and Setup need the Maintenance password; the service interval needs the Engineer password.');
   // Mark every stage as built from this spec so the example opens fully up to date.
   const src = { specFp: fingerprint(SPEC), spec: SPEC, ioFp: ioFingerprint(useIOStore.getState().projectIO), hmiFp: hmiFingerprint(HMI) };
   useProjectStore.getState().setRecommendation(RECOMMENDATION);

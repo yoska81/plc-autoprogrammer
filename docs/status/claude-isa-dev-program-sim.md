@@ -26,3 +26,6 @@ Draft PR #5 → `claude/optimistic-maxwell-6nfcs6`. No blockers.
 - One-line edit outside my files earlier: `data-rung-id` on each rung row in LadderView (now inside `src/plc/ui/ladder/`, so mine).
 - The simulator event log is dominated by the heartbeat bits (C12/C1203 every second). Could filter one-scan pulse bits from the log if Debug 1 finds it noisy.
 - Debug 2: the program listing PDF (`src/deliverables/programListingPdf.ts`, Dev 1) now gets 40 rungs / 7 blocks from the example — worth checking pagination.
+
+## Follow-ups
+- [x] Example HMI explanation text describes the six screens (Main, Manual, Setup, Alarms, Diagnostics, Maintenance); SEED_VERSION 9. Verified: tsc, eslint, 34 unit tests, E2E green.
