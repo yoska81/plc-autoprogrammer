@@ -2,10 +2,13 @@ import { useNavigate } from 'react-router-dom';
 import { useSpecStore } from '../store/useSpecStore';
 import { SPEC_SECTIONS } from '../spec/types';
 import SpecIntake from '../components/SpecIntake';
+import QuestionList from '../components/questions/QuestionList';
+import { useQuestions } from '../components/questions/useQuestionStore';
 
 export default function SpecPage() {
   const navigate = useNavigate();
   const spec = useSpecStore();
+  const questions = useQuestions();
   const filled = SPEC_SECTIONS.filter((s) => spec.sections[s.id]?.trim()).length;
 
   return (
@@ -44,6 +47,12 @@ export default function SpecPage() {
                 />
               </div>
             ))}
+          </div>
+
+          {/* Questions & answers: part of the specification (asked here and on the later pages). */}
+          <div id="questions-and-answers">
+            <QuestionList questions={questions} all showSource title="Questions & answers"
+              intro="Questions the AI asked about this machine, with your answers right under them. They are part of the specification: every later stage reads them, and changing an answer marks those stages out of date. Answer open ones in the box under the question; change an answer any time." />
           </div>
         </div>
       </div>

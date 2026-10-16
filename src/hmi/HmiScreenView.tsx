@@ -429,6 +429,13 @@ export default function HmiScreenView({ screen, widthPx, heightPx, read, onPress
         </radialGradient>
       </defs>
       <rect x={0} y={0} width={widthPx} height={heightPx} fill={`url(#${gradId})`} />
+      {screen.background && (
+        <g style={{ pointerEvents: 'none' }} data-background="">
+          <image href={screen.background.src} x={0} y={0} width={widthPx} height={heightPx}
+            preserveAspectRatio={screen.background.fit === 'stretch' ? 'none' : screen.background.fit === 'fill' ? 'xMidYMid slice' : 'xMidYMid meet'} />
+          {screen.background.dim > 0 && <rect x={0} y={0} width={widthPx} height={heightPx} fill="#000" opacity={Math.min(0.9, screen.background.dim)} />}
+        </g>
+      )}
       {ordered.map((el) => {
         const value = el.address && read ? read(el.address) : undefined;
         const navTarget = el.kind === 'nav' || el.kind === 'header' ? el.targetScreenId : null;
@@ -440,11 +447,13 @@ export default function HmiScreenView({ screen, widthPx, heightPx, read, onPress
             style={{ cursor: interactive ? 'pointer' : 'default' }}
             onPointerDown={thumbnail ? undefined : (e) => {
               if (onSelect) { e.stopPropagation(); onSelect(el.id); return; }
-              if (el.kind === 'button' && onPress) { (e.target as Element).setPointerCapture?.(e.pointerId); onPress(el, true); }
+              // Capture on the element's group: its shapes are re-drawn while pressed, and a lost capture would lose the release.
+              if (el.kind === 'button' && onPress) { (e.currentTarget as Element).setPointerCapture?.(e.pointerId); onPress(el, true); }
               if (navTarget && onNavigate && (el.kind === 'nav' || (e.target as Element).closest?.('[data-nav]'))) onNavigate(navTarget);
             }}
             onPointerUp={() => { if (!onSelect && el.kind === 'button' && onPress) onPress(el, false); }}
             onPointerCancel={() => { if (!onSelect && el.kind === 'button' && onPress) onPress(el, false); }}
+            onLostPointerCapture={() => { if (!onSelect && el.kind === 'button' && onPress) onPress(el, false); }}
           >
             <ElementShape el={el} value={value} ctx={ctx} />
             {lock && <LockBadge x={el.x + el.w - 6} y={el.y + 5} letter={LEVEL_SHORT[lock]} />}

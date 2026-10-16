@@ -290,7 +290,7 @@ export default function ElectricalPage() {
                 )}
 
                 <QuestionList questions={elecQuestions} title="Assumptions to confirm"
-                  intro="The AI made these assumptions. Confirm each one, or type the correct value in the box under it; answers are added to the machine description and the design becomes out of date so Update uses them." />
+                  intro="The AI made these assumptions. Confirm each one, or type the correct value in the box under it; answers are saved in the Questions & answers of the machine description (part of the spec) and the design becomes out of date so Update uses them." />
               </>
             )}
           </div>

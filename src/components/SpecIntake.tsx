@@ -5,8 +5,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import type { SpecSections } from '../spec/types';
 import { organizeSpec } from '../lib/ai/specAI';
 import { Spinner, ReasoningPanel } from './common';
-import QuestionList from './questions/QuestionList';
-import { useQuestions, useSyncQuestions } from './questions/useQuestionStore';
+import { useSyncQuestions } from './questions/useQuestionStore';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.csv,image/*';
 
@@ -25,7 +24,6 @@ export default function SpecIntake() {
   const apiKey = settings.anthropicApiKey;
   // The AI's open questions, each answered right under it (saved per project, merged into the spec).
   useSyncQuestions('spec', spec.questions.map((text) => ({ text })));
-  const questions = useQuestions('spec');
 
   const organize = async () => {
     if (!apiKey || (!newText.trim() && !files.length)) return;
@@ -98,8 +96,6 @@ export default function SpecIntake() {
             )}
           </div>
 
-          <QuestionList questions={questions} title="Open questions"
-            intro="Answering these makes the design more accurate. Type each answer in the box under its question (or pick a quick answer); it is saved and added to the spec sections below automatically." />
 
     </div>
   );

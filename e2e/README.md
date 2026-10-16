@@ -11,7 +11,7 @@ node e2e/app.e2e.cjs                  # BASE_URL=http://localhost:5173 by defaul
 Screenshots and downloaded files land in `e2e/out/` (git-ignored).
 Playwright is loaded from the global install (`/opt/node22/lib/node_modules/playwright`, Chromium in `/opt/pw-browsers`).
 
-Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/components/questions/questions.test.ts` and `npx tsx src/online/online.test.ts`.
+Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/plc/core/analog.test.ts` and `npx tsx src/electrical/analog.test.ts`.
 
 ## Preview build
 
@@ -34,3 +34,10 @@ HASH=1 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # preview buil
 ```
 The sweep fails on page/console errors, sideways scrolling, controls pushed off-screen, text below 3:1 contrast and light
 text on lime. `old-data/<commit>.json` is the browser storage the example project of that commit left behind.
+
+## HMI screens made by hand
+
+```bash
+BASE_URL=http://localhost:5203 node e2e/hmi-editor.e2e.cjs   # picture behind a screen, place/move/resize/undo, tags, AI recreate (mocked), simulator, PNG export
+npx tsx src/hmi/editor.test.ts                               # editor model: move, resize, snap, align, distribute, duplicate, undo, tags
+```

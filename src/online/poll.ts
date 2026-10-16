@@ -1,4 +1,4 @@
-import type { ModbusBridge } from './bridge';
+import type { ModbusBridge } from '../desktop/bridge';
 
 /** Where a PLC address lives in the Modbus map. */
 export type ModbusTable = 'coil' | 'discrete' | 'holding' | 'input';

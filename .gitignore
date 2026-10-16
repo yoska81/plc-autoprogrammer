@@ -36,3 +36,4 @@ release
 electron/vendor/
 e2e/out-desktop/
 tools/ai-quality/out/
+e2e/out-hmi-editor/

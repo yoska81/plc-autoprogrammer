@@ -174,8 +174,8 @@ export default function ReviewPage() {
           {ai?.summary && <p className="mt-1.5"><span className="font-semibold text-steel-800">Reviewer's verdict: </span>{ai.summary}</p>}
         </div>
 
-        <QuestionList questions={allQuestions.filter((q) => q.status === 'open' || !q.merged)} title="Questions to answer (all stages)" showSource
-          intro="Every open question and assumption from the machine description, I/O, electrical design, HMI and this review, each with its answer box right under it. Answers go into the machine description; the affected stages become out of date so Update uses them." />
+        <QuestionList questions={allQuestions} title="Questions to answer (all stages)" showSource
+          intro="Every open question and assumption from the machine description, I/O, electrical design, HMI and this review, each with its answer box right under it. Answers are saved in the Questions & answers of the machine description (part of the spec); the affected stages become out of date so Update uses them." />
 
         <div className="flex flex-wrap items-center gap-1.5 rounded border border-steel-200 bg-white px-3 py-2">
           <span className="mr-1 text-[11px] font-bold uppercase tracking-wide text-steel-500">Severity</span>
