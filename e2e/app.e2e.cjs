@@ -1,6 +1,9 @@
-// E2E v0.7: wizard (describe → equipment) → I/O → electrical (cabinet/machine/picture) → HMI → program → simulate → spec change/update all → deliverables.
+// E2E v0.8: wizard (project data → describe → equipment chooser) → project data/revisions → I/O (+filter) → electrical
+// (part picker, cabinet/machine/picture, machining DXF) → HMI → program (blocks) → simulate (blocks, bypasses) →
+// resizable panels → settings connection test → spec change/update all → second project (no leaks, rename) → labels → deliverables (incl. full package PDF).
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const JSZip = require('jszip');
+const { PDFDocument, PDFName } = require('pdf-lib');
 const fs = require('fs');
 const SP = __dirname + '/';
 const OUT = SP + 'out/';
@@ -9,6 +12,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const BASE = process.env.BASE_URL || 'http://localhost:5173';
 const F = JSON.parse(fs.readFileSync(SP + 'fixtures.json', 'utf8'));
 const log = (...a) => console.log('•', ...a);
+const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what); };
 let shot = 0;
 const snap = async (page, name, full = false) => page.screenshot({ path: `${OUT}${String(++shot).padStart(2, '0')}_${name}.png`, fullPage: full });
 
@@ -67,6 +71,7 @@ function sse(model, text) {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|net::ERR_FAILED|Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
@@ -85,7 +90,18 @@ function sse(model, text) {
   // Wizard
   await page.getByRole('button', { name: 'New project' }).first().click();
   await page.getByPlaceholder('e.g. Line 3 case packer').fill('Wizard Conveyor Cell');
-  await page.getByRole('button', { name: /480 V 3-phase/ }).click();
+  await page.getByPlaceholder('Shown on drawings and documents').fill('Acme Automation');
+  await page.getByPlaceholder('e.g. 24-117').fill('26-042');
+  await page.getByPlaceholder('e.g. WCC').fill('wcc');
+  await page.getByPlaceholder('e.g. Y.S.').fill('J.D.');
+  await page.getByRole('button', { name: /^Canada/ }).click();
+  const summary = async () => (await page.locator('aside.w-80').innerText()).replace(/\s+/g, ' ');
+  check((await summary()).includes('600 V 3-phase'), 'Canada selects 600 V');
+  await page.getByRole('button', { name: /^United States/ }).click();
+  check((await summary()).includes('480 V 3-phase'), 'US selects 480 V');
+  await page.getByRole('button', { name: /^Canada/ }).click();
+  await page.getByRole('button', { name: /^600 V 3-phase/ }).click();
+  log('Wizard summary:', (await summary()).slice(0, 120));
   await snap(page, 'wizard_1');
   await page.getByRole('button', { name: 'Next →' }).click();
   await page.locator('textarea').first().fill('Conveyor with a pusher at the end, E-stop, 7 inch HMI.');
@@ -96,36 +112,148 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Suggest equipment' }).click();
   await page.getByRole('button', { name: 'Suggest again' }).waitFor({ timeout: 15000 });
   await snap(page, 'wizard_3_recommendation');
+  // Equipment chooser: weak CPUs are greyed, a bigger one can be chosen.
+  const greyCpus = await page.locator('input[aria-label^="Choose C"][disabled]').count();
+  log('Greyed (too weak) CPUs:', greyCpus);
+  check(greyCpus > 0, 'some CPUs are greyed as too weak');
+  const weakRow = page.locator('tr', { has: page.locator('input[aria-label^="Choose C"][disabled]') }).first();
+  await weakRow.click();
+  check(!(await page.locator('aside', { hasText: 'Your selection' }).innerText()).includes(await weakRow.locator('td.font-mono').innerText()), 'clicking a greyed CPU does not select it');
+  await page.locator('tr', { has: page.locator('input[aria-label="Choose C0-11DD1E-D"]') }).click();
+  check(await page.locator('input[aria-label="Choose C0-11DD1E-D"]').isChecked(), 'bigger CPU selected');
   await page.getByRole('button', { name: 'Use this selection' }).click();
-  log('Summary panel controller:', await page.locator('aside dd.font-mono').first().innerText());
+  await page.getByText('Applied to the project.').waitFor();
+  log('Summary panel controller:', await page.locator('aside.w-80 dd.font-mono').first().innerText());
+  check((await page.locator('aside.w-80 dd.font-mono').first().innerText()).includes('C0-11DD1E-D'), 'bigger CPU applied');
   await page.getByRole('button', { name: 'Next →' }).click();
   await snap(page, 'wizard_4');
   await page.getByRole('button', { name: 'Open project →' }).click();
   await page.waitForURL('**/io');
   log('Project open:', await page.locator('select[aria-label="Open project"] option:checked').innerText());
+  const statusBar = () => page.locator('div.h-6').last().innerText();
+  check((await statusBar()).includes('C0-11DD1E-D'), 'status bar shows the chosen CPU');
+
+  // Project data: wizard values arrived; issue revisions; status bar follows.
+  await page.goto(BASE + '/project');
+  check(await page.getByLabel('company').inputValue() === 'Acme Automation', 'company saved');
+  check(await page.getByLabel('projectNumber').inputValue() === '26-042', 'job number saved');
+  check(await page.getByLabel('Drawing prefix').inputValue() === 'WCC', 'prefix saved upper-case');
+  check(await page.getByLabel('preparedBy').inputValue() === 'J.D.', 'engineer saved');
+  check((await page.locator('select').filter({ hasText: 'Canada' }).first().inputValue()) === 'Canada', 'region saved');
+  check((await statusBar()).includes('Rev A · Preliminary'), 'preliminary rev A before issuing');
+  await page.getByRole('button', { name: 'Issue revision A' }).click();
+  check((await statusBar()).includes('Rev A · Issued for review'), 'status bar shows issued rev A');
+  await page.getByRole('button', { name: 'Issue revision B' }).click();
+  check((await statusBar()).includes('Rev B · Issued for approval'), 'status bar shows rev B');
+  await page.getByRole('button', { name: 'Withdraw revision B' }).click();
+  check((await statusBar()).includes('Rev A'), 'withdrawing B goes back to A');
+  check(await page.getByRole('button', { name: 'Issue revision B' }).count() === 1, 'next revision is B again after withdrawing');
+  log('Status bar:', (await statusBar()).replace(/\s+/g, ' '));
+  await snap(page, 'project_data');
 
   // I/O
+  await page.goto(BASE + '/io');
   await page.getByRole('button', { name: 'Generate I/O from spec' }).click();
   await page.getByText('Review I/O changes').waitFor({ timeout: 15000 });
   await page.getByRole('button', { name: 'Apply changes' }).click();
   log('I/O addresses:', (await page.locator('input[aria-label^="PLC address"]').evaluateAll((els) => els.map((e) => e.placeholder))).join(' '));
   await snap(page, 'io');
+  const ioRows = () => page.locator('input[aria-label^="PLC address"]').count();
+  await page.getByLabel('Filter I/O').fill('pusher');
+  check(await ioRows() === 2, 'filter "pusher" shows 2 points');
+  await page.getByLabel('Show').selectOption('output');
+  check(await ioRows() === 1, 'pusher outputs only shows 1 point');
+  await page.getByLabel('Filter I/O').fill('zzz');
+  await page.getByText('Nothing matches the filter.').waitFor();
+  await page.getByLabel('Filter I/O').fill('');
+  await page.getByLabel('Show').selectOption('all');
+  check(await ioRows() === 7, 'filter cleared shows all 7');
+
+  const dl = async (name) => {
+    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 180000 }), page.getByRole('button', { name, exact: true }).click()]);
+    const path = OUT + d.suggestedFilename();
+    await d.saveAs(path);
+    return path;
+  };
 
   // Electrical
   await page.goto(BASE + '/electrical?tab=design');
   await page.getByRole('button', { name: /Generate (Electrical Design|New Design)/ }).click();
   await page.getByRole('button', { name: 'BOM CSV' }).waitFor({ timeout: 15000 });
+  await page.goto(BASE + '/electrical?tab=design');
+  check(await page.locator('select').filter({ hasText: '600VAC-3PH' }).first().inputValue() !== '', 'supply select present');
+  log('Electrical supply / code:', await page.locator('select').filter({ hasText: '600VAC-3PH' }).first().inputValue(), '/', await page.getByLabel('Electrical code').inputValue());
+
+  // Part picker: weaker parts greyed, a stronger one can be chosen.
+  const changeBtn = page.locator('button[aria-label^="Change "]').first();
+  const changeTag = (await changeBtn.getAttribute('aria-label')).slice(7);
+  const row = page.locator('tr', { has: changeBtn });
+  const before = await row.locator('div.font-mono').first().innerText();
+  await changeBtn.click();
+  const dialog = page.locator('.fixed.inset-0').filter({ hasText: `Change ${changeTag}` });
+  await dialog.waitFor();
+  const choosable = dialog.locator('tr', { has: page.locator('input[type=radio]:not([disabled]):not(:checked)') });
+  const nChoosable = await choosable.count();
+  log(`Part picker ${changeTag}: ${await dialog.locator('input[type=radio][disabled]').count()} greyed, ${nChoosable} choosable`);
+  if (nChoosable) {
+    const pn = await choosable.first().locator('td').nth(1).innerText();
+    await choosable.first().click();
+    await dialog.waitFor({ state: 'detached' });
+    const after = await row.locator('div.font-mono').first().innerText();
+    log(`Changed ${changeTag}: ${before} → ${after}`);
+    check(after === pn && after !== before, 'part picker replaced the part');
+  } else {
+    await dialog.getByRole('button', { name: 'Close' }).last().click();
+  }
+
+  // Machining: units, cut-only, DXF download.
+  await page.goto(BASE + '/electrical?tab=machining');
+  await page.getByLabel('DXF units').selectOption('in');
+  await page.getByText('X (in)').waitFor();
+  await page.getByLabel('Cutting geometry only').check();
+  {
+    const [d] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Back panel DXF' }).click()]);
+    const path = OUT + d.suggestedFilename();
+    await d.saveAs(path);
+    const dxf = fs.readFileSync(path, 'utf8');
+    const ok = /\$INSUNITS\s*\r?\n\s*70\s*\r?\n\s*1\s*\r?\n/.test(dxf);
+    log('Machining DXF:', d.suggestedFilename(), Math.round(dxf.length / 1024), 'KB, inch header', ok, '| TEXT layer used', /\n\s*8\s*\r?\nTEXT\s*\r?\n/.test(dxf));
+    check(/_in_cut\.dxf$/.test(d.suggestedFilename()) && ok, 'inch, cut-only DXF');
+  }
+  await snap(page, 'electrical_machining');
   for (const t of ['cabinet', 'machine', 'picture']) {
     await page.goto(BASE + `/electrical?tab=${t}`);
     await page.waitForTimeout(1200);
     await snap(page, `electrical_${t}`);
   }
 
+  // Labels: categories, content, size, label-printer PDF (one page per label at the label size), sheet PDF, CSV, Excel
+  await page.goto(BASE + '/electrical?tab=labels');
+  await page.getByText('1. Which labels').waitFor({ timeout: 15000 });
+  log('Label categories:', (await page.locator('section label').filter({ has: page.locator('input[type=checkbox]') }).allInnerTexts()).slice(0, 6).map((t) => t.split('\n')[0] + ' ' + t.split('\n').pop()).join(' | '));
+  await page.getByLabel('Number + description beside it').check();
+  await page.getByLabel('Label size').selectOption('25x10');
+  log('Labels to print:', await page.getByText(/labels selected/).innerText(), '| preview labels', await page.locator('[data-testid=label-preview] svg').count());
+  await snap(page, 'labels');
+  const lpdf = fs.readFileSync(await dl('Labels PDF for label printer'), 'latin1');
+  const boxes = [...lpdf.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number));
+  const mm = (b) => `${((b[2] - b[0]) / 72 * 25.4).toFixed(1)}x${((b[3] - b[1]) / 72 * 25.4).toFixed(1)}`;
+  log('Label printer PDF pages:', boxes.length, '| sizes', [...new Set(boxes.map(mm))].join(', '));
+  if (boxes.some((b) => mm(b) !== '25.0x10.0')) throw new Error('label page size is not 25 x 10 mm');
+  const sheet = fs.readFileSync(await dl('Sheet PDF'), 'latin1');
+  log('Label sheet PDF pages:', (sheet.match(/\/Type \/Page[^s]/g) || []).length);
+  log('Labels CSV rows:', fs.readFileSync(await dl('CSV'), 'utf8').trim().split('\n').length - 1);
+  const lx = await JSZip.loadAsync(fs.readFileSync(await dl('Excel')));
+  log('Labels Excel sheets:', [...(await lx.file('xl/workbook.xml').async('string')).matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
+  await page.getByLabel('Label size').selectOption('38x12');
+
   // HMI (part preselected by equipment)
   await page.goto(BASE + '/hmi');
   log('HMI preselected:', await page.getByText(/CM5-T7W · 7"/).count() > 0);
   await page.getByRole('button', { name: 'Design the HMI screens' }).click();
-  await page.getByRole('button', { name: /^Tags\s*\d+$/ }).waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: 'Redesign screens' }).waitFor({ timeout: 15000 });
+  log('HMI screens:', await page.locator('nav[aria-label="Screens"] > button').count(), '| tags tab:', (await page.getByRole('button', { name: /^Tags\s*\d+/ }).innerText()).replace(/\s+/g, ' '));
+  await snap(page, 'hmi');
 
   // Program
   await page.goto(BASE + '/program');
@@ -134,14 +262,82 @@ function sse(model, text) {
   await page.getByText('Cycle running: panel or HMI Start').waitFor({ timeout: 15000 });
   log('Tree status dots (done/stale):', await page.locator('nav [title="Done"]').count(), '/', await page.locator('nav [title="Out of date"]').count());
   await snap(page, 'program');
+  const rungNumbers = () => page.locator('div.select-none > div.font-mono.font-bold').allInnerTexts();
+  log('Block banners:', (await page.locator('span.text-xs.font-semibold.text-slate-800').allInnerTexts()).join(' | '));
+  await page.getByRole('button', { name: /^Pusher\s*2$/ }).click();
+  await page.getByText('Working on Pusher').waitFor();
+  log('Pusher block rung numbers:', (await rungNumbers()).join(','), '|', await page.getByText(/of 8 rungs/).innerText());
+  check((await rungNumbers()).join(',') === '4,5', 'block keeps the real rung numbers');
+  await snap(page, 'program_block');
+  await page.getByRole('button', { name: /^All\s*8$/ }).click().catch(() => {});
 
   // Simulate
   await page.goto(BASE + '/simulate');
   await page.getByRole('button', { name: /^Run$/ }).first().click();
-  const box = await page.locator('svg text', { hasText: /^START$/ }).last().boundingBox();
-  if (box) { await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.waitForTimeout(250); await page.mouse.up(); }
-  await page.waitForTimeout(5000);
+  const box = await page.locator('svg[aria-label^="HMI screen"] text', { hasText: /^start$/i }).last().boundingBox({ timeout: 10000 });
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.waitForTimeout(250); await page.mouse.up();
+  await page.waitForTimeout(3000);
+  const yOn = await page.locator('span[title="Outputs ON"] b').innerText();
+  log('Simulation outputs ON after HMI Start:', yOn);
+  if (yOn.startsWith('0/')) throw new Error('HMI Start did not start the machine');
+  const blockGroup = page.getByRole('group', { name: 'Block' });
+  await blockGroup.getByRole('button', { name: /^Pusher/ }).click();
+  await page.getByText('Showing the rungs and devices of').waitFor();
+  await page.getByLabel('Run selected block only').check();
+  const banner = page.locator('[role=status]').filter({ hasText: 'Bypasses active' });
+  await banner.waitFor();
+  log('Bypass banner:', (await banner.innerText()).replace(/\s+/g, ' ').slice(0, 120));
+  await snap(page, 'simulate_block');
+  await page.getByRole('button', { name: 'Clear all bypasses / forces' }).click();
+  await banner.waitFor({ state: 'detached' });
+  await blockGroup.getByRole('button', { name: /^All/ }).click();
   await snap(page, 'simulate');
+
+  // Resizable panels: drag, remembered after reload, double-click resets.
+  {
+    const sep = page.locator('[role=separator]').first();
+    const width = async () => Number(await sep.getAttribute('aria-valuenow'));
+    const w0 = await width();
+    const b = await sep.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 + 60, b.y + 200, { steps: 5 });
+    await page.mouse.move(b.x + b.width / 2 + 100, b.y + 200, { steps: 5 });
+    await page.mouse.up();
+    const w1 = await width();
+    await page.reload();
+    const w2 = await width();
+    await sep.dblclick();
+    const w3 = await width();
+    log(`Nav panel width: ${w0} → drag ${w1} → reload ${w2} → double-click ${w3}`);
+    check(w1 === w0 + 100 && w2 === w1 && w3 === 256, 'resizable nav panel');
+  }
+
+  // Settings: connection test messages.
+  await page.goto(BASE + '/settings');
+  const testWith = async (status, body) => {
+    await page.route('https://api.anthropic.com/v1/messages', (r) => r.fulfill({ status, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'request-id': 'req_test' }, body: JSON.stringify(body) }));
+    await page.getByRole('button', { name: 'Test connection' }).click();
+    const st = page.locator('[role=status]');
+    await st.waitFor();
+    await page.getByRole('button', { name: 'Test connection' }).waitFor();
+    const txt = await st.innerText();
+    await page.unroute('https://api.anthropic.com/v1/messages');
+    return txt;
+  };
+  const apiErr = (type, message) => ({ type: 'error', error: { type, message } });
+  const results = {
+    401: await testWith(401, apiErr('authentication_error', 'invalid x-api-key')),
+    404: await testWith(404, apiErr('not_found_error', 'model: claude-opus-5-5')),
+    credit: await testWith(400, apiErr('invalid_request_error', 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.')),
+    ok: await testWith(200, { id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'text', text: 'OK' }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 5, output_tokens: 1 } }),
+  };
+  for (const [k, v] of Object.entries(results)) log(`Test connection ${k}:`, v);
+  check(/rejected the key \(401\)/.test(results[401]), '401 message');
+  check(/not available to this account \(404\)/.test(results[404]), '404 message');
+  check(/no credit/.test(results.credit), 'credit message');
+  check(/^✓ Connected/.test(results.ok), 'success message');
+  await snap(page, 'settings');
 
   // Spec change → update all
   await page.goto(BASE + '/spec');
@@ -155,20 +351,39 @@ function sse(model, text) {
   await page.waitForTimeout(300);
   log('After approve out of date:', await page.locator('nav [title="Out of date"]').count());
 
+  // A second project starts empty, then the first comes back intact; rename shows everywhere.
+  const firstId = await page.locator('select[aria-label="Open project"]').inputValue();
+  await page.goto(BASE + '/new');
+  await page.getByPlaceholder('e.g. Line 3 case packer').fill('Second Cell');
+  await page.getByRole('button', { name: 'Next →' }).click();
+  await page.getByRole('button', { name: 'Close ✕' }).click();
+  await page.goto(BASE + '/io');
+  check(await page.getByText('No I/O points yet').count() === 1, 'new project has no I/O');
+  check((await statusBar()).includes('PLC: —') || !(await statusBar()).includes('C0-11DD1E-D'), 'new project has no CPU from the first');
+  check((await statusBar()).includes('Rev A · Preliminary'), 'new project has no revisions from the first');
+  await page.goto(BASE + '/project');
+  check(await page.getByLabel('company').inputValue() === 'ISA', 'new project starts with the default company ISA, not the first project\'s');
+  await page.getByLabel('Project name').fill('Second Cell Renamed');
+  check((await page.locator('select[aria-label="Open project"] option:checked').innerText()) === 'Second Cell Renamed', 'rename shows in the project list');
+  await page.locator('select[aria-label="Open project"]').selectOption(firstId);
+  await page.goto(BASE + '/io');
+  check(await ioRows() === 7, 'first project I/O back');
+  check((await statusBar()).includes('C0-11DD1E-D') && (await statusBar()).includes('Rev A · Issued for review'), 'first project CPU and revision back');
+  log('Projects:', (await page.locator('select[aria-label="Open project"] option').allInnerTexts()).join(' | '));
+
   // Deliverables
   await page.goto(BASE + '/export');
-  const dl = async (name) => {
-    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.getByRole('button', { name, exact: true }).click()]);
-    const path = OUT + d.suggestedFilename();
-    await d.saveAs(path);
-    return path;
-  };
   const eng = await dl('Engineering package');
   const engTxt = fs.readFileSync(eng, 'latin1');
   log('Engineering PDF:', Math.round(fs.statSync(eng).size / 1024), 'KB, pages', (engTxt.match(/\/Type \/Page[^s]/g) || []).length, '| has images', engTxt.includes('/Subtype /Image'));
   const xlsx = await dl('Excel report');
   const wbXml = await (await JSZip.loadAsync(fs.readFileSync(xlsx))).file('xl/workbook.xml').async('string');
   log('Excel sheets:', [...wbXml.matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
+  const full = await dl('Download full package PDF');
+  const fullDoc = await PDFDocument.load(fs.readFileSync(full));
+  const outlines = fullDoc.catalog.lookup(PDFName.of('Outlines'));
+  log('Full package PDF:', Math.round(fs.statSync(full).size / 1024), 'KB, pages', fullDoc.getPageCount(), '| bookmarks', outlines ? outlines.get(PDFName.of('Count')).toString() : 'none');
+  if (!outlines) throw new Error('full package has no bookmarks');
   const zipPath = await dl('Download everything');
   const zip = await JSZip.loadAsync(fs.readFileSync(zipPath));
   log('ZIP:', Object.keys(zip.files).filter((f) => !f.endsWith('/')).join(', '));
@@ -177,4 +392,5 @@ function sse(model, text) {
   log('AI calls:', JSON.stringify(counts));
   log('Page errors:', errors.length ? errors : 'none');
   await browser.close();
+  if (errors.length) throw new Error(`${errors.length} page/console error(s)`);
 })().catch((e) => { console.error('FAILED:', e.message.split('\n').slice(0, 6).join('\n')); process.exit(1); });

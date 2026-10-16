@@ -91,7 +91,18 @@ export interface StepAssembly {
   at: V3;
   children: StepNode[];
 }
-export type StepNode = StepPart | StepAssembly;
+/**
+ * Another placement of a part or sub-assembly that may be placed several times (written once as a
+ * product, then referenced by one NEXT_ASSEMBLY_USAGE_OCCURRENCE per instance, e.g. the identical
+ * terminal blocks of a strip). `name` is the instance (occurrence) name.
+ */
+export interface StepInstance {
+  kind: 'instance';
+  name: string;
+  of: StepPart | StepAssembly;
+  at: V3;
+}
+export type StepNode = StepPart | StepAssembly | StepInstance;
 
 export interface StepHeader {
   fileName: string;
@@ -669,9 +680,12 @@ export function writeStepAssembly(root: StepAssembly, header: StepHeader): strin
     return psa;
   };
   let nauoCount = 0;
+  const written = new Map<StepPart | StepAssembly, { pd: number; rep: number; origin: number }>();
 
-  /** Writes a product (and its subtree); returns its PRODUCT_DEFINITION and shape representation. */
-  const emit = (node: StepNode): { pd: number; rep: number; origin: number } => {
+  /** Writes a product (and its subtree) once; returns its PRODUCT_DEFINITION and shape representation. */
+  const emit = (node: StepPart | StepAssembly): { pd: number; rep: number; origin: number } => {
+    const done = written.get(node);
+    if (done) return done;
     const nm = p21String(node.name);
     const prod = w.add(`PRODUCT(${nm},${nm},${p21String(node.description)},(#${prodCtx}))`);
     products.push(prod);
@@ -688,7 +702,7 @@ export function writeStepAssembly(root: StepAssembly, header: StepHeader): strin
       });
       rep = w.add(`ADVANCED_BREP_SHAPE_REPRESENTATION(${nm},(${breps.map((b) => `#${b},`).join('')}#${origin}),#${ctx})`);
     } else {
-      const kids = node.children.map((c) => ({ c, r: emit(c) }));
+      const kids = node.children.map((c) => ({ c, r: emit(c.kind === 'instance' ? c.of : c) }));
       const places = kids.map(({ c }) => w.axis(c.at));
       rep = w.add(`SHAPE_REPRESENTATION(${nm},(#${origin}${places.map((p) => `,#${p}`).join('')}),#${ctx})`);
       kids.forEach(({ c, r }, i) => {
@@ -702,7 +716,9 @@ export function writeStepAssembly(root: StepAssembly, header: StepHeader): strin
       });
     }
     w.add(`SHAPE_DEFINITION_REPRESENTATION(#${pds},#${rep})`);
-    return { pd, rep, origin };
+    const res = { pd, rep, origin };
+    written.set(node, res);
+    return res;
   };
   emit(root);
   w.add(`PRODUCT_RELATED_PRODUCT_CATEGORY('part',$,(${products.map((p) => `#${p}`).join(',')}))`);

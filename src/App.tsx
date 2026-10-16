@@ -122,14 +122,21 @@ export default function App() {
           { label: 'Machine wiring', to: '/electrical?tab=machine' },
           { label: 'Cabinet picture', to: '/electrical?tab=picture' },
           { label: 'Machining (DXF)', to: '/electrical?tab=machining' },
+          { label: 'Labels', to: '/electrical?tab=labels' },
         ],
       },
       {
         label: 'HMI screens', to: '/hmi', stage: 'hmi',
         children: hmiScreens.length ? hmiScreens.map((s) => ({ label: s.name, to: `/hmi?screen=${s.id}` })) : undefined,
       },
-      { label: 'PLC program', to: '/program', stage: 'program' },
-      { label: 'Simulation', to: '/simulate' },
+      {
+        label: 'PLC program', to: '/program', stage: 'program',
+        children: [
+          { label: 'Ladder program', to: '/program' },
+          { label: 'I/O addressing', to: '/plc' },
+          { label: 'Simulation', to: '/simulate' },
+        ],
+      },
       { label: 'Deliverables', to: '/export' },
     ],
   };
@@ -156,6 +163,8 @@ export default function App() {
           ))}
           <div className="border-t border-steel-200 my-1" />
           <MenuItem onClick={() => navigate('/export')}>Deliverables…</MenuItem>
+          <MenuItem onClick={() => navigate('/export?action=print-full')}>Print full package…</MenuItem>
+          <MenuItem onClick={() => navigate('/electrical?tab=labels')}>Print labels…</MenuItem>
         </Menu>
         <Menu label="Tools">
           <MenuItem onClick={() => navigate('/simulate')}>Simulation</MenuItem>
