@@ -72,7 +72,8 @@ function sse(model, text) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|net::ERR_FAILED|Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
-  page.on('dialog', (d) => d.accept());
+  const dialogs = [];
+  page.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
     await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, JSON.stringify(reply(body.system))) });
@@ -378,6 +379,24 @@ function sse(model, text) {
   check(await ioRows() === 7, 'first project I/O back');
   check((await statusBar()).includes('C0-11DD1E-D') && (await statusBar()).includes('Rev A · Issued for review'), 'first project CPU and revision back');
   log('Projects:', (await page.locator('select[aria-label="Open project"] option').allInnerTexts()).join(' | '));
+
+  // While the AI is working the project can't be switched (its answer would land in the other project);
+  // generation errors are plain English.
+  await page.route('https://api.anthropic.com/v1/messages?*', async (r) => {
+    await new Promise((res) => setTimeout(res, 1500));
+    await r.fulfill({ status: 400, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, body: JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' } }) });
+  });
+  await page.getByRole('button', { name: 'Update I/O from spec' }).click();
+  const secondId = await page.locator('select[aria-label="Open project"] option', { hasText: 'Second Cell Renamed' }).getAttribute('value');
+  await page.getByText('Reading the spec…').waitFor();
+  await page.locator('select[aria-label="Open project"]').selectOption(secondId);
+  check(dialogs.some((m) => /AI is still working/.test(m)), 'switch refused while the AI works');
+  check(await page.locator('select[aria-label="Open project"]').inputValue() === firstId, 'still on the first project');
+  const genErr = page.locator('[role=alert]').filter({ hasText: 'no credit' });
+  await genErr.waitFor({ timeout: 10000 });
+  log('Generation error:', await genErr.innerText());
+  await page.unroute('https://api.anthropic.com/v1/messages?*');
+  check(await ioRows() === 7, 'first project I/O untouched');
 
   // Deliverables
   await page.goto(BASE + '/export');
