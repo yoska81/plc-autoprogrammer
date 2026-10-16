@@ -140,7 +140,7 @@ export default function ExportPage() {
               const sum = cabinetStepSummary(p.drawingCtx!);
               return (
                 <p className="text-xs text-steel-600">
-                  {sum.bodies.length} bodies{sum.estimatedCount ? ` · ${sum.estimatedCount} with estimated size (components are envelope boxes)` : ''}{sum.warnings.length ? ` · ${sum.warnings.length} to check: ${sum.warnings.slice(0, 2).join('; ')}` : ''}
+                  {sum.bodies.length} bodies{sum.estimatedCount ? ` · ${sum.estimatedCount} with estimated size (shapes are generic product models, not manufacturer CAD)` : ''}{sum.warnings.length ? ` · ${sum.warnings.length} to check: ${sum.warnings.slice(0, 2).join('; ')}` : ''}
                 </p>
               );
             })()}
