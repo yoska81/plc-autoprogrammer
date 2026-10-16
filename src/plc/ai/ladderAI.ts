@@ -70,7 +70,8 @@ How to write the program:
 - VFDs: run command = auto/manual request AND safety OK AND NOT drive fault; the fault input latches an alarm; preset speeds by the speed-select outputs. A speed set on the HMI needs an analog output or a Modbus link that this ladder model can't write — say so in the explanation instead of faking it.
 - Handshakes with other equipment (robot, servo drive with indexer, other machine): request output → wait for the done / in-position input with a timeout alarm → clear the request; never assume a step finished without its feedback; handle the other machine's fault input.
 - Recipes: recipe values live in DS registers per recipe (e.g. DS1301+ recipe 1, DS1321+ recipe 2); the selected recipe is COPYed into the working setpoints only while the machine is stopped.
-- Analog values: the I/O list is discrete only; if the spec needs analog control, implement the sequence with the discrete switches available and list the missing analog logic in the explanation.
+- Analog I/O: analog points are DF registers (marked ANALOG in the I/O list) that already hold the value in engineering units — the PLC's analog setup scales the 4-20 mA / 0-10 V signal (CLICK: Setup > System Configuration; there is no scaling instruction in ladder), so never scale raw counts. Read analog inputs with CMP (e.g. DF1 >= DF101); write analog outputs with COPY or MATH in their engineering units (e.g. COPY DF102 → DF5 for a valve position in %, MATH DF6 = DF103 for a VFD speed in Hz). Analog setpoints and alarm limits the HMI enters are DF registers DF101–DF200 (floating point, so they compare directly with analog values); give each a default on the first scan when it is outside its range.
+- Analog alarms: high / low alarms latch with a deadband so they don't chatter: SET the alarm when value >= high limit (or <= low limit), RST it only when value < high limit − deadband (> low limit + deadband) AND the operator pressed Reset; use the same deadband for control switching (e.g. a fill valve opens below setpoint − deadband and closes at setpoint). A transmitter reading at the bottom of its range (≤ min) while the process should be running indicates a broken 4-20 mA loop: alarm it.
 - HMI tags: when the request lists HMI tags, implement every one of them exactly as described (see "Implementing the HMI tags" below); never leave an HMI tag unused or unwritten, and never move an HMI tag to another address.
 - Split the program into blocks, one per machine section or station (e.g. "safety" Safety & modes, "infeed" Infeed conveyor, "pusher" Pusher station, "alarms" Alarms & HMI). List them in "blocks" in program order (id: short lower-case, name: 1–3 words, description: one sentence) and set every rung's "block" to its block id. Rungs of one block stay together. A small machine may have only 2–3 blocks. Signals passed between blocks go through internal bits so each block can be tested on its own.
 
@@ -137,7 +138,8 @@ function ioTable(ctx: PlcContext): string {
     .map((p) => {
       const a = ctx.addresses.get(p.id) || '';
       const w = a ? ctx.wiring?.get(a) : undefined;
-      return `${a || '(unassigned)'}\t${p.type}\t${p.category}\t${p.description || '(no description)'}${w ? `\tfield device ${w.deviceTag} (${w.deviceType})` : ''}`;
+      const an = p.signal === 'analog' && p.analog ? `\tANALOG ${p.analog.range}, value in engineering units ${p.analog.min}–${p.analog.max} ${p.analog.units}` : '';
+      return `${a || '(unassigned)'}\t${p.type}\t${p.category}\t${p.description || '(no description)'}${an}${w ? `\tfield device ${w.deviceTag} (${w.deviceType})` : ''}`;
     })
     .join('\n');
 }

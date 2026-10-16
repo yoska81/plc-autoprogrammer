@@ -5,7 +5,7 @@ import type { CpuModel, ModuleSlot } from './profile';
 export function moduleSlots(partNumbers: string[]): ModuleSlot[] {
   return partNumbers.map((pn) => {
     const r = getPart(pn)?.ratings ?? {};
-    return { partNumber: pn, inputs: Number(r.inputs ?? 0), outputs: Number(r.outputs ?? 0) };
+    return { partNumber: pn, inputs: Number(r.inputs ?? 0), outputs: Number(r.outputs ?? 0), analogInputs: Number(r.analogInputs ?? 0), analogOutputs: Number(r.analogOutputs ?? 0) };
   });
 }
 

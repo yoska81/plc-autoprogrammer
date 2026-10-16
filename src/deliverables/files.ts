@@ -12,6 +12,8 @@ import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
 import { getHmi } from '../hmi/hmiCatalog';
 import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv } from '../electrical/derive';
+import { analogSetup, analogSetupCsv } from '../plc/core/analog';
+import { moduleSlots } from '../plc/core/modules';
 import { clickNicknameCsv, clickRungListing } from '../plc/core/clickExport';
 import { buildExcelReport } from './excelReport';
 import { buildEngineeringPdf } from './engineering';
@@ -86,6 +88,12 @@ export async function buildHmiPdf(p: ProjectSnapshot, images: { name: string; da
 }
 
 /** PLC program files for the selected PLC. */
+/** Analog channel setup for the PLC software (only when the I/O list has analog points). */
+function analogFiles(p: ProjectSnapshot): { name: string; content: string }[] {
+  const rows = analogSetup(p.profile, p.cpu, moduleSlots(p.modules), p.io);
+  return rows.length ? [{ name: `${p.fileBase}_analog_setup.csv`, content: analogSetupCsv(rows) }] : [];
+}
+
 export function programFiles(p: ProjectSnapshot): { name: string; content: string }[] {
   if (p.profile.language === 'st') return p.stCode ? [{ name: `${p.fileBase}.st`, content: p.stCode }] : [];
   if (!p.ladder.rungs.length) return [];
@@ -94,6 +102,7 @@ export function programFiles(p: ProjectSnapshot): { name: string; content: strin
     { name: `${p.fileBase}_rungs.txt`, content: clickRungListing(p.ladder, p.labels, header) },
     { name: `${p.fileBase}_nicknames.csv`, content: clickNicknameCsv(p.ladder, p.io, p.addresses, (p.hmi?.tags ?? []).map((t) => ({ address: t.address, nickname: t.name, comment: `HMI: ${t.description}` }))) },
     { name: `${p.fileBase}_program.json`, content: JSON.stringify(p.ladder, null, 2) },
+    ...analogFiles(p),
   ];
 }
 

@@ -12,7 +12,7 @@ import { docInfo } from '../deliverables/docInfo';
 export function useDrawingContext(): DrawingContext | null {
   const design = useElectricalStore((s) => s.design);
   const projectName = useProgramStore((s) => s.projectName);
-  const { profile, cpu, io, addresses } = usePlc();
+  const { profile, cpu, io, addresses, analog } = usePlc();
   const info = useProjectStore((s) => s.info);
   const hmiPartNumber = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
 
@@ -27,6 +27,7 @@ export function useDrawingContext(): DrawingContext | null {
       region: info.region,
       hmiPartNumber,
       doc: docInfo(info),
+      analog,
     };
-  }, [design, projectName, profile, cpu, io, addresses, info, hmiPartNumber]);
+  }, [design, projectName, profile, cpu, io, addresses, info, hmiPartNumber, analog]);
 }

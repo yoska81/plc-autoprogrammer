@@ -1,6 +1,8 @@
 import type { AddressInfo, AddressKind, CpuModel, IecDataType, ModuleSlot, PlcProfile, ProgramExporter, SimSemantics } from '../profile';
 import { clickNicknameCsv, clickRungListing } from '../clickExport';
-import type { IOPoint } from '../../../types/io';
+import { assignAnalog } from '../analog';
+import { clickAnalogChannels } from './clickAnalog';
+import { isAnalog, type IOPoint } from '../../../types/io';
 import type { Rung } from '../ladder';
 import { CLICK_CPUS, CLICK_KNOWLEDGE } from './clickData';
 
@@ -64,8 +66,10 @@ function autoAddresses(io: IOPoint[], cpu: CpuModel, modules: ModuleSlot[]): Map
   // Manually-addressed points keep their address; skip it in the auto sequence.
   const taken = new Set(io.map((p) => p.plcAddress?.trim().toUpperCase()).filter(Boolean));
   const gens = { input: ioAddresses('X', cpu.builtInInputs, modules), output: ioAddresses('Y', cpu.builtInOutputs, modules) };
+  // Analog points get the DF register of their analog channel (see clickAnalog.ts).
+  for (const [id, ch] of assignAnalog(io, clickAnalogChannels(cpu, modules))) out.set(id, ch.address);
   for (const p of io) {
-    if (p.plcAddress?.trim()) continue;
+    if (p.plcAddress?.trim() || isAnalog(p)) continue;
     const gen = gens[p.type];
     let next = gen.next();
     while (!next.done && taken.has(next.value)) next = gen.next();
@@ -136,4 +140,5 @@ export const clickProfile: PlcProfile = {
   dataTypeOf,
   simSemantics: CLICK_SIM,
   exporters: CLICK_EXPORTERS,
+  analogChannels: clickAnalogChannels,
 };

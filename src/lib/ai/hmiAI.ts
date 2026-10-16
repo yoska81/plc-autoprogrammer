@@ -107,7 +107,8 @@ LAYOUT RULES (the app validates and reports violations)
 
 PLC ADDRESSING (the PLC program will be written to match these tags exactly)
 - HMI commands (buttons, mode selector, counter resets) write C bits C1001–C1100 (never X inputs or Y outputs directly).
-- Setpoints entered on the HMI are DS1001–DS1100.
+- Setpoints entered on the HMI are DS1001–DS1100. Analog setpoints and alarm limits (level, temperature, pressure, speed) are DF101–DF200 (floating point, same units as the analog value).
+- Analog values (I/O points marked ANALOG, DF registers in engineering units): show each on the Main or a Process screen as a "numeric" with its units (and min/max), plus a "trend" for the important ones; analog outputs (valve %, VFD speed Hz) as a "numeric" too, and in Manual mode as a "numeric-entry" the PLC copies to the output only in Manual. Put the high / low alarm limits on the Setup screen as "numeric-entry" fields with units and min/max.
 - PLC-computed status words for display (machine state / sequence step for multistate, rates, run hours) are DS1101–DS1200; counters may be shown from CTD, timers from TD.
 - Alarm bits the PLC sets: C1101–C1200 (one per alarm, also listed in "alarms"). Status bits the PLC sets for display (mode active, permissives/interlocks, heartbeat, service due): C1201–C1300. Indicators may also read X/Y directly.
 - Every element that reads or writes the PLC has an address (interlock bits and machine symbol bits too). Every address used except X/Y appears once in "tags" with a clear name and a description of exactly what the PLC must do (e.g. "PLC sets ON when manual mode is active and safety is OK"). Physical X/Y may be listed too.
@@ -141,7 +142,7 @@ export async function generateHmiDesign(opts: {
   spec: SpecSections; io: IOPoint[]; addresses: Map<string, string>;
   profile: PlcProfile; cpu: CpuModel;
 }): Promise<{ design: HmiDesign; explanation: string; reasoning: string | null }> {
-  const io = opts.io.map((p) => `${opts.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.description}`).join('\n') || '(none)';
+  const io = opts.io.map((p) => `${opts.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.description}${p.signal === 'analog' && p.analog ? `\tANALOG ${p.analog.min}–${p.analog.max} ${p.analog.units}` : ''}`).join('\n') || '(none)';
   const content = `PLC: ${opts.profile.vendor} ${opts.profile.name} ${opts.cpu.id}
 
 Machine specification:

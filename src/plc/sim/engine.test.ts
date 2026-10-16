@@ -736,5 +736,53 @@ test('vendor-neutral tag table of the example program', () => {
   assert.ok(tags.every((t) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(t.symbol)), 'IEC identifiers');
 });
 
+console.log('\nanalog simulation');
+
+test('tank level process: fill valve under level control, drain pump empties', () => {
+  const io = [
+    { address: 'Y001', description: 'Water fill valve', type: 'output', category: 'Analog/Process' },
+    { address: 'Y002', description: 'Transfer pump drain', type: 'output', category: 'Analog/Process' },
+    { address: 'X001', description: 'Drain request', type: 'input', category: 'Operator/HMI' },
+    { address: 'DF1', description: 'Tank level transmitter', type: 'input', category: 'Analog/Process', analog: { min: 0, max: 500, units: 'gal' } },
+  ];
+  const p = prog(
+    rung([[{ type: 'CMP', left: 'DF1', op: '<', right: '400' }, NC('X001')]], [OUT('Y001')]),
+    rung([[NO('X001'), { type: 'CMP', left: 'DF1', op: '>', right: '5' }]], [OUT('Y002')]),
+  );
+  const ctl = new SimController(p, io, []);
+  const tank = ctl.getSnapshot().devices.find((d) => d.kind === 'analogIn')!;
+  assert.equal(tank.kind === 'analogIn' && tank.process, 'level');
+  assert.deepEqual(tank.kind === 'analogIn' && [tank.raise, tank.lower], [['Y001'], ['Y002']]);
+  ctl.advance(30_000);
+  const lv = () => ctl.sim.readWord('DF1');
+  assert.ok(lv() > 200 && lv() < 300, `half full after 30 s: ${lv()}`);
+  ctl.advance(60_000);
+  assert.ok(lv() >= 400 && lv() < 405, `stops at the setpoint: ${lv()}`);
+  ctl.sim.setInput('X001', true);
+  ctl.advance(60_000);
+  assert.ok(lv() <= 6, `drained: ${lv()}`);
+  ctl.setAnalog(tank.id, 250);
+  assert.equal(lv(), 250, 'slider writes the DF register');
+});
+
+test('temperature process heats with an analog steam valve output', () => {
+  const io = [
+    { address: 'DF1', description: 'Tank temperature', type: 'input', category: 'Analog/Process', analog: { min: 0, max: 100, units: '°C' } },
+    { address: 'DF5', description: 'Steam valve', type: 'output', category: 'Analog/Process', analog: { min: 0, max: 100, units: '%' } },
+  ];
+  // on/off control on the analog valve: 100 % below 60 °C, 0 % above
+  const p = prog(
+    rung([[{ type: 'CMP', left: 'DF1', op: '<', right: '60' }]], [{ type: 'COPY', source: '100', dest: 'DF5' }]),
+    rung([[{ type: 'CMP', left: 'DF1', op: '>=', right: '60' }]], [{ type: 'COPY', source: '0', dest: 'DF5' }]),
+  );
+  const ctl = new SimController(p, io, []);
+  assert.equal(ctl.sim.readWord('DF1'), 0, 'before the first scan');
+  ctl.advance(10);
+  assert.equal(ctl.sim.readWord('DF1'), 20, 'ambient = 20 % of span');
+  ctl.advance(60_000);
+  const t = ctl.sim.readWord('DF1');
+  assert.ok(t >= 59.5 && t < 62, `held near 60: ${t}`);
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);
