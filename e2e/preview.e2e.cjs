@@ -68,6 +68,7 @@ function reply(system) {
     sample.json = (input, options) => run(input, options, true);
     const downloads = {
       save: async ({ filename, data }) => {
+        if (window.__saveError) throw { code: window.__saveError };
         const buf = data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : new TextEncoder().encode(String(data));
         let bin = '';
         for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
@@ -180,6 +181,14 @@ function reply(system) {
   const [dxf] = await saves();
   log('Machining save:', dxf.filename);
   check(dxf.filename.endsWith('.dxf.zip'), 'machining DXF zipped');
+
+  // A failed save is reported on the page (alert() is blocked in the preview frame).
+  await page.evaluate(() => { window.__saveError = 'rate_limited'; });
+  await page.getByRole('button', { name: 'Back panel DXF' }).click();
+  const notice = page.getByRole('alert').filter({ hasText: 'Another save is waiting' });
+  await notice.waitFor({ timeout: 10000 });
+  log('Save error notice:', await notice.innerText());
+  await page.evaluate(() => { window.__saveError = null; });
 
   log('Direct API requests:', direct.length ? direct : 'none');
   log('Dialogs:', dialogs.length ? dialogs : 'none');

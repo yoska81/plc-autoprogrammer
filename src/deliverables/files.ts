@@ -1,5 +1,6 @@
 import { IS_PREVIEW } from '../preview/mode';
 import { saveViaAccount } from '../preview/claudeAccount';
+import { notify } from '../store/useNoticeStore';
 import { backPanelDxf, doorDxf } from '../electrical/dxf';
 import { cabinetStep } from '../electrical/step/cabinetStep';
 import { createElement, type ReactElement } from 'react';
@@ -148,8 +149,8 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
 export function saveBlob(name: string, blob: Blob) {
   // The preview can't download directly: the viewer's Claude app offers the file.
   if (IS_PREVIEW) {
-    void saveViaAccount(name, blob).then((ok) => { if (!ok) alert('Saving files is not available in this view. Run the app on your PC to download.'); })
-      .catch((e: unknown) => alert(e instanceof Error ? e.message : String(e)));
+    void saveViaAccount(name, blob).then((ok) => { if (!ok) notify('Saving files is not available in this view. Run the app on your PC to download.'); })
+      .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
     return;
   }
   const url = URL.createObjectURL(blob);

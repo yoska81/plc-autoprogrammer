@@ -8,6 +8,7 @@ import { useElectricalStore } from './useElectricalStore';
 import { useHmiStore } from './useHmiStore';
 import { useStageStore } from './useStageStore';
 import { aiBusy } from '../lib/ai/busy';
+import { notify } from './useNoticeStore';
 
 /**
  * Several projects in one browser. The per-stage stores always hold the
@@ -90,7 +91,7 @@ interface ProjectsStore {
 /** An AI answer still on its way would land in whichever project is open when it arrives. */
 function blockedByAi(): boolean {
   if (!aiBusy()) return false;
-  alert('The AI is still working on this project. Wait until it finishes, then switch projects.');
+  notify('The AI is still working on this project. Wait until it finishes, then switch projects.');
   return true;
 }
 

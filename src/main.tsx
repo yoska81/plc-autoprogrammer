@@ -6,6 +6,7 @@ import { useSettingsStore } from './store/useSettingsStore'
 import { seedSampleProject } from './preview/sampleProject'
 import './index.css'
 import App from './App.tsx'
+import Notice from './components/Notice.tsx'
 import IOPage from './pages/IOPage.tsx'
 import ProgramPage from './plc/pages/ProgramPage.tsx'
 import ExportPage from './pages/ExportPage.tsx'
@@ -57,6 +58,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="project" element={<ProjectDataPage />} />
         </Route>
       </Routes>
+      <Notice />
     </Router>
   </StrictMode>,
 )
