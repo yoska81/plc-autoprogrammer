@@ -103,7 +103,7 @@ function documentControl(wb: Workbook, p: ProjectSnapshot) {
   const rh = ws.addRow(['Rev', 'Date', 'Description', 'By']);
   rh.font = { bold: true };
   rh.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEAD } };
-  for (const r of m.revisions) ws.addRow([r.rev, r.date, r.description, r.by]);
+  for (const r of m.revisions) ws.addRow([r.rev, r.date, r.override ? `${r.description} (override of open critical review findings: ${r.override})` : r.description, r.by]);
   ws.addRow([]);
   const disc = ws.addRow(['Prepared with ISA Auto Programmer (AI-generated). Values marked estimate / assumption must be confirmed. A qualified engineer must check and approve the design before purchase, construction or use.']);
   ws.mergeCells(disc.number, 1, disc.number, 4);
