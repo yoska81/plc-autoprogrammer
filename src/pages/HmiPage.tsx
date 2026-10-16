@@ -14,6 +14,7 @@ import { Spinner, ReasoningPanel } from '../components/common';
 import { type AccessLevel, type HmiDesign, type HmiElement, type HmiScreen, type HmiState, type HmiStyle, type MachineSymbol } from '../hmi/types';
 import { checkDesign, layoutBands, MIN_TOUCH, type LayoutIssue } from '../hmi/layout';
 import { LEVEL_LABEL } from '../hmi/theme';
+import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
 
@@ -209,7 +210,7 @@ export default function HmiPage() {
   const apiKey = settings.anthropicApiKey;
   const design = hmi.design;
   // "To confirm" items, answered under each one.
-  useSyncQuestions('hmi', design ? design.notes.map((n) => ({ text: n, assumption: n, section: 'operator' as const })) : null);
+  useSyncQuestions('hmi', design ? userNotes(design).map((n) => ({ text: n, assumption: n, section: 'operator' as const })) : null);
   const hmiQuestions = useQuestions('hmi');
   const screen = design?.screens.find((s) => s.id === screenId) ?? design?.screens[0] ?? null;
   const selectedEl = screen?.elements.find((e) => e.id === selected) ?? null;

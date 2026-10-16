@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SpecSectionId } from '../../spec/types';
+import { isTechnicalIssue } from './classify';
 import { useProjectsStore } from '../../store/useProjectsStore';
 
 /**
@@ -65,7 +66,7 @@ export const useQuestionStore = create<QuestionStore>()(
         const fresh: Question[] = [];
         for (const it of items) {
           const text = it.text.trim();
-          if (!text) continue;
+          if (!text || isTechnicalIssue(text)) continue;
           const id = questionId(source, text);
           if (ids.has(id)) continue;
           ids.add(id);
@@ -89,7 +90,15 @@ export const useQuestionStore = create<QuestionStore>()(
         byProject: { ...s.byProject, [key(projectId)]: (s.byProject[key(projectId)] ?? []).map((q) => (ids.includes(q.id) ? { ...q, merged: true } : q)) },
       })),
     }),
-    { name: 'isa-questions' },
+    {
+      name: 'isa-questions',
+      // Technical issues (HMI layout checks, wiring / catalog remarks) stored as questions by older versions are dropped on load.
+      merge: (persisted, current) => {
+        const byProject = (persisted as Partial<QuestionStore> | undefined)?.byProject ?? {};
+        const clean = Object.fromEntries(Object.entries(byProject).map(([k, list]) => [k, (list ?? []).filter((q) => !isTechnicalIssue(q.text))]));
+        return { ...current, byProject: clean };
+      },
+    },
   ),
 );
 

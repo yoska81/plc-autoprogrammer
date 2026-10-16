@@ -13,6 +13,7 @@ import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electr
 import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
+import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
 import { useDrawingContext } from '../electrical/useDrawingContext';
@@ -65,7 +66,7 @@ export default function ElectricalPage() {
   const setInfo = useProjectStore((s) => s.setInfo);
 
   // "Assumptions to confirm", answered under each item.
-  useSyncQuestions('electrical', el.design ? el.design.notes.map((n) => ({ text: n, assumption: n })) : null);
+  useSyncQuestions('electrical', el.design ? userNotes(el.design).map((n) => ({ text: n, assumption: n })) : null);
   const elecQuestions = useQuestions('electrical');
   const { inputs } = el;
   const setInputs = (patch: Partial<DesignInputs>) => el.setInputs({ ...inputs, ...patch });
