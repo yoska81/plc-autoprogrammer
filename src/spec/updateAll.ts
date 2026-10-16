@@ -30,7 +30,7 @@ export interface StepResult { step: UpdateStep; status: 'skipped' | 'done' | 'pr
  * stores where they support it); the PLC program change is left as a
  * proposal for the engineer to approve.
  */
-export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) => void): Promise<void> {
+export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) => void, shouldStop: () => boolean = () => false): Promise<void> {
   const settings = useSettingsStore.getState();
   const ai = { apiKey: settings.anthropicApiKey, model: settings.anthropicModel, effort: settings.effort };
   const spec = useSpecStore.getState().sections;
@@ -45,6 +45,7 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
   const ioNow = () => useIOStore.getState().projectIO;
 
   for (const step of steps) {
+    if (shouldStop()) { onStep({ step, status: 'skipped', message: 'Stopped before this stage.' }); continue; }
     try {
       const { profile, cpu, slots } = plc();
       if (step === 'equipment') {

@@ -635,7 +635,7 @@ function sse(model, text) {
     name: document.querySelector('select[aria-label="Open project"] option:checked').textContent,
   }));
   await page.getByRole('button', { name: 'Project', exact: true }).click();
-  const [isapDl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Save project to file \(\.isap\)/ }).click()]);
+  const [isapDl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /^Save\s*Ctrl\+S$/ }).click()]);
   const isapPath = OUT + isapDl.suggestedFilename();
   await isapDl.saveAs(isapPath);
   check(isapPath.endsWith('.isap'), 'project file has the .isap extension');
@@ -643,8 +643,10 @@ function sse(model, text) {
   const manifest = JSON.parse(await isap.file('manifest.json').async('string'));
   check(manifest.format === 'isa-auto-programmer-project' && manifest.formatVersion === 1, 'project file manifest');
   check(!(await isap.file('project.json').async('string')).includes('sk-ant-test'), 'API key is not in the project file');
+  page.on('console', (m) => { if (m.text().startsWith('DIRTY')) log(m.text().slice(0, 900)); });
   await page.locator('[data-testid="open-project-file"]').setInputFiles(isapPath);
   await page.waitForTimeout(1500);
+  check(!(await page.locator('[data-testid="window-title"]').innerText()).includes('*'), 'an opened project has no unsaved changes');
   const pfAfter = await page.evaluate(() => ({
     io: JSON.parse(localStorage.getItem('plc-io-store')).state.projectIO.length,
     rungs: JSON.parse(localStorage.getItem('plc-program-store')).state.ladder.rungs.length,
@@ -655,6 +657,16 @@ function sse(model, text) {
   log('Project file:', Math.round(fs.statSync(isapPath).size / 1024), 'KB |', JSON.stringify(pfBefore), '→', JSON.stringify(pfAfter));
   check(pfAfter.name === `${pfBefore.name} (2)`, 'opened as a new project with a new name');
   check(pfAfter.io === pfBefore.io && pfAfter.rungs === pfBefore.rungs && pfAfter.hasDesign === pfBefore.hasDesign && pfAfter.screens === pfBefore.screens, 'project file round trip keeps the data');
+  // Unsaved-changes marker: an edit sets it, Save clears it.
+  await page.goto(BASE + '/project');
+  await page.getByLabel('preparedBy').fill('Q.A.');
+  await page.waitForTimeout(300);
+  check((await page.locator('[data-testid="window-title"]').innerText()).endsWith('*'), 'an edit marks the project unsaved');
+  check((await page.locator('[data-testid="save-state"]').innerText()) === 'Unsaved changes', 'status bar shows unsaved changes');
+  await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+s')]);
+  await page.waitForTimeout(300);
+  check(!(await page.locator('[data-testid="window-title"]').innerText()).includes('*'), 'Ctrl+S saves and clears the marker');
+  log('Save state:', await page.locator('[data-testid="save-state"]').innerText(), '| title:', await page.title());
   await page.locator('[data-testid="open-project-file"]').setInputFiles({ name: 'bad.isap', mimeType: 'application/octet-stream', buffer: Buffer.from('not a zip') });
   await page.waitForTimeout(500);
   check((await page.locator('body').innerText()).includes('not an ISA Auto Programmer project file'), 'a wrong file is refused with a clear message');
