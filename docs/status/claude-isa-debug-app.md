@@ -64,6 +64,8 @@ PRs: #3 (merged), #12 (merged: Windows installer), next PR (draft → `claude/op
 | A-16 | Preview example update | viewers of older previews got two projects named "Conveyor Cell (example)" | fixed: their copy becomes "Conveyor Cell (your copy)" | 95dbe29 |
 | A-17 | Design review badge, simulator force/bypass | white text on amber-500 (2.15:1) on every page | fixed: dark text on amber | see "Readable text on amber badges" |
 | A-15 | Preview | the connection test asks for the `complex` model tier to get a one-word reply | open, cosmetic (`claudeAccount.ts`) | — |
+| A-18 | I/O list, analog | an analog point on a PLC without analog channels just shows address "—"; only Design review says why | open, low (Dev 2: a hint in `AnalogCell` like "no analog channel — add C0-04AD-1 on Equipment") | — |
+| A-19 | HMI editor, bar graph | a bar bound to an analog DF register keeps 0–100 and no units instead of the point's scale (e.g. 0–150 psi) | open, low (fill min/max/units from the I/O point when the address is set) | — |
 
 ## Review of claude/isa-dev-labels-print (head 6c55e83, 2026-10-16 17:30)
 - tsc/eslint clean. Their own `e2e/app.e2e.cjs` passes (labels incl. Brady i3300 page sizes, full package 72 pages / 9 bookmarks).
@@ -79,3 +81,9 @@ PRs: #3 (merged), #12 (merged: Windows installer), next PR (draft → `claude/op
 ## Review round 2 (2026-10-16 18:30): labels-print ccd368c (purchasing), program-sim 31f4fe5
 - Both heads are already merged into my branch. Web E2E, sweep (now with /review and the purchasing card on Deliverables) and old-data (15 pages) pass.
 - Found A-17: the design-review badge used white text on amber (2.15:1) on every page. Fixed, together with the same pattern in the simulator force/bypass controls.
+
+## Review round 3 (2026-10-16 evening): integration 90d950b/e21b015, program-sim 1f62935 (merge only), labels-print (nothing new)
+- Integration merged into my branch. tsc, eslint, all 12 unit suites, web E2E, sweep, old-data (web and HASH=1 preview), hmi-editor E2E, Modbus test (14) and the desktop E2E (Online page on my bridge, Dev 1's `fake-modbus` log) pass.
+- The sweep now has an analog pass (60421db): adds C0-04AD-1 / C0-04DA-1 to the example, makes an input and an output analog (4-20 mA, 0–150 psi / 0–60 Hz), then checks the ANALOG loop sheet, the simulator slider (max 150, takes a value) and an HMI bar graph bound to DF1. 0 problems.
+- Found A-18 and A-19 (both low, see table).
+- The Windows installer CI now runs every `src/**/*.test.ts`.
