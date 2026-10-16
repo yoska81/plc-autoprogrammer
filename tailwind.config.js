@@ -35,6 +35,8 @@ export default {
           900: '#1d2327',
         },
       },
+      // Near-square corners, like Siemens engineering tools.
+      borderRadius: { sm: '1px', DEFAULT: '2px', md: '2px', lg: '3px', xl: '4px', '2xl': '4px' },
       fontFamily: {
         // Desktop engineering-tool look: the Windows UI font, Arial fallback.
         sans: ['"Segoe UI"', 'Arial', 'Helvetica', 'system-ui', 'sans-serif'],

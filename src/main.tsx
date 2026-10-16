@@ -25,6 +25,7 @@ import SimulatePage from './plc/pages/SimulatePage.tsx'
 import OnlinePage from './online/OnlinePage.tsx'
 import EquipmentPage from './pages/EquipmentPage.tsx'
 import NewProjectPage from './pages/NewProjectPage.tsx'
+import PortalPage from './pages/PortalPage.tsx'
 
 // The side-panel preview frame needs hash routing, blocks confirm() dialogs
 // (they always answer "cancel"), and opens with an example project.
@@ -47,6 +48,7 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/print" element={<PrintPage />} />
         <Route path="/new" element={<NewProjectPage />} />
+        <Route path="/portal" element={<PortalPage />} />
         <Route path="/print-electrical" element={<PrintElectricalPage />} />
         <Route path="/" element={<App />}>
           <Route index element={<Navigate to="/spec" replace />} />
