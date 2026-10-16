@@ -5,7 +5,7 @@ import DrawingSet from '../electrical/drawings/DrawingSet';
 import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
 import { getHmi } from '../hmi/hmiCatalog';
-import { bomCsv, wireListCsv, terminalPlanCsv } from '../electrical/derive';
+import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv } from '../electrical/derive';
 import { clickNicknameCsv, clickRungListing } from '../plc/clickExport';
 import { buildExcelReport } from './excelReport';
 import { buildEngineeringPdf } from './engineering';
@@ -111,6 +111,7 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     zip.file('electrical/bom.csv', bomCsv(p.drawingCtx));
     zip.file('electrical/wire_list.csv', wireListCsv(p.drawingCtx));
     zip.file('electrical/terminal_plan.csv', terminalPlanCsv(p.drawingCtx));
+    zip.file('electrical/cable_schedule.csv', cableScheduleCsv(p.drawingCtx));
   }
   if (p.hmi) {
     onProgress?.('HMI screens');

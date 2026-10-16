@@ -5,7 +5,8 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { usePlc } from '../plc/usePlc';
 import { CATALOG, getPart, partsIn } from '../electrical/catalog';
-import { bomCsv, designWarnings, wireListCsv } from '../electrical/derive';
+import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electrical/derive';
+import CabinetPictures from '../electrical/CabinetPictures';
 import { useDrawingContext } from '../electrical/useDrawingContext';
 import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
@@ -37,7 +38,7 @@ function download(name: string, content: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
-type Tab = 'design' | 'drawings';
+type Tab = 'design' | 'cabinet' | 'machine' | 'picture';
 
 export default function ElectricalPage() {
   const el = useElectricalStore();
@@ -50,7 +51,7 @@ export default function ElectricalPage() {
   const { profile, cpu, io, addresses } = usePlc();
   const ctx = useDrawingContext();
 
-  const [tab, setTab] = useState<Tab>(el.design ? 'drawings' : 'design');
+  const [tab, setTab] = useState<Tab>(el.design ? 'cabinet' : 'design');
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<string | null>(null);
   const [pickCat, setPickCat] = useState<CatalogCategory>(CATEGORIES[0]);
@@ -79,7 +80,7 @@ export default function ElectricalPage() {
       el.setDesign(r.design, 'generated', r.explanation);
       markGenerated('electrical', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp });
       setReasoning(r.reasoning);
-      setTab('drawings');
+      setTab('cabinet');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -103,18 +104,21 @@ export default function ElectricalPage() {
             <div className="flex gap-2">
               <Link to="/print-electrical" target="_blank" className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded hover:bg-gray-900">Print / PDF</Link>
               {ctx && <button onClick={() => download(`${base}_BOM.csv`, bomCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">BOM CSV</button>}
+              {ctx && <button onClick={() => download(`${base}_cable_schedule.csv`, cableScheduleCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Cable schedule CSV</button>}
               {ctx && <button onClick={() => download(`${base}_wire_list.csv`, wireListCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Wire list CSV</button>}
             </div>
           )}
         </div>
-        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('drawings', 'Drawings')}</div>
+        <div className="flex mt-2">{tabBtn('design', 'Design')}{tabBtn('cabinet', 'Cabinet wiring')}{tabBtn('machine', 'Machine wiring')}{tabBtn('picture', 'Cabinet picture')}</div>
       </header>
 
       <StageBanner info={stages.electrical} action={
         <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-petrol-600 text-white rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
-      {tab === 'drawings' ? (
+      {tab === 'picture' ? (
+        <CabinetPictures ctx={ctx} />
+      ) : tab === 'cabinet' || tab === 'machine' ? (
         <div className="flex-1 overflow-hidden flex flex-col bg-gray-100">
           {ctx ? (
             <>
@@ -124,7 +128,7 @@ export default function ElectricalPage() {
                   <ul className="list-disc pl-5 mt-1 space-y-0.5">{warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
                 </details>
               )}
-              <div className="flex-1 overflow-hidden"><DrawingSet ctx={ctx} /></div>
+              <div className="flex-1 overflow-hidden"><DrawingSet ctx={ctx} section={tab} /></div>
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-sm text-gray-500">
