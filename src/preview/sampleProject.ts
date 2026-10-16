@@ -2,7 +2,7 @@ import { useIOStore } from '../store/useIOStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { useElectricalStore } from '../store/useElectricalStore';
-import type { CompareOp, LadderElement, LadderOutput, LadderProgram, Rung } from '../plc/ladder';
+import type { CompareOp, LadderElement, LadderOutput, LadderProgram, Rung } from '../plc/core/ladder';
 import type { DesignInputs, ElectricalDesign } from '../electrical/types';
 import type { HmiDesign, HmiElement, HmiState } from '../hmi/types';
 import { EMPTY_SECTIONS, fingerprint, type SpecSections } from '../spec/types';

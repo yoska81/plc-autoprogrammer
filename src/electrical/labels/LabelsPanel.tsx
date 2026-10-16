@@ -5,7 +5,7 @@ import { listLabels, type ListedLabel } from './list';
 import { saveBlob } from '../../deliverables/files';
 import { printPdf } from '../../deliverables/printPdf';
 import ResizablePane from '../../components/ResizablePane';
-import { Spinner } from '../../components/program/common';
+import { Spinner } from '../../components/common';
 import { canvasMeasure, expandCopies, layoutLabel } from './layout';
 import { labelPrinterPdf, labelSheetPdf, labelsXlsx, PAPER, printable } from './labelOutput';
 import { fmtSize, MM_PER_IN, SIZE_PRESETS, sizeOf, useLabelSetupStore, type LabelSetup } from './setup';

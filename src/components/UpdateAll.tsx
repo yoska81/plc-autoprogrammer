@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStages } from '../spec/useStages';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { runUpdateAll, type StepResult, type UpdateStep } from '../spec/updateAll';
-import { Spinner } from './program/common';
+import { Spinner } from './common';
 
 const ORDER: { step: UpdateStep; label: string }[] = [
   { step: 'equipment', label: 'Equipment' },
