@@ -1,13 +1,19 @@
-import { collectProject } from '../deliverables/collect';
+import { collectProject, type ProjectSnapshot } from '../deliverables/collect';
 import { stagesNow } from '../spec/useStages';
 import { useProjectStore } from '../store/useProjectStore';
 import { runChecks } from './checks';
 import { useReviewStore } from './useReviewStore';
 import { AREA_LABEL, SEVERITY_LABEL, type Finding } from './types';
 
+/** Deterministic checks for a project snapshot with the current stage status, modules and equipment cautions. */
+export function checksFor(p: ProjectSnapshot): Finding[] {
+  const { modules, recommendation } = useProjectStore.getState();
+  return runChecks({ p, stages: stagesNow(), modules, cautions: recommendation?.cautions ?? [] });
+}
+
 /** Run the deterministic checks on the current project and store them. */
 export function refreshChecks() {
-  const findings = runChecks({ p: collectProject(), stages: stagesNow(), modules: useProjectStore.getState().modules });
+  const findings = checksFor(collectProject());
   useReviewStore.getState().setChecks(findings);
   return findings;
 }

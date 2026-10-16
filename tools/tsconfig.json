@@ -1,5 +1,5 @@
 {
   "extends": "../tsconfig.app.json",
   "compilerOptions": { "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.tools.tsbuildinfo", "noEmit": true },
-  "include": ["harness"]
+  "include": ["harness", "ai-quality"]
 }

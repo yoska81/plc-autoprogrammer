@@ -1,8 +1,6 @@
 /** Design review result for the deliverables: fresh checks + the stored AI review, with resolved/ignored marks. */
 import type { ProjectSnapshot } from '../deliverables/collect';
-import { stagesNow } from '../spec/useStages';
-import { useProjectStore } from '../store/useProjectStore';
-import { runChecks } from './checks';
+import { checksFor } from './actions';
 import { statusOf, useReviewStore } from './useReviewStore';
 import { AREA_LABEL, SEVERITY_LABEL, sortFindings, type FindingStatus } from './types';
 
@@ -20,7 +18,7 @@ export interface ReviewRow {
 
 export function reviewRows(p: ProjectSnapshot): ReviewRow[] {
   const { ai, marks } = useReviewStore.getState();
-  const findings = sortFindings([...runChecks({ p, stages: stagesNow(), modules: useProjectStore.getState().modules }), ...(ai?.findings ?? [])]);
+  const findings = sortFindings([...checksFor(p), ...(ai?.findings ?? [])]);
   return findings.map((f, i) => ({
     id: `DR-${String(i + 1).padStart(2, '0')}`,
     severity: SEVERITY_LABEL[f.severity],
