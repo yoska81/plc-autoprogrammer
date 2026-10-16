@@ -115,7 +115,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   await page.waitForFunction(() => !document.querySelector('[data-job="electrical"]'), null, { timeout: 5000 });
   check(await explanation() === 'before cancel', 'cancelled job applied nothing');
   check(await page.getByRole('button', { name: 'Generate New Design' }).isEnabled(), 'page usable after cancel');
-  log('Cancel: status bar back to', await page.locator('text=Ready').count() ? 'Ready' : await bar.innerText());
+  log('Cancel: no AI job left in the status bar');
 
   // 5. A final failure is plain English with Retry, which keeps the input and succeeds.
   script.electrical.push({ status: 400, type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' });

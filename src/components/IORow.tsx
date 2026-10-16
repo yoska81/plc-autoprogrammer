@@ -62,7 +62,7 @@ export function IORow({ point, address, duplicate }: IORowProps) {
         </select>
       </td>
       <td className={`${td} text-xs text-steel-500 whitespace-nowrap`}>
-        <div className="flex items-center gap-2">{point.signal !== 'analog' && <span>{point.deviceType ?? '—'}</span>}<AnalogCell point={point} /></div>
+        <div className="flex items-center gap-2">{point.signal !== 'analog' && <span>{point.deviceType ?? '—'}</span>}<AnalogCell point={point} address={address} /></div>
       </td>
       <td className={td}>
         <button onClick={() => deletePoint(point.id)} title="Delete" aria-label={`Delete ${point.id}`}

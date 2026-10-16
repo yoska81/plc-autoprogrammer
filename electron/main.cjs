@@ -43,7 +43,7 @@ function projectFileArg(argv) {
 }
 function sendProjectFile(win, file) {
   fs.promises.readFile(file)
-    .then((buf) => win.webContents.send('isa:open-file', path.basename(file), new Uint8Array(buf)))
+    .then((buf) => { writablePaths.add(file); win.webContents.send('isa:open-file', path.basename(file), new Uint8Array(buf), file); })
     .catch(() => { /* unreadable file: nothing to open */ });
 }
 
@@ -111,6 +111,15 @@ function createWindow() {
   win.webContents.on('will-navigate', (e, url) => {
     if (!isAppUrl(url)) { e.preventDefault(); if (/^https?:/.test(url)) void shell.openExternal(url); }
   });
+  // Unsaved changes: the page blocks unload (beforeunload); ask like any Windows program.
+  win.webContents.on('will-prevent-unload', (e) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning', buttons: ['Close without saving', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
+      title: 'ISA Auto Programmer', message: 'The project has unsaved changes.',
+      detail: 'Cancel, then press Save (Ctrl+S) to keep them in the project file.',
+    });
+    if (choice === 0) e.preventDefault();
+  });
   const startFile = projectFileArg(process.argv);
   if (startFile) win.webContents.once('did-finish-load', () => setTimeout(() => sendProjectFile(win, startFile), 1500));
   void win.loadURL(`${ORIGIN}/`);
@@ -133,6 +142,8 @@ const FILTERS = {
   step: 'STEP 3D model', png: 'PNG image', txt: 'Text file', json: 'JSON file', md: 'Text (Markdown)',
   isap: 'ISA Auto Programmer project',
 };
+// Paths the user picked in a Save dialog or opened from Explorer: the page may write back to these only.
+const writablePaths = new Set();
 ipcMain.handle('isa:save-file', async (e, name, bytes) => {
   try {
     const ext = path.extname(String(name)).slice(1).toLowerCase();
@@ -142,8 +153,20 @@ ipcMain.handle('isa:save-file', async (e, name, bytes) => {
       defaultPath: path.join(app.getPath('documents'), path.basename(String(name))),
       filters: [...(ext ? [{ name: FILTERS[ext] ?? `${ext.toUpperCase()} file`, extensions: [ext] }] : []), { name: 'All files', extensions: ['*'] }],
     });
+
+// Save again to a file the user already chose (project Save without a dialog).
+ipcMain.handle('isa:write-file', async (_e, filePath, bytes) => {
+  try {
+    if (!writablePaths.has(filePath)) return { ok: false, error: 'not a file chosen in this session' };
+    await fs.promises.writeFile(filePath, Buffer.from(bytes));
+    return { ok: true, path: filePath };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+});
     if (r.canceled || !r.filePath) return { ok: false, cancelled: true };
     await fs.promises.writeFile(r.filePath, Buffer.from(bytes));
+    writablePaths.add(r.filePath);
     return { ok: true, path: r.filePath };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

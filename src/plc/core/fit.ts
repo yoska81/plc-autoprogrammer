@@ -3,6 +3,7 @@ import { moduleSlots, ioCapacity } from './modules';
 import { getPart } from '../../electrical/catalog';
 import type { HmiModel } from '../../hmi/hmiCatalog';
 import type { CpuModel } from './profile';
+import { platformById, platformFit, type Platform } from './platforms';
 
 export interface Need {
   digitalInputs: number;
@@ -25,11 +26,25 @@ export function findCpu(id: string): CpuModel | null {
   return null;
 }
 
+/**
+ * Hardware platform of a CPU when its PLC profile names one (multi-vendor profiles set
+ * `platformId`, see ./platforms.ts); CLICK CPUs have none and use the fit below.
+ */
+export function platformOf(cpuId: string): Platform | undefined {
+  const profile = PLC_PROFILES.find((p) => p.cpuModels.some((c) => c.id === cpuId));
+  // A CPU model may name its own platform (e.g. Micro820 vs Micro850 in one profile); else the profile's.
+  const cpu = profile?.cpuModels.find((c) => c.id === cpuId) as { platformId?: string } | undefined;
+  const id = cpu?.platformId ?? (profile as { platformId?: string } | undefined)?.platformId;
+  return id ? platformById(id) : undefined;
+}
+
 const hasEthernet = (cpu: CpuModel) => /ethernet/i.test(cpu.label) || /^C2-0[13]/.test(cpu.id);
 const builtInAnalog = (cpu: CpuModel) => (/analog/i.test(cpu.label) ? 2 : 0);
 
 /** Does CPU + modules cover what the machine needs? Weaker options get a reason. */
 export function cpuFit(cpu: CpuModel, modules: string[], need: Need): Fit {
+  const platform = platformOf(cpu.id);
+  if (platform) return platformFit(platform, cpu.id, modules, need);
   const cap = ioCapacity(cpu, moduleSlots(modules));
   const aIn = builtInAnalog(cpu) + modules.reduce((n, m) => n + Number(getPart(m)?.ratings.analogInputs ?? 0), 0);
   const aOut = builtInAnalog(cpu) + modules.reduce((n, m) => n + Number(getPart(m)?.ratings.analogOutputs ?? 0), 0);
@@ -44,9 +59,11 @@ export function cpuFit(cpu: CpuModel, modules: string[], need: Need): Fit {
   return { ok: !reason, reason, spareIn, spareOut };
 }
 
-export function hmiFit(hmi: HmiModel, need: Need): Fit {
+export function hmiFit(hmi: HmiModel, need: Need, cpuId?: string): Fit {
   let reason: string | null = null;
-  if (!hmi.supportsClickEthernet) reason = 'Cannot connect to CLICK over Ethernet.';
+  const platform = cpuId ? platformOf(cpuId) : undefined;
+  if (platform) reason = `C-more panels are set up for CLICK only; not checked with the ${platform.name}.`;
+  else if (!hmi.supportsClickEthernet) reason = 'Cannot connect to CLICK over Ethernet.';
   else if (need.minHmiSizeIn && hmi.sizeIn < need.minHmiSizeIn) reason = `Smaller than the ${need.minHmiSizeIn}" the screens need.`;
   return { ok: !reason, reason, spareIn: 0, spareOut: 0 };
 }

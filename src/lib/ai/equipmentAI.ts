@@ -18,7 +18,7 @@ export interface EquipmentRecommendation {
 const obj = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 
 function choices() {
-  const profiles = PLC_PROFILES.filter((p) => p.available && p.language === 'ladder');
+  const profiles = PLC_PROFILES.filter((p) => p.available && p.language === 'ladder' && p.autoChoose !== false);
   const cpus = profiles.flatMap((p) => p.cpuModels.map((c) => ({ profile: p, cpu: c })));
   const modules = partsIn('plcModule');
   const hmis = HMI_MODELS.filter((h) => h.touch);

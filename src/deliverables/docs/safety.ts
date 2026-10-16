@@ -1,3 +1,4 @@
+import { byRegion, isIec } from '../../standards/regions';
 import type { ProjectSnapshot } from '../collect';
 import { buildModel, supplyText } from '../../electrical/derive';
 import { makeTable, specLines, pad, type DocTable } from './table';
@@ -110,9 +111,8 @@ export function hazardTable(p: ProjectSnapshot): DocTable {
   const rows: string[][] = [];
   const d = p.electrical;
   const supply = d ? supplyText(d.inputs.supply) : 'mains supply';
-  const ca = p.info.region === 'Canada';
   rows.push(['Electric shock', `${supply} inside the control panel`, 'Enclosure closed by tool / latch; lockable main disconnect; PE bonding of all exposed metal; finger-safe terminals', 'Line side of the main disconnect stays live with the handle OFF — label required']);
-  rows.push(['Arc flash', 'Work on the energized panel', `Work de-energized; arc-flash / shock warning label (${ca ? 'CSA Z462' : 'NFPA 70E'})`, 'Incident energy study by the site (by others)']);
+  rows.push(['Arc flash', 'Work on the energized panel', `Work de-energized; arc-flash / shock warning label (${byRegion(p.info.region, 'NFPA 70E', 'CSA Z462', 'EN 50110-1, ISO 7010 W012')})`, 'Incident energy study by the site (by others)']);
   if (d?.inputs.motors.length) rows.push(['Entanglement / crushing', `Moving parts driven by ${d.inputs.motors.map((m) => `${m.tag} (${m.description || 'motor'})`).join(', ')}`, 'Fixed / interlocked guarding (machine builder); emergency stop SF-01', 'Guarding design is outside this electrical scope']);
   const pneu = (p.spec.pneumatics ?? '').trim() || (d?.ioWiring ?? []).some((w) => w.deviceType === 'solenoid');
   if (pneu) rows.push(['Unexpected pneumatic motion / stored air', 'Cylinders and valves', `${/spring return/i.test(p.spec.pneumatics ?? '') ? 'Spring-return valve(s): cylinders go to the de-energized position on power loss; ' : ''}lockable air dump valve (by machine builder)`, 'Trapped air in cylinders after air is dumped — bleed before work']);
@@ -150,5 +150,5 @@ export function residualRisks(p: ProjectSnapshot): string[] {
 }
 
 export function riskStatement(p: ProjectSnapshot): string {
-  return `A documented risk assessment to ANSI B11.0 / ISO 12100${p.info.region === 'Canada' ? ' and CSA Z432' : ''} is required before this design is released for construction. The assessment sets the required performance level (PLr) of every safety function in the table above; the safety circuit design must then be verified against ISO 13849-1 and validated per ISO 13849-2. This document does not replace the risk assessment.`;
+  return `A documented risk assessment to ${byRegion(p.info.region, 'ANSI B11.0 / ISO 12100', 'ANSI B11.0 / ISO 12100 and CSA Z432', 'EN ISO 12100')} is required before this design is released for construction. The assessment sets the required performance level (PLr) of every safety function in the table above; the safety circuit design must then be verified against ISO 13849-1 and validated per ISO 13849-2${isIec(p.info.region) ? ' (or designed and validated to IEC 62061)' : ''}. This document does not replace the risk assessment.`;
 }

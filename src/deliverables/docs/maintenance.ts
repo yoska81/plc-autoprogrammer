@@ -1,3 +1,4 @@
+import { byRegion } from '../../standards/regions';
 import type { ProjectSnapshot } from '../collect';
 import { buildModel, billOfMaterials, isFuseCartridge } from '../../electrical/derive';
 import { getHmi } from '../../hmi/hmiCatalog';
@@ -15,12 +16,11 @@ export function pmSchedule(p: ProjectSnapshot): DocTable {
   const m = p.drawingCtx ? buildModel(p.drawingCtx) : null;
   const has = (...cats: CatalogCategory[]) => !!m?.rc.some((c) => cats.includes(c.category));
   const tags = (...cats: CatalogCategory[]) => (m?.rc.filter((c) => cats.includes(c.category)).map((c) => c.tag) ?? []).join(', ');
-  const ca = p.info.region === 'Canada';
   if (m?.safety.estops.length) rows.push(['E-stop devices ' + m.safety.estops.join(', '), 'Functional test of every E-stop (machine stops, cannot restart without reset)', 'Weekly, or as set by the risk assessment']);
   if (m?.safety.relay) rows.push([`Safety relay ${m.safety.relay.tag}`, 'Full safety-function test incl. channel fault and EDM test (repeat FAT section 4)', 'Every 12 months (proof test) or after any change']);
   rows.push(['Control panel enclosure', 'Inspect gasket, latches, cable glands and cleanliness; no moisture or dust inside', 'Every 6 months']);
   if (has('fan')) rows.push([`Cooling fan / filters ${tags('fan')}`, 'Clean or replace filter mats; check fan runs', 'Every 3 months (dusty areas: monthly)']);
-  rows.push(['Power terminations', 'Infrared (thermographic) scan under load; re-torque any hot connection after LOTO', `Every 12 months (${ca ? 'CSA Z463' : 'NFPA 70B'})`]);
+  rows.push(['Power terminations', 'Infrared (thermographic) scan under load; re-torque any hot connection after LOTO', `Every 12 months (${byRegion(p.info.region, 'NFPA 70B', 'CSA Z463', 'IEC 60204-1 18 / EN 50110-1')})`]);
   if (has('contactor', 'overload')) rows.push([`Motor starters ${tags('contactor', 'overload')}`, 'Check contactor for noise / chatter and contact wear; check overload setting = motor FLA', 'Every 12 months']);
   if (has('breaker', 'motorProtector', 'fuse')) rows.push([`Protective devices ${tags('breaker', 'motorProtector')}`, 'Visual check; operate breakers manually (de-energized) to keep mechanisms free', 'Every 12 months']);
   if (has('powerSupply')) rows.push([`24 VDC supply ${tags('powerSupply')}`, 'Measure output voltage under load (24 VDC ±5%)', 'Every 12 months']);

@@ -23,6 +23,7 @@ interface ProjectStore {
 /** Installation region: US (NEC / UL 508A), Canada (CEC / CSA C22.2 No. 14) or an IEC region (src/standards/regions.ts). */
 export type { Region } from '../standards/regions';
 import type { Region } from '../standards/regions';
+import type { DrawingOptions } from '../standards/drawingOptions';
 
 /** One line of the document revision history (drawings and documents share it). */
 export interface Revision {
@@ -50,6 +51,8 @@ export interface ProjectInfo {
   approvedBy: string;
   /** Oldest first; the last entry is the current revision. */
   revisions: Revision[];
+  /** Designations, symbols and sheet size; unset = the region's defaults. */
+  drawing?: DrawingOptions;
   /** Preferred brands per equipment group ("customer standard"); AutomationDirect when absent. */
   vendors?: Partial<VendorPreference>;
 }

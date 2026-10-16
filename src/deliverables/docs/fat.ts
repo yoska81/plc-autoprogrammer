@@ -1,3 +1,4 @@
+import { byRegion } from '../../standards/regions';
 import type { ProjectSnapshot } from '../collect';
 import { buildModel, cableSchedule, supplyText, wireNumbers, terminalPlan } from '../../electrical/derive';
 import { alarmRows, programInfo, type ProgramInfo } from './program';
@@ -15,7 +16,6 @@ export function fatProcedure(p: ProjectSnapshot, meta: DocMeta, info: ProgramInf
   let n = 0;
   const add = (section: string, description: string, procedure: string, expected: string) => rows.push({ id: `FAT-${pad(++n)}`, section, description, procedure, expected });
   const m = p.drawingCtx ? buildModel(p.drawingCtx) : null;
-  const ca = p.info.region === 'Canada';
 
   // 1. Documentation and visual inspection
   const S1 = '1. Documentation and visual inspection';
@@ -23,7 +23,7 @@ export function fatProcedure(p: ProjectSnapshot, meta: DocMeta, info: ProgramInf
   if (p.drawingCtx) {
     add(S1, 'Bill of materials', 'Check every installed device part number against the BOM (Appendix A).', 'All part numbers match; no substitutions without an approved change.');
     add(S1, 'Device tags and labels', 'Check device tags, wire markers (both ends) and terminal markers against the drawings.', 'Every device, wire and terminal is labelled as drawn.');
-    add(S1, 'Nameplate and warning labels', `Check the panel nameplate: ${m ? supplyText(m.supply) : 'supply'}, full-load current, SCCR, ${ca ? 'CSA mark' : 'UL 508A mark'}; shock / arc-flash warning labels.`, 'Nameplate data complete; SCCR marked equals the value in the SCCR table; labels fitted.');
+    add(S1, 'Nameplate and warning labels', `Check the panel nameplate: ${m ? supplyText(m.supply) : 'supply'}, full-load current, SCCR, ${byRegion(p.info.region, 'UL 508A mark', 'CSA mark', 'IEC 61439 rating plate and CE / conformity marking')}; shock / arc-flash warning labels.`, 'Nameplate data complete; SCCR marked equals the value in the SCCR table; labels fitted.');
     add(S1, 'Workmanship', 'Inspect wire routing, bend radius, duct fill, ferrules, cable glands and enclosure type rating integrity (gaskets, unused holes plugged).', 'Neat, secure workmanship; enclosure type rating not compromised.');
   }
   // 2. Pre-power
@@ -105,10 +105,9 @@ export function satChecklist(p: ProjectSnapshot, sf: SafetyFunction[] = safetyFu
   let n = 0;
   const add = (section: string, description: string, procedure: string, expected: string) => rows.push({ id: `SAT-${pad(++n)}`, section, description, procedure, expected });
   const m = p.drawingCtx ? buildModel(p.drawingCtx) : null;
-  const ca = p.info.region === 'Canada';
   const A = '1. Site checks';
   add(A, 'FAT punch list', 'Confirm all FAT punch-list items are closed.', 'Punch list signed off.');
-  add(A, 'Panel installation', 'Check mounting, clearances in front of the panel, enclosure integrity and gland sealing after transport.', `Working clearance per ${ca ? 'CEC 2-308' : 'NEC 110.26'}; no transport damage.`);
+  add(A, 'Panel installation', 'Check mounting, clearances in front of the panel, enclosure integrity and gland sealing after transport.', `Working clearance per ${byRegion(p.info.region, 'NEC 110.26', 'CEC 2-308', 'IEC 60364-7-729 / local rules')}; no transport damage.`);
   if (m) add(A, 'Supply and grounding', `Measure the feeder voltage (${supplyText(m.supply)}) and check the feeder grounding conductor to the PE bar.`, 'Voltage within ±10%; equipment grounding conductor connected.');
   if (p.drawingCtx) {
     const sc = sccrTable(p);
@@ -134,7 +133,7 @@ export function satChecklist(p: ProjectSnapshot, sf: SafetyFunction[] = safetyFu
   }
   const E = '5. Safety validation';
   for (const s of sf) add(E, `${s.id} ${s.name}`, `${s.test} Measure stopping time where relevant.`, s.expected);
-  add(E, 'Risk assessment', `Confirm the risk assessment (ANSI B11.0 / ISO 12100${ca ? ' / CSA Z432' : ''}) is complete and the PLr of each safety function is achieved (ISO 13849-1/-2).`, 'Safety validation report signed by the responsible person.');
+  add(E, 'Risk assessment', `Confirm the risk assessment (${byRegion(p.info.region, 'ANSI B11.0 / ISO 12100', 'ANSI B11.0 / ISO 12100 / CSA Z432', 'EN ISO 12100')}) is complete and the PLr of each safety function is achieved (ISO 13849-1/-2).`, 'Safety validation report signed by the responsible person.');
   const F = '6. Operation and handover';
   add(F, 'Production run', 'Run with product at rated speed for the agreed time.', 'Rated throughput reached; no faults.');
   add(F, 'Operator and maintenance training', 'Train operators (Operator manual) and maintenance staff (maintenance chapter, LOTO points).', 'Attendance list signed.');

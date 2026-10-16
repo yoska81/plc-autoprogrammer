@@ -1,3 +1,4 @@
+import { byRegion, isIec, regionSize } from '../../standards/regions';
 import type { ProjectSnapshot } from '../collect';
 import {
   buildModel, ratingText, supplyText, terminalPlan, cableSchedule, naturalCompare, isFuseCartridge,
@@ -48,7 +49,7 @@ export function supplyTable(p: ProjectSnapshot): DocTable {
   rows.push(['Safety-switched supply', m.safety.outputSupply === '24+S' ? '24+S — PLC output supply removed by the safety circuit' : 'none — outputs fed from unswitched 24+', 'Electrical design']);
   rows.push(['Enclosure type rating (required)', d.inputs.enclosureRating, 'Specification']);
   rows.push(['Ambient temperature (assumption)', '0–40 °C, non-condensing, indoor', 'Assumption — confirm site conditions']);
-  rows.push(['Available fault current at the site', 'TO BE PROVIDED BY CUSTOMER', `Needed to confirm the panel SCCR (${p.info.region === 'Canada' ? 'CSA C22.2 No. 14' : 'NEC 409.22'})`]);
+  rows.push(['Available fault current at the site', 'TO BE PROVIDED BY CUSTOMER', `Needed to confirm the panel ${byRegion(p.info.region, 'SCCR (NEC 409.22)', 'SCCR (CSA C22.2 No. 14)', 'short-circuit rating Icc (IEC 61439-1 5.3)')}`]);
   return makeTable([['Parameter', 30], ['Value', 46], ['Basis', 50]], rows);
 }
 
@@ -79,7 +80,6 @@ export function protectiveDeviceTable(p: ProjectSnapshot): DocTable {
   const m = model(p);
   const rows: DocRow[] = [];
   if (!m) return makeTable([['Circuit', 14], ['Load', 30], ['Current', 18], ['Device', 24], ['Rating', 18], ['kA', 8], ['Conductor', 10], ['Code reference', 26]], rows);
-  const ca = p.info.region === 'Canada';
   const V = SUPPLY_V[m.supply] ?? 480;
   const wireSize = (w: string | undefined) => (w ? m.wires.find((x) => x.wire === w)?.size ?? '' : '');
   const psIn = (ps: ResolvedComponent) => {
@@ -91,28 +91,28 @@ export function protectiveDeviceTable(p: ProjectSnapshot): DocTable {
   const totalFla = m.motors.reduce((s, x) => s + x.fla, 0);
   const largest = m.motors.reduce((s, x) => Math.max(s, x.fla), 0);
   rows.push({ group: 'Feeder' });
-  rows.push(['Main', 'Complete panel', `${(totalFla + largest * 0.25).toFixed(1)} A motors (125% largest) + control`, devText(m.disconnect), ratingText(m.disconnect) || '—', kaText(m.disconnect), m.mainAwg, ca ? 'CEC 28-600 / CSA C22.2 No. 14' : 'NFPA 79 5.3 / NEC 430.109, 670']);
-  if (m.mainBreaker) rows.push(['Main', 'Main overcurrent protection', '', devText(m.mainBreaker), ratingText(m.mainBreaker), kaText(m.mainBreaker), m.mainAwg, ca ? 'CEC Section 28' : 'NEC 430.62 / NFPA 79 7.2']);
+  rows.push(['Main', 'Complete panel', `${(totalFla + largest * 0.25).toFixed(1)} A motors (125% largest) + control`, devText(m.disconnect), ratingText(m.disconnect) || '—', kaText(m.disconnect), m.mainAwg, byRegion(p.info.region, 'NFPA 79 5.3 / NEC 430.109, 670', 'CEC 28-600 / CSA C22.2 No. 14', 'IEC 60204-1 5.3 (main switch)')]);
+  if (m.mainBreaker) rows.push(['Main', 'Main overcurrent protection', '', devText(m.mainBreaker), ratingText(m.mainBreaker), kaText(m.mainBreaker), m.mainAwg, byRegion(p.info.region, 'NEC 430.62 / NFPA 79 7.2', 'CEC Section 28', 'IEC 60204-1 7.2 / IEC 60898-1')]);
   if (m.motors.length) rows.push({ group: 'Motor branch circuits' });
   for (const mm of m.motors) {
     const load = `${mm.motor.tag} ${mm.motor.description || 'motor'}, ${mm.motor.hp} HP ${mm.motor.voltage}`;
-    rows.push([`${mm.motor.tag} SCPD`, load, `FLA ${mm.fla} A`, devText(mm.protection), ratingText(mm.protection) || '—', kaText(mm.protection), mm.awg, ca ? 'CEC 28-200, 28-106 (125%)' : 'NEC 430.52, 430.22 (125%)']);
-    for (const c of mm.contactors) rows.push([`${mm.motor.tag} starter`, `${mm.motor.tag} ${c.comp.function || 'contactor'}`, `FLA ${mm.fla} A`, devText(c), ratingText(c) || String(c.part?.ratings.hp480 ? `${c.part.ratings.hp480} HP @ 480 V` : '—'), '—', mm.awg, ca ? 'CEC Section 28 (controllers)' : 'NEC 430.83']);
+    rows.push([`${mm.motor.tag} SCPD`, load, `FLA ${mm.fla} A`, devText(mm.protection), ratingText(mm.protection) || '—', kaText(mm.protection), mm.awg, byRegion(p.info.region, 'NEC 430.52, 430.22 (125%)', 'CEC 28-200, 28-106 (125%)', 'IEC 60204-1 7.2, 7.3; IEC 60947-2 / -4-1')]);
+    for (const c of mm.contactors) rows.push([`${mm.motor.tag} starter`, `${mm.motor.tag} ${c.comp.function || 'contactor'}`, `FLA ${mm.fla} A`, devText(c), ratingText(c) || String(c.part?.ratings.hp480 ? `${c.part.ratings.hp480} HP @ 480 V` : '—'), '—', mm.awg, byRegion(p.info.region, 'NEC 430.83', 'CEC Section 28 (controllers)', 'IEC 60947-4-1 (AC-3)')]);
     if (mm.overload) {
       const lo = num(mm.overload.part?.ratings.minAmps), hi = num(mm.overload.part?.ratings.maxAmps);
-      rows.push([`${mm.motor.tag} overload`, `${mm.motor.tag} running overload`, `Set ${mm.fla} A (FLA)`, devText(mm.overload), lo !== null ? `${lo}–${hi} A, class ${mm.overload.part?.ratings.tripClass ?? '—'}` : ratingText(mm.overload), '—', mm.awg, ca ? 'CEC 28-306' : 'NEC 430.32']);
+      rows.push([`${mm.motor.tag} overload`, `${mm.motor.tag} running overload`, `Set ${mm.fla} A (FLA)`, devText(mm.overload), lo !== null ? `${lo}–${hi} A, class ${mm.overload.part?.ratings.tripClass ?? '—'}` : ratingText(mm.overload), '—', mm.awg, byRegion(p.info.region, 'NEC 430.32', 'CEC 28-306', 'IEC 60204-1 7.3; IEC 60947-4-1 (trip class)')]);
     }
-    if (mm.vfd) rows.push([`${mm.motor.tag} drive`, `${mm.motor.tag} VFD`, `FLA ${mm.fla} A`, devText(mm.vfd), ratingText(mm.vfd), kaText(mm.vfd), mm.awg, ca ? 'CEC 28-200; drive manual' : 'NEC 430.122, 430.130; drive manual']);
+    if (mm.vfd) rows.push([`${mm.motor.tag} drive`, `${mm.motor.tag} VFD`, `FLA ${mm.fla} A`, devText(mm.vfd), ratingText(mm.vfd), kaText(mm.vfd), mm.awg, byRegion(p.info.region, 'NEC 430.122, 430.130; drive manual', 'CEC 28-200; drive manual', 'IEC 61800-5-1; drive manual')]);
   }
   rows.push({ group: 'Control power' });
   if (m.xfmrBranch) {
-    rows.push(['CPT primary', `${m.xfmrBranch.xfmr.tag} control transformer`, ratingText(m.xfmrBranch.xfmr), devText(m.xfmrBranch.protection), ratingText(m.xfmrBranch.protection) || (/yes/i.test(String(m.xfmrBranch.xfmr.part?.ratings.fused ?? '')) ? 'integral fuseblock' : 'NOT ASSIGNED'), kaText(m.xfmrBranch.protection), '14 AWG', ca ? 'CEC 26-256' : 'NEC 450.3(B) / UL 508A']);
+    rows.push(['CPT primary', `${m.xfmrBranch.xfmr.tag} control transformer`, ratingText(m.xfmrBranch.xfmr), devText(m.xfmrBranch.protection), ratingText(m.xfmrBranch.protection) || (/yes/i.test(String(m.xfmrBranch.xfmr.part?.ratings.fused ?? '')) ? 'integral fuseblock' : 'NOT ASSIGNED'), kaText(m.xfmrBranch.protection), regionSize('14 AWG', p.info.region), byRegion(p.info.region, 'NEC 450.3(B) / UL 508A', 'CEC 26-256', 'IEC 60204-1 7.2.7 / IEC 61558-2-2')]);
   }
   for (const b of m.psBranches) {
-    rows.push([`${b.ps.tag} primary`, `${b.ps.tag} 24 VDC power supply (${ratingText(b.ps)})`, psIn(b.ps), devText(b.protection), ratingText(b.protection) || 'NOT ASSIGNED', kaText(b.protection), wireSize(b.feedWires[0]) || '14 AWG', ca ? 'CEC 14-104 / CSA C22.2 No. 14' : 'NFPA 79 7.2 / UL 508A']);
+    rows.push([`${b.ps.tag} primary`, `${b.ps.tag} 24 VDC power supply (${ratingText(b.ps)})`, psIn(b.ps), devText(b.protection), ratingText(b.protection) || 'NOT ASSIGNED', kaText(b.protection), wireSize(b.feedWires[0]) || regionSize('14 AWG', p.info.region), byRegion(p.info.region, 'NFPA 79 7.2 / UL 508A', 'CEC 14-104 / CSA C22.2 No. 14', 'IEC 60204-1 7.2 / IEC 60898-1 curve C')]);
     rows.push([`${b.ps.tag} output`, '24 VDC distribution (TB1)', `${ratingText(b.ps)} max`, `${b.ps.tag} electronic current limit`, `${num(b.ps.part?.ratings.outputAmps) ?? '—'} A`, '—', '16 AWG', 'NFPA 79 7.2 (conductor protected by source current limit — verify)']);
   }
-  for (const b of m.auxBranches) rows.push([b.protection.tag, b.protection.comp.function || 'auxiliary circuit', '—', devText(b.protection), ratingText(b.protection), kaText(b.protection), wireSize(b.feedWires[0]) || '14 AWG', ca ? 'CEC 14-104' : 'NFPA 79 7.2']);
+  for (const b of m.auxBranches) rows.push([b.protection.tag, b.protection.comp.function || 'auxiliary circuit', '—', devText(b.protection), ratingText(b.protection), kaText(b.protection), wireSize(b.feedWires[0]) || regionSize('14 AWG', p.info.region), byRegion(p.info.region, 'NFPA 79 7.2', 'CEC 14-104', 'IEC 60204-1 7.2')]);
   return makeTable([['Circuit', 14], ['Load', 30], ['Current', 20], ['Device', 24], ['Rating', 18], ['kA', 8, 'center'], ['Conductor', 10], ['Code reference', 26]], rows);
 }
 
@@ -145,7 +145,7 @@ export function conductorTable(p: ProjectSnapshot): DocTable {
     String(g.n),
     [...g.wires].sort(naturalCompare).slice(0, 8).join(', ') + (g.wires.size > 8 ? ', …' : ''),
   ]);
-  rows.push(['—', `Sizes are suggestions for 75 °C copper in the enclosure; verify against ${ca ? 'CEC Table 2 / CSA C22.2 No. 14' : 'NFPA 79 Ch. 12 / UL 508A'} and the protective device ratings. Colours per NFPA 79 13.2.`, '', '', '']);
+  rows.push(['—', isIec(p.info.region) ? 'Sizes in mm² per IEC 60204-1 Table 6 (PVC copper, 40 °C, method B2) or the copper area of the equivalent AWG size; verify against the protective device ratings and grouping factors (Table D.2). Colours per IEC 60204-1 13.2.' : `Sizes are suggestions for 75 °C copper in the enclosure; verify against ${ca ? 'CEC Table 2 / CSA C22.2 No. 14' : 'NFPA 79 Ch. 12 / UL 508A'} and the protective device ratings. Colours per NFPA 79 13.2.`, '', '', '']);
   return makeTable([['Colour', 14], ['Use', 52], ['Sizes', 18], ['Wires', 8, 'center'], ['Wire numbers (examples)', 40]], rows);
 }
 

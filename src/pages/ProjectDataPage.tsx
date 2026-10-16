@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import RecoverWork from '../components/RecoverWork';
-import { REGIONS } from '../standards/regions';
+import { REGIONS, type DesignationStyle, type SheetFormat, type SymbolSet } from '../standards/regions';
+import { drawingOptions } from '../standards/drawingOptions';
 import { applyRegion, regionOption } from '../standards/applyRegion';
 import { useProjectStore, currentRevision, type Region, type Revision } from '../store/useProjectStore';
 import { useProjectsStore } from '../store/useProjectsStore';
@@ -61,6 +62,7 @@ export default function ProjectDataPage() {
 
 function ProjectData() {
   const info = useProjectStore((s) => s.info);
+  const opts = drawingOptions(info);
   const setInfo = useProjectStore((s) => s.setInfo);
   const { projects, activeId, renameActive, openProject, deleteProject } = useProjectsStore();
   const name = projects.find((p) => p.id === activeId)?.name ?? '';
@@ -121,6 +123,26 @@ function ProjectData() {
                 </select>
               </Field>
               <Field label="Standards"><div className="py-1 text-steel-700">{info.standards.join(', ') || '—'}</div></Field>
+            </div>
+            <div className="px-3 pb-3 grid grid-cols-3 gap-3">
+              <Field label="Device designations" hint="CB1, K1, PB1 or IEC 81346 -Q1, -K1, -S1">
+                <select value={opts.designations} onChange={(e) => setInfo({ drawing: { ...info.drawing, designations: e.target.value as DesignationStyle } })} className={input} aria-label="Device designations">
+                  <option value="nfpa">NFPA 79 tags (CB1, K1, PB1)</option>
+                  <option value="iec81346">IEC 81346 (-Q1, -K1, -S1)</option>
+                </select>
+              </Field>
+              <Field label="Drawing symbols">
+                <select value={opts.symbols} onChange={(e) => setInfo({ drawing: { ...info.drawing, symbols: e.target.value as SymbolSet } })} className={input} aria-label="Drawing symbols">
+                  <option value="ansi">ANSI / IEEE 315 (JIC)</option>
+                  <option value="iec60617">IEC 60617</option>
+                </select>
+              </Field>
+              <Field label="Sheet size">
+                <select value={opts.sheet} onChange={(e) => setInfo({ drawing: { ...info.drawing, sheet: e.target.value as SheetFormat } })} className={input} aria-label="Sheet size">
+                  <option value="ANSI B">ANSI B (17 × 11 in)</option>
+                  <option value="A3">A3 (420 × 297 mm)</option>
+                </select>
+              </Field>
             </div>
           </Section>
 

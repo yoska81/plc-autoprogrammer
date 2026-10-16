@@ -9,7 +9,7 @@ import { PLC_PROFILES } from '../plc/core/profiles';
 import { getPart, partsIn } from '../electrical/catalog';
 import { HMI_MODELS, getHmi } from '../hmi/hmiCatalog';
 import { moduleSlots, ioCapacity } from '../plc/core/modules';
-import { cpuFit, findCpu, hmiFit, type Need } from '../plc/core/fit';
+import { cpuFit, findCpu, hmiFit, platformOf, type Need } from '../plc/core/fit';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, type EquipmentChoice } from '../spec/equipment';
 import VendorPreferenceCard from './VendorPreferenceCard';
@@ -103,7 +103,9 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   });
 
   const cpus = PLC_PROFILES.filter((p) => p.available && p.language === 'ladder').flatMap((p) => p.cpuModels);
-  const modules = partsIn('plcModule');
+  // Expansion modules of the chosen CPU's platform (multi-vendor profiles); CLICK modules otherwise.
+  const platform = choice ? platformOf(choice.cpuId) : undefined;
+  const modules = platform ? platform.modules.map((m) => getPart(m)).filter((p): p is NonNullable<typeof p> => Boolean(p)) : partsIn('plcModule');
   const hmis = HMI_MODELS.filter((h) => h.touch);
   const cpu = choice ? findCpu(choice.cpuId) : null;
   const fit = cpu && choice ? cpuFit(cpu, choice.modules, need) : null;
@@ -203,7 +205,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                     <td className={td} colSpan={4}>No touch panel (pushbuttons and lights only)</td>
                   </tr>
                   {hmis.map((h) => {
-                    const f = hmiFit(h, need);
+                    const f = hmiFit(h, need, choice?.cpuId);
                     const selected = choice?.hmiPartNumber === h.partNumber;
                     return (
                       <tr key={h.partNumber} onClick={() => f.ok && set({ hmiPartNumber: h.partNumber })}

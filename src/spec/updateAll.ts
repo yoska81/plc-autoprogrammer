@@ -36,10 +36,13 @@ export const UPDATE_GROUPS: UpdateStep[][] = [['equipment'], ['io'], ['electrica
  * versions are kept by their stores where they support it); the PLC program change is left as a
  * proposal for the engineer to approve. A failed stage stops the stages after it.
  */
-export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) => void, signal?: AbortSignal): Promise<void> {
+export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) => void, opts: { signal?: AbortSignal; shouldStop?: () => boolean } = {}): Promise<void> {
+  const { signal, shouldStop = () => false } = opts;
   for (const group of UPDATE_GROUPS) {
     const run = group.filter((s) => steps.includes(s));
     if (!run.length) continue;
+    // "Stop after this stage": the stages not started yet are skipped
+    if (shouldStop()) { for (const step of run) onStep({ step, status: 'skipped', message: 'Stopped before this stage.' }); continue; }
     const ok = await Promise.all(run.map((step) => runStep(step, onStep, signal)));
     if (ok.includes(false) || signal?.aborted) return; // later stages depend on these
   }

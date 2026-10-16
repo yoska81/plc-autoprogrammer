@@ -8,7 +8,7 @@ const btn = 'px-1.5 leading-4 rounded border border-white/60 hover:bg-white/15';
 
 /**
  * Status-bar view of the AI jobs: running jobs with elapsed time, stage, retries and Cancel;
- * failures with Retry / Dismiss; results waiting for another project. "Ready" when idle.
+ * failures with Retry / Dismiss; results waiting for another project. Nothing when idle.
  */
 export default function AiJobsIndicator() {
   const jobs = useAiJobs((s) => s.jobs);
@@ -23,7 +23,7 @@ export default function AiJobsIndicator() {
     return () => clearInterval(t);
   }, [running.length]);
 
-  if (!running.length && !failed.length && !held.length) return <span>Ready</span>;
+  if (!running.length && !failed.length && !held.length) return null;
   const runningText = (j: AiJob) => `${j.label}${j.stage ? ` · ${j.stage}` : ''} · ${mmss(now - j.startedAt)}${j.retry ? ` · ${KIND_TEXT[j.retry.kind]}, retrying (${j.retry.attempt}/${j.retry.max})…` : ''}`;
   return (
     <span className="flex items-center gap-3 min-w-0" data-testid="ai-jobs" aria-live="polite">

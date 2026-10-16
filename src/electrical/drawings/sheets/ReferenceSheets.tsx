@@ -1,4 +1,6 @@
 /** Reference sheets: symbols & abbreviations legend, device list, nameplate / label schedule. */
+import { isIec, NEMA_TO_IP, regionSpec } from '../../../standards/regions';
+import { IEC_LETTERS } from '../../../standards/iecText';
 import type { ReactNode } from 'react';
 import { codeRefs, isFuseCartridge, panelNameplate } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
@@ -136,10 +138,11 @@ export function LegendSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }
   const abHalf = Math.ceil(ABBREVIATIONS.length / 2);
   const abTop = top;
   const tpTop = abTop + abHalf * 3.5 + 12;
-  const tpHalf = Math.ceil(TAG_PREFIXES.length / 2);
+  const prefixes = plan.ctx.designations === 'iec81346' ? IEC_LETTERS : TAG_PREFIXES;
+  const tpHalf = Math.ceil(prefixes.length / 2);
   return (
     <g>
-      <Txt x={x0} y={AREA.y + 7} size={3.2} bold>{`SYMBOLS (ANSI/IEEE 315, NFPA 79 / JIC STYLE) — ${codeRefs(plan.ctx).short}`}</Txt>
+      <Txt x={x0} y={AREA.y + 7} size={3.2} bold>{plan.ctx.symbols === 'iec60617' ? `SYMBOLS (IEC 60617) — ${codeRefs(plan.ctx).short}` : `SYMBOLS (ANSI/IEEE 315, NFPA 79 / JIC STYLE) — ${codeRefs(plan.ctx).short}`}</Txt>
       <Line x1={x0} y1={AREA.y + 9.5} x2={x0 + cols * colW - 4} y2={AREA.y + 9.5} w={LW} />
       {SYMBOLS.map((s, i) => {
         const c = Math.floor(i / perCol), r = i % perCol;
@@ -166,9 +169,9 @@ export function LegendSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }
           </g>
         );
       })}
-      <Txt x={RX} y={tpTop - 5} size={3.2} bold>DEVICE TAG PREFIXES (NFPA 79 ANNEX D STYLE)</Txt>
+      <Txt x={RX} y={tpTop - 5} size={3.2} bold>{plan.ctx.designations === 'iec81346' ? 'DEVICE DESIGNATIONS (IEC 81346-2)' : 'DEVICE TAG PREFIXES (NFPA 79 ANNEX D STYLE)'}</Txt>
       <Line x1={RX} y1={tpTop - 2.5} x2={AREA_R - 3} y2={tpTop - 2.5} w={LW} />
-      {TAG_PREFIXES.map(([re, p, d], i) => {
+      {prefixes.map(([re, p, d], i) => {
         const c = Math.floor(i / tpHalf), r = i % tpHalf;
         const x = RX + c * (RW / 2);
         const used = tags.some((t) => re.test(t.toUpperCase()));
@@ -183,7 +186,7 @@ export function LegendSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }
       {(() => {
         const ny = tpTop + tpHalf * 3.5 + 4;
         const notes = [
-          'DOT = PREFIX USED IN THIS DRAWING SET. TAG = PREFIX + SEQUENCE NUMBER (K1, PB2). MULTI-DEVICE PARTS: TAG.n (TB.2).',
+          plan.ctx.designations === 'iec81346' ? 'DOT = CLASS USED IN THIS DRAWING SET. DESIGNATION = "-" + IEC 81346-2 CLASS LETTER + NUMBER (-K1, -S2); TERMINALS -K1:A1. TERMINAL STRIPS KEEP TB1…' : 'DOT = PREFIX USED IN THIS DRAWING SET. TAG = PREFIX + SEQUENCE NUMBER (K1, PB2). MULTI-DEVICE PARTS: TAG.n (TB.2).',
           'LINE REFERENCES: "SHEET.LINE" — 5.04 = SHEET 5, LINE 04. LINE NUMBERS ARE PRINTED DOWN THE LEFT EDGE OF EVERY SCHEMATIC SHEET.',
           'WIRE COLOURS AND WIRE NUMBERING: SEE COVER SHEET. SPARE PLC POINTS ARE SHOWN "SPARE" ON THE I/O SHEETS.',
         ].flatMap((n) => wrapText(n, RW, 1.9));
@@ -266,6 +269,7 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   const np = panelNameplate(ctx);
   const codes = codeRefs(ctx);
   const canada = codes.region === 'Canada';
+  const iec = isIec(ctx.region);
   const x0 = AREA.x + 6;
   // ---- panel nameplate
   const NPW = 128, NPH = 90;
@@ -276,11 +280,11 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
     ['PROJECT / PROJECT NO.', `${ctx.projectName.toUpperCase()}${doc.projectNumber ? `  /  ${doc.projectNumber.toUpperCase()}` : ''}`],
     ['DRAWING NO.', `${plan.sheets[0]?.drawingNo ?? ''}  REV ${doc.rs.rev}`],
     ['SERIAL NO. / DATE OF MFR.', ''],
-    ['SUPPLY', `${np.volts} VAC, ${np.phases} PH, ${np.phases === 3 ? '3 W + PE' : '2 W + PE'}, ${np.hz} Hz`],
+    ['SUPPLY', iec ? np.supplyText : `${np.volts} VAC, ${np.phases} PH, ${np.phases === 3 ? '3 W + PE' : '2 W + PE'}, ${np.hz} Hz`],
     ['FULL-LOAD CURRENT', `${np.fullLoadAmps} A (MOTORS ${np.motorAmps} A + CONTROL ${np.controlAmps} A EST.) — VERIFY`],
     ['LARGEST MOTOR FLA', np.largestMotorFla !== null ? `${np.largestMotorFla} A` : 'N/A (NO MOTORS)'],
-    ['SCCR', `____ kA RMS SYM., ${np.volts} V MAX — ${np.sccr} (${canada ? 'CSA C22.2 No. 14' : 'UL 508A SB'})`],
-    ['ENCLOSURE TYPE', np.enclosureType.toUpperCase().replace(/^NEMA\s*/, 'TYPE ')],
+    iec ? ['SHORT-CIRCUIT RATING', `Icc ____ kA (IEC 61439-1 5.3) — ${np.sccr}`] : ['SCCR', `____ kA RMS SYM., ${np.volts} V MAX — ${np.sccr} (${canada ? 'CSA C22.2 No. 14' : 'UL 508A SB'})`],
+    iec ? ['DEGREE OF PROTECTION', `${NEMA_TO_IP[np.enclosureType] ?? np.enclosureType} (IEC 60529)`] : ['ENCLOSURE TYPE', np.enclosureType.toUpperCase().replace(/^NEMA\s*/, 'TYPE ')],
     ['CONTROL VOLTAGE', `24 VDC${model.transformer ? ' / 120 VAC (TRANSFORMER)' : ''}`],
   ];
   const fh = (NPH - 14) / fields.length;
@@ -298,7 +302,7 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   // ---- labels
   const labels: { head: string; body: string[]; symbol: 'shock' | 'arc' | 'info' | 'ground'; where: string }[] = [
     { head: 'DANGER', symbol: 'shock', where: 'ENCLOSURE DOOR, OUTSIDE', body: ['HAZARDOUS VOLTAGE.', `${np.volts} VAC. WILL CAUSE SEVERE INJURY OR DEATH. TURN OFF AND LOCK OUT ${np.disconnectTag} BEFORE OPENING.`] },
-    { head: 'WARNING', symbol: 'arc', where: 'ENCLOSURE DOOR, OUTSIDE', body: ['ARC FLASH AND SHOCK HAZARD.', `APPROPRIATE PPE REQUIRED. ${canada ? 'CSA Z462 / CEC 2-306' : 'NFPA 70E / NEC 110.16'}. INCIDENT ENERGY: TBD (BY SITE STUDY).`] },
+    { head: 'WARNING', symbol: 'arc', where: 'ENCLOSURE DOOR, OUTSIDE', body: iec ? ['ELECTRICAL HAZARD (ISO 7010 W012).', 'WORK ON LIVE PARTS ONLY BY SKILLED PERSONS WITH SUITABLE PPE (EN 50110-1). ISOLATE AND LOCK OFF FIRST.'] : ['ARC FLASH AND SHOCK HAZARD.', `APPROPRIATE PPE REQUIRED. ${canada ? 'CSA Z462 / CEC 2-306' : 'NFPA 70E / NEC 110.16'}. INCIDENT ENERGY: TBD (BY SITE STUDY).`] },
     { head: 'NOTICE', symbol: 'info', where: `${np.disconnectTag} HANDLE`, body: ['MAIN DISCONNECT.', 'LOCKABLE IN OFF POSITION. OFF / ON MARKED ON HANDLE.'] },
     ...(np.multipleSources ? [{ head: 'WARNING', symbol: 'shock' as const, where: 'DOOR + AFFECTED DEVICES', body: ['MULTIPLE SOURCES OF SUPPLY.', `CIRCUITS REMAIN ENERGIZED WITH ${np.disconnectTag} OFF. ORANGE (OG) WIRING.`] }] : []),
     { head: 'PE', symbol: 'ground', where: `${model.groundBar?.tag ?? 'PE BAR'} / GROUND BAR`, body: ['PROTECTIVE EARTH.', 'MAIN BONDING POINT. GREEN/YELLOW CONDUCTORS ONLY.'] },
@@ -308,12 +312,13 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   const perRow = Math.floor((NPW + 2) / (LW_ + 4));
   // ---- marking conventions
   const conv = [
-    'WIRE MARKERS: WHITE HEAT-SHRINK OR PRINTED SLEEVES, BLACK TEXT, 2.5 mm MIN. TEXT HEIGHT, AT BOTH ENDS OF EVERY CONDUCTOR, READING FROM THE TERMINAL OUTWARD (NFPA 79 13.2.1). TEXT = WIRE NUMBER ON THE SCHEMATIC.',
+    `WIRE MARKERS: WHITE HEAT-SHRINK OR PRINTED SLEEVES, BLACK TEXT, 2.5 mm MIN. TEXT HEIGHT, AT BOTH ENDS OF EVERY CONDUCTOR, READING FROM THE TERMINAL OUTWARD (${iec ? 'IEC 60204-1 13.2.1' : 'NFPA 79 13.2.1'}). TEXT = WIRE NUMBER ON THE SCHEMATIC.`,
     'TERMINAL MARKERS: CLIP-IN MARKERS, CONSECUTIVE NUMBERS 1, 2, 3… PER STRIP; STRIP TAG (TB1, TB2…) ON A GROUP MARKER AT EACH END STOP.',
     'DEVICE ID LABELS: ADHESIVE LABEL WITH THE DEVICE TAG ON THE PANEL OR DUCT NEXT TO EVERY BACK-PANEL DEVICE (NOT ON THE REMOVABLE DEVICE). DOOR DEVICES: TAG ON THE INSIDE OF THE DOOR.',
     'FIELD CABLES: CABLE TAG (W001…) ON BOTH ENDS; FIELD DEVICES: ENGRAVED / UV-STABLE TAG WITH THE DEVICE TAG.',
     'LEGEND PLATES: LAMINATED PHENOLIC (LAMICOID) OR THE OPERATOR SERIES LEGEND PLATE; ENGRAVED UPPER CASE, SANS-SERIF.',
-    canada ? 'CANADA: CSA/cUL LABEL BY CERTIFIED SHOP. BILINGUAL (EN/FR) WARNING LABELS WHERE REQUIRED (E.G. QUEBEC).' : 'UL 508A LISTING MARK AND SCCR MARKING APPLIED BY THE LISTED PANEL SHOP.',
+    iec ? `${regionSpec(ctx.region).marking.toUpperCase()}. IEC 61439 RATING PLATE BY THE PANEL BUILDER.${ctx.region === 'Israel' ? ' WARNING LABELS IN HEBREW (AND ENGLISH / ARABIC AS NEEDED).' : ' WARNING LABELS IN THE LANGUAGE(S) OF THE COUNTRY OF USE.'}`
+      : canada ? 'CANADA: CSA/cUL LABEL BY CERTIFIED SHOP. BILINGUAL (EN/FR) WARNING LABELS WHERE REQUIRED (E.G. QUEBEC).' : 'UL 508A LISTING MARK AND SCCR MARKING APPLIED BY THE LISTED PANEL SHOP.',
   ];
   const cy0 = ptop + (shownPlates.length + (hmi ? 1 : 0) + 2) * prow + 14;
   const convLines = conv.map((c) => wrapText(c, TW - 6, 2.1));

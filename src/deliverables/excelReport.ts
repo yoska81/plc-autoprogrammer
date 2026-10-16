@@ -1,3 +1,4 @@
+import { isIec, regionSpec } from '../standards/regions';
 import type { Worksheet, Workbook } from 'exceljs';
 import type { ProjectSnapshot } from './collect';
 import { SPEC_SECTIONS } from '../spec/types';
@@ -87,7 +88,7 @@ function documentControl(wb: Workbook, p: ProjectSnapshot) {
     ['Company', m.company], ['Customer', m.customer], ['Site', m.site], ['Project name', p.projectName], ['Project number', m.projectNumber],
     ['Report number', m.reportNo], ['Engineering package', m.docNo], ['Drawing set', m.drawings ? `${m.drawings.first} … ${m.drawings.last} (${m.drawings.sheets.length} sheets)` : 'not generated'],
     ['Current revision', `${m.rev.rev} — ${m.rev.date} — ${m.rev.description}`],
-    ['Region / codes', `${m.region} — ${m.codes.installation}, ${m.codes.panel}, NFPA 79`],
+    ['Region / codes', isIec(m.region) ? `${regionSpec(m.region).label} — ${m.codes.short}, ${m.codes.installation}` : `${m.region} — ${m.codes.installation}, ${m.codes.panel}, NFPA 79`],
     ['PLC', `${p.profile.vendor} ${p.profile.name} ${p.cpu.id}`], ['HMI', hmiText(m.hmiPart)],
     ['Supply', d ? `${supplyText(d.inputs.supply)}, ${d.inputs.enclosureRating}` : 'not designed'],
     ['Report generated', new Date().toLocaleString()],

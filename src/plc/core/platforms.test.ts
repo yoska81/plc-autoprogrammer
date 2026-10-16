@@ -5,8 +5,13 @@
  */
 import assert from 'node:assert/strict';
 import { getPart } from '../../electrical/catalog';
-import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules } from './platforms';
-import type { Need } from './fit';
+import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf } from './platforms';
+import { cpuFit, hmiFit, platformOf, type Need } from './fit';
+import { PLC_PROFILES } from './profiles';
+import { HMI_MODELS } from '../../hmi/hmiCatalog';
+import { CATALOG } from '../../electrical/catalog';
+
+const ALL_HMIS = () => CATALOG.filter((p) => p.category === 'hmi');
 
 const need = (n: Partial<Need> = {}): Need => ({ digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: false, minHmiSizeIn: null, ...n });
 
@@ -15,7 +20,8 @@ const ids = new Set<string>();
 for (const p of PLATFORMS) {
   assert.ok(!ids.has(p.id), `duplicate platform ${p.id}`);
   ids.add(p.id);
-  assert.ok(p.cpus.length > 0 && p.protocols.length > 0 && p.notes.trim(), p.id);
+  // protocols may be empty (e.g. Omron CP1E: Ethernet only with an option board — said in the notes).
+  assert.ok(p.cpus.length > 0 && p.notes.trim(), p.id);
   for (const c of p.cpus) {
     const part = getPart(c);
     assert.equal(part?.category, 'plc', `${p.id}: ${c} is a catalog CPU`);
@@ -76,3 +82,29 @@ const mods = suggestModules(s1500, '6ES7511-1AL03-0AB0', need({ digitalInputs: 2
 assert.deepEqual(mods, ['6ES7131-6BH01-0BA0', '6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0']);
 assert.ok(platformFit(s1500, '6ES7511-1AL03-0AB0', mods, need({ digitalInputs: 20, digitalOutputs: 8 })).ok);
 console.log('module suggestion tests passed');
+
+// Profiles with a platformId (multi-vendor profiles) use the platform fit; CLICK keeps its own.
+for (const p of PLC_PROFILES) {
+  for (const c of p.cpuModels) {
+    const pid = (c as { platformId?: string }).platformId ?? (p as { platformId?: string }).platformId;
+    if (!pid) { assert.equal(platformOf(c.id), undefined, `${c.id}: CLICK-style fit`); continue; }
+    const pl = platformById(pid);
+    assert.ok(pl, `${p.id}: platform ${pid} exists`);
+    assert.ok(pl!.cpus.includes(c.id), `${p.id}: cpu ${c.id} is a ${pid} CPU (catalog part number)`);
+    const n = need({ digitalInputs: 20, digitalOutputs: 10 });
+    assert.deepEqual(cpuFit(c, [], n), platformFit(pl!, c.id, [], n), `${c.id}: cpuFit = platformFit`);
+    assert.ok(!hmiFit(HMI_MODELS[0], n, c.id).ok, `${c.id}: C-more not offered for ${pid}`);
+  }
+}
+console.log('profile platform wiring tests passed');
+
+// Third-party panels: compatible only where their maker's driver list names the PLC family.
+assert.ok(driversOf(getPart('cMT2078X')!).includes('ab-micro850'), 'Weintek driver list names Micro850');
+assert.ok(ok('ab-micro850', 'cMT2078X') && ok('siemens-s7-1200', 'cMT2078X') && ok('omron-nx1p2', 'cMT2078X'), 'Weintek cMT X talks to AB, Siemens, Omron NX1P2');
+assert.ok(!ok('siemens-s7-1200-g2', 'MT8072iP'), 'Weintek iP: no S7-1200 G2 driver');
+assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000'), 'Red Lion: Logix yes, NX1P2 not listed');
+// Driver ids are platform ids (agreed list; every platform that exists must be on it).
+const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300']);
+for (const pl of PLATFORMS) assert.ok(DRIVER_IDS.has(pl.id), `platform ${pl.id} is on the driver id list`);
+for (const p of ALL_HMIS()) for (const id of driversOf(p)) assert.ok(DRIVER_IDS.has(id), `${p.partNumber}: driver id ${id} is a known platform id`);
+console.log('driver list tests passed');

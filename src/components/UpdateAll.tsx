@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStages } from '../spec/useStages';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -25,10 +25,12 @@ export default function UpdateAll() {
   const running = job?.status === 'running';
   const [results, setResults] = useState<StepResult[]>([]);
   const [planned, setPlanned] = useState<UpdateStep[]>([]);
+  const stopRef = useRef(false);
+  const [stopping, setStopping] = useState(false);
 
   // A stage is updated when it is stale, or when an earlier stage it depends on will change.
   const stale = ORDER.filter((o) => stages[o.step].status === 'stale').map((o) => o.step);
-  if (!stale.length && !open) return null;
+  if (!stale.length && !open && !running) return null;
 
   const start = async () => {
     const first = ORDER.findIndex((o) => stale.includes(o.step));
@@ -37,6 +39,8 @@ export default function UpdateAll() {
     setResults([]);
     setOpen(true);
     const label = (st: UpdateStep) => ORDER.find((o) => o.step === st)!.label;
+    stopRef.current = false;
+    setStopping(false);
     let done = 0;
     await startAiJob({
       kind: 'update-all', label: 'Update all',
@@ -47,7 +51,7 @@ export default function UpdateAll() {
           setResults((prev) => [...prev, r]);
           const next = steps.find((st, i) => i >= done && st !== r.step);
           if (next) h.stage(`${label(next)} (${Math.min(done + 1, steps.length)}/${steps.length})`);
-        }, h.signal);
+        }, { signal: h.signal, shouldStop: () => stopRef.current });
       },
     });
   };
@@ -56,7 +60,12 @@ export default function UpdateAll() {
 
   return (
     <>
-      {stale.length > 0 && (
+      {running && !open && (
+        <button onClick={() => setOpen(true)} className="px-3 py-1 text-sm font-semibold rounded bg-brand-600 text-white hover:bg-brand-700 inline-flex items-center gap-2" data-testid="update-progress">
+          <Spinner /> Updating… {results.length}/{planned.length}
+        </button>
+      )}
+      {stale.length > 0 && !running && (
         <button onClick={start} disabled={!apiKey || running}
           title={apiKey ? undefined : 'Add your Anthropic API key in Settings'}
           className="px-3 py-1 text-sm font-semibold rounded bg-amber-400 text-steel-900 hover:bg-amber-300 disabled:opacity-50">
@@ -68,7 +77,8 @@ export default function UpdateAll() {
           <div className="bg-white text-gray-800 rounded-lg shadow-xl w-full max-w-lg">
             <div className="px-5 py-4 border-b border-gray-200">
               <h3 className="text-base font-semibold">Updating the project from the spec</h3>
-              <p className="text-xs text-gray-500 mt-1">Each stage is rebuilt from the latest spec and the stages before it. Deep thinking can take several minutes per stage.</p>
+              <p className="text-xs text-gray-500 mt-1">Each stage is rebuilt from the latest spec and the stages before it. Deep thinking can take several minutes per stage.
+                You can hide this window and keep working: the update continues on every page (progress is shown in the toolbar).</p>
             </div>
             <ol className="px-5 py-4 space-y-2">
               {planned.map((step) => {
@@ -92,11 +102,16 @@ export default function UpdateAll() {
               {results.some((r) => r.status === 'proposal') && !running && (
                 <button onClick={() => { setOpen(false); navigate('/program'); }} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">Review program changes</button>
               )}
+              {running && (
+                <button onClick={() => { stopRef.current = true; setStopping(true); }} disabled={stopping} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-40">
+                  {stopping ? 'Stopping after this stage…' : 'Stop after this stage'}
+                </button>
+              )}
               {running && job && (
-                <button onClick={() => cancelAiJob(job.id)} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+                <button onClick={() => cancelAiJob(job.id)} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50">Cancel now</button>
               )}
               <button onClick={() => setOpen(false)} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50">
-                {running ? 'Continue in background' : 'Close'}
+                {running ? 'Hide (keep working)' : 'Close'}
               </button>
             </div>
           </div>

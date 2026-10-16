@@ -64,6 +64,8 @@ export default function ElectricalPage() {
   const specText = specToText(fp.spec);
   const { profile, cpu, io, addresses } = usePlc();
   const ctx = useDrawingContext();
+  // The layout editor stores device tags: it works with the design's own tags.
+  const rawCtx = useDrawingContext({ raw: true });
 
   const [params, setParams] = useSearchParams();
   const urlTab = params.get('tab') as Tab | null;
@@ -149,7 +151,7 @@ export default function ElectricalPage() {
       {tab === 'labels' ? (
         <LabelsPanel ctx={ctx} fileBase={base} projectName={projectName} />
       ) : tab === 'layout' ? (
-        <MachineLayoutPanel ctx={ctx} />
+        <MachineLayoutPanel ctx={rawCtx} />
       ) : tab === 'machining' ? (
         <MachiningPanel ctx={ctx} fileBase={base} />
       ) : tab === 'picture' ? (

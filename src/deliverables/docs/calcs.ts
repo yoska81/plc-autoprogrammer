@@ -1,3 +1,4 @@
+import { awgNear, iecMotorKw, isIec, mcbFor, mm2For, mm2Text } from '../../standards/regions';
 import type { ProjectSnapshot } from '../collect';
 import { getPart } from '../../electrical/catalog';
 import { getHmi } from '../../hmi/hmiCatalog';
@@ -30,6 +31,7 @@ export function calculations(p: ProjectSnapshot): CalcSection[] {
   const d = p.electrical;
   if (!d) return [];
   const canada = p.info.region === 'Canada';
+  const iec = isIec(p.info.region);
   const sections: CalcSection[] = [];
   const parts = d.components.map((c) => ({ c, part: getPart(c.partNumber) }));
 
@@ -83,7 +85,8 @@ export function calculations(p: ProjectSnapshot): CalcSection[] {
     // NEC 430.52 / CEC 28-200 maximum: inverse-time breaker 250% FLA, time-delay fuse 175%, other fuse 300%,
     // rounded up to the next standard size (NEC 240.6). Not checked for manual motor protectors and VFD branches
     // (drive manufacturer's rating applies).
-    const pct = protPart?.category === 'breaker' ? 2.5 : protPart?.category === 'fuse' ? (/time.?delay|dual/i.test(`${protPart.ratings.type ?? ''} ${protPart.description}`) ? 1.75 : 3) : null;
+    // IEC: the motor circuit breaker / MCB is chosen for the rated current (no NEC 430.52 percentage limit).
+    const pct = iec ? null : protPart?.category === 'breaker' ? 2.5 : protPart?.category === 'fuse' ? (/time.?delay|dual/i.test(`${protPart.ratings.type ?? ''} ${protPart.description}`) ? 1.75 : 3) : null;
     const STD = [...(protPart?.category === 'fuse' ? [1, 3, 6, 10] : []), 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250];
     const maxA = pct !== null && m.starter !== 'vfd' ? STD.find((x) => x >= fla * pct - 1e-9) ?? fla * pct : null;
     const protOk = maxA === null || protA === null || protA <= maxA;
@@ -91,11 +94,12 @@ export function calculations(p: ProjectSnapshot): CalcSection[] {
     const olMax = ol?.part ? num(ol.part.ratings.maxAmps) : null;
     const olOk = olMin !== null && olMax !== null ? fla >= olMin && fla <= olMax : true;
     sections.push({
-      title: `Motor ${m.tag} — ${m.description || 'motor'} (${m.hp} HP, ${m.voltage})`,
+      title: `Motor ${m.tag} — ${m.description || 'motor'} (${iec ? `${iecMotorKw(m.hp)} kW, ` : ''}${m.hp} HP, ${m.voltage})`,
       lines: [
-        { item: 'Full-load current', value: `${fla} A`, basis: canada ? 'CEC Table 44/45 (same values as NEC 430.250)' : 'NEC Table 430.250 / 430.248', estimate: false },
-        { item: `Conductors (125% FLA, ${canada ? 'CEC 28-106' : 'NEC 430.22'})`, value: awgFor(fla * 1.25), basis: `${(fla * 1.25).toFixed(1)} A`, estimate: false },
-        { item: 'Branch protection', value: protPart ? `${prot!.part!.partNumber}${cartridge?.part ? ` with ${cartridge.part.partNumber}` : ''}${protA ? ` (${protA} A)` : ''}` : 'not assigned', basis: `${canada ? 'CEC 28-200' : 'NEC 430.52'} limits${maxA !== null ? `: max ${maxA} A` : ''}`, estimate: false },
+        { item: iec ? 'Rated current Ie' : 'Full-load current', value: `${fla} A`, basis: iec ? 'IEC 60947-4-1 Annex G (4-pole cage motor); use the nameplate value' : canada ? 'CEC Table 44/45 (same values as NEC 430.250)' : 'NEC Table 430.250 / 430.248', estimate: false },
+        iec ? { item: 'Conductors (IEC 60204-1 Table 6, B2, 40 °C, 125% Ie)', value: `${mm2Text(mm2For(fla * 1.25))} (≈ ${awgNear(mm2For(fla * 1.25))})`, basis: `${(fla * 1.25).toFixed(1)} A`, estimate: false }
+          : { item: `Conductors (125% FLA, ${canada ? 'CEC 28-106' : 'NEC 430.22'})`, value: awgFor(fla * 1.25), basis: `${(fla * 1.25).toFixed(1)} A`, estimate: false },
+        { item: 'Branch protection', value: protPart ? `${prot!.part!.partNumber}${cartridge?.part ? ` with ${cartridge.part.partNumber}` : ''}${protA ? ` (${protA} A)` : ''}` : 'not assigned', basis: iec ? `Motor circuit breaker set to Ie (IEC 60947-2 / -4-1) or MCB ≥ ${mcbFor(fla)} A curve D (IEC 60898-1)` : `${canada ? 'CEC 28-200' : 'NEC 430.52'} limits${maxA !== null ? `: max ${maxA} A` : ''}`, estimate: false },
         { item: 'Overload setting', value: ol?.part ? `${ol.part.partNumber}, set to ${fla} A` : m.starter === 'vfd' ? 'VFD electronic overload, set to FLA' : 'not assigned', basis: olMin !== null ? `range ${olMin}–${olMax} A` : '', estimate: false },
       ],
       result: [olOk ? 'Overload range covers the motor FLA.' : `Overload range ${olMin}–${olMax} A does not include FLA ${fla} A.`,
@@ -143,7 +147,9 @@ export function calculations(p: ProjectSnapshot): CalcSection[] {
   sections.push({
     title: 'Short-circuit current rating (SCCR)',
     lines: [],
-    result: canada
+    result: iec
+      ? 'Preliminary short-circuit rating from the component ratings (table). Under IEC 61439-1 the panel builder verifies the conditional short-circuit current Icc for the prospective fault current at the site and marks it on the rating plate.'
+      : canada
       ? 'Preliminary panel SCCR is determined in the SCCR table (UL 508A Supplement SB method, lowest component rating). Confirm the available fault current at the site and mark the panel per CSA C22.2 No. 14.'
       : 'Preliminary panel SCCR is determined in the SCCR table (UL 508A Supplement SB, lowest component rating). Confirm the available fault current at the site (NEC 409.22) and mark the panel nameplate.',
     ok: true,

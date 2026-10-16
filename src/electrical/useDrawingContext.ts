@@ -9,9 +9,14 @@ import type { DrawingContext } from './derive';
 import { docInfo } from '../deliverables/docInfo';
 import { useMachineLayout } from './layout/useLayoutStore';
 import { layoutForDesign } from './layout/geometry';
+import { withDrawingOptions } from '../standards/drawingOptions';
 
-/** Everything the drawing engine needs, or null when there is no design yet. */
-export function useDrawingContext(): DrawingContext | null {
+/**
+ * Everything the drawing engine needs, or null when there is no design yet. `raw` skips the
+ * project's drawing options (IEC designations rename tags), for editors that store tags.
+ */
+export function useDrawingContext(opts: { raw?: boolean } = {}): DrawingContext | null {
+  const raw = Boolean(opts.raw);
   const design = useElectricalStore((s) => s.design);
   const projectName = useProgramStore((s) => s.projectName);
   const { profile, cpu, io, addresses, analog } = usePlc();
@@ -22,7 +27,7 @@ export function useDrawingContext(): DrawingContext | null {
 
   return useMemo(() => {
     if (!design) return null;
-    return {
+    const ctx: DrawingContext = {
       projectName,
       design,
       getPart,
@@ -34,5 +39,6 @@ export function useDrawingContext(): DrawingContext | null {
       machineLayout,
       analog,
     };
-  }, [design, projectName, profile, cpu, io, addresses, info, hmiPartNumber, machineLayout, analog]);
+    return raw ? ctx : withDrawingOptions(ctx, info);
+  }, [design, projectName, profile, cpu, io, addresses, info, hmiPartNumber, machineLayout, analog, raw]);
 }
