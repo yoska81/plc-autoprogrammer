@@ -65,6 +65,7 @@ PRs: #3 (merged), #12 (merged: Windows installer), next PR (draft → `claude/op
 | A-17 | Design review badge, simulator force/bypass | white text on amber-500 (2.15:1) on every page | fixed: dark text on amber | see "Readable text on amber badges" |
 | A-15 | Preview | the connection test asks for the `complex` model tier to get a one-word reply | open, cosmetic (`claudeAccount.ts`) | — |
 | A-18 | I/O list, analog | an analog point on a PLC without analog channels just shows address "—"; only Design review says why | open, low (Dev 2: a hint in `AnalogCell` like "no analog channel — add C0-04AD-1 on Equipment") | — |
+| A-20 | Program tree, simulator block chips | after the blue restyle the selected rung count was brand-800 on brand-600 (1.57:1) | fixed: brand-100 | 95e66ab |
 | A-19 | HMI editor, bar graph | a bar bound to an analog DF register keeps 0–100 and no units instead of the point's scale (e.g. 0–150 psi) | open, low (fill min/max/units from the I/O point when the address is set) | — |
 
 ## Review of claude/isa-dev-labels-print (head 6c55e83, 2026-10-16 17:30)
@@ -87,3 +88,4 @@ PRs: #3 (merged), #12 (merged: Windows installer), next PR (draft → `claude/op
 - The sweep now has an analog pass (60421db): adds C0-04AD-1 / C0-04DA-1 to the example, makes an input and an output analog (4-20 mA, 0–150 psi / 0–60 Hz), then checks the ANALOG loop sheet, the simulator slider (max 150, takes a value) and an HMI bar graph bound to DF1. 0 problems.
 - Found A-18 and A-19 (both low, see table).
 - The Windows installer CI now runs every `src/**/*.test.ts`.
+- Re-run after merging integration c633ca0 (blue restyle, coordinator's movable-picture fix 5c5c5f7): tsc, eslint, 12 unit suites, Modbus 14, web E2E, sweep (+ analog), old-data, hmi-editor, preview E2E, HASH=1 sweep and old-data all pass. Found and fixed A-20. My unpushed `local/movable-picture` (2408468) is superseded by 5c5c5f7 and will be dropped.
