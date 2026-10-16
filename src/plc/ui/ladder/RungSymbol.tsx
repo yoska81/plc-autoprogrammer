@@ -3,6 +3,8 @@
  * instruction boxes. Each component draws a fixed-size cell whose horizontal
  * wire sits at WIRE_Y so neighbouring cells line up.
  */
+import { useContext } from 'react';
+import { MnemonicsContext } from './mnemonics';
 import type { LadderElement, LadderOutput } from '../../core/ladder';
 import {
   BOX_HEADER, BOX_LINE, BOX_TOP, CELL_W, OUT_W, ROW_H, SYM_H, SYM_TOP, WIRE_Y,
@@ -10,6 +12,14 @@ import {
 } from './ladderEdit';
 
 const STROKE = '#1e293b'; // slate-800
+
+
+/** Small vendor instruction name in the corner of a contact / coil cell. */
+function Mnemonic({ k }: { k: string }) {
+  const m = useContext(MnemonicsContext)?.[k];
+  if (!m) return null;
+  return <div className="absolute right-1 font-mono text-[9px] font-bold leading-none text-brand-700" style={{ top: SYM_TOP + SYM_H + 1 }}>{m}</div>;
+}
 
 interface CellProps {
   label?: string;
@@ -101,7 +111,7 @@ export function ElementCell({ element, label, selected, struck, onClick }: CellP
         <div className="absolute left-0 h-[2px] bg-slate-800" style={{ top: WIRE_Y - 1, width: 6 }} />
         <div className="absolute right-0 h-[2px] bg-slate-800" style={{ top: WIRE_Y - 1, width: 6 }} />
         <div className="absolute inset-x-0 top-0 text-center text-[10px] font-semibold uppercase leading-[18px] tracking-wider text-slate-400">
-          Compare
+          <CompareTitle op={element.op} />
         </div>
         <div
           className={`absolute flex items-center justify-center rounded-sm border-2 border-slate-800 bg-white px-1 font-mono text-[11.5px] font-bold text-slate-900 ${struck ? 'line-through' : ''}`}
@@ -117,6 +127,7 @@ export function ElementCell({ element, label, selected, struck, onClick }: CellP
     <CellShell width={CELL_W} height={ROW_H} selected={selected} onClick={onClick}>
       <Address text={element.address} struck={struck} />
       <ContactSvg type={element.type} />
+      <Mnemonic k={element.type} />
       <Label text={label} top={SYM_TOP + SYM_H + 3} />
     </CellShell>
   );
@@ -145,7 +156,18 @@ function CoilSvg({ type }: { type: 'OUT' | 'SET' | 'RST' }) {
 
 const BOX_TITLE: Record<string, string> = { TMR: 'TMR', CNT: 'CNT', COPY: 'COPY', MATH: 'MATH' };
 
+function CompareTitle({ op }: { op: string }) {
+  return <>{useContext(MnemonicsContext)?.[op] ?? 'Compare'}</>;
+}
+
+/** Box title: the vendor's instruction (TON / RTO / CTU / MOV / CPT…) when the profile names it. */
+function boxTitle(o: LadderOutput, m: Record<string, string> | undefined): string {
+  const key = o.type === 'TMR' ? (o.accumulate ? 'TMR_RTO' : `TMR_${o.mode}`) : o.type === 'CNT' ? `CNT_${o.direction}` : o.type;
+  return m?.[key] ?? BOX_TITLE[o.type];
+}
+
 export function OutputCell({ output, label, selected, struck, onClick }: CellProps & { output: LadderOutput }) {
+  const mn = useContext(MnemonicsContext);
   const h = outputRowHeight(output);
   const addr = outputAddress(output);
   if (!isBox(output)) {
@@ -153,6 +175,7 @@ export function OutputCell({ output, label, selected, struck, onClick }: CellPro
       <CellShell width={OUT_W} height={h} selected={selected} onClick={onClick}>
         <Address text={addr} struck={struck} />
         <CoilSvg type={output.type as 'OUT' | 'SET' | 'RST'} />
+        <Mnemonic k={output.type} />
         <Label text={label} top={SYM_TOP + SYM_H + 3} />
       </CellShell>
     );
@@ -169,7 +192,7 @@ export function OutputCell({ output, label, selected, struck, onClick }: CellPro
         style={{ left: 8, right: 8, top: BOX_TOP, height: bh }}
       >
         <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-100 px-2" style={{ height: BOX_HEADER - 2 }}>
-          <span className="text-[11px] font-bold tracking-wider text-slate-600">{BOX_TITLE[output.type]}</span>
+          <span className="text-[11px] font-bold tracking-wider text-slate-600">{boxTitle(output, mn)}</span>
           {showAddr && (
             <span className={`truncate font-mono text-[12px] font-bold ${addr ? 'text-slate-900' : 'text-red-500'}`}>{addr || '???'}</span>
           )}

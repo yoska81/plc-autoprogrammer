@@ -1,5 +1,6 @@
 import type { CpuModel, PlcProfile } from '../profile';
 import { clickProfile } from './click';
+import { logixProfile } from './logix';
 
 /** Generic IEC 61131-3 Structured Text, addressed by the project's own I/O ids. */
 const genericStProfile: PlcProfile = {
@@ -27,6 +28,7 @@ function comingSoon(id: string, vendor: string, name: string, language: PlcProfi
 
 export const PLC_PROFILES: PlcProfile[] = [
   clickProfile,
+  logixProfile,
   comingSoon('siemens-s7', 'Siemens', 'S7-1200 / S7-1500', 'st'),
   comingSoon('yaskawa', 'Yaskawa', 'MotionWorks IEC', 'st'),
   genericStProfile,

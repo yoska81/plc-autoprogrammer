@@ -1,4 +1,4 @@
-import type { AddressInfo, AddressKind, CpuModel, IecDataType, ModuleSlot, PlcProfile, ProgramExporter, SimSemantics } from '../profile';
+import type { AddressInfo, AddressKind, AnalogChannel, CpuModel, IecDataType, ModuleSlot, PlcProfile, ProgramExporter, SimSemantics } from '../profile';
 import { clickNicknameCsv, clickRungListing } from '../clickExport';
 import { assignAnalog } from '../analog';
 import { clickAnalogChannels } from './clickAnalog';
@@ -33,7 +33,7 @@ const RANGES: RangeSpec[] = [
 const IO_RE = /^([XY])([0-8])(0[1-9]|1[0-6])$/;
 const NUMBER_RE = /^-?\d+(\.\d+)?$/;
 
-function parseAddress(raw: string): AddressInfo | null {
+export function parseAddress(raw: string): AddressInfo | null {
   const a = raw.trim().toUpperCase();
   if (NUMBER_RE.test(a)) return { kind: 'constant', isBit: false };
   const io = IO_RE.exec(a);
@@ -62,12 +62,20 @@ function* ioAddresses(letter: 'X' | 'Y', builtIn: number, modules: ModuleSlot[])
 }
 
 function autoAddresses(io: IOPoint[], cpu: CpuModel, modules: ModuleSlot[]): Map<string, string> {
+  return neutralAutoAddresses(io, cpu, modules, clickAnalogChannels(cpu, modules));
+}
+
+/**
+ * The app's neutral memory addressing (CLICK-style X/Y by slot, DF per analog channel). Profiles that
+ * map this memory onto their own tags at export (Logix) share it, so the simulator and checker work unchanged.
+ */
+export function neutralAutoAddresses(io: IOPoint[], cpu: CpuModel, modules: ModuleSlot[], channels: AnalogChannel[]): Map<string, string> {
   const out = new Map<string, string>();
   // Manually-addressed points keep their address; skip it in the auto sequence.
   const taken = new Set(io.map((p) => p.plcAddress?.trim().toUpperCase()).filter(Boolean));
   const gens = { input: ioAddresses('X', cpu.builtInInputs, modules), output: ioAddresses('Y', cpu.builtInOutputs, modules) };
   // Analog points get the DF register of their analog channel (see clickAnalog.ts).
-  for (const [id, ch] of assignAnalog(io, clickAnalogChannels(cpu, modules))) out.set(id, ch.address);
+  for (const [id, ch] of assignAnalog(io, channels)) out.set(id, ch.address);
   for (const p of io) {
     if (p.plcAddress?.trim() || isAnalog(p)) continue;
     const gen = gens[p.type];
@@ -101,7 +109,7 @@ function checkRung(rung: Rung) {
 }
 
 /** CLICK memory as IEC data types (DS 16-bit INT, DD 32-bit DINT, DH hex WORD, DF REAL, TD INT, CTD DINT). */
-function dataTypeOf(address: string): IecDataType | null {
+export function dataTypeOf(address: string): IecDataType | null {
   const a = address.trim().toUpperCase();
   const info = parseAddress(a);
   if (!info || info.kind === 'constant') return null;
