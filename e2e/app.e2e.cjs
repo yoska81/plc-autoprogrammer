@@ -138,7 +138,7 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Open project →' }).click();
   await page.waitForURL('**/io');
   log('Project open:', await page.locator('select[aria-label="Open project"] option:checked').innerText());
-  const statusBar = () => page.locator('[data-testid="editor-bar"]').innerText();
+  const statusBar = () => page.locator('div.h-6').last().innerText();
   check((await statusBar()).includes('C0-11DD1E-D'), 'status bar shows the chosen CPU');
 
   // Project data: wizard values arrived; issue revisions; status bar follows.

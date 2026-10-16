@@ -33,7 +33,7 @@ const launch = (env = {}) => electron.launch({
   await win.waitForSelector('text=Project navigation', { timeout: 30000 });
   const title = await win.title();
   const bridge = await win.evaluate(() => ({ isDesktop: window.isaDesktop?.isDesktop, version: window.isaDesktop?.version, keys: Object.keys(window.isaDesktop ?? {}), node: typeof require !== 'undefined' || typeof process !== 'undefined' }));
-  const status = await win.locator('[data-testid="editor-bar"]').innerText();
+  const status = await win.locator('div.h-6').last().innerText();
   log('Window title:', title, '| url', win.url(), '| bridge', JSON.stringify(bridge), '| status bar', status.replace(/\s+/g, ' '));
   check(win.url().startsWith('app://isa/'), 'app served from app://isa');
   check(bridge.isDesktop && bridge.keys.includes('print') && bridge.keys.includes('saveFile') && bridge.keys.includes('listPrinters'), 'desktop bridge exposed');

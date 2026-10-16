@@ -17,11 +17,11 @@ const { createElement } = React;
 let passed = 0;
 const test = (name: string, fn: () => void) => { fn(); passed++; console.log('  ok ', name); };
 
-test('missing look means Siemens, also for designs saved before looks existed', () => {
-  assert.equal(lookOf(undefined), 'siemens');
-  assert.equal(lookOf({}), 'siemens');
-  assert.equal(lookOf({ look: 'dark' }), 'dark');
-  assert.equal(palette(), SIEMENS);
+test('missing look means the dark console, also for designs saved before looks existed', () => {
+  assert.equal(lookOf(undefined), 'dark');
+  assert.equal(lookOf({}), 'dark');
+  assert.equal(lookOf({ look: 'siemens' }), 'siemens');
+  assert.equal(palette(), C);
   assert.equal(palette('dark'), C);
   assert.deepEqual(Object.keys(SIEMENS).sort(), Object.keys(C).sort());
 });

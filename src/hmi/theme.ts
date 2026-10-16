@@ -92,7 +92,7 @@ export const SIEMENS: HmiPalette = {
   accent: '#0d6efd',
   onAccent: '#ffffff',
   pressed: '#d5dbe1',
-  ok: '#1e9e50',
+  ok: '#1a7f43',
   warning: '#e69a00',
   alarm: '#d42f2f',
   okText: '#136d36',
@@ -101,9 +101,9 @@ export const SIEMENS: HmiPalette = {
   select: '#0d6efd',
 };
 
-export const DEFAULT_LOOK: HmiLook = 'siemens';
+export const DEFAULT_LOOK: HmiLook = 'dark';
 /** The look a design renders with: missing (new designs and designs saved before looks existed) means Siemens. */
-export const lookOf = (design: { look?: HmiLook } | undefined | null): HmiLook => (design?.look === 'dark' ? 'dark' : DEFAULT_LOOK);
+export const lookOf = (design: { look?: HmiLook } | undefined | null): HmiLook => (design?.look === 'siemens' ? 'siemens' : DEFAULT_LOOK);
 export const palette = (look: HmiLook = DEFAULT_LOOK): HmiPalette => (look === 'dark' ? C : SIEMENS);
 export const LOOK_LABEL: Record<HmiLook, string> = { siemens: 'Siemens (light)', dark: 'Dark console' };
 

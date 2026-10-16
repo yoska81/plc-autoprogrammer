@@ -3,7 +3,6 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   DocumentPlusIcon, ArrowUpTrayIcon, PlayIcon, ArrowDownTrayIcon, Cog6ToothIcon,
   FolderOpenIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, DocumentIcon, InformationCircleIcon,
-  ShieldCheckIcon, SignalIcon,
 } from '@heroicons/react/24/outline';
 import { IS_PREVIEW } from './preview/mode';
 import { useAutoReview } from './review/useAutoReview';
@@ -15,7 +14,6 @@ import { useHmiStore } from './store/useHmiStore';
 import type { StageId } from './store/useStageStore';
 import UpdateAll from './components/UpdateAll';
 import ResizablePane from './components/ResizablePane';
-import { EditorBar, PortalBrand } from './shell/tia';
 import { useOpenCounts } from './components/questions/useQuestionStore';
 
 
@@ -40,9 +38,9 @@ function Menu({ label, children }: { label: string; children: ReactNode }) {
   }, [open]);
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen((v) => !v)} className={`h-6 px-2.5 text-[13px] ${open ? 'bg-brand-100 text-brand-900' : 'text-steel-800 hover:bg-steel-200'}`}>{label}</button>
+      <button onClick={() => setOpen((v) => !v)} className={`px-2.5 py-0.5 rounded-sm ${open ? 'bg-brand-100' : 'hover:bg-steel-200'}`}>{label}</button>
       {open && (
-        <div onClick={() => setOpen(false)} className="absolute left-0 top-full mt-1 z-50 min-w-56 bg-white text-steel-900 border border-steel-300 shadow-lg py-1">
+        <div onClick={() => setOpen(false)} className="absolute left-0 top-full mt-0.5 z-50 min-w-56 bg-white border border-steel-300 shadow-lg py-1">
           {children}
         </div>
       )}
@@ -57,7 +55,7 @@ function MenuItem({ onClick, children }: { onClick: () => void; children: ReactN
 function ToolButton({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
   return (
     <button title={title} aria-label={title} onClick={onClick}
-      className="w-8 h-8 flex items-center justify-center text-steel-700 hover:bg-brand-50 hover:text-brand-800 border border-transparent hover:border-brand-200">
+      className="w-8 h-8 flex items-center justify-center rounded-sm text-steel-700 hover:bg-brand-50 hover:text-brand-800 border border-transparent hover:border-brand-200">
       {children}
     </button>
   );
@@ -93,7 +91,6 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
     </li>
   );
 }
-
 
 export default function App() {
   const stages = useStages();
@@ -151,61 +148,59 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#eef1f5] font-sans text-steel-900 text-[13px]">
-      {/* Header: menu bar and toolbar on the left, product name on the right (engineering-portal layout) */}
-      <div className="flex-shrink-0 bg-[#f3f4f6] border-b border-steel-300 flex items-stretch" data-testid="title-bar">
-        <div className="flex-1 min-w-0 flex flex-col">
-          <div className="h-7 flex items-center px-1 gap-0.5">
-            <span className="h-5 px-1 mx-1.5 flex items-center bg-brand-600 text-white text-[10px] font-bold tracking-wider" aria-hidden>ISA</span>
-            <Menu label="Project">
-              <MenuItem onClick={() => navigate('/new')}>New project…</MenuItem>
-              <MenuItem onClick={() => navigate('/import')}>Import existing system…</MenuItem>
-              <MenuItem onClick={() => navigate('/project')}>Project data and revisions…</MenuItem>
-              <div className="border-t border-steel-200 my-1" />
-              <MenuItem onClick={() => navigate('/review')}>Design review…</MenuItem>
-              <MenuItem onClick={() => navigate('/export')}>Deliverables…</MenuItem>
-              <MenuItem onClick={() => navigate('/export?action=print-full')}>Print full package…</MenuItem>
-              <MenuItem onClick={() => navigate('/electrical?tab=labels')}>Print labels…</MenuItem>
-            </Menu>
-            <Menu label="Online">
-              <MenuItem onClick={() => navigate('/simulate')}>Start simulation</MenuItem>
-              <MenuItem onClick={() => navigate('/online')}>Go online (real PLC)…</MenuItem>
-            </Menu>
-            <Menu label="Tools">
-              <MenuItem onClick={() => navigate('/plc')}>PLC addressing</MenuItem>
-              <MenuItem onClick={() => navigate('/review')}>Design review (compile)</MenuItem>
-            </Menu>
-            <Menu label="Options">
-              <MenuItem onClick={() => navigate('/settings')}>Settings (AI provider, keys)…</MenuItem>
-            </Menu>
-          </div>
-          <div className="h-9 flex items-center px-1.5 gap-0.5 border-t border-steel-200">
-            <ToolButton title="New project" onClick={() => navigate('/new')}><DocumentPlusIcon className="w-5 h-5" /></ToolButton>
-            <ToolButton title="Import existing system" onClick={() => navigate('/import')}><ArrowUpTrayIcon className="w-5 h-5" /></ToolButton>
-            <span className="w-px h-6 bg-steel-300 mx-1" />
-            <ToolButton title="Compile (design review)" onClick={() => navigate('/review')}><ShieldCheckIcon className="w-5 h-5" /></ToolButton>
-            <ToolButton title="Simulation" onClick={() => navigate('/simulate')}><PlayIcon className="w-5 h-5" /></ToolButton>
-            <ToolButton title="Go online" onClick={() => navigate('/online')}><SignalIcon className="w-5 h-5" /></ToolButton>
-            <ToolButton title="Deliverables" onClick={() => navigate('/export')}><ArrowDownTrayIcon className="w-5 h-5" /></ToolButton>
-            <span className="w-px h-6 bg-steel-300 mx-1" />
-            <ToolButton title="Settings" onClick={() => navigate('/settings')}><Cog6ToothIcon className="w-5 h-5" /></ToolButton>
-            <div className="ml-2"><UpdateAll /></div>
-            <div className="ml-auto flex items-center gap-2 min-w-0 pr-2">
-              <FolderOpenIcon className="w-4 h-4 text-steel-500 flex-shrink-0" />
-              <select aria-label="Open project" value={activeId ?? ''} onChange={(e) => openProject(e.target.value)}
-                className="h-7 border border-steel-300 px-2 bg-white max-w-[16rem]">
-                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-          </div>
+    <div className="flex flex-col h-screen bg-[#f0f2f3] font-sans text-steel-900 text-[13px]">
+      {/* Title bar */}
+      <div className="h-9 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-3 gap-2" data-testid="title-bar">
+        <span className="h-5 px-1 flex items-center bg-brand-600 text-white text-[10px] font-bold tracking-wider rounded-[3px]" aria-hidden>ISA</span>
+        <span className="font-semibold tracking-[0.14em] text-steel-900 text-sm" aria-label="ISA AUTO PROGRAMMER">AUTO PROGRAMMER</span>
+        <span className="mx-1 text-steel-300">|</span>
+        <span className="truncate text-steel-600 text-xs">{projectName}</span>
+      </div>
+
+      {/* Menu bar */}
+      <div className="h-7 flex-shrink-0 bg-[#f7f8f9] border-b border-steel-200 flex items-center px-1 gap-0.5">
+        <Menu label="Project">
+          <MenuItem onClick={() => navigate('/new')}>New project…</MenuItem>
+          <MenuItem onClick={() => navigate('/import')}>Import existing system…</MenuItem>
+          <MenuItem onClick={() => navigate('/project')}>Project data and revisions…</MenuItem>
+          <div className="border-t border-steel-200 my-1" />
+          <MenuItem onClick={() => navigate('/review')}>Design review…</MenuItem>
+          <MenuItem onClick={() => navigate('/export')}>Deliverables…</MenuItem>
+          <MenuItem onClick={() => navigate('/export?action=print-full')}>Print full package…</MenuItem>
+          <MenuItem onClick={() => navigate('/electrical?tab=labels')}>Print labels…</MenuItem>
+        </Menu>
+        <Menu label="Tools">
+          <MenuItem onClick={() => navigate('/simulate')}>Simulation</MenuItem>
+          <MenuItem onClick={() => navigate('/plc')}>PLC addressing</MenuItem>
+        </Menu>
+        <Menu label="Options">
+          <MenuItem onClick={() => navigate('/settings')}>Settings (AI provider, keys)…</MenuItem>
+        </Menu>
+      </div>
+
+      {/* Toolbar */}
+      <div className="h-10 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-2 gap-1">
+        <ToolButton title="New project" onClick={() => navigate('/new')}><DocumentPlusIcon className="w-5 h-5" /></ToolButton>
+        <ToolButton title="Import existing system" onClick={() => navigate('/import')}><ArrowUpTrayIcon className="w-5 h-5" /></ToolButton>
+        <span className="w-px h-6 bg-steel-200 mx-1" />
+        <ToolButton title="Simulation" onClick={() => navigate('/simulate')}><PlayIcon className="w-5 h-5" /></ToolButton>
+        <ToolButton title="Deliverables" onClick={() => navigate('/export')}><ArrowDownTrayIcon className="w-5 h-5" /></ToolButton>
+        <span className="w-px h-6 bg-steel-200 mx-1" />
+        <ToolButton title="Settings" onClick={() => navigate('/settings')}><Cog6ToothIcon className="w-5 h-5" /></ToolButton>
+        <div className="ml-3"><UpdateAll /></div>
+        <div className="ml-auto flex items-center gap-2">
+          <FolderOpenIcon className="w-4 h-4 text-steel-500" />
+          <select aria-label="Open project" value={activeId ?? ''} onChange={(e) => openProject(e.target.value)}
+            className="border border-steel-300 rounded-sm px-2 py-1 bg-white max-w-[16rem]">
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
         </div>
-        <div className="flex items-center px-4 border-l border-steel-200 bg-white"><PortalBrand /></div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
         {/* Project navigation */}
         <ResizablePane id="app.nav" defaultSize={256} min={180} max={520} className="bg-white border-r border-steel-300 flex flex-col">
-          <div className="h-8 flex items-center px-3 border-b border-steel-300 text-xs font-semibold text-steel-800 bg-gradient-to-b from-[#f3f4f6] to-[#e3e7ec]">Project tree</div>
+          <div className="h-7 flex items-center px-2 bg-[#e9edef] border-b border-steel-300 text-xs font-semibold text-steel-700">Project navigation</div>
           <nav className="flex-1 overflow-y-auto py-1">
             <ul><TreeItem node={tree} depth={0} stages={stages} /></ul>
           </nav>
@@ -228,14 +223,16 @@ export default function App() {
         </main>
       </div>
 
-      {/* Editor bar: portal view, open editors, status */}
-      <EditorBar projectName={projectName}>
+      {/* Status bar */}
+      <div className="h-6 flex-shrink-0 bg-brand-600 text-white flex items-center gap-5 px-3 text-[11px]">
+        <span>Ready</span>
         <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
         <span>HMI: {hmiPart || '—'}</span>
         <span>Rev {rev.rev} · {rev.description}</span>
         <ReviewStatus />
+        <span className="ml-auto" />
         <span>v{__APP_VERSION__}</span>
-      </EditorBar>
+      </div>
     </div>
   );
 }

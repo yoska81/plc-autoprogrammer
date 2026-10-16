@@ -625,7 +625,7 @@ export default function HmiPage() {
                     <span className="text-gray-500">Look</span>
                     <select aria-label="HMI look" value={lookOf(design)} onChange={(e) => commit({ ...design, look: e.target.value as HmiLook })}
                       className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 bg-white text-gray-800">
-                      {(['siemens', 'dark'] as HmiLook[]).map((l) => <option key={l} value={l}>{LOOK_LABEL[l]}</option>)}
+                      {(['dark', 'siemens'] as HmiLook[]).map((l) => <option key={l} value={l}>{LOOK_LABEL[l]}</option>)}
                     </select>
                   </label>
                   <PanelSpecs model={model} design={design} />

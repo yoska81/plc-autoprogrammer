@@ -148,6 +148,6 @@ export interface HmiDesign {
   generatedAt: string;
   /** Machine name shown in the header bar. */
   machineName?: string;
-  /** Visual style; missing means 'siemens' (also for designs saved before looks existed). */
+  /** Visual style; missing means 'dark' (also for designs saved before looks existed). */
   look?: HmiLook;
 }
