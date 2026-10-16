@@ -160,7 +160,7 @@ function LiveRung({ rung, index, p, bypassed, skippedByBlock, onBypass, ...rest 
     <div className={`group rounded-md border transition-colors ${frame}`}>
       <div className="flex items-center gap-2 px-2 pt-1.5">
         <span className="w-6 text-right font-mono text-xs font-bold text-steel-400">{index + 1}</span>
-        {bypassed ? <span className="rounded bg-amber-500 px-1.5 py-px text-[10px] font-bold tracking-wide text-white">BYPASSED</span>
+        {bypassed ? <span className="rounded bg-amber-500 px-1.5 py-px text-[10px] font-bold tracking-wide text-amber-950">BYPASSED</span>
           : skippedByBlock ? <span className="rounded bg-steel-300 px-1.5 py-px text-[10px] font-bold tracking-wide text-steel-700">SKIPPED</span>
           : <span className={`rounded px-1.5 py-px text-[10px] font-bold tracking-wide ${on ? 'bg-emerald-600 text-white' : 'bg-steel-200 text-steel-500'}`}>{on ? 'TRUE' : 'FALSE'}</span>}
         <span className="min-w-0 flex-1 truncate text-[12px] italic text-steel-500" title={rung.comment}>
@@ -170,7 +170,7 @@ function LiveRung({ rung, index, p, bypassed, skippedByBlock, onBypass, ...rest 
           <button type="button" onClick={() => onBypass(!bypassed)}
             title={bypassed ? 'Execute this rung again' : 'Skip this rung while testing; its outputs hold their last value'}
             className={`shrink-0 rounded border px-1.5 py-px text-[10.5px] font-semibold ${bypassed
-              ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600'
+              ? 'border-amber-500 bg-amber-500 text-amber-950 hover:bg-amber-600'
               : 'border-steel-300 bg-white text-steel-500 opacity-60 hover:border-amber-400 hover:text-amber-700 hover:opacity-100 group-hover:opacity-100'}`}>
             {bypassed ? 'Un-bypass' : 'Bypass rung'}
           </button>

@@ -14,7 +14,7 @@ import { AREA_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, pageRoute, sortFindings, ty
 
 const SEV_STYLE: Record<Severity, string> = {
   critical: 'bg-red-600 text-white',
-  major: 'bg-amber-500 text-white',
+  major: 'bg-amber-500 text-amber-950',
   minor: 'bg-sky-100 text-sky-800',
   info: 'bg-steel-100 text-steel-600',
 };
