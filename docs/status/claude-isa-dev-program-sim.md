@@ -13,7 +13,7 @@ Draft PR #5 → `claude/optimistic-maxwell-6nfcs6`. No blockers.
 - [x] **D. Ladder AI instructions for the standard HMI tags** — `dfcb1b2`.
   Explicit rules per tag kind (commands, mode select, permissives/hold-to-run, setpoints + first-scan defaults, state word, heartbeat, counters, run hours, service interval, rates, batch, alarms) + facts taken from the HMI screens (state tables, setpoint limits, interlocked buttons, toggles).
 - [x] **E. Program page: block tree, cross-reference panel, print view** — `637bb18`, `c4a4270`.
-- [ ] **F. (backlog, user) Multi-vendor design** — `docs/architecture/multi-vendor.md`: profiles for Siemens / Allen-Bradley / Schneider / Yaskawa / CLICK, vendor-neutral program model, multi-vendor catalogs, chooser/electrical AI across vendors, migration steps. Design only.
+- [x] **F. (backlog, user) Multi-vendor design** — `docs/architecture/multi-vendor.md` (design only, vendor-tool claims needing hands-on confirmation marked *verify*): profiles for Siemens / Allen-Bradley / Schneider / Yaskawa / CLICK, vendor-neutral program model, multi-vendor catalogs, chooser/electrical AI across vendors, migration steps. Design only.
 
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean after every commit.
