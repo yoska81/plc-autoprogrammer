@@ -17,6 +17,7 @@ import type { WebSource } from '../lib/ai/anthropic';
 import type { ElectricalDesign } from '../electrical/types';
 
 const money = (n: number, currency: 'USD' | 'EUR' = 'USD') => `${currency === 'EUR' ? '€' : '$'}${n.toFixed(2)}`;
+const PREVIEW_LIVE_OFF = 'Live stock check runs in the Windows app (it searches distributor sites); in this browser preview it is off.';
 const flagCls = { red: 'bg-red-50 text-red-700 border-red-200', orange: 'bg-orange-50 text-orange-800 border-orange-200' };
 const th = 'text-left py-1.5 pr-3 font-medium';
 
@@ -44,6 +45,9 @@ export default function SourcingPage() {
   const design = useElectricalStore((s) => s.design);
   const settings = useSettingsStore();
   const apiKey = settings.provider === 'anthropic' ? settings.anthropicApiKey : '';
+  // The preview's AI path (the viewer's Claude account) has no web search: Live check is off there, not a key problem.
+  const liveReady = !IS_PREVIEW && !!apiKey;
+  const liveOff = IS_PREVIEW ? PREVIEW_LIVE_OFF : !apiKey ? 'Needs an Anthropic API key (Settings)' : null;
   const [tab, setTab] = useUi<'bom' | 'optimise'>('sourcing.tab', 'bom');
   const [open, setOpen] = useState<string | null>(null);
   const [live, setLive] = useDraft<Record<string, LiveResult>>('sourcing.live', {});
@@ -67,7 +71,7 @@ export default function SourcingPage() {
   const proposals = useMemo(() => optimise(lines.map((l) => ({ partNumber: l.partNumber, qty: l.qty })), goals), [lines, goals]);
 
   const check = (subset: BomLine[]) => {
-    if (!apiKey || !subset.length) return;
+    if (!liveReady || !subset.length) return;
     const parts = subset.slice(0, 12).map((l) => ({ partNumber: l.partNumber, manufacturer: l.manufacturer, description: l.description }));
     void startAiJob({
       kind: 'sourcing', label: `Live check of ${parts.length} part${parts.length > 1 ? 's' : ''}`, keepResult: true,
@@ -102,7 +106,7 @@ export default function SourcingPage() {
           <p className="mt-0.5 text-xs text-steel-500">Price, availability and lifecycle of every part in the panel, with cross-brand alternatives. Prices and dates come from the supplier pages they were read on; what is not known says so.</p>
         </div>
         {tab === 'bom' && (
-          <button onClick={() => check(flagged.length ? flagged : lines)} disabled={!apiKey || busy || IS_PREVIEW} title={!apiKey ? 'Needs your Anthropic API key (Settings)' : undefined}
+          <button onClick={() => check(flagged.length ? flagged : lines)} disabled={!liveReady || busy} title={liveOff ?? undefined}
             className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
             {busy ? <><Spinner /> Checking…</> : `Live check ${flagged.length ? `${flagged.length} flagged` : `${Math.min(12, lines.length)} parts`}`}
           </button>
@@ -111,7 +115,9 @@ export default function SourcingPage() {
       <nav className="flex gap-1 border-b border-steel-200 bg-white px-4">{tabBtn('bom', 'Parts')}{tabBtn('optimise', `Optimise${proposals.length ? ` (${proposals.length})` : ''}`)}</nav>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {(!apiKey || IS_PREVIEW) && <div className="rounded border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">Live check searches the distributors' sites with the AI: it needs your own Anthropic API key in <Link to="/settings" className="underline">Settings</Link>{IS_PREVIEW ? ' (not available in this preview)' : ''}. Everything else on this page works without it.</div>}
+        {IS_PREVIEW
+          ? <div data-testid="live-off" className="rounded border border-steel-200 bg-steel-50 p-3 text-sm text-steel-700">{PREVIEW_LIVE_OFF} Everything else on this page works here.</div>
+          : !apiKey && <div data-testid="live-off" className="rounded border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">Live check searches the distributors' sites with the AI and needs an Anthropic API key in <Link to="/settings" className="underline">Settings</Link>. Everything else on this page works without it.</div>}
         {error && <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800"><b>Live check failed:</b> {error}</div>}
         {last && (
           <section className="rounded border border-brand-200 bg-brand-50 p-3 text-sm" data-testid="swap-impact">
@@ -164,7 +170,7 @@ export default function SourcingPage() {
                             <td className="px-3 py-1.5">{LIFECYCLE_LABEL[s.lifecycle]}</td>
                             <td className="px-3 py-1.5 text-xs text-steel-500 whitespace-nowrap">{s.checkedOn ?? s.price?.date ?? '—'}</td>
                             <td className="px-3 py-1.5"><LiveCell r={live[l.partNumber]} />
-                              {!live[l.partNumber] && apiKey && !IS_PREVIEW && <button onClick={() => check([l])} disabled={busy} className="block text-xs text-brand-700 hover:underline disabled:opacity-40">Check now</button>}
+                              {!live[l.partNumber] && liveReady && <button onClick={() => check([l])} disabled={busy} className="block text-xs text-brand-700 hover:underline disabled:opacity-40">Check now</button>}
                             </td>
                             <td className="px-3 py-1.5 text-right">{alts.length > 0 && <button onClick={() => setOpen(isOpen ? null : l.partNumber)} className="text-xs text-brand-700 hover:underline whitespace-nowrap" aria-expanded={isOpen}>Alternatives ({alts.length})</button>}</td>
                           </tr>

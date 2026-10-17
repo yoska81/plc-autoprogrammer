@@ -62,8 +62,28 @@ const launch = (env = {}) => electron.launch({
   await app.evaluate(({ dialog }, p) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: p }); }, csvPath);
   await win.locator('nav a', { hasText: 'Deliverables' }).click();
   await win.getByRole('button', { name: 'Excel report', exact: true }).click();
-  await win.getByRole('alert').filter({ hasText: 'Saved:' }).waitFor({ timeout: 60000 });
+  // the exact path: "The file could not be saved: …" also contains "saved:"
+  await win.getByRole('alert').filter({ hasText: `Saved: ${csvPath}` }).waitFor({ timeout: 60000 });
   log('Excel report via Save dialog:', fs.statSync(csvPath).size, 'bytes,', (await win.getByRole('alert').innerText()).split('\n')[0]);
+  // Cabinet pictures and HMI screen images (example project): one Save dialog each, a ZIP of real PNGs.
+  const JSZip = require('jszip');
+  // The example project, opened the way Explorer opens an .isap (double-click → isa:open-file).
+  const isap = path.join(__dirname, 'fixtures', 'example.isap');
+  await app.evaluate(({ BrowserWindow }, [f, bytes]) => BrowserWindow.getAllWindows()[0].webContents.send('isa:open-file', 'example.isap', new Uint8Array(bytes), f), [isap, [...fs.readFileSync(isap)]]);
+  await win.waitForFunction(() => /example/i.test(document.querySelector('select[aria-label="Open project"] option:checked')?.textContent ?? ''), null, { timeout: 30000 });
+  await win.locator('nav a', { hasText: 'Deliverables' }).click();
+  for (const [name, file, min] of [['Cabinet pictures (ZIP)', 'cabinet_pictures.zip', 2], ['Screen images (ZIP)', 'hmi_screens.zip', 1]]) {
+    const zp = path.join(OUT, file);
+    await app.evaluate(({ dialog }, p) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: p }); }, zp);
+    await win.getByRole('button', { name, exact: true }).click();
+    await win.getByRole('alert').filter({ hasText: `Saved: ${zp}` }).waitFor({ timeout: 120000 });
+    const zip = await JSZip.loadAsync(fs.readFileSync(zp));
+    const pngs = Object.keys(zip.files).filter((f) => f.endsWith('.png'));
+    for (const f of pngs) check((await zip.file(f).async('nodebuffer')).subarray(1, 4).toString() === 'PNG', `${name}: ${f} is a PNG`);
+    check(pngs.length >= min, `${name}: ${pngs.length} PNGs`);
+    log(`${name} via Save dialog:`, pngs.join(', '));
+  }
+  await win.locator('select[aria-label="Open project"]').selectOption({ label: 'Desktop Test Cell' });
   await app.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => ({ canceled: true }); });
   const cancelled = await win.evaluate(async () => window.isaDesktop.saveFile('x.pdf', new Uint8Array([1])));
   check(cancelled.cancelled === true, 'cancel reported');
