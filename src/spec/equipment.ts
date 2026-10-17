@@ -1,3 +1,4 @@
+import { create } from 'zustand';
 import { useProjectStore } from '../store/useProjectStore';
 import { setProjectPanel } from '../hmi/retarget';
 import { useElectricalStore } from '../store/useElectricalStore';
@@ -47,3 +48,9 @@ export function applyEquipment(choice: EquipmentChoice, rec: EquipmentRecommenda
   const spec = useSpecStore.getState().sections;
   useStageStore.getState().markGenerated('equipment', { specFp: fingerprint(spec), spec });
 }
+
+/**
+ * A selection shown on the Equipment panel but not applied to the project yet: `apply` applies it
+ * (null when there is none, or it does not fit). The New project wizard applies it on Next.
+ */
+export const usePendingEquipment = create<{ apply: (() => void) | null; label: string | null }>(() => ({ apply: null, label: null }));

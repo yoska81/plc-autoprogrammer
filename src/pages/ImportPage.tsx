@@ -9,17 +9,27 @@ import { analyzeExistingSystem, type Confidence, type ImportResult } from '../li
 import { PLC_PROFILES } from '../plc/core/profiles';
 import { Spinner, ReasoningPanel } from '../components/common';
 import { useUi } from '../store/useUiStore';
+import { useProjectsStore } from '../store/useProjectsStore';
 import { startAiJob, useAiJobError, useAiJobRunning } from '../lib/ai/jobs';
 
-/** Kept in memory (not persisted) so switching pages doesn't lose an analysis. */
-const useImportState = create<{
-  files: File[];
-  note: string;
-  result: ImportResult | null;
-  reasoning: string | null;
-  included: boolean[];
-  set: (s: Partial<{ files: File[]; note: string; result: ImportResult | null; reasoning: string | null; included: boolean[] }>) => void;
-}>((set) => ({ files: [], note: '', result: null, reasoning: null, included: [], set }));
+interface ImportSlice { files: File[]; note: string; result: ImportResult | null; reasoning: string | null; included: boolean[] }
+const EMPTY: ImportSlice = { files: [], note: '', result: null, reasoning: null, included: [] };
+
+/**
+ * Kept in memory (not persisted) so switching pages doesn't lose an analysis; per project, so an
+ * analysis never follows the user into another project (where "Apply" would overwrite it).
+ */
+const useImportStore = create<{ byProject: Record<string, ImportSlice>; set: (projectId: string, s: Partial<ImportSlice>) => void }>((set) => ({
+  byProject: {},
+  set: (projectId, patch) => set((st) => ({ byProject: { ...st.byProject, [projectId]: { ...(st.byProject[projectId] ?? EMPTY), ...patch } } })),
+}));
+
+/** The open project's import state. */
+function useImportState() {
+  const projectId = useProjectsStore((s) => s.activeId) ?? 'default';
+  const slice = useImportStore((s) => s.byProject[projectId]) ?? EMPTY;
+  return { ...slice, projectId, set: (patch: Partial<ImportSlice>) => useImportStore.getState().set(projectId, patch) };
+}
 
 const CONF_STYLE: Record<Confidence, string> = {
   high: 'bg-green-100 text-green-800',
@@ -71,11 +81,12 @@ export default function ImportPage() {
   const analyze = () => {
     if (!apiKey || !st.files.length) return;
     setError(null);
-    const files = st.files, note = st.note;
+    const files = st.files, note = st.note, projectId = st.projectId;
     void startAiJob({
       kind: 'import', label: 'Reading the existing system',
       run: (h) => analyzeExistingSystem({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal, files, note }),
-      apply: ({ result, reasoning }) => useImportState.getState().set({ result, reasoning, included: result.io.map((p) => p.confidence !== 'low') }),
+      // Into the project the analysis was started for, even if another one is open now.
+      apply: ({ result, reasoning }) => useImportStore.getState().set(projectId, { result, reasoning, included: result.io.map((p) => p.confidence !== 'low') }),
     });
   };
 

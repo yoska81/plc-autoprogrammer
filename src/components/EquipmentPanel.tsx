@@ -1,5 +1,5 @@
 import { isAnalog } from '../types/io';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useSpecStore } from '../store/useSpecStore';
@@ -15,7 +15,7 @@ import { useUi } from '../store/useUiStore';
 import { moduleSlots, ioCapacity } from '../plc/core/modules';
 import { cpuFit, findCpu, hmiFit, platformOf, type Need } from '../plc/core/fit';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
-import { applyEquipment, recommendedChoice, type EquipmentChoice } from '../spec/equipment';
+import { applyEquipment, recommendedChoice, usePendingEquipment, type EquipmentChoice } from '../spec/equipment';
 import VendorPreferenceCard from './VendorPreferenceCard';
 import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
@@ -145,6 +145,15 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     applyEquipment(choice, rec);
     onApplied?.();
   };
+  // Let the New project wizard apply a selection the user did not apply themselves.
+  const pendingLabel = choice && !applied ? `${choice.cpuId}${choice.hmiPartNumber ? ` + ${choice.hmiPartNumber}` : ''}` : null;
+  const canApply = Boolean(pendingLabel && fit?.ok);
+  const applyRef = useRef(apply);
+  useEffect(() => { applyRef.current = apply; });
+  useEffect(() => {
+    usePendingEquipment.setState({ apply: canApply ? () => applyRef.current() : null, label: pendingLabel });
+    return () => usePendingEquipment.setState({ apply: null, label: null });
+  }, [canApply, pendingLabel]);
 
   return (
     <div className="space-y-4">
