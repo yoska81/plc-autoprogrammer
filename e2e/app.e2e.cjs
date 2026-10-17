@@ -471,7 +471,9 @@ function sse(model, text) {
   check(!overview.includes('60 parts per minute'), 'answer is not copied into the spec sections');
   check(staleAfter > staleBefore, 'answering changes the spec fingerprint (later stages out of date)');
   // Only real questions: the HMI question is listed, the HMI issue and the layout-check messages are not.
-  check(qaText.includes('Which operator password levels are needed?'), 'AI question (kind "question") is in the Q&A');
+  // The HMI's question is asked on the Machine description page, once: the checklist's HMI password question covers it.
+  check(/password levels/i.test(qaText), 'AI question (kind "question") is in the Q&A');
+  check(/Found while designing|Operator panel \(HMI\)/i.test(qaText), 'questions grouped by topic on the Machine description page');
   check(!/Alarm banner colour|header bar|on the HMI page|Layout check|touch target|overlaps/i.test(qaText), 'technical issues are not questions: ' + qaText.split('\n').filter((l) => /header bar|Layout check|Alarm banner/i.test(l)).join(' | '));
   // Older versions stored layout messages as questions: they are dropped on load.
   await page.evaluate(() => {
