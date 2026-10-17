@@ -136,7 +136,8 @@ def check(vdir: Path):
     short = [f"{l['Number']} {l['Copies']}/{ends.get(l['Number'])}" for l in labels if l['Type'] == 'Wire markers' and int(l['Copies']) != ends.get(l['Number'])]
     if short:
         report('FAIL', v, f'wire marker copies differ from 2 per conductor: {short[:8]}')
-    missing = sorted(w for w in wires_csv if not re.search(r'(?<![\w-])' + re.escape(w) + r'(?![\w-])', drw_all))
+    # pypdf joins texts on one baseline without a space ("Y003AOL2" = wire Y003A, then contact tag OL2)
+    missing = sorted(w for w in wires_csv if not re.search(r'(?<![\w-])' + re.escape(w) + r'(?:(?![\w-])|(?=[A-Z]{1,4}\d))', drw_all))
     if missing:
         report('FAIL', v, f'{len(missing)} wire numbers from the wire list never appear on the drawings: {missing[:12]}')
     for r in wl:

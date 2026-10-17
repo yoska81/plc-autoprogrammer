@@ -160,6 +160,17 @@ test('safety-reset: separate reset ok; no reset or reset = Start fails', () => {
   assert.equal(run('safety-reset', { ctx: ctxOf(startIsReset) }).length, 1);
 });
 
+test('output-load-circuit: coils match the output style; the old sinking wiring (A2 to 0V) fails', () => {
+  for (const cpu of ['C0-10DD1E-D', 'C0-10DD2E-D']) assert.equal(run('output-load-circuit', { ctx: { ...base, plc: { ...base.plc, cpuPartNumber: cpu } } }).length, 0, cpu);
+  // sinking CPU with the coil wired as if sourcing: Y001 → OL1 → K1 A1, A2 → 0V (both coil ends at 0V)
+  const ctx = { ...base, plc: { ...base.plc, cpuPartNumber: 'C0-10DD1E-D' } };
+  const env = cloneEnv(ctx);
+  env.wires = env.wires.map((w) => (w.from === 'K1:A2' ? { ...w, wire: '0V', to: 'TB1 0V' } : w.to === 'OL1:95' ? { ...w, wire: 'Y001', from: 'PLC:Y001' } : w));
+  const hits = run('output-load-circuit', { ctx }, env);
+  assert.equal(hits.length, 1);
+  assert.ok(hits[0].severity === 'critical' && /sinking/.test(hits[0].title));
+});
+
 // Sealing head: two-hand start, light curtain, heater with thermocouple (the QA case of the rule-based pipeline).
 const io = (address: string, deviceTag: string, deviceType: ElectricalDesign['ioWiring'][number]['deviceType'], description: string, location = 'Sealing station') => ({ address, deviceTag, deviceType, description, location });
 const SEAL: ElectricalDesign = add({

@@ -130,6 +130,41 @@ const ioOf = (i: CodeInput) => [...(i.ctx.design.ioWiring ?? []).map((w) => ({ a
 
 const SAFETY_PROCESS_RULES: CodeRule[] = [
   {
+    id: 'output-load-circuit',
+    name: 'Every PLC-output load sits between the output and the right supply',
+    clause: { US: 'NFPA 79 9.1 / PLC output wiring per manufacturer (verify clause)', Canada: 'CSA C22.2 No. 14 (verify clause)', IEC: 'IEC 60204-1 9.1 (verify clause)' },
+    run: (_i, env) => {
+      const out: ReturnType<CodeRule['run']> = [];
+      const groupOf = new Map(env.m.groups.flatMap((g) => g.points.map((p) => [p.address, g] as const)));
+      for (const p of env.m.io) {
+        if (p.type !== 'output' || !p.deviceTag || !['contactor-coil', 'relay-coil', 'pilot-light', 'solenoid'].includes(p.deviceType)) continue;
+        const style = groupOf.get(p.address)?.outputStyle;
+        if (style !== 'sinking' && style !== 'sourcing') continue;
+        const [a, b] = p.deviceType === 'pilot-light' ? ['X1', 'X2'] : ['A1', 'A2'];
+        // what each end of the load is wired to, by wire number (one number per potential; chain letters follow the chain)
+        const side = (term: string) => {
+          const nums = env.wires.filter((w) => w.from === `${p.deviceTag}:${term}` || w.to === `${p.deviceTag}:${term}`).map((w) => w.wire);
+          if (!nums.length) return null;
+          if (nums.includes('0V')) return '0V';
+          if (nums.some((n) => n === '24+' || n === '24+S')) return '24V';
+          if (nums.includes(p.address)) return 'OUT';
+          if (nums.some((n) => n.startsWith(p.address))) return p.coilChain?.sink ? '24V' : 'OUT';
+          return 'OTHER';
+        };
+        const ends = [side(a), side(b)];
+        if (ends.includes(null)) continue; // field device wired through a cable: judged by the cable check
+        const want = style === 'sinking' ? '24V' : '0V';
+        if (ends.includes('OUT') && ends.includes(want)) continue;
+        out.push({
+          subject: p.address, severity: 'critical', area: 'electrical', title: `${p.deviceTag} on ${p.address} cannot switch: its circuit does not match the ${style} output`,
+          detail: `${p.deviceTag} ${a} is on ${ends[0]}, ${b} on ${ends[1]}. A ${style} PLC output ${style === 'sinking' ? 'switches its load to 0V, so the load must be fed from +24 V (24+S) on its other side' : 'sources +24 V, so the load must return to 0V on its other side'}; otherwise the load never energizes.`,
+          fix: style === 'sinking' ? `Wire 24+S → (series contacts) → ${p.deviceTag} ${a}, ${p.deviceTag} ${b} → ${p.address}.` : `Wire ${p.address} → (series contacts) → ${p.deviceTag} ${a}, ${p.deviceTag} ${b} → 0V.`,
+        });
+      }
+      return out;
+    },
+  },
+  {
     id: 'two-hand-control',
     name: 'Two-hand control through a two-hand safety relay',
     clause: { US: 'ANSI B11.19 / ISO 13851 type IIIC, NFPA 79 9.2.3.8 (verify clause)', Canada: 'CSA Z432 / ISO 13851 type IIIC (verify clause)', IEC: 'IEC 60204-1 9.2.3.8 / ISO 13851 type IIIC (verify clause)' },

@@ -148,6 +148,10 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   const s = model.safety;
   const rail: RungEnd = { kind: 'rail' };
   const toOutputs: RungEnd = { kind: 'xref', label: '24+S TO {=s:out}' };
+  // sourcing outputs take their supply from 24+S; sinking outputs switch loads that are fed from 24+S
+  const outGroups = model.groups.filter((g) => g.type === 'output');
+  const feeds = outGroups.length && outGroups.every((g) => g.outputStyle === 'sinking') ? 'FEEDS THE OUTPUT LOADS (SINKING OUTPUTS)'
+    : outGroups.some((g) => g.outputStyle === 'sinking') ? 'FEEDS OUTPUT SUPPLY AND SINKING LOADS' : 'FEEDS PLC OUTPUT SUPPLY';
   if (s.relay) {
     const sr = s.relay.tag;
     out.push({ start: rail, end: rail, els: [{ t: 'box', tag: sr, left: 'A1', right: 'A2' }], wires: ['24+', '0V'], desc: [`SAFETY RELAY ${sr} SUPPLY`, `CONTACTS: {c:${sr}}`], key: `coil:${sr}` });
@@ -169,9 +173,9 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
     });
     if (s.mcr) {
       out.push({ start: rail, end: rail, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }, { t: 'coil', tag: s.mcr.tag }], wires: ['24+', 'SR14', '0V'], desc: [`MASTER CONTROL RELAY ${s.mcr.tag}`, `CONTACTS: {c:${s.mcr.tag}}`], key: `coil:${s.mcr.tag}` });
-      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: s.mcr.tag, term: '13-14', dev: 'relay' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', 'FEEDS PLC OUTPUT SUPPLY {=s:out}'], key: 'rung:24+S' });
+      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: s.mcr.tag, term: '13-14', dev: 'relay' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', `${feeds} {=s:out}`], key: 'rung:24+S' });
     } else {
-      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', 'FEEDS PLC OUTPUT SUPPLY {=s:out}'], key: 'rung:24+S' });
+      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', `${feeds} {=s:out}`], key: 'rung:24+S' });
     }
   } else if (s.estops.length) {
     const es = s.estops;
@@ -202,10 +206,12 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   if (coils.length && out.length) out.push({ start: { kind: 'node', label: '' }, end: { kind: 'node', label: '' }, els: [], wires: [], desc: [] });
   for (const p of coils) {
     const ch = p.coilChain!;
+    // sourcing output: output → chain → coil → 0V; sinking output: output supply → chain → coil → output
     out.push({
-      start: { kind: 'xref', label: `${p.address} FROM {=io:${p.address}}` }, end: rail,
+      start: ch.sink ? { kind: 'node', label: s.outputSupply } : { kind: 'xref', label: `${p.address} FROM {=io:${p.address}}` },
+      end: ch.sink ? { kind: 'xref', label: `${p.address} TO {=io:${p.address}}` } : rail,
       els: [...ch.devices.map((d) => ({ t: 'contact' as const, nc: d.nc, tag: d.tag, term: d.terminals, dev: d.kind === 'ol' ? 'ol' as const : 'relay' as const })), { t: 'coil', tag: p.deviceTag || '?' }],
-      wires: [...ch.wires, '0V'],
+      wires: [...ch.wires, ch.sink ? p.address : '0V'],
       desc: [p.description.toUpperCase(), `${p.deviceTag} CONTACTS: {c:${p.deviceTag}}`], key: `coil:${p.deviceTag}`,
     });
   }
@@ -475,11 +481,12 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
         xref.set(`io:${p.address}`, l);
         if (p.deviceType === 'safety-relay-output') addContact({ tag: p.deviceTag || model.safety.relay?.tag || '', term: '23-24', nc: false, line: l });
       });
-      if (sp.group.type === 'output' && sp.last && sp.group.outputStyle !== 'sinking') outLines.push(lineNo(sh.n, sp.rows.length + 1));
+      // sourcing: the output supply row at the end of the module; sinking: the loads on the module's sheet
+      if (sp.group.type === 'output' && sp.last) outLines.push(lineNo(sh.n, sp.group.outputStyle === 'sinking' ? 1 : sp.rows.length + 1));
     }
   }
   for (const [tag, list] of contacts) xref.set(`c:${tag}`, list.map((c) => `${c.main ? 'MAIN' : c.term}${c.nc ? ' NC' : ''} ${c.line}`).join(', '));
-  xref.set('s:out', outLines.join(', ') || 'PLC OUTPUTS');
+  xref.set('s:out', outLines.join(', ') || 'OUTPUT SHEETS');
 
   // ---- where each tag is drawn
   const whereSets = new Map<string, Set<number>>();

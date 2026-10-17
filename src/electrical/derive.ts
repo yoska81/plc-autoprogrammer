@@ -306,7 +306,13 @@ export interface IoPoint {
   /** Junction box the field device is wired through, or null for a home-run cable. */
   jb: string | null;
   /** For PLC-driven coils on the control sheet: chain of series devices and wires. */
-  coilChain?: { devices: { tag: string; terminals: string; nc: boolean; kind: 'ol' | 'interlock' }[]; wires: string[] };
+  coilChain?: {
+    devices: { tag: string; terminals: string; nc: boolean; kind: 'ol' | 'interlock' }[];
+    /** Wire numbers along the chain up to the coil's A1 (sourcing: the output's address first; sinking: the output supply first). */
+    wires: string[];
+    /** Sinking output: the chain runs from the output supply (24+S) to A1 and the coil's A2 returns to the PLC output. */
+    sink: boolean;
+  };
 }
 
 export interface IoGroup {
@@ -640,7 +646,12 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       const other = mm.contactors.find((c) => c.tag !== p.deviceTag);
       if (other) devices.push({ tag: other.tag, terminals: ncOf(other.tag).join('-'), nc: true, kind: 'interlock' });
     }
-    p.coilChain = { devices, wires: [p.address, ...devices.map((_, k) => `${p.address}${letter(k + 1)}`)] };
+    // Sourcing: output → chain → A1, A2 → 0V. Sinking: the output switches to 0V, so the coil hangs off the
+    // output supply: 24+S → chain → A1, A2 → output (both coil ends at 0V would never pull in).
+    const sink = groups.find((x) => x.key === p.group)?.outputStyle === 'sinking';
+    p.coilChain = sink
+      ? { devices, wires: [safety.outputSupply, ...devices.map((_, k) => `${p.address}${letter(k + 1)}`)], sink }
+      : { devices, wires: [p.address, ...devices.map((_, k) => `${p.address}${letter(k + 1)}`)], sink };
   }
 
   // ---- terminal strips
@@ -679,7 +690,13 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     if (g.outputStyle === 'sinking') zero.push(`${g.devTag}:C`);
     else outSupply.push(`${g.devTag}:+V`);
   }
-  for (const p of io) if (p.coilChain) zero.push(`${p.deviceTag}:A2`);
+  for (const p of io) {
+    if (!p.coilChain) continue;
+    if (!p.coilChain.sink) { zero.push(`${p.deviceTag}:A2`); continue; }
+    const d0 = p.coilChain.devices[0];
+    const first = d0 ? `${d0.tag}:${d0.terminals.split('-')[0]}` : `${p.deviceTag}:A1`;
+    (safety.outputSupply === '24+S' ? outSupply : plus).push(first);
+  }
   if (io.some((p) => p.type === 'input' && p.location === 'field')) { plus.push('TB2 FIELD 24+'); zero.push('TB2 FIELD 0V'); }
   if (io.some((p) => p.type === 'output' && p.location !== 'internal')) {
     const anySink = groups.some((g) => g.type === 'output' && g.outputStyle === 'sinking');
@@ -920,10 +937,13 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       const sink = g?.outputStyle === 'sinking';
       if (p.coilChain) {
         const ch = p.coilChain;
-        ch.devices.forEach((d, k) => addWire({ wire: ch.wires[k], from: k === 0 ? `${plcTag}:${p.address}` : `${ch.devices[k - 1].tag}:${ch.devices[k - 1].terminals.split('-')[1]}`, to: `${d.tag}:${d.terminals.split('-')[0]}`, color: 'BU', size: '18 AWG', function: p.description }));
-        const last = ch.devices.length ? `${ch.devices[ch.devices.length - 1].tag}:${ch.devices[ch.devices.length - 1].terminals.split('-')[1]}` : `${plcTag}:${p.address}`;
+        // chain start: the PLC output (sourcing) or the output supply terminal (sinking)
+        const start = ch.sink ? `TB1 ${safety.outputSupply}` : `${plcTag}:${p.address}`;
+        ch.devices.forEach((d, k) => addWire({ wire: ch.wires[k], from: k === 0 ? start : `${ch.devices[k - 1].tag}:${ch.devices[k - 1].terminals.split('-')[1]}`, to: `${d.tag}:${d.terminals.split('-')[0]}`, color: 'BU', size: '18 AWG', function: p.description }));
+        const last = ch.devices.length ? `${ch.devices[ch.devices.length - 1].tag}:${ch.devices[ch.devices.length - 1].terminals.split('-')[1]}` : start;
         addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: `${tag}:A1`, color: 'BU', size: '18 AWG', function: p.description });
-        addWire({ wire: '0V', from: `${tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} coil return` });
+        if (ch.sink) addWire({ wire: p.address, from: `${tag}:A2`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: `${p.description} (sinking output)` });
+        else addWire({ wire: '0V', from: `${tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} coil return` });
       } else if (p.signalTerminal) {
         addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
