@@ -186,6 +186,7 @@ function reply(system) {
     }
   }
   await page.goto(BASE + '/#/electrical?tab=machining');
+  await page.getByRole('group', { name: 'Part' }).getByRole('button', { name: /^Front door/ }).click();
   await page.getByRole('button', { name: 'Front door DXF' }).click();
   await page.waitForFunction(() => window.__saves.length > 0);
   const [dxf] = await saves();
@@ -194,6 +195,7 @@ function reply(system) {
 
   // A failed save is reported on the page (alert() is blocked in the preview frame).
   await page.evaluate(() => { window.__saveError = 'rate_limited'; });
+  await page.getByRole('group', { name: 'Part' }).getByRole('button', { name: /^Back panel/ }).click();
   await page.getByRole('button', { name: 'Back panel DXF' }).click();
   const notice = page.getByRole('alert').filter({ hasText: 'Another save is waiting' });
   await notice.waitFor({ timeout: 10000 });
