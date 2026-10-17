@@ -1,14 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { testAnthropicConnection } from '../lib/ai/anthropic';
+import { clearAiCache } from '../lib/ai/cache';
 import { IS_PREVIEW, PREVIEW_ACCOUNT_KEY } from '../preview/mode';
 import {
   useSettingsStore,
   ANTHROPIC_MODELS,
   EFFORT_LEVELS,
   OPENAI_MODEL_SUGGESTIONS,
+  SPEEDS,
+  SMALL_TASK_MODELS,
+  DEFAULT_STAGE_MODES,
   type AIProvider,
   type Effort,
+  type ModeStage,
+  type Speed,
+  type StageMode,
 } from '../store/useSettingsStore';
+
+const MODE_STAGES: { stage: ModeStage; label: string; quick: string }[] = [
+  { stage: 'equipment', label: 'Equipment', quick: 'CPU and modules from the I/O counts' },
+  { stage: 'electrical', label: 'Electrical design', quick: 'motors and safety read from the I/O list' },
+  { stage: 'hmi', label: 'HMI screens', quick: 'names and machine states from the I/O list' },
+  { stage: 'program', label: 'PLC program', quick: 'default cycle from the I/O list' },
+];
+const MODE_LABEL: Record<StageMode, string> = { quick: 'Quick (rules only, seconds)', 'quick-then-ai': 'Quick first, then AI', ai: 'With AI' };
 
 const inputClass =
   'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
@@ -61,7 +76,7 @@ function ProviderCard({ title, active, children }: { title: string; active: bool
   );
 }
 
-type SettingsDraft = Pick<ReturnType<typeof useSettingsStore.getState>, 'provider' | 'anthropicApiKey' | 'anthropicModel' | 'effort' | 'openaiApiKey' | 'openaiModel'>;
+type SettingsDraft = Pick<ReturnType<typeof useSettingsStore.getState>, 'provider' | 'anthropicApiKey' | 'anthropicModel' | 'effort' | 'speed' | 'smallTaskModel' | 'stageModes' | 'openaiApiKey' | 'openaiModel'>;
 
 /** Write the edited settings to the store. */
 function commit(d: SettingsDraft) {
@@ -70,6 +85,9 @@ function commit(d: SettingsDraft) {
   s.setAnthropicApiKey(d.anthropicApiKey.trim() || (IS_PREVIEW ? PREVIEW_ACCOUNT_KEY : ''));
   s.setAnthropicModel(d.anthropicModel);
   s.setEffort(d.effort);
+  s.setSpeed(d.speed);
+  s.setSmallTaskModel(d.smallTaskModel);
+  for (const { stage } of MODE_STAGES) s.setStageMode(stage, d.stageModes[stage]);
   s.setOpenaiApiKey(d.openaiApiKey.trim());
   s.setOpenaiModel(d.openaiModel.trim() || 'gpt-4o');
 }
@@ -84,10 +102,14 @@ export default function SettingsPage() {
     anthropicApiKey: s.anthropicApiKey,
     anthropicModel: s.anthropicModel,
     effort: s.effort,
+    speed: s.speed,
+    smallTaskModel: s.smallTaskModel,
+    stageModes: { ...DEFAULT_STAGE_MODES, ...s.stageModes },
     openaiApiKey: s.openaiApiKey,
     openaiModel: s.openaiModel,
   });
   const [saved, setSaved] = useState(false);
+  const [cleared, setCleared] = useState(false);
   const [test, setTest] = useState<{ busy: boolean; ok?: boolean; message?: string }>({ busy: false });
   const runTest = async () => {
     setTest({ busy: true });
@@ -183,7 +205,45 @@ export default function SettingsPage() {
                 but takes longer and costs more. Max can take several minutes.
               </p>
             </div>
+            <div>
+              <label htmlFor="settings-speed" className="block text-xs font-medium text-gray-600 mb-1">Speed</label>
+              <select id="settings-speed" value={draft.speed} onChange={(e) => update('speed', e.target.value as Speed)} className={inputClass}>
+                {SPEEDS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Fast: small tasks (naming HMI items, choosing equipment) think briefly, the I/O list, cycle and machine model at medium,
+                program revisions and the design review at high — never deeper than the thinking depth above. A simple machine is built in
+                1–3 minutes. Thorough: every task at the thinking depth above.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="settings-small-model" className="block text-xs font-medium text-gray-600 mb-1">Model for small tasks</label>
+              <select id="settings-small-model" value={draft.smallTaskModel} onChange={(e) => update('smallTaskModel', e.target.value)} className={inputClass}>
+                {SMALL_TASK_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">Used only to name HMI items and choose the equipment. A faster model answers these in a few seconds; the engineering stays with the rules.</p>
+            </div>
           </ProviderCard>
+
+          <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-700">AI per stage (Update all)</p>
+              <p className="text-xs text-gray-400 mt-0.5">Quick builds the stage from the rules in seconds. Quick first, then AI shows the rules' version at once and replaces it with the AI's when it arrives.</p>
+            </div>
+            {MODE_STAGES.map(({ stage, label, quick }) => (
+              <div key={stage} className="flex items-center gap-3">
+                <label htmlFor={`stage-mode-${stage}`} className="w-36 text-xs font-medium text-gray-600">{label}</label>
+                <select id={`stage-mode-${stage}`} value={draft.stageModes[stage]} onChange={(e) => update('stageModes', { ...draft.stageModes, [stage]: e.target.value as StageMode })} className={inputClass} title={`Quick: ${quick}`}>
+                  {(stage === 'equipment' ? (['quick', 'ai'] as StageMode[]) : (['quick', 'quick-then-ai', 'ai'] as StageMode[])).map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
+                </select>
+              </div>
+            ))}
+            <div className="flex items-center gap-2 pt-1">
+              <button type="button" onClick={() => { void clearAiCache().then(() => setCleared(true)); }}
+                className="px-3 py-1 text-xs border border-steel-300 rounded-sm bg-white hover:bg-brand-50">Clear saved AI answers</button>
+              <span className="text-[11px] text-steel-400">{cleared ? 'Cleared: the next update asks the AI again.' : 'Update all reuses an answer when the same question was asked before.'}</span>
+            </div>
+          </div>
 
           <ProviderCard title="OpenAI (GPT / Codex)" active={draft.provider === 'openai'}>
             <div>

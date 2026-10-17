@@ -65,7 +65,7 @@ export async function organizeSpec(opts: {
     { type: 'text', text: `Current spec:\n${current}${qa}\n\n${opts.newText.trim() ? `New information from the engineer:\n${opts.newText}\n\n` : ''}${fileBlocks.length ? 'Merge the attached documents into the spec.' : 'Merge the new information into the spec.'}` },
   ];
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'spec',
     system: SYSTEM, messages: [{ role: 'user', content }], schema: SCHEMA,
   });
   try {

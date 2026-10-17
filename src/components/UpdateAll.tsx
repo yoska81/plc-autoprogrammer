@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useStages } from '../spec/useStages';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { UPDATE_GROUPS, type UpdateStep } from '../spec/updateAll';
-import { runStages, useUpdateRun } from '../spec/updateRun';
+import { runStages, runSummary, useUpdateRun } from '../spec/updateRun';
 import { cancelAiJob, useAiJob } from '../lib/ai/jobs';
 import { Spinner } from './common';
 import { isThinking, percentOf, useAiProgress } from '../lib/ai/progress';
+import { fmtDuration } from '../lib/ai/timing';
 
 const ORDER: { step: UpdateStep; label: string }[] = [
   { step: 'equipment', label: 'Equipment' },
@@ -34,6 +35,15 @@ function StepProgress({ step }: { step: string }) {
   );
 }
 
+/** "This run took 48 s (AI 41 s, 5 AI requests)" — ticks while the run is going. */
+function RunTime() {
+  const run = useUpdateRun();
+  const [, tick] = useState(0);
+  useEffect(() => { if (run.finishedAt) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [run.finishedAt]);
+  const text = runSummary(run);
+  return text ? <p className="px-5 pb-3 -mt-1 text-xs text-gray-500 tabular-nums" data-testid="update-run-time">{text}</p> : null;
+}
+
 /** Sidebar button + progress dialog that updates every out-of-date stage in order. */
 export default function UpdateAll() {
   const stages = useStages();
@@ -54,13 +64,14 @@ export default function UpdateAll() {
     void runStages(ORDER.slice(first).map((o) => o.step).filter((s) => stages[s].status !== 'empty'));
   };
   // the group still being worked on: its unfinished steps show a spinner
-  const activeGroup = UPDATE_GROUPS.findIndex((g) => g.some((st) => planned.includes(st) && !results.some((r) => r.step === st)));
+  const final = (st: UpdateStep) => results.find((r) => r.step === st && !r.provisional);
+  const activeGroup = UPDATE_GROUPS.findIndex((g) => g.some((st) => planned.includes(st) && !final(st)));
 
   return (
     <>
       {running && !open && (
         <button onClick={() => setOpen(true)} className="px-3 py-1 text-sm font-semibold rounded bg-brand-600 text-white hover:bg-brand-700 inline-flex items-center gap-2" data-testid="update-progress">
-          <Spinner /> {title.startsWith('Building') ? 'Building' : 'Updating'}… {results.length}/{planned.length}
+          <Spinner /> {title.startsWith('Building') ? 'Building' : 'Updating'}… {results.filter((r) => !r.provisional).length}/{planned.length}
         </button>
       )}
       {stale.length > 0 && !running && (
@@ -75,24 +86,25 @@ export default function UpdateAll() {
           <div className="bg-white text-gray-800 rounded-lg shadow-xl w-full max-w-lg">
             <div className="px-5 py-4 border-b border-gray-200">
               <h3 className="text-base font-semibold">{title || 'Updating the project from the spec'}</h3>
-              <p className="text-xs text-gray-500 mt-1">Each stage is rebuilt from the latest spec and the stages before it. Deep thinking can take several minutes per stage.
-                You can hide this window and keep working: the update continues on every page (progress is shown in the toolbar).</p>
+              <p className="text-xs text-gray-500 mt-1">Each stage is rebuilt from the latest spec and the stages before it; stages that don't depend on each other run at the same time.
+                The rules' version of a stage appears first, then the AI's (Settings → AI per stage). You can hide this window and keep working: the update continues on every page (progress is shown in the toolbar).</p>
             </div>
             <ol className="px-5 py-4 space-y-2">
               {planned.map((step) => {
                 const r = results.find((x) => x.step === step);
                 const label = ORDER.find((o) => o.step === step)!.label;
-                const isNext = running && !r && UPDATE_GROUPS[activeGroup]?.includes(step);
+                const refining = Boolean(r?.provisional && running);
+                const isNext = running && (!r || refining) && (refining || UPDATE_GROUPS[activeGroup]?.includes(step));
                 return (
                   <li key={step} className="flex items-start gap-3 text-sm">
                     <span className="w-5 pt-0.5">
-                      {r ? (r.status === 'failed' ? '✗' : r.status === 'skipped' ? '–' : r.status === 'proposal' ? '●' : '✓') : isNext ? <Spinner /> : '○'}
+                      {r && !refining ? (r.status === 'failed' ? '✗' : r.status === 'skipped' ? '–' : r.status === 'proposal' ? '●' : '✓') : isNext ? <Spinner /> : '○'}
                     </span>
                     <span className="flex-1">
                       <span className="flex items-center gap-2">
                         <span className="font-medium">{label}</span>
-                        {r && r.status !== 'failed' && r.status !== 'skipped' && <span className="ml-auto text-xs tabular-nums text-green-700" data-testid={`progress-${step}`}>100%</span>}
-                        {!r && isNext && <StepProgress step={step} />}
+                        {r && !refining && r.status !== 'failed' && r.status !== 'skipped' && <span className="ml-auto text-xs tabular-nums text-green-700" data-testid={`progress-${step}`}>100%{r.ms !== undefined ? <span className="text-gray-400 font-normal"> · {fmtDuration(r.ms)}</span> : null}</span>}
+                        {(!r || refining) && isNext && <StepProgress step={step} />}
                       </span>
                       {r && <span className={`block text-xs ${r.status === 'failed' ? 'text-red-700' : r.status === 'proposal' ? 'text-indigo-700' : 'text-gray-500'}`}>{r.message}</span>}
                     </span>
@@ -100,6 +112,7 @@ export default function UpdateAll() {
                 );
               })}
             </ol>
+            <RunTime />
             <div className="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
               {results.some((r) => r.status === 'proposal') && !running && (
                 <button onClick={() => { setOpen(false); navigate('/program'); }} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">Review program changes</button>

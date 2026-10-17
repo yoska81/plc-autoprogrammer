@@ -111,7 +111,7 @@ function uniqueIds(list: Finding[]): Finding[] {
 export async function runAiReview(ai: AIConfig, p: ProjectSnapshot, deterministic: Finding[]): Promise<AiReview> {
   const messages = [{ role: 'user' as const, content: projectSummary(p, deterministic) }];
   const text = ai.provider === 'anthropic'
-    ? (await callClaude({ ...ai, system: SYSTEM, messages, schema: REVIEW_SCHEMA })).text
+    ? (await callClaude({ ...ai, task: 'review', system: SYSTEM, messages, schema: REVIEW_SCHEMA })).text
     : await callOpenAI({ ...ai, system: SYSTEM, messages, schema: REVIEW_SCHEMA });
   let parsed: { summary: string; findings: { severity: Severity; area: ReviewArea; title: string; explanation: string; fix: string; page: ReviewPage; item: string }[] };
   try { parsed = JSON.parse(text); } catch (err) { throw new Error('The AI returned a review the app could not read. Please try again.', { cause: err }); }

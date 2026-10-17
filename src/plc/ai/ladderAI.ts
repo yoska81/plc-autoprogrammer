@@ -14,6 +14,8 @@ export interface AIConfig {
   effort: Effort;
   /** Aborts the request (job Cancel). */
   signal?: AbortSignal;
+  /** May answer from the answer cache (Update all). */
+  cache?: boolean;
 }
 
 export interface PlcContext {
@@ -188,7 +190,7 @@ async function run(ai: AIConfig, system: string, messages: ChatTurn[]): Promise<
   let text: string;
   let reasoning: string | null = null;
   if (ai.provider === 'anthropic') {
-    ({ text, reasoning } = await callClaude({ ...ai, system, messages, schema: LADDER_RESPONSE_SCHEMA }));
+    ({ text, reasoning } = await callClaude({ ...ai, task: 'program', system, messages, schema: LADDER_RESPONSE_SCHEMA }));
   } else {
     text = await callOpenAI({ ...ai, system, messages, schema: LADDER_RESPONSE_SCHEMA });
   }

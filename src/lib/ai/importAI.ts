@@ -128,7 +128,7 @@ export async function analyzeExistingSystem(opts: {
     { type: 'text', text: `Files (in the order attached):\n${names}\n\n${opts.note ? `Notes from the engineer:\n${opts.note}\n\n` : ''}Build the inventory of this machine's control system.` },
   ];
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'import',
     system: SYSTEM, messages: [{ role: 'user', content }], schema: IMPORT_SCHEMA,
   });
   try {

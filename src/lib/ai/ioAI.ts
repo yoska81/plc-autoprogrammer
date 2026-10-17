@@ -70,13 +70,15 @@ Rules:
 - "explanation": a short summary of the I/O list (counts and main groups).`;
 
 export async function generateIOFromSpec(opts: {
-  apiKey: string; model: string; effort: Effort; signal?: AbortSignal;
+  apiKey: string; model: string; effort: Effort; signal?: AbortSignal; cache?: boolean;
   spec: SpecSections; existing: IOPoint[]; profile: PlcProfile; cpu: CpuModel;
 }): Promise<{ points: GeneratedPoint[]; explanation: string; questions: string[]; reasoning: string | null }> {
   const existing = opts.existing.length
     ? opts.existing.map((p) => `${p.type}\t${p.category}\t${p.description}${p.signal === 'analog' && p.analog ? `\tanalog ${p.analog.range} ${p.analog.min}–${p.analog.max} ${p.analog.units}` : ''}`).join('\n')
     : '(none yet)';
-  const content = `PLC: ${opts.profile.vendor} ${opts.profile.name}, CPU ${opts.cpu.label}
+  // Only the PLC family: the I/O list does not depend on the CPU model, so it can be asked while the
+  // equipment step is still choosing the CPU (and an unchanged spec gives the same request: cached).
+  const content = `PLC: ${opts.profile.vendor} ${opts.profile.name}
 
 Machine specification:
 ${specToText(opts.spec) || '(empty)'}
@@ -86,7 +88,7 @@ ${existing}
 
 Produce the I/O list.`;
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, cache: opts.cache, task: 'io',
     system: SYSTEM, messages: [{ role: 'user', content }], schema: SCHEMA,
   });
   try {
