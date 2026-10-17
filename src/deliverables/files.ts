@@ -1,4 +1,5 @@
 import { hmiReadme, hmiTagCsv, needsHmiTagList } from './hmiTags';
+import { exportContext, hmiExtraTags } from './exportContext';
 import { sheetOnPaper } from '../standards/regions';
 import { IS_PREVIEW } from '../preview/mode';
 import { saveViaAccount } from '../preview/claudeAccount';
@@ -103,10 +104,10 @@ export function programFiles(p: ProjectSnapshot): { name: string; content: strin
   if (p.profile.language === 'st') return p.stCode ? [{ name: `${p.fileBase}.st`, content: p.stCode }] : [];
   if (!p.ladder.rungs.length) return [];
   const header = `${p.projectName} — ${p.profile.name} ${p.cpu.id}`;
-  const hmiTags = (p.hmi?.tags ?? []).map((t) => ({ address: t.address, nickname: t.name, comment: `HMI: ${t.description}` }));
+  const hmiTags = hmiExtraTags(p);
   // Tag-based PLCs (Logix …): the profile's own exporters write the vendor files.
   if (p.profile.id !== 'click' && p.profile.exporters?.length) {
-    const ctx = { io: p.io, addresses: p.addresses, labels: p.labels, header, extraTags: hmiTags, cpuId: p.cpu.id, modules: moduleSlots(p.modules), projectName: p.projectName };
+    const ctx = exportContext(p);
     return [
       ...p.profile.exporters.map((e) => ({ name: e.fileName(p.fileBase), content: e.build(p.ladder, ctx) })),
       { name: `${p.fileBase}_program.json`, content: JSON.stringify(p.ladder, null, 2) },

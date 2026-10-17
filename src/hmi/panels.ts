@@ -9,9 +9,13 @@ import { ALL_PARTS } from '../electrical/catalogs';
 import type { CatalogPart } from '../electrical/types';
 import type { HmiModel } from './hmiCatalog';
 
-/** "800 x 480" / "800x480" / resolutionPx → [800, 480], landscape. */
+/**
+ * The maker's confirmed resolution ('800x480' in ratings.resolutionPx) → [800, 480], landscape.
+ * The older free-text `resolution` does not count: where the datasheet could not confirm it,
+ * resolutionPx is left out on purpose.
+ */
 export function parseResolution(p: CatalogPart): [number, number] | null {
-  const t = String(p.ratings.resolutionPx ?? p.ratings.resolution ?? '');
+  const t = String(p.ratings.resolutionPx ?? '');
   const m = t.match(/(\d{3,4})\s*[x×]\s*(\d{2,4})/i);
   if (!m) return null;
   const a = Number(m[1]), b = Number(m[2]);

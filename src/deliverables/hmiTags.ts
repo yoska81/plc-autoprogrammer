@@ -9,7 +9,7 @@ import { getHmi, hmiMaker, isCmore } from '../hmi/hmiCatalog';
 import { moduleSlots } from '../plc/core/modules';
 import { plcTagNameOf } from './plcTagNames';
 
-export interface HmiTagRow { name: string; address: string; plcTag: string; dataType: string; access: string; description: string; screens: string }
+export interface HmiTagRow { name: string; address: string; plcTag: string; plcScope: string; plcType: string; plcIo: string; dataType: string; access: string; description: string; screens: string }
 
 /** True when the project's panel is not a C-more (needs the tag list and software note). */
 export const needsHmiTagList = (p: ProjectSnapshot) => {
@@ -24,15 +24,16 @@ export function hmiTagRows(p: ProjectSnapshot): HmiTagRow[] {
   for (const s of p.hmi.screens) for (const e of s.elements) { note(e.address, s.name); note(e.interlock, s.name); for (const y of e.symbols ?? []) note(y.address, s.name); }
   for (const a of p.hmi.alarms) note(a.address, 'Alarms');
   const tagOf = plcTagNameOf(p);
+  const plc = (k: string) => { const t = tagOf(k); return { plcTag: t.name || '(not in the program)', plcScope: t.scope, plcType: t.dataType, plcIo: t.io ?? '' }; };
   const rows = new Map<string, HmiTagRow>();
   for (const t of p.hmi.tags) {
     const k = t.address.toUpperCase();
-    rows.set(k, { name: t.name, address: k, plcTag: tagOf(k), dataType: t.dataType, access: t.access, description: t.description, screens: [...(used.get(k) ?? [])].join(', ') });
+    rows.set(k, { name: t.name, address: k, ...plc(k), dataType: t.dataType, access: t.access, description: t.description, screens: [...(used.get(k) ?? [])].join(', ') });
   }
   // Physical I/O shown on screens without an HMI tag of their own.
   for (const [k, screens] of used) if (!rows.has(k)) {
     const io = p.io.find((x) => (p.addresses.get(x.id) ?? '').toUpperCase() === k);
-    rows.set(k, { name: io?.description ?? k, address: k, plcTag: tagOf(k), dataType: /^(X|Y|C|T|CT|SC)\d+$/.test(k) ? 'BIT' : /^DF/.test(k) ? 'FLOAT' : 'INT', access: 'read', description: io?.description ?? '', screens: [...screens].join(', ') });
+    rows.set(k, { name: io?.description ?? k, address: k, ...plc(k), dataType: /^(X|Y|C|T|CT|SC)\d+$/.test(k) ? 'BIT' : /^DF/.test(k) ? 'FLOAT' : 'INT', access: 'read', description: io?.description ?? '', screens: [...screens].join(', ') });
   }
   return [...rows.values()].sort((a, b) => a.address.localeCompare(b.address, 'en', { numeric: true }));
 }
@@ -40,8 +41,8 @@ export function hmiTagRows(p: ProjectSnapshot): HmiTagRow[] {
 const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
 
 export function hmiTagCsv(p: ProjectSnapshot): string {
-  const head = ['HMI tag', 'Program address', `PLC tag (${p.profile.vendor} ${p.profile.name})`, 'Data type', 'Access', 'Description', 'Used on screens'];
-  return [head.map(cell).join(','), ...hmiTagRows(p).map((r) => [r.name, r.address, r.plcTag, r.dataType, r.access, r.description, r.screens].map(cell).join(','))].join('\r\n');
+  const head = ['HMI tag', 'Program address', `PLC tag (${p.profile.vendor} ${p.profile.name})`, 'PLC scope', 'PLC data type', 'PLC I/O', 'HMI data type', 'Access', 'Description', 'Used on screens'];
+  return [head.map(cell).join(','), ...hmiTagRows(p).map((r) => [r.name, r.address, r.plcTag, r.plcScope, r.plcType, r.plcIo, r.dataType, r.access, r.description, r.screens].map(cell).join(','))].join('\r\n');
 }
 
 /** Plain-text note: which software builds the panel project, and how to use the files. */

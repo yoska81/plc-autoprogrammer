@@ -9,10 +9,10 @@ const log = (...a) => console.log('•', ...a);
 const fails = [];
 const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', what); } };
 
-// PanelView 800 / KTP700 Basic have no confirmed resolution in the catalog yet: listed but locked.
+// A panel without a confirmed resolution (Red Lion G09C1000) is listed but locked.
 const CASES = [
-  { name: 'Allen-Bradley', cpu: '5069-L306ER', platform: 'ab-compactlogix-5380', panel: '2713P-T7WD1', lockedIfNoRes: '2711R-T7T', maker: 'Allen-Bradley', ioTag: /^Local:\d+:I\./, programFile: /\.L5X$/, viaUi: false },
-  { name: 'Siemens', cpu: '6ES7214-1AG40-0XB0', platform: 'siemens-s7-1200', panel: '6AV2123-3GB32-0AW0', lockedIfNoRes: '6AV2123-2GB03-0AX0', maker: 'Siemens', ioTag: /^%I\d+\.\d+$/, programFile: /\.scl$/, viaUi: true },
+  { name: 'Allen-Bradley', cpu: '5069-L306ER', platform: 'ab-compactlogix-5380', panel: '2711R-T7T', lockedIfNoRes: 'G09C1000', maker: 'Allen-Bradley', ioTag: /^Local:\d+:I\./, programFile: /\.L5X$/, viaUi: false },
+  { name: 'Siemens', cpu: '6ES7214-1AG40-0XB0', platform: 'siemens-s7-1200', panel: '6AV2123-2GB03-0AX0', lockedIfNoRes: 'G09C1000', maker: 'Siemens', ioTag: /^%I\d+\.\d+$/, programFile: /\.scl$/, viaUi: true },
 ];
 
 (async () => {
@@ -48,7 +48,7 @@ const CASES = [
     const locked = page.locator('tr', { has: page.locator(`input[aria-label="Choose ${c.lockedIfNoRes}"]`) });
     if (await locked.count()) {
       const t = await locked.innerText();
-      log(`${c.name}: ${c.lockedIfNoRes} → ${/Resolution not confirmed/.test(t) ? 'listed, locked (resolution not confirmed yet)' : 'selectable'}`);
+      check(/Resolution not confirmed/.test(t), `${c.name}: ${c.lockedIfNoRes} (no confirmed resolution) is locked`);
     }
     const row = page.locator('tr', { has: page.locator(`input[aria-label="Choose ${c.panel}"]`) });
     const rowText = await row.innerText();
@@ -87,12 +87,18 @@ const CASES = [
       const imgs = await buildHmiImages(snap);
       // A physical input as the project addresses it now (CLICK-era X001 does not exist on a CompactLogix).
       const firstIn = snap.io.find((x) => x.type === 'input');
-      return { csv: hmiTagCsv(snap), readme: hmiReadme(snap), images: imgs.length, files: programFiles(snap).map((f) => f.name), inAddr: snap.addresses.get(firstIn.id), inTag: (await import('/src/deliverables/plcTagNames.ts')).plcTagNameOf(snap)(snap.addresses.get(firstIn.id)) };
+      return { csv: hmiTagCsv(snap), readme: hmiReadme(snap), images: imgs.length, files: programFiles(snap).map((f) => f.name), inAddr: snap.addresses.get(firstIn.id), inTag: (await import('/src/deliverables/plcTagNames.ts')).plcTagNameOf(snap)(snap.addresses.get(firstIn.id)).io };
     });
-    const rows = out.csv.split('\r\n').slice(1).map((l) => l.split('","').map((x) => x.replace(/^"|"$/g, '')));
+    const parseCsvLine = (l) => [...l.matchAll(/"((?:[^"]|"")*)"/g)].map((m) => m[1].replace(/""/g, '"'));
+    const rows = out.csv.split('\r\n').slice(1).map(parseCsvLine);
     log(`${c.name}: tag list ${rows.length} rows; input ${out.inAddr} → ${out.inTag}; images ${out.images}; program ${out.files.join(', ')}`);
     check(rows.length > 10, `${c.name}: tag list has the HMI tags`);
-    check(c.ioTag.test(out.inTag), `${c.name}: input ${out.inAddr} bound to the PLC I/O tag (${out.inTag})`);
+    check(c.ioTag.test(out.inTag ?? ''), `${c.name}: input ${out.inAddr} bound to the PLC I/O (${out.inTag})`);
+    // Internal HMI bits/registers: named as in the exported program (Dev 2's plcTagNames).
+    const internal = rows.filter((r) => /^(C|DS|DF)\d+$/.test(r[1]));
+    const unnamed = internal.filter((r) => !r[2] || /not in the program|pending/.test(r[2]));
+    log(`${c.name}: e.g. ${internal.slice(0, 3).map((r) => `${r[1]} → ${r[2]} (${r[3]})`).join('; ')}`);
+    check(internal.length > 5 && !unnamed.length, `${c.name}: every HMI bit/register has its PLC tag name (${unnamed.map((r) => r[1]).join(', ')})`);
     check(out.images >= 6, `${c.name}: screen images`);
     check(out.readme.includes(c.panel) && out.readme.includes('does not contain a project file'), `${c.name}: how-to names the panel and makes no project file`);
     check(out.files.some((f) => c.programFile.test(f)), `${c.name}: PLC program export`);
