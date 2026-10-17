@@ -61,7 +61,8 @@ export function functionKey(p: CatalogPart): [CrossFunction, string] | null {
     }
     case 'overload': {
       const lo = n(r.minAmps), hi = n(r.maxAmps);
-      return lo !== undefined && hi !== undefined ? ['overload', `${lo}-${hi} A class ${r.tripClass ?? '?'}`] : null;
+      // Class "10A" (IEC 60947-4-1) and "10" are the same trip class.
+      return lo !== undefined && hi !== undefined ? ['overload', `${lo}-${hi} A class ${String(r.tripClass ?? '?').replace(/^(\d+)A$/i, '$1')}`] : null;
     }
     case 'powerSupply': {
       const v = n(r.outputVolts), a = n(r.outputAmps);
