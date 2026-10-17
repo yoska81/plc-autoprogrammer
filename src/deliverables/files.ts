@@ -1,3 +1,5 @@
+import { hmiReadme, hmiTagCsv, needsHmiTagList } from './hmiTags';
+import { exportContext, hmiExtraTags } from './exportContext';
 import { sheetOnPaper } from '../standards/regions';
 import { IS_PREVIEW } from '../preview/mode';
 import { saveViaAccount } from '../preview/claudeAccount';
@@ -102,10 +104,10 @@ export function programFiles(p: ProjectSnapshot): { name: string; content: strin
   if (p.profile.language === 'st') return p.stCode ? [{ name: `${p.fileBase}.st`, content: p.stCode }] : [];
   if (!p.ladder.rungs.length) return [];
   const header = `${p.projectName} — ${p.profile.name} ${p.cpu.id}`;
-  const hmiTags = (p.hmi?.tags ?? []).map((t) => ({ address: t.address, nickname: t.name, comment: `HMI: ${t.description}` }));
+  const hmiTags = hmiExtraTags(p);
   // Tag-based PLCs (Logix …): the profile's own exporters write the vendor files.
   if (p.profile.id !== 'click' && p.profile.exporters?.length) {
-    const ctx = { io: p.io, addresses: p.addresses, labels: p.labels, header, extraTags: hmiTags, cpuId: p.cpu.id, modules: moduleSlots(p.modules), projectName: p.projectName };
+    const ctx = exportContext(p);
     return [
       ...p.profile.exporters.map((e) => ({ name: e.fileName(p.fileBase), content: e.build(p.ladder, ctx) })),
       { name: `${p.fileBase}_program.json`, content: JSON.stringify(p.ladder, null, 2) },
@@ -162,6 +164,11 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     for (const img of images) zip.file(`hmi/${img.name}`, await dataUrlToBlob(img.dataUrl));
     pre.hmiPdf = await buildHmiPdf(p, images);
     if (pre.hmiPdf) zip.file(`hmi/${p.fileBase}_hmi_screens.pdf`, pre.hmiPdf);
+    // Panels of other makers: the tag list bound to the PLC program's tags and how to rebuild the screens.
+    if (needsHmiTagList(p)) {
+      zip.file(`hmi/${p.fileBase}_hmi_tags.csv`, hmiTagCsv(p));
+      zip.file('hmi/README.txt', hmiReadme(p));
+    }
   }
   onProgress?.('Engineering package');
   pre.engineering = await buildEngineeringPdf(p, p.equipment);

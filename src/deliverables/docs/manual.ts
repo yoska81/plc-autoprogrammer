@@ -2,7 +2,7 @@ import type { ProjectSnapshot } from '../collect';
 import { SPEC_SECTIONS } from '../../spec/types';
 import { buildModel, billOfMaterials } from '../../electrical/derive';
 import { reviewRows } from '../../review/report';
-import { getHmi } from '../../hmi/hmiCatalog';
+import { getHmi, hmiMakerOf } from '../../hmi/hmiCatalog';
 import { alarmRows, programInfo, type ProgramInfo } from './program';
 import { makeTable, specLines, type DocRow, type DocTable } from './table';
 
@@ -69,7 +69,7 @@ export function bomTable(p: ProjectSnapshot): DocTable {
   }
   if (p.hmi && !p.drawingCtx) { // with a design, billOfMaterials already lists the HMI
     rows.push({ group: 'HMI' });
-    rows.push(['', '1', p.hmi.hmiPartNumber, 'AutomationDirect', getHmi(p.hmi.hmiPartNumber)?.description ?? 'Operator touch panel', 'HMI1']);
+    rows.push(['', '1', p.hmi.hmiPartNumber, hmiMakerOf(p.hmi.hmiPartNumber), getHmi(p.hmi.hmiPartNumber)?.description ?? 'Operator touch panel', 'HMI1']);
   }
   return makeTable([['Item', 6, 'center'], ['Qty', 6, 'center'], ['Part number', 20], ['Manufacturer', 16], ['Description', 64], ['Tags', 20]], rows);
 }

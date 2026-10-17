@@ -1,5 +1,5 @@
 import { useProjectStore } from '../store/useProjectStore';
-import { useHmiStore } from '../store/useHmiStore';
+import { setProjectPanel } from '../hmi/retarget';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useStageStore } from '../store/useStageStore';
 import { useSpecStore } from '../store/useSpecStore';
@@ -30,7 +30,8 @@ export function applyEquipment(choice: EquipmentChoice, rec: EquipmentRecommenda
   project.setPlc(profile.id, choice.cpuId);
   project.setModules(choice.modules.slice(0, 8));
   if (rec) project.setRecommendation(rec);
-  useHmiStore.getState().setHmiPartNumber(choice.hmiPartNumber ?? '');
+  // A designed HMI follows a new panel (scaled to its resolution).
+  setProjectPanel(choice.hmiPartNumber ?? '');
 
   // Required parts for the electrical design: replace earlier PLC/module picks, keep the rest.
   const el = useElectricalStore.getState();

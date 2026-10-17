@@ -192,7 +192,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'door',
     widthMm: 208,
     heightMm: 153,
-    ratings: { family: 'Harmony ST6', sizeIn: 7, resolution: '800x480', touch: 'yes', ports: '2x Ethernet, COM1 RS232 (SUB-D9), COM2 RS485 (RJ45), USB-A, USB micro-B', protocols: 'Modbus, Uni-TE, third-party (downloadable)', supplyVolts: 24, cutoutWidthMm: 190, cutoutHeightMm: 135 },
+    ratings: { family: 'Harmony ST6', sizeIn: 7, touch: 'resistive', ports: '2x Ethernet, COM1 RS232 (SUB-D9), COM2 RS485 (RJ45), USB-A, USB micro-B', protocols: 'Modbus, Uni-TE, third-party (downloadable)', supplyVolts: 24, cutoutWidthMm: 190, cutoutHeightMm: 135, resolutionPx: '800x480', displayIn: 7, ethernetPorts: 2, serialPorts: 2, usbPorts: 2, software: 'EcoStruxure Operator Terminal Expert', specsSource: 'software: https://www.se.com/ie/en/faqs/FAQ000229670/' },
     verified: true,
   },
   {
@@ -205,7 +205,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'door',
     widthMm: 273,
     heightMm: 203,
-    ratings: { family: 'Harmony ST6', sizeIn: 10, resolution: '1024x600', touch: 'yes', ports: '2x Ethernet, COM1 RS232 (SUB-D9), COM2 RS485 (RJ45), USB-A, USB micro-B', protocols: 'Modbus, Uni-TE, third-party (downloadable)', supplyVolts: 24, cutoutWidthMm: 255, cutoutHeightMm: 185 },
+    ratings: { family: 'Harmony ST6', sizeIn: 10, touch: 'resistive', ports: '2x Ethernet, COM1 RS232 (SUB-D9), COM2 RS485 (RJ45), USB-A, USB micro-B', protocols: 'Modbus, Uni-TE, third-party (downloadable)', supplyVolts: 24, cutoutWidthMm: 255, cutoutHeightMm: 185, resolutionPx: '1024x600', displayIn: 10, ethernetPorts: 2, serialPorts: 2, usbPorts: 2, software: 'EcoStruxure Operator Terminal Expert', specsSource: 'software: https://www.se.com/ie/en/faqs/FAQ000229670/' },
     verified: true,
   },
   {
@@ -218,7 +218,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'door',
     widthMm: 313,
     heightMm: 235,
-    ratings: { family: 'Harmony ST6', sizeIn: 12, resolution: '1280x800', touch: 'yes', ports: '2x Ethernet, COM1 RS232 (SUB-D9), COM2 RS485 (RJ45), USB-A, USB micro-B', protocols: 'Modbus, Uni-TE, third-party (downloadable)', supplyVolts: 24, cutoutWidthMm: 295, cutoutHeightMm: 217 },
+    ratings: { family: 'Harmony ST6', sizeIn: 12, touch: 'resistive', ports: '2x Ethernet, COM1 RS232 (SUB-D9), COM2 RS485 (RJ45), USB-A, USB micro-B', protocols: 'Modbus, Uni-TE, third-party (downloadable)', supplyVolts: 24, cutoutWidthMm: 295, cutoutHeightMm: 217, resolutionPx: '1280x800', displayIn: 12, ethernetPorts: 2, serialPorts: 2, usbPorts: 2, software: 'EcoStruxure Operator Terminal Expert', specsSource: 'software: https://www.se.com/ie/en/faqs/FAQ000229670/' },
     verified: true,
   },
   {
@@ -231,7 +231,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'door',
     widthMm: 188,
     heightMm: 131,
-    ratings: { family: 'Harmony GTU', ports: '2x Ethernet RJ45, COM1 RS485 RJ45, COM2 RS232C/RS422/RS485 SUB-D9', protocols: 'Modbus, Modbus TCP/IP, Uni-Telway', supplyVolts: '12-24VDC' },
+    ratings: { family: 'Harmony GTU', ports: '2x Ethernet RJ45, COM1 RS485 RJ45, COM2 RS232C/RS422/RS485 SUB-D9', protocols: 'Modbus, Modbus TCP/IP, Uni-Telway', supplyVolts: '12-24VDC', touch: 'none', ethernetPorts: 2, serialPorts: 2, usbPorts: 3, software: 'Vijeo Designer', pairsWith: 'HMIDT732' },
     verified: true,
   },
   {
@@ -244,7 +244,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'door',
     widthMm: 397,
     heightMm: 296,
-    ratings: { family: 'Harmony GTU', sizeIn: 15, resolution: '1024x768', touch: 'yes', cutoutWidthMm: 383.5, cutoutHeightMm: 282.5 },
+    ratings: { family: 'Harmony GTU', sizeIn: 15, touch: 'resistive', cutoutWidthMm: 383.5, cutoutHeightMm: 282.5, resolutionPx: '1024x768', displayIn: 15, ethernetPorts: 0, serialPorts: 0, usbPorts: 2, pairsWith: 'HMIG3U' },
     verified: true,
   },
   {
