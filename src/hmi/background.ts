@@ -92,3 +92,42 @@ export function bgBox(bg: { offsetX?: number; offsetY?: number; zoom?: number },
   const z = bg.zoom && bg.zoom > 0 ? bg.zoom : 1;
   return { x: (w - w * z) / 2 + (bg.offsetX ?? 0), y: (h - h * z) / 2 + (bg.offsetY ?? 0), width: w * z, height: h * z };
 }
+
+/** Where a fit / stretch background's picture is drawn (panel pixels), for an iw×ih picture. */
+export function pictureRect(bg: { fit: 'fit' | 'fill' | 'stretch'; offsetX?: number; offsetY?: number; zoom?: number }, w: number, h: number, iw: number, ih: number) {
+  const box = bgBox(bg, w, h);
+  if (bg.fit === 'stretch' || !(iw > 0 && ih > 0)) return { x: box.x, y: box.y, w: box.width, h: box.height };
+  const s = bg.fit === 'fill' ? Math.max(box.width / iw, box.height / ih) : Math.min(box.width / iw, box.height / ih);
+  return { x: box.x + (box.width - iw * s) / 2, y: box.y + (box.height - ih * s) / 2, w: iw * s, h: ih * s };
+}
+
+/** "Use as background" for a picture element: a "fit" background whose picture lies where the element was. */
+export function backgroundAt(rect: { x: number; y: number; w: number; h: number }, w: number, h: number) {
+  // A fitted picture fills the width when it is wider (relative to the screen) than tall.
+  const zoom = rect.w / rect.h >= w / h ? rect.w / w : rect.h / h;
+  return { fit: 'fit' as const, zoom: Math.round(zoom * 1000) / 1000, offsetX: Math.round(rect.x + rect.w / 2 - w / 2), offsetY: Math.round(rect.y + rect.h / 2 - h / 2) };
+}
+
+/** Natural size of a picture (data URL). */
+export async function pictureSize(src: string): Promise<{ width: number; height: number }> {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  return { width: img.naturalWidth, height: img.naturalHeight };
+}
+
+/** The picture of a "fill" background cropped to the screen, as it is shown (transparent PNG). */
+export async function croppedBackground(bg: { src: string; fit: 'fit' | 'fill' | 'stretch'; offsetX?: number; offsetY?: number; zoom?: number }, w: number, h: number): Promise<string> {
+  const img = new Image();
+  img.src = bg.src;
+  await img.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  const box = bgBox(bg, w, h);
+  const r = pictureRect(bg, w, h, img.naturalWidth, img.naturalHeight);
+  ctx.beginPath(); ctx.rect(box.x, box.y, box.width, box.height); ctx.clip();
+  ctx.drawImage(img, r.x, r.y, r.w, r.h);
+  return canvas.toDataURL('image/png');
+}

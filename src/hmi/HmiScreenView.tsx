@@ -5,6 +5,7 @@ import type { HmiRuntime } from './runtime';
 import { fitSize, fitText, fmtTime, hmiTheme, LEVEL_SHORT, lookOf, stateTextColor, styleColor, textWidth } from './theme';
 import { LockBadge, MachineGraphic } from './symbols';
 import { NavBand, SiemensElement } from './siemens';
+import { lockInset } from './layout';
 import { Label } from './viewParts';
 import { showNum, SIEMENS_KINDS, stateFor, type AlarmRow, type Ctx } from './viewCtx';
 
@@ -23,6 +24,8 @@ export interface HmiScreenViewProps {
   /** Button pressed (down=true) or released (down=false). */
   onPress?: (el: HmiElement, down: boolean) => void;
   onNavigate?: (screenId: string) => void;
+  /** A numeric entry (setpoint) was tapped: the panel opens its keypad. */
+  onEntry?: (el: HmiElement) => void;
   /** Active alarm messages (legacy; used when no `design`/`runtime` is given). */
   activeAlarms?: string[];
   selectedId?: string | null;
@@ -197,7 +200,12 @@ function ElementShape({ el, value, ctx }: { el: HmiElement; value: boolean | num
     case 'header':
       return <Header el={el} ctx={ctx} />;
     case 'image':
-      return el.src ? <image href={el.src} x={el.x} y={el.y} width={el.w} height={el.h} preserveAspectRatio="none" style={{ pointerEvents: 'none' }} />
+      return el.src ? (
+        <g style={{ pointerEvents: 'none' }}>
+          <image href={el.src} x={el.x} y={el.y} width={el.w} height={el.h} preserveAspectRatio="none" />
+          {(el.dim ?? 0) > 0 && <rect x={el.x} y={el.y} width={el.w} height={el.h} fill="#000" opacity={Math.min(0.9, el.dim ?? 0)} />}
+        </g>
+      )
         : <rect x={el.x} y={el.y} width={el.w} height={el.h} fill="none" stroke={t.lineSoft} strokeDasharray="4 3" />;
     case 'panel':
       return (
@@ -221,7 +229,7 @@ function ElementShape({ el, value, ctx }: { el: HmiElement; value: boolean | num
       return (
         <g opacity={interlocked ? 0.45 : 1}>
           <rect x={el.x} y={el.y} width={el.w} height={el.h} rx={r} fill={fill} stroke={stroke} strokeWidth={1} />
-          <Label el={el} t={t} color={latched ? t.onAccent : danger ? '#ff8b8f' : t.text} dy={sub ? -7 : 0}>{t.caps(text)}</Label>
+          <Label el={el} t={t} color={latched ? t.onAccent : danger ? '#ff8b8f' : t.text} dy={sub ? -7 : 0} maxW={el.w - 16 - 2 * lockInset(el)}>{t.caps(text)}</Label>
           {sub && (
             <g>
               <circle cx={el.x + el.w / 2 - textWidth(sub, 9, 1.2) / 2 - 7} cy={el.y + el.h / 2 + 12} r={3}
@@ -397,7 +405,7 @@ function alarmRows(design: HmiDesign | undefined, read: HmiScreenViewProps['read
   return (design?.alarms ?? []).map((a) => ({ message: a.message, severity: a.severity, on: null, off: null, active: false }));
 }
 
-export default function HmiScreenView({ screen, widthPx, heightPx, read, onPress, onNavigate, activeAlarms = [], selectedId, onSelect, design, runtime, staticTime, thumbnail, look }: HmiScreenViewProps) {
+export default function HmiScreenView({ screen, widthPx, heightPx, read, onPress, onNavigate, onEntry, activeAlarms = [], selectedId, onSelect, design, runtime, staticTime, thumbnail, look }: HmiScreenViewProps) {
   const live = Boolean(read);
   const rows = alarmRows(design, read, runtime, activeAlarms);
   const t = hmiTheme(look ?? lookOf(design));
@@ -431,16 +439,19 @@ export default function HmiScreenView({ screen, widthPx, heightPx, read, onPress
       {ordered.map((el) => {
         const value = el.address && read ? read(el.address) : undefined;
         const navTarget = el.kind === 'nav' || el.kind === 'header' ? el.targetScreenId : null;
-        const interactive = !thumbnail && ((el.kind === 'button' && onPress) || (navTarget && onNavigate) || onSelect);
+        const entry = el.kind === 'numeric-entry' && el.address && onEntry && !onSelect;
+        const interactive = !thumbnail && ((el.kind === 'button' && onPress) || (navTarget && onNavigate) || entry || onSelect);
         const lock = el.level && el.level !== 'operator' && el.kind !== 'nav' && el.kind !== 'header' ? el.level : null;
         return (
           <g
             key={el.id}
+            data-el={el.id}
             style={{ cursor: interactive ? 'pointer' : 'default' }}
             onPointerDown={thumbnail ? undefined : (e) => {
               if (onSelect) { e.stopPropagation(); onSelect(el.id); return; }
               // Capture on the element's group: its shapes are re-drawn while pressed, and a lost capture would lose the release.
               if (el.kind === 'button' && onPress) { (e.currentTarget as Element).setPointerCapture?.(e.pointerId); onPress(el, true); }
+              if (entry) { onEntry(el); return; }
               if (navTarget && onNavigate && (el.kind === 'nav' || (e.target as Element).closest?.('[data-nav]'))) onNavigate(navTarget);
             }}
             onPointerUp={() => { if (!onSelect && el.kind === 'button' && onPress) onPress(el, false); }}
