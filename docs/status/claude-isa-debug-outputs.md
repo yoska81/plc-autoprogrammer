@@ -316,7 +316,7 @@ Findings, ranked (✔ = fixed here, → = routed to the coordinator):
 | 6 | thermocouple | OPEN | DF1 wired as 4-20 mA loop, no transmitter / TC input part |
 | 7 | no seal-temperature setpoint / dwell on the HMI | OPEN | only high/low alarm limits DF101/DF102 |
 | 8 | missing alarms (over-temp, air pressure, film low) | OPEN | 7 alarms, none of these three |
-| 9 | Start clean keeps the example's document control | OPEN (now warned) | banner lists "the example's document control (customer Example Foods Inc., …)" |
+| 9 | Start clean keeps the example's document control | FIXED | my first read was the banner text before pressing Start clean; after it the drawings are SH-E-xx and the spec has no Example Foods / 24-117 (Debug 1, b423cd6; sealing-head.e2e now checks it) |
 | 10 | ZIP crash on qa: undefined | FIXED (confirmed) | ZIP built, 54 files |
 | 11 | review rules for 1–6 | FIXED (confirmed) | all six findings raised |
 | 12 | zones | OPEN | light curtain, over-temp, air pressure, film low in "Unwind" |

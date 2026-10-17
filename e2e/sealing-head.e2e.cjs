@@ -173,6 +173,9 @@ function reply(text) {
   log('ZIP:', names.length, 'files');
   for (const want of [/^spec\.md$/, /_full_package\.pdf$/, /labels\/.*_label_printer\.pdf$/, /machining\/.*_back_panel_drilling\.pdf$/, /machining\/enclosure_bottom_cutouts_1to1_in\.dxf$/, /plc\/.*_analog_setup\.csv$/]) check(names.some((n) => want.test(n)), `ZIP has ${want}`);
   check(/Sealing head/i.test(await z.file('spec.md').async('string')), 'spec.md has the description');
+  // Start clean replaced the example's document control (customer, project no., drawing prefix)
+  const specMd = await z.file('spec.md').async('string');
+  check(!/example foods|24-117/i.test(specMd) && !Object.keys(z.files).some((n) => /CNV/i.test(n)), 'no example document control after Start clean');
   check(/Two-hand start/.test(spec) && /Seal heater/.test(spec), 'machine spec lists the sealing head I/O');
   // The design review says what the engines could not design (instead of a silently unsafe panel).
   const findings = await page.evaluate(async () => {

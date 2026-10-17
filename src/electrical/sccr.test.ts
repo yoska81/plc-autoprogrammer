@@ -30,6 +30,9 @@ test('class lists and the short form of catalog prose', () => {
   assert.equal(conditionMet(yaskawa, rc('FU2', 'fuse', { fuseClass: 'CC' }, '', { fuseClass: 'CC', amps: 35 })).met, false, '35 A > 30 A max.');
   assert.equal(shortCondition(yaskawa), 'Class CC/J/T fuses, 30 A max.');
   assert.equal(shortCondition('UL installations must use the Appendix A fuses: Class T 10 A (TJS10) for this 460 V model'), 'Class T fuses');
+  const gs20 = 'UL installations must use the Appendix A fuses: Class T 10 A (TJS10) for this 460 V model. Chart also lists high-speed Class J JHL10 (non-UL only) and a 15 A circuit breaker';
+  assert.equal(shortCondition(gs20), 'Class T fuses', 'non-UL Class J left out');
+  assert.equal(conditionMet(gs20, rc('FU3', 'fuse', { fuseClass: 'J' }, '', { fuseClass: 'J', amps: 10 })).met, false, 'Class J is non-UL only');
 });
 
 test('breaker, Type E and unknown wording', () => {

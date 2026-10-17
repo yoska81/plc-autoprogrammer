@@ -35,10 +35,14 @@ export interface PanelSccr {
 }
 
 const CLASS = '(?:J|CC|T|RK1|RK5|L|G)';
-/** Fuse classes a text names, slash lists included ("Class CC/J/T" → CC, J, T). */
+/** Fuse classes a text names, slash lists included ("Class CC/J/T" → CC, J, T); ones marked non-UL are left out. */
 function fuseClasses(text: string): string[] {
   const out = new Set<string>();
-  for (const m of text.matchAll(new RegExp(`\\bclass\\s*(${CLASS}(?:\\s*\\/\\s*${CLASS})*)\\b`, 'gi'))) for (const c of m[1].split('/')) out.add(c.trim().toUpperCase());
+  for (const m of text.matchAll(new RegExp(`\\bclass\\s*(${CLASS}(?:\\s*\\/\\s*${CLASS})*)\\b`, 'gi'))) {
+    // "high-speed Class J JHL10 (non-UL only)": not a UL installation option
+    if (/non-?UL/i.test(text.slice(m.index ?? 0, (m.index ?? 0) + m[0].length + 40))) continue;
+    for (const c of m[1].split('/')) out.add(c.trim().toUpperCase());
+  }
   return [...out];
 }
 
