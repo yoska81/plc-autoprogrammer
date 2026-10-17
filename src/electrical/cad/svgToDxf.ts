@@ -29,6 +29,8 @@ const DEVICE_SHEETS = [...WIRE_SHEETS, 'panel', 'door', 'machine', 'layout'];
 
 type M = [number, number, number, number, number, number]; // a b c d e f (SVG matrix)
 const ID: M = [1, 0, 0, 1, 0, 0];
+/** Capital-letter height per em of the DXF text fonts (Arial, Courier New): DXF heights are cap heights. */
+const CAP_SANS = 0.716, CAP_MONO = 0.571;
 const mul = (p: M, q: M): M => [p[0] * q[0] + p[2] * q[1], p[1] * q[0] + p[3] * q[1], p[0] * q[2] + p[2] * q[3], p[1] * q[2] + p[3] * q[3], p[0] * q[4] + p[2] * q[5] + p[4], p[1] * q[4] + p[3] * q[5] + p[5]];
 const apply = (m: M, x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 const scaleOf = (m: M) => Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2])) || 1;
@@ -134,6 +136,7 @@ export function svgToDxf(svg: SvgNode, opts: SheetDxfOptions = {}): { dxf: strin
   dxf.addLType('DASHED', '__  __  __', [2.5, -1.25]);
   for (const [name, color] of CAD_LAYERS) dxf.addLayer(name, color, 'CONTINUOUS');
   const sans = dxf.tables.addStyle('ISA_SANS'); sans.fontFileName = 'arial.ttf';
+  const bold = dxf.tables.addStyle('ISA_SANS_BOLD'); bold.fontFileName = 'arialbd.ttf';
   const mono = dxf.tables.addStyle('ISA_MONO'); mono.fontFileName = 'cour.ttf';
   // Device block: the tag shows, description / manufacturer / catalogue number ride along (AutoCAD Electrical names).
   const devBlock = dxf.addBlock('ISA_DEVICE');
@@ -163,7 +166,7 @@ export function svgToDxf(svg: SvgNode, opts: SheetDxfOptions = {}): { dxf: strin
   const deviceSheets = opts.deviceSheets ?? DEVICE_SHEETS;
   const P = (m: M, x: number, y: number) => { const [X, Y] = apply(m, x, y); return point3d(X, H - Y, 0); };
 
-  const walk = (n: SvgNode, m0: M, inh: { cad: string; sheet: string; stroke: string; fill: string; mono: boolean; size: number; anchor: string }) => {
+  const walk = (n: SvgNode, m0: M, inh: { cad: string; sheet: string; stroke: string; fill: string; mono: boolean; bold: boolean; size: number; anchor: string }) => {
     if (['defs', 'pattern', 'clipPath', 'mask', 'marker', 'symbol', 'style', 'title', 'desc', 'metadata'].includes(n.tag)) return;
     if (n.tag === 'image' || n.tag === 'use' || n.tag === 'foreignObject') { stats.skipped++; return; }
     const m = mul(m0, parseTransform(n.attrs.transform));
@@ -171,6 +174,7 @@ export function svgToDxf(svg: SvgNode, opts: SheetDxfOptions = {}): { dxf: strin
       cad: n.attrs['data-cad'] ?? inh.cad, sheet: n.attrs['data-cad-sheet'] ?? inh.sheet,
       stroke: n.attrs.stroke ?? inh.stroke, fill: n.attrs.fill ?? inh.fill,
       mono: n.attrs['font-family'] ? /mono|courier|consol/i.test(n.attrs['font-family']) : inh.mono,
+      bold: n.attrs['font-weight'] ? /bold|[6-9]00/.test(n.attrs['font-weight']) : inh.bold,
       size: n.attrs['font-size'] ? num(n.attrs['font-size'], inh.size) : inh.size,
       anchor: n.attrs['text-anchor'] ?? inh.anchor,
     };
@@ -220,13 +224,15 @@ export function svgToDxf(svg: SvgNode, opts: SheetDxfOptions = {}): { dxf: strin
         if (!value) break;
         const x = num(n.attrs.x), y = num(n.attrs.y);
         const p = P(m, x, y);
-        const height = s.size * scaleOf(m);
+        // SVG font-size is the em size; a DXF text height is the capital-letter height (Arial 0.716 em,
+        // Courier New 0.571 em), so the text keeps the drawing's size and stays inside its cells.
+        const height = s.size * scaleOf(m) * (s.mono ? CAP_MONO : CAP_SANS);
         // rotation: the direction of the baseline after the transform, in DXF (y up) degrees
         const [ax, ay] = apply(m, x + 1, y), [bx, by] = apply(m, x, y);
         const rotation = -(Math.atan2(ay - by, ax - bx) * 180) / Math.PI;
         const hz = s.anchor === 'middle' ? TextHorizontalAlignment.Center : s.anchor === 'end' ? TextHorizontalAlignment.Right : TextHorizontalAlignment.Left;
         const align = hz === TextHorizontalAlignment.Left ? {} : { horizontalAlignment: hz, verticalAlignment: TextVerticalAlignment.BaseLine, secondAlignmentPoint: p };
-        const style = s.mono ? 'ISA_MONO' : 'ISA_SANS';
+        const style = s.mono ? 'ISA_MONO' : s.bold ? 'ISA_SANS_BOLD' : 'ISA_SANS';
         const dev = s.cad !== 'BORDER' && deviceSheets.includes(s.sheet) ? devices.get(value) : undefined;
         if (s.cad === 'WIRENO') {
           const ins = dxf.addInsert('ISA_WIRENO', p, { layerName: 'WIRENO', rotationAngle: rotation });
@@ -247,6 +253,6 @@ export function svgToDxf(svg: SvgNode, opts: SheetDxfOptions = {}): { dxf: strin
     }
     for (const c of n.children) walk(c, m, s);
   };
-  walk(svg, ID, { cad: 'GRAPHICS', sheet: '', stroke: 'none', fill: 'black', mono: false, size: 2.5, anchor: 'start' });
+  walk(svg, ID, { cad: 'GRAPHICS', sheet: '', stroke: 'none', fill: 'black', mono: false, bold: false, size: 2.5, anchor: 'start' });
   return { dxf: dxf.stringify(), stats };
 }
