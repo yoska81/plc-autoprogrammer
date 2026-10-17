@@ -15,7 +15,7 @@ import { sheetOnPaper } from '../standards/regions';
 import { notify } from '../store/useNoticeStore';
 import { keyRatings } from '../electrical/strength';
 import { useProjectStore, useVendorPreference, type Region } from '../store/useProjectStore';
-import { REGIONS, regionSpec, SUPPLY_INFO } from '../standards/regions';
+import { hpToKw, isIec, NEMA_TO_IP, REGIONS, regionSpec, SUPPLY_INFO } from '../standards/regions';
 import { applyRegion, regionOption } from '../standards/applyRegion';
 import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electrical/derive';
 import CabinetPictures from '../electrical/CabinetPictures';
@@ -244,7 +244,7 @@ export default function ElectricalPage() {
                   <select value={inputs.supply} onChange={(e) => setInputs({ supply: e.target.value as SupplyVoltage })} className={input}>{regionSpec(region).supplies.map((s) => <option key={s} value={s}>{SUPPLY_INFO[s].label}</option>)}</select>
                 </label>
                 <label className="text-sm text-steel-700">Enclosure<br />
-                  <select value={inputs.enclosureRating} onChange={(e) => setInputs({ enclosureRating: e.target.value as EnclosureRating })} className={input}>{ENCLOSURES.map((s) => <option key={s}>{s}</option>)}</select>
+                  <select value={inputs.enclosureRating} onChange={(e) => setInputs({ enclosureRating: e.target.value as EnclosureRating })} className={input}>{ENCLOSURES.map((s) => <option key={s} value={s}>{isIec(region) ? `${NEMA_TO_IP[s]} (${s})` : s}</option>)}</select>
                 </label>
               </div>
               <label className="block text-sm text-steel-700">Other requirements
@@ -271,9 +271,18 @@ export default function ElectricalPage() {
                 <div key={i} className="flex flex-wrap items-center gap-2">
                   <input value={m.tag} onChange={(e) => setMotor(i, { tag: e.target.value.toUpperCase() })} className={`${input} w-16 font-mono`} aria-label="Motor tag" />
                   <input value={m.description} onChange={(e) => setMotor(i, { description: e.target.value })} placeholder="Conveyor 1 drive" className={`${input} flex-1 min-w-40`} aria-label="Motor description" />
+                  {isIec(region) ? (
+                    // IEC regions: power in kW (stored as HP, the unit the rest of the design uses).
+                    <label className="text-xs text-steel-500 flex items-center gap-1">kW
+                      <input type="number" min={0.06} step={0.01} key={`kw-${m.hp}`} defaultValue={Math.round(hpToKw(m.hp) * 100) / 100}
+                        onBlur={(e) => { const kw = Number(e.target.value); if (kw > 0 && Math.abs(kw - hpToKw(m.hp)) > 0.004) setMotor(i, { hp: kw / 0.7457 }); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} className={`${input} w-20`} aria-label="Motor power (kW)" />
+                    </label>
+                  ) : (
                   <label className="text-xs text-steel-500 flex items-center gap-1">HP
                     <input type="number" min={0.1} step={0.25} value={m.hp} onChange={(e) => setMotor(i, { hp: Number(e.target.value) })} className={`${input} w-20`} />
                   </label>
+                  )}
                   <select value={m.voltage} onChange={(e) => setMotor(i, { voltage: e.target.value as SupplyVoltage })} className={input} aria-label="Motor voltage">{regionSpec(region).supplies.map((s) => <option key={s} value={s}>{SUPPLY_INFO[s].label}</option>)}</select>
                   <select value={m.starter} onChange={(e) => setMotor(i, { starter: e.target.value as StarterType })} className={input} aria-label="Starter">{STARTERS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
                   <label className="text-xs text-steel-600 flex items-center gap-1"><input type="checkbox" checked={m.reversing} onChange={(e) => setMotor(i, { reversing: e.target.checked })} /> Reversing</label>

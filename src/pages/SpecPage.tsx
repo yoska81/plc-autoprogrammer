@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import StartCleanBanner from '../components/StartCleanBanner';
 import { useSpecStore } from '../store/useSpecStore';
 import { SPEC_SECTIONS } from '../spec/types';
 import SpecIntake from '../components/SpecIntake';
@@ -27,6 +28,7 @@ export default function SpecPage() {
 
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-4xl space-y-5">
+          <StartCleanBanner />
           {open > 0 && (
             <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 text-sm text-amber-900">
               <span className="flex-1">The AI has <b>{open} question{open === 1 ? '' : 's'}</b> about your machine. Answers make the design more accurate; every step also works without them (the AI then uses its assumption).</span>

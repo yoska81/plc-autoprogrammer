@@ -39,4 +39,9 @@ assert.ok(['electrical', 'hmi', 'program'].every((k) => old[k as 'hmi'].status =
 
 const ioEdit = run(click, logix, 'other');
 assert.equal(ioEdit.hmi.reason, 'Out of date: the I/O list changed.', 'an I/O list change is reported once');
+// The installation region: only the electrical design depends on it.
+const regionRun = computeStages({ fp: { ...fp(click), region: 'EU' }, sources: Object.fromEntries(Object.entries(sources(click)).map(([k, v]) => [k, { ...v, region: 'US' }])), ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true });
+assert.equal(regionRun.electrical.reason, 'Out of date: the installation region changed.');
+assert.equal(regionRun.hmi.status, 'ready');
+assert.equal(regionRun.program.status, 'ready');
 console.log('stage tests passed');

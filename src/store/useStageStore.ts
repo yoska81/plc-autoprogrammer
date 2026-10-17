@@ -10,6 +10,8 @@ export interface StageSource {
   ioFp?: string;
   /** PLC, CPU and resolved I/O addresses at generation time (absent on stages made before it existed). */
   addrFp?: string;
+  /** Installation region at generation time (codes, supply, colours: the electrical design depends on it). */
+  region?: string;
   hmiFp?: string;
   /** Spec text at generation time, so updates can tell the AI exactly what changed. */
   spec: SpecSections;
@@ -20,7 +22,8 @@ export interface StageSource {
 // free of PLC imports). Every generated stage records it, so changing the PLC family, CPU or
 // modules (which renumbers the I/O) puts the I/O-dependent stages out of date.
 let addressFp: (() => string) | null = null;
-export const setAddressFingerprint = (fn: () => string) => { addressFp = fn; };
+let regionNow: (() => string) | null = null;
+export const setAddressFingerprint = (fn: () => string, region?: () => string) => { addressFp = fn; regionNow = region ?? null; };
 
 interface StageStore {
   sources: Partial<Record<StageId, StageSource>>;
@@ -32,7 +35,7 @@ export const useStageStore = create<StageStore>()(
     (set) => ({
       sources: {},
       markGenerated: (stage, source) =>
-        set((s) => ({ sources: { ...s.sources, [stage]: { ...(addressFp ? { addrFp: addressFp() } : {}), ...source, at: new Date().toISOString() } } })),
+        set((s) => ({ sources: { ...s.sources, [stage]: { ...(addressFp ? { addrFp: addressFp() } : {}), ...(regionNow ? { region: regionNow() } : {}), ...source, at: new Date().toISOString() } } })),
     }),
     { name: 'plc-stage-store' }
   )
