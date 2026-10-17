@@ -129,6 +129,13 @@ def check(vdir: Path):
         report('FAIL', v, f'wire numbers CSV vs Excel differ: {sorted(wires_csv ^ wires_xl)[:8]}')
     if wires_csv != wires_lbl:
         report('FAIL', v, f'wire numbers CSV vs labels differ: {sorted(wires_csv ^ wires_lbl)[:8]}')
+    # wire markers: one per conductor end (2 per wire-list row of that number)
+    ends = {}
+    for r in wl:
+        if r['Wire']: ends[r['Wire']] = ends.get(r['Wire'], 0) + 2
+    short = [f"{l['Number']} {l['Copies']}/{ends.get(l['Number'])}" for l in labels if l['Type'] == 'Wire markers' and int(l['Copies']) != ends.get(l['Number'])]
+    if short:
+        report('FAIL', v, f'wire marker copies differ from 2 per conductor: {short[:8]}')
     missing = sorted(w for w in wires_csv if not re.search(r'(?<![\w-])' + re.escape(w) + r'(?![\w-])', drw_all))
     if missing:
         report('FAIL', v, f'{len(missing)} wire numbers from the wire list never appear on the drawings: {missing[:12]}')

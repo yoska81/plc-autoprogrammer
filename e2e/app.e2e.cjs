@@ -257,6 +257,15 @@ function sse(model, text) {
     log('Machining DXF:', d.suggestedFilename(), Math.round(dxf.length / 1024), 'KB, inch header', ok, '| TEXT layer used', /\n\s*8\s*\r?\nTEXT\s*\r?\n/.test(dxf));
     check(/_in_cut\.dxf$/.test(d.suggestedFilename()) && ok, 'inch, cut-only DXF');
   }
+  // A printable PDF drawing next to each DXF: the drilling / cutout sheet(s) on the project's paper.
+  for (const [btn, re] of [['Back panel PDF', /_back_panel_drilling\.pdf$/], ['Front door PDF', /_door_cutouts\.pdf$/]]) {
+    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: btn }).click()]);
+    const f = OUT + d.suggestedFilename(); await d.saveAs(f);
+    const doc = await PDFDocument.load(fs.readFileSync(f));
+    const { width, height } = doc.getPage(0).getSize();
+    log('Machining PDF:', d.suggestedFilename(), doc.getPageCount(), 'page(s),', `${(width / 72).toFixed(1)}x${(height / 72).toFixed(1)} in`);
+    check(re.test(d.suggestedFilename()) && doc.getPageCount() >= 1 && width > height, `${btn}: landscape drawing PDF`);
+  }
   await snap(page, 'electrical_machining');
   for (const t of ['cabinet', 'machine', 'picture']) {
     await page.goto(BASE + `/electrical?tab=${t}`);
@@ -271,6 +280,18 @@ function sse(model, text) {
   await page.getByLabel('Number + description beside it').check();
   await page.getByLabel('Label size').selectOption('25x10');
   log('Labels to print:', await page.getByText(/labels selected/).innerText(), '| preview labels', await page.locator('[data-testid=label-preview] svg').count());
+  // The preview shows every label once (copies as ×N), so no wire number hides behind 20 copies of 24+.
+  const nWires = Number((await page.locator('section label').filter({ hasText: 'Wire markers' }).innerText()).trim().split('\n').pop());
+  const shownCodes = new Set((await page.locator('[data-testid=label-preview] svg').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? ''))));
+  if (!(nWires > 2) || shownCodes.size < nWires) throw new Error(`label preview shows ${shownCodes.size} distinct labels, ${nWires} wire numbers exist`);
+  // Labels unticked in the list (kept with the project) are called out with a one-click fix.
+  await page.getByLabel('Filter labels').fill('24+');
+  await page.getByRole('button', { name: 'Select none' }).click();
+  await page.getByTestId('labels-unticked').waitFor();
+  log('Unticked warning:', await page.getByTestId('labels-unticked').innerText());
+  await page.getByTestId('labels-unticked').getByRole('button', { name: 'Tick all' }).click();
+  await page.getByTestId('labels-unticked').waitFor({ state: 'detached' });
+  await page.getByLabel('Filter labels').fill('');
   await snap(page, 'labels');
   const lpdf = fs.readFileSync(await dl('Labels PDF for label printer'), 'latin1');
   const boxes = [...lpdf.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number));
@@ -662,6 +683,12 @@ function sse(model, text) {
   if (!Object.keys(zip.files).some((f) => /^purchasing\/.*_spares_order\.csv$/.test(f))) throw new Error('ZIP has no separate spares order file');
   if (!Object.keys(zip.files).some((f) => /^commissioning\/.*_IO_checkout\.pdf$/.test(f))) throw new Error('ZIP has no I/O check-out sheet');
   await snap(page, 'deliverables');
+  // Full machine specification: one text with every part of the project.
+  await page.getByTestId('machine-spec').getByRole('button', { name: 'Show' }).click();
+  const specDoc = await page.getByLabel('Machine specification text').inputValue();
+  fs.writeFileSync(OUT + 'machine_specification.md', specDoc);
+  log('Machine specification:', specDoc.length, 'chars,', (specDoc.match(/^## /gm) ?? []).length, 'sections');
+  for (const want of ['Machine description', 'Control equipment', 'I/O list', 'Electrical components', 'Operator screens', 'PLC program']) check(specDoc.includes(want), `machine spec has ${want}`);
 
   // Project file (.isap): save the open project, open it back as a new project, same data.
   const pfBefore = await page.evaluate(() => ({

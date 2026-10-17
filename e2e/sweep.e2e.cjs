@@ -142,8 +142,9 @@ async function analogPass(browser, problems) {
     if (await t.count()) {
       await t.first().click();
       await page.waitForTimeout(800);
-      const n = (await t.first().locator('span').first().textContent()).trim();
-      const svgText = await page.locator(`[data-sheet="${n}"] svg`).first().textContent().catch(() => '');
+      // The sheet list and the stacked sheets are in the same order.
+      const i = (await page.locator('nav[aria-label="Drawing sheets"] button[title]').evaluateAll((bs) => bs.map((b) => b.title))).findIndex((t) => t.includes('ANALOG'));
+      const svgText = (await page.locator('[data-sheet]').nth(i).textContent().catch(() => '')) ?? '';
       if (!svgText.includes('psi') && !svgText.includes(made[0]?.address ?? '§')) fail('analog sheet does not show the analog input');
       await check(`drawing_${tab}`);
       break;
@@ -230,6 +231,45 @@ async function iecPass(browser, problems, region) {
   await ctx.close();
 }
 
+/**
+ * A project copied from the example with the user's own description (the "Sealing Head" case): the
+ * leftover warnings on Electrical motors and Program notes, and the "Start clean" banner, must show
+ * and the pages must audit clean with them on.
+ */
+async function copiedExamplePass(browser, problems) {
+  const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
+  await page.goto(BASE + '/spec');
+  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.goto(BASE + '/spec');
+  await page.locator('select[aria-label="Open project"]').selectOption('p_example');
+  await page.evaluate(async () => {
+    const ps = await import('/src/store/useProjectsStore.ts');
+    ps.addProjectFromData('Sealing Head', ps.activeProjectData().data);
+    const { useSpecStore } = await import('/src/store/useSpecStore.ts');
+    const { EMPTY_SECTIONS } = await import('/src/spec/types.ts');
+    useSpecStore.getState().setSections({ ...EMPTY_SECTIONS, overview: 'Sealing head: a pneumatic heat-sealing head closes on a pouch, holds for the dwell time at the set temperature, then opens. Two-hand start, light curtain, heater with thermocouple.' });
+    (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().setUserPrompt('Conveyor pusher: keep the pusher retracted while the conveyor runs; batch counter on the photo-eye.');
+  });
+  for (const [route, testid] of [['/spec', 'start-clean'], ['/project', 'start-clean'], ['/electrical?tab=design', 'leftover-motor'], ['/program', 'leftover-notes']]) {
+    await page.goto(BASE + route);
+    await page.waitForTimeout(route.includes('electrical') ? 1500 : 800);
+    if (route === '/program') { const d = page.getByRole('button', { name: 'Describe' }); if (await d.count()) { await d.first().click(); await page.waitForTimeout(300); } }
+    const name = `copied_${route.replace(/\W+/g, '_').replace(/^_|_$/g, '')}`;
+    await page.screenshot({ path: `${OUT}${name}.png` });
+    const found = await page.evaluate(audit);
+    if (!(await page.getByTestId(testid).count())) found.push(`"${testid}" warning not shown`);
+    for (const e of errors.splice(0)) found.push('error: ' + e.slice(0, 200));
+    if (found.length) { problems.push([name, found]); log(name, '\n   - ' + found.slice(0, 12).join('\n   - ')); }
+  }
+  log('copied example: leftover warnings shown');
+  await ctx.close();
+}
+
 (async () => {
   const browser = await chromium.launch();
   const problems = [];
@@ -271,6 +311,7 @@ async function iecPass(browser, problems, region) {
   }
   if (!HASH) await analogPass(browser, problems);
   if (!HASH) for (const region of ['EU', 'Israel']) await iecPass(browser, problems, region);
+  if (!HASH) await copiedExamplePass(browser, problems);
   await browser.close();
   log(`${problems.length} page(s) with problems`);
   if (problems.length) process.exit(1);

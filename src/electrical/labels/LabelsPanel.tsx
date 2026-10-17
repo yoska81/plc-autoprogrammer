@@ -19,6 +19,8 @@ const input = 'border border-steel-300 rounded px-2 py-1 text-sm focus:outline-n
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 bg-white hover:bg-steel-50 disabled:opacity-40 flex items-center gap-2';
 const primary = 'px-3 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2';
 const PREVIEW_MAX = 60;
+/** Distinct labels shown in the preview (each once, with its copy count). */
+const PREVIEW_DISTINCT_MAX = 400;
 /** Fixed row height of the label list (px) and extra rows rendered above / below the view. */
 const ROW_H = 33;
 const OVERSCAN = 15;
@@ -102,7 +104,13 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   const supply = setup.supply ? supplyByPart(setup.supply) : undefined;
   const tapeAuto = Boolean(size.tape) && !setup.tapeLength;
 
-  const preview = expandCopies(chosen, setup.useCopies).slice(0, PREVIEW_MAX).map((l) => ({ l, lay: layoutLabel(printable(l), setup, measure) }));
+  // Roll preview: every printed label at its real position on the liner. Otherwise each label once
+  // with its copy count, so a long run of copies (20 x 0V, 20 x 24+) never hides the other numbers.
+  const preview = (byRoll ? expandCopies(chosen, setup.useCopies).slice(0, PREVIEW_MAX) : chosen.slice(0, PREVIEW_DISTINCT_MAX))
+    .map((l) => ({ l, lay: layoutLabel(printable(l), setup, measure) }));
+  const previewMore = byRoll ? totalPrinted - preview.length : chosen.length - preview.length;
+  // Labels of the ticked kinds that were unticked in the list (kept with the project).
+  const unticked = all.filter((l) => kinds.has(l.kind) && off.has(l.id));
 
   const toggle = (ids: string[], on: boolean) => setOff((s) => {
     const n = new Set(s);
@@ -251,6 +259,12 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
 
           <Section title="4. Print or export">
             <p className="text-xs text-steel-600">{chosen.length} labels selected · <b>{totalPrinted}</b> to print · {sizeName}</p>
+            {unticked.length > 0 && (
+              <p className="text-xs text-amber-700" role="status" data-testid="labels-unticked">
+                {unticked.length} label{unticked.length > 1 ? 's are' : ' is'} unticked in the list and will not print ({unticked.slice(0, 4).map((l) => l.code).join(', ')}{unticked.length > 4 ? ', …' : ''}).{' '}
+                <button className="underline" onClick={() => toggle(unticked.map((l) => l.id), true)}>Tick all</button>
+              </p>
+            )}
             <fieldset className="text-sm space-y-1" aria-label="Page layout">
               <legend className="text-xs text-steel-600 mb-1">Page layout of the label-printer PDF</legend>
               <label className="flex items-start gap-2">
@@ -386,9 +400,15 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
                   ))}
                 </div>
               ))
-            ) : preview.map(({ l, lay }, i) => <LabelSvg key={i} lay={lay} border={setup.border} zoom={zoom} title={`${l.code} ${l.description}`} />)}
+            ) : preview.map(({ l, lay }, i) => (
+              <div key={i} className="relative flex-shrink-0">
+                <LabelSvg lay={lay} border={setup.border} zoom={zoom} title={`${l.code} ${l.description}`} />
+                {setup.useCopies && l.copies > 1 && <span className="absolute -top-1.5 -right-1.5 rounded-full bg-steel-700 text-white text-[10px] leading-none px-1 py-0.5" title={`${l.copies} copies print`}>×{l.copies}</span>}
+              </div>
+            ))}
           </div>
-          {totalPrinted > PREVIEW_MAX && <p className="mt-3 text-xs text-steel-500">First {PREVIEW_MAX} of {totalPrinted} labels shown.</p>}
+          {!byRoll && chosen.length > 0 && <p className="mt-3 text-xs text-steel-500">Each label shown once{setup.useCopies ? ' (×N = copies printed)' : ''}: {preview.length} of {chosen.length} labels, {totalPrinted} printed.</p>}
+          {previewMore > 0 && <p className="mt-1 text-xs text-steel-500">{previewMore} more not shown in the preview; all of them print.</p>}
           {!chosen.length && <p className="text-sm text-steel-500">Select labels to see them here.</p>}
         </div>
       </ResizablePane>
