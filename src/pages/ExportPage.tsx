@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import MachineSpecCard from '../deliverables/MachineSpecCard';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useStages, type StageInfo } from '../spec/useStages';
 import { collectProject } from '../deliverables/collect';
@@ -125,6 +126,8 @@ export default function ExportPage() {
           {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
 
           <ReviewCard />
+
+          <MachineSpecCard />
 
           <div className="bg-white rounded-sm border-2 border-brand-200 p-5 flex flex-wrap items-center gap-4">
             <div className="flex-1 min-w-64">

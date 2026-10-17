@@ -1,0 +1,55 @@
+supply 240VAC-3PH | NEMA 4
+motor M1 3 HP contactor-overload reversing — Gate motor
+
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 4
+SP1      SCE-30P24          x1    Back panel
+DS1      22013003           x1    Main disconnect 30A
+DS1H     148D1111           x1    Disconnect handle
+DS1S     14070532           x1    Disconnect shaft
+CB1      GMCBU-3C-20        x1    Motor M1 branch protection [M1]
+K1       SC-E03PG-24VDC     x1    Gate motor forward contactor [M1]
+K1-AUX   SZ-A11T            x1    K1 aux contact [M1]
+K2       SC-E03PG-24VDC     x1    Gate motor reverse contactor [M1]
+K2-AUX   SZ-A11T            x1    K2 aux contact [M1]
+K1-MI    SZ-RM              x1    K1/K2 mechanical reversing interlock [M1]
+OL1      TK-E02-1300        x1    Gate motor overload [M1]
+CB2      GMCBU-2C-10        x1    24VDC power supply primary
+PS1      PSL-24-030         x1    24VDC control power supply, fed L1-L2 240 VAC
+PLC      C0-10DD1E-D        x1    PLC CPU
+SR1      LG5925-48-61-24    x1    E-stop safety relay
+ES1      GCX1131            x1    Emergency stop, cabinet door
+ES1C     ECX1030-2          x1    Second NC contact for dual-channel E-stop ES1
+ES1L     ECX1651            x1    EMERGENCY STOP legend plate for ES1
+PB1      GCX1100            x1    Open
+PB2      GCX1100            x1    Close
+PB3      GCX1101            x1    Stop
+PL1      GCX1234-24L        x1    Gate moving
+PB4      GCX1104            x1    Safety reset
+TB1      DN-T10-A           x26   Feed-through terminals
+TBG      DN-G10             x3    Ground terminals
+TBC      DN-EC1210          x2    Terminal end covers
+TBE      DN-EB35            x4    End brackets
+DIN      DN-R35S1           x2    DIN rail
+WD       T1-1530G-1         x2    Wire duct
+GB1      SCE-GB10           x1    Ground bar
+
+X001   SR1    safety-relay-output  Cabinet        E-stop OK
+X002   PB1    pushbutton-no        Cabinet door   Open PB
+X003   PB2    pushbutton-no        Cabinet door   Close PB
+X004   PB3    pushbutton-nc        Cabinet door   Stop PB
+X005   LS1    limit-switch         Machine        Gate open limit switch
+X006   LS2    limit-switch         Machine        Gate closed limit switch
+Y001   K1     contactor-coil       Cabinet        Gate motor forward
+Y002   K2     contactor-coil       Cabinet        Gate motor reverse
+Y003   PL1    pilot-light          Cabinet door   Gate moving light
+
+zones ["Machine"]
+junctionBoxes []
+motorLocations {"M1":"Machine"}
+routing {"LS1":null,"LS2":null}
+
+note: Motor currents from NEC Table 430.250 / 430.248: M1 3 HP 9.6 A — confirm the nameplates.
+note: LS1 (Gate open limit switch): field device to select (not in the catalog); wired as a dry contact to X005.
+note: LS2 (Gate closed limit switch): field device to select (not in the catalog); wired as a dry contact to X006.
+
+explanation: Rule-based design: NEMA 4 SCE-30EL2410LP, 240 V 3-phase through 30A disconnect; motors: M1 3 HP reversing starter; 24 VDC from PSL-24-030 for 0.7 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 48% spare panel space.

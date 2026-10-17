@@ -18,7 +18,10 @@ import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge } from '.
 import { recommendEquipment, modulesInSlotOrder } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice } from './equipment';
 import { cpuFit, findCpu } from '../plc/core/fit';
-import { generateElectricalDesign } from '../lib/ai/electricalAI';
+import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
+import { analogSetup } from '../plc/core/analog';
+import { getPart } from '../electrical/catalog';
+import { vendorPreference } from '../store/useProjectStore';
 import { generateHmiDesign } from '../lib/ai/hmiAI';
 import { reviseLadder, generateLadder } from '../plc/ai/ladderAI';
 import { getHmi, hmiCommsText, HMI_DESIGN_GUIDELINES } from '../hmi/hmiCatalog';
@@ -113,11 +116,19 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, s
       if (step === 'electrical') {
         const el = useElectricalStore.getState();
         const io = ioNow();
-        const r = await generateElectricalDesign({ ...ai, profile, cpu, io, addresses: resolveAddresses(profile, cpu, io, slots), machineDescription: specToText(spec), inputs: el.inputs, region: useProjectStore.getState().info.region });
+        // AI reads the machine model, the rule-based engine designs the panel (src/electrical/engine).
+        const proj = useProjectStore.getState();
+        const hmiState = useHmiStore.getState();
+        const r = await generateRuleBasedDesign({
+          ...ai, spec: specToText(spec), io, addresses: resolveAddresses(profile, cpu, io, slots), inputs: el.inputs, region: proj.info.region,
+          pref: vendorPreference(), getPart, modules: proj.modules, analog: analogSetup(profile, cpu, slots, io),
+          hmiPartNumber: hmiState.design?.hmiPartNumber || hmiState.hmiPartNumber || null, projectName: useProgramStore.getState().projectName,
+          plc: { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label },
+        });
         el.setInputs(r.design.inputs);
         el.setDesign(r.design, 'generated', r.explanation);
         mark('electrical', { specFp, spec, ioFp: ioFingerprint(io) });
-        onStep({ step, status: 'done', message: `${r.design.components.length} components.` });
+        onStep({ step, status: 'done', message: `${r.design.components.length} components${r.aiError ? ' (from the rules: the AI could not read the spec)' : ''}.` });
       }
 
       if (step === 'hmi') {

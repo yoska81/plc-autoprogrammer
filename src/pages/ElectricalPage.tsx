@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { looksLeftOver } from '../spec/leftovers';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -27,6 +28,8 @@ import { useQuestions, useSyncQuestions } from '../components/questions/useQuest
 import { useDrawingContext } from '../electrical/useDrawingContext';
 import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
+import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
+import { useHmiStore } from '../store/useHmiStore';
 import type { CatalogCategory, DesignInputs, EnclosureRating, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
 import { Spinner, ReasoningPanel } from '../components/common';
 import StageBanner from '../components/StageBanner';
@@ -68,7 +71,9 @@ export default function ElectricalPage() {
   const fp = useFingerprints();
   const stages = useStages();
   const specText = specToText(fp.spec);
-  const { profile, cpu, io, addresses } = usePlc();
+  const { profile, cpu, io, addresses, analog } = usePlc();
+  const modules = useProjectStore((s) => s.modules);
+  const hmiPartNumber = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
   const ctx = useDrawingContext();
   // The layout editor stores device tags: it works with the design's own tags.
   const rawCtx = useDrawingContext({ raw: true });
@@ -121,19 +126,31 @@ export default function ElectricalPage() {
   const base = projectName.trim().replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'panel';
   const apiKey = settings.anthropicApiKey;
 
-  const generate = () => {
-    if (!apiKey || el.isGenerating) return;
+  /**
+   * Generate: the AI reads the specification into a small machine model (when a key is set) and the
+   * rule-based engine designs the panel from it — with no key, or when the AI fails, from the rules'
+   * own reading. `full` = the older all-AI design (experimental: the AI picks every part).
+   */
+  const generate = (full = false) => {
+    if (el.isGenerating || (full && !apiKey)) return;
     if (el.design && !confirm('Replace the current electrical design?')) return;
     setError(null);
     const snap = { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp };
     void startAiJob({
-      kind: 'electrical', label: 'Electrical design', keepResult: true,
+      kind: 'electrical', label: full ? 'Electrical design (full AI)' : 'Electrical design', keepResult: true,
       run: async (h) => {
         useElectricalStore.getState().setIsGenerating(true);
         try {
-          return await generateElectricalDesign({
-            apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
-            profile, cpu, io, addresses, machineDescription: specText, inputs, region,
+          if (full) {
+            return await generateElectricalDesign({
+              apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
+              profile, cpu, io, addresses, machineDescription: specText, inputs, region,
+            });
+          }
+          return await generateRuleBasedDesign({
+            apiKey: apiKey || undefined, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
+            spec: specText, io, addresses, inputs, region, pref, getPart, hmiPartNumber, analog, modules, projectName,
+            plc: { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label },
           });
         } finally { useElectricalStore.getState().setIsGenerating(false); }
       },
@@ -145,7 +162,7 @@ export default function ElectricalPage() {
       },
     });
   };
-  useTakeResult<Awaited<ReturnType<typeof generateElectricalDesign>>>('electrical', (r) => {
+  useTakeResult<{ reasoning: string | null }>('electrical', (r) => {
     setReasoning(r.reasoning);
     setTab('cabinet');
   });
@@ -172,7 +189,7 @@ export default function ElectricalPage() {
       </header>
 
       <StageBanner info={stages.electrical} action={
-        <button onClick={generate} disabled={el.isGenerating || !apiKey} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
+        <button onClick={() => generate()} disabled={el.isGenerating} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
       {tab === 'labels' ? (
@@ -243,6 +260,12 @@ export default function ElectricalPage() {
                 <button onClick={() => setInputs({ motors: [...inputs.motors, { tag: `M${inputs.motors.length + 1}`, description: '', hp: 1, voltage: inputs.supply, starter: 'contactor-overload', reversing: false }] })}
                   className="px-3 py-1 text-xs border border-steel-300 rounded hover:bg-steel-50">+ Add motor</button>
               </div>
+              {inputs.motors.filter((m) => m.description.trim() && looksLeftOver(m.description, specText, 1).leftOver).map((m) => (
+                <div key={m.tag} className="px-3 py-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded" role="alert" data-testid="leftover-motor">
+                  {m.tag} “{m.description}” is not in your machine description; it may be left over from another project.
+                  <button onClick={() => setInputs({ motors: inputs.motors.filter((x) => x !== m) })} className="ml-2 underline font-medium">Remove {m.tag}</button>
+                </div>
+              ))}
               {!inputs.motors.length && <p className="text-xs text-steel-500">No motors. Add each motor the panel drives.</p>}
               {inputs.motors.map((m, i) => (
                 <div key={i} className="flex flex-wrap items-center gap-2">
@@ -294,11 +317,14 @@ export default function ElectricalPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              <button onClick={generate} disabled={el.isGenerating || !apiKey}
+              <button onClick={() => generate()} disabled={el.isGenerating}
                 className="px-5 py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
-                {el.isGenerating ? <><Spinner /> Designing the panel… this can take several minutes</> : el.design ? 'Generate New Design' : 'Generate Electrical Design'}
+                {el.isGenerating ? <><Spinner /> Designing the panel…</> : el.design ? 'Generate New Design' : 'Generate Electrical Design'}
               </button>
-              {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</span>}
+              <button onClick={() => generate(true)} disabled={el.isGenerating || !apiKey}
+                title="The AI picks every part itself (slower; the standard design uses the AI only to read the specification)"
+                className="px-3 py-2 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-40">AI full design (experimental)</button>
+              {!apiKey && <span className="text-xs text-steel-500">Without an API key the design is made from the I/O list and motor list by the rules only. Add a key in <Link to="/settings" className="underline">Settings</Link> to let the AI read the specification.</span>}
             </div>
             {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
             {reasoning && <ReasoningPanel reasoning={reasoning} />}

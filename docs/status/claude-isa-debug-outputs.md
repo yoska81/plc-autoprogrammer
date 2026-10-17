@@ -1,6 +1,6 @@
 # Debug 2 — deliverables QA (`claude/isa-debug-outputs`)
 
-PR #7 merged (batches 1–2). Branch restarted from integration d78b221. Last integration merge: 1795268 (src/plc refactor).
+PR #7 merged (batches 1–2). PR #43 (watchdog) merged. Last integration merge: 7f3b37d (drawings as one scrolling document).
 
 ## Tasks (my own words)
 - [x] Repeatable checkers in `tools/` (`tools/check-all.sh`, README): generate every output through the real app for 4 projects — `us480` (example), `ca600` (Canada 600 V, Class CC fuses, fused CPT, rev B), `us120` (120 V 1-ph, small enclosure, no HMI), `big` (4 VFDs, 54 I/O, modules, 10" HMI, JBs).
@@ -149,3 +149,24 @@ Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 althoug
 - [x] withWatchdog (src/lib/ai/errors.ts): a request is aborted as a timeout when no data streams for 3 min, or when it runs longer than the cap for its effort level (low 5 / medium 10 / high 20 / xhigh 25 / max 30 min); it races the call, so even a call that ignores the abort settles. Timeouts are retried like other transient failures, then reported ("The AI service stopped sending data … (tried 4 times) … lower the thinking effort in Settings").
 - [x] Wired into the API-key stream (progress = every stream event), the preview account path (progress = streamed text; JSON answers: total cap) and OpenAI (total cap). Cancel still aborts (Update dialog: "Cancel now" aborts the current stage; "Stop after this stage" lets it finish).
 - [x] errors.test 10/10 (watchdog idle, steady progress, total cap, cancel vs timeout, hung → retried → plain message); ai-jobs E2E scenario 6: a request that never answers is stopped, retried, recovers. App E2E, sweep, all unit suites green.
+
+## Back panel with real footprints: tall devices + enclosure sizing (coordinator: 24x20 sample "TB2, TB3 do not fit")
+- Root cause: the UL98 disconnect (189 mm) makes rail 1 tall, and the 24x20 back panel (432x533) is too small for the real footprints. No packing makes it fit with duct spacing and clearances.
+- Layout (`derive.ts` panelLayout): when parts still overflow after the normal and compact passes, tall parts (≥ 140 mm, disconnect first) move to their **own column** at the right, beside a vertical duct. The rails stop at that duct, horizontal ducts end there, and the vertical ducts run to the lowest rail or column part. Parts that miss the bands also go to the column when narrow enough. The attempt with the least lost area wins. spareSpace measures each rail by its own length.
+- Enclosure sizing: `smallestEnclosure(ctx)` tries the catalog enclosures with the design's NEMA rating (same maker first, smallest back panel first). It returns the first one that holds every part with `SPARE_RULE` = 25 % spare.
+  - Design review warns "Enclosure ENC1 X is too small … use Y with back panel Z (N % spare)".
+  - When no catalog enclosure holds the parts, it says so.
+  - When the panel fits but has less than 25 % spare and nothing larger exists, it says that too.
+- Electrical AI: after generation it resizes ENC/SP from the footprints and adds a note.
+- Sample: ENC1 → SCE-30EL2410LP (30x24x10), SP1 → SCE-30P24, seed v12. Harness `ca600` is moved to 30x24 as well. `us120` still overflows on purpose.
+- Results (`tools/layout_summary.py`):
+
+  | Variant | Before | After |
+  |---|---|---|
+  | us480 | 432x533, TB2/TB3 not fit, 0 % spare | 533x686, all fit, 63 % spare (+2 rails) |
+  | ca600 | 432x533, TB1 not fit | 533x686, all fit, 46 % |
+  | big | 686x838, fits, 12 % | unchanged; flagged: below the 25 % rule, 36x30 is the largest catalog enclosure |
+  | analog | — | 533x686, 40 % |
+
+- Also: `e2e/sweep.e2e.cjs` finds the ANALOG sheet in the new sheet list (integration 7f3b37d removed the sheet tabs, so the sweep reported "no ANALOG drawing sheet").
+- Tests: `src/electrical/enclosureFit.test.ts` (sample fits, 24x20 flagged with the 30x24, no overlaps). tsc, eslint, all unit tests, check-all.sh 0 FAIL/0 WARN on 5 variants. E2E app, ai-jobs, layout, persist, old-data, hmi-editor, sweep all pass.
