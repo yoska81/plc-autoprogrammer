@@ -4,6 +4,19 @@ Each prompt / check change made for real-machine quality, with the reason. Score
 `tools/ai-quality/run.ts`; "not measured" means no recorded real-AI run exists yet (no API key in
 the environment where the change was made).
 
+## 2026-10-17 — electrical design: rules first, AI second (Dev 2)
+- **electrical**: Generate / Update all no longer ask the AI for the whole panel. The AI reads the spec
+  into a small machine model (`src/lib/ai/machineModelAI.ts`: motors with power and start method,
+  E-stops, guard doors, light curtains, zones, other machines, questions; no catalog, no part numbers)
+  and the rule-based engine (`src/electrical/engine`) picks and sizes every part. Without a key, or
+  when the AI fails, the engine reads the model from the I/O and motor lists itself. The old all-AI
+  design stays as "AI full design (experimental)". Why: the full design sent the whole catalog
+  (~68k chars, ~17k tokens) and its mistakes (missing aux blocks, wrong overloads, undersized panels)
+  were the main electrical findings; the machine model prompt is ~5.6k chars (~1.4k tokens).
+- Fixture recording `m0-example-conveyor/04-electrical.json` is now a machine-model answer
+  (`record-from-e2e.ts`). m0 replay: electrical 70 (1 major, 6 minor) with the old path → 94
+  (0 major, 2 minor) with the engine; total 93 → 97. Real-AI scores for m1–m6: not measured (no key).
+
 ## 2026-10-16 — first pass (static review against tools/machines m1–m6)
 
 No real-AI recordings yet: these changes come from reviewing every prompt against what the six

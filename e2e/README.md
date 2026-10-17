@@ -28,7 +28,7 @@ BASE_URL=http://localhost:5203 node e2e/preview.e2e.cjs     # saved files land i
 ## AI jobs
 
 ```bash
-BASE_URL=http://localhost:5204 node e2e/ai-jobs.e2e.cjs   # generation survives navigation (3 pages), kept result shown on return, 529 → retry, Cancel, final failure → Retry
+BASE_URL=http://localhost:5204 node e2e/ai-jobs.e2e.cjs   # (on "AI full design") generation survives navigation (3 pages), kept result shown on return, 529 → retry, Cancel, final failure → Retry; Generate with the AI failing → the rules design the panel
 ```
 Screenshots land in `e2e/out-ai-jobs/`.
 

@@ -9,6 +9,8 @@ export function stageOfPrompt(system: string): Stage {
   if (system.includes('choosing the control equipment')) return 'equipment';
   if (system.includes('PLC I/O list')) return 'io';
   if (system.includes('industrial control panel')) return 'electrical';
+  // Generate / Update all: the AI reads the machine model, the rule-based engine designs the panel.
+  if (system.includes("describe the machine's electrical load")) return 'electrical';
   if (system.includes('HMI designer')) return 'hmi';
   if (system.includes('ladder logic')) return 'program';
   return 'unknown';

@@ -28,7 +28,8 @@ const ELECTRICAL = {
   explanation: 'Job-runner test design: NEMA 12 panel, 480 VAC.', components: F.DESIGN.components, ioWiring: F.DESIGN.ioWiring, notes: F.DESIGN.notes, motors: F.DESIGN.inputs.motors,
   machine: { zones: m.zones, junctionBoxes: m.junctionBoxes, motorLocations: Object.entries(m.motorLocations).map(([motorTag, location]) => ({ motorTag, location })), routing: Object.entries(m.routing).map(([deviceTag, junctionBox]) => ({ deviceTag, junctionBox })) },
 };
-const stageOf = (system) => (system.includes('industrial control panel') ? 'electrical' : system.includes('choosing the control equipment') ? 'equipment' : 'other');
+const stageOf = (system) => (system.includes('industrial control panel') ? 'electrical' : system.includes("describe the machine's electrical load") ? 'machine'
+  : system.includes('choosing the control equipment') ? 'equipment' : 'other');
 
 (async () => {
   const browser = await chromium.launch();
@@ -39,8 +40,8 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
 
   // Scripted AI: per stage, a queue of behaviours ({ delay, status, body }); default = answer at once.
-  const script = { electrical: [], equipment: [] };
-  const calls = { electrical: 0, equipment: 0 };
+  const script = { electrical: [], equipment: [], machine: [] };
+  const calls = { electrical: 0, equipment: 0, machine: 0 };
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
     const stage = stageOf(sysText(body.system));
@@ -72,7 +73,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   // 1. A generation keeps running while the user visits three other pages; its result is applied.
   script.electrical.push({ delay: 4000 });
   await page.goto(BASE + '/electrical?tab=design');
-  await page.getByRole('button', { name: 'Generate New Design' }).click();
+  await page.getByRole('button', { name: 'AI full design (experimental)' }).click();
   await bar.locator('[data-job="electrical"][data-status="running"]').waitFor();
   log('Status bar:', await bar.innerText());
   for (const path of ['/io', '/hmi', '/review']) {
@@ -101,7 +102,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   // 3. Transient failure: 529 then success, with "retrying (1/3)" in the status bar.
   script.electrical.push({ status: 529 }, { delay: 500 });
   await page.goto(BASE + '/electrical?tab=design');
-  await page.getByRole('button', { name: 'Generate New Design' }).click();
+  await page.getByRole('button', { name: 'AI full design (experimental)' }).click();
   await bar.getByText(/retrying \(1\/3\)/).waitFor({ timeout: 5000 });
   log('Retry shown:', await bar.innerText());
   await page.waitForFunction(() => !document.querySelector('[data-job="electrical"]'), null, { timeout: 15000 });
@@ -111,7 +112,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.setState({ explanation: 'before cancel' }));
   script.electrical.push({ delay: 20000 });
   await page.goto(BASE + '/electrical?tab=design'); // a finished generation switches to the Cabinet tab
-  await page.getByRole('button', { name: 'Generate New Design' }).click();
+  await page.getByRole('button', { name: 'AI full design (experimental)' }).click();
   await bar.getByRole('button', { name: 'Cancel Electrical design' }).click();
   await page.waitForFunction(() => !document.querySelector('[data-job="electrical"]'), null, { timeout: 5000 });
   check(await explanation() === 'before cancel', 'cancelled job applied nothing');
@@ -121,7 +122,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   // 5. A final failure is plain English with Retry, which keeps the input and succeeds.
   script.electrical.push({ status: 400, type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' });
   await page.goto(BASE + '/electrical?tab=design');
-  await page.getByRole('button', { name: 'Generate New Design' }).click();
+  await page.getByRole('button', { name: 'AI full design (experimental)' }).click();
   const failed = bar.locator('[data-job="electrical"][data-status="failed"]');
   await failed.waitFor({ timeout: 5000 });
   log('Failure:', await failed.innerText());
@@ -135,12 +136,22 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   script.electrical.push({ hang: true }, {});
   await page.goto(BASE + '/electrical?tab=design');
   await page.evaluate(async () => (await import('/src/lib/ai/errors.ts')).setAiLimits({ idleMs: 1500 })); // after the page load
-  await page.getByRole('button', { name: 'Generate New Design' }).click();
+  await page.getByRole('button', { name: 'AI full design (experimental)' }).click();
   await bar.getByText(/did not answer in time, retrying \(1\/3\)/).waitFor({ timeout: 8000 });
   log('Hung request:', await bar.innerText());
   await page.waitForFunction(() => !document.querySelector('[data-job="electrical"]'), null, { timeout: 15000 });
   check(await bar.locator('[data-status="failed"]').count() === 0, 'hung request recovered by the retry');
   log('Hung request recovered');
+
+  // 7. Generate (rules first): the AI machine-model request fails for good, the rules still design the panel.
+  script.machine.push({ status: 400, type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' });
+  await page.goto(BASE + '/electrical?tab=design');
+  await page.getByRole('button', { name: 'Generate New Design' }).click();
+  await page.waitForFunction(async () => /^Rule-based design/.test((await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation ?? ''), null, { timeout: 15000 });
+  const fallbackNote = await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design.notes[0]);
+  log('AI failed, rules designed the panel:', fallbackNote.slice(0, 120));
+  check(/AI could not read the specification/.test(fallbackNote), 'fallback note on the design');
+  check(await bar.locator('[data-status="failed"]').count() === 0, 'no failed job: the design was made by the rules');
   await page.screenshot({ path: OUT + '02_end.png' });
 
   check(!errors.length, 'no page errors: ' + errors.join(' | '));

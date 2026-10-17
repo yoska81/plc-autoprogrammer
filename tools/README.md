@@ -20,6 +20,10 @@ tools/check-all.sh                # all variants; or: tools/check-all.sh us480 c
 | `ca600` | Canada / CEC, 600 V 3-ph, motor branch on Class CC fuses, 600:120 V fused control transformer, revision B |
 | `us120` | 120 V 1-ph, small 16x12 enclosure (overflows on purpose), no HMI |
 | `big` | 36x30 enclosure, 4 VFDs + 2 DOL motors, 2 input + 1 output modules (54 I/O), pilot lights, selector, stack light, 10" HMI, junction boxes |
+| `analog` | The example + tank level / temperature (C0-04AD-1) and a pump speed reference (C0-04DA-1) |
+| `rules` | The example with its design made by the rule-based engine (`src/electrical/engine`, no AI) |
+| `rules-big` | The `big` project designed by the engine (VFDs with STO, interposing relays, enclosure sized from the layout) |
+| `rules-eu` | The example in the EU: 400 V 3-ph, IEC motor currents, A3 drawings, designed by the engine |
 
 `gen-outputs.cjs` loads the harness through the Vite dev server, seeds the stores, calls the same
 `buildEverythingZip` the Export page uses, and writes to `tools/out/<variant>/`:
