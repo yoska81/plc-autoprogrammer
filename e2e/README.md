@@ -46,6 +46,7 @@ BASE_URL=http://localhost:5203 node e2e/sweep.e2e.cjs      # every page, 1366x76
 BASE_URL=http://localhost:5203 node e2e/start-clean.e2e.cjs # a copy of the example: leftover warnings, "Start clean from my description" keeps the description + I/O
 BASE_URL=http://localhost:5203 node e2e/persist.e2e.cjs    # what was typed/selected survives leaving a page, reloading and switching projects
 BASE_URL=http://localhost:5203 node e2e/hmi-brands.e2e.cjs # Allen-Bradley + Siemens panels: equipment, HMI, simulator, tag list
+BASE_URL=http://localhost:5203 node e2e/hmi-looks.e2e.cjs  # every HMI look: picker thumbnails, look follows the panel maker, no text past its element or on another, PNG/PDF exports in the look
 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # projects saved by older versions (e2e/old-data/*.json) still open and export
 HASH=1 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # preview build: a new example version never replaces the open project
 ```

@@ -4,16 +4,16 @@ import type { HmiDesign, HmiElement, HmiLook, HmiScreen } from './types';
 import type { HmiRuntime } from './runtime';
 import { fitSize, fitText, fmtTime, hmiTheme, LEVEL_SHORT, lookOf, stateTextColor, styleColor, textWidth } from './theme';
 import { LockBadge, MachineGraphic } from './symbols';
-import { NavBand, SiemensElement } from './siemens';
+import { NavBand, PanelElement } from './panelLook';
 import { lockInset } from './layout';
 import { Label } from './viewParts';
-import { showNum, SIEMENS_KINDS, stateFor, type AlarmRow, type Ctx } from './viewCtx';
+import { showNum, PANEL_KINDS, stateFor, type AlarmRow, type Ctx } from './viewCtx';
 
 /**
  * Draws one HMI screen as SVG in the panel's native pixels (scales to fit its
  * container). Static by default; pass `read`/`onPress` to make it live
  * (simulation) and `onSelect` to make elements selectable (editing). The
- * design's `look` picks the visual style (Siemens light panel by default).
+ * design's `look` picks the visual style (by default the look of the panel's maker).
  */
 export interface HmiScreenViewProps {
   screen: HmiScreen;
@@ -38,7 +38,7 @@ export interface HmiScreenViewProps {
   staticTime?: number;
   /** Hide the selection outline etc. for thumbnails. */
   thumbnail?: boolean;
-  /** Override the design's look (e.g. a preview of the other style). */
+  /** Override the design's look (e.g. a preview of another style). */
   look?: HmiLook;
 }
 
@@ -193,7 +193,7 @@ function Trend({ el, ctx, value }: { el: HmiElement; ctx: Ctx; value: number | u
 
 function ElementShape({ el, value, ctx }: { el: HmiElement; value: boolean | number | undefined; ctx: Ctx }) {
   const { t } = ctx;
-  if (t.look === 'siemens' && SIEMENS_KINDS.has(el.kind)) return <SiemensElement el={el} value={value} ctx={ctx} />;
+  if (t.shape.family === 'panel' && PANEL_KINDS.has(el.kind)) return <PanelElement el={el} value={value} ctx={ctx} />;
   const on = Boolean(value);
   const r = Math.min(12, el.h / 2);
   switch (el.kind) {
@@ -427,7 +427,7 @@ export default function HmiScreenView({ screen, widthPx, heightPx, read, onPress
         </radialGradient>
       </defs>
       <rect x={0} y={0} width={widthPx} height={heightPx} fill={`url(#${gradId})`} />
-      {t.look === 'siemens' && <NavBand elements={screen.elements} widthPx={widthPx} heightPx={heightPx} t={t} />}
+      {t.shape.family === 'panel' && <NavBand elements={screen.elements} widthPx={widthPx} heightPx={heightPx} t={t} />}
       {screen.background && (
         <g style={{ pointerEvents: 'none' }} data-background="">
           <image href={screen.background.src}

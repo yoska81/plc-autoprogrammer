@@ -2,7 +2,7 @@ import type { HmiDesign, HmiElement, HmiScreen, HmiState } from './types';
 import type { HmiRuntime } from './runtime';
 import type { HmiTheme } from './theme';
 
-/** Shared state and helpers of the screen renderer (both looks). */
+/** Shared state and helpers of the screen renderer (console and panel looks). */
 
 export interface AlarmRow { message: string; severity: 'alarm' | 'warning'; on: number | null; off: number | null; active: boolean }
 
@@ -19,8 +19,8 @@ export interface Ctx {
   t: HmiTheme;
 }
 
-/** Element kinds the Siemens look draws with its own shapes (the rest share the generic renderer). */
-export const SIEMENS_KINDS = new Set<HmiElement['kind']>([
+/** Element kinds the panel looks draw with their own shapes (the rest share the generic renderer). */
+export const PANEL_KINDS = new Set<HmiElement['kind']>([
   'header', 'panel', 'button', 'nav', 'indicator', 'multistate', 'numeric', 'numeric-entry', 'bar', 'trend', 'alarm-list', 'alarm-banner', 'datetime', 'text',
 ]);
 
