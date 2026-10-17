@@ -193,6 +193,9 @@ const FAKE_SPEECH = () => {
   await tree('Deliverables');
   const order = page.locator('#order-list');
   await order.scrollIntoViewIfNeeded();
+  // The parts list starts folded on the Deliverables page: open it.
+  const showParts = order.getByRole('button', { name: /^Show parts list/ });
+  if (await showParts.count()) await showParts.first().click();
   const totalText = async () => (await order.getByTestId('order-total').innerText());
   const money = (t) => Number(t.replace(/[^\d.]/g, ''));
   const before = money(await totalText());
@@ -338,6 +341,7 @@ const FAKE_SPEECH = () => {
   await page.waitForTimeout(1000);
   await page.goto(BASE + '/export');
   await page.waitForTimeout(800);
+  { const sp = page.locator('#order-list').getByRole('button', { name: /^Show parts list/ }); if (await sp.count()) await sp.first().click(); }
   const row = page.locator(`#order-list tr[data-part="${pn}"]`);
   check(await row.count() === 1 && await row.locator('input[aria-label^="Part number"]').inputValue() === 'MY-PN-001' && await row.locator('input[aria-label^="Unit price of"]').inputValue() === '123.45', 'order-list edits kept after the design was generated again');
   // Back to generated.
