@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
 import { getPart } from '../catalog';
-import { buildModel, designWarnings, doorDrilling, panelLayout, spareSpace, type DrawingContext } from '../derive';
+import { bomCsv, buildModel, designWarnings, doorDrilling, panelLayout, plcRack, spareSpace, vendorTerminal, type DrawingContext } from '../derive';
 import { cabinetHeat } from '../thermal';
 import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
@@ -29,6 +29,8 @@ const pt = (description: string, type: 'input' | 'output', extra: Partial<P> = {
 interface Scenario {
   name: string; points: P[]; supply: SupplyVoltage; region?: Region; motors?: MotorSpec[];
   cpu?: string; modules?: string[]; hmi?: string | null; spec?: string; rating?: DesignInputs['enclosureRating'];
+  /** PLC profile (default CLICK). */
+  profile?: string;
   /** Largest catalog enclosure is still under 25% spare: everything must fit, spare may be lower. */
   tight?: boolean;
 }
@@ -108,6 +110,17 @@ const SCENARIOS: Scenario[] = [
     ],
   },
   {
+    // Unitronics all-in-one: V700 (7" screen, no on-board I/O) with a V200-18-E3XB snap-in; the screen is the HMI.
+    name: 'unitronics-v700', supply: '480VAC-3PH', profile: 'unitronics-vision', cpu: 'V700-T20BJ', modules: ['V200-18-E3XB'], hmi: 'V700-T20BJ',
+    spec: 'Sealing head with a Unitronics V700 PLC + HMI: two-hand start, light curtain, heater with thermocouple, unwinder 0.5 HP on a VFD. 480 V 3-phase supply.',
+    points: [] as P[],
+  },
+  {
+    // UniStream US7 with on-board I/O (10 DI, 8 relay + 2 npn, 2 AI) running the example conveyor.
+    name: 'unitronics-us7', supply: '480VAC-3PH', profile: 'unitronics-unistream', cpu: 'US7-B10-TR22', hmi: 'US7-B10-TR22',
+    motors: [motor('M1', 'Conveyor motor', 1, '480VAC-3PH')], spec: specToText(SPEC), points: EXAMPLE,
+  },
+  {
     name: 'reversing240', supply: '240VAC-3PH', hmi: null, rating: 'NEMA 4',
     points: [pt('E-stop OK', 'input'), pt('Open PB', 'input'), pt('Close PB', 'input'), pt('Stop PB', 'input'), pt('Gate open limit switch', 'input'), pt('Gate closed limit switch', 'input'),
       pt('Gate motor forward', 'output'), pt('Gate motor reverse', 'output'), pt('Gate moving light', 'output')],
@@ -115,9 +128,11 @@ const SCENARIOS: Scenario[] = [
   },
 ];
 
+SCENARIOS.find((x) => x.name === 'unitronics-v700')!.points = SCENARIOS.find((x) => x.name === 'sealing-head')!.points;
+
 function run(s: Scenario): { r: EngineResult; ctx: DrawingContext } {
   const io = s.points.map((p, i) => ({ category: 'Operator/HMI', ...p, id: `p${i + 1}` })) as IOPoint[];
-  const profile = getProfile('click');
+  const profile = getProfile(s.profile ?? 'click');
   const cpu = getCpu(profile, s.cpu ?? 'C0-10DD1E-D');
   const addresses = resolveAddresses(profile, cpu, io, moduleSlots(s.modules ?? []));
   const plc = { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label };
@@ -201,6 +216,34 @@ for (const s of SCENARIOS) {
 
   const eu = run(SCENARIOS.find((s) => s.name === 'eu400')!).r.design;
   assert.ok(eu.components.some((c) => /^PSR-24-\d+-3$/.test(c.partNumber)), '400 V: 3-phase supply');
+}
+
+// Unitronics all-in-ones: the PLC is the door's panel (its own cutout, no second HMI, not on the back panel);
+// the I/O columns carry the maker's terminal names; relay outputs drawn as relay, the npn points named.
+{
+  for (const [name, pn, cut] of [['unitronics-v700', 'V700-T20BJ', [193, 125]], ['unitronics-us7', 'US7-B10-TR22', [196, 134]]] as const) {
+    const { r, ctx } = run(SCENARIOS.find((x) => x.name === name)!);
+    const L = panelLayout(ctx);
+    const panels = L.door.items.filter((d) => d.kind === 'hmi');
+    assert.deepEqual(panels.map((d) => `${d.tag} ${d.partNumber} ${d.cutout?.w}x${d.cutout?.h}`), [`PLC ${pn} ${cut[0]}x${cut[1]}`], `${name}: the PLC is the one door panel`);
+    assert.ok(!L.door.items.some((d) => d.kind !== 'hmi' && d.tag === 'PLC') && !L.items.some((i) => i.tag === 'PLC'), `${name}: PLC not also an operator or on the back panel`);
+    assert.equal(bomCsv(ctx).split('\n').filter((l) => l.includes(pn)).length, 1, `${name}: one BOM line for PLC + screen`);
+    assert.equal(buildModel(ctx).hmi, undefined, `${name}: no separate panel feed / link`);
+    assert.equal(r.design.ioWiring.length, ctx.io.filter((p) => p.address && !/^DF/.test(p.address)).length);
+  }
+  const us7 = run(SCENARIOS.find((x) => x.name === 'unitronics-us7')!);
+  assert.deepEqual(plcRack(us7.ctx).map((s) => `${s.partNumber} ${s.inputs}/${s.outputs} ${s.outputStyle}`), ['US7-B10-TR22 10/10 relay'], 'TR22: relay outputs (O8 / O9 npn named in the notes)');
+  assert.equal(vendorTerminal(getPart('US7-B10-TR22'), 'X001'), 'I0');
+  assert.equal(vendorTerminal(getPart('V200-18-E3XB'), 'Y103'), 'O2');
+  assert.equal(vendorTerminal(getPart('C0-10DD1E-D'), 'X001'), null, 'CLICK keeps its own addresses');
+  assert.ok(us7.r.design.notes.some((n) => /US7-B10-TR22 inputs .*wired sinking for the pnp sensors/.test(n)));
+  const v7 = run(SCENARIOS.find((x) => x.name === 'unitronics-v700')!);
+  assert.deepEqual(plcRack(v7.ctx).map((s) => `${s.slot} ${s.partNumber} ${s.inputs}/${s.outputs} ${s.outputStyle}`), ['0 V700-T20BJ 0/0 sourcing', '1 V200-18-E3XB 18/17 relay']);
+  assert.ok(v7.r.design.components.some((c) => c.tag === 'IO1' && /^Snap-in I\/O module/.test(c.function)));
+  // Twelve outputs on a V350-35-TR34: the 8 relays first, then the npn O0–O3 — named as such.
+  const v350 = run({ ...SCENARIOS.find((x) => x.name === 'unitronics-v700')!, name: 'v350', cpu: 'V350-35-TR34', modules: [], hmi: 'V350-35-TR34',
+    points: [...EXAMPLE, ...Array.from({ length: 7 }, (_, i) => pt(`Diverter ${i + 1} solenoid`, 'output'))] });
+  assert.ok(v350.r.design.notes.some((n) => /V350-35-TR34: Y001 \(O0\) Diverter 6 solenoid, Y002 \(O1\) Diverter 7 solenoid on npn transistor outputs \(0\.1 A max/.test(n)), v350.r.design.notes.join('\n'));
 }
 
 // A project copied from the example: the example's conveyor motor is left out and asked about; the unwinder comes from the I/O list.

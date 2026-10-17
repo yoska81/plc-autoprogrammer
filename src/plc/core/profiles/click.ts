@@ -69,13 +69,22 @@ function autoAddresses(io: IOPoint[], cpu: CpuModel, modules: ModuleSlot[]): Map
  * The app's neutral memory addressing (CLICK-style X/Y by slot, DF per analog channel). Profiles that
  * map this memory onto their own tags at export (Logix) share it, so the simulator and checker work unchanged.
  */
-export function neutralAutoAddresses(io: IOPoint[], cpu: CpuModel, modules: ModuleSlot[], channels: AnalogChannel[]): Map<string, string> {
+export function neutralAutoAddresses(io: IOPoint[], cpu: CpuModel, modules: ModuleSlot[], channels: AnalogChannel[], last?: Set<string>): Map<string, string> {
   const out = new Map<string, string>();
   // Manually-addressed points keep their address; skip it in the auto sequence.
   const taken = new Set(io.map((p) => p.plcAddress?.trim().toUpperCase()).filter(Boolean));
-  const gens = { input: ioAddresses('X', cpu.builtInInputs, modules), output: ioAddresses('Y', cpu.builtInOutputs, modules) };
+  // Digital points an analog channel in use takes (inputs that double as analog inputs).
+  const assigned = assignAnalog(io, channels);
+  for (const ch of assigned.values()) if (ch.sharesInput) taken.add(ch.sharesInput);
+  // Points in `last` (e.g. small npn transistor outputs among relays) are given out after the others of their slot.
+  const ordered = (g: Generator<string>) => {
+    const all = [...g];
+    const key = (x: string) => Number(x[1]) * 2 + (last?.has(x) ? 1 : 0);
+    return (last?.size ? all.map((x, i) => ({ x, i })).sort((a, b) => key(a.x) - key(b.x) || a.i - b.i).map((e) => e.x) : all)[Symbol.iterator]();
+  };
+  const gens = { input: ordered(ioAddresses('X', cpu.builtInInputs, modules)), output: ordered(ioAddresses('Y', cpu.builtInOutputs, modules)) };
   // Analog points get the DF register of their analog channel (see clickAnalog.ts).
-  for (const [id, ch] of assignAnalog(io, channels)) out.set(id, ch.address);
+  for (const [id, ch] of assigned) out.set(id, ch.address);
   for (const p of io) {
     if (p.plcAddress?.trim() || isAnalog(p)) continue;
     const gen = gens[p.type];

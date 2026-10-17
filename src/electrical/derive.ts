@@ -29,6 +29,7 @@ import type {
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
 } from './types';
 import { getHmi, hmiMaker } from '../hmi/hmiCatalog';
+import { hasBuiltInPanel } from '../hmi/panels';
 import { lengthText, routedLength, withService } from './layout/geometry';
 import { CABINET, type LayoutForDesign } from './layout/types';
 import { iecColor, iecMotorCurrent, isIec, mm2For, mm2FromAwg, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
@@ -549,7 +550,20 @@ function groupKey(address: string, type: 'input' | 'output', index: number): str
   return `${type}:g${Math.floor(index / 16)}`;
 }
 
+/**
+ * The PLC's own terminal name for a point, where the maker numbers terminals per CPU / module from 0
+ * (Unitronics: I0… / O0… on the CPU, each Uni-I/O module and snap-in, per their guides); null = the address is the label.
+ */
+export function vendorTerminal(part: CatalogPart | undefined, address: string): string | null {
+  if (part?.vendor !== 'unitronics') return null;
+  const m = /^([XY])\d(\d\d)$/i.exec(address);
+  return m ? `${m[1].toUpperCase() === 'X' ? 'I' : 'O'}${Number(m[2]) - 1}` : null;
+}
+
 function outputStyleOf(pn: string | undefined, part: CatalogPart | undefined): IoGroup['outputStyle'] {
+  // An explicit style from the catalog wins (Unitronics "-TR22" is mostly relay with two npn points).
+  const explicit = part?.ratings.outputStyle;
+  if (explicit === 'sourcing' || explicit === 'sinking' || explicit === 'relay') return explicit;
   const r = str(part?.ratings, 'outputType', 'outputs', 'output');
   const s = `${r ?? ''} ${part?.description ?? ''} ${pn ?? ''}`.toLowerCase();
   if (/sinking|nPN|dd1|td1/i.test(s)) return 'sinking';
@@ -789,7 +803,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   // The door HMI (a design component, or the one chosen on the HMI page): 24 VDC through its own fused
   // terminal (the supply can deliver more than the 18 AWG door wiring carries), Ethernet to the PLC when both have it.
   const hmiRc = rc.find((c) => c.category === 'hmi');
-  const hmiPn = hmiRc?.partNumber ?? ctx.hmiPartNumber ?? undefined;
+  // An all-in-one PLC is its own screen: no separate panel feed or link.
+  const hmiPn = hmiRc?.partNumber ?? (ctx.hmiPartNumber && ctx.hmiPartNumber !== ctx.plc.cpuPartNumber ? ctx.hmiPartNumber : undefined);
   const hmiTag = hmiRc?.tag ?? (hmiPn ? 'HMI1' : undefined);
   const hmiModel = hmiPn ? getHmi(hmiPn) : undefined;
   const hmiLink: HmiLink['link'] = String(plcPart?.ratings?.ethernet ?? 'yes') !== 'no' && hmiModel?.ethernet !== false ? 'ethernet' : 'serial';
@@ -1654,7 +1669,7 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
     else lines.set(key, { item: 0, qty: auxMissing.length, partNumber: 'SZ-A11T', manufacturer: ctx.getPart('SZ-A11T')?.manufacturer ?? 'Fuji Electric', description: `${ctx.getPart('SZ-A11T')?.description ?? 'Contactor auxiliary contact block, front mount, (1) N.O./(1) N.C.'} — ${why}`, tags: auxMissing.map((t) => `${t}-AUX`), category: 'other' });
   }
   // The project HMI (chosen on the HMI page) is on the door even when the design has no HMI component.
-  if (ctx.hmiPartNumber && !m.rc.some((c) => c.category === 'hmi')) {
+  if (ctx.hmiPartNumber && !m.rc.some((c) => c.category === 'hmi' || c.partNumber === ctx.hmiPartNumber)) {
     const h = getHmi(ctx.hmiPartNumber);
     lines.set(`hmi|${ctx.hmiPartNumber}`, { item: 0, qty: 1, partNumber: ctx.hmiPartNumber, manufacturer: h ? hmiMaker(h) : 'AutomationDirect', description: h?.description ?? 'Operator touch panel', tags: ['HMI1'], category: 'hmi' });
   }
@@ -2097,10 +2112,11 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   };
   // The plate names the device ("SAFETY RESET"), not the rest of its function text ("— blue, monitored manual reset of SR1 …").
   const legendOf = (c: ResolvedComponent) => wrapWords((str(c.part?.ratings, 'legend') ?? ((c.comp.function || c.tag).split(/\s+[—–-]\s+|[(:;,]/)[0].trim() || c.tag)).toUpperCase(), 12).slice(0, 2);
-  const hmis = doorRc.filter((c) => c.category === 'hmi');
+  // A PLC with a built-in screen (Unitronics) is laid out as the door's panel; its snap-in I/O is on its back.
+  const hmis = doorRc.filter((c) => c.category === 'hmi' || hasBuiltInPanel(c.part));
   // Stack lights mount on the enclosure top (direct base mount), not through the door face.
   for (const c of doorRc.filter((x) => x.category === 'stackLight')) unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Enclosure top mounted (stack light) — drill per manufacturer mounting template' });
-  const ops = doorRc.filter((c) => c.category !== 'hmi' && c.category !== 'stackLight' && !isLayoutAccessoryDoor(c));
+  const ops = doorRc.filter((c) => c.category !== 'hmi' && c.category !== 'plc' && c.category !== 'plcModule' && c.category !== 'stackLight' && !isLayoutAccessoryDoor(c));
   const kindOf = (c: ResolvedComponent): DoorItem['kind'] => c.category === 'pushbutton' ? 'pushbutton' : c.category === 'estop' ? 'estop' : c.category === 'pilotLight' ? 'pilot' : c.category === 'selector' ? 'selector' : 'other';
   const order: DoorItem['kind'][] = ['pilot', 'selector', 'pushbutton', 'other', 'estop'];
   // Double door: the HMI, operators and handle go on one leaf (the one in front of the disconnect), never across

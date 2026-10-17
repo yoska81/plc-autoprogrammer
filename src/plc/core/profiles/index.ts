@@ -3,6 +3,8 @@ import { clickProfile } from './click';
 import { logixProfile } from './logix';
 import { micro800Profile } from './micro800';
 import { siemensProfile } from './siemens';
+import { unistreamProfile } from './unilogic';
+import { visionProfile } from './visilogic';
 
 /** Generic IEC 61131-3 Structured Text, addressed by the project's own I/O ids. */
 const genericStProfile: PlcProfile = {
@@ -33,6 +35,8 @@ export const PLC_PROFILES: PlcProfile[] = [
   logixProfile,
   micro800Profile,
   siemensProfile,
+  unistreamProfile,
+  visionProfile,
   comingSoon('yaskawa', 'Yaskawa', 'MotionWorks IEC', 'st'),
   genericStProfile,
 ];

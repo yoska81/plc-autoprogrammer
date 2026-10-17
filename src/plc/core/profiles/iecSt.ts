@@ -32,6 +32,13 @@ export interface StDialect {
   prologue?: string[];
   /** Statements after the outputs. */
   epilogue?: string[];
+  /**
+   * No retentive timer block (UniLogic): an accumulating timer becomes a TON plus an accumulator (ms):
+   * <T>_ACC keeps the time of earlier runs, <T>_ET = ACC + the running TON, <T> = done bit.
+   */
+  rtoEmulation?: boolean;
+  /** Counter preset when it is not a constant (UniLogic CTU.PV is INT). */
+  counterPv?(expr: string): string;
   /** Extra I/O statements once every variable is known (e.g. analog scaling); inputs go first, outputs last. */
   ioExtra?(vars: Map<string, StVariable>): { inputs: string[]; outputs: string[] };
 }
@@ -54,6 +61,7 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
   }
   let edges = 0;
   let usesClock = false;
+  const emulated = (a: string) => Boolean(d.rtoEmulation) && blockType.get(a) === 'RTO';
 
   /** Variable for a neutral base address; returns the reference used in code. */
   function v(base: string, type: BlockType): string {
@@ -74,8 +82,9 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     const [, p, n] = m;
     switch (p) {
       case 'X': case 'Y': case 'C': return v(a, 'BOOL');
-      case 'T': return `${v(a, blockType.get(a) ?? 'TON')}.Q`;
+      case 'T': return emulated(a) ? v(a, 'BOOL') : `${v(a, blockType.get(a) ?? 'TON')}.Q`;
       case 'TD': {
+        if (emulated(`T${n}`)) { const et = v(`T${n}_ET`, 'DINT'), unit = timerUnit.get(`T${n}`) ?? 1000; return value && unit !== 1 ? `(${et} / ${unit})` : et; }
         const t = v(`T${n}`, blockType.get(`T${n}`) ?? 'TON'), unit = timerUnit.get(`T${n}`) ?? 1000;
         return value && unit !== 1 ? `(${d.timeToMs(`${t}.ET`)} / ${unit})` : d.timeToMs(`${t}.ET`);
       }
@@ -118,7 +127,20 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
           out.push(`IF ${cond} THEN ${op(o.address)} := FALSE; END_IF;`); break;
         }
         case 'TMR': {
-          const a = o.address.toUpperCase(), t = v(a, blockType.get(a)!), unit = UNIT_MS[o.unit] ?? 1000;
+          const a = o.address.toUpperCase(), unit = UNIT_MS[o.unit] ?? 1000;
+          if (emulated(a)) {
+            const ms = NUM_RE.test(o.preset.trim()) ? String(Math.round(Number(o.preset) * unit)) : `${op(o.preset)} * ${unit}`;
+            const done = v(a, 'BOOL'), ton = v(`${a}_TON`, 'TON'), acc = v(`${a}_ACC`, 'DINT'), last = v(`${a}_LAST`, 'DINT'), was = v(`${a}_WAS`, 'BOOL'), et = v(`${a}_ET`, 'DINT');
+            const rst = o.resetAddress ? op(o.resetAddress) : 'FALSE';
+            out.push(
+              `${ton}(IN := (${cond}) AND NOT ${rst}, PT := ${d.msToTime(`${ms} - ${acc}`)});`,
+              `IF ${rst} THEN ${acc} := 0; ELSIF NOT (${cond}) AND ${was} THEN ${acc} := ${acc} + ${last}; END_IF;`,
+              `${last} := ${d.timeToMs(`${ton}.ET`)};`, `${was} := (${cond}) AND NOT ${rst};`,
+              `${et} := ${acc} + ${last};`, `${done} := ${et} >= ${ms};`,
+            );
+            break;
+          }
+          const t = v(a, blockType.get(a)!);
           const ptv = NUM_RE.test(o.preset.trim()) ? d.msToTime(String(Math.round(Number(o.preset) * unit))) : d.msToTime(`${op(o.preset)} * ${unit}`);
           if (o.accumulate) out.push(`${t}(IN := ${cond}, ${d.params.rtoReset} := ${o.resetAddress ? op(o.resetAddress) : 'FALSE'}, PT := ${ptv});`);
           else out.push(`${t}(IN := ${cond}, PT := ${ptv});`);
@@ -126,7 +148,7 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
         }
         case 'CNT': {
           const a = o.address.toUpperCase(), c = v(a, blockType.get(a)!);
-          const pv = NUM_RE.test(o.preset.trim()) ? o.preset.trim() : op(o.preset);
+          const pv = NUM_RE.test(o.preset.trim()) ? o.preset.trim() : d.counterPv ? d.counterPv(op(o.preset)) : op(o.preset);
           const rstVar = vars.has(`${a}_RST`) ? refOf(`${a}_RST`) : undefined;
           const rst = [o.resetAddress ? op(o.resetAddress) : '', rstVar ?? ''].filter(Boolean).join(' OR ') || 'FALSE';
           out.push(o.direction === 'DOWN' ? `${c}(CD := ${cond}, ${d.params.ctdLoad} := ${rst}, PV := ${pv});` : `${c}(CU := ${cond}, ${d.params.ctuReset} := ${rst}, PV := ${pv});`);

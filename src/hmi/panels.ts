@@ -75,11 +75,14 @@ function toModel(raw: CatalogPart): HmiModel | null {
 
 let cache: PanelOption[] | null = null;
 
-/** Every catalog touch panel (display halves of pairs; boxes on their own are left out). */
+/** A PLC with its own touch screen (Unitronics all-in-ones): one part, PLC and panel. */
+export const hasBuiltInPanel = (p: CatalogPart | undefined) => p?.category === 'plc' && p.ratings.builtInPanel === 'yes';
+
+/** Every catalog touch panel (display halves of pairs; boxes on their own are left out), and the built-in screens of all-in-one PLCs. */
 export function catalogPanels(): PanelOption[] {
   if (cache) return cache;
   cache = ALL_PARTS
-    .filter((p) => p.category === 'hmi')
+    .filter((p) => p.category === 'hmi' || hasBuiltInPanel(p))
     .filter((p) => !(p.ratings.pairsWith && !parseResolution(p) && partnerOf(p) && parseResolution(partnerOf(p)!)))
     .map((part) => ({ part: panelPart(part), model: toModel(part) }));
   return cache;

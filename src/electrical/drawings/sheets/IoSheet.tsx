@@ -1,5 +1,5 @@
 /** PLC input / output wiring sheets: PLC terminal column, wire numbers, terminal strip, field device. */
-import type { IoGroup, IoPoint } from '../../derive';
+import { vendorTerminal, type IoGroup, type IoPoint } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW_THIN, textWidth, wrapText } from '../geometry';
 import { IO_PITCH, type DrawingPlan, type IoRow, type PlannedSheet, type SheetSpec } from '../plan';
 import {
@@ -101,6 +101,12 @@ function Header({ cols }: { cols: [number, string, ('start' | 'middle')?][] }) {
   );
 }
 
+/** PLC column label: the address, plus the maker's terminal name where it differs (Unitronics "X001 I0"). */
+function termLabel(plan: DrawingPlan, g: IoGroup, address: string): string {
+  const t = vendorTerminal(g.partNumber ? plan.ctx.getPart(g.partNumber) : undefined, address);
+  return t ? `${address} ${t}` : address;
+}
+
 function PlcColumn({ x, w, rows, labels, title, terminalSide, common }: { x: number; w: number; rows: number; labels: string[]; title: string; terminalSide: 'left' | 'right'; common?: boolean }) {
   const top = yOf(1) - IO_PITCH / 2 + 1;
   const bot = yOf(rows) + IO_PITCH / 2 - 1.5;
@@ -157,7 +163,7 @@ const I = { R24: 34, R0: 42, TBS: 58, DEV: 100, TBX: 150, PLC: 190, PLCW: 32, DE
 function InputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan; sheet: PlannedSheet; g: IoGroup; rows: IoRow[]; last: boolean }) {
   const pts = ioRows.flatMap((r) => (r.point ? [r.point] : []));
   const rows = ioRows.length + (last ? 1 : 0);
-  const labels = [...ioRows.map((r) => r.address), ...(last ? ['COM'] : [])];
+  const labels = [...ioRows.map((r) => termLabel(plan, g, r.address)), ...(last ? ['COM'] : [])];
   const strip = stripOf(pts.find((p) => p.signalTerminal)?.signalTerminal) || stripTag(plan.ctx.designations, 2);
   const lastUsed = Math.max(0, ...ioRows.map((r, i) => (r.point ? i + 1 : 0)));
   const railEnd = last ? yOf(rows) : yOf(lastUsed) + 6;
@@ -275,7 +281,7 @@ function OutputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan
   const rail = sink ? supply : '0V';
   const rows = ioRows.length + (last ? 1 : 0);
   const comLabel = sink ? 'C' : g.outputStyle === 'relay' ? 'C' : '+V';
-  const labels = [...ioRows.map((r) => r.address), ...(last ? [comLabel] : [])];
+  const labels = [...ioRows.map((r) => termLabel(plan, g, r.address)), ...(last ? [comLabel] : [])];
   const strip = stripOf(pts.find((p) => p.signalTerminal)?.signalTerminal) || stripTag(plan.ctx.designations, 3);
   const supplyRef = supply === '24+S' ? plan.xref.get('rung:24+S') : plan.xref.get(`ps:${plan.model.psBranches[0]?.ps.tag ?? ''}`);
   const zeroRef = plan.xref.get(`ps0:${plan.model.psBranches[0]?.ps.tag ?? ''}`);

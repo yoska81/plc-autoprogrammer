@@ -105,7 +105,7 @@ assert.ok(ok('ab-micro850', 'cMT2078X') && ok('siemens-s7-1200', 'cMT2078X') && 
 assert.ok(!ok('siemens-s7-1200-g2', 'MT8072iP'), 'Weintek iP: no S7-1200 G2 driver');
 assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000'), 'Red Lion: Logix yes, NX1P2 not listed');
 // Driver ids are platform ids (agreed list; every platform that exists must be on it).
-const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300']);
+const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz']);
 for (const pl of PLATFORMS) assert.ok(DRIVER_IDS.has(pl.id), `platform ${pl.id} is on the driver id list`);
 for (const p of ALL_HMIS()) for (const id of driversOf(p)) assert.ok(DRIVER_IDS.has(id), `${p.partNumber}: driver id ${id} is a known platform id`);
 console.log('driver list tests passed');
