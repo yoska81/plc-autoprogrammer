@@ -1,0 +1,39 @@
+machine Conveyor Cell
+screen main "Main": multistate "Machine State" DS1101, button "Start" C1001, button "Stop" C1002, button "Reset" C1003, indicator "Safety OK" X001, numeric "Parts" CTD1, numeric "Rate" DS1102, indicator "Running" C1202, machine "Conveyor Cell", alarm-banner "Alarms"
+screen manual "Manual" [maintenance]: panel "Mode", button "Manual Mode" C1004, indicator "Manual Active" C1201, indicator "Safety OK" X001, panel "Conveyor", button "Jog" C1005, indicator "Jog permitted" C1204, panel "Pusher", button "Extend" C1006, indicator "Extend permitted" C1205, indicator "Extended" X005, indicator "Retracted" X006
+screen setup "Setup" [maintenance]: panel "Timeouts", numeric-entry "Pusher timeout" DS1001, panel "Production", numeric-entry "Batch target" DS1002, panel "Service", numeric-entry "Service interval" DS1003
+screen alarms "Alarms": alarm-list "Message", button "Reset" C1003, indicator "Safety circuit open (E-st..." C1101, indicator "Pusher did not reach its ..." C1102, indicator "Service due: run hours re..." C1103
+screen diag "Diagnostics": panel "Inputs (CPU)  X001–X006", indicator "X001 E-Stop OK (safety relay)" X001, indicator "X002 Start Button" X002, indicator "X003 Stop Button" X003, indicator "X004 Part at end photo-eye" X004, indicator "X005 Pusher extended" X005, indicator "X006 Pusher retracted" X006, panel "Outputs (CPU)  Y001–Y003", indicator "Y001 Conveyor motor contactor" Y001, indicator "Y002 Pusher solenoid" Y002, indicator "Y003 Main air dump valve" Y003, panel "Communications", indicator "PLC heartbeat" C1203, text "CLICK C0-10DD1E-D"
+screen maint "Maintenance": panel "Counters", numeric "Parts" CTD1, button "Reset Parts" C1007, panel "Run time", numeric "Run hours" DS1103, numeric "Since service" DS1104, button "Service Done" C1008, indicator "Service Due" C1103, panel "Clock", datetime "Date / Time", numeric "Service interval" DS1003
+
+C1001   HMI_Start                    BIT   write      Momentary Start: the PLC starts the automatic cycle when Safety OK (X001) is ON, no alarm is latched and Manual mode is off.
+C1002   HMI_Stop                     BIT   write      Momentary Stop: the PLC ends the automatic cycle (stops all motion).
+C1003   HMI_Reset                    BIT   write      Momentary Reset: clears latched alarms whose cause is gone. Never restarts anything by itself.
+C1004   HMI_Manual_Select            BIT   read-write Toggle from the HMI: ON requests Manual mode; the PLC accepts it only while the cycle is stopped.
+C1201   STS_Manual_Mode              BIT   read       PLC sets ON while Manual mode is active (C1004 ON and the cycle stopped); Start is blocked while ON.
+C1202   STS_Running                  BIT   read       PLC sets ON while the automatic cycle runs.
+C1203   STS_Heartbeat                BIT   read       PLC toggles every second (communication watchdog on the Diagnostics screen).
+DS1101  Machine_State                INT   read       PLC writes 0 Stopped, 1 Running, 2 Faulted, 3 Manual, 4 Safety Stop (highest applicable wins).
+C1101   ALM_Safety_Open              BIT   read       PLC sets ON while Safety OK (X001) is OFF.
+C1204   STS_Conveyor_Jog_Permit      BIT   read       PLC sets ON when Manual mode (C1201) active, Safety OK (X001) ON and no other motion (Y002 OFF).
+C1005   HMI_Conveyor_Jog             BIT   write      Hold-to-run: while ON and C1204 is ON the PLC energizes Y001 (Conveyor motor contactor); stops on release.
+C1205   STS_Pusher_Extend_Permit     BIT   read       PLC sets ON when Manual mode (C1201) active, Safety OK (X001) ON and no other motion (Y001 OFF).
+C1006   HMI_Pusher_Extend            BIT   write      Hold-to-run: while ON and C1205 is ON the PLC energizes Y002 (Pusher solenoid); spring return retracts on release.
+DS1001  SP_Pusher_Timeout            INT   read-write Seconds allowed for Pusher to reach X005 (Pusher extended) / X006 (Pusher retracted) (1–30, default 3 on the first scan).
+C1102   ALM_Pusher_Timeout           BIT   read       PLC latches ON when Pusher does not reach its feedback position within DS1001 seconds after its valve switches; Reset (C1003) clears it.
+CTD1    Part_Count                   INT2  read       Counter CT1 counts each rising edge of X004 (Part at end photo-eye).
+C1007   HMI_Count_Reset              BIT   write      Momentary: resets the part counter CT1.
+DS1002  SP_Batch_Target              INT   read-write Batch size in parts (0 = no limit): the PLC stops the cycle when CTD1 reaches it.
+DS1102  Parts_Per_Min                INT   read       Parts counted in the last 60 s.
+DS1103  Run_Hours                    INT   read       Retentive machine run hours (count while the cycle runs).
+DS1104  Hours_Since_Service          INT   read       Retentive run hours since the last Service Done.
+DS1003  SP_Service_Interval          INT   read-write Run hours between services (50–2000, default 500 on the first scan).
+C1008   HMI_Service_Done             BIT   write      Momentary: resets the hours since service (DS1104) to 0.
+C1103   WRN_Service_Due              BIT   read       PLC sets ON when DS1104 >= DS1003.
+
+alarm C1101 alarm: Safety circuit open (E-stop or guard)
+alarm C1102 alarm: Pusher did not reach its position in time
+alarm C1103 warning: Service due: run hours reached
+
+note: Rule-based HMI: 6 screens (Main, Manual, Setup, Alarms, Diagnostics, Maintenance), 24 HMI tags in the standard ranges (commands C1001-, alarms C1101-, status C1201-, setpoints DS1001-/DF101-, status words DS1101-).
+note: Passwords: Maintenance for Manual, Setup and counter resets; Engineer for the service interval. Confirm the levels with the customer.

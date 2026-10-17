@@ -1,0 +1,105 @@
+block safety "Safety & modes"
+block alarms "Alarms"
+block cycle "Cycle"
+block head "Head"
+block manual "Manual"
+block outputs "Outputs"
+block status "HMI & status"
+
+[safety] First scan: Head timeout (s) outside 1-30 is loaded with the default 3
+    NO:SC2 DS1001<1 | NO:SC2 DS1001>30  ->  COPY 3->DS1001
+[safety] First scan: service interval (h) outside 50-2000 is loaded with the default 500
+    NO:SC2 DS1002<50 | NO:SC2 DS1002>2000  ->  COPY 500->DS1002
+[safety] Safety OK from the safety relay (Safety OK)
+    NO:X001  ->  OUT C1
+[safety] Reset command: HMI Reset
+    NO:C1003  ->  OUT C7
+[safety] Manual mode request is refused while the cycle runs: the HMI toggle is reset
+    NO:C2 NO:C1004  ->  RST C1004
+[safety] Manual mode active: HMI Manual selected and the cycle stopped
+    NO:C1004 NC:C2  ->  OUT C1201
+[safety] Cycle running: Start PB or HMI Start seals in; HMI Stop, safety loss, a fault, Manual mode or batch complete drops it
+    RISE:X002 NC:C1002 NO:C1 NC:C3 NC:C1201 NC:C4 | RISE:C1001 NC:C1002 NO:C1 NC:C3 NC:C1201 NC:C4 | NO:C2 NC:C1002 NO:C1 NC:C3 NC:C1201 NC:C4  ->  OUT C2
+[safety] Running status for the HMI
+    NO:C2  ->  OUT C1202
+[alarms] Head did not reach its position in time: latched
+    NO:T1 | NO:T2  ->  SET C1102
+[alarms] Head timeout reset: Reset once the valve is off
+    NO:C7 NC:Y003 NC:Y004  ->  RST C1102
+[alarms] Safety circuit open alarm while Safety OK is off
+    NC:C1  ->  OUT C1101
+[alarms] Any fault (stops the cycle): C1102
+    NO:C1102  ->  OUT C3
+[alarms] Service due warning: hours since service reached the service interval
+    DS1103>=DS1002 DS1002>0  ->  OUT C1103
+[cycle] Default cycle: Unwinder runs whenever the cycle runs (the machine's own sequence replaces this)
+    NO:C2  ->  OUT C20
+[cycle] Automatic sequence not written yet: Head extend, Head retract stay off in Auto (the AI or you write this block)
+    NC:SC1  ->  OUT C21, OUT C22
+[head] Head: extend timeout — valve on but not at Head down sensor within the setpoint
+    NO:C1 NO:Y003 NC:X004  ->  TMR T1 DS1001sec
+[head] Head: retract timeout — valve Y004 on but not at Head up sensor within the setpoint
+    NO:C1 NO:Y004 NC:X003  ->  TMR T2 DS1001sec
+[manual] Unwinder: Jog permitted — Manual mode, Safety OK, no other motion
+    NO:C1201 NO:C1 NC:Y003 NC:Y004  ->  OUT C1204
+[manual] Unwinder: manual Jog (Unwinder motor run) while the HMI button is held and permitted
+    NO:C1005 NO:C1204  ->  OUT C24
+[manual] Head: Down permitted — Manual mode, Safety OK, no other motion, Head up solenoid off
+    NO:C1201 NO:C1 NC:Y001 NC:Y004  ->  OUT C1205
+[manual] Head: manual Down (Head down solenoid) while the HMI button is held and permitted (an earlier jog has priority)
+    NO:C1006 NO:C1205 NC:C24  ->  OUT C25
+[manual] Head: Up permitted — Manual mode, Safety OK, no other motion, Head down solenoid off
+    NO:C1201 NO:C1 NC:Y001 NC:Y003  ->  OUT C1206
+[manual] Head: manual Up (Head up solenoid) while the HMI button is held and permitted (an earlier jog has priority)
+    NO:C1007 NO:C1206 NC:C24 NC:C25  ->  OUT C26
+[outputs] Unwinder motor run: automatic (cycle running) or manual request, Safety OK
+    NO:C20 NO:C2 NO:C1 | NO:C24 NO:C1  ->  OUT Y001
+[outputs] Head down solenoid: automatic (cycle running) or manual request, Safety OK, never with Head up solenoid
+    NO:C21 NO:C2 NO:C1 NC:Y004 | NO:C25 NO:C1 NC:Y004  ->  OUT Y003
+[outputs] Head up solenoid: automatic (cycle running) or manual request, Safety OK, never with Head down solenoid
+    NO:C22 NO:C2 NO:C1 NC:Y003 | NO:C26 NO:C1 NC:Y003  ->  OUT Y004
+[outputs] Heater contactor: on while Safety OK and no fault (confirm the heater may stay on while stopped)
+    NO:C1 NC:C3  ->  OUT Y002
+[status] One-scan pulse on each rising edge of the 1 s system clock SC7
+    RISE:SC7  ->  OUT C6
+[status] PLC heartbeat for the HMI: changes state every second
+    NO:C6 NC:C1203 | NC:C6 NO:C1203  ->  OUT C1203
+[status] Machine state 0 Stopped (default, overwritten below by higher states)
+    NO:SC1  ->  COPY 0->DS1101
+[status] Machine state 1 Running
+    NO:C2  ->  COPY 1->DS1101
+[status] Machine state 3 Manual
+    NO:C1201  ->  COPY 3->DS1101
+[status] Machine state 2 Faulted
+    NO:C3  ->  COPY 2->DS1101
+[status] Machine state 4 Safety Stop
+    NC:C1  ->  COPY 4->DS1101
+[status] No batch counting (no part sensor)
+    NC:SC1  ->  OUT C4
+[status] Run-hour timer: accumulates while the cycle runs, restarts after each full hour
+    NO:C2  ->  TMR T3 3600sec
+[status] One full run hour reached
+    NO:T3  ->  OUT C5
+[status] Add the hour to the run hours and the hours since service
+    NO:C5  ->  MATH DS1102=DS1102 + 1, MATH DS1103=DS1103 + 1
+[status] HMI Service Done clears the hours since service
+    NO:C1008  ->  COPY 0->DS1103
+
+C1 Safety_OK: Safety relay healthy
+C7 Cmd_Reset: Reset from the HMI or the panel
+C2 Cycle_Running: Automatic cycle running
+C20 Auto_Unwinder_run: Automatic run request for Unwinder (set by the cycle block)
+C21 Auto_Head_extend: Automatic extend request for Head (set by the cycle block)
+C22 Auto_Head_retract: Automatic retract request for Head (set by the cycle block)
+T1 Tmr_Head_Ext: Head extend timeout
+T2 Tmr_Head_Ret: Head retract timeout
+C23 Auto_Heater_run: Automatic run request for Heater (set by the cycle block)
+C3 Any_Fault: A latched fault: stops the cycle
+C24 Man_Unwinder_Y001: Manual request Unwinder motor run
+C25 Man_Head_Y003: Manual request Head down solenoid
+C26 Man_Head_Y004: Manual request Head up solenoid
+C6 Pulse_1s: One scan every second
+T3 Tmr_Run_Hour: Run-hour timer
+C5 Run_Hour_Pulse: One run hour reached
+
+note: The automatic sequence for Head is not written yet: those actuators move only in Manual until the cycle block is written.

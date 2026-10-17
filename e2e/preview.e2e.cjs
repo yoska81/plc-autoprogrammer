@@ -130,10 +130,10 @@ function reply(system) {
   await clickAi('/hmi', /Redesign screens|Design the HMI screens/, () => page.getByRole('button', { name: 'Redesign screens' }).waitFor({ timeout: 20000 }));
 
   await page.goto(BASE + '/#/program');
-  await page.getByRole('button', { name: 'Describe' }).click();
+  await page.getByRole('button', { name: 'Build', exact: true }).click();
   {
     const n = await page.evaluate(() => window.__calls.length);
-    const btn = page.getByRole('button', { name: /Generate (New )?Program/ });
+    const btn = page.getByRole('button', { name: 'Build program from my project' });
     check(await btn.isEnabled(), 'Generate Program enabled without an API key');
     await btn.click();
     await page.waitForFunction((k) => window.__calls.length > k, n, { timeout: 10000 });
@@ -186,6 +186,7 @@ function reply(system) {
     }
   }
   await page.goto(BASE + '/#/electrical?tab=machining');
+  await page.getByRole('group', { name: 'Part' }).getByRole('button', { name: /^Front door/ }).click();
   await page.getByRole('button', { name: 'Front door DXF' }).click();
   await page.waitForFunction(() => window.__saves.length > 0);
   const [dxf] = await saves();
@@ -194,6 +195,7 @@ function reply(system) {
 
   // A failed save is reported on the page (alert() is blocked in the preview frame).
   await page.evaluate(() => { window.__saveError = 'rate_limited'; });
+  await page.getByRole('group', { name: 'Part' }).getByRole('button', { name: /^Back panel/ }).click();
   await page.getByRole('button', { name: 'Back panel DXF' }).click();
   const notice = page.getByRole('alert').filter({ hasText: 'Another save is waiting' });
   await notice.waitFor({ timeout: 10000 });

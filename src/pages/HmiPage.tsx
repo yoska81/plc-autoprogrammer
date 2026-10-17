@@ -10,6 +10,12 @@ import { catalogPanels } from '../hmi/panels';
 import { setProjectPanel } from '../hmi/retarget';
 import { hmiFit, type Need } from '../plc/core/fit';
 import { generateHmiDesign, recreateScreenFromPicture } from '../lib/ai/hmiAI';
+import { generateRuleBasedHmi, projectHmiContent } from '../lib/ai/hmiContentAI';
+import { buildHmi } from '../hmi/engine';
+import { markEdited, mergeRegenerated, rebuildScreen } from '../hmi/engine/regenerate';
+import { useElectricalStore } from '../store/useElectricalStore';
+import { useProgramStore } from '../store/useProgramStore';
+import { specToText } from '../spec/types';
 import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
 import ResizablePane from '../components/ResizablePane';
@@ -153,7 +159,7 @@ function ElementEditor({ el, screens, onChange, onDelete }: { el: HmiElement; sc
   );
 }
 
-function ScreenInfo({ screen, issues, onLevel, onRename, onDelete }: { screen: HmiScreen; issues: LayoutIssue[]; onLevel: (l: AccessLevel) => void; onRename: (name: string) => void; onDelete?: () => void }) {
+function ScreenInfo({ screen, issues, onLevel, onRename, onDelete, onRebuild }: { screen: HmiScreen; issues: LayoutIssue[]; onLevel: (l: AccessLevel) => void; onRename: (name: string) => void; onDelete?: () => void; onRebuild?: () => void }) {
   const counts = new Map<string, number>();
   for (const e of screen.elements) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
   const addresses = new Set(screen.elements.flatMap((e) => [e.address, e.interlock ?? null].filter(Boolean)));
@@ -178,6 +184,8 @@ function ScreenInfo({ screen, issues, onLevel, onRename, onDelete }: { screen: H
         {[...counts].map(([k, n]) => <span key={k} className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{n} × {KIND_LABEL[k as HmiElement['kind']] ?? k}</span>)}
       </div>
       <p className="text-xs text-gray-400">Click an element on the screen to edit it.</p>
+      {screen.edited && <p className="text-xs text-gray-500">Edited by hand: kept when the screens are regenerated.</p>}
+      {screen.edited && onRebuild && <button onClick={onRebuild} className="block text-xs text-brand-700 hover:underline">Rebuild this screen from scratch</button>}
       {onDelete && <button onClick={onDelete} className="text-xs text-red-600 hover:underline">Delete this screen</button>}
     </div>
   );
@@ -280,7 +288,18 @@ export default function HmiPage() {
   const bounds = { w: W, h: H };
   const commit = (next: HmiDesign) => {
     if (design) setHist((h) => ({ ...h, past: [...h.past, design].slice(-100), future: [] }));
-    hmi.setDesign(syncHandTags(next, (a) => ioDesc.get(a)), hmi.explanation);
+    // Screens changed by hand are marked edited: a regeneration keeps them.
+    hmi.setDesign(syncHandTags(markEdited(design, next), (a) => ioDesc.get(a)), hmi.explanation);
+  };
+  /** "Rebuild this screen": the rules' version of this screen replaces the hand-edited one (one undo step). */
+  const rebuildThis = (id: string) => {
+    if (!design || !model) return;
+    const gen = buildHmi(projectHmiContent({ io, addresses, machineName: design.machineName || useProgramStore.getState().projectName, spec: '', electrical: useElectricalStore.getState().design, panel: model }),
+      { ...model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}` });
+    const next = rebuildScreen(design, gen, id);
+    if (!next) { notify('This screen is not one the generator makes (you added it), so it cannot be rebuilt.'); return; }
+    setHist((h) => ({ ...h, past: [...h.past, design].slice(-100), future: [] }));
+    hmi.setDesign(next, hmi.explanation);
   };
   const stepHistory = (dir: 'undo' | 'redo') => {
     const from = dir === 'undo' ? hist.past : hist.future;
@@ -423,30 +442,43 @@ export default function HmiPage() {
     return [...m];
   }, [io, addresses, design?.tags]);
 
-  const generate = () => {
-    if (!apiKey || !model || hmi.isGenerating) return;
+  /**
+   * Generate: the rule-based engine builds every screen from the I/O list (seconds, no key needed); with
+   * a key the AI only names things and adds the cycle's machine states. `full` = the older all-AI
+   * design (experimental: the AI lays out every element).
+   */
+  const generate = (full = false) => {
+    if (!model || hmi.isGenerating || (full && !apiKey)) return;
     setError(null);
     const look = design?.look, snap = { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp };
     void startAiJob({
-      kind: 'hmi', label: 'HMI screens', keepResult: true,
+      kind: 'hmi', label: full ? 'HMI screens (full AI)' : 'HMI screens', keepResult: true,
       run: async (h) => {
         useHmiStore.getState().setIsGenerating(true);
         try {
-          return await generateHmiDesign({
-            apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
-            hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: hmiCommsText(model, profile.id, `${profile.vendor} ${cpu.label}`),
-            spec: fp.spec, io, addresses, profile, cpu,
+          if (full) {
+            return await generateHmiDesign({
+              apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
+              hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: hmiCommsText(model, profile.id, `${profile.vendor} ${cpu.label}`),
+              spec: fp.spec, io, addresses, profile, cpu,
+            });
+          }
+          return await generateRuleBasedHmi({
+            apiKey: apiKey || undefined, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
+            io, addresses, spec: specToText(fp.spec), machineName: useProgramStore.getState().projectName,
+            electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
           });
         } finally { useHmiStore.getState().setIsGenerating(false); }
       },
       apply: (r) => {
-        // Keep the look the user picked (Siemens or dark console) across a regeneration.
-        useHmiStore.getState().setDesign(look ? { ...r.design, look } : r.design, r.explanation);
-        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(r.design) });
+        // Screens edited by hand are kept (re-bound to the new tags); keep the look the user picked.
+        const merged = mergeRegenerated(useHmiStore.getState().design, r.design).design;
+        useHmiStore.getState().setDesign(look ? { ...merged, look } : merged, r.explanation);
+        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(merged) });
       },
     });
   };
-  useTakeResult<Awaited<ReturnType<typeof generateHmiDesign>>>('hmi', (r) => {
+  useTakeResult<{ design: HmiDesign; reasoning: string | null }>('hmi', (r) => {
     setReasoning(r.reasoning);
     setScreenId(r.design.screens[0]?.id ?? null);
   });
@@ -465,10 +497,16 @@ export default function HmiPage() {
   };
 
   const genButton = (label: string) => (
-    <button onClick={generate} disabled={hmi.isGenerating || !apiKey || !model}
+    <button onClick={() => generate()} disabled={hmi.isGenerating || !model}
       className="px-4 py-2 text-sm bg-brand-600 text-white font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
       {hmi.isGenerating ? <><Spinner /> Designing screens…</> : label}
     </button>
+  );
+
+  const fullButton = (
+    <button onClick={() => generate(true)} disabled={hmi.isGenerating || !apiKey || !model}
+      title="The AI lays out every screen element itself (slower; the standard design uses the AI only for names and cycle steps)"
+      className="px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-40 whitespace-nowrap">AI full design (experimental)</button>
   );
 
   // Panels that can talk to this project's PLC (C-more for CLICK; other makers by their driver lists).
@@ -515,6 +553,7 @@ export default function HmiPage() {
             <Link to="/simulate" className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Try it live</Link>
             <button onClick={() => setChoosing((v) => !v)} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Change HMI</button>
             {genButton('Redesign screens')}
+            {fullButton}
           </div>
         )}
       </header>
@@ -531,10 +570,11 @@ export default function HmiPage() {
         {!design && (
           <div className="flex flex-wrap items-center gap-3">
             {genButton('Design the HMI screens')}
+            {fullButton}
             {model && <span className="text-sm text-gray-500">or make screens yourself:</span>}
             {model && <button onClick={() => void addScreen()} className="px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50">New blank screen</button>}
             {model && <PictureButton label="New screen from picture…" onFile={(f) => void addScreen(f)} />}
-            {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</span>}
+            {!apiKey && <span className="text-xs text-gray-500">Without an API key the screens are made from the I/O list by the rules only. Add a key in <Link to="/settings" className="underline">Settings</Link> to let the AI name things and add the cycle steps.</span>}
             {!model && <span className="text-sm text-gray-500">Choose an HMI above first.</span>}
           </div>
         )}
@@ -642,7 +682,7 @@ export default function HmiPage() {
                   ) : (
                     <ScreenInfo screen={screen} issues={screenIssues} onLevel={(l) => setScreenLevel(screen.id, l)}
                       onRename={(name) => updateScreen({ ...screen, name })}
-                      onDelete={design.screens.length > 1 ? () => deleteScreen(screen.id) : undefined} />
+                      onDelete={design.screens.length > 1 ? () => deleteScreen(screen.id) : undefined} onRebuild={() => rebuildThis(screen.id)} />
                   )}
                 </section>
                 <section className="bg-white rounded-lg border border-gray-200 p-4">

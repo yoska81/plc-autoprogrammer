@@ -9,7 +9,7 @@ import { useProjectStore } from '../store/useProjectStore';
 import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
-import { fingerprint } from './types';
+import { changedSections, fingerprint, type SpecSections } from './types';
 import type { IOPoint } from '../types/io';
 import type { HmiDesign } from '../hmi/types';
 
@@ -73,7 +73,11 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
     const src = sources[id];
     if (!src) return { id, status: 'ready', reason: null }; // made by hand or before tracking
     const reasons: string[] = [];
-    if (deps.spec && src.specFp !== fp.specFp) reasons.push('the spec changed');
+    if (deps.spec && src.specFp !== fp.specFp) {
+      // Say exactly what changed: answering a question (e.g. during an update) is not the same as editing the description.
+      const changed = src.spec ? changedSections(src.spec, fp.spec as SpecSections) : [];
+      reasons.push(changed.length === 1 && changed[0] === 'Questions and answers' ? 'new answers to questions' : changed.length ? `the machine description changed (${changed.slice(0, 3).join(', ')}${changed.length > 3 ? '…' : ''})` : 'the spec changed');
+    }
     if (deps.io && src.ioFp !== undefined && src.ioFp !== fp.ioFp) reasons.push('the I/O list changed');
     else if (deps.io && src.addrFp !== undefined && fp.addrFp !== undefined && src.addrFp !== fp.addrFp) reasons.push('the PLC or its I/O addresses changed');
     if (deps.region && src.region !== undefined && fp.region !== undefined && src.region !== fp.region) reasons.push('the installation region changed');

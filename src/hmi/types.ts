@@ -121,6 +121,8 @@ export interface HmiScreen {
   level?: AccessLevel;
   /** Picture drawn behind the elements. */
   background?: HmiBackground;
+  /** Changed by hand in the editor: a regeneration keeps it (re-binds addresses, adds missing items elsewhere). */
+  edited?: boolean;
 }
 
 export interface HmiAlarm {
@@ -135,6 +137,8 @@ export interface HmiTag {
   dataType: 'BIT' | 'INT' | 'INT2' | 'FLOAT';
   access: 'read' | 'write' | 'read-write';
   description: string;
+  /** What the tag is for, keyed by physical addresses (rule-based HMI, e.g. "permit:Y002"): the program templates find it by this, whatever its name. */
+  role?: string;
 }
 
 export interface HmiDesign {

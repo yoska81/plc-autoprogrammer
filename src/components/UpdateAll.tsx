@@ -5,7 +5,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { runUpdateAll, UPDATE_GROUPS, type StepResult, type UpdateStep } from '../spec/updateAll';
 import { cancelAiJob, startAiJob, useAiJob } from '../lib/ai/jobs';
 import { Spinner } from './common';
-import { percentOf, useAiProgress } from '../lib/ai/progress';
+import { isThinking, percentOf, useAiProgress } from '../lib/ai/progress';
 
 const ORDER: { step: UpdateStep; label: string }[] = [
   { step: 'equipment', label: 'Equipment' },
@@ -23,13 +23,12 @@ function StepProgress({ step }: { step: string }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
   if (!p || p.done) return <span className="ml-auto text-xs text-gray-400">waiting…</span>;
-  const pct = percentOf(step, p);
+  const pct = percentOf(step, p, now) ?? 0;
   return (
     <span className="ml-auto flex items-center gap-2 text-xs tabular-nums text-gray-600" data-testid={`progress-${step}`}>
-      {pct === null ? <>thinking {mmss(now - p.startedAt)}</> : <>
-        <span className="w-24 h-1.5 bg-gray-200 rounded overflow-hidden"><span className="block h-full bg-brand-600 transition-all" style={{ width: `${pct}%` }} /></span>
-        <span className="w-9 text-right font-medium text-brand-800">{pct}%</span>
-      </>}
+      <span className="text-gray-500">{isThinking(p) ? 'thinking' : 'writing'} {mmss(now - p.startedAt)}</span>
+      <span className="w-24 h-1.5 bg-gray-200 rounded overflow-hidden"><span className="block h-full bg-brand-600 transition-all" style={{ width: `${pct}%` }} /></span>
+      <span className="w-9 text-right font-medium text-brand-800">{pct}%</span>
     </span>
   );
 }

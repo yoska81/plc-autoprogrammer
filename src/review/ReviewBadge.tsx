@@ -24,7 +24,7 @@ export function ReviewTreeBadge() {
 export function ReviewStatus() {
   const [critical, major] = useBlocking();
   return (
-    <Link to="/review" className={`hover:underline ${critical ? 'text-red-300 font-semibold' : major ? 'text-amber-300' : ''}`} title="Design review: open findings">
+    <Link to="/review" className={`hover:underline ${critical ? 'bg-red-700 text-white font-semibold px-1.5 rounded-sm' : major ? 'bg-amber-300 text-steel-900 px-1.5 rounded-sm' : ''}`} title="Design review: open findings">
       Review: {critical || major ? `${critical} critical · ${major} major open` : 'no critical/major open'}
     </Link>
   );

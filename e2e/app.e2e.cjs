@@ -37,6 +37,8 @@ function reply(system, body = {}) {
     : system.includes('complete discrete PLC I/O list') ? 'io'
     : system.includes('industrial control panel') ? 'electrical'
     : system.includes("describe the machine's electrical load and safety") ? 'machine'
+    : system.includes('You name things on an operator touch panel') ? 'hmiNames'
+    : system.includes('You write ONE block of a ladder program') ? 'cycle'
     : system.includes('HMI designer') ? 'hmi'
     : system.includes('ladder logic') ? 'ladder' : 'unknown';
   counts[k] = (counts[k] ?? 0) + 1;
@@ -56,6 +58,8 @@ function reply(system, body = {}) {
       motors: F.DESIGN.inputs.motors.map((x) => ({ tag: x.tag, description: x.description, power: x.hp, unit: 'hp', powerGiven: true, start: 'dol', vertical: false, zone: m.motorLocations[x.tag] ?? '' })),
       estops: 1, guardDoors: [], lightCurtains: [], zones: m.zones, interfaces: [], questions: ['Confirm the conveyor motor nameplate current.'],
     };
+    case 'cycle': return { explanation: 'Step register reset while stopped.', tags: [{ address: 'DS1150', nickname: 'Step_Cycle', comment: 'Cycle step' }], rungs: [{ id: 'a', block: 'cycle', comment: 'Step 0 while the cycle is not running', branches: [[{ type: 'NC', address: 'C2' }]], outputs: [{ type: 'COPY', source: '0', dest: 'DS1150' }] }] };
+    case 'hmiNames': return { machineName: 'Conveyor Cell', actuators: [], states: [], questions: ['Which operator password levels are needed?'] };
     case 'hmi': return { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [{ kind: 'question', text: 'Which operator password levels are needed?' }, { kind: 'issue', text: 'Alarm banner colour chosen for contrast with the header.' }] };
     case 'ladder': {
       if (counts.ladder === 1) return { explanation: 'Program written from the spec.', program: F.LADDER };
@@ -125,8 +129,8 @@ function sse(model, text) {
   await page.getByText('Organized the description').waitFor({ timeout: 15000 });
   await snap(page, 'wizard_2');
   await page.getByRole('button', { name: 'Next →' }).click();
-  await page.getByRole('button', { name: 'Suggest equipment' }).click();
-  await page.getByRole('button', { name: 'Suggest again' }).waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: /Suggest for me/ }).click();
+  await page.getByRole('button', { name: /Suggest again/ }).waitFor({ timeout: 15000 });
   await snap(page, 'wizard_3_recommendation');
   // Equipment chooser: weak CPUs are greyed, a bigger one can be chosen.
   const greyCpus = await page.locator('input[aria-label^="Choose C"][disabled]').count();
@@ -256,7 +260,8 @@ function sse(model, text) {
     check(/_in_cut\.dxf$/.test(d.suggestedFilename()) && ok, 'inch, cut-only DXF');
   }
   // A printable PDF drawing next to each DXF: the drilling / cutout sheet(s) on the project's paper.
-  for (const [btn, re] of [['Back panel PDF', /_back_panel_drilling\.pdf$/], ['Front door PDF', /_door_cutouts\.pdf$/]]) {
+  for (const [part, btn, re] of [['Back panel', 'Back panel PDF', /_back_panel_drilling\.pdf$/], ['Front door', 'Front door PDF', /_door_cutouts\.pdf$/], ['Enclosure bottom', 'Enclosure bottom PDF', /_enclosure_bottom_cutouts\.pdf$/]]) {
+    await page.getByRole('group', { name: 'Part' }).getByRole('button', { name: new RegExp(`^${part} \\(`) }).click();
     const [d] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: btn }).click()]);
     const f = OUT + d.suggestedFilename(); await d.saveAs(f);
     const doc = await PDFDocument.load(fs.readFileSync(f));
@@ -333,15 +338,31 @@ function sse(model, text) {
   // HMI (part preselected by equipment)
   await page.goto(BASE + '/hmi');
   log('HMI preselected:', await page.getByText(/CM5-T7W · 7"/).count() > 0);
+  // Design = rule-based screens from the I/O list (the AI only names things), then the older all-AI design.
   await page.getByRole('button', { name: 'Design the HMI screens' }).click();
   await page.getByRole('button', { name: 'Redesign screens' }).waitFor({ timeout: 15000 });
+  await page.getByText(/^Rule-based HMI for/).first().waitFor({ timeout: 15000 });
+  const ruleScreens = await page.locator('nav[aria-label="Screens"] > button').count();
+  log('Rule-based HMI:', ruleScreens, 'screens |', (await page.getByText(/^Rule-based HMI for/).first().innerText()).slice(0, 140));
+  check(counts.hmiNames === 1 && ruleScreens >= 6, 'rule-based HMI: standard screens, one small AI request');
+  await page.getByRole('button', { name: 'AI full design (experimental)' }).click();
+  await page.getByText('Three screens.').first().waitFor({ timeout: 15000 });
+  check(counts.hmi === 1, 'HMI AI full design (experimental) still works');
   log('HMI screens:', await page.locator('nav[aria-label="Screens"] > button').count(), '| tags tab:', (await page.getByRole('button', { name: /^Tags\s*\d+/ }).innerText()).replace(/\s+/g, ' '));
   await snap(page, 'hmi');
 
   // Program
   await page.goto(BASE + '/program');
-  await page.getByRole('button', { name: 'Describe' }).click();
-  await page.getByRole('button', { name: 'Generate Program' }).click();
+  await page.getByRole('button', { name: 'Build', exact: true }).click();
+  // Generate = standard blocks from the rules (every HMI tag implemented), the AI writes only the cycle block.
+  await page.getByRole('button', { name: 'Build program from my project' }).click();
+  await page.getByText(/Program from the standard blocks/).first().waitFor({ timeout: 15000 });
+  log('Rule-based program:', (await page.getByText(/Program from the standard blocks/).first().innerText()).slice(0, 160));
+  check(counts.cycle === 1, 'cycle block: one small AI request');
+  check(await page.getByText(/Checker: no problems found/).count() === 1, 'rule-based program: checker clean');
+  // The older all-AI program is still there (the steps below use its fixture program).
+  await page.getByRole('button', { name: 'Build', exact: true }).click();
+  await page.getByRole('button', { name: 'AI full program (experimental)' }).click();
   await page.getByText('Cycle running: panel or HMI Start').waitFor({ timeout: 15000 });
   log('Tree status dots (done/stale):', await page.locator('nav [title="Done"]').count(), '/', await page.locator('nav [title="Out of date"]').count());
   await snap(page, 'program');
@@ -519,7 +540,8 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 15000 });
   log('Review verdict shown:', await page.getByText(/Reviewer's verdict/).count() > 0, '| critical open:', await page.locator('div', { hasText: /^Critical open$/ }).locator('xpath=following-sibling::div').first().innerText());
   const rowOf = (t) => page.locator('tr', { hasText: t });
-  check(await rowOf('HMI: Alarm banner colour').count() === 1, 'HMI technical issue is a design review finding (not a question)');
+  // Update all made the HMI with the rules: its summary note (not a question) is a review finding.
+  check(await rowOf('HMI: Rule-based HMI').count() === 1, 'HMI technical note is a design review finding (not a question)');
   const badge = page.locator('nav a', { hasText: 'Design review' }).locator('span[aria-label$="open critical or major findings"]');
   log('Review badge / status bar:', await badge.innerText(), '|', await page.getByRole('link', { name: /^Review: / }).innerText());
   check(Number(await badge.innerText()) >= 1, 'tree badge counts open critical/major findings');

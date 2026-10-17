@@ -10,7 +10,7 @@ import { hmiReadme, hmiTagCsv, needsHmiTagList } from '../deliverables/hmiTags';
 import { buildDrawingsPdf, buildEverythingZip, buildHmiImages, buildHmiPdf, buildMachiningPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
 import { Spinner } from '../components/common';
-import { backPanelDxf, doorDxf } from '../electrical/dxf';
+import { backPanelDxf, doorDxf, enclosureFaceDxfs } from '../electrical/dxf';
 import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep';
 import { printLabelPdf, printMessage } from '../electrical/labels/print';
 import OrderListCard from '../deliverables/OrderListCard';
@@ -207,12 +207,14 @@ export default function ExportPage() {
           </Card>
 
           <Card title="Cabinet machining (for the machine shop)" info={stages.electrical} to="/electrical?tab=cabinet">
-            <p className="text-xs text-steel-500">1:1 DXF files in inches for laser / CNC / punch: every drilling and tapping hole of the back panel, and every cutout of the door (22 mm operators, HMI, disconnect handle). Each has a PDF drawing to print beside it: dimensions from the datum, hole table, title block and sheet scale.</p>
+            <p className="text-xs text-steel-500">1:1 DXF files in inches for laser / CNC / punch: every drilling and tapping hole of the back panel, and every cutout of the door (22 mm operators, HMI, disconnect handle), and the enclosure walls (cable glands / cord grips for every field cable and the supply, filter fan and outlet filter when the heat calculation needs them, stack light). Each has a PDF drawing to print beside it: dimensions from the datum, hole table, title block and sheet scale.</p>
             <div className="flex flex-wrap gap-2">
               <B busy={busy} label="Back panel DXF" disabled={!hasElec} onClick={run('Back panel DXF', () => saveBlob(`${p.fileBase}_back_panel_drilling_1to1_in.dxf`, new Blob([backPanelDxf(p.drawingCtx!)], { type: 'application/dxf' })))} />
               <B busy={busy} label="Door cutouts DXF" disabled={!hasElec} onClick={run('Door cutouts DXF', () => saveBlob(`${p.fileBase}_door_cutouts_1to1_in.dxf`, new Blob([doorDxf(p.drawingCtx!)], { type: 'application/dxf' })))} />
               <B busy={busy} label="Back panel drilling PDF" disabled={!hasElec} onClick={run('Back panel drilling PDF', async () => { const b = await buildMachiningPdf(p.drawingCtx!, 'backpanel'); if (b) saveBlob(`${p.fileBase}_back_panel_drilling.pdf`, b); })} />
               <B busy={busy} label="Door cutouts PDF" disabled={!hasElec} onClick={run('Door cutouts PDF', async () => { const b = await buildMachiningPdf(p.drawingCtx!, 'door'); if (b) saveBlob(`${p.fileBase}_door_cutouts.pdf`, b); })} />
+              <B busy={busy} label="Enclosure walls DXF" disabled={!hasElec} onClick={run('Enclosure walls DXF', () => { for (const f of enclosureFaceDxfs(p.drawingCtx!)) saveBlob(`${p.fileBase}_enclosure_${f.face}_cutouts_1to1_in.dxf`, new Blob([f.dxf], { type: 'application/dxf' })); })} />
+              <B busy={busy} label="Enclosure walls PDF" disabled={!hasElec} onClick={run('Enclosure walls PDF', async () => { const b = await buildMachiningPdf(p.drawingCtx!, 'walls'); if (b) saveBlob(`${p.fileBase}_enclosure_cutouts.pdf`, b); })} />
             </div>
           </Card>
 

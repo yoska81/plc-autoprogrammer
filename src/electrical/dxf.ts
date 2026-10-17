@@ -10,6 +10,7 @@
  * TEXT (labels, title, units) and DIMS (ordinate reference marks).
  * Pure TypeScript, no dependencies.
  */
+import { enclosureFaceDrilling } from './enclosureFaces';
 import { backPanelDrilling, doorDrilling, dualDim, dualSize, type DrawingContext, type DrillingPlan } from './derive';
 
 const LAYERS: [string, number][] = [['OUTLINE', 7], ['HOLES', 1], ['CUTOUTS', 5], ['NOTCH_OPTIONAL', 6], ['TEMPLATE', 8], ['TEXT', 3], ['DIMS', 4]];
@@ -114,12 +115,13 @@ export function drillingDxf(plan: DrillingPlan, projectName = '', opts: DxfOptio
     w.text('TEXT', h.x + h.dia / 2 + 1, h.y + h.dia / 2 + 0.5, 2.5, `${h.id} Ø${dualDim(h.dia)}`);
   }
   for (const c of plan.cutouts) {
-    if (c.code === 'G') {
-      // centre mark only: drill from the handle template
-      w.line('TEMPLATE', c.x - 15, c.y, c.x + 15, c.y);
-      w.line('TEMPLATE', c.x, c.y - 15, c.x, c.y + 15);
-      w.circle('TEMPLATE', c.x, c.y, c.w / 2);
-      w.text('TEXT', c.x + 13, c.y + 13, 3, `${c.id} ${c.tag} DRILL PER HANDLE TEMPLATE`);
+    if (c.template) {
+      // size not from the catalog: centre mark and outline only, machined per the part's template / datasheet
+      const r = Math.max(c.w, c.h) / 2;
+      w.line('TEMPLATE', c.x - r - 5, c.y, c.x + r + 5, c.y);
+      w.line('TEMPLATE', c.x, c.y - r - 5, c.x, c.y + r + 5);
+      if (c.kind === 'rect') w.rect('TEMPLATE', c.x, c.y, c.w, c.h); else w.circle('TEMPLATE', c.x, c.y, c.w / 2);
+      w.text('TEXT', c.x + c.w / 2 + 2, c.y + c.h / 2 + 2, 3, `${c.id} ${c.tag} ${c.template} - DO NOT CUT FROM THIS OUTLINE`);
       continue;
     }
     if (c.kind === 'round') {
@@ -146,4 +148,9 @@ export function backPanelDxf(ctx: DrawingContext, opts?: DxfOptions): string {
 /** Door cutout DXF (inches unless opts.units = 'mm', lower-left datum, outside view). */
 export function doorDxf(ctx: DrawingContext, opts?: DxfOptions): string {
   return drillingDxf(doorDrilling(ctx), ctx.projectName, opts);
+}
+
+/** One DXF per enclosure wall with cutouts (bottom, top, left, right). */
+export function enclosureFaceDxfs(ctx: DrawingContext, opts?: DxfOptions): { face: DrillingPlan['kind']; dxf: string }[] {
+  return enclosureFaceDrilling(ctx).map((p) => ({ face: p.kind, dxf: drillingDxf(p, ctx.projectName, opts) }));
 }
