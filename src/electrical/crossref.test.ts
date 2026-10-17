@@ -39,3 +39,5 @@ assert.equal(bm.successor, 'MPW40-3-U001');
 assert.ok(isObsolete(bm));
 assert.equal(sourcingOf('6AV2124-0GC01-0AX0').lifecycle, 'mature', 'Comfort panel: phase-out announced (legacy in the HMI review)');
 console.log('sourcing tests passed');
+// Stainless enclosures and their back panels carry an AutomationDirect list price (NEMA 4X what-if).
+for (const pn of ['SCE-30EL2010SSLP', 'SCE-30P20']) assert.ok(sourcingOf(pn).listPrice, `${pn} price`);
