@@ -4,6 +4,7 @@ import { ANALOG_RANGES, type AnalogSpec, type IOCategory, type IOPoint } from '.
 import type { FieldDeviceType } from '../../electrical/types';
 import { specToText, type SpecSections } from '../../spec/types';
 import { callClaude } from './anthropic';
+import { ANSWERED_RULE } from '../../components/questions/classify';
 
 const CATEGORIES: IOCategory[] = ['Safety', 'Operator/HMI', 'External Machine', 'Product Detection', 'Conveyor', 'Pneumatic', 'Vacuum', 'Servo/Axis', 'Station 1', 'Station 2', 'Analog/Process', 'Spare'];
 const DEVICE_TYPES: FieldDeviceType[] = ['pushbutton-no', 'pushbutton-nc', 'selector', 'estop-contact', 'sensor-pnp', 'sensor-npn', 'limit-switch', 'pressure-switch', 'safety-relay-output', 'contactor-coil', 'relay-coil', 'solenoid', 'pilot-light', 'stack-light', 'vfd-input', 'other'];
@@ -67,6 +68,7 @@ Rules:
 - If an existing I/O list is given, KEEP the descriptions of points that are still needed exactly as written so their wiring is preserved, add what's missing, and drop what the spec no longer needs.
 - "reason": the spec requirement each point serves.
 - "questions": anything ambiguous that changes the I/O count (e.g. "Does the clamp need both open and closed sensors?").
+${ANSWERED_RULE}
 - "explanation": a short summary of the I/O list (counts and main groups).`;
 
 export async function generateIOFromSpec(opts: {

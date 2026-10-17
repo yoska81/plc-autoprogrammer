@@ -180,7 +180,8 @@ function ProjectData() {
                     <tr key={i}>
                       <td className={`${td} font-mono w-16`}>{r.rev}</td>
                       <td className={`${td} w-32`}>{r.date}</td>
-                      <td className={td}>{r.description}{r.override && <div className="text-xs text-red-700">Issued with open critical review findings — override: {r.override}</div>}</td>
+                      <td className={td}>{r.description}{r.override && <div className="text-xs text-red-700">Issued with open critical review findings — override: {r.override}</div>}
+                        {r.changes?.length ? <ul className="mt-0.5 list-disc pl-4 text-xs text-steel-600" aria-label={`Changes in revision ${r.rev}`}>{r.changes.map((c, j) => <li key={j}>{c}</li>)}</ul> : null}</td>
                       <td className={`${td} w-24`}>{r.by}</td>
                       <td className={`${td} w-8`}>
                         {i === info.revisions.length - 1 && (

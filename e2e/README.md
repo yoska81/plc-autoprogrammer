@@ -11,7 +11,7 @@ node e2e/app.e2e.cjs                  # BASE_URL=http://localhost:5173 by defaul
 Screenshots and downloaded files land in `e2e/out/` (git-ignored).
 Playwright is loaded from the global install (`/opt/node22/lib/node_modules/playwright`, Chromium in `/opt/pw-browsers`).
 
-Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/review/codeRules/iec.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/electrical/layout/layout.test.ts`, `npx tsx src/electrical/catalog.test.ts`, `npx tsx src/electrical/vfdLine.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/hmi/theme.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/plc/core/profiles/logix.test.ts`, `npx tsx src/plc/core/profiles/micro800.test.ts`, `npx tsx src/plc/core/profiles/siemens.test.ts`, `npx tsx src/plc/core/tagNames.test.ts` and `npx tsx src/electrical/vfd.test.ts`.
+Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/review/codeRules/iec.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/electrical/layout/layout.test.ts`, `npx tsx src/electrical/catalog.test.ts`, `npx tsx src/electrical/vfdLine.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/hmi/theme.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/plc/core/profiles/logix.test.ts`, `npx tsx src/plc/core/profiles/micro800.test.ts`, `npx tsx src/plc/core/profiles/siemens.test.ts`, `npx tsx src/plc/core/tagNames.test.ts` `npx tsx src/electrical/vfd.test.ts`, `npx tsx src/components/questions/knowledge.test.ts` (answered once anywhere → never asked again), `npx tsx src/components/questions/onePlace.test.ts` (questions only on the Machine description page; Update all leaves none open), `npx tsx src/commissioning/checklist.test.ts` and `npx tsx src/redlines/redlines.test.ts`.
 
 ## Preview build
 
@@ -58,3 +58,10 @@ text on lime. `old-data/<commit>.json` is the browser storage the example projec
 BASE_URL=http://localhost:5203 node e2e/hmi-editor.e2e.cjs   # picture behind a screen, place/move/resize/undo, tags, AI recreate (mocked), simulator, PNG export
 npx tsx src/hmi/editor.test.ts                               # editor model: move, resize, snap, align, distribute, duplicate, undo, tags
 ```
+
+## On site: commissioning checklist and redlines
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/field.e2e.cjs   # checklist tick / fail + note / sign, PDF + Excel (page and Deliverables), reload; redline on a sheet + field change → apply → M1 edited, revision with the change list
+```
+Screenshots and files land in `e2e/out-field/`.

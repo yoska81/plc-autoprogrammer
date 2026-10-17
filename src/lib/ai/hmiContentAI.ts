@@ -6,6 +6,7 @@ import { inferRoles } from '../../hmi/engine/roles';
 import { rungAddresses, rungWrites, type LadderProgram } from '../../plc/core/ladder';
 import { callClaude } from './anthropic';
 import type { AiOptions } from './machineModelAI';
+import { ANSWERED_RULE } from '../../components/questions/classify';
 
 /**
  * HMI, rules first and AI second: the rule-based engine (src/hmi/engine) builds every screen from the
@@ -28,7 +29,8 @@ const SYSTEM = `You name things on an operator touch panel whose screens a rule-
 - machineName: short machine name for the header (2–4 words, from the specification).
 - actuators: for each actuator listed (by index) a short operator name (1–3 words, e.g. "Infeed Belt", "Sealing Head") and manual = true when an operator may jog it by hand in Manual mode (false for heaters, safety dump valves, anything dangerous to jog).
 - states: the machine-state word texts in the order the PLC sets them: 0 Stopped (normal) first; Running (ok); one entry per main step of the cycle the specification describes (e.g. "Sealing", "Cooling", ok); then Faulted (alarm), Manual (warning) and Safety Stop (alarm). 4–10 entries, values 0,1,2… in order, texts of 1–2 words.
-- questions: what the customer must confirm for the panel (password levels, extra screens wanted), one short sentence each, at most 4.`;
+- questions: what the customer must confirm for the panel (password levels, extra screens wanted), one short sentence each, at most 4.
+${ANSWERED_RULE}`;
 
 interface AiContent { machineName: string; actuators: { index: number; name: string; manual: boolean }[]; states: HmiState[]; questions: string[] }
 

@@ -1,15 +1,18 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StartCleanBanner from '../components/StartCleanBanner';
 import { useSpecStore } from '../store/useSpecStore';
 import { SPEC_SECTIONS } from '../spec/types';
 import SpecIntake from '../components/SpecIntake';
 import QuestionList from '../components/questions/QuestionList';
-import { useQuestions } from '../components/questions/useQuestionStore';
+import { duplicateOpen, useQuestions } from '../components/questions/useQuestionStore';
 
 export default function SpecPage() {
   const navigate = useNavigate();
   const spec = useSpecStore();
-  const questions = useQuestions();
+  // Every question is asked here (the later stages only list the defaults they used); one asked twice is shown once.
+  const all = useQuestions();
+  const questions = useMemo(() => { const dup = duplicateOpen(all); return all.filter((q) => !dup.has(q.id)); }, [all]);
   const filled = SPEC_SECTIONS.filter((s) => spec.sections[s.id]?.trim()).length;
   const open = questions.filter((q) => q.status === 'open').length;
 
@@ -31,7 +34,7 @@ export default function SpecPage() {
           <StartCleanBanner />
           {open > 0 && (
             <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 text-sm text-amber-900">
-              <span className="flex-1">The AI has <b>{open} question{open === 1 ? '' : 's'}</b> about your machine. Answers make the design more accurate; every step also works without them (the AI then uses its assumption).</span>
+              <span className="flex-1" data-testid="spec-needs-answers">The machine description needs <b>{open} answer{open === 1 ? '' : 's'}</b>: everything the I/O, electrical design, HMI and program need is asked here, in one place. Every step also works without them (it uses the default shown with the question).</span>
               <button onClick={() => document.getElementById('questions-and-answers')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                 className="px-3 py-1 text-xs font-medium bg-white border border-amber-300 rounded-sm hover:bg-amber-100">Answer them ↓</button>
             </div>
@@ -59,10 +62,10 @@ export default function SpecPage() {
             ))}
           </div>
 
-          {/* Questions & answers: part of the specification (asked here and on the later pages). */}
+          {/* Questions & answers: part of the specification. The only place questions are asked. */}
           <div id="questions-and-answers">
-            <QuestionList questions={questions} all showSource title="Questions & answers"
-              intro="Questions the AI asked about this machine, with your answers right under them. They are part of the specification: every later stage reads them, and changing an answer marks those stages out of date. Answer open ones in the box under the question; change an answer any time." />
+            <QuestionList questions={questions} all grouped title="Questions & answers"
+              intro="Everything the later stages need, checked against your description, plus what they found while designing — asked here only, grouped by topic. Answers are part of the specification: every stage reads them, and changing an answer marks those stages out of date. An answer may bring a follow-up question right away." />
           </div>
         </div>
       </div>

@@ -119,7 +119,7 @@ export default function App() {
     label: projectName,
     children: [
       { label: 'Project data', to: '/project' },
-      { label: 'Machine description', to: '/spec', stage: 'spec', questions: openQ.spec },
+      { label: 'Machine description', to: '/spec', stage: 'spec', questions: Object.values(openQ).reduce((a, b) => a + b, 0) },
       {
         label: 'Equipment', to: '/equipment', stage: 'equipment',
         children: equipmentDone ? [
@@ -128,9 +128,9 @@ export default function App() {
           ...(hmiPart ? [{ label: `HMI ${hmiPart}`, mono: true }] : []),
         ] : undefined,
       },
-      { label: 'I/O list', to: '/io', stage: 'io', questions: openQ.io },
+      { label: 'I/O list', to: '/io', stage: 'io' },
       {
-        label: 'Electrical design', to: '/electrical?tab=design', stage: 'electrical', questions: openQ.electrical,
+        label: 'Electrical design', to: '/electrical?tab=design', stage: 'electrical',
         children: [
           { label: 'Cabinet wiring', to: '/electrical?tab=cabinet' },
           { label: 'Machine wiring', to: '/electrical?tab=machine' },
@@ -138,10 +138,11 @@ export default function App() {
           { label: 'Cabinet picture', to: '/electrical?tab=picture' },
           { label: 'Machining (DXF)', to: '/electrical?tab=machining' },
           { label: 'Labels', to: '/electrical?tab=labels' },
+          { label: 'Redlines / field changes', to: '/redlines' },
         ],
       },
       {
-        label: 'HMI screens', to: '/hmi', stage: 'hmi', questions: openQ.hmi,
+        label: 'HMI screens', to: '/hmi', stage: 'hmi',
       },
       {
         label: 'PLC program', to: '/program', stage: 'program',
@@ -149,9 +150,10 @@ export default function App() {
           { label: 'I/O addressing', to: '/plc' },
           { label: 'Simulation', to: '/simulate' },
           { label: 'Online (real PLC)', to: '/online' },
+          { label: 'Commissioning checklist', to: '/commissioning' },
         ],
       },
-      { label: 'Design review', to: '/review', badge: <ReviewTreeBadge />, questions: openQ.review },
+      { label: 'Design review', to: '/review', badge: <ReviewTreeBadge /> },
       { label: 'Deliverables', to: '/export' },
     ],
   };

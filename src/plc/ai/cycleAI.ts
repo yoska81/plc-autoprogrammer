@@ -9,6 +9,7 @@ import { validateProgram } from '../core/validate';
 import type { ProgramResult } from '../engine/program';
 import { checkSequence, programWithCycle, type CycleSequence, type CycleStep } from '../engine/sequence';
 import type { AIConfig, PlcContext } from './ladderAI';
+import { ANSWERED_RULE } from '../../components/questions/classify';
 
 /**
  * PLC program, rules first and AI second: the rule-based templates (src/plc/engine/program.ts) write
@@ -39,6 +40,7 @@ const SYSTEM = `You describe a machine's automatic cycle as a STEP SEQUENCE for 
 - Every step must wait for something (a sensor or a time), so the cycle never races.
 - Motors that run continuously in Auto: list their run action in every step where they run.
 - questions: what the specification leaves open about the cycle, one short sentence each, at most 4.
+${ANSWERED_RULE}
 - explanation: the cycle in plain words.`;
 
 export interface CycleRequest {

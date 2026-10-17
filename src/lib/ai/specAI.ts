@@ -1,3 +1,4 @@
+import { NEEDS } from '../../spec/needs';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { Effort } from '../../store/useSettingsStore';
 import { SPEC_SECTIONS, type SpecSections } from '../../spec/types';
@@ -46,7 +47,7 @@ Rules:
 - Write in clear, short engineering sentences or bullet lines ("- "). Keep the customer's terms and device names.
 - Leave a section as an empty string when nothing is known about it. Do not invent requirements.
 - Write the facts the design steps need explicitly, one per line, whenever the material gives them: every motor (name, HP, voltage, starter / VFD / servo), every sensor and actuator (what it detects or moves), every safety device and exactly what it must stop (per zone when there are several, e.g. "Light curtain at pallet position 1 stops the robot only while it works at position 1"), every analog signal with its range (e.g. "Tank level transmitter 4-20 mA, 0–500 gal"), every interface to other equipment (robot, other machine: each handshake signal and its direction), recipes (how many, which values), and the supply voltage and country.
-- "questions": the specific missing information an engineer needs before designing (e.g. "How is the lift axis homed: home switch or hard stop?", "What stop category for the guard door?"). Max 12, most important first. Never repeat a question that is already answered in "Questions already answered".
+- "questions": the specific missing information an engineer needs before designing (e.g. "How is the lift axis homed: home switch or hard stop?", "What stop category for the guard door?"). Max 12, most important first. Never repeat a question that is already answered in "Questions already answered". The app itself asks this checklist, so do not ask these again: ${NEEDS.map((n) => n.question.split(/[:?(]/)[0].trim()).join("; ")}. This page is the only place questions are asked: beyond that checklist, also ask anything else the I/O list, electrical design, HMI or PLC program will need that the description leaves open.
 - "summary": two or three sentences on what you organized and what changed.`;
 
 export async function organizeSpec(opts: {

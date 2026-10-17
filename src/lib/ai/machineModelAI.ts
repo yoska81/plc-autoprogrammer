@@ -4,6 +4,7 @@ import type { DesignInputs } from '../../electrical/types';
 import { defaultMachineModel, generateDesign, type EngineInput, type EngineResult, type MachineModel } from '../../electrical/engine';
 import type { ModelMotor, MotorStart } from '../../electrical/engine/machineModel';
 import { callClaude } from './anthropic';
+import { ANSWERED_RULE } from '../../components/questions/classify';
 
 /**
  * Electrical design, rule-based first and AI second: the AI reads the specification into a small
@@ -44,7 +45,8 @@ const SYSTEM = `You read a machine specification and its I/O list and describe t
 - guardDoors / lightCurtains: each interlocked guard door / light curtain the spec mentions, with its zone.
 - zones: the machine areas in order (e.g. "Infeed conveyor", "Pusher station"), 1-6 short names.
 - interfaces: the I/O descriptions of outputs that signal another machine or robot.
-- questions: what the designer must confirm (unstated motor powers, supply, safety assumptions), one short sentence each.`;
+- questions: what the designer must confirm (unstated motor powers, supply, safety assumptions), one short sentence each.
+${ANSWERED_RULE}`;
 
 interface AiModel {
   motors: { tag: string; description: string; power: number; unit: 'hp' | 'kW'; powerGiven: boolean; start: MotorStart; vertical: boolean; zone: string }[];
