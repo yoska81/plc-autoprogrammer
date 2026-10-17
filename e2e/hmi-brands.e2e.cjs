@@ -45,6 +45,11 @@ const CASES = [
     }
     await page.waitForTimeout(600);
     await page.getByLabel("Every maker's panels").check();
+    // Search finds any maker's panel by part number, current or legacy (nothing is hidden for being old).
+    await page.getByLabel('Search panels').fill('8102');
+    check(await page.locator('input[aria-label="Choose MT8102iP1"]').count() === 1, `${c.name}: search "8102" finds the Weintek MT8102iP1`);
+    check(await page.locator('input[aria-label="Choose MT8102iE1"]').count() === 1, `${c.name}: and the legacy MT8102iE1 (greyed, with its successor)`);
+    await page.getByLabel('Search panels').fill('');
     const locked = page.locator('tr', { has: page.locator(`input[aria-label="Choose ${c.lockedIfNoRes}"]`) });
     if (await locked.count()) {
       const t = await locked.innerText();
