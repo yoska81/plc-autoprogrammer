@@ -1,11 +1,11 @@
 supply 120VAC-1PH | NEMA 12
 motor M1 0.5 HP contactor-overload — Conveyor motor
 
-ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12
-SP1      SCE-30P24          x1    Back panel
+ENC1     SCE-24EL2008LP     x1    Main enclosure 24x20x8 NEMA 12
+SP1      SCE-24P20          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A
 DS1H     14831111           x1    Disconnect handle
-DS1S     14070532           x1    Disconnect shaft
+DS1S     14070520           x1    Disconnect shaft
 CB1      GMCBU-1C-20        x1    Motor M1 branch protection [M1]
 K1       SC-E03PG-24VDC     x1    Conveyor motor contactor [M1]
 K1-AUX   SZ-A11T            x1    K1 aux contact [M1]
@@ -50,4 +50,4 @@ routing {"PE1":"JB1","LS1":"JB1","LS2":"JB1","SOL1":"JB1","SOL2":"JB1"}
 
 note: Motor currents from NEC Table 430.250 / 430.248: M1 0.5 HP 9.8 A — confirm the nameplates.
 
-explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 120 V single-phase through 30A disconnect; motors: M1 0.5 HP across the line; 24 VDC from PSL-24-030 for 0.8 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 67% spare panel space.
+explanation: Rule-based design: NEMA 12 SCE-24EL2008LP, 120 V single-phase through 30A disconnect; motors: M1 0.5 HP across the line; 24 VDC from PSL-24-030 for 0.8 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 27% spare panel space.
