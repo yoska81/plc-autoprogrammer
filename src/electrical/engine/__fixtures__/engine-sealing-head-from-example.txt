@@ -1,7 +1,7 @@
 supply 480VAC-3PH | NEMA 12
 motor M2 1 HP contactor-overload — Unwinder motor
 
-ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 61% spare panel space (target >= 25%)
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 43% spare panel space (target >= 25%)
 SP1      SCE-30P24          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 2.8 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle
@@ -11,7 +11,7 @@ K1       SC-E02PG-24VDC     x1    Unwinder motor contactor — rated 5 HP at 480
 K1-AUX   SZ-A11T            x1    K1 aux contact — N.C. 61-62 for the safety relay feedback (EDM); SC-E02PG-24VDC has no built-in aux [M2]
 OL1      TK-E02-220         x1    Unwinder motor overload — range 1.4-2.2 A, set to FLA 2.1 A [M2]
 CB2      GMCBU-3C-3         x1    24VDC power supply primary — 3 A for a 120 W supply (inrush)
-PS1      PSR-24-120-3       x1    24VDC control power supply, 3-phase 480 VAC input — 5 A >= load 0.7 A + 25%
+PS1      PSR-24-120-3       x1    24VDC control power supply, 3-phase 480 VAC input — 5 A >= load 0.8 A + 25%
 PLC      C0-10DD1E-D        x1    PLC CPU
 IO1      C0-08TD1           x1    I/O module, slot 1
 SR1      LG5925-48-61-24    x1    E-stop safety relay — dual channel, monitored manual reset, removes power from the motion outputs (24+S)
@@ -23,35 +23,37 @@ PB2      GCX1102            x1    Right palm
 LS1      PNK-AP-3H          x1    Head up sensor
 LS2      PNK-AP-3H          x1    Head down sensor
 LS3      PNK-AP-3H          x1    Sealing bar temperature OK
+K2       SC-E02PG-24VDC     x1    Heater contactor
 SOL1     100222016324002    x1    Head solenoid valve (double solenoid)
 PB3      GCX1104            x1    Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)
-TB1      DN-T10-A           x32   Feed-through terminals
+TB1      DN-T10-A           x34   Feed-through terminals
 TBG      DN-G10             x4    Ground terminals
 TBC      DN-EC1210          x3    Terminal end covers
 TBE      DN-EB35            x6    End brackets
-DIN      DN-R35S1           x1    DIN rail
+DIN      DN-R35S1           x2    DIN rail
 WD       T1-1530G-1         x2    Wire duct
 GB1      SCE-GB10           x1    Ground bar
 
 X001   SR1    safety-relay-output  Cabinet        Safety OK
-X002   PB1    pushbutton-no        Cabinet door   Left palm button
-X003   PB2    pushbutton-no        Cabinet door   Right palm button
+X002   PB1    pushbutton-no        Machine        Left palm button
+X003   PB2    pushbutton-no        Machine        Right palm button
 X004   LS1    sensor-pnp           Machine        Head up sensor
 X005   LS2    sensor-pnp           Machine        Head down sensor
 X006   LS3    sensor-pnp           Machine        Sealing bar temperature OK
 Y001   K1     contactor-coil       Cabinet        Unwinder motor run
-Y002   K1     contactor-coil       Cabinet        Heater contactor
+Y002   K2     contactor-coil       Cabinet        Heater contactor
 Y003   SOL1   solenoid             Machine        Head down solenoid
 Y004   SOL1   solenoid             Machine        Head up solenoid
 
 zones ["Machine"]
 junctionBoxes [{"tag":"JB1","location":"Machine","partNumber":"SCE-16EL1206LP"}]
 motorLocations {"M2":"Machine"}
-routing {"LS1":"JB1","LS2":"JB1","LS3":"JB1","SOL1":"JB1"}
+routing {"PB1":"JB1","PB2":"JB1","LS1":"JB1","LS2":"JB1","LS3":"JB1","SOL1":"JB1"}
 
 note: M1 Conveyor motor (1 HP) is in the motor list but not in the machine description or I/O list, so it was left out of the design: add it back on the Design tab if this machine has it.
 note: Unwinder motor: motor power not given — assumed 1 HP; confirm the nameplate.
 note: One E-stop on the cabinet door assumed (into a safety relay); add field E-stops if operators work away from the panel.
+note: K2 (Heater contactor): the load it switches (heater, pump…) is not in the motor list — size its contactor and branch protection.
 note: Motor currents from NEC Table 430.250 / 430.248: M2 1 HP 2.1 A — confirm the nameplates.
 
-explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 480 V 3-phase through 30A — load 2.8 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M2 1 HP across the line; 24 VDC from PSR-24-120-3 for 0.7 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 61% spare panel space.
+explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 480 V 3-phase through 30A — load 2.8 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M2 1 HP across the line; 24 VDC from PSR-24-120-3 for 0.8 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 43% spare panel space.

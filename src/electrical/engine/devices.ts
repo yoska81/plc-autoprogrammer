@@ -21,7 +21,13 @@ const shared = (a: string, b: string) => {
   return [...A].filter((w) => B.has(w)).length;
 };
 
-/** The motor an I/O point belongs to: most shared words with its description, else the next one not yet linked. */
+/** Loads a contactor or relay switches that are not motors: never attached to a motor branch by default. */
+const NON_MOTOR_LOAD = /\b(heater|heaters|heating|element|oven|lamp|light|valve|brake|magnet|transformer|horn|sealer|seal bar|sealing bar)\b/i;
+
+/**
+ * The motor an I/O point belongs to: by its tag (M2, K3, VFD1), else most shared words with its description,
+ * else the next motor not yet linked — but never a load that is not a motor (a heater contactor gets its own).
+ */
 export function motorFor(desc: string, branches: MotorBranch[], linked: Set<string>, kind: 'vfd' | 'contactor' | 'any'): MotorBranch | undefined {
   const pool = branches.filter((b) => kind === 'any' || (kind === 'vfd' ? !!b.vfd : !b.vfd));
   const m = /\b(m|vfd|k)\s*-?(\d+)\b/i.exec(desc);
@@ -31,7 +37,8 @@ export function motorFor(desc: string, branches: MotorBranch[], linked: Set<stri
   }
   let best: MotorBranch | undefined, score = 0;
   for (const b of pool) { const s = shared(desc, b.motor.description); if (s > score) { best = b; score = s; } }
-  return best ?? pool.find((b) => !linked.has(b.motor.tag)) ?? pool[0];
+  if (best) return best;
+  return NON_MOTOR_LOAD.test(desc) && !/\bmotor\b/i.test(desc) ? undefined : pool.find((b) => !linked.has(b.motor.tag));
 }
 
 export interface DeviceResult {
@@ -143,7 +150,9 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
       else if (type === 'estop-contact') { tag = estopTags[Math.min(estopIdx++, estopTags.length - 1)]; location = tag === estopTags[0] ? DOOR : field(); }
       else if (type === 'pushbutton-no' || type === 'pushbutton-nc') {
         const pb = pickPushbutton(pk, desc, type === 'pushbutton-nc');
-        tag = tags.next('PB'); location = DOOR;
+        tag = tags.next('PB');
+        // Two-hand (palm) buttons are on the operator's station at the machine, never on the cabinet door.
+        location = /\b(palm|two[- ]?hand|2[- ]?hand)\b/i.test(desc) ? field() : DOOR;
         if (pb) add(comp(tag, pb.partNumber, 1, desc.replace(/\s*\b(pb|push ?button|button)\b/gi, '').trim() || desc));
       } else if (type === 'selector') {
         const sel = part('selector');
@@ -153,7 +162,7 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
         const b = motorFor(desc, branches, linkedMotors, 'vfd');
         type = 'vfd-input';
         tag = b?.vfd ?? tags.next('VFD');
-      } else if (/\b(overload|ol)\b.*\b(trip|tripped|fault|ok)\b|\b(trip|tripped)\b.*\boverload\b/i.test(desc)) {
+      } else if (/\boverload\b|\bol\b.*\b(trip|tripped|fault|ok)\b|\bmotor protector\b.*\b(trip|tripped|fault|ok)\b/i.test(desc)) {
         const b = motorFor(desc, branches, linkedMotors, 'contactor');
         type = 'other';
         tag = b?.overload ?? tags.next('OL');
