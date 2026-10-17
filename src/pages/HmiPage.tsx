@@ -16,7 +16,7 @@ import { Spinner, ReasoningPanel } from '../components/common';
 import { type AccessLevel, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiLook, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
 import ScreenEditor from '../hmi/ScreenEditor';
 import HmiEditorBar from '../hmi/HmiEditorBar';
-import { alignElements, createElement, createImageElement, deleteElements, distributeElements, duplicateElements, restack, syncHandTags, type Align } from '../hmi/editor';
+import { addNavEntry, alignElements, createElement, createImageElement, deleteElements, distributeElements, duplicateElements, restack, syncHandTags, type Align } from '../hmi/editor';
 import { loadPicture, panelImage } from '../hmi/background';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
@@ -330,7 +330,10 @@ export default function HmiPage() {
       const frame = !file && base.screens[0] ? base.screens[0].elements.filter((e) => e.kind === 'header' || e.kind === 'nav').map((e) => ({ ...structuredClone(e), id: makeId() })) : [];
       const name = file ? file.name.replace(/\.[^.]+$/, '').slice(0, 24) || `Screen ${n}` : `Screen ${n}`;
       const sc: HmiScreen = { id: `screen_${n}`, name, purpose: file ? 'Made by hand on top of a picture.' : 'Made by hand.', elements: frame, ...(background ? { background } : {}) };
-      commit({ ...base, screens: [...base.screens, sc] });
+      // Reachable on the panel: a button for it in every screen's navigation bar.
+      const nav = addNavEntry({ ...base, screens: [...base.screens, sc] }, sc.id, name, makeId);
+      commit(nav.design);
+      if (!nav.added && base.screens.length) notify(`${nav.reason} Add a "Screen button" for "${name}" by hand so it can be reached on the panel.`);
       setScreenId(sc.id);
       setSel([]);
       setEditing(true);
