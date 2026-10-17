@@ -28,11 +28,17 @@ export interface TxtProps {
 
 /** Text with a hard maximum width (never overflows its cell). */
 export function Txt({ x, y, children, size = 2.5, anchor = 'start', mono, bold, maxW, rotate, italic, fill = '#000' }: TxtProps) {
-  const s = String(children);
-  const est = textWidth(s, size, mono) * (bold ? 1.08 : 1);
+  let s = String(children);
+  const k = bold ? 1.08 : 1;
+  const est = textWidth(s, size, mono) * k;
   // Too long for its cell: shrink the font rather than squeezing glyphs
   // (svg2pdf ignores textLength, which made glyphs overlap in the PDF).
   const fs = maxW !== undefined && est > maxW && s.length > 1 ? Math.max(size * 0.45, (size * maxW) / est) : size;
+  // Still too long at the smallest size: cut it short so it never runs into the next column.
+  if (maxW !== undefined && textWidth(s, fs, mono) * k > maxW && s.length > 4) {
+    while (s.length > 4 && textWidth(`${s}...`, fs, mono) * k > maxW) s = s.slice(0, -1);
+    s = `${s.trimEnd()}...`;
+  }
   return (
     <text
       x={x} y={y} fontSize={fs} textAnchor={anchor} fill={fill} stroke="none"

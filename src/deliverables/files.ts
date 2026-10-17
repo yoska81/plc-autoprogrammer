@@ -122,7 +122,8 @@ function analogFiles(p: ProjectSnapshot): { name: string; content: string }[] {
 
 export function programFiles(p: ProjectSnapshot): { name: string; content: string }[] {
   if (p.profile.language === 'st') return p.stCode ? [{ name: `${p.fileBase}.st`, content: p.stCode }] : [];
-  if (!p.ladder.rungs.length) return [];
+  // the analog channel setup is PLC configuration: it ships before any program exists
+  if (!p.ladder.rungs.length) return analogFiles(p);
   const header = `${p.projectName} — ${p.profile.name} ${p.cpu.id}`;
   const hmiTags = hmiExtraTags(p);
   // Tag-based PLCs (Logix …): the profile's own exporters write the vendor files.
