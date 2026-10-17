@@ -57,18 +57,24 @@ def check_pdf(path: Path, kind: str, render: bool, vname: str):
                 report('FAIL', where, f'p{i + 1}: "{m.group(0)}" in "…{ctx}…"')
         if len(t.strip()) < 20 and kind not in ('hmi', 'labels'):
             report('WARN', where, f'p{i + 1}: almost no text ({len(t.strip())} chars)')
-    want = {'drawings': {'ANSI B'}, 'doc': {'Letter portrait', 'Letter'}, 'hmi': {'Letter'},
+    want = {'drawings': {'ANSI B'}, 'machining': {'ANSI B'}, 'doc': {'Letter portrait', 'Letter'}, 'hmi': {'Letter'},
             'bundle': {'Letter portrait', 'Letter', 'ANSI B'}, 'labels': None}[kind]
     for s, pages in sizes.items():
         if want is not None and s not in want:
             report('FAIL', where, f'pages {pages[:8]} are {s}, expected {sorted(want)}')
     print(f'{where}: {n} pages, sizes {{{", ".join(f"{k}: {len(v)}" for k, v in sizes.items())}}}')
+    # Sheet heading scale ("— SCALE 1:6 —") = title-block scale
+    if kind in ('drawings', 'machining'):
+        for i, t in enumerate(texts):
+            m = re.search(r'— SCALE (1:\d+) —', t)
+            if m and len(re.findall(r'(?<![\d:])' + re.escape(m.group(1)) + r'(?!\d)', t)) < 2:
+                report('FAIL', where, f'p{i + 1}: heading says SCALE {m.group(1)}, title block says {sorted(set(re.findall(r"(?<![\d:])1:\d+(?!\d)", t)) - {m.group(1)})}')
     # Page x of y / Sheet x of y
     for i, t in enumerate(texts):
         for m in re.finditer(r'(?:Page|Sheet|SHEET)\s+(\d+)\s+(?:of|OF)\s+(\d+)' if kind == 'drawings' else r'(?:Page|PAGE)\s+(\d+)\s+(?:of|OF)\s+(\d+)', t):
             a, b = int(m.group(1)), int(m.group(2))
-            if kind in ('bundle', 'labels'):
-                continue  # merged documents keep their own numbering
+            if kind in ('bundle', 'labels', 'machining'):
+                continue  # merged documents / sheets taken from the set keep their own numbering
             if kind != 'drawings' and (a != i + 1 or b != n):
                 report('FAIL', where, f'p{i + 1}: says "{m.group(0)}" (document has {n} pages)')
             if kind == 'drawings' and (b != n or a < 1 or a > n):
@@ -102,6 +108,40 @@ def check_pdf(path: Path, kind: str, render: bool, vname: str):
     return texts
 
 
+def check_machining(path: Path, texts, z: Path, vname: str):
+    """A machining PDF = the matching drilling / cutout sheets of the drawing set, with the scale note."""
+    where = f'{vname}/{path.name}'
+    dwg = next(z.rglob('*_drawings.pdf'), None)
+    if not dwg:
+        report('FAIL', where, 'no drawing set to compare with')
+        return
+    norm = lambda t: re.sub(r'\s+', ' ', t).strip()  # noqa: E731
+    sheets = {}
+    for t in (pg.extract_text() or '' for pg in PdfReader(dwg).pages):
+        m = re.search(r'SHEET\s+(\d+)\s+OF\s+\d+', t)
+        if m:
+            sheets[m.group(1)] = norm(t)
+    want = 'BACK PANEL DRILLING' if 'back_panel' in path.name else 'DOOR CUTOUTS'
+    # the sheet heading reads "<TITLE> — <part> — SCALE …" or "<TITLE> (2 OF 3) — …" (sheet 1 = cover, its index lists them too)
+    in_set = sorted((n for n, t in sheets.items() if n != "1" and re.search(re.escape(want) + r'( \(\d+ OF \d+\))? — .+ — ', t)), key=int)
+    got = []
+    for i, t in enumerate(texts):
+        m = re.search(r'SHEET\s+(\d+)\s+OF\s+\d+', t)
+        if not m:
+            report('FAIL', where, f'p{i + 1}: no "SHEET x OF y" in the title block')
+            continue
+        got.append(m.group(1))
+        if want not in t:
+            report('FAIL', where, f'p{i + 1}: not a {want} sheet')
+        if norm(t) != sheets.get(m.group(1)):
+            report('FAIL', where, f'p{i + 1}: differs from sheet {m.group(1)} of the drawing set')
+    if 'DO NOT SCALE THIS PRINT' not in norm(' '.join(texts)):
+        report('FAIL', where, 'scale note (print scaled, DXF 1:1) missing')
+    print(f'  machining sheets {got} = drawing set sheets {in_set}')
+    if got != in_set:
+        report('FAIL', where, f'sheets {got}, the drawing set has {want} on sheets {in_set}')
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     render = '--no-render' not in sys.argv
@@ -109,9 +149,11 @@ def main():
     for v in names:
         z = OUT / v / 'zip'
         for p in sorted(z.rglob('*.pdf')):
-            kind = ('drawings' if p.name.endswith('_drawings.pdf') else 'hmi' if 'hmi' in p.name
-                    else 'bundle' if p.name.endswith('_full_package.pdf') else 'labels' if 'labels' in p.name else 'doc')
-            check_pdf(p, kind, render, v)
+            kind = ('drawings' if p.name.endswith('_drawings.pdf') else 'machining' if p.parent.name == 'machining'
+                    else 'hmi' if 'hmi' in p.name else 'bundle' if p.name.endswith('_full_package.pdf') else 'labels' if 'labels' in p.name else 'doc')
+            texts = check_pdf(p, kind, render, v)
+            if kind == 'machining' and texts:
+                check_machining(p, texts, z, v)
     for lvl, where, msg in results:
         print(f'{lvl:4} {where}: {msg}')
     fails = [r for r in results if r[0] == 'FAIL']

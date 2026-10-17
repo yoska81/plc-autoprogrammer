@@ -9,10 +9,13 @@ import { createElement, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ProjectSnapshot } from './collect';
 import DrawingSet from '../electrical/drawings/DrawingSet';
+import SheetView from '../electrical/drawings/SheetView';
+import { planDrawings } from '../electrical/drawings/plan';
+import { SHEET_H, SHEET_W } from '../electrical/drawings/geometry';
 import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
 import { getHmi } from '../hmi/hmiCatalog';
-import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv, buildModel } from '../electrical/derive';
+import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv, buildModel, type DrawingContext } from '../electrical/derive';
 import { driveParamsCsv } from '../electrical/vfd';
 import { analogSetup, analogSetupCsv } from '../plc/core/analog';
 import { moduleSlots } from '../plc/core/modules';
@@ -37,15 +40,13 @@ async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) =>
   }
 }
 
-/** Electrical drawing set as a vector PDF, one page per sheet on the project's paper (ANSI B 17x11 or A3). */
-export async function buildDrawingsPdf(p: ProjectSnapshot): Promise<Blob | null> {
-  if (!p.drawingCtx) return null;
+/** Drawing sheets rendered by `el` as a vector PDF, one page per sheet on the project's paper. */
+async function sheetsPdf(ctx: DrawingContext, el: ReactElement): Promise<Blob> {
   const [{ jsPDF }] = await Promise.all([import('jspdf'), import('svg2pdf.js')]);
-  const W = 431.8, H = 279.4;
-  const on = sheetOnPaper(p.drawingCtx.sheet);
+  const on = sheetOnPaper(ctx.sheet);
   const PW = on.paper.w, PH = on.paper.h;
-  return renderOffscreen(createElement(DrawingSet, { ctx: p.drawingCtx, printMode: true }), async (host) => {
-    const sheets = [...host.querySelectorAll<SVGSVGElement>(`svg[viewBox="0 0 ${W} ${H}"]`)];
+  return renderOffscreen(el, async (host) => {
+    const sheets = [...host.querySelectorAll<SVGSVGElement>(`svg[viewBox="0 0 ${SHEET_W} ${SHEET_H}"]`)];
     if (!sheets.length) throw new Error('No drawing sheets were produced.');
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [PW, PH] });
     for (let i = 0; i < sheets.length; i++) {
@@ -54,6 +55,24 @@ export async function buildDrawingsPdf(p: ProjectSnapshot): Promise<Blob | null>
     }
     return doc.output('blob');
   });
+}
+
+/** Electrical drawing set as a vector PDF, one page per sheet on the project's paper (ANSI B 17x11 or A3). */
+export async function buildDrawingsPdf(p: ProjectSnapshot): Promise<Blob | null> {
+  if (!p.drawingCtx) return null;
+  return sheetsPdf(p.drawingCtx, createElement(DrawingSet, { ctx: p.drawingCtx, printMode: true }));
+}
+
+/**
+ * Machining drawings as a PDF next to the 1:1 DXFs: the back-panel drilling and / or door cutout
+ * sheets of the drawing set (dimensions from the datum, hole table, title block with the sheet
+ * scale) on the project's paper. Null when the design has nothing to machine there.
+ */
+export async function buildMachiningPdf(ctx: DrawingContext, which: 'backpanel' | 'door' | 'all' = 'all'): Promise<Blob | null> {
+  const plan = planDrawings(ctx);
+  const sheets = plan.sheets.filter((s) => s.spec.kind === 'drill' && (which === 'all' || s.spec.drill.kind === which));
+  if (!sheets.length) return null;
+  return sheetsPdf(ctx, createElement('div', null, ...sheets.map((s) => createElement(SheetView, { key: s.n, plan, sheet: s }))));
 }
 
 /** Every HMI screen as a PNG at the panel's native resolution. */
@@ -150,6 +169,12 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
       zip.file(`electrical/machining/back_panel_drilling_1to1_${units}.dxf`, backPanelDxf(p.drawingCtx, { units }));
       zip.file(`electrical/machining/door_cutouts_1to1_${units}.dxf`, doorDxf(p.drawingCtx, { units }));
     }
+    // ... and the same parts as dimensioned drawings to print for the shop.
+    onProgress?.('Machining drawings');
+    const bpPdf = await buildMachiningPdf(p.drawingCtx, 'backpanel');
+    if (bpPdf) zip.file(`electrical/machining/${p.fileBase}_back_panel_drilling.pdf`, bpPdf);
+    const doorPdf = await buildMachiningPdf(p.drawingCtx, 'door');
+    if (doorPdf) zip.file(`electrical/machining/${p.fileBase}_door_cutouts.pdf`, doorPdf);
     zip.file(`electrical/3d/${p.fileBase}_cabinet.step`, cabinetStep(p.drawingCtx));
     onProgress?.('Cabinet pictures');
     const hmiPart = p.hmi?.hmiPartNumber ?? null;

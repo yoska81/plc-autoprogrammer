@@ -239,6 +239,15 @@ function sse(model, text) {
     log('Machining DXF:', d.suggestedFilename(), Math.round(dxf.length / 1024), 'KB, inch header', ok, '| TEXT layer used', /\n\s*8\s*\r?\nTEXT\s*\r?\n/.test(dxf));
     check(/_in_cut\.dxf$/.test(d.suggestedFilename()) && ok, 'inch, cut-only DXF');
   }
+  // A printable PDF drawing next to each DXF: the drilling / cutout sheet(s) on the project's paper.
+  for (const [btn, re] of [['Back panel PDF', /_back_panel_drilling\.pdf$/], ['Front door PDF', /_door_cutouts\.pdf$/]]) {
+    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: btn }).click()]);
+    const f = OUT + d.suggestedFilename(); await d.saveAs(f);
+    const doc = await PDFDocument.load(fs.readFileSync(f));
+    const { width, height } = doc.getPage(0).getSize();
+    log('Machining PDF:', d.suggestedFilename(), doc.getPageCount(), 'page(s),', `${(width / 72).toFixed(1)}x${(height / 72).toFixed(1)} in`);
+    check(re.test(d.suggestedFilename()) && doc.getPageCount() >= 1 && width > height, `${btn}: landscape drawing PDF`);
+  }
   await snap(page, 'electrical_machining');
   for (const t of ['cabinet', 'machine', 'picture']) {
     await page.goto(BASE + `/electrical?tab=${t}`);

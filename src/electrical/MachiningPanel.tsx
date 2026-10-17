@@ -3,7 +3,7 @@ import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { backPanelDrilling, doorDrilling, dualDim, dualSize, type DrawingContext, type DrillingPlan } from './derive';
 import { drillingDxf, type DxfOptions } from './dxf';
 import ResizablePane from '../components/ResizablePane';
-import { saveBlob } from '../deliverables/files';
+import { buildMachiningPdf, saveBlob } from '../deliverables/files';
 import { useUi } from '../store/useUiStore';
 
 const th = 'text-left font-medium text-steel-500 px-2 py-1 border-b border-steel-200 bg-steel-50 whitespace-nowrap';
@@ -52,6 +52,7 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
   const [units, setUnits] = useUi<'mm' | 'in'>('machining.units', 'in');
   const [cutOnly, setCutOnly] = useUi('machining.cutOnly', false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [busy, setBusy] = useState<'backpanel' | 'door' | null>(null);
 
   const plans = useMemo(() => (ctx ? { backpanel: backPanelDrilling(ctx), door: doorDrilling(ctx) } : null), [ctx]);
   if (!ctx || !plans) {
@@ -61,6 +62,13 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
   const opts: DxfOptions = { units, cutOnly };
   const name = (kind: 'backpanel' | 'door') => `${fileBase}_${kind === 'backpanel' ? 'back_panel_drilling' : 'door_cutouts'}_1to1_${units}${cutOnly ? '_cut' : ''}.dxf`;
   const download = (kind: 'backpanel' | 'door') => save(name(kind), drillingDxf(plans[kind], ctx.projectName, opts));
+  const downloadPdf = async (kind: 'backpanel' | 'door') => {
+    setBusy(kind);
+    try {
+      const pdf = await buildMachiningPdf(ctx, kind);
+      if (pdf) saveBlob(`${fileBase}_${kind === 'backpanel' ? 'back_panel_drilling' : 'door_cutouts'}.pdf`, pdf);
+    } finally { setBusy(null); }
+  };
   const rows = [...plan.cutouts.map((c) => ({ id: c.id, tag: c.tag, code: c.code, x: c.x, y: c.y, size: c.kind === 'round' ? `Ø${dualDim(c.w)}` : dualSize(c.w, c.h), verified: c.verified })),
     ...plan.holes.map((h) => ({ id: h.id, tag: h.tag, code: h.code, x: h.x, y: h.y, size: `Ø${dualDim(h.dia)}`, verified: h.verified }))];
 
@@ -92,6 +100,12 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
           <button onClick={() => download('door')} className="h-7 px-3 flex items-center gap-1.5 bg-brand-600 text-white font-medium rounded-sm hover:bg-brand-700">
             <ArrowDownTrayIcon className="w-4 h-4" /> Front door DXF
           </button>
+          {(['backpanel', 'door'] as const).map((k) => (
+            <button key={k} onClick={() => void downloadPdf(k)} disabled={busy !== null} title="Dimensioned drawing to print: hole table, title block, sheet scale"
+              className="h-7 px-3 flex items-center gap-1.5 bg-white border border-steel-300 font-medium rounded-sm hover:bg-steel-50 disabled:opacity-60">
+              <ArrowDownTrayIcon className="w-4 h-4" /> {busy === k ? 'Building PDF…' : k === 'backpanel' ? 'Back panel PDF' : 'Front door PDF'}
+            </button>
+          ))}
         </div>
       </div>
       <div className="px-4 py-1.5 text-xs text-steel-600 bg-white border-b border-steel-200">

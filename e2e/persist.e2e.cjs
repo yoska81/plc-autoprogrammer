@@ -21,6 +21,7 @@ const log = (...a) => console.log('•', ...a);
 
   const fails = [];
   const tree = async (name) => { await page.locator('nav a', { hasText: new RegExp(`^${name}(\\s*\\d+\\?)?$`) }).first().click(); await page.waitForTimeout(500); };
+  const sheets = () => page.locator('nav[aria-label="Drawing sheets"] li button');
   // Each case: where, how to get there, what to do, how to read it back, expected value.
   const cases = [
     { name: 'Spec: "Add to the spec" text', go: () => tree('Machine description'),
@@ -32,9 +33,10 @@ const log = (...a) => console.log('•', ...a);
     { name: 'I/O list: filter text', go: () => tree('I/O list'),
       act: () => page.getByPlaceholder('Filter').first().fill('Pusher'),
       read: () => page.getByPlaceholder('Filter').first().inputValue(), want: 'Pusher' },
+    // sheets are one scrolling document with a sheet list (aria-current = the sheet in view)
     { name: 'Electrical: selected sheet and zoom', go: () => tree('Cabinet wiring'),
-      act: async () => { await page.locator('[role="tab"]').nth(4).click(); await page.getByRole('button', { name: '200%' }).click(); },
-      read: async () => `${await page.locator('[role="tab"]').nth(4).getAttribute('aria-selected')} ${await page.getByRole('button', { name: '200%' }).getAttribute('class').then((c) => /bg-steel-900|bg-brand|text-white/.test(c ?? ''))}`, want: 'true true' },
+      act: async () => { await sheets().nth(4).click(); await page.waitForTimeout(1200); await page.getByRole('button', { name: '200%' }).click(); },
+      read: async () => `${await sheets().nth(4).getAttribute('aria-current') === 'page'} ${await page.getByRole('button', { name: '200%' }).getAttribute('class').then((c) => /bg-steel-900|bg-brand|text-white/.test(c ?? ''))}`, want: 'true true' },
     { name: 'Labels: filter', go: () => tree('Labels'),
       act: () => page.getByLabel('Filter labels').fill('PB'),
       read: () => page.getByLabel('Filter labels').inputValue(), want: 'PB' },

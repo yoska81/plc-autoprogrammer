@@ -2014,6 +2014,9 @@ export interface DrillingPlan {
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
+/** On every machining drawing: the print is scaled, the DXF beside it is real size. */
+export const MACHINING_SCALE_NOTE = 'DO NOT SCALE THIS PRINT: THE SHEET SCALE IS IN THE TITLE. CUT FROM THE DIMENSIONS OR FROM THE DXF OF THIS PART, WHICH IS 1:1 (REAL SIZE).';
+
 /** Inches to 3 decimals from mm. */
 export const inch3 = (mm: number): string => (mm / 25.4).toFixed(3);
 /** Dual dimension for machining: inch first, mm in brackets, e.g. "4.000 [101.6]". */
@@ -2101,6 +2104,7 @@ export function backPanelDrilling(ctx: DrawingContext): DrillingPlan {
       ...(panelMount.length ? [`DIN RAIL INTERRUPTED BEHIND ${panelMount.map((p) => p.tag).join(', ')} (PANEL-MOUNTED).`] : []),
       ...(L.notFit.length ? [`NOT DRILLED (DOES NOT FIT): ${L.notFit.map((n) => n.tag).join(', ')}.`] : []),
       'DEBURR ALL HOLES. MASK / REMOVE PAINT AT GROUND-BAR AND BONDING POINTS.',
+      MACHINING_SCALE_NOTE,
     ],
   };
 }
@@ -2134,6 +2138,7 @@ export function doorDrilling(ctx: DrawingContext): DrillingPlan {
       'DOOR SIZE TAKEN AS ENCLOSURE OUTSIDE SIZE — CHECK FLANGE/RETURN AND HINGE CLEARANCE BEFORE CUTTING.',
       'HANDLE: ALIGN WITH DISCONNECT SHAFT CENTRE ON THE BACK PANEL; DRILL MOUNTING HOLES FROM THE HANDLE TEMPLATE.',
       'REINFORCE DOOR AROUND LARGE CUTOUTS; KEEP GASKET LAND CLEAR. DEBURR AND TOUCH UP PAINT.',
+      MACHINING_SCALE_NOTE,
     ],
   };
 }
