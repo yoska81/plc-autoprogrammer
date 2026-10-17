@@ -9,7 +9,7 @@ import type { DrawingContext } from '../derive';
 import SheetView from '../drawings/SheetView';
 import { planDrawings } from '../drawings/plan';
 import { parseSvg } from './svgTree';
-import { svgToDxf, type CadDevice, type SheetDxfStats } from './svgToDxf';
+import { svgSheetsToDxf, svgToDxf, type CadDevice, type SheetDxfStats } from './svgToDxf';
 
 export interface SheetDxf { n: number; title: string; drawingNo: string; kind: string; fileName: string; dxf: string; stats: SheetDxfStats }
 
@@ -28,12 +28,16 @@ export function cadDevices(ctx: DrawingContext): Map<string, CadDevice> {
   return map;
 }
 
-/** Every sheet of the drawing set as DXF (mm, 1:1 on the sheet's paper size). */
-export function drawingSetDxf(ctx: DrawingContext): SheetDxf[] {
+/** The whole drawing set in ONE DXF: every sheet 1:1, five per row in sheet order (sheet 1 top left). */
+export function drawingSetOneDxf(ctx: DrawingContext): { dxf: string; sheets: number; stats: SheetDxfStats } {
   const plan = planDrawings(ctx);
-  const devices = cadDevices(ctx);
-  // Each sheet is rendered into a hidden container and read back as markup (the same React components as
-  // the PDF; no server renderer in the app bundle).
+  const svgs = renderSheets(plan, (markup) => parseSvg(markup));
+  const { dxf, stats } = svgSheetsToDxf(svgs, { devices: cadDevices(ctx) });
+  return { dxf, sheets: svgs.length, stats };
+}
+
+/** Renders each sheet into a hidden container (the same React components as the PDF) and maps its markup. */
+function renderSheets<T>(plan: ReturnType<typeof planDrawings>, map: (markup: string, sheet: ReturnType<typeof planDrawings>['sheets'][number]) => T): T[] {
   const host = document.createElement('div');
   host.setAttribute('aria-hidden', 'true');
   host.style.cssText = 'position:fixed;left:-20000px;top:0;width:1200px;height:1200px;overflow:hidden;pointer-events:none;opacity:0;';
@@ -42,13 +46,22 @@ export function drawingSetDxf(ctx: DrawingContext): SheetDxf[] {
   try {
     return plan.sheets.map((sheet) => {
       flushSync(() => root.render(createElement(SheetView, { plan, sheet })));
-      const { dxf, stats } = svgToDxf(parseSvg(host.innerHTML), { devices });
-      return { n: sheet.n, title: sheet.title, drawingNo: sheet.drawingNo, kind: sheet.spec.kind, fileName: `${String(sheet.n).padStart(2, '0')}_${slug(sheet.drawingNo || '')}_${slug(sheet.title)}.dxf`.replace(/__+/g, '_'), dxf, stats };
+      return map(host.innerHTML, sheet);
     });
   } finally {
     root.unmount();
     host.remove();
   }
+}
+
+/** Every sheet of the drawing set as DXF (mm, 1:1 on the sheet's paper size). */
+export function drawingSetDxf(ctx: DrawingContext): SheetDxf[] {
+  const plan = planDrawings(ctx);
+  const devices = cadDevices(ctx);
+  return renderSheets(plan, (markup, sheet) => {
+    const { dxf, stats } = svgToDxf(parseSvg(markup), { devices });
+    return { n: sheet.n, title: sheet.title, drawingNo: sheet.drawingNo, kind: sheet.spec.kind, fileName: `${String(sheet.n).padStart(2, '0')}_${slug(sheet.drawingNo || '')}_${slug(sheet.title)}.dxf`.replace(/__+/g, '_'), dxf, stats };
+  });
 }
 
 export const AUTOCAD_README = (project: string, sheets: SheetDxf[], dwg: boolean) => `${project} — electrical drawings for AutoCAD

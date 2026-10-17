@@ -37,14 +37,16 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
     return { name: dl.suggestedFilename(), zip: await JSZip.loadAsync(fs.readFileSync(file)) };
   };
 
-  const ac = await save('Save as AutoCAD (DXF)');
-  const acFiles = Object.keys(ac.zip.files).filter((n) => !ac.zip.files[n].dir);
-  const dxfs = acFiles.filter((n) => /^dxf\/.*\.dxf$/.test(n));
-  log('AutoCAD:', ac.name, dxfs.length, 'DXF sheets;', acFiles.filter((n) => !n.startsWith('dxf/')).join(', '));
-  check(/_autocad_dxf\.zip$/.test(ac.name), 'AutoCAD zip name');
-  check(dxfs.length >= 10 && acFiles.includes('README.txt'), 'DXF sheets + README');
-  const control = await ac.zip.file(dxfs.find((n) => /control|schematic/i.test(n)) ?? dxfs[2]).async('string');
-  for (const s of ['AC1021', 'ISA_DEVICE', 'ISA_WIRENO', 'TAG1', 'WIRENO', 'BORDER', 'SYMS', 'TAGS']) check(control.includes(s), `DXF has ${s}`);
+  // AutoCAD: the whole drawing set in ONE DXF file (sheets five per row).
+  const [acDl] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.getByRole('button', { name: 'Save as AutoCAD (DXF)' }).click()]);
+  const acFile = OUT + acDl.suggestedFilename();
+  await acDl.saveAs(acFile);
+  const one = fs.readFileSync(acFile, 'utf8');
+  const frames = (one.match(/\bCOVER SHEET\b/g) ?? []).length;
+  log('AutoCAD:', acDl.suggestedFilename(), Math.round(one.length / 1024), 'KB');
+  check(/_drawings\.dxf$/.test(acDl.suggestedFilename()), 'AutoCAD: one .dxf file');
+  check(frames >= 1, 'the one file holds the drawing set');
+  for (const s of ['AC1021', 'ISA_DEVICE', 'ISA_WIRENO', 'TAG1', 'WIRENO', 'BORDER', 'SYMS', 'TAGS']) check(one.includes(s), `DXF has ${s}`);
 
   const ep = await save('Save as EPLAN');
   const epFiles = Object.keys(ep.zip.files).filter((n) => !ep.zip.files[n].dir);
@@ -55,7 +57,7 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
   check(!!aml, '.aml file');
   const xml = await ep.zip.file(aml).async('string');
   check(/<CAEXFile SchemaVersion="3\.0"/.test(xml) && /AutomationProjectConfigurationRoleClassLib\/TagTable/.test(xml), 'CAEX 3.0 AR APC');
-  check(epFiles.filter((n) => n.startsWith('dxf/')).length === dxfs.length, 'same DXF sheets');
+  check(epFiles.filter((n) => n.startsWith('dxf/')).length >= 10 && epFiles.some((n) => /_drawings\.dxf$/.test(n)), 'EPLAN package: DXF sheets and the one-file drawing set');
   check(/cannot be written/.test(await ep.zip.file('README.txt').async('string')), 'README is honest about native EPLAN files');
 
   check(!errors.length, 'no browser errors: ' + errors.join(' | '));

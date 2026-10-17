@@ -129,8 +129,19 @@ export function flattenPath(d: string): { pts: [number, number][]; closed: boole
 
 /** One drawing sheet (parsed SVG) as DXF text. */
 export function svgToDxf(svg: SvgNode, opts: SheetDxfOptions = {}): { dxf: string; stats: SheetDxfStats } {
-  const vb = (svg.attrs.viewBox ?? '0 0 431.8 279.4').split(/[\s,]+/).map(Number);
-  const H = vb[3];
+  return svgSheetsToDxf([svg], opts);
+}
+
+/**
+ * Several drawing sheets in ONE DXF: laid out in order, `perRow` sheets per row (sheet 1 top left), with a gap
+ * between them, each sheet at 1:1 with its own frame and title block.
+ */
+export function svgSheetsToDxf(sheets: SvgNode[], opts: SheetDxfOptions & { perRow?: number; gapMm?: number } = {}): { dxf: string; stats: SheetDxfStats } {
+  const perRow = opts.perRow ?? 5, gap = opts.gapMm ?? 50;
+  const sizes = sheets.map((svg) => { const vb = (svg.attrs.viewBox ?? '0 0 431.8 279.4').split(/[\s,]+/).map(Number); return { w: vb[2], h: vb[3] }; });
+  const cellW = Math.max(...sizes.map((z) => z.w)) + gap, cellH = Math.max(...sizes.map((z) => z.h)) + gap;
+  // Offset of the current sheet (DXF y up: row 0 on top) and its height (SVG y down -> DXF y up).
+  let ox = 0, oy = 0, H = sizes[0]?.h ?? 279.4;
   const dxf = new DxfWriter();
   dxf.setUnits(Units.Millimeters);
   dxf.addLType('DASHED', '__  __  __', [2.5, -1.25]);
@@ -164,7 +175,7 @@ export function svgToDxf(svg: SvgNode, opts: SheetDxfOptions = {}): { dxf: strin
   const devices = opts.devices ?? new Map<string, CadDevice>();
   const wireSheets = opts.wireSheets ?? WIRE_SHEETS;
   const deviceSheets = opts.deviceSheets ?? DEVICE_SHEETS;
-  const P = (m: M, x: number, y: number) => { const [X, Y] = apply(m, x, y); return point3d(X, H - Y, 0); };
+  const P = (m: M, x: number, y: number) => { const [X, Y] = apply(m, x, y); return point3d(ox + X, oy + H - Y, 0); };
 
   const walk = (n: SvgNode, m0: M, inh: { cad: string; sheet: string; stroke: string; fill: string; mono: boolean; bold: boolean; size: number; anchor: string }) => {
     if (['defs', 'pattern', 'clipPath', 'mask', 'marker', 'symbol', 'style', 'title', 'desc', 'metadata'].includes(n.tag)) return;
@@ -253,6 +264,11 @@ export function svgToDxf(svg: SvgNode, opts: SheetDxfOptions = {}): { dxf: strin
     }
     for (const c of n.children) walk(c, m, s);
   };
-  walk(svg, ID, { cad: 'GRAPHICS', sheet: '', stroke: 'none', fill: 'black', mono: false, bold: false, size: 2.5, anchor: 'start' });
+  sheets.forEach((svg, i) => {
+    ox = (i % perRow) * cellW;
+    oy = -Math.floor(i / perRow) * cellH;
+    H = sizes[i].h;
+    walk(svg, ID, { cad: 'GRAPHICS', sheet: '', stroke: 'none', fill: 'black', mono: false, bold: false, size: 2.5, anchor: 'start' });
+  });
   return { dxf: dxf.stringify(), stats };
 }
