@@ -80,6 +80,13 @@ export interface ModbusBridge {
   onStatus?(cb: (s: { connected: boolean; error?: string }) => void): () => void;
 }
 
+/** DWG export through the ODA File Converter, when the user has installed it (electron/oda.cjs). */
+export interface OdaBridge {
+  detect(): Promise<{ found: boolean; path?: string }>;
+  /** DXF text in, AutoCAD 2018 DWG out (same order, names with .dwg). */
+  convert(files: { name: string; text: string }[]): Promise<{ ok: true; files: { name: string; bytes: Uint8Array }[] } | { ok: false; error: string }>;
+}
+
 export interface IsaDesktop {
   /** Always true inside the desktop app. */
   isDesktop?: boolean;
@@ -98,6 +105,8 @@ export interface IsaDesktop {
   micPermission?: { get(): Promise<MicPermission>; reset(): Promise<MicPermission> };
   /** Connect to PLC over Modbus TCP (desktop app only: a browser can't open TCP sockets). */
   modbus?: ModbusBridge;
+  /** DWG conversion (desktop app only). */
+  oda?: OdaBridge;
 }
 
 export type MicPermission = 'always' | 'session' | 'ask';

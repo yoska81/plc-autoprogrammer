@@ -447,3 +447,37 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - a bigger pick kept with its note;
   - a too-small pick bumped with its note and still recorded.
 - **CAD exports:** parked as local commit 1c6cf94 (branch `cad-exports-wip`). They go into the next PR.
+
+## CAD exports: Save as AutoCAD / Save as EPLAN (Electrical page)
+- **Drawings to DXF:**
+  - The sheets are rendered from the same SheetView components as the PDF, using react-dom/server markup → `svgTree` → `svgToDxf`.
+  - There is one DXF per sheet, in mm at 1:1.
+- **Layers:** BORDER, SYMS, WIRES, WIRENO, TAGS, TEXT, GRAPHICS.
+- **Text styles:** ISA_SANS (arial.ttf) and ISA_MONO (cour.ttf).
+- **Blocks:**
+  - ISA_DEVICE, with AutoCAD Electrical attribute names: TAG1 (visible), DESC1, MFG and CAT. It is placed at every device tag on the device sheets.
+  - ISA_WIRENO, with attribute WIRENO, at every wire number.
+- **Format, stated honestly:** the writer (@tarikjabiri/dxf) produces DXF R2007 (AC1021), which opens directly in AutoCAD 2007 and later, LT and Electrical.
+  - The browser button says "Save as AutoCAD (DXF)".
+  - In the desktop app, if the ODA File Converter is installed (`electron/oda.cjs` detects it), the zip also holds AutoCAD 2018 DWG files. If it isn't installed, a notice explains why, and the DXF is saved instead.
+- **EPLAN package (zip)** — EPLAN's own project files (.elk / .zw1) cannot be written by another program, so the zip holds the formats EPLAN imports:
+  - `<project>.aml`: CAEX 3.0, with AR APC 1.4.0 classes (Device / DeviceItem / Channel / Tag / TagTable) for EPLAN's AutomationML AR APC PLC import. It also has an "ElectricalDesign" hierarchy: devices, terminal strips, cables, and connections as InternalLinks named by wire number.
+  - `plc_assignment_list.csv`
+  - `parts_eplan.xml`: EPLAN parts-management XML, one part per BOM part number.
+  - `device_list.csv`, `terminal_plan.csv`, `cable_schedule.csv`, `connection_list.csv`
+  - `dxf/`
+  - `README.txt`: the import steps in EPLAN, plus the CAEX 2.15 note.
+- **Checker `tools/check_cad.py`** (in check-all; the CAEX 3.0 XSD is in `tools/schemas/`):
+  - every DXF passes an ezdxf audit with 0 errors and 0 fixes;
+  - layers, text styles and blocks/attributes are present;
+  - CAT/MFG match the BOM, and wire numbers match the wire list;
+  - the AML is schema-valid, with unique IDs, valid link partners and resolved class paths, and one tag per I/O point;
+  - the CSVs and the parts XML parse, with matching counts.
+- **Tests:**
+  - `src/electrical/cad/cad.test.ts` covers the parser, transforms and paths, svg→dxf (layers, attributes, one SEQEND per insert, y flip), and the EPLAN helpers and package.
+  - `e2e/cad-export.e2e.cjs` clicks both buttons and checks the zip contents.
+- **Bugs the checker found and I fixed:**
+  - tags of modules after the CPU were dropped from the AML tag table;
+  - analog points were missing from the AML and from the assignment list;
+  - the parts XML missed BOM-only parts (HMI, duct);
+  - enclosure sizes in the parts XML used the panel size instead of the outer size.

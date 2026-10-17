@@ -21,6 +21,7 @@
     "@heroicons/react": "^2.2.0",
     "@huggingface/transformers": "^4.2.0",
     "@monaco-editor/react": "^4.7.0",
+    "@tarikjabiri/dxf": "^2.9.0",
     "exceljs": "^4.4.0",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.2",

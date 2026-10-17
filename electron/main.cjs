@@ -8,6 +8,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { registerModbusIpc } = require('./modbus.cjs');
 const mic = require('./micPermission.cjs');
+const { registerOdaIpc } = require('./oda.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;
@@ -139,7 +140,7 @@ function buildMenu() {
 
 // ── Save dialog ──
 const FILTERS = {
-  pdf: 'PDF document', xlsx: 'Excel workbook', csv: 'CSV (Excel)', zip: 'ZIP archive', dxf: 'DXF drawing (CAD/CAM)',
+  pdf: 'PDF document', xlsx: 'Excel workbook', csv: 'CSV (Excel)', zip: 'ZIP archive', dxf: 'DXF drawing (CAD/CAM)', dwg: 'AutoCAD drawing',
   step: 'STEP 3D model', png: 'PNG image', txt: 'Text file', json: 'JSON file', md: 'Text (Markdown)',
   isap: 'ISA Auto Programmer project',
 };
@@ -235,6 +236,7 @@ ipcMain.on('isa:version', (e) => { e.returnValue = app.getVersion(); });
 
 // ── Connect to PLC: Modbus TCP (electron/modbus.cjs) ──
 registerModbusIpc(ipcMain);
+registerOdaIpc(ipcMain);
 
 // ── Microphone for voice input: a native question the first time (electron/micPermission.cjs) ──
 let micState = { always: false, session: false };

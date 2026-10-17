@@ -50,7 +50,7 @@ export default function SheetFrame({ info, children, width, height, sheet }: { i
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${SHEET_W} ${SHEET_H}`} width={width} height={height}
-      style={{ background: '#fff', display: 'block' }} stroke="#000" fill="none" strokeLinecap="round"
+      style={{ background: '#fff', display: 'block' }} stroke="#000" fill="none" strokeLinecap="round" data-cad="BORDER"
     >
       <rect x={0} y={0} width={SHEET_W} height={SHEET_H} fill="#fff" stroke="none" />
       <rect x={FRAME} y={FRAME} width={SHEET_W - 2 * FRAME} height={SHEET_H - 2 * FRAME} strokeWidth={LW_THIN} />
@@ -89,7 +89,7 @@ export default function SheetFrame({ info, children, width, height, sheet }: { i
         <NumberBlock info={info} ty={ty} rev={rev} R={R} size={on.paper.size} />
       </g>
 
-      <g transform={on.factor === 1 && !on.tx && !on.ty ? undefined : `translate(${on.tx.toFixed(3)} ${on.ty.toFixed(3)}) scale(${on.factor.toFixed(5)})`}>{children}</g>
+      <g transform={on.factor === 1 && !on.tx && !on.ty ? undefined : `translate(${on.tx.toFixed(3)} ${on.ty.toFixed(3)}) scale(${on.factor.toFixed(5)})`} data-cad="GRAPHICS">{children}</g>
     </svg>
   );
 }
