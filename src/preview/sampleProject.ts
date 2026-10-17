@@ -461,6 +461,8 @@ function readSeedVersion(): string | null {
 
 /** The example lives in its own project and never overwrites the viewer's projects. */
 export const EXAMPLE_ID = 'p_example';
+/** The example's document control (title blocks, machine spec); a copy of the example keeps it until changed. */
+export const DOC_CONTROL = { customer: 'Example Foods Inc.', site: 'Line 3', projectNumber: '24-117', drawingPrefix: 'CNV', preparedBy: 'AI' };
 const EXAMPLE_NAME = 'Conveyor Cell (example)';
 
 /** Per-project data kept outside the project stores, moved when a project changes id. */
@@ -554,8 +556,7 @@ function writeExample() {
   useProjectStore.getState().setRecommendation(RECOMMENDATION);
   useProjectStore.getState().setModules([]);
   useProjectStore.getState().setInfo({
-    customer: 'Example Foods Inc.', site: 'Line 3', standards: ['NFPA 79', 'UL 508A', 'NEC'],
-    company: 'ISA', projectNumber: '24-117', drawingPrefix: 'CNV', preparedBy: 'AI', checkedBy: '', approvedBy: '',
+    ...DOC_CONTROL, standards: ['NFPA 79', 'UL 508A', 'NEC'], company: 'ISA', checkedBy: '', approvedBy: '',
     revisions: [{ rev: 'A', date: new Date().toISOString().slice(0, 10), description: 'Issued for review', by: 'AI' }],
   });
   for (const stage of ['equipment', 'io', 'electrical', 'hmi', 'program'] as const) useStageStore.getState().markGenerated(stage, src);

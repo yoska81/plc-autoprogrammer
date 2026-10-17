@@ -22,7 +22,7 @@ import { startAiJob, useAiJobRunning } from '../lib/ai/jobs';
 export default function StartCleanBanner() {
   // Subscribed so the banner re-checks when any of the stores the check reads change.
   useSubscribe(
-    useProjectStore((s) => s.recommendation), useElectricalStore((s) => s.design), useElectricalStore((s) => s.inputs.motors),
+    useProjectStore((s) => s.recommendation), useProjectStore((s) => s.info), useElectricalStore((s) => s.design), useElectricalStore((s) => s.inputs.motors),
     useHmiStore((s) => s.design), useProgramStore((s) => s.ladder), useProgramStore((s) => s.userPrompt),
     useSpecStore((s) => s.sections), useProjectsStore((s) => s.activeId), useQuestionStore((s) => s.byProject),
   );

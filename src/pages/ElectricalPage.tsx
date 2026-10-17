@@ -8,6 +8,7 @@ import { usePlc } from '../plc/core/usePlc';
 import { getPart, partsIn } from '../electrical/catalog';
 import { catalogFor } from '../electrical/catalogs';
 import PartPicker from '../electrical/PartPicker';
+import type { ElectricalDesign } from '../electrical/types';
 import { buildDrawingsPdf, saveBlob } from '../deliverables/files';
 import { collectProject } from '../deliverables/collect';
 import { printPdf } from '../deliverables/printPdf';
@@ -17,7 +18,7 @@ import { keyRatings } from '../electrical/strength';
 import { useProjectStore, useVendorPreference, type Region } from '../store/useProjectStore';
 import { hpToKw, isIec, NEMA_TO_IP, REGIONS, regionSpec, SUPPLY_INFO } from '../standards/regions';
 import { applyRegion, regionOption } from '../standards/applyRegion';
-import { bomCsv, cableScheduleCsv, designWarnings, wireListCsv } from '../electrical/derive';
+import { bomCsv, cableScheduleCsv, designWarnings, motorFla, wireListCsv } from '../electrical/derive';
 import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
@@ -63,6 +64,12 @@ const download = (name: string, content: string, mime: string) => saveBlob(name,
 type Tab = 'design' | 'cabinet' | 'machine' | 'layout' | 'picture' | 'machining' | 'labels';
 
 const TAB_TITLE: Record<Tab, string> = { design: 'Design', cabinet: 'Cabinet wiring', machine: 'Machine wiring', layout: 'Machine layout', picture: 'Cabinet picture', machining: 'Machining (DXF)', labels: 'Labels' };
+
+/** The motor a component belongs to (its branch protection is limited by the motor current). */
+function motorContext(d: ElectricalDesign, tag: string | null | undefined, iec: boolean) {
+  const m = tag ? d.inputs.motors.find((x) => x.tag === tag) : undefined;
+  return m ? { tag: m.tag, fla: motorFla(m.hp, m.voltage), iec } : undefined;
+}
 
 export default function ElectricalPage() {
   const el = useElectricalStore();
@@ -370,6 +377,7 @@ export default function ElectricalPage() {
 
                 {swap !== null && el.design.components[swap] && (
                   <PartPicker tag={el.design.components[swap].tag} partNumber={el.design.components[swap].partNumber}
+                    motor={motorContext(el.design, el.design.components[swap].motorTag, isIec(region))}
                     onPick={(pn) => el.updateComponent(swap, { ...el.design!.components[swap], partNumber: pn })} onClose={() => setSwap(null)} />
                 )}
 
