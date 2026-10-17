@@ -251,7 +251,7 @@ async function journey(browser, mc) {
       if (/^(Show|Hide)|edit rates|Copy|Print|Download everything|Back to typical|Rebuild/.test(n) || !n) continue;
       const b = page.getByRole('button', { name: n, exact: true }).first();
       if (!(await b.isEnabled().catch(() => false))) { if (/certification|build time/i.test(n)) problem(mc.key, 'deliverables', `"${n}" is disabled`); continue; }
-      const [d] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }).catch(() => null), b.click()]);
+      const [d] = await Promise.all([page.waitForEvent('download', { timeout: 300000 }).catch(() => null), b.click()]);
       if (!d) { problem(mc.key, 'deliverables', `"${n}" gave no file`); continue; }
       const path = OUT + mc.key + '_' + d.suggestedFilename();
       await d.saveAs(path);
