@@ -59,6 +59,11 @@ for (const re of [/over-temperature/, /Air pressure low/, /Film roll low/, /Rear
 const guardAlarm = role(`alarm:input:${A(/guard door/)}`);
 assert.ok(hmi.screens.some((sc) => /alarm/i.test(sc.id) && sc.elements.some((e) => e.kind === 'indicator' && e.address === guardAlarm)), 'guard door lamp on the Alarms screen');
 
+// The unwinder's speed reference (% units) belongs to its drive: HMI speed setpoint, written while it runs.
+const REF = A(/speed reference/), UNW = A(/Unwinder VFD run/);
+assert.equal(content.actuators.find((x) => x.kind === 'drive')?.speedRef?.address, REF, 'speed reference (%) on the unwinder drive');
+const spSpeed = role(`sp:speed:${REF}`);
+assert.ok(spSpeed, 'HMI speed setpoint for the unwinder');
 const r = programWithCycle({ content, hmiTags: hmi.tags, hmiScreens: hmi.screens, hmiAlarms: hmi.alarms, spec: SPEC });
 const ioSet = new Set([...addresses.values()]);
 assert.deepEqual(validateProgram(r.program, profile, ioSet, hmi).filter((i) => i.severity === 'error').map((i) => i.message), [], 'checker: no errors with the HMI');
@@ -90,8 +95,17 @@ assert.ok(until(() => cycles() === 1, 15_000), 'one full cycle: down, seal, up')
 assert.equal(sim.readWord(S), 0, 'back to step 0: waits for the next two-hand start');
 scan(3000);
 assert.equal(cycles(), 1, 'holding both buttons does not start another cycle (anti-tie-down)');
+// Second cycle: the speed reference is the HMI setpoint while the unwinder runs (step 10), 0 while it is stopped.
+sim.write(spSpeed!, 60);
 hands(false); scan(300); hands(true);
-assert.ok(until(() => cycles() === 2, 15_000), 'released and pressed again: the next cycle');
+let unwRan = false;
+for (let t = 0; t < 15_000 && cycles() < 2; t += 50) {
+  scan(50);
+  unwRan ||= sim.readBit(UNW);
+  assert.equal(sim.readWord(REF), sim.readBit(UNW) ? 60 : 0, `speed reference follows the unwinder (run ${sim.readBit(UNW)})`);
+}
+assert.ok(unwRan, 'the unwinder ran in the cycle');
+assert.equal(cycles(), 2, 'released and pressed again: the next cycle');
 hands(false); scan(300);
 
 // A hand off a button during the closing stroke: the head goes back up, no fault.

@@ -231,5 +231,37 @@ for (const [name, sensor] of [['example', 'X005'], ['sealing', 'X004']] as const
   assert.match(bad.notes[0], /not used: step 1: no request bit for "Robot run"/);
   console.log(`cycle prompt ${prompt} chars (~${Math.round(prompt / 4)} tokens)`);
 }
+// Analog outputs are always written (user-journey QA): a drive speed reference in rpm / % / mA from its HMI
+// speed setpoint while the drive runs (0 stopped); any other analog output from its own HMI setpoint while
+// Safety OK. A machine without a step sequence still writes the HMI's step-timeout alarm.
+{
+  const ma = (units: string, max: number): IOPoint['analog'] => ({ range: '4-20mA', min: 0, max, units });
+  const skid = project([
+    pt('Start button', 'input', { deviceType: 'pushbutton-no' }), pt('Stop button', 'input', { deviceType: 'pushbutton-nc' }), pt('Safety OK', 'input', { deviceType: 'safety-relay-output' }),
+    pt('Pump 1 VFD fault', 'input', { deviceType: 'vfd-input' }), pt('Pump 2 VFD fault', 'input', { deviceType: 'vfd-input' }),
+    pt('Pump 1 VFD run', 'output', { deviceType: 'vfd-input' }), pt('Pump 2 VFD run', 'output', { deviceType: 'vfd-input' }),
+    pt('Pump 1 speed reference', 'output', { signal: 'analog', analog: ma('rpm', 1750) }), pt('Pump 2 speed reference', 'output', { signal: 'analog', analog: ma('%', 100) }),
+    pt('Bypass valve position', 'output', { signal: 'analog', analog: ma('%', 100) }),
+  ], 'C0-10DD1E-D', ['C0-04DA-1']);
+  const r = programWithCycle({ content: skid.content, hmiTags: skid.hmi.tags, hmiScreens: skid.hmi.screens, hmiAlarms: skid.hmi.alarms, spec: 'Pump skid: two pumps on VFDs, a bypass valve.' });
+  const A = (re: RegExp) => skid.addresses.get(skid.io.find((p) => re.test(p.description))!.id)!;
+  const writes = new Set(r.program.rungs.flatMap((g) => rungWrites(g).map((w) => w.toUpperCase())));
+  for (const re of [/Pump 1 speed/, /Pump 2 speed/, /Bypass valve/]) assert.ok(writes.has(A(re)), `analog output ${re} written`);
+  assert.deepEqual(skid.content.actuators.filter((a) => a.kind === 'drive').map((a) => `${a.name}:${a.speedRef?.address}`), [`Pump 1:${A(/Pump 1 speed/)}`, `Pump 2:${A(/Pump 2 speed/)}`], 'speed references in rpm and % belong to their drives');
+  const role = (x: string) => skid.hmi.tags.find((t) => t.role === x)?.address;
+  const valveSp = role(`sp:ao:${A(/Bypass valve/)}`);
+  assert.ok(valveSp && skid.hmi.screens.some((s) => s.elements.some((e) => e.kind === 'numeric-entry' && e.address === valveSp)), 'valve setpoint on the HMI Setup screen');
+  assert.equal(r.sequence.steps.length, 0, 'no step sequence on this machine');
+  assert.ok(writes.has(role('alarm:step')!), 'step-timeout alarm written without a step sequence');
+  assert.deepEqual(validateProgram(r.program, profile, new Set(skid.addresses.values()), skid.hmi).filter((i) => i.severity === 'error').map((i) => i.message), [], 'checker clean with the HMI');
+  // In the simulator: the valve follows its setpoint while Safety OK, 0 % without; the speed reference only while its pump runs.
+  const sim = createSimulator(r.program);
+  sim.setInput(A(/Safety OK/), true);
+  sim.write(valveSp!, 40); sim.step(100);
+  assert.equal(sim.readWord(A(/Bypass valve/)), 40, 'valve = setpoint while Safety OK');
+  sim.setInput(A(/Safety OK/), false); sim.step(100);
+  assert.equal(sim.readWord(A(/Bypass valve/)), 0, 'valve at the bottom of its range without Safety OK');
+  assert.equal(sim.readWord(A(/Pump 1 speed/)), 0, 'speed reference 0 while the pump is stopped');
+}
 void buildProgram;
 console.log('program engine tests passed');
