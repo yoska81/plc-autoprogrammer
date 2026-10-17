@@ -84,8 +84,10 @@ const title = (s: string) => s.replace(/\s+/g, ' ').trim().replace(/(^|\s)\w/g, 
 
 /** Name of an actuator from its output description ("Pusher solenoid" -> "Pusher"). */
 function nameOf(desc: string): string {
-  const w = keyWords(desc);
-  return title(w.join(' ')) || title(desc);
+  // Ratings are not part of the name: "Film unwinder (0.18 kW, 1800 rpm, with STO)" / "Pump 5 HP 480 V" -> "Film Unwinder" / "Pump".
+  const bare = desc.replace(/\([^)]*\)/g, ' ').replace(/\b\d+(\.\d+)?\s*(kw|hp|rpm|vac|vdc|v|a|amps?|hz|ph|phase)\b/gi, ' ').replace(/\b(approx\.?|with sto|sto)\b/gi, ' ');
+  const w = keyWords(bare);
+  return title(w.join(' ')) || title(keyWords(desc).join(' ')) || title(desc);
 }
 
 const PART = /\b(part|product|present|presence|photo|eye|count|carton|box|bottle|pouch)\b/i;

@@ -17,11 +17,27 @@ export function inferRoles(tags: HmiTag[], opts: { screens?: HmiScreen[]; alarms
   const acts = opts.content?.actuators ?? [];
   const outputsOf = (a: HmiActuator) => [a.run, a.reverse, a.extend, a.retract].filter((p): p is NonNullable<typeof p> => !!p);
   const allOuts = acts.flatMap(outputsOf);
-  const actOf = (text: string) => acts.find((a) => a.name.toLowerCase().split(' ').every((w) => text.includes(w)));
+  // The actuator the text names: all its name words, else the one sharing the most name words (an HMI made
+  // with shorter names, "Film Unwinder" for "Film Unwinder Drive 1"); a tie is no match.
+  const nameWords = (a: HmiActuator) => a.name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !/^\d+$/.test(w));
+  const actOf = (text: string) => {
+    const full = acts.find((a) => a.name.toLowerCase().split(' ').every((w) => text.includes(w)));
+    if (full) return full;
+    const words = new Set(text.split(/[^a-z0-9]+/));
+    const scored = acts.map((a) => ({ a, n: nameWords(a).filter((w) => words.has(w)).length })).filter((x) => x.n > 0).sort((x, y) => y.n - x.n);
+    return scored.length && (scored.length === 1 || scored[0].n > scored[1].n) ? scored[0].a : undefined;
+  };
+  // Roles tied to an I/O address the I/O list no longer has (the PLC or its modules changed) are read again.
+  const ioAddr = new Set((opts.content?.io ?? []).map((p) => p.address.toUpperCase()));
+  const stale = (role: string) => {
+    const m = /:([XY]\d+)$/i.exec(role);
+    return !!m && ioAddr.size > 0 && !ioAddr.has(m[1].toUpperCase());
+  };
   const alarmAddr = new Set((opts.alarms ?? []).map((a) => a.address.toUpperCase()));
   // A button's interlock: command address -> permit address.
   const interlockOf = new Map<string, string>();
   for (const s of opts.screens ?? []) for (const e of s.elements) if (e.address && e.interlock) interlockOf.set(e.address.toUpperCase(), e.interlock.toUpperCase());
+  tags = tags.map((t) => (t.role && stale(t.role) ? { ...t, role: undefined } : t));
   const used = new Set(tags.filter((t) => t.role).map((t) => t.role!));
   const out: HmiTag[] = [];
   const unmatched: HmiTag[] = [];

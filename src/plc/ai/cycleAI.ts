@@ -94,8 +94,12 @@ export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcConte
       const problems = checkSequence(r.sequence, result.base, new Set(inputs.map((i) => i.address.toUpperCase())));
       if (problems.length) throw new Error(`its cycle steps were not used: ${problems.slice(0, 3).join('; ')}`);
       const withAi = programWithCycle({ ...input, sequence: r.sequence });
-      const errors = validateProgram(withAi.program, o.ctx.profile, ioSet, o.hmi ?? undefined).filter((i) => i.severity === 'error');
-      if (errors.length) throw new Error(`its cycle did not pass the checker: ${errors[0].message}`);
+      // Only errors the cycle adds count: one the standard blocks already have (an HMI tag nothing writes) is
+      // reported by the checker either way and is no reason to drop the AI's steps.
+      const errs = (prog: LadderProgram) => validateProgram(prog, o.ctx.profile, ioSet, o.hmi ?? undefined).filter((i) => i.severity === 'error').map((i) => i.message);
+      const before = new Set(errs(result.program));
+      const errors = errs(withAi.program).filter((m) => !before.has(m));
+      if (errors.length) throw new Error(`its cycle did not pass the checker: ${errors[0]}`);
       result = withAi; source = 'ai'; explanation = r.explanation;
     } catch (err) {
       if (o.ai.signal?.aborted) throw err;

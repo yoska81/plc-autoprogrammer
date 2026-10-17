@@ -12,7 +12,9 @@ import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
 import { moduleSlots } from '../../plc/core/modules';
 import type { IOPoint } from '../../types/io';
-import type { HmiDesign } from '../types';
+import type { HmiDesign, HmiTag } from '../types';
+import type { IOWiring } from '../../electrical/types';
+import { inferRoles } from './roles';
 
 const panel = { partNumber: 'P', widthPx: 800, heightPx: 480, now: 'T' };
 function design(points: [string, 'input' | 'output'][]): HmiDesign {
@@ -91,3 +93,21 @@ assert.ok(!rebuilt.screens.find((s) => s.id === 'alarms')!.elements.some((e) => 
 assert.ok(rebuilt.screens.find((s) => s.id === 'manual')!.edited, 'other edited screens stay');
 assert.equal(rebuildScreen(merged, v2, 'my-own-screen'), null);
 console.log('hmi regenerate tests passed');
+
+// A motor named with its ratings ("Film unwinder (0.18 kW, 1800 rpm, with STO)") is "Film Unwinder", and an HMI
+// alarm named that way is the drive-fault alarm the program writes, even without a stored role.
+{
+  const io = [
+    { id: 'a', description: 'Film unwinder VFD run', type: 'output', category: 'Conveyor', deviceType: 'vfd-input' },
+    { id: 'b', description: 'Film unwinder VFD fault', type: 'input', category: 'Conveyor', deviceType: 'vfd-input' },
+  ] as IOPoint[];
+  const wiring = [{ address: 'Y001', deviceTag: 'VFD1', deviceType: 'vfd-input' }, { address: 'X005', deviceTag: 'VFD1', deviceType: 'vfd-input' }] as IOWiring[];
+  const motorOf = new Map([['VFD1', { tag: 'M1', description: 'Film unwinder (0.18 kW, 1800 rpm, approx. 0.25 hp, with STO)' }]]);
+  const c = defaultHmiContent({ io, addresses: new Map([['a', 'Y001'], ['b', 'X005']]), machineName: 'x', wiring, motorOf });
+  assert.equal(c.actuators[0].name, 'Film Unwinder');
+  const tag = { name: 'ALM_Film_Unwinder_Fault', address: 'C1102', dataType: 'BIT', access: 'read', description: 'Film Unwinder: drive fault' } as HmiTag;
+  assert.equal(inferRoles([tag], { content: c }).tags[0].role, 'alarm:fault:X005');
+  // A role on an input the I/O list no longer has (the PLC changed) is read again from the name.
+  assert.equal(inferRoles([{ ...tag, role: 'alarm:fault:X009' }], { content: c }).tags[0].role, 'alarm:fault:X005');
+  console.log('ok - rated motor names and stale roles');
+}
