@@ -266,7 +266,7 @@ const STRESS_EXTRA: [string, 'input' | 'output', IOCategory, string][] = Array.f
 
 async function setupRules(v: string) {
   setupVariant(v === 'rules-big' || v === 'rules-floor' ? 'big' : 'us480');
-  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress') {
+  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress' || v === 'rules-sealing-4x') {
     // Only the sealing head's own description: the example's other sections (its conveyor) must not leak in.
     const sections = useSpecStore.getState().sections;
     useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC });
@@ -280,8 +280,15 @@ async function setupRules(v: string) {
     useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [{ partNumber: 'C0-12DD1E-D', quantity: 1 }, { partNumber: 'C0-16ND3', quantity: v === 'rules-stress' ? 2 : 1 }, { partNumber: 'C0-08TD1', quantity: 1 }] });
   }
+  // "rules-sealing-4x": the user's Sealing Head — NEMA 4X (stainless), a C0-10DD1E-D with input / output / analog
+  // modules, and the CPU changed on the PLC page after the equipment choice (C0-10DD2E-D still in the required parts).
+  if (v === 'rules-sealing-4x') {
+    const modules = ['C0-08ND3', 'C0-08TD1', 'C0-04AD-1', 'C0-04DA-1'];
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-10DD1E-D', modules });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, enclosureRating: 'NEMA 4X', motors: [], requiredParts: [{ partNumber: 'C0-10DD2E-D', quantity: 1 }, ...modules.map((partNumber) => ({ partNumber, quantity: 1 }))] });
+  }
   const el = useElectricalStore.getState();
-  let inputs = v === 'rules-sealing' ? el.inputs : el.design?.inputs ?? el.inputs;
+  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' ? el.inputs : el.design?.inputs ?? el.inputs;
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
@@ -359,7 +366,7 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     terminals: terminalPlan(ctx),
     cables: cableSchedule(ctx),
     warnings: designWarnings(ctx),
-    layout: { enclosure: layout.enclosure, backplate: layout.backplate, door: { w: layout.door.w, h: layout.door.h, items: layout.door.items, handle: layout.door.handle, leaves: layout.door.leaves, leaf: layout.door.leaf, plinth: layout.door.plinth }, overflow: layout.overflow, notFit: layout.notFit, warnings: layout.warnings, items: layout.items.map(({ tag, label, category, x, y, w, h }) => ({ tag, label, category, x, y, w, h })), rails: layout.rails, ducts: layout.ducts },
+    layout: { enclosure: layout.enclosure, backplate: layout.backplate, door: { w: layout.door.w, h: layout.door.h, items: layout.door.items, handle: layout.door.handle, leaves: layout.door.leaves, leaf: layout.door.leaf, plinth: layout.door.plinth, overflow: layout.door.overflow }, overflow: layout.overflow, notFit: layout.notFit, warnings: layout.warnings, items: layout.items.map(({ tag, label, category, x, y, w, h }) => ({ tag, label, category, x, y, w, h })), rails: layout.rails, ducts: layout.ducts },
     drilling: { backpanel: bpPlan, door: doorPlan, faces: facePlans },
     hmiModel: p.hmi ? getHmi(p.hmi.hmiPartNumber) ?? null : null,
     labels,
