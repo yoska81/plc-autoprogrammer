@@ -6,8 +6,8 @@ motor M4 5 HP vfd — Belt 2 motor
 motor M5 5 HP vfd — Belt 3 motor
 motor M6 5 HP vfd — Belt 4 motor
 
-ENC1     SCE-36EL3012LP     x1    Main enclosure 36x30x12 NEMA 12 — everything placed, but only 14% spare panel space (target >= 25%)
-SP1      SCE-36P30          x1    Back panel
+ENC1     SCE-42EL3612LP     x1    Main enclosure 42x36x12 NEMA 12 — smallest catalog enclosure with everything placed and 46% spare panel space (target >= 25%)
+SP1      SCE-42P36          x1    Back panel
 DS1      22013006           x1    Main disconnect 60A — load 39.4 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle
 DS1S     14070532           x1    Disconnect shaft
@@ -154,6 +154,5 @@ routing {"PE1":"JB1","PE2":"JB1","PE3":"JB1","PE4":"JB1","PE5":"JB1","PE6":"JB1"
 
 note: Motor currents from NEC Table 430.250 / 430.248: M1 1 HP 2.1 A, M2 3 HP 4.8 A, M3 5 HP 7.6 A, M4 5 HP 7.6 A, M5 5 HP 7.6 A, M6 5 HP 7.6 A — confirm the nameplates.
 note: VFD1, VFD2, VFD3, VFD4: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.
-note: No catalog enclosure leaves 25% spare panel space: SCE-36EL3012LP is the largest tried (14% spare) — consider a larger or a second enclosure.
 
-explanation: Rule-based design: NEMA 12 SCE-36EL3012LP, 480 V 3-phase through 60A — load 39.4 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP across the line, M2 3 HP across the line, M3 5 HP on GS23-45P0 (STO), M4 5 HP on GS23-45P0 (STO), M5 5 HP on GS23-45P0 (STO), M6 5 HP on GS23-45P0 (STO); 24 VDC from PSR-24-120-3 for 3.5 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 14% spare panel space.
+explanation: Rule-based design: NEMA 12 SCE-42EL3612LP, 480 V 3-phase through 60A — load 39.4 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP across the line, M2 3 HP across the line, M3 5 HP on GS23-45P0 (STO), M4 5 HP on GS23-45P0 (STO), M5 5 HP on GS23-45P0 (STO), M6 5 HP on GS23-45P0 (STO); 24 VDC from PSR-24-120-3 for 3.5 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 46% spare panel space.
