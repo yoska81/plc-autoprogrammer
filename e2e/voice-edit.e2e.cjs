@@ -155,10 +155,14 @@ const FAKE_SPEECH = () => {
   check(await voice.getByRole('radio', { name: /OpenAI/ }).isDisabled(), 'OpenAI engine needs a key');
   await page.screenshot({ path: path.join(OUT, '03-settings-voice.png'), fullPage: true });
   // A fake OpenAI key (never a real one) and the OpenAI engine.
-  await page.evaluate(async () => {
-    const s = await import('/src/store/useSettingsStore.ts'); s.useSettingsStore.getState().setOpenaiApiKey('sk-test-not-a-real-key');
-    const v = await import('/src/voice/useVoiceSettings.ts'); v.useVoiceSettings.getState().set({ engine: 'openai' });
-  });
+  // Through the Settings form, as a user does (the page keeps its own draft of the keys and saves it).
+  const openaiKey = page.getByPlaceholder('sk-...', { exact: true });
+  await openaiKey.fill('sk-test-not-a-real-key');
+  await page.getByRole('button', { name: 'Save Settings' }).click();
+  const openaiRadio = voice.getByRole('radio', { name: /OpenAI/ });
+  await openaiRadio.waitFor();
+  check(await openaiRadio.isEnabled(), 'OpenAI engine offered once a key is saved');
+  await openaiRadio.check();
   const trial = page.getByLabel('Try the microphone');
   await page.locator('div.relative', { has: trial }).getByTestId('mic').click();
   await page.getByTestId('dictation').getByText(/Listening/).waitFor({ timeout: 10000 });
@@ -169,7 +173,8 @@ const FAKE_SPEECH = () => {
   check(await trial.inputValue() === 'Transcribed by OpenAI', 'recorded speech written down by OpenAI');
   check(transcribed.length >= 1 && transcribed.at(-1).language === 'he' && transcribed.at(-1).model && transcribed.at(-1).bytes > 1000, `audio sent with the language (${JSON.stringify(transcribed.at(-1))})`);
   // On-device model: no internet for it here → plain error.
-  await page.evaluate(async () => { const v = await import('/src/voice/useVoiceSettings.ts'); v.useVoiceSettings.getState().set({ engine: 'local', language: 'en-US' }); });
+  await voice.getByLabel('Speech language').selectOption('en-US');
+  await voice.getByRole('radio', { name: /Speech model on this computer/ }).check();
   await trial.fill('');
   await page.locator('div.relative', { has: trial }).getByTestId('mic').click();
   await page.getByTestId('dictation').getByText(/Listening/).waitFor({ timeout: 10000 });
@@ -180,8 +185,9 @@ const FAKE_SPEECH = () => {
   await page.getByTestId('dictation').getByRole('button', { name: 'Close' }).click();
   await page.evaluate(async () => {
     const v = await import('/src/voice/useVoiceSettings.ts'); v.useVoiceSettings.getState().set({ engine: 'auto', language: 'en-US', voice: '' });
-    const s = await import('/src/store/useSettingsStore.ts'); s.useSettingsStore.getState().setOpenaiApiKey('');
   });
+  await openaiKey.fill('');
+  await page.getByRole('button', { name: 'Save Settings' }).click();
 
   // ── 4. Order list: price, quantity, part number, description ──
   await tree('Deliverables');
