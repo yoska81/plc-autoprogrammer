@@ -10,6 +10,8 @@ import { ALLOWED_RISE_C, cabinetHeat } from '../electrical/thermal';
 import { awgToMm2, SUPPLY_INFO } from '../standards/regions';
 import { equivalentsOf, sourcingFlags, sourcingOf } from '../sourcing/data';
 import type { Finding, Severity, ReviewArea } from '../review/types';
+import type { ProjectSnapshot } from '../deliverables/collect';
+import { ioCapacity, moduleSlots } from '../plc/core/modules';
 
 /** A finding with where it is on the drawings and an optional one-click fix. */
 export interface EngineerFinding extends Finding {
@@ -50,7 +52,8 @@ export function engineerChecks({ ctx, io, requiredPL }: EngineerInput): Engineer
     const tag = sccr.limiting[0];
     const pn = m.rc.find((c) => c.tag === tag)?.partNumber ?? '';
     const better = pn ? equivalentsOf(pn).find((e) => num(e.part.ratings.interruptingKA ?? e.part.ratings.sccrKA) > sccr.lowest!) : undefined;
-    add(`sccr-weak:${tag}`, sccr.lowest < 10 ? 'major' : 'minor', 'electrical', `SCCR weak link: ${sccr.limiting.join(', ')} (${sccr.lowest} kA)`,
+    // minor: the site's available fault current is not known, so a low rating is advice, not a defect (the SCCR code rule agrees)
+    add(`sccr-weak:${tag}`, 'minor', 'electrical', `SCCR weak link: ${sccr.limiting.join(', ')} (${sccr.lowest} kA)`,
       `The panel can only be marked ${sccr.lowest} kA because of ${sccr.limiting.join(', ')}. If the available fault current at the site is higher, the panel may not be installed there (UL 508A SB / NEC 409.22).`,
       better ? `Use ${better.part.partNumber} (${better.part.manufacturer}, ${better.part.ratings.interruptingKA ?? better.part.ratings.sccrKA} kA) or add current-limiting fuses ahead of it.` : 'Use a higher-rated part or current-limiting protection ahead of it; confirm the site fault current.',
       sccr.limiting, better && pn ? { label: `Use ${better.part.partNumber}`, kind: 'swap', from: pn, to: better.part.partNumber } : undefined);
@@ -119,4 +122,13 @@ export function engineerChecks({ ctx, io, requiredPL }: EngineerInput): Engineer
       alt ? `Replace it with ${alt}.` : 'Choose an available part on the Sourcing page.', l.tags, alt ? { label: `Use ${alt}`, kind: 'swap', from: l.partNumber, to: alt } : undefined);
   }
   return out;
+}
+
+/** The engineer rule checks for a project snapshot (part of the Design review, so every count agrees). */
+export function engineerChecksFor(p: ProjectSnapshot): EngineerFinding[] {
+  if (!p.drawingCtx) return [];
+  const cap = ioCapacity(p.cpu, moduleSlots(p.modules));
+  const used = (t: 'input' | 'output') => p.io.filter((pt) => pt.type === t && p.addresses.get(pt.id)).length;
+  const pl = `${p.spec.safety ?? ''} ${p.spec.guarding ?? ''}`.match(/\bPL\s*([a-e])\b/i)?.[1] ?? null;
+  return engineerChecks({ ctx: p.drawingCtx, io: { inputs: used('input'), outputs: used('output'), capInputs: cap.inputs, capOutputs: cap.outputs }, requiredPL: pl });
 }

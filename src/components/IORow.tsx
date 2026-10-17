@@ -2,6 +2,7 @@ import { TrashIcon } from '@heroicons/react/24/outline';
 import type { IOPoint, IOCategory } from '../types/io';
 import { useIOStore } from '../store/useIOStore';
 import AnalogCell from '../plc/ui/io/AnalogCell';
+import { FIELD_DEVICE_LABEL, type FieldDeviceType } from '../electrical/types';
 
 const ALL_CATEGORIES: IOCategory[] = [
   'Safety', 'Operator/HMI', 'External Machine', 'Product Detection',
@@ -19,9 +20,11 @@ interface IORowProps {
   address: string;
   /** Another point resolves to the same address. */
   duplicate: boolean;
+  /** The field device wired to this address in the electrical design, e.g. "PB1 · pushbutton (NO)". */
+  device?: string;
 }
 
-export function IORow({ point, address, duplicate }: IORowProps) {
+export function IORow({ point, address, duplicate, device }: IORowProps) {
   const { updateDescription, updateCategory, deletePoint, setPlcAddress } = useIOStore();
   const isManual = Boolean(point.plcAddress);
 
@@ -63,7 +66,7 @@ export function IORow({ point, address, duplicate }: IORowProps) {
         </select>
       </td>
       <td className={`${td} text-xs text-steel-500 whitespace-nowrap`}>
-        <div className="flex items-center gap-2">{point.signal !== 'analog' && <span>{point.deviceType ?? '—'}</span>}<AnalogCell point={point} address={address} /></div>
+        <div className="flex items-center gap-2">{point.signal !== 'analog' && <span>{device ?? (point.deviceType ? FIELD_DEVICE_LABEL[point.deviceType as FieldDeviceType] ?? point.deviceType : '—')}</span>}<AnalogCell point={point} address={address} /></div>
       </td>
       <td className={td}>
         <button onClick={() => deletePoint(point.id)} title="Delete" aria-label={`Delete ${point.id}`}

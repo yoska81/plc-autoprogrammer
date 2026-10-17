@@ -5,6 +5,7 @@
  * checking engineer does by hand: spec ↔ I/O, I/O ↔ program, safety gating,
  * HMI ↔ program, approvals.
  */
+import { engineerChecksFor } from '../engineer/checks';
 import type { ProjectSnapshot } from '../deliverables/collect';
 import { buildModel, designWarnings, spareSpace } from '../electrical/derive';
 import { codeRuleFindings } from './codeRules';
@@ -445,6 +446,9 @@ export function runChecks(input: ReviewInput): Finding[] {
     ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input), ...driveChecks(input),
     ...programChecks(input), ...hmiChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
   ];
+  // The Engineer review's rule checks (SCCR weak link, heat, voltage drop…) count here too: one set of findings everywhere.
+  const eng = engineerChecksFor(input.p);
+  all.push(...eng.filter((e) => !all.some((f) => f.title === e.title)));
   const seen = new Set<string>();
   return all.filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)));
 }
