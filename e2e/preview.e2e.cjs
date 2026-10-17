@@ -152,14 +152,16 @@ function reply(system) {
     check(schemaOk && turnsOk, 'prompt well-formed');
     check(c.size < MAX_PROMPT, `prompt under 256 KiB (${c.size})`);
   }
-  check(calls.filter((c) => c.json).length >= 5, 'all AI calls went through the account');
+  // Structured answers are requested as streamed text with the schema instruction (read leniently, continued when cut off).
+  check(calls.filter((c) => c.input[0].content.includes('OUTPUT FORMAT:')).length >= 5, 'all AI calls went through the account');
 
   // Generation error from the runtime shows up in plain English.
   await page.evaluate(() => { window.__mode = 'rate_limited'; });
   await page.goto(BASE + '/#/equipment');
   await page.getByRole('button', { name: /Suggest (again|equipment)/ }).click();
+  // rate_limited is retried 3 times with backoff (2 s, 6 s, 15 s) before the plain message shows.
   const alert = page.locator('[role=alert]');
-  await alert.waitFor({ timeout: 10000 });
+  await alert.waitFor({ timeout: 60000 });
   log('Generation error:', await alert.innerText());
   check(/usage limit/.test(await alert.innerText()), 'rate_limited generation error');
   await page.evaluate(() => { window.__mode = 'ok'; });

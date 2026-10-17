@@ -1,3 +1,5 @@
+import { bindProgress, finishProgress } from '../lib/ai/progress';
+import { IS_PREVIEW } from '../preview/mode';
 import { useSpecStore } from '../store/useSpecStore';
 import { useIOStore } from '../store/useIOStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -43,13 +45,26 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
     if (!run.length) continue;
     // "Stop after this stage": the stages not started yet are skipped
     if (shouldStop()) { for (const step of run) onStep({ step, status: 'skipped', message: 'Stopped before this stage.' }); continue; }
-    const ok = await Promise.all(run.map((step) => runStep(step, onStep, signal)));
+    // In the preview the viewer's Claude account answers one large request at a time more reliably.
+    const ok: boolean[] = [];
+    if (IS_PREVIEW) { for (const step of run) { ok.push(await runStep(step, onStep, signal)); if (!ok[ok.length - 1] || signal?.aborted) break; } }
+    else ok.push(...(await Promise.all(run.map((step) => runStep(step, onStep, signal)))));
     if (ok.includes(false) || signal?.aborted) return; // later stages depend on these
   }
 }
 
 /** One stage; false when it failed. */
-async function runStep(step: UpdateStep, onStep: (r: StepResult) => void, signal?: AbortSignal): Promise<boolean> {
+async function runStep(step: UpdateStep, onStep: (r: StepResult) => void, parent?: AbortSignal): Promise<boolean> {
+  // Each stage gets its own signal (aborted with the whole update) so its progress shows on its own line.
+  const ctrl = new AbortController();
+  if (parent?.aborted) ctrl.abort(); else parent?.addEventListener('abort', () => ctrl.abort(), { once: true });
+  bindProgress(ctrl.signal, step);
+  let ok = false;
+  try { ok = await runStepInner(step, onStep, ctrl.signal); } finally { finishProgress(step, ok); }
+  return ok;
+}
+
+async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, signal?: AbortSignal): Promise<boolean> {
   const settings = useSettingsStore.getState();
   const ai = { apiKey: settings.anthropicApiKey, model: settings.anthropicModel, effort: settings.effort, signal };
   const spec = useSpecStore.getState().sections;

@@ -10,6 +10,7 @@
  * If the open project changed before a job finished (switching is normally blocked while the AI
  * works), its result is held and applied when that project is opened again.
  */
+import { bindProgress, finishProgress } from './progress';
 import { useEffect, useRef } from 'react';
 import { create } from 'zustand';
 import { useProjectsStore } from '../../store/useProjectsStore';
@@ -92,6 +93,7 @@ export function startAiJob<T>(spec: AiJobSpec<T>): Promise<string> {
   const ctrl = new AbortController();
   controllers.set(id, ctrl);
   signals.set(ctrl.signal, id);
+  bindProgress(ctrl.signal, spec.kind);
   const projectId = activeProject();
   // older finished jobs of the same kind are replaced by this one
   useAiJobs.setState((s) => ({
@@ -120,7 +122,7 @@ export function startAiJob<T>(spec: AiJobSpec<T>): Promise<string> {
       patch({ status: cancelled ? 'cancelled' : 'failed', endedAt: Date.now(), retry: null, error: cancelled ? undefined : err instanceof Error ? err.message : String(err) });
       return id;
     },
-  ).finally(() => { controllers.delete(id); signals.delete(ctrl.signal); });
+  ).finally(() => { finishProgress(spec.kind, useAiJobs.getState().jobs.find((j) => j.id === id)?.status === 'done'); controllers.delete(id); signals.delete(ctrl.signal); });
 }
 
 /** Stop a running job (aborts its AI request). */

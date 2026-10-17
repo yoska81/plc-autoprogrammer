@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStages } from '../spec/useStages';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { runUpdateAll, UPDATE_GROUPS, type StepResult, type UpdateStep } from '../spec/updateAll';
 import { cancelAiJob, startAiJob, useAiJob } from '../lib/ai/jobs';
 import { Spinner } from './common';
+import { percentOf, useAiProgress } from '../lib/ai/progress';
 
 const ORDER: { step: UpdateStep; label: string }[] = [
   { step: 'equipment', label: 'Equipment' },
@@ -13,6 +14,25 @@ const ORDER: { step: UpdateStep; label: string }[] = [
   { step: 'hmi', label: 'HMI screens' },
   { step: 'program', label: 'PLC program' },
 ];
+
+const mmss = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+
+/** "Thinking 1:23" while the model thinks, then "Writing 45 %" with a bar while the answer arrives. */
+function StepProgress({ step }: { step: string }) {
+  const p = useAiProgress(step);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  if (!p || p.done) return <span className="ml-auto text-xs text-gray-400">waiting…</span>;
+  const pct = percentOf(step, p);
+  return (
+    <span className="ml-auto flex items-center gap-2 text-xs tabular-nums text-gray-600" data-testid={`progress-${step}`}>
+      {pct === null ? <>thinking {mmss(now - p.startedAt)}</> : <>
+        <span className="w-24 h-1.5 bg-gray-200 rounded overflow-hidden"><span className="block h-full bg-brand-600 transition-all" style={{ width: `${pct}%` }} /></span>
+        <span className="w-9 text-right font-medium text-brand-800">{pct}%</span>
+      </>}
+    </span>
+  );
+}
 
 /** Sidebar button + progress dialog that updates every out-of-date stage in order. */
 export default function UpdateAll() {
@@ -91,7 +111,11 @@ export default function UpdateAll() {
                       {r ? (r.status === 'failed' ? '✗' : r.status === 'skipped' ? '–' : r.status === 'proposal' ? '●' : '✓') : isNext ? <Spinner /> : '○'}
                     </span>
                     <span className="flex-1">
-                      <span className="font-medium">{label}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="font-medium">{label}</span>
+                        {r && r.status !== 'failed' && r.status !== 'skipped' && <span className="ml-auto text-xs tabular-nums text-green-700" data-testid={`progress-${step}`}>100%</span>}
+                        {!r && isNext && <StepProgress step={step} />}
+                      </span>
                       {r && <span className={`block text-xs ${r.status === 'failed' ? 'text-red-700' : r.status === 'proposal' ? 'text-indigo-700' : 'text-gray-500'}`}>{r.message}</span>}
                     </span>
                   </li>

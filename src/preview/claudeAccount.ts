@@ -62,6 +62,23 @@ function friendly(e: unknown): Error {
   return e instanceof Error ? e : new Error(String(e));
 }
 
+/** Read a JSON value from a model answer: plain, in a code fence, with text around it or trailing commas. */
+export function parseJsonLenient(text: string): unknown {
+  const tries: string[] = [];
+  const t = text.trim();
+  tries.push(t);
+  const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(t);
+  if (fence) tries.push(fence[1].trim());
+  const start = t.search(/[{[]/);
+  const end = Math.max(t.lastIndexOf('}'), t.lastIndexOf(']'));
+  if (start >= 0 && end > start) tries.push(t.slice(start, end + 1));
+  for (const c of [...tries]) tries.push(c.replace(/,\s*([}\]])/g, '$1'));
+  for (const c of tries) {
+    try { return JSON.parse(c); } catch { /* next */ }
+  }
+  return undefined;
+}
+
 /** True when the preview can run AI through the viewer's Claude account. */
 export async function accountAvailable(): Promise<boolean> {
   return (await getSample()) !== null;
@@ -87,8 +104,8 @@ export async function callClaudeAccount(opts: {
   messages: { role: 'user' | 'assistant'; content: string | Block[] }[];
   schema?: Record<string, unknown>;
   signal?: AbortSignal;
-  /** Called whenever streamed text arrives (watchdog). */
-  onProgress?: () => void;
+  /** Called whenever streamed text arrives (watchdog, progress), with the characters written so far. */
+  onProgress?: (chars?: number) => void;
 }): Promise<{ text: string; reasoning: string | null }> {
   const sample = await getSample();
   if (!sample) {
@@ -115,6 +132,7 @@ export async function callClaudeAccount(opts: {
   const input = [{ role: 'user' as const, content: `${opts.system}${format}` }, ...turns];
   if (input[input.length - 1].role !== 'user') input.push({ role: 'user', content: 'Continue.' });
 
+  let written = 0; // characters of earlier parts when an answer is continued
   const effort = opts.effort === 'low' ? 'low' : opts.effort === 'medium' ? 'medium' : 'high';
   const options: SampleOptions = {
     modelTier: 'complex',
@@ -122,12 +140,24 @@ export async function callClaudeAccount(opts: {
     effort,
     cache: false,
     ...(opts.signal ? { signal: opts.signal } : {}),
-    ...(opts.onProgress ? { onText: () => opts.onProgress?.() } : {}),
+    ...(opts.onProgress ? { onText: (u: { text: string }) => opts.onProgress?.(written + u.text.length) } : {}),
     ...(images.length ? { images } : {}),
   };
   try {
     if (opts.schema) {
-      const value = await sample.json(input, options);
+      // Streamed as text (progress shows), continued when it is cut off by the length limit,
+      // then read leniently (code fences, text around the JSON, trailing commas).
+      let full = '';
+      let turns2 = input;
+      for (let part = 0; part < 4; part++) {
+        const r = await sample(turns2, options);
+        full += r.text;
+        written = full.length;
+        if (!r.truncated) break;
+        turns2 = [...input, { role: 'assistant', content: full }, { role: 'user', content: 'Your answer was cut off. Continue exactly where you stopped: output only the rest of the JSON, no repetition, no prose.' }];
+      }
+      const value = parseJsonLenient(full);
+      if (value === undefined) throw Object.assign(new Error(ERRORS.invalid_json), { code: 'invalid_json' });
       return { text: JSON.stringify(value), reasoning: null };
     }
     const r = await sample(input, options);
