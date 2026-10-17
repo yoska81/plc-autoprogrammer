@@ -87,12 +87,12 @@ function templateLabelPlace(c: DrillCutout, all: DrillCutout[], px: (v: number) 
     const inside = b.x0 >= inner.x0 && b.x1 <= inner.x1 && b.y0 >= inner.y0 && b.y1 <= inner.y1;
     if (inside && !others.some((o) => b.x0 < o.x1 && o.x0 < b.x1 && b.y0 < o.y1 && o.y0 < b.y1)) return { labelBelow, labelRight };
   }
-  // too wide for the part (a narrow side wall on a small scale): centred on the mark, shrunk to the part's inner width,
-  // above it or below it — whichever stays inside the edge band (never across the outline)
+  // nowhere free: above, shrunk to the room left before the edge band
+  if (y - rh - 6.8 >= inner.y0) return { labelBelow: false, labelRight: false, labelMaxW: Math.max(8, inner.x1 - (x - rw)) };
+  // ... unless "above" crosses the outline (a mark near the top of a narrow side wall): centred on the mark below it,
+  // shrunk to the part's inner width
   const maxW = Math.max(8, inner.x1 - inner.x0);
-  const cx = Math.min(Math.max(x, inner.x0 + maxW / 2), inner.x1 - maxW / 2);
-  const aboveOk = y - rh - 6.8 >= inner.y0;
-  return { labelBelow: !aboveOk && y + rh + 7.2 <= inner.y1, labelRight: false, labelMaxW: maxW, labelCenterX: cx };
+  return { labelBelow: true, labelRight: false, labelMaxW: maxW, labelCenterX: Math.min(Math.max(x, inner.x0 + maxW / 2), inner.x1 - maxW / 2) };
 }
 
 type Corner = 'ne' | 'nw' | 'se' | 'sw';
