@@ -237,7 +237,8 @@ for (const s of SCENARIOS) {
   const { r, ctx } = run(over);
   const L = panelLayout(ctx);
   const enc = r.design.components.find((c) => c.tag === 'ENC1')!;
-  assert.ok(!r.layoutOk, 'big-overflow: no enclosure fits');
+  // With the large catalog enclosures (Dev 1, 72x72 double door) this machine may now fit; either way the
+  // choice must not fall back to the smallest enclosure and the door must hold the HMI and operators.
   assert.notEqual(enc.partNumber, 'SCE-16EL1206LP', 'not the smallest enclosure');
   assert.ok(!L.door.overflow, `big-overflow: door fits (${enc.partNumber})`);
   assert.ok(L.door.items.every((d) => d.cx - d.w / 2 >= 25 && d.cx + d.w / 2 <= L.enclosure.w - 25 && d.cy - d.h / 2 >= 25 && d.cy + d.h / 2 <= L.enclosure.h - 25), 'door items 25 mm clear of the edges');
