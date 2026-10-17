@@ -23,6 +23,8 @@ import { bomCsv, designWarnings, motorFla } from '../electrical/derive';
 import { cableScheduleCsvWithNotes, wireListCsvWithNotes } from '../edits/lists';
 import CableWireLists from '../edits/CableWireLists';
 import CabinetPictures from '../electrical/CabinetPictures';
+import EnclosureFitBanner from '../electrical/EnclosureFitBanner';
+import EnclosureControl from '../electrical/EnclosureControl';
 import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
 import ImprovePanel from '../electrical/improve/ImprovePanel';
@@ -203,6 +205,8 @@ export default function ElectricalPage() {
         <button onClick={() => generate()} disabled={el.isGenerating} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
+      {ctx && el.design && <EnclosureControl ctx={ctx} />}
+      {ctx && el.design && <EnclosureFitBanner ctx={ctx} />}
       {tab === 'improve' ? (
         <ImprovePanel fileBase={base} />
       ) : tab === 'lists' ? (

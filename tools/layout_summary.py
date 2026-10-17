@@ -35,5 +35,14 @@ for n in names:
         for dct in L['ducts']:
             if ov(a, dct):
                 print(f'FAIL {n}: {a["label"]} overlaps a wire duct at y={dct["y"]:.0f}'); fails += 1
+    # never a silent layout with parts left off: every back-panel and door part fits (the app shows a red banner otherwise)
+    if L['notFit']:
+        print(f'FAIL {n}: parts do not fit the back panel: {[x["tag"] for x in L["notFit"]]}'); fails += 1
+    if L['door'].get('overflow'):
+        print(f'FAIL {n}: door devices do not fit the door'); fails += 1
+    # one PLC CPU (a CPU left in the required parts after a CPU change was drawn and ordered twice)
+    cpus = [w for w in d.get('warnings', []) if 'PLC CPUs in the design' in w]
+    if cpus:
+        print(f'FAIL {n}: {cpus[0]}'); fails += 1
 print(f'LAYOUT: {fails} FAIL')
 sys.exit(1 if fails else 0)

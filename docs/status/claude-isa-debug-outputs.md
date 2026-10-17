@@ -393,3 +393,57 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - engine.test checks: the guard interlock and its actuator, the door-closed input on 33-34, the S11 / S21 chains through GS1, and the pressure switch on its DIN pins.
   - The catalog test allowlists 3SE5112-0QV10 with its reason.
   - The machine-model AI test now expects the real interlock instead of the note.
+
+## Enclosure: the designer's choice, no over-sizing, no silent overflow, PLC drawn twice (integration afcaf88 + Dev 1's 540333b)
+- **Reported by the user:**
+  - The Sealing Head showed parts that "do not fit" in SCE-20EL1608SSLP.
+  - After the 4X catalog arrived, it was placed in a huge, mostly empty cabinet.
+  - The PLC was listed twice: PLC C0-10DD1E-D and X1 C0-10DD2E-D.
+- **Cause of the over-sizing:**
+  - The catalog sizes come in big steps, and the spare rule was 25 %.
+  - The sealing head reached 24 % in the 30x24 steel and in the 24x30 / 30x24 stainless, so it jumped to 36x30 (66 %) and to 36x24 (54 %).
+  - There was no ranking by mounting or by door count.
+- **Cause of the PLC twice:**
+  - The equipment choice writes its CPU into the electrical required parts.
+  - After the CPU was changed on the PLC page, the old CPU stayed in that list. The engine added it under the fallback tag "X1".
+- **Ranking:** `enclosureRank` and `enclosuresFor` are shared by the engine, the derive sizing and the picker.
+  - Order: wall-mount single-door, then floor / two-door; smaller back panel; 304 before 316; shallower.
+  - The material family is kept: steel, stainless or non-metallic.
+- **Spare rule:** `SPARE_RULE` is now 20 % (shop rule 20–30 %).
+  - The sealing head now lands in the 30x24 steel (24 %).
+  - In 4X it lands in a wall-mount single-door 304 stainless enclosure, at most 36x30.
+- **The designer's pick:**
+  - `DesignInputs.enclosurePreference` is saved in the .isap and carried through regeneration and Update all. The engine, the AI path (`chooseEnclosure`) and the page all follow it.
+  - Kept when the parts fit. When it's larger than needed, the note reads "This cabinet is bigger than needed — the recommended size is …".
+  - When too small: the smallest enclosure of its rating and material that holds the parts is used, with the note "Your size (20x16x8) was too small for the parts; we use …". The pick stays recorded.
+  - Squeezing: the layout's existing compact pass (tall parts share rails, fewer rails and ducts) is what tries to fit a pick. A narrower duct or tighter rail pitch is not added yet.
+- **UI:**
+  - An "Enclosure" control comes first on the Electrical page. It shows:
+    - the current enclosure, with "recommended" or "your choice";
+    - a material select;
+    - a size list of every enclosure of that rating and material, with part number, H×W×D in inches and mm, door count and mounting. The recommended one is starred.
+    - the note.
+  - A red banner appears when parts still don't fit, offering a larger enclosure, 4X fiberglass, relax to NEMA 12, or split. Choosing one records it as the pick.
+  - Known gap: a pick on the page swaps ENC1 / SP1 but doesn't recount DIN rail or duct lengths. "Update design" recounts them.
+- **PLC twice:**
+  - The engine never adds a CPU or module from the required parts, and a note names the stale part.
+  - The design review warns on more than one CPU.
+- **Checkers:**
+  - `layout_summary` fails on parts left off the back panel, a door that doesn't fit, or two CPUs.
+  - New variant `rules-sealing-4x`: the user's case with NEMA 4X, CPU 10DD1E-D, modules, and the stale 10DD2E-D in the required parts.
+  - The us120 fixture moved from 16x12 to the 24x20 the engine picks (its parts never fitted the 16x12).
+- **Tests (engine.test):**
+  - Recommended: a wall-mount single-door 304 enclosure, at most 36x30, spare 20–50 %, no note.
+  - Too small: bumped, with the note, and the pick recorded.
+  - Too big: kept, with the note.
+  - Picking the recommended one gives no note.
+  - Regeneration keeps the pick.
+  - `chooseEnclosure` follows the same rules.
+  - The list order.
+  - seal-4x: exactly one CPU.
+- **Tests (E2E):** `e2e/enclosure-fit.e2e.cjs` covers:
+  - the banner and its one-click fix;
+  - the size list with the starred recommendation;
+  - a bigger pick kept with its note;
+  - a too-small pick bumped with its note and still recorded.
+- **CAD exports:** parked as local commit 1c6cf94 (branch `cad-exports-wip`). They go into the next PR.

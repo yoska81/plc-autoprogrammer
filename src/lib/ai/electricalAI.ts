@@ -10,7 +10,7 @@ import { SUPPLY_INFO } from '../../standards/regions';
 import { callClaude } from './anthropic';
 import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes, ANSWERED_RULE } from '../../components/questions/classify';
 import { getPart } from '../../electrical/catalog';
-import { smallestEnclosure, type DrawingContext } from '../../electrical/derive';
+import { chooseEnclosure, smallestEnclosure, withEnclosure, type DrawingContext } from '../../electrical/derive';
 
 const DEVICE_TYPES: FieldDeviceType[] = ['pushbutton-no', 'pushbutton-nc', 'selector', 'estop-contact', 'sensor-pnp', 'sensor-npn', 'limit-switch', 'pressure-switch', 'safety-relay-output', 'contactor-coil', 'relay-coil', 'solenoid', 'pilot-light', 'stack-light', 'vfd-input', 'other'];
 
@@ -198,7 +198,7 @@ ${vendorNotes(catalog)}`;
 
 /**
  * The AI can't lay out the back panel, so its enclosure choice is checked against the real part
- * footprints: when the parts don't fit with 25 % spare space, the smallest catalog enclosure (and
+ * footprints: when the parts don't fit with the spare-space rule, the smallest catalog enclosure (and
  * subpanel) that does replaces it, with a note saying so.
  */
 function sizeEnclosure(design: ElectricalDesign, opts: { profile: PlcProfile; cpu: CpuModel; io: IOPoint[]; addresses: Map<string, string>; region?: Region }): ElectricalDesign {
@@ -207,16 +207,18 @@ function sizeEnclosure(design: ElectricalDesign, opts: { profile: PlcProfile; cp
     plc: { vendor: opts.profile.vendor, name: opts.profile.name, cpuPartNumber: opts.cpu.id, cpuLabel: opts.cpu.label },
     io: opts.io.map((p) => ({ address: opts.addresses.get(p.id) ?? '', description: p.description, type: p.type })),
   };
+  // The designer's own enclosure pick wins (kept when the parts fit; too small -> the smallest that holds them).
+  if (design.inputs.enclosurePreference) {
+    try {
+      const { design: d, choice } = chooseEnclosure(ctx, design.inputs.enclosurePreference);
+      return choice.note ? { ...d, notes: [...d.notes, choice.note] } : d;
+    } catch { return design; }
+  }
   let fit;
   try { fit = smallestEnclosure(ctx); } catch { return design; } // sizing is advice: never lose the design over it
   if (!fit || fit.current) return design;
   const enc = design.components.find((c) => getPart(c.partNumber)?.category === 'enclosure' && String(getPart(c.partNumber)?.ratings.kind ?? '') !== 'subpanel');
-  const sub = design.components.find((c) => String(getPart(c.partNumber)?.ratings.kind ?? '') === 'subpanel');
-  const components = design.components
-    .filter((c) => c !== sub || !!fit.subpanel)
-    .map((c) => (c === enc ? { ...c, partNumber: fit.enclosure } : c === sub && fit.subpanel ? { ...c, partNumber: fit.subpanel } : c));
-  if (!enc) components.push({ tag: 'ENC1', partNumber: fit.enclosure, quantity: 1, function: 'Main enclosure', motorTag: null });
-  if (fit.subpanel && !sub) components.push({ tag: 'SP1', partNumber: fit.subpanel, quantity: 1, function: 'Back panel', motorTag: null });
+  const { components } = withEnclosure(design, getPart, fit.enclosure, fit.subpanel);
   const note = `Enclosure sized from the part footprints: ${enc ? `${enc.partNumber} was too small; ` : ''}using ${fit.enclosure}${fit.subpanel ? ` with back panel ${fit.subpanel}` : ''} (${Math.round(fit.spare * 100)} % spare space).`;
   return { ...design, components, notes: [...design.notes, note] };
 }

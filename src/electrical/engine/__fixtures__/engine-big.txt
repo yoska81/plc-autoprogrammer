@@ -6,7 +6,7 @@ motor M4 5 HP vfd — Belt 2 motor
 motor M5 5 HP vfd — Belt 3 motor
 motor M6 5 HP vfd — Belt 4 motor
 
-ENC1     SCE-42EL3612LP     x1    Main enclosure 42x36x12 NEMA 12 — smallest catalog enclosure with everything placed and 46% spare panel space (target >= 25%)
+ENC1     SCE-42EL3612LP     x1    Main enclosure 42x36x12 NEMA 12 — smallest catalog enclosure with everything placed and 46% spare panel space (target >= 20%)
 SP1      SCE-42P36          x1    Back panel
 DS1      22013006           x1    Main disconnect 60A — load 39.4 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle

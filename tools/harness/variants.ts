@@ -142,7 +142,7 @@ export function setupVariant(v: Variant) {
     elec.setDesign(design({
       supply: '120VAC-1PH', motors, ioWiring: io, enclosureRating: undefined,
       components: [
-        c('ENC1', 'SCE-16EL1206LP', 1, 'Main enclosure 16x12x6'), c('SP1', 'SCE-16P12', 1, 'Back panel'),
+        c('ENC1', 'SCE-24EL2008LP', 1, 'Main enclosure 24x20x8'), c('SP1', 'SCE-24P20', 1, 'Back panel'),
         c('DS1', '22013003', 1, 'Main disconnect 30A'), c('DS1H', '14831111', 1, 'Disconnect handle'), c('DS1S', '14070520', 1, 'Disconnect shaft'),
         c('CB1', 'GMCBU-1C-20', 1, 'Motor M1 branch protection', 'M1'), c('CB2', 'GMCBU-1C-5', 1, '24VDC power supply primary'),
         c('PS1', 'PSL-24-060', 1, '24VDC power supply'),
@@ -269,7 +269,7 @@ const STRESS_EXTRA: [string, 'input' | 'output', IOCategory, string][] = Array.f
 
 async function setupRules(v: string) {
   setupVariant(v === 'rules-big' || v === 'rules-floor' ? 'big' : 'us480');
-  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress') {
+  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress' || v === 'rules-sealing-4x') {
     // Only the sealing head's own description: the example's other sections (its conveyor) must not leak in.
     const sections = useSpecStore.getState().sections;
     useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC });
@@ -282,6 +282,13 @@ async function setupRules(v: string) {
     useHmiStore.getState().setHmiPartNumber('CM5-T7W');
     useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [{ partNumber: 'C0-12DD1E-D', quantity: 1 }, { partNumber: 'C0-16ND3', quantity: v === 'rules-stress' ? 2 : 1 }, { partNumber: 'C0-08TD1', quantity: 1 }] });
+  }
+  // "rules-sealing-4x": the user's Sealing Head — NEMA 4X (stainless), a C0-10DD1E-D with input / output / analog
+  // modules, and the CPU changed on the PLC page after the equipment choice (C0-10DD2E-D still in the required parts).
+  if (v === 'rules-sealing-4x') {
+    const modules = ['C0-08ND3', 'C0-08TD1', 'C0-04AD-1', 'C0-04DA-1'];
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-10DD1E-D', modules });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, enclosureRating: 'NEMA 4X', motors: [], requiredParts: [{ partNumber: 'C0-10DD2E-D', quantity: 1 }, ...modules.map((partNumber) => ({ partNumber, quantity: 1 }))] });
   }
   // Unitronics all-in-ones (the screen is the PLC's own): the sealing head on a Vision V700 + snap-in (VisiLogic) or a
   // UniStream US10 + Uni-I/O (UniLogic); the rules build the HMI and the program too, so the exporters run.
@@ -298,7 +305,7 @@ async function setupRules(v: string) {
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [uni.cpu, ...uni.modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
   }
   const el = useElectricalStore.getState();
-  let inputs = v === 'rules-sealing' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
+  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
@@ -385,7 +392,7 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     terminals: terminalPlan(ctx),
     cables: cableSchedule(ctx),
     warnings: designWarnings(ctx),
-    layout: { enclosure: layout.enclosure, backplate: layout.backplate, door: { w: layout.door.w, h: layout.door.h, items: layout.door.items, handle: layout.door.handle, leaves: layout.door.leaves, leaf: layout.door.leaf, plinth: layout.door.plinth }, overflow: layout.overflow, notFit: layout.notFit, warnings: layout.warnings, items: layout.items.map(({ tag, label, category, x, y, w, h }) => ({ tag, label, category, x, y, w, h })), rails: layout.rails, ducts: layout.ducts },
+    layout: { enclosure: layout.enclosure, backplate: layout.backplate, door: { w: layout.door.w, h: layout.door.h, items: layout.door.items, handle: layout.door.handle, leaves: layout.door.leaves, leaf: layout.door.leaf, plinth: layout.door.plinth, overflow: layout.door.overflow }, overflow: layout.overflow, notFit: layout.notFit, warnings: layout.warnings, items: layout.items.map(({ tag, label, category, x, y, w, h }) => ({ tag, label, category, x, y, w, h })), rails: layout.rails, ducts: layout.ducts },
     drilling: { backpanel: bpPlan, door: doorPlan, faces: facePlans },
     hmiModel: p.hmi ? getHmi(p.hmi.hmiPartNumber) ?? null : null,
     labels,
