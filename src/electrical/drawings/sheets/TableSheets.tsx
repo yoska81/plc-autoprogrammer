@@ -5,6 +5,7 @@ import { TERM_ROWS, type DrawingPlan, type PlannedSheet, type SheetSpec } from '
 import { Line, Txt } from '../symbols';
 import { isIec, NEMA_TO_IP, SUPPLY_INFO } from '../../../standards/regions';
 import { IEC_WIRE_COLORS, iecCoverNotes } from '../../../standards/iecText';
+import { stripTag } from '../../../standards/designations';
 
 const WIRE_COLORS: [string, string][] = [
   ['BK  BLACK', 'AC/DC power circuits — line and load (ungrounded)'],
@@ -198,7 +199,7 @@ export function NotesSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
 // Terminal plan
 // ---------------------------------------------------------------------------
 
-export function TerminalSheet({ sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
+export function TerminalSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
   const sp = sheet.spec as Extract<SheetSpec, { kind: 'terminals' }>;
   const colW = (AREA.w - 24) / 2;
   const rowH = 5.1;
@@ -242,7 +243,7 @@ export function TerminalSheet({ sheet }: { plan: DrawingPlan; sheet: PlannedShee
           </g>
         );
       })}
-      <Txt x={AREA.x + 8} y={AREA_B - 2} size={2.3} italic>TERMINALS IN A "JUMPERED" GROUP (24+, 24+S, 0V) ARE COMMONED WITH PLUG-IN JUMPER BARS. SENSOR 24+/0V TERMINALS ON TB2 ARE JUMPERED TO TB1. ONE CONDUCTOR PER TERMINAL CLAMP.</Txt>
+      <Txt x={AREA.x + 8} y={AREA_B - 2} size={2.3} italic>{`TERMINALS IN A "JUMPERED" GROUP (24+, 24+S, 0V) ARE COMMONED WITH PLUG-IN JUMPER BARS. SENSOR 24+/0V TERMINALS ON ${stripTag(plan.ctx.designations, 2)} ARE JUMPERED TO ${stripTag(plan.ctx.designations, 1)}. ONE CONDUCTOR PER TERMINAL CLAMP.`}</Txt>
     </g>
   );
 }

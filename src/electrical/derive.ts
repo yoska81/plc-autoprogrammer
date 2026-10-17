@@ -31,8 +31,9 @@ import type {
 import { getHmi, hmiMaker } from '../hmi/hmiCatalog';
 import { lengthText, routedLength, withService } from './layout/geometry';
 import { CABINET, type LayoutForDesign } from './layout/types';
-import { iecColor, iecMotorCurrent, isIec, mm2For, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
+import { iecColor, iecMotorCurrent, isIec, mm2For, mm2FromAwg, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
 import { ALL_PARTS } from './catalogs';
+import { withIecStrips } from '../standards/designations';
 
 export interface DrawingContext {
   projectName: string;
@@ -404,10 +405,14 @@ const NO_INTERNAL_AUX = /^SC-E(0[2-5]|1|2S?|3|4)G?$/i;
 const cache = new WeakMap<DrawingContext, ElectricalModel>();
 
 /** Builds (and caches per context object) the full derived model. */
+/** Wire number from a device designation: IEC "-M1" numbers its wires M1-L1 (no prefix sign in wire numbers). */
+const wt = (tag: string) => tag.replace(/^-/, '');
+
 export function buildModel(ctx: DrawingContext): ElectricalModel {
   const hit = cache.get(ctx);
   if (hit) return hit;
-  const m = computeModel(ctx);
+  // IEC 81346 designations: terminal strips TB1, TB2… are -X1, -X2… on every sheet and list.
+  const m = ctx.designations === 'iec81346' ? withIecStrips(computeModel(ctx)) : computeModel(ctx);
   cache.set(ctx, m);
   return m;
 }
@@ -492,8 +497,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   if (xfmrProt) used.add(xfmrProt);
   const xfmrBranch: XfmrBranch | undefined = transformer ? {
     protection: xfmrProt, xfmr: transformer,
-    primaryWires: phases === 1 ? [`${transformer.tag}-L1`, 'N'] : [`${transformer.tag}-L1`, `${transformer.tag}-L2`],
-    feedWires: phases === 1 ? [`${transformer.tag}-L1`, 'N'] : [`${transformer.tag}-L1`, `${transformer.tag}-L2`],
+    primaryWires: phases === 1 ? [`${wt(transformer.tag)}-L1`, 'N'] : [`${wt(transformer.tag)}-L1`, `${wt(transformer.tag)}-L2`],
+    feedWires: phases === 1 ? [`${wt(transformer.tag)}-L1`, 'N'] : [`${wt(transformer.tag)}-L1`, `${wt(transformer.tag)}-L2`],
     protectedPoles: phases === 1 ? 1 : Math.min(2, poles(xfmrProt, 2)),
   } : undefined;
   const psBranches: PsBranch[] = pss.map((ps) => {
@@ -502,14 +507,14 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     if (protection) used.add(protection);
     const inPh = num(ps.part?.ratings, 'phases', 'inputPhases');
     // With a control transformer the supply is fed from its 120V secondary (X1 hot / X2 grounded).
-    if (transformer) return { protection, ps, feedWires: [protection ? `${ps.tag}-L1` : 'X1', 'X2'], protectedPoles: 1, fromXfmr: true };
+    if (transformer) return { protection, ps, feedWires: [protection ? `${wt(ps.tag)}-L1` : 'X1', 'X2'], protectedPoles: 1, fromXfmr: true };
     const n = phases === 1 ? 2 : inPh === 3 ? 3 : 2;
-    const feedWires = phases === 1 ? [`${ps.tag}-L1`, 'N'] : Array.from({ length: n }, (_, k) => `${ps.tag}-L${k + 1}`);
+    const feedWires = phases === 1 ? [`${wt(ps.tag)}-L1`, 'N'] : Array.from({ length: n }, (_, k) => `${wt(ps.tag)}-L${k + 1}`);
     return { protection, ps, feedWires, protectedPoles: phases === 1 ? 1 : n };
   });
   const auxBranches: AuxBranch[] = rest.filter((c) => !used.has(c)).map((protection) => {
     const p = Math.min(poles(protection, phases === 1 ? 1 : 2), phases === 1 ? 1 : 3);
-    const feedWires = phases === 1 ? [`${protection.tag}-L1`, 'N'] : Array.from({ length: p }, (_, k) => `${protection.tag}-L${k + 1}`);
+    const feedWires = phases === 1 ? [`${wt(protection.tag)}-L1`, 'N'] : Array.from({ length: p }, (_, k) => `${wt(protection.tag)}-L${k + 1}`);
     return { protection, feedWires, protectedPoles: p };
   });
   const groundBar = byCat(rc, 'groundBar')[0];
@@ -532,9 +537,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     return {
       motor, fla, awg: iec ? mm2Text(mm2For(fla * 1.25)) : awgFor(fla * 1.25), protection: prot, contactors, overload, vfd,
       // 120VAC single-phase motors keep the grounded conductor numbered "N" end to end.
-      lineWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${motor.tag}-L${k}`)),
-      midWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${motor.tag}-C${k}`)),
-      loadWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${motor.tag}-T${k}`)),
+      lineWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${wt(motor.tag)}-L${k}`)),
+      midWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${wt(motor.tag)}-C${k}`)),
+      loadWires: idx.map((k) => (ph === 2 && k === 2 ? 'N' : `${wt(motor.tag)}-T${k}`)),
       terminals: [],
     };
   });
@@ -748,7 +753,11 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const loadPhase = (k: number) => (phases === 1 && k === 1 ? 'N' : `T${k + 1}`);
   const fullLoad = motors.reduce((s, m) => s + m.fla, 0);
   const largest = motors.reduce((s, m) => Math.max(s, m.fla), 0);
-  const mainAwg = iec ? mm2Text(mm2For(fullLoad + largest * 0.25 + psBranches.length * 2)) : awgFor(fullLoad + largest * 0.25 + psBranches.length * 2);
+  // IEC: never thinner than the fixed 14 AWG (2.5 mm²) feeds the bus supplies (power supplies, transformer, aux).
+  const busFeeds = psBranches.some((b) => !b.fromXfmr) || Boolean(xfmrBranch) || auxBranches.length > 0;
+  const mainAwg = iec
+    ? mm2Text(Math.max(mm2For(fullLoad + largest * 0.25 + psBranches.length * 2), busFeeds ? mm2FromAwg('14 AWG') ?? 0 : 0))
+    : awgFor(fullLoad + largest * 0.25 + psBranches.length * 2);
   incoming.forEach((w, k) => addWire({ wire: w, from: 'SUPPLY', to: phases === 1 && k === 1 ? `${pe} (N)` : `${dsTag}:L${k + 1}`, color: w === 'N' ? 'WH' : 'BK', size: mainAwg, function: `Incoming supply ${supplyText(supply)}` }));
   addWire({ wire: 'PE', from: 'SUPPLY PE', to: pe, color: 'GN/YE', size: mainAwg, function: 'Incoming protective earth' });
   // bus chain

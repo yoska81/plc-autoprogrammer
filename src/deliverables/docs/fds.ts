@@ -1,3 +1,4 @@
+import { powerText } from '../../standards/regions';
 import type { ProjectSnapshot } from '../collect';
 import { buildModel, naturalCompare, resolveComponents, supplyText } from '../../electrical/derive';
 import { getHmi, hmiMakerOf } from '../../hmi/hmiCatalog';
@@ -24,7 +25,7 @@ export function systemDescription(p: ProjectSnapshot): string[] {
   if (p.hmi) parts.push(`The operator uses a ${hmiText(p.hmi.hmiPartNumber)} touch panel on the control panel door, connected to the PLC over Ethernet, with ${p.hmi.screens.length} screens.`);
   if (d) {
     parts.push(`The control panel is fed from ${supplyText(d.inputs.supply)} through a lockable main disconnect, in a ${d.inputs.enclosureRating} enclosure, with 24 VDC control power.`);
-    if (d.inputs.motors.length) parts.push(`Motors: ${d.inputs.motors.map((m) => `${m.tag} ${m.description || ''} (${m.hp} HP, ${m.voltage}, ${m.starter === 'vfd' ? 'VFD' : m.starter === 'motor-protector' ? 'motor protector + contactor' : 'contactor and overload'}${m.reversing ? ', reversing' : ''})`).join('; ')}.`);
+    if (d.inputs.motors.length) parts.push(`Motors: ${d.inputs.motors.map((m) => `${m.tag} ${m.description || ''} (${powerText(m.hp, p.info.region)}, ${m.voltage}, ${m.starter === 'vfd' ? 'VFD' : m.starter === 'motor-protector' ? 'motor protector + contactor' : 'contactor and overload'}${m.reversing ? ', reversing' : ''})`).join('; ')}.`);
     const m = p.drawingCtx ? buildModel(p.drawingCtx) : null;
     if (m?.safety.relay) parts.push(`Emergency stop is hardwired through safety relay ${m.safety.relay.tag}${m.safety.outputSupply === '24+S' ? ', which removes the 24 VDC supply (24+S) from the PLC outputs' : ''}. The PLC only monitors the safety status; it does not perform safety functions.`);
   }
@@ -48,7 +49,7 @@ export function equipmentTable(p: ProjectSnapshot): DocTable {
     const motors = p.electrical?.inputs.motors ?? [];
     if (motors.length) {
       rows.push({ group: 'Motors (field, supplied with the machine)' });
-      for (const m of motors) rows.push([m.tag, '—', '', `${m.hp} HP, ${m.voltage} motor (nameplate data to be confirmed)`, m.description]);
+      for (const m of motors) rows.push([m.tag, '—', '', `${powerText(m.hp, p.info.region)}, ${m.voltage} motor (nameplate data to be confirmed)`, m.description]);
     }
   } else {
     rows.push(['PLC', p.cpu.id, p.profile.vendor, p.cpu.label, 'Controller']);

@@ -223,10 +223,30 @@ async function iecPass(browser, problems, region) {
       const svg = await page.locator('main svg').first().textContent();
       if (!/400\/230V 50Hz/.test(svg) || !/IEC 60204-1/.test(svg)) found.push('cover sheet is not IEC (supply / IEC 60204-1 notes missing)');
       if (/NFPA 79 13\.2\.4/.test(svg)) found.push('cover sheet still shows the NFPA colour table');
+      // A3 sheets (not ANSI B letterboxed), -X terminal strips, wire numbers without "-", kW motors.
+      const vb = await page.locator('main svg[viewBox]').first().getAttribute('viewBox');
+      if (vb !== '0 0 420 297') found.push(`sheet is not A3 (viewBox ${vb})`);
+      const all = (await page.locator('main [data-sheet]').allTextContents()).join(' ');
+      if (!/A3 420 x 297 mm/.test(all)) found.push('title block does not say A3');
+      if (/ANSI B/.test(all)) found.push('title block still says ANSI B');
+      if (/\bTB\d/.test(all)) found.push(`terminal strip named TB…: ${all.match(/.{20}\bTB\d.{10}/)?.[0]}`);
+      if (/(^|\s)-[A-Z]\d+-[LCT]\d/.test(all)) found.push(`wire number with a prefix sign: ${all.match(/(^|\s)-[A-Z]\d+-[LCT]\d/)?.[0]}`);
+      if (/\d HP\b/.test(all)) found.push(`motor power in HP: ${all.match(/.{15}\d HP\b/)?.[0]}`);
     }
     for (const e of errors.splice(0)) found.push('error: ' + e.slice(0, 200));
     if (found.length) { problems.push([name, found]); log(name, '\n   - ' + found.slice(0, 12).join('\n   - ')); }
   }
+  // The drawings PDF: every page A3 (1190.55 x 841.89 pt).
+  const pdf = await page.evaluate(async () => {
+    const { buildDrawingsPdf } = await import('/src/deliverables/files.ts');
+    const { collectProject } = await import('/src/deliverables/collect.ts');
+    const blob = await buildDrawingsPdf(collectProject());
+    const text = new TextDecoder('latin1').decode(await blob.arrayBuffer());
+    const boxes = [...text.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number).slice(2).map((v) => Math.round(v)).join('x'));
+    return { pages: boxes.length, sizes: [...new Set(boxes)] };
+  });
+  log(`iec ${region}: drawings PDF ${pdf.pages} pages, ${pdf.sizes.join(', ')} pt`);
+  if (!pdf.pages || pdf.sizes.join() !== '1191x842') problems.push([`iec_${region}_pdf`, [`drawings PDF pages are not A3: ${pdf.sizes.join(', ')}`]]);
   log(`iec ${region}: done`);
   await ctx.close();
 }

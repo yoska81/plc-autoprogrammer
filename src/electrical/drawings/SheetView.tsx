@@ -45,13 +45,13 @@ export default function SheetView({ plan, sheet, width, height }: { plan: Drawin
   const kind = sheet.spec.kind;
   const sp = sheet.spec;
   const ansiScale = kind === 'panel' ? scaleText(panelScale(plan)) : kind === 'door' ? scaleText(doorScale(plan)) : sp.kind === 'drill' && sp.drawing ? scaleText(drillSheetScale(sp.drill)) : kind === 'layout' ? `1:${machineLayoutScale(plan) ?? '—'}` : 'NONE';
-  // On A3 the ANSI B sheet prints at 97.3 %: scale 1:5 becomes 1:5.1.
+  // On A3 the content is drawn at 97.1 %: scale 1:5 becomes 1:5.15.
   const f = sheetOnPaper(plan.ctx.sheet).factor;
   const d = Number(ansiScale.slice(2)) / f;
   const scale = f !== 1 && /^1:[\d.]+$/.test(ansiScale) ? `1:${d.toFixed(d < 10 ? 2 : 1)} (A3)` : ansiScale;
   return (
     <SheetFrame
-      width={width} height={height}
+      width={width} height={height} sheet={plan.ctx.sheet}
       info={{
         projectName: plan.ctx.projectName, title: sheet.title, n: sheet.n, total: plan.sheets.length,
         drawingNo: sheet.drawingNo, date: plan.date, scale, cpu: plan.ctx.plc.cpuPartNumber, codes: codeRefs(plan.ctx).short,

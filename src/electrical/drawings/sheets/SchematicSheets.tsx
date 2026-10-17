@@ -1,5 +1,5 @@
 /** Power distribution, motor circuits and 24VDC control/safety ladder sheets. */
-import { iecMotorKw, isIec } from '../../../standards/regions';
+import { powerText, isIec } from '../../../standards/regions';
 import { isFusedDisconnect, ratingText, supplyText, type MotorModel, type ResolvedComponent, type XfmrBranch } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW_THIN, lineNo } from '../geometry';
 import {
@@ -10,6 +10,7 @@ import {
   BreakerPole, Coil, Contact, Dot, Fuse, Ground, Lamp, Line, Motor, OverloadHeater, Pushbutton, SwitchPole,
   TermBox, TermPt, Txt, WireNo, XrefArrow,
 } from '../symbols';
+import { stripTag } from '../../../standards/designations';
 
 const Y0 = AREA.y + 8;
 
@@ -419,10 +420,10 @@ function MotorBranch({ plan, m, idx, y, BX }: { plan: DrawingPlan; m: MotorModel
           <WireNo x={268} y={yy} n={m.loadWires[k]} />
         </g>
       ))}
-      <Txt x={TBX} y={ys[0] - 3.6} size={2.5} mono bold anchor="middle">TB1</Txt>
+      <Txt x={TBX} y={ys[0] - 3.6} size={2.5} mono bold anchor="middle">{stripTag(plan.ctx.designations, 1)}</Txt>
       <Motor cx={MX} cy={cy} leadsY={ys} r={8.5} />
       <Txt x={MX + 12} y={ys[0] + 0.9} size={2.8} mono bold>{m.motor.tag}</Txt>
-      <Txt x={MX + 12} y={ys[0] + 4.6} size={2.5}>{isIec(plan.ctx.region) ? `${iecMotorKw(m.motor.hp)} kW (${m.motor.hp} HP)  ${m.motor.voltage.replace('-', ' ')}` : `${m.motor.hp} HP  ${m.motor.voltage.replace('-', ' ')}`}</Txt>
+      <Txt x={MX + 12} y={ys[0] + 4.6} size={2.5}>{`${powerText(m.motor.hp, plan.ctx.region)}  ${m.motor.voltage.replace('-', ' ')}`}</Txt>
       <Txt x={MX + 12} y={ys[0] + 8.3} size={2.5}>{isIec(plan.ctx.region) ? `Ie ${m.fla} A (IEC 60947-4-1 ANNEX G)` : `FLA ${m.fla} A (${plan.ctx.region === 'Canada' ? 'CEC TABLE 44' : 'NEC 430.250'})`}</Txt>
       <Txt x={MX + 12} y={ys[0] + 12} size={2.5}>{`CONDUCTORS ${m.awg} MIN. (VERIFY)`}</Txt>
       <Txt x={MX + 12} y={ys[0] + 15.7} size={2.3} maxW={100}>{(m.vfd ? 'VFD CONTROLLED' : m.motor.starter === 'motor-protector' ? 'MANUAL MOTOR PROTECTOR' : 'ACROSS-THE-LINE STARTER') + (m.motor.reversing ? ', REVERSING' : '')}</Txt>

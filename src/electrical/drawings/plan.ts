@@ -13,6 +13,8 @@ import {
 } from '../derive';
 import { enclosureFaceDrilling } from '../enclosureFaces';
 import { lineNo } from './geometry';
+import { powerText } from '../../standards/regions';
+import { stripTag } from '../../standards/designations';
 
 export type RungEnd = { kind: 'rail' } | { kind: 'node'; label: string } | { kind: 'xref'; label: string };
 export type RungEl =
@@ -493,7 +495,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
         break;
       case 'motors':
         for (const it of sp.items) { const m = it.m; [m.protection, m.overload, m.vfd, ...m.contactors].forEach((c) => mark(c?.tag, n)); mark(m.motor.tag, n); }
-        mark('TB1', n);
+        mark(stripTag(ctx.designations, 1), n);
         break;
       case 'control':
         for (const r of sp.rungs) for (const e of r.els) mark(e.tag, n);
@@ -586,7 +588,7 @@ function deviceRows(plan: DrawingPlan): DeviceRow[] {
       fn: (c?.comp.function || motor?.description || io?.description || (jb ? `Junction box, ${jb.zone}` : '')).toUpperCase(),
       partNumber: c?.partNumber || md?.partNumber || (jb?.partNumber ?? '') || '',
       manufacturer: c?.part?.manufacturer ?? '',
-      description: c?.part?.description ?? (motor ? `${motor.hp} HP ${motor.voltage.replace('-', ' ')} MOTOR (BY OTHERS)` : jb ? 'ENCLOSURE TO BE SELECTED' : c ? 'PART NOT IN CATALOG — VERIFY' : 'NO PART SELECTED'),
+      description: c?.part?.description ?? (motor ? `${powerText(motor.hp, ctx.region).toUpperCase()} ${motor.voltage.replace('-', ' ')} MOTOR (BY OTHERS)` : jb ? 'ENCLOSURE TO BE SELECTED' : c ? 'PART NOT IN CATALOG — VERIFY' : 'NO PART SELECTED'),
       qty: c?.comp.quantity ?? 1,
       location,
       refs: refs || '—',
