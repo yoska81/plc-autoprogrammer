@@ -8,7 +8,7 @@ import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import DrawingSet from '../../src/electrical/drawings/DrawingSet';
 import { planDrawings } from '../../src/electrical/drawings/plan';
-import { SHEET_H, SHEET_W } from '../../src/electrical/drawings/geometry';
+import { sheetOnPaper } from '../../src/standards/regions';
 import { collectProject } from '../../src/deliverables/collect';
 import { setup } from './variants';
 
@@ -96,7 +96,10 @@ export async function measureOverlaps(variant: Parameters<typeof setup>[0], opts
   root.render(createElement(DrawingSet, { ctx: p.drawingCtx, printMode: true }));
   await new Promise((r) => setTimeout(r, 600));
   await document.fonts?.ready;
-  const svgs = [...host.querySelectorAll<SVGSVGElement>(`svg[viewBox="0 0 ${SHEET_W} ${SHEET_H}"]`)];
+  // the sheet is drawn on the project's paper (ANSI B, or A3 for IEC projects), as the PDF export selects it
+  const { paper } = sheetOnPaper(p.drawingCtx.sheet);
+  const svgs = [...host.querySelectorAll<SVGSVGElement>(`svg[viewBox="0 0 ${paper.w} ${paper.h}"]`)];
+  if (!svgs.length) throw new Error(`no ${paper.w} x ${paper.h} sheets rendered`);
   const out: SheetReport[] = [];
   svgs.forEach((svg, i) => {
     const rootInv = svg.getScreenCTM()!.inverse();

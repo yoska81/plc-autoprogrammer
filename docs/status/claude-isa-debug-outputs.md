@@ -303,3 +303,24 @@ Findings, ranked (✔ = fixed here, → = routed to the coordinator):
 | 120 W 24 V supply, not Class 2, no secondary protection | design note per supply: within the 18 AWG rating (7 A) its current limit protects the wiring, field circuits are Class 1 / NFPA 79 (Class 2 supply as the alternative); above 7 A the TB1 feeds to the field strips become 4 A fused terminals (BOM lists fuse sizes per terminal) |
 | non-fused 30 A disconnect, 14 AWG bus, no upstream protection stated | `upstreamOcpd`: required feeder OCPD by others, min. from the panel load (125 % largest motor + rest, NEC 430.24), max. from the bus conductor (NEC 240.4(D) / 310.16) and the disconnect rating; on the power sheet and as a design note (major when min > max) |
 | SCCR "TBD" | SB4 calculation moved to `src/electrical/sccr.ts` (shared by the documents, the review and the drawings); the nameplate prints "N kA RMS SYM., V MAX (UL 508A SB4; LIMITED BY …)" once every power-circuit rating is known, else "TBD: RATING NEEDED FOR …" (us480: PS1; big: VFD1–4, PS1 — not in the catalog, no default in Table SB4.1) |
+
+## Sealing head re-verification on integration (after Dev 2's #61, merged head 8b0fa7a)
+`e2e/sealing-head.e2e.cjs` against the preview build: builds end to end, ZIP 54 files. Two stale checks updated (buttons are no longer on the door; stage-log text).
+| # | item | status | evidence |
+|---|---|---|---|
+| 1 | two-hand control | PARTLY FIXED / OPEN | PB1/PB2 now at the machine (zone "Unwind"); still plain N.O. buttons into X002/X003, no two-hand relay (critical review finding still raised) |
+| 2 | light curtain = prox sensor | OPEN | LS1 = PNK-AP-3H inductive prox, sensor-pnp into X004; electrical note says "OSSD into SR1" but nothing is wired that way |
+| 3 | HMI closes the head without two-hand | OPEN | HMI_Start starts the auto cycle; HMI_Sealing_Head_Down hold-to-run energizes Y001 (closing stroke) from the screen |
+| 4 | heater power circuit | OPEN | Y003 still drives CR1 "interposing relay", contacts go nowhere; no SSR / heater contactor / branch protection |
+| 5 | over-temperature limit not hardwired | OPEN | X106 = LS4 PNK-AP-3H prox, PLC input only |
+| 6 | thermocouple | OPEN | DF1 wired as 4-20 mA loop, no transmitter / TC input part |
+| 7 | no seal-temperature setpoint / dwell on the HMI | OPEN | only high/low alarm limits DF101/DF102 |
+| 8 | missing alarms (over-temp, air pressure, film low) | OPEN | 7 alarms, none of these three |
+| 9 | Start clean keeps the example's document control | OPEN (now warned) | banner lists "the example's document control (customer Example Foods Inc., …)" |
+| 10 | ZIP crash on qa: undefined | FIXED (confirmed) | ZIP built, 54 files |
+| 11 | review rules for 1–6 | FIXED (confirmed) | all six findings raised |
+| 12 | zones | OPEN | light curtain, over-temp, air pressure, film low in "Unwind" |
+| 13 | Safety functions table | OPEN | SF-01 E-stop and SF-02 reset only |
+| 14 | pilot lights on 24+S | OPEN | PL2 (fault light) returns on 24+S, goes dark on a safety stop |
+| 15 | stray space "(thermocouple )" | OPEN | HMI tag descriptions and two alarm texts |
+| new | analog pair flagged "Wire DF3+ is WH, expected BU" | FIXED here | colour rules skip 4-20 mA / 0-10 V pairs (cable core colours); E2E checks it |
