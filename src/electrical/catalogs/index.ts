@@ -16,6 +16,7 @@ import { MAPLE } from './maple';
 import { MITSUBISHI } from './mitsubishi';
 import { DELTA } from './delta';
 import { PROFACE } from './proface';
+import { UNITRONICS } from './unitronics';
 
 /**
  * Multi-vendor catalogs. One file per vendor in this folder, same rule for
@@ -134,6 +135,10 @@ export const VENDORS: Vendor[] = [
   {
     id: 'proface', name: 'Pro-face', supplier: 'Pro-face / Schneider Electric (distributor)', parts: tag('proface', PROFACE),
     notes: 'Pro-face model letters: "TAD" = 24 VDC, "TAA" = 100-240 VAC. ST6000 "WADE" models are programmed with GP-Pro EX (the driver list applies to them). The PLC families each panel can talk to are in ratings.plcDrivers.',
+  },
+  {
+    id: 'unitronics', name: 'Unitronics', supplier: 'Unitronics (distributor)', parts: tag('unitronics', UNITRONICS),
+    notes: 'Unitronics all-in-ones are PLC + touch screen in one door-mounted unit (ratings.builtInPanel = yes): no separate HMI. UniStream built-in (US5/US7/US10/US15) and stand-alone USC-B10-TR22 are programmed with UniLogic; the modular USC-P-B10 CPU plugs onto the back of a USP-070/104/156 panel, which holds 3 / 5 Uni-I/O modules. Built-in models take Uni-I/O only through a UAG-CX expansion adapter kit (order separately). Vision and Samba are programmed with VisiLogic, Jazz with U90 Ladder. V700 / V1040 / V1210 have no on-board I/O: order one V200-18 snap-in I/O module. Vision / Samba / Jazz analog inputs share digital input terminals (ratings.analogSharedWith), set by a jumper. "-TR22" / "-TR34" / "-TR20" outputs are relays plus a few npn points (named in outputType); "-T38" / "-T20" are pnp. All run on 24 VDC (12/24 VDC where supplyVolts says so).',
   },
 ];
 

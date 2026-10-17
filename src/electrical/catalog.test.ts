@@ -45,6 +45,7 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)(mitsubishielectric\.com|mitsubishielectric\.co\.jp)$/, makers: /mitsubishi/i },
   { host: /(^|\.)(deltaww\.com|delta-americas\.com)$/, makers: /delta/i },
   { host: /(^|\.)(proface\.com|pro-face\.com)$/, makers: /pro-?face/i },
+  { host: /(^|\.)unitronicsplc\.com$/, makers: /unitronics/i },
 ];
 
 /** Key ratings a part of each category must state (the design and calculations use them). */

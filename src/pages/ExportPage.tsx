@@ -302,6 +302,11 @@ export default function ExportPage() {
                     <li>Write the program to the PLC and test every step with the machine in a safe state.</li>
                   </ol>
                 )}
+                {p.profile.importSteps && (
+                  <ol className="list-decimal pl-5 text-xs text-steel-600 space-y-1">
+                    {p.profile.importSteps.map((s, k) => <li key={k}>{s}</li>)}
+                  </ol>
+                )}
               </>
             ) : <p className="text-sm text-steel-500">No program yet.</p>}
           </Card>

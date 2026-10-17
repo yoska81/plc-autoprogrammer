@@ -35,6 +35,9 @@ import { generateRuleBasedDesign } from '../../src/lib/ai/machineModelAI';
 import { getPart } from '../../src/electrical/catalog';
 import { vendorPreference } from '../../src/store/useProjectStore';
 import { specToText } from '../../src/spec/types';
+import { buildHmi } from '../../src/hmi/engine';
+import { projectHmiContent } from '../../src/lib/ai/hmiContentAI';
+import { programWithCycle } from '../../src/plc/engine/sequence';
 
 type Point = { description: string; type: 'input' | 'output'; category: IOCategory; tag: string; deviceType: FieldDeviceType; location: string; part?: string; signal?: 'analog'; analog?: AnalogSpec };
 
@@ -280,8 +283,22 @@ async function setupRules(v: string) {
     useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [{ partNumber: 'C0-12DD1E-D', quantity: 1 }, { partNumber: 'C0-16ND3', quantity: v === 'rules-stress' ? 2 : 1 }, { partNumber: 'C0-08TD1', quantity: 1 }] });
   }
+  // Unitronics all-in-ones (the screen is the PLC's own): the sealing head on a Vision V700 + snap-in (VisiLogic) or a
+  // UniStream US10 + Uni-I/O (UniLogic); the rules build the HMI and the program too, so the exporters run.
+  const uni = v === 'rules-unitronics' ? { plcId: 'unitronics-vision', cpu: 'V700-T20BJ', modules: ['V200-18-E3XB'] }
+    : v === 'rules-unistream' ? { plcId: 'unitronics-unistream', cpu: 'US10-B10-TR22', modules: ['UID-1600', 'UIA-0402N'] } : null;
+  if (uni) {
+    const sections = useSpecStore.getState().sections;
+    useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC.replace('CLICK PLC with a C-more 7" touch panel', `Unitronics ${uni.cpu} PLC with its built-in touch screen`) });
+    useIOStore.setState({ projectIO: SEALING_IO.map(([description, type, category, deviceType, analog], i) => ({ id: `seal${i + 1}`, description, type, category, deviceType, ...(analog ? { signal: 'analog' as const, analog } : {}) })) });
+    useProjectStore.setState({ plcId: uni.plcId, cpuId: uni.cpu, modules: uni.modules });
+    useHmiStore.getState().setHmiPartNumber(uni.cpu);
+    useHmiStore.getState().setDesign(null, null);
+    useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [uni.cpu, ...uni.modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
+  }
   const el = useElectricalStore.getState();
-  let inputs = v === 'rules-sealing' ? el.inputs : el.design?.inputs ?? el.inputs;
+  let inputs = v === 'rules-sealing' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
@@ -303,6 +320,15 @@ async function setupRules(v: string) {
       : sub && x.partNumber === sub ? { ...x, partNumber: 'SCE-72P72', function: 'Subpanel for ENC1' } : x)) };
   }
   el.setDesign(design, 'generated', r.explanation);
+  if (uni) {
+    const q = collectProject();
+    const model = getHmi(uni.cpu)!;
+    const content = projectHmiContent({ io: q.io, addresses: q.addresses, machineName: 'Sealing Head', spec: specToText(q.spec), electrical: design, panel: model });
+    const hmi = buildHmi(content, { ...model, plcText: `${q.profile.vendor} ${q.cpu.label}`, now: '2026-10-17T00:00:00.000Z' });
+    useHmiStore.getState().setDesign(hmi, 'rules');
+    const prog = programWithCycle({ content, hmiTags: hmi.tags, hmiScreens: hmi.screens, hmiAlarms: hmi.alarms, spec: specToText(q.spec) });
+    useProgramStore.setState({ ladder: prog.program });
+  }
 }
 
 async function loadAiProject(machine: string) {

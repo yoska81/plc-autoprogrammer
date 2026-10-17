@@ -41,6 +41,8 @@ export interface AnalogChannel {
   terminals: string[];
   /** Register that holds the scaled value in the program, e.g. "DF3". */
   address: string;
+  /** Digital input (neutral X address) whose terminal this analog input uses; not a digital input while the channel is used. */
+  sharesInput?: string;
 }
 
 export interface CpuModel {
@@ -132,6 +134,8 @@ export interface PlcProfile {
   mnemonics?: Record<string, string>;
   /** Vendor I/O tag of a physical neutral address (Logix: Local:1:I.Pt00.Data), for display and export. */
   ioTag?(address: string, modules: ModuleSlot[]): string | null;
+  /** How the engineer gets the exported files into the PLC software (shown with the downloads). */
+  importSteps?: string[];
 }
 
 /** Effective PLC address of each I/O point: manual override, else auto. */

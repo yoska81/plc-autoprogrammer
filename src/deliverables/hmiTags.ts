@@ -8,6 +8,8 @@ import type { ProjectSnapshot } from './collect';
 import { getHmi, hmiMaker, isCmore } from '../hmi/hmiCatalog';
 import { moduleSlots } from '../plc/core/modules';
 import { plcTagNameOf } from './plcTagNames';
+import { getPart } from '../electrical/catalog';
+import { hasBuiltInPanel } from '../hmi/panels';
 
 export interface HmiTagRow { name: string; address: string; plcTag: string; plcScope: string; plcType: string; plcIo: string; dataType: string; access: string; description: string; screens: string }
 
@@ -50,6 +52,7 @@ export function hmiReadme(p: ProjectSnapshot): string {
   const m = p.hmi ? getHmi(p.hmi.hmiPartNumber) : undefined;
   if (!p.hmi || !m) return '';
   const sw = m.software ?? `the ${hmiMaker(m)} configuration software for the ${m.partNumber} (see the panel's datasheet)`;
+  const builtIn = hasBuiltInPanel(getPart(m.partNumber));
   return [
     `${p.projectName} — operator panel ${hmiMaker(m)} ${m.partNumber} (${m.sizeIn}" ${m.widthPx}x${m.heightPx})`,
     '',
@@ -61,8 +64,11 @@ export function hmiReadme(p: ProjectSnapshot): string {
     `- ${p.fileBase}_hmi_tags.csv: every address the screens use, with the PLC tag of the exported ${p.profile.vendor} ${p.profile.name} program to bind it to.`,
     '',
     'Steps:',
-    `1. Create a ${m.partNumber} project and add the PLC connection (${p.profile.vendor} ${p.cpu.label}) with the maker's driver.`,
-    '2. Import or create the tags from the CSV (PLC tag column).',
+    ...(builtIn
+      ? [`1. The ${m.partNumber} is PLC and screen in one: build the screens in the HMI editor of the same ${sw} project as the PLC program (no PLC connection or driver).`,
+        '2. Bind each screen element to the PLC tag / operand in the CSV (PLC tag column).']
+      : [`1. Create a ${m.partNumber} project and add the PLC connection (${p.profile.vendor} ${p.cpu.label}) with the maker's driver.`,
+        '2. Import or create the tags from the CSV (PLC tag column).']),
     '3. Rebuild each screen from its image: same layout, labels, colours and access levels.',
     '4. Test every button and lamp against the PLC (or the simulator in ISA Auto Programmer) before commissioning.',
     '',

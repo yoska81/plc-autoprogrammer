@@ -5,6 +5,7 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useStageStore } from '../store/useStageStore';
 import { useSpecStore } from '../store/useSpecStore';
 import { getPart } from '../electrical/catalog';
+import { hasBuiltInPanel } from '../hmi/panels';
 import { PLC_PROFILES } from '../plc/core/profiles';
 import { fingerprint } from './types';
 import { modulesInSlotOrder, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
@@ -17,7 +18,9 @@ export interface EquipmentChoice {
 }
 
 export function recommendedChoice(rec: EquipmentRecommendation): EquipmentChoice {
-  return { cpuId: rec.plc.cpuId, modules: modulesInSlotOrder(rec), hmiPartNumber: rec.hmi?.partNumber ?? null };
+  // An all-in-one PLC (Unitronics) is its own touch screen.
+  const own = hasBuiltInPanel(getPart(rec.plc.cpuId)) ? rec.plc.cpuId : null;
+  return { cpuId: rec.plc.cpuId, modules: modulesInSlotOrder(rec), hmiPartNumber: own ?? rec.hmi?.partNumber ?? null };
 }
 
 /**

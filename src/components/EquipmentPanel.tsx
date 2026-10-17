@@ -15,6 +15,7 @@ import { cpuFit, findCpu, platformOf, type Need } from '../plc/core/fit';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, usePendingEquipment, type EquipmentChoice } from '../spec/equipment';
 import HmiChooser from './HmiChooser';
+import { hasBuiltInPanel } from '../hmi/panels';
 import VendorPreferenceCard from './VendorPreferenceCard';
 import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
@@ -136,6 +137,11 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const applied = choice?.cpuId === project.cpuId
     && JSON.stringify(choice?.modules) === JSON.stringify(project.modules) && (choice?.hmiPartNumber ?? '') === (appliedHmi ?? '');
 
+  // An all-in-one PLC brings its own screen: choosing it selects that screen; leaving it drops the screen.
+  const withCpu = (cpuId: string): Partial<EquipmentChoice> => {
+    if (hasBuiltInPanel(getPart(cpuId))) return { cpuId, hmiPartNumber: cpuId };
+    return { cpuId, ...(choice?.hmiPartNumber && hasBuiltInPanel(getPart(choice.hmiPartNumber)) ? { hmiPartNumber: null } : {}) };
+  };
   const set = (patch: Partial<EquipmentChoice>) => setChoice((c) => ({ cpuId: c?.cpuId ?? cpus[0].id, modules: c?.modules ?? [], hmiPartNumber: c?.hmiPartNumber ?? null, ...patch }));
   const apply = () => {
     if (!choice || !fit?.ok) return;
@@ -196,13 +202,13 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                     const f = cpuFit(c, choice?.modules ?? [], need);
                     const selected = choice?.cpuId === c.id;
                     return (
-                      <tr key={c.id} onClick={() => f.ok && set({ cpuId: c.id })}
+                      <tr key={c.id} onClick={() => f.ok && set(withCpu(c.id))}
                         className={`${f.ok ? 'cursor-pointer hover:bg-brand-50' : 'text-steel-400 bg-steel-50/60 cursor-not-allowed'} ${selected ? 'bg-brand-100' : ''}`}>
                         <td className={td}><input type="radio" readOnly checked={selected} disabled={!f.ok} aria-label={`Choose ${c.id}`} /></td>
                         <td className={`${td} font-mono`}>{c.id}{rec?.plc.cpuId === c.id && <span className="ml-2 text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-sm font-sans">SUGGESTED</span>}</td>
                         <td className={td}>{c.builtInInputs}</td>
                         <td className={td}>{c.builtInOutputs}</td>
-                        <td className={`${td} text-xs`}>{[/ethernet/i.test(c.label) && 'Ethernet', /analog/i.test(c.label) && 'Analog', /relay/i.test(c.label) && 'Relay out', /sourcing/i.test(c.label) && 'Sourcing out', /CLICK PLUS/.test(c.label) && 'CLICK PLUS'].filter(Boolean).join(' · ')}</td>
+                        <td className={`${td} text-xs`}>{[/ethernet/i.test(c.label) && 'Ethernet', /analog/i.test(c.label) && 'Analog', /relay/i.test(c.label) && 'Relay out', /sourcing/i.test(c.label) && 'Sourcing out', /CLICK PLUS/.test(c.label) && 'CLICK PLUS', /built-in [\d.]+" touch screen/.test(c.label) && 'Built-in touch screen'].filter(Boolean).join(' · ')}</td>
                         <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes · {f.spareIn} in / {f.spareOut} out spare</span> : f.reason}</td>
                       </tr>
                     );
