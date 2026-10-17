@@ -1,4 +1,4 @@
-import type { OrderList } from './purchasing';
+import { priceSource, unitPrice, userPriced, type OrderList } from './purchasing';
 import { priceBasis } from './purchaseSummaryPdf';
 
 /** Order list workbook: the panel order, and the recommended spares on their own sheet when given. */
@@ -14,12 +14,12 @@ export async function orderListXlsx(ol: OrderList, projectName: string, spares: 
   for (const g of ol.groups) {
     for (const l of g.lines) {
       ws.addRow([g.supplier, l.partNumber, l.manufacturer, l.description, l.bomQty, l.spareQty, l.packQty > 1 ? `pack of ${l.packQty}` : 'each', l.orderQty,
-        l.price ? l.price.price : 'price to confirm', l.extended ?? null, l.price ? `${l.price.sourceUrl} (${l.price.date})` : '', l.note ?? '']);
+        unitPrice(l) ?? 'price to confirm', l.extended ?? null, priceSource(l), l.note ?? '']);
     }
     const sub = ws.addRow(['', '', '', `Subtotal ${g.supplier}${g.unpriced ? ` (${g.unpriced} price to confirm)` : ''}`, null, null, '', null, null, g.subtotal]);
     sub.font = { bold: true };
   }
-  const tot = ws.addRow(['', '', '', 'Total of verified prices', null, null, '', null, null, ol.total]);
+  const tot = ws.addRow(['', '', '', userPriced(ol) ? 'Total of known prices (verified and entered by you)' : 'Total of verified prices', null, null, '', null, null, ol.total]);
   tot.font = { bold: true };
   ws.addRow([]);
   ws.addRow([priceBasis(ol)]);
@@ -30,7 +30,7 @@ export async function orderListXlsx(ol: OrderList, projectName: string, spares: 
     const sw = wb.addWorksheet('Recommended spares');
     sw.addRow([`${projectName} — recommended spares (separate, optional order)`]).font = { bold: true, size: 13 };
     sw.addRow(['Supplier', 'Part number', 'Manufacturer', 'Description', 'Spares (pcs)', 'Unit', 'Order qty', 'Unit price (USD)', 'Extended (USD)']).font = { bold: true };
-    for (const g of spares.groups) for (const l of g.lines) sw.addRow([g.supplier, l.partNumber, l.manufacturer, l.description, l.spareQty, l.packQty > 1 ? `pack of ${l.packQty}` : 'each', l.orderQty, l.price ? l.price.price : 'price to confirm', l.extended ?? null]);
+    for (const g of spares.groups) for (const l of g.lines) sw.addRow([g.supplier, l.partNumber, l.manufacturer, l.description, l.spareQty, l.packQty > 1 ? `pack of ${l.packQty}` : 'each', l.orderQty, unitPrice(l) ?? 'price to confirm', l.extended ?? null]);
     sw.addRow(['', '', '', 'Total of verified prices', null, '', null, null, spares.total]).font = { bold: true };
     sw.columns.forEach((c, i) => { c.width = [18, 20, 16, 60, 11, 13, 10, 15, 15][i]; });
   }

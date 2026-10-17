@@ -18,7 +18,9 @@ import { keyRatings } from '../electrical/strength';
 import { useProjectStore, useVendorPreference, type Region } from '../store/useProjectStore';
 import { hpToKw, isIec, NEMA_TO_IP, REGIONS, regionSpec, SUPPLY_INFO } from '../standards/regions';
 import { applyRegion, regionOption } from '../standards/applyRegion';
-import { bomCsv, cableScheduleCsv, designWarnings, motorFla, wireListCsv } from '../electrical/derive';
+import { bomCsv, designWarnings, motorFla } from '../electrical/derive';
+import { cableScheduleCsvWithNotes, wireListCsvWithNotes } from '../edits/lists';
+import CableWireLists from '../edits/CableWireLists';
 import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
@@ -40,6 +42,8 @@ import { specToText } from '../spec/types';
 import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
 import { startAiJob, useAiJobError, useTakeResult } from '../lib/ai/jobs';
+import VoiceTextarea from '../voice/VoiceTextarea';
+import SpeakButton from '../voice/SpeakButton';
 
 const ENCLOSURES: EnclosureRating[] = ['NEMA 12', 'NEMA 4', 'NEMA 4X', 'NEMA 1'];
 const STARTERS: { value: StarterType; label: string }[] = [
@@ -61,9 +65,9 @@ const card = 'bg-white rounded-sm border border-steel-200 p-5';
 
 const download = (name: string, content: string, mime: string) => saveBlob(name, new Blob([content], { type: mime }));
 
-type Tab = 'design' | 'cabinet' | 'machine' | 'layout' | 'picture' | 'machining' | 'labels';
+type Tab = 'design' | 'cabinet' | 'machine' | 'layout' | 'picture' | 'machining' | 'labels' | 'lists';
 
-const TAB_TITLE: Record<Tab, string> = { design: 'Design', cabinet: 'Cabinet wiring', machine: 'Machine wiring', layout: 'Machine layout', picture: 'Cabinet picture', machining: 'Machining (DXF)', labels: 'Labels' };
+const TAB_TITLE: Record<Tab, string> = { design: 'Design', cabinet: 'Cabinet wiring', machine: 'Machine wiring', layout: 'Machine layout', picture: 'Cabinet picture', machining: 'Machining (DXF)', labels: 'Labels', lists: 'Cable & wire lists' };
 
 /** The motor a component belongs to (its branch protection is limited by the motor current). */
 function motorContext(d: ElectricalDesign, tag: string | null | undefined, iec: boolean) {
@@ -87,7 +91,7 @@ export default function ElectricalPage() {
 
   const [params, setParams] = useSearchParams();
   const urlTab = params.get('tab') as Tab | null;
-  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'layout', 'picture', 'machining', 'labels'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
+  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'layout', 'picture', 'machining', 'labels', 'lists'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   const [localError, setError] = useState<string | null>(null);
   // AI generation runs as a global job (keeps going across pages).
@@ -188,8 +192,8 @@ export default function ElectricalPage() {
               <button onClick={() => void drawingsPdf('save')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-60">{pdfBusy === 'save' ? 'Preparing…' : 'Drawings PDF'}</button>
               {ctx && <button onClick={() => download(`${base}_BOM.csv`, bomCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">BOM CSV</button>}
               {ctx && <Link to="/export#order-list" className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Order list</Link>}
-              {ctx && <button onClick={() => download(`${base}_cable_schedule.csv`, cableScheduleCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Cable schedule CSV</button>}
-              {ctx && <button onClick={() => download(`${base}_wire_list.csv`, wireListCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Wire list CSV</button>}
+              {ctx && <button onClick={() => download(`${base}_cable_schedule.csv`, cableScheduleCsvWithNotes(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Cable schedule CSV</button>}
+              {ctx && <button onClick={() => download(`${base}_wire_list.csv`, wireListCsvWithNotes(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Wire list CSV</button>}
             </div>
           )}
         </div>
@@ -199,7 +203,9 @@ export default function ElectricalPage() {
         <button onClick={() => generate()} disabled={el.isGenerating} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
-      {tab === 'labels' ? (
+      {tab === 'lists' ? (
+        <CableWireLists ctx={ctx} />
+      ) : tab === 'labels' ? (
         <LabelsPanel ctx={ctx} fileBase={base} projectName={projectName} />
       ) : tab === 'layout' ? (
         <MachineLayoutPanel ctx={rawCtx} />
@@ -255,9 +261,9 @@ export default function ElectricalPage() {
                 </label>
               </div>
               <label className="block text-sm text-steel-700">Other requirements
-                <textarea value={inputs.notes} onChange={(e) => setInputs({ notes: e.target.value })} rows={2}
+                <VoiceTextarea value={inputs.notes} onValueChange={(notes) => setInputs({ notes })} rows={2} wrapClassName="mt-1"
                   placeholder="e.g. 3-color stack light, HMI on the door, 25% spare space, 120VAC outlet, panel max 30 x 24 in"
-                  className={`${input} w-full mt-1`} />
+                  className={`${input} w-full`} />
               </label>
             </div>
 
@@ -339,7 +345,7 @@ export default function ElectricalPage() {
             {/* Result review */}
             {el.design && (
               <>
-                {el.explanation && <div className={`${card} text-sm text-steel-700`}><h3 className="text-sm font-semibold text-steel-800 mb-1">Design summary</h3>{el.explanation}</div>}
+                {el.explanation && <div className={`${card} text-sm text-steel-700`}><h3 className="text-sm font-semibold text-steel-800 mb-1 flex items-center gap-1">Design summary <SpeakButton text={el.explanation} label="Read the summary aloud" size="xs" /></h3>{el.explanation}</div>}
 
                 <div className={`${card} overflow-x-auto`}>
                   <h3 className="text-sm font-semibold text-steel-800 mb-2">Components ({el.design.components.length})</h3>

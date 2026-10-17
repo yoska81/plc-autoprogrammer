@@ -18,6 +18,9 @@ import { MnemonicsContext } from './mnemonics';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { getProfile } from '../../core/profiles';
 import ElementEditor from './ElementEditor';
+import { useEditsStore } from '../../../edits/useEditsStore';
+import { recordRungComment, rungKey } from '../../../edits/rungComments';
+import { EditedMark } from '../../../edits/EditedMark';
 import type { Anchor } from './ElementEditor';
 import {
   CELL_W, JOIN_GAP, MIN_COLS, OUT_STUB, OUT_W, ROW_H, WIRE_Y,
@@ -287,6 +290,9 @@ function RungRow(props: RungRowProps) {
   const removed = change === 'removed';
   const width = diagramWidth(cols);
   const errors = issues.filter((i) => i.severity === 'error').length;
+  // A comment the user rewrote: marked, with a way back to the generated one.
+  const commentEdit = useEditsStore((s) => s.texts[rungKey(rung.id)]);
+  const commentEdited = Boolean(commentEdit && commentEdit.value === rung.comment);
 
   return (
     <div
@@ -329,7 +335,7 @@ function RungRow(props: RungRowProps) {
               onBlur={(e) => {
                 const v = e.currentTarget.value;
                 props.setEditingComment(null);
-                if (v !== rung.comment) props.apply((p) => updateRung(p, rung.id, (r) => ({ ...r, comment: v })));
+                if (v !== rung.comment) { recordRungComment(rung.id, v, rung.comment); props.apply((p) => updateRung(p, rung.id, (r) => ({ ...r, comment: v }))); }
               }}
             />
           ) : (
@@ -340,6 +346,12 @@ function RungRow(props: RungRowProps) {
             >
               {rung.comment}
             </span>
+          )}
+          {commentEdited && commentEdit && !editingComment && (
+            <EditedMark className="shrink-0" generated={commentEdit.generated} onReset={editable ? () => {
+              useEditsStore.getState().resetText(rungKey(rung.id));
+              props.apply((p) => updateRung(p, rung.id, (r) => ({ ...r, comment: commentEdit.generated })));
+            } : undefined} />
           )}
           {editable && !removed && !editingComment && (
             <div className={`absolute right-3 top-[3px] z-10 rounded bg-white/95 pl-2 shadow-[-8px_0_8px_-4px_rgba(255,255,255,0.95)] ${selected ? 'flex' : 'hidden group-hover:flex'}`}>

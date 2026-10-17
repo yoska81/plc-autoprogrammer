@@ -1,5 +1,5 @@
 import type { ProjectSnapshot } from './collect';
-import { buildOrderList, money, PANEL_ORDER, SPARES_ORDER, type OrderList } from './purchasing';
+import { buildOrderList, money, PANEL_ORDER, SPARES_ORDER, unitPrice, userPriced, type OrderList } from './purchasing';
 import { simpleDoc } from './programListingPdf';
 import { docMeta } from './docs/meta';
 import { makeTable, type DocRow } from './docs/table';
@@ -7,9 +7,12 @@ import { MUTED, RED, pdfSafe } from './docs/pdfWriter';
 
 /** Price basis line shown wherever prices appear. */
 export function priceBasis(ol: OrderList): string {
+  const mine = userPriced(ol);
+  const yours = mine ? ` ${mine} price${mine === 1 ? '' : 's'} entered by you ${mine === 1 ? 'is' : 'are'} included in the totals.` : '';
   return ol.priceDate
-    ? `List prices as of ${ol.priceDate}, USD, excl. tax and shipping. Lines marked "price to confirm" have no verified price and are not in the totals.`
-    : 'No verified list prices yet: every line is "price to confirm". Quantities are exact; ask the supplier for a quote.';
+    ? `List prices as of ${ol.priceDate}, USD, excl. tax and shipping.${yours} Lines marked "price to confirm" have no price yet and are not in the totals.`
+    : mine ? `Prices entered by you, USD.${yours} Lines marked "price to confirm" have no price yet and are not in the totals.`
+      : 'No verified list prices yet: every line is "price to confirm". Quantities are exact; ask the supplier for a quote.';
 }
 
 /** One-page purchase summary: panel parts by supplier, then the recommended spares as a separate order. */
@@ -45,7 +48,7 @@ export async function buildPurchaseSummaryPdf(p: ProjectSnapshot, o: { labels: b
           rows.push([
             l.partNumber, fit(l.description), String(l.orderQty),
             l.packQty > 1 ? `${l.source === 'labels' ? 'roll' : 'pack'} of ${l.packQty}` : 'each',
-            l.price ? money(l.price.price) : 'to confirm', l.extended !== undefined ? money(l.extended) : '—',
+            unitPrice(l) !== undefined ? `${money(unitPrice(l)!)}${l.userPrice !== undefined ? '*' : ''}` : 'to confirm', l.extended !== undefined ? money(l.extended) : '—',
           ]);
         }
       }
@@ -57,6 +60,7 @@ export async function buildPurchaseSummaryPdf(p: ProjectSnapshot, o: { labels: b
     const notes = [
       ol.toSelect.length ? `STILL TO SELECT before ordering: ${ol.toSelect.join('; ')}.` : '',
       priceBasis(ol),
+      userPriced(ol) ? '* = price entered by you.' : '',
       'Order quantities are in selling units (packs / rolls where sold that way). The order file holds the panel parts only; the spares have their own order file. Check stock and lead times before release.',
     ].filter(Boolean).join(' ');
     w.text(notes, { size: 6.4, color: ol.toSelect.length ? RED : MUTED, gap: 1.5 });
