@@ -2,7 +2,7 @@ supply 480VAC-3PH | NEMA 12
 motor M1 1 HP vfd reversing — Infeed conveyor motor
 motor M2 2 HP contactor-overload — Lift motor
 
-ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 32% spare panel space (target >= 25%)
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 30% spare panel space (target >= 25%)
 SP1      SCE-30P24          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 6.5 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle
@@ -14,13 +14,16 @@ K1       SC-E02PG-24VDC     x1    Lift motor contactor — rated 5 HP at 480 V 3
 K1-AUX   SZ-A11T            x1    K1 aux contact — N.C. 61-62 for the safety relay feedback (EDM); SC-E02PG-24VDC has no built-in aux [M2]
 OL1      TK-E02-340         x1    Lift motor overload — range 2.2-3.4 A, set to FLA 3.4 A [M2]
 CB3      GMCBU-3C-3         x1    24VDC power supply primary — 3 A for a 120 W supply (inrush)
-PS1      PSR-24-120-3       x1    24VDC control power supply, 3-phase 480 VAC input — 5 A >= load 0.8 A + 25%
+PS1      PSR-24-120-3       x1    24VDC control power supply, 3-phase 480 VAC input — 5 A >= load 0.9 A + 25%
 PLC      C0-10DD1E-D        x1    PLC CPU
 IO1      C0-08TD1           x1    I/O module, slot 1
 SR1      LG5925-48-61-24    x1    E-stop safety relay — dual channel, monitored manual reset, removes power from the motion outputs (24+S)
 ES1      GCX1131            x1    Emergency stop, cabinet door — dual channel into SR1
 ES1C     ECX1030-2          x1    Second NC contact for dual-channel E-stop ES1
 ES1L     ECX1651            x1    EMERGENCY STOP legend plate for ES1
+SR2      LG5925-48-900-61   x1    Light-curtain safety relay — OSSD1/OSSD2 of the curtain; its safety output in series with SR1 switches 24+S (a broken beam stops the motion like an E-stop)
+LC1      SH4-14-0300-B-5    x1    Safety light curtain, Infeed — type 4, 300 mm protected height, 14 mm resolution, OSSD1/OSSD2 into SR2
+LC1W     7000-12241-2150500 x2    Connection cables for LC1 (sender + receiver)
 PB1      GCX1102            x1    Start
 PB2      GCX1101            x1    Stop
 SOL1     100222016324002    x1    Gripper solenoid valve (double solenoid)
@@ -57,13 +60,13 @@ motorLocations {"M1":"Infeed","M2":"Lift"}
 routing {"PRS1":null,"SOL1":null,"LS1":null,"LS2":null}
 
 note: Infeed conveyor: motor power not given — assumed 1 HP; confirm the nameplate.
+note: Guard door interlock (Infeed): not drawn yet — select a dual-channel safety switch (field item) and wire it in series with the E-stop channels of SR1 (S11-S12 / S21-S22).
+note: LC1: confirm the protected height (300 mm assumed) and the mounting distance from the hazard (ISO 13855: stopping time of the closing stroke + the curtain's 9 ms response).
 note: CR1 (Ready signal to robot): dry contact to the other machine's controller — confirm its input voltage and wiring.
 note: Motor currents from NEC Table 430.250 / 430.248: M1 1 HP 2.1 A, M2 2 HP 3.4 A — confirm the nameplates.
-note: Guard door interlock (Infeed): dual-channel safety switch into SR1 in series with the E-stops — the switch is a field item to select.
-note: Light curtain (Infeed): both OSSD outputs into SR1 (24 V type 4 curtain) — the light curtain is a field item to select.
 note: LS1 (Lift up limit switch): field device to select (not in the catalog); wired as a dry contact to X006.
 note: LS2 (Lift down limit switch): field device to select (not in the catalog); wired as a dry contact to X007.
 note: PRS1 (Air pressure switch): field device to select (not in the catalog); wired as a dry contact to X008.
 note: VFD1: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.
 
-explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 480 V 3-phase through 30A — load 6.5 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP on GS23-41P0 (STO), M2 2 HP across the line; 24 VDC from PSR-24-120-3 for 0.8 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 32% spare panel space.
+explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 480 V 3-phase through 30A — load 6.5 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP on GS23-41P0 (STO), M2 2 HP across the line; 24 VDC from PSR-24-120-3 for 0.9 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 30% spare panel space.
