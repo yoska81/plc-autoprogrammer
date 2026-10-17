@@ -64,6 +64,8 @@ export interface HmiContent {
 }
 
 /** An input that is an alarm or fault in itself. */
+/** A guard-door / safety-gate interlock input (its monitoring contact): never an actuator's position feedback. */
+const GUARD_RE = /\b(guard\s*door|safety\s*(gate|door)|interlock(ed)?\s*(door|gate|switch)|door\s*interlock|guard\s*(closed|switch|interlock))\b/i;
 const ALARM_WORDS = /\b(fault|faulted|trip|tripped|alarm|overload|over-?temp\w*|high[- ]?limit|jam\w*)\b/i;
 
 /** Which coil of a pair moves out (extend, advance, close a gripper, press down) and which moves back. */
@@ -113,6 +115,9 @@ export function defaultHmiContent(opts: {
   const used = new Set<string>();
   const actuators: HmiActuator[] = [];
   const questions: string[] = [];
+  // Guard doors first, so no cylinder or motor takes "guard door closed" as its position feedback.
+  const guards = inputs.filter((x) => GUARD_RE.test(x.p.description) && !/\b(e-?stop|light\s*curtain|safety relay)\b/i.test(x.p.description));
+  for (const x of guards) used.add(x.address);
 
   // Motors and drives: outputs on contactors / drives, grouped per motor (forward + reverse on one motor).
   const motorKey = (x: { p: IOPoint; address: string }) => {
@@ -193,6 +198,12 @@ export function defaultHmiContent(opts: {
   // Inputs that are alarms in themselves: limits, faults, pressure / level OK switches, material low or out.
   if (part) used.add(part.address);
   const alarmInputs: HmiAlarmInput[] = [];
+  // A guard door open: latched alarm (stops the cycle, the interlock already stopped the motion); input ON = closed
+  // unless the text says "open".
+  for (const x of guards) {
+    const name = x.p.description.replace(/\s*\((?:[^)]*)\)\s*$/, '').replace(/\b(closed|open|switch|interlock(ed)?|ok)\b/gi, '').replace(/\s+/g, ' ').trim();
+    alarmInputs.push({ point: point(x), text: `${name.charAt(0).toUpperCase()}${name.slice(1)} open`, activeWhen: /\bopen\b/i.test(x.p.description) && !/\bclosed\b/i.test(x.p.description), severity: 'alarm' });
+  }
   for (const x of inputs) {
     if (used.has(x.address)) continue;
     const t = typeOf(x), d = x.p.description;
