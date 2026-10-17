@@ -170,3 +170,18 @@ Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 althoug
 
 - Also: `e2e/sweep.e2e.cjs` finds the ANALOG sheet in the new sheet list (integration 7f3b37d removed the sheet tabs, so the sweep reported "no ANALOG drawing sheet").
 - Tests: `src/electrical/enclosureFit.test.ts` (sample fits, 24x20 flagged with the 30x24, no overlaps). tsc, eslint, all unit tests, check-all.sh 0 FAIL/0 WARN on 5 variants. E2E app, ai-jobs, layout, persist, old-data, hmi-editor, sweep all pass.
+
+## Urgent user requests (coordinator, after 8c8d7f6): wire labels, machining PDFs
+- **Wire labels ("printing gives just the 24+")**: the label data was complete in every variant: 39/39 wire numbers for us480, 122/122 for big, 2 markers per conductor, natural order; the label-printer and sheet PDFs printed all of them. What the user saw had two causes:
+  - The preview expanded copies and showed only the first 60 (20× 0V, 1L1–1L3, 20× 24+ …).
+  - Unticked rows are kept with the project, so a "Select only these" / "Select none" made earlier silently limited every later print.
+  - Fix: the preview shows each label once with a ×N copy badge (roll mode keeps real positions). A warning in section 4 lists unticked labels, with "Tick all".
+  - Test case `src/electrical/labels/wireLabels.test.ts` covers every wire number (power L1…, 1L1…, M1-T1…; 24+, 0V; X…, Y…; 24+S, S11…; PE), both ends, natural order and cable tags at both ends. `check_consistency.py` checks marker copies = 2 per conductor for all variants. The app E2E checks the preview and the unticked warning.
+- **Machining PDFs**: `buildMachiningPdf(ctx, 'backpanel' | 'door')` builds the drilling / cutout sheets of the drawing set as their own PDF on the project's paper. Each has dimensions from the datum, a hole table, the title block and the sheet scale, plus a new note: "do not scale this print … the DXF of this part is 1:1 (real size)".
+  - Buttons on Electrical → Machining ("Back panel PDF", "Front door PDF") and on Deliverables (next to the DXFs).
+  - In the ZIP as `electrical/machining/<base>_back_panel_drilling.pdf` / `_door_cutouts.pdf`. In the full package as part 3, "Machining drawings".
+  - There is no enclosure-side machining in the model (no side DXF). The stack light is noted on the door sheet as enclosure-top, drilled per template.
+  - `check_pdf.py`: machining PDFs must be ANSI B, each page must equal its drawing-set sheet text, the set's drilling/cutout sheets must all be present, and the scale note must be there.
+- **Bug found and fixed**: drilling/cutout sheet heading said "SCALE 1:6" while the title block said "1:5" (big door 1:8 vs 1:6). The heading used `drillScale(w, h·168/150)`, the title block `drillScale(w, h)`. Both now use `drillSheetScale` in `scale.ts`. `check_pdf.py` now fails any sheet whose heading scale differs from the title block.
+- `e2e/persist.e2e.cjs`: the selected-sheet case uses the sheet list (tabs removed in 7f3b37d).
+- Checks: tsc, eslint, all unit tests, `check-all.sh` 0 FAIL / 0 WARN on 5 variants. E2E pass: app, ai-jobs, layout, persist, old-data, hmi-editor, sweep.

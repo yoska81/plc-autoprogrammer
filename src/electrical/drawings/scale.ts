@@ -28,6 +28,9 @@ export function drillScale(w: number, h: number): number {
   return niceScale(Math.min(240 / w, 168 / h));
 }
 
+/** Scale of a machining drawing sheet: leaves room below the part for the dual-dimension ordinates. */
+export const drillSheetScale = (d: { w: number; h: number }) => drillScale(d.w, d.h * (168 / 150));
+
 /** Machine layout sheet drawing window (mm). */
 export const LAYOUT_DW = 272;
 export const LAYOUT_DH = 187;

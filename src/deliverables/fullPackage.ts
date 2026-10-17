@@ -2,7 +2,7 @@ import type JSZip from 'jszip';
 import type { PDFDict, PDFRef } from 'pdf-lib';
 import type { ProjectSnapshot } from './collect';
 import { buildEngineeringPdf } from './engineering';
-import { buildDrawingsPdf, buildHmiImages, buildHmiPdf } from './files';
+import { buildDrawingsPdf, buildHmiImages, buildHmiPdf, buildMachiningPdf } from './files';
 import { buildProgramListingPdf, simpleDoc } from './programListingPdf';
 import { docMeta } from './docs/meta';
 import { ioListTable } from './docs/fds';
@@ -73,6 +73,8 @@ export async function buildPackageParts(p: ProjectSnapshot, onProgress?: Progres
       run: async () => (pre.drawings !== undefined ? pre.drawings : buildDrawingsPdf(p)),
       children: () => (docMeta(p).drawings?.sheets ?? []).map((s, i) => ({ title: `${s.no} ${s.title}`, page: i })),
     });
+    // The machine shop's part of the set on its own, next to the 1:1 DXFs.
+    steps.push({ title: 'Machining drawings', description: 'Back panel drilling and door cutouts: dimensions from the datum, hole tables, sheet scale (cut from the 1:1 DXFs)', run: () => buildMachiningPdf(p.drawingCtx!) });
   }
   if (p.hmi) {
     steps.push({

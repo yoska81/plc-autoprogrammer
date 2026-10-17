@@ -2,7 +2,7 @@
 import { dualDim, dualSize, type DrillCutout, type DrillHole } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
 import { DRILL_ROWS_CONT, type DrawingPlan, type DrillRow, type PlannedSheet, type SheetSpec } from '../plan';
-import { drillScale, scaleText } from '../scale';
+import { drillSheetScale, scaleText } from '../scale';
 import { Line, Txt } from '../symbols';
 
 const TX = 296; // table x
@@ -15,7 +15,7 @@ export function DrillingSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Plann
 
 function DrillDrawing({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, { kind: 'drill' }> }) {
   const d = sp.drill;
-  const s = drillScale(d.w, d.h * (168 / 150)); // leaves room below the part for the dual-dimension ordinates
+  const s = drillSheetScale(d);
   const ox = AREA.x + 30;
   const top = AREA.y + 14;
   const oyB = top + d.h * s; // paper y of the datum (Y = 0)
