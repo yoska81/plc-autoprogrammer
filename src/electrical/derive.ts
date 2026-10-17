@@ -2276,7 +2276,7 @@ export function smallestEnclosure(ctx: DrawingContext, opt: number | EnclosureSe
   const panelArea = (p: CatalogPart) => (num(p.ratings, 'panelWidthIn') ?? 0) * (num(p.ratings, 'panelHeightIn') ?? 0) || (p.widthMm ?? 0) * (p.heightMm ?? 0) / 645;
   const maker = encC?.part?.manufacturer;
   const material = o.material ?? 'same';
-  const curFamily = encC?.part ? enclosureFamily(encC.part) : 'steel';
+  const curFamily = encC?.part ? enclosureFamily(encC.part) : need === '4X' ? 'stainless' : 'steel';
   const okMaterial = (p: CatalogPart) => material === 'any' || (material === 'steel' ? enclosureFamily(p) === 'steel' : material === 'stainless' ? STAINLESS(p) : material === 'nonStainless' ? enclosureFamily(p) === 'nonmetallic' : enclosureFamily(p) === curFamily);
   const candidates = ALL_PARTS
     .filter((p) => p.category === 'enclosure' && String(p.ratings.kind ?? '') !== 'subpanel' && panelArea(p) > 0 && okMaterial(p))
