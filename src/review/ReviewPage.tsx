@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import QuestionList from '../components/questions/QuestionList';
+import { Link, useNavigate } from 'react-router-dom';
+import AssumptionsUsed from '../components/questions/AssumptionsUsed';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
+import { foundWhile } from '../components/questions/qa';
 import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon } from '@heroicons/react/20/solid';
 import { collectProject } from '../deliverables/collect';
 import { useElectricalStore } from '../store/useElectricalStore';
@@ -106,10 +107,11 @@ export default function ReviewPage() {
   useEffect(() => { refreshChecks(); }, []);
 
   const all = useMemo(() => sortFindings([...checks, ...(ai?.findings ?? [])]), [checks, ai]);
-  // Info findings that need the user's input become questions (electrical / HMI notes are already asked on their pages).
+  // Info findings that need the user's input become questions — asked on the Machine description page, never here.
   useSyncQuestions('review', all.filter((f) => f.severity === 'info' && !/^(enote|hnote|empty):/.test(f.id) && /confirm|\?|provide|unknown|not (stated|known|given)|to be /i.test(`${f.title} ${f.detail}`))
-    .map((f) => ({ text: f.detail && f.detail !== f.title ? `${f.title}: ${f.detail}` : f.title, assumption: f.fix || undefined })));
-  const allQuestions = useQuestions();
+    .map((f) => ({ text: f.detail && f.detail !== f.title ? `${f.title}: ${f.detail}` : f.title, assumption: f.fix || undefined, topic: foundWhile('review') })));
+  const reviewQuestions = useQuestions('review');
+  const openQuestions = useQuestions().filter((q) => q.status === 'open').length;
   const shown = all.filter((f) => sev.has(f.severity) && (area === 'all' || f.area === area) && (source === 'all' || f.source === source)
     && (status === 'all' || statusOf(marks, f.id) === status) && (!q.trim() || `${f.title} ${f.detail}`.toLowerCase().includes(q.toLowerCase())));
   const openCount = (s: Severity) => all.filter((f) => f.severity === s && statusOf(marks, f.id) === 'open').length;
@@ -176,8 +178,12 @@ export default function ReviewPage() {
           {ai?.summary && <p className="mt-1.5"><span className="font-semibold text-steel-800">Reviewer's verdict: </span>{ai.summary}</p>}
         </div>
 
-        <QuestionList questions={allQuestions} title="Questions to answer (all stages)" showSource
-          intro="Every open question and assumption from the machine description, I/O, electrical design, HMI and this review, each with its answer box right under it. Answers are saved in the Questions & answers of the machine description (part of the spec); the affected stages become out of date so Update uses them." />
+        {openQuestions > 0 && (
+          <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="review-open-questions">
+            {openQuestions} question{openQuestions === 1 ? ' is' : 's are'} waiting for an answer on the <Link to="/spec#questions-and-answers" className="font-semibold underline">Machine description</Link> page (the only place questions are asked).
+          </div>
+        )}
+        <AssumptionsUsed questions={reviewQuestions} title="Review notes that need an answer" />
 
         <div className="flex flex-wrap items-center gap-1.5 rounded border border-steel-200 bg-white px-3 py-2">
           <span className="mr-1 text-[11px] font-bold uppercase tracking-wide text-steel-500">Severity</span>

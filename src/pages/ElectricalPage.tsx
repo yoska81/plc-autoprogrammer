@@ -24,9 +24,8 @@ import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
 import ImprovePanel from '../electrical/improve/ImprovePanel';
 import MachineLayoutPanel from '../electrical/layout/MachineLayoutPanel';
-import { userNotes } from '../components/questions/classify';
-import QuestionList from '../components/questions/QuestionList';
-import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
+import AssumptionsUsed from '../components/questions/AssumptionsUsed';
+import { useQuestions } from '../components/questions/useQuestionStore';
 import { useDrawingContext } from '../electrical/useDrawingContext';
 import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
@@ -102,8 +101,7 @@ export default function ElectricalPage() {
   const [swap, setSwap] = useState<number | null>(null);
   const region = useProjectStore((s) => s.info.region);
 
-  // "Assumptions to confirm", answered under each item.
-  useSyncQuestions('electrical', el.design ? userNotes(el.design).map((n) => ({ text: n, assumption: n })) : null);
+  // What the design assumed where the description was silent (asked only on the Machine description page; registered in ./components/questions/qa).
   const elecQuestions = useQuestions('electrical');
   const { inputs } = el;
   const setInputs = (patch: Partial<DesignInputs>) => el.setInputs({ ...inputs, ...patch });
@@ -384,8 +382,7 @@ export default function ElectricalPage() {
                     onPick={(pn) => el.updateComponent(swap, { ...el.design!.components[swap], partNumber: pn })} onClose={() => setSwap(null)} />
                 )}
 
-                <QuestionList questions={elecQuestions} title="Assumptions to confirm"
-                  intro="The AI made these assumptions. Confirm each one, or type the correct value in the box under it; answers are saved in the Questions & answers of the machine description (part of the spec) and the design becomes out of date so Update uses them." />
+                <AssumptionsUsed questions={elecQuestions} />
               </>
             )}
           </div>

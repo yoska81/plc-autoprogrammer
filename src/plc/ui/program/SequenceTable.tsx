@@ -1,8 +1,12 @@
 import { sequenceTable, type CycleSequence } from '../../engine/sequence';
+import AssumptionsUsed from '../../../components/questions/AssumptionsUsed';
+import { useQuestions } from '../../../components/questions/useQuestionStore';
 
 /** The automatic cycle as a readable table (step, what happens, waits for, timeout) above the ladder. */
 export default function SequenceTable({ sequence, labels }: { sequence: CycleSequence; labels?: Map<string, string> }) {
   const rows = sequenceTable(sequence);
+  // The cycle's open points are asked on the Machine description page; listed here read-only.
+  const asked = useQuestions('program');
   const named = (text: string) => text.replace(/\b([XY]\d{3})\b/g, (a) => (labels?.get(a) ? `${a} ${labels.get(a)}` : a));
   return (
     <details open className="border-b border-gray-200 bg-white text-xs" data-testid="cycle-steps">
@@ -23,7 +27,8 @@ export default function SequenceTable({ sequence, labels }: { sequence: CycleSeq
           ))}
         </tbody>
       </table>
-      {sequence.questions.length > 0 && <ul className="mx-4 mb-2 list-disc pl-4 text-amber-800">{sequence.questions.map((q) => <li key={q}>{q}</li>)}</ul>}
+      {asked.length > 0 ? <div className="mx-4 mb-2"><AssumptionsUsed questions={asked} title="Assumptions used in the cycle" /></div>
+        : sequence.questions.length > 0 && <ul className="mx-4 mb-2 list-disc pl-4 text-amber-800">{sequence.questions.map((q) => <li key={q}>{q}</li>)}</ul>}
     </details>
   );
 }

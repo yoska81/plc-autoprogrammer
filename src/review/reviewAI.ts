@@ -58,6 +58,7 @@ Look for, in this order of importance:
 Rules:
 - Base every finding on the project data you are given. Quote the address, rung, device tag or spec sentence it is about. Do not invent equipment that is not in the data.
 - Do not repeat the deterministic findings listed at the end unless you add something new about them.
+- The specification's "Questions and answers" hold what the customer already answered and the "Design review decision" entries what was already resolved or accepted: never raise those again in other words, and never ask the customer to confirm an answer already given.
 - Severity: critical = can hurt someone or damage the machine; major = the machine will not work as specified or the design cannot be approved; minor = should be improved; info = note for the record.
 - "explanation": plain English, what is wrong and why it matters (2–4 sentences). "fix": what to change, specific enough to do.
 - "page" and "item": where to fix it in the app — page is one of project, spec, equipment, io, electrical, hmi, program, simulate; item is the rung id, address, device tag or HMI screen id it concerns ("" if none).

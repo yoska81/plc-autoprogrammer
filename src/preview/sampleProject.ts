@@ -13,6 +13,8 @@ import { useStageStore } from '../store/useStageStore';
 import { backupActiveProject, runDerived, saveActiveProject, storeStateAs, useProjectsStore } from '../store/useProjectsStore';
 import { useLayoutStore } from '../electrical/layout/useLayoutStore';
 import { useQuestionStore } from '../components/questions/useQuestionStore';
+import { useCommissioningStore } from '../commissioning/useCommissioningStore';
+import { useRedlineStore } from '../redlines/useRedlineStore';
 import { useCheckoutStore } from '../online/useCheckoutStore';
 import { useLabelSetupStore } from '../electrical/labels/setup';
 import { useFileStore } from '../project/useFileStore';
@@ -480,7 +482,7 @@ const EXAMPLE_NAME = 'Conveyor Cell (example)';
 
 /** Per-project data kept outside the project stores, moved when a project changes id. */
 function moveKeyed(from: string, to: string) {
-  const stores = [useLayoutStore, useQuestionStore, useCheckoutStore, useLabelSetupStore, useFileStore] as unknown as { getState: () => { byProject: Record<string, unknown> }; setState: (s: { byProject: Record<string, unknown> }) => void }[];
+  const stores = [useLayoutStore, useQuestionStore, useCheckoutStore, useLabelSetupStore, useFileStore, useCommissioningStore, useRedlineStore] as unknown as { getState: () => { byProject: Record<string, unknown> }; setState: (s: { byProject: Record<string, unknown> }) => void }[];
   for (const st of stores) {
     const by = { ...st.getState().byProject };
     if (!(from in by)) continue;

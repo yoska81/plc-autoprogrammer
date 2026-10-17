@@ -33,6 +33,8 @@ export interface Revision {
   by: string;           // initials
   /** Why it was issued despite open critical design review findings (construction override). */
   override?: string;
+  /** What changed in this revision (redlines / field changes), one line each. */
+  changes?: string[];
 }
 
 export interface ProjectInfo {

@@ -15,6 +15,9 @@ import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep'
 import { printLabelPdf, printMessage } from '../electrical/labels/print';
 import OrderListCard from '../deliverables/OrderListCard';
 import ReviewCard from '../review/ReviewCard';
+import { commissioningItems, progress } from '../commissioning/checklist';
+import { commissioningFor } from '../commissioning/useCommissioningStore';
+import { useProjectsStore } from '../store/useProjectsStore';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40';
 const csv = (s: string) => new Blob([s], { type: 'text/csv' });
@@ -309,6 +312,29 @@ export default function ExportPage() {
                 )}
               </>
             ) : <p className="text-sm text-steel-500">No program yet.</p>}
+          </Card>
+
+          <Card title="Commissioning checklist" info={stages.program} to="/commissioning">
+            {(() => {
+              const items = commissioningItems(p);
+              const rec = commissioningFor(useProjectsStore.getState().activeId);
+              const s = progress(items, rec.results);
+              return (
+                <>
+                  <p className="text-xs text-steel-500">Every input and output with the result the program expects, each safety function test and each alarm test, to tick on site. {s.done} of {s.total} done{s.fail ? `, ${s.fail} failed` : ''}{rec.signoff ? ` · signed ${rec.signoff.date}` : ''}.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <B busy={busy} label="Commissioning checklist PDF" disabled={!items.length} onClick={run('Commissioning checklist PDF', async () => {
+                      const { commissioningPdf } = await import('../commissioning/export');
+                      saveBlob(`${p.fileBase}_commissioning_checklist.pdf`, await commissioningPdf(p, items, rec));
+                    })} />
+                    <B busy={busy} label="Commissioning checklist Excel" disabled={!items.length} onClick={run('Commissioning checklist Excel', async () => {
+                      const { commissioningXlsx } = await import('../commissioning/export');
+                      saveBlob(`${p.fileBase}_commissioning_checklist.xlsx`, await commissioningXlsx(p.projectName, items, rec));
+                    })} />
+                  </div>
+                </>
+              );
+            })()}
           </Card>
 
           <Card title="I/O list" info={stages.io} to="/io">

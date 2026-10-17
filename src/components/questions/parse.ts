@@ -30,7 +30,7 @@ const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'on', 'fo
 const words = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w));
 
 const DEFAULT_SECTION: Record<QuestionSource, SpecSectionId> = {
-  spec: 'other', io: 'sensing', electrical: 'utilities', hmi: 'operator', review: 'other',
+  spec: 'other', io: 'sensing', electrical: 'utilities', hmi: 'operator', program: 'sequence', review: 'other',
 };
 
 /** Extra words that point to a section (beyond its title and hint). */

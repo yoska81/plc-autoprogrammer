@@ -27,6 +27,8 @@ import SimulatePage from './plc/pages/SimulatePage.tsx'
 import OnlinePage from './online/OnlinePage.tsx'
 import EquipmentPage from './pages/EquipmentPage.tsx'
 import NewProjectPage from './pages/NewProjectPage.tsx'
+import CommissioningPage from './commissioning/CommissioningPage.tsx'
+import RedlinesPage from './redlines/RedlinesPage.tsx'
 
 // The side-panel preview frame needs hash routing, blocks confirm() dialogs
 // (they always answer "cancel"), and opens with an example project.
@@ -68,6 +70,8 @@ createRoot(document.getElementById('root')!).render(
           <Route path="export" element={<ExportPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="project" element={<ProjectDataPage />} />
+          <Route path="commissioning" element={<CommissioningPage />} />
+          <Route path="redlines" element={<RedlinesPage />} />
         </Route>
       </Routes>
       <Notice />

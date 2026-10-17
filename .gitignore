@@ -30,6 +30,7 @@ e2e/out-layout/
 e2e/out-improve/
 e2e/out-sealing-head/
 e2e/out-ai-jobs/
+e2e/out-field/
 tools/out/
 tools/.venv/
 __pycache__/

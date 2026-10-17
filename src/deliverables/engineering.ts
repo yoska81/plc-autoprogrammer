@@ -113,7 +113,7 @@ function cover(w: PdfWriter, p: ProjectSnapshot, m: DocMeta) {
   ], 9), { fontSize: 8.5, zebra: false });
 
   w.h3('Revision history');
-  w.table(makeTable([['Rev', 8, 'center'], ['Date', 16], ['Description', 60], ['By', 12, 'center']], m.revisions.map((r) => [r.rev, r.date, r.description, r.by])), { fontSize: 8.2 });
+  w.table(makeTable([['Rev', 8, 'center'], ['Date', 16], ['Description', 60], ['By', 12, 'center']], m.revisions.map((r) => [r.rev, r.date, r.changes?.length ? `${r.description}\n${r.changes.map((c) => `- ${c}`).join('\n')}` : r.description, r.by])), { fontSize: 8.2 });
 
   w.h3('Distribution');
   w.table(makeTable([['Copy', 8, 'center'], ['Recipient', 36], ['Purpose', 56]], [
