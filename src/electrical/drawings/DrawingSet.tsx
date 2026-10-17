@@ -112,7 +112,7 @@ function DrawingDocument({ plan, shown, idx, setActive, zoom, setZoom, width, he
       <nav className="w-52 shrink-0 border-r border-gray-300 bg-white flex flex-col min-h-0" aria-label="Drawing sheets">
         <div className="px-2 py-1.5 border-b border-gray-200 flex items-center justify-between">
           <span className="text-xs font-semibold text-gray-700">Sheets ({shown.length})</span>
-          <button onClick={() => { setRedline(!redline); setMark(null); }} aria-pressed={redline} title="Mark a change on a sheet: click the spot, write the change"
+          <button onClick={() => { setRedline(!redline); setMark(null); }} aria-pressed={redline} aria-description="Mark a change on a sheet: click the spot, write the change"
             className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${redline ? 'border-red-600 bg-red-600 text-white' : 'border-red-300 text-red-700 hover:bg-red-50'}`}>Redline</button>
           <div className="flex rounded border border-gray-300 overflow-hidden text-[11px]">
             {(['fit', 1, 2] as Zoom[]).map((z) => (
