@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import StartCleanBanner from '../components/StartCleanBanner';
 import RecoverWork from '../components/RecoverWork';
 import { REGIONS, type DesignationStyle, type SheetFormat, type SymbolSet } from '../standards/regions';
 import { drawingOptions } from '../standards/drawingOptions';
@@ -107,6 +108,7 @@ function ProjectData() {
         <p className="text-xs text-steel-500 mt-0.5">Names, numbers, approvals and revisions printed on every drawing title block and document cover</p>
       </header>
       <div className="flex-1 overflow-auto p-4">
+        <div className="max-w-6xl mb-4"><StartCleanBanner /></div>
         <div className="max-w-6xl grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
           <Section title="Project">
             <div className="p-3 grid grid-cols-2 gap-3">
