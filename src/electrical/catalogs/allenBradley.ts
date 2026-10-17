@@ -358,7 +358,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: 'PanelView 800',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2711R-T7T.html',
     mount: 'door',
-    ratings: { family: 'PanelView 800', sizeIn: 7, touch: 'yes', ports: 'Serial, Ethernet' },
+    ratings: { family: 'PanelView 800', sizeIn: 7, touch: 'resistive', ports: 'Serial, Ethernet', resolutionPx: '800x480', displayIn: 7, ethernetPorts: 1, serialPorts: 2, software: 'Connected Components Workbench', datasheet: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/2711r-td001_-en-p.pdf' },
     verified: true,
   },
   {
@@ -369,7 +369,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: 'PanelView 800',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2711R-T10T.html',
     mount: 'door',
-    ratings: { family: 'PanelView 800', sizeIn: 10.4, touch: 'yes', ports: 'Serial, Ethernet' },
+    ratings: { family: 'PanelView 800', sizeIn: 10.4, touch: 'resistive', ports: 'Serial, Ethernet', resolutionPx: '800x600', displayIn: 10.4, ethernetPorts: 1, serialPorts: 2, software: 'Connected Components Workbench', datasheet: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/2711r-td001_-en-p.pdf' },
     verified: true,
   },
   {
@@ -380,7 +380,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: 'PanelView 5310',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2713P-T7WD1.html',
     mount: 'door',
-    ratings: { family: 'PanelView 5310', sizeIn: 7, resolution: '800 x 480', touch: 'yes', ports: '1 x 10/100 Ethernet', protocols: 'EtherNet/IP', supplyVolts: 24, cutoutWidthMm: 207, cutoutHeightMm: 148 },
+    ratings: { family: 'PanelView 5310', sizeIn: 7, touch: 'resistive', ports: '1 x 10/100 Ethernet', protocols: 'EtherNet/IP', supplyVolts: 24, cutoutWidthMm: 207, cutoutHeightMm: 148, resolutionPx: '800x480', displayIn: 7, ethernetPorts: 1, serialPorts: 0, usbPorts: 2, software: 'Studio 5000 View Designer' },
     verified: true,
   },
   {
@@ -391,18 +391,18 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: 'PanelView 5310',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2713P-T9WD1.html',
     mount: 'door',
-    ratings: { family: 'PanelView 5310', sizeIn: 9, resolution: '800 x 480', touch: 'yes', ports: '1 x 10/100 Ethernet', protocols: 'EtherNet/IP', supplyVolts: 24, cutoutWidthMm: 252, cutoutHeightMm: 162 },
+    ratings: { family: 'PanelView 5310', sizeIn: 9, touch: 'resistive', ports: '1 x 10/100 Ethernet', protocols: 'EtherNet/IP', supplyVolts: 24, cutoutWidthMm: 252, cutoutHeightMm: 162, resolutionPx: '800x480', displayIn: 9, ethernetPorts: 1, serialPorts: 0, usbPorts: 2, software: 'Studio 5000 View Designer' },
     verified: true,
   },
   {
     partNumber: '2713P-T10CD1',
     category: 'hmi',
-    description: 'PanelView 5310 10 in 4:3 touch HMI, 24VDC, Ethernet',
+    description: 'PanelView 5310 10.4 in 4:3 touch HMI, 24VDC, Ethernet',
     manufacturer: 'Allen-Bradley',
     family: 'PanelView 5310',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2713P-T10CD1.html',
     mount: 'door',
-    ratings: { family: 'PanelView 5310', sizeIn: 10, resolution: '800 x 600', touch: 'yes', ports: '1 x 10/100 Ethernet', protocols: 'EtherNet/IP', supplyVolts: 24, cutoutWidthMm: 269, cutoutHeightMm: 224 },
+    ratings: { family: 'PanelView 5310', sizeIn: 10.4, touch: 'resistive', ports: '1 x 10/100 Ethernet', protocols: 'EtherNet/IP', supplyVolts: 24, cutoutWidthMm: 269, cutoutHeightMm: 224, resolutionPx: '800x600', displayIn: 10.4, ethernetPorts: 1, serialPorts: 0, usbPorts: 2, software: 'Studio 5000 View Designer' },
     verified: true,
   },
   {
@@ -413,7 +413,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: 'PanelView 5310',
     url: 'https://www.rockwellautomation.com/en-us/products/details.2713P-T12WD1.html',
     mount: 'door',
-    ratings: { family: 'PanelView 5310', sizeIn: 12.1, resolution: '1280 x 800', touch: 'yes', ports: '1 x 10/100 Ethernet', protocols: 'EtherNet/IP', supplyVolts: 24, cutoutWidthMm: 312, cutoutHeightMm: 218 },
+    ratings: { family: 'PanelView 5310', sizeIn: 12.1, touch: 'resistive', ports: '1 x 10/100 Ethernet', protocols: 'EtherNet/IP', supplyVolts: 24, cutoutWidthMm: 312, cutoutHeightMm: 218, resolutionPx: '1280x800', displayIn: 12.1, ethernetPorts: 1, serialPorts: 0, usbPorts: 2, software: 'Studio 5000 View Designer' },
     verified: true,
   },
   {

@@ -146,6 +146,14 @@ let failPage = null;
   check(await page.locator('tr', { hasText: 'C1061' }).count() === 1, 'tag from the AI proposal');
   check(await programStale() === 1, 'program marked out of date');
   const screenName = 'icon'; // named after the picture file
+  const navTo = await page.evaluate(async (name) => {
+    const { useHmiStore } = await import('/src/store/useHmiStore.ts');
+    const d = useHmiStore.getState().design;
+    const id = d.screens.find((s) => s.name === name).id;
+    return d.screens.filter((s) => s.elements.some((e) => e.kind === 'nav' && e.targetScreenId === id)).length;
+  }, screenName);
+  log(`Nav buttons to "${screenName}": on ${navTo} screen(s)`);
+  check(navTo >= 6, 'the hand-added screen has a nav button on every screen with a nav bar');
 
   // In the simulator: the screen with its picture; pressing the button sets C1050
   await page.goto(BASE + '/simulate');

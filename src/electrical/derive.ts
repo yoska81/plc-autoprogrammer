@@ -28,10 +28,11 @@ import type {
   CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, JunctionBox,
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
 } from './types';
-import { getHmi } from '../hmi/hmiCatalog';
+import { getHmi, hmiMaker } from '../hmi/hmiCatalog';
 import { lengthText, routedLength, withService } from './layout/geometry';
 import { CABINET, type LayoutForDesign } from './layout/types';
 import { iecColor, iecMotorCurrent, isIec, mm2For, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
+import { ALL_PARTS } from './catalogs';
 
 export interface DrawingContext {
   projectName: string;
@@ -1385,7 +1386,7 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
   // The project HMI (chosen on the HMI page) is on the door even when the design has no HMI component.
   if (ctx.hmiPartNumber && !m.rc.some((c) => c.category === 'hmi')) {
     const h = getHmi(ctx.hmiPartNumber);
-    lines.set(`hmi|${ctx.hmiPartNumber}`, { item: 0, qty: 1, partNumber: ctx.hmiPartNumber, manufacturer: 'AutomationDirect', description: h?.description ?? 'Operator touch panel', tags: ['HMI1'], category: 'hmi' });
+    lines.set(`hmi|${ctx.hmiPartNumber}`, { item: 0, qty: 1, partNumber: ctx.hmiPartNumber, manufacturer: h ? hmiMaker(h) : 'AutomationDirect', description: h?.description ?? 'Operator touch panel', tags: ['HMI1'], category: 'hmi' });
   }
   const notes: BomLine[] = [...notesFromLayout];
   const all = [...lines.values()];
@@ -1511,6 +1512,8 @@ const MARGIN = 10;
 /** Height a direct-mount overload adds below its contactor when the catalog has no height. */
 const OL_STACK_H = 50;
 const GAP = 4;
+/** Parts at least this tall get their own column when the rails overflow (mm). */
+const TALL_MM = 140;
 
 /** Layout group of a category (breakers / fuses together, PLC + modules together). */
 const grpOf = (c: CatalogCategory) => (c === 'breaker' || c === 'fuse' ? 'cb' : c === 'plc' || c === 'plcModule' ? 'plc' : c);
@@ -1614,6 +1617,8 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   // needed; terminal strips on their own rails, or one strip moved onto a device rail with room.
   const innerX0 = backplate.x + MARGIN + DUCT + CLEAR;
   const innerW = backplate.w - 2 * (MARGIN + DUCT + CLEAR);
+  /** Width the rails pack into: the full width, or less when tall parts have their own column. */
+  let areaW = innerW;
   type Band = { items: PlacedItem[]; h: number; terminals?: boolean };
   const gapOf = (b: PlacedItem[], it: PlacedItem) => (b.length ? it.gapLeft ?? gapBefore(b[b.length - 1], it) : 0);
   const bandW = (b: PlacedItem[]) => b.reduce((a, it, k) => a + it.w + (k ? it.gapLeft ?? gapBefore(b[k - 1], it) : 0), 0);
@@ -1621,7 +1626,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   /** Put an item on the best rail of `pool` that has room (tall-enough rails first). */
   const fitInto = (pool: Band[], it: PlacedItem): boolean => {
     const gapTo = (b: Band) => { const prev = b.items[b.items.length - 1]; return grpOf(prev.category) === grpOf(it.category) ? gapBefore(prev, it) : 3 * GAP; };
-    const fits = pool.filter((b) => b.items.length && bandW(b.items) + gapTo(b) + it.w <= innerW);
+    const fits = pool.filter((b) => b.items.length && bandW(b.items) + gapTo(b) + it.w <= areaW);
     const b = fits.find((x) => Math.max(...x.items.map((i) => i.h)) >= it.h) ?? fits[0];
     if (!b) return false;
     const prev = b.items[b.items.length - 1];
@@ -1632,7 +1637,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   /** compact: -1 = normal pass; >= 0 = compact pass, moving terminal strip `moveStrip - 1` onto a device rail (0 = none). */
   const pack = (rowsIn: PlacedItem[][], compact: number, notFit: PanelLayout['notFit']): Band[] => {
     const bands: Band[] = [];
-    const tooWide = (it: PlacedItem) => { if (it.w <= innerW) return false; notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h }); return true; };
+    const tooWide = (it: PlacedItem) => { if (it.w <= areaW) return false; notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h }); return true; };
     if (compact >= 0) {
       const dev = rowsIn.slice(0, 3).flat();
       const ds = dev.find((i) => i.category === 'disconnect');
@@ -1654,7 +1659,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
       const terminals = ri === 3;
       const last = bands[bands.length - 1];
       // A whole group that fits on the end of the previous rail shares it (never for terminal strips).
-      if (!terminals && last && !last.terminals && rowW(last.items) + 3 * GAP + rowW(row) <= innerW) {
+      if (!terminals && last && !last.terminals && rowW(last.items) + 3 * GAP + rowW(row) <= areaW) {
         row[0].gapLeft = 3 * GAP;
         last.items.push(...row);
         return;
@@ -1664,7 +1669,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
       for (const it of row) {
         if (tooWide(it)) continue;
         const need = gapOf(cur, it) + it.w;
-        if (cur.length && w + need > innerW) { bands.push({ items: cur, h: 0 }); cur = []; w = 0; }
+        if (cur.length && w + need > areaW) { bands.push({ items: cur, h: 0 }); cur = []; w = 0; }
         w += gapOf(cur, it) + it.w;
         cur.push(it);
       }
@@ -1672,8 +1677,19 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     });
     return bands;
   };
-  const place = (rowsIn: PlacedItem[][], gbs: PlacedItem[], compact: number) => {
+  /**
+   * Lay out the rails. With `column`, the tall parts (main disconnect, large drives) stand in their
+   * own column at the right-hand side, each on a short rail, beside a vertical duct, the way a panel
+   * builder mounts them; the DIN rails then run only across the area to the left of that duct.
+   */
+  const place = (rowsIn: PlacedItem[][], gbs: PlacedItem[], compact: number, column: PlacedItem[] = []) => {
     const notFit: PanelLayout['notFit'] = [];
+    const colW = column.length ? Math.max(...column.map((c) => c.w)) : 0;
+    // right duct | CLEAR | column | CLEAR | middle duct | CLEAR | rails ...
+    const colRight = backplate.x + backplate.w - MARGIN - DUCT - CLEAR;
+    const colX = colRight - colW;
+    const midDuctX = colX - CLEAR - DUCT;
+    areaW = column.length ? midDuctX - CLEAR - innerX0 : innerW;
     const bands = pack(rowsIn, compact, notFit);
     for (const b of bands) b.h = Math.max(RAIL_H, ...b.items.map((i) => i.h)) + 2 * CLEAR;
     const gbH = gbs.length ? Math.max(...gbs.map((g) => g.h)) + CLEAR : 0;
@@ -1681,20 +1697,41 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     const rails: Rect[] = [];
     const ducts: PanelLayout['ducts'] = [];
     const items: PlacedItem[] = [];
-    const ductX = backplate.x + MARGIN, ductW = backplate.w - 2 * MARGIN;
+    const ductX = backplate.x + MARGIN, fullW = backplate.w - 2 * MARGIN;
+    // with a column, the horizontal ducts between the rails stop at the middle duct
+    const ductW = column.length ? midDuctX + DUCT - ductX : fullW;
+    const railX = backplate.x + MARGIN + DUCT + 4;
+    const railW = column.length ? midDuctX - 4 - railX : backplate.w - 2 * (MARGIN + DUCT + 4);
     let y = backplate.y + MARGIN;
     const ductTop = y;
-    ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
+    ducts.push({ x: ductX, y, w: fullW, h: DUCT, orientation: 'h' });
     y += DUCT;
+    // the column: tall parts stacked from the top, each on its own short rail
+    let colBottom = y;
+    let colY = y + CLEAR;
+    /** Put a part in the column (on its own short rail); false when there is no room below. */
+    const toColumn = (it: PlacedItem): boolean => {
+      if (it.w > colW + 0.01 || colY + it.h + CLEAR > limit + 0.01) return false;
+      it.x = colX + (colW - it.w) / 2; it.y = colY;
+      rails.push({ x: colX - 4, y: colY + it.h / 2 - RAIL_H / 2, w: colW + 8, h: RAIL_H });
+      items.push(it);
+      colY += it.h + 2 * CLEAR;
+      colBottom = colY - CLEAR;
+      return true;
+    };
+    for (const it of column) if (!toColumn(it)) notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h });
     bands.forEach((b, bi) => {
       const lastBand = bi === bands.length - 1;
       // The duct under the bottom terminal strip is optional (field wiring enters from below).
       if (y + b.h + (lastBand && b.terminals ? 0 : DUCT) > limit + 0.01) {
-        for (const it of b.items) notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h });
+        for (const it of b.items) {
+          if (column.length && toColumn(it)) continue;
+          notFit.push({ tag: it.label, partNumber: it.partNumber, w: it.w, h: it.h });
+        }
         return;
       }
       const cy = y + b.h / 2;
-      rails.push({ x: backplate.x + MARGIN + DUCT + 4, y: cy - RAIL_H / 2, w: backplate.w - 2 * (MARGIN + DUCT + 4), h: RAIL_H });
+      rails.push({ x: railX, y: cy - RAIL_H / 2, w: railW, h: RAIL_H });
       // Main disconnect at the right-hand end of its rail (latch side of a left-hinged door), so the
       // through-door handle is on the right as usual; the rest of the rail packs from the left.
       const ds = b.items[0]?.category === 'disconnect' ? b.items[0] : undefined;
@@ -1707,18 +1744,23 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
         x += it.w;
         items.push(it);
       });
-      if (ds) { ds.x = innerX0 + innerW - ds.w; ds.y = cy - ds.h / 2; items.push(ds); }
+      if (ds) { ds.x = innerX0 + areaW - ds.w; ds.y = cy - ds.h / 2; items.push(ds); }
       y += b.h;
       if (!(lastBand && b.terminals) || y + DUCT <= limit + 0.01) {
         ducts.push({ x: ductX, y, w: ductW, h: DUCT, orientation: 'h' });
         y += DUCT;
       }
     });
-    const bottom = y;
+    const railsBottom = y;
+    const bottom = Math.max(y, colBottom);
     const lastDuct = ducts[ducts.length - 1];
-    const vEnd = lastDuct.y + lastDuct.h === bottom ? bottom - DUCT : bottom;
+    const vEnd = lastDuct.y + lastDuct.h === railsBottom && bottom === railsBottom ? bottom - DUCT : bottom;
     ducts.push({ x: ductX, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
     ducts.push({ x: backplate.x + backplate.w - MARGIN - DUCT, y: ductTop + DUCT, w: DUCT, h: Math.max(0, vEnd - ductTop - DUCT), orientation: 'v' });
+    if (column.length) {
+      const midEnd = lastDuct.y + lastDuct.h === railsBottom ? railsBottom - DUCT : railsBottom;
+      ducts.push({ x: midDuctX, y: ductTop + DUCT, w: DUCT, h: Math.max(0, Math.max(midEnd, colBottom) - ductTop - DUCT), orientation: 'v' });
+    }
     // Ground bar(s): bolted to the back panel along the bottom edge, below the last duct, right-hand side.
     let gx = backplate.x + backplate.w - MARGIN;
     for (const g of gbs) {
@@ -1738,6 +1780,20 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     for (let k = 0; k <= rows[3].length; k++) {
       const tight = place(rows.map((r) => r.map(copy)), groundBars.map(copy), k);
       if (lost(tight) < lost(placed)) placed = tight;
+    }
+  }
+  // Still overflowing: tall parts (disconnect, large drives) in their own column so they don't make
+  // a whole rail tall; the other parts pack on the rails beside it (normal and compact packing).
+  if (placed.notFit.length) {
+    const isTall = (it: PlacedItem) => it.h >= TALL_MM && it.category !== 'terminal';
+    if (rows.slice(0, 3).some((r) => r.some(isTall))) {
+      for (let k = -1; k <= rows[3].length; k++) {
+        const rs = rows.map((r) => r.map(copy));
+        const column = rs.slice(0, 3).flatMap((r) => r.filter(isTall)).sort((a, b) => (a.category === 'disconnect' ? -1 : b.category === 'disconnect' ? 1 : b.h - a.h));
+        const rest = rs.map((r, i) => (i < 3 ? r.filter((it) => !isTall(it)) : r));
+        const col = place(rest, groundBars.map(copy), k, column);
+        if (lost(col) < lost(placed)) placed = col;
+      }
     }
   }
   const { notFit, rails, ducts, items } = placed;
@@ -1835,9 +1891,11 @@ export function spareSpace(ctx: DrawingContext): SpareSpace {
   const usable = bp.w - 2 * (MARGIN + duct + CLEAR);
   const parts = L.items.filter((i) => i.category !== 'groundBar');
   const rails = L.rails.map((r, i) => {
-    const on = parts.filter((it) => it.y < r.y + r.h && it.y + it.h > r.y);
-    const usedMm = Math.min(usable, on.reduce((a, it) => a + it.w, 0));
-    return { rail: i + 1, lengthMm: usable, usedMm, spare: L.overflow ? 0 : 1 - usedMm / usable };
+    // full-width rails, or the short rails of the tall-part column (their own length)
+    const len = Math.min(usable, r.w - 2 * (CLEAR - 4));
+    const on = parts.filter((it) => it.y < r.y + r.h && it.y + it.h > r.y && it.x < r.x + r.w && it.x + it.w > r.x);
+    const usedMm = Math.min(len, on.reduce((a, it) => a + it.w, 0));
+    return { rail: i + 1, lengthMm: len, usedMm, spare: L.overflow ? 0 : 1 - usedMm / len };
   });
   const gb = L.items.filter((i) => i.category === 'groundBar');
   const gbH = gb.length ? Math.max(...gb.map((g) => g.h)) + CLEAR : 0;
@@ -1847,6 +1905,58 @@ export function spareSpace(ctx: DrawingContext): SpareSpace {
   const total = rails.reduce((a, r) => a + r.lengthMm, 0) + extraRails * usable;
   const spareMm = rails.reduce((a, r) => a + r.lengthMm - r.usedMm, 0) + extraRails * usable;
   return { rails, extraRails, panel: L.overflow || !total ? 0 : spareMm / total };
+}
+
+/** Smallest catalog enclosure (with its subpanel) that holds the back-panel parts with the spare-space rule. */
+export interface EnclosureFit {
+  enclosure: string;
+  /** Separate subpanel part, when the enclosure needs one. */
+  subpanel?: string;
+  description: string;
+  /** Spare fraction of the back panel with this enclosure. */
+  spare: number;
+  /** The design's own enclosure already fits. */
+  current: boolean;
+}
+
+/** Spare space the panel should keep for later additions (customer / panel-shop rule). */
+export const SPARE_RULE = 0.25;
+
+/**
+ * Size the enclosure from the real part footprints: try the catalog enclosures that meet the design's
+ * enclosure rating (same maker as the chosen one first), smallest back panel first, and return the
+ * first whose back panel holds every part with at least `spare` free. Null when none does.
+ */
+export function smallestEnclosure(ctx: DrawingContext, spare = SPARE_RULE): EnclosureFit | null {
+  const m = buildModel(ctx);
+  const encC = m.rc.find((c) => c.category === 'enclosure' && !isSubpanel(c));
+  const subC = m.rc.find((c) => isSubpanel(c));
+  const need = String(ctx.design.inputs.enclosureRating ?? '').replace(/^NEMA\s*/i, '').toUpperCase();
+  const panelArea = (p: CatalogPart) => (num(p.ratings, 'panelWidthIn') ?? 0) * (num(p.ratings, 'panelHeightIn') ?? 0) || (p.widthMm ?? 0) * (p.heightMm ?? 0) / 645;
+  const maker = encC?.part?.manufacturer;
+  const candidates = ALL_PARTS
+    .filter((p) => p.category === 'enclosure' && String(p.ratings.kind ?? '') !== 'subpanel' && panelArea(p) > 0)
+    .filter((p) => !need || String(p.ratings.nema ?? '').toUpperCase().split('/').map((x) => x.trim()).includes(need))
+    .sort((a, b) => Number(b.manufacturer === maker) - Number(a.manufacturer === maker) || panelArea(a) - panelArea(b));
+  const subOf = (p: CatalogPart) => { const s = String(p.ratings.subpanel ?? ''); return ALL_PARTS.some((x) => x.partNumber === s) ? s : undefined; };
+  const fits = (design: ElectricalDesign) => {
+    const c2: DrawingContext = { ...ctx, design, machineLayout: undefined };
+    const L = panelLayout(c2);
+    return L.overflow ? null : spareSpace(c2).panel;
+  };
+  const cur = fits(ctx.design);
+  if (cur !== null && cur >= spare && encC) return { enclosure: encC.partNumber, subpanel: subC?.partNumber, description: encC.part?.description ?? encC.partNumber, spare: cur, current: true };
+  for (const p of candidates) {
+    const sp = subOf(p);
+    const components = ctx.design.components
+      .filter((c) => c !== subC?.comp || !!sp)
+      .map((c) => (c === encC?.comp ? { ...c, partNumber: p.partNumber } : c === subC?.comp && sp ? { ...c, partNumber: sp } : c));
+    if (!encC) components.push({ tag: 'ENC1', partNumber: p.partNumber, quantity: 1, function: 'Main enclosure', motorTag: null });
+    if (sp && !subC) components.push({ tag: 'SP1', partNumber: sp, quantity: 1, function: 'Back panel', motorTag: null });
+    const f = fits({ ...ctx.design, components });
+    if (f !== null && f >= spare) return { enclosure: p.partNumber, subpanel: sp, description: p.description, spare: f, current: false };
+  }
+  return null;
 }
 
 /** Door-mounted accessories that are not operator devices (contact blocks, legend plates sold separately...). */
@@ -2134,6 +2244,15 @@ export function designWarnings(ctx: DrawingContext): string[] {
   }
   for (const p of m.io) if (!p.deviceTag && p.wiring) w.push(`${p.address}: wiring has no device tag.`);
   w.push(...panelLayout(ctx).warnings);
+  {
+    // enclosure sized from the real footprints: too small (or no 25 % spare) -> name the smallest that fits
+    const fit = smallestEnclosure(ctx);
+    if (fit && !fit.current) {
+      const enc = m.rc.find((c) => c.category === 'enclosure' && !isSubpanel(c));
+      w.push(`Enclosure ${enc ? `${enc.tag} ${enc.partNumber}` : '(none)'} is too small for the parts with ${Math.round(SPARE_RULE * 100)} % spare space: use ${fit.enclosure}${fit.subpanel ? ` with back panel ${fit.subpanel}` : ''} (${Math.round(fit.spare * 100)} % spare).`);
+    } else if (!fit && panelLayout(ctx).overflow) w.push('No catalog enclosure holds all back-panel parts: split the panel or add a larger enclosure to the catalog.');
+    else if (!fit) w.push(`The back panel holds all parts but has only ${Math.round(spareSpace(ctx).panel * 100)} % spare space (rule: ${Math.round(SPARE_RULE * 100)} %), and no larger catalog enclosure is available: split the panel or accept less spare space.`);
+  }
   w.push(...m.machine.warnings);
   w.push(ctx.region === 'Canada'
     ? 'Wire sizes are suggestions (75°C copper); verify against CEC Table 2 / CSA C22.2 No. 14 and the protective device ratings.'

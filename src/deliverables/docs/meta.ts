@@ -80,7 +80,7 @@ export function docMeta(p: ProjectSnapshot): DocMeta {
 export function hmiText(partNumber: string | null): string {
   if (!partNumber) return 'none';
   const m = getHmi(partNumber);
-  return m ? `${m.family} ${m.partNumber} (${m.sizeIn} in, ${m.widthPx}x${m.heightPx})` : partNumber;
+  return m ? `${m.catalog ? `${m.manufacturer} ` : ''}${m.family} ${m.partNumber} (${m.sizeIn} in, ${m.widthPx}x${m.heightPx})` : partNumber;
 }
 
 /** The other deliverables this document refers to. */

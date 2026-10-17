@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createImageElement, restack,
   alignElements, createElement, deleteElements, distributeElements, duplicateElements, elementsInRect, historyOf,
-  missingTags, moveElements, newElementId, record, redo, resizeElement, snap, syncHandTags, undo,
+  addNavEntry, missingTags, moveElements, newElementId, record, redo, resizeElement, snap, syncHandTags, undo,
 } from './editor';
 import type { HmiDesign, HmiScreen } from './types';
 
@@ -169,6 +169,25 @@ test('bring to front / send to back', () => {
   const sc = { id: 's', name: 'S', purpose: '', elements: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] } as unknown as HmiScreen;
   assert.deepEqual(restack(sc, ['a'], 'front').elements.map((e) => e.id), ['b', 'c', 'a']);
   assert.deepEqual(restack(sc, ['c'], 'back').elements.map((e) => e.id), ['c', 'a', 'b']);
+});
+
+
+// ---- navigation entry for a hand-added screen
+test('a hand-added screen gets a navigation button on every screen', () => {
+  const nav = (id: string, x: number, target: string, label: string): import('./types').HmiElement => ({ ...createElement('nav', id, 0, 0, { w: 800, h: 480 }), x, y: 424, w: 120, h: 48, targetScreenId: target, label });
+  const row = [nav('n1', 8, 'main', 'Main'), nav('n2', 136, 'manual', 'Manual'), nav('n3', 264, 'setup', 'Setup')];
+  const screens: HmiScreen[] = ['main', 'manual', 'setup'].map((id) => ({ id, name: id, purpose: '', elements: row.map((e) => ({ ...e, id: `${id}_${e.id}` })) }));
+  const design = { hmiPartNumber: 'CM5-T7W', screens: [...screens, { id: 'screen_4', name: 'Recipes', purpose: '', elements: row.map((e) => ({ ...e, id: `s4_${e.id}` })) }], alarms: [], tags: [], notes: [], generatedAt: '' } as HmiDesign;
+  let k = 0;
+  const r = addNavEntry(design, 'screen_4', 'Recipes', () => `new${++k}`);
+  assert.ok(r.added && r.design.screens.every((s) => s.elements.filter((e) => e.kind === 'nav').length === 4), 'nav entry added on every screen');
+  const navs = r.design.screens[0].elements.filter((e) => e.kind === 'nav').sort((a, b) => a.x - b.x);
+  assert.ok(navs[0].x === 8 && navs[3].x + navs[3].w <= 384 && navs.every((e) => e.w === navs[0].w) && navs[1].x - (navs[0].x + navs[0].w) === 8, 'row keeps its span and gaps, equal widths');
+  assert.ok(navs[3].targetScreenId === 'screen_4' && navs[3].label === 'Recipes' && navs[3].y === 424 && navs[3].h === 48, 'new button targets the new screen, copied style');
+  assert.ok(addNavEntry(r.design, 'screen_4', 'Recipes', () => 'x').reason === 'No screen has a navigation bar.' || !addNavEntry(r.design, 'screen_4', 'Recipes', () => 'x').added, 'a second call adds nothing');
+  const tight = { ...design, screens: design.screens.map((s) => ({ ...s, elements: s.elements.map((e) => ({ ...e, w: 60, x: 8 + (e.x - 8) / 2 })) })) } as HmiDesign;
+  const t = addNavEntry(tight, 'screen_4', 'Recipes', () => 'y');
+  assert.ok(!t.added && t.design === tight && /no room/.test(t.reason ?? ''), 'no room: nothing changes, reason given');
 });
 
 console.log(`\n${passed} passed`);

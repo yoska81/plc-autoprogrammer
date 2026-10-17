@@ -1,6 +1,6 @@
 import { isIec, regionSpec } from '../standards/regions';
 import type { ProjectSnapshot } from './collect';
-import { getHmi } from '../hmi/hmiCatalog';
+import { getHmi, isCmore } from '../hmi/hmiCatalog';
 import { supplyText } from '../electrical/derive';
 import { cabinetPng } from '../electrical/render/renderToPng';
 import { calculations } from './docs/calcs';
@@ -372,7 +372,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
   }
   w.h2(p.profile.language === 'ladder' && p.ladder.rungs.length ? '5.6 Communication' : '5.3 Communication');
   w.bullets([
-    p.hmi ? `HMI ${p.hmi.hmiPartNumber} <-> PLC ${p.cpu.id}: Ethernet (CLICK Ethernet driver / Modbus TCP), ${p.hmi.tags.length} tags. HMI command bits use internal C memory; the PLC never relies on the HMI for safety.` : 'No HMI communication.',
+    p.hmi ? `HMI ${p.hmi.hmiPartNumber} <-> PLC ${p.cpu.id}: Ethernet (${(isCmore(getHmi(p.hmi.hmiPartNumber)) ? 'CLICK Ethernet driver / Modbus TCP' : `the panel maker's ${p.profile.vendor} driver`)}), ${p.hmi.tags.length} tags. HMI command bits use internal C memory; the PLC never relies on the HMI for safety.` : 'No HMI communication.',
     'Programming port: Ethernet (or serial) from the engineering laptop.',
     'IP addresses, subnet and gateway: to be assigned by the site; record them on the drawings.',
     'No connection to plant networks is included; if one is added, use a managed switch / firewall and keep the safety circuit hardwired.',
@@ -406,7 +406,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
     w.bullets([
       `${p.hmi.alarms.length} alarm(s) are configured (see 2.6). Each alarm is a PLC bit; the HMI shows the message in the alarm banner on every screen and on the Alarms screen.`,
       'Alarms latch in the PLC until the cause is removed and the operator resets; the reset conditions are given in the alarm table.',
-      'Alarm history: enable the C-more alarm log (date / time, acknowledge) during commissioning if the customer requires it.',
+      `Alarm history: enable the ${p.hmi && isCmore(getHmi(p.hmi.hmiPartNumber)) ? 'C-more' : 'panel'} alarm log (date / time, acknowledge) during commissioning if the customer requires it.`,
     ]);
   }
 

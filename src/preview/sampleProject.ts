@@ -395,8 +395,8 @@ const c = (tag: string, partNumber: string, quantity: number, fn: string, motorT
 export const DESIGN: ElectricalDesign = {
   inputs: INPUTS,
   components: [
-    c('ENC1', 'SCE-24EL2008LP', 1, 'Main enclosure 24x20x8 NEMA 12'),
-    c('SP1', 'SCE-24P20', 1, 'Back panel'),
+    c('ENC1', 'SCE-30EL2410LP', 1, 'Main enclosure 30x24x10 NEMA 12'),
+    c('SP1', 'SCE-30P24', 1, 'Back panel'),
     c('DS1', '22013003', 1, 'Main disconnect 30A'),
     c('DS1H', '14831111', 1, 'Disconnect handle'),
     c('DS1S', '14070520', 1, 'Disconnect shaft'),
@@ -447,7 +447,7 @@ export const DESIGN: ElectricalDesign = {
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '11';
+const SEED_VERSION = '12'; // 12: 30x24 enclosure (the 24x20 is too small for the real part footprints)
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }

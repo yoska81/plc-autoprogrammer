@@ -118,7 +118,7 @@ export function setupVariant(v: Variant) {
     elec.setDesign(design({
       supply: '600VAC-3PH', motors, ioWiring: io,
       components: [
-        c('ENC1', 'SCE-24EL2008LP', 1, 'Main enclosure 24x20x8'), c('SP1', 'SCE-24P20', 1, 'Back panel'),
+        c('ENC1', 'SCE-30EL2410LP', 1, 'Main enclosure 30x24x10'), c('SP1', 'SCE-30P24', 1, 'Back panel'),
         c('DS1', '22013003', 1, 'Main disconnect 30A'), c('DS1H', '14831111', 1, 'Disconnect handle'), c('DS1S', '14070520', 1, 'Disconnect shaft'),
         c('FU1', 'EHCC3DU', 1, 'Motor M1 branch fuses', 'M1'), c('FU1F', 'EDCC5', 3, 'Class CC fuses 5A for FU1', 'M1'),
         c('T1', 'CT-050-060-12-1', 1, 'Control transformer 600:120 V'),

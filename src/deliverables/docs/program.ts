@@ -1,4 +1,5 @@
 import type { ProjectSnapshot } from '../collect';
+import { getHmi, isCmore } from '../../hmi/hmiCatalog';
 import type { LadderElement, LadderOutput, Rung } from '../../plc/core/ladder';
 import { rungWrites } from '../../plc/core/ladder';
 import { describeOutput } from '../../plc/core/clickExport';
@@ -317,7 +318,7 @@ export function controllerTable(p: ProjectSnapshot): DocTable {
   if (!mods.length) rows.push(['Expansion', 'none', 'All I/O on the CPU']);
   const nIn = p.io.filter((x) => x.type === 'input').length, nOut = p.io.filter((x) => x.type === 'output').length;
   rows.push(['I/O used', `${nIn} DI / ${nOut} DO`, `Built-in capacity ${p.cpu.builtInInputs} DI / ${p.cpu.builtInOutputs} DO`]);
-  if (p.hmi) rows.push(['HMI link', 'Ethernet', `${p.hmi.hmiPartNumber} to the CPU Ethernet port (CLICK Ethernet driver / Modbus TCP); fixed IP addresses to be assigned on site`]);
+  if (p.hmi) rows.push(['HMI link', 'Ethernet', `${p.hmi.hmiPartNumber} to the CPU Ethernet port (${(isCmore(getHmi(p.hmi.hmiPartNumber)) ? 'CLICK Ethernet driver / Modbus TCP' : `the panel maker's ${p.profile.vendor} driver`)}); fixed IP addresses to be assigned on site`]);
   rows.push(['Programming', p.profile.language === 'ladder' ? 'Ladder diagram' : 'Structured Text', p.profile.language === 'ladder' ? `${p.ladder.rungs.length} rungs, ${(p.ladder.blocks ?? []).length} blocks` : '']);
   return makeTable([['Item', 16], ['Value', 34], ['Notes', 60]], rows);
 }

@@ -310,7 +310,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'door',
     widthMm: 214,
     heightMm: 158,
-    ratings: { family: 'Basic Panel', sizeIn: 7, touch: 'yes', protocols: 'PROFINET', supplyVolts: 24, cutoutWidthMm: 198, cutoutHeightMm: 142 },
+    ratings: { family: 'Basic Panel', sizeIn: 7, touch: 'resistive', protocols: 'PROFINET', supplyVolts: 24, cutoutWidthMm: 198, cutoutHeightMm: 142, resolutionPx: '800x480', displayIn: 7, ethernetPorts: 1, serialPorts: 0, usbPorts: 1, software: 'WinCC Basic (TIA Portal)', datasheet: 'https://apim.industry.siemens.cloud/ted/datasheet?format=pdf&caller=SIOS&mlfbs=6AV2123-2GB03-0AX0&language=en' },
     verified: true,
   },
   {
@@ -323,7 +323,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'door',
     widthMm: 330,
     heightMm: 245,
-    ratings: { family: 'Basic Panel', sizeIn: 12, touch: 'yes', protocols: 'PROFINET', supplyVolts: 24, cutoutWidthMm: 310, cutoutHeightMm: 221 },
+    ratings: { family: 'Basic Panel', sizeIn: 12, touch: 'resistive', protocols: 'PROFINET', supplyVolts: 24, cutoutWidthMm: 310, cutoutHeightMm: 221, resolutionPx: '1280x800', displayIn: 12, ethernetPorts: 1, serialPorts: 0, usbPorts: 1, software: 'WinCC Basic (TIA Portal)', datasheet: 'https://apim.industry.siemens.cloud/ted/datasheet?format=pdf&caller=SIOS&mlfbs=6AV2123-2MB03-0AX0&language=en' },
     verified: true,
   },
   {
@@ -336,7 +336,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'door',
     widthMm: 214,
     heightMm: 158,
-    ratings: { family: 'Comfort Panel', sizeIn: 7, touch: 'yes', protocols: 'PROFINET, MPI/PROFIBUS DP', supplyVolts: 24, cutoutWidthMm: 198, cutoutHeightMm: 142 },
+    ratings: { family: 'Comfort Panel', sizeIn: 7, touch: 'resistive', protocols: 'PROFINET, MPI/PROFIBUS DP', supplyVolts: 24, cutoutWidthMm: 198, cutoutHeightMm: 142, resolutionPx: '800x480', displayIn: 7, ethernetPorts: 2, serialPorts: 1, usbPorts: 3, software: 'WinCC Comfort (TIA Portal)', datasheet: 'https://apim.industry.siemens.cloud/ted/datasheet?format=pdf&caller=SIOS&mlfbs=6AV2124-0GC01-0AX0&language=en' },
     verified: true,
   },
   {
@@ -349,7 +349,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'door',
     widthMm: 330,
     heightMm: 241,
-    ratings: { family: 'Comfort Panel', sizeIn: 12.1, resolution: '1280x800', touch: 'yes', supplyVolts: 24, cutoutWidthMm: 310, cutoutHeightMm: 221 },
+    ratings: { family: 'Comfort Panel', sizeIn: 12.1, touch: 'resistive', supplyVolts: 24, cutoutWidthMm: 310, cutoutHeightMm: 221, resolutionPx: '1280x800', displayIn: 12.1, ethernetPorts: 2, serialPorts: 1, usbPorts: 3, software: 'WinCC Comfort (TIA Portal)', datasheet: 'https://apim.industry.siemens.cloud/ted/datasheet?format=pdf&caller=SIOS&mlfbs=6AV2124-0MC01-0AX0&language=en' },
     verified: true,
   },
   {
@@ -360,7 +360,7 @@ export const SIEMENS: CatalogPart[] = [
     family: 'SIMATIC HMI Unified Basic Panels',
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&caller=SIOS&mlfbs=6AV21233GB320AW0&language=en',
     mount: 'door',
-    ratings: { family: 'Unified Basic Panel', sizeIn: 7, resolution: '800x480', touch: 'yes', ports: '1x Gigabit Ethernet RJ45, 2x USB', protocols: 'PROFINET', supplyVolts: 24 },
+    ratings: { family: 'Unified Basic Panel', sizeIn: 7, touch: 'capacitive', ports: '1x Gigabit Ethernet RJ45, 2x USB', protocols: 'PROFINET', supplyVolts: 24, resolutionPx: '800x480', displayIn: 7, ethernetPorts: 1, serialPorts: 0, usbPorts: 2, software: 'WinCC Unified Basic (TIA Portal)', datasheet: 'https://apim.industry.siemens.cloud/ted/datasheet?format=pdf&caller=SIOS&mlfbs=6AV2123-3GB32-0AW0&language=en', specsSource: 'https://apim.industry.siemens.cloud/ted/datasheet?format=pdf&caller=SIOS&mlfbs=6AV2123-3GB32-0AW0&language=en ; touch type: https://cache.industry.siemens.com/dl/files/166/109826166/att_1161632/v1/HWUnifiedBasicPanelsenUS_en-US.pdf' },
     verified: true,
   },
   {
@@ -763,7 +763,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 18,
     heightMm: 90,
-    ratings: { family: '5SY4', amps: 6, poles: 1, curve: 'C', volts: '230/400 VAC', interruptingKA: 10, ul: '1077' },
+    ratings: { family: '5SY4', amps: 6, poles: 1, curve: 'C', volts: '230/400 VAC', interruptingKA: 10, ul: '1077 (supplementary protector, not branch rated)', interruptingKAUL1077: 5, branchRated: 'no', interruptingNote: '10 kA per IEC/EN 60898; 5 kA per UL 1077 / CSA C22.2 No.235' },
     verified: true,
   },
   {
@@ -944,7 +944,7 @@ export const SIEMENS: CatalogPart[] = [
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=8WH9000-1PA00&language=en&caller=SIOS',
     mount: 'backplate',
     widthMm: 2.2,
-    ratings: { family: '8WH1', forUse: '8WH1000-0AF.. / 0AG.. / 0CF07 / 0CG07', kind: 'end plate' },
+    ratings: { family: '8WH1', forUse: '8WH through-type screw terminals, terminal size 2.5-10 mm2 (8WH1000-0AF.. / 0AG.. / 0CF07 / 0CG07)', kind: 'end plate' },
     verified: true,
   },
   {

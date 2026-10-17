@@ -2,7 +2,7 @@ import type { ProjectSnapshot } from './collect';
 import { billOfMaterials } from '../electrical/derive';
 import { getPart } from '../electrical/catalog';
 import { supplierOfPart } from '../electrical/catalogs';
-import { getHmi } from '../hmi/hmiCatalog';
+import { getHmi, hmiMakerOf } from '../hmi/hmiCatalog';
 import { sparePartsTable } from './docs/maintenance';
 import { isGroup } from './docs/table';
 import { priceOf, type PartPrice } from '../electrical/prices';
@@ -75,7 +75,7 @@ export const SPARES_ORDER: OrderOptions = { spares: true, labels: false, sparesO
 
 /** Supplier of a catalog part: the shop its product page is on. */
 function supplierOf(partNumber: string): string {
-  if (getHmi(partNumber)) return 'AutomationDirect';
+  if (getHmi(partNumber) && !getHmi(partNumber)!.catalog) return 'AutomationDirect';
   return supplierOfPart(getPart(partNumber)) ?? 'Supplier to confirm';
 }
 
@@ -109,7 +109,7 @@ export function buildOrderList(p: ProjectSnapshot, o: OrderOptions): OrderList {
       add(l.partNumber, l.manufacturer, l.description, l.qty, l.tags, 'bom');
     }
   } else if (p.hmi) {
-    add(p.hmi.hmiPartNumber, 'AutomationDirect', getHmi(p.hmi.hmiPartNumber)?.description ?? 'Operator touch panel', 1, ['HMI1'], 'bom');
+    add(p.hmi.hmiPartNumber, hmiMakerOf(p.hmi.hmiPartNumber), getHmi(p.hmi.hmiPartNumber)?.description ?? 'Operator touch panel', 1, ['HMI1'], 'bom');
   }
 
   if (o.spares) {
