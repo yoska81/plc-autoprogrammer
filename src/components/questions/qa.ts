@@ -1,6 +1,11 @@
 import { useSpecStore } from '../../store/useSpecStore';
 import { runDerived, useProjectsStore } from '../../store/useProjectsStore';
-import { SOURCE_LABEL, useQuestionStore, type Question, type QuestionSource } from './useQuestionStore';
+import { SOURCE_LABEL, setExternalKnowledge, useQuestionStore, type Question, type QuestionSource } from './useQuestionStore';
+import { useReviewStore } from '../../review/useReviewStore';
+import { useProgramStore } from '../../store/useProgramStore';
+import type { Finding, FindingMark } from '../../review/types';
+import type { KnownAnswer } from './knowledge';
+import { isTechnicalIssue } from './classify';
 import { useElectricalStore } from '../../store/useElectricalStore';
 import { useHmiStore } from '../../store/useHmiStore';
 import { useDraftStore } from '../../store/useDraftStore';
@@ -16,27 +21,53 @@ import type { SpecSectionId } from '../../spec/types';
 
 /** "A: …" for a question that has an answer (or uses the AI's assumption). */
 export function answerText(q: Question): string {
+  if (q.status === 'dismissed') return 'Not applicable — do not ask again.';
   if (q.status === 'assumed') return `(AI's assumption: ${q.assumption && q.assumption !== q.text ? q.assumption : 'use the engineer\'s judgement'})`;
   return q.answer.trim();
 }
 
-/** Answered questions as Q/A text, in the order asked (open questions are not part of the spec yet). */
+/** The label review decisions carry in the Q&A: no stage is out of date because of one (they read it, though). */
+export const DECISION_LABEL = 'Design review decision';
+
+/** Design review findings the user resolved or accepted, with the reason (what the user decided). */
+export function reviewDecisions(findings: Finding[], marks: Record<string, FindingMark>): KnownAnswer[] {
+  const seen = new Set<string>();
+  return findings.flatMap((f) => {
+    const m = marks[f.id];
+    if (!m || m.status === 'open' || seen.has(f.id) || isTechnicalIssue(f.title)) return [];
+    seen.add(f.id);
+    const question = f.detail && f.detail !== f.title ? `${f.title}: ${f.detail}` : f.title;
+    return [{ ref: f.id, question, answer: `${m.status === 'resolved' ? 'Resolved' : 'Accepted as is'}${m.reason.trim() ? `: ${m.reason.trim()}` : ''}`, where: { label: SOURCE_LABEL.review, route: '/review' } }];
+  });
+}
+
+const decisionsNow = () => {
+  const { checks, ai, marks } = useReviewStore.getState();
+  return reviewDecisions([...checks, ...(ai?.findings ?? [])], marks);
+};
+
+/**
+ * Answered questions as Q/A text, in the order asked (open questions are not part of the spec yet),
+ * then the design review decisions. Automatic answers are left out: they repeat an answer already
+ * here, and the AI rewords its questions on every run (the spec would change with each run).
+ */
 // A fixed order, so revisiting a page (which re-registers its questions) never changes the spec text.
 const SOURCE_ORDER = Object.keys(SOURCE_LABEL);
-export function qaText(questions: Question[]): string {
-  return questions
-    .filter((q) => q.status !== 'open')
+export function qaText(questions: Question[], decisions: KnownAnswer[] = []): string {
+  return [...questions
+    .filter((q) => q.status !== 'open' && !q.known)
     .slice()
     .sort((a, b) => SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    .map((q) => `Q (${SOURCE_LABEL[q.source]}): ${q.text.trim()}\nA: ${answerText(q)}`)
-    .join('\n');
+    .map((q) => `Q (${SOURCE_LABEL[q.source]}): ${q.text.trim()}\nA: ${answerText(q)}`),
+  ...decisions.slice().sort((a, b) => (a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0)).map((d) => `Q (${DECISION_LABEL}): ${d.question.trim()}\nA: ${d.answer}`),
+  ].join('\n');
 }
 
 const listFor = (projectId: string | null) => useQuestionStore.getState().byProject[projectId ?? 'default'] ?? [];
 
 /** Write the open project's Q&A into the spec (only when it changed). */
 export function syncQaIntoSpec(): void {
-  const qa = qaText(listFor(useProjectsStore.getState().activeId));
+  const qa = qaText(listFor(useProjectsStore.getState().activeId), decisionsNow());
   const spec = useSpecStore.getState();
   if ((spec.sections.qa ?? '') === qa) return;
   // Derived from the question list (the answers themselves are the user's change).
@@ -52,6 +83,7 @@ type Item = { text: string; assumption?: string; section?: SpecSectionId };
  * the review page and registered there.)
  */
 function stageQuestions(): Record<Exclude<QuestionSource, 'review'>, Item[] | null> {
+  const ladder = useProgramStore.getState().ladder;
   const plan = useDraftStore.getState().drafts['io.plan'] as { questions?: string[] } | null | undefined;
   const el = useElectricalStore.getState().design;
   const hmi = useHmiStore.getState().design;
@@ -60,6 +92,7 @@ function stageQuestions(): Record<Exclude<QuestionSource, 'review'>, Item[] | nu
     io: plan?.questions ? plan.questions.map((text) => ({ text })) : null,
     electrical: el ? userNotes(el).map((n) => ({ text: n, assumption: n })) : null,
     hmi: hmi ? userNotes(hmi).map((n) => ({ text: n, assumption: n, section: 'operator' as const })) : null,
+    program: ladder.rungs.length ? (ladder.sequence?.questions ?? []).map((text) => ({ text, section: 'sequence' as const })) : null,
   };
 }
 
@@ -81,11 +114,18 @@ let installed = false;
 export function installQaSync(): void {
   if (installed) return;
   installed = true;
+  setExternalKnowledge(decisionsNow);
   useQuestionStore.subscribe(syncQaIntoSpec);
   useProjectsStore.subscribe(syncQaIntoSpec);
-  for (const store of [useSpecStore, useElectricalStore, useHmiStore, useDraftStore, useProjectsStore] as { subscribe: (cb: () => void) => () => void }[]) store.subscribe(registerStageQuestions);
+  // A review decision answers the questions that ask the same thing, and is part of the Q&A.
+  useReviewStore.subscribe((s, prev) => {
+    if (s.marks === prev.marks && s.ai === prev.ai && s.checks === prev.checks) return;
+    runDerived(() => useQuestionStore.getState().resolveKnown(useProjectsStore.getState().activeId));
+    syncQaIntoSpec();
+  });
+  for (const store of [useSpecStore, useElectricalStore, useHmiStore, useDraftStore, useProgramStore, useProjectsStore] as { subscribe: (cb: () => void) => () => void }[]) store.subscribe(registerStageQuestions);
   registerStageQuestions();
   // Project data are loaded into the spec store on project switch; re-sync after it.
-  useSpecStore.subscribe((s, prev) => { if (s.sections !== prev.sections && (s.sections.qa ?? '') !== qaText(listFor(useProjectsStore.getState().activeId))) syncQaIntoSpec(); });
+  useSpecStore.subscribe((s, prev) => { if (s.sections !== prev.sections && (s.sections.qa ?? '') !== qaText(listFor(useProjectsStore.getState().activeId), decisionsNow())) syncQaIntoSpec(); });
   syncQaIntoSpec();
 }

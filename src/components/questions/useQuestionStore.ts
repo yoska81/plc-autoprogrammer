@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SpecSectionId } from '../../spec/types';
 import { isTechnicalIssue } from './classify';
+import { findKnown, type KnownAnswer, type KnownWhere } from './knowledge';
 import { useProjectsStore, runDerived } from '../../store/useProjectsStore';
 
 /**
@@ -11,13 +12,19 @@ import { useProjectsStore, runDerived } from '../../store/useProjectsStore';
  * switches; an answer is merged into the spec once ("merged").
  */
 
-export type QuestionSource = 'spec' | 'io' | 'electrical' | 'hmi' | 'review';
+export type QuestionSource = 'spec' | 'io' | 'electrical' | 'hmi' | 'program' | 'review';
 
 export const SOURCE_LABEL: Record<QuestionSource, string> = {
-  spec: 'Machine description', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI', review: 'Design review',
+  spec: 'Machine description', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI', program: 'PLC program', review: 'Design review',
 };
 
-export type QuestionStatus = 'open' | 'answered' | 'assumed';
+/** Page where each source's questions are asked (for "answered in …" links). */
+export const SOURCE_ROUTE: Record<QuestionSource, string> = {
+  spec: '/spec', io: '/io', electrical: '/electrical?tab=design', hmi: '/hmi', program: '/program', review: '/review',
+};
+
+/** `dismissed`: "Not applicable — don't ask again" (questions that ask the same thing are dismissed too). */
+export type QuestionStatus = 'open' | 'answered' | 'assumed' | 'dismissed';
 
 export interface Question {
   /** Stable id from the source and the question text. */
@@ -34,6 +41,46 @@ export interface Question {
   section?: SpecSectionId;
   /** Legacy: answers used to be merged into the spec sections (kept for old data). */
   merged: boolean;
+  /** Answered automatically: the same question was already answered there (the answer is copied from it). */
+  known?: { ref: string; question: string; where: KnownWhere };
+  /** The user reopened an automatic answer: ask it even though a similar one is answered. */
+  ask?: boolean;
+}
+
+/** What the user answered in this question list (automatic answers only copy these). */
+export function knownFromQuestions(list: Question[]): KnownAnswer[] {
+  return list.filter((q) => q.status !== 'open' && !q.known).map((q) => ({
+    ref: q.id, question: q.text, dismissed: q.status === 'dismissed' || undefined,
+    answer: q.status === 'answered' ? q.answer.trim() : q.status === 'dismissed' ? 'Not applicable' : `AI's assumption: ${q.assumption && q.assumption !== q.text ? q.assumption : "the engineer's judgement"}`,
+    where: { label: SOURCE_LABEL[q.source], route: SOURCE_ROUTE[q.source] },
+  }));
+}
+
+/** Answers given outside the question list (design review decisions); set by ./qa. */
+let external: () => KnownAnswer[] = () => [];
+export function setExternalKnowledge(fn: () => KnownAnswer[]): void { external = fn; }
+
+/**
+ * Answer every open question the user already answered somewhere (in other words, on another page,
+ * as a review decision), and keep automatic answers in step with the answer they copy.
+ */
+export function applyKnown(list: Question[]): Question[] {
+  const known = [...knownFromQuestions(list), ...external()];
+  let changed = false;
+  const next = list.map((q) => {
+    if (q.ask || (q.status !== 'open' && !q.known)) return q;
+    const k = findKnown(q.text, known.filter((x) => x.ref !== q.id));
+    if (!k) {
+      if (!q.known) return q;
+      changed = true;
+      return { ...q, status: 'open' as const, answer: '', known: undefined };
+    }
+    const status: QuestionStatus = k.dismissed ? 'dismissed' : 'answered';
+    if (q.known?.ref === k.ref && q.answer === k.answer && q.status === status) return q;
+    changed = true;
+    return { ...q, status, answer: k.answer, known: { ref: k.ref, question: k.question, where: k.where }, merged: false };
+  });
+  return changed ? next : list;
 }
 
 
@@ -50,6 +97,8 @@ interface QuestionStore {
   sync: (projectId: string | null, source: QuestionSource, items: { text: string; assumption?: string; section?: SpecSectionId }[]) => void;
   answer: (projectId: string | null, id: string, answer: string, status: Exclude<QuestionStatus, 'open'>) => void;
   reopen: (projectId: string | null, id: string) => void;
+  /** Re-check open questions against what is answered (after a design review decision). */
+  resolveKnown: (projectId: string | null) => void;
   markMerged: (projectId: string | null, ids: string[]) => void;
 }
 
@@ -83,15 +132,24 @@ export const useQuestionStore = create<QuestionStore>()(
           else if (q.status !== 'open') next.push(q);
         }
         next.push(...byId.values());
+        const resolved = applyKnown(next);
+        if (resolved !== next) return { byProject: { ...s.byProject, [key(projectId)]: resolved } };
         const same = next.length === list.length && next.every((q, i) => q === list[i]);
         return same ? s : { byProject: { ...s.byProject, [key(projectId)]: next } };
       }),
+      // An answer given here also answers the other questions that ask the same thing.
       answer: (projectId, id, answer, status) => set((s) => ({
-        byProject: { ...s.byProject, [key(projectId)]: (s.byProject[key(projectId)] ?? []).map((q) => (q.id === id ? { ...q, answer, status, date: now(), merged: false } : q)) },
+        byProject: { ...s.byProject, [key(projectId)]: applyKnown((s.byProject[key(projectId)] ?? []).map((q) => (q.id === id ? { ...q, answer, status, date: now(), merged: false, known: undefined } : q))) },
       })),
+      // Reopening an automatic answer asks the question for real (it is not answered automatically again).
       reopen: (projectId, id) => set((s) => ({
-        byProject: { ...s.byProject, [key(projectId)]: (s.byProject[key(projectId)] ?? []).map((q) => (q.id === id ? { ...q, status: 'open' as const, merged: false } : q)) },
+        byProject: { ...s.byProject, [key(projectId)]: applyKnown((s.byProject[key(projectId)] ?? []).map((q) => (q.id === id ? { ...q, status: 'open' as const, merged: false, ...(q.known ? { known: undefined, answer: '', ask: true } : {}) } : q))) },
       })),
+      resolveKnown: (projectId) => set((s) => {
+        const list = s.byProject[key(projectId)] ?? [];
+        const next = applyKnown(list);
+        return next === list ? s : { byProject: { ...s.byProject, [key(projectId)]: next } };
+      }),
       markMerged: (projectId, ids) => set((s) => ({
         byProject: { ...s.byProject, [key(projectId)]: (s.byProject[key(projectId)] ?? []).map((q) => (ids.includes(q.id) ? { ...q, merged: true } : q)) },
       })),
@@ -124,7 +182,7 @@ export function useActiveProjectId(): string | null {
 /** Open questions per source, for badges. */
 export function useOpenCounts(): Record<QuestionSource, number> {
   const list = useQuestions();
-  const out: Record<QuestionSource, number> = { spec: 0, io: 0, electrical: 0, hmi: 0, review: 0 };
+  const out: Record<QuestionSource, number> = { spec: 0, io: 0, electrical: 0, hmi: 0, program: 0, review: 0 };
   for (const q of list) if (q.status === 'open') out[q.source]++;
   return out;
 }

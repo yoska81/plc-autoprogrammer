@@ -144,7 +144,7 @@ export default function App() {
         label: 'HMI screens', to: '/hmi', stage: 'hmi', questions: openQ.hmi,
       },
       {
-        label: 'PLC program', to: '/program', stage: 'program',
+        label: 'PLC program', to: '/program', stage: 'program', questions: openQ.program,
         children: [
           { label: 'I/O addressing', to: '/plc' },
           { label: 'Simulation', to: '/simulate' },

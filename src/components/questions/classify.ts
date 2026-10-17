@@ -65,3 +65,9 @@ export function userNotes(design: { notes: string[]; askUser?: string[] } | null
 export function isIssueNote(design: { askUser?: string[] }, note: string): boolean {
   return design.askUser ? !design.askUser.includes(note) : isTechnicalIssue(note);
 }
+
+/**
+ * Prompt rule for every AI that asks questions or lists assumptions: the spec's "Questions and answers"
+ * (answers from every page and the design review decisions) are settled.
+ */
+export const ANSWERED_RULE = `The specification's "Questions and answers" section is what the customer already answered on any page (machine description, I/O list, electrical design, HMI, PLC program, design review) and the design review decisions. Those are settled: use the answers in the design, never ask any of them again in other words, and never restate one as an assumption to confirm (not even "the customer confirmed X, so confirm Y"). An answer "Not applicable — do not ask again" means: do not ask about that at all. Ask only about what is still unknown.`;

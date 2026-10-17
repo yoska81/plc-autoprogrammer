@@ -8,7 +8,7 @@ import { checkDesign, fixDesignLayout, layoutBands, MIN_TOUCH, GAP } from '../..
 import { specToText, type SpecSections } from '../../spec/types';
 import { callClaude, type RichTurn } from './anthropic';
 import type { HmiTag } from '../../hmi/types';
-import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes } from '../../components/questions/classify';
+import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes, ANSWERED_RULE } from '../../components/questions/classify';
 
 const obj = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 const ns = { type: ['string', 'null'] };
@@ -119,6 +119,7 @@ PLC ADDRESSING (the PLC program will be written to match these tags exactly)
 ${guidelines ? `Guidelines:\n${guidelines}\n` : ''}${comms ? `PLC communication notes:\n${comms}\n` : ''}
 "machineName": short machine name for the header. "notes": what must be confirmed (passwords per level, recipe needs, missing information).
 ${NOTE_KINDS_RULE}
+${ANSWERED_RULE}
 "explanation": a short summary of the screens for the customer.`;
 }
 

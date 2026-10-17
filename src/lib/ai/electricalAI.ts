@@ -8,7 +8,7 @@ import { vendorPreference } from '../../store/useProjectStore';
 import type { CatalogPart } from '../../electrical/types';
 import { SUPPLY_INFO } from '../../standards/regions';
 import { callClaude } from './anthropic';
-import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes } from '../../components/questions/classify';
+import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes, ANSWERED_RULE } from '../../components/questions/classify';
 import { getPart } from '../../electrical/catalog';
 import { smallestEnclosure, type DrawingContext } from '../../electrical/derive';
 
@@ -109,6 +109,7 @@ Design practice to follow:
 - ioWiring: one entry for every PLC I/O point in the I/O list, with the field device tag, type, and "location": "Cabinet door" for pushbuttons, selectors, pilot lights and the E-stop on the panel; "Cabinet" for devices inside it (safety relay status, overload contacts); otherwise the machine zone where the device is mounted (e.g. "Infeed conveyor", "Pusher station").
 - machine: the field (machine) wiring outside the cabinet. "zones" = the machine areas from the specification in order. Put a junction box (tags JB1, JB2…) in each zone that has 4 or more field devices, so one multi-core trunk cable runs from the cabinet to the box; other devices get a home-run cable straight to the cabinet terminals. "routing" gives every field device tag its junction box tag or null. "motorLocations" gives each motor's zone. A junction box partNumber may be a small catalog enclosure, else null.
 - "notes": every assumption that must be confirmed (motor FLA, cable lengths, sensor types, SCCR, local codes).
+${ANSWERED_RULE}
 ${NOTE_KINDS_RULE}
 - "motors": every motor the panel drives: the designer's motor list exactly as given, plus any other motor the specification mentions (estimate HP from the description when not stated and say so in "notes").
 - "explanation": a short plain-language summary of the panel for the customer.`;
