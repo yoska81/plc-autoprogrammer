@@ -212,8 +212,8 @@ export default function SettingsPage() {
               </select>
               <p className="text-xs text-gray-400 mt-1">
                 Fast: small tasks (naming HMI items, choosing equipment) think briefly, the I/O list, cycle and machine model at medium,
-                program revisions and the design review at high — never deeper than the thinking depth above. A simple machine is built in
-                1–3 minutes. Thorough: every task at the thinking depth above.
+                program revisions and the design review at high — never deeper than the thinking depth above. Several times faster
+                than Thorough. Thorough: every task at the thinking depth above.
               </p>
             </div>
             <div>

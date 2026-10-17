@@ -32,7 +32,7 @@ import { setClaudeInterceptor, type ClaudeOptions } from '../src/lib/ai/anthropi
 import { clearAiCache, setAiCacheEnabled } from '../src/lib/ai/cache';
 import { aiBusyMs, setAiClock, setAiTimingQuiet, useAiTimingStore } from '../src/lib/ai/timing';
 import { organizeSpec } from '../src/lib/ai/specAI';
-import { runUpdateAll, setUpdatePipelining, type StepResult, type UpdateStep } from '../src/spec/updateAll';
+import { runUpdateAll, setLegacyUpdate, type StepResult, type UpdateStep } from '../src/spec/updateAll';
 import { EMPTY_SECTIONS } from '../src/spec/types';
 import { DEFAULT_STAGE_MODES, useSettingsStore, type StageMode } from '../src/store/useSettingsStore';
 import { useSpecStore } from '../src/store/useSpecStore';
@@ -82,22 +82,34 @@ function recordings(machine: string): Map<Stage, string[]> | null {
 let vnow = 0;
 const pending: { at: number; resolve: () => void }[] = [];
 let ticking = false;
+let added = 0;
 function aiSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => { pending.push({ at: vnow + ms, resolve }); tick(); });
+  return new Promise((resolve) => { pending.push({ at: vnow + ms, resolve }); added++; tick(); });
 }
-function tick() {
+function tick(seen = -1) {
   if (ticking) return;
   ticking = true;
-  // a few real ms: lets hashing (WebCrypto runs off the main thread) and the engines finish first
+  // a few real ms: lets hashing (WebCrypto runs off the main thread) and the engines finish first;
+  // moves on only once no new request arrived during the wait
   setTimeout(() => {
     ticking = false;
     if (!pending.length) return;
+    if (added !== seen) { tick(added); return; }
     pending.sort((a, b) => a.at - b.at);
     const next = pending.shift()!;
     vnow = Math.max(vnow, next.at);
     next.resolve();
     if (pending.length) tick();
   }, 4);
+}
+
+/** A recorded reply cut to what the request's schema asks for (a leaner request writes less). */
+function prune(v: unknown, schema: Record<string, unknown> | undefined): unknown {
+  if (!schema || v === null || typeof v !== 'object') return v;
+  if (Array.isArray(v)) return v.map((x) => prune(x, schema.items as Record<string, unknown> | undefined));
+  const props = schema.properties as Record<string, Record<string, unknown>> | undefined;
+  if (!props) return v;
+  return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([k]) => k in props).map(([k, x]) => [k, prune(x, props[k])]));
 }
 
 /** Replay: each stage's recorded replies in order (the last one repeats), after the modelled latency (or at once). */
@@ -109,7 +121,8 @@ function replay(rec: Map<Stage, string[]>, instant: boolean) {
     if (!list?.length) throw new Error(`No recording for stage "${stage}"`);
     const n = used.get(stage) ?? 0;
     used.set(stage, n + 1);
-    const text = list[Math.min(n, list.length - 1)];
+    const recorded = list[Math.min(n, list.length - 1)];
+    const text = opts.schema ? JSON.stringify(prune(JSON.parse(recorded), opts.schema)) : recorded;
     if (!instant) await aiSleep(modelledLatencyMs(opts.effort, text.length));
     return { text, reasoning: null };
   });
@@ -141,7 +154,7 @@ async function runOnce(machine: string, config: Config, rec: Map<Stage, string[]
   setAiCacheEnabled(!before);
   vnow = 0;
   setAiClock(instant ? null : () => vnow);
-  setUpdatePipelining(!before);
+  setLegacyUpdate(before);
   const modes: Record<keyof typeof DEFAULT_STAGE_MODES, StageMode> = before ? { equipment: 'ai', electrical: 'ai', hmi: 'ai', program: 'ai' } : DEFAULT_STAGE_MODES;
   useSettingsStore.setState({ provider: 'anthropic', anthropicApiKey: 'bench', effort: 'max', speed: before ? 'thorough' : 'fast', smallTaskModel: '', stageModes: modes });
   if (setup.region) useProjectStore.getState().setInfo({ region: setup.region });

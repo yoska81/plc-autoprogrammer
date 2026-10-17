@@ -47,7 +47,7 @@ export default function StartCleanBanner() {
     const steps: UpdateStep[] = ['equipment', ...(cleanedIo ? [] : ['io' as const]), 'electrical', 'hmi', 'program'];
     const results = await runStages(steps, 'Building the project from your description');
     const name = (r: StepResult) => STEP_LABEL[r.step];
-    setOutcome({ ok: results.filter((r) => r.status === 'done' || r.status === 'proposal').map(name), failed: results.filter((r) => r.status === 'failed').map((r) => `${name(r)}: ${r.message}`) });
+    setOutcome({ ok: results.filter((r) => r.status === 'done' || r.status === 'proposal' || (r.status === 'skipped' && r.message.startsWith('Up to date'))).map(name), failed: results.filter((r) => r.status === 'failed').map((r) => `${name(r)}: ${r.message}`) });
     setStep('built');
   };
 

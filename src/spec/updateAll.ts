@@ -53,8 +53,8 @@ const ORDER: UpdateStep[] = ['equipment', 'io', 'electrical', 'hmi', 'program'];
 const DEPS: Record<UpdateStep, UpdateStep[]> = { equipment: [], io: [], electrical: ['equipment', 'io'], hmi: ['equipment', 'io'], program: ['equipment', 'io', 'electrical', 'hmi'] };
 
 let pipelining = true;
-/** Test hook (tools/bench-update.ts): the old order — the I/O list asked only after the equipment, no early cycle request. */
-export function setUpdatePipelining(on: boolean) { pipelining = on; }
+/** Test hook (tools/bench-update.ts): the old way — the I/O list asked (in full) only after the equipment, no early cycle request. */
+export function setLegacyUpdate(on: boolean) { pipelining = !on; }
 
 export const stageMode = (step: ModeStage): StageMode => useSettingsStore.getState().stageModes?.[step] ?? DEFAULT_STAGE_MODES[step];
 
@@ -95,12 +95,9 @@ export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) 
   await Promise.all(running.values());
 }
 
-/** Upstream stages whose new result makes this one out of date even when its fingerprints match. */
-const UPSTREAM: Record<UpdateStep, UpdateStep[]> = { equipment: [], io: [], electrical: ['equipment', 'io'], hmi: ['equipment', 'io'], program: ['equipment', 'io', 'electrical', 'hmi'] };
-
-/** A reason to skip the stage: it is up to date (its inputs' fingerprints match) and nothing before it changed in this run. */
+/** A reason to skip the stage: it is up to date (its inputs' fingerprints match) and nothing it depends on changed in this run. */
 function upToDate(step: UpdateStep, ctx: RunCtx): string | null {
-  if (UPSTREAM[step].some((s) => ctx.changed.has(s))) return null;
+  if (DEPS[step].some((s) => ctx.changed.has(s))) return null;
   if (step === 'program' && !useProgramStore.getState().ladder.rungs.length) return null;
   return stagesNow()[step].status === 'ready' ? 'Up to date: nothing it depends on changed.' : null;
 }
@@ -178,7 +175,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
 
     if (step === 'io') {
       const { profile, cpu } = plc();
-      const r = await generateIOFromSpec({ ...ai, spec, existing: ioNow(), profile, cpu });
+      const r = await generateIOFromSpec({ ...ai, spec, existing: ioNow(), profile, cpu, lean: pipelining });
       // Applied once the equipment step (running alongside) has chosen the CPU and modules.
       if (stageMode('equipment') !== 'quick' && !(await ctx.after('equipment'))) return false;
       const before = ioFingerprint(ioNow());
