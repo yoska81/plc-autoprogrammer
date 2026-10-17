@@ -1,8 +1,9 @@
 import { priceSource, unitPrice, userPriced, type OrderList } from './purchasing';
 import { priceBasis } from './purchaseSummaryPdf';
+import { hoursText, type BuildEstimate } from './buildTime';
 
-/** Order list workbook: the panel order, and the recommended spares on their own sheet when given. */
-export async function orderListXlsx(ol: OrderList, projectName: string, spares: OrderList | null): Promise<Blob> {
+/** Order list workbook: the panel order, the recommended spares and the shop build time on their own sheets when given. */
+export async function orderListXlsx(ol: OrderList, projectName: string, spares: OrderList | null, build: BuildEstimate | null = null): Promise<Blob> {
   const { default: ExcelJS } = await import('exceljs');
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ISA Auto Programmer';
@@ -33,6 +34,21 @@ export async function orderListXlsx(ol: OrderList, projectName: string, spares: 
     for (const g of spares.groups) for (const l of g.lines) sw.addRow([g.supplier, l.partNumber, l.manufacturer, l.description, l.spareQty, l.packQty > 1 ? `pack of ${l.packQty}` : 'each', l.orderQty, unitPrice(l) ?? 'price to confirm', l.extended ?? null]);
     sw.addRow(['', '', '', 'Total of verified prices', null, '', null, null, spares.total]).font = { bold: true };
     sw.columns.forEach((c, i) => { c.width = [18, 20, 16, 60, 11, 13, 10, 15, 15][i]; });
+  }
+  if (build) {
+    const bw = wb.addWorksheet('Build time');
+    bw.addRow([`${projectName} — shop build time (estimate)`]).font = { bold: true, size: 13 };
+    bw.addRow(['Task', 'Item', 'Quantity', 'Rate', 'Unit', 'Hours', 'Counted from']).font = { bold: true };
+    for (const t of build.byTask) {
+      for (const l of build.lines.filter((x) => x.task === t.task)) bw.addRow([l.task, l.item, l.qty, l.rate, l.unit, Math.round(l.hours * 100) / 100, l.basis]);
+      bw.addRow(['', `Subtotal ${t.task}`, null, null, '', Math.round(t.hours * 100) / 100]).font = { bold: true };
+    }
+    bw.addRow(['', 'Total build time', null, null, '', Math.round(build.totalHours * 100) / 100]).font = { bold: true };
+    if (build.cost) bw.addRow(['', `Labour at $${build.hourlyRate}/h (USD)`, null, null, '', Math.round(build.cost * 100) / 100]).font = { bold: true };
+    bw.addRow([]);
+    bw.addRow([`Total ${hoursText(build.totalHours)}. Quantities from the design; rates are the shop's (Deliverables → Shop build time). Leaves out engineering, programming, purchasing and packing.`]);
+    for (const n of build.notes) bw.addRow([n]);
+    bw.columns.forEach((c, i) => { c.width = [26, 52, 10, 8, 16, 9, 44][i]; });
   }
   return new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }

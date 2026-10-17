@@ -8,6 +8,8 @@ import { Spinner } from '../components/common';
 import { useUi } from '../store/useUiStore';
 import { useEditsStore } from '../edits/useEditsStore';
 import { EditableCell, EditedMark } from '../edits/EditedMark';
+import { buildEstimate } from './buildTime';
+import { shopRates } from './useShopRatesStore';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40 flex items-center gap-2';
 const primary = 'px-3 py-1.5 text-sm rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2';
@@ -167,7 +169,7 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
               const { buildPurchaseSummaryPdf } = await import('./purchaseSummaryPdf');
               saveBlob(`${fileBase}_purchase_summary.pdf`, await buildPurchaseSummaryPdf(p, { spares, labels }));
             })}>{busy === 'pdf' && <Spinner />}Purchase summary PDF</button>
-            <button className={btn} disabled={Boolean(busy)} onClick={run('xlsx', async () => saveBlob(`${fileBase}_order_list.xlsx`, await orderListXlsx(ol, p.projectName, sp)))}>{busy === 'xlsx' && <Spinner />}Order list (Excel)</button>
+            <button className={btn} disabled={Boolean(busy)} onClick={run('xlsx', async () => saveBlob(`${fileBase}_order_list.xlsx`, await orderListXlsx(ol, p.projectName, sp, buildEstimate(p, shopRates().rates, shopRates().hourlyRate))))}>{busy === 'xlsx' && <Spinner />}Order list (Excel)</button>
             <button className={btn} disabled={Boolean(busy)} onClick={run('csv', () => saveBlob(`${fileBase}_order_list.csv`, new Blob([orderListCsv(ol) + (sp?.groups.length ? `\n\nRecommended spares (separate, optional order)\n${orderListCsv(sp)}` : '')], { type: 'text/csv' })))}>Order list (CSV)</button>
           </div>
           {note && <p role="status" className="text-xs text-steel-700 bg-brand-50 border border-brand-200 rounded p-2">{note}</p>}

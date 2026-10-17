@@ -17,6 +17,8 @@ import { useProjectsStore } from '../store/useProjectsStore';
 import { commissioningFor } from '../commissioning/useCommissioningStore';
 import { buildPurchaseSummaryPdf } from './purchaseSummaryPdf';
 import { buildOrderList, orderListCsv, PANEL_ORDER, SPARES_ORDER, supplierCsv } from './purchasing';
+import { buildEstimate } from './buildTime';
+import { shopRates } from './useShopRatesStore';
 
 /**
  * The whole project as one printable PDF: cover, contents with page numbers,
@@ -268,6 +270,10 @@ export async function addPackageToZip(zip: JSZip, p: ProjectSnapshot, pre: Prebu
   if (p.drawingCtx || p.hmi) {
     onProgress?.('Purchasing');
     zip.file(`purchasing/${p.fileBase}_purchase_summary.pdf`, await buildPurchaseSummaryPdf(p));
+    if (p.drawingCtx) {
+      const { buildCertPackPdf } = await import('./certPack');
+      zip.file(`certification/${p.fileBase}_certification_pack.pdf`, await buildCertPackPdf(p));
+    }
     // The order files are the panel parts only; the recommended spares are a separate, clearly named order.
     const slug = (s: string) => s.replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
     const ol = buildOrderList(p, PANEL_ORDER);
@@ -275,7 +281,7 @@ export async function addPackageToZip(zip: JSZip, p: ProjectSnapshot, pre: Prebu
     for (const g of ol.groups) zip.file(`purchasing/${p.fileBase}_order_${slug(g.supplier)}.csv`, supplierCsv(g));
     const sp = buildOrderList(p, SPARES_ORDER);
     const { orderListXlsx } = await import('./orderListXlsx');
-    zip.file(`purchasing/${p.fileBase}_order_list.xlsx`, await orderListXlsx(ol, p.projectName, sp.groups.length ? sp : null));
+    zip.file(`purchasing/${p.fileBase}_order_list.xlsx`, await orderListXlsx(ol, p.projectName, sp.groups.length ? sp : null, buildEstimate(p, shopRates().rates, shopRates().hourlyRate)));
     if (sp.groups.length) {
       zip.file(`purchasing/${p.fileBase}_spares_order_list.csv`, orderListCsv(sp));
       for (const g of sp.groups) zip.file(`purchasing/${p.fileBase}_${slug(g.supplier)}_spares_order.csv`, supplierCsv(g));

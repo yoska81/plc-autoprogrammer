@@ -4,6 +4,8 @@ import { simpleDoc } from './programListingPdf';
 import { docMeta } from './docs/meta';
 import { makeTable, type DocRow } from './docs/table';
 import { MUTED, RED, pdfSafe } from './docs/pdfWriter';
+import { buildEstimate, buildTimeSummary } from './buildTime';
+import { shopRates } from './useShopRatesStore';
 
 /** Price basis line shown wherever prices appear. */
 export function priceBasis(ol: OrderList): string {
@@ -64,6 +66,9 @@ export async function buildPurchaseSummaryPdf(p: ProjectSnapshot, o: { labels: b
       'Order quantities are in selling units (packs / rolls where sold that way). The order file holds the panel parts only; the spares have their own order file. Check stock and lead times before release.',
     ].filter(Boolean).join(' ');
     w.text(notes, { size: 6.4, color: ol.toSelect.length ? RED : MUTED, gap: 1.5 });
+    const r = shopRates();
+    const est = buildEstimate(p, r.rates, r.hourlyRate);
+    if (est) w.text(`${buildTimeSummary(est)} Estimate from the design quantities and the shop rates (Deliverables → Shop build time).`, { size: 7, bold: false, gap: 1.2 });
     if (sp?.groups.length) {
       // Spares in compact form: the detail is in the spares order file / Excel sheet.
       const items = sp.groups.flatMap((g) => g.lines.map((l) => `${l.partNumber} x${l.orderQty}${l.packQty > 1 ? ` (pack of ${l.packQty})` : ''}`));
