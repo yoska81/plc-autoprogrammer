@@ -37,10 +37,14 @@ const NON_MOTOR_LOAD = /\b(heater|heaters|heating|element|oven|lamp|light|valve|
  * else the next motor not yet linked — but never a load that is not a motor (a heater contactor gets its own).
  */
 export function motorFor(desc: string, branches: MotorBranch[], linked: Set<string>, kind: 'vfd' | 'contactor' | 'any'): MotorBranch | undefined {
-  const pool = branches.filter((b) => kind === 'any' || (kind === 'vfd' ? !!b.vfd : !b.vfd));
+  // "VFD1 run" / "drive 2 fault" is a drive branch, never a contactor-started motor with the same number
+  const wantsDrive = kind === 'vfd' || (kind === 'any' && /\b(vfd|drive|inverter)\b/i.test(desc) && branches.some((b) => b.vfd));
+  const pool = branches.filter((b) => (wantsDrive ? !!b.vfd : kind === 'any' || !b.vfd));
   const m = /\b(m|vfd|k)\s*-?(\d+)\b/i.exec(desc);
   if (m) {
-    const byTag = pool.find((b) => b.motor.tag.toUpperCase() === `M${m[2]}` || b.vfd?.toUpperCase() === `VFD${m[2]}` || b.contactors.some((k) => k.toUpperCase() === `K${m[2]}`));
+    // the tag the description names, with its own prefix (VFD1 is a drive tag, not motor M1 or contactor K1)
+    const want = `${m[1].toUpperCase()}${m[2]}`;
+    const byTag = pool.find((b) => (m[1].toUpperCase() === 'M' ? b.motor.tag.toUpperCase() === want : m[1].toUpperCase() === 'VFD' ? b.vfd?.toUpperCase() === want : b.contactors.some((k) => k.toUpperCase() === want)));
     if (byTag) return byTag;
   }
   let best: MotorBranch | undefined, score = 0;

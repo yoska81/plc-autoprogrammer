@@ -379,6 +379,9 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     calcs: calculations(p),
     alarms: alarmRows(p, info),
     motors: m.motors.map((x) => ({ tag: x.motor.tag, hp: x.motor.hp, voltage: x.motor.voltage, fla: x.fla, tableFla: motorFla(x.motor.hp, x.motor.voltage) })),
+    // drive branch protection against the drive's listed fuses (check_consistency: Class T fuses or the review finding)
+    drives: m.motors.filter((x) => x.vfd).map((x) => ({ motor: x.motor.tag, tag: x.vfd!.tag, partNumber: x.vfd!.partNumber, fuseClass: x.vfd!.part?.ratings.fuseClass ?? null, fusePart: x.vfd!.part?.ratings.fusePart ?? null,
+      protection: x.protection ? { tag: x.protection.tag, partNumber: x.protection.partNumber, category: x.protection.category, fuseClass: x.protection.fuse?.ratings.fuseClass ?? null, fuse: x.protection.fuse?.partNumber ?? null } : null })),
     nameplate: panelNameplate(ctx),
     step: cabinetStepSummary(ctx),
     spare: spareSpace(ctx),

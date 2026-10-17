@@ -481,3 +481,31 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - analog points were missing from the AML and from the assignment list;
   - the parts XML missed BOM-only parts (HMI, duct);
   - enclosure sizes in the parts XML used the panel size instead of the outer size.
+
+## Class T drive fuses; the CAD checker's warnings traced to generator bugs (Dev 1's 477ee37 / 25cf3e0)
+- **Class T drive branches:**
+  - The engine gives each UL/CSA drive branch the drive's own fuses from the manual chart (`ratings.fuseClass` 'T' / `fusePart`), in a Class T block with the right number of poles (`driveFuses`). These fuses are the condition of the drive's 100 kA SCCR, and the SCCR check now passes for them.
+  - Single fuses (`-1`) are used where they exist; otherwise whole packs.
+  - The Class CC `pickFuses` only picks Class CC parts now (before, the new Class T parts could leak in).
+- **Class T over 60 A (no orderable block from AutomationDirect)** — this covers GS23-4020 and up, GS23-2010 and up, GS23-25P0 and all GS30:
+  - the branch keeps its breaker;
+  - the engine adds a note;
+  - the design review says: "No orderable Class T fuse holder above 60 A for VFDx (… needs Class T TJxxx, n A, for its 100 kA SCCR) — use an open-style Class T fuse block from another maker (Bussmann, Mersen, Littelfuse), or keep the breaker and mark the lower SCCR the drive manual gives for it."
+  - If a block exists but the design has other protection, the review names the block to use.
+- **check-all:** `check_consistency` fails a drive with a Class T `fusePart` unless its branch has those Class T fuses or the review says why.
+- **engine.test:**
+  - the vfd scenario gets Class T fuses, three cartridges, its SCCR condition met, and no finding;
+  - 5 HP at 230 V (GS23-25P0, TJN80) keeps its breaker, with the note and the finding.
+- **Wire numbers drawn on the safety sheets but missing from the wire list:**
+  - **Y004A / Y005A (rules-big, rules-floor):** an engine bug.
+    - "VFD1 run" was matched to motor M1's contactor K1, because the tag lookup took M1, VFD1 or K1 for any "…1". So K1 had two coil outputs (Y001 and Y004).
+    - Separately, `drivesFromIo` added two phantom drive motors (M7/M8, VFD5/VFD6) for "VFD1 run" / "VFD2 run" that the drawings wired up.
+    - Fix: `motorFor` honours the prefix (VFD1 is a drive tag) and keeps "VFD/drive" descriptions on drive branches. `drivesFromIo` lets generic "VFDn run" / "Drive n run" outputs take the declared drives before adding motors.
+    - Covered by a new engine.test case ("vfd-numbers").
+  - **OSSD1 and -K5-1 (rules-stress, IEC):** the light-curtain / two-hand relay inputs are found by the relay's tag in the device's function, and `\b-K5\b` never matches an IEC tag with a leading "-". The inputs came out empty, the drawing drew a "?" device with its wire numbers, and the wire list had none.
+    - Fix: new `tagRe` (escaped, lookarounds), used for that lookup and the PS-protection and N.C.-block lookups.
+- **Tags with no tag text on the drawings:**
+  - FU2 / -F2 were the heater fuse cartridges with a tag of their own. They now take the holder tag + F, like the motor fuses (FU2 → FU2F).
+  - LC1 / LC1W are fixed by `tagRe`: the light curtain is now drawn with its tag.
+  - -U1 / -U2 / -U3 are the enclosure and back panel under IEC tags. check_cad now excludes undrawn parts by BOM category, not by tag prefix.
+- **check_cad:** both former warnings are now FAIL (a drawn wire number not in the wire list; a BOM device whose tag is drawn nowhere). On the 7 affected variants: CAD 0 FAIL / 0 WARN, CONSISTENCY 0, LAYOUT 0.

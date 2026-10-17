@@ -13,6 +13,7 @@ import { defaultMachineModel } from './machineModel';
 import { getPart } from '../catalog';
 import { buildModel, chooseEnclosure, designWarnings, doorDrilling, enclosureFitProblem, enclosureSize, enclosuresFor, layoutFits, panelLayout, spareSpace, SPARE_RULE, withEnclosure, type DrawingContext } from '../derive';
 import { cabinetHeat } from '../thermal';
+import { panelSccr } from '../sccr';
 import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
 import { moduleSlots } from '../../plc/core/modules';
@@ -359,6 +360,47 @@ for (const s of SCENARIOS) {
   const list = enclosuresFor('NEMA 4X', 'stainless');
   const firstFloor = list.findIndex((p) => /floor|free/i.test(`${p.ratings.mounting ?? ''} ${p.ratings.floorStand ?? ''}`));
   assert.ok(firstFloor < 0 || list.slice(firstFloor).every((p) => /floor|free/i.test(`${p.ratings.mounting ?? ''} ${p.ratings.floorStand ?? ''}`) || Number(p.ratings.doors ?? 1) > 1), 'floor-standing after wall-mount');
+}
+
+// Drive branches use the drive's own Class T fuses (its SCCR condition) in a Class T block; above 60 A AutomationDirect has
+// no orderable Class T block, so the branch keeps a breaker and the design review says so.
+{
+  const v = SCENARIOS.find((x) => x.name === 'vfd')!;
+  const { r, ctx } = run({ ...v, name: 'vfd-classT' });
+  const m = buildModel(ctx);
+  const drive = m.motors.find((x) => x.vfd)!;
+  const fusePn = String(drive.vfd!.part!.ratings.fusePart);
+  assert.equal(drive.protection?.category, 'fuse', `${drive.motor.tag}: fuse-protected`);
+  assert.match(String(drive.protection?.part?.ratings.fuseClass), /^T$/, 'a Class T block');
+  assert.ok([fusePn, `${fusePn}-1`].includes(String(drive.protection?.fuse?.partNumber)), `${fusePn} in it`);
+  assert.ok(r.design.components.some((c) => c.partNumber.startsWith(fusePn) && c.quantity === 3), 'three cartridges');
+  assert.ok(panelSccr(ctx).unmet.every((u) => u.tag !== drive.vfd!.tag), 'the drive SCCR condition is met');
+  assert.ok(!designWarnings(ctx).some((w) => /Class T/.test(w)), 'no Class T finding');
+  // 5 HP at 230 V: GS23-25P0 needs TJN80 — no orderable Class T block that size.
+  const big = run({ ...v, name: 'vfd-classT-80A', supply: '240VAC-3PH', motors: [motor('M1', 'Infeed conveyor', 5, '240VAC-3PH', 'vfd')] });
+  const bm = buildModel(big.ctx).motors.find((x) => x.vfd)!;
+  if (bm.vfd!.partNumber === 'GS23-25P0') {
+    assert.equal(bm.protection?.category, 'breaker', 'breaker kept');
+    assert.ok(big.r.design.notes.some((n) => /needs Class T TJN80 \(80 A\).*no orderable Class T fuse block/.test(n)), 'engine note');
+    assert.ok(designWarnings(big.ctx).some((w) => w.startsWith(`No orderable Class T fuse holder above 60 A for ${bm.vfd!.tag} (GS23-25P0 needs Class T TJN80, 80 A`)), 'review finding');
+  } else assert.fail(`expected GS23-25P0 for 5 HP 230 V, got ${bm.vfd!.partNumber}`);
+}
+
+// "VFD1 run" belongs to drive VFD1, not to motor M1's contactor: one PLC output per coil (rules-big drew Y004 "VFD1 run"
+// as a second coil rung for K1 while the wire list sent it to the drive).
+{
+  const { r, ctx } = run({
+    name: 'vfd-numbers', supply: '480VAC-3PH', hmi: null, modules: ['C0-08TD1'],
+    motors: [motor('M1', 'Conveyor motor', 1, '480VAC-3PH'), motor('M2', 'Pump motor', 3, '480VAC-3PH'), motor('M3', 'Belt 1 motor', 5, '480VAC-3PH', 'vfd'), motor('M4', 'Belt 2 motor', 5, '480VAC-3PH', 'vfd')],
+    points: [pt('E-stop OK', 'input'), pt('Start PB', 'input'), pt('Stop PB', 'input'), pt('Conveyor motor contactor', 'output'), pt('Pump motor contactor', 'output'), pt('VFD1 run', 'output', { deviceType: 'vfd-input' }), pt('VFD2 run', 'output', { deviceType: 'vfd-input' })],
+  });
+  const w = r.design.ioWiring;
+  for (const d of ['VFD1 run', 'VFD2 run']) assert.equal(w.find((x) => x.description === d)?.deviceType, 'vfd-input', `${d}: a drive input`);
+  const coils = w.filter((x) => x.deviceType === 'contactor-coil').map((x) => x.deviceTag);
+  assert.equal(new Set(coils).size, coils.length, `one output per contactor coil: ${coils.join(', ')}`);
+  const vfdTags = buildModel(ctx).motors.filter((x) => x.vfd).map((x) => x.vfd!.tag);
+  assert.equal(vfdTags.length, 2, `the two declared drives, no extra motors for "VFD1 run" / "VFD2 run": ${vfdTags.join(', ')}`);
+  assert.deepEqual(w.filter((x) => /^VFD\d run$/.test(x.description)).map((x) => x.deviceTag).sort(), [...vfdTags].sort(), 'each run output on its own drive');
 }
 
 // Guard doors and pressure switches come from the catalog: the interlock (+ actuator) in series with the E-stops

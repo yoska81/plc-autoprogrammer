@@ -1,20 +1,21 @@
 supply 480VAC-3PH | NEMA 12
 motor M1 0.5 HP vfd — Unwinder motor
 
-ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 24% spare panel space (target >= 20%)
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 20% spare panel space (target >= 20%)
 SP1      SCE-30P24          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 5.5 A (motors + 25% of the largest + 125% of the heaters + control) x 1.15
 DS1H     14831111           x1    Disconnect handle
 DS1S     14070532           x1    Disconnect shaft
-CB1      GMCBU-3C-3         x1    Motor M1 branch protection — 3 A C-curve, 2.7 x FLA 1.1 A (rides through the start, max. 250% NEC 430.52) [M1]
+FU1      T60030-3SR         x1    Motor M1 drive branch fuses — Class T block (the GS23-40P5 fuses for its 100 kA SCCR) [M1]
+FU1F     TJS10-1            x3    Class T fuses 10A for FU1 — GS23-40P5 manual fuse chart [M1]
 VFD1     GS23-40P5          x1    Unwinder motor drive, STO from safety relay — 1.5 A output >= FLA 1.1 A; Safe Torque Off for the safety stop [M1]
 TAH1     SCU-3100           x1    Heater over-temperature limit — own thermocouple, latched relay 1 drops the heater contactor, relay 2 to the PLC (independent of the PLC)
 K1       SC-E02PG-24VDC     x1    HTR1 Seal heater safety contactor — AC-1 20 A >= 1.25 x 3.1 A; held by 24+S through TAH1, so the safety stop and the over-temperature limit cut the heater even if the SSR fails short
 SSR1     GRSH-25-60-D-0-0   x1    HTR1 Seal heater solid-state relay — 25 A zero-cross >= 1.25 x 3.1 A, switched by the PLC output (time-proportioned temperature control)
-FU1      CH30J2             x1    HTR1 Seal heater via K1 and SSR1 — branch fuses 20 A Class J high-speed (SSR protection), >= 1.25 x 3.1 A heater current
-FU2      JHL20-1            x2    Fuse cartridges for the HTR1 branch
+FU2      CH30J2             x1    HTR1 Seal heater via K1 and SSR1 — branch fuses 20 A Class J high-speed (SSR protection), >= 1.25 x 3.1 A heater current
+FU2F     JHL20-1            x2    Fuse cartridges for FU2 (the HTR1 branch)
 TT1      XTD2-0-UNV-S       x1    Temperature transmitter for Seal heater temperature — thermocouple in, loop-powered 4-20 mA to the analog input (0-300 °C)
-CB2      GMCBU-3C-3         x1    24VDC power supply primary — 3 A for a 120 W supply (inrush)
+CB1      GMCBU-3C-3         x1    24VDC power supply primary — 3 A for a 120 W supply (inrush)
 PS1      PSR-24-120-3       x1    24VDC control power supply, 3-phase 480 VAC input — 5 A >= load 1.7 A + 25%
 PLC      C0-12DD1E-D        x1    PLC CPU
 IO1      C0-16ND3           x1    I/O module, slot 1
@@ -78,4 +79,4 @@ note: PRS1: set the switch point of MPS25-1C-D100D (10-100 psig adjustable) for 
 note: Motor currents from NEC Table 430.250 / 430.248: M1 0.5 HP 1.1 A — confirm the nameplates.
 note: VFD1: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.
 
-explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 480 V 3-phase through 30A — load 5.5 A (motors + 25% of the largest + 125% of the heaters + control) x 1.15 disconnect; motors: M1 0.5 HP on GS23-40P5 (STO); 24 VDC from PSR-24-120-3 for 1.7 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 24% spare panel space.
+explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 480 V 3-phase through 30A — load 5.5 A (motors + 25% of the largest + 125% of the heaters + control) x 1.15 disconnect; motors: M1 0.5 HP on GS23-40P5 (STO); 24 VDC from PSR-24-120-3 for 1.7 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 20% spare panel space.
