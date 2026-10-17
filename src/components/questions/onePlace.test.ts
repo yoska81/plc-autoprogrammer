@@ -115,6 +115,8 @@ setClaudeInterceptor(async () => ({ reasoning: null, text: JSON.stringify({
   questions: ['The unwinder brake coil is 220 VAC but the control supply is 120 VAC: how is the brake fed?'],
 }) }));
 const r2: StepResult[] = [];
+// The description changes (a brake is added), so the electrical stage is out of date and runs again (Update all skips up-to-date stages).
+useSpecStore.setState({ sections: { ...useSpecStore.getState().sections, overview: `${useSpecStore.getState().sections.overview} The unwinder has a holding brake.` } });
 await runUpdateAll(['electrical'], (r) => r2.push(r));
 assert.equal(r2[0]?.status, 'done', 'the stage completes with its default');
 registerStageQuestions();
