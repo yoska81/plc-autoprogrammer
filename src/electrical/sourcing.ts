@@ -41,9 +41,18 @@ export function sourcingOf(partNumber: string): Sourcing {
   const rec = SOURCING_DATA[partNumber];
   const price = priceOf(partNumber);
   const part = getPart(partNumber);
+  // Catalog panels carry their own lifecycle / list price (HMI review): used when no page record exists.
+  const r = part?.ratings ?? {};
+  const fromRatings: Partial<SourcingRecord> = {
+    ...(typeof r.listPrice === 'number' ? { listPrice: r.listPrice, currency: r.currency === 'EUR' ? 'EUR' : 'USD', priceSource: r.priceSource ? String(r.priceSource) : undefined } : {}),
+    // legacy = replaced / phase-out: not for new designs (Rockwell "Active Mature", Siemens phase-out); the maker's EOL notice is in lifecycleSource.
+    ...(r.lifecycle === 'legacy' ? { lifecycle: 'mature' as const, successor: r.successor ? String(r.successor) : undefined, lifecycleSource: r.lifecycleSource ? String(r.lifecycleSource) : undefined }
+      : r.lifecycle === 'active' ? { lifecycle: 'active' as const } : {}),
+  };
   return {
     partNumber,
     manufacturer: part?.manufacturer,
+    ...fromRatings,
     ...(price ? { listPrice: price.price, currency: price.currency, priceUnit: price.unit, priceSource: price.sourceUrl, checked: price.date } : {}),
     ...rec,
   };

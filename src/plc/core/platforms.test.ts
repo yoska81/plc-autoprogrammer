@@ -11,7 +11,7 @@ import { PLC_PROFILES } from './profiles';
 import { HMI_MODELS } from '../../hmi/hmiCatalog';
 import { CATALOG } from '../../electrical/catalog';
 
-const ALL_HMIS = () => CATALOG.filter((p) => p.category === 'hmi');
+const ALL_HMIS = () => CATALOG.filter((p) => p.category === 'hmi' || (p.category === 'plc' && p.ratings.builtInPanel === 'yes'));
 
 const need = (n: Partial<Need> = {}): Need => ({ digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: false, minHmiSizeIn: null, ...n });
 
@@ -120,6 +120,7 @@ const NO_RESOLUTION: Record<string, string> = {
 for (const p of ALL_HMIS().filter((h) => h.vendor && h.vendor !== 'automationdirect')) {
   const r = p.ratings;
   const headless = r.touch === 'none'; // gateways / servers without a display
+  if (r.lifecycle === 'legacy') continue; // listed for existing machines only (greyed, never designed for)
   if (r.resolutionPx !== undefined) assert.match(String(r.resolutionPx), /^\d+x\d+$/, `${p.partNumber}: resolutionPx is WxH`);
   else assert.ok(headless || NO_RESOLUTION[p.partNumber], `${p.partNumber}: resolutionPx from the datasheet`);
   if (p.partNumber !== 'HMIG3U' && !headless) assert.equal(typeof r.displayIn, 'number', `${p.partNumber}: displayIn`);

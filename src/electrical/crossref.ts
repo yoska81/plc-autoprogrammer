@@ -74,8 +74,12 @@ export function functionKey(p: CatalogPart): [CrossFunction, string] | null {
       }
       return r.contacts ? ['relay', `${r.contacts} ${r.coilVoltage ?? r.coil ?? ''}`.trim()] : null;
     }
-    case 'terminal':
-      return r.size ? ['terminal', `${r.size}${r.kind ? ` ${r.kind}` : ''}`] : null;
+    case 'terminal': {
+      // '2.5mm2', '2.5 mm²' and 2.5 are the same size.
+      const mm = parseFloat(String(r.size ?? ''));
+      const kind = /pe|ground/i.test(String(r.kind ?? '')) ? 'ground' : /fuse/i.test(String(r.kind ?? '')) ? 'fuse' : 'feed-through';
+      return Number.isFinite(mm) ? ['terminal', `${mm} mm² ${kind}`] : null;
+    }
     case 'plcModule': {
       const parts = [['inputs', 'DI'], ['outputs', 'DO'], ['analogInputs', 'AI'], ['analogOutputs', 'AO']]
         .map(([k, l]) => (n(r[k]) ? `${n(r[k])} ${l}` : '')).filter(Boolean);
@@ -117,6 +121,8 @@ export function differences(a: CatalogPart, b: CatalogPart): string[] {
   diff('Terminal style', ra.terminals ?? ra.connection, rb.terminals ?? rb.connection);
   diff('Mounting', ra.mounting, rb.mounting);
   diff('Aux contacts', ra.aux, rb.aux);
+  // Accessories (overloads, auxiliary blocks ...) mount only on what forUse names: a swap may need its host swapped too.
+  diff('Mounts on', ra.forUse, rb.forUse);
   diff('Trip curve', ra.curve, rb.curve);
   diff('Network', ra.network, rb.network);
   diff('Cutout (mm)', ra.cutoutWidthMm && `${ra.cutoutWidthMm}×${ra.cutoutHeightMm}`, rb.cutoutWidthMm && `${rb.cutoutWidthMm}×${rb.cutoutHeightMm}`);
