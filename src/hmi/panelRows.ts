@@ -14,6 +14,8 @@ export interface PanelRow {
   legacy: boolean;
   successor?: string;
   price?: string;
+  /** The panel of an all-in-one PLC: chosen together with that CPU. */
+  builtIn?: boolean;
 }
 
 const money = (v: unknown, cur: unknown) => (typeof v === 'number' ? `${cur === 'EUR' ? '€' : '$'}${v.toLocaleString('en-US')}` : undefined);
@@ -31,6 +33,7 @@ export function allPanelRows(): PanelRow[] {
         pn: o.part.partNumber, maker: o.part.manufacturer, vendor: o.part.vendor ?? '', series: String(r.series ?? o.part.family ?? o.part.manufacturer),
         sizeIn: Number(r.displayIn ?? r.sizeIn ?? 0), res: o.model ? `${o.model.widthPx}×${o.model.heightPx}` : '—', model: o.model,
         legacy: r.lifecycle === 'legacy', successor: r.successor ? String(r.successor) : undefined, price: money(r.listPrice, r.currency),
+        builtIn: o.part.category === 'plc',
       };
     }),
   ];

@@ -52,4 +52,11 @@ const withEnclosure = (enc: string, sub: string): ElectricalDesign => ({
   }
 }
 
+// A too-small stainless (NEMA 4X) enclosure is answered with a bigger stainless one, never a painted or plastic box.
+{
+  const fit = smallestEnclosure(ctxOf({ ...withEnclosure('SCE-20EL1608SSLP', 'SCE-20P16'), inputs: { ...DESIGN.inputs, enclosureRating: 'NEMA 4X' } }));
+  assert.match(String(getPart(fit!.enclosure)?.ratings.material), /stainless/i, `stainless suggested (${fit?.enclosure})`);
+  assert.ok(fit!.spare >= SPARE_RULE);
+}
+
 console.log('enclosureFit: OK');

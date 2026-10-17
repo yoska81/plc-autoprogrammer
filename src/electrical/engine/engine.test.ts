@@ -247,13 +247,12 @@ for (const s of SCENARIOS) {
   // The door check itself: the 10" HMI on a 16x12 door does not fit.
   const small = { ...ctx, design: { ...ctx.design, components: ctx.design.components.map((c) => (c.tag === 'ENC1' ? { ...c, partNumber: 'SCE-16EL1206LP' } : c)) } };
   assert.ok(panelLayout(small).door.overflow, '16x12 door too small for CM5-T10W and the operators');
-  // A real overflow: NEMA 4X needs stainless, and the catalog's stainless enclosures stop at 20x16.
-  // The closest one is used (fewest parts left out), not the smallest, and the layout says it does not fit.
+  // NEMA 4X needs stainless: the catalog's Enviroline stainless enclosures (up to 90x72) now hold the big machine.
   const ss = run({ ...big, name: 'big-4x', rating: 'NEMA 4X' });
   const ssEnc = ss.r.design.components.find((c) => c.tag === 'ENC1')!;
-  assert.ok(!ss.r.layoutOk, 'big-4x: no stainless enclosure fits');
-  assert.equal(ssEnc.partNumber, 'SCE-20EL1608SSLP', 'big-4x: the largest stainless enclosure, not the 16x12');
-  assert.ok(panelLayout(ss.ctx).notFit.length > 0 || panelLayout(ss.ctx).overflow, 'big-4x: the layout reports what does not fit');
+  assert.ok(ss.r.layoutOk, 'big-4x: a stainless enclosure fits');
+  assert.match(String(getPart(ssEnc.partNumber)?.ratings.material), /stainless/i, `big-4x: stainless (${ssEnc.partNumber})`);
+  assert.ok(!panelLayout(ss.ctx).overflow && panelLayout(ss.ctx).notFit.length === 0, 'big-4x: everything placed');
 
   // Floor-standing double door on 12in stands: devices on one leaf (never across the split), 0.6–1.7 m above
   // the floor; the door plan is that leaf; the thermal area leaves out the bottom.
