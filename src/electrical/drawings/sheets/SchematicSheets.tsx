@@ -525,7 +525,8 @@ function RungView({ plan, r, yy }: { plan: DrawingPlan; r: Rung; yy: number }) {
       ))}
       {r.els.map((e, i) => <RungElement key={i} plan={plan} e={e} x={xs[i]} y={yy} />)}
       {r.end.kind === 'rail' && <Dot x={RAIL_R} y={yy} />}
-      {r.end.kind === 'node' && (
+      {/* an end node without a label: the circuit ends at the last element (a field device box) */}
+      {r.end.kind === 'node' && r.end.label && (
         <g>
           <TermPt x={endX} y={yy} />
           <Txt x={endX + 1.5} y={yy - 2} size={2.5} mono bold>{r.end.label.split(' ')[0]}</Txt>

@@ -15,7 +15,8 @@ import { getHmi } from '../../hmi/hmiCatalog';
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, MotorSpec } from '../types';
 import { defaultMachineModel, type MachineModel } from './machineModel';
 import { comp, controlPower, mainDisconnect, motorBranches, Tags } from './power';
-import { devicesAndWiring, motorFor } from './devices';
+import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
+import { processLoads } from './process';
 import { num, Picker } from './select';
 
 export { defaultMachineModel, type MachineModel } from './machineModel';
@@ -103,7 +104,11 @@ export function generateDesign(input: EngineInput): EngineResult {
 
   const power = motorBranches(pk, tags, model.motors, supply, input.region, reversingByIo);
   notes.push(...power.notes);
-  const dev = devicesAndWiring(pk, tags, model, power.branches, points);
+  const overTempInput = points.some(({ point }) => point.type === 'input' && OVER_TEMP_RE.test(point.description));
+  const proc = processLoads(pk, tags, model.heaters ?? [], supply, input.io, overTempInput);
+  notes.push(...proc.notes);
+  askUser.push(...proc.askUser);
+  const dev = devicesAndWiring(pk, tags, model, power.branches, points, proc);
   notes.push(...dev.notes);
   askUser.push(...dev.askUser);
 
@@ -124,7 +129,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   }
 
   const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(dev.components.find((c) => c.tag === w.deviceTag)?.partNumber ?? '')).length;
-  const loadA = dcLoad([...power.components, ...dev.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
+  const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
   const ctl = controlPower(pk, tags, supply, loadA);
   notes.push(...ctl.notes);
 
@@ -140,7 +145,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   const sto = power.branches.filter((b) => b.sto).map((b) => b.vfd);
   if (sto.length) notes.push(`${sto.join(', ')}: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.`);
 
-  const core = [...power.components, ...ctl.components, ...plc, ...dev.components, ...required];
+  const core = [...power.components, ...proc.components, ...ctl.components, ...plc, ...dev.components, ...required];
   const nema4 = /4/.test(inputs.enclosureRating ?? '');
   const bigIo = points.length > 48;
   const termFeed = pk.byNumber('DN-T10-A') ?? pk.pick('terminal', (p) => !/ground/i.test(p.description));
@@ -181,7 +186,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   for (const enc of enclosureCandidates(pk, inputs.enclosureRating)) {
     const sub = pk.byNumber(String(enc.ratings.subpanel ?? ''));
     const depth = num(enc.ratings.depthIn) ?? 8;
-    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth);
+    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps);
     const head = [
       comp('ENC1', enc.partNumber, 1, `Main enclosure ${enc.ratings.heightIn}x${enc.ratings.widthIn}x${enc.ratings.depthIn} ${enclosureText(inputs.enclosureRating, input.region)}`),
       ...(sub ? [comp('SP1', sub.partNumber, 1, 'Back panel')] : []),

@@ -89,6 +89,24 @@ const SCENARIOS: Scenario[] = [
       pt('Unwinder motor run', 'output'), pt('Heater contactor', 'output'), pt('Head down solenoid', 'output'), pt('Head up solenoid', 'output')],
   },
   {
+    // The harness's sealing head (tools/harness/variants.ts rules-sealing): two-hand start, light curtain, heater on an SSR with a thermocouple.
+    name: 'sealing-head', supply: '480VAC-3PH', cpu: 'C0-12DD1E-D', modules: ['C0-16ND3', 'C0-08TD1'],
+    spec: 'Sealing head: a pneumatic heat-sealing head closes on a pouch, holds for the dwell time at the set temperature, then opens. Two-hand start, light curtain, heater with thermocouple. The film comes off an unwinder driven by a 0.5 HP motor on a VFD. CLICK PLC with a C-more 7" touch panel; the operator sets the seal temperature and the dwell time on the HMI. 480 V 3-phase supply.',
+    points: [
+      pt('Safety relay OK (E-stop and light curtain)', 'input', { deviceType: 'safety-relay-output' }), pt('Two-hand start button left', 'input', { deviceType: 'pushbutton-no' }),
+      pt('Two-hand start button right', 'input', { deviceType: 'pushbutton-no' }), pt('Light curtain clear (OSSD)', 'input', { deviceType: 'other' }),
+      pt('Stop button', 'input', { deviceType: 'pushbutton-nc' }), pt('Fault reset button', 'input', { deviceType: 'pushbutton-no' }),
+      pt('Sealing head up (retracted)', 'input', { deviceType: 'sensor-pnp' }), pt('Sealing head down (sealing position)', 'input', { deviceType: 'sensor-pnp' }),
+      pt('Air pressure OK', 'input', { deviceType: 'pressure-switch' }), pt('Heater over-temperature limit tripped', 'input', { deviceType: 'other' }),
+      pt('Unwinder VFD fault', 'input', { deviceType: 'vfd-input' }), pt('Film roll low sensor', 'input', { deviceType: 'sensor-pnp' }),
+      pt('Seal heater temperature (thermocouple transmitter)', 'input', { deviceType: 'other', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } }),
+      pt('Sealing head down solenoid', 'output', { deviceType: 'solenoid' }), pt('Sealing head up solenoid', 'output', { deviceType: 'solenoid' }),
+      pt('Seal heater on (SSR)', 'output', { deviceType: 'other' }), pt('Unwinder VFD run', 'output', { deviceType: 'vfd-input' }),
+      pt('Machine running light', 'output', { deviceType: 'pilot-light' }), pt('Fault light', 'output', { deviceType: 'pilot-light' }),
+      pt('Unwinder speed reference', 'output', { deviceType: 'other', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 100, units: '%' } }),
+    ],
+  },
+  {
     name: 'reversing240', supply: '240VAC-3PH', hmi: null, rating: 'NEMA 4',
     points: [pt('E-stop OK', 'input'), pt('Open PB', 'input'), pt('Close PB', 'input'), pt('Stop PB', 'input'), pt('Gate open limit switch', 'input'), pt('Gate closed limit switch', 'input'),
       pt('Gate motor forward', 'output'), pt('Gate motor reverse', 'output'), pt('Gate moving light', 'output')],
@@ -164,7 +182,11 @@ for (const s of SCENARIOS) {
   assert.equal(new Set(clamp.map((w) => w.deviceTag)).size, 1, 'clamp / unclamp coils on one double-solenoid valve');
   assert.equal(vfd.components.find((c) => c.tag === clamp[0].deviceTag)?.partNumber, '100222016324002');
   assert.ok(vfd.ioWiring.some((w) => w.deviceType === 'relay-coil' && /robot/i.test(w.description) && /^CR/.test(w.deviceTag)), 'robot handshake through an interposing relay');
-  assert.ok(vfd.notes.some((n) => /Guard door/.test(n)) && vfd.notes.some((n) => /Light curtain/.test(n)));
+  assert.ok(vfd.notes.some((n) => /Guard door/.test(n)));
+  // The light curtain is a real part with its OSSD relay and cables, not a note.
+  assert.ok(vfd.components.some((c) => /^LC\d/.test(c.tag) && /^SH4-14-/.test(c.partNumber)) && vfd.components.some((c) => c.partNumber === 'LG5925-48-900-61'), 'light curtain + OSSD relay');
+  assert.equal(vfd.components.find((c) => /^LC\dW$/.test(c.tag))?.quantity, 2, 'two cables per curtain');
+  assert.equal(vfd.components.find((c) => c.tag === 'SR1')?.partNumber, 'LG5925-48-61-24', 'SR1 stays the E-stop relay');
 
   const ca = run(SCENARIOS.find((s) => s.name === 'ca600')!).r.design;
   assert.ok(ca.components.some((c) => c.partNumber === 'EHCC3DU' && c.motorTag === 'M1'), 'Canada: motor branch on Class CC fuses');
@@ -191,7 +213,8 @@ for (const s of SCENARIOS) {
   assert.equal(heater.deviceType, 'contactor-coil');
   const unwinderK = d.ioWiring.find((w) => w.description === 'Unwinder motor run')!.deviceTag;
   assert.notEqual(heater.deviceTag, unwinderK, 'the heater contactor is its own, not the unwinder motor\'s');
-  assert.ok(d.askUser?.some((q) => q.startsWith(`${heater.deviceTag} (Heater contactor)`)), 'its load is asked about');
+  assert.ok(d.askUser?.some((q) => /^Heater contactor: heater power not given/.test(q)), 'its load is asked about');
+  assert.ok(d.components.some((c) => c.tag === heater.deviceTag && /^Heater|HTR1/.test(c.function) && /AC-1/.test(c.function)), 'an AC-1 rated heater contactor');
   // An overload input without "trip" / "fault" in its text is the motor's overload contact.
   const ol = run({ ...SCENARIOS.find((x) => x.name === 'sealing-head-from-example')!, name: 'ol', points: [...SCENARIOS.find((x) => x.name === 'sealing-head-from-example')!.points, pt('Unwinder motor overload', 'input')] }).r.design;
   const olW = ol.ioWiring.find((w) => w.description === 'Unwinder motor overload')!;
