@@ -35,6 +35,7 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)(nvent\.com|hoffmanonline\.com)$/, makers: /hoffman|nvent/i },
   { host: /(^|\.)rittal\.(com|us)$/, makers: /rittal/i },
   { host: /(^|\.)phoenixcontact\.com$/, makers: /phoenix/i },
+  { host: /(^|\.)weidmueller\.com$/, makers: /weidm(ü|ue)ller/i },
   { host: /(^|\.)eaton\.com$/, makers: /eaton/i },
   { host: /(^|\.)(omron\.com|omron\.eu)$/, makers: /omron/i },
   { host: /(^|\.)weintek\.com$/, makers: /weintek/i },
