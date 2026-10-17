@@ -128,6 +128,12 @@ function dcBranchFuse(ps: ResolvedComponent | undefined): string | undefined {
   return ps && !isClass2(ps) && psOutA(ps) > DC_WIRE_A ? '4 A' : undefined;
 }
 
+/** Current of an auxiliary load (heater …) from its branch protection, which is sized at >= 1.25 x the load. */
+function auxLoadA(b: AuxBranch): number {
+  const a = num(b.protection.fuse?.ratings, 'amps') ?? num(b.protection.part?.ratings, 'amps');
+  return a ? a / 1.25 : 0;
+}
+
 /** Small-conductor / 75 °C copper ampacity for the OCPD limit (NEC 240.4(D), Table 310.16). */
 const AWG_OCPD: Record<string, number> = { '14 AWG': 15, '12 AWG': 20, '10 AWG': 30, '8 AWG': 50, '6 AWG': 65, '4 AWG': 85, '3 AWG': 100, '2 AWG': 115, '1 AWG': 130, '1/0 AWG': 150, '2/0 AWG': 175, '3/0 AWG': 200, '4/0 AWG': 230 };
 const STD_OCPD = [15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250];
@@ -144,7 +150,7 @@ export function upstreamOcpd(ctx: DrawingContext): { minA: number; maxA: number 
   const motorFla = m.motors.map((x) => x.fla);
   const largest = motorFla.length ? Math.max(...motorFla) : 0;
   const control = m.psBranches.length * 2 + (m.transformer ? 2 : 0);
-  const load = motorFla.reduce((a, b) => a + b, 0) + largest * 0.25 + control;
+  const load = motorFla.reduce((a, b) => a + b, 0) + largest * 0.25 + control + m.auxBranches.reduce((s, b) => s + auxLoadA(b), 0);
   const minA = STD_OCPD.find((a) => a >= load) ?? Math.ceil(load);
   const discA = num(m.disconnect?.part?.ratings, 'amps', 'ratedAmps', 'currentA');
   const wireA = AWG_OCPD[m.mainAwg];
@@ -306,7 +312,13 @@ export interface WireRecord {
 export interface PsBranch { protection?: ResolvedComponent; ps: ResolvedComponent; feedWires: string[]; protectedPoles: number; fromXfmr?: boolean }
 /** Control power transformer branch: bus -> primary protection -> T1 (H1/H2) -> X1/X2 secondary. */
 export interface XfmrBranch { protection?: ResolvedComponent; xfmr: ResolvedComponent; primaryWires: string[]; /** Same as primaryWires (uniform with other branches). */ feedWires: string[]; protectedPoles: number }
-export interface AuxBranch { protection: ResolvedComponent; feedWires: string[]; protectedPoles: number }
+export interface AuxBranch {
+  protection: ResolvedComponent; feedWires: string[]; protectedPoles: number;
+  /** Load fed through switching devices ("Seal heater via K1 and SSR1"): contactor first, then the SSR (first pole). */
+  path?: ResolvedComponent[];
+  /** Name of the load ("Seal heater"). */
+  load?: string;
+}
 
 export interface MotorModel {
   motor: MotorSpec;
@@ -575,7 +587,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const auxBranches: AuxBranch[] = rest.filter((c) => !used.has(c)).map((protection) => {
     const p = Math.min(poles(protection, phases === 1 ? 1 : 2), phases === 1 ? 1 : 3);
     const feedWires = phases === 1 ? [`${wt(protection.tag)}-L1`, 'N'] : Array.from({ length: p }, (_, k) => `${wt(protection.tag)}-L${k + 1}`);
-    return { protection, feedWires, protectedPoles: p };
+    // "Seal heater via K1 and SSR1 — branch fuses …": the devices the load is switched through
+    const via = /^(.*?)\s+via\s+(\S+)(?:\s+and\s+(\S+))?\s+—/.exec(protection.comp.function);
+    const path = via ? [via[2], via[3]].map((t) => rc.find((c) => c.tag === t)).filter((c): c is ResolvedComponent => !!c) : [];
+    return { protection, feedWires, protectedPoles: p, ...(path.length ? { path, load: via![1] } : {}) };
   });
   const groundBar = byCat(rc, 'groundBar')[0];
 
@@ -864,7 +879,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const pe = groundBar?.tag ?? 'PE BAR';
   const dsTag = disconnect?.tag ?? 'DS1';
   const loadPhase = (k: number) => (phases === 1 && k === 1 ? 'N' : `T${k + 1}`);
-  const fullLoad = motors.reduce((s, m) => s + m.fla, 0);
+  // auxiliary loads (heaters …) count with their current, estimated from the branch protection (sized >= 1.25 x)
+  const auxA = auxBranches.reduce((s, b) => s + auxLoadA(b), 0);
+  const fullLoad = motors.reduce((s, m) => s + m.fla, 0) + auxA;
   const largest = motors.reduce((s, m) => Math.max(s, m.fla), 0);
   // IEC: never thinner than the fixed 14 AWG (2.5 mm²) feeds the bus supplies (power supplies, transformer, aux).
   const busFeeds = psBranches.some((b) => !b.fromXfmr) || Boolean(xfmrBranch) || auxBranches.length > 0;
@@ -915,7 +932,28 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     addWire({ wire: '0V', from: `${b.ps.tag}:-V`, to: 'TB1 0V', color: 'WH/BU', size: '16 AWG', function: '0V DC common' });
   }
   if (psBranches.length) addWire({ wire: '0V', from: 'TB1 0V', to: pe, color: 'WH/BU', size: '14 AWG', function: '0V bonded to PE (grounded DC control circuit)' });
-  for (const b of auxBranches) b.feedWires.forEach((w, k) => addWire({ wire: w, from: `${b.protection.tag}:T${k + 1}`, to: b.protection.comp.function || 'LOAD', color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: b.protection.comp.function }));
+  for (const b of auxBranches) {
+    if (!b.path) {
+      b.feedWires.forEach((w, k) => addWire({ wire: w, from: `${b.protection.tag}:T${k + 1}`, to: b.protection.comp.function || 'LOAD', color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: b.protection.comp.function }));
+      continue;
+    }
+    // protection → contactor main contacts → SSR (first pole) → load, numbered on the load side of each device
+    const [k, ssr] = b.path;
+    const fuseA = num(b.protection.fuse?.ratings, 'amps') ?? num(b.protection.part?.ratings, 'amps') ?? 15;
+    const size = iec ? mm2Text(mm2For(fuseA)) : awgFor(fuseA);
+    const load = b.load ?? 'LOAD';
+    // the load's terminals by its tag ("HTR1 Seal heater" → HTR1:1)
+    const dest = /^-?[A-Z]+\d+\b/.exec(load)?.[0] ?? load.toUpperCase();
+    b.feedWires.forEach((w, i) => {
+      const col = w === 'N' ? 'WH' : 'BK';
+      addWire({ wire: w, from: w === 'N' ? 'N' : `${b.protection.tag}:T${i + 1}`, to: `${k.tag}:L${i + 1}`, color: col, size, function: `${load} feed` });
+      const kOut = w === 'N' ? 'N' : `${wt(k.tag)}-T${i + 1}`;
+      if (i === 0 && ssr && ssr !== k) {
+        addWire({ wire: kOut, from: `${k.tag}:T1`, to: `${ssr.tag}:1`, color: col, size, function: `${load} through ${k.tag} to ${ssr.tag}` });
+        addWire({ wire: `${wt(ssr.tag)}-T1`, from: `${ssr.tag}:2`, to: `${dest}:1`, color: col, size, function: `${load} (switched by ${ssr.tag})` });
+      } else addWire({ wire: kOut, from: `${k.tag}:T${i + 1}`, to: `${dest}:${i + 1}`, color: col, size, function: `${load} (through ${k.tag})` });
+    });
+  }
   for (const m of motors) {
     const prot = m.protection?.tag;
     // VFD with a line contactor (safety stop by contactor): protection -> K:L, K:T -> VFD:L
