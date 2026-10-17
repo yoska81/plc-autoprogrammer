@@ -257,7 +257,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 325,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 2.3, kw: 0.75, hp480: 1 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 2.3, kw: 0.75, hp480: 1, sccrKA: 5, sccrCondition: 'Without line reactor (as designed): rated at 480 V 3-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 5 kA with a PowerPact H*L36015 breaker, a GV2P08 Type E controller, or Class CC/J fuses max 6 A. With the specified line reactor (12 mH / 1.7 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -270,7 +270,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 45,
     heightMm: 325,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 4.1, kw: 1.5, hp480: 2 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 4.1, kw: 1.5, hp480: 2, sccrKA: 5, sccrCondition: 'Without line reactor (as designed): rated at 480 V 3-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 5 kA with a PowerPact H*L36015 breaker, a GV2P10 Type E controller, or Class CC/J fuses max 12 A. With the specified line reactor (6.8 mH / 3.2 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -283,7 +283,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 60,
     heightMm: 325,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 5.5, kw: 2.2, hp480: 3 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 5.5, kw: 2.2, hp480: 3, sccrKA: 5, sccrCondition: 'Without line reactor (as designed): rated at 480 V 3-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 5 kA with a PowerPact H*L36015 breaker, a GV2P14 Type E controller, or Class CC/J fuses max 15 A. With the specified line reactor (5 mH / 4.7 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -296,7 +296,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 60,
     heightMm: 325,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 9.5, kw: 4, hp480: 5 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 9.5, kw: 4, hp480: 5, sccrKA: 5, sccrCondition: 'Without line reactor (as designed): rated at 480 V 3-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 5 kA with a PowerPact H*L36015 breaker, a GV3P13 (or GV2P16 limited to 10 kA) Type E controller, or Class CC/J fuses max 25 A. With the specified line reactor (3 mH / 8 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -309,7 +309,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 150,
     heightMm: 308,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 17, kw: 7.5, hp480: 10 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 17, kw: 7.5, hp480: 10, sccrKA: 22, sccrCondition: 'Without line reactor (as designed): rated at 480 V 3-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 22 kA with a PowerPact H*L36030 breaker, a GV3P25 (or GV2P22 limited to 10 kA) Type E controller, or Class CC/J fuses max 40 A. With the specified line reactor (1.5 mH / 15 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -322,7 +322,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 180,
     heightMm: 404,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 27.7, kw: 11, hp480: 15 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '380-500', inputPhases: 3, outputAmps: 27.7, kw: 11, hp480: 15, sccrKA: 22, sccrCondition: 'Without line reactor (as designed): rated at 480 V 3-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 22 kA with a PowerPact H*L36040 breaker, a GV3P32 Type E controller, or Class CC/J fuses max 60 A. With the specified line reactor (1.2 mH / 22 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -335,7 +335,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 143,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 1, outputAmps: 4.8, kw: 0.75, hp1ph: 1 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 1, outputAmps: 4.8, kw: 0.75, hp1ph: 1, sccrKA: 5, sccrCondition: 'Without line reactor (as designed): rated at 240 V 1-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 5 kA with a PowerPact H*L36015 breaker, a GV2P16 Type E controller, or Class CC/J fuses max 25 A. With the specified line reactor (2.5 mH / 7 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875). For the 1-phase M2 models the 5 kA rating carries a note: thermal design is for 1 kA, so at 5 kA do not exceed 45 C at nominal load.', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -348,7 +348,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 105,
     heightMm: 142,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 1, outputAmps: 8, kw: 1.5, hp1ph: 2 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 1, outputAmps: 8, kw: 1.5, hp1ph: 2, sccrKA: 5, sccrCondition: 'Without line reactor (as designed): rated at 240 V 1-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 5 kA with a PowerPact H*L36030 breaker, a GV2P20 Type E controller, or Class CC/J fuses max 40 A. With the specified line reactor (1 mH / 13 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875). For the 1-phase M2 models the 5 kA rating carries a note: thermal design is for 1 kA, so at 5 kA do not exceed 45 C at nominal load.', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -361,7 +361,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 105,
     heightMm: 142,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 1, outputAmps: 11, kw: 2.2, hp1ph: 3 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 1, outputAmps: 11, kw: 2.2, hp1ph: 3, sccrKA: 5, sccrCondition: 'Without line reactor (as designed): rated at 240 V 1-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 5 kA with a PowerPact H*L36035 breaker, a GV3P32 Type E controller, or Class CC/J fuses max 45 A. With the specified line reactor (1 mH / 18 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875). For the 1-phase M2 models the 5 kA rating carries a note: thermal design is for 1 kA, so at 5 kA do not exceed 45 C at nominal load.', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -374,7 +374,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 105,
     heightMm: 143,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 3, outputAmps: 8, kw: 1.5, hp230: 2 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 3, outputAmps: 8, kw: 1.5, hp230: 2, sccrKA: 5, sccrCondition: 'Without line reactor (as designed): rated at 240 V 3-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 5 kA with a PowerPact H*L36015 breaker, a GV2P14 Type E controller, or Class CC/J fuses max 25 A. With the specified line reactor (1.5 mH / 6 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -387,7 +387,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 184,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 3, outputAmps: 17.5, kw: 4, hp230: 5 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 3, outputAmps: 17.5, kw: 4, hp230: 5, sccrKA: 5, sccrCondition: 'Without line reactor (as designed): rated at 240 V 3-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 5 kA with a PowerPact H*L36030 breaker, a GV2P21 Type E controller, or Class CC/J fuses max 45 A. With the specified line reactor (0.8 mH / 15 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -400,7 +400,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 150,
     heightMm: 232,
-    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 3, outputAmps: 33, kw: 7.5, hp230: 10 },
+    ratings: { series: 'Altivar Machine ATV320', duty: 'heavy duty', network: 'Modbus serial, CANopen', inputVolts: '200-240', inputPhases: 3, outputAmps: 33, kw: 7.5, hp230: 10, sccrKA: 22, sccrCondition: 'Without line reactor (as designed): rated at 240 V 3-phase, drive in a Type 1/3R/4X/12 enclosure (min 53 L / 3223 in3). Without line reactor: 22 kA with a PowerPact H*L36050 breaker, a GV3P50 Type E controller, or Class CC/J fuses max 70 A. With the specified line reactor (0.4 mH / 28 A): 65 kA with the breaker or GV*P, 100 kA with the Class J fuses. Source: Schneider NVE21777 (ATV320 SCCR annex, UL 61800-5-1, file E116875).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=NVE21777' },
     verified: true,
   },
   {
@@ -413,7 +413,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 144,
     heightMm: 350,
-    ratings: { series: 'Altivar Process ATV630', inputVolts: '380-480', inputPhases: 3, outputAmps: '5.6A ND / 4A HD', duty: 'normal duty (heavy duty also stated)', kw: 2.2, hp480: 3, network: 'Modbus TCP / Ethernet, Modbus serial' },
+    ratings: { series: 'Altivar Process ATV630', inputVolts: '380-480', inputPhases: 3, outputAmps: '5.6A ND / 4A HD', duty: 'normal duty (heavy duty also stated)', kw: 2.2, hp480: 3, network: 'Modbus TCP / Ethernet, Modbus serial', sccrKA: 100, sccrCondition: 'Rated at 480 V 3-phase. In an enclosure (min 47 L / 2880 in3): 100 kA with Class CC/J fuses max 10 A, or with a PowerPact H*L36015 breaker of 100 kA breaking letter (L or R at 480 V; J = 65 kA, G = 35 kA, D = 18 kA); 65 kA with a GV2P08 Type E controller (480Y/277 V). With UL Type 1 conduit box: 100 kA with Class J fuses max 10 A. No line reactor required. Source: Schneider EAV64300 (ATV600 SCCR annex).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=EAV64300' },
     verified: true,
   },
   {
@@ -426,7 +426,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 171,
     heightMm: 409,
-    ratings: { series: 'Altivar Process ATV630', inputVolts: '380-480', inputPhases: 3, outputAmps: '16.5A ND', duty: 'normal duty', kw: 7.5, hp480: 10, network: 'Modbus TCP / Ethernet, Modbus serial' },
+    ratings: { series: 'Altivar Process ATV630', inputVolts: '380-480', inputPhases: 3, outputAmps: '16.5A ND', duty: 'normal duty', kw: 7.5, hp480: 10, network: 'Modbus TCP / Ethernet, Modbus serial', sccrKA: 100, sccrCondition: 'Rated at 480 V 3-phase. In an enclosure (min 47 L / 2880 in3): 100 kA with Class CC/J fuses max 20 A, or with a PowerPact H*L36030 breaker of 100 kA breaking letter (L or R at 480 V; J = 65 kA, G = 35 kA, D = 18 kA); 65 kA with a GV3P13 (or GV2P16 limited to 10 kA) Type E controller (480Y/277 V). With UL Type 1 conduit box: 100 kA with Class J fuses max 20 A. No line reactor required. Source: Schneider EAV64300 (ATV600 SCCR annex).', sccrSource: 'https://download.schneider-electric.com/files?p_Doc_Ref=EAV64300' },
     verified: true,
   },
   {
