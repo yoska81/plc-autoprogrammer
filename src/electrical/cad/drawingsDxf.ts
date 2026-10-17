@@ -1,9 +1,10 @@
 /**
  * The electrical drawing set as DXF: one file per sheet, rendered from the same sheet components as the
- * PDF (react-dom/server markup → svgToDxf), so the CAD files match the drawings sheet for sheet.
+ * PDF (rendered off-screen in the page → svgToDxf), so the CAD files match the drawings sheet for sheet.
  */
 import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { flushSync } from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import type { DrawingContext } from '../derive';
 import SheetView from '../drawings/SheetView';
 import { planDrawings } from '../drawings/plan';
@@ -31,11 +32,23 @@ export function cadDevices(ctx: DrawingContext): Map<string, CadDevice> {
 export function drawingSetDxf(ctx: DrawingContext): SheetDxf[] {
   const plan = planDrawings(ctx);
   const devices = cadDevices(ctx);
-  return plan.sheets.map((sheet) => {
-    const markup = renderToStaticMarkup(createElement(SheetView, { plan, sheet }));
-    const { dxf, stats } = svgToDxf(parseSvg(markup), { devices });
-    return { n: sheet.n, title: sheet.title, drawingNo: sheet.drawingNo, kind: sheet.spec.kind, fileName: `${String(sheet.n).padStart(2, '0')}_${slug(sheet.drawingNo || '')}_${slug(sheet.title)}.dxf`.replace(/__+/g, '_'), dxf, stats };
-  });
+  // Each sheet is rendered into a hidden container and read back as markup (the same React components as
+  // the PDF; no server renderer in the app bundle).
+  const host = document.createElement('div');
+  host.setAttribute('aria-hidden', 'true');
+  host.style.cssText = 'position:fixed;left:-20000px;top:0;width:1200px;height:1200px;overflow:hidden;pointer-events:none;opacity:0;';
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  try {
+    return plan.sheets.map((sheet) => {
+      flushSync(() => root.render(createElement(SheetView, { plan, sheet })));
+      const { dxf, stats } = svgToDxf(parseSvg(host.innerHTML), { devices });
+      return { n: sheet.n, title: sheet.title, drawingNo: sheet.drawingNo, kind: sheet.spec.kind, fileName: `${String(sheet.n).padStart(2, '0')}_${slug(sheet.drawingNo || '')}_${slug(sheet.title)}.dxf`.replace(/__+/g, '_'), dxf, stats };
+    });
+  } finally {
+    root.unmount();
+    host.remove();
+  }
 }
 
 export const AUTOCAD_README = (project: string, sheets: SheetDxf[], dwg: boolean) => `${project} — electrical drawings for AutoCAD

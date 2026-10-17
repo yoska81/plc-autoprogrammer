@@ -3,8 +3,6 @@
  * Converter in the desktop app, when installed) and the EPLAN import package.
  */
 import type { ProjectSnapshot } from './collect';
-import { desktopBridge } from '../desktop/bridge';
-import { notify } from '../store/useNoticeStore';
 import { saveBlob } from './files';
 import { AUTOCAD_README, drawingSetDxf, type SheetDxf } from '../electrical/cad/drawingsDxf';
 import { eplanPackage, type EplanOptions } from '../electrical/cad/eplan';
@@ -34,22 +32,9 @@ export async function eplanZip(p: ProjectSnapshot, sheets: SheetDxf[] = drawingS
   return zip.generateAsync({ type: 'blob' });
 }
 
-/** Desktop app with the ODA File Converter: DWG + DXF; otherwise DXF, with a note why. */
+/** The drawing set as DXF (opens directly in AutoCAD 2007 and later, LT and AutoCAD Electrical). */
 export async function saveAsAutocad(p: ProjectSnapshot): Promise<void> {
-  const sheets = drawingSetDxf(p.drawingCtx!);
-  const oda = desktopBridge()?.oda;
-  let dwg: { name: string; bytes: Uint8Array }[] = [];
-  if (oda) {
-    const found = await oda.detect();
-    if (found.found) {
-      const r = await oda.convert(sheets.map((s) => ({ name: s.fileName, text: s.dxf })));
-      if (r.ok) dwg = r.files;
-      else notify(`DWG conversion failed (${r.error}). Saved DXF instead — it opens directly in AutoCAD.`);
-    } else {
-      notify('DWG needs the free ODA File Converter (opendesign.com > ODA File Converter), which is not installed. Saved DXF instead — it opens directly in AutoCAD.');
-    }
-  }
-  saveBlob(`${p.fileBase}_autocad_${dwg.length ? 'dwg' : 'dxf'}.zip`, await autocadZip(p, sheets, dwg));
+  saveBlob(`${p.fileBase}_autocad_dxf.zip`, await autocadZip(p, drawingSetDxf(p.drawingCtx!)));
 }
 
 export async function saveAsEplan(p: ProjectSnapshot): Promise<void> {
