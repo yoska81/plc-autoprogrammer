@@ -61,7 +61,8 @@ assert.equal(moduleLimits(platformById('siemens-s7-1200')!, getPart('6ES7212-1AE
 // HMI ↔ PLC: same brand, or a shared Ethernet protocol stated for the panel.
 const ok = (platform: string, hmi: string) => hmiCompatible(platformById(platform)!, getPart(hmi)!).ok;
 assert.deepEqual(protocolsOf(getPart('2713P-T7WD1')!), ['EtherNet/IP']);
-assert.ok(ok('ab-micro850', '2713P-T7WD1'), 'PanelView 5310 with Micro850');
+// Rockwell 2713P-TD001: PanelView 5310 (View Designer) talks to Logix 5000 controllers only; Micro800 uses the PanelView 800.
+assert.ok(!ok('ab-micro850', '2713P-T7WD1') && ok('ab-compactlogix-5380', '2713P-T7WD1'), 'PanelView 5310 with CompactLogix, not Micro850');
 assert.ok(ok('ab-micro850', '2711R-T7T'), 'PanelView 800 (protocol not stated) with its own brand');
 assert.ok(!ok('ab-micro850', '6AV2123-2GB03-0AX0'), 'KTP700 (PROFINET) not with Micro850');
 assert.ok(ok('siemens-s7-1200', '6AV2123-2GB03-0AX0'), 'KTP700 with S7-1200');
