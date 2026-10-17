@@ -1,4 +1,6 @@
-import { Link } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { NEED_TOPICS } from '../../spec/needs';
 import { quickChoices } from './parse';
 import { answerText } from './qa';
 import { SOURCE_LABEL, useActiveProjectId, useQuestionStore, type Question } from './useQuestionStore';
@@ -17,22 +19,29 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
   const projectId = useActiveProjectId();
   const { answer, reopen } = useQuestionStore();
   const [draft, setDraft] = useDraft(`answer.${q.id}`, q.answer);
-  const [editing, setEditing] = useUi(`answer.${q.id}.editing`, q.status === 'open');
+  const [stored, setEditing] = useUi(`answer.${q.id}.editing`, q.status === 'open');
+  // "Answer" / "Change" on a later stage's "Assumptions used" links here with ?q=<id>: open that question.
+  const [params, setParams] = useSearchParams();
+  const target = params.get('q') === q.id;
+  const editing = stored || target;
+  const card = useRef<HTMLLIElement>(null);
+  useEffect(() => { if (target) card.current?.scrollIntoView({ block: 'center' }); }, [target]);
   const choices = quickChoices(q.text);
   const save = (text: string, status: 'answered' | 'assumed' | 'dismissed') => {
     answer(projectId, q.id, text, status);
     setDraft(text);
     setEditing(false);
+    if (target) setParams((p) => { p.delete('q'); return p; }, { replace: true });
   };
   const st = q.known && q.status === 'answered' ? { text: 'Already answered', cls: 'bg-green-100 text-green-800' } : STATUS[q.status];
   return (
-    <li className={`rounded-sm border bg-white ${q.status === 'open' ? 'border-amber-300' : 'border-steel-200'}`} data-question={q.id}>
+    <li ref={card} className={`rounded-sm border bg-white ${q.status === 'open' ? 'border-amber-300' : 'border-steel-200'} ${target ? 'ring-2 ring-brand-500' : ''}`} data-question={q.id}>
       <div className="flex items-start gap-2 px-3 pt-2.5">
         <span className="text-xs font-semibold text-steel-400 tabular-nums pt-0.5">{n}.</span>
         <p className="flex-1 text-sm font-medium text-steel-900"><span className="text-steel-500 font-semibold mr-1">Q:</span>{q.text}</p>
         <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold ${st.cls}`}>{st.text}</span>
       </div>
-      {showSource && <p className="px-3 pl-8 text-[11px] text-steel-400">Asked in: {SOURCE_LABEL[q.source]}</p>}
+      {showSource && <p className="px-3 pl-8 text-[11px] text-steel-400">{q.source === 'spec' ? 'Asked for the machine description' : `Found while designing: ${SOURCE_LABEL[q.source]}`}</p>}
       {q.assumption && q.assumption !== q.text && q.status === 'open' && <p className="px-3 pl-8 text-xs text-steel-500">AI's assumption: {q.assumption}</p>}
       <div className="px-3 pb-3 pt-2 pl-8 space-y-2">
         {editing ? (
@@ -55,7 +64,7 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
                 className="rounded border border-steel-300 bg-white px-3 py-1 text-sm hover:bg-steel-50">Don't know — use the AI's assumption</button>
               <button type="button" onClick={() => save('', 'dismissed')} title="Questions that ask the same thing again are dismissed too"
                 className="rounded border border-steel-300 bg-white px-3 py-1 text-sm hover:bg-steel-50">Not applicable — don't ask again</button>
-              {q.status !== 'open' && <button type="button" onClick={() => { setDraft(q.answer); setEditing(false); }} className="text-sm text-steel-500 underline">Cancel</button>}
+              {q.status !== 'open' && <button type="button" onClick={() => { setDraft(q.answer); setEditing(false); if (target) setParams((p) => { p.delete('q'); return p; }, { replace: true }); }} className="text-sm text-steel-500 underline">Cancel</button>}
             </div>
           </>
         ) : (
@@ -78,6 +87,14 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
   );
 }
 
+const topicOf = (q: Question) => q.topic ?? (q.source === 'spec' ? 'Other requirements' : `Found while designing: ${SOURCE_LABEL[q.source]}`);
+/** Topic headings in order: the needs checklist's topics, the description's own, then what the stages found. */
+function topicsOf(list: Question[]): string[] {
+  const all = [...new Set(list.map(topicOf))];
+  const rank = (t: string) => (NEED_TOPICS.includes(t) ? NEED_TOPICS.indexOf(t) : t.startsWith('Found while designing') ? 1000 : 500);
+  return all.sort((a, b) => rank(a) - rank(b));
+}
+
 /**
  * Questions with their answers right under them. Answers are saved per
  * project and are part of the specification as a Q&A list (see ./qa) —
@@ -85,7 +102,7 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
  * `all`: show every question (answered ones stay as Q/A pairs); otherwise
  * answered ones can be hidden behind "Show answered".
  */
-export default function QuestionList({ questions, title = 'Questions to answer', intro, showSource = false, all = false }: { questions: Question[]; title?: string; intro?: string; showSource?: boolean; all?: boolean }) {
+export default function QuestionList({ questions, title = 'Questions to answer', intro, showSource = false, all = false, grouped = false }: { questions: Question[]; title?: string; intro?: string; showSource?: boolean; all?: boolean; /** Open questions under topic headings (the Machine description page). */ grouped?: boolean }) {
   const [showDone, setShowDone] = useUi('questions.showDone', false);
   if (!questions.length) return null;
   const open = questions.filter((q) => q.status === 'open');
@@ -102,9 +119,26 @@ export default function QuestionList({ questions, title = 'Questions to answer',
         )}
       </div>
       <p className="text-xs text-steel-600">{intro ?? 'Answer each question in the box right under it. Your answers are saved as questions and answers in the machine description and are part of the specification, so the later stages become out of date and "Update" uses them.'}</p>
-      <ol className="space-y-2">
-        {shown.map((q) => <QuestionCard key={`${q.id}-${q.status}`} q={q} n={questions.indexOf(q) + 1} showSource={showSource} />)}
-      </ol>
+      {grouped ? (
+        <>
+          {topicsOf(open).map((t) => (
+            <div key={t} className="space-y-1.5" data-topic={t}>
+              <h4 className="text-xs font-bold uppercase tracking-wide text-steel-600">{t}</h4>
+              <ol className="space-y-2">{open.filter((q) => topicOf(q) === t).map((q) => <QuestionCard key={`${q.id}-${q.status}`} q={q} n={questions.indexOf(q) + 1} showSource={showSource} />)}</ol>
+            </div>
+          ))}
+          {done.length > 0 && (all || showDone || !open.length) && (
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-bold uppercase tracking-wide text-steel-600">Answered</h4>
+              <ol className="space-y-2">{done.map((q) => <QuestionCard key={`${q.id}-${q.status}`} q={q} n={questions.indexOf(q) + 1} showSource={showSource} />)}</ol>
+            </div>
+          )}
+        </>
+      ) : (
+        <ol className="space-y-2">
+          {shown.map((q) => <QuestionCard key={`${q.id}-${q.status}`} q={q} n={questions.indexOf(q) + 1} showSource={showSource} />)}
+        </ol>
+      )}
     </section>
   );
 }

@@ -1,6 +1,6 @@
 import { useSpecStore } from '../../store/useSpecStore';
 import { runDerived, useProjectsStore } from '../../store/useProjectsStore';
-import { SOURCE_LABEL, setExternalKnowledge, useQuestionStore, type Question, type QuestionSource } from './useQuestionStore';
+import { SOURCE_LABEL, setExternalKnowledge, type SyncItem, useQuestionStore, type Question, type QuestionSource } from './useQuestionStore';
 import { useReviewStore } from '../../review/useReviewStore';
 import { useProgramStore } from '../../store/useProgramStore';
 import type { Finding, FindingMark } from '../../review/types';
@@ -10,7 +10,9 @@ import { useElectricalStore } from '../../store/useElectricalStore';
 import { useHmiStore } from '../../store/useHmiStore';
 import { useDraftStore } from '../../store/useDraftStore';
 import { userNotes } from './classify';
-import type { SpecSectionId } from '../../spec/types';
+import { SPEC_SECTIONS, specToText, type SpecSections } from '../../spec/types';
+import { missingNeeds } from '../../spec/needs';
+import { guessSection } from './parse';
 
 /**
  * The project's questions and answers as part of the specification. They are
@@ -74,12 +76,27 @@ export function syncQaIntoSpec(): void {
   runDerived(() => useSpecStore.setState({ sections: { ...spec.sections, qa } }));
 }
 
-type Item = { text: string; assumption?: string; section?: SpecSectionId };
+type Item = SyncItem;
+
+/** Heading of the gaps a later stage found (asked on the Machine description page, never on the stage's own page). */
+export const foundWhile = (source: QuestionSource) => `Found while designing: ${SOURCE_LABEL[source]}`;
 
 /**
- * The questions each stage asked, read from its data (the spec's open questions, the I/O plan, the
- * electrical and HMI designs' notes). Registered globally, not only when a page is open, so the
- * design review, the badges and the machine spec always have them. (Review findings are computed on
+ * Everything the Machine description page asks: the needs checklist items the description does not
+ * cover yet (src/spec/needs.ts, follow-ups included), then the AI's own questions about the spec.
+ */
+export function specQuestionItems(sections: SpecSections, aiQuestions: string[]): Item[] {
+  const needs = missingNeeds({ text: specToText(sections), sections }).map((n) => ({ text: n.question, topic: n.topic, need: n.id }));
+  const sectionTitle = (t: string) => SPEC_SECTIONS.find((d) => d.id === guessSection(t, 'spec'))?.title ?? 'Other requirements';
+  return [...needs, ...aiQuestions.map((text) => ({ text, topic: sectionTitle(text) }))];
+}
+
+/**
+ * The questions each stage raised, read from its data (the spec's open questions and checklist, the
+ * I/O plan, the electrical and HMI designs' notes, the program's cycle). Only the Machine description
+ * page asks them: a later stage's notes are gaps it found, built with the stated default (the
+ * "assumption") and listed on its page under "Assumptions used". Registered globally, not only when a
+ * page is open, so the badges and the machine spec always have them. (Review findings are computed on
  * the review page and registered there.)
  */
 function stageQuestions(): Record<Exclude<QuestionSource, 'review'>, Item[] | null> {
@@ -88,11 +105,11 @@ function stageQuestions(): Record<Exclude<QuestionSource, 'review'>, Item[] | nu
   const el = useElectricalStore.getState().design;
   const hmi = useHmiStore.getState().design;
   return {
-    spec: useSpecStore.getState().questions.map((text) => ({ text })),
-    io: plan?.questions ? plan.questions.map((text) => ({ text })) : null,
-    electrical: el ? userNotes(el).map((n) => ({ text: n, assumption: n })) : null,
-    hmi: hmi ? userNotes(hmi).map((n) => ({ text: n, assumption: n, section: 'operator' as const })) : null,
-    program: ladder.rungs.length ? (ladder.sequence?.questions ?? []).map((text) => ({ text, section: 'sequence' as const })) : null,
+    spec: specQuestionItems(useSpecStore.getState().sections, useSpecStore.getState().questions),
+    io: plan?.questions ? plan.questions.map((text) => ({ text, topic: foundWhile('io') })) : null,
+    electrical: el ? userNotes(el).map((n) => ({ text: n, assumption: n, topic: foundWhile('electrical') })) : null,
+    hmi: hmi ? userNotes(hmi).map((n) => ({ text: n, assumption: n, section: 'operator' as const, topic: foundWhile('hmi') })) : null,
+    program: ladder.rungs.length ? (ladder.sequence?.questions ?? []).map((text) => ({ text, section: 'sequence' as const, topic: foundWhile('program') })) : null,
   };
 }
 

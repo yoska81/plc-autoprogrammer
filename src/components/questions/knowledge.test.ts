@@ -111,12 +111,12 @@ assert.ok(prompt.includes(ANSWERED_RULE));
 // 4. No repeat: the reworded questions are answered from where they were answered, with a link; only the new one is open.
 assert.deepEqual(open(), ['What air pressure is available on site?']);
 assert.equal(auto(/rewinder motor M3/).answer, 'M3 nameplate 3.4 A.', 'M3 current was answered with the motor currents');
-assert.equal(auto(/removed from the motor list/).known?.where.label, 'Design review');
+assert.equal(auto(/removed from the motor list/).known?.where.label, 'Machine description', 'every question is answered on the Machine description page');
 assert.match(auto(/removed from the motor list/).answer, /no conveyor M1/);
 assert.equal(auto(/how the motor and VFD are fed/).known?.where.route, '/review');
 assert.match(auto(/how the motor and VFD are fed/).answer, /^Resolved: Motor replaced/);
 assert.equal(auto(/VFD overload setting/).answer, '6.8 A');
-assert.equal(auto(/VFD overload setting/).known?.where.label, 'Electrical design');
+assert.match(auto(/VFD overload setting/).known?.where.route ?? '', /^\/spec\?q=/);
 assert.equal(auto(/recipes are needed/).status, 'dismissed', "not applicable — don't ask again");
 // Automatic answers do not change the spec's Q&A: a reworded question never makes a stage out of date.
 assert.equal(qaText(list(), reviewDecisions(findings, marks)), qa);

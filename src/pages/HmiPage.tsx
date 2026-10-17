@@ -32,9 +32,8 @@ import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
 import { checkDesign, layoutBands, MIN_TOUCH, type LayoutIssue } from '../hmi/layout';
 import { LEVEL_LABEL, LOOK_LABEL, lookOf } from '../hmi/theme';
-import { userNotes } from '../components/questions/classify';
-import QuestionList from '../components/questions/QuestionList';
-import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
+import AssumptionsUsed from '../components/questions/AssumptionsUsed';
+import { useQuestions } from '../components/questions/useQuestionStore';
 import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
 import { withAnalogScale } from '../hmi/analogScale';
@@ -271,7 +270,6 @@ export default function HmiPage() {
   const apiKey = settings.anthropicApiKey;
   const design = hmi.design;
   // "To confirm" items, answered under each one.
-  useSyncQuestions('hmi', design ? userNotes(design).map((n) => ({ text: n, assumption: n, section: 'operator' as const })) : null);
   const hmiQuestionsRaw = useQuestions('hmi');
   // Allen-Bradley / Siemens: the exported program's tag of each neutral address (null on CLICK, where they are the same).
   const ladder = useProgramStore((s) => s.ladder);
@@ -746,7 +744,7 @@ export default function HmiPage() {
                 {tabBtn('tags', 'Tags', design.tags.length)}
                 {tabBtn('alarms', 'Alarms', design.alarms.length)}
                 {tabBtn('check', 'Layout check', issues.length)}
-                {tabBtn('notes', 'To confirm', hmiQuestions.filter((q) => q.status === 'open').length)}
+                {tabBtn('notes', 'Assumptions used', hmiQuestions.length)}
               </div>
               <div className="p-4 overflow-x-auto">
                 {tab === 'tags' && (
@@ -811,8 +809,7 @@ export default function HmiPage() {
                   ) : <p className="text-sm text-emerald-700">All screens pass: on-screen, no overlaps, touch targets ≥ {MIN_TOUCH.w}×{MIN_TOUCH.h} px, header and navigation present, every address tagged.</p>
                 )}
                 {tab === 'notes' && (
-                  hmiQuestions.length ? <QuestionList questions={hmiQuestions} title="To confirm"
-                    intro="Confirm each item or type the correct answer under it; answers are saved in the Questions & answers of the machine description (part of the spec) and the HMI becomes out of date so Update uses them." /> : <p className="text-sm text-gray-500">Nothing to confirm.</p>
+                  hmiQuestions.length ? <AssumptionsUsed questions={hmiQuestions} /> : <p className="text-sm text-gray-500">No assumptions: the description covers everything the HMI needs.</p>
                 )}
               </div>
             </section>

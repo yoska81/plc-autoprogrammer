@@ -22,6 +22,8 @@ export interface KnownAnswer {
   /** "Not applicable — don't ask again": matching questions are dismissed too. */
   dismissed?: boolean;
   where: KnownWhere;
+  /** Later questions this answer settles whatever their wording (a needs-checklist item, see src/spec/needs.ts). */
+  settles?: RegExp;
 }
 
 /** Same meaning in other words (applied to lower-case text). */
@@ -107,8 +109,9 @@ export function findKnown(text: string, known: KnownAnswer[]): KnownAnswer | nul
   let best: KnownAnswer | null = null, bestScore = -1;
   for (const k of known) {
     const ks = signature(`${k.question} ${k.answer}`);
-    if (!sameQuestion(sig, ks) && !sameQuestion(sig, signature(k.question))) continue;
-    const score = common(sig.words, ks.words) + 2 * common(sig.tags, ks.tags);
+    const settled = Boolean(k.settles?.test(text));
+    if (!settled && !sameQuestion(sig, ks) && !sameQuestion(sig, signature(k.question))) continue;
+    const score = common(sig.words, ks.words) + 2 * common(sig.tags, ks.tags) + (settled ? 100 : 0);
     if (score > bestScore) { best = k; bestScore = score; }
   }
   return best;

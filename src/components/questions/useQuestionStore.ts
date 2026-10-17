@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 import type { SpecSectionId } from '../../spec/types';
 import { isTechnicalIssue } from './classify';
 import { findKnown, type KnownAnswer, type KnownWhere } from './knowledge';
+import { NEEDS } from '../../spec/needs';
 import { useProjectsStore, runDerived } from '../../store/useProjectsStore';
 
 /**
@@ -39,6 +40,10 @@ export interface Question {
   assumption?: string;
   /** Spec section the answer belongs in (guessed when not given). */
   section?: SpecSectionId;
+  /** Group heading on the Machine description page ("Power and motors", "Found while designing: …"). */
+  topic?: string;
+  /** Needs-checklist item this question asks (src/spec/needs.ts). */
+  need?: string;
   /** Legacy: answers used to be merged into the spec sections (kept for old data). */
   merged: boolean;
   /** Answered automatically: the same question was already answered there (the answer is copied from it). */
@@ -52,7 +57,8 @@ export function knownFromQuestions(list: Question[]): KnownAnswer[] {
   return list.filter((q) => q.status !== 'open' && !q.known).map((q) => ({
     ref: q.id, question: q.text, dismissed: q.status === 'dismissed' || undefined,
     answer: q.status === 'answered' ? q.answer.trim() : q.status === 'dismissed' ? 'Not applicable' : `AI's assumption: ${q.assumption && q.assumption !== q.text ? q.assumption : "the engineer's judgement"}`,
-    where: { label: SOURCE_LABEL[q.source], route: SOURCE_ROUTE[q.source] },
+    where: { label: SOURCE_LABEL.spec, route: `/spec?q=${encodeURIComponent(q.id)}` },
+    settles: q.need ? NEEDS.find((n) => n.id === q.need)?.settles : undefined,
   }));
 }
 
@@ -84,6 +90,9 @@ export function applyKnown(list: Question[]): Question[] {
 }
 
 
+/** One question a stage registers. */
+export interface SyncItem { text: string; assumption?: string; section?: SpecSectionId; topic?: string; need?: string }
+
 export function questionId(source: QuestionSource, text: string): string {
   let h = 2166136261;
   const s = `${source}|${text.trim().toLowerCase()}`;
@@ -94,7 +103,7 @@ export function questionId(source: QuestionSource, text: string): string {
 interface QuestionStore {
   byProject: Record<string, Question[]>;
   /** Register a stage's current questions: new ones are added as open, answered ones are kept, open ones that disappeared are dropped. */
-  sync: (projectId: string | null, source: QuestionSource, items: { text: string; assumption?: string; section?: SpecSectionId }[]) => void;
+  sync: (projectId: string | null, source: QuestionSource, items: SyncItem[]) => void;
   answer: (projectId: string | null, id: string, answer: string, status: Exclude<QuestionStatus, 'open'>) => void;
   reopen: (projectId: string | null, id: string) => void;
   /** Re-check open questions against what is answered (after a design review decision). */
@@ -120,7 +129,8 @@ export const useQuestionStore = create<QuestionStore>()(
           if (ids.has(id)) continue;
           ids.add(id);
           const cur = list.find((q) => q.id === id);
-          fresh.push(cur ? { ...cur, assumption: it.assumption ?? cur.assumption, section: cur.section ?? it.section } : { id, source, text, answer: '', status: 'open', date: now(), assumption: it.assumption, section: it.section, merged: false });
+          fresh.push(cur ? { ...cur, assumption: it.assumption ?? cur.assumption, section: cur.section ?? it.section, ...(it.topic ? { topic: it.topic } : {}), ...(it.need ? { need: it.need } : {}) }
+            : { id, source, text, answer: '', status: 'open', date: now(), assumption: it.assumption, section: it.section, merged: false, ...(it.topic ? { topic: it.topic } : {}), ...(it.need ? { need: it.need } : {}) });
         }
         // Keep answers already given (history) even when the AI no longer asks, and keep every
         // question where it was in the list: revisiting a page must not reorder anything.
@@ -188,12 +198,24 @@ export function useOpenCounts(): Record<QuestionSource, number> {
 }
 
 /** Register a stage's current questions with the store (call from the page that shows them). */
-export function useSyncQuestions(source: QuestionSource, items: { text: string; assumption?: string; section?: SpecSectionId }[] | null): void {
+export function useSyncQuestions(source: QuestionSource, items: SyncItem[] | null): void {
   const projectId = useActiveProjectId();
   const sync = useQuestionStore((s) => s.sync);
   const sig = items ? JSON.stringify(items) : null;
   useEffect(() => {
     // Registering the questions a stage asked is derived data, not a user change.
-    if (sig !== null) runDerived(() => sync(projectId, source, JSON.parse(sig) as { text: string; assumption?: string; section?: SpecSectionId }[]));
+    if (sig !== null) runDerived(() => sync(projectId, source, JSON.parse(sig) as SyncItem[]));
   }, [projectId, source, sig, sync]);
+}
+
+/** Open questions that ask the same thing as an earlier open one (asked once: answering it answers the others). */
+export function duplicateOpen(list: Question[]): Set<string> {
+  const out = new Set<string>();
+  const seen: KnownAnswer[] = [];
+  for (const q of list) {
+    if (q.status !== 'open') continue;
+    if (findKnown(q.text, seen)) out.add(q.id);
+    else seen.push({ ref: q.id, question: q.text, answer: '', where: { label: SOURCE_LABEL.spec, route: '/spec' } });
+  }
+  return out;
 }
