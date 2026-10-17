@@ -279,7 +279,7 @@ function OutputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan
   const strip = stripOf(pts.find((p) => p.signalTerminal)?.signalTerminal) || stripTag(plan.ctx.designations, 3);
   const supplyRef = supply === '24+S' ? plan.xref.get('rung:24+S') : plan.xref.get(`ps:${plan.model.psBranches[0]?.ps.tag ?? ''}`);
   const zeroRef = plan.xref.get(`ps0:${plan.model.psBranches[0]?.ps.tag ?? ''}`);
-  const railUsers = pts.filter((p) => !(p.coilChain || (p.location === 'internal' && p.deviceType !== 'vfd-input')));
+  const railUsers = pts.filter((p) => !(p.coilChain || (p.location === 'internal' && p.deviceType !== 'vfd-input') || (rail === '24+S' && isLamp(p))));
   const lastRailRow = Math.max(0, ...ioRows.map((r, i) => (r.point && railUsers.includes(r.point) ? i + 1 : 0)));
   return (
     <g>
@@ -306,7 +306,10 @@ function OutputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan
   );
 }
 
+const isLamp = (p: IoPoint) => p.deviceType === 'pilot-light' || p.deviceType === 'stack-light';
+
 function OutputRow({ plan, p, y, rail, prev }: { plan: DrawingPlan; p: IoPoint; y: number; rail: string; prev?: IoPoint }) {
+  const lampOff24S = rail === '24+S' && isLamp(p);
   const field = !!p.signalTerminal;
   const start = O.PLC + O.PLCW;
   const internalCoil = !!p.coilChain || ((p.deviceType === 'contactor-coil' || p.deviceType === 'relay-coil') && p.location === 'internal');
@@ -347,10 +350,11 @@ function OutputRow({ plan, p, y, rail, prev }: { plan: DrawingPlan; p: IoPoint; 
         </g>
       ) : (
         <g>
-          <Line x1={O.DEV + half} y1={y} x2={p.returnTerminal ? O.TBR - 2.5 : O.RAIL} y2={y} />
-          {p.returnTerminal && <><TermBox x={O.TBR} y={y} n={tn(p.returnTerminal)} /><Line x1={O.TBR + 2.5} y1={y} x2={O.RAIL} y2={y} /></>}
-          <WireNo x={(O.DEV + half + (p.returnTerminal ? O.TBR - 2.5 : O.RAIL)) / 2 + 3} y={y} n={rail} />
-          <Dot x={O.RAIL} y={y} />
+          {/* lamps on a safety-switched sinking module are fed from the unswitched 24+, so a fault lamp lights during a safety stop */}
+          <Line x1={O.DEV + half} y1={y} x2={p.returnTerminal ? O.TBR - 2.5 : O.RAIL - (lampOff24S ? 4 : 0)} y2={y} />
+          {p.returnTerminal && <><TermBox x={O.TBR} y={y} n={tn(p.returnTerminal)} /><Line x1={O.TBR + 2.5} y1={y} x2={O.RAIL - (lampOff24S ? 4 : 0)} y2={y} /></>}
+          <WireNo x={(O.DEV + half + (p.returnTerminal ? O.TBR - 2.5 : O.RAIL)) / 2 + 3} y={y} n={lampOff24S ? '24+' : rail} />
+          {lampOff24S ? <XrefArrow x={O.RAIL - 4} y={y} /> : <Dot x={O.RAIL} y={y} />}
         </g>
       )}
       <Desc x={O.DESC} y={y} p={p} />
