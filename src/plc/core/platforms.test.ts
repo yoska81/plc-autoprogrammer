@@ -126,5 +126,5 @@ for (const p of ALL_HMIS().filter((h) => h.vendor && h.vendor !== 'automationdir
   if (r.touch !== undefined) assert.match(String(r.touch), /^(resistive|capacitive|yes|none)$/, `${p.partNumber}: touch type`);
   for (const k of ['ethernetPorts', 'serialPorts', 'usbPorts']) if (r[k] !== undefined) assert.ok(Number.isInteger(r[k]) && Number(r[k]) >= 0, `${p.partNumber}: ${k}`);
 }
-assert.equal(getPart('HMIG3U')!.ratings.pairsWith, 'HMIDT732');
+assert.ok(String(getPart('HMIG3U')!.ratings.pairsWith).split(',').includes('HMIDT732'), 'GTU box pairs with its displays');
 console.log('HMI panel spec tests passed');

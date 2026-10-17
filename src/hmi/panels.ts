@@ -26,8 +26,13 @@ const num = (v: unknown) => (v === undefined || v === '' ? NaN : Number(v));
 
 /** The other half of a display + box pair (e.g. Schneider HMIDT732 display + HMIG3U box). */
 function partnerOf(p: CatalogPart): CatalogPart | undefined {
-  const pn = String(p.ratings.pairsWith ?? '').trim();
-  return pn ? ALL_PARTS.find((x) => x.partNumber.toUpperCase() === pn.toUpperCase()) : undefined;
+  // pairsWith may list several (any GTU display with any GTU box): the first one in the catalog.
+  const pns = String(p.ratings.pairsWith ?? '').split(/[,;]/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+  for (const pn of pns) {
+    const hit = ALL_PARTS.find((x) => x.partNumber.toUpperCase() === pn);
+    if (hit) return hit;
+  }
+  return undefined;
 }
 
 /** One catalog panel as the designer sees it; for a pair, the display carries the box's comms. */
