@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
 import { getPart } from '../catalog';
-import { designWarnings, doorDrilling, panelLayout, spareSpace, type DrawingContext } from '../derive';
+import { buildModel, designWarnings, doorDrilling, panelLayout, spareSpace, type DrawingContext } from '../derive';
 import { cabinetHeat } from '../thermal';
 import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
@@ -183,7 +183,8 @@ for (const s of SCENARIOS) {
   assert.equal(new Set(clamp.map((w) => w.deviceTag)).size, 1, 'clamp / unclamp coils on one double-solenoid valve');
   assert.equal(vfd.components.find((c) => c.tag === clamp[0].deviceTag)?.partNumber, '100222016324002');
   assert.ok(vfd.ioWiring.some((w) => w.deviceType === 'relay-coil' && /robot/i.test(w.description) && /^CR/.test(w.deviceTag)), 'robot handshake through an interposing relay');
-  assert.ok(vfd.notes.some((n) => /Guard door/.test(n)));
+  // The guard door is a real interlock switch with its actuator, not a note.
+  assert.ok(vfd.components.some((c) => /^GS\d$/.test(c.tag) && c.partNumber === 'KM-203002') && vfd.notes.some((n) => /^GS\d: confirm the guard door/.test(n)));
   // The light curtain is a real part with its OSSD relay and cables, not a note.
   assert.ok(vfd.components.some((c) => /^LC\d/.test(c.tag) && /^SH4-14-/.test(c.partNumber)) && vfd.components.some((c) => c.partNumber === 'LG5925-48-900-61'), 'light curtain + OSSD relay');
   assert.equal(vfd.components.find((c) => /^LC\dW$/.test(c.tag))?.quantity, 2, 'two cables per curtain');
@@ -270,6 +271,28 @@ for (const s of SCENARIOS) {
   assert.ok(Math.abs(dd.w - (lf.x1 - lf.x0)) < 0.1 && dd.cutouts.every((c) => c.x > 0 && c.x < dd.w), 'door plan = the leaf, leaf-relative X');
   const heat = (pn: string) => cabinetHeat([{ tag: 'ENC1', partNumber: pn, quantity: 1 }], getPart).area!;
   assert.ok(heat('SCE-72EL7218LPPL') < 1.83 * 1.83 + 2 * 1.83 * 0.457 + 2 * 1.83 * 0.457 - 0.5, 'floor-standing: bottom not in the cooling area');
+}
+
+// Guard doors and pressure switches come from the catalog: the interlock (+ actuator) in series with the E-stops
+// in both channels of SR1, its N.O. 33-34 to a "door closed" input; the pressure switch on its DIN pins C=1 / NO=3.
+{
+  const v = SCENARIOS.find((x) => x.name === 'vfd')!;
+  const { r, ctx } = run({ ...v, name: 'vfd-guard', points: v.points.map((q) => (q.description === 'Lift down limit switch' ? pt('Lift guard door closed', 'input') : q)) });
+  const d = r.design;
+  const gs = d.components.find((c) => /^GS\d/.test(c.tag))!;
+  assert.equal(gs?.partNumber, 'KM-203002', 'guard interlock from the catalog');
+  assert.ok(d.components.some((c) => c.tag === `${gs.tag}A` && c.partNumber === '140107'), 'its actuator');
+  assert.ok(!d.askUser?.some((q) => /not drawn yet/.test(q)), 'no "not drawn" question');
+  assert.equal(d.ioWiring.find((w) => /guard door closed/i.test(w.description))?.deviceTag, gs.tag, 'door-closed input on the interlock');
+  const m = buildModel(ctx);
+  assert.deepEqual(m.safety.guards, [gs.tag]);
+  for (const [a, b] of [['S11', '11'], ['S21', '21']]) assert.ok(m.wires.some((w) => w.wire.startsWith(a) && w.to === `${gs.tag}:${b}`), `${a} channel through ${gs.tag}`);
+  assert.ok(m.wires.some((w) => w.from === `${gs.tag}:12` && w.to.endsWith(':S12')), 'channel 1 back to the relay after the guard');
+  const door = m.io.find((p) => /guard door closed/i.test(p.description))!;
+  assert.ok(m.wires.some((w) => w.wire === door.address && w.from === `${gs.tag}:34`), 'monitoring contact 33-34 to the PLC');
+  const prs = d.components.find((c) => /^PRS\d/.test(c.tag))!;
+  assert.equal(prs?.partNumber, 'MPS25-1C-D100D', 'mechanical pressure switch');
+  assert.ok(m.wires.some((w) => w.from === `${prs.tag}:3`) && m.wires.some((w) => w.to === `${prs.tag}:1`), 'pressure switch wired on its DIN pins (C=1, NO=3)');
 }
 
 // The default model reads motors from the I/O list when there is no motor list.

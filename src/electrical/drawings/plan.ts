@@ -19,7 +19,7 @@ import { stripTag } from '../../standards/designations';
 
 export type RungEnd = { kind: 'rail' } | { kind: 'node'; label: string } | { kind: 'xref'; label: string };
 export type RungEl =
-  | { t: 'contact'; nc: boolean; tag: string; term: string; dev: 'pb' | 'estop' | 'relay' | 'ol' | 'sr' }
+  | { t: 'contact'; nc: boolean; tag: string; term: string; dev: 'pb' | 'estop' | 'relay' | 'ol' | 'sr' | 'guard' }
   | { t: 'coil'; tag: string }
   | { t: 'lamp'; tag: string; color: string }
   | { t: 'box'; tag: string; left: string; right: string; label?: string }
@@ -159,13 +159,14 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   if (s.relay) {
     const sr = s.relay.tag;
     out.push({ start: rail, end: rail, els: [{ t: 'box', tag: sr, left: 'A1', right: 'A2' }], wires: ['24+', '0V'], desc: [`SAFETY RELAY ${sr} SUPPLY`, `CONTACTS: {c:${sr}}`], key: `coil:${sr}` });
-    const es = s.estops.length ? s.estops : ['ES?'];
+    // E-stops, then the guard-door interlocks (their N.C. safety contacts), in series in both channels
+    const es = [...(s.estops.length ? s.estops : ['ES?']), ...s.guards];
     for (const [a, b, term, ch] of [['S11', 'S12', '11-12', 1], ['S21', 'S22', '21-22', 2]] as const) {
       out.push({
         start: { kind: 'node', label: `${sr} ${a}` }, end: { kind: 'node', label: `${sr} ${b}` },
-        els: es.map((tag) => ({ t: 'contact', nc: true, tag, term, dev: 'estop' })),
+        els: es.map((tag) => ({ t: 'contact', nc: true, tag, term, dev: s.guards.includes(tag) ? 'guard' : 'estop' })),
         wires: [a, ...es.slice(1).map((_, k) => `${a}${letter(k + 1)}`), b],
-        desc: [`E-STOP CHANNEL ${ch} (${es.join(', ')})`, ch === 1 ? 'DUAL CHANNEL, CROSS-MONITORED' : ''],
+        desc: [`${s.guards.length ? 'E-STOP / GUARD' : 'E-STOP'} CHANNEL ${ch} (${es.join(', ')})`, ch === 1 ? 'DUAL CHANNEL, CROSS-MONITORED' : ''],
       });
     }
     const rs = s.reset ?? 'PB?';
@@ -507,7 +508,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
       for (const r of sp.rungs) {
         const l = lineNo(sh.n, r.idx);
         if (r.key) xref.set(r.key, l);
-        for (const e of r.els) if (e.t === 'contact' && e.dev !== 'pb' && e.dev !== 'estop') addContact({ tag: e.tag, term: e.term, nc: e.nc, line: l });
+        for (const e of r.els) if (e.t === 'contact' && e.dev !== 'pb' && e.dev !== 'estop' && e.dev !== 'guard') addContact({ tag: e.tag, term: e.term, nc: e.nc, line: l });
       }
     } else if (sp.kind === 'io') {
       sp.rows.forEach((r, i) => {

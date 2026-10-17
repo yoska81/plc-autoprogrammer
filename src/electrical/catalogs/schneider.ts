@@ -1135,4 +1135,15 @@ export const SCHNEIDER: CatalogPart[] = [
     ratings: { family: 'Harmony XB5', color: 'white', size: '22mm', volts: '24VAC/DC', led: 'yes' },
     verified: true,
   },
+  {
+    partNumber: 'XMLB010A2S13',
+    category: 'sensor',
+    description: 'Telemecanique XMLB pressure switch, 10 bar, 1 C/O contact, adjustable rising threshold 0.7-10 bar (falling 0.13-9.15 bar)',
+    manufacturer: 'Schneider Electric',
+    family: 'Telemecanique XMLB',
+    url: 'https://iportal.se.com/Contents/docs/SQD-XMLB010A2S13_DATA%20SHEET.PDF',
+    mount: 'field',
+    ratings: { type: 'pressure switch', kind: 'mechanical', output: '1 C/O dry contact', volts: 'up to 240 VAC / 250 VDC', contact: '1 C/O snap action (dry contact)', rangeBar: '0.7-10', media: 'air, fresh water, hydraulic oil (0-70 °C)', process: '1/4in-18 NPTF female', connection: 'screw-clamp terminals 0.5-2.5 mm² (AWG 20-14), 1/2in NPT entry, gland 7-13 mm', IP: 'IP66', contactRating: 'AC-15: 3 A @ 120 V, 1.5 A @ 240 V; DC-13: 0.1 A @ 250 V', sccr: 'n/a — control-circuit field device, not a power-circuit component (UL 508A SB4)' },
+    verified: true,
+  },
 ];

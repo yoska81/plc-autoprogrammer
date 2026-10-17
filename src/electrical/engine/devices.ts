@@ -13,6 +13,8 @@ export const CABINET = 'Cabinet';
 /** Input from a hardware over-temperature limit (not a sensor). */
 export const OVER_TEMP_RE = /\b(over-?temp\w*|high[- ]?limit|temperature limit|limit alarm)\b/i;
 const LIGHT_CURTAIN_RE = /\blight\s*curtain\b/i;
+/** A guard-door / safety-gate input (the interlock's monitoring contact), not the cabinet door. */
+const GUARD_RE = /\b(guard\s*door|safety\s*(gate|door)|interlock(ed)?\s*(door|gate|switch)|door\s*interlock|guard\s*(closed|switch|interlock))\b/i;
 /** The closing (dangerous) stroke a two-hand control enables. */
 const CLOSING_RE = /\b(down|close|closing|lower|clamp|press)\b/i;
 export const DOOR = 'Cabinet door';
@@ -129,8 +131,23 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
     if (legend) add(comp(`${t}L`, legend.partNumber, 1, `EMERGENCY STOP legend plate for ${t}`));
   }
   if (nEstops > 1) askUser.push(`${nEstops - 1} field E-stop station(s) assumed: the push-button enclosure for each is a field item; confirm the locations.`);
-  // No guard switch in the catalog: say what to add, without claiming the drawings show it.
-  for (const g of model.safety.guardDoors) askUser.push(`Guard door interlock (${g.zone}): not drawn yet — select a dual-channel safety switch (field item) and wire it in series with the E-stop channels of ${srTag ?? 'the safety relay'} (S11-S12 / S21-S22).`);
+  // Guard doors: a tongue interlock switch (+ its actuator) per door; its two N.C. safety contacts 11-12 / 21-22
+  // are in series with the E-stops in both channels of SR1, its N.O. monitoring contact 33-34 tells the PLC "closed".
+  const guardIo = points.filter(({ point }) => point.type === 'input' && GUARD_RE.test(point.description) && !/\b(safety relay|e-?stop|light curtain)\b/i.test(point.description));
+  const guardZones = model.safety.guardDoors.length ? model.safety.guardDoors.map((g) => g.zone) : guardIo.length ? [zones[0]] : [];
+  while (guardZones.length < guardIo.length) guardZones.push(guardZones[guardZones.length - 1]);
+  const guardTags: string[] = [];
+  const gsPart = guardZones.length ? pk.pick('sensor', (p) => /safety interlock switch/i.test(String(p.ratings.type ?? '')) && (num(p.ratings.nc) ?? 0) >= 2) : null;
+  for (const zone of guardZones) {
+    if (!gsPart) { askUser.push(`Guard door interlock (${zone}): no dual-channel safety interlock switch in the catalog — select one and wire it in series with the E-stop channels of ${srTag ?? 'the safety relay'} (S11-S12 / S21-S22).`); continue; }
+    const t = add(comp(tags.next('GS'), gsPart.partNumber, 1, `Guard door interlock, ${zone} — N.C. 11-12 / 21-22 in series with the E-stop channels of ${srTag ?? 'the safety circuit'} (S11-S12 / S21-S22), N.O. 33-34 door closed`));
+    guardTags.push(t);
+    const act = gsPart.ratings.actuator ? pk.byNumber(String(gsPart.ratings.actuator)) : null;
+    if (act) add(comp(`${t}A`, act.partNumber, 1, `Actuator (tongue) for ${t}, on the guard door`));
+    else askUser.push(`${t}: select the actuator (tongue) for the ${gsPart.partNumber} interlock switch.`);
+    askUser.push(`${t}: confirm the guard door (${zone}) and that opening it may stop the machine like an E-stop (stop category per the risk assessment); a door that must stay locked while the machine runs down needs a solenoid-locking switch.`);
+  }
+  let guardIdx = 0;
   // Light curtains: a type 4 curtain (sender + receiver, 2 cables) into its own OSSD safety relay, whose safety
   // output is in series with SR1's in the safety-switched supply (24+S); one of its outputs tells the PLC "clear".
   const lcInput = points.some(({ point }) => point.type === 'input' && LIGHT_CURTAIN_RE.test(point.description));
@@ -187,6 +204,7 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
       if (LIGHT_CURTAIN_RE.test(desc) && !/\b(safety relay|e-?stop)\b/i.test(desc) && lcRelay) { tag = lcRelay; type = 'safety-relay-output'; }
       else if (TWO_HAND_RE.test(desc) && thStation) { tag = thStation; type = 'pushbutton-no'; location = model.safety.twoHand?.zone ?? field(); }
       else if (OVER_TEMP_RE.test(desc) && proc?.limit) { tag = proc.limit; type = 'other'; }
+      else if (guardIo.some((g) => g.point === p) && guardTags.length) { tag = guardTags[Math.min(guardIdx++, guardTags.length - 1)]; type = 'limit-switch'; location = guardZones[Math.min(guardIdx - 1, guardZones.length - 1)]; }
       else if (type === 'safety-relay-output') { tag = srTag ?? 'SR1'; }
       else if (type === 'estop-contact') { tag = estopTags[Math.min(estopIdx++, estopTags.length - 1)]; location = tag === estopTags[0] ? DOOR : field(); }
       else if (type === 'pushbutton-no' || type === 'pushbutton-nc') {
@@ -215,9 +233,18 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
         const s = pickSensor(pk, desc, type === 'sensor-npn');
         tag = tags.next(s.prefix); location = field();
         if (s.part) add(comp(tag, s.part.partNumber, 1, desc));
+      } else if (type === 'pressure-switch' || /\b(air|pneumatic|hydraulic|vacuum)?\s*pressure\s*(switch|ok|low|high)\b/i.test(desc)) {
+        // A mechanical pressure switch: its dry SPDT contact (C-NO, closes on rising pressure) to the input.
+        type = 'pressure-switch';
+        tag = tags.next('PRS'); location = field();
+        const ps = pk.pick('sensor', (q) => /pressure switch/i.test(String(q.ratings.type ?? '')) && q.ratings.kind === 'mechanical');
+        if (ps) {
+          add(comp(tag, ps.partNumber, 1, `${desc} — ${ps.ratings.contact ?? 'dry contact'}, N.O. closes on rising pressure`));
+          askUser.push(`${tag}: set the switch point of ${ps.partNumber} (${ps.ratings.setpointPsig ? `${ps.ratings.setpointPsig} psig` : `${ps.ratings.rangeBar ?? ''} bar`} adjustable) for "${desc}".`);
+        } else notes.push(`${tag} (${desc}): pressure switch to select (none in the catalog); wired as a dry contact to ${address}.`);
       } else {
-        // limit / pressure / level switches and other contacts: field items without a catalog part
-        const prefix = type === 'pressure-switch' ? 'PRS' : type === 'limit-switch' ? 'LS' : /\b(level|float)\b/i.test(desc) ? 'LSW' : /\b(flow)\b/i.test(desc) ? 'FS' : /\b(temp|thermostat)\b/i.test(desc) ? 'TS' : 'S';
+        // limit / level switches and other contacts: field items without a catalog part
+        const prefix = type === 'limit-switch' ? 'LS' : /\b(level|float)\b/i.test(desc) ? 'LSW' : /\b(flow)\b/i.test(desc) ? 'FS' : /\b(temp|thermostat)\b/i.test(desc) ? 'TS' : 'S';
         tag = tags.next(prefix); location = field();
         if (type === 'other') type = 'limit-switch';
         notes.push(`${tag} (${desc}): field device to select (not in the catalog); wired as a dry contact to ${address}.`);

@@ -78,7 +78,7 @@ const m2 = good.design.inputs.motors.find((m) => m.tag === 'M2')!;
 assert.equal(m2.starter, 'vfd');
 assert.ok(Math.abs(m2.hp - 1.006) < 0.01, 'kW converted');
 assert.ok(good.design.components.some((c) => c.motorTag === 'M2' && /^GS23-4/.test(c.partNumber)), 'pump drive from the catalog');
-assert.ok(good.design.notes.some((n) => /Guard door interlock \(Pusher station\)/.test(n)));
+assert.ok(good.design.components.some((c) => /^GS\d$/.test(c.tag) && /Guard door interlock, Pusher station/.test(c.function)), 'guard door interlock from the model');
 assert.ok(good.design.askUser?.some((n) => /power not given/.test(n)));
 assert.deepEqual(good.design.machine?.zones, ['Conveyor', 'Pusher station']);
 

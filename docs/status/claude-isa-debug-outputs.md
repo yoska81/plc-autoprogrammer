@@ -366,3 +366,30 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - **Drilling sheets at small scale:** crowded 22 mm holes show their ID only (the tag stays in the table). An HMI cutout label moves above a short cutout. Hole labels avoid other holes' crosshairs.
   - **Checkers:** check_dxf and check_step take the door leaf and the stands into account.
 - **Not done:** the in-app 3D and door views don't draw the split line yet. The layout data (`door.leaves`) is there.
+
+## Double door in the app views; pressure and guard-door switches (integration 1703ef7)
+- **In-app cabinet views:**
+  - The door view draws the centre split, hinges on both outer edges and the latch on the device leaf. The nameplate and warning labels stay off the split.
+  - The inside view opens each leaf about its own hinge (`openDoorPoint`). Device backs and the handle sit on their leaf, and the door wire bundle runs to the duct on that side. The view box covers both leaves.
+  - Single-door renders are unchanged.
+- **Catalog**, all with real part numbers checked against datasheets:
+  - AutomationDirect:
+    - ProSense MPS25-1C-D100D: mechanical, 10–100 psig, SPDT 3 A @ 125 VAC / 2 A @ 30 VDC, DIN pins C=1 NC=2 NO=3 PE=4.
+    - ProSense PSD25-0P-0145H: electronic PNP, M12 pins 1 + / 2 OUT2 / 3 0V / 4 OUT1.
+    - IDEM KM-203002 tongue interlock: 2 N.C. 11-12 / 21-22 + N.O. 33-34, AC-15 6 A @ 120 V, up to PL e with a safety relay, UL E258676.
+    - Actuator 140107.
+  - Siemens: 3SE5112-0QV10 with actuator 3SE5000-0AV01. The switch is listed unverified: the data sheet server returned 403, so its terminal numbers are unchecked.
+  - Schneider: XMLB010A2S13 pressure switch.
+  - SCCR: these are control-circuit field devices, so UL 508A SB4 doesn't apply. Each part says so.
+  - No Allen-Bradley 440K or Schneider XCSPA part was added: no 2 N.C. + 1 N.O. catalog number could be confirmed (XCSPA592 is 1 N.C. + 1 N.O.).
+- **Engine:**
+  - Each pressure-switch input gets a mechanical pressure switch from the catalog, plus a set-point question. It no longer produces a "not in the catalog" note.
+  - Each guard door gets a GS interlock and its actuator, instead of the old "not drawn yet" note. Doors come from the spec, or from a "guard door closed" input.
+- **Wiring:**
+  - Field dry-contact inputs use the part's own terminal numbers (`contactPin`): PRS1:1 / :3 / :4, GS1:33 / :34.
+  - Guard switches sit in series after the E-stops in both SR1 channels: S11…GS1:11, GS1:12→S12, and the same for 21-22. They're drawn as N.C. contacts on the safety rungs.
+  - The safety-functions document has a "Guard door interlock" entry from the design.
+- **Tests:**
+  - engine.test checks: the guard interlock and its actuator, the door-closed input on 33-34, the S11 / S21 chains through GS1, and the pressure switch on its DIN pins.
+  - The catalog test allowlists 3SE5112-0QV10 with its reason.
+  - The machine-model AI test now expects the real interlock instead of the note.

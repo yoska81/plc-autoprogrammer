@@ -81,6 +81,17 @@ export function safetyFunctions(p: ProjectSnapshot): SafetyFunction[] {
       test: `Release the E-stop and operate ${s.reset ?? 'the reset device'}; then try to start without the reset.`,
       expected: 'Safety circuit resets only on the deliberate reset action; releasing the E-stop alone does not restart anything; Start is required after reset.',
     });
+    if (s.guards.length) out.push({
+      id: `SF-${pad(++n, 2)}`, name: 'Guard door interlock',
+      initiating: s.guards.map((t) => `${t}${loc(t) ? ` (${loc(t)})` : ''}`).join(', '),
+      stopCategory: cat,
+      logic: s.relay ? `${s.relay.tag} ${s.relay.partNumber} (N.C. 11-12 / 21-22 in series with the E-stops)` : 'Hardwired chain',
+      finals: finals.join('; ') || 'NOT DEFINED',
+      architecture: `Dual-channel positive-opening interlock(s) ${s.guards.join(', ')} into ${s.relay?.tag ?? 'the safety circuit'}; the N.O. monitoring contact to the PLC is not safety-related. Category / PL to be verified per ISO 13849-1/-2 (ISO 14119: guard locking if the run-down time exceeds the access time).`,
+      plr: PLR,
+      test: `With the machine running, open each guard door (${s.guards.join(', ')}) one at a time; then close it and try to restart without a reset.`,
+      expected: `All hazardous motion stops; ${s.relay ? `${s.relay.tag} outputs open, ` : ''}the machine cannot restart until the door is closed and the safety circuit is reset.`,
+    });
     if (s.edm.length && s.relay) out.push({
       id: `SF-${pad(++n, 2)}`, name: 'Contactor monitoring (EDM)',
       initiating: `NC mirror contacts of ${s.edm.join(', ')}`, stopCategory: 'n/a', logic: `${s.relay.tag} feedback loop S33–S34`,
@@ -90,7 +101,7 @@ export function safetyFunctions(p: ProjectSnapshot): SafetyFunction[] {
     });
   }
   // Safety functions the design itself has (two-hand and light-curtain relays, the heater's over-temperature limit).
-  const designed = new Set<string>();
+  const designed = new Set<string>(m?.safety.guards.length ? ['Guard door interlock'] : []);
   for (const x of m?.safety.extraRelays ?? []) {
     const t = x.relay.tag;
     const guarded = (p.electrical?.ioWiring ?? []).filter((w) => w.safetyContact === t).map((w) => `${w.address} ${w.deviceTag} (${w.description})`);

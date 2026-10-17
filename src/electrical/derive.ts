@@ -383,9 +383,20 @@ export interface IoGroup {
   points: IoPoint[];
 }
 
+/**
+ * Terminal of a dry-contact field device for a contact role: the part's own numbering (catalog
+ * ratings.pins, e.g. "C=1 NC=2 NO=3 PE=4" on a DIN-connector pressure switch, "C=33 NO=34" on an
+ * interlock's monitoring contact), else the role name.
+ */
+export function contactPin(part: CatalogPart | undefined, role: 'C' | 'NO' | 'NC' | 'PE'): string {
+  return new RegExp(`\\b${role}=(\\S+)`).exec(String(part?.ratings.pins ?? ''))?.[1] ?? role;
+}
+
 export interface SafetyModel {
   relay?: ResolvedComponent;
   estops: string[];
+  /** Guard-door interlock switches: their N.C. 11-12 / 21-22 in series with the E-stops in both channels. */
+  guards: string[];
   reset?: string;
   mcr?: ResolvedComponent;
   edm: string[];
@@ -630,6 +641,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const srs = byCat(rc, 'safetyRelay');
   const relay = srs.find((c) => !isTwoHand(c) && !isCurtain(c)) ?? srs[0];
   const estopTags = byCat(rc, 'estop').map((c) => c.tag);
+  const guardTags = byCat(rc, 'sensor').filter((c) => /safety interlock switch/i.test(String(c.part?.ratings.type ?? ''))).map((c) => c.tag);
+  const pinOf = (tag: string, role: 'C' | 'NO' | 'NC' | 'PE') => contactPin(rc.find((c) => c.tag === tag)?.part, role);
   const ioW = ctx.design.ioWiring;
   for (const w of ioW) if (w.deviceType === 'estop-contact' && !estopTags.includes(w.deviceTag)) estopTags.push(w.deviceTag);
   // Safety-relay reset button: an explicit "safety reset" first; a plain "Reset" only when it is not
@@ -669,7 +682,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     const inputs = rc.filter((d) => d !== c && new RegExp(`\\b${c.tag}\\b`).test(d.comp.function) && (kind === 'two-hand' ? d.category === 'pushbutton' : d.category === 'sensor')).map((d) => d.tag);
     return { relay: c, kind, inputs };
   });
-  const safety: SafetyModel = { relay, estops: estopTags, reset, mcr, edm, edmTerms: edm.map((t) => ncOf(t).join('-')), outputSupply: hasSafety ? '24+S' : '24+', extraRelays };
+  const safety: SafetyModel = { relay, estops: estopTags, guards: guardTags, reset, mcr, edm, edmTerms: edm.map((t) => ncOf(t).join('-')), outputSupply: hasSafety ? '24+S' : '24+', extraRelays };
 
   // ---- PLC & IO points
   const plcRc = byCat(rc, 'plc')[0];
@@ -843,11 +856,11 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${p.jb} (${tag})`, kind: 'feed', group: p.jb });
         continue;
       }
-      p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${tag}:${sensor ? 'BK' : 'NO'}`, kind: 'feed', group: tag });
-      p.supplyTerminal = add(tb2, { wire: '24+', internal: 'TB1 24+ (jumper)', external: `${tag}:${sensor ? 'BN' : 'C'}`, kind: 'feed', group: tag });
+      p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${tag}:${sensor ? 'BK' : pinOf(tag, 'NO')}`, kind: 'feed', group: tag });
+      p.supplyTerminal = add(tb2, { wire: '24+', internal: 'TB1 24+ (jumper)', external: `${tag}:${sensor ? 'BN' : pinOf(tag, 'C')}`, kind: 'feed', group: tag });
       if (sensor) p.returnTerminal = add(tb2, { wire: '0V', internal: 'TB1 0V (jumper)', external: `${tag}:BU`, kind: 'feed', group: tag });
       // the device cable's PE core gets its own clamp (one conductor per terminal)
-      else add(tb2, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${tag}:PE`, kind: 'ground', group: tag });
+      else add(tb2, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${tag}:${pinOf(tag, 'PE')}`, kind: 'ground', group: tag });
     }
     // one 24+ / 0V pair per junction box, commoned inside the box
     for (const jb of mw.wiring.junctionBoxes) {
@@ -1012,7 +1025,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:A1`, color: 'BU', size: '18 AWG', function: 'Safety relay supply' });
     addWire({ wire: '0V', from: `${relay.tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: 'Safety relay supply' });
     const chain = (a: string, b: string, contactTerms: string) => {
-      const devs = estopTags.length ? estopTags : ['ES?'];
+      const devs = [...(estopTags.length ? estopTags : ['ES?']), ...guardTags];
       devs.forEach((tag, k) => {
         const [t1, t2] = contactTerms.split('-');
         addWire({ wire: k === 0 ? a : `${a}${letter(k)}`, from: k === 0 ? `${relay.tag}:${a}` : `${devs[k - 1]}:${t2}`, to: `${tag}:${t1}`, color: 'BU', size: '18 AWG', function: 'E-stop channel' });
@@ -1129,9 +1142,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     }
     if (p.type === 'input') {
       if (p.signalTerminal) {
-        addWire({ wire: p.address, from: `${tag}:${p.deviceType.startsWith('sensor') ? 'BK' : 'NO'}`, to: p.signalTerminal, color: p.deviceType.startsWith('sensor') ? 'BK (cable)' : 'BU', size: '18 AWG', function: p.description });
+        addWire({ wire: p.address, from: `${tag}:${p.deviceType.startsWith('sensor') ? 'BK' : pinOf(tag, 'NO')}`, to: p.signalTerminal, color: p.deviceType.startsWith('sensor') ? 'BK (cable)' : 'BU', size: '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
-        if (p.supplyTerminal) addWire({ wire: '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType.startsWith('sensor') ? 'BN' : 'C'}`, color: p.deviceType.startsWith('sensor') ? 'BN (cable)' : 'BU', size: '18 AWG', function: `${tag} supply` });
+        if (p.supplyTerminal) addWire({ wire: '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType.startsWith('sensor') ? 'BN' : pinOf(tag, 'C')}`, color: p.deviceType.startsWith('sensor') ? 'BN (cable)' : 'BU', size: '18 AWG', function: `${tag} supply` });
         if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:BU`, color: 'BU (cable)', size: '18 AWG', function: `${tag} 0V` });
       } else {
         addWire({ wire: '24+', from: 'TB1 24+', to: `${tag}:C`, color: 'BU', size: '18 AWG', function: `${tag} supply` });

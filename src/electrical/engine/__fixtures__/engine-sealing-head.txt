@@ -32,6 +32,7 @@ PB2      GCX1101            x1    Stop
 PB3      GCX1102            x1    Fault reset
 LS1      PNK-AP-3H          x1    Sealing head up (retracted)
 LS2      PNK-AP-3H          x1    Sealing head down (sealing position)
+PRS1     MPS25-1C-D100D     x1    Air pressure OK — SPDT (dry contact), N.O. closes on rising pressure
 LS3      PNK-AP-3H          x1    Film roll low sensor
 SOL1     100222016324002    x1    Sealing head solenoid valve (double solenoid)
 PL1      GCX1232-24L        x1    Machine running
@@ -73,8 +74,8 @@ note: Seal heater on (SSR): heater power not given — assumed 1.5 kW single-pha
 note: TAH1 (SCU-3100): order its SCU-PDM2 programming / display module (sold separately, not in this catalog) and a second thermocouple in the heater for the limit; set the trip point and the latch.
 note: LC1: confirm the protected height (300 mm assumed) and the mounting distance from the hazard (ISO 13855: stopping time of the closing stroke + the curtain's 9 ms response).
 note: PB1: each button's N.O. + N.C. go to SR3; the PLC's two-hand inputs need an extra N.O. contact per button (or read the relay's monitoring output instead) — confirm with the station's contact blocks.
+note: PRS1: set the switch point of MPS25-1C-D100D (10-100 psig adjustable) for "Air pressure OK".
 note: Motor currents from NEC Table 430.250 / 430.248: M1 0.5 HP 1.1 A — confirm the nameplates.
-note: PRS1 (Air pressure OK): field device to select (not in the catalog); wired as a dry contact to X105.
 note: VFD1: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.
 
 explanation: Rule-based design: NEMA 12 SCE-36EL3012LP, 480 V 3-phase through 30A — load 5.5 A (motors + 25% of the largest + 125% of the heaters + control) x 1.15 disconnect; motors: M1 0.5 HP on GS23-40P5 (STO); 24 VDC from PSR-24-120-3 for 1.7 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 66% spare panel space.
