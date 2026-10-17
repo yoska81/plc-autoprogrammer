@@ -11,7 +11,7 @@ import { PLC_PROFILES } from './profiles';
 import { HMI_MODELS } from '../../hmi/hmiCatalog';
 import { CATALOG } from '../../electrical/catalog';
 
-const ALL_HMIS = () => CATALOG.filter((p) => p.category === 'hmi');
+const ALL_HMIS = () => CATALOG.filter((p) => p.category === 'hmi' || (p.category === 'plc' && p.ratings.builtInPanel === 'yes'));
 
 const need = (n: Partial<Need> = {}): Need => ({ digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: false, minHmiSizeIn: null, ...n });
 
@@ -61,7 +61,8 @@ assert.equal(moduleLimits(platformById('siemens-s7-1200')!, getPart('6ES7212-1AE
 // HMI ↔ PLC: same brand, or a shared Ethernet protocol stated for the panel.
 const ok = (platform: string, hmi: string) => hmiCompatible(platformById(platform)!, getPart(hmi)!).ok;
 assert.deepEqual(protocolsOf(getPart('2713P-T7WD1')!), ['EtherNet/IP']);
-assert.ok(ok('ab-micro850', '2713P-T7WD1'), 'PanelView 5310 with Micro850');
+// Rockwell 2713P-TD001: PanelView 5310 (View Designer) talks to Logix 5000 controllers only; Micro800 uses the PanelView 800.
+assert.ok(!ok('ab-micro850', '2713P-T7WD1') && ok('ab-compactlogix-5380', '2713P-T7WD1'), 'PanelView 5310 with CompactLogix, not Micro850');
 assert.ok(ok('ab-micro850', '2711R-T7T'), 'PanelView 800 (protocol not stated) with its own brand');
 assert.ok(!ok('ab-micro850', '6AV2123-2GB03-0AX0'), 'KTP700 (PROFINET) not with Micro850');
 assert.ok(ok('siemens-s7-1200', '6AV2123-2GB03-0AX0'), 'KTP700 with S7-1200');
@@ -118,13 +119,15 @@ const NO_RESOLUTION: Record<string, string> = {
 };
 for (const p of ALL_HMIS().filter((h) => h.vendor && h.vendor !== 'automationdirect')) {
   const r = p.ratings;
+  const headless = r.touch === 'none'; // gateways / servers without a display
+  if (r.lifecycle === 'legacy') continue; // listed for existing machines only (greyed, never designed for)
   if (r.resolutionPx !== undefined) assert.match(String(r.resolutionPx), /^\d+x\d+$/, `${p.partNumber}: resolutionPx is WxH`);
-  else assert.ok(NO_RESOLUTION[p.partNumber], `${p.partNumber}: resolutionPx from the datasheet`);
-  if (p.partNumber !== 'HMIG3U') assert.equal(typeof r.displayIn, 'number', `${p.partNumber}: displayIn`);
+  else assert.ok(headless || NO_RESOLUTION[p.partNumber], `${p.partNumber}: resolutionPx from the datasheet`);
+  if (p.partNumber !== 'HMIG3U' && !headless) assert.equal(typeof r.displayIn, 'number', `${p.partNumber}: displayIn`);
   if (r.touch !== undefined) assert.match(String(r.touch), /^(resistive|capacitive|yes|none)$/, `${p.partNumber}: touch type`);
   for (const k of ['ethernetPorts', 'serialPorts', 'usbPorts']) if (r[k] !== undefined) assert.ok(Number.isInteger(r[k]) && Number(r[k]) >= 0, `${p.partNumber}: ${k}`);
 }
-assert.equal(getPart('HMIG3U')!.ratings.pairsWith, 'HMIDT732');
+assert.ok(String(getPart('HMIG3U')!.ratings.pairsWith).split(',').includes('HMIDT732'), 'GTU box pairs with its displays');
 console.log('HMI panel spec tests passed');
 
 // Update all: the CPU must hold the real I/O list; CLICK modules are added for the shortfall, or null (a bigger CPU).

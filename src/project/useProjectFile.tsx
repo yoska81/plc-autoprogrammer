@@ -72,7 +72,8 @@ export function useProjectFile(): { save: () => void; saveAs: () => void; open: 
   }, []);
 
   useEffect(() => {
-    desktopBridge()?.onOpenFile?.((name, bytes, filePath) => openBlob(new Blob([bytes as BlobPart]), name, filePath));
+    const off = desktopBridge()?.onOpenFile?.((name, bytes, filePath) => openBlob(new Blob([bytes as BlobPart]), name, filePath));
+    return () => { if (typeof off === 'function') off(); };
   }, [openBlob]);
 
   const input = (

@@ -60,6 +60,13 @@ HASH=1 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # preview buil
 The sweep fails on page/console errors, sideways scrolling, controls pushed off-screen, text below 3:1 contrast and light
 text on lime. `old-data/<commit>.json` is the browser storage the example project of that commit left behind.
 
+## Sourcing and Engineer review
+
+```bash
+BASE_URL=http://localhost:5203 node e2e/sourcing.e2e.cjs   # BOM sourcing, alternatives + Swap (impact, Undo), live check (web search mocked), Optimise, Engineer review (rules + AI with one-click fix), review package
+npx tsx src/sourcing/sourcing.test.ts                      # sourcing data, equivalents, swap impact (mounting), optimise, live-check source verification
+```
+
 ## HMI screens made by hand
 
 ```bash

@@ -139,6 +139,8 @@ export default function App() {
           { label: 'Machining (DXF)', to: '/electrical?tab=machining' },
           { label: 'Labels', to: '/electrical?tab=labels' },
           { label: 'Improve design', to: '/electrical?tab=improve' },
+          { label: 'Sourcing', to: '/sourcing' },
+          { label: 'Engineer review', to: '/engineer' },
         ],
       },
       {

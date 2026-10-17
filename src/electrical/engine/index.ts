@@ -75,7 +75,8 @@ function enclosureCandidates(pk: Picker, rating: DesignInputs['enclosureRating']
   const stainless = rating === 'NEMA 4X';
   const n = (rating ?? 'NEMA 12').replace('NEMA ', '');
   const all = pk.candidates('enclosure').filter((p) => p.ratings.kind === 'enclosure');
-  const fit = all.filter((p) => (stainless ? /stainless/i.test(String(p.ratings.material ?? '')) : !/stainless/i.test(String(p.ratings.material ?? '')))
+  // NEMA 4X: stainless (washdown); otherwise painted steel. Fiberglass / polycarbonate 4X boxes are catalog choices, not defaults.
+  const fit = all.filter((p) => (stainless ? /stainless/i.test(String(p.ratings.material ?? '')) : !/stainless|fiberglass|polycarbonate/i.test(String(p.ratings.material ?? '')))
     && (n === '1' || String(p.ratings.nema ?? '').split('/').includes(n)));
   const area = (p: CatalogPart) => (num(p.ratings.heightIn) ?? 0) * (num(p.ratings.widthIn) ?? 0) * 1000 + (num(p.ratings.depthIn) ?? 0);
   return (fit.length ? fit : all).sort((a, b) => area(a) - area(b));
