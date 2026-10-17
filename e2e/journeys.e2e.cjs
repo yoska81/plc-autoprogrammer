@@ -126,7 +126,7 @@ function sse(model, text) {
 }
 
 // Buttons a sweep never presses: they leave the page, delete or reset work, or open the file dialogs of the OS.
-const SKIP = /delete|remove|clear|reset all|new project|start clean|withdraw|issue revision|discard|close|cancel|open project|import|load|print|connect|disconnect|ai full|redesign|regenerate|generate|build|rebuild|update all|update .* from|ask ai|save as|save|undo|redo|restore|revert|replace|sign out|log ?out|quit|exit|copy|back to typical|^open$|start empty|from template|^change$/i;
+const SKIP = /delete|remove|clear|reset all|new project|start clean|withdraw|issue revision|discard|close|cancel|open project|import|load|print|connect|disconnect|ai full|redesign|regenerate|generate|build|rebuild|update all|update .* from|ask ai|save as|save|undo|redo|restore|revert|replace|sign out|log ?out|quit|exit|copy|back to typical|^open$|start empty|from template|^change|^update|add rung|new blank screen|new screen from|run ai review/i;
 
 async function sweep(page, mc, where) {
   const before = page.url();
@@ -220,6 +220,16 @@ async function journey(browser, mc) {
     await page.getByRole('button', { name: 'Build program from my project' }).click();
     await page.waitForTimeout(3000);
   });
+  await step('review after build', async () => {
+    const f = await page.evaluate(async () => {
+      const { checksFor } = await import('/src/review/actions.ts');
+      const { collectProject } = await import('/src/deliverables/collect.ts');
+      return checksFor(collectProject()).filter((x) => x.severity === 'critical' || x.severity === 'major').map((x) => `${x.severity}: ${x.title}`);
+    });
+    fs.writeFileSync(`${OUT}${mc.key}_review.txt`, f.join('\n'));
+    log(mc.key, 'critical/major review findings after the build', f.length);
+    for (const x of f) console.log('    ', x);
+  });
   // Every page: look and click.
   for (const route of ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/review', '/export']) {
     await step(`page ${route}`, async () => {
@@ -257,15 +267,6 @@ async function journey(browser, mc) {
     const files = Object.keys(zip.files);
     for (const want of [/certification_pack\.pdf$/, /order_list\.xlsx$/, /_full_package\.pdf$/]) if (!files.some((f) => want.test(f))) problem(mc.key, 'ZIP', `no ${want}`);
     log(mc.key, 'ZIP files', files.length);
-  });
-  await step('review', async () => {
-    const f = await page.evaluate(async () => {
-      const { checksFor } = await import('/src/review/actions.ts');
-      const { collectProject } = await import('/src/deliverables/collect.ts');
-      return checksFor(collectProject()).filter((x) => x.severity === 'critical' || x.severity === 'major').map((x) => `${x.severity}: ${x.title}`);
-    });
-    fs.writeFileSync(`${OUT}${mc.key}_review.txt`, f.join('\n'));
-    log(mc.key, 'critical/major review findings', f.length, f.slice(0, 6).join(' | '));
   });
   await ctx.close();
 }
