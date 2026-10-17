@@ -24,7 +24,8 @@ import { getPart } from '../electrical/catalog';
 import { vendorPreference } from '../store/useProjectStore';
 import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
 import { mergeRegenerated } from '../hmi/engine/regenerate';
-import { reviseLadder, generateLadder } from '../plc/ai/ladderAI';
+import { reviseLadder } from '../plc/ai/ladderAI';
+import { generateRuleBasedProgram } from '../plc/ai/cycleAI';
 import { getHmi } from '../hmi/hmiCatalog';
 
 export type UpdateStep = 'equipment' | 'io' | 'electrical' | 'hmi' | 'program';
@@ -160,8 +161,8 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, s
         const ctx = { profile, cpu, io, addresses, wiring, hmi };
         const aiCfg = { ...ai, provider: settings.provider };
         if (!prog.ladder.rungs.length) {
-          const r = await generateLadder(aiCfg, ctx, specToText(spec));
-          if (!r.program) throw new Error('No program returned.');
+          // Standard blocks from the rules (every HMI tag implemented); the AI writes only the cycle block.
+          const r = await generateRuleBasedProgram({ ai: aiCfg.apiKey ? aiCfg : undefined, ctx, spec: specToText(spec), electrical: useElectricalStore.getState().design, hmi: hmi ?? null });
           prog.setGeneratedLadder(r.program, r.explanation, r.reasoning);
           mark('program', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(hmi ?? null) });
           onStep({ step, status: 'done', message: `${r.program.rungs.length} rungs written.` });

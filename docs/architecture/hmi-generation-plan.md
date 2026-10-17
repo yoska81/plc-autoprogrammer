@@ -198,7 +198,7 @@ Steps 1–3 already give an HMI without any AI. Each step leaves the app working
 - Still open from the plan: one shared `tagPlan` read by ladderAI and the review (today the ladder AI
   reads the HMI's tag list, as before), and retarget as a re-layout.
 
-## 8. Next: PLC program the same way (step 3, manager)
+## 8. PLC program the same way (step 3, manager) — implemented 2026-10-17
 
 Template blocks are built from the machine model, the I/O list and the HMI tag plan:
 
@@ -214,3 +214,18 @@ The AI only fills in the machine's own cycle logic, block by block, in small req
 the whole program in one answer. The standard HMI tags are then implemented by construction (the
 m0 replay currently shows 22 "tag never written" findings, because the recorded program predates the
 rule-based HMI).
+
+Implemented:
+- `src/plc/engine/program.ts`: `buildProgram()` builds Safety & modes, Alarms, one block per actuator
+  (timeouts), Manual, Outputs (one coil per output, Safety OK in every motion rung) and HMI & status.
+  HMI tags are found by their `role` (keyed by physical addresses, so renaming an actuator doesn't break
+  it). The default cycle runs motors and drives while the cycle runs.
+- `src/plc/ai/cycleAI.ts`: the AI writes only the "cycle" block, in a small request of about 4.7k chars.
+  `mergeCycle` checks that it writes only its request bits, the free bits / step register / free timers
+  and the state word, and that the checker finds no errors. Otherwise the rules' default is kept, with
+  a note.
+- Tests: `src/plc/engine/program.test.ts`. Goldens example / big / sealing; checker clean; the review's
+  program and HMI rules give 0 problems; a simulator run covers start, safety stop, no auto restart,
+  manual jog and the timeout alarm; the cycle merge accepts and rejects correctly; AI failure and a
+  recorded cycle are covered.
+- AI-quality m0 replay: hmi 0 -> 97, program 100, total 98.

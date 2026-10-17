@@ -137,6 +137,8 @@ export interface HmiTag {
   dataType: 'BIT' | 'INT' | 'INT2' | 'FLOAT';
   access: 'read' | 'write' | 'read-write';
   description: string;
+  /** What the tag is for, keyed by physical addresses (rule-based HMI, e.g. "permit:Y002"): the program templates find it by this, whatever its name. */
+  role?: string;
 }
 
 export interface HmiDesign {
