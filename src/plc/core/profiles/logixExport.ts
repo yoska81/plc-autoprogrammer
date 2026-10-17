@@ -13,7 +13,8 @@ import type { CompareElement, LadderElement, LadderOutput, LadderProgram, Rung }
 import type { ExportContext, ModuleSlot } from '../profile';
 
 export type LogixType = 'BOOL' | 'DINT' | 'REAL' | 'TIMER' | 'COUNTER';
-export interface LogixTag { name: string; dataType: LogixType; aliasFor?: string; description: string }
+/** `base` = the neutral address the tag stands for (T1 for a TIMER, C1 for a BOOL …). */
+export interface LogixTag { name: string; dataType: LogixType; aliasFor?: string; description: string; base?: string }
 export interface LogixRung { comment: string; text: string }
 export interface LogixRoutine { name: string; rungs: LogixRung[] }
 export interface LogixProgram { tags: LogixTag[]; routines: LogixRoutine[]; warnings: string[] }
@@ -59,6 +60,7 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     const label = ctx.labels.get(base);
     const alias = dataType === 'BOOL' || dataType === 'REAL' ? ioTag(base, modules) : null;
     const tag: LogixTag = {
+      base,
       name: logixName(n?.nickname || label || GENERATED[base] || base, used, base),
       dataType, description: [label, n?.comment].filter(Boolean).join(' — ') || base,
       ...(alias ? { aliasFor: alias } : {}),
@@ -193,6 +195,8 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     if (!rungs.length) continue;
     routines.push({ name: logixName(b.name, routineUsed, 'Routine'), rungs: rungs.flatMap(rungText) });
   }
+  // HMI tags the ladder doesn't use still exist in the controller, so the HMI can bind to them.
+  for (const t of ctx.extraTags) operand(t.address);
   const main: LogixRung[] = [];
   if (usesClock) {
     const clk = tagFor('SC7', 'BOOL').name;

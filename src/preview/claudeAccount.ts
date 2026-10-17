@@ -87,6 +87,8 @@ export async function callClaudeAccount(opts: {
   messages: { role: 'user' | 'assistant'; content: string | Block[] }[];
   schema?: Record<string, unknown>;
   signal?: AbortSignal;
+  /** Called whenever streamed text arrives (watchdog). */
+  onProgress?: () => void;
 }): Promise<{ text: string; reasoning: string | null }> {
   const sample = await getSample();
   if (!sample) {
@@ -120,6 +122,7 @@ export async function callClaudeAccount(opts: {
     effort,
     cache: false,
     ...(opts.signal ? { signal: opts.signal } : {}),
+    ...(opts.onProgress ? { onText: () => opts.onProgress?.() } : {}),
     ...(images.length ? { images } : {}),
   };
   try {

@@ -2,7 +2,7 @@ import type { ChatTurn } from './anthropic';
 import { IS_PREVIEW } from '../../preview/mode';
 import { callClaudeAccount } from '../../preview/claudeAccount';
 import { trackAi } from './busy';
-import { withRetries } from './errors';
+import { totalLimitFor, withRetries, withWatchdog } from './errors';
 import { reportRetry } from './jobs';
 
 /** One OpenAI chat request; with `schema` the reply is strict JSON. */
@@ -17,7 +17,8 @@ type OpenAIOptions = {
 
 /** One OpenAI request; transient failures are retried like callClaude. */
 export function callOpenAI(opts: OpenAIOptions): Promise<string> {
-  return trackAi(() => withRetries(() => requestOpenAI(opts), {
+  // no streaming here: the watchdog caps the total time (30 min) so a dead connection can't hang the app
+  return trackAi(() => withRetries(() => withWatchdog((signal) => requestOpenAI({ ...opts, signal }), { signal: opts.signal, totalMs: totalLimitFor('max'), reportsProgress: false }), {
     signal: opts.signal,
     onRetry: (n) => reportRetry(opts.signal, n),
     explain: (err) => (err instanceof Error ? err.message : String(err)),
