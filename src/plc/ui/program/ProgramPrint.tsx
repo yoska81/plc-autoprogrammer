@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { IS_PREVIEW } from '../../../preview/mode';
 import { createPortal } from 'react-dom';
 import { PrinterIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import type { LadderProgram } from '../../core/ladder';
@@ -87,7 +88,7 @@ export default function ProgramPrint({ program, projectName, plcName, issues, la
       <div className="no-print sticky top-0 z-10 flex items-center gap-2 border-b border-gray-200 bg-white px-6 py-2 shadow-sm">
         <span className="flex-1 text-sm font-semibold">Print program · {program.rungs.length} rungs in {blocks.length} blocks</span>
         <button type="button" onClick={() => void listing('print')} disabled={busy} className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-          <PrinterIcon className="h-4 w-4" /> {busy ? 'Preparing…' : 'Print'}
+          <PrinterIcon className="h-4 w-4" /> {busy ? 'Preparing…' : IS_PREVIEW ? 'Print (save PDF)' : 'Print'}
         </button>
         <button type="button" onClick={() => void listing('save')} disabled={busy} className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-60">
           Program PDF

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { IS_PREVIEW } from '../preview/mode';
 import { looksLeftOver } from '../spec/leftovers';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useElectricalStore } from '../store/useElectricalStore';
@@ -187,7 +188,7 @@ export default function ElectricalPage() {
           </div>
           {el.design && (
             <div className="flex gap-2">
-              <button onClick={() => void drawingsPdf('print')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm bg-steel-800 text-white rounded hover:bg-steel-900 disabled:opacity-60">{pdfBusy === 'print' ? 'Preparing…' : 'Print'}</button>
+              <button onClick={() => void drawingsPdf('print')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm bg-steel-800 text-white rounded hover:bg-steel-900 disabled:opacity-60" title={IS_PREVIEW ? 'The browser preview cannot reach a printer: this saves the drawings PDF to print from your PDF reader. In the Windows app, Print opens the Windows print dialog.' : 'Print the drawings'}>{pdfBusy === 'print' ? 'Preparing…' : IS_PREVIEW ? 'Print (save PDF)' : 'Print'}</button>
               <button onClick={() => void drawingsPdf('save')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-60">{pdfBusy === 'save' ? 'Preparing…' : 'Drawings PDF'}</button>
               {ctx && <button onClick={() => download(`${base}_BOM.csv`, bomCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">BOM CSV</button>}
               {ctx && <Link to="/export#order-list" className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Order list</Link>}
