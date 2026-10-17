@@ -23,6 +23,14 @@ const launch = (env = {}) => electron.launch({
   env: { ...process.env, ISA_USER_DATA: PROFILE, ...env },
 });
 
+// Close the app. A project opened from an .isap has unsaved changes: answer the app's
+// "Close without saving" prompt and the page's beforeunload (nothing can be clicked headless).
+async function closeApp(app, win) {
+  await app.evaluate(({ dialog }) => { dialog.showMessageBoxSync = () => 0; });
+  win.on('dialog', (d) => d.accept().catch(() => {}));
+  await app.close();
+}
+
 (async () => {
   const errors = [];
   // ── First run ──
@@ -71,6 +79,9 @@ const launch = (env = {}) => electron.launch({
   const isap = path.join(__dirname, 'fixtures', 'example.isap');
   await app.evaluate(({ BrowserWindow }, [f, bytes]) => BrowserWindow.getAllWindows()[0].webContents.send('isa:open-file', 'example.isap', new Uint8Array(bytes), f), [isap, [...fs.readFileSync(isap)]]);
   await win.waitForFunction(() => /example/i.test(document.querySelector('select[aria-label="Open project"] option:checked')?.textContent ?? ''), null, { timeout: 30000 });
+  await win.waitForTimeout(1500);
+  const opened = (await win.locator('select[aria-label="Open project"] option').allInnerTexts()).filter((t) => /example/i.test(t));
+  check(opened.length === 1, `one .isap open makes one project (${opened.join(' | ')})`);
   await win.locator('nav a', { hasText: 'Deliverables' }).click();
   for (const [name, file, min] of [['Cabinet pictures (ZIP)', 'cabinet_pictures.zip', 2], ['Screen images (ZIP)', 'hmi_screens.zip', 1]]) {
     const zp = path.join(OUT, file);
@@ -127,7 +138,7 @@ const launch = (env = {}) => electron.launch({
   const printers = await win.evaluate(async () => window.isaDesktop.listPrinters());
   log('Printers seen by Windows/CUPS:', printers.length ? printers.map((p) => p.name).join(', ') : 'none (no printers on this machine)');
   await win.screenshot({ path: path.join(OUT, '02_deliverables.png') });
-  await app.close();
+  await closeApp(app, win);
 
   // ── Second run: projects kept; window size remembered ──
   app = await launch();
@@ -135,9 +146,9 @@ const launch = (env = {}) => electron.launch({
   await win.waitForSelector('text=Project navigation', { timeout: 30000 });
   const projects2 = await win.locator('select[aria-label="Open project"] option').allInnerTexts();
   log('Projects after restart:', projects2.join(' | '));
-  check(projects2.includes('Desktop Test Cell'), 'project kept after restart');
+  check(projects2.includes('Desktop Test Cell') && projects2.filter((t) => /example/i.test(t)).length === 1, 'projects kept after restart');
   check(fs.existsSync(path.join(PROFILE, 'window-state.json')), 'window size remembered');
-  await app.close();
+  await closeApp(app, win);
 
   // ── Printing: a 2-label PDF (38 x 12 mm) and a mixed-size PDF, laid out by the print window ──
   for (const [name, sizesMm, uniform] of [['labels', [[38, 12], [38, 12]], true], ['mixed', [[215.9, 279.4], [431.8, 279.4]], false]]) {
@@ -154,7 +165,7 @@ const launch = (env = {}) => electron.launch({
     await win.waitForSelector('text=Project navigation', { timeout: 30000 });
     const r = await win.evaluate(async ({ b, w, h, u }) => window.isaDesktop.print({ pdf: new Uint8Array(b), jobName: 'test', pageWidthMm: w, pageHeightMm: h, uniformPageSize: u, printerName: '', showDialog: true, scale: 'actual', copies: 1 }),
       { b: [...bytes], w: sizesMm[0][0], h: sizesMm[0][1], u: uniform });
-    await app.close();
+    await closeApp(app, win);
     const printed = await PDFDocument.load(fs.readFileSync(outPdf));
     const mm = printed.getPages().map((p) => [p.getWidth() / 72 * 25.4, p.getHeight() / 72 * 25.4]);
     const got = mm.map(([w, h]) => `${w.toFixed(1)}x${h.toFixed(1)}`);
