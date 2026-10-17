@@ -126,3 +126,16 @@ Current: address stability + program QA (manager's URGENT list) — new draft PR
 - [x] 9. CLICK nickname CSV data types (BIT / INT DS, TD / INT2 DD, CTD / HEX / FLOAT) + retentive flags.
 - [x] 10. Block-scoped AI change / "Regenerate this block" only changes the selected block; outside changes left out and counted in the answer.
 - Verified: tsc, eslint, all unit tests, modbus, e2e app, check-all 8 variants 0 FAIL.
+
+## HMI QA (engine side; Debug 1's #59 added the text-fit / reachability checks)
+- [x] Texts fit by measuring (`fitTexts` in build.ts on layout.ts `cutTexts`): abbreviations, then "…"; no fixed 25-char cut; on/off texts stay different; Running lamp gets more room on Main; Date / Time on its own row. The engine test now enforces the text-fit rule on 480x272 … 1280x800.
+- [x] Manual feedback lamps: distinct ON / OFF texts (Extended / Not extended).
+- [x] Redesign: "(added)" screens, hand-added screens and orphaned continuation pages get a nav button on every bar (a hand-added screen keeps its button's text); the merge no longer mutates the generated design.
+- [x] HMI page: confirm before redesigning an HMI the generator did not make; a redesign is one undo step; kept-screen notes shown.
+- Open: header screen name on 4.3" (renderer, Debug 1 / shared), light-curtain drawing and the two-hand / heater power work (sealing-head list, with Dev 1's catalog parts from #55).
+
+## Electrical QA
+- [x] `motorFor`: no `pool[0]` fallback; non-motor loads (heater …) get their own contactor + a question.
+- [x] Overload input regex: "Unwinder motor overload" = the motor's OL contact.
+- [x] Palm / two-hand buttons located at the machine, not on the door.
+- Analog temperature point counted as discrete in the fit: fixed on integration by 7b888fd (platforms / change dialog), not in my code.
