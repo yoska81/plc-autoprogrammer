@@ -144,7 +144,7 @@ function reply(system) {
 
   await go('/program');
   await shot('program_before');
-  await page.getByRole('button', { name: 'Describe' }).click().catch(() => {});
+  await page.getByRole('button', { name: 'Build', exact: true }).click().catch(() => {});
   await click(/Generate (New )?Program/);
   await page.waitForTimeout(2500);
   await shot('program');

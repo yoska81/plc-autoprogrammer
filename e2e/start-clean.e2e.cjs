@@ -43,7 +43,7 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   check(await page.getByTestId('leftover-motor').count() > 0, 'Electrical: leftover motor warning');
   await page.goto(BASE + '/program');
   await page.waitForTimeout(800);
-  const describe = page.getByRole('button', { name: 'Describe' });
+  const describe = page.getByRole('button', { name: 'Build', exact: true });
   if (await describe.count()) await describe.first().click();
   await page.waitForTimeout(300);
   check(await page.getByTestId('leftover-notes').count() > 0, 'Program: leftover notes warning');

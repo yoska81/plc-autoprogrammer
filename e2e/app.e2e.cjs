@@ -351,8 +351,8 @@ function sse(model, text) {
 
   // Program
   await page.goto(BASE + '/program');
-  await page.getByRole('button', { name: 'Describe' }).click();
-  await page.getByRole('button', { name: 'Generate Program' }).click();
+  await page.getByRole('button', { name: 'Build', exact: true }).click();
+  await page.getByRole('button', { name: 'Build program from my project' }).click();
   await page.getByText('Cycle running: panel or HMI Start').waitFor({ timeout: 15000 });
   log('Tree status dots (done/stale):', await page.locator('nav [title="Done"]').count(), '/', await page.locator('nav [title="Out of date"]').count());
   await snap(page, 'program');

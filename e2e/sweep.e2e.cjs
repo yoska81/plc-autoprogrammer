@@ -258,7 +258,7 @@ async function copiedExamplePass(browser, problems) {
   for (const [route, testid] of [['/spec', 'start-clean'], ['/project', 'start-clean'], ['/electrical?tab=design', 'leftover-motor'], ['/program', 'leftover-notes']]) {
     await page.goto(BASE + route);
     await page.waitForTimeout(route.includes('electrical') ? 1500 : 800);
-    if (route === '/program') { const d = page.getByRole('button', { name: 'Describe' }); if (await d.count()) { await d.first().click(); await page.waitForTimeout(300); } }
+    if (route === '/program') { const d = page.getByRole('button', { name: 'Build', exact: true }); if (await d.count()) { await d.first().click(); await page.waitForTimeout(300); } }
     const name = `copied_${route.replace(/\W+/g, '_').replace(/^_|_$/g, '')}`;
     await page.screenshot({ path: `${OUT}${name}.png` });
     const found = await page.evaluate(audit);

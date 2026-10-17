@@ -44,7 +44,7 @@ const log = (...a) => console.log('•', ...a);
       act: async () => { await page.locator('nav[aria-label="Screens"] button').nth(2).click(); await page.getByRole('button', { name: 'Edit screen' }).click(); },
       read: async () => `${await page.locator('nav[aria-label="Screens"] button').nth(2).getAttribute('aria-current')} ${await page.getByRole('button', { name: 'Done editing' }).count()}`, want: 'page 1' },
     { name: 'Program: Fix & Ask text', go: () => tree('PLC program'),
-      act: async () => { const t = page.getByPlaceholder(/Describe a problem or change/); if (!(await t.count())) await page.getByRole('button', { name: /^Fix/ }).first().click(); await page.getByPlaceholder(/Describe a problem or change/).fill('Persist: add a jam timer'); },
+      act: async () => { const t = page.getByPlaceholder(/Describe a problem or change/); if (!(await t.count())) await page.getByRole('button', { name: 'Change', exact: true }).first().click(); await page.getByPlaceholder(/Describe a problem or change/).fill('Persist: add a jam timer'); },
       read: () => page.getByPlaceholder(/Describe a problem or change/).inputValue(), want: 'Persist: add a jam timer' },
     { name: 'Simulation: speed and block', go: () => tree('Simulation'),
       act: async () => { await page.getByRole('button', { name: '2x', exact: true }).click(); await page.getByRole('group', { name: 'Block' }).getByRole('button', { name: /^Conveyor/ }).click(); },
