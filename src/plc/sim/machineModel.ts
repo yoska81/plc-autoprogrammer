@@ -368,9 +368,11 @@ export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): Machine
   }
 
   // conveyors: conveyor motors + product sensors
+  // A motor in the "Conveyor" category is a belt only when nothing in its name says otherwise (an unwinder, pump, fan…).
+  const NOT_BELT = /\b(unwind\w*|rewind\w*|winder|reel|spool|roll|pump|fan|blower|mixer|agitator|spindle|compressor|press)\b/;
   const convMotors = motors.filter((m) => {
     const p = outputs.find((o) => o.address === m.output);
-    return has(m.label, CONVEYOR_RE) || p?.category === 'Conveyor';
+    return has(m.label, CONVEYOR_RE) || (p?.category === 'Conveyor' && !has(m.label, NOT_BELT));
   });
   const conveyors: ConveyorDevice[] = convMotors.map((m) => ({
     id: id('conv'), kind: 'conveyor', label: capital(subject(m.label).join(' ') || 'Conveyor'), motorId: m.id,

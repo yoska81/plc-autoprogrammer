@@ -129,7 +129,8 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
     if (legend) add(comp(`${t}L`, legend.partNumber, 1, `EMERGENCY STOP legend plate for ${t}`));
   }
   if (nEstops > 1) askUser.push(`${nEstops - 1} field E-stop station(s) assumed: the push-button enclosure for each is a field item; confirm the locations.`);
-  for (const g of model.safety.guardDoors) notes.push(`Guard door interlock (${g.zone}): dual-channel safety switch into ${srTag ?? 'the safety circuit'} in series with the E-stops — the switch is a field item to select.`);
+  // No guard switch in the catalog: say what to add, without claiming the drawings show it.
+  for (const g of model.safety.guardDoors) askUser.push(`Guard door interlock (${g.zone}): not drawn yet — select a dual-channel safety switch (field item) and wire it in series with the E-stop channels of ${srTag ?? 'the safety relay'} (S11-S12 / S21-S22).`);
   // Light curtains: a type 4 curtain (sender + receiver, 2 cables) into its own OSSD safety relay, whose safety
   // output is in series with SR1's in the safety-switched supply (24+S); one of its outputs tells the PLC "clear".
   const lcInput = points.some(({ point }) => point.type === 'input' && LIGHT_CURTAIN_RE.test(point.description));

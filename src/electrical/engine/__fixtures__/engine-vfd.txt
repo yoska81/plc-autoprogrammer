@@ -60,10 +60,10 @@ motorLocations {"M1":"Infeed","M2":"Lift"}
 routing {"PRS1":null,"SOL1":null,"LS1":null,"LS2":null}
 
 note: Infeed conveyor: motor power not given — assumed 1 HP; confirm the nameplate.
+note: Guard door interlock (Infeed): not drawn yet — select a dual-channel safety switch (field item) and wire it in series with the E-stop channels of SR1 (S11-S12 / S21-S22).
 note: LC1: confirm the protected height (300 mm assumed) and the mounting distance from the hazard (ISO 13855: stopping time of the closing stroke + the curtain's 9 ms response).
 note: CR1 (Ready signal to robot): dry contact to the other machine's controller — confirm its input voltage and wiring.
 note: Motor currents from NEC Table 430.250 / 430.248: M1 1 HP 2.1 A, M2 2 HP 3.4 A — confirm the nameplates.
-note: Guard door interlock (Infeed): dual-channel safety switch into SR1 in series with the E-stops — the switch is a field item to select.
 note: LS1 (Lift up limit switch): field device to select (not in the catalog); wired as a dry contact to X006.
 note: LS2 (Lift down limit switch): field device to select (not in the catalog); wired as a dry contact to X007.
 note: PRS1 (Air pressure switch): field device to select (not in the catalog); wired as a dry contact to X008.

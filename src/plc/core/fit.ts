@@ -3,7 +3,8 @@ import { moduleSlots, ioCapacity } from './modules';
 import { getPart } from '../../electrical/catalog';
 import type { HmiModel } from '../../hmi/hmiCatalog';
 import type { CpuModel } from './profile';
-import { driversOf, hmiCompatible, platformById, platformFit, type Platform } from './platforms';
+import { driversOf, hmiCompatible, platformById, platformFit, suggestModules, type Platform } from './platforms';
+import { ALL_PARTS } from '../../electrical/catalogs';
 import { panelPart } from '../../hmi/panels';
 
 export interface Need {
@@ -79,3 +80,32 @@ export function hmiFit(hmi: HmiModel, need: Need, cpuId?: string): Fit {
   if (!reason && need.minHmiSizeIn && hmi.sizeIn < need.minHmiSizeIn) reason = `Smaller than the ${need.minHmiSizeIn}" the screens need.`;
   return { ok: !reason, reason, spareIn: 0, spareOut: 0 };
 }
+
+/**
+ * Modules that make `cpuId` cover `need`: the platform's own suggestion (multi-vendor), or for CLICK the
+ * current modules plus the largest CLICK module for each shortfall (inputs, outputs, analog), at most 8.
+ * null when no module set covers it (a bigger CPU is needed).
+ */
+export function modulesToFit(cpuId: string, modules: string[], need: Need): string[] | null {
+  const cpu = findCpu(cpuId);
+  if (!cpu) return null;
+  if (cpuFit(cpu, modules, need).ok) return modules;
+  const platform = platformOf(cpuId);
+  if (platform) {
+    const mods = suggestModules(platform, cpuId, need);
+    return cpuFit(cpu, mods, need).ok ? mods : null;
+  }
+  const click = ALL_PARTS.filter((p) => p.category === 'plcModule' && /^C0-/.test(p.partNumber) && !/THM|RTD/i.test(p.partNumber));
+  const mods = [...modules];
+  for (let k = 0; k < 8 && mods.length < 8; k++) {
+    const f = cpuFit(cpu, mods, need);
+    if (f.ok) return mods;
+    const key = f.spareIn < 0 ? 'inputs' : f.spareOut < 0 ? 'outputs' : /analog inputs/.test(f.reason ?? '') ? 'analogInputs' : /analog outputs/.test(f.reason ?? '') ? 'analogOutputs' : '';
+    if (!key) return null;
+    const best = click.map((p) => ({ p, n: Number(p.ratings[key] ?? 0) })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n)[0];
+    if (!best) return null;
+    mods.push(best.p.partNumber);
+  }
+  return cpuFit(cpu, mods, need).ok ? mods : null;
+}
+

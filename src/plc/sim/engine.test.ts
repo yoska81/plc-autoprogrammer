@@ -248,6 +248,16 @@ test('a dump valve is a valve, not a cylinder; the safety relay needs a manual r
   rb.state.pressed = true; assert.equal(machineInputs(m).get('X001'), true, 'Reset button resets the relay');
 });
 
+test('an unwinder in the Conveyor category is a motor, not a belt with parts', () => {
+  const m = buildMachineModel([
+    { address: 'Y001', description: 'Unwinder VFD run', type: 'output', category: 'Conveyor' },
+    { address: 'Y002', description: 'Infeed belt motor', type: 'output', category: 'Conveyor' },
+  ], []);
+  const conv = m.devices.filter((d): d is ConveyorDevice => d.kind === 'conveyor');
+  assert.equal(conv.length, 1, 'only the belt');
+  assert.ok(m.devices.some((d) => d.kind === 'motor' && /unwinder/i.test(d.label)));
+});
+
 test('pairs solenoids / motors with feedback by description', () => {
   const io = [
     { address: 'Y001', description: 'Clamp 1 extend solenoid', type: 'output', category: 'Pneumatic' },
