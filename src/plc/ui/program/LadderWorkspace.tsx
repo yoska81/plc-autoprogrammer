@@ -95,8 +95,9 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const stages = useStages();
   const { sources, markGenerated } = useStageStore();
   const specText = specToText(fp.spec);
-  const programText = [...(ladder.blocks ?? []).map((b) => `${b.name} ${b.description}`), ...ladder.rungs.map((r) => r.comment)].join(' ');
-  const programLeftOver = ladder.rungs.length ? looksLeftOver(programText, specText + ' ' + io.map((p) => p.description).join(' ')) : { leftOver: false, terms: [] as string[] };
+  // Only the machine-specific block names count (generic PLC words like alarms, modes, seal-in or first-scan are not leftovers).
+  const programText = (ladder.blocks ?? []).map((b) => b.name).join(' ');
+  const programLeftOver = ladder.blocks?.length ? looksLeftOver(programText, `${specText} ${io.map((p) => p.description).join(' ')}`, 1) : { leftOver: false, terms: [] as string[] };
   const notesCheck = /^the machine specification and\/or i\/o list changed|^current specification:/i.test(userPrompt.trim()) || userPrompt.length > 600 && specText && userPrompt.includes(specText.slice(0, 80))
     ? { leftOver: true, terms: ['a copy of the update message / specification'] }
     : looksLeftOver(userPrompt, specText);
