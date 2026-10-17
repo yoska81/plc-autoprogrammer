@@ -1,5 +1,6 @@
 import { IS_PREVIEW } from '../preview/mode';
 import { saveBlob } from './files';
+import { desktopBridge } from '../desktop/bridge';
 
 /**
  * Open a PDF in the browser's print dialog. Where printing is blocked (the
@@ -7,7 +8,13 @@ import { saveBlob } from './files';
  * the PDF is saved instead so it can be printed from a PDF reader.
  * Returns 'printed' (dialog opened), 'opened' (PDF opened in a new tab) or 'saved'.
  */
-export async function printPdf(pdf: Blob, fallbackName: string): Promise<'printed' | 'opened' | 'saved'> {
+export async function printPdf(pdf: Blob, fallbackName: string, page: { wMm: number; hMm: number } = { wMm: 431.8, hMm: 279.4 }): Promise<'printed' | 'opened' | 'saved'> {
+  // Windows app: the Windows print dialog.
+  const d = desktopBridge();
+  if (d?.print) {
+    const r = await d.print({ pdf: new Uint8Array(await pdf.arrayBuffer()), jobName: fallbackName, pageWidthMm: page.wMm, pageHeightMm: page.hMm, uniformPageSize: false, printerName: '', showDialog: true, scale: 'actual', copies: 1 });
+    if (r.ok || r.cancelled) return 'printed';
+  }
   if (IS_PREVIEW) {
     saveBlob(fallbackName, pdf);
     return 'saved';
