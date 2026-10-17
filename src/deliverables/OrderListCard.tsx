@@ -152,7 +152,7 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
             </div>
           )}
           <div className="flex flex-wrap items-baseline gap-3">
-            <span className="text-sm font-semibold text-steel-800" data-testid="order-total">Panel parts, total of {ol.groups.some((g) => g.lines.some((l) => l.userPrice !== undefined)) ? 'known prices' : 'list prices'}: {money(ol.parts.total)}</span>
+            <span className="text-sm font-semibold text-steel-800" data-testid="order-total">Panel parts, total of {ol.groups.some((g) => g.lines.some((l) => l.userPrice !== undefined)) ? 'known prices' : 'verified prices'}: {money(ol.parts.total)}</span>
             {ol.parts.unpriced > 0 && <span className="text-xs text-amber-700">+ {ol.parts.unpriced} line{ol.parts.unpriced === 1 ? '' : 's'} with price to confirm (not in the total)</span>}
             {ol.total !== ol.parts.total || ol.unpriced !== ol.parts.unpriced ? <span className="text-xs text-steel-600" data-testid="order-total-labels">With label supplies: {money(ol.total)}{ol.unpriced > ol.parts.unpriced ? ` + ${ol.unpriced - ol.parts.unpriced} to confirm` : ''}</span> : null}
           </div>
