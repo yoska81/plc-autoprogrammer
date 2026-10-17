@@ -26,7 +26,7 @@ function StepProgress({ step }: { step: string }) {
   const pct = percentOf(step, p, now) ?? 0;
   return (
     <span className="ml-auto flex items-center gap-2 text-xs tabular-nums text-gray-600" data-testid={`progress-${step}`}>
-      <span className="text-gray-500">{isThinking(p) ? 'thinking' : 'writing'} {mmss(now - p.startedAt)}</span>
+      <span className="text-gray-500">{isThinking(p) ? 'thinking' : 'writing'} {mmss(Math.max(0, now - p.startedAt))}</span>
       <span className="w-24 h-1.5 bg-gray-200 rounded overflow-hidden"><span className="block h-full bg-brand-600 transition-all" style={{ width: `${pct}%` }} /></span>
       <span className="w-9 text-right font-medium text-brand-800">{pct}%</span>
     </span>

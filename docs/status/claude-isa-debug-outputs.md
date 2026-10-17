@@ -244,3 +244,34 @@ Findings, ranked (✔ = fixed here, → = routed to the coordinator):
     - analog setup CSV;
     - wire labels for every number; machining incl. bottom glands;
     - 54-file ZIP.
+
+## Drawing text overlap audit (coordinator, urgent user report: "the print is going on top of other prints")
+- **New checker `tools/check_overlap.cjs`** (with `tools/harness/overlap.ts`), part of `check-all.sh`:
+  - renders every sheet like the PDF export;
+  - takes text ink boxes (getBBox → sheet mm, trimmed to the glyphs) and every stroked line;
+  - ignores lines hidden under a filled shape drawn later;
+  - FAIL: text over text ≥ 0.5 mm², or a line ≥ 1 mm through a text.
+  - Cross-checked against the printed PDF with PyMuPDF: same hits.
+- **New harness variants:**
+  - `rules-sealing`: the user's Sealing Head, designed by the engine;
+  - `rules-sealing-long`: the same with I/O descriptions as long as the AI writes them.
+- **Before:** 286 raw hits on 9 variants. After hidden-line occlusion and per-sheet triage, the real ones were:
+  - power distribution (ca600): "FROM T1 4.07" written over "INTEGRAL SECONDARY FUSE" (11 mm²);
+  - device list: long function text running into the part-number column (12 mm²);
+  - panel layout: rail tags R1–R4 drawn over the first device ("R3PLC"); slim-relay labels and short terminal-strip labels crossing their outlines and terminal lines;
+  - drilling sheets: hole IDs colliding (close VFD hole patterns) and sitting on reference duct lines; template labels (handle, stack light, fan, outlet filter) crossed by their own centre lines and the part outline;
+  - door layout: legend plates showing the function text ("SAFETY RESET / — BLUE,"); DETAIL A frame through the E-stop tag; the handle bar through the DS1H tag;
+  - input sheets: "FROM 4.07" across the line-number column;
+  - machine layout: labels on cable routes and on a JB;
+  - IEC symbols: the pressure-switch symbol over its cell line.
+- **Fixes:**
+  - `Txt` cuts text with "..." when even the smallest font doesn't fit `maxW` (so nothing with a width ever runs into the next column).
+  - Placement fixes per sheet as listed:
+    - free-corner hole labels and above/below/left/right template labels that avoid other cutouts and the edge band;
+    - rail tags over the duct; strip labels below short strips; narrow-part labels centred or dropped when unreadable;
+    - door legend = the device name (text before "—", ":", ",", "(");
+    - machine-layout labels avoid routes and try side and diagonal spots;
+    - legend symbols at 85 %.
+- **Bug found:** the analog setup CSV was left out of the ZIP until a PLC program existed. Fixed: it is PLC configuration.
+- **After:** OVERLAP 0 FAIL on all 10 variants. check-all: LAYOUT / DXF / STEP / PDF / XLSX / CONSISTENCY all 0 FAIL.
+- **Open:** I asked the coordinator for the user's screenshot / project to confirm their exact case.

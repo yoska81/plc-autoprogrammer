@@ -5,7 +5,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useStageStore } from '../store/useStageStore';
 import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, hmiFingerprint } from '../spec/useStages';
-import { HMI_MODELS, getHmi, hmiCommsText, hmiMaker, isCmore, HMI_DESIGN_GUIDELINES, type HmiModel } from '../hmi/hmiCatalog';
+import { HMI_MODELS, MIN_DESIGN_PX, designable, getHmi, hmiCommsText, hmiMaker, isCmore, HMI_DESIGN_GUIDELINES, type HmiModel } from '../hmi/hmiCatalog';
 import { catalogPanels } from '../hmi/panels';
 import { setProjectPanel } from '../hmi/retarget';
 import { hmiFit, type Need } from '../plc/core/fit';
@@ -15,6 +15,9 @@ import { buildHmi } from '../hmi/engine';
 import { markEdited, mergeRegenerated, rebuildScreen } from '../hmi/engine/regenerate';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useProgramStore } from '../store/useProgramStore';
+import { collectProject } from '../deliverables/collect';
+import { plcTagNameOf } from '../deliverables/plcTagNames';
+import { withTagNames } from '../hmi/tagLabels';
 import { specToText } from '../spec/types';
 import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
@@ -23,8 +26,8 @@ import { Spinner, ReasoningPanel } from '../components/common';
 import { type AccessLevel, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiLook, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
 import ScreenEditor from '../hmi/ScreenEditor';
 import HmiEditorBar from '../hmi/HmiEditorBar';
-import { addNavEntry, alignElements, createElement, createImageElement, deleteElements, distributeElements, duplicateElements, restack, syncHandTags, type Align } from '../hmi/editor';
-import { loadPicture, panelImage } from '../hmi/background';
+import { addNavEntry, alignElements, createElement, createImageElement, deleteElements, distributeElements, duplicateElements, renameScreen, restack, setScreenLevel as setLevelOf, syncHandTags, type Align } from '../hmi/editor';
+import { backgroundAt, croppedBackground, loadPicture, panelImage, pictureRect, pictureSize } from '../hmi/background';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
 import { checkDesign, layoutBands, MIN_TOUCH, type LayoutIssue } from '../hmi/layout';
@@ -59,7 +62,13 @@ function textToStates(t: string): HmiState[] {
   });
 }
 
-function ElementEditor({ el, screens, onChange, onDelete }: { el: HmiElement; screens: HmiScreen[]; onChange: (e: HmiElement) => void; onDelete: () => void }) {
+/** A neutral memory address with the PLC's tag for it (Allen-Bradley / Siemens), else just the address. */
+function AddressCell({ address, tag }: { address: string; tag?: string | null }) {
+  if (!tag || tag === address) return <>{address}</>;
+  return <span className="inline-flex flex-col leading-tight"><span>{tag}</span><span className="text-[10px] text-gray-400">{address}</span></span>;
+}
+
+function ElementEditor({ el, screens, onChange, onDelete, tagName }: { el: HmiElement; screens: HmiScreen[]; onChange: (e: HmiElement) => void; onDelete: () => void; tagName?: ((a: string) => string | null) | null }) {
   const [statesText, setStatesText] = useState(() => statesToText(el.states));
   const [symbolsText, setSymbolsText] = useState(() => JSON.stringify(el.symbols ?? [], null, 1));
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
@@ -91,6 +100,7 @@ function ElementEditor({ el, screens, onChange, onDelete }: { el: HmiElement; sc
       {READS.has(el.kind) && (
         <label className={fieldLabel}>{el.kind === 'header' ? 'Mode bit / register' : 'PLC address'}
           <input value={el.address ?? ''} onChange={(e) => onChange({ ...el, address: e.target.value.toUpperCase().trim() || null })} className={`${input} w-full font-mono`} placeholder="e.g. C1001, DS1001" list="hmi-address-options" aria-label="PLC address" />
+          {el.address && tagName?.(el.address) && <span className="block mt-0.5 text-[11px] font-mono text-gray-600 normal-case" data-testid="plc-tag">PLC tag: {tagName(el.address)}</span>}
         </label>
       )}
       {el.kind === 'button' && (
@@ -255,12 +265,27 @@ export default function HmiPage() {
   const [tab, setTab] = useUi<Tab>('hmi.tab', 'tags');
   const [tagFilter, setTagFilter] = useUi('hmi.tagFilter', '');
 
-  const model = getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
+  const chosenPanel = getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
+  // A panel too small for touch screens (e.g. a 128×64 C-more Micro text display) is not designed for.
+  const model = chosenPanel && designable(chosenPanel) ? chosenPanel : undefined;
   const apiKey = settings.anthropicApiKey;
   const design = hmi.design;
   // "To confirm" items, answered under each one.
   useSyncQuestions('hmi', design ? userNotes(design).map((n) => ({ text: n, assumption: n, section: 'operator' as const })) : null);
-  const hmiQuestions = useQuestions('hmi');
+  const hmiQuestionsRaw = useQuestions('hmi');
+  // Allen-Bradley / Siemens: the exported program's tag of each neutral address (null on CLICK, where they are the same).
+  const ladder = useProgramStore((s) => s.ladder);
+  const tagName = useMemo(() => {
+    if (profile.id === 'click') return null;
+    try {
+      const of = plcTagNameOf(collectProject());
+      return (a: string) => of(a).name || null;
+    } catch { return null; }
+    // collectProject reads the stores; recompute when what it names changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, ladder, design, io, addresses]);
+  const tagged = (text: string) => withTagNames(text, tagName);
+  const hmiQuestions = useMemo(() => hmiQuestionsRaw.map((q) => ({ ...q, text: withTagNames(q.text, tagName) })), [hmiQuestionsRaw, tagName]);
   const screen = design?.screens.find((s) => s.id === screenId) ?? design?.screens[0] ?? null;
   const selectedEl = screen?.elements.find((e) => e.id === selected) ?? null;
   const issues = useMemo(() => (design && model ? checkDesign(design, model.widthPx, model.heightPx) : []), [design, model]);
@@ -388,11 +413,18 @@ export default function HmiPage() {
       setPictureHint('Drag the picture to move it; drag a corner to resize it (hold Shift to stretch). "Send to back" puts it behind the buttons.');
     } catch (err) { notify(err instanceof Error ? err.message : String(err)); }
   };
-  const backgroundToPicture = () => {
+  const backgroundToPicture = async () => {
     if (!screen?.background) return;
-    const bg = screen.background;
-    const el = { ...createImageElement(idMaker()(), bg.src, W, H, bg.name?.replace(/\.[^.]+$/, '') ?? 'Picture', bounds), x: 0, y: 0, w: W, h: H };
-    const next = { ...screen, elements: [el, ...screen.elements] };
+    const bg = screen.background, at = screen;
+    // The picture keeps where and how big it was shown (Move / Zoom, fit) and its dimming.
+    let src = bg.src, rect = { x: 0, y: 0, w: W, h: H };
+    try {
+      if (bg.fit === 'fill') src = await croppedBackground(bg, W, H);
+      else { const n = await pictureSize(bg.src); rect = pictureRect(bg, W, H, n.width, n.height); }
+    } catch { /* unreadable picture: whole screen */ }
+    const r = { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.max(1, Math.round(rect.w)), h: Math.max(1, Math.round(rect.h)) };
+    const el = { ...createImageElement(idMaker()(), src, W, H, bg.name?.replace(/\.[^.]+$/, '') ?? 'Picture', bounds), ...r, ...(bg.dim > 0 ? { dim: bg.dim } : {}) };
+    const next = { ...at, elements: [el, ...at.elements] };
     delete next.background;
     updateScreen(next);
     setSel([el.id]);
@@ -401,7 +433,7 @@ export default function HmiPage() {
   const pictureToBackground = () => {
     const el = screen?.elements.find((e) => sel.length === 1 && e.id === sel[0] && e.kind === 'image');
     if (!screen || !el?.src) return;
-    updateScreen({ ...screen, elements: screen.elements.filter((e) => e.id !== el.id), background: { src: el.src, fit: 'fit', dim: 0.3, name: el.label } });
+    updateScreen({ ...screen, elements: screen.elements.filter((e) => e.id !== el.id), background: { src: el.src, ...backgroundAt(el, W, H), dim: el.dim ?? 0, name: el.label } });
     setSel([]);
   };
   const uploadBackground = async (file: File) => {
@@ -484,17 +516,11 @@ export default function HmiPage() {
     setScreenId(r.design.screens[0]?.id ?? null);
   });
 
+  /** Screen access (password level): one undo step; the screen counts as edited so a Redesign keeps it. */
   const setScreenLevel = (id: string, level: AccessLevel) => {
     if (!design) return;
-    hmi.setDesign({
-      ...design,
-      screens: design.screens.map((s) => {
-        if (s.id !== id) return s;
-        const next = { ...s };
-        if (level === 'operator') delete next.level; else next.level = level;
-        return next;
-      }),
-    }, hmi.explanation);
+    const next = setLevelOf(design, id, level);
+    commit({ ...next, screens: next.screens.map((s) => (s.id === id ? { ...s, edited: true } : s)) });
   };
 
   const genButton = (label: string) => (
@@ -511,7 +537,7 @@ export default function HmiPage() {
   );
 
   // Panels that can talk to this project's PLC (C-more for CLICK; other makers by their driver lists).
-  const pickable = [...HMI_MODELS.filter((m) => m.touch), ...catalogPanels().flatMap((o) => (o.model?.touch ? [o.model] : []))]
+  const pickable = [...HMI_MODELS, ...catalogPanels().flatMap((o) => (o.model ? [o.model] : []))].filter(designable)
     .filter((m) => hmiFit(m, ANY_NEED, cpu.id).ok);
   const picker = (
     <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
@@ -561,7 +587,13 @@ export default function HmiPage() {
       <StageBanner info={stages.hmi} action={genButton('Update screens')} />
 
       <div className="flex-1 overflow-auto bg-gray-50 p-5 space-y-4">
-        {(choosing || (!design && !model)) && picker}
+        {chosenPanel && !model && (
+          <p role="alert" className="text-sm rounded border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2" data-testid="hmi-too-small">
+            The {chosenPanel.partNumber} ({chosenPanel.sizeIn}", {chosenPanel.widthPx}×{chosenPanel.heightPx}{chosenPanel.touch ? '' : ', no touch screen'}) is too small to lay out
+            touch screens on; set it up in the maker's software (function keys and text screens). Choose a touch panel of at least {MIN_DESIGN_PX.w}×{MIN_DESIGN_PX.h} to design screens here.
+          </p>
+        )}
+        {(choosing || !model) && picker}
         {!design && model && !choosing && (
           <p className="text-sm text-gray-700">
             Operator panel: <span className="font-mono font-medium">{model.partNumber}</span> ({model.sizeIn}", {model.widthPx}×{model.heightPx}){' '}
@@ -584,7 +616,7 @@ export default function HmiPage() {
 
         {design && model && screen && (
           <>
-            {hmi.explanation && <p className="text-sm text-gray-700 max-w-4xl">{hmi.explanation}</p>}
+            {hmi.explanation && <p className="text-sm text-gray-700 max-w-4xl">{tagged(hmi.explanation)}</p>}
             <div className="flex gap-4 items-start">
               {/* Screen list */}
               <ResizablePane id="hmi.screens" defaultSize={200} min={140} max={420} handle="right">
@@ -635,7 +667,7 @@ export default function HmiPage() {
                     onSnap={setSnapOn} onPicture={(f) => { void uploadBackground(f); setPictureHint('This picture fills the screen background. Use Move / Zoom to shift it, or "Make it a movable picture" to drag and resize it like a button.'); }} onBackground={setBackground} onRecreate={() => void recreate()}
                     onAddPicture={(f) => void addPictureElement(f)} onRestack={(to) => updateScreen(restack(screen, sel, to))}
                     selectedIsPicture={sel.length === 1 && screen.elements.some((e) => e.id === sel[0] && e.kind === 'image')}
-                    onPictureToBackground={pictureToBackground} onBackgroundToPicture={backgroundToPicture} hint={pictureHint}
+                    onPictureToBackground={pictureToBackground} onBackgroundToPicture={() => void backgroundToPicture()} hint={pictureHint}
                     onDone={() => { setEditing(false); setSel([]); setProposal(null); }} />
                 )}
                 {proposal && proposal.screenId === screen.id && (
@@ -666,7 +698,7 @@ export default function HmiPage() {
                 <p className="text-xs text-gray-500 mt-2">{editing
                   ? 'Click to select (Shift adds), drag to move, drag the yellow handles to resize, drag on empty space to select an area. Arrows nudge 1 px (Shift: 8 px), Del deletes, Ctrl+D duplicates, Ctrl+Z undoes.'
                   : <>Static design view: lamps show OFF and values 0. Use <Link to="/simulate" className="underline">Simulate</Link> to press the buttons against the PLC program.</>}</p>
-                <datalist id="hmi-address-options">{addressOptions.map(([a, t]) => <option key={a} value={a}>{t}</option>)}</datalist>
+                <datalist id="hmi-address-options">{addressOptions.map(([a, t]) => <option key={a} value={a}>{tagName?.(a) ? `${tagName(a)}: ${t}` : t}</option>)}</datalist>
               </div>
 
               {/* Properties */}
@@ -675,14 +707,14 @@ export default function HmiPage() {
                 <section className="bg-white rounded-lg border border-gray-200 p-4">
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{selectedEl ? 'Element properties' : sel.length > 1 ? `${sel.length} elements selected` : 'Screen'}</h3>
                   {selectedEl ? (
-                    <ElementEditor key={selectedEl.id} el={selectedEl} screens={design.screens}
+                    <ElementEditor key={selectedEl.id} el={selectedEl} screens={design.screens} tagName={tagName}
                       onChange={(e) => updateScreen({ ...screen, elements: screen.elements.map((x) => (x.id === e.id ? withAnalogScale(x, e, io, addresses) : x)) })}
                       onDelete={() => { updateScreen(deleteElements(screen, [selectedEl.id])); setSelected(null); }} />
                   ) : sel.length > 1 ? (
                     <p className="text-xs text-gray-500">Use the tools above the screen to line them up, space them evenly, duplicate or delete them. Drag any of them to move all.</p>
                   ) : (
                     <ScreenInfo screen={screen} issues={screenIssues} onLevel={(l) => setScreenLevel(screen.id, l)}
-                      onRename={(name) => updateScreen({ ...screen, name })}
+                      onRename={(name) => { if (design) commit(renameScreen(design, screen.id, name)); }}
                       onDelete={design.screens.length > 1 ? () => deleteScreen(screen.id) : undefined} onRebuild={() => rebuildThis(screen.id)} />
                   )}
                 </section>
@@ -712,17 +744,19 @@ export default function HmiPage() {
                 {tab === 'tags' && (
                   <>
                     <div className="flex items-center justify-between gap-3 mb-2">
-                      <p className="text-xs text-gray-500">The PLC program implements these. HMI commands C1001–C1100, setpoints DS1001–DS1100, status words DS1101–DS1200, alarms C1101–C1200, status bits C1201–C1300.</p>
+                      <p className="text-xs text-gray-500">{tagName
+                        ? `The PLC program implements these under the tag names shown (the exported ${profile.vendor} program uses them; the grey memory address is what the simulator runs).`
+                        : 'The PLC program implements these. HMI commands C1001–C1100, setpoints DS1001–DS1100, status words DS1101–DS1200, alarms C1101–C1200, status bits C1201–C1300.'}</p>
                       <input value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} placeholder="Filter tags" className={`${input} w-48`} />
                     </div>
                     <table className="w-full text-sm">
                       <thead className="text-[11px] text-gray-500 uppercase tracking-wide border-b border-gray-200">
-                        <tr>{['Address', 'Name', 'Type', 'Access', 'Used on', 'What the PLC does'].map((h) => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr>
+                        <tr>{[tagName ? 'PLC tag (memory)' : 'Address', 'Name', 'Type', 'Access', 'Used on', 'What the PLC does'].map((h) => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {tags.map((t) => (
                           <tr key={t.address + t.name} className="align-top">
-                            <td className="py-1.5 pr-3 font-mono whitespace-nowrap">{t.address}</td>
+                            <td className="py-1.5 pr-3 font-mono whitespace-nowrap"><AddressCell address={t.address} tag={tagName?.(t.address)} /></td>
                             <td className="pr-3 py-1.5 font-mono text-xs whitespace-nowrap">{t.name}</td>
                             <td className="pr-3 py-1.5 text-xs">{t.dataType}</td>
                             <td className="pr-3 py-1.5 text-xs whitespace-nowrap">{t.access}</td>
@@ -737,12 +771,12 @@ export default function HmiPage() {
                 {tab === 'alarms' && (
                   <table className="w-full text-sm">
                     <thead className="text-[11px] text-gray-500 uppercase tracking-wide border-b border-gray-200">
-                      <tr>{['Bit', 'Severity', 'Message', 'Shown on'].map((h) => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr>
+                      <tr>{[tagName ? 'PLC tag (memory)' : 'Bit', 'Severity', 'Message', 'Shown on'].map((h) => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {design.alarms.map((a) => (
                         <tr key={a.address}>
-                          <td className="py-1.5 pr-3 font-mono">{a.address}</td>
+                          <td className="py-1.5 pr-3 font-mono"><AddressCell address={a.address} tag={tagName?.(a.address)} /></td>
                           <td className="pr-3"><span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${a.severity === 'alarm' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>{a.severity === 'alarm' ? 'Alarm' : 'Warning'}</span></td>
                           <td className="pr-3 text-gray-800">{a.message}</td>
                           <td className="text-xs text-gray-500">Header counter, alarm table{usedOn.get(a.address.toUpperCase())?.length ? `, ${usedOn.get(a.address.toUpperCase())!.join(', ')}` : ''}</td>
@@ -760,7 +794,7 @@ export default function HmiPage() {
                           <li key={k} className="flex gap-2 items-start">
                             <span className={`mt-0.5 text-[10px] px-1.5 rounded font-semibold ${i.severity === 'error' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>{i.severity === 'error' ? 'FIX' : 'CHECK'}</span>
                             <button className="text-left hover:underline" onClick={() => { if (sc) { setScreenId(sc.id); setSelected(i.elementId); } }}>
-                              {sc ? <span className="text-gray-500">{sc.name}: </span> : null}{i.message}
+                              {sc ? <span className="text-gray-500">{sc.name}: </span> : null}{tagged(i.message)}
                             </button>
                           </li>
                         );

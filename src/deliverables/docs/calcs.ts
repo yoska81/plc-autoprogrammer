@@ -1,4 +1,4 @@
-import { awgNear, iecMotorKw, isIec, mcbFor, mm2For, mm2Text } from '../../standards/regions';
+import { awgNear, isIec, powerText, mcbFor, mm2For, mm2Text } from '../../standards/regions';
 import type { ProjectSnapshot } from '../collect';
 import { getPart } from '../../electrical/catalog';
 import { getHmi } from '../../hmi/hmiCatalog';
@@ -93,7 +93,7 @@ export function calculations(p: ProjectSnapshot): CalcSection[] {
     const olMax = ol?.part ? num(ol.part.ratings.maxAmps) : null;
     const olOk = olMin !== null && olMax !== null ? fla >= olMin && fla <= olMax : true;
     sections.push({
-      title: `Motor ${m.tag} — ${m.description || 'motor'} (${iec ? `${iecMotorKw(m.hp)} kW, ` : ''}${m.hp} HP, ${m.voltage})`,
+      title: `Motor ${m.tag} — ${m.description || 'motor'} (${powerText(m.hp, p.info.region)}, ${m.voltage})`,
       lines: [
         { item: iec ? 'Rated current Ie' : 'Full-load current', value: `${fla} A`, basis: iec ? 'IEC 60947-4-1 Annex G (4-pole cage motor); use the nameplate value' : canada ? 'CEC Table 44/45 (same values as NEC 430.250)' : 'NEC Table 430.250 / 430.248', estimate: false },
         iec ? { item: 'Conductors (IEC 60204-1 Table 6, B2, 40 °C, 125% Ie)', value: `${mm2Text(mm2For(fla * 1.25))} (≈ ${awgNear(mm2For(fla * 1.25))})`, basis: `${(fla * 1.25).toFixed(1)} A`, estimate: false }

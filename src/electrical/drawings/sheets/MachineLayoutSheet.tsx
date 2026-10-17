@@ -30,16 +30,26 @@ export function MachineLayoutSheet({ plan }: { plan: DrawingPlan; sheet: Planned
     ...ml.remoteIo.map((m) => { const [x, y] = P(m.x, m.y); return { key: `rio:${m.tag}`, text: m.tag, x, y, r: 3 }; }),
   ];
   const labelY = new Map<string, number>();
+  const labelDx = new Map<string, number>();
   type Box = { x0: number; x1: number; y0: number; y1: number };
   const boxes: Box[] = marks.map((m) => ({ x0: m.x - m.r + 0.6, x1: m.x + m.r - 0.6, y0: m.y - m.r + 0.6, y1: m.y + m.r - 0.6 }));
-  const overlap = (a: Box) => boxes.reduce((t, b) => t + Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)), 0);
+  // cable routes (drawn 1.4 mm wide) are obstacles too: a label never sits on a route
+  const routeSegs = ml.routes.flatMap((r) => { const pts = r.pts.map(([x, y]) => P(x, y)); return pts.slice(1).map((q, i) => [pts[i], q] as const); });
+  const crosses = (a: Box) => routeSegs.some(([[x1, y1], [x2, y2]]) => {
+    const g = 0.8; // half the route width
+    return Math.max(x1, x2) + g > a.x0 && Math.min(x1, x2) - g < a.x1 && Math.max(y1, y2) + g > a.y0 && Math.min(y1, y2) - g < a.y1;
+  });
+  const overlap = (a: Box) => boxes.reduce((t, b) => t + Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)), 0) + (crosses(a) ? 4 : 0);
   for (const m of [...marks].sort((a, b) => a.y - b.y || a.x - b.x)) {
     const w = m.text.length * 1.45 + 1, h = 3;
-    const box = (ly: number): Box => ({ x0: m.x - w / 2, x1: m.x + w / 2, y0: ly - h, y1: ly });
-    const cands = [m.y - m.r, m.y + m.r + 2, m.y - m.r - 3, m.y + m.r + 5, m.y - m.r - 6, m.y + m.r + 8];
-    const ly = cands.find((c) => overlap(box(c)) === 0) ?? cands.reduce((best, c) => (overlap(box(c)) < overlap(box(best)) ? c : best), cands[0]);
-    boxes.push(box(ly));
-    labelY.set(m.key, ly);
+    const box = ([dx, ly]: [number, number]): Box => ({ x0: m.x + dx - w / 2, x1: m.x + dx + w / 2, y0: ly - h, y1: ly });
+    const side = m.r + w / 2 + 0.4;
+    const cands: [number, number][] = [[0, m.y - m.r], [0, m.y + m.r + 2], [side, m.y + 1], [-side, m.y + 1], [side, m.y - m.r], [-side, m.y - m.r], [side, m.y + m.r + 2], [-side, m.y + m.r + 2],
+      [0, m.y - m.r - 3], [0, m.y + m.r + 5], [0, m.y - m.r - 6], [0, m.y + m.r + 8]];
+    const c = cands.find((x) => overlap(box(x)) === 0) ?? cands.reduce((best, x) => (overlap(box(x)) < overlap(box(best)) ? x : best), cands[0]);
+    boxes.push(box(c));
+    labelY.set(m.key, c[1]);
+    labelDx.set(m.key, c[0]);
   }
   // scale bar: a round length close to a fifth of the drawing width
   const barM = [0.5, 1, 2, 5, 10, 20, 50].reduce((b, v) => (v * k <= LAYOUT_DW / 8 ? v : b), 0.5);
@@ -67,12 +77,12 @@ export function MachineLayoutSheet({ plan }: { plan: DrawingPlan; sheet: Planned
           <g key={m.tag}>
             {m.valves.map((v) => { const p = ml.pos[v]; if (!p) return null; const [vx, vy] = P(p.x, p.y); return <line key={v} x1={x} y1={y} x2={vx} y2={vy} strokeWidth={LW_THIN} strokeDasharray="1 1" />; })}
             <rect x={x - 3} y={y - 1.6} width={6} height={3.2} fill="#ddd" strokeWidth={LW} />
-            <Txt x={x} y={labelY.get(`mf:${m.tag}`) ?? y + 4.6} size={2} bold anchor="middle">{`${m.tag} (${m.valves.length})`}</Txt>
+            <Txt x={x + (labelDx.get(`mf:${m.tag}`) ?? 0)} y={labelY.get(`mf:${m.tag}`) ?? y + 4.6} size={2} bold anchor="middle">{`${m.tag} (${m.valves.length})`}</Txt>
           </g>
         );
       })}
       {ml.remoteIo.map((m) => { const [x, y] = P(m.x, m.y); return (
-        <g key={m.tag}><rect x={x - 2.2} y={y - 2.2} width={4.4} height={4.4} fill="#bbb" strokeWidth={LW} /><Txt x={x} y={labelY.get(`rio:${m.tag}`) ?? y + 5.4} size={2} bold anchor="middle">{m.tag}</Txt></g>
+        <g key={m.tag}><rect x={x - 2.2} y={y - 2.2} width={4.4} height={4.4} fill="#bbb" strokeWidth={LW} /><Txt x={x + (labelDx.get(`rio:${m.tag}`) ?? 0)} y={labelY.get(`rio:${m.tag}`) ?? y + 5.4} size={2} bold anchor="middle">{m.tag}</Txt></g>
       ); })}
       {items.map(([tag, p]) => {
         const [x, y] = P(p.x, p.y);
@@ -82,7 +92,7 @@ export function MachineLayoutSheet({ plan }: { plan: DrawingPlan; sheet: Planned
           : motors.has(tag) ? <circle cx={x} cy={y} r={2.4} fill="#fff" strokeWidth={LW_HEAVY} />
           : tag === AIR ? <path d={`M ${x - 2} ${y + 1.6} L ${x} ${y - 2} L ${x + 2} ${y + 1.6} Z`} fill="#fff" strokeWidth={LW} />
           : <circle cx={x} cy={y} r={1.3} fill="#000" />;
-        return <g key={tag}>{shape}<Txt x={x} y={ly} size={2.1} bold anchor="middle">{labelOf(tag)}</Txt></g>;
+        return <g key={tag}>{shape}<Txt x={x + (labelDx.get(tag) ?? 0)} y={ly} size={2.1} bold anchor="middle">{labelOf(tag)}</Txt></g>;
       })}
       {/* scale bar */}
       <g>

@@ -94,6 +94,8 @@ export interface HmiElement {
   symbols?: MachineSymbol[];
   /** 'image' elements: the picture as a data URL. */
   src?: string;
+  /** 'image' elements: darkened 0 (as is) … 0.9, like a screen background's dim. */
+  dim?: number;
 }
 
 /** A picture behind a screen (photo of the machine, screenshot of an existing HMI, drawing). */

@@ -7,6 +7,8 @@
 import { AREA, AREA_B, AREA_R, LW_THIN } from '../geometry';
 import type { DrawingPlan, PlannedSheet, SheetSpec } from '../plan';
 import { Line, TermPt, Txt, WireNo } from '../symbols';
+import { powerText } from '../../../standards/regions';
+import { stripTag } from '../../../standards/designations';
 
 const ROLE_TEXT: Record<string, string> = {
   run: 'RUN FORWARD', reverse: 'RUN REVERSE', preset: 'PRESET SPEED', fault: 'DRIVE FAULT (R1O CLOSES)', running: 'DRIVE RUNNING', speed: 'SPEED REFERENCE',
@@ -28,7 +30,7 @@ export function DriveSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   return (
     <g>
       <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`${d.tag} — ${d.partNumber} (${c.series === 'other' ? 'DRIVE' : `DURAPULSE ${c.series}`}) · MOTOR ${d.motorTag}: ${d.motorDescription.toUpperCase()}`}</Txt>
-      <Txt x={AREA.x + 6} y={AREA.y + 12} size={2.3}>{`${d.motorHp} HP · ${d.motorVolts} V · FLA ${d.fla.toFixed(1)} A${d.outputAmps ? ` · DRIVE OUTPUT ${d.outputAmps} A` : ''}${d.reversing ? ' · REVERSING' : ''} · SPEED: ${c.speedSource === 'analog' ? `ANALOG 0–${c.maxHz} HZ` : c.speedSource === 'presets' ? 'PRESET SPEEDS' : 'KEYPAD'}`}</Txt>
+      <Txt x={AREA.x + 6} y={AREA.y + 12} size={2.3}>{`${powerText(d.motorHp, plan.ctx.region).toUpperCase()} · ${d.motorVolts} V · FLA ${d.fla.toFixed(1)} A${d.outputAmps ? ` · DRIVE OUTPUT ${d.outputAmps} A` : ''}${d.reversing ? ' · REVERSING' : ''} · SPEED: ${c.speedSource === 'analog' ? `ANALOG 0–${c.maxHz} HZ` : c.speedSource === 'presets' ? 'PRESET SPEEDS' : 'KEYPAD'}`}</Txt>
       {/* control terminals */}
       <Txt x={X.plc + 10} y={y0 - 4} size={2.4} bold anchor="middle">PLC</Txt>
       <Txt x={X.drv + 15} y={y0 - 4} size={2.4} bold anchor="middle">{d.tag}</Txt>
@@ -54,7 +56,7 @@ export function DriveSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
         const y = y0 + 8 + (rows.length + i) * pitch;
         return (
           <g key={term}>
-            <Txt x={X.plc} y={y + 0.9} size={2.3} mono bold>{`TB1 ${wire}`}</Txt>
+            <Txt x={X.plc} y={y + 0.9} size={2.3} mono bold>{`${stripTag(plan.ctx.designations, 1)} ${wire}`}</Txt>
             <Line x1={X.plc + 20.7} y1={y} x2={X.drv} y2={y} />
             <WireNo x={(X.plc + X.drv) / 2 + 6} y={y} n={wire} />
             <Txt x={X.drv + 2} y={y + 0.9} size={2.4} mono bold>{term}</Txt>

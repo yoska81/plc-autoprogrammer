@@ -76,3 +76,37 @@ export function withIecDesignations<D extends ElectricalDesign, L>(design: D, la
   const map = designationMap(designTags(design));
   return { design: deep(design, map), layout: layout === undefined ? undefined : deep(layout, map), map };
 }
+
+/** Terminal strip n as the designation style names it: TB2 (NFPA) or -X2 (IEC 81346-2, class X). */
+export const stripTag = (designations: string | undefined, n: number) => (designations === 'iec81346' ? `-X${n}` : `TB${n}`);
+
+/** TB1, TB2… in a text as IEC terminal strips -X1, -X2… */
+export const iecStripText = (text: string) => text.replace(/(?<![A-Za-z0-9-])TB(\d+)(?![0-9])/g, '-X$1');
+
+/**
+ * The electrical model (terminal strips, wires, notes) with IEC strip designations. Catalog parts
+ * are kept as they are (their own texts), Maps are rebuilt, everything else is copied.
+ */
+export function withIecStrips<T>(v: T, key = '', seen = new Map<object, unknown>()): T {
+  if (typeof v === 'string') return (key === 'partNumber' ? v : iecStripText(v)) as T;
+  if (!v || typeof v !== 'object') return v;
+  // An object shared by two places stays one object (the model compares some by identity).
+  if (seen.has(v)) return seen.get(v) as T;
+  if (Array.isArray(v)) {
+    const a: unknown[] = [];
+    seen.set(v, a);
+    for (const x of v) a.push(withIecStrips(x, key, seen));
+    return a as T;
+  }
+  if (v instanceof Map) {
+    const m = new Map();
+    seen.set(v, m);
+    for (const [k, x] of v) m.set(typeof k === 'string' ? iecStripText(k) : k, withIecStrips(x, '', seen));
+    return m as T;
+  }
+  if (Object.getPrototypeOf(v) !== Object.prototype) return v;
+  const o: Record<string, unknown> = {};
+  seen.set(v, o);
+  for (const [k, x] of Object.entries(v)) o[k] = k === 'part' ? x : withIecStrips(x, k, seen);
+  return o as T;
+}

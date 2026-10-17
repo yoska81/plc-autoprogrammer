@@ -7,6 +7,7 @@ import {
   TermBox, TermPt, Txt, WireNo, XrefArrow,
 } from '../symbols';
 import { LineNumbers } from './SchematicSheets';
+import { stripTag } from '../../../standards/designations';
 
 const Y0 = AREA.y + 4;
 const yOf = (i: number) => Y0 + i * IO_PITCH;
@@ -132,13 +133,15 @@ function Desc({ x, y, p }: { x: number; y: number; p: IoPoint }) {
 // Inputs
 // ---------------------------------------------------------------------------
 
+/** Right edge of the line-number column (LineNumbers). */
+const LINE_COL = AREA.x + 13;
 const I = { R24: 34, R0: 42, TBS: 58, DEV: 100, TBX: 150, PLC: 190, PLCW: 32, DESC: 232 };
 
 function InputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan; sheet: PlannedSheet; g: IoGroup; rows: IoRow[]; last: boolean }) {
   const pts = ioRows.flatMap((r) => (r.point ? [r.point] : []));
   const rows = ioRows.length + (last ? 1 : 0);
   const labels = [...ioRows.map((r) => r.address), ...(last ? ['COM'] : [])];
-  const strip = stripOf(pts.find((p) => p.signalTerminal)?.signalTerminal) || 'TB2';
+  const strip = stripOf(pts.find((p) => p.signalTerminal)?.signalTerminal) || stripTag(plan.ctx.designations, 2);
   const lastUsed = Math.max(0, ...ioRows.map((r, i) => (r.point ? i + 1 : 0)));
   const railEnd = last ? yOf(rows) : yOf(lastUsed) + 6;
   const psTag = plan.model.psBranches[0]?.ps.tag ?? '';
@@ -151,7 +154,8 @@ function InputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan;
       <TableHead />
       <Line x1={I.R24} y1={yOf(0) + 4} x2={I.R24} y2={railEnd} w={0.5} />
       <Line x1={I.R0} y1={yOf(0) + 4} x2={I.R0} y2={railEnd} w={0.5} />
-      <Txt x={I.R24 - 1} y={yOf(0) + 7.0} size={1.8} mono anchor="end">{ref24 ? `FROM ${ref24}` : ''}</Txt>
+      {/* between the line-number column and the 24+ rail: shrink to the gap rather than cross the column line */}
+      <Txt x={I.R24 - 1} y={yOf(0) + 7.0} size={1.8} mono anchor="end" maxW={I.R24 - 1 - (LINE_COL + 0.8)}>{ref24 ? `FROM ${ref24}` : ''}</Txt>
       <Txt x={I.R0 + 1} y={yOf(0) + 7.0} size={1.8} mono>{ref0 ? `FROM ${ref0}` : ''}</Txt>
       <PlcColumn x={I.PLC} w={I.PLCW} rows={rows} labels={labels} title={`${g.devTag} — ${g.label}`} terminalSide="left" common={last} />
       {ioRows.map((r, i) => (r.point
@@ -255,7 +259,7 @@ function OutputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan
   const rows = ioRows.length + (last ? 1 : 0);
   const comLabel = sink ? 'C' : g.outputStyle === 'relay' ? 'C' : '+V';
   const labels = [...ioRows.map((r) => r.address), ...(last ? [comLabel] : [])];
-  const strip = stripOf(pts.find((p) => p.signalTerminal)?.signalTerminal) || 'TB3';
+  const strip = stripOf(pts.find((p) => p.signalTerminal)?.signalTerminal) || stripTag(plan.ctx.designations, 3);
   const supplyRef = supply === '24+S' ? plan.xref.get('rung:24+S') : plan.xref.get(`ps:${plan.model.psBranches[0]?.ps.tag ?? ''}`);
   const zeroRef = plan.xref.get(`ps0:${plan.model.psBranches[0]?.ps.tag ?? ''}`);
   const railUsers = pts.filter((p) => !(p.coilChain || (p.location === 'internal' && p.deviceType !== 'vfd-input')));
@@ -277,7 +281,7 @@ function OutputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan
           <Line x1={O.PLC + O.PLCW} y1={yOf(rows)} x2={O.TBX + 8} y2={yOf(rows)} />
           <XrefArrow x={O.TBX + 8} y={yOf(rows)} dir={sink ? 'right' : 'left'} />
           <WireNo x={(O.PLC + O.PLCW + O.TBX + 8) / 2} y={yOf(rows)} n={sink ? '0V' : supply} />
-          <Txt x={O.TBX + 12} y={yOf(rows) + 0.9} size={2.5} mono>{sink ? `0V FROM ${zeroRef ?? 'TB1'}` : `${supply} FROM ${supplyRef ?? 'TB1'}`}</Txt>
+          <Txt x={O.TBX + 12} y={yOf(rows) + 0.9} size={2.5} mono>{sink ? `0V FROM ${zeroRef ?? stripTag(plan.ctx.designations, 1)}` : `${supply} FROM ${supplyRef ?? stripTag(plan.ctx.designations, 1)}`}</Txt>
           <Txt x={O.DESC} y={yOf(rows) + 0.2} size={2.6} bold>{sink ? 'OUTPUT COMMON TO 0V (SINKING OUTPUTS, LOADS FROM +24V)' : `OUTPUT SUPPLY ${supply}${supply === '24+S' ? ' (SAFETY-SWITCHED +24V)' : ''}`}</Txt>
         </g>
       )}

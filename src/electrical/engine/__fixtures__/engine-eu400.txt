@@ -1,13 +1,13 @@
 supply 400VAC-3PH | NEMA 12
 motor M1 1.5 HP contactor-overload — Conveyor motor
 
-ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 61% spare panel space (target >= 25%)
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 IP54 — smallest catalog enclosure with everything placed and 61% spare panel space (target >= 25%)
 SP1      SCE-30P24          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 4.7 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle
 DS1S     14070532           x1    Disconnect shaft
-CB1      GMCBU-3C-10        x1    Motor M1 branch protection — 10 A C-curve, 2.8 x FLA 3.6 A (rides through the start, max. 250% NEC 430.52) [M1]
-K1       SC-E02PG-24VDC     x1    Conveyor motor contactor — AC-3 9 A >= 1.5 HP / 3.6 A, 24 VDC coil [M1]
+CB1      GMCBU-3C-10        x1    Motor M1 branch protection — 10 A C-curve, 2.8 x FLA 3.6 A (rides through the start, IEC 60947-2 / IEC 60204-1 7.2.10) [M1]
+K1       SC-E02PG-24VDC     x1    Conveyor motor contactor — AC-3 9 A >= 1.12 kW / 3.6 A, 24 VDC coil [M1]
 K1-AUX   SZ-A11T            x1    K1 aux contact — N.C. 61-62 for the safety relay feedback (EDM); SC-E02PG-24VDC has no built-in aux [M1]
 OL1      TK-E02-600         x1    Conveyor motor overload — range 4-6 A, set to FLA 3.6 A [M1]
 CB2      GMCBU-3C-3         x1    24VDC power supply primary — 3 A for a 120 W supply (inrush)
@@ -48,7 +48,7 @@ junctionBoxes []
 motorLocations {"M1":"Conveyor"}
 routing {"PE1":null,"SOL2":null,"LS1":null,"LS2":null,"SOL1":null}
 
-note: Motor currents from IEC 60947-4-1 Annex G: M1 1.5 HP 3.6 A — confirm the nameplates.
+note: Motor currents from IEC 60947-4-1 Annex G: M1 1.12 kW 3.6 A — confirm the nameplates.
 note: OL1 TK-E02-600: no range brackets the 3.6 A FLA; set at its minimum 4 A (111% of FLA) or fit the next smaller range if the nameplate current is lower.
 
-explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 400 V 3-phase + N through 30A — load 4.7 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1.5 HP across the line; 24 VDC from PSR-24-120-3 for 1.4 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 61% spare panel space.
+explanation: Rule-based design: IP54 SCE-30EL2410LP, 400 V 3-phase + N through 30A — load 4.7 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1.12 kW across the line; 24 VDC from PSR-24-120-3 for 1.4 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 61% spare panel space.

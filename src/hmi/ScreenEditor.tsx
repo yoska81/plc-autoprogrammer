@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import HmiScreenView from './HmiScreenView';
 import { elementsInRect, GRID, moveElements, resizeElement, type Bounds, type Handle } from './editor';
 import type { HmiDesign, HmiElement, HmiScreen } from './types';
@@ -93,6 +93,25 @@ export default function ScreenEditor({ screen, design, widthPx, heightPx, select
     setDraft(null);
   };
 
+  // Undo / redo work while the editor is open, wherever the focus is, except in a text field
+  // (which keeps its own typing undo).
+  const onKeyRef = useRef(onKey);
+  useEffect(() => { onKeyRef.current = onKey; });
+  useEffect(() => {
+    const onWindowKey = (e: globalThis.KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const k = e.key.toLowerCase();
+      const action = k === 'z' && !e.shiftKey ? 'undo' : k === 'y' || (k === 'z' && e.shiftKey) ? 'redo' : null;
+      if (!action) return;
+      e.preventDefault();
+      onKeyRef.current?.(action);
+    };
+    window.addEventListener('keydown', onWindowKey);
+    return () => window.removeEventListener('keydown', onWindowKey);
+  }, []);
+
   const onKeyDown = (e: KeyboardEvent) => {
     const mod = e.ctrlKey || e.metaKey;
     const step = e.shiftKey ? GRID : 1;
@@ -102,8 +121,6 @@ export default function ScreenEditor({ screen, design, widthPx, heightPx, select
       onChange(moveElements(screen, selected, arrows[e.key][0], arrows[e.key][1], bounds, 1));
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected.length) { e.preventDefault(); onKey?.('delete'); }
     else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); onKey?.('duplicate'); }
-    else if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); onKey?.('undo'); }
-    else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); onKey?.('redo'); }
     else if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); onSelect(screen.elements.map((x) => x.id)); }
     else if (e.key === 'Escape') onSelect([]);
   };

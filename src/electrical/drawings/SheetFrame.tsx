@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import type { RevisionEntry } from '../derive';
 import {
-  BORDER, FRAME, LW, LW_HEAVY, LW_THIN, SHEET_H, SHEET_W, TITLE_H, ZONE_COLS, ZONE_ROWS, wrapText,
+  BORDER, FRAME, LW, LW_HEAVY, LW_THIN, TITLE_H, ZONE_COLS, ZONE_ROWS, wrapText,
 } from './geometry';
 import type { DocState } from './plan';
+import { sheetOnPaper, type SheetFormat } from '../../standards/regions';
 import { Line, Txt } from './symbols';
 
 export interface FrameInfo {
@@ -28,8 +29,14 @@ export interface FrameInfo {
 /** Title-block column edges (mm). */
 const C1 = 104, C2 = 196, C3 = 300;
 
-/** ANSI B (17" x 11") sheet: trim frame, border with zone grid, title block with revision table. Units: mm. */
-export default function SheetFrame({ info, children, width, height }: { info: FrameInfo; children: ReactNode; width?: string; height?: string }) {
+/**
+ * Drawing sheet on its paper (ANSI B 17" x 11", or A3): trim frame, border with zone grid, title
+ * block with revision table. The content is laid out for ANSI B and scaled into an A3 sheet's
+ * drawing area. Units: mm.
+ */
+export default function SheetFrame({ info, children, width, height, sheet }: { info: FrameInfo; children: ReactNode; width?: string; height?: string; sheet?: SheetFormat }) {
+  const on = sheetOnPaper(sheet);
+  const SHEET_W = on.paper.w, SHEET_H = on.paper.h;
   const iw = SHEET_W - 2 * BORDER;
   const ih = SHEET_H - 2 * BORDER;
   const zw = iw / ZONE_COLS;
@@ -79,10 +86,10 @@ export default function SheetFrame({ info, children, width, height }: { info: Fr
         <CompanyBlock info={info} ty={ty} preliminary={preliminary} status={rs?.status ?? 'PRELIMINARY — NOT FOR CONSTRUCTION'} />
         <RevisionTable ty={ty} revisions={rs?.revisions ?? []} />
         <ProjectBlock info={info} ty={ty} />
-        <NumberBlock info={info} ty={ty} rev={rev} R={R} />
+        <NumberBlock info={info} ty={ty} rev={rev} R={R} size={on.paper.size} />
       </g>
 
-      <g>{children}</g>
+      <g transform={on.factor === 1 && !on.tx && !on.ty ? undefined : `translate(${on.tx.toFixed(3)} ${on.ty.toFixed(3)}) scale(${on.factor.toFixed(5)})`}>{children}</g>
     </svg>
   );
 }
@@ -166,7 +173,7 @@ function ProjectBlock({ info, ty }: { info: FrameInfo; ty: number }) {
   );
 }
 
-function NumberBlock({ info, ty, rev, R }: { info: FrameInfo; ty: number; rev: string; R: number }) {
+function NumberBlock({ info, ty, rev, R, size }: { info: FrameInfo; ty: number; rev: string; R: number; size: string }) {
   const doc = info.doc;
   const w = R - C3;
   const cw = [48, 36, w - 84];
@@ -182,7 +189,7 @@ function NumberBlock({ info, ty, rev, R }: { info: FrameInfo; ty: number; rev: s
     { cap: 'APPROVED', val: (doc?.approvedBy ?? '').toUpperCase(), size: 2.3, right: signed(doc?.approvedBy) },
     { cap: 'DATE', val: info.date, size: 2.4, mono: true },
     { cap: 'SCALE', val: info.scale, size: 2.4 },
-    { cap: 'SIZE', val: 'ANSI B 17" x 11"', size: 2.2 },
+    { cap: 'SIZE', val: size, size: 2.2 },
     { cap: 'PLC', val: info.cpu, size: 2.2, mono: true },
     { cap: 'SUPPLY', val: info.supply ?? '', size: 2.2 },
     { cap: 'DWG STATUS', val: doc?.rs.preliminary === false ? 'ISSUED' : 'PRELIMINARY', size: 2.2, bold: true },
