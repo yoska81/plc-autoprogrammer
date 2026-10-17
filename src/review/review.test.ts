@@ -17,6 +17,7 @@ import { acceptCriticalForConstruction, checksFor, openCriticalFindings } from '
 import { openCounts } from './useReviewStore';
 import { designReviewTable } from '../deliverables/docs/manual';
 import { pageRoute } from './types';
+import { specMotorRatings } from './checks';
 import type { LadderProgram } from '../plc/core/ladder';
 
 // The stores persist to localStorage, which node doesn't have: silence the warnings.
@@ -116,6 +117,32 @@ test('construction guard: open criticals block, override marks them accepted', (
   assert.equal(openCriticalFindings().length, 0);
   assert.match(useReviewStore.getState().marks['out-unsafe:Y001'].reason, /rev B.*Interlock added/);
   assert.equal(openCounts(useReviewStore.getState()).critical, 0);
+});
+
+test('spec motors: a motor described in two sections counts once; a match is never a mismatch', () => {
+  const three = {
+    overview: 'Conveyor cell: M1 infeed conveyor 2 HP, M2 transfer conveyor 1 HP and an M3 discharge conveyor 1/2 HP.',
+    motion: '- Infeed conveyor motor 2 HP, 480 V, across the line.\n- The 0.5 HP discharge motor runs at constant speed.',
+    qa: 'Q: Is the transfer conveyor motor 1 HP? A: Yes, M2 is 1 HP with a gearbox.',
+  };
+  assert.deepEqual(specMotorRatings(three).length, 3, specMotorRatings(three).join(', '));
+  // the same motor twice in one section, once unnamed
+  assert.equal(specMotorRatings({ motion: 'Conveyor motor 2 HP. The 2 HP motor stops on a jam.' }).length, 1);
+  // two different motors of one rating are two
+  assert.equal(specMotorRatings({ motion: 'Pump 1 HP and fan 1 HP.' }).length, 2);
+  assert.equal(specMotorRatings({ overview: 'No motors.' }).length, 0);
+  // the review: a 3-motor panel for that spec raises nothing; a 2-motor panel does (on a copy of the project)
+  seedSampleProject();
+  const snap = collectProject();
+  const withMotors = (n: number) => {
+    const m0 = snap.electrical!.inputs.motors[0];
+    const motors = Array.from({ length: n }, (_, i) => ({ ...m0, tag: `M${i + 1}` }));
+    return checksFor({ ...snap, spec: { ...snap.spec, ...three }, electrical: { ...snap.electrical!, inputs: { ...snap.electrical!.inputs, motors } } });
+  };
+  assert.ok(!withMotors(3).some((x) => x.id === 'spec-motors'), withMotors(3).map((x) => x.id).join(', '));
+  const f = withMotors(2).find((x) => x.id === 'spec-motors');
+  assert.ok(f, 'a missing motor is flagged');
+  assert.match(f!.title, /names 3 motors, the panel has 2/);
 });
 
 test('spec coverage: analog, guarding, motors, VFD and servo the design misses', () => {

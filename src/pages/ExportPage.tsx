@@ -7,7 +7,7 @@ import { buildExcelReport } from '../deliverables/excelReport';
 import { buildEngineeringPdf } from '../deliverables/engineering';
 import { buildProgramListingPdf } from '../deliverables/programListingPdf';
 import { hmiReadme, hmiTagCsv, needsHmiTagList } from '../deliverables/hmiTags';
-import { buildDrawingsPdf, buildEverythingZip, buildHmiImages, buildHmiPdf, buildMachiningPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
+import { buildDrawingsPdf, buildEverythingZip, dataUrlToBlob, buildHmiImages, buildHmiPdf, buildMachiningPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
 import { Spinner } from '../components/common';
 import { backPanelDxf, doorDxf, enclosureFaceDxfs } from '../electrical/dxf';
@@ -202,13 +202,15 @@ export default function ExportPage() {
               })} />
               <B busy={busy} label="BOM CSV" disabled={!hasElec} onClick={run('BOM CSV', () => saveBlob(`${p.fileBase}_BOM.csv`, csv(bomCsv(p.drawingCtx!))))} />
               <B busy={busy} label="Wire list CSV" disabled={!hasElec} onClick={run('Wire list CSV', () => saveBlob(`${p.fileBase}_wire_list.csv`, csv(wireListCsv(p.drawingCtx!))))} />
-              <B busy={busy} label="Cabinet pictures (PNG)" disabled={!hasElec} onClick={run('Cabinet pictures (PNG)', async () => {
-                const { cabinetPng } = await import('../electrical/render/renderToPng');
+              <B busy={busy} label="Cabinet pictures (ZIP)" disabled={!hasElec} onClick={run('Cabinet pictures (ZIP)', async () => {
+                // Inside and door in one file: two saves in a row are refused by the preview and blocked by browsers.
+                const [{ cabinetPng }, { default: JSZip }] = await Promise.all([import('../electrical/render/renderToPng'), import('jszip')]);
                 const snap = collectProject();
+                const zip = new JSZip();
                 for (const v of ['inside', 'door'] as const) {
-                  const url = await cabinetPng(snap.drawingCtx!, v, snap.hmi?.hmiPartNumber ?? null, 2400);
-                  saveBlob(`${p.fileBase}_cabinet_${v}.png`, await (await fetch(url)).blob());
+                  zip.file(`${p.fileBase}_cabinet_${v}.png`, await dataUrlToBlob(await cabinetPng(snap.drawingCtx!, v, snap.hmi?.hmiPartNumber ?? null, 2400)));
                 }
+                saveBlob(`${p.fileBase}_cabinet_pictures.zip`, await zip.generateAsync({ type: 'blob' }));
               })} />
               <B busy={busy} label="Terminal plan CSV" disabled={!hasElec} onClick={run('Terminal plan CSV', () => saveBlob(`${p.fileBase}_terminal_plan.csv`, csv(terminalPlanCsv(p.drawingCtx!))))} />
             </div>
@@ -249,7 +251,7 @@ export default function ExportPage() {
               <B busy={busy} label="Screen images (ZIP)" disabled={!hasHmi} onClick={run('Screen images (ZIP)', async () => {
                 const { default: JSZip } = await import('jszip');
                 const zip = new JSZip();
-                for (const img of await buildHmiImages(collectProject())) zip.file(img.name, await (await fetch(img.dataUrl)).blob());
+                for (const img of await buildHmiImages(collectProject())) zip.file(img.name, await dataUrlToBlob(img.dataUrl));
                 saveBlob(`${p.fileBase}_hmi_screens.zip`, await zip.generateAsync({ type: 'blob' }));
               })} />
               {needsHmiTagList(p) && <B busy={busy} label="HMI tag list (CSV)" onClick={run('HMI tag list (CSV)', async () => {
