@@ -359,6 +359,12 @@ function sse(model, text) {
   await page.getByText(/Program from the standard blocks/).first().waitFor({ timeout: 15000 });
   log('Rule-based program:', (await page.getByText(/Program from the standard blocks/).first().innerText()).slice(0, 160));
   check(counts.cycle === 1, 'cycle block: one small AI request');
+  const clean = await page.getByText(/Checker: no problems found/).count();
+  if (clean !== 1) {
+    log('Checker clean banners:', clean);
+    await page.getByRole('button', { name: /^Checker: \d+ error/ }).first().click().catch(() => {});
+    log('Checker:', (await page.locator('ul.max-h-40').first().innerText().catch(() => '?')).replace(/\s+/g, ' '));
+  }
   check(await page.getByText(/Checker: no problems found/).count() === 1, 'rule-based program: checker clean');
   check(await page.getByTestId('cycle-steps').count() === 1, 'step sequence table shown on the Program page');
   log('Cycle steps:', (await page.getByTestId('cycle-steps').locator('summary').innerText()).slice(0, 120));
@@ -663,6 +669,17 @@ function sse(model, text) {
 
   // Deliverables
   await page.goto(BASE + '/export');
+  // The program left by the steps above is the experimental full-AI one, which does not implement the HMI:
+  // the program files are held back until "Export anyway", with a link to rebuild it.
+  const progErr = page.getByText(/The checker finds \d+ errors? in the program/);
+  log('Export checker:', (await progErr.count()) ? (await progErr.innerText()).slice(0, 120) : 'clean');
+  if (await progErr.count()) {
+    const nick = page.getByRole('button', { name: /_nicknames\.csv$/ });
+    check(await nick.isDisabled(), 'export: program files held back while the checker finds errors');
+    check(await page.getByRole('link', { name: /^Rebuild for the / }).count() === 1, 'export: offers to rebuild the program');
+    await page.getByLabel('Export anyway').check();
+    check(await nick.isEnabled(), 'export: "Export anyway" releases the program files');
+  }
   const eng = await dl('Engineering package');
   const engTxt = fs.readFileSync(eng, 'latin1');
   log('Engineering PDF:', Math.round(fs.statSync(eng).size / 1024), 'KB, pages', (engTxt.match(/\/Type \/Page[^s]/g) || []).length, '| has images', engTxt.includes('/Subtype /Image'));

@@ -53,6 +53,7 @@ export default function ExportPage() {
   const stages = useStages();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exportAnyway, setExportAnyway] = useState(false);
 
   const run = (label: string, fn: () => Promise<void> | void) => async () => {
     setBusy(label);
@@ -106,6 +107,7 @@ export default function ExportPage() {
   const hasElec = Boolean(p.drawingCtx);
   const hasHmi = Boolean(p.hmi);
   const progFiles = programFiles(p);
+  const progErrors = p.issues.filter((i) => i.severity === 'error');
   const STAGE_NAME = { equipment: 'Equipment', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI screens', program: 'PLC program' } as const;
   const stale = (['equipment', 'io', 'electrical', 'hmi', 'program'] as const).filter((s) => stages[s].status === 'stale').map((s) => STAGE_NAME[s]);
 
@@ -122,6 +124,11 @@ export default function ExportPage() {
           {stale.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900">
               Some stages are out of date ({stale.join(', ')}). Update them before sending deliverables to anyone.
+            </div>
+          )}
+          {progErrors.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">
+              The PLC program has {progErrors.length} checker error{progErrors.length !== 1 && 's'} for the {p.profile.name} (see PLC program below): rebuild it before sending the program to anyone.
             </div>
           )}
           {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
@@ -256,9 +263,19 @@ export default function ExportPage() {
           <Card title="PLC program" info={stages.program} to="/program">
             {progFiles.length ? (
               <>
+                {progErrors.length > 0 && (
+                  <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-800 space-y-1">
+                    <p className="font-semibold">The checker finds {progErrors.length} error{progErrors.length !== 1 && 's'} in the program for the {p.profile.vendor} {p.profile.name}: these files will not work as they are.</p>
+                    <ul className="list-disc pl-5">{progErrors.slice(0, 3).map((i, k) => <li key={k}>{i.message}</li>)}</ul>
+                    <div className="flex flex-wrap items-center gap-3 pt-1">
+                      <Link to="/program" className="px-2 py-0.5 rounded border border-red-300 bg-white font-medium hover:bg-red-100">Rebuild for the {p.profile.name}</Link>
+                      <label className="flex items-center gap-1"><input type="checkbox" checked={exportAnyway} onChange={(e) => setExportAnyway(e.target.checked)} /> Export anyway</label>
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {progFiles.map((f) => (
-                    <B busy={busy} key={f.name} label={f.name} onClick={run(f.name, () => saveBlob(f.name, new Blob([f.content], { type: 'text/plain' })))} />
+                    <B busy={busy} key={f.name} label={f.name} disabled={progErrors.length > 0 && !exportAnyway} onClick={run(f.name, () => saveBlob(f.name, new Blob([f.content], { type: 'text/plain' })))} />
                   ))}
                   {p.profile.language === 'ladder' && <B busy={busy} label="Program listing PDF" onClick={run('Program listing PDF', async () => { const pdf = await buildProgramListingPdf(p); if (pdf) saveBlob(`${p.fileBase}_program.pdf`, pdf); })} />}
                 </div>

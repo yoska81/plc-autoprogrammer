@@ -7,11 +7,13 @@ VERSION : 0.1
       Start_PB : Bool;   // Start PB
       Stop_PB : Bool;   // Stop PB
       Run : Bool;   // C1
-      Tank_level : Real;   // Tank level
-      Level_SP : Real;   // %
       Pump_run : Bool;   // Pump run
       Fill_Timer : TONR_TIME;   // T1
       RT_1 : R_TRIG;   // RT_1
+   END_VAR
+   VAR RETAIN
+      Tank_level : Real;   // Tank level
+      Level_SP : Real;   // %
       Cycles : CTU_DINT;   // CT1
       Valve_position : Real;   // Valve position
    END_VAR
@@ -49,7 +51,6 @@ END_FUNCTION_BLOCK
 DATA_BLOCK "Machine_DB"
 { S7_Optimized_Access := 'TRUE' }
 VERSION : 0.1
-NON_RETAIN
 "Machine"
 
 BEGIN

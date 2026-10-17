@@ -24,7 +24,7 @@ export interface CycleStep {
   /** Fault when the step lasts longer (seconds); null = waits as long as needed (e.g. for the next part). */
   timeoutSec: number | null;
 }
-export interface CycleSequence { steps: CycleStep[]; questions: string[]; source: 'ai' | 'rules' }
+export interface CycleSequence { steps: CycleStep[]; questions: string[]; source: 'ai' | 'rules'; /** Step register the program uses (DS1150 unless the HMI uses it). */ register?: string }
 
 export const STEP_REGISTER = 'DS1150';
 
@@ -82,13 +82,17 @@ export function checkSequence(seq: CycleSequence, base: ProgramResult, inputs: S
 
 /** The sequence as the program's "cycle" block, merged into the rule-based program. */
 export function compileSequence(seq: CycleSequence, base: ProgramResult, opts: { alarm?: string; countReset?: string; stateWord?: string; states?: { value: number; text: string }[] } = {}): { program: LadderProgram; cycleCounter: string } {
-  const S = STEP_REGISTER;
-  const RUN = 'C2', SAFE = 'C1', RESET = 'C7';
+  const { run: RUN, safe: SAFE, reset: RESET } = base.internal;
   const p = base.program;
-  const used = new Set(p.rungs.flatMap((r) => [...rungWrites(r), ...r.outputs.map((o) => ('address' in o ? o.address : ''))]));
-  let t = 1; while (used.has(`T${t}`)) t++;
-  let ct = 1; while (used.has(`CT${ct}`)) ct++;
-  const timer = () => { while (used.has(`T${t}`)) t++; used.add(`T${t}`); return `T${t++}`; };
+  const used = new Set([...base.taken, ...p.rungs.flatMap((r) => [...rungWrites(r), ...r.outputs.map((o) => ('address' in o ? o.address : ''))])].map((a) => a.toUpperCase()));
+  // The step register: DS1150, or the next free one when the HMI uses it for something else.
+  let sr = Number(STEP_REGISTER.slice(2));
+  while (used.has(`DS${sr}`)) sr++;
+  const S = `DS${sr}`;
+  used.add(S);
+  let t = 1;
+  let ct = 1; while (used.has(`CT${ct}`) || used.has(`CTD${ct}`)) ct++;
+  const timer = () => { while (used.has(`T${t}`) || used.has(`TD${t}`)) t++; used.add(`T${t}`); return `T${t++}`; };
   const counter = `CT${ct}`;
   const tags: TagDefinition[] = [{ address: S, nickname: 'Step_Cycle', comment: 'Automatic cycle step (0 idle, 10, 20…)' }, { address: counter, nickname: 'Cnt_Cycles', comment: 'Completed automatic cycles' }];
   const rungs: Rung[] = [];
@@ -119,7 +123,7 @@ export function compileSequence(seq: CycleSequence, base: ProgramResult, opts: {
       const last = i === steps.length - 1;
       R(`Step ${v(i)} — ${st.name}: done ${st.waitFor.length ? `when ${st.waitFor.map((w) => (w.input ? `${w.input} ${w.on === false ? 'OFF' : 'ON'}` : `${w.seconds} s`)).join(' and ')}` : 'at once'} → ${last ? 'cycle complete, back to step 10' : `step ${v(i + 1)}`}`,
         [[NO(RUN), NO(SAFE), CMP(S, '==', v(i)), ...conds]],
-        [{ type: 'COPY', source: last ? '10' : v(i + 1), dest: S }, ...(last ? [{ type: 'CNT', address: counter, direction: 'UP', preset: '32767', resetAddress: opts.countReset ?? 'C98' } as LadderOutput] : [])]);
+        [{ type: 'COPY', source: last ? '10' : v(i + 1), dest: S }, ...(last ? [{ type: 'CNT', address: counter, direction: 'UP', preset: '32767', resetAddress: opts.countReset ?? base.internal.reset } as LadderOutput] : [])]);
     }
   }
   // Request bits: ON in the steps that list them (one OUT each).
@@ -144,7 +148,7 @@ export function compileSequence(seq: CycleSequence, base: ProgramResult, opts: {
   const runIdx = merged.findIndex((r) => /^Machine state \d+ Running/.test(r.comment));
   if (runIdx >= 0) merged.splice(runIdx + 1, 0, ...stateRungs);
   return {
-    program: { ...p, rungs: merged, tags: [...p.tags, ...tags.filter((x) => !p.tags.some((y) => y.address === x.address))], sequence: seq },
+    program: { ...p, rungs: merged, tags: [...p.tags, ...tags.filter((x) => !p.tags.some((y) => y.address === x.address))], sequence: { ...seq, register: S } },
     cycleCounter: counter,
   };
 }
@@ -163,14 +167,14 @@ export function sequenceTable(seq: CycleSequence): { step: string; does: string;
  * The whole rule-based program: the standard blocks plus the cycle compiled from `sequence` (the AI's) or
  * the default sequence read from the I/O list and the spec.
  */
-export function programWithCycle(input: ProgramInput & { spec: string; sequence?: CycleSequence }): { program: LadderProgram; sequence: CycleSequence; cycleCounter: string; notes: string[]; base: ProgramResult } {
+export function programWithCycle(input: ProgramInput & { spec: string; sequence?: CycleSequence }): { program: LadderProgram; sequence: CycleSequence; cycleCounter: string; stepRegister: string; notes: string[]; base: ProgramResult } {
   const base = buildProgram(input);
-  const role = (r: string) => (input.hmiTags?.find((t) => t.role === r) ?? undefined)?.address;
+  const role = (r: string) => base.roles.get(r);
   const sequence = input.sequence ?? defaultSequence(input.content, input.spec);
-  const alarm = role('alarm:step') ?? base.roles.get('alarm:step');
   const { program, cycleCounter } = compileSequence(sequence, base, {
-    alarm, countReset: role('cmd:countreset') ?? base.roles.get('cmd:countreset'), stateWord: role('word:state') ?? base.roles.get('word:state'), states: input.content.states,
+    // Cycle count reset: the HMI's count reset, else Service done (maintenance counters), else the Reset bit.
+    alarm: role('alarm:step'), countReset: role('cmd:countreset') ?? role('cmd:servicedone') ?? base.internal.reset, stateWord: role('word:state'), states: input.content.states,
   });
   const notes = base.notes.filter((n) => !/automatic sequence .* not written yet/i.test(n) || !sequence.steps.length);
-  return { program, sequence, cycleCounter, notes: [...notes, ...sequence.questions], base };
+  return { program, sequence: program.sequence ?? sequence, cycleCounter, stepRegister: program.sequence?.register ?? STEP_REGISTER, notes: [...notes, ...sequence.questions], base };
 }

@@ -13,6 +13,7 @@ import SequenceTable from './SequenceTable';
 import { useElectricalStore } from '../../../store/useElectricalStore';
 import { validateProgram, type ValidationIssue } from '../../core/validate';
 import { diffPrograms, summarizeDiff, type RungChange } from '../../core/diff';
+import { GENERAL_BLOCK, scopeToBlock } from '../../sim/blocks';
 import type { LadderProgram, Rung } from '../../core/ladder';
 import LadderView from '../ladder/LadderView';
 import { Spinner, ReasoningPanel } from '../../../components/common';
@@ -59,7 +60,7 @@ function mergeBlock(full: LadderProgram, blockId: string, edited: LadderProgram)
   return { ...full, tags: edited.tags, rungs: [...rest.slice(0, at), ...mine, ...rest.slice(at)] };
 }
 
-function IssueList({ issues, rungNumber }: { issues: ValidationIssue[]; rungNumber: (id: string) => number }) {
+function IssueList({ issues, rungNumber, plcName, onRebuild }: { issues: ValidationIssue[]; rungNumber: (id: string) => number; plcName: string; onRebuild?: () => void }) {
   const [open, setOpen] = useState(false);
   const errors = issues.filter((i) => i.severity === 'error').length;
   const warnings = issues.length - errors;
@@ -74,6 +75,12 @@ function IssueList({ issues, rungNumber }: { issues: ValidationIssue[]; rungNumb
         </span>
         <span className="text-gray-500">{open ? 'Hide ▲' : 'Show ▼'}</span>
       </button>
+      {errors > 0 && onRebuild && (
+        <div className="px-4 pb-2 flex flex-wrap items-center gap-2 text-red-800">
+          <span>Exports of this program for the {plcName} will not work as they are (for example after a change of PLC).</span>
+          <button onClick={onRebuild} className="px-2 py-0.5 rounded border border-red-300 bg-white font-medium hover:bg-red-100">Rebuild for the {plcName}</button>
+        </div>
+      )}
       {open && (
         <ul className="px-4 pb-2 space-y-0.5 max-h-40 overflow-y-auto">
           {issues.map((i, k) => (
@@ -164,7 +171,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     );
   };
 
-  const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet), [ladder, ctx.profile, ioAddressSet]);
+  const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet, hmiDesign ?? undefined), [ladder, ctx.profile, ioAddressSet, hmiDesign]);
 
   // While reviewing an AI change, show the proposed program with removed rungs kept in place.
   const review = useMemo(() => {
@@ -176,9 +183,9 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       display,
       changes,
       summary: summarizeDiff(entries),
-      issues: validateProgram(proposal.program, ctx.profile, ioAddressSet),
+      issues: validateProgram(proposal.program, ctx.profile, ioAddressSet, hmiDesign ?? undefined),
     };
-  }, [proposal, ladder, ctx.profile, ioAddressSet]);
+  }, [proposal, ladder, ctx.profile, ioAddressSet, hmiDesign]);
 
   const rungNumber = (id: string) => (review?.display ?? ladder).rungs.findIndex((r) => r.id === id) + 1;
 
@@ -239,8 +246,15 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     return runAI('program-revise', 'PLC program change', (signal) => reviseLadder({ ...ai, signal }, ctx, ladder, issues, history, scoped), (r) => {
       const st = useProgramStore.getState();
       if (r.program) {
-        st.addChat({ role: 'assistant', text: r.explanation });
-        st.setProposal({ program: r.program, explanation: r.explanation, reasoning: r.reasoning, specUpdate });
+        // A change asked for one block changes only that block; the rest of the program stays as it is.
+        let program = r.program, explanation = r.explanation;
+        if (activeBlock !== null && !specUpdate) {
+          const scopedResult = scopeToBlock(ladder, r.program, activeBlock === GENERAL ? GENERAL_BLOCK : activeBlock);
+          program = scopedResult.program;
+          if (scopedResult.outside) explanation += `\n\nOnly the block ${blockName} was changed: ${scopedResult.outside} change${scopedResult.outside === 1 ? '' : 's'} the AI made to other blocks ${scopedResult.outside === 1 ? 'was' : 'were'} left out. Select "Whole program" to ask for changes there.`;
+        }
+        st.addChat({ role: 'assistant', text: explanation });
+        st.setProposal({ program, explanation, reasoning: r.reasoning, specUpdate });
       } else {
         st.addChat({ role: 'assistant', text: r.explanation, outcome: 'no-change' });
       }
@@ -433,7 +447,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <button onClick={() => { const fromSpec = proposal?.specUpdate; store.applyProposal(); if (fromSpec) recordSource(); }} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700">Approve</button>
           </div>
         ) : (
-          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} />
+          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} plcName={ctx.profile.name} onRebuild={() => handleGenerate(false)} />
         )}
 
         {!review && ladder.rungs.length > 0 && (

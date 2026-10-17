@@ -2,6 +2,8 @@ import type { IOPoint } from '../../types/io';
 import type { ElectricalDesign } from '../../electrical/types';
 import type { HmiDesign, HmiState, HmiStyle } from '../../hmi/types';
 import { buildHmi, defaultHmiContent, type HmiContent } from '../../hmi/engine';
+import { inferRoles } from '../../hmi/engine/roles';
+import { rungAddresses, rungWrites, type LadderProgram } from '../../plc/core/ladder';
 import { callClaude } from './anthropic';
 import type { AiOptions } from './machineModelAI';
 
@@ -59,6 +61,10 @@ export interface HmiProjectInput {
   panel: { partNumber: string; widthPx: number; heightPx: number };
   plcText?: string;
   now?: string;
+  /** The HMI being redesigned: every function keeps its address (roles inferred for older designs). */
+  existingHmi?: HmiDesign | null;
+  /** The current PLC program: new HMI tags never take an address it uses. */
+  program?: LadderProgram | null;
 }
 
 /** Rules' content for the project: the electrical design's wiring links reversing contactors and drives to their motor. */
@@ -92,7 +98,10 @@ export async function generateRuleBasedHmi(opts: Partial<AiOptions> & HmiProject
       aiError = err instanceof Error ? err.message : String(err);
     }
   }
-  const design = buildHmi(content, { ...opts.panel, plcText: opts.plcText, now: opts.now });
+  // Address stability: the existing HMI's functions keep their addresses; new tags avoid every address in use.
+  const keepTags = opts.existingHmi ? inferRoles(opts.existingHmi.tags, { content: base, screens: opts.existingHmi.screens, alarms: opts.existingHmi.alarms }).tags : [];
+  const usedAddresses = (opts.program?.rungs ?? []).flatMap((r) => [...rungAddresses(r), ...rungWrites(r)]).filter((a) => /^[A-Z]+\d+$/i.test(a));
+  const design = buildHmi(content, { ...opts.panel, plcText: opts.plcText, now: opts.now, keepTags, usedAddresses });
   if (aiError) {
     const note = `The AI could not name the screens (${aiError}): names and machine states come from the I/O list — check them.`;
     design.notes.unshift(note);

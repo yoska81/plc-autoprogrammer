@@ -6,6 +6,8 @@
  * Hand-added screens are kept. Everything kept or changed is listed in the returned notes.
  */
 import type { HmiDesign, HmiElement, HmiScreen } from '../types';
+import { MIN_TOUCH } from '../layout';
+import { fitTexts } from './build';
 
 /** Same elements apart from the header and navigation (adding a screen adds a nav button to every screen). */
 const sameContent = (a: HmiScreen, b: HmiScreen) => {
@@ -77,10 +79,46 @@ export function mergeRegenerated(old: HmiDesign | null, fresh: HmiDesign): { des
     for (const e of os.elements) for (const a of [rebind(e.address), e.interlock ? rebind(e.interlock) : null]) if (a) keptTags.add(a.toUpperCase());
     notes.push(`Kept your screen "${os.name}" (not part of the generated set).`);
   }
+  withNavigation(screens, fresh, old, notes);
   // Hand tags still used on kept screens stay in the tag list.
   const freshAddr = new Set(fresh.tags.map((t) => t.address.toUpperCase()));
   const handTags = old.tags.filter((t) => !freshAddr.has(t.address.toUpperCase()) && !remap.has(t.address.toUpperCase()) && keptTags.has(t.address.toUpperCase()));
   return { design: { ...fresh, screens, tags: [...fresh.tags, ...handTags], notes: [...notes, ...fresh.notes] }, notes };
+}
+
+/**
+ * Screens no other screen leads to ("(added)" screens, hand-added screens, a continuation page whose kept
+ * first page has no Next) get a button in every navigation bar, after the generated ones (a hand-added
+ * screen keeps its button's text).
+ */
+function withNavigation(screens: HmiScreen[], fresh: HmiDesign, old: HmiDesign, notes: string[]) {
+  const isBar = (e: HmiElement) => e.kind === 'nav' && /-nav-/.test(e.id);
+  // Not reached from another screen: added / hand-added screens, and a continuation page whose kept first page has no Next button.
+  const reached = (s: HmiScreen) => screens.some((o) => o.id !== s.id && o.elements.some((e) => (e.kind === 'nav' || e.kind === 'header') && e.targetScreenId === s.id));
+  const extra = screens.filter((s) => !reached(s));
+  const sample = fresh.screens[0]?.elements.filter(isBar) ?? [];
+  if (!extra.length || !sample.length) return;
+  const oldLabel = new Map<string, string>();
+  for (const s of old.screens) for (const e of s.elements) if (e.kind === 'nav' && e.targetScreenId && !oldLabel.has(e.targetScreenId)) oldLabel.set(e.targetScreenId, e.label);
+  const entries = [
+    ...sample.map((e) => ({ target: e.targetScreenId!, label: e.label })),
+    ...extra.map((s) => ({ target: s.id, label: s.id.endsWith('-added') ? `+ ${s.name.replace(/ \(added\)$/, '')}` : oldLabel.get(s.id) ?? s.name })),
+  ];
+  const left = Math.min(...sample.map((e) => e.x)), right = Math.max(...sample.map((e) => e.x + e.w));
+  const gap = sample.length > 1 ? Math.max(0, sample[1].x - sample[0].x - sample[0].w) : 8;
+  const w = Math.floor((right - left - gap * (entries.length - 1)) / entries.length);
+  if (w < MIN_TOUCH.w) {
+    notes.push(`No room in the navigation bar for ${extra.map((s) => `"${s.name}"`).join(', ')}: add a button to ${extra.length === 1 ? 'it' : 'them'} on another screen.`);
+    return;
+  }
+  const { y, h } = sample[0];
+  screens.forEach((s, k) => {
+    if (!s.elements.some(isBar)) return;
+    const current = new Set(s.elements.filter((e) => isBar(e) && e.style === 'ok').map((e) => e.targetScreenId));
+    const bar = entries.map((n, i) => fitTexts({ ...sample[0], id: `${s.id}-nav-${n.target}`, label: n.label, targetScreenId: n.target, x: left + i * (w + gap), y, w, h,
+      style: n.target === s.id || current.has(n.target) ? 'ok' : 'normal' }));
+    screens[k] = { ...s, elements: [...s.elements.filter((e) => !isBar(e)), ...bar] };
+  });
 }
 
 /** "Rebuild this screen": the generated version of one screen (and its continuation pages) replaces the user's. */

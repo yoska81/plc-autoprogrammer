@@ -111,8 +111,8 @@ export const LADDER: LadderProgram = {
       [[CMP('DS1002', '>', '0'), CMP('CTD1', '>=', 'DS1002')]], [OUT('C4')]),
 
     // ---- Pusher
-    R('r_push', 'pusher', 'Automatic push request: a new part at the end starts it, held until the pusher is extended',
-      [[NO('C2'), RISE('X004')], [NO('C3'), NC('X005'), NO('C2')]], [OUT('C3')]),
+    R('r_push', 'pusher', 'Automatic push request: a part at the end with the pusher back starts it (level, so a part left at the eye after a stop is still pushed), held until the pusher is extended',
+      [[NO('C2'), NO('X004'), NO('X006')], [NO('C3'), NC('X005'), NO('C2')]], [OUT('C3')]),
     R('r_tmo', 'pusher', 'Pusher timeout: preset is the HMI setpoint DS1001 (seconds)', [[NO('C3')]],
       [{ type: 'TMR', address: 'T1', mode: 'ON_DELAY', preset: 'DS1001', unit: 'sec', accumulate: false, resetAddress: null }]),
     R('r_ret_tmo', 'pusher', 'Retract timeout: after the push, the pusher must be back at retracted within DS1001 s', [[NO('C2'), NC('C3'), NC('X006')]],
@@ -454,7 +454,7 @@ export const DESIGN: ElectricalDesign = {
 };
 
 /** Bump when the example changes so returning preview viewers get the new one. */
-const SEED_VERSION = '12'; // 12: 30x24 enclosure (the 24x20 is too small for the real part footprints)
+const SEED_VERSION = '13'; // 13: push on the part-at-end level (not its rising edge); 12: 30x24 enclosure
 
 function readSeedVersion(): string | null {
   try { return localStorage.getItem('plc-preview-seed'); } catch { return null; }

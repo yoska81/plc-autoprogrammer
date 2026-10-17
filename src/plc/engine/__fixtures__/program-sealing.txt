@@ -49,7 +49,7 @@ block status "HMI & status"
 [cycle] Step timeout reset: Reset while the cycle is stopped
     NO:C7 NC:C2  ->  RST C1101
 [cycle] Step 40 — Head up until Head up sensor: done when X003 ON → cycle complete, back to step 10
-    NO:C2 NO:C1 DS1150==40 NO:X003  ->  COPY 10->DS1150, CNT CT1 rst C98
+    NO:C2 NO:C1 DS1150==40 NO:X003  ->  COPY 10->DS1150, CNT CT1 rst C1008
 [cycle] Step 30 — Seals 2 s: done when 2 s → step 40
     NO:C2 NO:C1 DS1150==30 NO:T6  ->  COPY 40->DS1150
 [cycle] Step 20 — Head down until Head down sensor: done when X004 ON → step 30
