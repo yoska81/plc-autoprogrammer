@@ -68,7 +68,7 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
     'ALL WIRING 600V, 90°C MTW/TEW/SIS COPPER (NFPA 79 CH. 12). POWER CONDUCTORS SIZED PER MOTOR SHEETS; CONTROL 18 AWG MIN., I/O 18 AWG MIN. UNLESS NOTED.',
     'EVERY CONDUCTOR IDENTIFIED AT BOTH ENDS WITH ITS WIRE NUMBER (NFPA 79 13.2.1). ONE WIRE NUMBER PER ELECTRICALLY COMMON POTENTIAL; SUFFIX LETTER AFTER EACH SERIES DEVICE.',
     'FIELD WIRING VIA TERMINAL STRIPS TB2 (INPUTS) / TB3 (OUTPUTS); MOTOR LEADS VIA TB1. ~15% SPARE TERMINALS PROVIDED.',
-    'E-STOP IS STOP CATEGORY 0 VIA SAFETY RELAY REMOVING 24+S FROM PLC OUTPUTS; PERFORM RISK ASSESSMENT AND VALIDATE (ISO 13849-1 / NFPA 79 9.2.5.4).',
+    `E-STOP IS STOP CATEGORY 0 VIA SAFETY RELAY REMOVING 24+S FROM ${model.groups.some((g) => g.type === 'output' && g.outputStyle === 'sinking') ? 'THE OUTPUT LOADS (SINKING OUTPUTS: EACH LOAD IS FED FROM 24+S AND SWITCHED TO 0V BY THE PLC)' : 'THE PLC OUTPUT SUPPLY'}; PERFORM RISK ASSESSMENT AND VALIDATE (ISO 13849-1 / NFPA 79 9.2.5.4).`,
     'LINE REFERENCES "SHEET.LINE": "/4.05" = SHEET 4, LINE 05. CONTACT LISTS UNDER EACH COIL; "TO" / "FROM" ARROWS FOR CONTINUATIONS. SYMBOLS, ABBREVIATIONS AND DEVICE TAGS (NFPA 79 ANNEX D) ON SHEET 2.',
     'THIS DRAWING SET IS AI-GENERATED. ALL PARTS, RATINGS, WIRE SIZES AND LAYOUT MUST BE CHECKED AND APPROVED BY A QUALIFIED ENGINEER BEFORE PURCHASE, BUILD OR USE.',
   ];
@@ -235,7 +235,7 @@ export function TerminalSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Plann
                   <Txt x={x + cols[1] + 1.5} y={yy - 1.4} size={2.4} mono bold maxW={cols[2] - cols[1] - 3}>{t.wire || '—'}</Txt>
                   <Txt x={x + cols[2] + 1.5} y={yy - 1.4} size={2.3} mono maxW={cols[3] - cols[2] - 3}>{t.internal}</Txt>
                   <Txt x={x + cols[3] + 1.5} y={yy - 1.4} size={2.3} mono maxW={cols[4] - cols[3] - 3}>{t.external}</Txt>
-                  <Txt x={x + cols[4] + 1.5} y={yy - 1.4} size={2.2} maxW={colW - cols[4] - 3}>{t.kind === 'ground' ? 'PE (GN/YE)' : t.kind === 'spare' ? 'SPARE' : t.group === t.wire ? 'JUMPERED' : 'FEED'}</Txt>
+                  <Txt x={x + cols[4] + 1.5} y={yy - 1.4} size={2.2} maxW={colW - cols[4] - 3}>{t.kind === 'ground' ? 'PE (GN/YE)' : t.kind === 'spare' ? 'SPARE' : t.fuse ? `FUSED ${t.fuse}` : t.group === t.wire ? 'JUMPERED' : 'FEED'}</Txt>
                   <Line x1={x} y1={yy} x2={x + colW} y2={yy} w={0.12} />
                 </g>
               );

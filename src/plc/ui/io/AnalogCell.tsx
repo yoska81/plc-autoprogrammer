@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ANALOG_RANGES, type AnalogRange, type AnalogSpec, type IOPoint } from '../../../types/io';
 import { useIOStore } from '../../../store/useIOStore';
 import { useProjectStore } from '../../../store/useProjectStore';
@@ -21,6 +22,16 @@ export default function AnalogCell({ point, address }: { point: IOPoint; address
   const a = point.signal === 'analog' ? point.analog ?? DEFAULT : null;
   const set = (patch: Partial<AnalogSpec>) => setAnalog(point.id, { ...(a ?? DEFAULT), ...patch });
   const num = (v: string, fallback: number) => (Number.isFinite(Number(v)) && v.trim() !== '' ? Number(v) : fallback);
+  // The scale must rise: a minimum at or above the maximum is refused (the field goes back) with a note.
+  const [scaleError, setScaleError] = useState<string | null>(null);
+  const setScale = (el: HTMLInputElement, which: 'min' | 'max') => {
+    if (!a) return;
+    const v = num(el.value, a[which]);
+    const lo = which === 'min' ? v : a.min, hi = which === 'max' ? v : a.max;
+    if (lo >= hi) { el.value = String(a[which]); setScaleError(`The scale minimum must be below the maximum (${a.min} – ${a.max} kept).`); return; }
+    setScaleError(null);
+    set({ [which]: v });
+  };
   return (
     <div className="flex flex-wrap items-center gap-1">
       <button type="button" onClick={() => setAnalog(point.id, a ? null : DEFAULT)} aria-pressed={Boolean(a)}
@@ -33,10 +44,11 @@ export default function AnalogCell({ point, address }: { point: IOPoint; address
           <select aria-label={`Signal range of ${point.id}`} value={a.range} onChange={(e) => set({ range: e.target.value as AnalogRange })} className={box}>
             {ANALOG_RANGES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
-          <input aria-label={`Scale minimum of ${point.id}`} defaultValue={a.min} key={`min${a.min}`} onBlur={(e) => set({ min: num(e.target.value, a.min) })} className={`${box} w-12 text-right`} />
+          <input aria-label={`Scale minimum of ${point.id}`} defaultValue={a.min} key={`min${a.min}`} onBlur={(e) => setScale(e.target, 'min')} className={`${box} w-12 text-right`} />
           <span className="text-xs text-steel-400">–</span>
-          <input aria-label={`Scale maximum of ${point.id}`} defaultValue={a.max} key={`max${a.max}`} onBlur={(e) => set({ max: num(e.target.value, a.max) })} className={`${box} w-14 text-right`} />
+          <input aria-label={`Scale maximum of ${point.id}`} defaultValue={a.max} key={`max${a.max}`} onBlur={(e) => setScale(e.target, 'max')} className={`${box} w-14 text-right`} />
           <input aria-label={`Units of ${point.id}`} defaultValue={a.units} key={`u${a.units}`} onBlur={(e) => set({ units: e.target.value.trim() })} placeholder="units" className={`${box} w-12`} />
+          {scaleError && <span role="alert" className="basis-full text-[11px] text-red-700">{scaleError}</span>}
           {address === '' && (
             <span role="note" className="basis-full text-[11px] text-amber-800">
               No analog channel for this point: add an analog {point.type} module

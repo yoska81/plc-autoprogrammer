@@ -153,7 +153,7 @@ export const IEC_RULES: CodeRule[] = [
     run: (_i, env) => {
       const expect = (w: WireRecord): string[] | null => {
         if (isCable(w)) return null;
-        if (isPe(w)) return ['GN/YE'];
+        if (isPe(w) || /\bshield\b|\bdrain\b/i.test(w.function)) return ['GN/YE']; // shields / drains land on PE
         if (/secondary/i.test(w.function) && /^(X2)$/.test(w.wire)) return ['RD']; // earthed side of the control transformer: AC control
         if (/^(X2|N)$/.test(w.wire) || /neutral|grounded conductor/i.test(w.function)) return ['BU(LT)', 'LBU', 'BU'];
         if (/^X1$/.test(w.wire) || /secondary 1[12]0VAC|1[12]0VAC feed|230VAC feed/i.test(w.function)) return ['RD'];

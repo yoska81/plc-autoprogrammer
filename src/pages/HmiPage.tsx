@@ -288,7 +288,7 @@ export default function HmiPage() {
   const hmiQuestions = useMemo(() => hmiQuestionsRaw.map((q) => ({ ...q, text: withTagNames(q.text, tagName) })), [hmiQuestionsRaw, tagName]);
   const screen = design?.screens.find((s) => s.id === screenId) ?? design?.screens[0] ?? null;
   const selectedEl = screen?.elements.find((e) => e.id === selected) ?? null;
-  const issues = useMemo(() => (design && model ? checkDesign(design, model.widthPx, model.heightPx) : []), [design, model]);
+  const issues = useMemo(() => (design && model ? checkDesign(design, model.widthPx, model.heightPx, { text: true }) : []), [design, model]);
   const usedOn = useMemo(() => {
     const m = new Map<string, string[]>();
     for (const s of design?.screens ?? []) for (const e of s.elements) {

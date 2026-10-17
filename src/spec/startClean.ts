@@ -4,7 +4,7 @@
  * This finds those leftovers (compared with the example's seed data) and clears them, keeping the
  * user's machine description and — if they want — their I/O list. A backup is taken first.
  */
-import { DESIGN, DOC_CONTROL, EXAMPLE_ID, HMI, LADDER, RECOMMENDATION, SPEC } from '../preview/sampleProject';
+import { DESIGN, DOC_CONTROL, EXAMPLE_ID, EXAMPLE_IO, HMI, LADDER, RECOMMENDATION, SPEC } from '../preview/sampleProject';
 import { useProjectStore } from '../store/useProjectStore';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useHmiStore } from '../store/useHmiStore';
@@ -16,10 +16,10 @@ import { useDraftStore } from '../store/useDraftStore';
 import { useReviewStore } from '../review/useReviewStore';
 import { useQuestionStore } from '../components/questions/useQuestionStore';
 import { backupActiveProject, useProjectsStore } from '../store/useProjectsStore';
-import { specToText } from './types';
+import { SPEC_SECTIONS, specToText, type SpecSectionId } from './types';
 import { looksLeftOver } from './leftovers';
 
-export type LeftoverKey = 'docControl' | 'equipment' | 'electrical' | 'motors' | 'hmi' | 'program' | 'notes' | 'questions';
+export type LeftoverKey = 'spec' | 'io' | 'docControl' | 'equipment' | 'electrical' | 'motors' | 'hmi' | 'program' | 'notes' | 'questions';
 export interface Leftover { key: LeftoverKey; label: string }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -32,6 +32,9 @@ export function exampleLeftovers(): Leftover[] {
   if (same(spec, SPEC)) return [];
   const specText = specToText(spec);
   const out: Leftover[] = [];
+  const sections = exampleSections();
+  if (sections.length) out.push({ key: 'spec', label: `description sections still the example's (${sections.map((id) => SPEC_SECTIONS.find((d) => d.id === id)!.title.toLowerCase()).join(', ')})` });
+  if (ioIsExample()) out.push({ key: 'io', label: `the example's I/O list (${EXAMPLE_IO.length} conveyor points)` });
   const doc = exampleDocControl();
   if (doc.length) out.push({ key: 'docControl', label: `the example's document control (${doc.join(', ')})` });
   const rec = useProjectStore.getState().recommendation;
@@ -50,6 +53,23 @@ export function exampleLeftovers(): Leftover[] {
   const qs = (useQuestionStore.getState().byProject[pid] ?? []).filter((q) => q.source !== 'spec' && (exampleNotes.has(q.text.trim().toLowerCase()) || out.length > 0));
   if (qs.length) out.push({ key: 'questions', label: `${qs.length} question${qs.length > 1 ? 's' : ''} from the example's design` });
   return out;
+}
+
+const norm = (t: string | undefined) => (t ?? '').replace(/\s+/g, ' ').trim();
+
+/** Description sections (besides the overview) whose text is still the example's. */
+export function exampleSections(): SpecSectionId[] {
+  const spec = useSpecStore.getState().sections;
+  return SPEC_SECTIONS.map((d) => d.id).filter((id) => id !== 'overview' && norm(SPEC[id]) && norm(spec[id]) === norm(SPEC[id]));
+}
+
+/** The I/O list is still the example's 9 conveyor points (same descriptions and types, any order). */
+export function ioIsExample(): boolean {
+  const io = useIOStore.getState().projectIO;
+  if (io.length !== EXAMPLE_IO.length) return false;
+  const key = (p: { description: string; type: string }) => `${p.type}:${norm(p.description).toLowerCase()}`;
+  const ex = new Set(EXAMPLE_IO.map(key));
+  return io.every((p) => ex.has(key(p)));
 }
 
 /** Title-block fields still holding the example's values, as "customer Example Foods Inc."… */
@@ -74,7 +94,7 @@ export function prefixFromName(name: string): string {
  * questions those stages asked). The machine description stays; the I/O list stays unless
  * `keepIo` is false. A backup of the project is taken first (Project › Recover).
  */
-export function startClean({ keepIo }: { keepIo: boolean }) {
+export function startClean({ keepIo, clearSections = true }: { keepIo: boolean; clearSections?: boolean }) {
   backupActiveProject('Before "Start clean from my description"');
   const project = useProjectStore.getState();
   // The example's document control: its customer, site, job number, prefix and revision history.
@@ -100,6 +120,12 @@ export function startClean({ keepIo }: { keepIo: boolean }) {
   review.setAi(null);
   useReviewStore.setState({ marks: {} });
   if (!keepIo) useIOStore.setState({ projectIO: [] });
+  // Description sections that are still the example's text: emptied (the AI fills them from the overview).
+  const sections = clearSections ? exampleSections() : [];
+  if (sections.length) {
+    const spec = useSpecStore.getState().sections;
+    useSpecStore.getState().setSections({ ...spec, ...Object.fromEntries(sections.map((id) => [id, ''])) });
+  }
   const pid = useProjectsStore.getState().activeId ?? 'default';
   useQuestionStore.setState((s) => ({ byProject: { ...s.byProject, [pid]: (s.byProject[pid] ?? []).filter((q) => q.source === 'spec') } }));
   // Generation records of the cleared stages; pending choices made on the example's outputs.

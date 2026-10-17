@@ -48,20 +48,32 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   await page.waitForTimeout(300);
   check(await page.getByTestId('leftover-notes').count() > 0, 'Program: leftover notes warning');
 
+  // The Sealing Head case: the user rewrote the overview; the other sections are still the example's.
+  await page.evaluate(async ({ own }) => {
+    const { useSpecStore } = await import('/src/store/useSpecStore.ts');
+    const { SPEC } = await import('/src/preview/sampleProject.ts');
+    useSpecStore.getState().setSections({ ...SPEC, overview: own });
+  }, { own: OWN });
+
   // The banner on the description page.
   await page.goto(BASE + '/spec');
   await page.waitForTimeout(600);
   const banner = page.getByTestId('start-clean');
   const text = (await banner.innerText()).replace(/\s+/g, ' ');
   log('Banner:', text.slice(0, 260));
-  for (const part of ['document control', 'Example Foods Inc.', '24-117', 'drawing prefix CNV', 'revision history', 'equipment suggestion', 'electrical design', 'HMI screens', 'PLC program', 'program notes']) check(text.includes(part), `banner names ${part}`);
+  for (const part of ['description sections still the example', 'sequence of operation', "the example's I/O list (9 conveyor points)", 'document control', 'Example Foods Inc.', '24-117', 'drawing prefix CNV', 'revision history', 'equipment suggestion', 'electrical design', 'HMI screens', 'PLC program']) check(text.includes(part), `banner names ${part}`);
 
   const before = await page.evaluate(async () => ({
     io: (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.length,
     backups: Object.keys(localStorage).filter((k) => k.startsWith('plc-backup:')).length,
   }));
+  // Reload: the banner is still there while the leftovers remain.
+  await page.reload();
+  await page.waitForTimeout(800);
+  check(await page.getByTestId('start-clean').count() === 1, 'banner still shown after a reload');
   await banner.getByRole('button', { name: 'Start clean from my description' }).click();
-  await banner.getByLabel('Keep my I/O list').check();
+  check(await banner.getByLabel('Make it again from the description').isChecked(), "the example's I/O is made again by default");
+  check(await banner.getByLabel("Empty the description sections that are still the example's text").isChecked(), 'example sections emptied by default');
   await banner.getByRole('button', { name: "Clear the example's parts" }).click();
   await page.waitForTimeout(500);
 
@@ -74,15 +86,18 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
     const spec = (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().sections;
     const stages = (await import('/src/spec/useStages.ts')).stagesNow();
     const info = proj.info;
+    const filled = Object.entries(spec).filter(([k, v]) => k !== 'qa' && String(v).trim()).map(([k]) => k);
     return {
       io, design: Boolean(el.design), motors: el.inputs.motors.length, hmi: Boolean(hmi.design), rungs: prog.ladder.rungs.length, notes: prog.userPrompt,
       rec: Boolean(proj.recommendation), overview: spec.overview, backups: Object.keys(localStorage).filter((k) => k.startsWith('plc-backup:')).length,
+      filled,
       doc: { customer: info.customer, site: info.site, projectNumber: info.projectNumber, prefix: info.drawingPrefix, revisions: info.revisions.length },
       stages: Object.fromEntries(Object.entries(stages).map(([k, v]) => [k, v.status])),
     };
   });
   log('After:', JSON.stringify(after));
-  check(after.io === before.io && after.io > 0, 'I/O list kept');
+  check(after.io === 0 && before.io === 9, `the example's I/O list cleared to be made again (${before.io} → ${after.io})`);
+  check(after.filled.join() === 'overview', `only the user's overview is left in the description (${after.filled.join()})`);
   check(after.overview === OWN, 'description kept');
   check(!after.design && !after.motors && !after.hmi && !after.rungs && !after.notes && !after.rec, "the example's outputs are cleared");
   check(!after.doc.customer && !after.doc.site && !after.doc.projectNumber && after.doc.prefix === 'SH' && after.doc.revisions === 0, `the example's document control is reset (prefix from the name, no revisions): ${JSON.stringify(after.doc)}`);
@@ -99,9 +114,35 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   check(!/EXAMPLE FOODS|LINE 3|24-117|\bCNV\b/.test(fields), `Project data no longer holds the example's customer, site, job or prefix: ${fields.slice(0, 200)}`);
   check(/\bSH\b/.test(fields), 'drawing prefix from the project name (SH)');
 
+  // The banner stays (with the build offer) across pages and reloads until closed.
+  await page.goto(BASE + '/io');
+  await page.goto(BASE + '/spec');
+  await page.waitForTimeout(600);
+  check(/Build everything from my description/.test(await page.getByTestId('start-clean').innerText()), 'build offer kept across pages');
+
+  // Build everything: the AI fails (bad request) → the Update dialog shows it, the banner names what was not built.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('plc-settings-store') || '{"state":{},"version":4}');
+    s.state = { ...s.state, provider: 'anthropic', anthropicApiKey: 'sk-ant-test' };
+    localStorage.setItem('plc-settings-store', JSON.stringify(s));
+  });
+  await page.route('https://api.anthropic.com/**', (r) => r.fulfill({ status: 400, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, body: JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'test: bad request' } }) }));
   await page.reload();
   await page.waitForTimeout(800);
-  check(await page.getByTestId('start-clean').count() === 0, 'no banner after cleaning (reload)');
+  await page.getByTestId('start-clean').getByRole('button', { name: 'Build everything from my description' }).click();
+  await page.getByText('Building the project from your description').waitFor({ timeout: 10000 });
+  await page.getByTestId('start-clean').filter({ hasText: /Not built|Nothing was built|Built from/ }).waitFor({ timeout: 60000 });
+  const built = (await page.getByTestId('start-clean').innerText()).replace(/\s+/g, ' ');
+  log('After the build:', built.slice(0, 200));
+  check(/Not built: Equipment/.test(built), 'failed stage named with its error');
+  check(!/\bio done\b|\bequipment failed\b/.test(built), 'no internal stage ids');
+  check(/Try again/.test(built), 'offers to try again');
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await page.waitForTimeout(800);
+  check(/Not built/.test(await page.getByTestId('start-clean').innerText()), 'build outcome kept after a reload');
+  await page.getByTestId('start-clean').getByRole('button', { name: 'Close' }).click();
+  check(await page.getByTestId('start-clean').count() === 0, 'no banner once closed and cleaned');
   await page.goto(BASE + '/electrical?tab=design');
   await page.waitForTimeout(800);
   check(await page.getByTestId('leftover-motor').count() === 0, 'no leftover motor warning after cleaning');
@@ -109,5 +150,5 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   for (const e of errors) fails.push(`page error: ${e.slice(0, 160)}`);
   await browser.close();
   if (fails.length) { console.log('FAILED:\n - ' + fails.join('\n - ')); process.exit(1); }
-  log('copied-from-example project cleaned; description and I/O kept');
+  log('copied-from-example project cleaned: overview kept, example sections, I/O and document control cleared; build outcome reported');
 })().catch((e) => { console.error('FAILED:', e.message.split('\n').slice(0, 6).join('\n')); process.exit(1); });

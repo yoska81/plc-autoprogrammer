@@ -13,6 +13,12 @@ const td = 'px-3 py-1.5 border-b border-steel-100 align-top';
  * Every copy of a project saved in this browser (project copies and automatic
  * backups), with a way to open any of them as a new project. Nothing is overwritten.
  */
+/** First line with content: skips "overview:"-style headings and blank lines. */
+function previewLine(text: string): string {
+  const line = text.split('\n').map((l) => l.trim()).find((l) => l && !/^[\w .\-/]+:$/.test(l)) ?? '';
+  return line.replace(/^[a-z][\w]*:\s+/i, '');
+}
+
 export default function RecoverWork() {
   const navigate = useNavigate();
   const [items, setItems] = useState<SavedWork[]>(() => listSavedWork());
@@ -61,7 +67,7 @@ export default function RecoverWork() {
                 <button onClick={() => setOpenPiece(openPiece === pc.id ? null : pc.id)} className="flex-1 text-left">
                   <span className="font-medium text-steel-900">{pc.title}</span>
                   <span className="text-xs text-steel-500"> · {pc.where}{pc.when ? ` · ${new Date(pc.when).toLocaleString()}` : ''}</span>
-                  <span className="block text-xs text-steel-500 truncate">{pc.text.split('\n')[0]}</span>
+                  <span className="block text-xs text-steel-500 truncate">{previewLine(pc.text)}</span>
                 </button>
                 <button onClick={() => copy(pc.text)} className="px-2 py-1 text-xs border border-steel-300 rounded-sm hover:bg-steel-50">Copy</button>
                 <button onClick={() => startFrom(pc)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 whitespace-nowrap">Start a new project from this</button>

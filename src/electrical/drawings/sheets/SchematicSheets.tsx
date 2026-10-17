@@ -622,9 +622,17 @@ function RungElement({ plan, e, x, y }: { plan: DrawingPlan; e: RungEl; x: numbe
           <rect x={x - 12} y={y - 3} width={24} height={6} strokeWidth={0.45} fill="#fff" />
           <Txt x={x - 11} y={y + 0.9} size={2.2} mono>{e.left}</Txt>
           <Txt x={x + 11} y={y + 0.9} size={2.2} mono anchor="end">{e.right}</Txt>
-          <Txt x={x} y={y + 0.9} size={2.2} anchor="middle">SAFETY</Txt>
+          <Txt x={x} y={y + 0.9} size={2.2} anchor="middle">{e.label ?? 'SAFETY'}</Txt>
           <Txt x={x} y={y - 4.2} size={2.6} mono bold anchor="middle">{e.tag}</Txt>
           <ContactMirror plan={plan} tag={e.tag} x={x} y={y - 0.4} />
+        </g>
+      );
+    case 'fuse':
+      return (
+        <g>
+          <Fuse x={x} y={y} />
+          <Txt x={x} y={y - 2.6} size={2.4} mono bold anchor="middle">{e.tag}</Txt>
+          <Txt x={x} y={y + 4.4} size={2.0} mono anchor="middle">{e.rating}</Txt>
         </g>
       );
   }

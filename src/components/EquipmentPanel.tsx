@@ -1,5 +1,5 @@
 import { isAnalog } from '../types/io';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useSpecStore } from '../store/useSpecStore';
@@ -15,7 +15,7 @@ import { useUi } from '../store/useUiStore';
 import { moduleSlots, ioCapacity } from '../plc/core/modules';
 import { cpuFit, findCpu, hmiFit, platformOf, type Need } from '../plc/core/fit';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
-import { applyEquipment, recommendedChoice, type EquipmentChoice } from '../spec/equipment';
+import { applyEquipment, recommendedChoice, usePendingEquipment, type EquipmentChoice } from '../spec/equipment';
 import VendorPreferenceCard from './VendorPreferenceCard';
 import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
@@ -92,16 +92,19 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const specEmpty = !Object.values(spec).some((t) => typeof t === 'string' && t.trim());
   const apiKey = settings.anthropicApiKey;
 
-  // What the machine needs: the AI estimate, or the real I/O list once it exists (whichever is larger).
+  // What the machine needs: the real I/O list once it exists (the same count the design review uses),
+  // the AI estimate before that.
   const need: Need = useMemo(() => {
     // Analog points count against analog channels, not the discrete inputs/outputs.
     const count = (type: 'input' | 'output', analog: boolean) => ioPoints.filter((p) => p.type === type && isAnalog(p) === analog).length;
     const recHmi = rec?.hmi ? getHmi(rec.hmi.partNumber) : undefined;
+    const est = rec?.estimatedIO;
+    const n = (k: 'digitalInputs' | 'digitalOutputs' | 'analogInputs' | 'analogOutputs', type: 'input' | 'output', analog: boolean) => (ioPoints.length ? count(type, analog) : est?.[k] ?? 0);
     return {
-      digitalInputs: Math.max(rec?.estimatedIO.digitalInputs ?? 0, count('input', false)),
-      digitalOutputs: Math.max(rec?.estimatedIO.digitalOutputs ?? 0, count('output', false)),
-      analogInputs: Math.max(rec?.estimatedIO.analogInputs ?? 0, count('input', true)),
-      analogOutputs: Math.max(rec?.estimatedIO.analogOutputs ?? 0, count('output', true)),
+      digitalInputs: n('digitalInputs', 'input', false),
+      digitalOutputs: n('digitalOutputs', 'output', false),
+      analogInputs: n('analogInputs', 'input', true),
+      analogOutputs: n('analogOutputs', 'output', true),
       ethernetHmi: Boolean(choice?.hmiPartNumber),
       minHmiSizeIn: recHmi ? recHmi.sizeIn : null,
     };
@@ -145,6 +148,15 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     applyEquipment(choice, rec);
     onApplied?.();
   };
+  // Let the New project wizard apply a selection the user did not apply themselves.
+  const pendingLabel = choice && !applied ? `${choice.cpuId}${choice.hmiPartNumber ? ` + ${choice.hmiPartNumber}` : ''}` : null;
+  const canApply = Boolean(pendingLabel && fit?.ok);
+  const applyRef = useRef(apply);
+  useEffect(() => { applyRef.current = apply; });
+  useEffect(() => {
+    usePendingEquipment.setState({ apply: canApply ? () => applyRef.current() : null, label: pendingLabel });
+    return () => usePendingEquipment.setState({ apply: null, label: null });
+  }, [canApply, pendingLabel]);
 
   return (
     <div className="space-y-4">

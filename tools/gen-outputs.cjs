@@ -9,7 +9,7 @@ const path = require('path');
 
 const BASE = process.env.BASE_URL || 'http://localhost:5204';
 const OUT = path.join(__dirname, 'out');
-const ALL = ['us480', 'ca600', 'us120', 'big', 'analog', 'rules', 'rules-big', 'rules-eu', 'rules-sealing', 'rules-sealing-long'];
+const ALL = ['us480', 'ca600', 'us120', 'big', 'analog', 'rules', 'rules-big', 'rules-eu', 'rules-sealing', 'rules-sealing-long', 'rules-stress'];
 const variants = process.argv.slice(2).length ? process.argv.slice(2) : ALL;
 
 (async () => {

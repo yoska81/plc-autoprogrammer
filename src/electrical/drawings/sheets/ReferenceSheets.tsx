@@ -6,7 +6,7 @@ import { codeRefs, isFuseCartridge, panelNameplate } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
 import type { DrawingPlan, PlannedSheet, SheetSpec } from '../plan';
 import {
-  BreakerPole, Coil, Contact, Dot, Fuse, Ground, Lamp, LimitSwitch, Line, Motor, OverloadHeater, PressureSwitch, Pushbutton,
+  BreakerPole, CellTxt, Coil, Contact, Dot, Fuse, Ground, Lamp, LimitSwitch, Line, Motor, OverloadHeater, PressureSwitch, Pushbutton,
   Selector, Sensor3W, Solenoid, SwitchPole, TermBox, TermPt, Txt, WireNo, XrefArrow,
 } from '../symbols';
 import { iecStripText, stripTag } from '../../../standards/designations';
@@ -224,12 +224,12 @@ export function DeviceListSheet({ sheet }: { plan: DrawingPlan; sheet: PlannedSh
           <g key={r.tag}>
             <Txt x={x + cols[0] + 1.5} y={ty} size={2.3} mono bold maxW={cols[1] - cols[0] - 2.5}>{r.tag}</Txt>
             <Txt x={x + (cols[1] + cols[2]) / 2} y={ty} size={2.2} mono anchor="middle">{r.qty}</Txt>
-            <Txt x={x + cols[2] + 1.5} y={ty} size={2.1} maxW={cols[3] - cols[2] - 3}>{r.fn || '—'}</Txt>
+            <CellTxt x={x + cols[2] + 1.5} y={ty} size={2.1} w={cols[3] - cols[2] - 3} rowH={rowH}>{r.fn || '—'}</CellTxt>
             <Txt x={x + cols[3] + 1.5} y={ty} size={2.1} mono maxW={cols[4] - cols[3] - 3}>{r.partNumber || '—'}</Txt>
-            <Txt x={x + cols[4] + 1.5} y={ty} size={2.0} maxW={cols[5] - cols[4] - 3}>{(r.manufacturer || '—').toUpperCase()}</Txt>
-            <Txt x={x + cols[5] + 1.5} y={ty} size={2.0} maxW={cols[6] - cols[5] - 3}>{r.description.replace(/^FIXTURE — /, 'FIXTURE: ').toUpperCase()}</Txt>
-            <Txt x={x + cols[6] + 1.5} y={ty} size={2.0} maxW={cols[7] - cols[6] - 3}>{r.location}</Txt>
-            <Txt x={x + cols[7] + 1.5} y={ty} size={2.0} mono maxW={w - cols[7] - 3}>{r.refs}</Txt>
+            <CellTxt x={x + cols[4] + 1.5} y={ty} w={cols[5] - cols[4] - 3} rowH={rowH}>{(r.manufacturer || '—').toUpperCase()}</CellTxt>
+            <CellTxt x={x + cols[5] + 1.5} y={ty} w={cols[6] - cols[5] - 3} rowH={rowH}>{r.description.replace(/^FIXTURE — /, 'FIXTURE: ').toUpperCase()}</CellTxt>
+            <CellTxt x={x + cols[6] + 1.5} y={ty} w={cols[7] - cols[6] - 3} rowH={rowH}>{r.location}</CellTxt>
+            <CellTxt x={x + cols[7] + 1.5} y={ty} w={w - cols[7] - 3} rowH={rowH} mono>{r.refs}</CellTxt>
             <Line x1={x} y1={yy} x2={x + w} y2={yy} w={0.12} />
           </g>
         );
@@ -325,7 +325,9 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   const cy0 = ptop + (shownPlates.length + (hmi ? 1 : 0) + 2) * prow + 14;
   const convLines = conv.map((c) => wrapText(c, TW - 6, 2.1));
   const convEnd = cy0 + 7 + convLines.reduce((h, ls) => h + ls.length * 2.9 + 1.2, 0);
-  const idTags = model.rc.filter((c) => c.mount === 'backplate' && !isFuseCartridge(c) && !['enclosure', 'dinRail', 'wireDuct', 'terminal', 'terminalAccessory'].includes(c.category) && !/handle|shaft|jumper|marker/i.test(`${c.comp.function} ${c.part?.description ?? ''}`))
+  // accessories are left out by what they are (the description's first clause: DS1 "disconnect switch … order handle + shaft" stays)
+  const idTags = model.rc.filter((c) => c.mount === 'backplate' && !isFuseCartridge(c) && !['enclosure', 'dinRail', 'wireDuct', 'terminal', 'terminalAccessory'].includes(c.category)
+    && !/handle|shaft|jumper|marker/i.test(`${c.comp.function} ${(c.part?.description ?? '').split(/[,;(]/)[0]}`))
     .map((c) => c.tag).concat(model.strips.map((st) => st.tag)).filter((t, i, a) => a.indexOf(t) === i).sort((x, y) => x.localeCompare(y, 'en', { numeric: true }));
   return (
     <g>
@@ -415,8 +417,12 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
           );
         });
       })()}
-      {/* wire marker illustration */}
+      {/* wire marker illustration: a real wire of this project (first PLC point landed on a strip) */}
       {(() => {
+        const p = model.io.find((x) => x.signalTerminal);
+        const term = p?.signalTerminal ?? `${stripTag(plan.ctx.designations, 1)}-1`;
+        const cut = term.lastIndexOf('-'); // "TB2-4", IEC "-X2-4"
+        const ex = { strip: term.slice(0, cut), n: Number(term.slice(cut + 1)) || 1, wire: p?.wire ?? '24+', to: p ? `${model.plcTag}:${p.address}` : `${model.plcTag}:24V` };
         const iy = convEnd + 6;
         const ix = TX + 4;
         const ly0 = iy + 16;
@@ -441,17 +447,17 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
                 {idTags.length > shown.length && <Txt x={AREA_R - 4} y={ly0} size={1.9} italic anchor="end">{`+${idTags.length - shown.length} MORE (SEE DEVICE LIST)`}</Txt>}
               </g>
             )}
-            <TermBox x={ix} y={iy} n={4} />
-            <Txt x={ix} y={iy - 3.4} size={1.8} mono anchor="middle">{stripTag(plan.ctx.designations, 2)}</Txt>
+            <TermBox x={ix} y={iy} n={ex.n} />
+            <Txt x={ix} y={iy - 3.4} size={1.8} mono anchor="middle">{ex.strip}</Txt>
             <Line x1={ix + 2.5} y1={iy} x2={ix + 90} y2={iy} w={0.6} />
             {[ix + 9, ix + 75].map((sx) => (
               <g key={sx}>
                 <rect x={sx} y={iy - 1.8} width={11} height={3.6} strokeWidth={LW_THIN} fill="#fff" />
-                <Txt x={sx + 5.5} y={iy + 0.8} size={2.0} mono bold anchor="middle">X101</Txt>
+                <Txt x={sx + 5.5} y={iy + 0.8} size={2.0} mono bold anchor="middle" maxW={10.4}>{ex.wire}</Txt>
               </g>
             ))}
             <TermPt x={ix + 90.7} y={iy} />
-            <Txt x={ix + 92.5} y={iy + 0.8} size={1.9} mono>PLC1:X101</Txt>
+            <Txt x={ix + 92.5} y={iy + 0.8} size={1.9} mono>{ex.to}</Txt>
             <Txt x={ix + 42} y={iy + 5.5} size={1.9} anchor="middle">SAME WIRE NUMBER ON BOTH SLEEVES — MATCHES THE SCHEMATIC</Txt>
           </g>
         );

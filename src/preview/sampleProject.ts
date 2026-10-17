@@ -1,3 +1,4 @@
+import type { IOPoint } from '../types/io';
 import { useIOStore } from '../store/useIOStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useProgramStore } from '../store/useProgramStore';
@@ -461,6 +462,18 @@ function readSeedVersion(): string | null {
 
 /** The example lives in its own project and never overwrites the viewer's projects. */
 export const EXAMPLE_ID = 'p_example';
+/** The example's I/O list (9 conveyor points). */
+export const EXAMPLE_IO: Pick<IOPoint, 'description' | 'type' | 'category'>[] = [
+  { description: 'E-Stop OK (safety relay)', type: 'input', category: 'Safety' },
+  { description: 'Start Button', type: 'input', category: 'Operator/HMI' },
+  { description: 'Stop Button', type: 'input', category: 'Operator/HMI' },
+  { description: 'Part at end photo-eye', type: 'input', category: 'Product Detection' },
+  { description: 'Pusher extended', type: 'input', category: 'Pneumatic' },
+  { description: 'Pusher retracted', type: 'input', category: 'Pneumatic' },
+  { description: 'Conveyor motor contactor', type: 'output', category: 'Conveyor' },
+  { description: 'Pusher solenoid', type: 'output', category: 'Pneumatic' },
+  { description: 'Main air dump valve', type: 'output', category: 'Pneumatic' },
+];
 /** The example's document control (title blocks, machine spec); a copy of the example keeps it until changed. */
 export const DOC_CONTROL = { customer: 'Example Foods Inc.', site: 'Line 3', projectNumber: '24-117', drawingPrefix: 'CNV', preparedBy: 'AI' };
 const EXAMPLE_NAME = 'Conveyor Cell (example)';
@@ -533,17 +546,7 @@ export function seedSampleProject() {
 function writeExample() {
   useReviewStore.setState(useReviewStore.getInitialState(), true);
   useProjectStore.getState().setPlc('click', 'C0-10DD1E-D');
-  useIOStore.getState().importPoints([
-    { description: 'E-Stop OK (safety relay)', type: 'input', category: 'Safety' },
-    { description: 'Start Button', type: 'input', category: 'Operator/HMI' },
-    { description: 'Stop Button', type: 'input', category: 'Operator/HMI' },
-    { description: 'Part at end photo-eye', type: 'input', category: 'Product Detection' },
-    { description: 'Pusher extended', type: 'input', category: 'Pneumatic' },
-    { description: 'Pusher retracted', type: 'input', category: 'Pneumatic' },
-    { description: 'Conveyor motor contactor', type: 'output', category: 'Conveyor' },
-    { description: 'Pusher solenoid', type: 'output', category: 'Pneumatic' },
-    { description: 'Main air dump valve', type: 'output', category: 'Pneumatic' },
-  ], true);
+  useIOStore.getState().importPoints(EXAMPLE_IO.map((p) => ({ ...p })), true);
   const prog = useProgramStore.getState();
   prog.setProjectName(EXAMPLE_NAME);
   prog.setGeneratedLadder(LADDER, 'Example program in 7 blocks: safety and Auto/Manual modes, alarms, conveyor with part and batch counting, pusher with an adjustable timeout fault, manual jog with permissives, one coil per output, and HMI status (machine state, heartbeat, run hours, service hours, parts per minute).', null);

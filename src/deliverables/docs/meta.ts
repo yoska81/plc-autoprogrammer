@@ -4,6 +4,7 @@ import { currentRevision, type Revision } from '../../store/useProjectStore';
 import { codeRefs, type DrawingContext } from '../../electrical/derive';
 import { planDrawings } from '../../electrical/drawings/plan';
 import { getHmi } from '../../hmi/hmiCatalog';
+import { issuedForConstruction } from '../../standards/issue';
 
 /** Document control data for the engineering documents (cover, headers, footers). */
 export interface DocMeta {
@@ -42,7 +43,7 @@ export function docMeta(p: ProjectSnapshot): DocMeta {
   const base = prefix || 'PRJ';
   const rev = currentRevision(info);
   const revisions = info.revisions?.length ? info.revisions : [rev];
-  const approved = Boolean(info.approvedBy?.trim()) && /approv|construction|\bIFC\b|as[- ]built|final/i.test(rev.description);
+  const approved = issuedForConstruction(info);
   const ctx = p.drawingCtx ?? ({ region: info.region } as DrawingContext);
   let drawings: DocMeta['drawings'] = null;
   if (p.drawingCtx) {

@@ -275,3 +275,24 @@ Findings, ranked (✔ = fixed here, → = routed to the coordinator):
 - **Bug found:** the analog setup CSV was left out of the ZIP until a PLC program existed. Fixed: it is PLC configuration.
 - **After:** OVERLAP 0 FAIL on all 10 variants. check-all: LAYOUT / DXF / STEP / PDF / XLSX / CONSISTENCY all 0 FAIL.
 - **Open:** I asked the coordinator for the user's screenshot / project to confirm their exact case.
+
+## Electrical QA findings in my area (coordinator, before the overlap stress test)
+| # | finding | fix | check |
+|---|---|---|---|
+| 1 critical | Sinking PLC outputs: coil wired output → OL → A1, A2 → 0V (both ends at 0V, never pulls in) | `24+S → OL 95-96 → (interlock) → A1`, `A2 → PLC output` in wire list, terminal plan (TB1 24+S feeds the chain), control rung (starts at the 24+S node, ends "Y001 TO …"), 24+S rung text and E-stop general note | new design-review rule `output-load-circuit` (every PLC-driven coil / lamp / solenoid has the output on one side and 0V/24V on the other per output style) + unit test with the old wiring injected |
+| 2 major | DXF / drawings drew tapped holes at thread size | holes drawn and cut at the tap-drill size (M5 Ø4.2, M4 Ø3.3, 1/4-20 Ø5.1); DXF hole text keeps the tap ("A1 M5 TAP, Ø… DRILL") | `check_dxf.py` warns on any other hole size |
+| 3 major | HMI never wired, missing from the device list | HMI1 24 VDC through its own fused terminal (TB1, DN-F6L24, 2 A) + 0V + frame ground; Ethernet ENET1 PLC↔HMI (RS-232 when the CPU has no Ethernet); control-sheet rung; device list row (DOOR); BOM: fused terminal + patch cable (part to be selected) | consistency: wire numbers on drawings, terminal counts incl. fused |
+| 4 major | component removed on the Design tab still drawn | design warning "X is drawn and wired (Y001) but is not in the component list, so it is not in the BOM"; device list says NOT IN COMPONENT LIST / BOM; confirm before remove | — |
+| 5 major | no GB1 → PE terminal wires, no bonding; two PE cores on one clamp | wire list: GB1 → every PE terminal, enclosure / back panel / door bonding; one PE terminal per home-run field cable on TB2/TB3 | engine goldens regenerated (expected terminal counts) |
+| 6 | "SAFETY RESET — BLUE," legend | already fixed in #58 (legendOf); nameplate/labels sheets verified | — |
+| 7 minor | sheet 18 ID list without DS1, example X101/PLC1; sheet 6 "FEEDS PLC OUTPUT SUPPLY PLC OUTPUTS"; ES1L "FIELD"; sheet 19 DOOR list without PB3/ES1 | DS1 kept (accessory filter on the description's first clause); marking example uses a real wire of the project; 24+S text by output style; legend plates / contact blocks located DOOR; door list from the door layout | visual |
+| 8 overlaps | door "PER HANDLE TEMPLATE" / ES1 / R2 (fixed in #58, re-checked); device list text shrunk | device list cells and I/O sheet descriptions wrap onto two lines (cut with "..." past that, never shrunk); IEC actuator heads (pushbutton, mushroom, limit, pressure, selector) kept below the 3-wire sensor 0V lead of the row above (stress run found the "p" box on it); cabinet picture tag plates scale with the panel and the pictures are taller; cabinet-location suggestion never lands on a device (≥ 1 m, test) | overlap checker, new `rules-stress` variant (IEC, 32 I/O with 100+ char descriptions, 120-char component functions) |
+
+## Review / deliverables findings (coordinator, second list)
+| # | finding | fix |
+|---|---|---|
+| 1 | review: analog input DF registers "never written"; shield DF1SH GN/YE flagged; Equipment 11 vs Review 10 inputs; shortage critical vs minor | analog inputs skipped (filled by the analog setup); shield / drain = GN/YE in the NFPA and IEC colour rules; Equipment counts the I/O list once it exists (estimate before); capacity is one finding (Equipment, critical), the electrical duplicate is dropped |
+| 2 | package printed the machining sheets twice | separate "Machining drawings" part removed; the drawings part names the machining sheet range; the machine-shop PDF stays in the ZIP next to the DXFs |
+| 3 | ZIP spec.md raw, no program listing, no Order list Excel | spec.md = full machine specification; plc/…_program_listing.pdf; purchasing/…_order_list.xlsx (spares sheet) |
+| 4 | HMI screens PDF without document control | header (company, project, project no.), footer (status, revision, date, page i of n), PDF title |
+| 5 | cosmetics | check-out PDF named with fileBase; mm DXFs "DIMENSIONS MM [INCH]" and mm-first labels; drawings / machining PDF Title metadata; Order list CSV includes the spares section when "Show recommended spares" is on |

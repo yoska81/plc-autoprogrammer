@@ -136,7 +136,8 @@ def check(vdir: Path):
     short = [f"{l['Number']} {l['Copies']}/{ends.get(l['Number'])}" for l in labels if l['Type'] == 'Wire markers' and int(l['Copies']) != ends.get(l['Number'])]
     if short:
         report('FAIL', v, f'wire marker copies differ from 2 per conductor: {short[:8]}')
-    missing = sorted(w for w in wires_csv if not re.search(r'(?<![\w-])' + re.escape(w) + r'(?![\w-])', drw_all))
+    # pypdf joins texts on one baseline without a space ("Y003AOL2" / IEC "Y004A-F1" = wire, then contact tag)
+    missing = sorted(w for w in wires_csv if not re.search(r'(?<![\w-])' + re.escape(w) + r'(?:(?![\w-])|(?=-?[A-Z]{1,4}\d))', drw_all))
     if missing:
         report('FAIL', v, f'{len(missing)} wire numbers from the wire list never appear on the drawings: {missing[:12]}')
     for r in wl:
@@ -157,14 +158,13 @@ def check(vdir: Path):
     t_xl = {(str(r['Terminal']), str(r['Wire'] or '')) for r in sheet_rows(wb, 'Terminal Plan') if r.get('Terminal') and r.get('Internal (panel)') is not None or (r.get('Terminal') and r.get('Kind'))}
     if t_csv != t_xl:
         report('FAIL', v, f'terminal plan CSV vs Excel differ: {sorted(t_csv ^ t_xl)[:6]}')
-    # Terminal markers are <strip>-<terminal>; the strip's own marker (an IEC strip is named -X1) is not a terminal.
-    strips = {r['Strip'] for r in tp}
-    t_lbl = {l['Number'] for l in labels if l['Type'] == 'Terminal markers' and '-' in l['Number'] and l['Number'] not in strips}
+    # terminal markers "TB2-4" / IEC "-X2-4" (not the strip group markers "TB2" / "-X2")
+    t_lbl = {l['Number'] for l in labels if l['Type'] == 'Terminal markers' and re.search(r'.-\d+$', l['Number'])}
     if {t for t, _ in t_csv} != t_lbl:
         report('FAIL', v, f'terminal labels vs plan differ: {sorted({t for t, _ in t_csv} ^ t_lbl)[:8]}')
     # strip size vs BOM quantity of feed-through terminals
     n_term = len(tp)
-    tb_q = sum(q for pn, q in csv_q.items() if pn.startswith('DN-T'))
+    tb_q = sum(q for pn, q in csv_q.items() if pn.startswith(('DN-T', 'DN-F')))  # feed-through + fused
     if tb_q and tb_q < n_term - sum(1 for r in tp if r.get('Type') == 'ground'):
         report('WARN', v, f'BOM has {tb_q} feed-through terminals, terminal plan needs {n_term}')
 

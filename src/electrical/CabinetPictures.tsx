@@ -26,14 +26,14 @@ export default function CabinetPictures({ ctx }: { ctx: DrawingContext | null })
       </div>
       <div className={`flex-1 overflow-auto p-4 grid gap-4 ${view === 'both' ? 'grid-cols-1 2xl:grid-cols-2' : 'grid-cols-1'}`}>
         {(view === 'both' || view === 'inside') && (
-          <figure className="bg-white border border-steel-200 p-2 min-h-[520px] flex flex-col">
-            <div className="flex-1 min-h-[480px]"><CabinetRender ctx={ctx} view="inside" hmiPartNumber={hmiPart} showLabels={labels} /></div>
+          <figure className="bg-white border border-steel-200 p-2 min-h-[72vh] flex flex-col">
+            <div className="flex-1 min-h-[70vh]"><CabinetRender ctx={ctx} view="inside" hmiPartNumber={hmiPart} showLabels={labels} /></div>
             <figcaption className="text-xs text-steel-500 pt-1">Inside view — back panel, DIN rails, wire duct and every component in the design.</figcaption>
           </figure>
         )}
         {(view === 'both' || view === 'door') && (
-          <figure className="bg-white border border-steel-200 p-2 min-h-[520px] flex flex-col">
-            <div className="flex-1 min-h-[480px]"><CabinetRender ctx={ctx} view="door" hmiPartNumber={hmiPart} showLabels={labels} /></div>
+          <figure className="bg-white border border-steel-200 p-2 min-h-[72vh] flex flex-col">
+            <div className="flex-1 min-h-[70vh]"><CabinetRender ctx={ctx} view="door" hmiPartNumber={hmiPart} showLabels={labels} /></div>
             <figcaption className="text-xs text-steel-500 pt-1">Door view — operator devices, touch panel, disconnect handle and nameplate.</figcaption>
           </figure>
         )}

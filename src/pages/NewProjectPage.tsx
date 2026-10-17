@@ -13,6 +13,9 @@ import type { EnclosureRating, SupplyVoltage } from '../electrical/types';
 import SpecIntake from '../components/SpecIntake';
 import EquipmentPanel from '../components/EquipmentPanel';
 import { useUi, useUiStore } from '../store/useUiStore';
+import { usePendingEquipment } from '../spec/equipment';
+import QuestionList from '../components/questions/QuestionList';
+import { useQuestions } from '../components/questions/useQuestionStore';
 
 const STEPS = ['Project data', 'Describe the machine', 'Equipment', 'Summary'];
 
@@ -50,6 +53,10 @@ export default function NewProjectPage() {
   const stages = useStages();
 
   const [step, setStep] = useUi('wizard.step', 0, { global: true });
+  // Furthest step reached: the step tabs jump back and forward again up to it.
+  const [reached, setReached] = useUi('wizard.reached', 0, { global: true });
+  const pendingEquipment = usePendingEquipment();
+  const specQuestions = useQuestions('spec');
   // The project this wizard run created (remembered across pages and reloads). If another project
   // is open now, the run was abandoned: start a new one rather than write into that project.
   const activeId = useProjectsStore((s) => s.activeId);
@@ -92,6 +99,9 @@ export default function NewProjectPage() {
       const el = useElectricalStore.getState();
       el.setInputs({ ...el.inputs, supply, enclosureRating: enclosure });
     }
+    // A selection on the Equipment step that was not applied with "Use this selection": apply it now,
+    // so the summary and the electrical design use what the user saw.
+    if (step === 2 && pendingEquipment.apply) pendingEquipment.apply();
     if (step === STEPS.length - 1) {
       // Done: the next "New project" starts with an empty wizard.
       const ui = useUiStore.getState();
@@ -100,9 +110,14 @@ export default function NewProjectPage() {
       return;
     }
     setStep((s) => s + 1);
+    setReached((r) => Math.max(r, step + 1));
   };
+  // Leaving the wizard goes to the app (navigate(-1) left a fresh tab off the app).
+  const close = () => navigate('/spec');
 
-  const canNext = step === 0 ? Boolean(name.trim()) : step === 1 ? filled.length > 0 : true;
+  // An equipment selection that does not fit the I/O can't be applied: change it (or clear it) first.
+  const equipmentBlocked = step === 2 && Boolean(pendingEquipment.label) && !pendingEquipment.apply;
+  const canNext = step === 0 ? Boolean(name.trim()) : step === 1 ? filled.length > 0 : step === 2 ? !equipmentBlocked : true;
 
   return (
     <div className="flex flex-col h-screen bg-steel-50 font-sans text-steel-900">
@@ -110,7 +125,7 @@ export default function NewProjectPage() {
         <span className="h-5 px-1 flex items-center bg-brand-600 text-white text-[10px] font-bold tracking-wider rounded-[3px]" aria-hidden>ISA</span>
         <span className="font-semibold tracking-[0.14em] text-steel-900" aria-label="ISA AUTO PROGRAMMER">AUTO PROGRAMMER</span>
         <span className="text-steel-500 text-sm">New project</span>
-        <button onClick={() => navigate(-1)} className="ml-auto text-sm text-steel-600 hover:text-steel-900">Close ✕</button>
+        <button onClick={close} className="ml-auto text-sm text-steel-600 hover:text-steel-900">Close ✕</button>
       </header>
 
       {/* Step indicator */}
@@ -118,7 +133,7 @@ export default function NewProjectPage() {
         <ol className="flex">
           {STEPS.map((label, i) => (
             <li key={label} className="flex-1">
-              <button type="button" disabled={i > step || (i > 0 && !created)} onClick={() => setStep(i)}
+              <button type="button" disabled={i > Math.max(step, reached) || (i > 0 && !created)} onClick={() => setStep(i)}
                 className={`w-full flex items-center gap-2 py-3 border-b-4 text-sm ${i === step ? 'border-brand-600 text-brand-800 font-semibold' : i < step ? 'border-brand-200 text-steel-700' : 'border-transparent text-steel-400'}`}>
                 <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${i < step ? 'bg-brand-500 text-white' : i === step ? 'bg-brand-600 text-white' : 'bg-steel-100 text-steel-500'}`}>
                   {i < step ? '✓' : i + 1}
@@ -187,6 +202,10 @@ export default function NewProjectPage() {
               <>
                 <p className="text-sm text-steel-600">Tell it what the machine does in your own words: the sequence, safety (E-stops, doors, light curtains), homing, modes, motors and air cylinders. Upload a spec document if you have one. You can change everything later.</p>
                 <SpecIntake />
+                {created && specQuestions.length > 0 && (
+                  <QuestionList questions={specQuestions} title="Questions about the description"
+                    intro="Answer what you know now (or later on the Machine description page); answers are part of the spec." />
+                )}
               </>
             )}
 
@@ -232,11 +251,13 @@ export default function NewProjectPage() {
       </div>
 
       <footer className="h-16 flex-shrink-0 bg-white border-t border-steel-200 flex items-center justify-between px-6">
-        <button onClick={() => (step === 0 ? navigate(-1) : setStep((s) => s - 1))} className="px-4 py-2 text-sm border border-steel-300 rounded hover:bg-steel-50">
+        <button onClick={() => (step === 0 ? close() : setStep((s) => s - 1))} className="px-4 py-2 text-sm border border-steel-300 rounded hover:bg-steel-50">
           {step === 0 ? 'Cancel' : '← Back'}
         </button>
         <div className="flex items-center gap-3">
-          {step === 2 && stages.equipment.status === 'empty' && <span className="text-xs text-steel-500">You can also choose equipment later.</span>}
+          {step === 2 && stages.equipment.status === 'empty' && !pendingEquipment.label && <span className="text-xs text-steel-500">You can also choose equipment later.</span>}
+          {step === 2 && pendingEquipment.apply && <span className="text-xs text-steel-600">Next applies {pendingEquipment.label} to the project.</span>}
+          {equipmentBlocked && <span className="text-xs text-amber-800">{pendingEquipment.label} does not fit the I/O: change the selection before going on.</span>}
           <button onClick={next} disabled={!canNext}
             className="px-5 py-2 text-sm font-medium bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-40">
             {step === STEPS.length - 1 ? 'Open project →' : 'Next →'}

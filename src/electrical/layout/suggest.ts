@@ -179,8 +179,18 @@ export function suggest(ml: LayoutForDesign, devices: MachineDevice[], cables: C
     const ends = cables.filter((c) => !(c.kind === 'device' && ml.pos[c.from])).map((c) => P(c.to)).filter((p): p is Pt => !!p);
     if (ends.length >= 3) {
       const med = (v: number[]) => { const s = [...v].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
-      const best: Pt = [med(ends.map((p) => p[0])), med(ends.map((p) => p[1]))];
       const total = (at: Pt) => ends.reduce((a, p) => a + withService(manhattan(at, p), ml.service), 0);
+      // The median is often a device's own spot: keep the cabinet at least 1 m from every other item,
+      // taking the cheapest free point on a 0.5 m grid around it.
+      const others = Object.entries(ml.pos).filter(([t]) => t !== CABINET).map(([, q]) => [q.x, q.y] as Pt);
+      const free = (at: Pt) => others.every((q) => Math.hypot(at[0] - q[0], at[1] - q[1]) >= 1);
+      const m0: Pt = [med(ends.map((p) => p[0])), med(ends.map((p) => p[1]))];
+      let best: Pt = m0;
+      if (!free(m0)) {
+        const cands: Pt[] = [];
+        for (let dx = -6; dx <= 6; dx++) for (let dy = -6; dy <= 6; dy++) cands.push([m0[0] + dx * 0.5, m0[1] + dy * 0.5]);
+        best = cands.filter(free).sort((a, b) => total(a) - total(b))[0] ?? cab;
+      }
       const now = total(cab), then = total(best);
       if (now - then > Math.max(5, now * 0.15)) out.push({ id: `cabinet:${Math.round(best[0])}:${Math.round(best[1])}`, kind: 'cabinet', title: 'A different cabinet location would save cable',
         detail: `Placing the cabinet near the middle of the devices it feeds would cut the field cable from about ${fmt(now)} to ${fmt(then)} (straight-line estimate). Keep it where operators and maintenance can reach it and away from wash-down / heat.`, savingM: now - then, cabinet: { to: best } });

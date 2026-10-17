@@ -12,6 +12,7 @@ import {
   type MotorModel, type PanelLayout, type XfmrBranch, type PsBranch, type Terminal, type TerminalStrip,
 } from '../derive';
 import { enclosureFaceDrilling } from '../enclosureFaces';
+import { getHmi, hmiMaker } from '../../hmi/hmiCatalog';
 import { lineNo } from './geometry';
 import { powerText } from '../../standards/regions';
 import { stripTag } from '../../standards/designations';
@@ -21,7 +22,8 @@ export type RungEl =
   | { t: 'contact'; nc: boolean; tag: string; term: string; dev: 'pb' | 'estop' | 'relay' | 'ol' | 'sr' }
   | { t: 'coil'; tag: string }
   | { t: 'lamp'; tag: string; color: string }
-  | { t: 'box'; tag: string; left: string; right: string };
+  | { t: 'box'; tag: string; left: string; right: string; label?: string }
+  | { t: 'fuse'; tag: string; rating: string };
 export interface Rung {
   idx: number;
   start: RungEnd;
@@ -150,6 +152,10 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   const s = model.safety;
   const rail: RungEnd = { kind: 'rail' };
   const toOutputs: RungEnd = { kind: 'xref', label: '24+S TO {=s:out}' };
+  // sourcing outputs take their supply from 24+S; sinking outputs switch loads that are fed from 24+S
+  const outGroups = model.groups.filter((g) => g.type === 'output');
+  const feeds = outGroups.length && outGroups.every((g) => g.outputStyle === 'sinking') ? 'FEEDS THE OUTPUT LOADS (SINKING OUTPUTS)'
+    : outGroups.some((g) => g.outputStyle === 'sinking') ? 'FEEDS OUTPUT SUPPLY AND SINKING LOADS' : 'FEEDS PLC OUTPUT SUPPLY';
   if (s.relay) {
     const sr = s.relay.tag;
     out.push({ start: rail, end: rail, els: [{ t: 'box', tag: sr, left: 'A1', right: 'A2' }], wires: ['24+', '0V'], desc: [`SAFETY RELAY ${sr} SUPPLY`, `CONTACTS: {c:${sr}}`], key: `coil:${sr}` });
@@ -171,9 +177,9 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
     });
     if (s.mcr) {
       out.push({ start: rail, end: rail, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }, { t: 'coil', tag: s.mcr.tag }], wires: ['24+', 'SR14', '0V'], desc: [`MASTER CONTROL RELAY ${s.mcr.tag}`, `CONTACTS: {c:${s.mcr.tag}}`], key: `coil:${s.mcr.tag}` });
-      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: s.mcr.tag, term: '13-14', dev: 'relay' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', 'FEEDS PLC OUTPUT SUPPLY {=s:out}'], key: 'rung:24+S' });
+      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: s.mcr.tag, term: '13-14', dev: 'relay' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', `${feeds} {=s:out}`], key: 'rung:24+S' });
     } else {
-      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', 'FEEDS PLC OUTPUT SUPPLY {=s:out}'], key: 'rung:24+S' });
+      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', `${feeds} {=s:out}`], key: 'rung:24+S' });
     }
   } else if (s.estops.length) {
     const es = s.estops;
@@ -184,6 +190,13 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
       wires: ['24+', ...es.slice(1).map((_, k) => `ES${k + 1}`), '24+S', ...(s.mcr ? ['0V'] : [])],
       desc: ['E-STOP CHAIN (HARDWIRED, NO SAFETY RELAY)', 'REVIEW REQUIRED — SEE NOTES'], key: s.mcr ? `coil:${s.mcr.tag}` : 'rung:24+S',
     });
+  }
+  // door HMI: unswitched 24+ through its fused terminal (it keeps running through an E-stop)
+  if (model.hmi) {
+    const h = model.hmi;
+    if (out.length) out.push({ start: { kind: 'node', label: '' }, end: { kind: 'node', label: '' }, els: [], wires: [], desc: [] });
+    out.push({ start: rail, end: rail, els: [{ t: 'fuse', tag: h.fuseTerminal, rating: h.fuse }, { t: 'box', tag: h.tag, left: '+24V', right: '0V', label: 'HMI' }], wires: ['24+', '24+H', '0V'],
+      desc: [`OPERATOR PANEL ${h.tag} SUPPLY (${h.partNumber})`, h.link === 'ethernet' ? `ETHERNET ENET1 TO ${model.plcTag} (SHIELDED CAT6, DIRECT)` : `RS-232 COM2 TO ${model.plcTag} PORT 2`], key: `ps:${h.tag}` });
   }
   // VFD line contactors held by the safety-switched supply (safety stop by contactor, not by a PLC output)
   const ioTags = new Set(model.io.map((p) => p.deviceTag));
@@ -204,10 +217,12 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   if (coils.length && out.length) out.push({ start: { kind: 'node', label: '' }, end: { kind: 'node', label: '' }, els: [], wires: [], desc: [] });
   for (const p of coils) {
     const ch = p.coilChain!;
+    // sourcing output: output → chain → coil → 0V; sinking output: output supply → chain → coil → output
     out.push({
-      start: { kind: 'xref', label: `${p.address} FROM {=io:${p.address}}` }, end: rail,
+      start: ch.sink ? { kind: 'node', label: s.outputSupply } : { kind: 'xref', label: `${p.address} FROM {=io:${p.address}}` },
+      end: ch.sink ? { kind: 'xref', label: `${p.address} TO {=io:${p.address}}` } : rail,
       els: [...ch.devices.map((d) => ({ t: 'contact' as const, nc: d.nc, tag: d.tag, term: d.terminals, dev: d.kind === 'ol' ? 'ol' as const : 'relay' as const })), { t: 'coil', tag: p.deviceTag || '?' }],
-      wires: [...ch.wires, '0V'],
+      wires: [...ch.wires, ch.sink ? p.address : '0V'],
       desc: [p.description.toUpperCase(), `${p.deviceTag} CONTACTS: {c:${p.deviceTag}}`], key: `coil:${p.deviceTag}`,
     });
   }
@@ -477,11 +492,12 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
         xref.set(`io:${p.address}`, l);
         if (p.deviceType === 'safety-relay-output') addContact({ tag: p.deviceTag || model.safety.relay?.tag || '', term: '23-24', nc: false, line: l });
       });
-      if (sp.group.type === 'output' && sp.last && sp.group.outputStyle !== 'sinking') outLines.push(lineNo(sh.n, sp.rows.length + 1));
+      // sourcing: the output supply row at the end of the module; sinking: the loads on the module's sheet
+      if (sp.group.type === 'output' && sp.last) outLines.push(lineNo(sh.n, sp.group.outputStyle === 'sinking' ? 1 : sp.rows.length + 1));
     }
   }
   for (const [tag, list] of contacts) xref.set(`c:${tag}`, list.map((c) => `${c.main ? 'MAIN' : c.term}${c.nc ? ' NC' : ''} ${c.line}`).join(', '));
-  xref.set('s:out', outLines.join(', ') || 'PLC OUTPUTS');
+  xref.set('s:out', outLines.join(', ') || 'OUTPUT SHEETS');
 
   // ---- where each tag is drawn
   const whereSets = new Map<string, Set<number>>();
@@ -559,6 +575,7 @@ function deviceTags(ctx: DrawingContext, model: ElectricalModel): string[] {
   for (const p of model.io) if (p.deviceTag) tags.add(p.deviceTag);
   for (const m of ctx.design.inputs.motors) tags.add(m.tag);
   for (const j of model.machine.jbs) tags.add(j.tag);
+  if (model.hmi) tags.add(model.hmi.tag);
   return [...tags].sort(naturalCompare);
 }
 
@@ -573,9 +590,13 @@ function deviceRows(plan: DrawingPlan): DeviceRow[] {
     const io = model.io.find((p) => p.deviceTag === tag);
     const motor = ctx.design.inputs.motors.find((m) => m.tag === tag);
     const jb = model.machine.jbs.find((j) => j.tag === tag);
+    const hmi = !c && model.hmi?.tag === tag ? model.hmi : undefined;
+    const hmiModel = hmi ? getHmi(hmi.partNumber) : undefined;
     let location: string;
     if (c?.category === 'enclosure') location = 'ENCLOSURE';
-    else if (c?.mount === 'door' || io?.location === 'door') location = 'DOOR';
+    // operator accessories (legend plates, contact blocks, lamp modules) sit with their operator on the door
+    else if (c?.mount === 'door' || io?.location === 'door' || tag === model.hmi?.tag
+      || (c && /\b(legend plate|contact block|lamp module)\b/i.test(`${c.comp.function} ${c.part?.description ?? ''}`))) location = 'DOOR';
     else if (md || motor || jb) location = `FIELD — ${(md?.zone ?? jb?.zone ?? model.machine.wiring.motorLocations[tag] ?? 'MACHINE').toUpperCase()}`;
     else if (c?.mount === 'field' || io?.location === 'field') location = 'FIELD';
     else if (c?.category === 'fan') location = 'ENCLOSURE (SIDE/DOOR)';
@@ -585,10 +606,10 @@ function deviceRows(plan: DrawingPlan): DeviceRow[] {
     const refs = [...(ref ? [`/${ref}`] : []), ...sheetsOf.filter((n) => !ref || String(n) !== ref.split('.')[0]).map(String)].join(', ');
     return {
       tag,
-      fn: (c?.comp.function || motor?.description || io?.description || (jb ? `Junction box, ${jb.zone}` : '')).toUpperCase(),
-      partNumber: c?.partNumber || md?.partNumber || (jb?.partNumber ?? '') || '',
-      manufacturer: c?.part?.manufacturer ?? '',
-      description: c?.part?.description ?? (motor ? `${powerText(motor.hp, ctx.region).toUpperCase()} ${motor.voltage.replace('-', ' ')} MOTOR (BY OTHERS)` : jb ? 'ENCLOSURE TO BE SELECTED' : c ? 'PART NOT IN CATALOG — VERIFY' : 'NO PART SELECTED'),
+      fn: (c?.comp.function || motor?.description || io?.description || (jb ? `Junction box, ${jb.zone}` : '') || (hmi ? 'Operator touch panel' : '')).toUpperCase(),
+      partNumber: c?.partNumber || md?.partNumber || (jb?.partNumber ?? '') || (hmi?.partNumber ?? ''),
+      manufacturer: c?.part?.manufacturer ?? (hmiModel ? hmiMaker(hmiModel) : ''),
+      description: c?.part?.description ?? (hmi ? hmiModel?.description ?? 'OPERATOR TOUCH PANEL' : motor ? `${powerText(motor.hp, ctx.region).toUpperCase()} ${motor.voltage.replace('-', ' ')} MOTOR (BY OTHERS)` : jb ? 'ENCLOSURE TO BE SELECTED' : c ? 'PART NOT IN CATALOG — VERIFY' : io && io.location !== 'field' ? 'NOT IN COMPONENT LIST / BOM — VERIFY' : 'NO PART SELECTED'),
       qty: c?.comp.quantity ?? 1,
       location,
       refs: refs || '—',
