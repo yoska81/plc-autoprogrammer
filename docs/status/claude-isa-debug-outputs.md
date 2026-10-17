@@ -393,3 +393,45 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - engine.test checks: the guard interlock and its actuator, the door-closed input on 33-34, the S11 / S21 chains through GS1, and the pressure switch on its DIN pins.
   - The catalog test allowlists 3SE5112-0QV10 with its reason.
   - The machine-model AI test now expects the real interlock instead of the note.
+
+## Sealing Head NEMA 4X: parts that don't fit, and the PLC drawn twice (integration 17d5b95)
+- **What the user saw:**
+  - The cabinet picture listed PLC, X1, IO1, IO2, SR1 and more as "does not fit" in SCE-20EL1608SSLP. That was the largest stainless enclosure in the catalog.
+  - The PLC appeared twice, as PLC C0-10DD1E-D and X1 C0-10DD2E-D.
+- **Cause, CPU twice:**
+  - The equipment choice put its CPU into the electrical required parts.
+  - After the CPU was changed on the PLC page, the old CPU stayed in that list. The engine then added it under the fallback tag "X".
+- **Catalog:** 304 stainless NEMA 4X wall-mount enclosures, each checked against its AutomationDirect page:
+  - SCE-24EL2008SSLP and SCE-24EL2010SSLP (subpanel SCE-24P20)
+  - SCE-30EL2412SSLP (SCE-30P24)
+  - SCE-36EL3012SSLP (SCE-36P30)
+  - Stahlin J2420HPL fiberglass NEMA 4X, 24x20x10 (22x18 back panel BPJ2420)
+- **Engine:**
+  - Material stays in its family: NEMA 4X is stainless, otherwise painted steel. Non-metallic enclosures are only the designer's choice.
+  - A CPU or module in the required parts is never added again. The project's PLC selection wins, and a note says the equipment-list part is not used.
+- **Sizing (derive):**
+  - `smallestEnclosure` checks that both the back panel and the door fit (`layoutFits`), and keeps the material family (stainless stays stainless).
+  - New `withEnclosure`; the AI path now uses it too.
+  - New `enclosureFitProblem` returns what does not fit, plus the options:
+    - a larger enclosure with the same rating;
+    - a NEMA 4X fiberglass one;
+    - relax to NEMA 12 (steel);
+    - split into two enclosures.
+  - The design review warns when a design has more than one PLC CPU.
+- **UI:**
+  - A red banner on every Electrical tab whenever parts don't fit. It names the parts and says they are left out of the drawings, the picture and the machining.
+  - Option buttons swap ENC1 / SP1 and add a note. "Relax" also changes the rating input. "Split" is advice text.
+- **Tests:**
+  - engine.test, "seal-4x": user's case (CPU 10DD1E-D, modules 08ND3 + 04AD-1, stale required C0-10DD2E-D). Checks:
+    - exactly one CPU;
+    - each module once;
+    - the stale-CPU note;
+    - a stainless enclosure that holds everything.
+  - engine.test, the user's saved 20x16 stainless design. Checks:
+    - the fit problem is reported;
+    - the first option is a larger stainless enclosure that fits;
+    - the rating and split options are offered;
+    - a design with two CPUs is flagged.
+  - big-4x now fits in stainless.
+  - New `e2e/enclosure-fit.e2e.cjs` checks the banner, its options, and the click-to-fix.
+- **CAD exports:** parked as local commit 1c6cf94 (branch `cad-exports-wip`). They go into the next PR.

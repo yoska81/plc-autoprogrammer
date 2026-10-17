@@ -25,7 +25,7 @@ import type { AnalogSetupRow } from '../plc/core/analog';
 import { analogWiring, type AnalogWiring } from './analog';
 import { driveControls, type DriveControl, type DriveTerminal } from './vfd';
 import type {
-  CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, JunctionBox,
+  CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, EnclosureRating, FieldDeviceType, IOWiring, JunctionBox,
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
 } from './types';
 import { getHmi, hmiMaker } from '../hmi/hmiCatalog';
@@ -2226,41 +2226,123 @@ export interface EnclosureFit {
 /** Spare space the panel should keep for later additions (customer / panel-shop rule). */
 export const SPARE_RULE = 0.25;
 
+const STAINLESS = (p: CatalogPart) => /stainless/i.test(String(p.ratings.material ?? ''));
+/** Enclosure material family: steel (painted carbon steel), stainless, or non-metallic (fiberglass, polycarbonate). */
+export const enclosureFamily = (p: CatalogPart): 'steel' | 'stainless' | 'nonmetallic' =>
+  STAINLESS(p) ? 'stainless' : /fiberglass|polyester|polycarbonate|plastic|pvc|abs/i.test(String(p.ratings.material ?? '')) ? 'nonmetallic' : 'steel';
+
+export interface EnclosureSearch {
+  /** Spare panel space the enclosure must leave (default the 25 % rule). */
+  spare?: number;
+  /** Enclosure rating to meet (default the design's). */
+  rating?: string;
+  /** Which materials to try: the current enclosure's family (steel / stainless / non-metallic; default), stainless only, non-metallic only, or any. */
+  material?: 'same' | 'steel' | 'stainless' | 'nonStainless' | 'any';
+}
+
+/** The design with another enclosure (and its subpanel, or none when the enclosure has a fixed panel). */
+export function withEnclosure(design: ElectricalDesign, getPart: DrawingContext['getPart'], enclosure: string, subpanel?: string): ElectricalDesign {
+  const cat = (c: DesignComponent) => getPart(c.partNumber);
+  const isSub = (c: DesignComponent) => cat(c)?.category === 'enclosure' && String(cat(c)?.ratings.kind ?? '') === 'subpanel';
+  const enc = design.components.find((c) => cat(c)?.category === 'enclosure' && !isSub(c));
+  const sub = design.components.find(isSub);
+  const components = design.components
+    .filter((c) => c !== sub || !!subpanel)
+    .map((c) => (c === enc ? { ...c, partNumber: enclosure } : c === sub && subpanel ? { ...c, partNumber: subpanel } : c));
+  if (!enc) components.push({ tag: 'ENC1', partNumber: enclosure, quantity: 1, function: 'Main enclosure', motorTag: null });
+  if (subpanel && !sub) components.push({ tag: 'SP1', partNumber: subpanel, quantity: 1, function: 'Back panel', motorTag: null });
+  return { ...design, components };
+}
+
+/** Back panel and door hold every part (no part left off, the door's operators / HMI fit). */
+export function layoutFits(ctx: DrawingContext): boolean {
+  const L = panelLayout(ctx);
+  return !L.overflow && !L.notFit.length && !L.door.overflow;
+}
+
 /**
  * Size the enclosure from the real part footprints: try the catalog enclosures that meet the design's
- * enclosure rating (same maker as the chosen one first), smallest back panel first, and return the
- * first whose back panel holds every part with at least `spare` free. Null when none does.
+ * enclosure rating (same maker as the chosen one first, a stainless enclosure only by stainless ones),
+ * smallest back panel first, and return the first whose back panel and door hold every part with at
+ * least `spare` free. Null when none does.
  */
-export function smallestEnclosure(ctx: DrawingContext, spare = SPARE_RULE): EnclosureFit | null {
+export function smallestEnclosure(ctx: DrawingContext, opt: number | EnclosureSearch = {}): EnclosureFit | null {
+  const o: EnclosureSearch = typeof opt === 'number' ? { spare: opt } : opt;
+  const spare = o.spare ?? SPARE_RULE;
   const m = buildModel(ctx);
   const encC = m.rc.find((c) => c.category === 'enclosure' && !isSubpanel(c));
   const subC = m.rc.find((c) => isSubpanel(c));
-  const need = String(ctx.design.inputs.enclosureRating ?? '').replace(/^NEMA\s*/i, '').toUpperCase();
+  const need = String(o.rating ?? ctx.design.inputs.enclosureRating ?? '').replace(/^NEMA\s*/i, '').toUpperCase();
   const panelArea = (p: CatalogPart) => (num(p.ratings, 'panelWidthIn') ?? 0) * (num(p.ratings, 'panelHeightIn') ?? 0) || (p.widthMm ?? 0) * (p.heightMm ?? 0) / 645;
   const maker = encC?.part?.manufacturer;
+  const material = o.material ?? 'same';
+  const curFamily = encC?.part ? enclosureFamily(encC.part) : 'steel';
+  const okMaterial = (p: CatalogPart) => material === 'any' || (material === 'steel' ? enclosureFamily(p) === 'steel' : material === 'stainless' ? STAINLESS(p) : material === 'nonStainless' ? enclosureFamily(p) === 'nonmetallic' : enclosureFamily(p) === curFamily);
   const candidates = ALL_PARTS
-    .filter((p) => p.category === 'enclosure' && String(p.ratings.kind ?? '') !== 'subpanel' && panelArea(p) > 0)
-    .filter((p) => !need || String(p.ratings.nema ?? '').toUpperCase().split('/').map((x) => x.trim()).includes(need))
+    .filter((p) => p.category === 'enclosure' && String(p.ratings.kind ?? '') !== 'subpanel' && panelArea(p) > 0 && okMaterial(p))
+    .filter((p) => !need || need === '1' || String(p.ratings.nema ?? '').toUpperCase().split('/').map((x) => x.trim()).includes(need))
     .sort((a, b) => Number(b.manufacturer === maker) - Number(a.manufacturer === maker) || panelArea(a) - panelArea(b));
   const subOf = (p: CatalogPart) => { const s = String(p.ratings.subpanel ?? ''); return ALL_PARTS.some((x) => x.partNumber === s) ? s : undefined; };
   const fits = (design: ElectricalDesign) => {
     const c2: DrawingContext = { ...ctx, design, machineLayout: undefined };
-    const L = panelLayout(c2);
-    return L.overflow ? null : spareSpace(c2).panel;
+    return layoutFits(c2) ? spareSpace(c2).panel : null;
   };
-  const cur = fits(ctx.design);
+  const curOk = encC && okMaterial(encC.part ?? ({ ratings: {} } as CatalogPart)) && (!need || need === '1' || String(encC.part?.ratings.nema ?? '').toUpperCase().split('/').map((x) => x.trim()).includes(need));
+  const cur = curOk ? fits(ctx.design) : null;
   if (cur !== null && cur >= spare && encC) return { enclosure: encC.partNumber, subpanel: subC?.partNumber, description: encC.part?.description ?? encC.partNumber, spare: cur, current: true };
   for (const p of candidates) {
+    if (p.partNumber === encC?.partNumber && !curOk) continue;
     const sp = subOf(p);
-    const components = ctx.design.components
-      .filter((c) => c !== subC?.comp || !!sp)
-      .map((c) => (c === encC?.comp ? { ...c, partNumber: p.partNumber } : c === subC?.comp && sp ? { ...c, partNumber: sp } : c));
-    if (!encC) components.push({ tag: 'ENC1', partNumber: p.partNumber, quantity: 1, function: 'Main enclosure', motorTag: null });
-    if (sp && !subC) components.push({ tag: 'SP1', partNumber: sp, quantity: 1, function: 'Back panel', motorTag: null });
-    const f = fits({ ...ctx.design, components });
+    const f = fits(withEnclosure(ctx.design, ctx.getPart, p.partNumber, sp));
     if (f !== null && f >= spare) return { enclosure: p.partNumber, subpanel: sp, description: p.description, spare: f, current: false };
   }
   return null;
+}
+
+/** A way out when the parts don't fit the enclosure (Electrical page banner). */
+export interface FitOption {
+  kind: 'larger' | 'material' | 'rating' | 'split';
+  label: string;
+  detail: string;
+  /** Enclosure (+ subpanel) to switch to; none for "split". */
+  fit?: EnclosureFit;
+  /** Enclosure rating to change to ("relax to NEMA 12"). */
+  rating?: EnclosureRating;
+}
+
+export interface FitProblem {
+  /** Back-panel parts left off the panel. */
+  notFit: { tag: string; partNumber: string }[];
+  /** The door's operators / HMI / handle don't fit the door. */
+  door: boolean;
+  options: FitOption[];
+}
+
+const sizeText = (p?: CatalogPart) => (p ? `${num(p.ratings, 'heightIn')}x${num(p.ratings, 'widthIn')}${num(p.ratings, 'depthIn') ? `x${num(p.ratings, 'depthIn')}` : ''}` : '');
+
+/** Null when everything fits; else what doesn't fit and the options (larger enclosure, other 4X material, relaxed rating, split). */
+export function enclosureFitProblem(ctx: DrawingContext): FitProblem | null {
+  if (!ctx.design.components.some((c) => ctx.getPart(c.partNumber)?.category === 'enclosure')) return null;
+  const L = panelLayout(ctx);
+  if (layoutFits(ctx)) return null;
+  const options: FitOption[] = [];
+  const rating = String(ctx.design.inputs.enclosureRating ?? 'NEMA 12');
+  const pick = (o: EnclosureSearch) => smallestEnclosure(ctx, o) ?? smallestEnclosure(ctx, { ...o, spare: 0 });
+  const label = (f: EnclosureFit, what: string) => `${what} ${sizeText(ALL_PARTS.find((p) => p.partNumber === f.enclosure))} (${f.enclosure})`;
+  const larger = pick({});
+  if (larger && !larger.current) options.push({ kind: 'larger', fit: larger, label: label(larger, `Use a larger ${rating}`), detail: `${larger.description}${larger.subpanel ? ` with back panel ${larger.subpanel}` : ''}; ${Math.round(larger.spare * 100)} % spare panel space.` });
+  const encPart = buildModel(ctx).rc.find((c) => c.category === 'enclosure' && !isSubpanel(c))?.part;
+  if (rating === 'NEMA 4X' && encPart && STAINLESS(encPart)) {
+    const fg = pick({ material: 'nonStainless' });
+    if (fg) options.push({ kind: 'material', fit: fg, label: label(fg, `Use a NEMA 4X ${/fiberglass/i.test(fg.description) ? 'fiberglass' : /polycarbonate/i.test(fg.description) ? 'polycarbonate' : 'non-stainless'}`), detail: `${fg.description}. Check the material suits the washdown / chemicals before choosing it over stainless.` });
+  }
+  if (rating !== 'NEMA 12' && rating !== 'NEMA 1') {
+    const r12 = pick({ rating: 'NEMA 12', material: 'steel' });
+    if (r12) options.push({ kind: 'rating', rating: 'NEMA 12', fit: r12, label: `Relax to NEMA 12: ${sizeText(ALL_PARTS.find((p) => p.partNumber === r12.enclosure))} (${r12.enclosure})`, detail: `Only if the location allows it: NEMA 12 is indoor, dust / dripping-liquid tight, not for washdown (${rating} was asked for).` });
+  }
+  const moved = L.notFit.length ? L.notFit.map((n) => n.tag).join(', ') : 'the drives and power parts';
+  options.push({ kind: 'split', label: 'Split into two enclosures', detail: `Put ${moved} in a second ${rating} enclosure (power / drives apart from the controls) and connect them with a cable; add it as a second cabinet in Machine layout.` });
+  return { notFit: L.notFit.map((n) => ({ tag: n.tag, partNumber: n.partNumber })), door: L.door.overflow, options };
 }
 
 /** Door-mounted accessories that are not operator devices (contact blocks, legend plates sold separately...). */
@@ -2585,6 +2667,9 @@ export function designWarnings(ctx: DrawingContext): string[] {
   }
   for (const p of m.io) if (!p.deviceTag && p.wiring) w.push(`${p.address}: wiring has no device tag.`);
   w.push(...panelLayout(ctx).warnings);
+  // one CPU: a second one (e.g. a CPU left in the required parts after a CPU change) is drawn and ordered twice
+  const cpus = m.rc.filter((c) => c.category === 'plc');
+  if (cpus.length > 1) w.push(`${cpus.length} PLC CPUs in the design (${cpus.map((c) => `${c.tag} ${c.partNumber}`).join(', ')}): keep only the project's CPU ${ctx.plc.cpuPartNumber} — remove the others or update the design.`);
   {
     // enclosure sized from the real footprints: too small (or no 25 % spare) -> name the smallest that fits
     const fit = smallestEnclosure(ctx);

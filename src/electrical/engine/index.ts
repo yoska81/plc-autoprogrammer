@@ -9,7 +9,7 @@ import type { AnalogSetupRow } from '../../plc/core/analog';
 import type { Region } from '../../standards/regions';
 import { enclosureText, powerText, SUPPLY_INFO } from '../../standards/regions';
 import { DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
-import { panelLayout, spareSpace, terminalCounts, motorFla, type DrawingContext } from '../derive';
+import { enclosureFamily, panelLayout, spareSpace, terminalCounts, motorFla, type DrawingContext } from '../derive';
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
 import { getHmi } from '../../hmi/hmiCatalog';
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, MotorSpec } from '../types';
@@ -75,7 +75,8 @@ function enclosureCandidates(pk: Picker, rating: DesignInputs['enclosureRating']
   const stainless = rating === 'NEMA 4X';
   const n = (rating ?? 'NEMA 12').replace('NEMA ', '');
   const all = pk.candidates('enclosure').filter((p) => p.ratings.kind === 'enclosure');
-  const fit = all.filter((p) => (stainless ? /stainless/i.test(String(p.ratings.material ?? '')) : !/stainless/i.test(String(p.ratings.material ?? '')))
+  // NEMA 4X: stainless; otherwise painted steel. Non-metallic enclosures are the designer's choice (Electrical page).
+  const fit = all.filter((p) => enclosureFamily(p) === (stainless ? 'stainless' : 'steel')
     && (n === '1' || String(p.ratings.nema ?? '').split('/').includes(n)));
   const area = (p: CatalogPart) => (num(p.ratings.heightIn) ?? 0) * (num(p.ratings.widthIn) ?? 0) * 1000 + (num(p.ratings.depthIn) ?? 0);
   return (fit.length ? fit : all).sort((a, b) => area(a) - area(b));
@@ -128,6 +129,12 @@ export function generateDesign(input: EngineInput): EngineResult {
   for (const r of inputs.requiredParts) {
     if (chosen.has(r.partNumber)) continue;
     const p = getPart(r.partNumber);
+    // The CPU and the modules are the project's PLC selection: a CPU / module left in the required parts
+    // from an earlier equipment choice is never a second PLC.
+    if (p?.category === 'plc' || p?.category === 'plcModule') {
+      notes.push(`${r.partNumber} from the equipment list is not used: the project's PLC is ${input.plc.cpuPartNumber}${input.modules.length ? ` with ${input.modules.join(', ')}` : ''} (change it on the PLC page).`);
+      continue;
+    }
     required.push(comp(tags.next(TAG_PREFIX[p?.category ?? 'other'] ?? 'X'), r.partNumber, r.quantity, `Required by the designer${p ? `: ${p.description}` : ''}`));
   }
 

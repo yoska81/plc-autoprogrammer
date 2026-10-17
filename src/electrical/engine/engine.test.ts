@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
 import { getPart } from '../catalog';
-import { buildModel, designWarnings, doorDrilling, panelLayout, spareSpace, type DrawingContext } from '../derive';
+import { buildModel, designWarnings, doorDrilling, enclosureFitProblem, layoutFits, panelLayout, spareSpace, withEnclosure, type DrawingContext } from '../derive';
 import { cabinetHeat } from '../thermal';
 import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
@@ -31,6 +31,8 @@ interface Scenario {
   cpu?: string; modules?: string[]; hmi?: string | null; spec?: string; rating?: DesignInputs['enclosureRating'];
   /** Largest catalog enclosure is still under 25% spare: everything must fit, spare may be lower. */
   tight?: boolean;
+  /** Parts the designer chose (equipment list). */
+  required?: DesignInputs['requiredParts'];
 }
 
 const EXAMPLE: P[] = [
@@ -121,7 +123,7 @@ function run(s: Scenario): { r: EngineResult; ctx: DrawingContext } {
   const cpu = getCpu(profile, s.cpu ?? 'C0-10DD1E-D');
   const addresses = resolveAddresses(profile, cpu, io, moduleSlots(s.modules ?? []));
   const plc = { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label };
-  const inputs: DesignInputs = { supply: s.supply, enclosureRating: s.rating ?? 'NEMA 12', notes: '', motors: s.motors ?? [], requiredParts: [] };
+  const inputs: DesignInputs = { supply: s.supply, enclosureRating: s.rating ?? 'NEMA 12', notes: '', motors: s.motors ?? [], requiredParts: s.required ?? [] };
   const hmi = s.hmi === undefined ? 'CM5-T7W' : s.hmi;
   const r = generateDefaultDesign({ io, addresses, spec: s.spec ?? '', inputs, plc, modules: s.modules ?? [], region: s.region ?? 'US', getPart, hmiPartNumber: hmi, now: '2026-01-01T00:00:00.000Z', projectName: s.name });
   const ctx: DrawingContext = { projectName: s.name, design: r.design, getPart, plc, io: io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type })), region: s.region ?? 'US', hmiPartNumber: hmi };
@@ -247,13 +249,13 @@ for (const s of SCENARIOS) {
   // The door check itself: the 10" HMI on a 16x12 door does not fit.
   const small = { ...ctx, design: { ...ctx.design, components: ctx.design.components.map((c) => (c.tag === 'ENC1' ? { ...c, partNumber: 'SCE-16EL1206LP' } : c)) } };
   assert.ok(panelLayout(small).door.overflow, '16x12 door too small for CM5-T10W and the operators');
-  // A real overflow: NEMA 4X needs stainless, and the catalog's stainless enclosures stop at 20x16.
-  // The closest one is used (fewest parts left out), not the smallest, and the layout says it does not fit.
+  // NEMA 4X needs stainless: the larger stainless enclosures (up to 36x30) hold the big machine; the engine
+  // never leaves parts off when a stainless enclosure fits.
   const ss = run({ ...big, name: 'big-4x', rating: 'NEMA 4X' });
-  const ssEnc = ss.r.design.components.find((c) => c.tag === 'ENC1')!;
-  assert.ok(!ss.r.layoutOk, 'big-4x: no stainless enclosure fits');
-  assert.equal(ssEnc.partNumber, 'SCE-20EL1608SSLP', 'big-4x: the largest stainless enclosure, not the 16x12');
-  assert.ok(panelLayout(ss.ctx).notFit.length > 0 || panelLayout(ss.ctx).overflow, 'big-4x: the layout reports what does not fit');
+  const ssEnc = getPart(ss.r.design.components.find((c) => c.tag === 'ENC1')!.partNumber)!;
+  assert.match(String(ssEnc.ratings.material), /stainless/, 'big-4x: a stainless enclosure');
+  assert.ok(ss.r.layoutOk || (layoutFits(ss.ctx) && ss.r.design.notes.some((n) => /25% spare/.test(n))), `big-4x: everything fits in ${ssEnc.partNumber}`);
+  assert.equal(enclosureFitProblem(ss.ctx), null, 'big-4x: no fit problem');
 
   // Floor-standing double door on 12in stands: devices on one leaf (never across the split), 0.6–1.7 m above
   // the floor; the door plan is that leaf; the thermal area leaves out the bottom.
@@ -271,6 +273,39 @@ for (const s of SCENARIOS) {
   assert.ok(Math.abs(dd.w - (lf.x1 - lf.x0)) < 0.1 && dd.cutouts.every((c) => c.x > 0 && c.x < dd.w), 'door plan = the leaf, leaf-relative X');
   const heat = (pn: string) => cabinetHeat([{ tag: 'ENC1', partNumber: pn, quantity: 1 }], getPart).area!;
   assert.ok(heat('SCE-72EL7218LPPL') < 1.83 * 1.83 + 2 * 1.83 * 0.457 + 2 * 1.83 * 0.457 - 0.5, 'floor-standing: bottom not in the cooling area');
+}
+
+// The user's Sealing Head: NEMA 4X, CPU changed on the PLC page after the equipment choice (the old CPU still in
+// the required parts), modules C0-08ND3 + C0-04AD-1. One CPU only, and an enclosure that holds everything.
+{
+  const seal = SCENARIOS.find((x) => x.name === 'sealing-head')!;
+  const s4 = { ...seal, name: 'seal-4x', rating: 'NEMA 4X' as const, cpu: 'C0-10DD1E-D', modules: ['C0-08ND3', 'C0-04AD-1'],
+    required: [{ partNumber: 'C0-10DD2E-D', quantity: 1 }, { partNumber: 'C0-08ND3', quantity: 1 }, { partNumber: 'C0-04AD-1', quantity: 1 }] };
+  const { r, ctx } = run(s4);
+  const cpus = r.design.components.filter((c) => getPart(c.partNumber)?.category === 'plc');
+  assert.deepEqual(cpus.map((c) => `${c.tag} ${c.partNumber}`), ['PLC C0-10DD1E-D'], 'one CPU: the project\'s');
+  assert.equal(r.design.components.filter((c) => c.partNumber === 'C0-08ND3').length, 1, 'each module once');
+  assert.ok(r.design.notes.some((n) => /C0-10DD2E-D from the equipment list is not used/.test(n)), 'the stale CPU is reported');
+  assert.ok(!designWarnings(ctx).some((w) => /PLC CPUs in the design/.test(w)));
+  const enc = getPart(r.design.components.find((c) => c.tag === 'ENC1')!.partNumber)!;
+  assert.match(String(enc.ratings.material), /stainless/);
+  assert.ok(layoutFits(ctx), `seal-4x: everything fits in ${enc.partNumber}`);
+  assert.equal(enclosureFitProblem(ctx), null);
+
+  // A saved design with the 20x16 stainless (what the user had): the problem and the ways out.
+  const small = { ...ctx, design: withEnclosure(ctx.design, getPart, 'SCE-20EL1608SSLP', 'SCE-20P16') };
+  const pr = enclosureFitProblem(small)!;
+  assert.ok(pr && (pr.notFit.length > 0 || pr.door), 'the 20x16 is too small');
+  const kinds = pr.options.map((o) => o.kind);
+  assert.equal(kinds[0], 'larger');
+  assert.match(String(getPart(pr.options[0].fit!.enclosure)!.ratings.material), /stainless/, 'larger: stainless stays stainless');
+  assert.ok(layoutFits({ ...small, design: withEnclosure(small.design, getPart, pr.options[0].fit!.enclosure, pr.options[0].fit!.subpanel) }), 'the larger option fits');
+  assert.ok(kinds.includes('rating') && kinds.includes('split'), `options ${kinds.join(', ')}`);
+  const fg = pr.options.find((o) => o.kind === 'material');
+  if (fg) assert.ok(!/stainless/i.test(String(getPart(fg.fit!.enclosure)!.ratings.material)) && /4X/.test(String(getPart(fg.fit!.enclosure)!.ratings.nema)), 'material: a non-stainless 4X');
+  // A design that already has two CPUs (made before the fix) is flagged.
+  const two = { ...ctx, design: { ...ctx.design, components: [...ctx.design.components, { tag: 'X1', partNumber: 'C0-10DD2E-D', quantity: 1, function: 'Required by the designer', motorTag: null }] } };
+  assert.ok(designWarnings(two).some((w) => /2 PLC CPUs in the design \(PLC C0-10DD1E-D, X1 C0-10DD2E-D\)/.test(w)), 'two CPUs flagged');
 }
 
 // Guard doors and pressure switches come from the catalog: the interlock (+ actuator) in series with the E-stops
