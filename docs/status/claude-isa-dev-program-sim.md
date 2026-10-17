@@ -1,6 +1,6 @@
 # Dev 2 — program & simulation (`claude/isa-dev-program-sim`)
 
-Current: rule-based electrical engine (rules first, AI second) — draft PR → `claude/optimistic-maxwell-6nfcs6`. Earlier PRs #25 #27 #32 #37 merged, #45 (plcTagNames) open. No blockers (real-AI scores still wait for an API key).
+Current: address stability + program QA (manager's URGENT list) — new draft PR → `claude/optimistic-maxwell-6nfcs6` (#57 merged). Next: HMI QA, electrical QA, sealing-head safety. Earlier PRs #25 #27 #32 #37 merged, #45 (plcTagNames) open. No blockers (real-AI scores still wait for an API key).
 
 ## Task list (restated, in priority order)
 
@@ -113,3 +113,16 @@ Current: rule-based electrical engine (rules first, AI second) — draft PR → 
 - [x] Manager (top priority, "program not built right"): the automatic cycle is a STEP SEQUENCE (`src/plc/engine/sequence.ts`): steps with actions, waits (input ON/OFF, time) and timeout; `compileSequence` -> step register DS1150 (0 idle, 10, 20…), transitions written last step first (each step lasts ≥ 1 scan), step timers, step timeouts -> new HMI alarm `ALM_Cycle_Step_Timeout` (stops the cycle, reset while stopped), cycle counter, step states of the state word. Default sequence without AI from the I/O list + spec words (feed / wait for part, each cylinder out and back in spec order, dwell/seal time from the spec) + a question. AI (`cycleAI.ts`) now returns only the steps (~2.5k-char prompt); `checkSequence` + checker gate it, else the default cycle with a note. Program page shows the step table (step, name, what happens, waits for, timeout, questions). Heater: off on an analog temperature high alarm. Drive speed setpoint below 10% of range on first scan -> mid-range default (a fresh PLC's 0 Hz no longer stalls the belt).
 - [x] ACCEPTANCE (`src/plc/engine/program.test.ts`): closed loop against the simulator's plant model for example, sealing and big — Start, 3 full automatic cycles, every step reached, cycle counter increments, no fault; fault test (example X005 / sealing X004 forced missing -> timeout alarm -> cycle stops -> sensor back + Reset -> Start runs again); the AI's own recorded sequence also runs the sealing plant. Checker 0 issues and review rules 0 problems on all three.
 - Found: e2e/preview.e2e.cjs fails on integration since e418764 (enclosure wall machining) removed the "Front door DXF" button it clicks — not from this branch.
+
+## Address stability + program QA (manager URGENT, after #57)
+- [x] 1. Program matches role-less HMIs: `src/hmi/engine/roles.ts` `inferRoles` (name / description / interlock / content rules); both engines reuse every address by role and allocate only from free space; HMI counter/timer displays implemented at their own address; unmatched tags reported; checker ERROR for HMI tags no rung writes / commands no rung reads. Test `src/plc/engine/stability.test.ts` on the example HMI (role table, C1004/C1201/C1101/C1102/DS1102/DS1103/CT2/T1 meanings, state numbers, simulator E-stop, redesign keeps addresses, new HMI next to an old program has no collisions).
+- [x] 2. Fallback cycle = default sequence; the Build summary says the cycle's source (AI / default, no AI connected / AI's cycle not used + reason). The AI's cycle is also checked against the HMI.
+- [x] 3. Example Pusher on level + cycle bit (a part left at the eye after Stop is pushed on restart), SEED_VERSION 13.
+- [x] 4. Siemens: setpoints / registers / counters in `VAR RETAIN`; instance DB without NON_RETAIN.
+- [x] 5. Export: program files held back (with "Export anyway") when the checker finds errors for the selected PLC / HMI; "Rebuild for the <PLC>" on the Export and Program pages.
+- [x] 6. Simulator block test: held words before the first scan take the first-scan values (setpoint defaults).
+- [x] 7. Checker dead-logic warnings (read never written / written never read); I/O, system, HMI tags and standard HMI ranges, TD/CTD, counters, constants excluded.
+- [x] 8. Plant: dump / supply / exhaust / blow-off valves are on/off valves, not cylinders; safety relay latches off on E-stop and needs Reset (Reset button or "Reset relay").
+- [x] 9. CLICK nickname CSV data types (BIT / INT DS, TD / INT2 DD, CTD / HEX / FLOAT) + retentive flags.
+- [x] 10. Block-scoped AI change / "Regenerate this block" only changes the selected block; outside changes left out and counted in the answer.
+- Verified: tsc, eslint, all unit tests, modbus, e2e app, check-all 8 variants 0 FAIL.

@@ -157,7 +157,9 @@ def check(vdir: Path):
     t_xl = {(str(r['Terminal']), str(r['Wire'] or '')) for r in sheet_rows(wb, 'Terminal Plan') if r.get('Terminal') and r.get('Internal (panel)') is not None or (r.get('Terminal') and r.get('Kind'))}
     if t_csv != t_xl:
         report('FAIL', v, f'terminal plan CSV vs Excel differ: {sorted(t_csv ^ t_xl)[:6]}')
-    t_lbl = {l['Number'] for l in labels if l['Type'] == 'Terminal markers' and '-' in l['Number']}
+    # Terminal markers are <strip>-<terminal>; the strip's own marker (an IEC strip is named -X1) is not a terminal.
+    strips = {r['Strip'] for r in tp}
+    t_lbl = {l['Number'] for l in labels if l['Type'] == 'Terminal markers' and '-' in l['Number'] and l['Number'] not in strips}
     if {t for t, _ in t_csv} != t_lbl:
         report('FAIL', v, f'terminal labels vs plan differ: {sorted({t for t, _ in t_csv} ^ t_lbl)[:8]}')
     # strip size vs BOM quantity of feed-through terminals
