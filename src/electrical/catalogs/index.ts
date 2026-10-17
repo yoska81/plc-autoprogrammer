@@ -6,6 +6,8 @@ import { SCHNEIDER } from './schneider';
 import { YASKAWA } from './yaskawa';
 import { IFM } from './ifm';
 import { PHOENIX } from './phoenix';
+import { ABB } from './abb';
+import { EATON } from './eaton';
 import { WEIDMULLER } from './weidmuller';
 import { HOFFMAN } from './hoffman';
 import { RITTAL } from './rittal';
@@ -90,6 +92,14 @@ export const VENDORS: Vendor[] = [
   {
     id: 'ifm', name: 'ifm', supplier: 'ifm (distributor)', parts: tag('ifm', IFM), otherGroup: 'field',
     notes: 'Inductive sensors have 3-pin M12 connectors (cable EVC042 is a 3-pin patch cord); photoelectric sensors are 4-pin M12 (cables EVC001 / EVC002 / EVC004). IO-Link masters: AL1120 / AL1122 / AL1320 / AL1920 are EtherNet/IP, AL1100 / AL1102 are PROFINET; AL1920 is the IP20 master for inside the cabinet, the others mount in the field. Only the O5D100 has IO-Link; the others are plain PNP switching sensors.',
+  },
+  {
+    id: 'eaton', name: 'Eaton', supplier: 'Eaton (distributor)', parts: tag('eaton', EATON),
+    notes: 'XTCE contactors: "TD" = 24 VDC coil, "A" = 120 VAC coil; B frame (9 and 12 A) only. PSG power supplies: E = single-phase input, F = three-phase.',
+  },
+  {
+    id: 'abb', name: 'ABB', supplier: 'ABB (distributor)', parts: tag('abb', ABB),
+    notes: 'AF contactors have wide-range electronic coils (e.g. 100-250 V AC/DC; "Z" = 24 V DC). TF42 overloads mount on AF09-AF38. MS132 / MS116: choose the range containing the motor FLA. S200U breakers are UL 489 at 240 VAC only (not for 480 V circuits). CR-M / CR-P relays plug into their sockets (footprint is the socket).',
   },
   {
     id: 'phoenix', name: 'Phoenix Contact', supplier: 'Phoenix Contact (distributor)', parts: tag('phoenix', PHOENIX),
