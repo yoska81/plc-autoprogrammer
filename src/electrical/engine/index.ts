@@ -192,10 +192,11 @@ export function generateDesign(input: EngineInput): EngineResult {
     const L = panelLayout(ctxOf(trial));
     const railPcs = Math.ceil(L.rails.reduce((s, r) => s + r.w, 0) / (num(rail?.ratings.lengthMm) ?? 1000));
     const ductPcs = Math.ceil(L.ducts.reduce((s, d) => s + Math.max(d.w, d.h), 0) / ((num(duct?.ratings.lengthM) ?? 2) * 1000));
-    const components = [...head, ...core, ...accessories(counts, railPcs, ductPcs)];
+    let components = [...head, ...core, ...accessories(counts, railPcs, ductPcs)];
     const ctx = ctxOf(components);
     const L2 = panelLayout(ctx);
     const spare = spareSpace(ctx).panel;
+    components = components.map((c) => (c.tag === 'ENC1' ? { ...c, function: `${c.function} — ${spare >= 0.25 ? 'smallest catalog enclosure with everything placed and' : 'everything placed, but only'} ${Math.round(spare * 100)}% spare panel space (target >= 25%)` } : c));
     const ok = !L2.overflow && !L2.notFit.length && !L2.door.overflow && spare >= 0.25;
     if (!best || ok || spare > best.spare) best = { components, spare, ok, enc };
     if (ok) { if (ds.notes.length) notes.push(...ds.notes); break; }

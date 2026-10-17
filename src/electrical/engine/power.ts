@@ -151,7 +151,7 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
     // Branch short-circuit protection
     if (start === 'motor-protector') {
       const mp = pickProtector(pk, fla);
-      if (mp) components.push(comp(tags.next('MP'), mp.partNumber, 1, `${name} motor protector (branch protection + overload)`, m.tag));
+      if (mp) components.push(comp(tags.next('MP'), mp.partNumber, 1, `${name} motor protector (branch protection + overload) — dial ${num(mp.ratings.minAmps)}-${num(mp.ratings.maxAmps)} A covers FLA ${fla.toFixed(1)} A`, m.tag));
       else { notes.push(`${m.tag}: no motor protector covers ${fla.toFixed(1)} A — breaker, contactor and overload used instead.`); start = 'dol'; }
     }
     if (start !== 'motor-protector') {
@@ -159,11 +159,11 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
       const f = fuses ? pickFuses(pk, fla * (vfd ? 1.4 : 1), poles) : null;
       if (f) {
         const t = tags.next('FU');
-        components.push(comp(t, f.holder.partNumber, 1, `Motor ${m.tag} branch fuses`, m.tag));
-        components.push(comp(`${t}F`, f.fuse.partNumber, poles, `Class CC fuses ${amps(f.fuse)}A for ${t}`, m.tag));
+        components.push(comp(t, f.holder.partNumber, 1, `Motor ${m.tag} branch fuses — Class CC (${region === 'Canada' ? 'CEC' : '600 V'} branch protection)`, m.tag));
+        components.push(comp(`${t}F`, f.fuse.partNumber, poles, `Class CC fuses ${amps(f.fuse)}A for ${t} — time-delay, >= 1.25 x FLA ${fla.toFixed(1)} A`, m.tag));
       } else {
         const cb = pickBranchBreaker(pk, supply, fla, poles, factor);
-        if (cb) components.push(comp(tags.next('CB'), cb.partNumber, 1, `Motor ${m.tag} branch protection`, m.tag));
+        if (cb) components.push(comp(tags.next('CB'), cb.partNumber, 1, `Motor ${m.tag} branch protection — ${amps(cb)} A ${cb.ratings.curve ?? ''}-curve, ${(amps(cb) / fla).toFixed(1)} x FLA ${fla.toFixed(1)} A (rides through the start, max. 250% NEC 430.52)`.replace(' -curve', ''), m.tag));
         else notes.push(`${m.tag}: no branch breaker in the catalog for ${fla.toFixed(1)} A at ${SUPPLY_INFO[supply].label} — select branch protection.`);
       }
     }
@@ -171,15 +171,15 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
     if (vfd) {
       const t = tags.next('VFD');
       branch.vfd = t; branch.sto = vfd.sto;
-      components.push(comp(t, vfd.part.partNumber, 1, `${name} drive${vfd.sto ? ', STO from safety relay' : ''}`, m.tag));
+      components.push(comp(t, vfd.part.partNumber, 1, `${name} drive${vfd.sto ? ', STO from safety relay' : ''} — ${num(vfd.part.ratings.outputAmps)} A output >= FLA ${fla.toFixed(1)} A${vfd.sto ? '; Safe Torque Off for the safety stop' : ''}`, m.tag));
       if (!vfd.sto) {
         // No STO terminals: the safety relay drops a contactor ahead of the drive.
         const k = pickContactor(pk, supply, fla, m.hp);
         if (k) {
           const kt = tags.next('K');
           branch.contactors.push(kt);
-          components.push(comp(kt, k.partNumber, 1, `${name} drive safety contactor (dropped by the safety relay)`, m.tag));
-          if (auxBlock && needsAuxBlock(k)) components.push(comp(`${kt}-AUX`, auxBlock.partNumber, 1, `${kt} aux contact`, m.tag));
+          components.push(comp(kt, k.partNumber, 1, `${name} drive safety contactor (dropped by the safety relay) — the drive has no STO input`, m.tag));
+          if (auxBlock && needsAuxBlock(k)) components.push(comp(`${kt}-AUX`, auxBlock.partNumber, 1, `${kt} aux contact — N.C. 61-62 for the safety relay feedback (EDM); ${k.partNumber} has no built-in aux`, m.tag));
         }
       }
       if (m.vertical) notes.push(`${m.tag} ${name}: vertical / overhauling load — braking resistor and motor brake to be sized per the drive manual (not in the catalog).`);
@@ -193,18 +193,19 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
     for (const d of dirs) {
       const kt = tags.next('K');
       branch.contactors.push(kt);
-      components.push(comp(kt, k.partNumber, 1, `${name} ${d ? `${d} ` : ''}contactor`, m.tag));
-      if (auxBlock && needsAuxBlock(k)) components.push(comp(`${kt}-AUX`, auxBlock.partNumber, 1, `${kt} aux contact`, m.tag));
+      const rating = hpRating(k, supply);
+      components.push(comp(kt, k.partNumber, 1, `${name} ${d ? `${d} ` : ''}contactor — ${rating !== undefined && SUPPLY_INFO[supply].hz !== 50 ? `rated ${rating} HP at ${SUPPLY_INFO[supply].label}` : `AC-3 ${amps(k)} A`} >= ${m.hp} HP / ${fla.toFixed(1)} A, 24 VDC coil`, m.tag));
+      if (auxBlock && needsAuxBlock(k)) components.push(comp(`${kt}-AUX`, auxBlock.partNumber, 1, `${kt} aux contact — N.C. 61-62 for the safety relay feedback (EDM)${reversing ? ' and the reversing interlock' : ''}; ${k.partNumber} has no built-in aux`, m.tag));
     }
     if (reversing) {
-      if (interlock && needsAuxBlock(k)) components.push(comp(`${branch.contactors[0]}-MI`, interlock.partNumber, 1, `${branch.contactors.join('/')} mechanical reversing interlock`, m.tag));
+      if (interlock && needsAuxBlock(k)) components.push(comp(`${branch.contactors[0]}-MI`, interlock.partNumber, 1, `${branch.contactors.join('/')} mechanical reversing interlock — both directions can never pull in together`, m.tag));
       else notes.push(`${m.tag}: add the mechanical reversing interlock for ${k.partNumber} (not in the catalog).`);
     }
     if (start !== 'motor-protector') {
       const ol = pickOverload(pk, fla, k);
       if (ol) {
         const t = tags.next('OL'); branch.overload = t;
-        components.push(comp(t, ol.part.partNumber, 1, `${name} overload`, m.tag));
+        components.push(comp(t, ol.part.partNumber, 1, `${name} overload — range ${num(ol.part.ratings.minAmps)}-${num(ol.part.ratings.maxAmps)} A, set to FLA ${fla.toFixed(1)} A`, m.tag));
         if (ol.setAbove) notes.push(`${t} ${ol.part.partNumber}: no range brackets the ${fla.toFixed(1)} A FLA; set at its minimum ${num(ol.part.ratings.minAmps)} A (${Math.round((num(ol.part.ratings.minAmps)! / fla) * 100)}% of FLA) or fit the next smaller range if the nameplate current is lower.`);
       }
       else notes.push(`${m.tag}: no overload relay range covers ${fla.toFixed(1)} A — select one.`);
@@ -223,7 +224,7 @@ export function mainDisconnect(pk: Picker, branches: MotorBranch[], supply: Supp
   const notes: string[] = [];
   const components: DesignComponent[] = [];
   if (!ds) { notes.push(`No catalog disconnect is rated for ${load.toFixed(0)} A: select a main disconnect.`); return { components, notes, amps: load }; }
-  components.push(comp('DS1', ds.partNumber, 1, `Main disconnect ${amps(ds)}A`));
+  components.push(comp('DS1', ds.partNumber, 1, `Main disconnect ${amps(ds)}A — load ${load.toFixed(1)} A (motors + 25% of the largest + control) x 1.15`));
   const size = String(ds.ratings.handleSize ?? '').split('/')[0];
   const vendor = ds.vendor ?? 'automationdirect';
   const same = (p: CatalogPart) => (p.vendor ?? 'automationdirect') === vendor && (!size || String(p.ratings.handleSize ?? p.ratings.forUse ?? '').includes(size));
@@ -255,7 +256,7 @@ export function controlPower(pk: Picker, tags: Tags, supply: SupplyVoltage, load
   const psuPrimary = (ps: CatalogPart, poles: number, feed: SupplyVoltage, what: string) => {
     const w = num(ps.ratings.watts) ?? out(ps) * 24;
     const cb = pickBranchBreaker(pk, feed, Math.max(2.4, w / 60) / 1.25, poles, 1.25);
-    if (cb) components.push(comp(tags.next('CB'), cb.partNumber, 1, what));
+    if (cb) components.push(comp(tags.next('CB'), cb.partNumber, 1, `${what} — ${amps(cb)} A for a ${w} W supply (inrush)`));
     else notes.push(`${ps.partNumber}: select primary protection.`);
   };
 
@@ -267,7 +268,7 @@ export function controlPower(pk: Picker, tags: Tags, supply: SupplyVoltage, load
       ?? pk.pick('other', (p) => p.ratings.kind === 'transformer' && String(p.ratings.primaryVolts ?? '').split('/').map(Number).includes(600) && (num(p.ratings.va) ?? 0) >= va, (p) => num(p.ratings.va) ?? 0);
     if (!ps || !t) { notes.push(`${info.label}: no control transformer / 24 VDC supply in the catalog for ${need.toFixed(1)} A — select them.`); return { components, notes, inputA: 1 }; }
     const tt = tags.next('T');
-    components.push(comp(tt, t.partNumber, 1, `Control transformer 600:120 V, ${num(t.ratings.va)} VA`));
+    components.push(comp(tt, t.partNumber, 1, `Control transformer 600:120 V, ${num(t.ratings.va)} VA — no 24 VDC supply takes 600 V; >= ${Math.ceil(va)} VA for ${ps.partNumber} + 25%`));
     if (/yes/i.test(String(t.ratings.fused ?? ''))) {
       const vaT = num(t.ratings.va) ?? 100;
       const prim = vaT / 600, sec = vaT / 120;
@@ -277,7 +278,7 @@ export function controlPower(pk: Picker, tags: Tags, supply: SupplyVoltage, load
       if (fs) components.push(comp(`${tt}FS`, fs.partNumber, 1, `Class CC fuse ${amps(fs)}A, ${tt} secondary (integral fuse block)`));
       notes.push(`${tt} fuses sized from the transformer rating (primary ${(prim * 2.5).toFixed(2)} A min., secondary ${(sec * 1.25).toFixed(2)} A min.): confirm against the transformer label (NEC 450.3 / CEC Rule 26-256).`);
     } else notes.push(`${tt}: add primary and secondary fuses (transformer has no fuse block).`);
-    components.push(comp(tags.next('PS'), ps.partNumber, 1, `24VDC control power supply, fed from ${tt} 120 V secondary`));
+    components.push(comp(tags.next('PS'), ps.partNumber, 1, `24VDC control power supply, fed from ${tt} 120 V secondary — ${out(ps)} A >= load ${loadA.toFixed(1)} A + 25%`));
     return { components, notes, inputA: (num(t.ratings.va) ?? 100) / 600 };
   }
 
@@ -289,7 +290,7 @@ export function controlPower(pk: Picker, tags: Tags, supply: SupplyVoltage, load
   const w = num(ps.ratings.watts) ?? out(ps) * 24;
   const poles = three ? 3 : info.phases === 3 ? 2 : info.neutral || v <= 130 ? 1 : 2;
   psuPrimary(ps, poles, supply, '24VDC power supply primary');
-  components.push(comp(tags.next('PS'), ps.partNumber, 1, `24VDC control power supply${three ? `, 3-phase ${v} VAC input` : info.phases === 3 ? `, fed L1-L2 ${v} VAC` : ''}`));
+  components.push(comp(tags.next('PS'), ps.partNumber, 1, `24VDC control power supply${three ? `, 3-phase ${v} VAC input` : info.phases === 3 ? `, fed L1-L2 ${v} VAC` : ''} — ${out(ps)} A >= load ${loadA.toFixed(1)} A + 25%`));
   if (out(ps) > 7) notes.push(`${ps.partNumber} can deliver ${out(ps)} A: protect each 24 VDC branch at or below its wire rating (18 AWG max. 7 A) with fused terminals or DC breakers.`);
   return { components, notes, inputA: (w / 0.85) / (three ? v * 1.732 : v) };
 }

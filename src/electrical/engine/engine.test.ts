@@ -141,7 +141,9 @@ for (const s of SCENARIOS) {
   // Same choices as the hand-made example design (whose 24x20 panel no longer fits the terminal strips: 30x24 here).
   assert.deepEqual(['ENC1', 'DS1', 'CB1', 'CB2', 'PS1', 'K1', 'OL1', 'K1-AUX', 'SR1', 'ES1', 'PB1', 'PB2', 'PB3'].map(pn),
     ['SCE-30EL2410LP', '22013003', 'GMCBU-3C-5', 'GMCBU-3C-3', 'PSR-24-120-3', 'SC-E02PG-24VDC', 'TK-E02-220', 'SZ-A11T', 'LG5925-48-61-24', 'GCX1131', 'GCX1102', 'GCX1101', 'GCX1104']);
-  assert.equal(ex.components.find((c) => c.tag === 'PB3')?.function, 'Safety reset');
+  assert.match(ex.components.find((c) => c.tag === 'PB3')?.function ?? '', /^Safety reset — /);
+  // Every rule-picked power / safety part says why it was chosen.
+  for (const t of ['ENC1', 'DS1', 'CB1', 'CB2', 'PS1', 'K1', 'OL1', 'K1-AUX', 'SR1', 'ES1']) assert.match(ex.components.find((c) => c.tag === t)?.function ?? '', / — /, `${t}: no reason in its function`);
 
   const vfd = run(SCENARIOS.find((s) => s.name === 'vfd')!).r.design;
   const drive = vfd.components.find((c) => c.tag === 'VFD1')!;
@@ -166,6 +168,26 @@ for (const s of SCENARIOS) {
 
   const eu = run(SCENARIOS.find((s) => s.name === 'eu400')!).r.design;
   assert.ok(eu.components.some((c) => /^PSR-24-\d+-3$/.test(c.partNumber)), '400 V: 3-phase supply');
+}
+
+// A project copied from the example with a new machine: the example's conveyor motor is left out and asked about.
+{
+  const spec = 'Sealing head: a heated sealing bar (heater on a contactor, temperature switch) closed by two pneumatic cylinders. Operator loads a pouch, presses both palm buttons, the head comes down, seals for the dwell time and opens.';
+  const s: Scenario = {
+    name: 'sealing', supply: '480VAC-3PH', spec, hmi: null,
+    motors: [motor('M1', 'Conveyor motor', 1, '480VAC-3PH')],
+    points: [pt('Safety OK', 'input'), pt('Left palm button', 'input', { deviceType: 'pushbutton-no' }), pt('Right palm button', 'input', { deviceType: 'pushbutton-no' }),
+      pt('Head up sensor', 'input'), pt('Head down sensor', 'input'), pt('Sealing bar temperature OK', 'input'),
+      pt('Heater contactor', 'output'), pt('Head down solenoid', 'output'), pt('Head up solenoid', 'output')],
+  };
+  const d = run(s).r.design;
+  assert.deepEqual(d.inputs.motors, [], 'no motor for a sealing head');
+  assert.ok(!d.components.some((c) => /conveyor/i.test(c.function)), 'nothing from the example conveyor');
+  assert.ok(d.askUser?.some((q) => /M1 Conveyor motor .* not in the machine description/.test(q)), 'left-over motor asked about');
+  assert.ok(!/example/i.test(run(s).r.explanation));
+  assert.ok(d.ioWiring.some((w) => w.description === 'Heater contactor' && w.deviceType === 'contactor-coil'));
+  // The example itself keeps its motor (the spec mentions the conveyor motor).
+  assert.equal(run(SCENARIOS[0]).r.design.inputs.motors.length, 1);
 }
 
 // The default model reads motors from the I/O list when there is no motor list.

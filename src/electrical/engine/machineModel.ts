@@ -5,7 +5,8 @@
  * (./index.ts) turns it into the complete ElectricalDesign.
  */
 import type { IOPoint } from '../../types/io';
-import type { DesignInputs, EnclosureRating, FieldDeviceType, StarterType } from '../types';
+import type { DesignInputs, EnclosureRating, FieldDeviceType, MotorSpec, StarterType } from '../types';
+import { looksLeftOver } from '../../spec/leftovers';
 
 export type MotorStart = 'dol' | 'reversing' | 'vfd' | 'motor-protector';
 
@@ -60,12 +61,28 @@ export const starterOf = (s: MotorStart): StarterType => (s === 'vfd' ? 'vfd' : 
  * when there are none, one motor per motor-driving output in the I/O list; E-stops from the I/O list;
  * zones from words in the spec / I/O; guard doors and light curtains from the spec text.
  */
+/**
+ * The designer's motors that this machine's description and I/O list never mention — typically left
+ * over from the project this one was copied from (the example's conveyor motor in a sealing head).
+ * Only judged when there is a description to compare with.
+ */
+export function staleMotors(motors: MotorSpec[], io: IOPoint[], spec: string): MotorSpec[] {
+  const hay = `${spec}\n${io.map((p) => p.description).join('\n')}`;
+  if (!spec.trim()) return [];
+  return motors.filter((m) => looksLeftOver(m.description, hay, 1).leftOver);
+}
+
 export function defaultMachineModel(io: IOPoint[], inputs: DesignInputs, spec = ''): MachineModel {
   const assumptions: string[] = [];
-  const motors: ModelMotor[] = inputs.motors.map((m) => ({ tag: m.tag, description: m.description, hp: m.hp, start: m.starter === 'vfd' ? 'vfd' : m.starter === 'motor-protector' ? 'motor-protector' : m.reversing ? 'reversing' : 'dol' }));
+  const stale = new Set(staleMotors(inputs.motors, io, spec).map((m) => m.tag));
+  for (const m of inputs.motors.filter((x) => stale.has(x.tag))) {
+    assumptions.push(`${m.tag} ${m.description} (${m.hp} HP) is in the motor list but not in the machine description or I/O list, so it was left out of the design: add it back on the Design tab if this machine has it.`);
+  }
+  const motors: ModelMotor[] = inputs.motors.filter((m) => !stale.has(m.tag)).map((m) => ({ tag: m.tag, description: m.description, hp: m.hp, start: m.starter === 'vfd' ? 'vfd' : m.starter === 'motor-protector' ? 'motor-protector' : m.reversing ? 'reversing' : 'dol' }));
   if (!motors.length) {
     // One motor per output that runs one (contactor / VFD run), not per direction or speed.
-    const outs = io.filter((p) => p.type === 'output' && (p.deviceType === 'contactor-coil' || p.deviceType === 'vfd-input' || (MOTOR_RE.test(p.description) && !/\b(rev|reverse|speed|fault|light)\b/i.test(p.description))));
+    const outs = io.filter((p) => p.type === 'output' && !/\b(heat\w*|lamp|light|horn|valve|solenoid)\b/i.test(p.description)
+      && (p.deviceType === 'contactor-coil' || p.deviceType === 'vfd-input' || (MOTOR_RE.test(p.description) && !/\b(rev|reverse|speed|fault|light)\b/i.test(p.description))));
     for (const p of outs) {
       if (/\b(rev|reverse)\b/i.test(p.description)) continue;
       const hp = Number(HP_RE.exec(p.description)?.[1] ?? 0) * (/kw/i.test(HP_RE.exec(p.description)?.[2] ?? '') ? 1.341 : 1) || 1;

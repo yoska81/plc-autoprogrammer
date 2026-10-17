@@ -99,7 +99,7 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
 
   // ---- safety relay + E-stops + safety reset
   const sr = part('safetyRelay', (p) => (num(p.ratings.channels) ?? 2) >= 2);
-  const srTag = sr ? add(comp('SR1', sr.partNumber, 1, 'E-stop safety relay')) : undefined;
+  const srTag = sr ? add(comp('SR1', sr.partNumber, 1, 'E-stop safety relay — dual channel, monitored manual reset, removes power from the motion outputs (24+S)')) : undefined;
   if (!sr) notes.push('No safety relay in the catalog: the E-stop circuit is drawn as a hardwired chain; select a safety relay.');
   const estopPart = part('estop');
   const secondNc = pk.byNumber('ECX1030-2');
@@ -111,7 +111,7 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
     const t = tags.next('ES');
     estopTags.push(t);
     const where = k === 0 ? 'cabinet door' : `${zones[Math.min(k - 1, zones.length - 1)]} (field station)`;
-    if (estopPart) add(comp(t, estopPart.partNumber, 1, `Emergency stop, ${where}`));
+    if (estopPart) add(comp(t, estopPart.partNumber, 1, `Emergency stop, ${where} — dual channel into ${srTag ?? 'the safety circuit'}`));
     if (secondNc) add(comp(`${t}C`, secondNc.partNumber, 1, `Second NC contact for dual-channel E-stop ${t}`));
     if (legend) add(comp(`${t}L`, legend.partNumber, 1, `EMERGENCY STOP legend plate for ${t}`));
   }
@@ -211,7 +211,7 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
         type = 'relay-coil';
         const r = part('relay', (q) => /24/.test(String(q.ratings.coilVoltage ?? '')));
         tag = tags.next('CR');
-        if (r) add(comp(tag, r.partNumber, 1, `Interposing relay: ${desc}`));
+        if (r) add(comp(tag, r.partNumber, 1, `Interposing relay: ${desc} — dry contact, no PLC output wired straight to another controller`));
         if (model.interfaces.includes(p.description)) askUser.push(`${tag} (${desc}): dry contact to the other machine's controller — confirm its input voltage and wiring.`);
       }
     }
@@ -225,7 +225,7 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
   }
   // Monitored manual reset of the safety relay: blue pushbutton on the door, numbered after the PLC's own buttons.
   const blue = sr ? pk.pick('pushbutton', (p) => String(p.ratings.color ?? '') === 'blue') : null;
-  if (blue) add(comp(tags.next('PB'), blue.partNumber, 1, 'Safety reset'));
+  if (blue) add(comp(tags.next('PB'), blue.partNumber, 1, 'Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)'));
   if (!points.some(({ point }) => point.type === 'input' && deviceTypeOf(point) === 'safety-relay-output') && srTag) {
     askUser.push(`The I/O list has no "Safety OK" input: add one so the PLC sees ${srTag}'s status (an auxiliary output of the relay).`);
   }
