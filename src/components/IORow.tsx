@@ -46,12 +46,13 @@ export function IORow({ point, address, duplicate }: IORowProps) {
       </td>
       <td className={td}>
         <input
-          key={point.description}
-          defaultValue={point.description}
+          value={point.description}
           placeholder="Description"
           aria-label={`Description of ${point.id}`}
-          onBlur={(e) => { if (e.target.value !== point.description) updateDescription(point.id, e.target.value); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { e.currentTarget.value = point.description; e.currentTarget.blur(); } }}
+          // Saved as you type, so leaving the page, Back or Ctrl+S never loses an edit; Escape undoes the edit.
+          onFocus={(e) => { e.currentTarget.dataset.before = point.description; }}
+          onChange={(e) => updateDescription(point.id, e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { updateDescription(point.id, e.currentTarget.dataset.before ?? point.description); e.currentTarget.blur(); } }}
           className={`${cell} text-steel-900 placeholder:italic placeholder:text-steel-400`}
         />
       </td>

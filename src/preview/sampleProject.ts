@@ -9,7 +9,13 @@ import { EMPTY_SECTIONS, fingerprint, type SpecSections } from '../spec/types';
 import { useSpecStore } from '../store/useSpecStore';
 import { useHmiStore } from '../store/useHmiStore';
 import { useStageStore } from '../store/useStageStore';
-import { backupActiveProject, saveActiveProject, storeStateAs, useProjectsStore } from '../store/useProjectsStore';
+import { backupActiveProject, runDerived, saveActiveProject, storeStateAs, useProjectsStore } from '../store/useProjectsStore';
+import { useLayoutStore } from '../electrical/layout/useLayoutStore';
+import { useQuestionStore } from '../components/questions/useQuestionStore';
+import { useCheckoutStore } from '../online/useCheckoutStore';
+import { useLabelSetupStore } from '../electrical/labels/setup';
+import { useFileStore } from '../project/useFileStore';
+import { notify } from '../store/useNoticeStore';
 import { useReviewStore } from '../review/useReviewStore';
 import { ioFingerprint, hmiFingerprint } from '../spec/useStages';
 import type { EquipmentRecommendation } from '../lib/ai/equipmentAI';
@@ -457,7 +463,45 @@ function readSeedVersion(): string | null {
 export const EXAMPLE_ID = 'p_example';
 const EXAMPLE_NAME = 'Conveyor Cell (example)';
 
+/** Per-project data kept outside the project stores, moved when a project changes id. */
+function moveKeyed(from: string, to: string) {
+  const stores = [useLayoutStore, useQuestionStore, useCheckoutStore, useLabelSetupStore, useFileStore] as unknown as { getState: () => { byProject: Record<string, unknown> }; setState: (s: { byProject: Record<string, unknown> }) => void }[];
+  for (const st of stores) {
+    const by = { ...st.getState().byProject };
+    if (!(from in by)) continue;
+    by[to] = by[from];
+    delete by[from];
+    st.setState({ byProject: by });
+  }
+}
+
+/**
+ * The viewer edited the example itself (renamed it, or wrote their own machine description in it):
+ * it becomes their own project under a new id, so it is never overwritten by an example update and
+ * gets the normal tools for a copied project (Start clean). The example is restored next to it.
+ */
+function detachEditedExample(): boolean {
+  const ps = useProjectsStore.getState();
+  if (ps.activeId !== EXAMPLE_ID) return false;
+  const name = ps.projects.find((p) => p.id === EXAMPLE_ID)?.name ?? EXAMPLE_NAME;
+  const overview = (useSpecStore.getState().sections.overview ?? '').trim();
+  if (name === EXAMPLE_NAME && overview === SPEC.overview.trim()) return false;
+  const newId = `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const ownName = name === EXAMPLE_NAME ? 'Conveyor Cell (your copy)' : name;
+  backupActiveProject('Before your edited example became its own project');
+  useProjectsStore.setState((s) => ({ projects: s.projects.map((p) => (p.id === EXAMPLE_ID ? { ...p, id: newId, name: ownName } : p)), activeId: newId }));
+  moveKeyed(EXAMPLE_ID, newId);
+  saveActiveProject();
+  // Write a fresh example under its own id, then put the viewer's project back in the stores.
+  runDerived(() => { writeExample(); storeStateAs(EXAMPLE_ID, newId); });
+  useProjectsStore.setState((s) => ({ projects: [{ id: EXAMPLE_ID, name: EXAMPLE_NAME, createdAt: new Date().toISOString() }, ...s.projects] }));
+  try { localStorage.setItem('plc-preview-seed', SEED_VERSION); } catch { /* storage blocked */ }
+  notify(`Your changes to the example are kept as your own project “${ownName}”. The example is back in the project list unchanged.`);
+  return true;
+}
+
 export function seedSampleProject() {
+  if (detachEditedExample()) return;
   const ps = useProjectsStore.getState();
   const hasExample = ps.projects.some((p) => p.id === EXAMPLE_ID);
   if (readSeedVersion() === SEED_VERSION && hasExample) return;
