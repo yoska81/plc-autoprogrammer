@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { SPEC_SECTIONS } from '../../../spec/types';
+import { useHmiStore } from '../../../store/useHmiStore';
+import { useIOStore } from '../../../store/useIOStore';
 import { looksLeftOver } from '../../../spec/leftovers';
 import { ArrowsRightLeftIcon, PrinterIcon } from '@heroicons/react/20/solid';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -85,10 +88,14 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const store = useProgramStore();
   const { ladder, proposal, chat, versions, isGenerating, userPrompt } = store;
   const fp = useFingerprints();
+  const io = useIOStore((s) => s.projectIO);
+  const hmiDesign = useHmiStore((s) => s.design);
   const stages = useStages();
   const { sources, markGenerated } = useStageStore();
   const specText = specToText(fp.spec);
-  const notesCheck = looksLeftOver(userPrompt, specText);
+  const notesCheck = /^the machine specification and\/or i\/o list changed|^current specification:/i.test(userPrompt.trim()) || userPrompt.length > 600 && specText && userPrompt.includes(specText.slice(0, 80))
+    ? { leftOver: true, terms: ['a copy of the update message / specification'] }
+    : looksLeftOver(userPrompt, specText);
   const machineText = [specText, userPrompt.trim() && `Additional notes for the program:\n${userPrompt}`].filter(Boolean).join('\n\n');
   const recordSource = () => markGenerated('program', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, hmiFp: fp.hmiFp });
 
@@ -243,11 +250,16 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {tab === 'describe' && (
             <>
-              <p className="text-sm text-gray-600">
-                The program is written from your <Link to="/spec" className="underline">spec</Link>, the I/O list and the HMI design.
-                {specText ? '' : ' The spec is empty: describe the machine first, or type the requirements below.'}
-              </p>
-              <label htmlFor="prompt" className="block text-sm font-medium text-gray-700">Notes for the program <span className="font-normal text-gray-400">(optional)</span></label>
+              <div className="text-sm text-gray-700 bg-brand-50 border border-brand-200 rounded px-3 py-2" data-testid="program-sources">
+                <div className="font-medium text-gray-800 mb-1">The program is made directly from:</div>
+                <ul className="text-xs space-y-0.5">
+                  <li>✓ <Link to="/spec" className="underline">Machine description</Link> — {SPEC_SECTIONS.filter((s) => (fp.spec as Record<string, string>)[s.id]?.trim()).length} sections{fp.spec.qa?.trim() ? ' + your answers' : ''}</li>
+                  <li>✓ <Link to="/io" className="underline">I/O list</Link> — {io.length} points</li>
+                  <li>✓ <Link to="/hmi" className="underline">HMI design</Link>{hmiDesign ? ` — ${hmiDesign.screens.length} screens` : ' — none yet'}</li>
+                </ul>
+                {specText ? <div className="text-xs text-gray-500 mt-1">You don't need to copy anything here: change the machine description and press Generate.</div> : <div className="text-xs text-amber-800 mt-1">The machine description is empty: describe the machine first.</div>}
+              </div>
+              <label htmlFor="prompt" className="block text-sm font-medium text-gray-700">Extra notes for the program only <span className="font-normal text-gray-400">(optional, usually empty)</span></label>
               <textarea
                 id="prompt"
                 value={userPrompt}

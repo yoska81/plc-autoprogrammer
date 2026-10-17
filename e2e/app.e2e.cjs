@@ -635,6 +635,12 @@ function sse(model, text) {
   if (!Object.keys(zip.files).some((f) => /^purchasing\/.*_spares_order\.csv$/.test(f))) throw new Error('ZIP has no separate spares order file');
   if (!Object.keys(zip.files).some((f) => /^commissioning\/.*_IO_checkout\.pdf$/.test(f))) throw new Error('ZIP has no I/O check-out sheet');
   await snap(page, 'deliverables');
+  // Full machine specification: one text with every part of the project.
+  await page.getByTestId('machine-spec').getByRole('button', { name: 'Show' }).click();
+  const specDoc = await page.getByLabel('Machine specification text').inputValue();
+  fs.writeFileSync(OUT + 'machine_specification.md', specDoc);
+  log('Machine specification:', specDoc.length, 'chars,', (specDoc.match(/^## /gm) ?? []).length, 'sections');
+  for (const want of ['Machine description', 'Control equipment', 'I/O list', 'Electrical components', 'Operator screens', 'PLC program']) check(specDoc.includes(want), `machine spec has ${want}`);
 
   // Project file (.isap): save the open project, open it back as a new project, same data.
   const pfBefore = await page.evaluate(() => ({
