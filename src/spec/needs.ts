@@ -38,7 +38,7 @@ export const NEEDS: Need[] = [
     covered: /allen[- ]?bradley|rockwell|siemens|automation ?direct|\bclick\b|omron|mitsubishi|schneider|beckhoff|productivity|compactlogix|controllogix|micro ?8\d0|\bs7-?\d|any brand|no preference/i,
     settles: /\b(plc|hmi|controller)\b.*\b(brand|make|manufacturer|vendor)\b|\bbrand\b.*\b(plc|hmi)\b/i },
   // I/O
-  { id: 'sensor-type', stage: 'io', topic: 'Sensors and I/O', question: 'Which sensor outputs are used: PNP (sourcing) or NPN (sinking), 24 VDC?',
+  { id: 'sensor-type', stage: 'io', topic: 'Sensors and I/O', question: 'Which 24 VDC sensor outputs are used: PNP (sourcing) or NPN (sinking)?',
     covered: /\bpnp\b|\bnpn\b|sourcing|sinking/i, settles: /\b(pnp|npn|sourcing|sinking)\b/i },
   { id: 'spares', stage: 'io', topic: 'Sensors and I/O', question: 'How many spare I/O points should the PLC have (e.g. 20 % spare)?',
     covered: /\bspares?\b.*\b(i\/?o|inputs?|outputs?|points?|%)|\b(i\/?o|inputs?|outputs?)\b.*\bspares?\b/i, settles: /\bspare (i\/?o|inputs?|outputs?|points?|capacity)\b/i },
@@ -61,7 +61,7 @@ export const NEEDS: Need[] = [
     covered: /\bsccr\b|\b\d+(\.\d+)?\s*ka\b|fault current|short[- ]circuit (current|rating)|not known/i, settles: /\bsccr\b|\bavailable fault current\b|\bshort[- ]circuit current rating\b/i },
   { id: 'standards', stage: 'electrical', topic: 'Control panel', question: 'Which standards must the machine meet (e.g. NFPA 79 and UL 508A, CSA, or CE / IEC 60204-1)?',
     covered: /nfpa|ul ?508|iec ?60204|\bce\b|\bcsa\b|\bukca\b/i, settles: /\b(which|what) (electrical )?(standards?|codes?)\b/i },
-  { id: 'location', stage: 'electrical', topic: 'Control panel', question: 'Where is the panel installed: indoor/outdoor, ambient temperature range, dust or wash-down?',
+  { id: 'location', stage: 'electrical', topic: 'Control panel', question: 'Where is the panel installed (indoor / outdoor), and what are the ambient temperature range and the dust and wash-down conditions?',
     covered: /\bambient\b|°\s?[cf]\b|\bdeg(rees)?\s?[cf]\b|\bindoors?\b|\boutdoors?\b|wash[- ]?down/i, settles: /\bambient\b|\b(indoor|outdoor)\b|wash[- ]?down/i },
   // HMI
   { id: 'hmi-size', stage: 'hmi', topic: 'Operator panel (HMI)', question: 'Which HMI screen size (e.g. 7", 10" or 15"), or no HMI (pushbuttons only)?',

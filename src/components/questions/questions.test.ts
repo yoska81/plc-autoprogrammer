@@ -4,6 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { guessSection, quickChoices } from './parse';
+import { NEEDS } from '../../spec/needs';
 import { qaText, answerText } from './qa';
 import { EMPTY_SECTIONS, fingerprint, specToText, changedSections } from '../../spec/types';
 import { questionId, useQuestionStore, type Question } from './useQuestionStore';
@@ -17,6 +18,18 @@ assert.deepEqual(quickChoices('Stack light colours: red, amber or green?'), ['re
 assert.deepEqual(quickChoices('Does the clamp need both open and closed sensors?'), ['Yes', 'No']);
 assert.deepEqual(quickChoices('How many parts per minute at most?'), []);
 assert.deepEqual(quickChoices('Assumed 480 VAC 3-phase supply with 65 kA available fault current.'), ['Correct as stated']);
+// Never cut inside parentheses or standard names; unsure → no buttons (the questions from the Machine description checklist).
+assert.deepEqual(quickChoices('Which PLC and HMI brand should be used (e.g. Allen-Bradley, Siemens, AutomationDirect), or is any brand fine?'), []);
+assert.deepEqual(quickChoices('Which standards must the machine meet (e.g. NFPA 79 and UL 508A, CSA, or CE / IEC 60204-1)?'), []);
+assert.deepEqual(quickChoices('Which HMI screen size (e.g. 7", 10" or 15"), or no HMI (pushbuttons only)?'), []);
+assert.deepEqual(quickChoices('Describe the automatic cycle step by step: what moves, in which order, and what each step waits for.'), [], 'a request, not an assumption');
+assert.deepEqual(quickChoices('Is a VFD or soft starter needed for the unwinder motor?'), [], 'options that cannot be cut cleanly: no buttons, not Yes / No');
+assert.deepEqual(quickChoices('Guard door stop category (per the risk assessment): 0 or 1?'), ['0', '1'], 'a note in parentheses is dropped, the options stay');
+assert.deepEqual(quickChoices('Which 24 VDC sensor outputs are used: PNP (sourcing) or NPN (sinking)?'), ['PNP', 'NPN']);
+for (const n of NEEDS) {
+  const c = quickChoices(n.question);
+  assert.ok(c.every((o) => !/[()]/.test(o) && !/\be\.g\./i.test(o) && o.split(' ').length <= 5), `${n.id}: whole options only (${JSON.stringify(c)})`);
+}
 
 // Sections (still used to group answers in documents)
 assert.equal(guessSection('How is the lift axis homed: home switch or hard stop?', 'spec'), 'homing');
