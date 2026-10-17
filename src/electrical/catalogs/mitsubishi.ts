@@ -384,7 +384,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 0.4, outputAmps: 1.6, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 0.75, outputAmpsLD: 2.1 },
+    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 0.4, outputAmps: 1.6, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 0.75, outputAmpsLD: 2.1, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). 400 V class, 480Y/277 V max (0.4K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1408/170M1308/170M1358, 10 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 6 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 15 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -397,7 +397,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 0.75, outputAmps: 2.6, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 1.5, outputAmpsLD: 3.5 },
+    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 0.75, outputAmps: 2.6, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 1.5, outputAmpsLD: 3.5, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). 400 V class, 480Y/277 V max (0.75K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1410/170M1310/170M1360, 20 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 10 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 15 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -410,7 +410,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 1.5, outputAmps: 4, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 2.2, outputAmpsLD: 5.5 },
+    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 1.5, outputAmps: 4, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 2.2, outputAmpsLD: 5.5, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). 400 V class, 480Y/277 V max (1.5K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1411/170M1311/170M1361, 25 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 15 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 15 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -423,7 +423,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 150,
-    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 2.2, outputAmps: 6, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 3, outputAmpsLD: 6.9 },
+    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 2.2, outputAmps: 6, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 3, outputAmpsLD: 6.9, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). 400 V class, 480Y/277 V max (2.2K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1412/170M1312/170M1362, 32 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 15 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 20 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -436,7 +436,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 150,
-    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 3.7, outputAmps: 9.5, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 5.5, outputAmpsLD: 11.1 },
+    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 3.7, outputAmps: 9.5, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 5.5, outputAmpsLD: 11.1, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). 400 V class, 480Y/277 V max (3.7K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1414/170M1314/170M1364, 50 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 25 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 30 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -449,7 +449,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 220,
     heightMm: 150,
-    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 5.5, outputAmps: 12, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 7.5, outputAmpsLD: 17.5 },
+    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 5.5, outputAmps: 12, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 7.5, outputAmpsLD: 17.5, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). 400 V class, 480Y/277 V max (5.5K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1416/170M1316/170M1366, 80 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 35 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 40 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -462,7 +462,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 220,
     heightMm: 150,
-    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 7.5, outputAmps: 17, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 11, outputAmpsLD: 23 },
+    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 7.5, outputAmps: 17, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 11, outputAmpsLD: 23, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). 400 V class, 480Y/277 V max (7.5K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1416/170M1316/170M1366, 80 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 45 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 50 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -475,7 +475,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 0.75, outputAmps: 2.6, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: '2x Ethernet: EtherNet/IP, MODBUS/TCP, CC-Link IE TSN, CC-Link IE Field Basic, BACnet/IP', outputAmpsLD: 3.5 },
+    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 0.75, outputAmps: 2.6, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: '2x Ethernet: EtherNet/IP, MODBUS/TCP, CC-Link IE TSN, CC-Link IE Field Basic, BACnet/IP', outputAmpsLD: 3.5, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). 400 V class, 480Y/277 V max (0.75K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1410/170M1310/170M1360, 20 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 10 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 15 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -488,7 +488,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 150,
-    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 3.7, outputAmps: 9.5, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: '2x Ethernet: EtherNet/IP, MODBUS/TCP, CC-Link IE TSN, CC-Link IE Field Basic, BACnet/IP', outputAmpsLD: 11.1 },
+    ratings: { series: 'FR-E800', inputVolts: '380-480', inputPhases: 3, kw: 3.7, outputAmps: 9.5, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: '2x Ethernet: EtherNet/IP, MODBUS/TCP, CC-Link IE TSN, CC-Link IE Field Basic, BACnet/IP', outputAmpsLD: 11.1, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). 400 V class, 480Y/277 V max (3.7K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1414/170M1314/170M1364, 50 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 25 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 30 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -501,7 +501,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 128,
-    ratings: { series: 'FR-E800', inputVolts: '200-240', inputPhases: 1, kw: 0.4, outputAmps: 3, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB' },
+    ratings: { series: 'FR-E800', inputVolts: '200-240', inputPhases: 1, kw: 0.4, outputAmps: 3, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). single-phase 200 V class, 240 V max (0.4K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1411/170M1311/170M1361, 25 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 10 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 15 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -514,7 +514,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'FR-E800', inputVolts: '200-240', inputPhases: 1, kw: 1.5, outputAmps: 8, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB' },
+    ratings: { series: 'FR-E800', inputVolts: '200-240', inputPhases: 1, kw: 1.5, outputAmps: 8, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). single-phase 200 V class, 240 V max (1.5K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1415/170M1315/170M1365, 63 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 30 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 20 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -527,7 +527,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 128,
-    ratings: { series: 'FR-E800', inputVolts: '200-240', inputPhases: 1, kw: 2.2, outputAmps: 11, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB' },
+    ratings: { series: 'FR-E800', inputVolts: '200-240', inputPhases: 1, kw: 2.2, outputAmps: 11, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). single-phase 200 V class, 240 V max (2.2K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1417/170M1317/170M1367, 100 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 35 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 40 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -540,7 +540,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 128,
-    ratings: { series: 'FR-E800', inputVolts: '200-240', inputPhases: 3, kw: 0.4, outputAmps: 3, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 0.75, outputAmpsLD: 3.5 },
+    ratings: { series: 'FR-E800', inputVolts: '200-240', inputPhases: 3, kw: 0.4, outputAmps: 3, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', kwLD: 0.75, outputAmpsLD: 3.5, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). three-phase 200 V class, 240 V max (0.4K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1409/170M1309/170M1359, 16 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 10 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 15 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
   {
@@ -553,7 +553,7 @@ export const MITSUBISHI: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 128,
-    ratings: { series: 'FR-E800', inputVolts: '200-240', inputPhases: 3, kw: 0.75, outputAmps: 5, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', outputAmpsLD: 6 },
+    ratings: { series: 'FR-E800', inputVolts: '200-240', inputPhases: 3, kw: 0.75, outputAmps: 5, duty: 'kw/outputAmps = ND (normal duty, Mitsubishi rated); *LD = light duty', network: 'RS-485 (Modbus RTU), USB', outputAmpsLD: 6, sccrKA: 31, sccrCondition: '31 kA with UL Class J/T/CC fuses (100 kA only with the listed Bussmann semiconductor fuses; 10 kA with a UL 489 breaker). three-phase 200 V class, 240 V max (0.75K). 100 kA rms sym with semiconductor fuses (Bussmann 170M1411/170M1311/170M1361, 25 A, 700 V); 31 kA with UL Listed Class J/T/CC fuses max 15 A, 600 V (min. enclosure volume 3051 in3); 10 kA with UL 489 MCCB 15 A (min. enclosure 3051 in3). Per Mitsubishi Technical News MF-S-187C, referenced by the FR-E800 Inverter Safety Guideline (UL 61800-5-1).', sccrSource: 'https://www.mitsubishielectric.com/fa/document/technews/inv/mf-s-187e/mfs187c_eng.pdf' },
     verified: true,
   },
 ];

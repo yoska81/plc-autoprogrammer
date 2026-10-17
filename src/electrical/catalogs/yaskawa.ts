@@ -21,7 +21,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 1, hp480HD: 0.75, outputAmps: 2.1, outputAmpsHD: 1.8, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.2', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 1, hp480HD: 0.75, outputAmps: 2.1, outputAmpsHD: 1.8, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.2', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 480 V max with Bussmann FWH-40B semiconductor fuse or Class CC/J/T time-delay fuse max 3.5 A, drive in a protected enclosure of min 960 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 3.5 A: 31 kA. MCCB HLL36015: 31 kA. Type E CMC 140-MT-D9E-B25 / GV2P07: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -34,7 +34,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 2, hp480HD: 2, outputAmps: 4.1, outputAmpsHD: 3.4, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.3', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 2, hp480HD: 2, outputAmps: 4.1, outputAmpsHD: 3.4, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.3', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 480 V max with Bussmann FWH-50B semiconductor fuse or Class CC/J/T time-delay fuse max 7 A, drive in a protected enclosure of min 960 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 7 A: 31 kA. MCCB HLL36015: 31 kA. Type E CMC 140-MT-D9E-B63 / GV2P10: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -47,7 +47,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 3, hp480HD: 3, outputAmps: 5.4, outputAmpsHD: 4.8, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.4', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 3, hp480HD: 3, outputAmps: 5.4, outputAmpsHD: 4.8, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.4', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 480 V max with Bussmann FWH-70BC semiconductor fuse or Class CC/J/T time-delay fuse max 9 A, drive in a protected enclosure of min 960 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 9 A: 31 kA. MCCB HLL36015: 31 kA. Type E CMC 140-MT-D9E-B63 / GV2P10: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -60,7 +60,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 5, hp480HD: 4, outputAmps: 8.9, outputAmpsHD: 7.3, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.4', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 5, hp480HD: 4, outputAmps: 8.9, outputAmpsHD: 7.3, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.4', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 480 V max with Bussmann FWH-90BC semiconductor fuse or Class CC/J/T time-delay fuse max 15 A, drive in a protected enclosure of min 960 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 15 A: 31 kA. MCCB HLL36015: 31 kA. Type E CMC 140-MT-D9E-C10 / GV2P14: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -73,7 +73,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 128,
-    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 7.5, hp480HD: 5, outputAmps: 11.9, outputAmpsHD: 9.2, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '3.1', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 7.5, hp480HD: 5, outputAmps: 11.9, outputAmpsHD: 9.2, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '3.1', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 480 V max with Bussmann FWH-90BC semiconductor fuse or Class CC/J/T time-delay fuse max 20 A, drive in a protected enclosure of min 960 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 20 A: 31 kA. MCCB HLL36020: 31 kA. Type E CMC 140-MT-D9E-C16 / GV3P18: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -86,7 +86,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 260,
-    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 10, hp480HD: 10, outputAmps: 17.5, outputAmpsHD: 14.8, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '5', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 10, hp480HD: 10, outputAmps: 17.5, outputAmpsHD: 14.8, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '5', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 480 V max with Bussmann FWH-80BC semiconductor fuse or Class CC/J/T time-delay fuse max 30 A, drive in a protected enclosure of min 960 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 30 A: 31 kA. MCCB HLL36035: 31 kA. Type E CMC 140-MT-D9E-C20 / GV3P25: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -99,7 +99,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 260,
-    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 15, hp480HD: 10, outputAmps: 23.4, outputAmpsHD: 18, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '5', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 15, hp480HD: 10, outputAmps: 23.4, outputAmpsHD: 18, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '5', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 480 V max with Bussmann FWH-100BC semiconductor fuse or Class CC/J/T time-delay fuse max 40 A, drive in a protected enclosure of min 960 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 40 A: 31 kA. MCCB HLL36040: 31 kA. Type E CMC 140-MT-F9E-C25 / GV3P25: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -112,7 +112,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 180,
     heightMm: 300,
-    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 20, hp480HD: 15, outputAmps: 31, outputAmpsHD: 24, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '6', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '480', inputPhases: 3, hp480: 20, hp480HD: 15, outputAmps: 31, outputAmpsHD: 24, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '6', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 480 V max with Bussmann FWH-125B semiconductor fuse or Class CC/J/T time-delay fuse max 50 A, drive in a protected enclosure of min 2240 (2560 for RK1/RK5 or MCCB) in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 50 A: 31 kA. MCCB HLL36060: 31 kA. Type E CMC 140-MT-F9E-C45 / GV3P40: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -125,7 +125,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 128,
-    ratings: { series: 'GA500', inputVolts: '240', inputPhases: 3, hp230: 1.5, hp230HD: 1, outputAmps: 6, outputAmpsHD: 5, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '1.3', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '240', inputPhases: 3, hp230: 1.5, hp230HD: 1, outputAmps: 6, outputAmpsHD: 5, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '1.3', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 240 V max with Bussmann FWH-25A14F semiconductor fuse or Class CC/J/T time-delay fuse max 10 A, drive in a protected enclosure of min 600 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 10 A: 31 kA. MCCB HLL36015: 31 kA. Type E CMC 140-MT-D9E-C10 / GV2P14: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -138,7 +138,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'GA500', inputVolts: '240', inputPhases: 3, hp230: 3, hp230HD: 2, outputAmps: 9.6, outputAmpsHD: 8, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.1', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '240', inputPhases: 3, hp230: 3, hp230HD: 2, outputAmps: 9.6, outputAmpsHD: 8, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.1', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 240 V max with Bussmann FWH-70BC semiconductor fuse or Class CC/J/T time-delay fuse max 15 A, drive in a protected enclosure of min 600 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 15 A: 31 kA. MCCB HLL36015: 31 kA. Type E CMC 140-MT-D9E-C16 / GV3P13: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -151,7 +151,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 108,
     heightMm: 128,
-    ratings: { series: 'GA500', inputVolts: '240', inputPhases: 3, hp230: 4, hp230HD: 3, outputAmps: 12.2, outputAmpsHD: 11, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.3', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '240', inputPhases: 3, hp230: 4, hp230HD: 3, outputAmps: 12.2, outputAmpsHD: 11, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '2.3', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 240 V max with Bussmann FWH-70BC semiconductor fuse or Class CC/J/T time-delay fuse max 20 A, drive in a protected enclosure of min 600 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 20 A: 31 kA. MCCB HLL36020: 31 kA. Type E CMC 140-MT-D9E-C16 / GV3P18: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -164,7 +164,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 128,
-    ratings: { series: 'GA500', inputVolts: '240', inputPhases: 3, hp230: 7.5, hp230HD: 5, outputAmps: 21, outputAmpsHD: 17.6, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '3.1', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier' },
+    ratings: { series: 'GA500', inputVolts: '240', inputPhases: 3, hp230: 7.5, hp230HD: 5, outputAmps: 21, outputAmpsHD: 17.6, duty: 'hp/outputAmps = Normal Duty; *HD = Heavy Duty', frame: '3.1', enclosure: 'IP20/Protected Chassis', networkOptions: 'EtherNet/IP via SI-EN3 (or SI-EN3/D dual-port) + JOHB-GA50 option card carrier', sccrKA: 100, sccrCondition: '100 kA at 240 V max with Bussmann FWH-90BC semiconductor fuse or Class CC/J/T time-delay fuse max 35 A, drive in a protected enclosure of min 960 in3 (31 kA with the same fuses otherwise). Class RK1/RK5 fuses max 35 A: 31 kA. MCCB HLL36040: 31 kA. Type E CMC 140-MT-D9E-C25 / GV3P25: 65 kA. Source: Yaskawa TOEPYAISUP12D GA500 Short Circuit Protection Manual Supplement (UL 61800-5-1).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPYAISUP12&cmd=documents&documentName=TOEPYAISUP12.pdf' },
     verified: true,
   },
   {
@@ -177,7 +177,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 260,
-    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 10, hp480HD: 7.5, outputAmps: 17.5, outputAmpsHD: 14.8, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3' },
+    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 10, hp480HD: 7.5, outputAmps: 17.5, outputAmpsHD: 14.8, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3', sccrKA: 100, sccrCondition: 'The maximum SCCR of the drive with the fuse or MCCB combinations listed is 100 kA rms symmetrical at 480 V AC max. Protection: Eaton/Bussmann FWH-80B semiconductor fuse (same enclosure), or Class CC/J/T fuse max 30 A, or MCCB max 35 A, or Class RK1/RK5 fuse max 30 A. MCCB and RK1/RK5 need a ventilated enclosure of min 4195 in3. The document cites UL 508C. Source: Yaskawa GA800 Quick Setup Procedure TOEPC71061748G, branch circuit protection table (models 2004-2211 / 4002-4168).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPC71061748&cmd=documents&documentName=TOEPC71061748.pdf' },
     verified: true,
   },
   {
@@ -190,7 +190,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 260,
-    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 15, hp480HD: 10, outputAmps: 23.4, outputAmpsHD: 18, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3' },
+    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 15, hp480HD: 10, outputAmps: 23.4, outputAmpsHD: 18, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3', sccrKA: 100, sccrCondition: 'The maximum SCCR of the drive with the fuse or MCCB combinations listed is 100 kA rms symmetrical at 480 V AC max. Protection: Eaton/Bussmann FWH-90B semiconductor fuse (same enclosure), or Class CC/J/T fuse max 40 A, or MCCB max 45 A, or Class RK1/RK5 fuse max 40 A. MCCB and RK1/RK5 need a ventilated enclosure of min 4195 in3. The document cites UL 508C. Source: Yaskawa GA800 Quick Setup Procedure TOEPC71061748G, branch circuit protection table (models 2004-2211 / 4002-4168).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPC71061748&cmd=documents&documentName=TOEPC71061748.pdf' },
     verified: true,
   },
   {
@@ -203,7 +203,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 180,
     heightMm: 300,
-    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 20, hp480HD: 15, outputAmps: 31, outputAmpsHD: 24, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3' },
+    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 20, hp480HD: 15, outputAmps: 31, outputAmpsHD: 24, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3', sccrKA: 100, sccrCondition: 'The maximum SCCR of the drive with the fuse or MCCB combinations listed is 100 kA rms symmetrical at 480 V AC max. Protection: Eaton/Bussmann FWH-125B or FWH-150B semiconductor fuse (same enclosure), or Class CC/J/T fuse max 50 A, or MCCB max 60 A, or Class RK1/RK5 fuse max 50 A. MCCB and RK1/RK5 need a ventilated enclosure of min 4195 in3. The document cites UL 508C. Source: Yaskawa GA800 Quick Setup Procedure TOEPC71061748G, branch circuit protection table (models 2004-2211 / 4002-4168).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPC71061748&cmd=documents&documentName=TOEPC71061748.pdf' },
     verified: true,
   },
   {
@@ -216,7 +216,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 220,
     heightMm: 350,
-    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 30, hp480HD: 25, outputAmps: 44, outputAmpsHD: 39, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3' },
+    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 30, hp480HD: 25, outputAmps: 44, outputAmpsHD: 39, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3', sccrKA: 100, sccrCondition: 'The maximum SCCR of the drive with the fuse or MCCB combinations listed is 100 kA rms symmetrical at 480 V AC max. Protection: Eaton/Bussmann FWH-200B semiconductor fuse (same enclosure), or Class CC/J/T fuse max 70 A, or MCCB max 80 A, or Class RK1/RK5 fuse max 70 A. MCCB and RK1/RK5 need a ventilated enclosure of min 4195 in3. The document cites UL 508C. Source: Yaskawa GA800 Quick Setup Procedure TOEPC71061748G, branch circuit protection table (models 2004-2211 / 4002-4168).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPC71061748&cmd=documents&documentName=TOEPC71061748.pdf' },
     verified: true,
   },
   {
@@ -229,7 +229,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 220,
     heightMm: 350,
-    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 40, hp480HD: 30, outputAmps: 59.6, outputAmpsHD: 45, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3' },
+    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 40, hp480HD: 30, outputAmps: 59.6, outputAmpsHD: 45, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3', sccrKA: 100, sccrCondition: 'The maximum SCCR of the drive with the fuse or MCCB combinations listed is 100 kA rms symmetrical at 480 V AC max. Protection: Eaton/Bussmann FWH-225A semiconductor fuse (same enclosure), or Class CC/J/T fuse max 100 A, or MCCB max 110 A, or Class RK1/RK5 fuse max 100 A. MCCB and RK1/RK5 need a ventilated enclosure of min 4195 in3. The document cites UL 508C. Source: Yaskawa GA800 Quick Setup Procedure TOEPC71061748G, branch circuit protection table (models 2004-2211 / 4002-4168).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPC71061748&cmd=documents&documentName=TOEPC71061748.pdf' },
     verified: true,
   },
   {
@@ -242,7 +242,7 @@ export const YASKAWA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 240,
     heightMm: 400,
-    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 50, hp480HD: 40, outputAmps: 74.9, outputAmpsHD: 60, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3' },
+    ratings: { series: 'GA800', inputVolts: '480', inputPhases: 3, hp480: 50, hp480HD: 40, outputAmps: 74.9, outputAmpsHD: 60, duty: 'hp480/outputAmps = Normal Duty; *HD = Heavy Duty', enclosure: 'IP20', network: 'Modbus RTU, RS-485, 115 kbps (standard)', networkOptions: 'EtherNet/IP SI-EN3 / SI-EN3D, PROFINET SI-EP3, Modbus TCP SI-EM3', sccrKA: 100, sccrCondition: 'The maximum SCCR of the drive with the fuse or MCCB combinations listed is 100 kA rms symmetrical at 480 V AC max. Protection: Eaton/Bussmann FWH-250A semiconductor fuse (same enclosure), or Class CC/J/T fuse max 125 A, or MCCB max 150 A, or Class RK1/RK5 fuse max 125 A. MCCB and RK1/RK5 need a ventilated enclosure of min 10121 in3. The document cites UL 508C. Source: Yaskawa GA800 Quick Setup Procedure TOEPC71061748G, branch circuit protection table (models 2004-2211 / 4002-4168).', sccrSource: 'https://www.yaskawa.com/delegate/getAttachment?documentId=TOEPC71061748&cmd=documents&documentName=TOEPC71061748.pdf' },
     verified: true,
   },
 ];

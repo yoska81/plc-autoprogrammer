@@ -477,7 +477,7 @@ export const DELTA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 130,
     heightMm: 250,
-    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 3, duty: 'heavy duty (150% 60 s, factory default)', kw: 0.75, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 1 },
+    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 3, duty: 'heavy duty (150% 60 s, factory default)', kw: 0.75, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 1, sccrKA: 100, sccrCondition: 'With fuses: Delta\'s C2000 Plus catalog (SCCR row of the general specifications) says that per UL508C the C2000 Plus with a fuse is suitable for power systems with less than 100 kA short-circuit capacity. Fuse type and size: see the fuse table in the C2000 Plus user manual (not on the catalog). The catalog states no rating with a circuit breaker only.', sccrSource: 'https://www.deltaww.com/IA/downloadcenter/catalogue/1.Drive_Power-Quality/C2000-Plus/DELTA_IA-MDS_C2000%20Plus_C_EN_20201117.pdf' },
     verified: true,
   },
   {
@@ -490,7 +490,7 @@ export const DELTA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 130,
     heightMm: 250,
-    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 4, duty: 'heavy duty (150% 60 s, factory default)', kw: 1.5, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 2 },
+    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 4, duty: 'heavy duty (150% 60 s, factory default)', kw: 1.5, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 2, sccrKA: 100, sccrCondition: 'With fuses: Delta\'s C2000 Plus catalog (SCCR row of the general specifications) says that per UL508C the C2000 Plus with a fuse is suitable for power systems with less than 100 kA short-circuit capacity. Fuse type and size: see the fuse table in the C2000 Plus user manual (not on the catalog). The catalog states no rating with a circuit breaker only.', sccrSource: 'https://www.deltaww.com/IA/downloadcenter/catalogue/1.Drive_Power-Quality/C2000-Plus/DELTA_IA-MDS_C2000%20Plus_C_EN_20201117.pdf' },
     verified: true,
   },
   {
@@ -503,7 +503,7 @@ export const DELTA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 130,
     heightMm: 250,
-    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 6, duty: 'heavy duty (150% 60 s, factory default)', kw: 2.2, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 3 },
+    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 6, duty: 'heavy duty (150% 60 s, factory default)', kw: 2.2, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 3, sccrKA: 100, sccrCondition: 'With fuses: Delta\'s C2000 Plus catalog (SCCR row of the general specifications) says that per UL508C the C2000 Plus with a fuse is suitable for power systems with less than 100 kA short-circuit capacity. Fuse type and size: see the fuse table in the C2000 Plus user manual (not on the catalog). The catalog states no rating with a circuit breaker only.', sccrSource: 'https://www.deltaww.com/IA/downloadcenter/catalogue/1.Drive_Power-Quality/C2000-Plus/DELTA_IA-MDS_C2000%20Plus_C_EN_20201117.pdf' },
     verified: true,
   },
   {
@@ -516,7 +516,7 @@ export const DELTA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 130,
     heightMm: 250,
-    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 9, duty: 'heavy duty (150% 60 s, factory default)', kw: 3.7, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 5 },
+    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 9, duty: 'heavy duty (150% 60 s, factory default)', kw: 3.7, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 5, sccrKA: 100, sccrCondition: 'With fuses: Delta\'s C2000 Plus catalog (SCCR row of the general specifications) says that per UL508C the C2000 Plus with a fuse is suitable for power systems with less than 100 kA short-circuit capacity. Fuse type and size: see the fuse table in the C2000 Plus user manual (not on the catalog). The catalog states no rating with a circuit breaker only.', sccrSource: 'https://www.deltaww.com/IA/downloadcenter/catalogue/1.Drive_Power-Quality/C2000-Plus/DELTA_IA-MDS_C2000%20Plus_C_EN_20201117.pdf' },
     verified: true,
   },
   {
@@ -529,7 +529,7 @@ export const DELTA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 130,
     heightMm: 250,
-    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 12, duty: 'heavy duty (150% 60 s, factory default)', kw: 5.5, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 7.5 },
+    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 12, duty: 'heavy duty (150% 60 s, factory default)', kw: 5.5, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 7.5, sccrKA: 100, sccrCondition: 'With fuses: Delta\'s C2000 Plus catalog (SCCR row of the general specifications) says that per UL508C the C2000 Plus with a fuse is suitable for power systems with less than 100 kA short-circuit capacity. Fuse type and size: see the fuse table in the C2000 Plus user manual (not on the catalog). The catalog states no rating with a circuit breaker only.', sccrSource: 'https://www.deltaww.com/IA/downloadcenter/catalogue/1.Drive_Power-Quality/C2000-Plus/DELTA_IA-MDS_C2000%20Plus_C_EN_20201117.pdf' },
     verified: true,
   },
   {
@@ -542,7 +542,7 @@ export const DELTA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 190,
     heightMm: 320,
-    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 18, duty: 'heavy duty (150% 60 s, factory default)', kw: 7.5, frame: 'B', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 10 },
+    ratings: { series: 'C2000 Plus', inputVolts: '380-480 VAC', inputPhases: 3, outputAmps: 18, duty: 'heavy duty (150% 60 s, factory default)', kw: 7.5, frame: 'B', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp480: 10, sccrKA: 100, sccrCondition: 'With fuses: Delta\'s C2000 Plus catalog (SCCR row of the general specifications) says that per UL508C the C2000 Plus with a fuse is suitable for power systems with less than 100 kA short-circuit capacity. Fuse type and size: see the fuse table in the C2000 Plus user manual (not on the catalog). The catalog states no rating with a circuit breaker only.', sccrSource: 'https://www.deltaww.com/IA/downloadcenter/catalogue/1.Drive_Power-Quality/C2000-Plus/DELTA_IA-MDS_C2000%20Plus_C_EN_20201117.pdf' },
     verified: true,
   },
   {
@@ -555,7 +555,7 @@ export const DELTA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 130,
     heightMm: 250,
-    ratings: { series: 'C2000 Plus', inputVolts: '200-240 VAC', inputPhases: 3, outputAmps: 5, duty: 'heavy duty (150% 60 s, factory default)', kw: 0.75, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp230: 1 },
+    ratings: { series: 'C2000 Plus', inputVolts: '200-240 VAC', inputPhases: 3, outputAmps: 5, duty: 'heavy duty (150% 60 s, factory default)', kw: 0.75, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp230: 1, sccrKA: 100, sccrCondition: 'With fuses: Delta\'s C2000 Plus catalog (SCCR row of the general specifications) says that per UL508C the C2000 Plus with a fuse is suitable for power systems with less than 100 kA short-circuit capacity. Fuse type and size: see the fuse table in the C2000 Plus user manual (not on the catalog). The catalog states no rating with a circuit breaker only.', sccrSource: 'https://www.deltaww.com/IA/downloadcenter/catalogue/1.Drive_Power-Quality/C2000-Plus/DELTA_IA-MDS_C2000%20Plus_C_EN_20201117.pdf' },
     verified: true,
   },
   {
@@ -568,7 +568,7 @@ export const DELTA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 130,
     heightMm: 250,
-    ratings: { series: 'C2000 Plus', inputVolts: '200-240 VAC', inputPhases: 3, outputAmps: 8, duty: 'heavy duty (150% 60 s, factory default)', kw: 1.5, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp230: 2 },
+    ratings: { series: 'C2000 Plus', inputVolts: '200-240 VAC', inputPhases: 3, outputAmps: 8, duty: 'heavy duty (150% 60 s, factory default)', kw: 1.5, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp230: 2, sccrKA: 100, sccrCondition: 'With fuses: Delta\'s C2000 Plus catalog (SCCR row of the general specifications) says that per UL508C the C2000 Plus with a fuse is suitable for power systems with less than 100 kA short-circuit capacity. Fuse type and size: see the fuse table in the C2000 Plus user manual (not on the catalog). The catalog states no rating with a circuit breaker only.', sccrSource: 'https://www.deltaww.com/IA/downloadcenter/catalogue/1.Drive_Power-Quality/C2000-Plus/DELTA_IA-MDS_C2000%20Plus_C_EN_20201117.pdf' },
     verified: true,
   },
   {
@@ -581,7 +581,7 @@ export const DELTA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 130,
     heightMm: 250,
-    ratings: { series: 'C2000 Plus', inputVolts: '200-240 VAC', inputPhases: 3, outputAmps: 17, duty: 'heavy duty (150% 60 s, factory default)', kw: 3.7, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp230: 5 },
+    ratings: { series: 'C2000 Plus', inputVolts: '200-240 VAC', inputPhases: 3, outputAmps: 17, duty: 'heavy duty (150% 60 s, factory default)', kw: 3.7, frame: 'A', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp230: 5, sccrKA: 100, sccrCondition: 'With fuses: Delta\'s C2000 Plus catalog (SCCR row of the general specifications) says that per UL508C the C2000 Plus with a fuse is suitable for power systems with less than 100 kA short-circuit capacity. Fuse type and size: see the fuse table in the C2000 Plus user manual (not on the catalog). The catalog states no rating with a circuit breaker only.', sccrSource: 'https://www.deltaww.com/IA/downloadcenter/catalogue/1.Drive_Power-Quality/C2000-Plus/DELTA_IA-MDS_C2000%20Plus_C_EN_20201117.pdf' },
     verified: true,
   },
   {
@@ -594,7 +594,7 @@ export const DELTA: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 190,
     heightMm: 320,
-    ratings: { series: 'C2000 Plus', inputVolts: '200-240 VAC', inputPhases: 3, outputAmps: 33, duty: 'heavy duty (150% 60 s, factory default)', kw: 7.5, frame: 'B', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp230: 10 },
+    ratings: { series: 'C2000 Plus', inputVolts: '200-240 VAC', inputPhases: 3, outputAmps: 33, duty: 'heavy duty (150% 60 s, factory default)', kw: 7.5, frame: 'B', network: 'Modbus (RS-485) built-in; option cards for CANopen / PROFIBUS DP / DeviceNet / Modbus TCP / EtherNet/IP / EtherCAT / PROFINET', hp230: 10, sccrKA: 100, sccrCondition: 'With fuses: Delta\'s C2000 Plus catalog (SCCR row of the general specifications) says that per UL508C the C2000 Plus with a fuse is suitable for power systems with less than 100 kA short-circuit capacity. Fuse type and size: see the fuse table in the C2000 Plus user manual (not on the catalog). The catalog states no rating with a circuit breaker only.', sccrSource: 'https://www.deltaww.com/IA/downloadcenter/catalogue/1.Drive_Power-Quality/C2000-Plus/DELTA_IA-MDS_C2000%20Plus_C_EN_20201117.pdf' },
     verified: true,
   },
 ];
