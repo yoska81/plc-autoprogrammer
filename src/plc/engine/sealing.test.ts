@@ -27,6 +27,7 @@ const POINTS: P[] = [
   ['Sealing head up (retracted)', 'input', 'Pneumatic', 'sensor-pnp'], ['Sealing head down (sealing position)', 'input', 'Pneumatic', 'sensor-pnp'],
   ['Air pressure OK', 'input', 'Pneumatic', 'pressure-switch'], ['Heater over-temperature limit tripped', 'input', 'Analog/Process', 'other'],
   ['Unwinder VFD fault', 'input', 'Conveyor', 'vfd-input'], ['Film roll low sensor', 'input', 'Product Detection', 'sensor-pnp'],
+  ['Rear guard door closed', 'input', 'Safety', 'limit-switch'],
   ['Seal heater temperature (thermocouple transmitter)', 'input', 'Analog/Process', 'other', { range: '4-20mA', min: 0, max: 300, units: '°C' }],
   ['Sealing head down solenoid', 'output', 'Pneumatic', 'solenoid'], ['Sealing head up solenoid', 'output', 'Pneumatic', 'solenoid'],
   ['Seal heater on (SSR)', 'output', 'Analog/Process', 'other'], ['Unwinder VFD run', 'output', 'Conveyor', 'vfd-input'],
@@ -41,7 +42,7 @@ const A = (desc: RegExp) => addresses.get(io.find((p) => desc.test(p.description
 const content = defaultHmiContent({ io, addresses, machineName: 'Sealing Head', spec: SPEC });
 assert.deepEqual(content.twoHand?.map((p) => p.address), [A(/left/), A(/right/)], 'two-hand buttons');
 assert.deepEqual(content.alarmInputs?.map((a) => `${a.text}|${a.severity}|${a.activeWhen}`), [
-  'Light curtain interrupted|warning|false', 'Air pressure low|alarm|false', 'Heater over-temperature limit tripped|alarm|true', 'Film roll low|warning|true',
+  'Rear guard door open|alarm|false', 'Light curtain interrupted|warning|false', 'Air pressure low|alarm|false', 'Heater over-temperature limit tripped|alarm|true', 'Film roll low|warning|true',
 ], 'input alarms');
 assert.equal(content.process?.temp?.pv.address, A(/heater temperature/));
 assert.equal(content.process?.dwell?.name, 'Seal time');
@@ -53,7 +54,10 @@ assert.ok(role(`jog:${A(/head up solenoid/)}`), 'the head can still be jogged up
 const setup = hmi.screens.filter((s) => s.id.startsWith('setup')).flatMap((s) => s.elements);
 assert.ok(setup.some((e) => e.kind === 'numeric-entry' && e.address === role(`sp:temp:${A(/heater temperature/)}`)), 'temperature setpoint on Setup');
 assert.ok(setup.some((e) => e.kind === 'numeric-entry' && e.address === role('sp:dwell') && e.units === 'ms'), 'seal time on Setup');
-for (const re of [/over-temperature/, /Air pressure low/, /Film roll low/]) assert.ok(hmi.alarms.some((a) => re.test(a.message)), `HMI alarm ${re}`);
+for (const re of [/over-temperature/, /Air pressure low/, /Film roll low/, /Rear guard door open/]) assert.ok(hmi.alarms.some((a) => re.test(a.message)), `HMI alarm ${re}`);
+// The guard door's alarm has its lamp on the Alarms screen.
+const guardAlarm = role(`alarm:input:${A(/guard door/)}`);
+assert.ok(hmi.screens.some((sc) => /alarm/i.test(sc.id) && sc.elements.some((e) => e.kind === 'indicator' && e.address === guardAlarm)), 'guard door lamp on the Alarms screen');
 
 const r = programWithCycle({ content, hmiTags: hmi.tags, hmiScreens: hmi.screens, hmiAlarms: hmi.alarms, spec: SPEC });
 const ioSet = new Set([...addresses.values()]);
@@ -107,6 +111,20 @@ const UP = A(/head up solenoid/);
 const t0 = (() => { let t = 0; while (!sim.readBit(UP) && t < 10_000) { scan(50); t += 50; } return t; })();
 assert.ok(t0 >= 3800 && t0 <= 4600, `seal time follows the setpoint (${t0} ms)`);
 hands(false); scan(1000);
+
+// Guard door opened: latched alarm, the cycle stops; Reset clears it once the door is closed again.
+const gd = m.devices.find((d) => d.kind === 'sensor' && /guard door/i.test(d.label));
+assert.ok(gd && gd.kind === 'sensor' && gd.state.on, 'guard door starts closed');
+press(role('cmd:start')!); scan(200);
+assert.equal(sim.readBit(role('sts:running')!), true, 'running before the door opens');
+gd.state.on = false; for (const [a, v] of machineInputs(m)) sim.setInput(a, v); scan(200);
+assert.equal(sim.readBit(guardAlarm!), true, 'guard door open alarm');
+assert.equal(sim.readBit(role('sts:running')!), false, 'guard door open stops the cycle');
+gd.state.on = true; for (const [a, v] of machineInputs(m)) sim.setInput(a, v); scan(200);
+assert.equal(sim.readBit(guardAlarm!), true, 'stays latched after the door closes');
+press(role('cmd:reset')!);
+assert.equal(sim.readBit(guardAlarm!), false, 'Reset clears it with the door closed');
+press(role('cmd:start')!); scan(200);
 
 // Over-temperature limit: latched alarm, heater off, the cycle stops.
 const ot = m.devices.find((d) => d.kind === 'sensor' && /over-temperature/i.test(d.label));

@@ -450,8 +450,8 @@ export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): Machine
         front.push({ id: id('sr'), kind, label: d, tag, input: p.address, state: { ok: true } });
         break;
       case 'sensor':
-        // "OK" / "clear" switches (air pressure OK, light curtain clear) start healthy (ON).
-        devices.push({ id: id('sen'), kind, label: d, tag, input: p.address, state: { on: /\b(ok|clear|healthy|ready)\b/i.test(d) && !/\b(not|fault|trip\w*)\b/i.test(d) } });
+        // "OK" / "clear" switches (air pressure OK, light curtain clear) and closed guard doors start healthy (ON).
+        devices.push({ id: id('sen'), kind, label: d, tag, input: p.address, state: { on: (/\b(ok|clear|healthy|ready)\b/i.test(d) || /\b(door|gate|guard)\b.*\bclosed\b/i.test(d)) && !/\b(not|fault|trip\w*)\b/i.test(d) } });
         break;
     }
   }
