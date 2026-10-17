@@ -22,7 +22,7 @@ import { applyProposal, costDownPass, savingText, type Proposal } from './costDo
 import { insertSection, KIND_LABEL, libraryFile, makePanel, makeSection, parseLibrary, type LibraryItem, type LibraryKind } from './library';
 import { useLibraryStore } from './useLibraryStore';
 import { differences, KIND_TITLE, runDesign, whatIfOptions, type BaseInput, type WhatIfOption, type WhatIfResult } from './whatIf';
-import { LEAD_LABEL, usd } from './facts';
+import { designFacts, LEAD_LABEL, usd } from './facts';
 import { CRITICALITY_LABEL, FAILURE_LABEL, spareParts, SPARES_BASIS } from './spares';
 
 const card = 'bg-white rounded-sm border border-steel-200 p-5 space-y-3';
@@ -41,7 +41,7 @@ export default function ImprovePanel({ fileBase }: { fileBase: string }) {
       <div className="max-w-5xl space-y-5">
         <p className="text-sm text-steel-600">Ways to make this design cheaper, compare it with other choices, reuse proven panels, and plan the spare parts. Nothing changes until you accept or apply something.</p>
         {ctx ? <CostDownCard ctx={ctx} /> : <div className={card}><p className="text-sm text-steel-500">No design yet. Make one on the Design tab first; the library below can also start from a saved panel.</p></div>}
-        {ctx && <WhatIfCard />}
+        {ctx && <WhatIfCard ctx={ctx} />}
         <LibraryCard ctx={ctx} />
         {ctx && <SparesCard ctx={ctx} fileBase={fileBase} />}
       </div>
@@ -114,21 +114,25 @@ function useBaseInput(): BaseInput {
   }), [io, addresses, fp.spec, el.inputs, modules, region, pref, hmiPartNumber, analog, projectName, profile, cpu]);
 }
 
-function WhatIfCard() {
+function WhatIfCard({ ctx }: { ctx: DrawingContext }) {
   const base = useBaseInput();
   const fp = useFingerprints();
   const options = useMemo(() => whatIfOptions(base), [base]);
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState<{ now: WhatIfResult; alts: WhatIfResult[] } | null>(null);
+  const [res, setRes] = useState<{ now: WhatIfResult; rules: WhatIfResult | null; alts: WhatIfResult[] } | null>(null);
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 3 ? p : [...p, id]));
   const compare = () => {
     setBusy(true);
     // Let the spinner paint: each option is a full design run.
     setTimeout(() => {
       try {
-        const now = runDesign(base, null);
-        setRes({ now, alts: picked.map((id) => runDesign(base, options.find((o) => o.id === id)!)) });
+        // "As it is now" is the design in the project (same total as the order list and Sourcing). When it is not
+        // what the rules would make today (edited, AI or imported), the rules' own design is shown too.
+        const now: WhatIfResult = { option: null, ctx, facts: designFacts(ctx), gaps: [], layoutOk: true };
+        const rules = runDesign(base, null);
+        const same = rules.facts.cost === now.facts.cost && rules.facts.pieces === now.facts.pieces && rules.facts.enclosure.text === now.facts.enclosure.text;
+        setRes({ now, rules: same ? null : rules, alts: picked.map((id) => runDesign(base, options.find((o) => o.id === id)!)) });
       } catch (e) { notify(`The comparison could not be made: ${e instanceof Error ? e.message : String(e)}`); }
       finally { setBusy(false); }
     }, 20);
@@ -153,7 +157,7 @@ function WhatIfCard() {
     notify(`Applied: ${o.label}.${c.plc ? ' The PLC program and the HMI now need updating for the new PLC.' : ''}`);
   };
   const groups = (Object.keys(KIND_TITLE) as WhatIfOption['kind'][]).map((k) => ({ k, list: options.filter((o) => o.kind === k) })).filter((g) => g.list.length);
-  const cols = res ? [res.now, ...res.alts] : [];
+  const cols = res ? [res.now, ...(res.rules ? [res.rules] : []), ...res.alts] : [];
   const row = (label: string, f: (r: WhatIfResult) => string) => (
     <tr><th className="text-left font-medium text-steel-600 py-1 pr-3 whitespace-nowrap">{label}</th>{cols.map((r, i) => <td key={i} className="py-1 pr-3 align-top">{f(r)}</td>)}</tr>
   );
@@ -177,19 +181,19 @@ function WhatIfCard() {
       {res && (
         <div className="overflow-x-auto">
           <table className="text-sm w-full" data-testid="what-if-table">
-            <thead><tr><th />{cols.map((r, i) => <th key={i} className="text-left py-1 pr-3 text-steel-800">{r.option ? r.option.label : 'As it is now'}</th>)}</tr></thead>
+            <thead><tr><th />{cols.map((r, i) => <th key={i} className="text-left py-1 pr-3 text-steel-800">{r.option ? r.option.label : r === res.now ? 'As it is now' : 'Redesigned by the rules, no change'}</th>)}</tr></thead>
             <tbody className="divide-y divide-steel-100">
-              {row('Cost (verified prices)', (r) => `${usd(r.facts.cost)}${r.facts.unpriced ? ` + ${r.facts.unpriced} to confirm` : ''}`)}
+              {row('Cost (list prices)', (r) => `${usd(r.facts.cost)}${r.facts.unpriced ? ` + ${r.facts.unpriced} to confirm (${r.facts.unpricedParts.slice(0, 3).join(', ')}${r.facts.unpriced > 3 ? '…' : ''})` : ''}`)}
               {row('Enclosure', (r) => `${r.facts.enclosure.text}${r.facts.enclosure.partNumber ? ` (${r.facts.enclosure.partNumber})` : ''}`)}
               {row('Heat inside', (r) => `${r.facts.heatW} W${r.facts.riseC !== null ? `, +${r.facts.riseC} °C without a fan` : ''}`)}
               {row('Lead time', (r) => `${LEAD_LABEL[r.facts.lead]}${r.facts.lead !== 'stock' ? `: ${r.facts.leadParts.slice(0, 3).join(', ')}` : ''}${r.facts.leadTypical ? ' (typical)' : ''}`)}
               {row('Parts', (r) => `${r.facts.pieces} pieces, ${r.facts.lines} part numbers`)}
               {row('To check', (r) => (r.gaps.length || !r.layoutOk ? [...(r.layoutOk ? [] : ['less than 25% spare space']), ...r.gaps].join(' · ') : '—'))}
-              {row('Differences', (r) => (r.option ? differences(res.now.facts, r.facts).join(' · ') || 'none' : ''))}
+              {row('Differences', (r) => (r === res.now ? '' : differences(res.now.facts, r.facts).join(' · ') || 'none'))}
               <tr><th />{cols.map((r, i) => <td key={i} className="py-2">{r.option && <button className={primary} onClick={() => apply(r)}>Apply this option</button>}</td>)}</tr>
             </tbody>
           </table>
-          <p className="text-xs text-steel-500 mt-1">Both sides are designed by the rules, so they compare fairly. Costs count only verified list prices; lead times marked "typical" are by kind of part until supplier data is available.</p>
+          <p className="text-xs text-steel-500 mt-1">Each option is the panel designed again by the rules with that one change. Costs use the same prices as the order list and Sourcing (yours where you typed one); a part with no price is "to confirm" and not in the total, so two costs are only compared when the same parts are priced. Lead times marked "typical" are by kind of part where the supplier's stock is not known.</p>
         </div>
       )}
     </section>

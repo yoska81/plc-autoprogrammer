@@ -6,7 +6,8 @@
  */
 import { billOfMaterials, buildModel, isFuseCartridge, type DrawingContext } from '../derive';
 import type { CatalogCategory } from '../types';
-import { leadOf, LEAD_LABEL, piecePrice, type LeadClass } from './facts';
+import { leadOf, LEAD_LABEL, type LeadClass } from './facts';
+import { priceLine } from '../pricing';
 import { getHmi } from '../../hmi/hmiCatalog';
 
 export type Criticality = 'A' | 'B' | 'C';
@@ -81,11 +82,13 @@ export function spareParts(ctx: DrawingContext): SpareList {
     const qty = recommendedQty(l.category, l.qty, rule);
     if (!qty) continue;
     const part = ctx.getPart(l.partNumber);
-    const unit = piecePrice(l.partNumber, part);
+    // Priced as the spares order prices it (whole packs, the user's price when typed).
+    const pl = priceLine(l.partNumber, qty, undefined, false);
+    const unit = pl.extended === undefined ? undefined : (pl.userPrice ?? pl.price!.price) / pl.packQty;
     lines.push({
       partNumber: l.partNumber, manufacturer: l.manufacturer, description: l.description.replace(/\s+—\s+\d+ required by terminal plan$/, ''), tags: l.tags,
       category: l.category, installed: l.qty, criticality: rule.crit, failure: rule.rate, qty, why: rule.why,
-      unitPrice: unit, extended: unit === undefined ? undefined : Math.round(unit * qty * 100) / 100,
+      unitPrice: unit, extended: pl.extended,
       lead: part ? leadOf(part).cls : getHmi(l.partNumber) ? 'short' : 'stock',
     });
   }

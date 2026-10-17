@@ -36,6 +36,21 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
     m.seedSampleProject();
     ps.useProjectsStore.getState().openProject(m.EXAMPLE_ID);
   });
+  // 0. One price source: Sourcing, the order list and Compare ("As it is now") show the same total.
+  const money = (t) => (/\$[\d,]+\.\d\d/.exec(t) || [''])[0];
+  await page.goto(BASE + '/sourcing');
+  const tSourcing = money(await page.getByTestId('sourcing-total').innerText());
+  await page.goto(BASE + '/export');
+  const tOrder = money(await page.getByTestId('order-total').innerText());
+  await page.goto(BASE + '/electrical?tab=improve');
+  const wi0 = page.getByRole('region', { name: 'Compare options' });
+  await wi0.getByLabel('NEMA 1', { exact: true }).check();
+  await wi0.getByRole('button', { name: 'Compare' }).click();
+  await wi0.getByTestId('what-if-table').waitFor({ timeout: 30000 });
+  const tCompare = money(await wi0.getByTestId('what-if-table').locator('tbody tr').first().locator('td').first().innerText());
+  log('Totals: Sourcing', tSourcing, '| order list', tOrder, '| Compare', tCompare);
+  check(tSourcing && tSourcing === tOrder && tOrder === tCompare, 'the same total on Sourcing, the order list and Compare');
+
   // Oversize the motor contactor and the power supply (as an edited design would be).
   await store(`(() => { const s = E.getState(); s.setDesign({ ...s.design, components: s.design.components.map((c) => c.tag === 'K1' ? { ...c, partNumber: 'SC-E04PG-24VDC' } : c.tag === 'PS1' ? { ...c, partNumber: 'PSR-24-240-3' } : c) }, 'generated', null); })()`);
   await page.goto(BASE + '/electrical?tab=improve');
@@ -57,6 +72,7 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
 
   // 2. What-if compare
   const wi = page.getByRole('region', { name: 'Compare options' });
+  await wi.getByLabel('NEMA 1', { exact: true }).uncheck();
   await wi.getByLabel('240 V 3-phase').check();
   await wi.getByLabel('NEMA 4X').check();
   await wi.getByRole('button', { name: 'Compare' }).click();
@@ -64,7 +80,10 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
   await table.waitFor({ timeout: 30000 });
   const heads = await table.locator('thead th').allInnerTexts();
   log('Compared:', heads.filter(Boolean).join(' | '));
-  check(heads.filter(Boolean).length === 3, 'now + two options side by side');
+  check(heads.filter(Boolean).length === 4 && heads.includes('Redesigned by the rules, no change'), 'now (edited design), the rules design and two options side by side');
+  const diff4x = await table.locator('tbody tr').filter({ hasText: 'Differences' }).locator('td').last().innerText();
+  log('NEMA 4X:', diff4x);
+  check(!/^Saves/.test(diff4x), 'no saving claimed for a stainless enclosure without a price');
   for (const r of ['Cost', 'Enclosure', 'Heat inside', 'Lead time', 'Parts']) check(await table.getByText(r, { exact: false }).count() > 0, `row ${r}`);
   await page.screenshot({ path: OUT + '2-what-if.png', fullPage: true });
   await table.getByRole('button', { name: 'Apply this option' }).last().click();

@@ -1,6 +1,8 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Spinner } from '../components/common';
+import { bomCost } from '../electrical/pricing';
+import { useEditsStore } from '../edits/useEditsStore';
 import { useDrawingContext } from '../electrical/useDrawingContext';
 import { billOfMaterials, type BomLine } from '../electrical/derive';
 import { useElectricalStore } from '../store/useElectricalStore';
@@ -16,7 +18,7 @@ import { optimise, DEFAULT_GOALS, type Goals } from '../sourcing/optimise';
 import type { WebSource } from '../lib/ai/anthropic';
 import type { ElectricalDesign } from '../electrical/types';
 
-const money = (n: number, currency: 'USD' | 'EUR' = 'USD') => `${currency === 'EUR' ? '€' : '$'}${n.toFixed(2)}`;
+const money = (n: number, currency: 'USD' | 'EUR' = 'USD') => `${currency === 'EUR' ? '€' : '$'}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const PREVIEW_LIVE_OFF = 'Live stock check runs in the Windows app (it searches distributor sites); in this browser preview it is off.';
 const flagCls = { red: 'bg-red-50 text-red-700 border-red-200', orange: 'bg-orange-50 text-orange-800 border-orange-200' };
 const th = 'text-left py-1.5 pr-3 font-medium';
@@ -65,9 +67,9 @@ export default function SourcingPage() {
   const groups = useMemo(() => (ctx ? billOfMaterials(ctx).map((g) => ({ ...g, lines: g.lines.filter((l) => l.partNumber && !l.note) })).filter((g) => g.lines.length) : []), [ctx]);
   const lines = useMemo(() => groups.flatMap((g) => g.lines), [groups]);
   const flagged = lines.filter((l) => sourcingFlags(sourcingOf(l.partNumber)).length);
-  // Totals per currency (a EUR list price is never converted).
-  const totals = lines.reduce((t, l) => { const p = sourcingOf(l.partNumber).price; if (p && p.unit === 'each') t[p.currency] = (t[p.currency] ?? 0) + p.price * l.qty; return t; }, {} as Partial<Record<'USD' | 'EUR', number>>);
-  const unpriced = lines.filter((l) => !sourcingOf(l.partNumber).price).length;
+  // The same total as the order list and Improve design (src/electrical/pricing.ts): packs, your typed prices.
+  const editsBom = useEditsStore((s) => s.bom);
+  const cost = useMemo(() => (ctx ? bomCost(ctx, editsBom) : { total: 0, unpriced: 0 }), [ctx, editsBom]);
   const proposals = useMemo(() => optimise(lines.map((l) => ({ partNumber: l.partNumber, qty: l.qty })), goals), [lines, goals]);
 
   const check = (subset: BomLine[]) => {
@@ -141,7 +143,7 @@ export default function SourcingPage() {
           <>
             <div className="flex flex-wrap gap-4 text-sm text-steel-700">
               <span><b>{lines.length}</b> parts</span>
-              <span>List price <b>{(Object.entries(totals) as ['USD' | 'EUR', number][]).map(([c, n]) => money(n, c)).join(' + ') || money(0)}</b>{unpriced ? <span className="text-steel-500"> + {unpriced} to confirm</span> : ''}</span>
+              <span data-testid="sourcing-total">List price <b>{money(cost.total)}</b>{cost.unpriced ? <span className="text-steel-500"> + {cost.unpriced} to confirm</span> : ''}</span>
               <span className={flagged.length ? 'text-red-700 font-medium' : ''}>{flagged.length} flagged</span>
             </div>
             {groups.map((g) => (
