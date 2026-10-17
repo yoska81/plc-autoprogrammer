@@ -71,11 +71,18 @@ export function mergeMachineModel(ai: AiModel, base: MachineModel, inputs: Desig
   const notGiven = ai.motors.filter((m) => !m.powerGiven && !own.has(m.tag)).map((m) => `${m.tag} ${m.description}: power not given — assumed ${m.power} ${m.unit}; confirm the nameplate.`);
   return {
     motors,
-    safety: { estops: Math.max(1, ai.estops, base.safety.estops), guardDoors: ai.guardDoors, lightCurtains: ai.lightCurtains },
+    // Devices the I/O list itself shows (a light curtain input, two-hand buttons) stay even when the AI misses them.
+    safety: {
+      estops: Math.max(1, ai.estops, base.safety.estops),
+      guardDoors: ai.guardDoors.length ? ai.guardDoors : base.safety.guardDoors,
+      lightCurtains: ai.lightCurtains.length ? ai.lightCurtains : base.safety.lightCurtains,
+      ...(base.safety.twoHand ? { twoHand: base.safety.twoHand } : {}),
+    },
+    ...(base.heaters?.length ? { heaters: base.heaters } : {}),
     zones: zones.length ? zones : base.zones,
     interfaces: [...new Set([...base.interfaces, ...ai.interfaces])],
     enclosureRating: base.enclosureRating,
-    assumptions: [...new Set([...base.assumptions.filter((a) => /left out of the design/.test(a)), ...notGiven, ...ai.questions])],
+    assumptions: [...new Set([...base.assumptions.filter((a) => /left out of the design|heater power not given/.test(a)), ...notGiven, ...ai.questions])],
   };
 }
 /** Only the AI's placement details for a designer motor (its power and starter stay the designer's). */

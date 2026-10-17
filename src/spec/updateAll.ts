@@ -15,9 +15,9 @@ import { validateProgram } from '../plc/core/validate';
 import { fingerprint, specToText, changedSections } from './types';
 import { ioFingerprint, hmiFingerprint } from './useStages';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge } from '../lib/ai/ioAI';
-import { recommendEquipment, modulesInSlotOrder } from '../lib/ai/equipmentAI';
+import { recommendEquipment } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice } from './equipment';
-import { cpuFit, findCpu } from '../plc/core/fit';
+import { cpuFit, findCpu, modulesToFit, type Need } from '../plc/core/fit';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
 import { analogSetup } from '../plc/core/analog';
 import { getPart } from '../electrical/catalog';
@@ -97,8 +97,13 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, s
           applyEquipment({ cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi }, rec);
           onStep({ step, status: 'done', message: `Kept your ${cur.cpuId}${cur.modules.length ? ` + ${cur.modules.length} module(s)` : ''}: it still covers the I/O.` });
         } else {
-          applyEquipment(recommendedChoice(rec), rec);
-          onStep({ step, status: 'done', message: `${rec.plc.cpuId}${cur.cpuId && cur.cpuId !== rec.plc.cpuId ? ` (was ${cur.cpuId}, no longer enough)` : ''}, ${modulesInSlotOrder(rec).length} module(s)${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.` });
+          const choice = recommendedChoice(rec);
+          // The AI's CPU + modules must cover its own I/O estimate: add the modules it is short of, or stop.
+          const mods = modulesToFit(choice.cpuId, choice.modules, need);
+          if (!mods) { onStep({ step, status: 'failed', message: `${choice.cpuId} cannot cover ${need.digitalInputs} inputs / ${need.digitalOutputs} outputs even with modules: choose a bigger CPU on the Equipment page.` }); return false; }
+          applyEquipment({ ...choice, modules: mods }, rec);
+          const added = mods.length - choice.modules.length;
+          onStep({ step, status: 'done', message: `${rec.plc.cpuId}${cur.cpuId && cur.cpuId !== rec.plc.cpuId ? ` (was ${cur.cpuId}, no longer enough)` : ''}, ${mods.length} module(s)${added ? ` (${added} added to cover the I/O)` : ''}${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.` });
         }
         return true;
       }
@@ -112,7 +117,10 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, s
           plan.removed.map((p) => p.id),
         );
         mark('io', { specFp, spec, ioFp: ioFingerprint(ioNow()) });
-        onStep({ step, status: 'done', message: `${plan.added.length} added, ${plan.removed.length} removed, ${plan.kept.length} kept.` });
+        // The real I/O list may need more than the equipment step's estimate: add modules, or stop with a clear error.
+        const fitNote = ensureIoFits(ioNow());
+        if (fitNote?.error) { onStep({ step, status: 'failed', message: fitNote.error }); return false; }
+        onStep({ step, status: 'done', message: `${plan.added.length} added, ${plan.removed.length} removed, ${plan.kept.length} kept.${fitNote?.note ? ` ${fitNote.note}` : ''}` });
       }
 
       if (step === 'electrical') {
@@ -191,3 +199,18 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, s
   }
   return true;
 }
+
+/** After the I/O step: the CPU + modules must hold every point; missing modules are added (and become required parts). */
+function ensureIoFits(io: { type: string; signal?: string }[]): { note?: string; error?: string } | null {
+  const { cpuId, modules, recommendation } = useProjectStore.getState();
+  const cpu = findCpu(cpuId);
+  if (!cpu) return null;
+  const n = (type: string, analog: boolean) => io.filter((p) => p.type === type && (p.signal === 'analog') === analog).length;
+  const need: Need = { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: Boolean(useHmiStore.getState().hmiPartNumber), minHmiSizeIn: null };
+  if (cpuFit(cpu, modules, need).ok) return null;
+  const mods = modulesToFit(cpuId, modules, need);
+  if (!mods) return { error: `${cpuId} with ${modules.length} module(s) cannot hold the ${need.digitalInputs} inputs / ${need.digitalOutputs} outputs of the I/O list, even with more modules: choose a bigger CPU on the Equipment page.` };
+  applyEquipment({ cpuId, modules: mods, hmiPartNumber: useHmiStore.getState().hmiPartNumber || null }, recommendation);
+  return { note: `Added ${mods.slice(modules.length).join(', ')} so the I/O list fits ${cpuId}.` };
+}
+

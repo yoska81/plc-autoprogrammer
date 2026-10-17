@@ -379,6 +379,8 @@ export interface SafetyModel {
   statusInput?: IoPoint;
   /** Wire supplying PLC outputs: 24+S when switched by safety, else 24+. */
   outputSupply: string;
+  /** Two-hand and light-curtain safety relays: their own input circuits; a light curtain's output is in series in 24+S. */
+  extraRelays?: { relay: ResolvedComponent; kind: 'two-hand' | 'light-curtain'; inputs: string[] }[];
 }
 
 export interface Terminal {
@@ -603,7 +605,12 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   });
 
   // ---- safety
-  const relay = byCat(rc, 'safetyRelay')[0];
+  // The E-stop relay; two-hand and light-curtain relays are drawn as their own safety functions.
+  const appOf = (c: ResolvedComponent) => `${str(c.part?.ratings, 'application') ?? ''} ${c.comp.function}`;
+  const isTwoHand = (c: ResolvedComponent) => /two-hand/i.test(appOf(c));
+  const isCurtain = (c: ResolvedComponent) => /light[- ]curtain/i.test(appOf(c)) && !/e-?stop/i.test(appOf(c).split('—')[0]);
+  const srs = byCat(rc, 'safetyRelay');
+  const relay = srs.find((c) => !isTwoHand(c) && !isCurtain(c)) ?? srs[0];
   const estopTags = byCat(rc, 'estop').map((c) => c.tag);
   const ioW = ctx.design.ioWiring;
   for (const w of ioW) if (w.deviceType === 'estop-contact' && !estopTags.includes(w.deviceTag)) estopTags.push(w.deviceTag);
@@ -638,7 +645,13 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   }
   function auxNcUsed(b: ResolvedComponent) { return [...auxNc.values()].filter((a) => a.block === b.partNumber && !a.missing).length >= Math.max(1, b.comp.quantity); }
   const ncOf = (tag: string): [string, string] => auxNc.get(tag)?.terms ?? ['21', '22'];
-  const safety: SafetyModel = { relay, estops: estopTags, reset, mcr, edm, edmTerms: edm.map((t) => ncOf(t).join('-')), outputSupply: hasSafety ? '24+S' : '24+' };
+  const extraRelays: SafetyModel['extraRelays'] = srs.filter((c) => c !== relay && (isTwoHand(c) || isCurtain(c))).map((c) => {
+    const kind = isTwoHand(c) ? 'two-hand' as const : 'light-curtain' as const;
+    // The devices feeding it: the two-hand station / the light curtains (by the relay's tag in their function).
+    const inputs = rc.filter((d) => d !== c && new RegExp(`\\b${c.tag}\\b`).test(d.comp.function) && (kind === 'two-hand' ? d.category === 'pushbutton' : d.category === 'sensor')).map((d) => d.tag);
+    return { relay: c, kind, inputs };
+  });
+  const safety: SafetyModel = { relay, estops: estopTags, reset, mcr, edm, edmTerms: edm.map((t) => ncOf(t).join('-')), outputSupply: hasSafety ? '24+S' : '24+', extraRelays };
 
   // ---- PLC & IO points
   const plcRc = byCat(rc, 'plc')[0];
@@ -695,8 +708,11 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
 
   // coil chains for PLC-driven contactors/relays
   for (const p of io) {
-    if (p.type !== 'output' || (p.deviceType !== 'contactor-coil' && p.deviceType !== 'relay-coil')) continue;
+    const sc = p.wiring?.safetyContact;
+    if (p.type !== 'output' || (p.deviceType !== 'contactor-coil' && p.deviceType !== 'relay-coil' && !sc)) continue;
     const devices: NonNullable<IoPoint['coilChain']>['devices'] = [];
+    // A safety relay's N.O. output in series (two-hand relay on the closing stroke, over-temperature limit on a heater contactor).
+    if (sc) devices.push({ tag: sc, terminals: '13-14', nc: false, kind: 'interlock' });
     const mm = motors.find((m) => m.contactors.some((c) => c.tag === p.deviceTag));
     if (mm?.overload) devices.push({ tag: mm.overload.tag, terminals: '95-96', nc: true, kind: 'ol' });
     if (mm && mm.motor.reversing && mm.contactors.length === 2) {
@@ -757,7 +773,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   }
   for (const p of io) {
     if (!p.coilChain) continue;
-    if (!p.coilChain.sink) { zero.push(`${p.deviceTag}:A2`); continue; }
+    if (!p.coilChain.sink) { if (p.location !== 'field') zero.push(`${p.deviceTag}:A2`); continue; }
     const d0 = p.coilChain.devices[0];
     const first = d0 ? `${d0.tag}:${d0.terminals.split('-')[0]}` : `${p.deviceTag}:A1`;
     (safety.outputSupply === '24+S' ? outSupply : plus).push(first);
@@ -774,7 +790,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const fieldFuse = dcBranchFuse(psBranches[0]?.ps);
   const fuseOf = (c: string) => (fieldFuse && /^TB\d+ (FIELD|LOAD) /.test(c) ? { fuse: fieldFuse } : {});
   for (const c of plus) add(tb1, { wire: '24+', internal: `${psMain}:+V`, external: c, kind: 'feed', group: '24+', ...fuseOf(c) });
-  if (safety.outputSupply === '24+S') for (const c of outSupply) add(tb1, { wire: '24+S', internal: relay ? `${mcr ? mcr.tag : relay.tag}:14` : `${estopTags.at(-1) ?? 'ES'}:12`, external: c, kind: 'feed', group: '24+S', ...fuseOf(c) });
+  // 24+S leaves the last safety output in series: the MCR, a light-curtain relay after SR1, or SR1 itself.
+  const lcRelays = (safety.extraRelays ?? []).filter((x) => x.kind === 'light-curtain').map((x) => x.relay.tag);
+  const sPlus = relay ? `${mcr ? mcr.tag : lcRelays.at(-1) ?? relay.tag}:14` : `${estopTags.at(-1) ?? 'ES'}:12`;
+  if (safety.outputSupply === '24+S') for (const c of outSupply) add(tb1, { wire: '24+S', internal: sPlus, external: c, kind: 'feed', group: '24+S', ...fuseOf(c) });
   else for (const c of outSupply) add(tb1, { wire: '24+', internal: `${psMain}:+V`, external: c, kind: 'feed', group: '24+', ...fuseOf(c) });
   if (hmiTag && hmiPn) {
     zero.push(`${hmiTag}:0V`);
@@ -823,7 +842,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       const g = groups.find((x) => x.key === p.group);
       const sink = g?.outputStyle === 'sinking';
       const pin = p.deviceType === 'stack-light' ? `${tag}:${(p.description.match(/red|amber|yellow|green|blue|white|horn|buzzer/i)?.[0] ?? p.address).toUpperCase()}` : `${tag}:${p.deviceType === 'pilot-light' ? 'X1' : 'A1'}`;
-      p.signalTerminal = add(tb3, { wire: p.address, internal: `${plcTag}:${p.address}`, external: p.jb ? `${p.jb} (${tag})` : pin, kind: 'feed', group: p.jb ?? tag });
+      // Through a series safety contact (coil chain): the terminal is fed from the chain's last contact.
+      const ch = p.coilChain && !p.coilChain.sink && p.coilChain.devices.length ? p.coilChain : undefined;
+      const lastDev = ch?.devices[ch.devices.length - 1];
+      p.signalTerminal = add(tb3, { wire: ch ? ch.wires[ch.wires.length - 1] : p.address, internal: lastDev ? `${lastDev.tag}:${lastDev.terminals.split('-')[1]}` : `${plcTag}:${p.address}`, external: p.jb ? `${p.jb} (${tag})` : pin, kind: 'feed', group: p.jb ?? tag });
       const retWire = sink ? safety.outputSupply : '0V';
       const key = p.jb ? `${p.jb}|${retWire}` : `${tag}|${retWire}`;
       if (retDone.has(key)) p.returnTerminal = retDone.get(key);
@@ -947,7 +969,36 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       addWire({ wire: '0V', from: `${mcr.tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: 'MCR coil' });
       addWire({ wire: '24+', from: 'TB1 24+', to: `${mcr.tag}:13`, color: 'BU', size: '18 AWG', function: 'MCR contact supply' });
       addWire({ wire: '24+S', from: `${mcr.tag}:14`, to: 'TB1 24+S', color: 'BU', size: '16 AWG', function: 'Safety-switched +24V' });
-    } else addWire({ wire: '24+S', from: `${relay.tag}:14`, to: 'TB1 24+S', color: 'BU', size: '16 AWG', function: 'Safety-switched +24V' });
+    } else {
+      const series = [relay.tag, ...lcRelays];
+      for (let k = 0; k + 1 < series.length; k++) addWire({ wire: k === 0 ? 'SR14' : `SR14${letter(k)}`, from: `${series[k]}:14`, to: `${series[k + 1]}:13`, color: 'BU', size: '16 AWG', function: 'Safety outputs in series (E-stop, light curtain)' });
+      addWire({ wire: '24+S', from: `${lcRelays.at(-1) ?? relay.tag}:14`, to: 'TB1 24+S', color: 'BU', size: '16 AWG', function: 'Safety-switched +24V' });
+    }
+    // Two-hand and light-curtain relays: supply and inputs.
+    for (const x of safety.extraRelays ?? []) {
+      const t = x.relay.tag;
+      addWire({ wire: '24+', from: 'TB1 24+', to: `${t}:A1`, color: 'BU', size: '18 AWG', function: `${t} supply` });
+      addWire({ wire: '0V', from: `${t}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${t} supply` });
+      for (const d of x.inputs) {
+        if (x.kind === 'light-curtain') {
+          addWire({ wire: 'OSSD1', from: `${d}:OSSD1`, to: `${t}:S12`, color: 'BU', size: '18 AWG', function: `Light curtain ${d} OSSD1` });
+          addWire({ wire: 'OSSD2', from: `${d}:OSSD2`, to: `${t}:S22`, color: 'BU', size: '18 AWG', function: `Light curtain ${d} OSSD2` });
+        } else {
+          addWire({ wire: `${t}-1`, from: `${d}:BTN1`, to: `${t}:IN1`, color: 'BU', size: '18 AWG', function: `Two-hand button 1 (${d})` });
+          addWire({ wire: `${t}-2`, from: `${d}:BTN2`, to: `${t}:IN2`, color: 'BU', size: '18 AWG', function: `Two-hand button 2 (${d})` });
+        }
+      }
+    }
+    // Heater safety contactors: 24+S through the over-temperature limit's latched relay to the coil.
+    const limit = rc.find((c) => c.part?.ratings.kind === 'limitAlarm');
+    const ioTagSet = new Set(io.map((p) => p.deviceTag));
+    for (const k of rc.filter((c) => c.category === 'contactor' && !c.comp.motorTag && !ioTagSet.has(c.tag) && /safety contactor/i.test(c.comp.function))) {
+      if (limit) {
+        addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${limit.tag}:R1`, color: 'BU', size: '18 AWG', function: `${k.tag} coil through the over-temperature limit` });
+        addWire({ wire: `${k.tag}A1`, from: `${limit.tag}:R1`, to: `${k.tag}:A1`, color: 'BU', size: '18 AWG', function: `${k.tag} coil` });
+      } else addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${k.tag}:A1`, color: 'BU', size: '18 AWG', function: `${k.tag} coil` });
+      addWire({ wire: '0V', from: `${k.tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${k.tag} coil return` });
+    }
     if (safety.statusInput) {
       addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:23`, color: 'BU', size: '18 AWG', function: 'Safety status contact' });
       addWire({ wire: safety.statusInput.address, from: `${relay.tag}:24`, to: `${plcTag}:${safety.statusInput.address}`, color: 'BU', size: '18 AWG', function: 'Safety relay status to PLC' });
@@ -1033,8 +1084,13 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         const start = ch.sink ? `TB1 ${safety.outputSupply}` : `${plcTag}:${p.address}`;
         ch.devices.forEach((d, k) => addWire({ wire: ch.wires[k], from: k === 0 ? start : `${ch.devices[k - 1].tag}:${ch.devices[k - 1].terminals.split('-')[1]}`, to: `${d.tag}:${d.terminals.split('-')[0]}`, color: 'BU', size: '18 AWG', function: p.description }));
         const last = ch.devices.length ? `${ch.devices[ch.devices.length - 1].tag}:${ch.devices[ch.devices.length - 1].terminals.split('-')[1]}` : start;
-        addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: `${tag}:A1`, color: 'BU', size: '18 AWG', function: p.description });
-        if (ch.sink) addWire({ wire: p.address, from: `${tag}:A2`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: `${p.description} (sinking output)` });
+        if (p.signalTerminal && !ch.sink) {
+          // Field coil: from the chain through its output terminal, returning through the field return terminal.
+          addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });
+          addWire({ wire: ch.wires[ch.wires.length - 1], from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
+          if (p.returnTerminal) addWire({ wire: '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: 'WH/BU', size: '18 AWG', function: `${tag} return` });
+        } else addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: `${tag}:A1`, color: 'BU', size: '18 AWG', function: p.description });
+        if (p.signalTerminal && !ch.sink) { /* return wired above */ } else if (ch.sink) addWire({ wire: p.address, from: `${tag}:A2`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: `${p.description} (sinking output)` });
         else addWire({ wire: '0V', from: `${tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} coil return` });
       } else if (p.signalTerminal) {
         addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });

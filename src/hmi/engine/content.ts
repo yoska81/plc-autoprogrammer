@@ -7,7 +7,7 @@
 import type { IOPoint } from '../../types/io';
 import type { FieldDeviceType, IOWiring } from '../../electrical/types';
 import type { HmiState } from '../types';
-import { deviceTypeOf } from '../../electrical/engine/machineModel';
+import { deviceTypeOf, TWO_HAND_RE } from '../../electrical/engine/machineModel';
 
 export type ActuatorKind = 'motor' | 'drive' | 'cylinder' | 'valve' | 'heater';
 
@@ -34,6 +34,17 @@ export interface HmiActuator {
 
 export interface HmiAnalog { address: string; name: string; units: string; min: number; max: number; kind: 'input' | 'output' }
 
+/** A discrete input that is itself an alarm or warning (over-temperature limit, air pressure low, film low). */
+export interface HmiAlarmInput { point: HmiPoint; text: string; /** The input value that means "alarm". */ activeWhen: boolean; severity: 'alarm' | 'warning' }
+
+/** Process setpoints the operator sets: the heater's temperature and the dwell (seal) time. */
+export interface HmiProcess {
+  /** Temperature control of a heater from an analog temperature input. */
+  temp?: { heater: HmiPoint; pv: HmiAnalog; default: number };
+  /** Dwell / seal time in ms (the cycle's timed step reads it). */
+  dwell?: { defaultMs: number; name: string };
+}
+
 export interface HmiContent {
   machineName: string;
   actuators: HmiActuator[];
@@ -43,16 +54,23 @@ export interface HmiContent {
   analogs: HmiAnalog[];
   /** Machine state word texts (value 0 = stopped). */
   states: HmiState[];
+  /** Two-hand start buttons: the cycle starts only with both (anti-tie-down in the PLC, safety in the two-hand relay). */
+  twoHand?: HmiPoint[];
+  alarmInputs?: HmiAlarmInput[];
+  process?: HmiProcess;
   /** Every discrete point for the Diagnostics screen, in address order. */
   io: (HmiPoint & { type: 'input' | 'output' })[];
   questions: string[];
 }
 
+/** An input that is an alarm or fault in itself. */
+const ALARM_WORDS = /\b(fault|faulted|trip|tripped|alarm|overload|over-?temp\w*|high[- ]?limit|jam\w*)\b/i;
+
 /** Which coil of a pair moves out (extend, advance, close a gripper, press down) and which moves back. */
 const EXTEND = /\b(extend\w*|advance\w*|forward|clamp|down|close|in)\b/i;
 const RETRACT = /\b(retract\w*|return\w*|back|unclamp|up|open|out)\b/i;
 const FEEDBACK = /\b(extended|retracted|advanced|returned|up|down|open(ed)?|closed|home|in|out|clamped|unclamped|position)\b/i;
-const GENERIC = new Set(['solenoid', 'sol', 'valve', 'coil', 'output', 'cylinder', 'motor', 'contactor', 'starter', 'run', 'vfd', 'drive', 'sensor', 'switch', 'prox', 'limit', 'the', 'and']);
+const GENERIC = new Set(['ssr', 'solenoid', 'sol', 'valve', 'coil', 'output', 'cylinder', 'motor', 'contactor', 'starter', 'run', 'vfd', 'drive', 'sensor', 'switch', 'prox', 'limit', 'the', 'and']);
 const keyWords = (s: string) => s.toLowerCase().replace(/\b(extend\w*|retract\w*|advance\w*|return\w*|forward|reverse|fwd|rev|up|down|open|close|clamp|unclamp|in|out|extended|retracted|on|off)\b/g, ' ')
   .split(/[^a-z0-9]+/).filter((w) => (w.length > 1 || /^\d+$/.test(w)) && !GENERIC.has(w));
 /** Shared name words; numbers must agree ("Belt 2 fault" is not Belt 1's). */
@@ -80,6 +98,8 @@ const PART = /\b(part|product|present|presence|photo|eye|count|carton|box|bottle
 export function defaultHmiContent(opts: {
   io: IOPoint[]; addresses: Map<string, string>; machineName: string;
   wiring?: IOWiring[]; motorOf?: Map<string, { tag: string; description: string }>;
+  /** The specification: dwell time and temperature defaults. */
+  spec?: string;
 }): HmiContent {
   const wiring = new Map((opts.wiring ?? []).map((w) => [w.address.toUpperCase(), w] as const));
   const pts = opts.io
@@ -149,17 +169,20 @@ export function defaultHmiContent(opts: {
   for (const x of outputs.filter((y) => !used.has(y.address) && /\bheat\w*\b/i.test(y.p.description))) {
     used.add(x.address);
     const a: HmiActuator = { name: nameOf(x.p.description), kind: 'heater', run: point(x), feedback: [], manual: false };
-    for (const i of inputs) if (!used.has(i.address) && /\b(temp\w*|thermostat|heat\w*)\b/i.test(i.p.description)) { a.feedback.push(point(i)); used.add(i.address); }
+    for (const i of inputs) if (!used.has(i.address) && /\b(temp\w*|thermostat|heat\w*)\b/i.test(i.p.description) && !ALARM_WORDS.test(i.p.description)) { a.feedback.push(point(i)); used.add(i.address); }
     actuators.push(a);
   }
 
-  const safety = inputs.find((x) => typeOf(x) === 'safety-relay-output');
+  const twoHand = inputs.filter((x) => !used.has(x.address) && TWO_HAND_RE.test(x.p.description)).slice(0, 2);
+  for (const x of twoHand) used.add(x.address);
+  const safety = inputs.find((x) => typeOf(x) === 'safety-relay-output' && !/\blight\s*curtain\b.*\b(clear|ossd)\b/i.test(x.p.description));
+  if (safety) used.add(safety.address);
   const part = inputs.find((x) => !used.has(x.address) && (typeOf(x) === 'sensor-pnp' || typeOf(x) === 'sensor-npn') && PART.test(x.p.description));
   if (!safety) questions.push('The I/O list has no "Safety OK" input from the safety relay: the HMI cannot show the safety state until one is added.');
 
   // Analog points: values on a Process screen; a speed reference belongs to its drive.
   const analogs: HmiAnalog[] = pts.filter((x) => x.p.signal === 'analog').map((x) => ({
-    address: x.address, name: title(x.p.description.replace(/\b(transmitter|sensor|signal|reference|ref)\b/gi, '')) || x.address,
+    address: x.address, name: title(x.p.description.replace(/\b(transmitter|sensor|signal|reference|ref)\b/gi, '').replace(/\(\s*([^)]*?)\s*\)/g, (_, w: string) => (w ? `(${w})` : '')).replace(/\(\s*\)/g, '')) || x.address,
     units: x.p.analog?.units ?? '', min: x.p.analog?.min ?? 0, max: x.p.analog?.max ?? 100, kind: x.p.type,
   }));
   for (const an of analogs.filter((y) => y.kind === 'output' && /\b(hz|%)$/i.test(y.units))) {
@@ -167,11 +190,48 @@ export function defaultHmiContent(opts: {
     if (drive) drive.speedRef = an;
   }
 
+  // Inputs that are alarms in themselves: limits, faults, pressure / level OK switches, material low or out.
+  if (part) used.add(part.address);
+  const alarmInputs: HmiAlarmInput[] = [];
+  for (const x of inputs) {
+    if (used.has(x.address)) continue;
+    const t = typeOf(x), d = x.p.description;
+    if (t === 'pushbutton-no' || t === 'pushbutton-nc' || t === 'selector' || t === 'estop-contact') continue;
+    const name = d.replace(/\s*\((?:[^)]*)\)\s*$/, '').trim();
+    if (/\blight\s*curtain\b/i.test(d) && /\b(clear|ok|ossd)\b/i.test(d)) alarmInputs.push({ point: point(x), text: 'Light curtain interrupted', activeWhen: false, severity: 'warning' });
+    else if (ALARM_WORDS.test(d)) alarmInputs.push({ point: point(x), text: name.replace(/\btripped\b/i, 'tripped'), activeWhen: true, severity: 'alarm' });
+    else if (/\b(pressure|air|vacuum|level|flow)\b/i.test(d) && /\b(ok|healthy|present)\b/i.test(d)) alarmInputs.push({ point: point(x), text: `${name.replace(/\b(ok|healthy|present)\b/i, '').trim()} low`, activeWhen: false, severity: 'alarm' });
+    else if (/\b(low|empty|out|missing)\b/i.test(d) && /\b(film|roll|level|material|label|supply|reel|web|tank|hopper|pressure|air)\b/i.test(d)) {
+      const out = /\b(empty|out|missing)\b/i.test(d);
+      alarmInputs.push({ point: point(x), text: name.replace(/\s+(sensor|switch|eye)$/i, ''), activeWhen: true, severity: out ? 'alarm' : 'warning' });
+    } else continue;
+    used.add(x.address);
+  }
+
+  // Process setpoints: a heater with an analog temperature gets a temperature setpoint; a dwell / seal time from the spec.
+  const spec = opts.spec ?? '';
+  const process: HmiProcess = {};
+  const heater = actuators.find((a) => a.kind === 'heater');
+  const pv = analogs.find((an) => an.kind === 'input' && /\b(temp\w*|thermocouple)\b/i.test(an.name));
+  if (heater?.run && pv) {
+    const fromSpec = Number(/(\d{2,4})\s*°?\s*(?:c|f|deg)\b/i.exec(spec)?.[1] ?? NaN);
+    const def = Number.isFinite(fromSpec) && fromSpec >= pv.min && fromSpec <= pv.max ? fromSpec : Math.round(pv.min + (pv.max - pv.min) * 0.5);
+    process.temp = { heater: heater.run, pv, default: def };
+  }
+  const dwell = /\b(dwell|seal\w*|hold)\b/i.exec(spec);
+  if (dwell) {
+    const sec = Number(/(\d+(?:\.\d+)?)\s*(?:s|sec|seconds)\b/i.exec(spec.slice(Math.max(0, dwell.index - 60), dwell.index + 80))?.[1] ?? 1.5);
+    process.dwell = { defaultMs: Math.round(sec * 1000), name: /seal/i.test(dwell[1]) ? 'Seal time' : 'Dwell time' };
+  }
+
   return {
     machineName: opts.machineName.trim() || 'Machine',
     actuators,
     ...(safety ? { safetyOk: point(safety) } : {}),
     ...(part ? { partSensor: point(part) } : {}),
+    ...(twoHand.length ? { twoHand: twoHand.map(point) } : {}),
+    ...(alarmInputs.length ? { alarmInputs } : {}),
+    ...(process.temp || process.dwell ? { process } : {}),
     analogs,
     states: [
       { value: 0, text: 'Stopped', style: 'normal' },

@@ -98,6 +98,8 @@ export interface IOWiring {
   description: string;
   /** Where the device is: "Cabinet door", or a machine zone like "Infeed conveyor". */
   location?: string;
+  /** Safety relay whose N.O. safety output is in series with this PLC output (e.g. a two-hand relay enabling the closing stroke). */
+  safetyContact?: string;
 }
 
 /** Field junction box collecting devices of one machine zone. */

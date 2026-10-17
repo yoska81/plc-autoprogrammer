@@ -71,7 +71,7 @@ export interface HmiProjectInput {
 export function projectHmiContent(o: HmiProjectInput): HmiContent {
   const motors = new Map((o.electrical?.inputs.motors ?? []).map((m) => [m.tag, m.description]));
   const motorOf = new Map((o.electrical?.components ?? []).filter((c) => c.motorTag && motors.has(c.motorTag)).map((c) => [c.tag, { tag: c.motorTag!, description: motors.get(c.motorTag!)! }]));
-  return defaultHmiContent({ io: o.io, addresses: o.addresses, machineName: o.machineName, wiring: o.electrical?.ioWiring, motorOf });
+  return defaultHmiContent({ io: o.io, addresses: o.addresses, machineName: o.machineName, wiring: o.electrical?.ioWiring, motorOf, spec: o.spec });
 }
 
 export async function hmiContentFromSpec(opts: AiOptions & { spec: string; base: HmiContent }): Promise<{ content: HmiContent; promptChars: number }> {

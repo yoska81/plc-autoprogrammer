@@ -147,6 +147,38 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   await page.waitForTimeout(800);
   check(await page.getByTestId('leftover-motor').count() === 0, 'no leftover motor warning after cleaning');
 
+  // The other ways a project becomes a copy of the example: the example edited in place (detached into
+  // its own project by the next seeding) and the example saved as a .isap file and opened again.
+  for (const how of ['edited example', '.isap reopened']) {
+    await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+    await page.goto(BASE + '/spec');
+    await page.locator('select[aria-label="Open project"]').selectOption('p_example');
+    await page.evaluate(async ({ how, own }) => {
+      const ps = await import('/src/store/useProjectsStore.ts');
+      const { useSpecStore } = await import('/src/store/useSpecStore.ts');
+      if (how === '.isap reopened') {
+        const pf = await import('/src/project/projectFile.ts');
+        await pf.openProjectFile((await pf.buildProjectFile()).blob);
+      }
+      ps.useProjectsStore.getState().renameActive('Sealing Head');
+      useSpecStore.getState().setSections({ ...useSpecStore.getState().sections, overview: own });
+      if (how === 'edited example') (await import('/src/preview/sampleProject.ts')).seedSampleProject();
+    }, { how, own: OWN });
+    await page.goto(BASE + '/spec');
+    await page.waitForTimeout(800);
+    const b = page.getByTestId('start-clean');
+    const active = await page.evaluate(async () => (await import('/src/store/useProjectsStore.ts')).useProjectsStore.getState().activeId);
+    check(active !== 'p_example', `${how}: a project of its own (${active})`);
+    check(/document control/.test(await b.innerText().catch(() => '')), `${how}: banner lists the document control`);
+    await b.getByRole('button', { name: 'Start clean from my description' }).click();
+    await b.getByRole('button', { name: "Clear the example's parts" }).click();
+    await page.reload();
+    await page.waitForTimeout(800);
+    const doc = await page.evaluate(async () => { const i = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().info; return { c: i.customer, s: i.site, n: i.projectNumber, p: i.drawingPrefix, by: i.preparedBy, r: i.revisions.length }; });
+    log(`${how}: document control after Start clean and a reload: ${JSON.stringify(doc)}`);
+    check(!doc.c && !doc.s && !doc.n && doc.p === 'SH' && !doc.by && doc.r === 0, `${how}: document control reset`);
+  }
+
   for (const e of errors) fails.push(`page error: ${e.slice(0, 160)}`);
   await browser.close();
   if (fails.length) { console.log('FAILED:\n - ' + fails.join('\n - ')); process.exit(1); }

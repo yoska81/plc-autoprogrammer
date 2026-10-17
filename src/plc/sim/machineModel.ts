@@ -230,7 +230,7 @@ function classifyInput(p: SimIOPoint, t: FieldDeviceType | undefined): { kind: I
     return has(d, /\b(ok|healthy|relay|safety|reset)\b/) ? { kind: 'safetyRelay', nc: false } : { kind: 'estop', nc: true };
   }
   if (has(d, /\b(safety|guard|light curtain|interlock)\b/) && has(d, /\b(ok|relay|healthy)\b/)) return { kind: 'safetyRelay', nc: false };
-  if (has(d, /\b(selector|switch.*(auto|manual|mode)|mode|auto\/manual|hand|ss\d*)\b/) && !has(d, /\blimit\b/)) return { kind: 'selector', nc: false };
+  if (has(d, /\b(selector|switch.*(auto|manual|mode)|mode|auto\/manual|hand|ss\d*)\b/) && !has(d, /\blimit\b|two[- ]?hand/)) return { kind: 'selector', nc: false };
   if (has(d, /\b(button|pb\d*|push ?button|start|stop|reset|jog|ack|acknowledge)\b/) && !has(d, /\b(sensor|prox|eye)\b/)) {
     return { kind: 'pushbutton', nc: has(d, /\bstop\b/) };
   }
@@ -368,9 +368,11 @@ export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): Machine
   }
 
   // conveyors: conveyor motors + product sensors
+  // A motor in the "Conveyor" category is a belt only when nothing in its name says otherwise (an unwinder, pump, fan…).
+  const NOT_BELT = /\b(unwind\w*|rewind\w*|winder|reel|spool|roll|pump|fan|blower|mixer|agitator|spindle|compressor|press)\b/;
   const convMotors = motors.filter((m) => {
     const p = outputs.find((o) => o.address === m.output);
-    return has(m.label, CONVEYOR_RE) || p?.category === 'Conveyor';
+    return has(m.label, CONVEYOR_RE) || (p?.category === 'Conveyor' && !has(m.label, NOT_BELT));
   });
   const conveyors: ConveyorDevice[] = convMotors.map((m) => ({
     id: id('conv'), kind: 'conveyor', label: capital(subject(m.label).join(' ') || 'Conveyor'), motorId: m.id,
@@ -448,7 +450,8 @@ export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): Machine
         front.push({ id: id('sr'), kind, label: d, tag, input: p.address, state: { ok: true } });
         break;
       case 'sensor':
-        devices.push({ id: id('sen'), kind, label: d, tag, input: p.address, state: { on: false } });
+        // "OK" / "clear" switches (air pressure OK, light curtain clear) start healthy (ON).
+        devices.push({ id: id('sen'), kind, label: d, tag, input: p.address, state: { on: /\b(ok|clear|healthy|ready)\b/i.test(d) && !/\b(not|fault|trip\w*)\b/i.test(d) } });
         break;
     }
   }

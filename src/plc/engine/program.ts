@@ -10,6 +10,7 @@
 import type { CompareOp, LadderElement, LadderOutput, LadderProgram, ProgramBlock, Rung, TagDefinition } from '../core/ladder';
 import type { HmiAlarm, HmiScreen, HmiTag } from '../../hmi/types';
 import { inferRoles } from '../../hmi/engine/roles';
+import { TWO_HAND_RE } from '../../electrical/engine/machineModel';
 import { planHmiTags, type HmiActuator, type HmiContent, type HmiPoint } from '../../hmi/engine';
 
 const NO = (address: string): LadderElement => ({ type: 'NO', address });
@@ -57,6 +58,10 @@ export interface ProgramResult {
   taken: Set<string>;
   /** HMI tags no rule implements (also checker errors when the HMI is passed to the checker). */
   unmatched: HmiTag[];
+  /** What the automatic cycle needs from the standard blocks: bits that must be ON before each cycle starts
+   *  (two-hand start, temperature ready), the two-hand inputs (released during the closing stroke aborts it)
+   *  and the dwell-time setpoint (ms) of its timed step. */
+  cycle: { startConds: string[]; twoHand?: string[]; dwellSp?: string; /** Actuator whose extend is the closing stroke the two-hand control guards. */ closing?: string };
 }
 
 export function buildProgram(input: ProgramInput): ProgramResult {
@@ -89,6 +94,9 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   nextBit = Math.max(nextBit, 20);
   let nextTimer = 1;
   const bit = freeBit;
+  // Internal float registers above the HMI's DF101-DF200.
+  let nextDf = 201;
+  const freeDf = () => { let a: string; do { a = `DF${nextDf++}`; } while (taken.has(a)); taken.add(a); return a; };
   const timer = () => { let a: string; do { a = `T${nextTimer++}`; } while (taken.has(a) || taken.has(`TD${a.slice(1)}`)); taken.add(a); return a; };
   const tags: TagDefinition[] = [];
   const nick = (address: string, nickname: string, comment: string) => { if (!tags.some((t) => t.address === address)) tags.push({ address, nickname: nickname.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24), comment }); };
@@ -97,7 +105,8 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   const R = (block: string, comment: string, branches: LadderElement[][], outputs: LadderOutput[]) => rungs.push({ id: `r_${block}_${++n}`, block, comment, branches, outputs });
 
   const inputs = c.io.filter((p) => p.type === 'input');
-  const startPb = inputs.find((p) => /\bstart\b/i.test(p.description));
+  // A panel Start button (two-hand start buttons start each cycle, they do not arm the machine).
+  const startPb = inputs.find((p) => /\bstart\b/i.test(p.description) && !TWO_HAND_RE.test(p.description));
   const stopPb = inputs.find((p) => /\bstop\b/i.test(p.description) && !/e-?stop|emergency/i.test(p.description));
   const resetPb = inputs.find((p) => /\breset\b/i.test(p.description) && !/safety/i.test(p.description));
   const start = must('cmd:start'), stop = must('cmd:stop'), reset = must('cmd:reset'), manualSel = must('cmd:manual');
@@ -121,9 +130,12 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   }
   for (const an of c.analogs.filter((x) => x.kind === 'input')) {
     const span = an.max - an.min;
-    sp(`sp:high:${an.address}`, an.min, an.max, an.min + span * 0.9, `${an.name} high limit`);
+    // A high limit in the bottom 10% of the range (0 from a fresh PLC) counts as not set: it would alarm at once.
+    sp(`sp:high:${an.address}`, an.min + span * 0.1, an.max, an.min + span * 0.9, `${an.name} high limit`);
     sp(`sp:low:${an.address}`, an.min, an.max, an.min + span * 0.1, `${an.name} low limit`);
   }
+  if (c.process?.temp) sp(`sp:temp:${c.process.temp.pv.address}`, c.process.temp.pv.min + 1, c.process.temp.pv.max, c.process.temp.default, `${c.process.temp.pv.name} setpoint`);
+  if (c.process?.dwell) sp('sp:dwell', 100, 10000, c.process.dwell.defaultMs, `${c.process.dwell.name} (ms)`);
   sp('sp:batch', 0, 9999, 0, 'batch target');
   sp('sp:serviceinterval', 50, 2000, 500, 'service interval (h)');
   if (c.safetyOk) R('safety', `Safety OK from the safety relay (${c.safetyOk.description})`, [[NO(c.safetyOk.address)]], [OUT(SAFE)]);
@@ -137,6 +149,19 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   R('safety', `Cycle running: ${startPb ? `${startPb.description} or ` : ''}HMI Start seals in; ${stopPb ? `${stopPb.description} (NC), ` : ''}HMI Stop, safety loss, a fault, Manual mode or batch complete drops it`,
     [...(startPb ? [[RISE(startPb.address), ...stopChain]] : []), [RISE(start), ...stopChain], [NO(RUN), ...stopChain]], [OUT(RUN)]);
   nick(RUN, 'Cycle_Running', 'Automatic cycle running');
+  // Two-hand start: Start (HMI / panel) only arms the cycle; each cycle starts with both two-hand buttons, and both
+  // must have been released since the last start (anti-tie-down). The two-hand relay enforces the 0.5 s simultaneity.
+  const cycleStart: string[] = [];
+  let twoHand: string[] | undefined;
+  if (c.twoHand?.length) {
+    twoHand = c.twoHand.map((p) => p.address);
+    const ARM = bit(), GO = bit();
+    R('safety', `Two-hand start armed: both buttons released (${twoHand.join(', ')}) — anti-tie-down`, [twoHand.map(NC)], [SET(ARM)]);
+    R('safety', `Two-hand start: both buttons pressed after being released, cycle armed by Start`, [[NO(RUN), NO(ARM), ...twoHand.map(NO)]], [OUT(GO)]);
+    R('safety', 'Two-hand start used: both buttons must be released before the next cycle', [[NO(GO)]], [RST(ARM)]);
+    nick(ARM, 'Two_Hand_Armed', 'Both two-hand buttons released since the last start'); nick(GO, 'Two_Hand_Start', 'Two-hand start (one scan)');
+    cycleStart.push(GO);
+  }
   if (running !== RUN) R('safety', 'Running status for the HMI', [[NO(RUN)]], [OUT(running)]);
 
   // ---- Per actuator: request bits, timeouts, faults
@@ -181,6 +206,16 @@ export function buildProgram(input: ProgramInput): ProgramResult {
         faultBits.push(alm);
       }
     }
+  }
+  for (const ai of c.alarmInputs ?? []) {
+    const alm = alarm(`alarm:input:${ai.point.address}`);
+    if (!alm) continue;
+    const active = ai.activeWhen ? NO(ai.point.address) : NC(ai.point.address), clear = ai.activeWhen ? NC(ai.point.address) : NO(ai.point.address);
+    if (ai.severity === 'alarm') {
+      R('alarms', `${ai.text} (${ai.point.description} ${ai.activeWhen ? 'ON' : 'OFF'}): latched, stops the cycle`, [[active]], [SET(alm)]);
+      R('alarms', `${ai.text} reset: Reset once ${ai.point.description} is ${ai.activeWhen ? 'OFF' : 'ON'} again`, [[NO(RESET), clear]], [RST(alm)]);
+      faultBits.push(alm);
+    } else R('alarms', `${ai.text} warning while ${ai.point.description} is ${ai.activeWhen ? 'ON' : 'OFF'}`, [[active]], [OUT(alm)]);
   }
   const safetyAlarm = alarm('alarm:safety');
   if (safetyAlarm) R('alarms', 'Safety circuit open alarm while Safety OK is off', [[NC(SAFE)]], [OUT(safetyAlarm)]);
@@ -228,7 +263,22 @@ export function buildProgram(input: ProgramInput): ProgramResult {
       if (a.kind === 'heater') {
         // Overtemperature: an analog temperature high alarm switches the heater off (a temperature switch is shown as its feedback).
         const overTemp = c.analogs.filter((x) => x.kind === 'input' && /\b(temp\w*)\b/i.test(x.name)).map((x) => alarm(`alarm:high:${x.address}`)).filter((x): x is string => !!x);
-        R('outputs', `${out.description}: on while Safety OK and no fault${overTemp.length ? ', off on overtemperature' : ''} (confirm the heater may stay on while stopped)`, [[NO(SAFE), NC(FAULT), ...overTemp.map(NC)]], [OUT(out.address)]);
+        const tc = c.process?.temp, tsp = tc && tc.heater.address === out.address ? tag(`sp:temp:${tc.pv.address}`) : undefined;
+        if (tc && tsp) {
+          // On / off control with a 2-unit hysteresis on the temperature setpoint (time-proportioned PID is a later refinement).
+          const HEAT = bit(), READY = bit(), lo = bit(), hi = bit();
+          const bandLo = freeDf(), readyLo = freeDf(), readyHi = freeDf();
+          R('outputs', `${a.name}: band limits from the setpoint (heat below SP - 2, ready within SP +/- 5)`, [[NO('SC1')]], [MATH(bandLo, `${tsp} - 2`), MATH(readyLo, `${tsp} - 5`), MATH(readyHi, `${tsp} + 5`)]);
+          nick(bandLo, `Heat_On_Below_${a.name}`, 'Heat demand on below'); nick(readyLo, `Ready_Low_${a.name}`, 'Ready band low'); nick(readyHi, `Ready_High_${a.name}`, 'Ready band high');
+          R('outputs', `${a.name}: below the setpoint by 2 ${tc.pv.units} or more`, [[CMP(tc.pv.address, '<', bandLo)]], [OUT(lo)]);
+          R('outputs', `${a.name}: at or above the setpoint`, [[CMP(tc.pv.address, '>=', tsp)]], [OUT(hi)]);
+          R('outputs', `${a.name}: heat demand ON below the band`, [[NO(lo)]], [SET(HEAT)]);
+          R('outputs', `${a.name}: heat demand OFF at the setpoint`, [[NO(hi)]], [RST(HEAT)]);
+          R('outputs', `${out.description}: heat demand, Safety OK, no fault${overTemp.length ? ', no overtemperature' : ''} (heats while stopped too — confirm)`, [[NO(HEAT), NO(SAFE), NC(FAULT), ...overTemp.map(NC)]], [OUT(out.address)]);
+          R('outputs', `${a.name} ready: within 5 ${tc.pv.units} of the setpoint (each cycle waits for it)`, [[CMP(tc.pv.address, '>=', readyLo), CMP(tc.pv.address, '<=', readyHi)]], [OUT(READY)]);
+          nick(HEAT, `Heat_${a.name}`, `Heat demand ${a.name}`); nick(READY, `Temp_Ready_${a.name}`, `${a.name} at temperature`); nick(lo, `Temp_Low_${a.name}`, 'Below the band'); nick(hi, `Temp_At_SP_${a.name}`, 'At the setpoint');
+          cycleStart.push(READY);
+        } else R('outputs', `${out.description}: on while Safety OK and no fault${overTemp.length ? ', off on overtemperature' : ''} (confirm the heater may stay on while stopped)`, [[NO(SAFE), NC(FAULT), ...overTemp.map(NC)]], [OUT(out.address)]);
         continue;
       }
       const gate = [NO(SAFE), ...(faultAlm ? [NC(faultAlm)] : []), ...(opposite ? [NC(opposite.address)] : [])];
@@ -342,6 +392,10 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     internal: { safe: SAFE, run: RUN, fault: FAULT, reset: RESET },
     taken,
     unmatched,
+    cycle: {
+      startConds: cycleStart, ...(twoHand ? { twoHand } : {}), ...(tag('sp:dwell') ? { dwellSp: tag('sp:dwell') } : {}),
+      ...(twoHand ? { closing: c.actuators.find((a) => a.kind === 'cylinder' && /\b(down|close|closing|lower|clamp|press)\b/i.test(a.extend?.description ?? ''))?.name } : {}),
+    },
     free: { bits: `C${Math.max(nextBit, 60)}-C99`, steps: 'DS1150-DS1159', timers: `T${nextTimer + 10}-T${nextTimer + 29}` },
     notes,
   };
