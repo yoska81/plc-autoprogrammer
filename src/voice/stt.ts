@@ -10,7 +10,7 @@ import { IS_PREVIEW } from '../preview/mode';
 import { desktopBridge } from '../desktop/bridge';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useVoiceSettings } from './useVoiceSettings';
-import { pickEngine } from './text';
+import { langCode, pickEngine } from './text';
 import { transcribeOpenAI } from './openaiTranscribe';
 
 export type Engine = 'browser' | 'openai' | 'local';
@@ -66,7 +66,7 @@ export function engineAvailability(): Record<Engine, { ok: boolean; why: string 
       : s.openaiApiKey.trim() ? { ok: true, why: 'Very accurate, many languages. Uses your OpenAI API key (a small cost per minute).' }
         : { ok: false, why: 'Add an OpenAI API key above to use it.' },
     local: IS_PREVIEW ? { ok: false, why: 'Not available in the preview.' }
-      : { ok: canRecord(), why: 'Free and private: runs on this computer. The speech model is downloaded once (about 80 MB tiny, 150 MB base).' },
+      : { ok: canRecord(), why: 'Free and private: runs on this computer. The speech model is downloaded once (about 70 MB tiny, 140 MB base).' },
   };
 }
 
@@ -97,8 +97,9 @@ export function prepareLocalModel(): Promise<unknown> {
     .catch((e: unknown) => {
       model = null;
       const msg = e instanceof Error ? e.message : String(e);
-      useSpeechModel.setState({ status: 'error', error: /fetch|network|Failed to/i.test(msg) ? 'The speech model could not be downloaded. Check the internet connection and try again.' : msg });
-      throw e;
+      const plain = /fetch|network|Failed to|load/i.test(msg) ? 'The speech model could not be downloaded. Check the internet connection and try again.' : `The speech model could not be started: ${msg}`;
+      useSpeechModel.setState({ status: 'error', error: plain });
+      throw new Error(plain, { cause: e });
     });
   model = { size, asr };
   return asr;
@@ -120,7 +121,7 @@ async function toSamples(blob: Blob): Promise<Float32Array> {
 async function transcribe(engine: 'openai' | 'local', blob: Blob, lang: string, signal?: AbortSignal): Promise<string> {
   if (engine === 'openai') return transcribeOpenAI(blob, { apiKey: useSettingsStore.getState().openaiApiKey.trim(), lang, signal });
   const [asr, m] = await Promise.all([prepareLocalModel(), import('./localWhisperModel')]);
-  return m.runModel(asr as never, await toSamples(blob), lang);
+  return m.runModel(asr as never, await toSamples(blob), langCode(lang));
 }
 
 /** Turn a recorded clip into text with the engine in use (hands-free mode records its own clips). */

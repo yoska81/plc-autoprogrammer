@@ -190,6 +190,7 @@ export default function App() {
         </Menu>
         <Menu label="Options">
           <MenuItem onClick={() => navigate('/settings')}>Settings (AI provider, keys)…</MenuItem>
+          <MenuItem onClick={() => navigate('/settings#voice')}>Voice (microphone, language, read aloud)…</MenuItem>
         </Menu>
       </div>
 

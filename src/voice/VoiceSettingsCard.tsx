@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVoiceSettings, VOICE_LANGUAGES, type SpeechEngine } from './useVoiceSettings';
 import { currentEngine, engineAvailability, ENGINE_LABEL, prepareLocalModel, useSpeechModel } from './stt';
 import { canSpeak, speak, stopSpeaking, useSpeaking, useVoices } from './tts';
@@ -24,6 +24,9 @@ export default function VoiceSettingsCard() {
   const voices = useVoices();
   const testing = useSpeaking((s) => s.id === 'voice-test');
   const [trial, setTrial] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  // Options → Voice opens Settings at this card.
+  useEffect(() => { if (location.hash.endsWith('#voice')) ref.current?.scrollIntoView({ block: 'start' }); }, []);
   // Re-read when the OpenAI key changes.
   const openaiKey = useSettingsStore((s) => s.openaiApiKey);
   const avail = useMemo(() => { void openaiKey; return engineAvailability(); }, [openaiKey]);
@@ -39,7 +42,7 @@ export default function VoiceSettingsCard() {
   ];
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-4" data-testid="voice-settings">
+    <div ref={ref} id="voice" className="bg-white rounded-lg border border-gray-200 p-5 space-y-4 scroll-mt-4" data-testid="voice-settings">
       <div>
         <p className="text-sm font-semibold text-gray-700">Voice</p>
         <p className="text-xs text-gray-500 mt-0.5">Speak instead of typing: every text box has a microphone button. Speaker buttons read questions, AI answers, review findings and the machine specification aloud.</p>
@@ -72,8 +75,8 @@ export default function VoiceSettingsCard() {
         <div className="rounded border border-gray-200 bg-gray-50 p-3 space-y-2 text-sm" data-testid="local-model">
           <label className="block text-gray-700">Speech model size
             <select aria-label="Speech model size" value={v.localModel} onChange={(e) => v.set({ localModel: e.target.value as 'tiny' | 'base' })} className={`${select} mt-1`}>
-              <option value="base">Base — understands better (about 150 MB, recommended)</option>
-              <option value="tiny">Tiny — quicker download (about 80 MB)</option>
+              <option value="base">Base — understands better (about 140 MB, recommended)</option>
+              <option value="tiny">Tiny — quicker download (about 70 MB)</option>
             </select>
           </label>
           {model.status === 'downloading' ? (

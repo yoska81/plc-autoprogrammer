@@ -3,21 +3,32 @@
  * tag / wire number and ends (stable while the design is regenerated), written into the CSV and
  * Excel files next to the generated columns.
  */
-import { cableScheduleCsv, wireListCsv, type Cable, type DrawingContext, type WireRecord } from '../electrical/derive';
+import { cableScheduleCsv, wireListCsv, wireNumbers, type Cable, type DrawingContext, type WireRecord } from '../electrical/derive';
 import { currentEdits } from './useEditsStore';
 
 export const cableKey = (c: Pick<Cable, 'tag'>) => `cable:${c.tag}`;
-export const wireKey = (w: Pick<WireRecord, 'wire' | 'from' | 'to'>) => `wire:${w.wire}|${w.from}|${w.to}`;
+export const wireKey = (w: Pick<WireRecord, 'wire' | 'from' | 'to'>, n = 1) => `wire:${w.wire}|${w.from}|${w.to}${n > 1 ? `#${n}` : ''}`;
+
+/** Keys of a wire list in order: a wire listed twice with the same ends gets "#2". */
+export function wireKeys(wires: Pick<WireRecord, 'wire' | 'from' | 'to'>[]): string[] {
+  const seen = new Map<string, number>();
+  return wires.map((w) => {
+    const k = wireKey(w);
+    const n = (seen.get(k) ?? 0) + 1;
+    seen.set(k, n);
+    return wireKey(w, n);
+  });
+}
 
 /** The user's note for a key ('' = none). */
 export const noteOf = (key: string, notes: Record<string, string> = currentEdits().notes): string => notes[key] ?? '';
 
 const cell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
-/** Add a "Note" column to a generated CSV: `noteFor` gets the row's cells (header excluded). */
-function withNotes(csv: string, noteFor: (cells: string[]) => string): string {
+/** Add a "Note" column to a generated CSV: `noteFor` gets the row's cells and data row number (header excluded). */
+function withNotes(csv: string, noteFor: (cells: string[], row: number) => string): string {
   const lines = csv.replace(/\r\n$/, '').split('\r\n');
-  return lines.map((l, i) => `${l},${i === 0 ? 'Note' : cell(noteFor(parseRow(l)))}`).join('\r\n') + '\r\n';
+  return lines.map((l, i) => `${l},${i === 0 ? 'Note' : cell(noteFor(parseRow(l), i - 1))}`).join('\r\n') + '\r\n';
 }
 
 /** One CSV row → cells (handles quoted cells). */
@@ -42,5 +53,7 @@ export function cableScheduleCsvWithNotes(ctx: DrawingContext, notes: Record<str
 
 /** Wire list CSV with the user's notes. */
 export function wireListCsvWithNotes(ctx: DrawingContext, notes: Record<string, string> = currentEdits().notes): string {
-  return withNotes(wireListCsv(ctx), (c) => noteOf(wireKey({ wire: c[0], from: c[1], to: c[2] }), notes));
+  // The CSV has one row per wire record, in the same order.
+  const keys = wireKeys(wireNumbers(ctx));
+  return withNotes(wireListCsv(ctx), (_c, i) => noteOf(keys[i] ?? '', notes));
 }

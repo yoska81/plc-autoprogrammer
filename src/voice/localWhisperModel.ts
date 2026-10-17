@@ -20,6 +20,11 @@ export function loadModel(size: LocalModel, onProgress: (p: ModelProgress) => vo
   env.allowLocalModels = false;
   const files = new Map<string, { loaded: number; total: number }>();
   const p = pipeline('automatic-speech-recognition', REPO[size], {
+    device: 'wasm',
+    // Full-precision encoder (accuracy) and 8-bit decoder (size); the 4-bit default files do not load in this runtime.
+    dtype: { encoder_model: 'fp32', decoder_model_merged: 'q8' },
+    // The runtime's full graph optimisation breaks on the 8-bit decoder (qdq_actions: "Missing required scale").
+    session_options: { graphOptimizationLevel: 'basic' },
     progress_callback: (e: { status: string; file?: string; loaded?: number; total?: number }) => {
       if (e.status !== 'progress' || !e.file) return;
       files.set(e.file, { loaded: e.loaded ?? 0, total: e.total ?? 0 });

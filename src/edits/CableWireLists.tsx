@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { cableSchedule, wireNumbers, type DrawingContext } from '../electrical/derive';
 import { useUi } from '../store/useUiStore';
-import { cableKey, wireKey } from './lists';
+import { cableKey, wireKeys } from './lists';
 import { useEditsStore } from './useEditsStore';
 import { EditableCell } from './EditedMark';
 
@@ -17,12 +17,12 @@ export default function CableWireLists({ ctx }: { ctx: DrawingContext | null }) 
   const [filter, setFilter] = useUi('lists.filter', '');
   const [all, setAll] = useUi('lists.all', false);
   const cables = useMemo(() => (ctx ? cableSchedule(ctx) : []), [ctx]);
-  const wires = useMemo(() => (ctx ? wireNumbers(ctx) : []), [ctx]);
+  const wires = useMemo(() => { const list = ctx ? wireNumbers(ctx) : []; const keys = wireKeys(list); return list.map((w, i) => ({ ...w, key: keys[i] })); }, [ctx]);
   if (!ctx) return <div className="flex-1 p-6 text-sm text-steel-500">No electrical design yet.</div>;
   const q = filter.trim().toLowerCase();
   const match = (...v: string[]) => !q || v.join(' ').toLowerCase().includes(q);
   const shownCables = cables.filter((c) => match(c.tag, c.from, c.to, c.type, c.zone, notes[cableKey(c)] ?? ''));
-  const shownWires = wires.filter((w) => match(w.wire, w.from, w.to, w.function, notes[wireKey(w)] ?? ''));
+  const shownWires = wires.filter((w) => match(w.wire, w.from, w.to, w.function, notes[w.key] ?? ''));
   const noteCell = (key: string, label: string) => (
     <EditableCell value={notes[key] ?? ''} label={label} placeholder="Add a note…" mark={false}
       onCommit={(v) => setNote(key, v)} inputClassName={`min-w-48 ${notes[key] ? 'text-sky-900' : 'placeholder:text-steel-300'}`} />
@@ -66,14 +66,14 @@ export default function CableWireLists({ ctx }: { ctx: DrawingContext | null }) 
             <thead><tr>{['Wire', 'From', 'To', 'Color', 'Size', 'Function', 'Note'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
             <tbody>
               {(all ? shownWires : shownWires.slice(0, PAGE)).map((w) => (
-                <tr key={wireKey(w)}>
+                <tr key={w.key}>
                   <td className={`${td} font-mono font-semibold`}>{w.wire}</td>
                   <td className={`${td} font-mono`}>{w.from}</td>
                   <td className={`${td} font-mono`}>{w.to}</td>
                   <td className={td}>{w.color}</td>
                   <td className={td}>{w.size}</td>
                   <td className={td}>{w.function}</td>
-                  <td className={`${td} w-1/4`}>{noteCell(wireKey(w), `Note for wire ${w.wire} ${w.from} to ${w.to}`)}</td>
+                  <td className={`${td} w-1/4`}>{noteCell(w.key, `Note for wire ${w.wire} ${w.from} to ${w.to}`)}</td>
                 </tr>
               ))}
               {!shownWires.length && <tr><td colSpan={7} className="p-4 text-center text-steel-400">No wires match.</td></tr>}

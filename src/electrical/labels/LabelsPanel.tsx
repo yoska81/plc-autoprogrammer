@@ -365,11 +365,11 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
                     <td className="text-right pr-2 text-xs tabular-nums text-steel-400">{i + 1}</td>
                     <td className="pr-2 font-mono font-semibold whitespace-nowrap">
                       <EditableCell value={l.code} label={`Label text ${l.id}`} edited={l.edited?.code !== undefined} generated={l.edited?.code}
-                        onCommit={(v) => setLabel(l.id, { code: v.trim() && v !== (l.edited?.code ?? l.code) ? v : undefined })} onReset={() => resetLabel(l.id, 'code')} inputClassName="font-mono font-semibold w-28" />
+                        onCommit={(v) => setLabel(l.id, { code: v.trim() && v !== (l.edited?.code ?? l.code) ? v : undefined })} onReset={() => resetLabel(l.id, 'code')} inputClassName="font-mono font-semibold !w-20" inline />
                     </td>
                     <td className="pr-2 max-w-md" title={l.description}>
                       <EditableCell value={l.description} label={`Label description ${l.id}`} edited={l.edited?.description !== undefined} generated={l.edited?.description}
-                        onCommit={(v) => setLabel(l.id, { description: v !== (l.edited?.description ?? l.description) ? v : undefined })} onReset={() => resetLabel(l.id, 'description')} inputClassName="truncate" />
+                        onCommit={(v) => setLabel(l.id, { description: v !== (l.edited?.description ?? l.description) ? v : undefined })} onReset={() => resetLabel(l.id, 'description')} inputClassName="truncate min-w-[9rem]" inline />
                     </td>
                     <td className="pr-2 text-xs whitespace-nowrap">{LABEL_KINDS.find((k) => k.kind === l.kind)?.title}</td>
                     <td className="pr-2 text-xs text-steel-500 whitespace-nowrap">{l.group}</td>

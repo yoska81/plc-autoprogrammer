@@ -80,11 +80,11 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
                       <tr key={key} data-part={key}>
                         <td className="px-2 py-1 font-mono whitespace-nowrap">
                           {editable ? <EditableCell value={l.partNumber} label={`Part number ${key}`} edited={e?.partNumber !== undefined} generated={e?.partNumber} markLabel="entered by you"
-                            onCommit={(v) => setBom(key, { partNumber: v.trim() && v.trim() !== key ? v.trim() : undefined })} onReset={() => resetBom(key, 'partNumber')} inputClassName="font-mono w-36" /> : l.partNumber}
+                            onCommit={(v) => setBom(key, { partNumber: v.trim() && v.trim() !== key ? v.trim() : undefined })} onReset={() => resetBom(key, 'partNumber')} inputClassName="font-mono !w-32" /> : l.partNumber}
                         </td>
                         <td className="px-2 py-1 text-steel-700 min-w-56">
                           {editable ? <EditableCell value={l.description} label={`Description of ${key}`} edited={e?.description !== undefined} generated={e?.description} markLabel="entered by you"
-                            onCommit={(v) => setBom(key, { description: v.trim() && v !== (e?.description ?? l.description) ? v : undefined })} onReset={() => resetBom(key, 'description')} /> : l.description}
+                            onCommit={(v) => setBom(key, { description: v.trim() && v !== (e?.description ?? l.description) ? v : undefined })} onReset={() => resetBom(key, 'description')} wrap={45} /> : l.description}
                           {l.note && <div className="text-steel-500 px-1">{l.note}</div>}
                         </td>
                         <td className="px-2 py-1 text-right tabular-nums">{l.bomQty || ''}</td>
@@ -93,7 +93,7 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
                           {editable ? (
                             <span className="inline-flex items-center gap-1">
                               <EditableCell type="number" align="right" value={String(l.orderQty)} label={`Order quantity of ${key}`} edited={e?.orderQty !== undefined} generated={e?.orderQty !== undefined ? String(e.orderQty) : undefined} markLabel="entered by you"
-                                onCommit={(v) => { const n = num(v) !== undefined ? Math.round(num(v)!) : undefined; setBom(key, { qty: n !== (e?.orderQty ?? l.orderQty) ? n : undefined }); }} onReset={() => resetBom(key, 'qty')} inputClassName="w-16 font-semibold" />
+                                onCommit={(v) => { const n = num(v) !== undefined ? Math.round(num(v)!) : undefined; setBom(key, { qty: n !== (e?.orderQty ?? l.orderQty) ? n : undefined }); }} onReset={() => resetBom(key, 'qty')} inputClassName="!w-14 font-semibold" />
                               {l.packQty > 1 ? `× ${l.source === 'labels' ? 'roll' : 'pack'}` : ''}
                             </span>
                           ) : <>{l.orderQty}{l.packQty > 1 ? ` × ${l.source === 'labels' ? 'roll' : 'pack'}` : ''}</>}
@@ -102,8 +102,8 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
                           {editable ? (
                             <span className="inline-flex flex-col items-end">
                               <EditableCell type="number" align="right" value={l.userPrice !== undefined ? String(l.userPrice) : ''} label={`Unit price of ${key}`}
-                                placeholder={l.price ? l.price.price.toFixed(2) : 'price to confirm'} edited={l.userPrice !== undefined} mark={false}
-                                onCommit={(v) => setBom(key, { price: num(v) })} inputClassName={`w-24 ${l.userPrice === undefined && !l.price ? 'placeholder:text-amber-700' : 'placeholder:text-steel-700'}`} />
+                                placeholder={l.price ? l.price.price.toFixed(2) : 'to confirm'} edited={l.userPrice !== undefined} mark={false}
+                                onCommit={(v) => setBom(key, { price: num(v) })} inputClassName={`!w-[5.5rem] ${l.userPrice === undefined && !l.price ? 'placeholder:text-amber-700' : 'placeholder:text-steel-700'}`} />
                               {l.userPrice !== undefined
                                 ? <EditedMark label="entered by you" generated={l.price ? money(l.price.price) : 'price to confirm'} onReset={() => resetBom(key, 'price')} />
                                 : l.price && <a href={l.price.sourceUrl} target="_blank" rel="noreferrer" title={`List price as of ${l.price.date}, ${l.price.unit}`} className="text-[10px] text-steel-500 underline decoration-dotted">list price {l.price.date}</a>}

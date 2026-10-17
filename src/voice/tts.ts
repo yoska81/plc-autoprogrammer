@@ -41,7 +41,7 @@ export function speak(text: string, id = 'speech'): Promise<void> {
       }
       const u = new SpeechSynthesisUtterance(chunks[i++]);
       u.lang = v?.lang ?? language;
-      if (v) u.voice = v;
+      try { if (v) u.voice = v; } catch { /* not a voice this engine accepts: its default voice for the language */ }
       u.rate = rate;
       u.onend = next;
       u.onerror = next;

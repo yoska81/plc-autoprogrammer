@@ -58,3 +58,21 @@ text on lime. `old-data/<commit>.json` is the browser storage the example projec
 BASE_URL=http://localhost:5203 node e2e/hmi-editor.e2e.cjs   # picture behind a screen, place/move/resize/undo, tags, AI recreate (mocked), simulator, PNG export
 npx tsx src/hmi/editor.test.ts                               # editor model: move, resize, snap, align, distribute, duplicate, undo, tags
 ```
+
+## Voice and hand edits
+
+```bash
+npx vite --port 5205 &
+BASE_URL=http://localhost:5205 node e2e/voice-edit.e2e.cjs
+```
+Voice (speech services faked in the page, fake microphone): dictation with live words, Done / add vs replace / Cancel,
+speaker buttons, hands-free answers (question read, answer heard, "yes" saves), Settings → Voice (language, Hebrew voice,
+test voice), recording + OpenAI transcription (mocked: model and language checked), on-device model download failure
+explained. Hand edits: order-list price / quantity / part number / description (marked "entered by you", in the total and
+the CSV), machine spec text, label text, cable and wire notes (in the CSVs), I/O description and back to generated, review
+note, HMI alarm text, rung comment; all kept after a reload, in the .isap file and after the electrical design is generated
+again; a new project starts clean. Screenshots land in `e2e/out-voice-edit/`.
+
+Unit tests: `npx tsx src/edits/edits.test.ts` (store, order list totals and files, labels, notes in CSVs, rung comments and
+HMI alarm texts kept through regeneration) and `npx tsx src/voice/text.test.ts` (add / replace, engine choice, spoken
+yes / no / skip / stop in several languages, Markdown read aloud, long texts split for speech).
