@@ -7,8 +7,9 @@ import { buildExcelReport } from '../deliverables/excelReport';
 import { buildEngineeringPdf } from '../deliverables/engineering';
 import { buildProgramListingPdf } from '../deliverables/programListingPdf';
 import { hmiReadme, hmiTagCsv, needsHmiTagList } from '../deliverables/hmiTags';
-import { buildDrawingsPdf, buildEverythingZip, buildHmiImages, buildHmiPdf, buildMachiningPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
-import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
+import { buildDrawingsPdf, buildEverythingZip, dataUrlToBlob, buildHmiImages, buildHmiPdf, buildMachiningPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
+import { bomCsv, terminalPlanCsv } from '../electrical/derive';
+import { wireListCsvWithNotes } from '../edits/lists';
 import { Spinner } from '../components/common';
 import { backPanelDxf, doorDxf, enclosureFaceDxfs } from '../electrical/dxf';
 import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep';
@@ -168,6 +169,22 @@ export default function ExportPage() {
 
           <OrderListCard p={p} fileBase={p.fileBase} />
 
+          <Card title="Spare parts" info={stages.electrical} to="/electrical?tab=improve">
+            <p className="text-xs text-steel-500">The parts to keep on the shelf (fuses, relays, contactors, power supply, PLC and I/O, touch panel, drives), how many, and why: how critical each one is and how often that kind of part fails.</p>
+            <div className="flex flex-wrap gap-2">
+              <B busy={busy} label="Spare parts (Excel)" disabled={!hasElec} onClick={run('Spare parts (Excel)', async () => {
+                const [{ sparePartsXlsx }, { spareParts }] = await Promise.all([import('../deliverables/sparePartsFiles'), import('../electrical/improve/spares')]);
+                const snap = collectProject();
+                saveBlob(`${p.fileBase}_spare_parts.xlsx`, await sparePartsXlsx(spareParts(snap.drawingCtx!), snap.projectName));
+              })} />
+              <B busy={busy} label="Spare parts (PDF)" disabled={!hasElec} onClick={run('Spare parts (PDF)', async () => {
+                const { sparePartsPdf } = await import('../deliverables/sparePartsFiles');
+                const pdf = await sparePartsPdf(collectProject());
+                if (pdf) saveBlob(`${p.fileBase}_spare_parts.pdf`, pdf);
+              })} />
+            </div>
+          </Card>
+
           <Card title="Labels" info={stages.electrical} to="/electrical?tab=labels">
             <p className="text-xs text-steel-500">Wire, terminal, device, cable and door labels. Choose the label size and content, preview and print in Electrical design → Labels.</p>
             <div className="flex flex-wrap gap-2">
@@ -201,14 +218,16 @@ export default function ExportPage() {
                 if (pdf) saveBlob(`${p.fileBase}_drawings.pdf`, pdf);
               })} />
               <B busy={busy} label="BOM CSV" disabled={!hasElec} onClick={run('BOM CSV', () => saveBlob(`${p.fileBase}_BOM.csv`, csv(bomCsv(p.drawingCtx!))))} />
-              <B busy={busy} label="Wire list CSV" disabled={!hasElec} onClick={run('Wire list CSV', () => saveBlob(`${p.fileBase}_wire_list.csv`, csv(wireListCsv(p.drawingCtx!))))} />
-              <B busy={busy} label="Cabinet pictures (PNG)" disabled={!hasElec} onClick={run('Cabinet pictures (PNG)', async () => {
-                const { cabinetPng } = await import('../electrical/render/renderToPng');
+              <B busy={busy} label="Wire list CSV" disabled={!hasElec} onClick={run('Wire list CSV', () => saveBlob(`${p.fileBase}_wire_list.csv`, csv(wireListCsvWithNotes(p.drawingCtx!))))} />
+              <B busy={busy} label="Cabinet pictures (ZIP)" disabled={!hasElec} onClick={run('Cabinet pictures (ZIP)', async () => {
+                // Inside and door in one file: two saves in a row are refused by the preview and blocked by browsers.
+                const [{ cabinetPng }, { default: JSZip }] = await Promise.all([import('../electrical/render/renderToPng'), import('jszip')]);
                 const snap = collectProject();
+                const zip = new JSZip();
                 for (const v of ['inside', 'door'] as const) {
-                  const url = await cabinetPng(snap.drawingCtx!, v, snap.hmi?.hmiPartNumber ?? null, 2400);
-                  saveBlob(`${p.fileBase}_cabinet_${v}.png`, await (await fetch(url)).blob());
+                  zip.file(`${p.fileBase}_cabinet_${v}.png`, await dataUrlToBlob(await cabinetPng(snap.drawingCtx!, v, snap.hmi?.hmiPartNumber ?? null, 2400)));
                 }
+                saveBlob(`${p.fileBase}_cabinet_pictures.zip`, await zip.generateAsync({ type: 'blob' }));
               })} />
               <B busy={busy} label="Terminal plan CSV" disabled={!hasElec} onClick={run('Terminal plan CSV', () => saveBlob(`${p.fileBase}_terminal_plan.csv`, csv(terminalPlanCsv(p.drawingCtx!))))} />
             </div>
@@ -249,7 +268,7 @@ export default function ExportPage() {
               <B busy={busy} label="Screen images (ZIP)" disabled={!hasHmi} onClick={run('Screen images (ZIP)', async () => {
                 const { default: JSZip } = await import('jszip');
                 const zip = new JSZip();
-                for (const img of await buildHmiImages(collectProject())) zip.file(img.name, await (await fetch(img.dataUrl)).blob());
+                for (const img of await buildHmiImages(collectProject())) zip.file(img.name, await dataUrlToBlob(img.dataUrl));
                 saveBlob(`${p.fileBase}_hmi_screens.zip`, await zip.generateAsync({ type: 'blob' }));
               })} />
               {needsHmiTagList(p) && <B busy={busy} label="HMI tag list (CSV)" onClick={run('HMI tag list (CSV)', async () => {

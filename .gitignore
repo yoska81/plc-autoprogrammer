@@ -27,6 +27,7 @@ e2e/out/
 e2e/out-preview/
 e2e/out-sweep/
 e2e/out-layout/
+e2e/out-improve/
 e2e/out-sealing-head/
 e2e/out-ai-jobs/
 tools/out/
@@ -43,3 +44,5 @@ e2e/out-hmi-editor/
 installer/
 e2e/out-walkthrough/
 .claude/worktrees/
+e2e/out-voice-edit/
+e2e/out-desktop-mic/

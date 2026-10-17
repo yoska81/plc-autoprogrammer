@@ -39,6 +39,14 @@ BASE_URL=http://localhost:5204 node e2e/layout.e2e.cjs   # scale, cabinet + moto
 ```
 Screenshots land in `e2e/out-layout/`.
 
+## Improve design
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/improve.e2e.cjs   # cost-down (accept, checks re-run), what-if compare + apply, panel library (save, export/import, add a section, new project from a panel), spare parts Excel/PDF here and on Deliverables
+npx tsx src/electrical/improve/costDown.test.ts && npx tsx src/electrical/improve/library.test.ts && npx tsx src/electrical/improve/whatIf.test.ts && npx tsx src/electrical/improve/spares.test.ts
+```
+Screenshots land in `e2e/out-improve/`.
+
 ## Page sweep and old projects
 
 ```bash
@@ -52,9 +60,46 @@ HASH=1 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # preview buil
 The sweep fails on page/console errors, sideways scrolling, controls pushed off-screen, text below 3:1 contrast and light
 text on lime. `old-data/<commit>.json` is the browser storage the example project of that commit left behind.
 
+## Sourcing and Engineer review
+
+```bash
+BASE_URL=http://localhost:5203 node e2e/sourcing.e2e.cjs   # BOM sourcing, alternatives + Swap (impact, Undo), live check (web search mocked), Optimise, Engineer review (rules + AI with one-click fix), review package
+npx tsx src/sourcing/sourcing.test.ts                      # sourcing data, equivalents, swap impact (mounting), optimise, live-check source verification
+```
+
 ## HMI screens made by hand
 
 ```bash
 BASE_URL=http://localhost:5203 node e2e/hmi-editor.e2e.cjs   # picture behind a screen, place/move/resize/undo, tags, AI recreate (mocked), simulator, PNG export
 npx tsx src/hmi/editor.test.ts                               # editor model: move, resize, snap, align, distribute, duplicate, undo, tags
 ```
+
+## Voice and hand edits
+
+```bash
+npx vite --port 5205 &
+BASE_URL=http://localhost:5205 node e2e/voice-edit.e2e.cjs
+```
+Voice (speech services faked in the page, fake microphone): dictation with live words, Done / add vs replace / Cancel,
+speaker buttons, hands-free answers (question read, answer heard, "yes" saves), Settings → Voice (language, Hebrew voice,
+test voice), recording + OpenAI transcription (mocked: model and language checked), on-device model download failure
+explained. Hand edits: order-list price / quantity / part number / description (marked "entered by you", in the total and
+the CSV), machine spec text, label text, cable and wire notes (in the CSVs), I/O description and back to generated, review
+note, HMI alarm text, rung comment; all kept after a reload, in the .isap file and after the electrical design is generated
+again; a new project starts clean. Screenshots land in `e2e/out-voice-edit/`.
+
+Unit tests: `npx tsx src/edits/edits.test.ts` (store, order list totals and files, labels, notes in CSVs, rung comments and
+HMI alarm texts kept through regeneration) and `npx tsx src/voice/text.test.ts` (add / replace, engine choice, spoken
+yes / no / skip / stop in several languages, Markdown read aloud, long texts split for speech).
+
+## Desktop microphone permission
+
+```bash
+npm run build:desktop
+xvfb-run -a node e2e/desktop-mic.e2e.cjs
+```
+The first press of a microphone asks with a native dialog (stubbed: Allow once / Always allow / Don't allow);
+"Always" is remembered across a restart in `mic-permission.json` and reset in Settings → Voice; "Don't allow"
+is explained in the mic popover (no address-bar advice); "Allow once" lasts until the app closes; camera
+requests are refused. Unit test: `npx tsx src/voice/micAccess.test.ts`. The preview e2e checks that the
+preview shows the mic as not available (it has no microphone) and makes no microphone request.

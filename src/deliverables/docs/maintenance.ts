@@ -1,6 +1,7 @@
 import { byRegion } from '../../standards/regions';
 import type { ProjectSnapshot } from '../collect';
-import { buildModel, billOfMaterials, isFuseCartridge } from '../../electrical/derive';
+import { buildModel } from '../../electrical/derive';
+import { spareParts, spareReason } from '../../electrical/improve/spares';
 import { getHmi, hmiMakerOf } from '../../hmi/hmiCatalog';
 import type { CatalogCategory } from '../../electrical/types';
 import { makeTable, type DocTable } from './table';
@@ -35,43 +36,11 @@ export function pmSchedule(p: ProjectSnapshot): DocTable {
   return makeTable([['Item', 34], ['Task', 70], ['Interval (typical, adjust to site)', 30]], rows);
 }
 
-interface SpareRule { qty: (installed: number) => number; reason: string }
-
-const SPARE_RULES: Partial<Record<CatalogCategory, SpareRule>> = {
-  plc: { qty: () => 1, reason: 'Critical, single point of failure' },
-  plcModule: { qty: () => 1, reason: 'Critical I/O' },
-  powerSupply: { qty: () => 1, reason: 'Critical — loss stops the machine' },
-  safetyRelay: { qty: () => 1, reason: 'Critical safety component' },
-  contactor: { qty: () => 1, reason: 'Wear item (contacts / coil)' },
-  overload: { qty: () => 1, reason: 'Long lead time risk' },
-  motorProtector: { qty: () => 1, reason: 'Protective device' },
-  breaker: { qty: () => 1, reason: 'Protective device — one per rating' },
-  fuse: { qty: (n) => Math.max(n, 3), reason: 'Consumable — full set per rating' },
-  relay: { qty: (n) => (n >= 5 ? 2 : 1), reason: 'Wear item' },
-  vfd: { qty: () => 1, reason: 'Critical, long lead time' },
-  sensor: { qty: () => 1, reason: 'Exposed field device — wear / damage' },
-  solenoidValve: { qty: () => 1, reason: 'Wear item' },
-  pushbutton: { qty: () => 1, reason: 'Operator wear' },
-  estop: { qty: () => 1, reason: 'Safety device — operator wear' },
-  pilotLight: { qty: () => 1, reason: 'Lamp / LED failure' },
-  selector: { qty: () => 1, reason: 'Operator wear' },
-  stackLight: { qty: () => 1, reason: 'Lamp / LED failure' },
-  fan: { qty: () => 1, reason: 'Wear item (plus filter mats)' },
-};
-
 export function sparePartsTable(p: ProjectSnapshot): DocTable {
-  const rows: string[][] = [];
-  if (p.drawingCtx) {
-    const m = buildModel(p.drawingCtx);
-    const carts = new Set(m.rc.filter(isFuseCartridge).map((c) => c.partNumber));
-    for (const g of billOfMaterials(p.drawingCtx)) for (const l of g.lines) {
-      if (l.note || !l.partNumber) continue;
-      const rule = l.category === 'note' ? undefined : SPARE_RULES[l.category];
-      if (!rule) continue;
-      if (l.category === 'fuse' && !carts.has(l.partNumber)) continue; // holders are not spares
-      rows.push([l.partNumber, l.manufacturer, l.description, l.tags.join(', '), String(l.qty), String(rule.qty(l.qty)), rule.reason]);
-    }
-  }
-  if (p.hmi && !rows.some((r) => r[0] === p.hmi!.hmiPartNumber)) rows.push([p.hmi.hmiPartNumber, hmiMakerOf(p.hmi.hmiPartNumber), getHmi(p.hmi.hmiPartNumber)?.description ?? 'Operator touch panel', 'HMI1', '1', '1', 'Critical — operator interface (or keep a loaded backup project)']);
+  // Same list as Electrical → Improve design → Spare parts (criticality x failure rate).
+  const rows: string[][] = p.drawingCtx
+    ? spareParts(p.drawingCtx).lines.map((l) => [l.partNumber, l.manufacturer, l.description, l.tags.join(', '), String(l.installed), String(l.qty), spareReason(l)])
+    : [];
+  if (p.hmi && !rows.some((r) => r[0] === p.hmi!.hmiPartNumber)) rows.push([p.hmi.hmiPartNumber, hmiMakerOf(p.hmi.hmiPartNumber), getHmi(p.hmi.hmiPartNumber)?.description ?? 'Operator touch panel', 'HMI1', '1', '1', 'Critical · fails rarely — operator interface (keep the project backed up too)']);
   return makeTable([['Part number', 18], ['Manufacturer', 14], ['Description', 50], ['Tags', 14], ['Qty installed', 9, 'center'], ['Recommended spares', 11, 'center'], ['Reason', 30]], rows);
 }

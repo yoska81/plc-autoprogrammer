@@ -11,7 +11,7 @@ import { PLC_PROFILES } from './profiles';
 import { HMI_MODELS } from '../../hmi/hmiCatalog';
 import { CATALOG } from '../../electrical/catalog';
 
-const ALL_HMIS = () => CATALOG.filter((p) => p.category === 'hmi');
+const ALL_HMIS = () => CATALOG.filter((p) => p.category === 'hmi' || (p.category === 'plc' && p.ratings.builtInPanel === 'yes'));
 
 const need = (n: Partial<Need> = {}): Need => ({ digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: false, minHmiSizeIn: null, ...n });
 
@@ -119,13 +119,15 @@ const NO_RESOLUTION: Record<string, string> = {
 };
 for (const p of ALL_HMIS().filter((h) => h.vendor && h.vendor !== 'automationdirect')) {
   const r = p.ratings;
+  const headless = r.touch === 'none'; // gateways / servers without a display
+  if (r.lifecycle === 'legacy') continue; // listed for existing machines only (greyed, never designed for)
   if (r.resolutionPx !== undefined) assert.match(String(r.resolutionPx), /^\d+x\d+$/, `${p.partNumber}: resolutionPx is WxH`);
-  else assert.ok(NO_RESOLUTION[p.partNumber], `${p.partNumber}: resolutionPx from the datasheet`);
-  if (p.partNumber !== 'HMIG3U') assert.equal(typeof r.displayIn, 'number', `${p.partNumber}: displayIn`);
+  else assert.ok(headless || NO_RESOLUTION[p.partNumber], `${p.partNumber}: resolutionPx from the datasheet`);
+  if (p.partNumber !== 'HMIG3U' && !headless) assert.equal(typeof r.displayIn, 'number', `${p.partNumber}: displayIn`);
   if (r.touch !== undefined) assert.match(String(r.touch), /^(resistive|capacitive|yes|none)$/, `${p.partNumber}: touch type`);
   for (const k of ['ethernetPorts', 'serialPorts', 'usbPorts']) if (r[k] !== undefined) assert.ok(Number.isInteger(r[k]) && Number(r[k]) >= 0, `${p.partNumber}: ${k}`);
 }
-assert.equal(getPart('HMIG3U')!.ratings.pairsWith, 'HMIDT732');
+assert.ok(String(getPart('HMIG3U')!.ratings.pairsWith).split(',').includes('HMIDT732'), 'GTU box pairs with its displays');
 console.log('HMI panel spec tests passed');
 
 // Update all: the CPU must hold the real I/O list; CLICK modules are added for the shortfall, or null (a bigger CPU).

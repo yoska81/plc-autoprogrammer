@@ -11,6 +11,7 @@ import { Spinner, ReasoningPanel } from '../components/common';
 import { useUi } from '../store/useUiStore';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { startAiJob, useAiJobError, useAiJobRunning } from '../lib/ai/jobs';
+import VoiceTextarea from '../voice/VoiceTextarea';
 
 interface ImportSlice { files: File[]; note: string; result: ImportResult | null; reasoning: string | null; included: boolean[] }
 const EMPTY: ImportSlice = { files: [], note: '', result: null, reasoning: null, included: [] };
@@ -164,9 +165,10 @@ export default function ImportPage() {
               </ul>
             )}
 
-            <textarea
+            <VoiceTextarea
               value={st.note}
-              onChange={(e) => st.set({ note: e.target.value })}
+              onValueChange={(note) => st.set({ note })}
+              aria-label="Notes about the drawings"
               rows={2}
               placeholder="Optional notes, e.g. 'Palletizer on line 3. Sheet 7 is the I/O list. The photo shows the left door open.'"
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"

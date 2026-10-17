@@ -16,7 +16,7 @@ import { planDrawings } from '../electrical/drawings/plan';
 import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
 import { getHmi } from '../hmi/hmiCatalog';
-import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv, buildModel, type DrawingContext, type DrillingPlan } from '../electrical/derive';
+import { bomCsv, terminalPlanCsv, buildModel, type DrawingContext, type DrillingPlan } from '../electrical/derive';
 import { driveParamsCsv } from '../electrical/vfd';
 import { analogSetup, analogSetupCsv } from '../plc/core/analog';
 import { moduleSlots } from '../plc/core/modules';
@@ -24,6 +24,8 @@ import { clickNicknameCsv, clickRungListing } from '../plc/core/clickExport';
 import { buildExcelReport } from './excelReport';
 import { buildEngineeringPdf } from './engineering';
 import { cabinetPng } from '../electrical/render/renderToPng';
+import { cableScheduleCsvWithNotes, wireListCsvWithNotes } from '../edits/lists';
+import { MACHINE_SPEC_KEY, textOr } from '../edits/useEditsStore';
 
 /** Render React content off-screen, let the caller read the DOM, then clean up. */
 async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) => Promise<T>): Promise<T> {
@@ -165,7 +167,16 @@ export function ioCsv(p: ProjectSnapshot): string {
   return ['ID,PLC Address,Type,Category,Description', ...p.io.map((x) => [x.id, p.addresses.get(x.id) ?? '', x.type, x.category, x.description].map(cell).join(','))].join('\r\n');
 }
 
-const dataUrlToBlob = async (url: string) => (await fetch(url)).blob();
+/** A data: URL as a Blob, decoded here: fetch() of a data URL can be blocked by the preview frame's content policy. */
+export async function dataUrlToBlob(url: string): Promise<Blob> {
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(url);
+  if (!m) return (await fetch(url)).blob();
+  if (!m[2]) return new Blob([decodeURIComponent(m[3])], { type: m[1] });
+  const bin = atob(m[3]);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: m[1] || 'application/octet-stream' });
+}
 
 /** Everything in one ZIP. */
 export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step: string) => void): Promise<Blob> {
@@ -180,9 +191,9 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     pre.drawings = await buildDrawingsPdf(p);
     if (pre.drawings) zip.file(`electrical/${p.fileBase}_drawings.pdf`, pre.drawings);
     zip.file('electrical/bom.csv', bomCsv(p.drawingCtx));
-    zip.file('electrical/wire_list.csv', wireListCsv(p.drawingCtx));
+    zip.file('electrical/wire_list.csv', wireListCsvWithNotes(p.drawingCtx));
     zip.file('electrical/terminal_plan.csv', terminalPlanCsv(p.drawingCtx));
-    zip.file('electrical/cable_schedule.csv', cableScheduleCsv(p.drawingCtx));
+    zip.file('electrical/cable_schedule.csv', cableScheduleCsvWithNotes(p.drawingCtx));
     const drives = buildModel(p.drawingCtx).drives;
     if (drives.length) zip.file('electrical/drive_parameters.csv', driveParamsCsv(drives));
     // 1:1 machining files: inches (default for the shop) and the same geometry in millimetres.
@@ -229,7 +240,8 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
   await addPackageToZip(zip, p, pre, onProgress);
   // the full machine specification (sections, answered questions, equipment), not the raw intake text
   const { machineSpecText } = await import('./machineSpec');
-  zip.file('spec.md', machineSpecText(p));
+  // The user's own version of the text when they rewrote it on the Deliverables page.
+  zip.file('spec.md', textOr(MACHINE_SPEC_KEY, machineSpecText(p)));
   onProgress?.('Packing');
   return zip.generateAsync({ type: 'blob' });
 }
@@ -238,7 +250,11 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
 export function saveBlobResult(name: string, blob: Blob): Promise<{ ok: boolean; path?: string }> {
   // The preview can't download directly: the viewer's Claude app offers the file.
   if (IS_PREVIEW) {
-    return saveViaAccount(name, blob).then((ok) => { if (!ok) notify('Saving files is not available in this view. Run the app on your PC to download.'); return { ok }; })
+    return saveViaAccount(name, blob).then((r) => {
+      if (r === 'unavailable') notify('Saving files is not available in this view. Run the app on your PC to download.');
+      else if (r === 'saved') notify(`Saved: ${name}`);
+      return { ok: r !== 'unavailable' };
+    })
       .catch((e: unknown) => { notify(e instanceof Error ? e.message : String(e)); return { ok: false }; });
   }
   // Windows app: native Save dialog.
@@ -254,6 +270,7 @@ export function saveBlobResult(name: string, blob: Blob): Promise<{ ok: boolean;
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+  notify(`Downloaded: ${name}`);
   return Promise.resolve({ ok: true });
 }
 

@@ -26,8 +26,13 @@ const num = (v: unknown) => (v === undefined || v === '' ? NaN : Number(v));
 
 /** The other half of a display + box pair (e.g. Schneider HMIDT732 display + HMIG3U box). */
 function partnerOf(p: CatalogPart): CatalogPart | undefined {
-  const pn = String(p.ratings.pairsWith ?? '').trim();
-  return pn ? ALL_PARTS.find((x) => x.partNumber.toUpperCase() === pn.toUpperCase()) : undefined;
+  // pairsWith may list several (any GTU display with any GTU box): the first one in the catalog.
+  const pns = String(p.ratings.pairsWith ?? '').split(/[,;]/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+  for (const pn of pns) {
+    const hit = ALL_PARTS.find((x) => x.partNumber.toUpperCase() === pn);
+    if (hit) return hit;
+  }
+  return undefined;
 }
 
 /** One catalog panel as the designer sees it; for a pair, the display carries the box's comms. */
@@ -75,11 +80,12 @@ function toModel(raw: CatalogPart): HmiModel | null {
 
 let cache: PanelOption[] | null = null;
 
-/** Every catalog touch panel (display halves of pairs; boxes on their own are left out). */
+/** Every catalog touch panel and built-in PLC panel (display halves of pairs; boxes on their own are left out). */
 export function catalogPanels(): PanelOption[] {
   if (cache) return cache;
   cache = ALL_PARTS
-    .filter((p) => p.category === 'hmi')
+    // Touch panels, plus all-in-one PLCs with a built-in panel (e.g. Unitronics: one part number for both).
+    .filter((p) => p.category === 'hmi' || (p.category === 'plc' && p.ratings.builtInPanel === 'yes'))
     .filter((p) => !(p.ratings.pairsWith && !parseResolution(p) && partnerOf(p) && parseResolution(partnerOf(p)!)))
     .map((part) => ({ part: panelPart(part), model: toModel(part) }));
   return cache;

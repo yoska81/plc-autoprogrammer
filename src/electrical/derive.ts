@@ -2238,8 +2238,11 @@ export function smallestEnclosure(ctx: DrawingContext, spare = SPARE_RULE): Encl
   const need = String(ctx.design.inputs.enclosureRating ?? '').replace(/^NEMA\s*/i, '').toUpperCase();
   const panelArea = (p: CatalogPart) => (num(p.ratings, 'panelWidthIn') ?? 0) * (num(p.ratings, 'panelHeightIn') ?? 0) || (p.widthMm ?? 0) * (p.heightMm ?? 0) / 645;
   const maker = encC?.part?.manufacturer;
+  // Same material family as the current enclosure (painted steel / stainless / non-metallic): a bigger box, not another kind.
+  const family = (p?: CatalogPart) => { const m = String(p?.ratings.material ?? ''); return /stainless/i.test(m) ? 'stainless' : /fiberglass|polycarbonate/i.test(m) ? 'non-metallic' : 'steel'; };
+  const want = encC?.part ? family(encC.part) : need === '4X' ? 'stainless' : 'steel';
   const candidates = ALL_PARTS
-    .filter((p) => p.category === 'enclosure' && String(p.ratings.kind ?? '') !== 'subpanel' && panelArea(p) > 0)
+    .filter((p) => p.category === 'enclosure' && String(p.ratings.kind ?? '') !== 'subpanel' && panelArea(p) > 0 && family(p) === want)
     .filter((p) => !need || String(p.ratings.nema ?? '').toUpperCase().split('/').map((x) => x.trim()).includes(need))
     .sort((a, b) => Number(b.manufacturer === maker) - Number(a.manufacturer === maker) || panelArea(a) - panelArea(b));
   const subOf = (p: CatalogPart) => { const s = String(p.ratings.subpanel ?? ''); return ALL_PARTS.some((x) => x.partNumber === s) ? s : undefined; };
