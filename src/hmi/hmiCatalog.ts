@@ -52,6 +52,12 @@ export interface HmiModel {
   bezelMm?: { width: number; height: number };
   url: string;
   verified: boolean;
+  /** Discontinued / replaced: listed for existing machines, not offered for new ones. */
+  legacy?: boolean;
+  /** Successor part number the maker names. */
+  successor?: string;
+  /** Public list price (USD) where the maker or distributor shows one. */
+  listPrice?: number;
 }
 
 const PN_URL = 'https://www.automationdirect.com/pn/';
