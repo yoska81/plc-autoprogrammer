@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { CATALOG_GROUPS_NOTE, GROUP_TITLE, VENDORS, fallbackCategories, groupOfPart, groupsOf, type VendorGroup } from '../electrical/catalogs';
 import type { VendorId } from '../electrical/types';
 import { useProjectStore, useVendorPreference } from '../store/useProjectStore';
@@ -17,58 +17,23 @@ const nameOf = (id: VendorId, g?: VendorGroup) => {
 };
 
 /**
- * Brands chosen for one group: chips (first = first choice) and a searchable,
- * scrollable list to add more. Works for any number of brands.
+ * Brand for one group: a dropdown like "Use one brand for everything", listing
+ * every brand that offers parts for the group. A project saved with several
+ * brands in the group keeps them until another brand is picked.
  */
-function BrandPicker({ group, chosen, onChange }: { group: VendorGroup; chosen: VendorId[]; onChange: (ids: VendorId[]) => void }) {
-  const [q, setQ] = useState('');
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
-  const listId = useId();
-  const inputRef = useRef<HTMLInputElement>(null);
+function BrandSelect({ group, chosen, onChange }: { group: VendorGroup; chosen: VendorId[]; onChange: (ids: VendorId[]) => void }) {
   const title = GROUP_TITLE[group];
-  const offered = useMemo(() => VENDORS.filter((v) => groupsOf(v.id).includes(group) && !chosen.includes(v.id)), [group, chosen]);
-  const matches = offered.filter((v) => !q.trim() || nameOf(v.id, group).toLowerCase().includes(q.trim().toLowerCase()));
-  const add = (id: VendorId) => { onChange([...chosen, id]); setQ(''); setActive(0); inputRef.current?.focus(); };
-  const remove = (id: VendorId) => onChange(chosen.filter((x) => x !== id));
+  const offered = useMemo(() => VENDORS.filter((v) => groupsOf(v.id).includes(group)), [group]);
   return (
-    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-      {chosen.map((id, i) => (
-        <span key={id} className="inline-flex items-center gap-1 rounded-full border border-brand-300 bg-brand-50 pl-2.5 pr-1 py-0.5 text-xs text-steel-800">
-          {nameOf(id, group)}{chosen.length > 1 && i === 0 && <span className="text-[10px] text-steel-500">· first choice</span>}
-          {chosen.length > 1 && (
-            <button type="button" onClick={() => remove(id)} aria-label={`Remove ${nameOf(id)} from ${title}`}
-              className="ml-0.5 h-4 w-4 rounded-full text-steel-500 hover:bg-steel-200 hover:text-steel-900 leading-none">×</button>
-          )}
-        </span>
-      ))}
-      {offered.length > 0 && (
-        <div className="relative">
-          <input ref={inputRef} value={q} role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list"
-            aria-label={`Add a brand for ${title}`} placeholder="+ Add brand…"
-            onChange={(e) => { setQ(e.target.value); setOpen(true); setActive(0); }}
-            onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 120)}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, matches.length - 1)); }
-              else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
-              else if (e.key === 'Enter' && matches[active]) { e.preventDefault(); add(matches[active].id); }
-              else if (e.key === 'Escape') setOpen(false);
-            }}
-            className="w-36 rounded border border-steel-300 px-2 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500" />
-          {open && (
-            <ul id={listId} role="listbox" aria-label={`Brands for ${title}`}
-              className="absolute z-20 mt-1 max-h-48 w-56 overflow-y-auto rounded border border-steel-200 bg-white py-1 shadow-lg">
-              {matches.length ? matches.map((v, i) => (
-                <li key={v.id} role="option" aria-selected={i === active}
-                  onMouseDown={(e) => { e.preventDefault(); add(v.id); }} onMouseEnter={() => setActive(i)}
-                  className={`cursor-pointer px-2.5 py-1 text-xs ${i === active ? 'bg-brand-50 text-steel-900' : 'text-steel-700'}`}>
-                  {nameOf(v.id, group)}{partsInGroup(v.id, group) > 0 && <span className="text-steel-400"> · {partsInGroup(v.id, group)} parts</span>}
-                </li>
-              )) : <li className="px-2.5 py-1 text-xs text-steel-400">No brand matches “{q}”</li>}
-            </ul>
-          )}
-        </div>
-      )}
+    <div className="flex flex-wrap items-center gap-2 min-w-0">
+      <select aria-label={`Brand for ${title}`} value={chosen[0]} onChange={(e) => onChange([e.target.value as VendorId])}
+        className="w-64 max-w-full border border-steel-300 rounded px-1.5 py-0.5 text-xs">
+        {offered.map((v) => {
+          const n = partsInGroup(v.id, group);
+          return <option key={v.id} value={v.id}>{nameOf(v.id, group)}{n > 0 ? ` · ${n} parts` : ''}</option>;
+        })}
+      </select>
+      {chosen.length > 1 && <span className="text-xs text-steel-500">also: {chosen.slice(1).map((id) => nameOf(id, group)).join(', ')}</span>}
     </div>
   );
 }
@@ -91,7 +56,7 @@ export default function VendorPreferenceCard() {
     <section className="rounded-lg border border-steel-200 bg-white p-4 space-y-2" aria-label="Preferred brands">
       <div className="flex flex-wrap items-baseline gap-2">
         <h3 className="font-semibold text-steel-900">Preferred brands / customer standard</h3>
-        <span className="text-xs text-steel-500">Mixed brands are fine, e.g. an Allen-Bradley PLC with ifm sensors and Yaskawa drives.</span>
+        <span className="text-xs text-steel-500">Pick a brand per group; mixed brands are fine, e.g. an Allen-Bradley PLC with ifm sensors and Yaskawa drives.</span>
         <label className="ml-auto text-xs text-steel-600 flex items-center gap-1.5">Use one brand for everything
           <select aria-label="One brand for everything" value="" onChange={(e) => e.target.value && setAll(e.target.value as VendorId)}
             className="border border-steel-300 rounded px-1.5 py-0.5 text-xs">
@@ -105,7 +70,7 @@ export default function VendorPreferenceCard() {
           <div key={g} className="contents">
             <div className="py-1.5 text-sm text-steel-700 border-t border-steel-100" title={GROUP_TITLE[g]}>{SHORT[g]}</div>
             <div className="py-1.5 border-t border-steel-100" role="group" aria-label={GROUP_TITLE[g]}>
-              <BrandPicker group={g} chosen={pref[g]} onChange={(ids) => setGroup(g, ids)} />
+              <BrandSelect group={g} chosen={pref[g]} onChange={(ids) => setGroup(g, ids)} />
             </div>
           </div>
         ))}
