@@ -7,6 +7,7 @@ import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, hmiFingerprint } from '../spec/useStages';
 import { HMI_MODELS, getHmi, hmiCommsText, hmiMaker, isCmore, HMI_DESIGN_GUIDELINES, type HmiModel } from '../hmi/hmiCatalog';
 import { catalogPanels } from '../hmi/panels';
+import { setProjectPanel } from '../hmi/retarget';
 import { hmiFit, type Need } from '../plc/core/fit';
 import { generateHmiDesign, recreateScreenFromPicture } from '../lib/ai/hmiAI';
 import HmiScreenView from '../hmi/HmiScreenView';
@@ -479,7 +480,7 @@ export default function HmiPage() {
       <p className="text-xs text-gray-500">Touch panels that can talk to the {profile.vendor} {cpu.label} (the maker's PLC driver list), {pickable.length} in all.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         {pickable.map((m) => (
-          <button key={m.partNumber} onClick={() => { hmi.setHmiPartNumber(m.partNumber); setChoosing(false); }}
+          <button key={m.partNumber} onClick={() => { setProjectPanel(m.partNumber); setChoosing(false); }}
             className={`text-left rounded border p-3 ${m.partNumber === (model?.partNumber ?? '') ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-brand-300'}`}>
             <div className="font-mono text-sm font-semibold text-gray-800">{m.partNumber}</div>
             <div className="text-xs text-gray-600">{hmiMaker(m)} {m.family} · {m.sizeIn}" · {m.widthPx}×{m.heightPx}{m.ethernet ? ' · Ethernet' : ''}</div>

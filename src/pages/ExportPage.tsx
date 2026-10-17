@@ -4,6 +4,7 @@ import { useStages, type StageInfo } from '../spec/useStages';
 import { collectProject } from '../deliverables/collect';
 import { buildExcelReport } from '../deliverables/excelReport';
 import { buildEngineeringPdf } from '../deliverables/engineering';
+import { hmiReadme, hmiTagCsv, needsHmiTagList } from '../deliverables/hmiTags';
 import { buildDrawingsPdf, buildEverythingZip, buildHmiImages, buildHmiPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
 import { Spinner } from '../components/common';
@@ -235,7 +236,12 @@ export default function ExportPage() {
                 for (const img of await buildHmiImages(collectProject())) zip.file(img.name, await (await fetch(img.dataUrl)).blob());
                 saveBlob(`${p.fileBase}_hmi_screens.zip`, await zip.generateAsync({ type: 'blob' }));
               })} />
+              {needsHmiTagList(p) && <B busy={busy} label="HMI tag list (CSV)" onClick={run('HMI tag list (CSV)', async () => {
+                const snap = collectProject();
+                saveBlob(`${p.fileBase}_hmi_tags.csv`, new Blob([hmiTagCsv(snap)], { type: 'text/csv' }));
+              })} />}
             </div>
+            {needsHmiTagList(p) && <p className="mt-2 text-xs text-steel-500">{hmiReadme(p).split('\r\n')[2]} The ZIP adds the tag list and a short how-to; no project file of that software is made.</p>}
           </Card>
 
           <Card title="PLC program" info={stages.program} to="/program">

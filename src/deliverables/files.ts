@@ -1,3 +1,4 @@
+import { hmiReadme, hmiTagCsv, needsHmiTagList } from './hmiTags';
 import { sheetOnPaper } from '../standards/regions';
 import { IS_PREVIEW } from '../preview/mode';
 import { saveViaAccount } from '../preview/claudeAccount';
@@ -162,6 +163,11 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     for (const img of images) zip.file(`hmi/${img.name}`, await dataUrlToBlob(img.dataUrl));
     pre.hmiPdf = await buildHmiPdf(p, images);
     if (pre.hmiPdf) zip.file(`hmi/${p.fileBase}_hmi_screens.pdf`, pre.hmiPdf);
+    // Panels of other makers: the tag list bound to the PLC program's tags and how to rebuild the screens.
+    if (needsHmiTagList(p)) {
+      zip.file(`hmi/${p.fileBase}_hmi_tags.csv`, hmiTagCsv(p));
+      zip.file('hmi/README.txt', hmiReadme(p));
+    }
   }
   onProgress?.('Engineering package');
   pre.engineering = await buildEngineeringPdf(p, p.equipment);
