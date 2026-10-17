@@ -8,14 +8,13 @@ import { useHmiStore } from '../store/useHmiStore';
 import { useIOStore } from '../store/useIOStore';
 import { PLC_PROFILES } from '../plc/core/profiles';
 import { getPart, partsIn } from '../electrical/catalog';
-import { HMI_MODELS, getHmi, type HmiModel } from '../hmi/hmiCatalog';
-import { catalogPanels } from '../hmi/panels';
+import { getHmi } from '../hmi/hmiCatalog';
 import { normalizePreference } from '../electrical/catalogs';
-import { useUi } from '../store/useUiStore';
 import { moduleSlots, ioCapacity } from '../plc/core/modules';
-import { cpuFit, findCpu, hmiFit, platformOf, type Need } from '../plc/core/fit';
+import { cpuFit, findCpu, platformOf, type Need } from '../plc/core/fit';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, usePendingEquipment, type EquipmentChoice } from '../spec/equipment';
+import HmiChooser from './HmiChooser';
 import VendorPreferenceCard from './VendorPreferenceCard';
 import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
@@ -131,11 +130,6 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   // first (Brand preference), all makers on request. A panel whose resolution is not confirmed
   // is listed but cannot be chosen (screens are never laid out on a guessed resolution).
   const hmiMakers = normalizePreference(project.info.vendors).hmi;
-  const [allMakers, setAllMakers] = useUi('equipment.allHmiMakers', false);
-  const panelRows: { pn: string; maker: string; sizeIn: number; res: string; model: HmiModel | null }[] = [
-    ...HMI_MODELS.filter((h) => h.touch).map((h) => ({ pn: h.partNumber, maker: 'AutomationDirect', vendor: 'automationdirect', sizeIn: h.sizeIn, res: `${h.widthPx}×${h.heightPx}`, model: h as HmiModel | null })),
-    ...catalogPanels().filter((o) => o.model?.touch !== false).map((o) => ({ pn: o.part.partNumber, maker: o.part.manufacturer, vendor: o.part.vendor ?? '', sizeIn: Number(o.part.ratings.displayIn ?? o.part.ratings.sizeIn ?? 0), res: o.model ? `${o.model.widthPx}×${o.model.heightPx}` : '—', model: o.model })),
-  ].filter((r) => allMakers || hmiMakers.includes(r.vendor as never) || r.pn === choice?.hmiPartNumber);
   const cpu = choice ? findCpu(choice.cpuId) : null;
   const fit = cpu && choice ? cpuFit(cpu, choice.modules, need) : null;
   const cap = cpu && choice ? ioCapacity(cpu, moduleSlots(choice.modules)) : null;
@@ -239,34 +233,9 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
             )}
           </Section>
 
-          <Section title="Operator panel (HMI)"
-            aside={<label className="text-xs text-steel-600 flex items-center gap-1.5"><input type="checkbox" checked={allMakers} onChange={(e) => setAllMakers(e.target.checked)} /> Every maker's panels</label>}>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead><tr>{['', 'Part number', 'Maker', 'Size', 'Resolution', 'Fits this machine?'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
-                <tbody>
-                  <tr onClick={() => set({ hmiPartNumber: null })} className={`cursor-pointer hover:bg-brand-50 ${!choice?.hmiPartNumber ? 'bg-brand-100' : ''}`}>
-                    <td className={td}><input type="radio" readOnly checked={!choice?.hmiPartNumber} aria-label="No HMI" /></td>
-                    <td className={td} colSpan={5}>No touch panel (pushbuttons and lights only)</td>
-                  </tr>
-                  {panelRows.map((r) => {
-                    const f = r.model ? hmiFit(r.model, need, choice?.cpuId) : { ok: false, reason: "Resolution not confirmed on the maker's datasheet yet." };
-                    const selected = choice?.hmiPartNumber === r.pn;
-                    return (
-                      <tr key={r.pn} onClick={() => f.ok && set({ hmiPartNumber: r.pn })}
-                        className={`${f.ok ? 'cursor-pointer hover:bg-brand-50' : 'text-steel-400 bg-steel-50/60 cursor-not-allowed'} ${selected ? 'bg-brand-100' : ''}`}>
-                        <td className={td}><input type="radio" readOnly checked={selected} disabled={!f.ok} aria-label={`Choose ${r.pn}`} /></td>
-                        <td className={`${td} font-mono`}>{r.pn}{rec?.hmi?.partNumber === r.pn && <span className="ml-2 text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-sm font-sans">SUGGESTED</span>}</td>
-                        <td className={`${td} text-xs`}>{r.maker}</td>
-                        <td className={td}>{r.sizeIn ? `${r.sizeIn}"` : '—'}</td>
-                        <td className={td}>{r.res}</td>
-                        <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes</span> : f.reason}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          <Section title="Operator panel (HMI)">
+            <HmiChooser need={need} cpuId={choice?.cpuId} selected={choice?.hmiPartNumber ?? null} suggested={rec?.hmi?.partNumber}
+              makers={hmiMakers} onPick={(pn) => set({ hmiPartNumber: pn })} />
           </Section>
         </div>
 
