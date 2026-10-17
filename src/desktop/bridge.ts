@@ -94,9 +94,13 @@ export interface IsaDesktop {
   onOpenFile?(cb: (name: string, bytes: Uint8Array, filePath: string) => void): (() => void) | void;
   /** Write again to a file chosen earlier in a Save dialog (or opened from Explorer). */
   writeFile?(filePath: string, bytes: Uint8Array): Promise<DesktopSaveResult>;
+  /** Microphone permission for voice input: 'always' (remembered), 'session' (until the app closes) or 'ask'. */
+  micPermission?: { get(): Promise<MicPermission>; reset(): Promise<MicPermission> };
   /** Connect to PLC over Modbus TCP (desktop app only: a browser can't open TCP sockets). */
   modbus?: ModbusBridge;
 }
+
+export type MicPermission = 'always' | 'session' | 'ask';
 
 declare global {
   interface Window { isaDesktop?: IsaDesktop }

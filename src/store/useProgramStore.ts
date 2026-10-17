@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { EMPTY_PROGRAM, type LadderProgram } from '../plc/core/ladder';
+import { keepRungComments } from '../edits/rungComments';
 
 export interface ProgramVersion {
   id: string;
@@ -98,7 +99,8 @@ export const useProgramStore = create<ProgramStore>()(
       setGeneratedLadder: (program, explanation, reasoning) =>
         set((s) => ({
           versions: snapshot(s.versions, s.ladder, 'Before new generation'),
-          ladder: program,
+          // Rung comments the user rewrote stay (rungs keep their ids).
+          ladder: keepRungComments(program),
           reasoning,
           proposal: null,
           lastGeneratedAt: now(),
@@ -120,7 +122,7 @@ export const useProgramStore = create<ProgramStore>()(
           if (!s.proposal) return {};
           return {
             versions: snapshot(s.versions, s.ladder, 'Before AI change'),
-            ladder: s.proposal.program,
+            ladder: keepRungComments(s.proposal.program),
             reasoning: s.proposal.reasoning,
             proposal: null,
             chat: markLastAssistant(s.chat, 'applied'),

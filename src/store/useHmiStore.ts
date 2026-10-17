@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { HmiDesign, HmiElement } from '../hmi/types';
+import { keepAlarmTexts } from '../edits/hmiTexts';
 
 interface HmiStore {
   /** Chosen HMI part number (before or after a design exists). */
@@ -22,7 +23,8 @@ export const useHmiStore = create<HmiStore>()(
       setHmiPartNumber: (hmiPartNumber) => set({ hmiPartNumber }),
       design: null,
       explanation: null,
-      setDesign: (design, explanation) => set({ design, explanation }),
+      // Alarm messages the user rewrote stay through regenerations.
+      setDesign: (design, explanation) => set({ design: keepAlarmTexts(design), explanation }),
       updateElement: (screenId, el) =>
         set((s) => (s.design ? {
           design: { ...s.design, screens: s.design.screens.map((sc) => (sc.id === screenId ? { ...sc, elements: sc.elements.map((e) => (e.id === el.id ? el : e)) } : sc)) },

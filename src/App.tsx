@@ -139,6 +139,7 @@ export default function App() {
           { label: 'Machining (DXF)', to: '/electrical?tab=machining' },
           { label: 'Labels', to: '/electrical?tab=labels' },
           { label: 'Improve design', to: '/electrical?tab=improve' },
+          { label: 'Cable & wire lists', to: '/electrical?tab=lists' },
           { label: 'Sourcing', to: '/sourcing' },
           { label: 'Engineer review', to: '/engineer' },
         ],
@@ -192,6 +193,7 @@ export default function App() {
         </Menu>
         <Menu label="Options">
           <MenuItem onClick={() => navigate('/settings')}>Settings (AI provider, keys)…</MenuItem>
+          <MenuItem onClick={() => navigate('/settings#voice')}>Voice (microphone, language, read aloud)…</MenuItem>
         </Menu>
       </div>
 

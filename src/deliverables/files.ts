@@ -16,7 +16,7 @@ import { planDrawings } from '../electrical/drawings/plan';
 import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
 import { getHmi } from '../hmi/hmiCatalog';
-import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv, buildModel, type DrawingContext, type DrillingPlan } from '../electrical/derive';
+import { bomCsv, terminalPlanCsv, buildModel, type DrawingContext, type DrillingPlan } from '../electrical/derive';
 import { driveParamsCsv } from '../electrical/vfd';
 import { analogSetup, analogSetupCsv } from '../plc/core/analog';
 import { moduleSlots } from '../plc/core/modules';
@@ -24,6 +24,8 @@ import { clickNicknameCsv, clickRungListing } from '../plc/core/clickExport';
 import { buildExcelReport } from './excelReport';
 import { buildEngineeringPdf } from './engineering';
 import { cabinetPng } from '../electrical/render/renderToPng';
+import { cableScheduleCsvWithNotes, wireListCsvWithNotes } from '../edits/lists';
+import { MACHINE_SPEC_KEY, textOr } from '../edits/useEditsStore';
 
 /** Render React content off-screen, let the caller read the DOM, then clean up. */
 async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) => Promise<T>): Promise<T> {
@@ -189,9 +191,9 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     pre.drawings = await buildDrawingsPdf(p);
     if (pre.drawings) zip.file(`electrical/${p.fileBase}_drawings.pdf`, pre.drawings);
     zip.file('electrical/bom.csv', bomCsv(p.drawingCtx));
-    zip.file('electrical/wire_list.csv', wireListCsv(p.drawingCtx));
+    zip.file('electrical/wire_list.csv', wireListCsvWithNotes(p.drawingCtx));
     zip.file('electrical/terminal_plan.csv', terminalPlanCsv(p.drawingCtx));
-    zip.file('electrical/cable_schedule.csv', cableScheduleCsv(p.drawingCtx));
+    zip.file('electrical/cable_schedule.csv', cableScheduleCsvWithNotes(p.drawingCtx));
     const drives = buildModel(p.drawingCtx).drives;
     if (drives.length) zip.file('electrical/drive_parameters.csv', driveParamsCsv(drives));
     // 1:1 machining files: inches (default for the shop) and the same geometry in millimetres.
@@ -238,7 +240,8 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
   await addPackageToZip(zip, p, pre, onProgress);
   // the full machine specification (sections, answered questions, equipment), not the raw intake text
   const { machineSpecText } = await import('./machineSpec');
-  zip.file('spec.md', machineSpecText(p));
+  // The user's own version of the text when they rewrote it on the Deliverables page.
+  zip.file('spec.md', textOr(MACHINE_SPEC_KEY, machineSpecText(p)));
   onProgress?.('Packing');
   return zip.generateAsync({ type: 'blob' });
 }

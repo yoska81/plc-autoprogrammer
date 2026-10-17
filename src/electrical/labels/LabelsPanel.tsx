@@ -14,6 +14,8 @@ import LabelSvg from './LabelSvg';
 import { BRANDS, PRINTERS, printerById, SUPPLY_KIND_TITLE, supplyByPart, suppliesFor, supplyText, type SupplyKind } from './printers';
 import { useDraft } from '../../store/useDraftStore';
 import { useUi } from '../../store/useUiStore';
+import { useEditsStore } from '../../edits/useEditsStore';
+import { EditableCell } from '../../edits/EditedMark';
 
 const input = 'border border-steel-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 bg-white hover:bg-steel-50 disabled:opacity-40 flex items-center gap-2';
@@ -48,7 +50,11 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   const setup = useLabelSetupStore((s) => (activeId && s.byProject[activeId]) || s.last);
   const setFor = useLabelSetupStore((s) => s.set);
   const set = (patch: Partial<LabelSetup>) => setFor(activeId, patch);
-  const all = useMemo(() => (ctx ? listLabels(ctx) : []), [ctx]);
+  // Label texts typed over the generated ones (kept by label id when the design is generated again).
+  const labelEdits = useEditsStore((s) => s.labels);
+  const setLabel = useEditsStore((s) => s.setLabel);
+  const resetLabel = useEditsStore((s) => s.resetLabel);
+  const all = useMemo(() => (ctx ? listLabels(ctx, labelEdits) : []), [ctx, labelEdits]);
   // Kept with the project (as arrays), so ticks and copy counts survive leaving the page.
   const [kindList, setKindList] = useDraft<LabelKind[]>('labels.kinds', LABEL_KINDS.map((k) => k.kind));
   const [offList, setOffList] = useDraft<string[]>('labels.off', []);
@@ -357,8 +363,14 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
                   <tr key={l.id} style={{ height: ROW_H }} className={on ? '' : 'text-steel-400 bg-steel-50'}>
                     <td className="pl-3 py-1"><input type="checkbox" aria-label={`Print ${l.code}`} checked={on} onClick={(e) => clickRow(i, e)} onChange={() => {}} /></td>
                     <td className="text-right pr-2 text-xs tabular-nums text-steel-400">{i + 1}</td>
-                    <td className="pr-2 font-mono font-semibold whitespace-nowrap">{l.code}</td>
-                    <td className="pr-2 max-w-md truncate" title={l.description}>{l.description}</td>
+                    <td className="pr-2 font-mono font-semibold whitespace-nowrap">
+                      <EditableCell value={l.code} label={`Label text ${l.id}`} edited={l.edited?.code !== undefined} generated={l.edited?.code}
+                        onCommit={(v) => setLabel(l.id, { code: v.trim() && v !== (l.edited?.code ?? l.code) ? v : undefined })} onReset={() => resetLabel(l.id, 'code')} inputClassName="font-mono font-semibold !w-20" inline />
+                    </td>
+                    <td className="pr-2 max-w-md" title={l.description}>
+                      <EditableCell value={l.description} label={`Label description ${l.id}`} edited={l.edited?.description !== undefined} generated={l.edited?.description}
+                        onCommit={(v) => setLabel(l.id, { description: v !== (l.edited?.description ?? l.description) ? v : undefined })} onReset={() => resetLabel(l.id, 'description')} inputClassName="truncate min-w-[9rem]" inline />
+                    </td>
                     <td className="pr-2 text-xs whitespace-nowrap">{LABEL_KINDS.find((k) => k.kind === l.kind)?.title}</td>
                     <td className="pr-2 text-xs text-steel-500 whitespace-nowrap">{l.group}</td>
                     <td className="pr-3"><input type="number" min={0} max={99} aria-label={`Copies of ${l.code}`} value={withCopies(l).copies}

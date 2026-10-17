@@ -16,6 +16,11 @@ contextBridge.exposeInMainWorld('isaDesktop', {
   listPrinters: () => ipcRenderer.invoke('isa:list-printers'),
   saveFile: (name, bytes) => ipcRenderer.invoke('isa:save-file', name, bytes),
   writeFile: (filePath, bytes) => ipcRenderer.invoke('isa:write-file', filePath, bytes),
+  // Microphone permission for voice input: 'always' | 'session' | 'ask'; reset forgets "Always allow".
+  micPermission: {
+    get: () => ipcRenderer.invoke('isa:mic-permission'),
+    reset: () => ipcRenderer.invoke('isa:mic-permission-reset'),
+  },
   // Returns an unsubscribe: a page that registers again (re-render) must not open one file twice.
   onOpenFile: (cb) => {
     const h = (_e, name, bytes, filePath) => cb(name, bytes, filePath);

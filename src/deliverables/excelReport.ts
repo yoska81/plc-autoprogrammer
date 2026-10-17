@@ -16,6 +16,7 @@ import { safetyFunctionTable, safetyFunctions } from './docs/safety';
 import { fatProcedure, satChecklist, satTable, testTable } from './docs/fat';
 import { pmSchedule, sparePartsTable } from './docs/maintenance';
 import { isGroup, type DocTable } from './docs/table';
+import { cableKey, noteOf, wireKeys } from '../edits/lists';
 
 /** Deep blue: title rows (white text) and dark text. */
 const BRAND = 'FF0B2A5C';
@@ -190,18 +191,20 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
     const wires = wb.addWorksheet('Wire List');
     header(wires, [
       { header: 'Wire', key: 'w', width: 12 }, { header: 'From', key: 'f', width: 26 }, { header: 'To', key: 't', width: 26 },
-      { header: 'Color', key: 'c', width: 8 }, { header: 'Size', key: 's', width: 10 }, { header: 'Function', key: 'fn', width: 40 },
+      { header: 'Color', key: 'c', width: 8 }, { header: 'Size', key: 's', width: 10 }, { header: 'Function', key: 'fn', width: 40 }, { header: 'Note', key: 'n', width: 40 },
     ]);
-    for (const w of wireNumbers(p.drawingCtx)) wires.addRow({ w: w.wire, f: w.from, t: w.to, c: w.color, s: w.size, fn: w.function });
+    const wireList = wireNumbers(p.drawingCtx);
+    const keys = wireKeys(wireList);
+    wireList.forEach((w, i) => wires.addRow({ w: w.wire, f: w.from, t: w.to, c: w.color, s: w.size, fn: w.function, n: noteOf(keys[i]) }));
 
     const cab = wb.addWorksheet('Cable Schedule');
     header(cab, [
       { header: 'Cable', key: 'c', width: 9 }, { header: 'Zone', key: 'z', width: 18 }, { header: 'From', key: 'f', width: 18 }, { header: 'To', key: 't', width: 14 },
       { header: 'Type', key: 'ty', width: 34 }, { header: 'Part number', key: 'pn', width: 18 }, { header: 'Size', key: 's', width: 10 }, { header: 'Length', key: 'l', width: 10 },
-      { header: 'Core', key: 'core', width: 8 }, { header: 'Wire', key: 'w', width: 10 }, { header: 'Color', key: 'col', width: 8 },
+      { header: 'Core', key: 'core', width: 8 }, { header: 'Wire', key: 'w', width: 10 }, { header: 'Color', key: 'col', width: 8 }, { header: 'Note', key: 'n', width: 40 },
     ]);
     for (const c of cableSchedule(p.drawingCtx)) {
-      cab.addRow({ c: c.tag, z: c.zone, f: c.from, t: c.to, ty: c.type, pn: c.partNumber ?? '', s: c.size, l: c.length }).font = { bold: true };
+      cab.addRow({ c: c.tag, z: c.zone, f: c.from, t: c.to, ty: c.type, pn: c.partNumber ?? '', s: c.size, l: c.length, n: noteOf(cableKey(c)) }).font = { bold: true };
       for (const k of c.cores) cab.addRow({ core: k.core, w: k.wire, col: k.color, f: k.from, t: k.to });
     }
 
