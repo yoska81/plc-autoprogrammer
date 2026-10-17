@@ -13,9 +13,10 @@ import { panelLayout, spareSpace, terminalCounts, motorFla, type DrawingContext 
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
 import { getHmi } from '../../hmi/hmiCatalog';
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, MotorSpec } from '../types';
-import { defaultMachineModel, type MachineModel } from './machineModel';
+import { defaultMachineModel, drivesFromIo, type MachineModel } from './machineModel';
 import { comp, controlPower, mainDisconnect, motorBranches, Tags } from './power';
-import { devicesAndWiring, motorFor } from './devices';
+import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
+import { processLoads } from './process';
 import { num, Picker } from './select';
 
 export { defaultMachineModel, type MachineModel } from './machineModel';
@@ -36,6 +37,8 @@ export interface EngineInput {
   hmiPartNumber?: string | null;
   analog?: AnalogSetupRow[];
   projectName?: string;
+  /** The specification (motor powers for drives found only in the I/O list). */
+  spec?: string;
   /** Timestamp for generatedAt (tests pass a fixed one). */
   now?: string;
 }
@@ -80,7 +83,8 @@ function enclosureCandidates(pk: Picker, rating: DesignInputs['enclosureRating']
 }
 
 export function generateDesign(input: EngineInput): EngineResult {
-  const { model, inputs, getPart } = input;
+  const { inputs, getPart } = input;
+  const model = drivesFromIo(input.model, input.io, input.spec ?? '');
   const supply = inputs.supply;
   const pk = new Picker(input.pref ?? DEFAULT_PREFERENCE);
   const tags = new Tags(['PLC', 'ENC1', 'SP1', 'DS1', 'SR1']);
@@ -104,7 +108,11 @@ export function generateDesign(input: EngineInput): EngineResult {
 
   const power = motorBranches(pk, tags, model.motors, supply, input.region, reversingByIo);
   notes.push(...power.notes);
-  const dev = devicesAndWiring(pk, tags, model, power.branches, points);
+  const overTempInput = points.some(({ point }) => point.type === 'input' && OVER_TEMP_RE.test(point.description));
+  const proc = processLoads(pk, tags, model.heaters ?? [], supply, input.io, overTempInput);
+  notes.push(...proc.notes);
+  askUser.push(...proc.askUser);
+  const dev = devicesAndWiring(pk, tags, model, power.branches, points, proc);
   notes.push(...dev.notes);
   askUser.push(...dev.askUser);
 
@@ -125,7 +133,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   }
 
   const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(dev.components.find((c) => c.tag === w.deviceTag)?.partNumber ?? '')).length;
-  const loadA = dcLoad([...power.components, ...dev.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
+  const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
   const ctl = controlPower(pk, tags, supply, loadA);
   notes.push(...ctl.notes);
 
@@ -141,7 +149,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   const sto = power.branches.filter((b) => b.sto).map((b) => b.vfd);
   if (sto.length) notes.push(`${sto.join(', ')}: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.`);
 
-  const core = [...power.components, ...ctl.components, ...plc, ...dev.components, ...required];
+  const core = [...power.components, ...proc.components, ...ctl.components, ...plc, ...dev.components, ...required];
   const nema4 = /4/.test(inputs.enclosureRating ?? '');
   const bigIo = points.length > 48;
   const termFeed = pk.byNumber('DN-T10-A') ?? pk.pick('terminal', (p) => !/ground/i.test(p.description));
@@ -178,11 +186,14 @@ export function generateDesign(input: EngineInput): EngineResult {
   // Terminal counts come from the terminal plan, which does not depend on the enclosure.
   const counts = terminalCounts(ctxOf([...core, ...accessories({ feed: 1, ground: 1, fused: 0, endPlates: 1, endStops: 2 }, 1, 1)]));
 
-  let best: { components: DesignComponent[]; spare: number; ok: boolean; enc: CatalogPart } | undefined;
+  // When no enclosure fits, the closest one wins: fewest back-panel parts left out, then a door that fits
+  // (HMI, operators, handle), then the most spare space — never simply the smallest (all score 0 % spare).
+  let best: { components: DesignComponent[]; spare: number; ok: boolean; enc: CatalogPart; score: number[] } | undefined;
+  const better = (a: number[], b: number[]) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i]; return false; };
   for (const enc of enclosureCandidates(pk, inputs.enclosureRating)) {
     const sub = pk.byNumber(String(enc.ratings.subpanel ?? ''));
     const depth = num(enc.ratings.depthIn) ?? 8;
-    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth);
+    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps);
     const head = [
       comp('ENC1', enc.partNumber, 1, `Main enclosure ${enc.ratings.heightIn}x${enc.ratings.widthIn}x${enc.ratings.depthIn} ${enclosureText(inputs.enclosureRating, input.region)}`),
       ...(sub ? [comp('SP1', sub.partNumber, 1, 'Back panel')] : []),
@@ -199,7 +210,8 @@ export function generateDesign(input: EngineInput): EngineResult {
     const spare = spareSpace(ctx).panel;
     components = components.map((c) => (c.tag === 'ENC1' ? { ...c, function: `${c.function} — ${spare >= 0.25 ? 'smallest catalog enclosure with everything placed and' : 'everything placed, but only'} ${Math.round(spare * 100)}% spare panel space (target >= 25%)` } : c));
     const ok = !L2.overflow && !L2.notFit.length && !L2.door.overflow && spare >= 0.25;
-    if (!best || ok || spare > best.spare) best = { components, spare, ok, enc };
+    const score = [ok ? 1 : 0, -L2.notFit.length, L2.door.overflow ? 0 : 1, spare];
+    if (!best || ok || better(score, best.score)) best = { components, spare, ok, enc, score };
     if (ok) { if (ds.notes.length) notes.push(...ds.notes); break; }
   }
   if (!best) throw new Error('No enclosure in the catalog.');

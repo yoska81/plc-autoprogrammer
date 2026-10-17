@@ -19,7 +19,7 @@ import { stripTag } from '../../standards/designations';
 
 export type RungEnd = { kind: 'rail' } | { kind: 'node'; label: string } | { kind: 'xref'; label: string };
 export type RungEl =
-  | { t: 'contact'; nc: boolean; tag: string; term: string; dev: 'pb' | 'estop' | 'relay' | 'ol' | 'sr' }
+  | { t: 'contact'; nc: boolean; tag: string; term: string; dev: 'pb' | 'estop' | 'relay' | 'ol' | 'sr' | 'guard' }
   | { t: 'coil'; tag: string }
   | { t: 'lamp'; tag: string; color: string }
   | { t: 'box'; tag: string; left: string; right: string; label?: string }
@@ -159,13 +159,14 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   if (s.relay) {
     const sr = s.relay.tag;
     out.push({ start: rail, end: rail, els: [{ t: 'box', tag: sr, left: 'A1', right: 'A2' }], wires: ['24+', '0V'], desc: [`SAFETY RELAY ${sr} SUPPLY`, `CONTACTS: {c:${sr}}`], key: `coil:${sr}` });
-    const es = s.estops.length ? s.estops : ['ES?'];
+    // E-stops, then the guard-door interlocks (their N.C. safety contacts), in series in both channels
+    const es = [...(s.estops.length ? s.estops : ['ES?']), ...s.guards];
     for (const [a, b, term, ch] of [['S11', 'S12', '11-12', 1], ['S21', 'S22', '21-22', 2]] as const) {
       out.push({
         start: { kind: 'node', label: `${sr} ${a}` }, end: { kind: 'node', label: `${sr} ${b}` },
-        els: es.map((tag) => ({ t: 'contact', nc: true, tag, term, dev: 'estop' })),
+        els: es.map((tag) => ({ t: 'contact', nc: true, tag, term, dev: s.guards.includes(tag) ? 'guard' : 'estop' })),
         wires: [a, ...es.slice(1).map((_, k) => `${a}${letter(k + 1)}`), b],
-        desc: [`E-STOP CHANNEL ${ch} (${es.join(', ')})`, ch === 1 ? 'DUAL CHANNEL, CROSS-MONITORED' : ''],
+        desc: [`${s.guards.length ? 'E-STOP / GUARD' : 'E-STOP'} CHANNEL ${ch} (${es.join(', ')})`, ch === 1 ? 'DUAL CHANNEL, CROSS-MONITORED' : ''],
       });
     }
     const rs = s.reset ?? 'PB?';
@@ -179,7 +180,24 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
       out.push({ start: rail, end: rail, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }, { t: 'coil', tag: s.mcr.tag }], wires: ['24+', 'SR14', '0V'], desc: [`MASTER CONTROL RELAY ${s.mcr.tag}`, `CONTACTS: {c:${s.mcr.tag}}`], key: `coil:${s.mcr.tag}` });
       out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: s.mcr.tag, term: '13-14', dev: 'relay' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', `${feeds} {=s:out}`], key: 'rung:24+S' });
     } else {
-      out.push({ start: rail, end: toOutputs, els: [{ t: 'contact', nc: false, tag: sr, term: '13-14', dev: 'sr' }], wires: ['24+', '24+S'], desc: ['SAFETY-SWITCHED +24V (24+S)', `${feeds} {=s:out}`], key: 'rung:24+S' });
+      // A light-curtain relay's safety output is in series: a broken beam drops 24+S like an E-stop.
+      const lc = (s.extraRelays ?? []).filter((x) => x.kind === 'light-curtain').map((x) => x.relay.tag);
+      out.push({ start: rail, end: toOutputs, els: [sr, ...lc].map((tag) => ({ t: 'contact' as const, nc: false, tag, term: '13-14', dev: 'sr' as const })),
+        wires: ['24+', ...lc.map((_, k) => (k === 0 ? 'SR14' : `SR14${letter(k)}`)), '24+S'], desc: [lc.length ? `SAFETY-SWITCHED +24V (24+S) — E-STOP AND ${lc.join(', ')}` : 'SAFETY-SWITCHED +24V (24+S)', `${feeds} {=s:out}`], key: 'rung:24+S' });
+    }
+    // Two-hand and light-curtain relays: supply and input circuit (their outputs: 24+S above, the closing stroke below).
+    for (const x of s.extraRelays ?? []) {
+      const t = x.relay.tag;
+      out.push({ start: rail, end: rail, els: [{ t: 'box', tag: t, left: 'A1', right: 'A2' }], wires: ['24+', '0V'],
+        desc: [x.kind === 'two-hand' ? `TWO-HAND SAFETY RELAY ${t} SUPPLY` : `LIGHT-CURTAIN SAFETY RELAY ${t} SUPPLY`, `CONTACTS: {c:${t}}`], key: `coil:${t}` });
+      for (const d of x.inputs.length ? x.inputs : ['?']) {
+        out.push(x.kind === 'two-hand'
+          // The relay terminals are named at the start (the right rail may run past the rung's end).
+          ? { start: { kind: 'node', label: `${t} IN1/IN2` }, end: { kind: 'node', label: '' }, els: [{ t: 'box', tag: d, left: 'BTN1', right: 'BTN2', label: '' }], wires: [`${t}-1`, `${t}-2`],
+            desc: [`TWO-HAND STATION ${d}: BOTH BUTTONS (N.O. + N.C. EACH)`, `WIRES ${t}-1 / ${t}-2, 0.5 S, ISO 13851 TYPE IIIC`] }
+          : { start: { kind: 'node', label: `${t} S12/S22` }, end: { kind: 'node', label: '' }, els: [{ t: 'box', tag: d, left: 'OSSD1', right: 'OSSD2', label: '' }], wires: ['OSSD1', 'OSSD2'],
+            desc: [`LIGHT CURTAIN ${d}: OSSD1 / OSSD2`, 'TYPE 4, SELF-TESTING (IEC 61496)'] });
+      }
     }
   } else if (s.estops.length) {
     const es = s.estops;
@@ -205,6 +223,14 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
     if (!k || ioTags.has(k.tag)) continue;
     out.push({ start: { kind: 'node', label: s.outputSupply }, end: rail, els: [{ t: 'coil', tag: k.tag }], wires: [s.outputSupply, '0V'],
       desc: [`${k.tag} LINE CONTACTOR FOR ${mm.vfd!.tag} (${mm.motor.tag})`, s.outputSupply === '24+S' ? 'SAFETY STOP: DROPS WITH 24+S' : 'NO SAFETY RELAY — REVIEW'], key: `coil:${k.tag}` });
+  }
+  // heater safety contactors held by 24+S through the over-temperature limit's latched relay (not a PLC output)
+  const limit = model.rc.find((c) => c.part?.ratings.kind === 'limitAlarm');
+  for (const k of model.rc.filter((c) => c.category === 'contactor' && !c.comp.motorTag && !ioTags.has(c.tag) && /safety contactor/i.test(c.comp.function))) {
+    out.push({ start: { kind: 'node', label: s.outputSupply }, end: rail,
+      els: [...(limit ? [{ t: 'contact' as const, nc: false, tag: limit.tag, term: 'R1', dev: 'relay' as const }] : []), { t: 'coil', tag: k.tag }],
+      wires: [s.outputSupply, ...(limit ? [`${k.tag}A1`] : []), '0V'],
+      desc: [`${k.tag} ${k.comp.function.split(' — ')[0].toUpperCase()}`, limit ? `OVER-TEMPERATURE LIMIT ${limit.tag} (LATCHED) AND 24+S DROP IT` : 'DROPS WITH 24+S'], key: `coil:${k.tag}` });
   }
   // pilot lights not driven by the PLC, e.g. "control power on"
   const lamps = model.rc.filter((c) => c.category === 'pilotLight' && !ioTags.has(c.tag));
@@ -482,7 +508,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
       for (const r of sp.rungs) {
         const l = lineNo(sh.n, r.idx);
         if (r.key) xref.set(r.key, l);
-        for (const e of r.els) if (e.t === 'contact' && e.dev !== 'pb' && e.dev !== 'estop') addContact({ tag: e.tag, term: e.term, nc: e.nc, line: l });
+        for (const e of r.els) if (e.t === 'contact' && e.dev !== 'pb' && e.dev !== 'estop' && e.dev !== 'guard') addContact({ tag: e.tag, term: e.term, nc: e.nc, line: l });
       }
     } else if (sp.kind === 'io') {
       sp.rows.forEach((r, i) => {

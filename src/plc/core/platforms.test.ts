@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { getPart } from '../../electrical/catalog';
 import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf } from './platforms';
-import { cpuFit, hmiFit, platformOf, type Need } from './fit';
+import { cpuFit, hmiFit, modulesToFit, platformOf, type Need } from './fit';
 import { PLC_PROFILES } from './profiles';
 import { HMI_MODELS } from '../../hmi/hmiCatalog';
 import { CATALOG } from '../../electrical/catalog';
@@ -128,3 +128,13 @@ for (const p of ALL_HMIS().filter((h) => h.vendor && h.vendor !== 'automationdir
 }
 assert.ok(String(getPart('HMIG3U')!.ratings.pairsWith).split(',').includes('HMIDT732'), 'GTU box pairs with its displays');
 console.log('HMI panel spec tests passed');
+
+// Update all: the CPU must hold the real I/O list; CLICK modules are added for the shortfall, or null (a bigger CPU).
+{
+  const n = need({ digitalInputs: 15, digitalOutputs: 6, analogInputs: 1 });
+  const mods = modulesToFit('C0-12DD1E-D', [], n)!;
+  assert.ok(mods.length >= 2 && cpuFit(PLC_PROFILES.flatMap((p) => p.cpuModels).find((c) => c.id === 'C0-12DD1E-D')!, mods, n).ok, `CLICK modules added: ${mods.join(', ')}`);
+  assert.deepEqual(modulesToFit('C0-12DD1E-D', mods, n), mods, 'already fits: unchanged');
+  assert.equal(modulesToFit('C0-12DD1E-D', [], need({ digitalInputs: 400 })), null, 'too much I/O for any module set');
+  console.log('module fit tests passed');
+}

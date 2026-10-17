@@ -1,13 +1,13 @@
 /** Power distribution, motor circuits and 24VDC control/safety ladder sheets. */
 import { powerText, isIec } from '../../../standards/regions';
-import { isFusedDisconnect, ratingText, upstreamOcpd, supplyText, type MotorModel, type ResolvedComponent, type XfmrBranch } from '../../derive';
+import { isFusedDisconnect, ratingText, upstreamOcpd, supplyText, type AuxBranch, type MotorModel, type ResolvedComponent, type XfmrBranch } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW_THIN, lineNo } from '../geometry';
 import {
   CONTROL_PITCH, CONTROL_RUNGS, MOTOR_LINES, MOTOR_PITCH, POWER_PITCH, resolveRefs,
   type DrawingPlan, type PlannedSheet, type Rung, type RungEl, type RungEnd, type SheetSpec,
 } from '../plan';
 import {
-  BreakerPole, Coil, Contact, Dot, Fuse, Ground, Lamp, Line, Motor, OverloadHeater, Pushbutton, SwitchPole,
+  BreakerPole, Coil, Contact, DevBox, Dot, Fuse, Ground, Lamp, Line, Motor, OverloadHeater, Pushbutton, SwitchPole,
   TermBox, TermPt, Txt, WireNo, XrefArrow,
 } from '../symbols';
 import { stripTag } from '../../../standards/designations';
@@ -47,6 +47,41 @@ function Poles({ x, ys, kind }: { x: number; ys: number[]; kind: 'breaker' | 'sw
       {ys.length > 1 && kind !== 'fuse' && kind !== 'ol' && (
         <Line x1={x + (kind === 'switch' ? 0.6 : kind === 'mmp' ? -5 : 0)} y1={ys[0] - (kind === 'contact' ? 2.5 : 2.6)} x2={x + (kind === 'switch' ? 0.6 : kind === 'mmp' ? -5 : 0)} y2={ys[ys.length - 1] - (kind === 'contact' ? -2.5 : 1.2)} w={LW_THIN} dash="1.2 0.8" />
       )}
+    </g>
+  );
+}
+
+/**
+ * A load fed through switching devices (heater: branch fuses → safety contactor main contacts → SSR on the
+ * first pole → heater), with the load-side wire numbers of each device and the contactor's coil reference.
+ */
+function AuxPath({ plan, b, ys, x0 }: { plan: DrawingPlan; b: AuxBranch; ys: number[]; x0: number }) {
+  const [k, ssr] = b.path!;
+  const KX = 170, SX = 193, AX = 218;
+  const wt = (t: string) => t.replace(/^-/, '');
+  const coil = plan.xref.get(`coil:${k.tag}`);
+  return (
+    <g>
+      {ys.map((yy, i) => (
+        <g key={i}>
+          <Line x1={x0} y1={yy} x2={KX - 4} y2={yy} />
+          {i === 0 && ssr ? <><Line x1={KX + 4} y1={yy} x2={SX - 6} y2={yy} /><Line x1={SX + 6} y1={yy} x2={AX} y2={yy} /></> : <Line x1={KX + 4} y1={yy} x2={AX} y2={yy} />}
+          <WireNo x={i === 0 && ssr ? 181 : 190} y={yy} n={b.feedWires[i] === 'N' ? 'N' : `${wt(k.tag)}-T${i + 1}`} maxW={9} />
+          {i === 0 && ssr && <WireNo x={208.5} y={yy} n={`${wt(ssr.tag)}-T1`} maxW={14} />}
+          <XrefArrow x={AX} y={yy} />
+        </g>
+      ))}
+      <Poles x={KX} ys={ys} kind="contact" />
+      <Txt x={KX} y={ys[0] - 4.6} size={2.8} mono bold anchor="middle">{k.tag}</Txt>
+      {coil && <Txt x={KX} y={ys[ys.length - 1] + 5} size={2.0} mono anchor="middle">{`/${coil}`}</Txt>}
+      {ssr && (
+        <g>
+          <DevBox x={SX} y={ys[0]} label="SSR" w={12} />
+          <Txt x={SX} y={ys[0] - 4.6} size={2.8} mono bold anchor="middle">{ssr.tag}</Txt>
+        </g>
+      )}
+      <Txt x={AX + 6} y={ys[0] + 0.9} size={2.5} maxW={AREA_R - AX - 8}>{(b.load ?? 'LOAD').toUpperCase()}</Txt>
+      <Txt x={AX + 6} y={ys[0] + 4.4} size={2.2} maxW={AREA_R - AX - 8}>{`${k.tag} AC-1 SAFETY CONTACTOR${ssr ? `, ${ssr.tag} SWITCHED BY THE PLC` : ''}`}</Txt>
     </g>
   );
 }
@@ -145,7 +180,7 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
                 ) : <Dot x={BX[k]} y={ys[k]} />}
                 <Line x1={fromX ? 124.4 : BX[k]} y1={ys[k]} x2={k < br.b.protectedPoles ? PX - 5 : PX + 5} y2={ys[k]} />
                 {k >= br.b.protectedPoles && <Line x1={PX - 5} y1={ys[k]} x2={PX + 5} y2={ys[k]} />}
-                <WireNo x={k < br.b.protectedPoles ? 172 : 172} y={ys[k]} n={w} />
+                {br.type === 'aux' && br.b.path ? <WireNo x={158} y={ys[k]} n={w} maxW={11} /> : <WireNo x={172} y={ys[k]} n={w} />}
               </g>
             ))}
             {prot ? <Poles x={PX} ys={protYs} kind={protKind(prot)} /> : integral ? <Poles x={PX} ys={protYsShown} kind="fuse" /> : protYs.map((yy, k) => <Line key={k} x1={PX - 5} y1={yy} x2={PX + 5} y2={yy} />)}
@@ -154,11 +189,13 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
             {/* above the X1 wire right of its arrow: below the branch is the protection's note, left of it the bus */}
             {fromX && <Txt x={125} y={ys[0] - 1.4} size={2.0} maxW={PX - 7 - 125}>{`FROM ${m.xfmrBranch?.xfmr.tag ?? 'T1'} ${plan.xref.get('xfmr') ?? ''}`.trim()}</Txt>}
             {br.type === 'xfmr' ? <XfmrBox plan={plan} br={br.b} ys={ys} y0={y(br.idx)} pitch={POWER_PITCH} /> : br.type === 'ps' ? <PsBox plan={plan} br={br.b} ys={ys} y0={y(br.idx)} pitch={POWER_PITCH} /> : (
-              <g>
-                {ys.map((yy, k) => <Line key={k} x1={PX + 5} y1={yy} x2={208} y2={yy} />)}
-                {ys.map((yy, k) => <XrefArrow key={`a${k}`} x={208} y={yy} />)}
-                <Txt x={214} y={ys[0] + 0.9} size={2.5}>{(br.b.protection.comp.function || 'AUXILIARY LOAD').toUpperCase()}</Txt>
-              </g>
+              br.b.path ? <AuxPath plan={plan} b={br.b} ys={ys} x0={PX + 5} /> : (
+                <g>
+                  {ys.map((yy, k) => <Line key={k} x1={PX + 5} y1={yy} x2={208} y2={yy} />)}
+                  {ys.map((yy, k) => <XrefArrow key={`a${k}`} x={208} y={yy} />)}
+                  <Txt x={214} y={ys[0] + 0.9} size={2.5}>{(br.b.protection.comp.function || 'AUXILIARY LOAD').toUpperCase()}</Txt>
+                </g>
+              )
             )}
           </g>
         );
@@ -527,7 +564,8 @@ function RungView({ plan, r, yy }: { plan: DrawingPlan; r: Rung; yy: number }) {
       ))}
       {r.els.map((e, i) => <RungElement key={i} plan={plan} e={e} x={xs[i]} y={yy} />)}
       {r.end.kind === 'rail' && <Dot x={RAIL_R} y={yy} />}
-      {r.end.kind === 'node' && (
+      {/* an end node without a label: the circuit ends at the last element (a field device box) */}
+      {r.end.kind === 'node' && r.end.label && (
         <g>
           <TermPt x={endX} y={yy} />
           <Txt x={endX + 1.5} y={yy - 2} size={2.5} mono bold>{r.end.label.split(' ')[0]}</Txt>

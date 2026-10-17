@@ -25,12 +25,29 @@ export interface ModelSafety {
   /** Emergency-stop buttons (cabinet door first, then field stations). */
   estops: number;
   guardDoors: { zone: string }[];
-  lightCurtains: { zone: string }[];
+  /** heightMm: protected height when the spec gives one. */
+  lightCurtains: { zone: string; heightMm?: number }[];
+  /** Two-hand control (ISO 13851): a two-hand station into a two-hand safety relay that enables the closing stroke. */
+  twoHand?: { zone: string };
+}
+
+/** Resistive heater switched by the PLC (SSR or contactor), with its branch protection and over-temperature limit. */
+export interface ModelHeater {
+  tag: string;
+  description: string;
+  kw: number;
+  /** 1 = single-phase (line-to-line on a 3-phase supply), 3 = three-phase. */
+  phases: 1 | 3;
+  /** What the PLC output switches: an SSR (time-proportioned) or the heater contactor itself. */
+  switching: 'ssr' | 'contactor';
+  zone?: string;
 }
 
 export interface MachineModel {
   motors: ModelMotor[];
   safety: ModelSafety;
+  /** Heaters (from the I/O list and the spec); absent = none. */
+  heaters?: ModelHeater[];
   /** Machine areas in order; field devices and motors are placed in them. */
   zones: string[];
   /** Other machines / robots the PLC exchanges signals with (outputs to them get interposing relays). */
@@ -85,15 +102,17 @@ export function defaultMachineModel(io: IOPoint[], inputs: DesignInputs, spec = 
       && (p.deviceType === 'contactor-coil' || p.deviceType === 'vfd-input' || (MOTOR_RE.test(p.description) && !/\b(rev|reverse|speed|fault|light)\b/i.test(p.description))));
     for (const p of outs) {
       if (/\b(rev|reverse)\b/i.test(p.description)) continue;
-      const hp = Number(HP_RE.exec(p.description)?.[1] ?? 0) * (/kw/i.test(HP_RE.exec(p.description)?.[2] ?? '') ? 1.341 : 1) || 1;
+      const name0 = p.description.split(/\s+[—–-]\s+|[(,;]/)[0].replace(HP_RE, '').replace(/\b(run|contactor|starter|coil|output|on|vfd|drive)\b/gi, '').replace(/\s+/g, ' ').trim();
+      const fromSpec = specPower(spec, name0);
+      const hp = Number(HP_RE.exec(p.description)?.[1] ?? 0) * (/kw/i.test(HP_RE.exec(p.description)?.[2] ?? '') ? 1.341 : 1) || fromSpec || 1;
       const vfd = p.deviceType === 'vfd-input' || /\b(vfd|drive|speed)\b/i.test(p.description);
       const reversing = io.some((q) => q !== p && q.type === 'output' && /\b(rev|reverse)\b/i.test(q.description) && wordsShared(p.description, q.description));
-      const name = p.description.replace(HP_RE, '').replace(/\b(run|contactor|starter|coil|output|on|vfd|drive)\b/gi, '').replace(/\s+/g, ' ').trim() || 'Motor';
+      const name = name0 || 'Motor';
       // New tags skip the left-over motors' tags, so "M1 Conveyor motor … left out" never names a different motor.
       let n = motors.length + 1;
       while (stale.has(`M${n}`) || motors.some((m) => m.tag === `M${n}`)) n++;
       motors.push({ tag: `M${n}`, description: /motor/i.test(name) ? name : `${name} motor`, hp, start: vfd ? 'vfd' : reversing ? 'reversing' : 'dol', ...(/\b(hoist|lift|elevat\w*|crane|winch)\b/i.test(name) ? { vertical: true } : {}) });
-      if (!HP_RE.test(p.description)) assumptions.push(`${name}: motor power not given — assumed ${hp} HP; confirm the nameplate.`);
+      if (!HP_RE.test(p.description) && !fromSpec) assumptions.push(`${name}: motor power not given — assumed ${hp} HP; confirm the nameplate.`);
     }
   }
   const estopIo = io.filter((p) => p.type === 'input' && (p.deviceType === 'estop-contact' || /\b(e-?stop|emergency)\b/i.test(p.description)) && !/\b(ok|relay|healthy|status)\b/i.test(p.description));
@@ -102,12 +121,67 @@ export function defaultMachineModel(io: IOPoint[], inputs: DesignInputs, spec = 
   const text = `${spec}\n${io.map((p) => p.description).join('\n')}`;
   const zones = zonesFrom([spec, ...io.map((p) => p.description)]);
   const guardDoors = /\b(guard\s*door|interlocked\s*door|door\s*switch|safety\s*gate)\b/i.test(text) ? [{ zone: zones[0] ?? 'Machine' }] : [];
-  const lightCurtains = /\blight\s*curtain/i.test(text) ? [{ zone: zones[0] ?? 'Machine' }] : [];
+  const lcHeight = Number(/light\s*curtain[^.\n]{0,40}?(\d{3,4})\s*mm/i.exec(text)?.[1] ?? 0);
+  const lightCurtains = /\blight\s*curtain/i.test(text) ? [{ zone: zones[0] ?? 'Machine', ...(lcHeight ? { heightMm: lcHeight } : {}) }] : [];
+  const twoHand = io.some((p) => p.type === 'input' && TWO_HAND_RE.test(p.description)) || TWO_HAND_RE.test(spec) ? { zone: zones[0] ?? 'Machine' } : undefined;
+  const heaters: ModelHeater[] = io.filter((p) => p.type === 'output' && HEATER_RE.test(p.description) && p.signal !== 'analog').map((p, i) => {
+    const kw = heaterKw(`${p.description}\n${spec}`);
+    if (!kw) assumptions.push(`${p.description}: heater power not given — assumed ${DEFAULT_HEATER_KW} kW single-phase; confirm the heater's rating so its SSR, contactor and fuses can be checked.`);
+    return { tag: `HTR${i + 1}`, description: p.description.split(/\s+[—–-]\s+|[(,;]/)[0].trim().replace(/\s+(on|output|ssr|contactor)$/i, '').trim() || p.description, kw: kw ?? DEFAULT_HEATER_KW, phases: /\b3[- ]?(phase|ph)\s+heat|\bheat\w*\b[^.\n,;]{0,20}\b3[- ]?(phase|ph)\b/i.test(`${p.description}. ${spec}`) ? 3 : 1, switching: /\bcontactor\b/i.test(p.description) && !/\bssr\b/i.test(p.description) ? 'contactor' : 'ssr', zone: zones[0] };
+  });
   const interfaces = [...new Set(io.filter((p) => p.type === 'output' && /\b(robot|handshake|to (the )?(upstream|downstream|other)|signal to|request to|ready to)\b/i.test(p.description)).map((p) => p.description))];
   return {
-    motors, safety: { estops, guardDoors, lightCurtains }, zones: zones.length ? zones : ['Machine'], interfaces,
+    motors, safety: { estops, guardDoors, lightCurtains, ...(twoHand ? { twoHand } : {}) }, ...(heaters.length ? { heaters } : {}), zones: zones.length ? zones : ['Machine'], interfaces,
     enclosureRating: inputs.enclosureRating, assumptions,
   };
+}
+
+export const TWO_HAND_RE = /\b(two[- ]?hand|2[- ]?hand|palm button|palm buttons)\b/i;
+/** A heater output (not a heat sink, not a heater's status lamp). */
+export const HEATER_RE = /\bheat(er|ers|ing)?\b(?!\s*sink)/i;
+const DEFAULT_HEATER_KW = 1.5;
+
+/** Heater power from text: "2 kW heater", "heater 1500 W". */
+function heaterKw(text: string): number | undefined {
+  const m = /(\d+(?:\.\d+)?)\s*(kw|w)\b[^.\n]{0,30}\bheat/i.exec(text) ?? /\bheat\w*\b[^.\n]{0,30}?(\d+(?:\.\d+)?)\s*(kw|w)\b/i.exec(text);
+  if (!m) return undefined;
+  return m[2].toLowerCase() === 'kw' ? Number(m[1]) : Number(m[1]) / 1000;
+}
+
+/** Motor power the spec gives for a named motor: "an unwinder driven by a 0.5 HP motor". */
+function specPower(spec: string, name: string): number | undefined {
+  const key = name.toLowerCase().split(/\s+/).find((w) => w.length > 3 && w !== 'motor');
+  if (!key) return undefined;
+  const m = new RegExp(`\\b${key}\\w*\\b[^.\\n]{0,40}?(\\d+(?:\\.\\d+)?)\\s*(hp|kw)\\b`, 'i').exec(spec);
+  if (!m) return undefined;
+  return Number(m[1]) * (m[2].toLowerCase() === 'kw' ? 1.341 : 1);
+}
+
+/**
+ * Motors the I/O list runs through a VFD (run / fault on a drive) are designed on a drive whatever the motor
+ * list or the AI said — otherwise the drive I/O would be wired to a drive that is not in the design.
+ */
+export function drivesFromIo(model: MachineModel, io: IOPoint[], spec = ''): MachineModel {
+  const driveIo = io.filter((p) => p.deviceType === 'vfd-input' || /\b(vfd|drive|inverter)\b/i.test(p.description));
+  const notes: string[] = [];
+  const motors = model.motors.map((m) => {
+    if (m.start === 'vfd' || !driveIo.some((p) => wordsShared(p.description, m.description))) return m;
+    notes.push(`${m.tag} ${m.description} was on a ${m.start === 'reversing' ? 'reversing starter' : 'contactor'}, but the I/O list runs it through a VFD: it is designed on a drive — change the starter on the Design tab if that is wrong.`);
+    return { ...m, start: 'vfd' as const };
+  });
+  // A drive run output no motor matches (the motor list is from another machine): a motor on a drive for it.
+  const runs = driveIo.filter((p) => p.type === 'output' && p.signal !== 'analog' && !/\b(rev|reverse|speed|preset|fault)\b/i.test(p.description));
+  for (const p of runs) {
+    if (motors.some((m) => wordsShared(p.description, m.description))) continue;
+    if (runs.length === 1 && motors.filter((m) => m.start === 'vfd').length === 1) continue; // the one drive is this one
+    const name0 = p.description.split(/\s+[—–-]\s+|[(,;]/)[0].replace(HP_RE, '').replace(/\b(run|contactor|starter|coil|output|on|vfd|drive)\b/gi, '').replace(/\s+/g, ' ').trim() || 'Drive';
+    const hp = specPower(spec, name0) ?? 1;
+    let n = motors.length + 1;
+    while (motors.some((m) => m.tag === `M${n}`)) n++;
+    motors.push({ tag: `M${n}`, description: /motor/i.test(name0) ? name0 : `${name0} motor`, hp, start: 'vfd' });
+    notes.push(`${p.description}: no motor in the motor list matches this drive output — ${`M${n}`} (${hp} HP${specPower(spec, name0) ? '' : ', assumed'}) on a drive was added; confirm it on the Design tab.`);
+  }
+  return notes.length ? { ...model, motors, assumptions: [...model.assumptions, ...notes] } : model;
 }
 
 function wordsShared(a: string, b: string): boolean {

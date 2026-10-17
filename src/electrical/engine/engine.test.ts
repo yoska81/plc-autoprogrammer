@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
 import { getPart } from '../catalog';
-import { designWarnings, spareSpace, type DrawingContext } from '../derive';
+import { buildModel, designWarnings, doorDrilling, panelLayout, spareSpace, type DrawingContext } from '../derive';
+import { cabinetHeat } from '../thermal';
 import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
 import { moduleSlots } from '../../plc/core/modules';
@@ -89,6 +90,24 @@ const SCENARIOS: Scenario[] = [
       pt('Unwinder motor run', 'output'), pt('Heater contactor', 'output'), pt('Head down solenoid', 'output'), pt('Head up solenoid', 'output')],
   },
   {
+    // The harness's sealing head (tools/harness/variants.ts rules-sealing): two-hand start, light curtain, heater on an SSR with a thermocouple.
+    name: 'sealing-head', supply: '480VAC-3PH', cpu: 'C0-12DD1E-D', modules: ['C0-16ND3', 'C0-08TD1'],
+    spec: 'Sealing head: a pneumatic heat-sealing head closes on a pouch, holds for the dwell time at the set temperature, then opens. Two-hand start, light curtain, heater with thermocouple. The film comes off an unwinder driven by a 0.5 HP motor on a VFD. CLICK PLC with a C-more 7" touch panel; the operator sets the seal temperature and the dwell time on the HMI. 480 V 3-phase supply.',
+    points: [
+      pt('Safety relay OK (E-stop and light curtain)', 'input', { deviceType: 'safety-relay-output' }), pt('Two-hand start button left', 'input', { deviceType: 'pushbutton-no' }),
+      pt('Two-hand start button right', 'input', { deviceType: 'pushbutton-no' }), pt('Light curtain clear (OSSD)', 'input', { deviceType: 'other' }),
+      pt('Stop button', 'input', { deviceType: 'pushbutton-nc' }), pt('Fault reset button', 'input', { deviceType: 'pushbutton-no' }),
+      pt('Sealing head up (retracted)', 'input', { deviceType: 'sensor-pnp' }), pt('Sealing head down (sealing position)', 'input', { deviceType: 'sensor-pnp' }),
+      pt('Air pressure OK', 'input', { deviceType: 'pressure-switch' }), pt('Heater over-temperature limit tripped', 'input', { deviceType: 'other' }),
+      pt('Unwinder VFD fault', 'input', { deviceType: 'vfd-input' }), pt('Film roll low sensor', 'input', { deviceType: 'sensor-pnp' }),
+      pt('Seal heater temperature (thermocouple transmitter)', 'input', { deviceType: 'other', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } }),
+      pt('Sealing head down solenoid', 'output', { deviceType: 'solenoid' }), pt('Sealing head up solenoid', 'output', { deviceType: 'solenoid' }),
+      pt('Seal heater on (SSR)', 'output', { deviceType: 'other' }), pt('Unwinder VFD run', 'output', { deviceType: 'vfd-input' }),
+      pt('Machine running light', 'output', { deviceType: 'pilot-light' }), pt('Fault light', 'output', { deviceType: 'pilot-light' }),
+      pt('Unwinder speed reference', 'output', { deviceType: 'other', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 100, units: '%' } }),
+    ],
+  },
+  {
     name: 'reversing240', supply: '240VAC-3PH', hmi: null, rating: 'NEMA 4',
     points: [pt('E-stop OK', 'input'), pt('Open PB', 'input'), pt('Close PB', 'input'), pt('Stop PB', 'input'), pt('Gate open limit switch', 'input'), pt('Gate closed limit switch', 'input'),
       pt('Gate motor forward', 'output'), pt('Gate motor reverse', 'output'), pt('Gate moving light', 'output')],
@@ -164,7 +183,12 @@ for (const s of SCENARIOS) {
   assert.equal(new Set(clamp.map((w) => w.deviceTag)).size, 1, 'clamp / unclamp coils on one double-solenoid valve');
   assert.equal(vfd.components.find((c) => c.tag === clamp[0].deviceTag)?.partNumber, '100222016324002');
   assert.ok(vfd.ioWiring.some((w) => w.deviceType === 'relay-coil' && /robot/i.test(w.description) && /^CR/.test(w.deviceTag)), 'robot handshake through an interposing relay');
-  assert.ok(vfd.notes.some((n) => /Guard door/.test(n)) && vfd.notes.some((n) => /Light curtain/.test(n)));
+  // The guard door is a real interlock switch with its actuator, not a note.
+  assert.ok(vfd.components.some((c) => /^GS\d$/.test(c.tag) && c.partNumber === 'KM-203002') && vfd.notes.some((n) => /^GS\d: confirm the guard door/.test(n)));
+  // The light curtain is a real part with its OSSD relay and cables, not a note.
+  assert.ok(vfd.components.some((c) => /^LC\d/.test(c.tag) && /^SH4-14-/.test(c.partNumber)) && vfd.components.some((c) => c.partNumber === 'LG5925-48-900-61'), 'light curtain + OSSD relay');
+  assert.equal(vfd.components.find((c) => /^LC\dW$/.test(c.tag))?.quantity, 2, 'two cables per curtain');
+  assert.equal(vfd.components.find((c) => c.tag === 'SR1')?.partNumber, 'LG5925-48-61-24', 'SR1 stays the E-stop relay');
 
   const ca = run(SCENARIOS.find((s) => s.name === 'ca600')!).r.design;
   assert.ok(ca.components.some((c) => c.partNumber === 'EHCC3DU' && c.motorTag === 'M1'), 'Canada: motor branch on Class CC fuses');
@@ -191,13 +215,83 @@ for (const s of SCENARIOS) {
   assert.equal(heater.deviceType, 'contactor-coil');
   const unwinderK = d.ioWiring.find((w) => w.description === 'Unwinder motor run')!.deviceTag;
   assert.notEqual(heater.deviceTag, unwinderK, 'the heater contactor is its own, not the unwinder motor\'s');
-  assert.ok(d.askUser?.some((q) => q.startsWith(`${heater.deviceTag} (Heater contactor)`)), 'its load is asked about');
+  assert.ok(d.askUser?.some((q) => /^Heater contactor: heater power not given/.test(q)), 'its load is asked about');
+  assert.ok(d.components.some((c) => c.tag === heater.deviceTag && /^Heater|HTR1/.test(c.function) && /AC-1/.test(c.function)), 'an AC-1 rated heater contactor');
   // An overload input without "trip" / "fault" in its text is the motor's overload contact.
   const ol = run({ ...SCENARIOS.find((x) => x.name === 'sealing-head-from-example')!, name: 'ol', points: [...SCENARIOS.find((x) => x.name === 'sealing-head-from-example')!.points, pt('Unwinder motor overload', 'input')] }).r.design;
   const olW = ol.ioWiring.find((w) => w.description === 'Unwinder motor overload')!;
   assert.ok(ol.components.some((c) => c.tag === olW.deviceTag && /overload/i.test(c.function)), `overload input wired to the unwinder's overload relay (got ${olW.deviceTag})`);
+  // The motor list says contactor, the I/O list runs it on a drive: the drive is a real component (no orphan VFD tag).
+  const seal = SCENARIOS.find((x) => x.name === 'sealing-head')!;
+  const sd = run({ ...seal, name: 'seal-motor-list', motors: [motor('M1', 'Unwinder motor', 1, '480VAC-3PH')] }).r.design;
+  const vfdTags = new Set(sd.ioWiring.filter((w) => w.deviceType === 'vfd-input').map((w) => w.deviceTag));
+  assert.ok(vfdTags.size === 1 && [...vfdTags].every((t) => sd.components.some((c) => c.tag === t && /GS2/.test(c.partNumber))), `drive component for ${[...vfdTags].join(', ')}`);
+  assert.ok(sd.askUser?.some((q) => /runs it through a VFD/.test(q)), 'the starter change is asked about');
   // The example itself keeps its motor (the spec mentions the conveyor motor).
   assert.equal(run(SCENARIOS[0]).r.design.inputs.motors.length, 1);
+}
+
+// No catalog enclosure fits the back panel: the closest one is used (fewest parts left out, a door that holds the
+// HMI and operators clear of its edges), not the smallest.
+{
+  const big = SCENARIOS.find((x) => x.name === 'big')!;
+  const over = { ...big, name: 'big-overflow', motors: [...big.motors!, ...[5, 6, 7, 8, 9, 10].map((n) => motor(`M${n + 2}`, `Belt ${n} motor`, 5, '480VAC-3PH', 'vfd'))] };
+  const { r, ctx } = run(over);
+  const L = panelLayout(ctx);
+  const enc = r.design.components.find((c) => c.tag === 'ENC1')!;
+  // With the large catalog enclosures (Dev 1, 72x72 double door) this machine may now fit; either way the
+  // choice must not fall back to the smallest enclosure and the door must hold the HMI and operators.
+  assert.notEqual(enc.partNumber, 'SCE-16EL1206LP', 'not the smallest enclosure');
+  assert.ok(!L.door.overflow, `big-overflow: door fits (${enc.partNumber})`);
+  assert.ok(L.door.items.every((d) => d.cx - d.w / 2 >= 25 && d.cx + d.w / 2 <= L.enclosure.w - 25 && d.cy - d.h / 2 >= 25 && d.cy + d.h / 2 <= L.enclosure.h - 25), 'door items 25 mm clear of the edges');
+  // The door check itself: the 10" HMI on a 16x12 door does not fit.
+  const small = { ...ctx, design: { ...ctx.design, components: ctx.design.components.map((c) => (c.tag === 'ENC1' ? { ...c, partNumber: 'SCE-16EL1206LP' } : c)) } };
+  assert.ok(panelLayout(small).door.overflow, '16x12 door too small for CM5-T10W and the operators');
+  // NEMA 4X needs stainless: the catalog's Enviroline stainless enclosures (up to 90x72) now hold the big machine.
+  const ss = run({ ...big, name: 'big-4x', rating: 'NEMA 4X' });
+  const ssEnc = ss.r.design.components.find((c) => c.tag === 'ENC1')!;
+  assert.ok(ss.r.layoutOk, 'big-4x: a stainless enclosure fits');
+  assert.match(String(getPart(ssEnc.partNumber)?.ratings.material), /stainless/i, `big-4x: stainless (${ssEnc.partNumber})`);
+  assert.ok(!panelLayout(ss.ctx).overflow && panelLayout(ss.ctx).notFit.length === 0, 'big-4x: everything placed');
+
+  // Floor-standing double door on 12in stands: devices on one leaf (never across the split), 0.6–1.7 m above
+  // the floor; the door plan is that leaf; the thermal area leaves out the bottom.
+  const sub = getPart(enc.partNumber)?.ratings.subpanel;
+  const fl = { ...ctx, design: { ...ctx.design, components: ctx.design.components.map((c) => (c.tag === 'ENC1' ? { ...c, partNumber: 'SCE-72EL7218LPPL' } : c.partNumber === sub ? { ...c, partNumber: 'SCE-72P72' } : c)) } };
+  const F = panelLayout(fl).door;
+  assert.equal(F.leaves.length, 2, 'two door leaves');
+  assert.ok(Math.abs((F.plinth ?? 0) - 304.8) < 0.1, '12in floor stands');
+  const lf = F.leaves[F.leaf];
+  assert.ok(F.items.every((d) => d.cx - d.w / 2 >= lf.x0 + 25 && d.cx + d.w / 2 <= lf.x1 - 25), 'door devices on one leaf, clear of the split');
+  assert.ok(!F.handle || (F.handle.cx > lf.x0 && F.handle.cx < lf.x1), 'handle on the same leaf');
+  const above = (y: number) => F.h + F.plinth! - y;
+  assert.ok(F.items.every((d) => above(d.cy - d.h / 2) <= 1700.5 && (d.kind === 'hmi' || above(d.cy) >= 600)), 'devices 0.6–1.7 m above the floor');
+  const dd = doorDrilling(fl);
+  assert.ok(Math.abs(dd.w - (lf.x1 - lf.x0)) < 0.1 && dd.cutouts.every((c) => c.x > 0 && c.x < dd.w), 'door plan = the leaf, leaf-relative X');
+  const heat = (pn: string) => cabinetHeat([{ tag: 'ENC1', partNumber: pn, quantity: 1 }], getPart).area!;
+  assert.ok(heat('SCE-72EL7218LPPL') < 1.83 * 1.83 + 2 * 1.83 * 0.457 + 2 * 1.83 * 0.457 - 0.5, 'floor-standing: bottom not in the cooling area');
+}
+
+// Guard doors and pressure switches come from the catalog: the interlock (+ actuator) in series with the E-stops
+// in both channels of SR1, its N.O. 33-34 to a "door closed" input; the pressure switch on its DIN pins C=1 / NO=3.
+{
+  const v = SCENARIOS.find((x) => x.name === 'vfd')!;
+  const { r, ctx } = run({ ...v, name: 'vfd-guard', points: v.points.map((q) => (q.description === 'Lift down limit switch' ? pt('Lift guard door closed', 'input') : q)) });
+  const d = r.design;
+  const gs = d.components.find((c) => /^GS\d/.test(c.tag))!;
+  assert.equal(gs?.partNumber, 'KM-203002', 'guard interlock from the catalog');
+  assert.ok(d.components.some((c) => c.tag === `${gs.tag}A` && c.partNumber === '140107'), 'its actuator');
+  assert.ok(!d.askUser?.some((q) => /not drawn yet/.test(q)), 'no "not drawn" question');
+  assert.equal(d.ioWiring.find((w) => /guard door closed/i.test(w.description))?.deviceTag, gs.tag, 'door-closed input on the interlock');
+  const m = buildModel(ctx);
+  assert.deepEqual(m.safety.guards, [gs.tag]);
+  for (const [a, b] of [['S11', '11'], ['S21', '21']]) assert.ok(m.wires.some((w) => w.wire.startsWith(a) && w.to === `${gs.tag}:${b}`), `${a} channel through ${gs.tag}`);
+  assert.ok(m.wires.some((w) => w.from === `${gs.tag}:12` && w.to.endsWith(':S12')), 'channel 1 back to the relay after the guard');
+  const door = m.io.find((p) => /guard door closed/i.test(p.description))!;
+  assert.ok(m.wires.some((w) => w.wire === door.address && w.from === `${gs.tag}:34`), 'monitoring contact 33-34 to the PLC');
+  const prs = d.components.find((c) => /^PRS\d/.test(c.tag))!;
+  assert.equal(prs?.partNumber, 'MPS25-1C-D100D', 'mechanical pressure switch');
+  assert.ok(m.wires.some((w) => w.from === `${prs.tag}:3`) && m.wires.some((w) => w.to === `${prs.tag}:1`), 'pressure switch wired on its DIN pins (C=1, NO=3)');
 }
 
 // The default model reads motors from the I/O list when there is no motor list.

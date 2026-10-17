@@ -374,6 +374,10 @@ function plateFor(text: string, cx: number, y: number, maxW: number, k = 1): Tag
 export interface HandleInfo { x: number; y: number; tag: string; partNumber?: string; lever: string; plate: string }
 export interface DoorScene {
   w: number; h: number;
+  /** Door leaves left to right (two on a double door, meeting at the centre); `leaf` carries the devices and the latch. */
+  leaves: { x0: number; x1: number }[]; leaf: number;
+  /** Latch centre X on the closed door (free edge of the device leaf). */
+  latchX: number;
   items: DoorItem[];
   handle?: HandleInfo;
   latch: 'quarter-turn' | 'handle';
@@ -414,9 +418,10 @@ function doorItems(L: PanelLayout, hmiPartNumber: string | null): { items: DoorI
   const top = Math.min(90, L.door.h * 0.15);
   const shift = h + 40;
   const shifted = items.map((d) => ({ ...d, cy: d.cy + shift }));
-  const hmi: DoorItem = { tag: 'HMI', partNumber: hmiPartNumber, kind: 'hmi', cx: L.door.w / 2, cy: top + h / 2, w, h, legend: [], color: '', estimated: !b };
+  const lf = L.door.leaves[L.door.leaf] ?? { x0: 0, x1: L.door.w };
+  const hmi: DoorItem = { tag: 'HMI', partNumber: hmiPartNumber, kind: 'hmi', cx: (lf.x0 + lf.x1) / 2, cy: top + h / 2, w, h, legend: [], color: '', estimated: !b };
   const lowest = Math.max(top + h, ...shifted.map((d) => d.cy + (d.kind === 'estop' ? 30 : 22)));
-  return { items: [hmi, ...shifted], hmiOverflow: lowest > L.door.h - 30 || w > L.door.w - 40 };
+  return { items: [hmi, ...shifted], hmiOverflow: lowest > L.door.h - 30 || w > lf.x1 - lf.x0 - 40 };
 }
 
 export function doorItemBox(d: DoorItem): Rect {
@@ -437,6 +442,22 @@ export interface DoorPoint { x: number; y: number; sx: number; sy: number }
 export function projectDoor(W: number, H: number, u: number, v: number): DoorPoint {
   const s = 1 + (DOOR_K * u) / W;
   return { x: -DOOR_C * u * (1 + (DOOR_K * u) / W / 2), y: H / 2 + (v - H / 2) * s, sx: DOOR_C * s, sy: s };
+}
+
+/** Leaf of a point on the closed door. */
+export function leafOf(door: Pick<DoorScene, 'w' | 'leaves'>, x: number): number {
+  return door.leaves.length > 1 && x >= door.w / 2 ? 1 : 0;
+}
+
+/**
+ * A point (x, y on the closed door) on the open door: a single door swings open about its left hinge;
+ * on a double door the left leaf swings left about x = 0 and the right leaf right about x = W.
+ */
+export function openDoorPoint(door: Pick<DoorScene, 'w' | 'h' | 'leaves'>, x: number, y: number, li = leafOf(door, x)): DoorPoint {
+  const l = door.leaves[li];
+  const right = door.leaves.length > 1 && li === 1;
+  const q = projectDoor(l.x1 - l.x0, door.h, right ? l.x1 - x : x - l.x0, y);
+  return right ? { ...q, x: door.w - q.x } : q;
 }
 
 // ---------------------------------------------------------------------------
@@ -576,7 +597,12 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
     handle = { x: hx, y: hy, tag: handleRc?.tag ?? disc?.tag ?? 'DS', partNumber: handleRc?.partNumber, ...c };
   }
   const latch: DoorScene['latch'] = /1\/4[- ]?turn|quarter[- ]?turn/i.test(encDesc) ? 'quarter-turn' : 'handle';
-  const occupied: Rect[] = [...items.map(doorItemBox), ...(handle ? [{ x: handle.x - 42, y: handle.y - 42, w: 84, h: 84 }] : []), { x: W - 50, y: H * 0.62 - 50, w: 50, h: 100 }];
+  const leaves = L.door.leaves, leaf = L.door.leaf;
+  const two = leaves.length > 1;
+  const latchX = two ? (leaf === 1 ? W / 2 + 22 : W / 2 - 22) : W - 22;
+  const occupied: Rect[] = [...items.map(doorItemBox), ...(handle ? [{ x: handle.x - 42, y: handle.y - 42, w: 84, h: 84 }] : []), { x: latchX - 28, y: H * 0.62 - 50, w: 56, h: 100 },
+    // labels never across the split of a double door
+    ...(two ? [{ x: W / 2 - 12, y: 0, w: 24, h: H }] : [])];
   const ww = Math.min(80, W * 0.2), wh = ww * 0.62;
   const warning = freeSpot(occupied, [
     { x: W - ww - 34, y: 34, w: ww, h: wh }, { x: 34, y: 34, w: ww, h: wh },
@@ -597,7 +623,7 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
   ];
   const lamps = items.filter((d) => d.kind === 'pilot').slice(0, 3).map((d) => ({ text: d.legend.join(' '), color: d.color }));
   const door: DoorScene = {
-    w: W, h: H, items, handle, latch, latchY: H * 0.62, warning, nameplate, nameLines, hmiOverflow, finish,
+    w: W, h: H, leaves, leaf, latchX, items, handle, latch, latchY: H * 0.62, warning, nameplate, nameLines, hmiOverflow, finish,
     hmiScreen: {
       title: (ctx.projectName || 'MACHINE').toUpperCase(),
       lamps,
@@ -605,19 +631,26 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
     },
   };
 
-  // --- door bundle (open door -> hinge -> left vertical duct)
+  // --- door bundle (open door -> hinge -> nearest vertical duct: the left one, the right one for a right leaf)
   let doorBundle: string | undefined;
   const doorWires: WirePath[] = [];
-  const leftV = ducts.filter((d) => d.orientation === 'v' && d.h > 20).sort((a, b) => a.x - b.x)[0];
-  if (items.length && leftV) {
+  const right = two && leaf === 1;
+  const vds = ducts.filter((d) => d.orientation === 'v' && d.h > 20).sort((a, b) => a.x - b.x);
+  const sideV = right ? vds[vds.length - 1] : vds[0];
+  if (items.length && sideV) {
+    const lf = leaves[leaf];
     const ys = items.map((d) => d.cy);
-    const vy = Math.min(Math.max(ys.reduce((a, b) => a + b, 0) / ys.length, leftV.y + 25), leftV.y + leftV.h - 25);
-    const nearU = Math.max(40, Math.min(...items.map((d) => d.cx - d.w / 2)) - 10);
-    const a = projectDoor(W, H, nearU, vy);
-    const b = projectDoor(W, H, 22, vy + 12);
-    const tx = leftV.x + leftV.w / 2;
+    const vy = Math.min(Math.max(ys.reduce((a, b) => a + b, 0) / ys.length, sideV.y + 25), sideV.y + sideV.h - 25);
+    // u = distance from the hinge of the device leaf; xAt(u) = the closed-door X at that distance
+    const xAt = (u: number) => (right ? lf.x1 - u : lf.x0 + u);
+    const nearU = Math.max(40, Math.min(...items.map((d) => (right ? lf.x1 - d.cx : d.cx - lf.x0) - d.w / 2)) - 10);
+    const dp = { w: W, h: H, leaves };
+    const a = openDoorPoint(dp, xAt(nearU), vy, leaf);
+    const b = openDoorPoint(dp, xAt(22), vy + 12, leaf);
+    const tx = sideV.x + sideV.w / 2;
+    const m = right ? -1 : 1;
     for (const d of items) {
-      const q = projectDoor(W, H, d.cx, d.cy + (d.kind === 'hmi' ? d.h * 0.3 : 0));
+      const q = openDoorPoint(dp, d.cx, d.cy + (d.kind === 'hmi' ? d.h * 0.3 : 0), leaf);
       const cols: WireColor[] = d.kind === 'pilot' ? ['BU', 'WH/BU'] : d.kind === 'hmi' ? ['BU', 'WH/BU'] : ['BU', 'BU'];
       cols.forEach((c, k) => {
         const ox = (k - 0.5) * 2.4 * q.sx, oy = (k - 0.5) * 2.4;
@@ -625,7 +658,7 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
         doorWires.push({ d: `M${f(q.x + ox)} ${f(q.y + oy)} C${f(mx)} ${f(q.y + oy + (a.y - q.y) * 0.1)} ${f(mx)} ${f(a.y + oy * 0.4)} ${f(a.x)} ${f(a.y + oy * 0.4)}`, color: c, w: 1.5 });
       });
     }
-    doorBundle = `M${f(a.x)} ${f(a.y)} C${f(b.x - 10)} ${f(b.y)} ${f(b.x)} ${f(b.y + 18)} ${f(-4)} ${f(vy + 22)} S${f(tx - 30)} ${f(vy + 6)} ${f(tx)} ${f(vy + 4)}`;
+    doorBundle = `M${f(a.x)} ${f(a.y)} C${f(b.x - 10 * m)} ${f(b.y)} ${f(b.x)} ${f(b.y + 18)} ${f(right ? W + 4 : -4)} ${f(vy + 22)} S${f(tx - 30 * m)} ${f(vy + 6)} ${f(tx)} ${f(vy + 4)}`;
   }
 
   const notShown = [...L.notFit.map((n) => `${n.tag} (${n.partNumber}) — does not fit`), ...L.unplaced.map((u) => `${u.tag} (${u.partNumber}) — ${u.reason}`)];

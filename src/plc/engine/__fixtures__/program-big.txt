@@ -10,8 +10,8 @@ block status "HMI & status"
     NO:SC2 DF101<6 | NO:SC2 DF101>60  ->  COPY 30->DF101
 [safety] First scan: Gripper timeout (s) outside 1-30 is loaded with the default 3
     NO:SC2 DS1001<1 | NO:SC2 DS1001>30  ->  COPY 3->DS1001
-[safety] First scan: Tank Level high limit outside 0-100 is loaded with the default 90
-    NO:SC2 DF102<0 | NO:SC2 DF102>100  ->  COPY 90->DF102
+[safety] First scan: Tank Level high limit outside 10-100 is loaded with the default 90
+    NO:SC2 DF102<10 | NO:SC2 DF102>100  ->  COPY 90->DF102
 [safety] First scan: Tank Level low limit outside 0-100 is loaded with the default 10
     NO:SC2 DF103<0 | NO:SC2 DF103>100  ->  COPY 10->DF103
 [safety] First scan: batch target outside 0-9999 is loaded with the default 0

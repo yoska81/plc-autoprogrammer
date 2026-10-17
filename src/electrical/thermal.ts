@@ -1,7 +1,7 @@
 import type { CatalogCategory, CatalogPart } from './types';
 
 /**
- * Cabinet heat and temperature rise (wall-mounted painted steel enclosure), shared by the
+ * Cabinet heat and temperature rise (painted steel enclosure, wall-mounted or floor-standing), shared by the
  * calculations document and the enclosure machining (filter-fan cutouts).
  */
 
@@ -28,7 +28,7 @@ export interface CabinetHeat {
   lines: HeatLine[];
   watts: number;
   enclosure?: CatalogPart;
-  /** Effective (wall-mounted) surface area, m². */
+  /** Effective surface area (back, and a floor-standing enclosure's bottom, not counted), m². */
   area: number | null;
   /** Temperature rise above room temperature, °C. */
   rise: number | null;
@@ -68,8 +68,10 @@ export function cabinetHeat(
   }
   if (!enclosure) return { lines, watts, area: null, rise: null, ventilation: null };
   const h = (num(enclosure.ratings.heightIn) ?? 24) * 0.0254, w = (num(enclosure.ratings.widthIn) ?? 20) * 0.0254, d = (num(enclosure.ratings.depthIn) ?? 8) * 0.0254;
-  // Wall-mounted: back not counted (IEC/TR 60890 style effective area, simplified).
-  const area = h * w + 2 * h * d + 2 * w * d;
+  // Back not counted (IEC/TR 60890 style effective area, simplified); a floor-standing enclosure's bottom
+  // sits on the floor or its stands and does not count either.
+  const floor = enclosure.ratings.mounting === 'floor';
+  const area = h * w + 2 * h * d + (floor ? 1 : 2) * w * d;
   const rise = watts / (K_STEEL * area);
   const wattsToRemove = watts - K_STEEL * area * ALLOWED_RISE_C;
   return {

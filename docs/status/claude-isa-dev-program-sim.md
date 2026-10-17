@@ -139,3 +139,13 @@ Current: address stability + program QA (manager's URGENT list) — new draft PR
 - [x] Overload input regex: "Unwinder motor overload" = the motor's OL contact.
 - [x] Palm / two-hand buttons located at the machine, not on the door.
 - Analog temperature point counted as discrete in the fit: fixed on integration by 7b888fd (platforms / change dialog), not in my code.
+
+## Sealing head safety / heater (PR #64, Dev 1's parts from #55)
+- [x] Two-hand control: 2H-240002 station (field) -> BG5933 relay; its safety output in series with the closing-stroke output (IOWiring.safetyContact, drawn + wired). Program: Start only arms; each cycle waits for a two-hand start (anti-tie-down) and the heater ready band; release during closing -> head up, not counted. No HMI jog of the closing stroke.
+- [x] Light curtain: SH4 curtain (+2 cables) -> LG5925-48-900-61 OSSD relay in series with SR1 in 24+S; drawn (supply, OSSD rung, 24+S series); PLC "clear" input from it.
+- [x] Heater: Class J high-speed fuses + holder, AC-1 safety contactor held by 24+S through the SCU-3100 over-temperature limit (latched; SCU-PDM2 asked for), zero-cross SSR switched by the PLC; disconnect includes 125% heater current. "Heater contactor" outputs switch the contactor through the limit.
+- [x] Thermocouple 4-20 mA input: XTD2 transmitter. HMI: temperature setpoint + seal time (Setup "Process"); input alarms (over-temp, air low, film low, curtain interrupted). Program: on/off control with hysteresis, ready band, seal timer from the setpoint.
+- [x] Minor: safety functions table from the design (two-hand, curtain, over-temp limit); SF-01 lists motion outputs only; "(thermocouple )" fixed; motor power read from the spec.
+- [x] Manager's final items: Update all checks CPU fit after equipment and after I/O (modules added, else a clear stop); unwinder not simulated as a belt; SSR / over-temp device types; HMI process setpoints.
+- Open: heater power path on the power sheet shows only the fuses (labelled "via K1 and SSR1"); no catalog pressure / guard-door switch (field items, notes).
+- Verified: tsc, eslint, all unit tests (new src/plc/engine/sealing.test.ts closed loop), e2e app / hmi-qa / hmi-editor / hmi-brands, check-all 11 variants 0 FAIL.

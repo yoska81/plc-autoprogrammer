@@ -217,15 +217,16 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
 }
 
 /** Main disconnect (+ handle + shaft for the enclosure depth) sized for the motors plus the control power. */
-export function mainDisconnect(pk: Picker, branches: MotorBranch[], supply: SupplyVoltage, controlA: number, nema4: boolean, depthIn: number): { components: DesignComponent[]; notes: string[]; amps: number } {
+export function mainDisconnect(pk: Picker, branches: MotorBranch[], supply: SupplyVoltage, controlA: number, nema4: boolean, depthIn: number, heaterA = 0): { components: DesignComponent[]; notes: string[]; amps: number } {
   const flas = branches.map((b) => b.fla);
-  const load = flas.reduce((a, b) => a + b, 0) + (flas.length ? Math.max(...flas) * 0.25 : 0) + controlA;
+  // Heaters are continuous loads: 125% of their current.
+  const load = flas.reduce((a, b) => a + b, 0) + (flas.length ? Math.max(...flas) * 0.25 : 0) + controlA + heaterA * 1.25;
   const maxHp = Math.max(0, ...branches.map((b) => b.motor.hp));
   const ds = pk.pick('disconnect', (p) => p.mount === 'backplate' && amps(p) >= load * 1.15 && coversSupply(p, supply) && (hpRating(p, supply) ?? Infinity) >= maxHp, amps);
   const notes: string[] = [];
   const components: DesignComponent[] = [];
   if (!ds) { notes.push(`No catalog disconnect is rated for ${load.toFixed(0)} A: select a main disconnect.`); return { components, notes, amps: load }; }
-  components.push(comp('DS1', ds.partNumber, 1, `Main disconnect ${amps(ds)}A — load ${load.toFixed(1)} A (motors + 25% of the largest + control) x 1.15`));
+  components.push(comp('DS1', ds.partNumber, 1, `Main disconnect ${amps(ds)}A — load ${load.toFixed(1)} A (motors + 25% of the largest${heaterA ? ' + 125% of the heaters' : ''} + control) x 1.15`));
   const size = String(ds.ratings.handleSize ?? '').split('/')[0];
   const vendor = ds.vendor ?? 'automationdirect';
   const same = (p: CatalogPart) => (p.vendor ?? 'automationdirect') === vendor && (!size || String(p.ratings.handleSize ?? p.ratings.forUse ?? '').includes(size));

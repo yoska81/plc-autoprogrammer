@@ -21,7 +21,12 @@ export interface RichTurn {
 export interface ClaudeResult {
   text: string;
   reasoning: string | null;
+  /** Pages the answer used (web search): what the user can open to check it. */
+  sources?: WebSource[];
 }
+
+/** A web page found by the web search tool, or cited in the answer. */
+export interface WebSource { url: string; title: string; pageAge?: string | null }
 
 /**
  * One Claude request. With `schema`, the reply is constrained to that JSON
@@ -36,6 +41,11 @@ export type ClaudeOptions = {
   schema?: Record<string, unknown>;
   /** Aborts the request (job Cancel). */
   signal?: AbortSignal;
+  /**
+   * Let Claude search the web (server tool; API key only, not in the preview). The pages it read come
+   * back in `sources`. Not combined with `schema`: the answer is asked for as JSON in the prompt.
+   */
+  webSearch?: { maxUses?: number; allowedDomains?: string[] };
 };
 
 /**
@@ -69,11 +79,16 @@ function explainFailure(err: unknown, info: AiErrorInfo, model: string): string 
   return msg;
 }
 
+/** The dynamic-filtering web search on current models; the basic variant on older ones. */
+const webSearchType = (model: string) =>
+  (/opus-5|opus-4-[678]|sonnet-5|sonnet-4-6|fable-5/.test(model) ? 'web_search_20260209' : 'web_search_20250305') as 'web_search_20250305';
+
 async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   // The preview can't reach the API; the viewer's own Claude account answers instead.
   // A watchdog makes sure no request hangs: no data for 3 min, or longer than the cap for its
   // effort level, aborts it as a timeout (retried by callClaude, then reported).
   const totalMs = totalLimitFor(opts.effort);
+  if (IS_PREVIEW && opts.webSearch) throw new Error('Web search needs your own Anthropic API key (Settings); the preview cannot search the web.');
   if (IS_PREVIEW) {
     // plain answers stream their text (progress); JSON answers arrive at once (total cap only)
     return withWatchdog((signal, progress) => callClaudeAccount({ ...(opts as Parameters<typeof callClaudeAccount>[0]), signal, onProgress: (chars) => { progress(); if (chars !== undefined) reportAiProgress(opts.signal, chars); } }),
@@ -86,25 +101,38 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   // Streamed so long, deep-thinking generations don't hit HTTP timeouts.
   // `fallbacks: 'default'` lets the API retry on another model if a safety
   // classifier declines the request instead of returning nothing.
-  const message = await withWatchdog(async (signal, progress) => {
-    const stream = client.beta.messages.stream({
-      model: opts.model,
-      max_tokens: 64000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      thinking: { type: 'adaptive', display: 'summarized' },
-      output_config: {
-        effort: opts.effort,
-        ...(opts.schema ? { format: { type: 'json_schema' as const, schema: opts.schema } } : {}),
-      },
-      // The system prompt is static per stage: cached across calls (5 min) when it is long enough.
-      system: [{ type: 'text', text: opts.system, cache_control: { type: 'ephemeral' } }],
-      messages: opts.messages,
-    }, { signal });
-    stream.on('streamEvent', progress);
-    stream.on('text', (_delta, snapshot) => reportAiProgress(opts.signal, snapshot.length));
-    return stream.finalMessage();
-  }, { signal: opts.signal, totalMs, reportsProgress: true });
+  const tools = opts.webSearch
+    ? [{ type: webSearchType(opts.model), name: 'web_search' as const, max_uses: opts.webSearch.maxUses ?? 5, ...(opts.webSearch.allowedDomains?.length ? { allowed_domains: opts.webSearch.allowedDomains } : {}) }]
+    : undefined;
+  let messages: Anthropic.Beta.Messages.BetaMessageParam[] = opts.messages;
+  const content: Anthropic.Beta.Messages.BetaContentBlock[] = [];
+  let message: Anthropic.Beta.Messages.BetaMessage;
+  // A server tool (web search) may pause a long turn: send it back to let Claude continue (a few times at most).
+  for (let turn = 0; ; turn++) {
+    message = await withWatchdog(async (signal, progress) => {
+      const stream = client.beta.messages.stream({
+        model: opts.model,
+        max_tokens: 64000,
+        betas: ['server-side-fallback-2026-07-01'],
+        fallbacks: 'default',
+        thinking: { type: 'adaptive', display: 'summarized' },
+        output_config: {
+          effort: opts.effort,
+          ...(opts.schema ? { format: { type: 'json_schema' as const, schema: opts.schema } } : {}),
+        },
+        // The system prompt is static per stage: cached across calls (5 min) when it is long enough.
+        system: [{ type: 'text', text: opts.system, cache_control: { type: 'ephemeral' } }],
+        messages,
+        ...(tools ? { tools } : {}),
+      }, { signal });
+      stream.on('streamEvent', progress);
+      stream.on('text', (_delta, snapshot) => reportAiProgress(opts.signal, snapshot.length));
+      return stream.finalMessage();
+    }, { signal: opts.signal, totalMs, reportsProgress: true });
+    content.push(...message.content);
+    if (message.stop_reason !== 'pause_turn' || turn >= 3) break;
+    messages = [...messages, { role: 'assistant', content: message.content as Anthropic.Beta.Messages.BetaContentBlockParam[] }];
+  }
 
   if (message.stop_reason === 'refusal') {
     throw new Error('Claude declined this request. Try rephrasing it.');
@@ -113,12 +141,29 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
     throw new Error('The answer was cut off (output limit reached). Try splitting the machine into smaller parts.');
   }
 
-  const text = message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-  const reasoning = message.content
+  const text = content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
+  const reasoning = content
     .flatMap((b) => (b.type === 'thinking' && b.thinking ? [b.thinking] : []))
     .join('\n\n');
   if (!text) throw new Error('Claude returned an empty response.');
-  return { text, reasoning: reasoning || null };
+  return { text, reasoning: reasoning || null, ...(opts.webSearch ? { sources: webSources(content) } : {}) };
+}
+
+/** Every page the web search returned or the answer cited (each URL once, cited first). */
+function webSources(content: Anthropic.Beta.Messages.BetaContentBlock[]): WebSource[] {
+  const out = new Map<string, WebSource>();
+  for (const b of content) {
+    if (b.type !== 'text') continue;
+    for (const c of b.citations ?? []) {
+      if (c.type === 'web_search_result_location' && !out.has(c.url)) out.set(c.url, { url: c.url, title: c.title ?? c.url });
+    }
+  }
+  for (const b of content) {
+    // A failed search returns an error object instead of a result list.
+    if (b.type !== 'web_search_tool_result' || !Array.isArray(b.content)) continue;
+    for (const r of b.content) if (!out.has(r.url)) out.set(r.url, { url: r.url, title: r.title, pageAge: r.page_age ?? null });
+  }
+  return [...out.values()];
 }
 
 /** Plain-English text for an Anthropic API failure (shared by generation and the connection test). */

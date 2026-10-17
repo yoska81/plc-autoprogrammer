@@ -48,7 +48,8 @@ export function safetyFunctions(p: ProjectSnapshot): SafetyFunction[] {
   if (m && (m.safety.estops.length || m.safety.relay)) {
     const s = m.safety;
     const loc = (tag: string) => p.electrical?.ioWiring.find((w) => w.deviceTag === tag)?.location ?? (m.rc.find((c) => c.tag === tag)?.mount === 'door' ? 'cabinet door' : '');
-    const outputs = m.io.filter((x) => x.type === 'output');
+    // Motion outputs only: lamps share the module's 24+S supply but are not final elements of a safety function.
+    const outputs = m.io.filter((x) => x.type === 'output' && x.deviceType !== 'pilot-light' && x.deviceType !== 'stack-light');
     const finals: string[] = [];
     if (s.outputSupply === '24+S') finals.push(`24+S supply to PLC outputs (${outputs.map((x) => `${x.address}${x.deviceTag ? ` ${x.deviceTag}` : ''}`).join(', ') || 'none'})`);
     if (s.mcr) finals.push(`${s.mcr.tag} master control relay`);
@@ -80,6 +81,17 @@ export function safetyFunctions(p: ProjectSnapshot): SafetyFunction[] {
       test: `Release the E-stop and operate ${s.reset ?? 'the reset device'}; then try to start without the reset.`,
       expected: 'Safety circuit resets only on the deliberate reset action; releasing the E-stop alone does not restart anything; Start is required after reset.',
     });
+    if (s.guards.length) out.push({
+      id: `SF-${pad(++n, 2)}`, name: 'Guard door interlock',
+      initiating: s.guards.map((t) => `${t}${loc(t) ? ` (${loc(t)})` : ''}`).join(', '),
+      stopCategory: cat,
+      logic: s.relay ? `${s.relay.tag} ${s.relay.partNumber} (N.C. 11-12 / 21-22 in series with the E-stops)` : 'Hardwired chain',
+      finals: finals.join('; ') || 'NOT DEFINED',
+      architecture: `Dual-channel positive-opening interlock(s) ${s.guards.join(', ')} into ${s.relay?.tag ?? 'the safety circuit'}; the N.O. monitoring contact to the PLC is not safety-related. Category / PL to be verified per ISO 13849-1/-2 (ISO 14119: guard locking if the run-down time exceeds the access time).`,
+      plr: PLR,
+      test: `With the machine running, open each guard door (${s.guards.join(', ')}) one at a time; then close it and try to restart without a reset.`,
+      expected: `All hazardous motion stops; ${s.relay ? `${s.relay.tag} outputs open, ` : ''}the machine cannot restart until the door is closed and the safety circuit is reset.`,
+    });
     if (s.edm.length && s.relay) out.push({
       id: `SF-${pad(++n, 2)}`, name: 'Contactor monitoring (EDM)',
       initiating: `NC mirror contacts of ${s.edm.join(', ')}`, stopCategory: 'n/a', logic: `${s.relay.tag} feedback loop S33–S34`,
@@ -88,9 +100,41 @@ export function safetyFunctions(p: ProjectSnapshot): SafetyFunction[] {
       expected: `${s.relay.tag} cannot be reset while the feedback loop is open.`,
     });
   }
-  const specText = `${p.spec.safety ?? ''}\n${p.spec.guarding ?? ''}`;
+  // Safety functions the design itself has (two-hand and light-curtain relays, the heater's over-temperature limit).
+  const designed = new Set<string>(m?.safety.guards.length ? ['Guard door interlock'] : []);
+  for (const x of m?.safety.extraRelays ?? []) {
+    const t = x.relay.tag;
+    const guarded = (p.electrical?.ioWiring ?? []).filter((w) => w.safetyContact === t).map((w) => `${w.address} ${w.deviceTag} (${w.description})`);
+    if (x.kind === 'two-hand') {
+      designed.add('Two-hand control');
+      out.push({
+        id: `SF-${pad(++n, 2)}`, name: 'Two-hand control', initiating: `${x.inputs.join(', ') || 'two-hand station'} (both buttons)`, stopCategory: cat,
+        logic: `${t} ${x.relay.partNumber} (ISO 13851 type IIIC)`, finals: guarded.length ? `${t} safety output in series with ${guarded.join(', ')}` : `${t} safety output`,
+        architecture: 'Both buttons within 0.5 s, released between cycles (relay + PLC anti-tie-down); releasing a button stops the closing stroke. Category / PL to be verified per ISO 13849-1.', plr: PLR,
+        test: 'Press one button only; press both more than 0.5 s apart; release one during the closing stroke; hold both after a cycle.',
+        expected: 'No closing stroke on one button or late second button; the stroke stops and the head returns on release; no new cycle until both are released.',
+      });
+    } else {
+      designed.add('Light curtain (presence sensing)');
+      out.push({
+        id: `SF-${pad(++n, 2)}`, name: 'Light curtain (presence sensing)', initiating: x.inputs.join(', ') || 'light curtain', stopCategory: cat,
+        logic: `${t} ${x.relay.partNumber} (OSSD, type 4)`, finals: `${t} safety output in series with ${s0(m)} in the 24+S supply`,
+        architecture: 'Type 4 curtain, OSSD1/OSSD2 cross-monitored by the relay; mounted at the ISO 13855 safety distance. Category / PL to be verified per ISO 13849-1.', plr: PLR,
+        test: 'Break the curtain with the test rod during the closing stroke and while stopped.',
+        expected: 'Hazardous motion stops at once (24+S removed); no restart until the curtain is clear and the cycle is started again.',
+      });
+    }
+  }
+  const limit = m?.rc.find((c) => c.part?.ratings.kind === 'limitAlarm');
+  if (limit) out.push({
+    id: `SF-${pad(++n, 2)}`, name: 'Heater over-temperature limit', initiating: `${limit.tag} on its own thermocouple`, stopCategory: 'n/a (process)',
+    logic: `${limit.tag} ${limit.partNumber}, latched relay`, finals: (m?.rc ?? []).filter((c) => c.category === 'contactor' && /heater/i.test(c.comp.function)).map((c) => `${c.tag} heater contactor`).join(', ') || 'heater contactor',
+    architecture: 'Independent of the PLC: the latched limit relay drops the heater contactor; manual reset at the limit alarm.', plr: PLR,
+    test: 'Lower the trip point below the actual temperature (or simulate the input).', expected: 'The heater contactor drops and stays off until the limit is reset; the PLC shows the alarm.',
+  });
+  const specText = `${p.spec.overview ?? ''}\n${p.spec.safety ?? ''}\n${p.spec.guarding ?? ''}`;
   for (const f of SPEC_FUNCTIONS) {
-    if (!f.re.test(specText)) continue;
+    if (!f.re.test(specText) || designed.has(f.name)) continue;
     const devs = (p.electrical?.ioWiring ?? []).filter((w) => f.dev.test(`${w.description} ${w.deviceTag}`)).map((w) => `${w.deviceTag} (${w.address})`);
     out.push({
       id: `SF-${pad(++n, 2)}`, name: f.name,
@@ -101,6 +145,9 @@ export function safetyFunctions(p: ProjectSnapshot): SafetyFunction[] {
   }
   return out;
 }
+
+/** The E-stop relay of the design (for "in series with ..."). */
+function s0(m: ReturnType<typeof buildModel> | null): string { return m?.safety.relay?.tag ?? 'the E-stop relay'; }
 
 export function safetyFunctionTable(p: ProjectSnapshot, sf = safetyFunctions(p)): DocTable {
   return makeTable([['SF-ID', 7], ['Safety function', 18], ['Initiating device', 22], ['Stop cat.', 10], ['Logic device', 18], ['Final elements', 30], ['Architecture / category', 34], ['Required PLr', 16]],

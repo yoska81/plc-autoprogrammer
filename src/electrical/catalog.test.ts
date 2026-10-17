@@ -86,7 +86,9 @@ const ENCLOSURE_IN: [number, number] = [2, 100];
  * Parts that cannot be verified yet, each with the reason (shown in the review). The list must stay short:
  * an entry for a part that is verified, or missing from the catalog, fails.
  */
-const UNVERIFIED_OK: Record<string, string> = {};
+const UNVERIFIED_OK: Record<string, string> = {
+  '3SE5112-0QV10': 'Siemens data sheet server refused the download (403): terminal numbers and AC-15 / DC-13 ratings still to be checked; contacts (1 NO + 2 NC), M20 entry and actuator from distributor listings.',
+};
 
 /** A maker's document (PDF catalog / datasheet or documentation portal) covering many parts. */
 const isMakerDocument = (u: URL) => /\.pdf$/i.test(u.pathname) || /\/dl\/files\//.test(u.pathname) || /^docs\.|^literature\./.test(u.host);

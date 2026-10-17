@@ -139,12 +139,24 @@ export function PanelLayoutSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Pl
   const maxRows = Math.floor((AREA_B - (AREA.y + 14) - 12) / rowH);
   const itemOf = (tag: string, pn?: string) => plan.bomItem.get(tag) ?? plan.bomItem.get(tag.replace(/\.\d+$/, '').replace(/\s*\(.*$/, '')) ?? (pn ? plan.bomItem.get(`pn:${pn}`) : undefined);
   // callout balloons above each part, staggered upward when neighbours are too close (leader to the part)
-  const side = L.items.flatMap((it) => (it.sub ?? []).slice(1).map((p, k) => ({ n: itemOf(it.label.split('/')[k + 1] ?? p.tag, p.partNumber), ax: ox + p.x * s, top: oy + (p.y + p.h / 2) * s })))
-    .filter((r): r is { n: number; ax: number; top: number } => r.n !== undefined)
-    .map((r) => ({ ...r, bx: r.ax - 2.3, by: r.top }));
   const reqs = L.items.flatMap((it) => (it.sub ?? [it]).slice(0, 1).map((p, i) => ({ n: itemOf(it.sub ? it.label.split('/')[i] ?? p.tag : it.tag, p.partNumber), ax: ox + (p.x + p.w / 2) * s, top: oy + it.y * s })))
     .filter((r): r is { n: number; ax: number; top: number } => r.n !== undefined)
     .sort((a, b) => a.top - b.top || a.ax - b.ax);
+  // Stacked parts (K1 over OL1): the lower part's balloon goes left of it, else below it (over the duct),
+  // wherever it clears every part outline, the other balloons and the balloons above the next row.
+  const boxes = L.items.flatMap((it) => it.sub ?? [it]).map((p) => ({ x0: ox + p.x * s, y0: oy + p.y * s, x1: ox + (p.x + p.w) * s, y1: oy + (p.y + p.h) * s }));
+  const R = 2.2;
+  const taken: { x: number; y: number }[] = reqs.map((r) => ({ x: r.ax, y: r.top - 2.4 }));
+  const clear = (x: number, y: number) => !boxes.some((b) => x + R > b.x0 && x - R < b.x1 && y + R > b.y0 && y - R < b.y1) && !taken.some((t) => Math.hypot(t.x - x, t.y - y) < 2 * R);
+  const side = L.items.flatMap((it) => (it.sub ?? []).slice(1).map((p, k) => ({ n: itemOf(it.label.split('/')[k + 1] ?? p.tag, p.partNumber), p })))
+    .filter((r): r is { n: number; p: PlacedItem } => r.n !== undefined)
+    .map(({ n, p }) => {
+      const left = { ax: ox + p.x * s, top: oy + (p.y + p.h / 2) * s, bx: ox + p.x * s - 2.3, by: oy + (p.y + p.h / 2) * s };
+      const below = { ax: ox + (p.x + p.w / 2) * s, top: oy + (p.y + p.h) * s, bx: ox + (p.x + p.w / 2) * s, by: oy + (p.y + p.h) * s + 2.4 };
+      const pick = [left, below].find((c) => clear(c.bx, c.by)) ?? left;
+      taken.push({ x: pick.bx, y: pick.by });
+      return { n, ...pick };
+    });
   const balloons: { n: number; ax: number; top: number; bx: number; by: number }[] = [...side];
   for (const r of reqs) {
     let lvl = 0;
@@ -331,6 +343,15 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
   const dox = DX0 + (availW - (maxX - minX) * ds) / 2 - minX * ds;
   const doy = oy + 6 - minY * ds;
   const TY = AREA_B - tableH;
+  const two = D.leaves.length > 1;
+  const lx0 = D.leaves[D.leaf]?.x0 ?? 0;
+  // "DETAIL A" above its box; at small door scales the HMI bezel comes down to the box, then left of it
+  // (inside the door outline), else just inside its top-left corner.
+  const bx0 = ox + (minX - 5) * s, by0 = oy + (minY - 5) * s, lblW = textWidth('DETAIL A', 2.3) * 1.1;
+  const hmiHit = (x0: number, y0: number, x1: number, y1: number) => D.items.some((d) => d.kind === 'hmi'
+    && x1 > ox + (d.cx - d.w / 2) * s && x0 < ox + (d.cx + d.w / 2) * s && y1 > oy + (d.cy - d.h / 2) * s && y0 < oy + (d.cy + d.h / 2) * s);
+  const detailLbl: { x: number; y: number; anchor: 'start' | 'end' } = !hmiHit(bx0, by0 - 3.4, bx0 + lblW, by0) ? { x: bx0, y: by0 - 1.2, anchor: 'start' }
+    : bx0 - lblW - 1.5 > ox + 1 ? { x: bx0 - 1.2, y: by0 + 2.4, anchor: 'end' } : { x: bx0 + 1, y: by0 + 2.8, anchor: 'start' };
   return (
     <g>
       <Txt x={ox} y={AREA.y + 7} size={3.2} bold>{`DOOR LAYOUT (FRONT VIEW) — SCALE ${scaleText(s)}`}</Txt>
@@ -338,8 +359,20 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
       <rect x={ox + 3} y={oy + 3} width={D.w * s - 6} height={D.h * s - 6} strokeWidth={LW_THIN} rx={0.8} strokeDasharray="1.5 1" />
       {[0.15, 0.85].map((f) => <rect key={f} x={ox - 1.6} y={oy + D.h * s * f - 4} width={1.6} height={8} strokeWidth={LW_THIN} />)}
       <Txt x={ox - 3} y={oy + D.h * s * 0.5} size={2.2} anchor="middle" rotate={-90}>HINGE SIDE</Txt>
-      {/* latch + disconnect handle */}
-      <rect x={ox + D.w * s - 6} y={oy + D.h * s * 0.62} width={3} height={10} strokeWidth={LW_THIN} />
+      {two ? (
+        <g>
+          {/* double door: hinges on both outer edges, the leaves meet at the centre; latch on the leaf with the devices */}
+          {[0.15, 0.85].map((f) => <rect key={f} x={ox + D.w * s} y={oy + D.h * s * f - 4} width={1.6} height={8} strokeWidth={LW_THIN} />)}
+          <Txt x={ox + D.w * s + 3.4} y={oy + D.h * s * 0.5} size={2.2} anchor="middle" rotate={90}>HINGE SIDE</Txt>
+          <Line x1={ox + (D.w / 2) * s} y1={oy} x2={ox + (D.w / 2) * s} y2={oy + D.h * s} w={LW} />
+          <rect x={ox + (D.w / 2) * s + (D.leaf === 1 ? 1 : -4)} y={oy + D.h * s * 0.62} width={3} height={10} strokeWidth={LW_THIN} />
+          <Txt x={ox + (D.w / 4) * s} y={oy + D.h * s - 4} size={2.2} bold anchor="middle">LEFT DOOR</Txt>
+          <Txt x={ox + (D.w * 3 / 4) * s} y={oy + D.h * s - 4} size={2.2} bold anchor="middle">RIGHT DOOR</Txt>
+        </g>
+      ) : <rect x={ox + D.w * s - 6} y={oy + D.h * s * 0.62} width={3} height={10} strokeWidth={LW_THIN} />}
+      {D.plinth !== undefined && (
+        <Txt x={ox} y={oy + D.h * s + 14} size={2.1} maxW={D.w * s}>{`FLOOR-STANDING${D.plinth ? ` ON ${Math.round(D.plinth)} mm (${inch(D.plinth)}) FLOOR STANDS` : ''}: DEVICE HEIGHT ABOVE FLOOR = Y + ${Math.round(D.plinth)} mm`}</Txt>
+      )}
       {hd && (
         <g>
           <circle cx={ox + hd.cx * s} cy={oy + hd.cy * s} r={Math.max(4, 30 * s)} strokeWidth={LW} />
@@ -354,7 +387,7 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
         <g>
           {/* down past the tags printed under the lowest devices */}
           <rect x={ox + (minX - 5) * s} y={oy + (minY - 5) * s} width={(maxX - minX + 10) * s} height={(maxY - minY + 10) * s + 3.5} strokeWidth={LW_THIN} strokeDasharray="2 1" />
-          <Txt x={ox + (minX - 5) * s} y={oy + (minY - 5) * s - 1.2} size={2.3} bold>DETAIL A</Txt>
+          <Txt x={detailLbl.x} y={detailLbl.y} size={2.3} bold anchor={detailLbl.anchor}>DETAIL A</Txt>
         </g>
       )}
       <Dim x1={ox} y1={oy + D.h * s + 7} x2={ox + D.w * s} y2={oy + D.h * s + 7} text={`${Math.round(D.w)} mm (${inch(D.w)})`} />
@@ -371,14 +404,14 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
       <g>
         <Txt x={DX0} y={TY + 3} size={3} bold>LEGEND PLATES & OPERATOR DEVICES</Txt>
         <Line x1={DX0} y1={TY + 5} x2={AREA_R - 2} y2={TY + 5} w={LW} />
-        {['TAG', 'LEGEND', 'COLOR', 'CENTRE X / Y FROM LOWER-LEFT, mm (in)', 'PART NUMBER'].map((h, i) => <Txt key={h} x={DX0 + [0, 16, 60, 80, 152][i]} y={TY + 8.6} size={2.1} bold>{h}</Txt>)}
+        {['TAG', 'LEGEND', 'COLOR', `CENTRE X / Y FROM LOWER-LEFT${two ? ` OF ${D.leaf === 0 ? 'LEFT' : 'RIGHT'} DOOR` : ''}, mm (in)`, 'PART NUMBER'].map((h, i) => <Txt key={h} x={DX0 + [0, 16, 60, 80, 152][i]} y={TY + 8.6} size={2.1} bold>{h}</Txt>)}
         <Line x1={DX0} y1={TY + 10} x2={AREA_R - 2} y2={TY + 10} w={LW_THIN} />
         {D.items.map((d, i) => (
           <g key={d.tag}>
             <Txt x={DX0} y={TY + 13.6 + i * 4.4} size={2.3} mono bold>{d.tag}</Txt>
             <Txt x={DX0 + 16} y={TY + 13.6 + i * 4.4} size={2.2} maxW={42}>{d.kind === 'hmi' ? 'HMI' : d.legend.join(' ')}</Txt>
             <Txt x={DX0 + 60} y={TY + 13.6 + i * 4.4} size={2.2} maxW={18}>{d.color || '—'}</Txt>
-            <Txt x={DX0 + 80} y={TY + 13.6 + i * 4.4} size={2.1} mono maxW={70}>{`X ${mmIn(d.cx)}  Y ${mmIn(D.h - d.cy)}`}</Txt>
+            <Txt x={DX0 + 80} y={TY + 13.6 + i * 4.4} size={2.1} mono maxW={70}>{`X ${mmIn(d.cx - lx0)}  Y ${mmIn(D.h - d.cy)}`}</Txt>
             <Txt x={DX0 + 152} y={TY + 13.6 + i * 4.4} size={2.2} mono maxW={AREA_R - DX0 - 155}>{d.partNumber}</Txt>
           </g>
         ))}

@@ -113,7 +113,7 @@ export function calculations(p: ProjectSnapshot): CalcSection[] {
     const v = th.ventilation;
     sections.push({
       title: 'Cabinet temperature rise',
-      lines: [...th.lines, { item: 'Effective surface area', value: `${th.area.toFixed(2)} m²`, basis: `${th.enclosure.partNumber}, wall mounted`, estimate: false },
+      lines: [...th.lines, { item: 'Effective surface area', value: `${th.area.toFixed(2)} m²`, basis: `${th.enclosure.partNumber}, ${th.enclosure.ratings.mounting === 'floor' ? 'floor-standing (back and bottom not counted)' : 'wall mounted (back not counted)'}`, estimate: false },
         ...(v ? [{ item: 'Filter fan air flow', value: `${Math.ceil(v.airflowM3h)} m³/h (${Math.ceil(v.airflowM3h / 1.699)} CFM)`, basis: `V = 3.1 x ${v.wattsToRemove.toFixed(0)} W / ${ALLOWED_RISE_C} K (heat above what the walls shed at ${ALLOWED_RISE_C} °C rise)`, estimate: true }] : [])],
       result: `${th.watts.toFixed(0)} W in ${th.area.toFixed(2)} m² -> about ${th.rise.toFixed(1)} °C above room temperature (painted steel, k ~ 5.5 W/m²K). ${v ? `Above ${ALLOWED_RISE_C} °C: add a filter fan of at least ${Math.ceil(v.airflowM3h)} m³/h (with an outlet filter), or a larger enclosure.` : 'Natural cooling is enough at normal room temperatures (<= 40 °C).'}`,
       ok: !v,

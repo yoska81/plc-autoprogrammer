@@ -316,7 +316,7 @@ Findings, ranked (✔ = fixed here, → = routed to the coordinator):
 | 6 | thermocouple | OPEN | DF1 wired as 4-20 mA loop, no transmitter / TC input part |
 | 7 | no seal-temperature setpoint / dwell on the HMI | OPEN | only high/low alarm limits DF101/DF102 |
 | 8 | missing alarms (over-temp, air pressure, film low) | OPEN | 7 alarms, none of these three |
-| 9 | Start clean keeps the example's document control | OPEN (now warned) | banner lists "the example's document control (customer Example Foods Inc., …)" |
+| 9 | Start clean keeps the example's document control | FIXED | my first read was the banner text before pressing Start clean; after it the drawings are SH-E-xx and the spec has no Example Foods / 24-117 (Debug 1, b423cd6; sealing-head.e2e now checks it) |
 | 10 | ZIP crash on qa: undefined | FIXED (confirmed) | ZIP built, 54 files |
 | 11 | review rules for 1–6 | FIXED (confirmed) | all six findings raised |
 | 12 | zones | OPEN | light curtain, over-temp, air pressure, film low in "Unwind" |
@@ -324,3 +324,72 @@ Findings, ranked (✔ = fixed here, → = routed to the coordinator):
 | 14 | pilot lights on 24+S | OPEN | PL2 (fault light) returns on 24+S, goes dark on a safety stop |
 | 15 | stray space "(thermocouple )" | OPEN | HMI tag descriptions and two alarm texts |
 | new | analog pair flagged "Wire DF3+ is WH, expected BU" | FIXED here | colour rules skip 4-20 mA / 0-10 V pairs (cable core colours); E2E checks it |
+
+## Sealing head re-verification after Dev 2's #64 (integration 1c34a2c)
+| # | item | status | evidence |
+|---|---|---|---|
+| 1 | two-hand control | FIXED | SR3 BG5933 (ISO 13851 IIIC), 2H-240002 station at the machine; Y001 (closing stroke) through SR3 13-14; SF-04 |
+| 2 | light curtain | FIXED | LC1 SH4 type 4 → SR2 LG5925-48-900 OSSD relay, SR2 status on X004; SF-03 |
+| 3 | HMI closes the head without two-hand | FIXED | no HMI hold-to-run on the closing stroke; HMI_Start only starts the cycle, the stroke needs SR3 |
+| 4 | heater power circuit | FIXED (+ drawn here) | FU1 Class J 20 A → K1 (AC-1) → SSR1 → HTR1; power sheet now draws it with wire numbers (K1-T1, SSR1-T1, K1-T2) and the wire list follows; aux loads now size the bus (14 → 12 AWG, upstream OCPD 20 A) |
+| 5 | over-temperature hardwired | FIXED | TAH1 SCU-3100 latched relay holds K1 (coil chain on sheet 6); X106 = TAH1 relay 2; SF-05 |
+| 6 | thermocouple | FIXED | TT1 XTD2 transmitter, 4-20 mA loop |
+| 7 | HMI setpoint / dwell | FIXED | DF103 SP_Seal_Heater_Temperature_SP, DS1002 SP_Seal_time |
+| 8 | missing alarms | FIXED | light curtain, air pressure low, heater over-temperature, film roll low |
+| 9 | Start clean document control | FIXED | (see above) |
+| 10–11 | ZIP crash, review rules | FIXED | |
+| 12 | zones | FIXED | LC1 / sealing sensors "Sealing station", air pressure and film-low at the unwinder, TAH1 in the cabinet |
+| 13 | Safety Functions table | FIXED | SF-01 … SF-05 from the design |
+| 14 | fault lamp on 24+S | FIXED (Dev 2, f5187ae; checked after the cfad3dd merge) | lamps on sinking modules return on the unswitched 24+; combined with the per-coil return key and p.pins[1] terminals, consistent in TB3 and the direct returns |
+| 15 | stray space "(thermocouple )" | FIXED | "(thermocouple)" |
+| new | double solenoid SOL1 (Y001 down / Y002 up) wired to the same A1/A2 | FIXED here | per-coil terminal pairs (A1/A2, B1/B2) in wiring, TB3 (one return per coil), cable cores; the sinking coil behind SR3 goes 24+S → SR3 → TB3 → A1, A2 → TB3 → Y001; found by the output-load-circuit rule (critical) |
+
+## Enclosure sizing: the door counts (integration cfad3dd)
+rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), far too small for the CM5-T10W, the operators and the DS1H handle.
+- Cause: no catalog enclosure fits rules-big's back panel, and the fallback kept the candidate with the most spare space; all of them had 0 %, so the first one won, which was the smallest.
+- Fix (engine): when nothing fits, the closest enclosure wins. Ranking: fewest back-panel parts left out, then a door that fits, then the most spare space.
+- Fix (panelLayout): every door item (HMI bezel, operators) must be at least 25 mm from the door edges, or the door overflows with a warning. The door check already covered rows, width and the handle zone.
+- Test: `engine.test.ts` "big-overflow" asserts that the chosen enclosure is not the smallest, its door fits with 25 mm clear, and a 16x12 door with CM5-T10W flags overflow. The test fails without the fix.
+- rules-big now uses SCE-36EL3012LP (36x30) and check-all passes with 0 FAILs. Six parts still do not fit the back panel (PLC, IO2–IO4, SR1, TB1). That is a real "does not fit" and is reported in the layout and STEP notes: the catalog's largest NEMA 12 enclosure is 36x30, so the fix is a larger enclosure in the catalog or a second panel.
+
+## Large catalog enclosures (Dev 1, #69, integration ce316da)
+- **Overflow test:** with 72x72 enclosures in the catalog, the big machine fits. The "closest enclosure" path is now tested with `big-4x`: NEMA 4X needs stainless, and the catalog's stainless enclosures stop at 20x16. The test expects SCE-20EL1608SSLP, not the 16x12, and fails on the old ranking.
+- **rules-big:** now picks SCE-42EL3612LP (42x36 wall, single door), everything placed, 29% spare. Two overlaps from the smaller sheet scale are fixed:
+  - Sheet 23: the balloon of a stacked part (OL1 under K1) went just left of the part and landed on the neighbouring OL1 tag. It now goes left if clear, else below the part over the duct, and avoids part outlines and other balloons.
+  - Sheet 24: "DETAIL A" ran into the HMI bezel. It now moves left of its box, or inside its corner.
+- **New harness variant `rules-floor`:** the big machine in an SCE-72EL7218LPPL, a floor-standing double-door enclosure on 12in stands.
+  - **Door layout:** HMI, operators and handle all go on the leaf in front of the disconnect, never across the centre split, and stay 25 mm clear of that leaf's edges. The door sheet draws the split line, both hinge sides, the latch on the device leaf and the LEFT/RIGHT DOOR labels. Its legend gives X from that leaf's lower-left corner.
+  - **Floor-standing heights:** the top device is at most 1.7 m above the floor, stands included. Operators below 0.6 m get a warning. The `mounting-heights` review rule reports the actual heights instead of "mount the enclosure bottom at…".
+  - **Door drilling and DXF:** the plan covers the device leaf ("RIGHT DOOR CUTOUTS"), with the leaf as datum and a double-door note.
+  - **STEP:** two leaf plates hinged on the outer edges, cutouts on the device leaf, latch at the split, floor stands under the body.
+  - **Thermal:** a floor-standing enclosure's bottom is no longer counted in the cooling area. The calcs basis text says so.
+  - **Drilling sheets at small scale:** crowded 22 mm holes show their ID only (the tag stays in the table). An HMI cutout label moves above a short cutout. Hole labels avoid other holes' crosshairs.
+  - **Checkers:** check_dxf and check_step take the door leaf and the stands into account.
+- **Not done:** the in-app 3D and door views don't draw the split line yet. The layout data (`door.leaves`) is there.
+
+## Double door in the app views; pressure and guard-door switches (integration 1703ef7)
+- **In-app cabinet views:**
+  - The door view draws the centre split, hinges on both outer edges and the latch on the device leaf. The nameplate and warning labels stay off the split.
+  - The inside view opens each leaf about its own hinge (`openDoorPoint`). Device backs and the handle sit on their leaf, and the door wire bundle runs to the duct on that side. The view box covers both leaves.
+  - Single-door renders are unchanged.
+- **Catalog**, all with real part numbers checked against datasheets:
+  - AutomationDirect:
+    - ProSense MPS25-1C-D100D: mechanical, 10–100 psig, SPDT 3 A @ 125 VAC / 2 A @ 30 VDC, DIN pins C=1 NC=2 NO=3 PE=4.
+    - ProSense PSD25-0P-0145H: electronic PNP, M12 pins 1 + / 2 OUT2 / 3 0V / 4 OUT1.
+    - IDEM KM-203002 tongue interlock: 2 N.C. 11-12 / 21-22 + N.O. 33-34, AC-15 6 A @ 120 V, up to PL e with a safety relay, UL E258676.
+    - Actuator 140107.
+  - Siemens: 3SE5112-0QV10 with actuator 3SE5000-0AV01. The switch is listed unverified: the data sheet server returned 403, so its terminal numbers are unchecked.
+  - Schneider: XMLB010A2S13 pressure switch.
+  - SCCR: these are control-circuit field devices, so UL 508A SB4 doesn't apply. Each part says so.
+  - No Allen-Bradley 440K or Schneider XCSPA part was added: no 2 N.C. + 1 N.O. catalog number could be confirmed (XCSPA592 is 1 N.C. + 1 N.O.).
+- **Engine:**
+  - Each pressure-switch input gets a mechanical pressure switch from the catalog, plus a set-point question. It no longer produces a "not in the catalog" note.
+  - Each guard door gets a GS interlock and its actuator, instead of the old "not drawn yet" note. Doors come from the spec, or from a "guard door closed" input.
+- **Wiring:**
+  - Field dry-contact inputs use the part's own terminal numbers (`contactPin`): PRS1:1 / :3 / :4, GS1:33 / :34.
+  - Guard switches sit in series after the E-stops in both SR1 channels: S11…GS1:11, GS1:12→S12, and the same for 21-22. They're drawn as N.C. contacts on the safety rungs.
+  - The safety-functions document has a "Guard door interlock" entry from the design.
+- **Tests:**
+  - engine.test checks: the guard interlock and its actuator, the door-closed input on 33-34, the S11 / S21 chains through GS1, and the pressure switch on its DIN pins.
+  - The catalog test allowlists 3SE5112-0QV10 with its reason.
+  - The machine-model AI test now expects the real interlock instead of the note.

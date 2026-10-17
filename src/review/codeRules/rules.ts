@@ -141,7 +141,7 @@ const SAFETY_PROCESS_RULES: CodeRule[] = [
         if (p.type !== 'output' || !p.deviceTag || !['contactor-coil', 'relay-coil', 'pilot-light', 'solenoid'].includes(p.deviceType)) continue;
         const style = groupOf.get(p.address)?.outputStyle;
         if (style !== 'sinking' && style !== 'sourcing') continue;
-        const [a, b] = p.deviceType === 'pilot-light' ? ['X1', 'X2'] : ['A1', 'A2'];
+        const [a, b] = p.pins;
         // what each end of the load is wired to, by wire number (one number per potential; chain letters follow the chain)
         const side = (term: string) => {
           const nums = env.wires.filter((w) => w.from === `${p.deviceTag}:${term}` || w.to === `${p.deviceTag}:${term}`).map((w) => w.wire);
@@ -432,6 +432,18 @@ export const RULES: CodeRule[] = [
       const top = env.iec ? 1.9 : 2.0;
       if (!D.handle && !D.items.length) return [];
       const fromBottom = (cy: number) => (D.h - cy) / 1000;
+      if (D.plinth !== undefined) {
+        // Floor-standing: the heights are fixed by the enclosure (on the floor or on its stands).
+        const z = (cy: number) => fromBottom(cy) + D.plinth! / 1000;
+        const handle = D.handle ? z(D.handle.cy) : null;
+        const ops = D.items.filter((d) => d.kind !== 'hmi');
+        const low = ops.length ? Math.min(...ops.map((d) => z(d.cy + d.h / 2))) : null;
+        const out: Omit<CodeHit, 'rule' | 'clause'>[] = [];
+        if (handle !== null && handle > top) out.push({ subject: 'door', severity: 'minor', area: 'electrical', title: `Disconnect handle ${handle.toFixed(2)} m above the floor (max ${top} m)`, detail: `Floor-standing enclosure${D.plinth ? ` on ${Math.round(D.plinth)} mm stands` : ''}: the handle centre is ${handle.toFixed(2)} m above the floor.`, fix: 'Move the disconnect lower on the back panel or add a platform.' });
+        if (low !== null && low < 0.6) out.push({ subject: 'door', severity: 'minor', area: 'electrical', title: `Operator device ${low.toFixed(2)} m above the floor (min 0.6 m)`, detail: 'The lowest operator device on the door is below 0.6 m.', fix: 'Move the operators up the door or use enclosure floor stands.' });
+        if (!out.length) out.push({ subject: 'door', severity: 'info', area: 'electrical', title: 'Floor-standing enclosure: handle and operator heights fixed', detail: `Handle centre ${handle !== null ? `${handle.toFixed(2)} m` : '—'}, lowest operator device ${low !== null ? `${low.toFixed(2)} m` : '—'} above the floor${D.plinth ? ` (on ${Math.round(D.plinth)} mm stands)` : ''}.`, fix: 'No action.' });
+        return out;
+      }
       const handleUp = D.handle ? fromBottom(D.handle.cy) : null;
       const lowest = D.items.length ? Math.min(...D.items.map((d) => fromBottom(d.cy + d.h / 2))) : null;
       const maxBottom = handleUp !== null ? top - handleUp : Infinity;
@@ -495,6 +507,9 @@ export const RULES: CodeRule[] = [
       // Missing datasheet data, not a design error: minor until the ratings are looked up.
       if (s?.unknown.length) out.push({ subject: 'unknown', severity: 'minor', area: 'electrical', title: `SCCR cannot be determined: no rating for ${s.unknown.join(', ')}`,
         detail: 'Every power-circuit component needs a short-circuit rating (or the default from UL 508A Table SB4.1) before the panel SCCR can be marked.', fix: 'Get the ratings from the datasheets or use parts with published SCCR.' });
+      const pe = panelSccr(input.ctx).exemptCheck;
+      if (pe.length) out.push({ subject: 'exempt', severity: 'minor', area: 'electrical', title: `No published SCCR for ${pe.join(', ')}: check the UL 508A SB4 exemption`,
+        detail: 'Power supply makers publish no short-circuit rating. These parts are not counted in the panel SCCR; confirm they fall under the Supplement SB4 exemptions (e.g. Class 2 / isolated secondary sources, branch-protected supplies).', fix: 'Confirm the exemption, or get a rating from the manufacturer.' });
       // a conditional rating counts only when the design meets its condition (protection ahead of the part)
       for (const u of panelSccr(input.ctx).unmet) out.push({ subject: `condition:${u.tag}`, severity: 'major', area: 'electrical', title: `${u.tag} SCCR not counted: valid only ${u.condition}`,
         detail: `The catalog rating of ${u.tag} holds only ${u.condition}; ${u.why}.`, fix: `Protect ${u.tag} as its rating requires, or use the default / a part rated without that condition.` });

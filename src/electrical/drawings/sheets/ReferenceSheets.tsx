@@ -277,7 +277,12 @@ function sccrText(sc: PanelSccr, volts: number, std: string): string {
 export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }) {
   const { ctx, model, layout, doc } = plan;
   const np = panelNameplate(ctx);
-  const sccrValid = panelSccr(ctx).conditions;
+  const sc = panelSccr(ctx);
+  // conditions the marked rating depends on, and parts without a published rating (SB4 exemption to check)
+  const sccrNote = [
+    sc.conditions.length ? `SCCR VALID WITH: ${sc.conditions.map((v) => `${v.tag} ${v.condition}`).join('; ')}` : '',
+    sc.exemptCheck.length ? `NOT PUBLISHED, CHECK UL 508A SB4 EXEMPTION: ${sc.exemptCheck.join(', ')}` : '',
+  ].filter(Boolean).join('. ').toUpperCase();
   const codes = codeRefs(ctx);
   const canada = codes.region === 'Canada';
   const iec = isIec(ctx.region);
@@ -294,7 +299,7 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
     ['SUPPLY', iec ? np.supplyText : `${np.volts} VAC, ${np.phases} PH, ${np.phases === 3 ? '3 W + PE' : '2 W + PE'}, ${np.hz} Hz`],
     ['FULL-LOAD CURRENT', `${np.fullLoadAmps} A (MOTORS ${np.motorAmps} A + CONTROL ${np.controlAmps} A EST.) — VERIFY`],
     ['LARGEST MOTOR FLA', np.largestMotorFla !== null ? `${np.largestMotorFla} A` : 'N/A (NO MOTORS)'],
-    iec ? ['SHORT-CIRCUIT RATING', `Icc ____ kA (IEC 61439-1 5.3) — ${np.sccr}`] : ['SCCR', sccrText(panelSccr(ctx), np.volts, canada ? 'CSA C22.2 No. 14' : 'UL 508A SB4')],
+    iec ? ['SHORT-CIRCUIT RATING', `Icc ____ kA (IEC 61439-1 5.3) — ${np.sccr}`] : ['SCCR', sccrText(sc, np.volts, canada ? 'CSA C22.2 No. 14' : 'UL 508A SB4')],
     iec ? ['DEGREE OF PROTECTION', `${NEMA_TO_IP[np.enclosureType] ?? np.enclosureType} (IEC 60529)`] : ['ENCLOSURE TYPE', np.enclosureType.toUpperCase().replace(/^NEMA\s*/, 'TYPE ')],
     ['CONTROL VOLTAGE', `24 VDC${model.transformer ? ' / 120 VAC (TRANSFORMER)' : ''}`],
   ];
@@ -320,7 +325,7 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   ];
   const LW_ = 60, LH = 26;
   // a third note line under the nameplate (SCCR conditions) moves the labels down
-  const ly = npY + NPH + 14 + (!iec && sccrValid.length ? 3 : 0);
+  const ly = npY + NPH + 14 + (!iec && sccrNote ? 3 : 0);
   const perRow = Math.floor((NPW + 2) / (LW_ + 4));
   // ---- marking conventions
   const conv = [
@@ -358,7 +363,7 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
       })}
       <Txt x={x0} y={npY + NPH + 4} size={1.9} maxW={NPW}>{`STAINLESS OR ENGRAVED PHENOLIC, RIVETED/ADHESIVE ON THE DOOR OUTSIDE NEAR ${np.disconnectTag}. BLANK FIELDS FILLED BY THE PANEL SHOP.`}</Txt>
       <Txt x={x0} y={npY + NPH + 7} size={1.9} maxW={NPW}>{`MARKINGS PER ${codes.panel} / NFPA 79 16.4. SCCR AND FULL-LOAD CURRENT MUST BE CALCULATED AND VERIFIED.`}</Txt>
-      {!iec && sccrValid.length > 0 && <Txt x={x0} y={npY + NPH + 10} size={1.9} maxW={NPW}>{`SCCR VALID WITH: ${sccrValid.map((v) => `${v.tag} ${v.condition}`).join('; ').toUpperCase()}`}</Txt>}
+      {!iec && sccrNote && <Txt x={x0} y={npY + NPH + 10} size={1.9} maxW={NPW}>{sccrNote}</Txt>}
 
       {/* warning labels */}
       <Txt x={x0} y={ly - 2} size={3.0} bold>WARNING & IDENTIFICATION LABELS</Txt>

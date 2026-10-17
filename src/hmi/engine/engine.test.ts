@@ -52,7 +52,7 @@ const PANELS: [number, number][] = [[480, 272], [800, 480], [1024, 600], [1280, 
 
 /** Every rule the HMI page's layout check and the PLC program rely on. */
 function checkAll(d: HmiDesign, w: number, h: number, ioAddresses: Set<string>, what: string) {
-  const issues = checkDesign(d, w, h);
+  const issues = checkDesign(d, w, h, { text: true });
   assert.deepEqual(issues.map((i) => `${i.screenId}: ${i.message}`), [], `${what} ${w}x${h}: layout issues`);
   const ids = new Set(d.screens.map((s) => s.id));
   assert.equal(ids.size, d.screens.length, 'unique screen ids');

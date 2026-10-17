@@ -1,7 +1,7 @@
 /** Open enclosure seen from the front: cabinet, back panel, rails, ducts, devices, wiring, open door. */
 import type { DoorItem, Rect } from '../derive';
 import { Device, Screw, T } from './Devices';
-import { FINGER_PITCH, FINGER_W, WIRE_HEX, projectDoor } from './scene';
+import { FINGER_PITCH, FINGER_W, WIRE_HEX, leafOf, openDoorPoint } from './scene';
 import type { Duct, Scene, TagPlate, WirePath } from './scene';
 
 const f = (n: number) => Math.round(n * 100) / 100;
@@ -122,15 +122,27 @@ function DeviceBack({ d, p }: { d: DoorItem; p: string }) {
   );
 }
 
+/** The open door: one leaf swung left about its hinge, or both leaves of a double door swung outwards. */
 function OpenDoor({ s, p }: { s: Scene; p: string }) {
-  const { w: W, h: H } = s.enc;
-  const P = (u: number, v: number) => projectDoor(W, H, u, v);
+  return <g>{s.door.leaves.map((_, li) => <OpenLeaf key={li} s={s} p={p} li={li} />)}</g>;
+}
+
+function OpenLeaf({ s, p, li }: { s: Scene; p: string; li: number }) {
+  const D = s.door;
+  const { h: H } = s.enc;
+  const lf = D.leaves[li];
+  const Wl = lf.x1 - lf.x0;
+  const right = D.leaves.length > 1 && li === 1;
+  // u = distance from this leaf's hinge, v = height
+  const P = (u: number, v: number) => openDoorPoint(D, right ? lf.x1 - u : lf.x0 + u, v, li);
   const poly = (pts: [number, number][]) => pts.map(([u, v]) => { const q = P(u, v); return `${f(q.x)},${f(q.y)}`; }).join(' ');
-  const quad = (i: number) => poly([[i, i], [W - i, i], [W - i, H - i], [i, H - i]]);
-  const a = P(W, 0), b = P(W, H);
-  const ret = 9;
-  const handle = s.door.handle;
-  const items = [...s.door.items].sort((x, y) => x.cx - y.cx);
+  const quad = (i: number) => poly([[i, i], [Wl - i, i], [Wl - i, H - i], [i, H - i]]);
+  const a = P(Wl, 0), b = P(Wl, H);
+  const ret = right ? -9 : 9;
+  const mine = (x: number) => leafOf(D, x) === li;
+  const handle = s.door.handle && mine(s.door.handle.x) ? s.door.handle : undefined;
+  const items = s.door.items.filter((d) => mine(d.cx)).sort((x, y) => (right ? y.cx - x.cx : x.cx - y.cx));
+  const P0 = (x: number, y: number) => openDoorPoint(D, x, y, li);
   return (
     <g>
       <g filter={`url(#${p}-shadowSoft)`}>
@@ -141,10 +153,10 @@ function OpenDoor({ s, p }: { s: Scene; p: string }) {
       <polygon points={quad(18)} fill={`url(#${p}-doorSheen)`} opacity={0.6} />
       <polygon points={quad(8)} fill="none" stroke={`url(#${p}-gasket)`} strokeWidth={5.2} strokeLinejoin="round" />
       <polygon points={quad(8)} fill="none" stroke="#ffffff" strokeOpacity={0.12} strokeWidth={1} strokeLinejoin="round" />
-      {/* latch mechanism */}
-      {(() => { const q = P(W - 24, s.door.latchY); return <rect x={q.x - 4 * q.sx} y={q.y - 16 * q.sy} width={8 * q.sx} height={32 * q.sy} rx={1} fill={`url(#${p}-shaft)`} stroke="#5f666c" strokeWidth={0.4} />; })()}
+      {/* latch mechanism (on the leaf with the devices) */}
+      {li === D.leaf && (() => { const q = P(Wl - 24, s.door.latchY); return <rect x={q.x - 4 * q.sx} y={q.y - 16 * q.sy} width={8 * q.sx} height={32 * q.sy} rx={1} fill={`url(#${p}-shaft)`} stroke="#5f666c" strokeWidth={0.4} />; })()}
       {handle && (() => {
-        const q = P(handle.x, handle.y);
+        const q = P0(handle.x, handle.y);
         return (
           <g transform={`translate(${f(q.x)} ${f(q.y)}) scale(${f(q.sx)} ${f(q.sy)})`} filter={`url(#${p}-shadow)`}>
             <rect x={-24} y={-24} width={48} height={48} rx={4} fill="#3b3f44" stroke="#22252a" strokeWidth={0.8} />
@@ -154,7 +166,7 @@ function OpenDoor({ s, p }: { s: Scene; p: string }) {
         );
       })()}
       {items.map((d) => {
-        const q = P(d.cx, d.cy);
+        const q = P0(d.cx, d.cy);
         return (
           <g key={d.tag} transform={`translate(${f(q.x)} ${f(q.y)}) scale(${f(q.sx)} ${f(q.sy)})`}>
             <title>{`${d.tag} — ${d.partNumber} (back of door device)`}</title>
@@ -221,8 +233,15 @@ export function InsideView({ s, p, showLabels, vb }: { s: Scene; p: string; show
       {showLabels && s.plates.map((t, i) => <Plate key={i} t={t} p={p} />)}
       <Hinge x={0} y={H * 0.15 - 20} h={40} p={p} />
       <Hinge x={0} y={H * 0.85 - 20} h={40} p={p} />
-      {/* latch keeper on the body */}
-      <rect x={W - 9} y={s.door.latchY - 14} width={5} height={28} rx={1.5} fill={`url(#${p}-shaft)`} stroke="#6d747a" strokeWidth={0.3} />
+      {s.door.leaves.length > 1 ? (
+        <>
+          <Hinge x={W} y={H * 0.15 - 20} h={40} p={p} />
+          <Hinge x={W} y={H * 0.85 - 20} h={40} p={p} />
+        </>
+      ) : (
+        // latch keeper on the body (a double door latches leaf to leaf)
+        <rect x={W - 9} y={s.door.latchY - 14} width={5} height={28} rx={1.5} fill={`url(#${p}-shaft)`} stroke="#6d747a" strokeWidth={0.3} />
+      )}
       {s.notShown.length > 0 && (
         <T x={W / 2} y={H + 26} size={9} fill="#9b1c1c" weight={600}>{`Not shown: ${s.notShown.join('; ')}`}</T>
       )}

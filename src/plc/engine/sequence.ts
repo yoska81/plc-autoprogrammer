@@ -101,13 +101,19 @@ export function compileSequence(seq: CycleSequence, base: ProgramResult, opts: {
   const v = (i: number) => String((i + 1) * 10);
   const steps = seq.steps;
   if (steps.length) {
+    // What the standard blocks require before each cycle (two-hand start, temperature ready): with any, every
+    // cycle returns to step 0 and waits for them; without, the cycle repeats from step 10.
+    const startConds = base.cycle?.startConds ?? [];
+    const back = startConds.length ? '0' : '10';
     R('Cycle not running: step 0 (idle)', [[NC(RUN)]], [{ type: 'COPY', source: '0', dest: S }]);
-    R(`Cycle start: step 10 — ${steps[0].name}`, [[NO(RUN), CMP(S, '==', '0')]], [{ type: 'COPY', source: '10', dest: S }]);
+    R(`Cycle start: step 10 — ${steps[0].name}${startConds.length ? ` (waits for ${startConds.join(' and ')})` : ''}`, [[NO(RUN), CMP(S, '==', '0'), ...startConds.map(NO)]], [{ type: 'COPY', source: '10', dest: S }]);
     // Step timers (timed waits) and step timeouts.
     const delay = new Map<number, string>(), tmo = new Map<number, string>();
     steps.forEach((st, i) => {
       const sec = st.waitFor.find((w) => w.seconds)?.seconds;
-      if (sec) { const tm = timer(); delay.set(i, tm); tags.push({ address: tm, nickname: `Tmr_Step_${v(i)}`, comment: `Step ${v(i)} time` }); R(`Step ${v(i)} time: ${sec} s`, [[CMP(S, '==', v(i))]], [{ type: 'TMR', address: tm, mode: 'ON_DELAY', preset: String(sec), unit: 'sec', accumulate: false, resetAddress: null }]); }
+      // The dwell / seal step reads the operator's setpoint (ms) when the HMI has one.
+      const dwellSp = base.cycle?.dwellSp && /\b(dwell|seal\w*|hold\w*)\b/i.test(st.name) ? base.cycle.dwellSp : undefined;
+      if (sec) { const tm = timer(); delay.set(i, tm); tags.push({ address: tm, nickname: `Tmr_Step_${v(i)}`, comment: `Step ${v(i)} time` }); R(`Step ${v(i)} time: ${dwellSp ? `${dwellSp} ms (operator setpoint)` : `${sec} s`}`, [[CMP(S, '==', v(i))]], [{ type: 'TMR', address: tm, mode: 'ON_DELAY', preset: dwellSp ?? String(sec), unit: dwellSp ? 'ms' : 'sec', accumulate: false, resetAddress: null }]); }
       if (st.timeoutSec && opts.alarm) { const tm = timer(); tmo.set(i, tm); tags.push({ address: tm, nickname: `Tmr_Step_${v(i)}_Tmo`, comment: `Step ${v(i)} timeout` }); R(`Step ${v(i)} timeout: ${st.timeoutSec} s`, [[CMP(S, '==', v(i))]], [{ type: 'TMR', address: tm, mode: 'ON_DELAY', preset: String(st.timeoutSec), unit: 'sec', accumulate: false, resetAddress: null }]); }
     });
     if (!tmo.size && opts.alarm) R('No step has a timeout: the step-timeout alarm stays off', [[NC('SC1')]], [{ type: 'SET', address: opts.alarm }]);
@@ -116,14 +122,34 @@ export function compileSequence(seq: CycleSequence, base: ProgramResult, opts: {
       R('A cycle step did not finish in time: latched (stops the cycle)', [...tmo.values()].map((tm) => [NO(tm)]), [{ type: 'SET', address: opts.alarm }]);
       R('Step timeout reset: Reset while the cycle is stopped', [[NO(RESET), NC(RUN)]], [{ type: 'RST', address: opts.alarm }]);
     }
+    // Two-hand abort (below): a cycle sent back by a released hand is not counted; cleared at the next start.
+    const th = base.cycle?.twoHand, closing = base.cycle?.closing;
+    const aborts = th?.length && closing ? steps.some((st) => st.actions.some((a) => a.actuator === closing && a.what === 'extend')) : false;
+    let ABORT = '';
+    if (aborts) {
+      let k = 60; while (used.has(`C${k}`)) k++;
+      ABORT = `C${k}`; used.add(ABORT);
+      tags.push({ address: ABORT, nickname: 'Cycle_Aborted', comment: 'A hand left the two-hand buttons during the closing stroke: this cycle is not counted' });
+      R('Cycle aborted flag cleared when the next cycle starts', [[CMP(S, '==', '0')]], [{ type: 'RST', address: ABORT }]);
+    }
     // Transitions, last step first: a step entered this scan is checked on the next one.
     for (let i = steps.length - 1; i >= 0; i--) {
       const st = steps[i];
       const conds = st.waitFor.flatMap((w) => (w.input ? [w.on === false ? NC(w.input) : NO(w.input)] : w.seconds ? [NO(delay.get(i)!)] : []));
       const last = i === steps.length - 1;
-      R(`Step ${v(i)} — ${st.name}: done ${st.waitFor.length ? `when ${st.waitFor.map((w) => (w.input ? `${w.input} ${w.on === false ? 'OFF' : 'ON'}` : `${w.seconds} s`)).join(' and ')}` : 'at once'} → ${last ? 'cycle complete, back to step 10' : `step ${v(i + 1)}`}`,
+      const cnt: LadderOutput = { type: 'CNT', address: counter, direction: 'UP', preset: '32767', resetAddress: opts.countReset ?? base.internal.reset };
+      // With an abort flag the count is its own rung (ahead of the transition, same scan) so an aborted cycle is not counted.
+      if (last && ABORT) R(`Cycle complete: counted unless aborted`, [[NO(RUN), NO(SAFE), CMP(S, '==', v(i)), ...conds, NC(ABORT)]], [cnt]);
+      R(`Step ${v(i)} — ${st.name}: done ${st.waitFor.length ? `when ${st.waitFor.map((w) => (w.input ? `${w.input} ${w.on === false ? 'OFF' : 'ON'}` : `${w.seconds} s`)).join(' and ')}` : 'at once'} → ${last ? `cycle complete, back to step ${back}` : `step ${v(i + 1)}`}`,
         [[NO(RUN), NO(SAFE), CMP(S, '==', v(i)), ...conds]],
-        [{ type: 'COPY', source: last ? '10' : v(i + 1), dest: S }, ...(last ? [{ type: 'CNT', address: counter, direction: 'UP', preset: '32767', resetAddress: opts.countReset ?? base.internal.reset } as LadderOutput] : [])]);
+        [{ type: 'COPY', source: last ? back : v(i + 1), dest: S }, ...(last && !ABORT ? [cnt] : [])]);
+      // Two-hand control: a hand off a button during the closing stroke sends it back (written after the
+      // transition, so it wins); the two-hand relay has already cut the valve in hardware.
+      if (ABORT && st.actions.some((a) => a.actuator === closing && a.what === 'extend')) {
+        const j = steps.findIndex((x, k) => k > i && x.actions.some((a) => a.actuator === closing && a.what === 'retract'));
+        R(`Step ${v(i)}: a hand off the two-hand buttons stops the closing stroke → ${j >= 0 ? `step ${v(j)} (${steps[j].name})` : 'step 0'}, not counted`,
+          th!.map((x) => [NO(RUN), CMP(S, '==', v(i)), NC(x)]), [{ type: 'COPY', source: j >= 0 ? v(j) : '0', dest: S }, { type: 'SET', address: ABORT }]);
+      }
     }
   }
   // Request bits: ON in the steps that list them (one OUT each).
