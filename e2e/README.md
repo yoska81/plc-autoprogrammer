@@ -39,6 +39,14 @@ BASE_URL=http://localhost:5204 node e2e/layout.e2e.cjs   # scale, cabinet + moto
 ```
 Screenshots land in `e2e/out-layout/`.
 
+## Improve design
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/improve.e2e.cjs   # cost-down (accept, checks re-run), what-if compare + apply, panel library (save, export/import, add a section, new project from a panel), spare parts Excel/PDF here and on Deliverables
+npx tsx src/electrical/improve/costDown.test.ts && npx tsx src/electrical/improve/library.test.ts && npx tsx src/electrical/improve/whatIf.test.ts && npx tsx src/electrical/improve/spares.test.ts
+```
+Screenshots land in `e2e/out-improve/`.
+
 ## Page sweep and old projects
 
 ```bash

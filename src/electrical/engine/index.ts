@@ -57,7 +57,7 @@ const TAG_PREFIX: Partial<Record<CatalogCategory, string>> = {
 };
 
 /** Typical 24 VDC draw of the design (same figures as the calculations document). */
-function dcLoad(components: DesignComponent[], getPart: EngineInput['getPart'], hmiPartNumber: string | null | undefined, fieldInputs: number): number {
+export function dcLoad(components: DesignComponent[], getPart: EngineInput['getPart'], hmiPartNumber: string | null | undefined, fieldInputs: number): number {
   let a = 0;
   for (const c of components) {
     const p = getPart(c.partNumber);
