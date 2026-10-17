@@ -10,7 +10,7 @@ import type { DrawingContext } from '../derive';
 import { RenderDefs } from './Defs';
 import { DoorView } from './DoorView';
 import { InsideView } from './InsideView';
-import { buildScene, projectDoor } from './scene';
+import { buildScene, openDoorPoint } from './scene';
 
 export interface CabinetRenderProps {
   ctx: DrawingContext;
@@ -32,12 +32,14 @@ export default function CabinetRender({ ctx, view, hmiPartNumber = null, showLab
       const extra = scene.door.hmiOverflow ? 30 : 0;
       return { x: -40, y: -40, w: W + 80, h: H + 95 + extra };
     }
-    const far = projectDoor(W, H, W, 0);
-    const farB = projectDoor(W, H, W, H);
-    const x0 = far.x - 40;
-    const y0 = Math.min(-40, far.y - 25);
-    const y1 = Math.max(H + 55, farB.y + 25) + (scene.notShown.length ? 30 : 0);
-    return { x: x0, y: y0, w: W + 40 - x0, h: y1 - y0 };
+    // free edge of each open leaf (top and bottom corners): the left one swings left, a right leaf swings right
+    const D = scene.door;
+    const far = D.leaves.flatMap((l, li) => [0, H].map((v) => openDoorPoint(D, D.leaves.length > 1 && li === 1 ? l.x0 : l.x1, v, li)));
+    const x0 = Math.min(0, ...far.map((q) => q.x)) - 40;
+    const x1 = Math.max(W, ...far.map((q) => q.x)) + 40;
+    const y0 = Math.min(-40, ...far.map((q) => q.y - 25));
+    const y1 = Math.max(H + 55, ...far.map((q) => q.y + 25)) + (scene.notShown.length ? 30 : 0);
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }, [view, W, H, scene]);
   const label = view === 'door'
     ? `Cabinet door of ${scene.title}: ${scene.door.items.length} door devices`

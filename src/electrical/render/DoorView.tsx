@@ -230,8 +230,10 @@ function Nameplate({ r, lines, p }: { r: Rect; lines: string[]; p: string }) {
 export function DoorView({ s, p, vb }: { s: Scene; p: string; vb: Rect }) {
   const D = s.door;
   const { w: W, h: H } = D;
-  const hinge = (y: number) => (
-    <g key={y} filter={`url(#${p}-shadowSmall)`}>
+  const two = D.leaves.length > 1;
+  // hinge on the left edge, or mirrored onto the right edge (second leaf of a double door)
+  const hinge = (y: number, right = false) => (
+    <g key={`${y}${right}`} filter={`url(#${p}-shadowSmall)`} transform={right ? `translate(${W} 0) scale(-1 1)` : undefined}>
       <rect x={-5} y={y - 20} width={8} height={40} rx={3.6} fill={`url(#${p}-hinge)`} stroke="#5b5e5a" strokeWidth={0.3} />
       <line x1={-5} x2={3} y1={y} y2={y} stroke="#4d504c" strokeWidth={0.5} />
     </g>
@@ -250,15 +252,25 @@ export function DoorView({ s, p, vb }: { s: Scene; p: string; vb: Rect }) {
       <rect x={10} y={10} width={W - 20} height={H - 20} rx={4} fill="none" stroke="#000" strokeOpacity={0.06} strokeWidth={1.4} />
       {hinge(H * 0.15)}
       {hinge(H * 0.85)}
+      {two && (
+        <g>
+          {hinge(H * 0.15, true)}
+          {hinge(H * 0.85, true)}
+          {/* the two leaves meet at the centre: overlap strip on the leaf with the latch */}
+          <rect x={W / 2 + (D.leaf === 1 ? 0 : -4)} y={3} width={4} height={H - 6} fill="#000" fillOpacity={0.06} />
+          <line x1={W / 2} x2={W / 2} y1={3} y2={H - 3} stroke="#5d605c" strokeWidth={1.1} />
+          <line x1={W / 2 + 1.2} x2={W / 2 + 1.2} y1={3} y2={H - 3} stroke="#ffffff" strokeOpacity={0.55} strokeWidth={0.6} />
+        </g>
+      )}
       {/* latch */}
       {D.latch === 'quarter-turn' ? (
-        <g transform={`translate(${W - 22} ${D.latchY})`} filter={`url(#${p}-shadowSmall)`}>
+        <g transform={`translate(${D.latchX} ${D.latchY})`} filter={`url(#${p}-shadowSmall)`}>
           <circle r={9} fill={`url(#${p}-chrome)`} stroke="#5f666c" strokeWidth={0.4} />
           <circle r={6} fill="#2a2c30" />
           <rect x={-4.5} y={-1.1} width={9} height={2.2} rx={0.6} fill="#9aa1a7" transform="rotate(-20)" />
         </g>
       ) : (
-        <g transform={`translate(${W - 24} ${D.latchY})`} filter={`url(#${p}-shadow)`}>
+        <g transform={`translate(${D.latchX - 2} ${D.latchY})`} filter={`url(#${p}-shadow)`}>
           <rect x={-9} y={-34} width={18} height={68} rx={4} fill="#2b2d31" stroke="#16171a" strokeWidth={0.5} />
           <rect x={-5} y={-30} width={10} height={44} rx={4} fill={`url(#${p}-devBlack)`} stroke="#4b4f55" strokeWidth={0.4} />
           <rect x={-3.6} y={-28} width={2.2} height={38} rx={1} fill="#fff" opacity={0.16} />
