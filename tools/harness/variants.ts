@@ -16,6 +16,8 @@ import { useProgramStore } from '../../src/store/useProgramStore';
 import { useSpecStore } from '../../src/store/useSpecStore';
 import { collectProject } from '../../src/deliverables/collect';
 import { buildEverythingZip } from '../../src/deliverables/files';
+import { autocadZip, eplanZip } from '../../src/deliverables/cadExport';
+import { drawingSetDxf } from '../../src/electrical/cad/drawingsDxf';
 import { drillingDxf } from '../../src/electrical/dxf';
 import { enclosureFaceDrilling } from '../../src/electrical/enclosureFaces';
 import {
@@ -348,6 +350,10 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     out[`dxf/${k}_mm_cut.dxf`] = text(drillingDxf(plan, ctx.projectName, { units: 'mm', cutOnly: true }));
     out[`dxf/${k}_in_cut.dxf`] = text(drillingDxf(plan, ctx.projectName, { units: 'in', cutOnly: true }));
   }
+  // CAD exports (Electrical page "Save as AutoCAD" / "Save as EPLAN"), as the app builds them.
+  const sheets = drawingSetDxf(ctx);
+  out['cad/autocad.zip'] = await b64(await autocadZip(p, sheets));
+  out['cad/eplan.zip'] = await b64(await eplanZip(p, sheets, { now: '2026-01-01T00:00:00Z' }));
   const labels = buildLabels(ctx);
   out['labels.csv'] = text(labelsCsv(labels, 'code+description', false));
   const layout = panelLayout(ctx);

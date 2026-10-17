@@ -58,7 +58,7 @@ export default function SheetView({ plan, sheet, width, height }: { plan: Drawin
         doc: plan.doc, rev: sheet.rev, supply: supplyText(plan.model.supply),
       }}
     >
-      <SymbolSetContext.Provider value={plan.ctx.symbols ?? 'ansi'}><Content plan={plan} sheet={sheet} /></SymbolSetContext.Provider>
+      <SymbolSetContext.Provider value={plan.ctx.symbols ?? 'ansi'}><g data-sheet={kind}><Content plan={plan} sheet={sheet} /></g></SymbolSetContext.Provider>
     </SheetFrame>
   );
 }

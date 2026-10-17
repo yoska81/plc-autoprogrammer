@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('isaDesktop', {
   saveFile: (name, bytes) => ipcRenderer.invoke('isa:save-file', name, bytes),
   writeFile: (filePath, bytes) => ipcRenderer.invoke('isa:write-file', filePath, bytes),
   onOpenFile: (cb) => { ipcRenderer.on('isa:open-file', (_e, name, bytes, filePath) => cb(name, bytes, filePath)); },
+  oda: {
+    detect: () => ipcRenderer.invoke('isa:oda-detect'),
+    convert: (files) => ipcRenderer.invoke('isa:oda-convert', files),
+  },
   modbus: {
     connect: async (o) => { const r = await ipcRenderer.invoke('isa:modbus', 'connect', [o]); return r.ok ? r.value : { ok: false, error: r.error }; },
     disconnect: () => mb('disconnect'),

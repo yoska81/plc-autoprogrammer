@@ -79,7 +79,7 @@ export function Dot({ x, y }: { x: number; y: number }) {
 /** Wire number centred above a horizontal wire. */
 export function WireNo({ x, y, n, maxW }: { x: number; y: number; n: string; maxW?: number }) {
   if (!n) return null;
-  return <Txt x={x} y={y - 1} mono size={2.5} anchor="middle" maxW={maxW}>{n}</Txt>;
+  return <g data-cad="WIRENO"><Txt x={x} y={y - 1} mono size={2.5} anchor="middle" maxW={maxW}>{n}</Txt></g>;
 }
 
 /** Terminal-strip terminal on a horizontal wire: small box with the terminal number. */
@@ -87,7 +87,7 @@ export function TermBox({ x, y, n }: { x: number; y: number; n: string | number 
   const s = String(n);
   const w = Math.max(5, textWidth(s, 2.2, true) + 1.6);
   return (
-    <g>
+    <g data-cad="SYMS">
       <rect x={x - w / 2} y={y - 1.9} width={w} height={3.8} fill="#fff" strokeWidth={LW_THIN} />
       <Txt x={x} y={y + 0.8} size={2.2} mono anchor="middle">{s}</Txt>
     </g>
@@ -104,7 +104,7 @@ export function Contact({ x, y, nc }: { x: number; y: number; nc?: boolean }) {
   const iec = useIecSymbols();
   if (iec) return <IecContact x={x} y={y} nc={nc} lead={4} />;
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 4} y1={y} x2={x - 1.25} y2={y} />
       <Line x1={x + 1.25} y1={y} x2={x + 4} y2={y} />
       <Line x1={x - 1.25} y1={y - 2.5} x2={x - 1.25} y2={y + 2.5} />
@@ -120,7 +120,7 @@ export function Contact({ x, y, nc }: { x: number; y: number; nc?: boolean }) {
  */
 function IecContact({ x, y, nc, lead }: { x: number; y: number; nc?: boolean; lead: number }) {
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - lead} y1={y} x2={x - 3} y2={y} />
       <Line x1={x + 3} y1={y} x2={x + lead} y2={y} />
       {nc ? <>
@@ -137,7 +137,7 @@ function IecContact({ x, y, nc, lead }: { x: number; y: number; nc?: boolean; le
  */
 function IecActuated({ x, y, nc, head, to = y - 4.2 }: { x: number; y: number; nc?: boolean; head: ReactNode; to?: number }) {
   return (
-    <g>
+    <g data-cad="SYMS">
       <IecContact x={x} y={y} nc={nc} lead={5} />
       <Line x1={x} y1={nc ? y - 1 : y - 1.4} x2={x} y2={to} w={LW_THIN} dash="0.8 0.6" />
       {head}
@@ -156,7 +156,7 @@ export function Pushbutton({ x, y, nc, mushroom }: { x: number; y: number; nc?: 
       : <path d={`M ${x - 1.6} ${y - 5.3} V ${y - 4.2} H ${x + 1.6} V ${y - 5.3}`} strokeWidth={LW} />} />
   );
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />
       <Line x1={x + 3.7} y1={y} x2={x + 5} y2={y} />
       <TermPt x={x - 3} y={y} />
@@ -176,7 +176,7 @@ export function LimitSwitch({ x, y, nc }: { x: number; y: number; nc?: boolean }
   const ey = nc ? y + 1.4 : y - 2.6;
   if (iec) return <IecActuated x={x} y={y} nc={nc} head={<path d={`M ${x - 1.4} ${y - 4.2} L ${x} ${y - 5.4} L ${x + 1.4} ${y - 4.2} Z`} strokeWidth={LW_THIN} />} />;
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />
       <Line x1={x + 3.7} y1={y} x2={x + 5} y2={y} />
       <TermPt x={x - 3} y={y} />
@@ -193,7 +193,7 @@ export function PressureSwitch({ x, y, nc }: { x: number; y: number; nc?: boolea
   const ey = nc ? y + 1.4 : y - 2.6;
   if (iec) return <IecActuated x={x} y={y} nc={nc} to={y - 2.9} head={<g><rect x={x - 1.4} y={y - 5.4} width={2.8} height={2.5} strokeWidth={LW_THIN} /><Txt x={x} y={y - 3.8} size={1.9} anchor="middle">p</Txt></g>} />;
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />
       <Line x1={x + 3.7} y1={y} x2={x + 5} y2={y} />
       <TermPt x={x - 3} y={y} />
@@ -210,7 +210,7 @@ export function Selector({ x, y }: { x: number; y: number }) {
   const iec = useIecSymbols();
   if (iec) return <IecActuated x={x} y={y} head={<path d={`M ${x - 1.6} ${y - 5.3} L ${x - 1.6} ${y - 4.2} H ${x + 1.6} L ${x + 1.6} ${y - 3.2}`} strokeWidth={LW} />} />;
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />
       <Line x1={x + 3.7} y1={y} x2={x + 5} y2={y} />
       <TermPt x={x - 3} y={y} />
@@ -227,7 +227,7 @@ export function Selector({ x, y }: { x: number; y: number }) {
 export function Coil({ x, y }: { x: number; y: number }) {
   const iec = useIecSymbols();
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - 3} y2={y} />
       <Line x1={x + 3} y1={y} x2={x + 5} y2={y} />
       {iec ? <rect x={x - 3} y={y - 2} width={6} height={4} strokeWidth={LW} /> /* IEC 60617 S00305 */ : <circle cx={x} cy={y} r={3} strokeWidth={LW} />}
@@ -238,7 +238,7 @@ export function Coil({ x, y }: { x: number; y: number }) {
 /** Solenoid coil (10 mm). */
 export function Solenoid({ x, y }: { x: number; y: number }) {
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - 3.5} y2={y} />
       <Line x1={x + 3.5} y1={y} x2={x + 5} y2={y} />
       <rect x={x - 3.5} y={y - 2.3} width={7} height={4.6} strokeWidth={LW} />
@@ -255,7 +255,7 @@ export function Lamp({ x, y, color }: { x: number; y: number; color?: string }) 
   const iec = useIecSymbols();
   // IEC 60617 S00965: circle with a cross; colour code next to it (RD, GN…).
   if (iec) return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - r} y2={y} />
       <Line x1={x + r} y1={y} x2={x + 5} y2={y} />
       <circle cx={x} cy={y} r={r} strokeWidth={LW} />
@@ -265,7 +265,7 @@ export function Lamp({ x, y, color }: { x: number; y: number; color?: string }) 
     </g>
   );
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - r} y2={y} />
       <Line x1={x + r} y1={y} x2={x + 5} y2={y} />
       <circle cx={x} cy={y} r={r} strokeWidth={LW} />
@@ -280,7 +280,7 @@ export function Lamp({ x, y, color }: { x: number; y: number; color?: string }) 
 /** 3-wire DC sensor body (14 x 8 mm) with BN (left), BK (right) and BU (bottom) leads. */
 export function Sensor3W({ x, y, kind }: { x: number; y: number; kind: 'PNP' | 'NPN' }) {
   return (
-    <g>
+    <g data-cad="SYMS">
       <rect x={x - 6} y={y - 3.5} width={12} height={7} strokeWidth={LW} fill="#fff" />
       <path d={`M ${x - 6} ${y - 3.5} l -1.6 1.6 v 3.8 l 1.6 1.6`} strokeWidth={LW_THIN} />
       <Txt x={x + 0.6} y={y + 0.9} size={2.3} anchor="middle" bold>{kind}</Txt>
@@ -294,7 +294,7 @@ export function Sensor3W({ x, y, kind }: { x: number; y: number; kind: 'PNP' | '
 /** Generic device box on a wire (e.g. VFD digital input), 12 x 6 mm. */
 export function DevBox({ x, y, label, w = 12 }: { x: number; y: number; label: string; w?: number }) {
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - w / 2 - 1.5} y1={y} x2={x - w / 2} y2={y} />
       <rect x={x - w / 2} y={y - 3} width={w} height={6} strokeWidth={LW} fill="#fff" />
       <Txt x={x} y={y + 0.9} size={2.2} anchor="middle" mono maxW={w - 1}>{label}</Txt>
@@ -309,14 +309,14 @@ export function BreakerPole({ x, y }: { x: number; y: number }) {
   const iec = useIecSymbols();
   // IEC 60617 S00287: make contact with the circuit-breaker cross on the fixed contact.
   if (iec) return (
-    <g>
+    <g data-cad="SYMS">
       <IecContact x={x} y={y} lead={5} />
       <Line x1={x + 2.2} y1={y - 0.8} x2={x + 3.8} y2={y + 0.8} w={LW_THIN} />
       <Line x1={x + 2.2} y1={y + 0.8} x2={x + 3.8} y2={y - 0.8} w={LW_THIN} />
     </g>
   );
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - 3.6} y2={y} />
       <Line x1={x + 3.6} y1={y} x2={x + 5} y2={y} />
       <TermPt x={x - 3} y={y} />
@@ -331,14 +331,14 @@ export function SwitchPole({ x, y }: { x: number; y: number }) {
   const iec = useIecSymbols();
   // IEC 60617 S00290 switch-disconnector: make contact with the isolating bar and load-switch ring.
   if (iec) return (
-    <g>
+    <g data-cad="SYMS">
       <IecContact x={x} y={y} lead={5} />
       <Line x1={x + 3} y1={y - 1} x2={x + 3} y2={y + 1} />
       <circle cx={x + 3} cy={y} r={0.6} strokeWidth={LW_THIN} />
     </g>
   );
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - 3.6} y2={y} />
       <Line x1={x + 3.6} y1={y} x2={x + 5} y2={y} />
       <TermPt x={x - 3} y={y} />
@@ -351,7 +351,7 @@ export function SwitchPole({ x, y }: { x: number; y: number }) {
 /** Fuse (10 mm). */
 export function Fuse({ x, y }: { x: number; y: number }) {
   return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x + 5} y2={y} />
       <rect x={x - 3.5} y={y - 1.3} width={7} height={2.6} strokeWidth={LW} fill="#fff" />
       <Line x1={x - 3.5} y1={y} x2={x + 3.5} y2={y} />
@@ -364,7 +364,7 @@ export function OverloadHeater({ x, y }: { x: number; y: number }) {
   const iec = useIecSymbols();
   // IEC 60617 S00379 thermal overload element: box with the thermal step.
   if (iec) return (
-    <g>
+    <g data-cad="SYMS">
       <Line x1={x - 5} y1={y} x2={x - 3} y2={y} />
       <Line x1={x + 3} y1={y} x2={x + 5} y2={y} />
       <rect x={x - 3} y={y - 1.8} width={6} height={3.6} strokeWidth={LW} fill="#fff" />
@@ -380,7 +380,7 @@ export function OverloadHeater({ x, y }: { x: number; y: number }) {
 export function Ground({ x, y }: { x: number; y: number }) {
   const iec = useIecSymbols();
   return (
-    <g>
+    <g data-cad="SYMS">
       {iec && <circle cx={x} cy={y + 2.9} r={3.1} strokeWidth={LW_THIN} /> /* IEC 60417-5019 protective earth */}
       <Line x1={x} y1={y} x2={x} y2={y + 2} />
       <Line x1={x - 2.4} y1={y + 2} x2={x + 2.4} y2={y + 2} />
@@ -393,7 +393,7 @@ export function Ground({ x, y }: { x: number; y: number }) {
 /** 3-phase (or 1-phase) motor circle with leads arriving from the left. */
 export function Motor({ cx, cy, r = 8.5, leadsY }: { cx: number; cy: number; r?: number; leadsY: number[] }) {
   return (
-    <g>
+    <g data-cad="SYMS">
       {leadsY.map((ly, i) => {
         const dy = ly - cy;
         const dx = Math.sqrt(Math.max(0, r * r - dy * dy));
@@ -412,7 +412,7 @@ export function XrefArrow({ x, y, dir = 'right', label }: { x: number; y: number
       : dir === 'down' ? `M ${x - 1.4} ${y} L ${x} ${y + 2.4} L ${x + 1.4} ${y} Z`
         : `M ${x - 1.4} ${y} L ${x} ${y - 2.4} L ${x + 1.4} ${y} Z`;
   return (
-    <g>
+    <g data-cad="SYMS">
       <path d={p} fill="#000" strokeWidth={LW_THIN} />
       {label}
     </g>

@@ -11,6 +11,8 @@ import PartPicker from '../electrical/PartPicker';
 import type { ElectricalDesign } from '../electrical/types';
 import { buildDrawingsPdf, saveBlob } from '../deliverables/files';
 import { collectProject } from '../deliverables/collect';
+import { saveAsAutocad, saveAsEplan } from '../deliverables/cadExport';
+import { desktopBridge } from '../desktop/bridge';
 import { printPdf } from '../deliverables/printPdf';
 import { sheetOnPaper } from '../standards/regions';
 import { notify } from '../store/useNoticeStore';
@@ -112,7 +114,7 @@ export default function ElectricalPage() {
     setInputs({ motors: inputs.motors.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
 
   const warnings = useMemo(() => (ctx ? designWarnings(ctx) : []), [ctx]);
-  const [pdfBusy, setPdfBusy] = useState<'print' | 'save' | null>(null);
+  const [pdfBusy, setPdfBusy] = useState<'print' | 'save' | 'autocad' | 'eplan' | null>(null);
   // The drawing set as a real PDF (one page per sheet, 1:1 on the project's paper): print it or save it.
   const drawingsPdf = async (mode: 'print' | 'save') => {
     setPdfBusy(mode);
@@ -128,6 +130,19 @@ export default function ElectricalPage() {
       }
     } catch (e) {
       notify(`The drawings PDF could not be made: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPdfBusy(null);
+    }
+  };
+  // CAD exports of the drawing set: AutoCAD (DXF; DWG in the desktop app with the ODA File Converter) and the EPLAN import package.
+  const cadExport = async (kind: 'autocad' | 'eplan') => {
+    setPdfBusy(kind);
+    try {
+      const p = collectProject();
+      if (!p.drawingCtx) { notify('There is no electrical design to export yet.'); return; }
+      await (kind === 'autocad' ? saveAsAutocad(p) : saveAsEplan(p));
+    } catch (e) {
+      notify(`The ${kind === 'autocad' ? 'AutoCAD' : 'EPLAN'} export failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setPdfBusy(null);
     }
@@ -188,6 +203,8 @@ export default function ElectricalPage() {
             <div className="flex gap-2">
               <button onClick={() => void drawingsPdf('print')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm bg-steel-800 text-white rounded hover:bg-steel-900 disabled:opacity-60">{pdfBusy === 'print' ? 'Preparing…' : 'Print'}</button>
               <button onClick={() => void drawingsPdf('save')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-60">{pdfBusy === 'save' ? 'Preparing…' : 'Drawings PDF'}</button>
+              {ctx && <button onClick={() => void cadExport('autocad')} disabled={pdfBusy !== null} title={desktopBridge() ? 'Drawing set for AutoCAD: DWG (AutoCAD 2018) when the ODA File Converter is installed, plus DXF; layers, text styles, device blocks with TAG1 / DESC1 / MFG / CAT and wire-number blocks' : 'Drawing set as DXF (opens directly in AutoCAD 2007 and later): layers, text styles, device blocks with TAG1 / DESC1 / MFG / CAT and wire-number blocks'} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-60">{pdfBusy === 'autocad' ? 'Preparing…' : desktopBridge() ? 'Save as AutoCAD' : 'Save as AutoCAD (DXF)'}</button>}
+              {ctx && <button onClick={() => void cadExport('eplan')} disabled={pdfBusy !== null} title="EPLAN import package (zip): AutomationML PLC data, parts XML, device / terminal / cable / connection lists, DXF sheets and the import steps — EPLAN's own project files can't be written" className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-60">{pdfBusy === 'eplan' ? 'Preparing…' : 'Save as EPLAN'}</button>}
               {ctx && <button onClick={() => download(`${base}_BOM.csv`, bomCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">BOM CSV</button>}
               {ctx && <Link to="/export#order-list" className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Order list</Link>}
               {ctx && <button onClick={() => download(`${base}_cable_schedule.csv`, cableScheduleCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Cable schedule CSV</button>}
