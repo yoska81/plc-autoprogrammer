@@ -86,6 +86,26 @@ export async function accountAvailable(): Promise<boolean> {
 
 type Block = { type: string; text?: string; source?: { type: string; media_type?: string; data?: string } };
 
+/** Plain text of a PDF (base64), page by page; '' when it has no text layer. */
+async function pdfText(data: string): Promise<string> {
+  try {
+    const pdfjs = await import('pdfjs-dist');
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    const bin = atob(data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const doc = await pdfjs.getDocument({ data: bytes }).promise;
+    const pages: string[] = [];
+    for (let n = 1; n <= Math.min(doc.numPages, 40); n++) {
+      const tc = await (await doc.getPage(n)).getTextContent();
+      pages.push(tc.items.map((it) => ('str' in it ? it.str : '')).join(' ').replace(/\s+/g, ' ').trim());
+    }
+    return pages.filter(Boolean).map((t, i) => `--- page ${i + 1} ---\n${t}`).join('\n').slice(0, 120_000);
+  } catch {
+    return '';
+  }
+}
+
 function base64ToBlob(data: string, type: string): Blob {
   const bin = atob(data);
   const bytes = new Uint8Array(bin.length);
@@ -112,20 +132,27 @@ export async function callClaudeAccount(opts: {
     throw new Error('AI is not available in this view. Open the preview inside claude.ai (or the Claude app) and allow it to use Claude, or run the app on your PC with an API key.');
   }
   const images: Blob[] = [];
-  const turns = opts.messages.map((m) => {
-    if (typeof m.content === 'string') return { role: m.role, content: m.content };
+  const turns: { role: 'user' | 'assistant'; content: string }[] = [];
+  for (const m of opts.messages) {
+    if (typeof m.content === 'string') { turns.push({ role: m.role, content: m.content }); continue; }
     const parts: string[] = [];
+    let pdfNo = 0;
     for (const b of m.content) {
       if (b.type === 'text' && b.text) parts.push(b.text);
       else if (b.type === 'image' && b.source?.type === 'base64' && b.source.data) {
         images.push(base64ToBlob(b.source.data, b.source.media_type ?? 'image/png'));
         parts.push(`[Image ${images.length} attached]`);
       } else if (b.type === 'document') {
-        parts.push('[A PDF was attached but PDFs can\'t be sent from the preview; work from the text and images only.]');
+        // PDFs can't be attached here: their text is read in the browser and sent instead.
+        pdfNo++;
+        const text = b.source?.type === 'base64' && b.source.data ? await pdfText(b.source.data) : '';
+        parts.push(text.trim()
+          ? `[Text of attached PDF ${pdfNo} (drawings and pictures in it are not included)]\n${text}`
+          : `[PDF ${pdfNo} was attached but has no readable text (scanned or drawing-only); work from the other text and images.]`);
       }
     }
-    return { role: m.role, content: parts.join('\n\n') || '(no text)' };
-  });
+    turns.push({ role: m.role, content: parts.join('\n\n') || '(no text)' });
+  }
   const format = opts.schema
     ? `\n\nOUTPUT FORMAT: reply with ONLY one JSON value (no prose, no code fence) that conforms exactly to this JSON Schema — every required property present, enum values copied exactly, no extra properties:\n${JSON.stringify(opts.schema)}`
     : '';

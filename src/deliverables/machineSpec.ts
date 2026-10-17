@@ -11,6 +11,7 @@ import { getPart } from '../electrical/catalog';
 import { answerText } from '../components/questions/qa';
 import type { ProjectSnapshot } from './collect';
 import { getHmi } from '../hmi/hmiCatalog';
+import { billOfMaterials } from '../electrical/derive';
 
 const hmiText = (pn: string) => {
   const m = getHmi(pn);
@@ -40,7 +41,8 @@ export function machineSpecText(p: ProjectSnapshot): string {
   h(2, `${next()}. Machine description`);
   for (const s of SPEC_SECTIONS) {
     const t = (p.spec as Record<string, string>)[s.id]?.trim();
-    if (t) out.push(`**${s.title}.** ${t}`, '');
+    // Bullet lists start on their own line under the bold title.
+    if (t) out.push(/^\s*[-*•]/.test(t) || t.includes('\n') ? `**${s.title}**\n\n${t}` : `**${s.title}.** ${t}`, '');
   }
   const answered = p.questions.filter((q) => q.status !== 'open');
   const open = p.questions.filter((q) => q.status === 'open');
@@ -70,15 +72,21 @@ export function machineSpecText(p: ProjectSnapshot): string {
       d.inputs.motors.map((m) => [m.tag, m.description, `${m.hp} HP`, m.voltage, m.starter, m.reversing ? 'yes' : 'no'])));
   }
 
+  const wiring = new Map((p.electrical?.ioWiring ?? []).map((w) => [w.address, w]));
   h(2, `${next()}. I/O list (${p.io.length} points)`);
   out.push(table(['Address', 'Type', 'Description', 'Category', 'Device / signal'],
     p.io.map((x) => [p.addresses.get(x.id) ?? '', x.type, x.description, x.category,
-      x.signal === 'analog' && x.analog ? `analog ${x.analog.range} ${x.analog.min}–${x.analog.max} ${x.analog.units}` : x.deviceType ?? ''])));
+      x.signal === 'analog' && x.analog ? `analog ${x.analog.range} ${x.analog.min}–${x.analog.max} ${x.analog.units}`
+        : (() => { const w = wiring.get(p.addresses.get(x.id) ?? ''); return w ? `${w.deviceTag} (${w.deviceType})` : x.deviceType ?? ''; })()])));
 
   if (d) {
-    h(2, `${next()}. Electrical components (${d.components.length})`);
-    out.push(table(['Tag', 'Part number', 'Qty', 'Description', 'Function'],
-      d.components.map((c) => [c.tag, c.partNumber, c.quantity, getPart(c.partNumber)?.description ?? '', c.function])));
+    // The bill of materials as ordered (quantities include what the terminal plan and accessories need).
+    const groups = p.drawingCtx ? billOfMaterials(p.drawingCtx) : [];
+    const lines = groups.flatMap((g) => g.lines.filter((l) => !l.note));
+    h(2, `${next()}. Electrical components (${lines.length || d.components.length})`);
+    out.push(lines.length
+      ? table(['Item', 'Qty', 'Part number', 'Manufacturer', 'Description', 'Tags'], lines.map((l) => [l.item, l.qty, l.partNumber, l.manufacturer, l.description, l.tags.join(', ')]))
+      : table(['Tag', 'Part number', 'Qty', 'Description', 'Function'], d.components.map((c) => [c.tag, c.partNumber, c.quantity, getPart(c.partNumber)?.description ?? '', c.function])));
     const notes = [...(d.notes ?? [])].filter((t) => t.trim());
     if (notes.length) out.push('', '**Design notes**', ...notes.map((t) => `- ${t}`));
   }
