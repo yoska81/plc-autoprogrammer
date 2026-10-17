@@ -451,7 +451,7 @@ export const RULES: CodeRule[] = [
     run: (_i, env) => {
       const expect = (w: WireRecord): string[] | null => {
         if (/\(cable\)/.test(w.color)) return null; // factory core colours of multiconductor cables
-        if (w.wire === 'PE' || /protective earth|ground$|ground\b(?!ed)/i.test(w.function)) return ['GN/YE', 'GN'];
+        if (w.wire === 'PE' || /protective earth|ground$|ground\b(?!ed)|\bshield\b|\bdrain\b/i.test(w.function)) return ['GN/YE', 'GN']; // shields / drains land on PE
         if (/^X1$/.test(w.wire) || /secondary 120VAC|120VAC feed/i.test(w.function)) return ['RD'];
         if (/^(X2|N)$/.test(w.wire) || /neutral|grounded conductor/i.test(w.function)) return ['WH', 'GY'];
         if (AC_POWER.test(w.function)) return ['BK'];

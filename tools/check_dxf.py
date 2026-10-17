@@ -206,7 +206,13 @@ def check_variant(vdir: Path):
                     elif e.dxftype() in ('POLYLINE', 'LWPOLYLINE'):
                         items.append((e.dxf.layer, 'P') + tuple(round(c * k, 2) for pt in poly_pts(e) for c in pt))
                     elif e.dxftype() == 'TEXT':
-                        items.append((e.dxf.layer, 'T', e.dxf.text.replace('DRAWING UNITS: INCH', 'U').replace('DRAWING UNITS: MM', 'U')))
+                        t = e.dxf.text.replace('DRAWING UNITS: INCH', 'U').replace('DRAWING UNITS: MM', 'U')
+                        if units == 'mm':
+                            # the mm file labels mm first ("4.2 [0.165]", "189.5 x 140.0 [7.461 x 5.512]"): compare in inch-first form
+                            t = t.replace('DIMENSIONS MM [INCH]', 'DIMENSIONS INCH [MM]')
+                            t = re.sub(r'(\d+\.\d) x (\d+\.\d) \[(\d+\.\d{3}) x (\d+\.\d{3})\]', r'\3 x \4 [\1 x \2]', t)
+                            t = re.sub(r'(\d+\.\d) \[(\d+\.\d{3})\]', r'\2 [\1]', t)
+                        items.append((e.dxf.layer, 'T', t))
                 g[units] = sorted(items)
             if len(g['in']) != len(g['mm']):
                 report('FAIL', v, f'{part}{cut}: {len(g["in"])} entities in inch file vs {len(g["mm"])} in mm file')
