@@ -373,7 +373,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 73,
     heightMm: 173,
-    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 0.55, hp480: 0.75, frame: 'FSAA', network: 'PROFINET, EtherNet/IP', outputAmps: 1.7 },
+    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 0.55, hp480: 0.75, frame: 'FSAA', network: 'PROFINET, EtherNet/IP', outputAmps: 1.7, sccrKA: 100, sccrCondition: '100 kA at 480 V with UL non-semiconductor fuses (Class J, CF, T, L, CC or G), max 10 A (FSAA). Minimum enclosure volume is 0.03 m3 (1.06 ft3), with no limit when Mersen AJT fuses are used. Alternatives: Type E CMC 3RV2011-1JA../3RV2021-1JA.. (max 10 A): 65 kA at 480Y/277 V. UL circuit breakers LGG/CED6/3RV1742/3RV2711 (max 15 A): 5 kA. Source: Siemens \'Protective Devices for SINAMICS G120C\', A5E42806155A, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/343/109750343/att_932935/v1/G120C_protective_device_prod_info_1117.pdf' },
     verified: true,
   },
   {
@@ -386,7 +386,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 73,
     heightMm: 173,
-    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 0.75, hp480: 1, frame: 'FSAA', network: 'PROFINET-PN', outputAmps: 2.2 },
+    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 0.75, hp480: 1, frame: 'FSAA', network: 'PROFINET-PN', outputAmps: 2.2, sccrKA: 100, sccrCondition: '100 kA at 480 V with UL non-semiconductor fuses (Class J, CF, T, L, CC or G), max 10 A (FSAA). Minimum enclosure volume is 0.03 m3 (1.06 ft3), with no limit when Mersen AJT fuses are used. Alternatives: Type E CMC 3RV2011-1JA../3RV2021-1JA.. (max 10 A): 65 kA at 480Y/277 V. UL circuit breakers LGG/CED6/3RV1742/3RV2711 (max 15 A): 5 kA. Source: Siemens \'Protective Devices for SINAMICS G120C\', A5E42806155A, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/343/109750343/att_932935/v1/G120C_protective_device_prod_info_1117.pdf' },
     verified: true,
   },
   {
@@ -399,7 +399,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 73,
     heightMm: 173,
-    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 1.5, hp480: 2, frame: 'FSAA', network: 'PROFINET-PN', outputAmps: 4.1 },
+    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 1.5, hp480: 2, frame: 'FSAA', network: 'PROFINET-PN', outputAmps: 4.1, sccrKA: 100, sccrCondition: '100 kA at 480 V with UL non-semiconductor fuses (Class J, CF, T, L, CC or G), max 10 A (FSAA). Minimum enclosure volume is 0.03 m3 (1.06 ft3), with no limit when Mersen AJT fuses are used. Alternatives: Type E CMC 3RV2011-1JA../3RV2021-1JA.. (max 10 A): 65 kA at 480Y/277 V. UL circuit breakers LGG/CED6/3RV1742/3RV2711 (max 15 A): 5 kA. Source: Siemens \'Protective Devices for SINAMICS G120C\', A5E42806155A, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/343/109750343/att_932935/v1/G120C_protective_device_prod_info_1117.pdf' },
     verified: true,
   },
   {
@@ -412,7 +412,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 73,
     heightMm: 173,
-    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 2.2, hp480: 3, frame: 'FSAA', network: 'PROFINET-PN', outputAmps: 5.6 },
+    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 2.2, hp480: 3, frame: 'FSAA', network: 'PROFINET-PN', outputAmps: 5.6, sccrKA: 100, sccrCondition: '100 kA at 480 V with UL non-semiconductor fuses (Class J, CF, T, L, CC or G), max 10 A (FSAA). Minimum enclosure volume is 0.03 m3 (1.06 ft3), with no limit when Mersen AJT fuses are used. Alternatives: Type E CMC 3RV2011-1JA../3RV2021-1JA.. (max 10 A): 65 kA at 480Y/277 V. UL circuit breakers LGG/CED6/3RV1742/3RV2711 (max 15 A): 5 kA. Source: Siemens \'Protective Devices for SINAMICS G120C\', A5E42806155A, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/343/109750343/att_932935/v1/G120C_protective_device_prod_info_1117.pdf' },
     verified: true,
   },
   {
@@ -425,7 +425,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 73,
     heightMm: 196,
-    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 4, hp480: 5, outputAmps: 8.8, duty: 'LO (HO 7.3 A)', frame: 'FSA', network: 'PROFINET, EtherNet/IP' },
+    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 4, hp480: 5, outputAmps: 8.8, duty: 'LO (HO 7.3 A)', frame: 'FSA', network: 'PROFINET, EtherNet/IP', sccrKA: 100, sccrCondition: '100 kA at 480 V with UL non-semiconductor fuses (Class J, CF, T, L, CC or G), max 15 A (FSA). Minimum enclosure volume is 0.03 m3 (1.06 ft3), with no limit when Mersen AJT fuses are used. Alternatives: Type E CMC 3RV2011-4AA../3RV2021-4AA../3RV1031-4AA (max 16 A): 65 kA at 480Y/277 V. UL circuit breakers LGG/CED6/3RV1742/3RV2711 (max 15 A): 65 kA. Source: Siemens \'Protective Devices for SINAMICS G120C\', A5E42806155A, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/343/109750343/att_932935/v1/G120C_protective_device_prod_info_1117.pdf' },
     verified: true,
   },
   {
@@ -438,7 +438,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 100,
     heightMm: 196,
-    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 7.5, hp480: 10, frame: 'FSB', network: 'PROFINET-PN', outputAmps: 16.5 },
+    ratings: { series: 'G120C', inputVolts: '380-480', inputPhases: 3, kw: 7.5, hp480: 10, frame: 'FSB', network: 'PROFINET-PN', outputAmps: 16.5, sccrKA: 100, sccrCondition: '100 kA at 480 V with UL non-semiconductor fuses (Class J, CF, T, L, CC or G), max 35 A (FSB). Minimum enclosure volume is 0.06 m3 (2.12 ft3), with no limit when Mersen AJT fuses are used. Alternatives: Type E CMC (480Y/277 V): 3RV2021-4DA (25 A), 3RV1031-4EA or 3RV2031-4EA (32 A) 65 kA; 3RV2021-4EA 50 kA. UL circuit breakers (max 35 A): LGG, CED6, HCGA, 3RV1742 65 kA; NCGA 35 kA. Source: Siemens \'Protective Devices for SINAMICS G120C\', A5E42806155A, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/343/109750343/att_932935/v1/G120C_protective_device_prod_info_1117.pdf' },
     verified: true,
   },
   {
@@ -451,7 +451,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 90,
     heightMm: 150,
-    ratings: { series: 'V20', inputVolts: '380-480', inputPhases: 3, kw: 0.75, hp480: 1, outputAmps: 2.2, duty: 'HO/LO 2.2 A', frame: 'FSA', network: 'USS, Modbus RTU' },
+    ratings: { series: 'V20', inputVolts: '380-480', inputPhases: 3, kw: 0.75, hp480: 1, outputAmps: 2.2, duty: 'HO/LO 2.2 A', frame: 'FSA', network: 'USS, Modbus RTU', sccrKA: 100, sccrCondition: '100 kA at 480 V AC with UL non-semiconductor fuses (Class J, T, CC, G or CF), max 15 A (FSA). Alternatives: Type E CMC 3RV2011-1EA.. (max 4 A) 65 kA. UL circuit breaker 3RV2742-5BD../3RV2711-4AD.. (max 15 A) 65 kA, min enclosure 0.47 m3. Source: Siemens \'Protective Devices for SINAMICS V20\', A5E43322224-004, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/776/109799776/att_1112699/v1/V20_protective_devices_prod_info_0722.pdf' },
     verified: true,
   },
   {
@@ -464,7 +464,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 90,
     heightMm: 166,
-    ratings: { series: 'V20', inputVolts: '380-480', inputPhases: 3, kw: 1.5, hp480: 2, outputAmps: 4.1, duty: 'LO/HO', frame: 'FSA', network: 'USS, Modbus RTU' },
+    ratings: { series: 'V20', inputVolts: '380-480', inputPhases: 3, kw: 1.5, hp480: 2, outputAmps: 4.1, duty: 'LO/HO', frame: 'FSA', network: 'USS, Modbus RTU', sccrKA: 100, sccrCondition: '100 kA at 480 V AC with UL non-semiconductor fuses (Class J, T, CC, G or CF), max 15 A (FSA). Alternatives: Type E CMC 3RV2011-1HA.. (max 8 A) 65 kA. UL circuit breaker 3RV2742-5BD../3RV2711-4AD.. (max 15 A) 65 kA, min enclosure 0.47 m3. Source: Siemens \'Protective Devices for SINAMICS V20\', A5E43322224-004, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/776/109799776/att_1112699/v1/V20_protective_devices_prod_info_0722.pdf' },
     verified: true,
   },
   {
@@ -477,7 +477,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 160,
-    ratings: { series: 'V20', inputVolts: '380-480', inputPhases: 3, kw: 4, hp480: 5, outputAmps: 8.8, duty: 'LO 8.8 A @400 V (8.2 A @480 V)', frame: 'FSB', network: 'USS, Modbus RTU' },
+    ratings: { series: 'V20', inputVolts: '380-480', inputPhases: 3, kw: 4, hp480: 5, outputAmps: 8.8, duty: 'LO 8.8 A @400 V (8.2 A @480 V)', frame: 'FSB', network: 'USS, Modbus RTU', sccrKA: 100, sccrCondition: '100 kA at 480 V AC with UL non-semiconductor fuses (Class J, T, CC, G or CF), max 20 A (FSB). Alternatives: Type E CMC 3RV2031-4SA.. (max 14 A) 65 kA. UL circuit breaker 3RV2742-5CD.. (max 20 A) 65 kA, 3RV2721-4BD.. 50 kA, 3VA5120-5E (MEAS) 35 kA, 3VA5120-4E (SEAS) 25 kA; min enclosure 0.80 m3. Source: Siemens \'Protective Devices for SINAMICS V20\', A5E43322224-004, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/776/109799776/att_1112699/v1/V20_protective_devices_prod_info_0722.pdf' },
     verified: true,
   },
   {
@@ -490,7 +490,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 240,
     heightMm: 206.5,
-    ratings: { series: 'V20', inputVolts: '380-480', inputPhases: 3, kw: 7.5, hp480: 10, outputAmps: 16.5, duty: 'LO/HO 16.5 A', frame: 'FSD', network: 'USS, Modbus RTU' },
+    ratings: { series: 'V20', inputVolts: '380-480', inputPhases: 3, kw: 7.5, hp480: 10, outputAmps: 16.5, duty: 'LO/HO 16.5 A', frame: 'FSD', network: 'USS, Modbus RTU', sccrKA: 100, sccrCondition: '100 kA at 480 V AC with UL non-semiconductor fuses (Class J, T, CC, G or CF), max 60 A (FSD). Alternatives: an unventilated enclosure must be at least 0.23 m3 unless Class J or CC fuses are used. Type E CMC 3RV20.1-4AA.. (max 16 A) 65 kA. UL circuit breaker 3RV2742-5ED.. (max 30 A) 65 kA, min enclosure 1.85 m3. Source: Siemens \'Protective Devices for SINAMICS V20\', A5E43322224-004, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/776/109799776/att_1112699/v1/V20_protective_devices_prod_info_0722.pdf' },
     verified: true,
   },
   {
@@ -503,7 +503,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 142,
-    ratings: { series: 'V20', inputVolts: '230', inputPhases: 1, kw: 0.75, hp1ph: 1, outputAmps: 4.2, network: 'USS, Modbus RTU', frame: 'FSAB' },
+    ratings: { series: 'V20', inputVolts: '230', inputPhases: 1, kw: 0.75, hp1ph: 1, outputAmps: 4.2, network: 'USS, Modbus RTU', frame: 'FSAB', sccrKA: 100, sccrCondition: '100 kA at 240 V AC with UL non-semiconductor fuses (Class J, T, CC, G or CF), max 15 A (FSAB). Alternatives: Type E CMC 3RV2011-1KA.. (max 12.5 A) 65 kA at 240 V. UL circuit breaker 3RV2742-5BD.. (max 15 A) 65 kA at 240 V. Source: Siemens \'Protective Devices for SINAMICS V20\', A5E43322224-004, section 2.', sccrSource: 'https://cache.industry.siemens.com/dl/files/776/109799776/att_1112699/v1/V20_protective_devices_prod_info_0722.pdf' },
     verified: true,
   },
   {
