@@ -254,22 +254,32 @@ const SEALING_IO: [string, 'input' | 'output', IOCategory, string, AnalogSpec?][
   ['Unwinder speed reference', 'output', 'Conveyor', 'other', { range: '4-20mA', min: 0, max: 100, units: '%' }],
 ];
 
+/**
+ * "rules-stress": the sealing head, IEC (EU), with I/O descriptions and component functions as long as an
+ * AI writes them (60-120 characters) and two input modules — for the drawing text-overlap check.
+ */
+const STRESS_EXTRA: [string, 'input' | 'output', IOCategory, string][] = Array.from({ length: 12 }, (_, i) => [
+  `Pouch present at sealing station ${i + 1}, diffuse photo-eye on the infeed guide rail, left-hand side, mounted 40 mm above the belt`,
+  'input', 'Product Detection', 'sensor-pnp',
+]);
+
 async function setupRules(v: string) {
   setupVariant(v === 'rules-big' ? 'big' : 'us480');
-  if (v === 'rules-sealing' || v === 'rules-sealing-long') {
+  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress') {
     useSpecStore.getState().setSections({ ...useSpecStore.getState().sections, overview: SEALING_SPEC });
     // "-long": descriptions as long as the AI I/O step writes them (location, function and device in one line)
-    const long = v === 'rules-sealing-long';
+    const long = v === 'rules-sealing-long' || v === 'rules-stress';
     const LONG_TAIL = [' — operator station at the sealing head, front side', ' (wired to the PLC through junction box at the sealing station)', ', monitored by the PLC for the cycle interlocks and alarms'];
-    useIOStore.setState({ projectIO: SEALING_IO.map(([description, type, category, deviceType, analog], i) => ({ id: `seal${i + 1}`, description: long ? description + LONG_TAIL[i % 3] : description, type, category, deviceType, ...(analog ? { signal: 'analog' as const, analog } : {}) })) });
-    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-12DD1E-D', modules: ['C0-16ND3', 'C0-08TD1'] });
+    const io = [...SEALING_IO, ...(v === 'rules-stress' ? STRESS_EXTRA : [])];
+    useIOStore.setState({ projectIO: io.map(([description, type, category, deviceType, analog], i) => ({ id: `seal${i + 1}`, description: long ? description + LONG_TAIL[i % 3] : description, type, category, deviceType, ...(analog ? { signal: 'analog' as const, analog } : {}) })) });
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-12DD1E-D', modules: v === 'rules-stress' ? ['C0-16ND3', 'C0-16ND3', 'C0-08TD1'] : ['C0-16ND3', 'C0-08TD1'] });
     useHmiStore.getState().setHmiPartNumber('CM5-T7W');
     useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
-    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [{ partNumber: 'C0-12DD1E-D', quantity: 1 }, { partNumber: 'C0-16ND3', quantity: 1 }, { partNumber: 'C0-08TD1', quantity: 1 }] });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [{ partNumber: 'C0-12DD1E-D', quantity: 1 }, { partNumber: 'C0-16ND3', quantity: v === 'rules-stress' ? 2 : 1 }, { partNumber: 'C0-08TD1', quantity: 1 }] });
   }
   const el = useElectricalStore.getState();
   let inputs = v === 'rules-sealing' ? el.inputs : el.design?.inputs ?? el.inputs;
-  if (v === 'rules-eu') {
+  if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
   }
@@ -280,7 +290,9 @@ async function setupRules(v: string) {
     plc: { vendor: p.profile.vendor, name: p.profile.name, cpuPartNumber: p.cpu.id, cpuLabel: p.cpu.label },
   });
   el.setInputs(r.design.inputs);
-  el.setDesign(r.design, 'generated', r.explanation);
+  // AI-length component functions: the device list, legend and cross-reference columns must wrap or cut, never overlap
+  const design = v !== 'rules-stress' ? r.design : { ...r.design, components: r.design.components.map((x) => ({ ...x, function: `${x.function} — supplied and wired by the panel builder, see the schematic and terminal plan for its connections`.slice(0, 120) })) };
+  el.setDesign(design, 'generated', r.explanation);
 }
 
 async function loadAiProject(machine: string) {

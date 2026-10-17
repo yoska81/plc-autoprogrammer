@@ -359,11 +359,12 @@ const f = (n: number) => (Math.round(n * 100) / 100).toString();
 export interface TagPlate { x: number; y: number; w: number; h: number; text: string; font: number }
 const PLATE_H = 7;
 
-function plateFor(text: string, cx: number, y: number, maxW: number): TagPlate {
-  const natural = text.length * 2.75 + 4;
+/** `k` scales the plate with the cabinet so tags stay readable when a large panel is fitted to the screen. */
+function plateFor(text: string, cx: number, y: number, maxW: number, k = 1): TagPlate {
+  const natural = text.length * 2.75 * k + 4;
   const w = Math.max(10, Math.min(natural, Math.max(maxW, 10)));
-  const font = Math.min(4.2, (w - 2.4) / (text.length * 0.64));
-  return { x: cx - w / 2, y, w, h: PLATE_H, text, font };
+  const font = Math.min(4.2 * k, (w - 2.4) / (text.length * 0.64));
+  return { x: cx - w / 2, y, w, h: PLATE_H * k, text, font };
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +528,9 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
   const ductBelow = (r: Rect) => hd.filter((d) => d.y >= r.y + r.h - 0.1 && spans(d, r)).sort((a, b) => a.y - b.y)[0];
   const ductAbove = (r: Rect) => hd.filter((d) => d.y + d.h <= r.y + 0.1 && spans(d, r)).sort((a, b) => b.y - a.y)[0];
   const rowPlates: TagPlate[] = [];
+  // plate size grows with the back panel (a 30" panel fitted to ~500 px would make 4 mm text about 3 px tall)
+  const pk = Math.min(1.5, Math.max(1, L.backplate.h / 480));
+  const PH = PLATE_H * pk;
   for (const d of devices) {
     const r = d.rect;
     const w = wired.get(d.key)!;
@@ -536,14 +540,14 @@ export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): S
     if (useTop) {
       const a = ductAbove(r);
       const room = a ? r.y - (a.y + a.h) : 99;
-      const y = !w.top && room >= PLATE_H + 3 ? r.y - PLATE_H - 1.5 : a ? a.y + a.h * 0.75 - PLATE_H / 2 : r.y - PLATE_H - 1.5;
-      rowPlates.push(plateFor(d.tag, cx, y, maxW));
+      const y = !w.top && room >= PH + 3 ? r.y - PH - 1.5 : a ? a.y + a.h * 0.75 - PH / 2 : r.y - PH - 1.5;
+      rowPlates.push(plateFor(d.tag, cx, y, maxW, pk));
       continue;
     }
     const db = ductBelow(r);
     const room = (db ? db.y : Infinity) - (r.y + r.h);
-    const y = !w.bottom && room >= PLATE_H + 3 ? r.y + r.h + 1.5 : db ? db.y + db.h * 0.25 - PLATE_H / 2 : r.y + r.h + 1.5;
-    rowPlates.push(plateFor(d.tag, cx, y, maxW));
+    const y = !w.bottom && room >= PH + 3 ? r.y + r.h + 1.5 : db ? db.y + db.h * 0.25 - PH / 2 : r.y + r.h + 1.5;
+    rowPlates.push(plateFor(d.tag, cx, y, maxW, pk));
   }
   // keep plates on the same line from overlapping
   rowPlates.sort((a, b) => a.y - b.y || a.x - b.x);

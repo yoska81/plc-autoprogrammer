@@ -6,7 +6,7 @@
  * (see SYM in geometry.ts). Parent groups set stroke="#000" fill="none".
  */
 import type { ReactNode } from 'react';
-import { FONT_MONO, FONT_SANS, LW, LW_THIN, textWidth } from './geometry';
+import { FONT_MONO, FONT_SANS, LW, LW_THIN, textWidth, wrapText } from './geometry';
 import { useIecSymbols } from './symbolSet';
 
 type Anchor = 'start' | 'middle' | 'end';
@@ -45,6 +45,26 @@ export function Txt({ x, y, children, size = 2.5, anchor = 'start', mono, bold, 
       fontFamily={mono ? FONT_MONO : FONT_SANS} fontWeight={bold ? 700 : 400} fontStyle={italic ? 'italic' : undefined}
       transform={rotate ? `rotate(${rotate} ${x} ${y})` : undefined}
     >{s}</text>
+  );
+}
+
+/**
+ * Table cell text in a fixed row: one line when it fits, else wrapped onto two lines at a slightly smaller
+ * size inside the same row (instead of shrinking the whole text to fit one line). `y` is the one-line
+ * baseline, `rowH` the row height; the second line still too long is cut short by Txt.
+ */
+export function CellTxt({ x, y, w, rowH, children, size = 2.0, mono, bold }: { x: number; y: number; w: number; rowH: number; children: string; size?: number; mono?: boolean; bold?: boolean }) {
+  const k = bold ? 1.08 : 1;
+  if (textWidth(children, size, mono) * k <= w) return <Txt x={x} y={y} size={size} mono={mono} bold={bold}>{children}</Txt>;
+  const fs = Math.min(size, rowH * 0.36);
+  const lines = wrapText(children, w / k, fs, mono);
+  if (lines.length === 1) return <Txt x={x} y={y} size={size} mono={mono} bold={bold} maxW={w}>{children}</Txt>;
+  const y1 = y - fs * 0.78;
+  return (
+    <g>
+      <Txt x={x} y={y1} size={fs} mono={mono} bold={bold} maxW={w}>{lines[0]}</Txt>
+      <Txt x={x} y={y1 + fs * 1.12} size={fs} mono={mono} bold={bold} maxW={w}>{lines.slice(1).join(' ')}</Txt>
+    </g>
   );
 }
 
@@ -111,12 +131,15 @@ function IecContact({ x, y, nc, lead }: { x: number; y: number; nc?: boolean; le
   );
 }
 
-/** IEC actuator above a contact: dashed linkage from the blade to the operator drawn by `head`. */
-function IecActuated({ x, y, nc, head }: { x: number; y: number; nc?: boolean; head: ReactNode }) {
+/**
+ * IEC actuator above a contact: dashed linkage from the blade to the operator drawn by `head`. Heads stay
+ * below y - 5.4: the I/O row above returns a 3-wire sensor's 0V lead 6 mm higher (IoSheet pitch 12 mm).
+ */
+function IecActuated({ x, y, nc, head, to = y - 4.2 }: { x: number; y: number; nc?: boolean; head: ReactNode; to?: number }) {
   return (
     <g>
       <IecContact x={x} y={y} nc={nc} lead={5} />
-      <Line x1={x} y1={nc ? y - 1 : y - 1.4} x2={x} y2={y - 4.6} w={LW_THIN} dash="0.8 0.6" />
+      <Line x1={x} y1={nc ? y - 1 : y - 1.4} x2={x} y2={to} w={LW_THIN} dash="0.8 0.6" />
       {head}
     </g>
   );
@@ -129,8 +152,8 @@ export function Pushbutton({ x, y, nc, mushroom }: { x: number; y: number; nc?: 
   const top = y - 5.2;
   if (iec) return (
     <IecActuated x={x} y={y} nc={nc} head={mushroom
-      ? <path d={`M ${x - 3} ${y - 4.6} A 3 2.2 0 0 1 ${x + 3} ${y - 4.6} Z`} strokeWidth={LW} />
-      : <path d={`M ${x - 1.6} ${y - 6} V ${y - 4.6} H ${x + 1.6} V ${y - 6}`} strokeWidth={LW} />} />
+      ? <path d={`M ${x - 3} ${y - 4.2} A 3 1.1 0 0 1 ${x + 3} ${y - 4.2} Z`} strokeWidth={LW} />
+      : <path d={`M ${x - 1.6} ${y - 5.3} V ${y - 4.2} H ${x + 1.6} V ${y - 5.3}`} strokeWidth={LW} />} />
   );
   return (
     <g>
@@ -151,7 +174,7 @@ export function Pushbutton({ x, y, nc, mushroom }: { x: number; y: number; nc?: 
 export function LimitSwitch({ x, y, nc }: { x: number; y: number; nc?: boolean }) {
   const iec = useIecSymbols();
   const ey = nc ? y + 1.4 : y - 2.6;
-  if (iec) return <IecActuated x={x} y={y} nc={nc} head={<path d={`M ${x - 1.4} ${y - 4.6} L ${x} ${y - 6.4} L ${x + 1.4} ${y - 4.6} Z`} strokeWidth={LW_THIN} />} />;
+  if (iec) return <IecActuated x={x} y={y} nc={nc} head={<path d={`M ${x - 1.4} ${y - 4.2} L ${x} ${y - 5.4} L ${x + 1.4} ${y - 4.2} Z`} strokeWidth={LW_THIN} />} />;
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />
@@ -168,7 +191,7 @@ export function LimitSwitch({ x, y, nc }: { x: number; y: number; nc?: boolean }
 export function PressureSwitch({ x, y, nc }: { x: number; y: number; nc?: boolean }) {
   const iec = useIecSymbols();
   const ey = nc ? y + 1.4 : y - 2.6;
-  if (iec) return <IecActuated x={x} y={y} nc={nc} head={<g><rect x={x - 1.8} y={y - 8.2} width={3.6} height={3.6} strokeWidth={LW_THIN} /><Txt x={x} y={y - 5.5} size={2.4} anchor="middle">p</Txt></g>} />;
+  if (iec) return <IecActuated x={x} y={y} nc={nc} to={y - 2.9} head={<g><rect x={x - 1.4} y={y - 5.4} width={2.8} height={2.5} strokeWidth={LW_THIN} /><Txt x={x} y={y - 3.8} size={1.9} anchor="middle">p</Txt></g>} />;
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />
@@ -185,7 +208,7 @@ export function PressureSwitch({ x, y, nc }: { x: number; y: number; nc?: boolea
 /** Two-position selector switch contact (10 mm). */
 export function Selector({ x, y }: { x: number; y: number }) {
   const iec = useIecSymbols();
-  if (iec) return <IecActuated x={x} y={y} head={<path d={`M ${x - 1.6} ${y - 6} L ${x - 1.6} ${y - 4.6} H ${x + 1.6} L ${x + 1.6} ${y - 3.4}`} strokeWidth={LW} />} />;
+  if (iec) return <IecActuated x={x} y={y} head={<path d={`M ${x - 1.6} ${y - 5.3} L ${x - 1.6} ${y - 4.2} H ${x + 1.6} L ${x + 1.6} ${y - 3.2}`} strokeWidth={LW} />} />;
   return (
     <g>
       <Line x1={x - 5} y1={y} x2={x - 3.7} y2={y} />

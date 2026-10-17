@@ -1,6 +1,6 @@
 /** PLC input / output wiring sheets: PLC terminal column, wire numbers, terminal strip, field device. */
 import type { IoGroup, IoPoint } from '../../derive';
-import { AREA, AREA_B, AREA_R, LW_THIN } from '../geometry';
+import { AREA, AREA_B, AREA_R, LW_THIN, textWidth, wrapText } from '../geometry';
 import { IO_PITCH, type DrawingPlan, type IoRow, type PlannedSheet, type SheetSpec } from '../plan';
 import {
   Coil, Contact, DevBox, Dot, Lamp, LimitSwitch, Line, PressureSwitch, Pushbutton, Selector, Sensor3W, Solenoid,
@@ -119,10 +119,27 @@ function PlcColumn({ x, w, rows, labels, title, terminalSide, common }: { x: num
   );
 }
 
+/** Text cut at a word with "..." to fit `w` at `size` (no shrinking). */
+function cut(text: string, w: number, size: number): string {
+  if (textWidth(text, size) <= w) return text;
+  const words = text.split(' ');
+  while (words.length > 1 && textWidth(`${words.join(' ')}...`, size) > w) words.pop();
+  return `${words.join(' ').replace(/[\s,;:—-]+$/, '')}...`;
+}
+
 function Desc({ x, y, p }: { x: number; y: number; p: IoPoint }) {
+  const w = T.TERM - x - 4;
+  const text = `${p.deviceTag || '—'}  ${p.description.toUpperCase()}`;
+  // long (AI-written) descriptions wrap onto a second line above instead of shrinking to an unreadable size
+  const lines = textWidth(text, 2.6) * 1.08 <= w ? [text] : wrapText(text, w / 1.08, 2.2);
   return (
     <g>
-      <Txt x={x} y={y + 0.2} size={2.6} bold maxW={T.TERM - x - 4}>{`${p.deviceTag || '—'}  ${p.description.toUpperCase()}`}</Txt>
+      {lines.length === 1
+        ? <Txt x={x} y={y + 0.2} size={2.6} bold maxW={w}>{text}</Txt>
+        : <>
+          <Txt x={x} y={y - 2.6} size={2.2} bold maxW={w}>{lines[0]}</Txt>
+          <Txt x={x} y={y + 0.2} size={2.2} bold maxW={w}>{cut(lines.slice(1).join(' '), w / 1.08, 2.2)}</Txt>
+        </>}
       <Txt x={x} y={y + 3.6} size={2.2} maxW={T.TERM - x - 4}>{`${TYPE_TEXT[p.deviceType] ?? p.deviceType.toUpperCase()}${p.wiring ? '' : ' — NO WIRING INFO, VERIFY'}`}</Txt>
     </g>
   );

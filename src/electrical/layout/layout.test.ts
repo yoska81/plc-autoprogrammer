@@ -122,6 +122,13 @@ test('suggest: junction box placement and cabinet location', () => {
   const s = suggest(d, model.machine.devices, model.machine.cables, { manifoldRadiusM: 2 });
   const mv = s.find((x) => x.kind === 'jb-move');
   assert.ok(mv && mv.jbMove!.jb === 'JB1' && mv.savingM! > 1, JSON.stringify(s.map((x) => x.id)));
+  // home-run devices around LS1/LS2: the suggested cabinet spot is never on top of a device
+  const homeRun = ['PE1', 'LS1', 'LS2', 'SOL1', 'SOL2'].map((to, i) => ({ tag: `W${i + 1}`, kind: 'device', zone: '', from: `TB2-${i + 1}`, to, type: '3-core', size: '18 AWG', length: 'BY SITE', cores: [], spareCores: 0 })) as unknown as Parameters<typeof suggest>[2];
+  const d2 = ml(pos);
+  const all2 = suggest(d2, [], homeRun, { manifoldRadiusM: 2 });
+  const cabS = all2.find((x) => x.kind === 'cabinet');
+  assert.ok(cabS, 'cabinet move suggested');
+  for (const [tag, p] of Object.entries(pos)) if (tag !== CABINET) assert.ok(Math.hypot(cabS.cabinet!.to[0] - p[0], cabS.cabinet!.to[1] - p[1]) >= 1, `cabinet ${cabS.cabinet!.to} clear of ${tag}`);
 });
 
 test('clusters and cable totals', () => {

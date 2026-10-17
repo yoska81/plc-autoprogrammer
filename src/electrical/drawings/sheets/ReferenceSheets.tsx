@@ -6,7 +6,7 @@ import { codeRefs, isFuseCartridge, panelNameplate } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
 import type { DrawingPlan, PlannedSheet, SheetSpec } from '../plan';
 import {
-  BreakerPole, Coil, Contact, Dot, Fuse, Ground, Lamp, LimitSwitch, Line, Motor, OverloadHeater, PressureSwitch, Pushbutton,
+  BreakerPole, CellTxt, Coil, Contact, Dot, Fuse, Ground, Lamp, LimitSwitch, Line, Motor, OverloadHeater, PressureSwitch, Pushbutton,
   Selector, Sensor3W, Solenoid, SwitchPole, TermBox, TermPt, Txt, WireNo, XrefArrow,
 } from '../symbols';
 
@@ -223,12 +223,12 @@ export function DeviceListSheet({ sheet }: { plan: DrawingPlan; sheet: PlannedSh
           <g key={r.tag}>
             <Txt x={x + cols[0] + 1.5} y={ty} size={2.3} mono bold maxW={cols[1] - cols[0] - 2.5}>{r.tag}</Txt>
             <Txt x={x + (cols[1] + cols[2]) / 2} y={ty} size={2.2} mono anchor="middle">{r.qty}</Txt>
-            <Txt x={x + cols[2] + 1.5} y={ty} size={2.1} maxW={cols[3] - cols[2] - 3}>{r.fn || '—'}</Txt>
+            <CellTxt x={x + cols[2] + 1.5} y={ty} size={2.1} w={cols[3] - cols[2] - 3} rowH={rowH}>{r.fn || '—'}</CellTxt>
             <Txt x={x + cols[3] + 1.5} y={ty} size={2.1} mono maxW={cols[4] - cols[3] - 3}>{r.partNumber || '—'}</Txt>
-            <Txt x={x + cols[4] + 1.5} y={ty} size={2.0} maxW={cols[5] - cols[4] - 3}>{(r.manufacturer || '—').toUpperCase()}</Txt>
-            <Txt x={x + cols[5] + 1.5} y={ty} size={2.0} maxW={cols[6] - cols[5] - 3}>{r.description.replace(/^FIXTURE — /, 'FIXTURE: ').toUpperCase()}</Txt>
-            <Txt x={x + cols[6] + 1.5} y={ty} size={2.0} maxW={cols[7] - cols[6] - 3}>{r.location}</Txt>
-            <Txt x={x + cols[7] + 1.5} y={ty} size={2.0} mono maxW={w - cols[7] - 3}>{r.refs}</Txt>
+            <CellTxt x={x + cols[4] + 1.5} y={ty} w={cols[5] - cols[4] - 3} rowH={rowH}>{(r.manufacturer || '—').toUpperCase()}</CellTxt>
+            <CellTxt x={x + cols[5] + 1.5} y={ty} w={cols[6] - cols[5] - 3} rowH={rowH}>{r.description.replace(/^FIXTURE — /, 'FIXTURE: ').toUpperCase()}</CellTxt>
+            <CellTxt x={x + cols[6] + 1.5} y={ty} w={cols[7] - cols[6] - 3} rowH={rowH}>{r.location}</CellTxt>
+            <CellTxt x={x + cols[7] + 1.5} y={ty} w={w - cols[7] - 3} rowH={rowH} mono>{r.refs}</CellTxt>
             <Line x1={x} y1={yy} x2={x + w} y2={yy} w={0.12} />
           </g>
         );
