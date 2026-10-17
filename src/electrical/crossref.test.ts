@@ -25,6 +25,8 @@ for (const g of crossReference().filter((x) => x.fn === 'breaker')) {
   const kinds = new Set(Object.values(g.parts).flat().map((pn) => /UL 489/.test(functionKey(getPart(pn!)!)![1])));
   assert.equal(kinds.size, 1, g.key);
 }
+const ol = differences(getPart('TK-E02-600')!, getPart('LRD10')!);
+assert.ok(ol.some((x) => /^Mounts on: /.test(x)), ol.join(' | '));
 console.log(`cross-reference tests passed (${crossReference().length} groups)`);
 
 // Sourcing: page records, with lifecycle / successor where the maker names one.

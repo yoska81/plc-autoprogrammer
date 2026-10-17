@@ -1784,6 +1784,9 @@ export const SCHNEIDER: CatalogPart[] = [
     widthMm: 408,
     heightMm: 264,
     ratings: { series: 'Harmony GTUX', displayIn: 15.6, sizeIn: 15.6, resolutionPx: '1366x768', touch: 'resistive', ethernetPorts: 0, serialPorts: 0, usbPorts: 0, supplyVolts: 12, supplyRange: '10.8-28.8 VDC', cutoutWidthMm: 394, cutoutHeightMm: 250, datasheet: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=HMIDT75X_DATASHEET_US_en-US.pdf&p_Doc_Ref=HMIDT75X_DATASHEET_US_en-US', lifecycle: 'active', pairsWith: 'HMIG3X', pairsWithSource: 'https://www.se.com/us/en/faqs/FAQ000209968/' },
+    verified: true,
+  },
+  {
     partNumber: 'XMLB010A2S13',
     category: 'sensor',
     description: 'Telemecanique XMLB pressure switch, 10 bar, 1 C/O contact, adjustable rising threshold 0.7-10 bar (falling 0.13-9.15 bar)',

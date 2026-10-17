@@ -121,6 +121,8 @@ export function differences(a: CatalogPart, b: CatalogPart): string[] {
   diff('Terminal style', ra.terminals ?? ra.connection, rb.terminals ?? rb.connection);
   diff('Mounting', ra.mounting, rb.mounting);
   diff('Aux contacts', ra.aux, rb.aux);
+  // Accessories (overloads, auxiliary blocks ...) mount only on what forUse names: a swap may need its host swapped too.
+  diff('Mounts on', ra.forUse, rb.forUse);
   diff('Trip curve', ra.curve, rb.curve);
   diff('Network', ra.network, rb.network);
   diff('Cutout (mm)', ra.cutoutWidthMm && `${ra.cutoutWidthMm}×${ra.cutoutHeightMm}`, rb.cutoutWidthMm && `${rb.cutoutWidthMm}×${rb.cutoutHeightMm}`);
