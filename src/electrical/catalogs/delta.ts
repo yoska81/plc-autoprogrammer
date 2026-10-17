@@ -238,7 +238,7 @@ export const DELTA: CatalogPart[] = [
     family: 'DOP-100',
     url: 'https://www.deltaww.com/IA/downloadcenter/catalogue/3.Control/DOP-100/DELTA_IA-HMI-DOP-100_C_EN_20200109_web.pdf',
     mount: 'door',
-    ratings: { family: 'DOP-100', sizeIn: 4.3, resolution: '480x272', touch: 'yes', ports: 'Ethernet x1, COM x2, USB host + slave', protocols: 'Ethernet 10/100 (DOP drivers: Modbus TCP/IP, Delta DVP TCP/IP, Delta AS TCP, Siemens S7 ISO TCP, Mitsubishi FX5U Ethernet, Allen-Bradley EtherNet/IP, Omron FINS TCP)', supplyVolts: 24, cutoutWidthMm: 118.8, cutoutHeightMm: 92.8, plcDrivers: 'click,delta-dvp,delta-as300,siemens-s7-1200,siemens-s7-1500,mitsubishi-fx5u', driversSource: 'https://www.deltaww.com/en-US/service-support/download-center?sectionId=2&categoryCode=06&subCategoryCode=060302', ratingsSource: 'https://www.deltaww.com/en-US/products/Touch-Panel-HMI-Human-Machine-Interfaces/W-Type' },
+    ratings: { family: 'DOP-100', sizeIn: 4.3, touch: 'resistive', ports: 'Ethernet x1, COM x2, USB host + slave', protocols: 'Ethernet 10/100 (DOP drivers: Modbus TCP/IP, Delta DVP TCP/IP, Delta AS TCP, Siemens S7 ISO TCP, Mitsubishi FX5U Ethernet, Allen-Bradley EtherNet/IP, Omron FINS TCP)', supplyVolts: 24, cutoutWidthMm: 118.8, cutoutHeightMm: 92.8, plcDrivers: 'click,delta-dvp,delta-as300,siemens-s7-1200,siemens-s7-1500,mitsubishi-fx5u', driversSource: 'https://www.deltaww.com/en-US/service-support/download-center?sectionId=2&categoryCode=06&subCategoryCode=060302', ratingsSource: 'https://www.deltaww.com/en-US/products/Touch-Panel-HMI-Human-Machine-Interfaces/W-Type', resolutionPx: '480x272', displayIn: 4.3, ethernetPorts: 1, serialPorts: 2, usbPorts: 2, software: 'DOPSoft 4.0' },
     verified: true,
   },
   {
@@ -249,7 +249,7 @@ export const DELTA: CatalogPart[] = [
     family: 'DOP-100',
     url: 'https://www.deltaww.com/IA/downloadcenter/catalogue/3.Control/DOP-100/DELTA_IA-HMI-DOP-100_C_EN_20200109_web.pdf',
     mount: 'door',
-    ratings: { family: 'DOP-100', sizeIn: 7, resolution: '800x480', touch: 'yes', ports: 'Ethernet x1, COM x3, USB host + slave', protocols: 'Ethernet 10/100 (DOP drivers: Modbus TCP/IP, Delta DVP TCP/IP, Delta AS TCP, Siemens S7 ISO TCP, Mitsubishi FX5U Ethernet, Allen-Bradley EtherNet/IP, Omron FINS TCP)', supplyVolts: 24, cutoutWidthMm: 186.8, cutoutHeightMm: 126.8, plcDrivers: 'click,delta-dvp,delta-as300,siemens-s7-1200,siemens-s7-1500,mitsubishi-fx5u', driversSource: 'https://www.deltaww.com/en-US/service-support/download-center?sectionId=2&categoryCode=06&subCategoryCode=060302', ratingsSource: 'https://www.deltaww.com/en-US/products/Touch-Panel-HMI-Human-Machine-Interfaces/W-Type' },
+    ratings: { family: 'DOP-100', sizeIn: 7, touch: 'resistive', ports: 'Ethernet x1, COM x3, USB host + slave', protocols: 'Ethernet 10/100 (DOP drivers: Modbus TCP/IP, Delta DVP TCP/IP, Delta AS TCP, Siemens S7 ISO TCP, Mitsubishi FX5U Ethernet, Allen-Bradley EtherNet/IP, Omron FINS TCP)', supplyVolts: 24, cutoutWidthMm: 186.8, cutoutHeightMm: 126.8, plcDrivers: 'click,delta-dvp,delta-as300,siemens-s7-1200,siemens-s7-1500,mitsubishi-fx5u', driversSource: 'https://www.deltaww.com/en-US/service-support/download-center?sectionId=2&categoryCode=06&subCategoryCode=060302', ratingsSource: 'https://www.deltaww.com/en-US/products/Touch-Panel-HMI-Human-Machine-Interfaces/W-Type', resolutionPx: '800x480', displayIn: 7, ethernetPorts: 1, serialPorts: 3, usbPorts: 2, software: 'DOPSoft 4.0' },
     verified: true,
   },
   {
@@ -260,7 +260,7 @@ export const DELTA: CatalogPart[] = [
     family: 'DOP-100',
     url: 'https://www.deltaww.com/IA/downloadcenter/catalogue/3.Control/DOP-100/DELTA_IA-HMI-DOP-100_C_EN_20200109_web.pdf',
     mount: 'door',
-    ratings: { family: 'DOP-100', sizeIn: 10.1, resolution: '1024x600', touch: 'yes', ports: 'Ethernet x1, COM x3, USB host + slave', protocols: 'Ethernet 10/100 (DOP drivers: Modbus TCP/IP, Delta DVP TCP/IP, Delta AS TCP, Siemens S7 ISO TCP, Mitsubishi FX5U Ethernet, Allen-Bradley EtherNet/IP, Omron FINS TCP)', supplyVolts: 24, cutoutWidthMm: 255, cutoutHeightMm: 170.5, plcDrivers: 'click,delta-dvp,delta-as300,siemens-s7-1200,siemens-s7-1500,mitsubishi-fx5u', driversSource: 'https://www.deltaww.com/en-US/service-support/download-center?sectionId=2&categoryCode=06&subCategoryCode=060302', ratingsSource: 'https://www.deltaww.com/en-US/products/Touch-Panel-HMI-Human-Machine-Interfaces/W-Type' },
+    ratings: { family: 'DOP-100', sizeIn: 10.1, touch: 'resistive', ports: 'Ethernet x1, COM x3, USB host + slave', protocols: 'Ethernet 10/100 (DOP drivers: Modbus TCP/IP, Delta DVP TCP/IP, Delta AS TCP, Siemens S7 ISO TCP, Mitsubishi FX5U Ethernet, Allen-Bradley EtherNet/IP, Omron FINS TCP)', supplyVolts: 24, cutoutWidthMm: 255, cutoutHeightMm: 170.5, plcDrivers: 'click,delta-dvp,delta-as300,siemens-s7-1200,siemens-s7-1500,mitsubishi-fx5u', driversSource: 'https://www.deltaww.com/en-US/service-support/download-center?sectionId=2&categoryCode=06&subCategoryCode=060302', ratingsSource: 'https://www.deltaww.com/en-US/products/Touch-Panel-HMI-Human-Machine-Interfaces/W-Type', resolutionPx: '1024x600', displayIn: 10.1, ethernetPorts: 1, serialPorts: 3, usbPorts: 2, software: 'DOPSoft 4.0' },
     verified: true,
   },
   {
@@ -271,7 +271,7 @@ export const DELTA: CatalogPart[] = [
     family: 'DOP-100',
     url: 'https://www.deltaww.com/IA/downloadcenter/catalogue/3.Control/DOP-100/DELTA_IA-HMI-DOP-100_C_EN_20200109_web.pdf',
     mount: 'door',
-    ratings: { family: 'DOP-100', sizeIn: 7, resolution: '800x480', touch: 'yes', ports: 'Ethernet x1, COM x3, USB host + slave', protocols: 'Ethernet 10/100 (DOP drivers: Modbus TCP/IP, Delta DVP TCP/IP, Delta AS TCP, Siemens S7 ISO TCP, Mitsubishi FX5U Ethernet, Allen-Bradley EtherNet/IP, Omron FINS TCP)', supplyVolts: 24, cutoutWidthMm: 196.9, cutoutHeightMm: 142.9, plcDrivers: 'click,delta-dvp,delta-as300,siemens-s7-1200,siemens-s7-1500,mitsubishi-fx5u', driversSource: 'https://www.deltaww.com/en-US/service-support/download-center?sectionId=2&categoryCode=06&subCategoryCode=060302', ratingsSource: 'https://www.deltaww.com/en-US/products/Touch-Panel-HMI-Human-Machine-Interfaces/E-Type' },
+    ratings: { family: 'DOP-100', sizeIn: 7, touch: 'resistive', ports: 'Ethernet x1, COM x3, USB host + slave', protocols: 'Ethernet 10/100 (DOP drivers: Modbus TCP/IP, Delta DVP TCP/IP, Delta AS TCP, Siemens S7 ISO TCP, Mitsubishi FX5U Ethernet, Allen-Bradley EtherNet/IP, Omron FINS TCP)', supplyVolts: 24, cutoutWidthMm: 196.9, cutoutHeightMm: 142.9, plcDrivers: 'click,delta-dvp,delta-as300,siemens-s7-1200,siemens-s7-1500,mitsubishi-fx5u', driversSource: 'https://www.deltaww.com/en-US/service-support/download-center?sectionId=2&categoryCode=06&subCategoryCode=060302', ratingsSource: 'https://www.deltaww.com/en-US/products/Touch-Panel-HMI-Human-Machine-Interfaces/E-Type', resolutionPx: '800x480', displayIn: 7, ethernetPorts: 1, usbPorts: 2, software: 'DOPSoft 4.0' },
     verified: true,
   },
   {
@@ -282,7 +282,7 @@ export const DELTA: CatalogPart[] = [
     family: 'DOP-100',
     url: 'https://www.deltaww.com/IA/downloadcenter/catalogue/3.Control/DOP-100/DELTA_IA-HMI-DOP-100_C_EN_20200109_web.pdf',
     mount: 'door',
-    ratings: { family: 'DOP-100', sizeIn: 10.1, resolution: '1024x600', touch: 'yes', ports: 'Ethernet x1, COM x3, USB host + slave, SD', protocols: 'Ethernet 10/100 (DOP drivers: Modbus TCP/IP, Delta DVP TCP/IP, Delta AS TCP, Siemens S7 ISO TCP, Mitsubishi FX5U Ethernet, Allen-Bradley EtherNet/IP, Omron FINS TCP)', supplyVolts: 24, cutoutWidthMm: 261.3, cutoutHeightMm: 189.3, plcDrivers: 'click,delta-dvp,delta-as300,siemens-s7-1200,siemens-s7-1500,mitsubishi-fx5u', driversSource: 'https://www.deltaww.com/en-US/service-support/download-center?sectionId=2&categoryCode=06&subCategoryCode=060302', ratingsSource: 'https://www.deltaww.com/en-US/products/Touch-Panel-HMI-Human-Machine-Interfaces/I-Type' },
+    ratings: { family: 'DOP-100', sizeIn: 10.1, touch: 'resistive', ports: 'Ethernet x1, COM x3, USB host + slave, SD', protocols: 'Ethernet 10/100 (DOP drivers: Modbus TCP/IP, Delta DVP TCP/IP, Delta AS TCP, Siemens S7 ISO TCP, Mitsubishi FX5U Ethernet, Allen-Bradley EtherNet/IP, Omron FINS TCP)', supplyVolts: 24, cutoutWidthMm: 261.3, cutoutHeightMm: 189.3, plcDrivers: 'click,delta-dvp,delta-as300,siemens-s7-1200,siemens-s7-1500,mitsubishi-fx5u', driversSource: 'https://www.deltaww.com/en-US/service-support/download-center?sectionId=2&categoryCode=06&subCategoryCode=060302', ratingsSource: 'https://www.deltaww.com/en-US/products/Touch-Panel-HMI-Human-Machine-Interfaces/I-Type', resolutionPx: '1024x600', displayIn: 10.1, ethernetPorts: 1, serialPorts: 3, usbPorts: 2, software: 'DOPSoft 4.0' },
     verified: true,
   },
   {

@@ -28,7 +28,7 @@ import type {
   CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, JunctionBox,
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
 } from './types';
-import { getHmi } from '../hmi/hmiCatalog';
+import { getHmi, hmiMaker } from '../hmi/hmiCatalog';
 import { lengthText, routedLength, withService } from './layout/geometry';
 import { CABINET, type LayoutForDesign } from './layout/types';
 import { iecColor, iecMotorCurrent, isIec, mm2For, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
@@ -1386,7 +1386,7 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
   // The project HMI (chosen on the HMI page) is on the door even when the design has no HMI component.
   if (ctx.hmiPartNumber && !m.rc.some((c) => c.category === 'hmi')) {
     const h = getHmi(ctx.hmiPartNumber);
-    lines.set(`hmi|${ctx.hmiPartNumber}`, { item: 0, qty: 1, partNumber: ctx.hmiPartNumber, manufacturer: 'AutomationDirect', description: h?.description ?? 'Operator touch panel', tags: ['HMI1'], category: 'hmi' });
+    lines.set(`hmi|${ctx.hmiPartNumber}`, { item: 0, qty: 1, partNumber: ctx.hmiPartNumber, manufacturer: h ? hmiMaker(h) : 'AutomationDirect', description: h?.description ?? 'Operator touch panel', tags: ['HMI1'], category: 'hmi' });
   }
   const notes: BomLine[] = [...notesFromLayout];
   const all = [...lines.values()];

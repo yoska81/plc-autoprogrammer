@@ -27,9 +27,18 @@
  * AutomationDirect drawing (cutout = panel hole, bezel = outside of the front bezel).
  */
 
+import { catalogPanel } from './panels';
+
 export interface HmiModel {
-  partNumber: string; // exact AutomationDirect part number
-  family: 'C-more' | 'C-more Micro' | 'other';
+  partNumber: string; // exact maker part number
+  /** 'C-more' / 'C-more Micro' for the AutomationDirect list; the product family for catalog panels. */
+  family: string;
+  /** Maker; absent = AutomationDirect (the C-more list below). */
+  manufacturer?: string;
+  /** The maker's configuration software, as the datasheet names it (catalog panels). */
+  software?: string;
+  /** From the multi-vendor parts catalog (src/hmi/panels.ts) rather than the C-more list. */
+  catalog?: boolean;
   description: string;
   sizeIn: number; // diagonal inches
   widthPx: number;
@@ -366,10 +375,18 @@ export const RETIRED_HMI_MODELS: { partNumber: string; replacement?: string; not
   { partNumber: 'EA3-T10CL', note: 'Retired C-more Micro 10in; no replacement named on the page checked.' },
 ];
 
+/** A C-more model, else a catalog panel of another maker with a confirmed resolution. */
 export function getHmi(partNumber: string): HmiModel | undefined {
   const key = partNumber.trim().toUpperCase();
-  return HMI_MODELS.find((m) => m.partNumber === key);
+  return HMI_MODELS.find((m) => m.partNumber === key) ?? (key ? catalogPanel(key) : undefined);
 }
+
+/** Maker of a panel model. */
+export const hmiMaker = (m: Pick<HmiModel, 'manufacturer'>) => m.manufacturer ?? 'AutomationDirect';
+/** Maker of a panel by part number (AutomationDirect for the C-more list and unknown numbers). */
+export const hmiMakerOf = (partNumber: string) => { const m = getHmi(partNumber); return m ? hmiMaker(m) : 'AutomationDirect'; };
+/** True for AutomationDirect C-more / C-more Micro panels (programmed with C-more software). */
+export const isCmore = (m: Pick<HmiModel, 'catalog' | 'family'> | undefined) => Boolean(m && !m.catalog && /^C-more/.test(m.family));
 
 /**
  * How C-more talks to a CLICK PLC.
@@ -520,3 +537,12 @@ SECURITY / PASSWORDS IN C-more
 - Per-object Password tab: tick to require a password, choose which groups may operate the object. Eight password groups (names up to 20 characters); each group's password is either Static (numeric, up to 10 characters) or read from a tag (BCD/unsigned/signed 16/32-bit). Some object styles do not support passwords. [CM-PW]
 - Restrict maintenance/engineering screens, but avoid over-restriction that leads to password sharing. [AD-16, AD-LAY]
 - For remotely reachable panels: send a Protected Project, use a VPN instead of port forwarding, keep firmware current. [CM-SEC]`;
+
+/**
+ * PLC communication notes for the HMI design prompt: the C-more ↔ CLICK text for a C-more panel
+ * on CLICK; otherwise how the chosen panel reaches the PLC (no project-file format is assumed).
+ */
+export function hmiCommsText(m: HmiModel, profileId: string, plcName: string): string {
+  if (isCmore(m) && profileId === 'click') return CLICK_HMI_COMMUNICATION;
+  return `The panel is a ${hmiMaker(m)} ${m.partNumber}${m.software ? `, configured in ${m.software}` : ''}. It talks to the ${plcName} over the maker's PLC driver (Ethernet). The addresses in this design (X/Y, C bits, DS/DF registers) are the program's neutral memory; the app exports an HMI tag list that maps each one to the PLC tag name in the exported program, and the screens are rebuilt in the maker's software from the screen images and that list.`;
+}

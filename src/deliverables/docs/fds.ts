@@ -1,6 +1,6 @@
 import type { ProjectSnapshot } from '../collect';
 import { buildModel, naturalCompare, resolveComponents, supplyText } from '../../electrical/derive';
-import { getHmi } from '../../hmi/hmiCatalog';
+import { getHmi, hmiMakerOf } from '../../hmi/hmiCatalog';
 import { hmiText } from './meta';
 import { makeTable, specLines, type DocRow, type DocTable } from './table';
 
@@ -42,7 +42,7 @@ export function equipmentTable(p: ProjectSnapshot): DocTable {
       rows.push({ group: MOUNT_TEXT[mount] });
       for (const c of list) rows.push([c.tag, c.partNumber || '—', c.part?.manufacturer ?? '', c.part?.description ?? 'Part not found in catalog — verify', `${c.comp.function}${c.comp.quantity > 1 ? ` (qty ${c.comp.quantity})` : ''}`]);
       if (mount === 'door' && p.hmi && !rc.some((c) => c.partNumber === p.hmi!.hmiPartNumber)) {
-        rows.push(['HMI1', p.hmi.hmiPartNumber, 'AutomationDirect', getHmi(p.hmi.hmiPartNumber)?.description ?? '', 'Operator touch panel']);
+        rows.push(['HMI1', p.hmi.hmiPartNumber, hmiMakerOf(p.hmi.hmiPartNumber), getHmi(p.hmi.hmiPartNumber)?.description ?? '', 'Operator touch panel']);
       }
     }
     const motors = p.electrical?.inputs.motors ?? [];
@@ -52,7 +52,7 @@ export function equipmentTable(p: ProjectSnapshot): DocTable {
     }
   } else {
     rows.push(['PLC', p.cpu.id, p.profile.vendor, p.cpu.label, 'Controller']);
-    if (p.hmi) rows.push(['HMI1', p.hmi.hmiPartNumber, 'AutomationDirect', getHmi(p.hmi.hmiPartNumber)?.description ?? '', 'Operator touch panel']);
+    if (p.hmi) rows.push(['HMI1', p.hmi.hmiPartNumber, hmiMakerOf(p.hmi.hmiPartNumber), getHmi(p.hmi.hmiPartNumber)?.description ?? '', 'Operator touch panel']);
   }
   return makeTable([['Tag', 9], ['Part number', 20], ['Manufacturer', 16], ['Description', 58], ['Function', 36]], rows);
 }

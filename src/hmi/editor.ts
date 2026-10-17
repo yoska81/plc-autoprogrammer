@@ -252,3 +252,36 @@ export function syncHandTags(design: HmiDesign, describe: (address: string) => s
   const add = missingTags(base, describe);
   return add.length ? { ...base, tags: [...base.tags, ...add] } : base;
 }
+
+/**
+ * A new screen gets a button in the navigation bar of every screen that has one (the bottom row
+ * of "nav" elements): the row is re-spaced evenly over the same width with the new button at the
+ * end. Nothing changes when the buttons would get narrower than a touch target; the reason is
+ * returned so the page can ask the user to add the button by hand.
+ */
+export function addNavEntry(design: HmiDesign, screenId: string, label: string, makeId: () => string): { design: HmiDesign; added: boolean; reason: string | null } {
+  let reason: string | null = null;
+  const plans: { screen: HmiScreen; row: HmiElement[] }[] = [];
+  for (const screen of design.screens) {
+    const navs = screen.elements.filter((e) => e.kind === 'nav');
+    if (!navs.length || navs.some((e) => e.targetScreenId === screenId)) continue;
+    const y = Math.max(...navs.map((e) => e.y)); // the bottom row
+    const row = navs.filter((e) => Math.abs(e.y - y) <= GRID).sort((a, b) => a.x - b.x);
+    plans.push({ screen, row });
+  }
+  if (!plans.length) return { design, added: false, reason: 'No screen has a navigation bar.' };
+  const out = new Map<string, HmiScreen>();
+  for (const { screen, row } of plans) {
+    const left = row[0].x, right = Math.max(...row.map((e) => e.x + e.w));
+    const gap = row.length > 1 ? Math.max(4, row[1].x - (row[0].x + row[0].w)) : GRID;
+    const n = row.length + 1;
+    const w = Math.floor((right - left - gap * (n - 1)) / n);
+    if (w < MIN_TOUCH.w) { reason = `The navigation bar has no room for another ${MIN_TOUCH.w} px button (${n} buttons in ${right - left} px).`; break; }
+    const placed = new Map(row.map((e, i) => [e.id, { ...e, x: left + i * (w + gap), w }]));
+    const last = row[row.length - 1];
+    const added: HmiElement = { ...structuredClone(last), id: makeId(), label, targetScreenId: screenId, x: left + row.length * (w + gap), w };
+    out.set(screen.id, { ...screen, elements: [...screen.elements.map((e) => placed.get(e.id) ?? e), added] });
+  }
+  if (reason) return { design, added: false, reason };
+  return { design: { ...design, screens: design.screens.map((s) => out.get(s.id) ?? s) }, added: true, reason: null };
+}

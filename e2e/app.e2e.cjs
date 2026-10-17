@@ -579,14 +579,15 @@ function sse(model, text) {
   // the electrical AI was given the catalog notes of the brands in use (AutomationDirect by default).
   check(/Catalog specifics per brand:\n- AutomationDirect:/.test(lastUser.electrical ?? '') && !/Allen-Bradley:/.test(lastUser.electrical ?? ''), 'electrical prompt has only the default brand notes');
   await page.goto(BASE + '/equipment');
-  // Searchable brand list per group: type, pick from the list; chips show the choice, × removes it.
+  // One dropdown per group (like "Use one brand for everything").
+  const brandSelect = (group) => page.getByRole('combobox', { name: new RegExp(`^Brand for ${group}`) });
   const addBrand = async (group, name) => {
-    const box = page.getByRole('combobox', { name: new RegExp(`^Add a brand for ${group}`) });
-    await box.fill(name.slice(0, 5));
-    await page.getByRole('listbox', { name: new RegExp(`^Brands for ${group}`) }).getByRole('option', { name: new RegExp(`^${name}`) }).click();
+    const sel = brandSelect(group);
+    const value = await sel.locator('option', { hasText: new RegExp(`^${name}`) }).first().getAttribute('value');
+    await sel.selectOption(value);
   };
-  const hasBrand = async (group, name) => (await page.getByRole('group', { name: new RegExp(`^${group}`) }).getByText(name).count()) > 0;
-  const removeBrand = (group, name) => page.getByRole('button', { name: new RegExp(`^Remove ${name} from ${group}`) }).click();
+  const hasBrand = async (group, name) => (await brandSelect(group).locator('option:checked').innerText()).startsWith(name);
+  const removeBrand = (group) => addBrand(group, 'AutomationDirect');
   await addBrand('Panel parts', 'Allen-Bradley');
   await page.reload();
   check(await hasBrand('Panel parts', 'Allen-Bradley'), 'brand preference is saved with the project');
@@ -595,9 +596,7 @@ function sse(model, text) {
   const cardBox = await card.boundingBox();
   log('Brand card at 1366x768:', Math.round(cardBox.width), "x", Math.round(cardBox.height), "px");
   check(cardBox.width <= 1366 && cardBox.height < 520, 'brand card fits at 1366x768');
-  await page.getByRole('combobox', { name: /^Add a brand for Motor drives/ }).click();
   await snap(page, 'brands_1366');
-  await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1600, height: 950 });
   await page.goto(BASE + '/electrical?tab=design');
   await page.getByRole('button', { name: 'Change K1' }).click();
@@ -606,7 +605,7 @@ function sse(model, text) {
   check(abChoices >= 3, 'Allen-Bradley contactors offered when the brand is preferred');
   await page.getByRole('button', { name: 'Close', exact: true }).first().click();
   await page.goto(BASE + '/equipment');
-  await removeBrand('Panel parts', 'Allen-Bradley');
+  await removeBrand('Panel parts');
   // An Allen-Bradley PLC + HMI preference shows that brand's CPUs with the modules they'd need and the fit (comparison only).
   await addBrand('PLC and I/O', 'Allen-Bradley');
   await addBrand('Operator panel', 'Allen-Bradley');
@@ -619,8 +618,8 @@ function sse(model, text) {
   log('Touch panels for Allen-Bradley:', panels);
   check(panels.includes('2713P-T7WD1 (7")'), 'PanelView 5310 listed as a compatible touch panel');
   await snap(page, 'brands');
-  await removeBrand('PLC and I/O', 'Allen-Bradley');
-  await removeBrand('Operator panel', 'Allen-Bradley');
+  await removeBrand('PLC and I/O');
+  await removeBrand('Operator panel');
 
   // Deliverables
   await page.goto(BASE + '/export');
@@ -657,6 +656,12 @@ function sse(model, text) {
   if (!Object.keys(zip.files).some((f) => /^purchasing\/.*_spares_order\.csv$/.test(f))) throw new Error('ZIP has no separate spares order file');
   if (!Object.keys(zip.files).some((f) => /^commissioning\/.*_IO_checkout\.pdf$/.test(f))) throw new Error('ZIP has no I/O check-out sheet');
   await snap(page, 'deliverables');
+  // Full machine specification: one text with every part of the project.
+  await page.getByTestId('machine-spec').getByRole('button', { name: 'Show' }).click();
+  const specDoc = await page.getByLabel('Machine specification text').inputValue();
+  fs.writeFileSync(OUT + 'machine_specification.md', specDoc);
+  log('Machine specification:', specDoc.length, 'chars,', (specDoc.match(/^## /gm) ?? []).length, 'sections');
+  for (const want of ['Machine description', 'Control equipment', 'I/O list', 'Electrical components', 'Operator screens', 'PLC program']) check(specDoc.includes(want), `machine spec has ${want}`);
 
   // Project file (.isap): save the open project, open it back as a new project, same data.
   const pfBefore = await page.evaluate(() => ({

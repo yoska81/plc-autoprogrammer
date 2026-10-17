@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { looksLeftOver } from '../spec/leftovers';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -243,6 +244,12 @@ export default function ElectricalPage() {
                 <button onClick={() => setInputs({ motors: [...inputs.motors, { tag: `M${inputs.motors.length + 1}`, description: '', hp: 1, voltage: inputs.supply, starter: 'contactor-overload', reversing: false }] })}
                   className="px-3 py-1 text-xs border border-steel-300 rounded hover:bg-steel-50">+ Add motor</button>
               </div>
+              {inputs.motors.filter((m) => m.description.trim() && looksLeftOver(m.description, specText, 1).leftOver).map((m) => (
+                <div key={m.tag} className="px-3 py-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded" role="alert" data-testid="leftover-motor">
+                  {m.tag} “{m.description}” is not in your machine description; it may be left over from another project.
+                  <button onClick={() => setInputs({ motors: inputs.motors.filter((x) => x !== m) })} className="ml-2 underline font-medium">Remove {m.tag}</button>
+                </div>
+              ))}
               {!inputs.motors.length && <p className="text-xs text-steel-500">No motors. Add each motor the panel drives.</p>}
               {inputs.motors.map((m, i) => (
                 <div key={i} className="flex flex-wrap items-center gap-2">

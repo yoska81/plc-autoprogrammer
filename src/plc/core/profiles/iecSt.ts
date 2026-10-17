@@ -151,6 +151,8 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     if (!rungs.length) continue;
     sections.push(`(* ===== ${b.name} ===== *)`, ...rungs.flatMap(rungSt), '');
   }
+  // HMI tags the ladder doesn't use are still declared, so the HMI can bind to them.
+  for (const t of ctx.extraTags) op(t.address);
   // I/O copy at the start / end of the scan: named variables ↔ the PLC's I/O.
   const inputs: string[] = [], outputs: string[] = [];
   for (const [base, x] of vars) {
