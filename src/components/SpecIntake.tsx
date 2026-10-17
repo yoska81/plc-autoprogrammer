@@ -88,7 +88,12 @@ export default function SpecIntake() {
               {undo && !busy && (
                 <button onClick={() => { spec.setSections(undo); setUndo(null); setSummary(null); }} className="text-sm text-steel-600 underline">Undo</button>
               )}
-              {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>, or type directly into the sections.</span>}
+              {!apiKey && newText.trim() && (
+                // Without the AI the text goes into the overview as written (sorted into sections later, or by hand).
+                <button onClick={() => { const cur = spec.sections.overview.trim(); spec.setSections({ ...spec.sections, overview: cur ? `${cur}\n\n${newText.trim()}` : newText.trim() }); setNewText(''); setSummary('Added to the machine overview as written. Add an API key to have it sorted into the sections, or edit the sections on the Machine description page.'); }}
+                  className="px-4 py-2 text-sm border border-steel-300 rounded hover:bg-steel-50">Add as the machine overview (no AI)</button>
+              )}
+              {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link> to have it sorted into the sections, or add it as the overview as written.</span>}
             </div>
             {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
             {summary && <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-900">{summary}</div>}

@@ -11,6 +11,7 @@ import ConstructionGuard from '../review/ConstructionGuard';
 import { acceptCriticalForConstruction, openCriticalFindings } from '../review/actions';
 import type { Finding } from '../review/types';
 import { useDraft } from '../store/useDraftStore';
+import { issuedForConstruction } from '../standards/issue';
 
 const input = 'w-full border border-steel-300 rounded-sm px-2 py-1 bg-white focus:outline-none focus:border-brand-500';
 const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50';
@@ -36,9 +37,9 @@ function Section({ title, children, aside }: { title: string; children: ReactNod
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+function Field({ label, hint, children, wide }: { label: string; hint?: string; children: ReactNode; wide?: boolean }) {
   return (
-    <label className="block">
+    <label className={`block${wide ? ' col-span-2' : ''}`}>
       <span className="block text-xs font-medium text-steel-600 mb-0.5">{label}</span>
       {children}
       {hint && <span className="block text-[11px] text-steel-400 mt-0.5">{hint}</span>}
@@ -71,7 +72,9 @@ function ProjectData() {
   const today = new Date().toISOString().slice(0, 10);
   const [draft, setDraft] = useDraft<Revision>('revision.draft', { rev: nextRev(info.revisions), date: today, description: PURPOSES[0], by: info.preparedBy });
   const cur = currentRevision(info);
-  const issuedForConstruction = info.revisions.some((r) => /construction|as built/i.test(r.description));
+  const issued = issuedForConstruction(info);
+  // The current revision says "for construction" but the checker / approver is not named yet.
+  const issueUnsigned = !issued && /construction|\bIFC\b|as[- ]?built/i.test(info.revisions.at(-1)?.description ?? '') && !/not\s+for\s+construction/i.test(info.revisions.at(-1)?.description ?? '');
 
   const text = (key: 'customer' | 'site' | 'company' | 'projectNumber' | 'preparedBy' | 'checkedBy' | 'approvedBy') => (
     <input value={info[key]} onChange={(e) => setInfo({ [key]: e.target.value })} className={input} aria-label={key} />
@@ -120,12 +123,13 @@ function ProjectData() {
               <Field label="Drawing / document prefix" hint={`Drawings ${info.drawingPrefix || 'PRJ'}-E01…, package ${info.drawingPrefix || 'PRJ'}-EP-001`}>
                 <input value={info.drawingPrefix} maxLength={8} onChange={(e) => setInfo({ drawingPrefix: e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '') })} className={`${input} uppercase font-mono`} aria-label="Drawing prefix" />
               </Field>
-              <Field label="Electrical code">
+              {/* Full width: the code names (e.g. "Europe — IEC 60204-1, EN 61439") don't fit half a column. */}
+              <Field label="Electrical code" wide>
                 <select value={info.region} onChange={(e) => applyRegion(e.target.value as Region)} className={input} aria-label="Electrical code">
                   {REGIONS.map((r) => <option key={r.value} value={r.value}>{regionOption(r.value)}</option>)}
                 </select>
               </Field>
-              <Field label="Standards"><div className="py-1 text-steel-700">{info.standards.join(', ') || '—'}</div></Field>
+              <Field label="Standards" wide><div className="py-1 text-steel-700">{info.standards.join(', ') || '—'}</div></Field>
             </div>
             <div className="px-3 pb-3 grid grid-cols-3 gap-3">
               <Field label="Device designations" hint="CB1, K1, PB1 or IEC 81346 -Q1, -K1, -S1">
@@ -159,8 +163,10 @@ function ProjectData() {
               Generated designs must be checked and approved by a qualified person before anything is bought or built.
               Until a revision is issued for construction, every drawing and document carries a "Preliminary — not for construction" status.
             </p>
-            <div className={`mx-3 mb-3 px-3 py-2 border text-xs ${issuedForConstruction ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
-              Current revision <span className="font-semibold">{cur.rev}</span> · {cur.description} · {issuedForConstruction ? 'issued for construction' : 'preliminary'}
+            <div className={`mx-3 mb-3 px-3 py-2 border text-xs ${issued ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+              Current revision <span className="font-semibold">{cur.rev}</span> · {cur.description}
+              {issued ? (/construction|IFC|built/i.test(cur.description) ? '' : ' · issued for construction')
+                : issueUnsigned ? ' · not issued yet: name who checked and approved it' : /preliminary/i.test(cur.description) ? '' : ' · preliminary'}
             </div>
           </Section>
 

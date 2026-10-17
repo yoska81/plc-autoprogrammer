@@ -44,4 +44,22 @@ const regionRun = computeStages({ fp: { ...fp(click), region: 'EU' }, sources: O
 assert.equal(regionRun.electrical.reason, 'Out of date: the installation region changed.');
 assert.equal(regionRun.hmi.status, 'ready');
 assert.equal(regionRun.program.status, 'ready');
+// Q&A staleness per stage: an HMI answer stales the HMI and the program only; an assumption the
+// stages already used stales nothing.
+{
+  const { fingerprint } = await import('./types');
+  const base = { overview: 'x', qa: 'Q (Machine description): Speed?\nA: 10 ppm' } as unknown as SpecSections;
+  const withHmi = { ...base, qa: `${base.qa}\nQ (HMI): Which screen first?\nA: Main` } as unknown as SpecSections;
+  const withAssumed = { ...base, qa: `${base.qa}\nQ (Electrical design): Enclosure?\nA: (AI's assumption: NEMA 12)` } as unknown as SpecSections;
+  const built = (sp: SpecSections) => ({ specFp: fingerprint(sp), spec: sp, ioFp: ioFingerprint(io), hmiFp: 'h', at: '' });
+  const all = (sp: SpecSections) => ({ equipment: built(sp), io: built(sp), electrical: built(sp), hmi: built(sp), program: built(sp) });
+  const st = (now: SpecSections) => computeStages({ fp: { spec: now, specFp: fingerprint(now), ioFp: ioFingerprint(io), hmiFp: 'h' }, sources: all(base), ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true });
+  const h = st(withHmi);
+  assert.deepEqual(['equipment', 'io', 'electrical', 'hmi', 'program'].map((k) => h[k as 'hmi'].status), ['ready', 'ready', 'ready', 'stale', 'stale'], 'an HMI answer: HMI and program only');
+  const a = st(withAssumed);
+  assert.ok(['equipment', 'io', 'electrical', 'hmi', 'program'].every((k) => a[k as 'hmi'].status === 'ready'), "using the AI's assumption stales nothing");
+  const spec2 = { ...base, qa: 'Q (Machine description): Speed?\nA: 20 ppm' } as unknown as SpecSections;
+  assert.ok(['equipment', 'io', 'electrical', 'hmi', 'program'].every((k) => st(spec2)[k as 'hmi'].status === 'stale'), 'a description answer stales every stage');
+}
+
 console.log('stage tests passed');
