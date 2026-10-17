@@ -151,6 +151,10 @@ export function compileSequence(seq: CycleSequence, base: ProgramResult, opts: {
           th!.map((x) => [NO(RUN), CMP(S, '==', v(i)), NC(x)]), [{ type: 'COPY', source: j >= 0 ? v(j) : '0', dest: S }, { type: 'SET', address: ABORT }]);
       }
     }
+  } else if (opts.alarm) {
+    // No step sequence (nothing to time out): the HMI's step-timeout alarm is still written — it stays off.
+    R('No automatic step sequence: the step-timeout alarm stays off', [[NC('SC1')]], [{ type: 'SET', address: opts.alarm }]);
+    R('Step timeout reset: Reset while the cycle is stopped', [[NO(RESET), NC(RUN)]], [{ type: 'RST', address: opts.alarm }]);
   }
   // Request bits: ON in the steps that list them (one OUT each).
   for (const b of base.autoBits) {

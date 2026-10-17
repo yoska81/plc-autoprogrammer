@@ -80,7 +80,7 @@ interface ManualCmd { label: string; address: string; permit: string; output: st
 interface Plan {
   start: string; stop: string; reset: string; manualSel: string; manualSts: string; running: string; heartbeat: string; state: string;
   safetyAlarm?: string; manual: Map<HmiActuator, ManualCmd[]>; faults: Map<HmiActuator, string>; timeouts: Map<HmiActuator, { sp: string; alarm: string }>;
-  speed: Map<HmiActuator, string>; limits: Map<string, { hi: string; lo: string; almHi: string; almLo: string }>;
+  speed: Map<HmiActuator, string>; aoSp: Map<string, string>; limits: Map<string, { hi: string; lo: string; almHi: string; almLo: string }>;
   /** Process setpoints: the heater's temperature (DF) and the dwell time in ms (DS). */
   tempSp?: string; dwellSp?: string;
   count?: { counter: string; reset: string; batch: string; rate: string };
@@ -99,7 +99,7 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
   const state = t.as('word:state').word('Machine_State', `PLC writes ${c.states.map((s) => `${s.value} ${s.text}`).join(', ')} (highest applicable wins).`);
   const plan: Plan = {
     start, stop, reset, manualSel, manualSts, running, heartbeat, state,
-    manual: new Map(), faults: new Map(), timeouts: new Map(), speed: new Map(), limits: new Map(),
+    manual: new Map(), faults: new Map(), timeouts: new Map(), speed: new Map(), aoSp: new Map(), limits: new Map(),
     runHours: '', sinceService: '', serviceInterval: '', serviceDone: '', serviceDue: '',
   };
   if (c.actuators.some((a) => a.kind === 'cylinder' || a.kind === 'motor' || a.kind === 'drive')) {
@@ -139,6 +139,12 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
       plan.timeouts.set(a, { sp, alarm });
     }
     if (a.speedRef) plan.speed.set(a, t.as(`sp:speed:${a.speedRef.address}`).df(`${a.name}_Speed`, `${a.name} speed setpoint (${a.speedRef.units}, ${a.speedRef.min}–${a.speedRef.max}); the PLC copies it to ${a.speedRef.address} while ${a.name} runs, 0 when stopped; safe default on the first scan.`));
+  }
+  // Analog outputs that are not a drive's speed reference (valve position, setpoint to another device): an
+  // operator setpoint the PLC writes to the output while Safety OK (the low end of the range otherwise).
+  const driven = new Set(c.actuators.map((a) => a.speedRef?.address).filter(Boolean));
+  for (const an of c.analogs.filter((x) => x.kind === 'output' && !driven.has(x.address))) {
+    plan.aoSp.set(an.address, t.as(`sp:ao:${an.address}`).df(`${ident(an.name)}_SP`, `${an.name} setpoint (${an.units || 'engineering units'}, ${an.min}–${an.max}); the PLC writes it to ${an.address} while Safety OK, ${an.min} otherwise; ${an.min} on the first scan when out of range.`));
   }
   // Analog values shown on screens (already in engineering units: the PLC's analog setup scales them).
   for (const an of c.analogs) t.as(`analog:${an.address}`).raw(an.address, `${an.kind === 'input' ? 'AI' : 'AO'}_${ident(an.name)}`, 'FLOAT', `${an.kind === 'input' ? 'Analog input' : 'Analog output'} ${an.name} in ${an.units || 'engineering units'} (${an.min}-${an.max}), scaled by the PLC's analog setup.`);
@@ -309,6 +315,8 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
   if (timeouts.length) setup.push({ title: 'Timeouts', rows: timeouts.map((x) => [x]) });
   const speeds = [...p.speed].map(([a, x]) => entry(`${a.name} speed`, x, a.speedRef!.units, a.speedRef!.min, a.speedRef!.max));
   if (speeds.length) setup.push({ title: 'Drive speeds', rows: speeds.map((x) => [x]) });
+  const aoRows = c.analogs.filter((an) => p.aoSp.has(an.address)).map((an) => entry(an.name, p.aoSp.get(an.address)!, an.units, an.min, an.max));
+  if (aoRows.length) setup.push({ title: 'Analog outputs', rows: aoRows.map((x) => [x]) });
   for (const an of c.analogs.filter((x) => x.kind === 'input')) {
     const l = p.limits.get(an.address)!;
     setup.push({ title: `${an.name} alarms`, rows: [[entry('High', l.hi, an.units, an.min, an.max), entry('Low', l.lo, an.units, an.min, an.max)]] });

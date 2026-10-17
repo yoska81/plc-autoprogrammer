@@ -9,7 +9,7 @@ import type { AnalogSetupRow } from '../../plc/core/analog';
 import type { Region } from '../../standards/regions';
 import { enclosureText, powerText, SUPPLY_INFO } from '../../standards/regions';
 import { DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
-import { panelLayout, spareSpace, terminalCounts, motorFla, type DrawingContext } from '../derive';
+import { panelLayout, spareSpace, terminalCounts, motorFla, vendorTerminal, type DrawingContext } from '../derive';
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
 import { getHmi } from '../../hmi/hmiCatalog';
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, MotorSpec } from '../types';
@@ -67,7 +67,8 @@ function dcLoad(components: DesignComponent[], getPart: EngineInput['getPart'], 
     else a += (DC_LOAD_A[p.category] ?? 0) * c.quantity;
   }
   const hmi = hmiPartNumber ? getHmi(hmiPartNumber) : undefined;
-  if (hmi) a += hmi.sizeIn >= 10 ? 1.0 : 0.6;
+  // An all-in-one PLC's screen is already in its own (PLC) draw.
+  if (hmi && getPart(hmiPartNumber!)?.category !== 'plc') a += hmi.sizeIn >= 10 ? 1.0 : 0.6;
   return a + fieldInputs * 0.03;
 }
 
@@ -118,9 +119,25 @@ export function generateDesign(input: EngineInput): EngineResult {
   const plc: DesignComponent[] = [comp('PLC', input.plc.cpuPartNumber, 1, 'PLC CPU')];
   input.modules.forEach((pn, i) => {
     const p = getPart(pn);
-    const kind = /analog/i.test(p?.description ?? '') ? 'Analog' : 'I/O';
+    const discrete = num(p?.ratings.inputs) || num(p?.ratings.outputs);
+    const kind = /analog/i.test(p?.description ?? '') && !discrete ? 'Analog' : /snap-in/i.test(p?.description ?? '') ? 'Snap-in I/O' : 'I/O';
     plc.push(comp(`IO${i + 1}`, pn, 1, `${kind} module, slot ${i + 1}`));
   });
+
+  // Unitronics: the input type is set by wiring / a jumper, and some analog inputs are digital input terminals.
+  const cpuPart = getPart(input.plc.cpuPartNumber);
+  if (cpuPart?.vendor === 'unitronics') {
+    const npnIn = points.some(({ point }) => point.deviceType === 'sensor-npn');
+    const r = cpuPart.ratings;
+    // Inputs on the CPU, else on its snap-in / first module (V700 / V1040 / V1210 have none on board).
+    const inPart = num(r.discreteInputs) ? cpuPart : input.modules.map((m) => getPart(m)).find((m) => num(m?.ratings.inputs));
+    if (inPart) notes.push(`${inPart.partNumber} inputs (${inPart.ratings.inputType ?? 'see the guide'}): wired ${npnIn ? 'sourcing for the npn sensors (common to 24+)' : 'sinking for the pnp sensors (common to 0V)'}${/jumper/i.test(String(inPart.ratings.inputType ?? '')) ? `; set the input jumper to ${npnIn ? 'npn' : 'pnp'}` : ''}.`);
+    if (r.analogSharedWith) notes.push(`${input.plc.cpuPartNumber}: inputs ${r.analogSharedWith} are the analog inputs when used as analog (jumper per input); the I/O addressing leaves a used one out of the digital inputs.`);
+    // Mostly-relay CPUs: the npn points are given out last; a used one switches 0V, not a relay contact.
+    const npn = new Set(String(r.npnOutputs ?? '').split(',').map((x) => x.trim()).filter(Boolean));
+    const usedNpn = points.filter(({ point, address }) => point.type === 'output' && /^Y0/i.test(address) && npn.has(vendorTerminal(cpuPart, address) ?? ''));
+    if (usedNpn.length) notes.push(`${input.plc.cpuPartNumber}: ${usedNpn.map(({ point, address }) => `${address} (${vendorTerminal(cpuPart, address)}) ${point.description}`).join(', ')} on npn transistor output${usedNpn.length > 1 ? 's' : ''} (${r.transistorOutputCurrentA ?? '?'} A max, switches 0V: load between 24+ and the output) — the drawings show the CPU's relay outputs; check these points or add an output module.`);
+  }
 
   // Parts the designer already chose that the rules did not pick.
   const required: DesignComponent[] = [];

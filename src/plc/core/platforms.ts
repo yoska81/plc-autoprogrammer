@@ -150,6 +150,39 @@ export const PLATFORMS: Platform[] = [
     notes: 'Backplane-less right-side expansion: max. 32 modules (max. 16 analog / 4 communication), 1,024 I/O. CPUs take 24 VDC (AS-PS02 power module 24 V 2 A, or external 24 V). CPU built-in I/O is on MIL connectors: order UC-ET010/020/030-24D cables plus UB-10-ID16A (inputs) / UB-10-OR16A (NPN-to-relay outputs) terminal boards. AS300 CPUs have 2 function-card slots (e.g. AS-F485, AS-FCOPM CANopen, AS-F2AD/F2DA, AS-FEN02) - not catalogued here. CANopen DS301 needs the AS-FCOPM card on AS300.',
     // https://www.deltaww.com/IA/downloadcenter/catalogue/3.Control/AS/DELTA_IA-PLC_AS_C_EN_20230116.pdf
   },
+  {
+    id: 'unitronics-unistream', vendor: 'unitronics', name: 'Unitronics UniStream',
+    cpus: ['US5-B5-B1', 'US5-B10-TR22', 'US7-B5-B1', 'US7-B10-TR22', 'US10-B5-B1', 'US10-B10-TR22', 'US15-B10-B1', 'USC-B10-TR22', 'USC-P-B10'],
+    modules: ['UID-1600', 'UID-0016T', 'UID-0016R', 'UID-0808T', 'UID-0808R', 'UIA-0402N', 'UIS-04PTN', 'UIS-WCB1'],
+    protocols: ['Modbus TCP', 'EtherNet/IP'],
+    notes: 'Programmed with UniLogic. US5 / US7 / US10 / US15 are PLC + touch screen in one unit (the HMI is built in); "-TR22" models have 10 DI / 2 AI / 8 relay + 2 npn outputs on board, "-B1" models none. Built-in models connect Uni-I/O modules only through a UAG-CX I/O expansion adapter kit (base, end unit and cable, order separately; up to 80 modules). USC-B10-TR22 is the stand-alone DIN-rail CPU (up to 8 modules directly). USC-P-B10 plugs onto the back of a USP-070-B10 / USP-104-B10 / USP-156-B10 panel (order the panel as the HMI); the panel back holds 3 / 5 modules, more need a UAG-CX kit. UIS-WCB1 is a wide module (counts as 1.5). Ethernet: Modbus TCP master / slave, EtherNet/IP scanner and adapter.',
+    // https://www.unitronicsplc.com/Documents/UniStream/Built-in/UG_US5_7_10_15-Bx-B1_TR22_T24.pdf
+  },
+  {
+    id: 'unitronics-vision', vendor: 'unitronics', name: 'Unitronics Vision',
+    cpus: ['V130-33-T38', 'V130-33-TR34', 'V350-35-TR34', 'V350-35-TR20', 'V350-35-T38', 'V700-T20BJ', 'V1040-T20B', 'V1210-T20BJ'],
+    modules: ['V200-18-E1B', 'V200-18-E2B', 'V200-18-E3XB', 'V200-18-E46B'],
+    plugIns: ['V200-18-E1B', 'V200-18-E2B', 'V200-18-E3XB', 'V200-18-E46B'],
+    protocols: ['Modbus TCP'],
+    notes: 'Programmed with VisiLogic. PLC + touch screen in one unit (the HMI is built in). V130 / V350 have their I/O on board; two of their digital inputs double as the analog inputs (jumper). V700 / V1040 / V1210 have no on-board I/O: one V200-18 snap-in I/O module plugs into the back. EX-A2X local expansion (up to 8 modules) is not in this catalog. Ethernet (Modbus TCP) is built into the V700; the V130 / V350 / V1040 / V1210 need the optional Ethernet port module.',
+    // https://unitronicsplc.com/Documents/Vision/PLC/UG_V700.pdf
+  },
+  {
+    id: 'unitronics-samba', vendor: 'unitronics', name: 'Unitronics Samba',
+    cpus: ['SM43-J-T20', 'SM70-J-T20', 'SM35-J-TA22'],
+    modules: [],
+    protocols: [],
+    notes: 'Programmed with VisiLogic. PLC + touch screen in one unit with on-board I/O only (no expansion). Two digital inputs double as the analog inputs (jumper). No built-in Ethernet: optional Ethernet / serial port module.',
+    // https://unitronicsplc.com/Documents/Samba/PLC/UG_SM35_43_70_R20_T20.pdf
+  },
+  {
+    id: 'unitronics-jazz', vendor: 'unitronics', name: 'Unitronics Jazz',
+    cpus: ['JZ20-R31', 'JZ20-T40', 'JZ20-J-T20HS'],
+    modules: [],
+    protocols: [],
+    notes: 'Micro PLC with a 2 x 16 character text display and keypad (not a touch screen), on-board I/O only. Programmed with U90 Ladder: 64 on-delay timers, no counter operands, no program import. No built-in Ethernet (MJ20-ET1 add-on).',
+    // https://unitronicsplc.com/wp-content/uploads/2015/12/JZ20-R31_JZ20-J-R31_TECH-SPEC_01-141.pdf
+  },
 ];
 
 export const platformById = (id: string) => PLATFORMS.find((p) => p.id === id);
@@ -170,6 +203,17 @@ export function platformCapacity(cpu: CatalogPart, modules: string[]) {
   };
 }
 
+/** Digital inputs that double as the analog inputs (Unitronics: ratings.analogSharedWith = 'I14,I15'). */
+export const sharedAnalogInputs = (cpu: CatalogPart): string[] => String(cpu.ratings.analogSharedWith ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
+/** Digital inputs left once the machine's analog inputs take their shared terminals. */
+function digitalInputsLeft(cpu: CatalogPart, modules: string[], need: Need): number {
+  const cap = platformCapacity(cpu, modules);
+  const moduleAi = cap.analogInputs - num(cpu.ratings.analogInputs);
+  const onCpu = Math.max(0, need.analogInputs - moduleAi);
+  return cap.inputs - Math.min(sharedAnalogInputs(cpu).length, onCpu);
+}
+
 /** Module limits of a CPU: its own ratings, else the platform's; undefined = not published (no check). */
 export function moduleLimits(platform: Platform, cpu: CatalogPart): { expansion?: number; plugIn?: number } {
   const r = cpu.ratings;
@@ -186,7 +230,8 @@ export function platformFit(platform: Platform, cpuPn: string, modules: string[]
   const cpu = getPart(cpuPn);
   if (!cpu || !platform.cpus.includes(cpuPn)) return { ok: false, reason: `${cpuPn} is not a ${platform.name} CPU.`, spareIn: 0, spareOut: 0 };
   const cap = platformCapacity(cpu, modules);
-  const spareIn = cap.inputs - need.digitalInputs;
+  const inputs = digitalInputsLeft(cpu, modules, need);
+  const spareIn = inputs - need.digitalInputs;
   const spareOut = cap.outputs - need.digitalOutputs;
   const limits = moduleLimits(platform, cpu);
   const plugs = modules.filter((m) => isPlugIn(platform, m)).length;
@@ -196,11 +241,12 @@ export function platformFit(platform: Platform, cpuPn: string, modules: string[]
   if (foreign) reason = `${foreign} does not fit the ${platform.name}.`;
   else if (limits.plugIn !== undefined && plugs > limits.plugIn) reason = `Has ${limits.plugIn} plug-in slots; ${plugs} plug-in modules chosen.`;
   else if (limits.expansion !== undefined && exps > limits.expansion) reason = limits.expansion ? `Takes at most ${limits.expansion} expansion modules; ${exps} chosen.` : 'Takes no expansion modules.';
-  else if (spareIn < 0) reason = `Only ${cap.inputs} inputs; ${need.digitalInputs} needed.`;
+  else if (spareIn < 0) reason = `Only ${inputs} inputs${inputs < cap.inputs ? ` (${cap.inputs - inputs} used as analog inputs)` : ''}; ${need.digitalInputs} needed.`;
   else if (spareOut < 0) reason = `Only ${cap.outputs} outputs; ${need.digitalOutputs} needed.`;
   else if (need.analogInputs > cap.analogInputs) reason = `No analog inputs for ${need.analogInputs} analog signals.`;
   else if (need.analogOutputs > cap.analogOutputs) reason = `No analog outputs for ${need.analogOutputs} analog signals.`;
-  else if (need.ethernetHmi && !platform.protocols.length) reason = 'No Ethernet port for the touch panel.';
+  // A built-in screen talks to its own CPU: no Ethernet needed for it.
+  else if (need.ethernetHmi && !platform.protocols.length && cpu.ratings.builtInPanel !== 'yes') reason = 'No Ethernet port for the touch panel.';
   return { ok: !reason, reason, spareIn, spareOut };
 }
 
@@ -261,7 +307,7 @@ export function suggestModules(platform: Platform, cpuPn: string, need: Need): s
   const short = () => {
     const cap = platformCapacity(cpu, mods);
     return [
-      ['inputs', need.digitalInputs - cap.inputs], ['outputs', need.digitalOutputs - cap.outputs],
+      ['inputs', need.digitalInputs - digitalInputsLeft(cpu, mods, need)], ['outputs', need.digitalOutputs - cap.outputs],
       ['analogInputs', need.analogInputs - cap.analogInputs], ['analogOutputs', need.analogOutputs - cap.analogOutputs],
     ].find(([, n]) => Number(n) > 0)?.[0] as string | undefined;
   };

@@ -5,7 +5,7 @@ import type { HmiModel } from '../../hmi/hmiCatalog';
 import type { CpuModel } from './profile';
 import { driversOf, hmiCompatible, platformById, platformFit, suggestModules, type Platform } from './platforms';
 import { ALL_PARTS } from '../../electrical/catalogs';
-import { panelPart } from '../../hmi/panels';
+import { hasBuiltInPanel, panelPart } from '../../hmi/panels';
 
 export interface Need {
   digitalInputs: number;
@@ -73,6 +73,8 @@ export function hmiFit(hmi: HmiModel, need: Need, cpuId?: string): Fit {
     const raw = getPart(hmi.partNumber);
     const part = raw ? panelPart(raw) : undefined;
     if (!part) reason = 'Not in the parts catalog.';
+    // The screen of an all-in-one PLC comes only with that PLC.
+    else if (hasBuiltInPanel(part)) reason = cpuId === part.partNumber ? null : `Built into the ${part.partNumber} PLC: choose it as the CPU.`;
     else if (platform) reason = hmiCompatible(platform, part).reason;
     else if (!driversOf(part).includes('click')) reason = `CLICK is not in ${part.manufacturer}'s PLC driver list${part.ratings.plcDrivers === undefined ? ' (no driver list in the catalog yet)' : ''}.`;
   } else if (platform) reason = `C-more panels are set up for CLICK only; not checked with the ${platform.name}.`;

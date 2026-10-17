@@ -10,6 +10,8 @@ import { toLogix } from './profiles/logixExport';
 import { logixIoTag } from './profiles/logix';
 import { toMicro800St } from './profiles/micro800';
 import { buildScl } from './profiles/siemens';
+import { buildUniLogicSt } from './profiles/unilogic';
+import { visiOperands } from './profiles/visilogic';
 
 export interface PlcTagName {
   /** As the PLC software shows it: 'Start_PB', 'Jam_Timer.DN', '"Machine_DB".Run', 'C1001'. */
@@ -52,6 +54,28 @@ export function plcTagNames(profile: PlcProfile, program: LadderProgram, ctx: Ex
       for (const v of st.variables) {
         const io = plc.get(v.name);
         addIec(out, v.base, `"Machine_DB".${v.name}`, v.type, 'Machine_DB', io?.address, { bool: 'Bool', time: 'Time', dint: 'DInt' });
+      }
+      break;
+    }
+    case 'unitronics-unistream': {
+      const { program: st } = buildUniLogicSt(program, ctx);
+      for (const v of st.variables) {
+        // Accumulating timers are emulated: the done bit and the elapsed ms are plain tags.
+        const t = /^T(\d+)(_ET)?$/.exec(v.base);
+        if (t && v.type !== 'TON' && v.type !== 'TOF') { out.set(t[2] ? `TD${t[1]}` : v.base, { name: v.name, scope: 'Global', dataType: v.type }); continue; }
+        if (/_(TON|ACC|LAST|WAS)$/.test(v.base)) continue;
+        addIec(out, v.base, v.name, v.type, 'Global', profile.ioTag?.(v.base, ctx.modules ?? []) ?? undefined, { bool: 'BOOL', time: 'TIME', dint: 'INT' });
+      }
+      break;
+    }
+    case 'unitronics-vision': {
+      const map = visiOperands(program, ctx);
+      for (const [b, v] of map.byBase) {
+        const n = /^(T|CT)(\d+)$/.exec(b);
+        const name = n && n[1] === 'T' && map.offDelay.has(b) ? map.offDelay.get(b)!.operand : v.operand;
+        out.set(b, { name, scope: 'VisiLogic', dataType: v.type === 'I' || v.type === 'O' || v.type === 'SB' || v.type === 'MB' || n ? 'Bit' : v.type });
+        // Timer / counter current values (a timer counts down from its preset).
+        if (n) out.set(`${n[1] === 'T' ? 'TD' : 'CTD'}${n[2]}`, { name: `${v.operand} current`, scope: 'VisiLogic', dataType: n[1] === 'T' ? 'Timer' : 'Counter' });
       }
       break;
     }

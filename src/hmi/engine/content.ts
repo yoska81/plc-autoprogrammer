@@ -192,7 +192,8 @@ export function defaultHmiContent(opts: {
     address: x.address, name: title(x.p.description.replace(/\b(transmitter|sensor|signal|reference|ref)\b/gi, '').replace(/\(\s*([^)]*?)\s*\)/g, (_, w: string) => (w ? `(${w})` : '')).replace(/\(\s*\)/g, '')) || x.address,
     units: x.p.analog?.units ?? '', min: x.p.analog?.min ?? 0, max: x.p.analog?.max ?? 100, kind: x.p.type,
   }));
-  for (const an of analogs.filter((y) => y.kind === 'output' && /\b(hz|%)$/i.test(y.units))) {
+  // A speed reference: drive units (Hz, %, rpm, m/min) or "speed" / "frequency" in its name (a 4-20 mA reference may be in mA).
+  for (const an of analogs.filter((y) => y.kind === 'output' && (/^(hz|%|rpm|r\/min|m\/min|ft\/min)$/i.test(y.units.trim()) || /\b(speed|frequency|freq)\b/i.test(y.name)))) {
     const drive = actuators.find((a) => a.kind === 'drive' && !a.speedRef && (shareKey(a.name, an.name) || actuators.filter((b) => b.kind === 'drive').length === 1));
     if (drive) drive.speedRef = an;
   }

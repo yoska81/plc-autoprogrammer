@@ -128,6 +128,7 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     // A speed below 10% of the range (e.g. 0 Hz from a fresh PLC) counts as not set: load the mid-range default.
     if (a.speedRef) sp(`sp:speed:${a.speedRef.address}`, a.speedRef.min + (a.speedRef.max - a.speedRef.min) * 0.1, a.speedRef.max, Math.round((a.speedRef.min + a.speedRef.max) / 2), `${a.name} speed`);
   }
+  for (const an of c.analogs.filter((x) => x.kind === 'output')) sp(`sp:ao:${an.address}`, an.min, an.max, an.min, `${an.name} setpoint`);
   for (const an of c.analogs.filter((x) => x.kind === 'input')) {
     const span = an.max - an.min;
     // A high limit in the bottom 10% of the range (0 from a fresh PLC) counts as not set: it would alarm at once.
@@ -288,11 +289,21 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     if (a.speedRef) {
       const spd = tag(`sp:speed:${a.speedRef.address}`);
       const runOut = a.run?.address;
-      if (spd && runOut) {
-        R('outputs', `${a.name} speed reference: the HMI setpoint while running`, [[NO(runOut)]], [COPY(spd, a.speedRef.address)]);
+      // Without an HMI speed setpoint: the mid-range speed (change it here).
+      const value = spd ?? String(Math.round((a.speedRef.min + a.speedRef.max) / 2));
+      if (runOut) {
+        R('outputs', `${a.name} speed reference: ${spd ? 'the HMI setpoint' : `${value} ${a.speedRef.units} (no HMI setpoint)`} while running`, [[NO(runOut)]], [COPY(value, a.speedRef.address)]);
         R('outputs', `${a.name} speed reference: 0 when stopped`, [[NC(runOut)]], [COPY('0', a.speedRef.address)]);
-      }
+      } else R('outputs', `${a.name} speed reference: ${spd ? 'the HMI setpoint' : `${value} ${a.speedRef.units}`} while Safety OK, 0 otherwise (no run output)`, [[NO(SAFE)]], [COPY(value, a.speedRef.address)]);
     }
+  }
+  // Other analog outputs: the HMI setpoint while Safety OK, the low end of the range otherwise.
+  const speedRefs = new Set(c.actuators.map((a) => a.speedRef?.address).filter(Boolean));
+  for (const an of c.analogs.filter((x) => x.kind === 'output' && !speedRefs.has(x.address))) {
+    const spv = tag(`sp:ao:${an.address}`);
+    const value = spv ?? String(an.min);
+    R('outputs', `${an.name} (${an.address}): ${spv ? 'the HMI setpoint' : `${value} ${an.units} (no HMI setpoint: set the value here)`} while Safety OK`, [[NO(SAFE)]], [COPY(value, an.address)]);
+    if (spv) R('outputs', `${an.name} (${an.address}): ${an.min} ${an.units} when Safety is not OK`, [[NC(SAFE)]], [COPY(String(an.min), an.address)]);
   }
   // Lights and indicators by their words; other outputs are left to the cycle block.
   const actOuts = new Set(c.actuators.flatMap((a) => [a.run, a.reverse, a.extend, a.retract].filter(Boolean).map((p) => p!.address)));
