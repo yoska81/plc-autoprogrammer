@@ -141,7 +141,7 @@ const SAFETY_PROCESS_RULES: CodeRule[] = [
         if (p.type !== 'output' || !p.deviceTag || !['contactor-coil', 'relay-coil', 'pilot-light', 'solenoid'].includes(p.deviceType)) continue;
         const style = groupOf.get(p.address)?.outputStyle;
         if (style !== 'sinking' && style !== 'sourcing') continue;
-        const [a, b] = p.deviceType === 'pilot-light' ? ['X1', 'X2'] : ['A1', 'A2'];
+        const [a, b] = p.pins;
         // what each end of the load is wired to, by wire number (one number per potential; chain letters follow the chain)
         const side = (term: string) => {
           const nums = env.wires.filter((w) => w.from === `${p.deviceTag}:${term}` || w.to === `${p.deviceTag}:${term}`).map((w) => w.wire);

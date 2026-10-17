@@ -324,3 +324,22 @@ Findings, ranked (✔ = fixed here, → = routed to the coordinator):
 | 14 | pilot lights on 24+S | OPEN | PL2 (fault light) returns on 24+S, goes dark on a safety stop |
 | 15 | stray space "(thermocouple )" | OPEN | HMI tag descriptions and two alarm texts |
 | new | analog pair flagged "Wire DF3+ is WH, expected BU" | FIXED here | colour rules skip 4-20 mA / 0-10 V pairs (cable core colours); E2E checks it |
+
+## Sealing head re-verification after Dev 2's #64 (integration 1c34a2c)
+| # | item | status | evidence |
+|---|---|---|---|
+| 1 | two-hand control | FIXED | SR3 BG5933 (ISO 13851 IIIC), 2H-240002 station at the machine; Y001 (closing stroke) through SR3 13-14; SF-04 |
+| 2 | light curtain | FIXED | LC1 SH4 type 4 → SR2 LG5925-48-900 OSSD relay, SR2 status on X004; SF-03 |
+| 3 | HMI closes the head without two-hand | FIXED | no HMI hold-to-run on the closing stroke; HMI_Start only starts the cycle, the stroke needs SR3 |
+| 4 | heater power circuit | FIXED (+ drawn here) | FU1 Class J 20 A → K1 (AC-1) → SSR1 → HTR1; power sheet now draws it with wire numbers (K1-T1, SSR1-T1, K1-T2) and the wire list follows; aux loads now size the bus (14 → 12 AWG, upstream OCPD 20 A) |
+| 5 | over-temperature hardwired | FIXED | TAH1 SCU-3100 latched relay holds K1 (coil chain on sheet 6); X106 = TAH1 relay 2; SF-05 |
+| 6 | thermocouple | FIXED | TT1 XTD2 transmitter, 4-20 mA loop |
+| 7 | HMI setpoint / dwell | FIXED | DF103 SP_Seal_Heater_Temperature_SP, DS1002 SP_Seal_time |
+| 8 | missing alarms | FIXED | light curtain, air pressure low, heater over-temperature, film roll low |
+| 9 | Start clean document control | FIXED | (see above) |
+| 10–11 | ZIP crash, review rules | FIXED | |
+| 12 | zones | FIXED | LC1 / sealing sensors "Sealing station", air pressure and film-low at the unwinder, TAH1 in the cabinet |
+| 13 | Safety Functions table | FIXED | SF-01 … SF-05 from the design |
+| 14 | fault lamp on 24+S | OPEN | PL2 X2 returns on TB1 24+S (sinking outputs): goes dark on a safety stop |
+| 15 | stray space "(thermocouple )" | FIXED | "(thermocouple)" |
+| new | double solenoid SOL1 (Y001 down / Y002 up) wired to the same A1/A2 | FIXED here | per-coil terminal pairs (A1/A2, B1/B2) in wiring, TB3 (one return per coil), cable cores; the sinking coil behind SR3 goes 24+S → SR3 → TB3 → A1, A2 → TB3 → Y001; found by the output-load-circuit rule (critical) |
