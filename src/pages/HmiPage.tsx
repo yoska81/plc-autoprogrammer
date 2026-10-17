@@ -5,7 +5,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useStageStore } from '../store/useStageStore';
 import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, hmiFingerprint } from '../spec/useStages';
-import { HMI_MODELS, MIN_DESIGN_PX, designable, getHmi, hmiCommsText, hmiMaker, isCmore, HMI_DESIGN_GUIDELINES, type HmiModel } from '../hmi/hmiCatalog';
+import { HMI_MODELS, MIN_DESIGN_PX, designable, getHmi, hmiCommsText, hmiMaker, hmiMakerOf, isCmore, HMI_DESIGN_GUIDELINES, type HmiModel } from '../hmi/hmiCatalog';
 import { catalogPanels } from '../hmi/panels';
 import { setProjectPanel } from '../hmi/retarget';
 import { hmiFit, type Need } from '../plc/core/fit';
@@ -23,7 +23,7 @@ import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
 import ResizablePane from '../components/ResizablePane';
 import { Spinner, ReasoningPanel } from '../components/common';
-import { type AccessLevel, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiLook, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
+import { type AccessLevel, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
 import ScreenEditor from '../hmi/ScreenEditor';
 import HmiEditorBar from '../hmi/HmiEditorBar';
 import { addNavEntry, alignElements, createElement, createImageElement, deleteElements, distributeElements, duplicateElements, renameScreen, restack, setScreenLevel as setLevelOf, syncHandTags, type Align } from '../hmi/editor';
@@ -31,7 +31,8 @@ import { backgroundAt, croppedBackground, loadPicture, panelImage, pictureRect, 
 import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
 import { checkDesign, layoutBands, MIN_TOUCH, type LayoutIssue } from '../hmi/layout';
-import { LEVEL_LABEL, LOOK_LABEL, lookOf } from '../hmi/theme';
+import { defaultLookFor, LEVEL_LABEL } from '../hmi/theme';
+import LookPicker from '../hmi/LookPicker';
 import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
 import { useQuestions, useSyncQuestions } from '../components/questions/useQuestionStore';
@@ -728,13 +729,11 @@ export default function HmiPage() {
                 </section>
                 <section className="bg-white rounded-lg border border-gray-200 p-4">
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Panel</h3>
-                  <label className="flex items-center justify-between gap-3 mb-3 text-xs">
+                  <div className="flex items-center justify-between gap-3 mb-3 text-xs">
                     <span className="text-gray-500">Look</span>
-                    <select aria-label="HMI look" value={lookOf(design)} onChange={(e) => commit({ ...design, look: e.target.value as HmiLook })}
-                      className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 bg-white text-gray-800">
-                      {(['dark', 'siemens'] as HmiLook[]).map((l) => <option key={l} value={l}>{LOOK_LABEL[l]}</option>)}
-                    </select>
-                  </label>
+                    <LookPicker value={design.look} makerLook={defaultLookFor(design.hmiPartNumber)} makerName={hmiMakerOf(design.hmiPartNumber)}
+                      onChange={(look) => commit({ ...design, look })} />
+                  </div>
                   <PanelSpecs model={model} design={design} />
                 </section>
               </aside>

@@ -41,6 +41,7 @@ electron/vendor/
 e2e/out-desktop/
 tools/ai-quality/out/
 e2e/out-hmi-editor/
+e2e/out-hmi-looks/
 installer/
 e2e/out-walkthrough/
 .claude/worktrees/

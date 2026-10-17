@@ -17,6 +17,7 @@ import { aiReviewNote } from '../review/report';
 import { ACCENT, BRAND, INFO_FILL, INK, MUTED, RED, WARN_FILL, PdfWriter, pdfSafe } from './docs/pdfWriter';
 import { makeTable } from './docs/table';
 import { qaTable } from '../components/questions/qaTable';
+import { LOOK_LABEL, lookOf } from '../hmi/theme';
 
 /**
  * The controls engineering package a North American controls firm hands
@@ -231,7 +232,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
   w.bullets([
     `Control panel design: ${hasElec ? `${p.electrical!.components.length} components, ${p.electrical!.inputs.enclosureRating} enclosure, ${supplyText(p.electrical!.inputs.supply)} supply` : 'to be generated'}; electrical drawings, BOM, wire list, terminal plan and field cable schedule.`,
     `PLC program for ${p.profile.vendor} ${p.profile.name} ${p.cpu.id} (${p.io.filter((x) => x.type === 'input').length} inputs, ${p.io.filter((x) => x.type === 'output').length} outputs).`,
-    ...(p.hmi ? [`HMI application for ${hmiText(p.hmi.hmiPartNumber)}: ${p.hmi.screens.length} screens, ${p.hmi.alarms.length} alarm(s).`] : []),
+    ...(p.hmi ? [`HMI application for ${hmiText(p.hmi.hmiPartNumber)}: ${p.hmi.screens.length} screens, ${p.hmi.alarms.length} alarm(s), ${LOOK_LABEL[lookOf(p.hmi)]} look.`] : []),
     'Hardwired emergency stop / safety circuit as drawn.',
     'FAT and SAT procedures, operator manual, maintenance schedule and spare parts list.',
   ]);

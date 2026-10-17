@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } fr
 import HmiScreenView from './HmiScreenView';
 import { elementsInRect, GRID, moveElements, resizeElement, type Bounds, type Handle } from './editor';
 import type { HmiDesign, HmiElement, HmiScreen } from './types';
-import { lookOf } from './theme';
+import { hmiTheme, lookOf } from './theme';
 
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const CURSOR: Record<Handle, string> = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize' };
@@ -40,8 +40,8 @@ export default function ScreenEditor({ screen, design, widthPx, heightPx, select
   const bounds: Bounds = { w: widthPx, h: heightPx };
   const grid = snapToGrid ? GRID : 1;
   const shown = draft ?? screen;
-  // Faint outlines of every element: dark on the light Siemens screen, white on the dark console.
-  const light = lookOf(design) === 'siemens';
+  // Faint outlines of every element: dark on light screens, white on dark ones.
+  const light = hmiTheme(lookOf(design)).light;
 
   const toPanel = (e: { clientX: number; clientY: number }) => {
     const r = svgRef.current!.getBoundingClientRect();

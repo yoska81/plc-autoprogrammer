@@ -31,8 +31,8 @@ export const MACHINE_SYMBOL_KINDS: MachineSymbolKind[] = ['conveyor', 'motor', '
 
 export type HmiStyle = 'normal' | 'ok' | 'warning' | 'alarm';
 
-/** Visual style of the whole HMI: Siemens WinCC-like light panel (default) or the dark console. */
-export type HmiLook = 'siemens' | 'dark';
+/** Visual style of the whole HMI: the dark console, the Siemens light panel, ISA-101 grey or a maker-style look (src/hmi/theme.ts). */
+export type HmiLook = 'siemens' | 'dark' | 'isa101' | 'factorytalk' | 'cmore' | 'weintek' | 'unitronics' | 'yaskawa' | 'proface' | 'omron' | 'schneider';
 
 /** Who may operate an element / open a screen (C-more password groups). */
 export type AccessLevel = 'operator' | 'maintenance' | 'engineer';
@@ -154,6 +154,6 @@ export interface HmiDesign {
   generatedAt: string;
   /** Machine name shown in the header bar. */
   machineName?: string;
-  /** Visual style; missing means 'dark' (also for designs saved before looks existed). */
+  /** Visual style; missing means the look of the panel's maker (also for designs saved before looks existed). */
   look?: HmiLook;
 }

@@ -15,6 +15,7 @@ import SheetView from '../electrical/drawings/SheetView';
 import { planDrawings } from '../electrical/drawings/plan';
 import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
+import { LOOK_LABEL, lookOf } from '../hmi/theme';
 import { getHmi } from '../hmi/hmiCatalog';
 import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv, buildModel, type DrawingContext, type DrillingPlan } from '../electrical/derive';
 import { driveParamsCsv } from '../electrical/vfd';
@@ -78,7 +79,7 @@ export async function buildMachiningPdf(ctx: DrawingContext, which: DrillingPlan
   return sheetsPdf(ctx, createElement('div', null, ...sheets.map((s) => createElement(SheetView, { key: s.n, plan, sheet: s }))), 'Machining drawings');
 }
 
-/** Every HMI screen as a PNG at the panel's native resolution. */
+/** Every HMI screen as a PNG at the panel's native resolution, in the design's look. */
 export async function buildHmiImages(p: ProjectSnapshot): Promise<{ name: string; dataUrl: string }[]> {
   const model = p.hmi ? getHmi(p.hmi.hmiPartNumber) : undefined;
   if (!p.hmi || !model) return [];
@@ -111,7 +112,7 @@ export async function buildHmiPdf(p: ProjectSnapshot, images: { name: string; da
     if (i > 0) doc.addPage('letter', 'landscape');
     const screen = p.hmi!.screens[i];
     doc.setFontSize(14);
-    doc.text(pdfSafe(`${screen.name} — HMI ${model.partNumber}`), margin, top);
+    doc.text(pdfSafe(`${screen.name} — HMI ${model.partNumber} — ${LOOK_LABEL[lookOf(p.hmi)]} look`), margin, top);
     doc.setFontSize(9);
     doc.text(pdfSafe(screen.purpose.slice(0, 160)), margin, top + 6);
     doc.addImage(img.dataUrl, 'PNG', margin, top + 10, model.widthPx * scale, model.heightPx * scale, undefined, 'FAST');
