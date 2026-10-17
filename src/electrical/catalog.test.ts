@@ -27,15 +27,18 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)automationdirect\.com$/, makers: /./ },
   { host: /(^|\.)rockwellautomation\.com$/, makers: /allen[- ]?bradley|rockwell/i },
   // siemens.com includes the official download cache (cache.industry.siemens.com) and support portal;
-  // docs.tia.siemens.cloud is Siemens' official TIA Portal documentation site
-  { host: /(^|\.)(siemens\.com|tia\.siemens\.cloud)$/, makers: /siemens/i },
+  // docs.tia.siemens.cloud is Siemens' official TIA Portal documentation site; apim.industry.siemens.cloud serves the
+  // product datasheets that support.industry.siemens.com/teddatasheet links redirect to
+  { host: /(^|\.)(siemens\.com|tia\.siemens\.cloud|industry\.siemens\.cloud)$/, makers: /siemens/i },
   { host: /(^|\.)(se\.com|schneider-electric\.com|schneider-electric\.us)$/, makers: /schneider|square ?d|telemecanique/i },
   { host: /(^|\.)ifm\.com$/, makers: /\bifm\b/i },
   { host: /(^|\.)yaskawa\.(com|eu)$/, makers: /yaskawa/i },
   { host: /(^|\.)(nvent\.com|hoffmanonline\.com)$/, makers: /hoffman|nvent/i },
   { host: /(^|\.)rittal\.(com|us)$/, makers: /rittal/i },
   { host: /(^|\.)phoenixcontact\.com$/, makers: /phoenix/i },
+  { host: /(^|\.)weidmueller\.com$/, makers: /weidm(ü|ue)ller/i },
   { host: /(^|\.)eaton\.com$/, makers: /eaton/i },
+  { host: /(^|\.)abb\.com$/, makers: /\babb\b/i },
   { host: /(^|\.)(omron\.com|omron\.eu)$/, makers: /omron/i },
   { host: /(^|\.)weintek\.com$/, makers: /weintek/i },
   // Red Lion is part of HMS Networks: redlion.net now redirects to hms-networks.com
@@ -92,7 +95,7 @@ const UNVERIFIED_OK: Record<string, string> = {
 };
 
 /** A maker's document (PDF catalog / datasheet or documentation portal) covering many parts. */
-const isMakerDocument = (u: URL) => /\.pdf$/i.test(u.pathname) || /\/dl\/files\//.test(u.pathname) || /^docs\.|^literature\./.test(u.host);
+const isMakerDocument = (u: URL) => /\.pdf$/i.test(u.pathname) || /\/dl\/files\//.test(u.pathname) || /\/library\/Download\.aspx$/i.test(u.pathname) || /^docs\.|^literature\./.test(u.host);
 
 const isAdHost = (u: string) => /(^|\.)automationdirect\.com$/.test(new URL(u).host);
 const has = (p: CatalogPart, k: string) => (ALIASES[k] ?? [k]).some((a) => p.ratings[a] !== undefined && p.ratings[a] !== '');
