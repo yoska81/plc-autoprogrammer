@@ -13,6 +13,7 @@ import SequenceTable from './SequenceTable';
 import { useElectricalStore } from '../../../store/useElectricalStore';
 import { validateProgram, type ValidationIssue } from '../../core/validate';
 import { diffPrograms, summarizeDiff, type RungChange } from '../../core/diff';
+import { GENERAL_BLOCK, scopeToBlock } from '../../sim/blocks';
 import type { LadderProgram, Rung } from '../../core/ladder';
 import LadderView from '../ladder/LadderView';
 import { Spinner, ReasoningPanel } from '../../../components/common';
@@ -244,8 +245,15 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     return runAI('program-revise', 'PLC program change', (signal) => reviseLadder({ ...ai, signal }, ctx, ladder, issues, history, scoped), (r) => {
       const st = useProgramStore.getState();
       if (r.program) {
-        st.addChat({ role: 'assistant', text: r.explanation });
-        st.setProposal({ program: r.program, explanation: r.explanation, reasoning: r.reasoning, specUpdate });
+        // A change asked for one block changes only that block; the rest of the program stays as it is.
+        let program = r.program, explanation = r.explanation;
+        if (activeBlock !== null && !specUpdate) {
+          const scopedResult = scopeToBlock(ladder, r.program, activeBlock === GENERAL ? GENERAL_BLOCK : activeBlock);
+          program = scopedResult.program;
+          if (scopedResult.outside) explanation += `\n\nOnly the block ${blockName} was changed: ${scopedResult.outside} change${scopedResult.outside === 1 ? '' : 's'} the AI made to other blocks ${scopedResult.outside === 1 ? 'was' : 'were'} left out. Select "Whole program" to ask for changes there.`;
+        }
+        st.addChat({ role: 'assistant', text: explanation });
+        st.setProposal({ program, explanation, reasoning: r.reasoning, specUpdate });
       } else {
         st.addChat({ role: 'assistant', text: r.explanation, outcome: 'no-change' });
       }

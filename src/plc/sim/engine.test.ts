@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import type { CompareOp, LadderElement, LadderOutput, LadderProgram, Rung } from '../core/ladder';
 import { compileMath, createSimulator } from './engine';
 import { buildMachineModel, machineInputs, setDeviceBypass, stepMachine } from './machineModel';
-import { blockAddresses, devicesInBlock, externalSignals, programBlocks } from './blocks';
+import { blockAddresses, devicesInBlock, externalSignals, programBlocks, scopeToBlock } from './blocks';
 import { SimController } from './controller';
 import type { ConveyorDevice, CylinderDevice, MotorDevice } from './machineModel';
 import { CONVEYOR_IO, CONVEYOR_PROGRAM, CONVEYOR_WIRING } from './__fixtures__/conveyor';
@@ -466,6 +466,25 @@ test('controller: a block selected before the first scan holds the first-scan de
   const ctl = new SimController(p, [], []);
   ctl.selectBlock('feed');
   assert.equal(ctl.getSnapshot().holds.get('DS1001'), 50, 'the default setpoint, not 0 from before the first scan');
+});
+
+test('a change asked for one block changes only that block', () => {
+  const cur: LadderProgram = { tags: [], blocks: [{ id: 'a', name: 'A', description: '' }, { id: 'b', name: 'B', description: '' }], rungs: [
+    { id: 'a1', block: 'a', comment: '', branches: [[NO('X001')]], outputs: [OUT('C1')] },
+    { id: 'b1', block: 'b', comment: '', branches: [[NO('C1')]], outputs: [OUT('Y001')] },
+    { id: 'b2', block: 'b', comment: '', branches: [[NO('C1')]], outputs: [OUT('Y002')] },
+    { id: 'a2', block: 'a', comment: '', branches: [[NO('X002')]], outputs: [OUT('C2')] },
+  ] };
+  const prop: LadderProgram = { ...cur, rungs: [
+    { id: 'a1', block: 'a', comment: 'changed outside', branches: [[NO('X003')]], outputs: [OUT('C1')] },
+    { id: 'b1', block: 'b', comment: 'new', branches: [[NO('C1'), NO('X004')]], outputs: [OUT('Y001')] },
+    { id: 'n1', comment: '', branches: [[NO('C1')]], outputs: [OUT('Y003')] },
+    { id: 'n2', block: 'a', comment: '', branches: [[NO('C1')]], outputs: [OUT('C9')] },
+  ] };
+  const r = scopeToBlock(cur, prop, 'b');
+  assert.deepEqual(r.program.rungs.map((x) => `${x.id}:${x.block}`), ['a1:a', 'b1:b', 'n1:b', 'a2:a'], 'block B replaced in place, other blocks as they were');
+  assert.equal(r.program.rungs[0].comment, '', 'the change to block A is left out');
+  assert.equal(r.outside, 3, 'a1 changed, a2 removed, n2 added in block A');
 });
 
 console.log('\nretentive memory, register presets, HMI presses');

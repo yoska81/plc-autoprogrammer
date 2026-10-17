@@ -152,3 +152,37 @@ export function devicesInBlock(devices: SimDevice[], addresses: Set<string>): Se
   }
   return ids;
 }
+
+/**
+ * A change asked for one block keeps the rest of the program as it is: the proposal's rungs of that block
+ * (and new rungs without a block) replace the block's rungs in place; every other rung stays the current one.
+ * `outside` counts the proposal's changes to other blocks that were left out (added, changed or removed rungs).
+ */
+export function scopeToBlock(current: LadderProgram, proposed: LadderProgram, blockId: string): { program: LadderProgram; outside: number } {
+  const curIds = new Set(current.rungs.map((r) => r.id));
+  const inBlock = (p: LadderProgram, r: Rung) => blockOfRung(p, r) === blockId;
+  const otherIds = new Set(current.rungs.filter((r) => !inBlock(current, r)).map((r) => r.id));
+  const mine = proposed.rungs
+    .filter((r) => !otherIds.has(r.id) && (inBlock(proposed, r) || (!curIds.has(r.id) && !r.block?.trim())))
+    .map((r) => (blockId === GENERAL_BLOCK ? { ...r, block: undefined } : { ...r, block: blockId }));
+  const same = (a: Rung, b: Rung) => JSON.stringify({ ...a, block: undefined }) === JSON.stringify({ ...b, block: undefined });
+  const propById = new Map(proposed.rungs.map((r) => [r.id, r]));
+  const mineIds = new Set(mine.map((r) => r.id));
+  let outside = 0;
+  for (const r of current.rungs) {
+    if (inBlock(current, r)) continue;
+    const p = propById.get(r.id);
+    if (!p || !same(p, r)) outside++;
+  }
+  outside += proposed.rungs.filter((r) => !curIds.has(r.id) && !mineIds.has(r.id)).length;
+  const rungs: Rung[] = [];
+  let placed = false;
+  for (const r of current.rungs) {
+    if (!inBlock(current, r)) { rungs.push(r); continue; }
+    if (!placed) { rungs.push(...mine); placed = true; }
+  }
+  if (!placed) rungs.push(...mine);
+  const tags = [...current.tags];
+  for (const t of proposed.tags) if (!tags.some((x) => normAddress(x.address) === normAddress(t.address))) tags.push(t);
+  return { program: { ...current, rungs, tags }, outside };
+}

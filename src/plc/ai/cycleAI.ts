@@ -94,7 +94,7 @@ export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcConte
       const problems = checkSequence(r.sequence, result.base, new Set(inputs.map((i) => i.address.toUpperCase())));
       if (problems.length) throw new Error(`its cycle steps were not used: ${problems.slice(0, 3).join('; ')}`);
       const withAi = programWithCycle({ ...input, sequence: r.sequence });
-      const errors = validateProgram(withAi.program, o.ctx.profile, ioSet).filter((i) => i.severity === 'error');
+      const errors = validateProgram(withAi.program, o.ctx.profile, ioSet, o.hmi ?? undefined).filter((i) => i.severity === 'error');
       if (errors.length) throw new Error(`its cycle did not pass the checker: ${errors[0].message}`);
       result = withAi; source = 'ai'; explanation = r.explanation;
     } catch (err) {
@@ -106,6 +106,6 @@ export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcConte
   const { program, notes, sequence } = result;
   return {
     program, sequence, source, aiError, notes, reasoning: null,
-    explanation: `${source === 'ai' ? 'Program from the standard blocks with the cycle steps written from the specification' : 'Program from the standard blocks with the default cycle (rules)'}: ${program.rungs.length} rungs in ${program.blocks?.length ?? 0} blocks; cycle ${sequence.steps.map((st, i) => `${(i + 1) * 10} ${st.name}`).join(' → ') || 'none'}.${explanation ? ` ${explanation}` : ''}${notes.length ? ` Notes: ${notes.join(' ')}` : ''}`,
+    explanation: `${source === 'ai' ? 'Program from the standard blocks with the cycle steps written by the AI from the specification' : aiError ? 'Program from the standard blocks with the default cycle (rules): the AI\'s cycle was not used, see the notes' : `Program from the standard blocks with the default cycle (rules${o.ai?.apiKey ? '' : ', no AI connected'})`}: ${program.rungs.length} rungs in ${program.blocks?.length ?? 0} blocks; cycle ${sequence.steps.map((st, i) => `${(i + 1) * 10} ${st.name}`).join(' → ') || 'none'}.${explanation ? ` ${explanation}` : ''}${notes.length ? ` Notes: ${notes.join(' ')}` : ''}`,
   };
 }
