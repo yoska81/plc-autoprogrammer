@@ -120,6 +120,7 @@ const NO_RESOLUTION: Record<string, string> = {
 for (const p of ALL_HMIS().filter((h) => h.vendor && h.vendor !== 'automationdirect')) {
   const r = p.ratings;
   const headless = r.touch === 'none'; // gateways / servers without a display
+  if (r.lifecycle === 'legacy') continue; // listed for existing machines only (greyed, never designed for)
   if (r.resolutionPx !== undefined) assert.match(String(r.resolutionPx), /^\d+x\d+$/, `${p.partNumber}: resolutionPx is WxH`);
   else assert.ok(headless || NO_RESOLUTION[p.partNumber], `${p.partNumber}: resolutionPx from the datasheet`);
   if (p.partNumber !== 'HMIG3U' && !headless) assert.equal(typeof r.displayIn, 'number', `${p.partNumber}: displayIn`);
