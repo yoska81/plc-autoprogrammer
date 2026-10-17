@@ -62,7 +62,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
     const mod = await import('/src/preview/sampleProject.ts');
     const ps = await import('/src/store/useProjectsStore.ts');
     localStorage.clear();
-    localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'max', openaiApiKey: '', openaiModel: 'gpt-4o' }, version: 2 }));
+    localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'max', openaiApiKey: '', openaiModel: 'gpt-4o', showExperimental: true }, version: 2 }));
     mod.seedSampleProject();
     ps.useProjectsStore.getState().openProject(mod.EXAMPLE_ID);
   });

@@ -260,6 +260,7 @@ type Tab = 'tags' | 'alarms' | 'check' | 'notes';
 export default function HmiPage() {
   const hmi = useHmiStore();
   const settings = useSettingsStore();
+  const showExperimental = !!settings.showExperimental;
   const { profile, cpu, io, addresses } = usePlc();
   const fp = useFingerprints();
   const stages = useStages();
@@ -608,7 +609,7 @@ export default function HmiPage() {
             <Link to="/simulate" className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Try it live</Link>
             <button onClick={() => setChoosing((v) => !v)} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Change HMI</button>
             {genButton('Redesign screens')}
-            {fullButton}
+            {showExperimental && fullButton}
           </div>
         )}
       </header>
@@ -631,7 +632,7 @@ export default function HmiPage() {
         {!design && (
           <div className="flex flex-wrap items-center gap-3">
             {genButton('Design the HMI screens')}
-            {fullButton}
+            {showExperimental && fullButton}
             {model && <span className="text-sm text-gray-500">or make screens yourself:</span>}
             {model && <button onClick={() => void addScreen()} className="px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50">New blank screen</button>}
             {model && <PictureButton label="New screen from picture…" onFile={(f) => void addScreen(f)} />}

@@ -217,6 +217,10 @@ export default function SettingsPage() {
                 than Thorough. Thorough: every task at the thinking depth above.
               </p>
             </div>
+            <label className="flex items-start gap-2 text-xs text-gray-600">
+              <input type="checkbox" checked={!!s.showExperimental} onChange={(e) => s.setShowExperimental(e.target.checked)} className="mt-0.5" />
+              <span><span className="font-medium">Show experimental AI buttons</span> — the older "AI full design / AI full program" buttons, where the AI makes everything itself. Slow, and too large for the browser preview; the normal Generate buttons are the recommended way.</span>
+            </label>
             <div>
               <label htmlFor="settings-small-model" className="block text-xs font-medium text-gray-600 mb-1">Model for small tasks</label>
               <select id="settings-small-model" value={draft.smallTaskModel} onChange={(e) => update('smallTaskModel', e.target.value)} className={inputClass}>

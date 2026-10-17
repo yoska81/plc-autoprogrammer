@@ -82,6 +82,7 @@ function motorContext(d: ElectricalDesign, tag: string | null | undefined, iec: 
 export default function ElectricalPage() {
   const el = useElectricalStore();
   const settings = useSettingsStore();
+  const showExperimental = !!settings.showExperimental;
   const { projectName } = useProgramStore();
   const fp = useFingerprints();
   const stages = useStages();
@@ -356,9 +357,9 @@ export default function ElectricalPage() {
                 className="px-5 py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
                 {el.isGenerating ? <><Spinner /> Designing the panel…</> : el.design ? 'Generate New Design' : 'Generate Electrical Design'}
               </button>
-              <button onClick={() => generate(true)} disabled={el.isGenerating || !apiKey}
+              {showExperimental && <button onClick={() => generate(true)} disabled={el.isGenerating || !apiKey}
                 title="The AI picks every part itself (slower; the standard design uses the AI only to read the specification)"
-                className="px-3 py-2 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-40">AI full design (experimental)</button>
+                className="px-3 py-2 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-40">AI full design (experimental)</button>}
               {!apiKey && <span className="text-xs text-steel-500">Without an API key the design is made from the I/O list and motor list by the rules only. Add a key in <Link to="/settings" className="underline">Settings</Link> to let the AI read the specification.</span>}
             </div>
             {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}

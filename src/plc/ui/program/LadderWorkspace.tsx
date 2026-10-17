@@ -1,3 +1,4 @@
+import { useSettingsStore } from '../../../store/useSettingsStore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';
 import { useHmiStore } from '../../../store/useHmiStore';
@@ -98,6 +99,7 @@ function IssueList({ issues, rungNumber, plcName, onRebuild }: { issues: Validat
 }
 
 export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, analog = [] }: Props) {
+  const showExperimental = useSettingsStore((s) => !!s.showExperimental);
   const store = useProgramStore();
   const { ladder, proposal, chat, versions, isGenerating, userPrompt } = store;
   const fp = useFingerprints();
@@ -344,9 +346,9 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               )}
                 </div>
               </details>
-              <button onClick={() => handleGenerate(true)} disabled={isGenerating || !ready || !machineText.trim()}
+              {showExperimental && <button onClick={() => handleGenerate(true)} disabled={isGenerating || !ready || !machineText.trim()}
                 title="The AI writes the whole program itself (slower); the standard program uses the AI only for the machine's cycle"
-                className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-40">AI full program (experimental)</button>
+                className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-40">AI full program (experimental)</button>}
               <p className="text-xs text-gray-400">Standard blocks for the {ctx.profile.name} {ctx.cpu.id} from the I/O list and HMI in seconds{ready ? '; the AI writes the machine\'s cycle from your description.' : '.'}</p>
             </>
           )}

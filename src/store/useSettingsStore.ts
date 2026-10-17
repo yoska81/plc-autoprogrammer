@@ -55,6 +55,9 @@ interface SettingsStore {
   setEffort: (e: Effort) => void;
   speed: Speed;
   setSpeed: (s: Speed) => void;
+  /** Show the older all-AI generate buttons (Electrical, HMI, PLC program); off: one clear Generate path. */
+  showExperimental: boolean;
+  setShowExperimental: (on: boolean) => void;
   /** Model for the small tasks ('' = the main model). */
   smallTaskModel: string;
   setSmallTaskModel: (m: string) => void;
@@ -81,6 +84,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setEffort: (effort) => set({ effort }),
       speed: 'fast',
       setSpeed: (speed) => set({ speed }),
+      showExperimental: false,
+      setShowExperimental: (showExperimental) => set({ showExperimental }),
       smallTaskModel: '',
       setSmallTaskModel: (smallTaskModel) => set({ smallTaskModel }),
       stageModes: DEFAULT_STAGE_MODES,

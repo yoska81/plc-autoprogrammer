@@ -102,7 +102,7 @@ function sse(model, text) {
   await page.goto(BASE);
   await page.evaluate(() => {
     localStorage.clear();
-    localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'max', openaiApiKey: '', openaiModel: 'gpt-4o' }, version: 2 }));
+    localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'max', openaiApiKey: '', openaiModel: 'gpt-4o', showExperimental: true }, version: 2 }));
   });
   await page.goto(BASE + '/spec');
   await snap(page, 'shell');
