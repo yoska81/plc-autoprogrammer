@@ -1,6 +1,6 @@
 # Debug 2 — deliverables QA (`claude/isa-debug-outputs`)
 
-PR #7 merged (batches 1–2). Branch restarted from integration d78b221. Last integration merge: 1795268 (src/plc refactor).
+PR #7 merged (batches 1–2). PR #43 (watchdog) merged. Last integration merge: 7f3b37d (drawings as one scrolling document).
 
 ## Tasks (my own words)
 - [x] Repeatable checkers in `tools/` (`tools/check-all.sh`, README): generate every output through the real app for 4 projects — `us480` (example), `ca600` (Canada 600 V, Class CC fuses, fused CPT, rev B), `us120` (120 V 1-ph, small enclosure, no HMI), `big` (4 VFDs, 54 I/O, modules, 10" HMI, JBs).
@@ -168,4 +168,5 @@ Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 althoug
   | big | 686x838, fits, 12 % | unchanged; flagged: below the 25 % rule, 36x30 is the largest catalog enclosure |
   | analog | — | 533x686, 40 % |
 
+- Also: `e2e/sweep.e2e.cjs` finds the ANALOG sheet in the new sheet list (integration 7f3b37d removed the sheet tabs, so the sweep reported "no ANALOG drawing sheet").
 - Tests: `src/electrical/enclosureFit.test.ts` (sample fits, 24x20 flagged with the 30x24, no overlaps). tsc, eslint, all unit tests, check-all.sh 0 FAIL/0 WARN on 5 variants. E2E app, ai-jobs, layout, persist, old-data, hmi-editor, sweep all pass.
