@@ -12,6 +12,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useVoiceSettings } from './useVoiceSettings';
 import { langCode, pickEngine } from './text';
 import { transcribeOpenAI } from './openaiTranscribe';
+import { micErrorText, micPlace, micUsable, PREVIEW_NO_MIC, type MicPlace } from './micAccess';
 
 export type Engine = 'browser' | 'openai' | 'local';
 export type DictationState = 'starting' | 'listening' | 'transcribing';
@@ -59,7 +60,7 @@ export function currentEngine(): Engine {
 export function engineAvailability(): Record<Engine, { ok: boolean; why: string }> {
   const s = useSettingsStore.getState();
   return {
-    browser: recognitionClass() && !isDesktop()
+    browser: IS_PREVIEW ? { ok: false, why: 'Not available in the preview.' } : recognitionClass() && !isDesktop()
       ? { ok: true, why: 'Words appear while you speak. Needs the internet (Chrome and Edge send the sound to their speech service).' }
       : { ok: false, why: isDesktop() ? 'Not available in the desktop app.' : 'This browser has no speech recognition (use Chrome or Edge).' },
     openai: IS_PREVIEW ? { ok: false, why: 'Not available in the preview.' }
@@ -157,23 +158,20 @@ export interface Dictation {
   done: Promise<string>;
 }
 
-/** Plain words for microphone errors. */
+/** Where the app runs, for the microphone: the preview frame, the Windows app or a browser. */
+export const micPlaceNow = (): MicPlace => micPlace({ preview: IS_PREVIEW, desktop: isDesktop() });
+
+/** Plain words for microphone errors (src/voice/micAccess.ts). */
 export function micError(e: unknown): string {
-  const name = (e as { name?: string })?.name ?? '';
-  const msg = e instanceof Error ? e.message : String(e ?? '');
-  if (name === 'NotAllowedError' || /not-allowed|service-not-allowed|Permission/i.test(msg)) {
-    return isDesktop()
-      ? 'The microphone is blocked. In Windows Settings → Privacy & security → Microphone, allow desktop apps to use the microphone.'
-      : 'The microphone is blocked. Allow it for this page (the camera/microphone icon in the address bar) and try again.';
-  }
-  if (name === 'NotFoundError' || /audio-capture|Requested device not found/i.test(msg)) return 'No microphone was found. Plug one in (or turn it on) and try again.';
-  return msg || 'Speech input stopped unexpectedly.';
+  return micErrorText(e, micPlaceNow());
 }
 
 let active: Dictation | null = null;
 
 /** Start listening. Only one dictation runs at a time: starting a new one finishes the previous. */
 export async function startDictation(h: DictationHandlers, o: DictationOptions = {}): Promise<Dictation> {
+  // The claude.ai preview frame has no microphone: no prompt, every request is refused.
+  if (!micUsable(micPlaceNow())) throw new Error(PREVIEW_NO_MIC);
   if (active) await active.stop().catch(() => '');
   const lang = useVoiceSettings.getState().language;
   const engine = currentEngine();

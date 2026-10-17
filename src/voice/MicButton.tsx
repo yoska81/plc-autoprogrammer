@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { MicrophoneIcon } from '@heroicons/react/24/outline';
 import { Spinner } from '../components/common';
 import { useVoiceSettings, type DictateMode } from './useVoiceSettings';
-import { ENGINE_LABEL, micError, startDictation, useSpeechModel, type Dictation, type DictationState, type Engine } from './stt';
+import { ENGINE_LABEL, micError, micPlaceNow, startDictation, useSpeechModel, type Dictation, type DictationState, type Engine } from './stt';
 import { clock, joinDictation } from './text';
 import { stopSpeaking } from './tts';
+import { micUsable, PREVIEW_NO_MIC } from './micAccess';
 
 interface Session {
   state: DictationState;
@@ -46,6 +47,8 @@ export default function MicButton({ value, onChange, label = 'Speak instead of t
   useEffect(() => () => { void dict.current?.stop().catch(() => ''); }, []);
 
   if (!enabled) return null;
+  // The claude.ai preview frame has no microphone: say so instead of asking for a permission that never comes.
+  if (!micUsable(micPlaceNow())) return <NoMicHere className={className} />;
 
   const put = (spoken: string) => write.current(joinDictation(base.current, spoken, modeRef.current));
   const setMode = (m: DictateMode) => { modeRef.current = m; setModeState(m); put(heard.current); };
@@ -134,6 +137,26 @@ export default function MicButton({ value, onChange, label = 'Speak instead of t
               </div>
             </>
           )}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/** Microphone button where voice input cannot work (the preview): muted, explains why when pressed. */
+function NoMicHere({ className }: { className: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className={`relative inline-flex ${className}`}>
+      <button type="button" data-testid="mic" aria-disabled="true" aria-label="Voice input is not available here" title={PREVIEW_NO_MIC}
+        onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center justify-center rounded p-1 text-steel-300 hover:bg-steel-100">
+        <MicrophoneIcon className="h-4 w-4" />
+      </button>
+      {open && (
+        <div role="status" data-testid="dictation" className="absolute right-0 top-full z-30 mt-1 w-72 rounded border border-steel-300 bg-white p-2.5 text-left text-xs text-steel-700 shadow-lg">
+          <p>{PREVIEW_NO_MIC}</p>
+          <button type="button" onClick={() => setOpen(false)} className="mt-2 rounded border border-steel-300 px-2 py-0.5 hover:bg-steel-50">Close</button>
         </div>
       )}
     </span>

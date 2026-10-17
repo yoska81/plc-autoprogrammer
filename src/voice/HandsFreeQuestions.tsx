@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { MicrophoneIcon } from '@heroicons/react/24/outline';
 import { Spinner } from '../components/common';
 import { useActiveProjectId, useQuestionStore, type Question } from '../components/questions/useQuestionStore';
-import { micError, startDictation, type Dictation } from './stt';
+import { micError, micPlaceNow, startDictation, type Dictation } from './stt';
+import { micUsable } from './micAccess';
 import { speak, stopSpeaking } from './tts';
 import { spokenReply } from './text';
 import { useVoiceSettings } from './useVoiceSettings';
@@ -28,7 +29,8 @@ export default function HandsFreeQuestions({ questions }: { questions: Question[
   useEffect(() => () => { token.current++; dict.current?.cancel(); stopSpeaking(); }, []);
 
   const open = questions.filter((q) => q.status === 'open');
-  if (!enabled || (!run && !open.length)) return null;
+  // No microphone in the preview frame: no hands-free mode there (questions still have speaker buttons).
+  if (!enabled || !micUsable(micPlaceNow()) || (!run && !open.length)) return null;
   const current = run ? questions.find((q) => q.id === run.ids[run.i]) ?? null : null;
 
   const put = (t: string) => { textRef.current = t; setText(t); };

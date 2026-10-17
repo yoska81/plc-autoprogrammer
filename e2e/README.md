@@ -103,3 +103,15 @@ again; a new project starts clean. Screenshots land in `e2e/out-voice-edit/`.
 Unit tests: `npx tsx src/edits/edits.test.ts` (store, order list totals and files, labels, notes in CSVs, rung comments and
 HMI alarm texts kept through regeneration) and `npx tsx src/voice/text.test.ts` (add / replace, engine choice, spoken
 yes / no / skip / stop in several languages, Markdown read aloud, long texts split for speech).
+
+## Desktop microphone permission
+
+```bash
+npm run build:desktop
+xvfb-run -a node e2e/desktop-mic.e2e.cjs
+```
+The first press of a microphone asks with a native dialog (stubbed: Allow once / Always allow / Don't allow);
+"Always" is remembered across a restart in `mic-permission.json` and reset in Settings → Voice; "Don't allow"
+is explained in the mic popover (no address-bar advice); "Allow once" lasts until the app closes; camera
+requests are refused. Unit test: `npx tsx src/voice/micAccess.test.ts`. The preview e2e checks that the
+preview shows the mic as not available (it has no microphone) and makes no microphone request.

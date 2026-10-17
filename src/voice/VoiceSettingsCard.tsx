@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVoiceSettings, VOICE_LANGUAGES, type SpeechEngine } from './useVoiceSettings';
-import { currentEngine, engineAvailability, ENGINE_LABEL, prepareLocalModel, useSpeechModel } from './stt';
+import { currentEngine, engineAvailability, ENGINE_LABEL, micPlaceNow, prepareLocalModel, useSpeechModel } from './stt';
+import { micPermissionText, micUsable, PREVIEW_NO_MIC } from './micAccess';
+import { desktopBridge, type MicPermission } from '../desktop/bridge';
 import { canSpeak, speak, stopSpeaking, useSpeaking, useVoices } from './tts';
 import { langCode } from './text';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -25,6 +27,10 @@ export default function VoiceSettingsCard() {
   const testing = useSpeaking((s) => s.id === 'voice-test');
   const [trial, setTrial] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const usable = micUsable(micPlaceNow());
+  // Desktop app: whether the microphone is allowed always / until closing / asked (electron/micPermission.cjs).
+  const [micPerm, setMicPerm] = useState<MicPermission | null>(null);
+  useEffect(() => { void desktopBridge()?.micPermission?.get().then(setMicPerm).catch(() => undefined); }, []);
   // Options → Voice opens Settings at this card.
   useEffect(() => { if (location.hash.endsWith('#voice')) ref.current?.scrollIntoView({ block: 'start' }); }, []);
   // Re-read when the OpenAI key changes.
@@ -48,9 +54,23 @@ export default function VoiceSettingsCard() {
         <p className="text-xs text-gray-500 mt-0.5">Speak instead of typing: every text box has a microphone button. Speaker buttons read questions, AI answers, review findings and the machine specification aloud.</p>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-gray-700">
-        <input type="checkbox" checked={v.micEnabled} onChange={(e) => v.set({ micEnabled: e.target.checked })} /> Show the microphone buttons
-      </label>
+      {usable ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={v.micEnabled} onChange={(e) => v.set({ micEnabled: e.target.checked })} /> Show the microphone buttons
+          </label>
+          {micPerm && (
+            <span className="flex items-center gap-2 text-xs text-gray-600" data-testid="mic-permission">
+              {micPermissionText(micPerm)}
+              {micPerm !== 'ask' && (
+                <button type="button" onClick={() => void desktopBridge()?.micPermission?.reset().then(setMicPerm)} className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50">Reset</button>
+              )}
+            </span>
+          )}
+        </div>
+      ) : (
+        <p className="rounded border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900" data-testid="no-mic-here">{PREVIEW_NO_MIC}</p>
+      )}
 
       <label className="block text-sm text-gray-700">Language you speak (also used to read aloud)
         <select aria-label="Speech language" value={v.language} onChange={(e) => v.set({ language: e.target.value, voice: '' })} className={`${select} mt-1`}>
@@ -58,6 +78,7 @@ export default function VoiceSettingsCard() {
         </select>
       </label>
 
+      {usable && (<>
       <fieldset className="space-y-1.5">
         <legend className="text-sm text-gray-700 mb-1">How speech is written down</legend>
         {engines.map((e) => {
@@ -113,6 +134,7 @@ export default function VoiceSettingsCard() {
           <span className="absolute right-1.5 top-1.5"><MicButton value={trial} onChange={setTrial} /></span>
         </div>
       </div>
+      </>)}
 
       {canSpeak() ? (
         <div className="space-y-3 border-t border-gray-100 pt-3">
