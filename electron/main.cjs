@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { registerModbusIpc } = require('./modbus.cjs');
+const mic = require('./micPermission.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;
@@ -235,8 +236,49 @@ ipcMain.on('isa:version', (e) => { e.returnValue = app.getVersion(); });
 // ── Connect to PLC: Modbus TCP (electron/modbus.cjs) ──
 registerModbusIpc(ipcMain);
 
+// ── Microphone for voice input: a native question the first time (electron/micPermission.cjs) ──
+let micState = { always: false, session: false };
+let micAsking = null; // one dialog at a time; requests while it is open share the answer
+async function askMic(wc) {
+  if (!micAsking) {
+    micAsking = (async () => {
+      const r = await dialog.showMessageBox(BrowserWindow.fromWebContents(wc) ?? undefined, {
+        type: 'question', buttons: mic.BUTTONS, defaultId: 0, cancelId: 2, noLink: true,
+        title: APP_NAME, message: `${APP_NAME} wants to use the microphone for voice input`,
+        detail: 'What you say is written into the text box. "Always allow" can be changed later in Settings → Voice.',
+      });
+      const { grant, state } = mic.applyChoice(micState, r.response);
+      micState = state;
+      if (r.response === 1) mic.save(app.getPath('userData'), micState);
+      return grant;
+    })().finally(() => { micAsking = null; });
+  }
+  return micAsking;
+}
+function installMicPermission() {
+  micState = mic.load(app.getPath('userData'));
+  // Other permissions keep Electron's default (granted); camera / video capture is not used by the app.
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+    if (permission !== 'media') return callback(true);
+    if (!mic.isMicRequest(permission, details)) return callback(false);
+    if (mic.decide(micState) === 'allow') return callback(true);
+    askMic(wc).then(callback, () => callback(false));
+  });
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => {
+    if (permission !== 'media') return true;
+    return details?.mediaType !== 'video' && mic.decide(micState) === 'allow';
+  });
+}
+ipcMain.handle('isa:mic-permission', () => mic.status(micState));
+ipcMain.handle('isa:mic-permission-reset', () => {
+  micState = { always: false, session: false };
+  mic.save(app.getPath('userData'), micState);
+  return mic.status(micState);
+});
+
 app.whenReady().then(() => {
   serveApp();
+  installMicPermission();
   // The AI services accept browser calls with CORS; make sure the app origin is allowed.
   session.defaultSession.webRequest.onHeadersReceived({ urls: ['https://api.anthropic.com/*', 'https://api.openai.com/*'] }, (d, cb) => {
     const h = { ...d.responseHeaders };

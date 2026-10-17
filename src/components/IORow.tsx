@@ -2,6 +2,9 @@ import { TrashIcon } from '@heroicons/react/24/outline';
 import type { IOPoint, IOCategory } from '../types/io';
 import { useIOStore } from '../store/useIOStore';
 import AnalogCell from '../plc/ui/io/AnalogCell';
+import { useEditsStore } from '../edits/useEditsStore';
+import { EditedMark } from '../edits/EditedMark';
+import MicButton from '../voice/MicButton';
 
 const ALL_CATEGORIES: IOCategory[] = [
   'Safety', 'Operator/HMI', 'External Machine', 'Product Detection',
@@ -24,6 +27,18 @@ interface IORowProps {
 export function IORow({ point, address, duplicate }: IORowProps) {
   const { updateDescription, updateCategory, deletePoint, setPlcAddress } = useIOStore();
   const isManual = Boolean(point.plcAddress);
+  // A generated description the user rewrote: marked, with a way back (kept by I/O id).
+  const key = `io:${point.id}`;
+  const edit = useEditsStore((s) => s.texts[key]);
+  const setText = useEditsStore((s) => s.setText);
+  const resetText = useEditsStore((s) => s.resetText);
+  const edited = Boolean(edit && edit.value === point.description);
+  const describe = (v: string, before: string) => {
+    updateDescription(point.id, v);
+    // Points the user added themselves have no generated text to go back to.
+    const generated = edit?.generated ?? before;
+    if (generated.trim()) setText(key, v, generated);
+  };
 
   return (
     <tr className="hover:bg-brand-50/60 group">
@@ -45,16 +60,22 @@ export function IORow({ point, address, duplicate }: IORowProps) {
         </div>
       </td>
       <td className={td}>
+        <div className="flex items-center gap-1">
         <input
           value={point.description}
           placeholder="Description"
           aria-label={`Description of ${point.id}`}
           // Saved as you type, so leaving the page, Back or Ctrl+S never loses an edit; Escape undoes the edit.
           onFocus={(e) => { e.currentTarget.dataset.before = point.description; }}
-          onChange={(e) => updateDescription(point.id, e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { updateDescription(point.id, e.currentTarget.dataset.before ?? point.description); e.currentTarget.blur(); } }}
-          className={`${cell} text-steel-900 placeholder:italic placeholder:text-steel-400`}
+          onChange={(e) => describe(e.target.value, e.currentTarget.dataset.before ?? point.description)}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { const b = e.currentTarget.dataset.before ?? point.description; describe(b, b); e.currentTarget.blur(); } }}
+          className={`${cell} text-steel-900 placeholder:italic placeholder:text-steel-400 ${edited ? 'text-sky-900' : ''}`}
         />
+        {edited && edit && <EditedMark generated={edit.generated} onReset={() => { updateDescription(point.id, edit.generated); resetText(key); }} />}
+        <span className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[aria-pressed=true]]:opacity-100 has-[[role=status]]:opacity-100">
+          <MicButton value={point.description} onChange={(v) => describe(v, point.description)} label="Speak the description" />
+        </span>
+        </div>
       </td>
       <td className={td}>
         <select value={point.category} onChange={(e) => updateCategory(point.id, e.target.value as IOCategory)}

@@ -3,6 +3,10 @@ import type { ProjectSnapshot } from '../deliverables/collect';
 import { checksFor } from './actions';
 import { statusOf, useReviewStore } from './useReviewStore';
 import { AREA_LABEL, SEVERITY_LABEL, sortFindings, type FindingStatus } from './types';
+import { currentEdits } from '../edits/useEditsStore';
+
+/** Key of the user's note on a finding (hand-edit store). */
+export const reviewNoteKey = (findingId: string) => `review:${findingId}`;
 
 export interface ReviewRow {
   id: string;
@@ -14,10 +18,13 @@ export interface ReviewRow {
   status: FindingStatus;
   reason: string;
   date: string;
+  /** The user's note on the finding. */
+  note: string;
 }
 
 export function reviewRows(p: ProjectSnapshot): ReviewRow[] {
   const { ai, marks } = useReviewStore.getState();
+  const { notes } = currentEdits();
   const findings = sortFindings([...checksFor(p), ...(ai?.findings ?? [])]);
   return findings.map((f, i) => ({
     id: `DR-${String(i + 1).padStart(2, '0')}`,
@@ -30,6 +37,7 @@ export function reviewRows(p: ProjectSnapshot): ReviewRow[] {
     status: statusOf(marks, f.id),
     reason: marks[f.id]?.reason ?? '',
     date: marks[f.id]?.at.slice(0, 10) ?? '',
+    note: notes[reviewNoteKey(f.id)] ?? '',
   }));
 }
 

@@ -8,7 +8,8 @@ import { buildEngineeringPdf } from '../deliverables/engineering';
 import { buildProgramListingPdf } from '../deliverables/programListingPdf';
 import { hmiReadme, hmiTagCsv, needsHmiTagList } from '../deliverables/hmiTags';
 import { buildDrawingsPdf, buildEverythingZip, buildHmiImages, buildHmiPdf, buildMachiningPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
-import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
+import { bomCsv, terminalPlanCsv } from '../electrical/derive';
+import { wireListCsvWithNotes } from '../edits/lists';
 import { Spinner } from '../components/common';
 import { backPanelDxf, doorDxf, enclosureFaceDxfs } from '../electrical/dxf';
 import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep';
@@ -201,7 +202,7 @@ export default function ExportPage() {
                 if (pdf) saveBlob(`${p.fileBase}_drawings.pdf`, pdf);
               })} />
               <B busy={busy} label="BOM CSV" disabled={!hasElec} onClick={run('BOM CSV', () => saveBlob(`${p.fileBase}_BOM.csv`, csv(bomCsv(p.drawingCtx!))))} />
-              <B busy={busy} label="Wire list CSV" disabled={!hasElec} onClick={run('Wire list CSV', () => saveBlob(`${p.fileBase}_wire_list.csv`, csv(wireListCsv(p.drawingCtx!))))} />
+              <B busy={busy} label="Wire list CSV" disabled={!hasElec} onClick={run('Wire list CSV', () => saveBlob(`${p.fileBase}_wire_list.csv`, csv(wireListCsvWithNotes(p.drawingCtx!))))} />
               <B busy={busy} label="Cabinet pictures (PNG)" disabled={!hasElec} onClick={run('Cabinet pictures (PNG)', async () => {
                 const { cabinetPng } = await import('../electrical/render/renderToPng');
                 const snap = collectProject();

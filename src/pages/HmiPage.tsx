@@ -23,7 +23,7 @@ import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
 import ResizablePane from '../components/ResizablePane';
 import { Spinner, ReasoningPanel } from '../components/common';
-import { type AccessLevel, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiLook, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
+import { type AccessLevel, type HmiAlarm, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiLook, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
 import ScreenEditor from '../hmi/ScreenEditor';
 import HmiEditorBar from '../hmi/HmiEditorBar';
 import { addNavEntry, alignElements, createElement, createImageElement, deleteElements, distributeElements, duplicateElements, renameScreen, restack, setScreenLevel as setLevelOf, syncHandTags, type Align } from '../hmi/editor';
@@ -39,6 +39,10 @@ import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
 import { withAnalogScale } from '../hmi/analogScale';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
+import SpeakButton from '../voice/SpeakButton';
+import { useEditsStore } from '../edits/useEditsStore';
+import { alarmEdit, alarmKey } from '../edits/hmiTexts';
+import { EditableCell } from '../edits/EditedMark';
 
 /** Panels listed in the picker: those that can talk to the PLC at all (no machine-specific needs). */
 const ANY_NEED: Need = { digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null };
@@ -231,6 +235,23 @@ function PictureButton({ label, onFile, small }: { label: string; onFile: (f: Fi
       <button onClick={() => ref.current?.click()}
         className={small ? 'px-2 py-1 text-xs border border-gray-300 rounded bg-white hover:bg-brand-50' : 'px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50'}>{label}</button>
     </>
+  );
+}
+
+/** Alarm message the user can rewrite; kept when the screens are generated again. */
+function AlarmText({ alarm }: { alarm: HmiAlarm }) {
+  const texts = useEditsStore((s) => s.texts);
+  const found = alarmEdit(alarm, texts);
+  const generated = found?.edit.generated ?? alarm.message;
+  const setMessage = (message: string) => {
+    const hmi = useHmiStore.getState();
+    if (!hmi.design) return;
+    hmi.setDesign({ ...hmi.design, alarms: hmi.design.alarms.map((x) => (x.address === alarm.address ? { ...x, message } : x)) }, hmi.explanation);
+  };
+  return (
+    <EditableCell value={alarm.message} label={`Alarm message ${alarm.address}`} edited={Boolean(found)} generated={generated}
+      onCommit={(v) => { if (!v.trim()) return; useEditsStore.getState().setText(alarmKey(generated), v, generated); setMessage(v); }}
+      onReset={() => { useEditsStore.getState().resetText(found?.key ?? alarmKey(generated)); setMessage(generated); }} />
   );
 }
 
@@ -624,7 +645,7 @@ export default function HmiPage() {
 
         {design && model && screen && (
           <>
-            {hmi.explanation && <p className="text-sm text-gray-700 max-w-4xl">{tagged(hmi.explanation)}</p>}
+            {hmi.explanation && <p className="text-sm text-gray-700 max-w-4xl"><SpeakButton text={hmi.explanation} label="Read aloud" size="xs" className="mr-1 align-middle" />{tagged(hmi.explanation)}</p>}
             <div className="flex gap-4 items-start">
               {/* Screen list */}
               <ResizablePane id="hmi.screens" defaultSize={200} min={140} max={420} handle="right">
@@ -786,7 +807,7 @@ export default function HmiPage() {
                         <tr key={a.address}>
                           <td className="py-1.5 pr-3 font-mono"><AddressCell address={a.address} tag={tagName?.(a.address)} /></td>
                           <td className="pr-3"><span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${a.severity === 'alarm' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>{a.severity === 'alarm' ? 'Alarm' : 'Warning'}</span></td>
-                          <td className="pr-3 text-gray-800">{a.message}</td>
+                          <td className="pr-3 text-gray-800"><AlarmText alarm={a} /></td>
                           <td className="text-xs text-gray-500">Header counter, alarm table{usedOn.get(a.address.toUpperCase())?.length ? `, ${usedOn.get(a.address.toUpperCase())!.join(', ')}` : ''}</td>
                         </tr>
                       ))}

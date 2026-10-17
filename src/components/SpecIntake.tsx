@@ -9,6 +9,7 @@ import { useSyncQuestions } from './questions/useQuestionStore';
 import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
+import VoiceTextarea from '../voice/VoiceTextarea';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.csv,image/*';
 
@@ -58,7 +59,7 @@ export default function SpecIntake() {
           <div className="bg-white rounded-lg border border-brand-200 p-5 space-y-3">
             <h3 className="text-sm font-semibold text-steel-800">Add to the spec</h3>
             <p className="text-xs text-steel-500">Describe the machine in your own words, paste notes, or upload a spec document. The AI sorts it into the sections below and keeps everything already there.</p>
-            <textarea value={newText} onChange={(e) => setNewText(e.target.value)} rows={6}
+            <VoiceTextarea value={newText} onValueChange={setNewText} rows={6} aria-label="Add to the spec"
               placeholder="e.g. Pick and place cell. Operator loads trays at the front. Two guard doors with locking switches; opening a door during Auto stops all motion (category 1 stop) and the robot gripper holds the part. Homing: Z axis up first to its home switch, then X to home. Modes: Auto, Manual jog from the HMI, Setup with doors open at low speed..."
               className="w-full border border-steel-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
             <label

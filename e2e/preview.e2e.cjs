@@ -246,6 +246,28 @@ function reply(system) {
   check(await page.getByLabel('Description of I001').inputValue() === 'Own proximity sensor', 'recovered project has the data');
   check((await projectNames()).includes('My Own Cell'), 'original project still listed');
 
+  // Voice: the preview frame has no microphone. No permission request, no address-bar advice: the mic says
+  // voice input works in the Windows app; reading aloud stays.
+  const gum = await page.evaluate(() => { window.__gum = 0; const md = navigator.mediaDevices; if (md) { const o = md.getUserMedia.bind(md); md.getUserMedia = (c) => { window.__gum++; return o(c); }; } return true; });
+  void gum;
+  await page.goto(BASE + '/#/settings');
+  await page.getByTestId('no-mic-here').waitFor();
+  check(/Windows app/.test(await page.getByTestId('no-mic-here').innerText()), 'Settings → Voice: voice input works in the Windows app');
+  check(await page.getByLabel('Try the microphone').count() === 0 && await page.getByRole('button', { name: 'Test the voice' }).count() <= 1, 'no microphone trial in the preview; read aloud settings kept');
+  await page.goto(BASE + '/#/spec');
+  const specMic = page.getByTestId('mic').first();
+  await specMic.waitFor();
+  check(await specMic.getAttribute('aria-disabled') === 'true', 'mic shown as not available');
+  await page.evaluate(() => { window.__gum = 0; });
+  await specMic.click({ force: true }); // aria-disabled: Playwright would not click it, people can
+  const pop = page.getByTestId('dictation');
+  await pop.waitFor();
+  const popText = await pop.innerText();
+  check(/Windows app/.test(popText) && !/address bar/.test(popText), `mic explains the preview ("${popText.replace(/\s+/g, ' ').slice(0, 90)}…")`);
+  check(await page.evaluate(() => window.__gum) === 0, 'no microphone request from the preview');
+  check(await page.getByTestId('hands-free').count() === 0, 'no hands-free answering in the preview');
+  log('Preview mic:', popText.replace(/\s+/g, ' ').slice(0, 90));
+
   log('Direct API requests:', direct.length ? direct : 'none');
   log('Dialogs:', dialogs.length ? dialogs : 'none');
   log('Page errors:', errors.length ? errors : 'none');

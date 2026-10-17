@@ -4,6 +4,7 @@ import { generatePLCProgram } from '../../../lib/generateProgram';
 import type { AIConfig } from '../../ai/ladderAI';
 import type { IOPoint } from '../../../types/io';
 import { Spinner, ReasoningPanel } from '../../../components/common';
+import VoiceTextarea from '../../../voice/VoiceTextarea';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 
@@ -42,10 +43,10 @@ export default function StProgramView({ ai, io, ready }: { ai: AIConfig; io: IOP
       <div className="w-2/5 flex flex-col border-r border-gray-200 bg-white p-4 overflow-y-auto gap-4">
         <div>
           <label htmlFor="prompt" className="block text-sm font-medium text-gray-700 mb-1">Describe your machine logic</label>
-          <textarea
+          <VoiceTextarea
             id="prompt"
             value={userPrompt}
-            onChange={(e) => setUserPrompt(e.target.value)}
+            onValueChange={setUserPrompt}
             rows={10}
             placeholder="e.g. When the start button is pressed and all safety inputs are OK, run Conveyor 1..."
             className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
