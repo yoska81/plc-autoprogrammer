@@ -247,6 +247,7 @@ const SEALING_IO: [string, 'input' | 'output', IOCategory, string, AnalogSpec?][
   ['Sealing head up (retracted)', 'input', 'Pneumatic', 'sensor-pnp'], ['Sealing head down (sealing position)', 'input', 'Pneumatic', 'sensor-pnp'],
   ['Air pressure OK', 'input', 'Pneumatic', 'pressure-switch'], ['Heater over-temperature limit tripped', 'input', 'Analog/Process', 'other'],
   ['Unwinder VFD fault', 'input', 'Conveyor', 'vfd-input'], ['Film roll low sensor', 'input', 'Product Detection', 'sensor-pnp'],
+  ['Rear guard door closed', 'input', 'Safety', 'limit-switch'],
   ['Seal heater temperature (thermocouple transmitter)', 'input', 'Analog/Process', 'other', { range: '4-20mA', min: 0, max: 300, units: '°C' }],
   ['Sealing head down solenoid', 'output', 'Pneumatic', 'solenoid'], ['Sealing head up solenoid', 'output', 'Pneumatic', 'solenoid'],
   ['Seal heater on (SSR)', 'output', 'Analog/Process', 'other'], ['Unwinder VFD run', 'output', 'Conveyor', 'vfd-input'],

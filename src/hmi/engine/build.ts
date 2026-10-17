@@ -464,7 +464,10 @@ function alarmScreen(alarms: HmiAlarm[], p: Plan, a: Rect, id: string, rowH: num
   ];
   const lampH = 36;
   const room = Math.floor((a.h - rowH - GAP) / (lampH + GAP));
-  alarms.slice(0, room).forEach((al, i) => out.push(el(`${id}-a${i}`, 'indicator', al.message,
+  // When not every alarm gets a lamp: safety (E-stop, guard door, light curtain) first, then alarms, then warnings.
+  const rank = (al: HmiAlarm) => (/\b(safety|guard|e-?stop|light curtain)\b/i.test(al.message) ? 0 : al.severity === 'alarm' ? 1 : 2);
+  const lamps = alarms.map((al, i) => ({ al, i })).sort((x, y) => rank(x.al) - rank(y.al) || x.i - y.i).map((x) => x.al);
+  lamps.slice(0, room).forEach((al, i) => out.push(el(`${id}-a${i}`, 'indicator', al.message,
     { x: a.x + a.w - sideW, y: a.y + rowH + GAP + i * (lampH + GAP), w: sideW, h: lampH }, { address: al.address, style: al.severity === 'alarm' ? 'alarm' : 'warning' })));
   return out;
 }
