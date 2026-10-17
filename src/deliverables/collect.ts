@@ -58,7 +58,8 @@ export function collectProject() {
     profile, cpu, modules, spec, io, addresses, labels,
     ladder: program.ladder,
     stCode: program.generatedCode,
-    issues: profile.language === 'ladder' ? validateProgram(program.ladder, profile, ioAddressSet) : [],
+    // The neutral ladder is checked against the selected PLC (every vendor exports from it) and the project's HMI.
+    issues: program.ladder.rungs.length ? validateProgram(program.ladder, profile, ioAddressSet, hmi.design ?? undefined) : [],
     electrical: electrical.design,
     drawingCtx,
     hmi: hmi.design,

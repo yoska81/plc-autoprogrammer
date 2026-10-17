@@ -59,7 +59,7 @@ function mergeBlock(full: LadderProgram, blockId: string, edited: LadderProgram)
   return { ...full, tags: edited.tags, rungs: [...rest.slice(0, at), ...mine, ...rest.slice(at)] };
 }
 
-function IssueList({ issues, rungNumber }: { issues: ValidationIssue[]; rungNumber: (id: string) => number }) {
+function IssueList({ issues, rungNumber, plcName, onRebuild }: { issues: ValidationIssue[]; rungNumber: (id: string) => number; plcName: string; onRebuild?: () => void }) {
   const [open, setOpen] = useState(false);
   const errors = issues.filter((i) => i.severity === 'error').length;
   const warnings = issues.length - errors;
@@ -74,6 +74,12 @@ function IssueList({ issues, rungNumber }: { issues: ValidationIssue[]; rungNumb
         </span>
         <span className="text-gray-500">{open ? 'Hide ▲' : 'Show ▼'}</span>
       </button>
+      {errors > 0 && onRebuild && (
+        <div className="px-4 pb-2 flex flex-wrap items-center gap-2 text-red-800">
+          <span>Exports of this program for the {plcName} will not work as they are (for example after a change of PLC).</span>
+          <button onClick={onRebuild} className="px-2 py-0.5 rounded border border-red-300 bg-white font-medium hover:bg-red-100">Rebuild for the {plcName}</button>
+        </div>
+      )}
       {open && (
         <ul className="px-4 pb-2 space-y-0.5 max-h-40 overflow-y-auto">
           {issues.map((i, k) => (
@@ -432,7 +438,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <button onClick={() => { const fromSpec = proposal?.specUpdate; store.applyProposal(); if (fromSpec) recordSource(); }} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700">Approve</button>
           </div>
         ) : (
-          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} />
+          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} plcName={ctx.profile.name} onRebuild={() => handleGenerate(false)} />
         )}
 
         {!review && ladder.rungs.length > 0 && (

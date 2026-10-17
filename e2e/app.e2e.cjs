@@ -669,6 +669,17 @@ function sse(model, text) {
 
   // Deliverables
   await page.goto(BASE + '/export');
+  // The program left by the steps above is the experimental full-AI one, which does not implement the HMI:
+  // the program files are held back until "Export anyway", with a link to rebuild it.
+  const progErr = page.getByText(/The checker finds \d+ errors? in the program/);
+  log('Export checker:', (await progErr.count()) ? (await progErr.innerText()).slice(0, 120) : 'clean');
+  if (await progErr.count()) {
+    const nick = page.getByRole('button', { name: /_nicknames\.csv$/ });
+    check(await nick.isDisabled(), 'export: program files held back while the checker finds errors');
+    check(await page.getByRole('link', { name: /^Rebuild for the / }).count() === 1, 'export: offers to rebuild the program');
+    await page.getByLabel('Export anyway').check();
+    check(await nick.isEnabled(), 'export: "Export anyway" releases the program files');
+  }
   const eng = await dl('Engineering package');
   const engTxt = fs.readFileSync(eng, 'latin1');
   log('Engineering PDF:', Math.round(fs.statSync(eng).size / 1024), 'KB, pages', (engTxt.match(/\/Type \/Page[^s]/g) || []).length, '| has images', engTxt.includes('/Subtype /Image'));
