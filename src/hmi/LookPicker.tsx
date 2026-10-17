@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { HmiLook } from './types';
 import { HMI_LOOKS, hmiTheme, LOOK_LABEL, LOOK_NOTE, shade } from './theme';
 
@@ -60,9 +60,15 @@ export function LookSwatch({ look, width = 72 }: { look: HmiLook; width?: number
   );
 }
 
+/** Tallest the list gets, the least it shrinks to, and the gap it keeps from the window edge (px). */
+const LIST_MAX_H = 416, LIST_MIN_H = 160, EDGE = 8;
+
 /**
  * The Look picker of the HMI page: the current look with its preview, opening a list of every
  * look with a thumbnail. "Match the panel" (no look stored) follows the panel's maker.
+ * The list opens below the button, or above it when there is more room there, and is
+ * never taller than the room on that side of the window or of the panel it sits in (it
+ * scrolls instead of being cut off).
  */
 export default function LookPicker({ value, makerLook, makerName, onChange }: {
   /** The look the user picked; undefined = match the panel's maker. */
@@ -73,6 +79,30 @@ export default function LookPicker({ value, makerLook, makerName, onChange }: {
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<{ up: boolean; maxH: number }>({ up: false, maxH: LIST_MAX_H });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const fit = () => {
+      const el = box.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      // Room inside the window and inside any scrolling / clipping panel around the picker.
+      let top = 0, bottom = window.innerHeight;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        if (getComputedStyle(p).overflowY === 'visible') continue;
+        const pr = p.getBoundingClientRect();
+        top = Math.max(top, pr.top);
+        bottom = Math.min(bottom, pr.bottom);
+      }
+      const below = bottom - r.bottom - EDGE, above = r.top - top - EDGE;
+      const up = below < LIST_MAX_H && above > below;
+      setPlace({ up, maxH: Math.max(LIST_MIN_H, Math.min(LIST_MAX_H, up ? above : below)) });
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    window.addEventListener('scroll', fit, true);
+    return () => { window.removeEventListener('resize', fit); window.removeEventListener('scroll', fit, true); };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
@@ -102,7 +132,8 @@ export default function LookPicker({ value, makerLook, makerName, onChange }: {
         <span aria-hidden="true" className="text-gray-500">▾</span>
       </button>
       {open && (
-        <div role="listbox" aria-label="HMI looks" className="absolute z-30 right-0 mt-1 w-72 max-h-[26rem] overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg p-1">
+        <div role="listbox" aria-label="HMI looks" data-placement={place.up ? 'up' : 'down'} style={{ maxHeight: place.maxH }}
+          className={`absolute z-30 right-0 ${place.up ? 'bottom-full mb-1' : 'top-full mt-1'} w-72 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg p-1`}>
           {option('auto', makerLook, `Match the panel (${LOOK_LABEL[makerLook]})`, `Follows the ${makerName} panel; changes with the panel.`, value === undefined, undefined)}
           <div className="my-1 border-t border-gray-100" />
           {HMI_LOOKS.map((l) => option(l, l, l === makerLook ? `${LOOK_LABEL[l]} · panel maker` : LOOK_LABEL[l], LOOK_NOTE[l], value === l, l))}
