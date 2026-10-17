@@ -287,3 +287,12 @@ Findings, ranked (✔ = fixed here, → = routed to the coordinator):
 | 6 | "SAFETY RESET — BLUE," legend | already fixed in #58 (legendOf); nameplate/labels sheets verified | — |
 | 7 minor | sheet 18 ID list without DS1, example X101/PLC1; sheet 6 "FEEDS PLC OUTPUT SUPPLY PLC OUTPUTS"; ES1L "FIELD"; sheet 19 DOOR list without PB3/ES1 | DS1 kept (accessory filter on the description's first clause); marking example uses a real wire of the project; 24+S text by output style; legend plates / contact blocks located DOOR; door list from the door layout | visual |
 | 8 overlaps | door "PER HANDLE TEMPLATE" / ES1 / R2 (fixed in #58, re-checked); device list text shrunk | device list cells and I/O sheet descriptions wrap onto two lines (cut with "..." past that, never shrunk); IEC actuator heads (pushbutton, mushroom, limit, pressure, selector) kept below the 3-wire sensor 0V lead of the row above (stress run found the "p" box on it); cabinet picture tag plates scale with the panel and the pictures are taller; cabinet-location suggestion never lands on a device (≥ 1 m, test) | overlap checker, new `rules-stress` variant (IEC, 32 I/O with 100+ char descriptions, 120-char component functions) |
+
+## Review / deliverables findings (coordinator, second list)
+| # | finding | fix |
+|---|---|---|
+| 1 | review: analog input DF registers "never written"; shield DF1SH GN/YE flagged; Equipment 11 vs Review 10 inputs; shortage critical vs minor | analog inputs skipped (filled by the analog setup); shield / drain = GN/YE in the NFPA and IEC colour rules; Equipment counts the I/O list once it exists (estimate before); capacity is one finding (Equipment, critical), the electrical duplicate is dropped |
+| 2 | package printed the machining sheets twice | separate "Machining drawings" part removed; the drawings part names the machining sheet range; the machine-shop PDF stays in the ZIP next to the DXFs |
+| 3 | ZIP spec.md raw, no program listing, no Order list Excel | spec.md = full machine specification; plc/…_program_listing.pdf; purchasing/…_order_list.xlsx (spares sheet) |
+| 4 | HMI screens PDF without document control | header (company, project, project no.), footer (status, revision, date, page i of n), PDF title |
+| 5 | cosmetics | check-out PDF named with fileBase; mm DXFs "DIMENSIONS MM [INCH]" and mm-first labels; drawings / machining PDF Title metadata; Order list CSV includes the spares section when "Show recommended spares" is on |

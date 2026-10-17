@@ -42,7 +42,7 @@ async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) =>
 }
 
 /** Drawing sheets rendered by `el` as a vector PDF, one page per sheet on the project's paper. */
-async function sheetsPdf(ctx: DrawingContext, el: ReactElement): Promise<Blob> {
+async function sheetsPdf(ctx: DrawingContext, el: ReactElement, title: string): Promise<Blob> {
   const [{ jsPDF }] = await Promise.all([import('jspdf'), import('svg2pdf.js')]);
   const on = sheetOnPaper(ctx.sheet);
   const PW = on.paper.w, PH = on.paper.h;
@@ -50,6 +50,7 @@ async function sheetsPdf(ctx: DrawingContext, el: ReactElement): Promise<Blob> {
     const sheets = [...host.querySelectorAll<SVGSVGElement>(`svg[viewBox="0 0 ${PW} ${PH}"]`)];
     if (!sheets.length) throw new Error('No drawing sheets were produced.');
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [PW, PH] });
+    doc.setProperties({ title: `${ctx.projectName} — ${title}`, creator: 'ISA Auto Programmer' });
     for (let i = 0; i < sheets.length; i++) {
       if (i > 0) doc.addPage([PW, PH], 'landscape');
       await doc.svg(sheets[i], { x: on.x, y: on.y, width: on.w, height: on.h });
@@ -61,7 +62,7 @@ async function sheetsPdf(ctx: DrawingContext, el: ReactElement): Promise<Blob> {
 /** Electrical drawing set as a vector PDF, one page per sheet on the project's paper (ANSI B 17x11 or A3). */
 export async function buildDrawingsPdf(p: ProjectSnapshot): Promise<Blob | null> {
   if (!p.drawingCtx) return null;
-  return sheetsPdf(p.drawingCtx, createElement(DrawingSet, { ctx: p.drawingCtx, printMode: true }));
+  return sheetsPdf(p.drawingCtx, createElement(DrawingSet, { ctx: p.drawingCtx, printMode: true }), 'Electrical drawings');
 }
 
 /**
@@ -74,7 +75,7 @@ export async function buildMachiningPdf(ctx: DrawingContext, which: DrillingPlan
   const isWall = (k: DrillingPlan['kind']) => k !== 'backpanel' && k !== 'door';
   const sheets = plan.sheets.filter((s) => s.spec.kind === 'drill' && (which === 'all' || s.spec.drill.kind === which || (which === 'walls' && isWall(s.spec.drill.kind))));
   if (!sheets.length) return null;
-  return sheetsPdf(ctx, createElement('div', null, ...sheets.map((s) => createElement(SheetView, { key: s.n, plan, sheet: s }))));
+  return sheetsPdf(ctx, createElement('div', null, ...sheets.map((s) => createElement(SheetView, { key: s.n, plan, sheet: s }))), 'Machining drawings');
 }
 
 /** Every HMI screen as a PNG at the panel's native resolution. */
@@ -97,17 +98,34 @@ export async function buildHmiPdf(p: ProjectSnapshot, images: { name: string; da
   const model = p.hmi ? getHmi(p.hmi.hmiPartNumber) : undefined;
   if (!p.hmi || !model || !images.length) return null;
   const { jsPDF } = await import('jspdf');
+  const { docMeta } = await import('./docs/meta');
+  const { pdfSafe } = await import('./docs/pdfWriter');
+  const m = docMeta(p);
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+  doc.setProperties({ title: `${p.projectName} — HMI screens`, creator: 'ISA Auto Programmer' });
   const pageW = 279.4, pageH = 215.9, margin = 15;
-  const scale = Math.min((pageW - 2 * margin) / model.widthPx, (pageH - 2 * margin - 12) / model.heightPx);
+  // room for the running header (top) and the document-control footer (bottom)
+  const top = margin + 6, bottom = pageH - margin - 6;
+  const scale = Math.min((pageW - 2 * margin) / model.widthPx, (bottom - top - 12) / model.heightPx);
   images.forEach((img, i) => {
     if (i > 0) doc.addPage('letter', 'landscape');
     const screen = p.hmi!.screens[i];
     doc.setFontSize(14);
-    doc.text(`${p.projectName} — HMI ${model.partNumber} — ${screen.name}`, margin, margin);
+    doc.text(pdfSafe(`${screen.name} — HMI ${model.partNumber}`), margin, top);
     doc.setFontSize(9);
-    doc.text(screen.purpose.slice(0, 160), margin, margin + 6);
-    doc.addImage(img.dataUrl, 'PNG', margin, margin + 10, model.widthPx * scale, model.heightPx * scale, undefined, 'FAST');
+    doc.text(pdfSafe(screen.purpose.slice(0, 160)), margin, top + 6);
+    doc.addImage(img.dataUrl, 'PNG', margin, top + 10, model.widthPx * scale, model.heightPx * scale, undefined, 'FAST');
+    // document control on every page: project, revision and date, status, page i of n
+    doc.setFontSize(8);
+    doc.text(pdfSafe(m.company || ''), margin, margin - 3);
+    doc.text(pdfSafe(`${p.projectName} — HMI screens${m.projectNumber ? ` — ${m.projectNumber}` : ''}`), pageW - margin, margin - 3, { align: 'right' });
+    doc.setDrawColor(184, 192, 204);
+    doc.setLineWidth(0.2);
+    doc.line(margin, margin - 1.5, pageW - margin, margin - 1.5);
+    doc.line(margin, pageH - margin + 1, pageW - margin, pageH - margin + 1);
+    doc.setFontSize(7);
+    doc.text(pdfSafe(`${m.status} · Rev ${m.rev.rev} · ${m.rev.date}`), margin, pageH - margin + 5);
+    doc.text(`Page ${i + 1} of ${images.length}`, pageW - margin, pageH - margin + 5, { align: 'right' });
   });
   return doc.output('blob');
 }
@@ -203,10 +221,15 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
   pre.engineering = await buildEngineeringPdf(p, p.equipment);
   zip.file(`${p.fileBase}_engineering_package.pdf`, pre.engineering);
   for (const f of programFiles(p)) zip.file(`plc/${f.name}`, f.content);
+  const { buildProgramListingPdf } = await import('./programListingPdf');
+  const listing = await buildProgramListingPdf(p);
+  if (listing) zip.file(`plc/${p.fileBase}_program_listing.pdf`, listing);
   // Labels and the complete package PDF (reuses the PDFs built above).
   const { addPackageToZip } = await import('./fullPackage');
   await addPackageToZip(zip, p, pre, onProgress);
-  zip.file('spec.md', `# ${p.projectName}\n\n${Object.entries(p.spec).filter((e): e is [string, string] => typeof e[1] === 'string' && Boolean(e[1].trim())).map(([k, t]) => `## ${k}\n${t}`).join('\n\n')}\n`);
+  // the full machine specification (sections, answered questions, equipment), not the raw intake text
+  const { machineSpecText } = await import('./machineSpec');
+  zip.file('spec.md', machineSpecText(p));
   onProgress?.('Packing');
   return zip.generateAsync({ type: 'blob' });
 }

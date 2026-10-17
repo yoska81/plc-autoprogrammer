@@ -2,7 +2,7 @@ import type JSZip from 'jszip';
 import type { PDFDict, PDFRef } from 'pdf-lib';
 import type { ProjectSnapshot } from './collect';
 import { buildEngineeringPdf } from './engineering';
-import { buildDrawingsPdf, buildHmiImages, buildHmiPdf, buildMachiningPdf } from './files';
+import { buildDrawingsPdf, buildHmiImages, buildHmiPdf } from './files';
 import { buildProgramListingPdf, simpleDoc } from './programListingPdf';
 import { docMeta } from './docs/meta';
 import { ioListTable } from './docs/fds';
@@ -68,13 +68,16 @@ export async function buildPackageParts(p: ProjectSnapshot, onProgress?: Progres
     { title: 'Engineering package', description: 'Design basis, functional specification, calculations, safety, PLC and HMI description, FAT / SAT, operator manual, maintenance', run: async () => pre.engineering ?? buildEngineeringPdf(p, p.equipment) },
   ];
   if (p.drawingCtx) {
+    // The machining sheets are printed once, inside the drawing set; the machine shop's own PDF (same sheets)
+    // ships in the ZIP next to the 1:1 DXFs.
+    const sheets = docMeta(p).drawings?.sheets ?? [];
+    const drill = sheets.filter((s) => /DRILLING|CUTOUTS/i.test(s.title)).map((s) => s.no);
     steps.push({
-      title: 'Electrical drawings', description: 'Schematics, panel layout, terminal plans, wire and cable lists (ANSI B)',
+      title: 'Electrical drawings',
+      description: `Schematics, panel layout, terminal plans, wire and cable lists (ANSI B)${drill.length ? `; machining sheets ${drill[0]}${drill.length > 1 ? ` to ${drill[drill.length - 1]}` : ''} (back panel drilling, door and wall cutouts, cut from the 1:1 DXFs in the ZIP)` : ''}`,
       run: async () => (pre.drawings !== undefined ? pre.drawings : buildDrawingsPdf(p)),
-      children: () => (docMeta(p).drawings?.sheets ?? []).map((s, i) => ({ title: `${s.no} ${s.title}`, page: i })),
+      children: () => sheets.map((s, i) => ({ title: `${s.no} ${s.title}`, page: i })),
     });
-    // The machine shop's part of the set on its own, next to the 1:1 DXFs.
-    steps.push({ title: 'Machining drawings', description: 'Back panel drilling, door cutouts and enclosure wall cutouts (cable entries, fans, stack light): dimensions from the datum, hole tables, sheet scale (cut from the 1:1 DXFs)', run: () => buildMachiningPdf(p.drawingCtx!) });
   }
   if (p.hmi) {
     steps.push({
@@ -270,6 +273,8 @@ export async function addPackageToZip(zip: JSZip, p: ProjectSnapshot, pre: Prebu
     zip.file(`purchasing/${p.fileBase}_order_list.csv`, orderListCsv(ol));
     for (const g of ol.groups) zip.file(`purchasing/${p.fileBase}_order_${slug(g.supplier)}.csv`, supplierCsv(g));
     const sp = buildOrderList(p, SPARES_ORDER);
+    const { orderListXlsx } = await import('./orderListXlsx');
+    zip.file(`purchasing/${p.fileBase}_order_list.xlsx`, await orderListXlsx(ol, p.projectName, sp.groups.length ? sp : null));
     if (sp.groups.length) {
       zip.file(`purchasing/${p.fileBase}_spares_order_list.csv`, orderListCsv(sp));
       for (const g of sp.groups) zip.file(`purchasing/${p.fileBase}_${slug(g.supplier)}_spares_order.csv`, supplierCsv(g));

@@ -139,9 +139,11 @@ function hmiChecks({ p }: ReviewInput): Finding[] {
     }
   }
   const reads = new Set(p.ladder.rungs.flatMap((r) => rungReads(r).map((x) => x.address)));
+  // analog input registers are filled by the module's analog setup, not by a rung
+  const analogIn = new Set(p.io.filter((pt) => pt.type === 'input' && isAnalog(pt)).map((pt) => (p.addresses.get(pt.id) ?? '').toUpperCase()).filter(Boolean));
   for (const t of p.hmi.tags) {
     const a = t.address.trim().toUpperCase();
-    if (/^[XY]\d/.test(a)) continue;
+    if (/^[XY]\d/.test(a) || analogIn.has(a)) continue;
     if (t.access === 'read' && !writes.has(a)) {
       out.push(finding(`hmi-unwritten:${a}`, 'major', 'hmi', 'program', '', `HMI tag ${a} ${t.name} is never written by the PLC`,
         `The HMI shows ${t.name} (${t.description}) but no rung writes ${a}, so the screen would always show 0 / OFF.`, 'Implement the tag in the program as its description says.'));
@@ -218,13 +220,15 @@ function stageChecks({ stages }: ReviewInput): Finding[] {
 const MAJOR_WARN_RE = /\b(no reset|no safety relay|no e-stop|below the motor|transformer is required|not rated|without contactor|needs two contactors|no plc output)\b/i;
 /** Design warnings a code rule already reports (with its clause): not listed twice in the review. */
 const COVERED_BY_CODE_RULES = /safety relay has no reset pushbutton/i;
+// PLC I/O capacity is one finding, in Equipment (critical), with the same count as the Equipment page
+const COVERED_BY_EQUIPMENT = /^PLC (inputs|outputs) over capacity/i;
 const INFO_WARN_RE = /\b(estimated|by site|suggestions|calculate and mark|confirm with datasheets)\b/i;
 
 function electricalChecks({ p }: ReviewInput): Finding[] {
   const out: Finding[] = [];
   if (p.drawingCtx) {
     for (const w of designWarnings(p.drawingCtx)) {
-      if (COVERED_BY_CODE_RULES.test(w)) continue;
+      if (COVERED_BY_CODE_RULES.test(w) || COVERED_BY_EQUIPMENT.test(w)) continue;
       const sev: Severity = MAJOR_WARN_RE.test(w) ? 'major' : INFO_WARN_RE.test(w) ? 'info' : 'minor';
       out.push(finding(`elec:${hash(w)}`, sev, /safety|e-stop/i.test(w) ? 'safety' : 'electrical', 'electrical', '', w.length > 90 ? `${w.slice(0, 88)}…` : w, w, 'Check the electrical design and correct it, or record why it is acceptable.'));
     }

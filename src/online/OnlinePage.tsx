@@ -29,7 +29,6 @@ const NO_CHECKS: Record<string, CheckoutEntry> = {};
 /** PLC program → Online: live values from a real CLICK PLC, I/O check-out, and (only when allowed) writes. */
 export default function OnlinePage() {
   const ladder = useProgramStore((s) => s.ladder);
-  const projectName = useProgramStore((s) => s.projectName);
   const hmi = useHmiStore((s) => s.design);
   const { io, addresses, profile, cpu } = usePlc();
   const st = useOnlineStore();
@@ -211,7 +210,7 @@ export default function OnlinePage() {
             <div className="flex flex-wrap items-center gap-3 px-3 py-2 border-b border-steel-200 text-sm">
               <span className="font-semibold text-steel-800">{sum.verified} of {sum.total} points verified</span>
               <label className="text-xs text-steel-600 flex items-center gap-1">Technician <input aria-label="Technician" value={tech} onChange={(e) => setTech(e.target.value)} className={`${input} w-40`} /></label>
-              <button className={`${btn} ml-auto`} onClick={() => void buildCheckoutPdf(collectProject(), checkout).then((b) => saveBlob(`${projectName.replace(/[^\w-]+/g, '_') || 'project'}_IO_checkout.pdf`, b))}>Check-out sheet (PDF)</button>
+              <button className={`${btn} ml-auto`} onClick={() => { const snap = collectProject(); void buildCheckoutPdf(snap, checkout).then((b) => saveBlob(`${snap.fileBase}_IO_checkout.pdf`, b)); }}>Check-out sheet (PDF)</button>
             </div>
             <p className="px-3 py-1.5 text-xs text-steel-500 border-b border-steel-100">Inputs: operate the field device and watch the PLC value change. Outputs: run the output from the program (or the HMI) and confirm the device responds. Tick each point; the PLC value at that moment is recorded. The result goes into the SAT checklist and the deliverables.</p>
             <table className="w-full text-sm">

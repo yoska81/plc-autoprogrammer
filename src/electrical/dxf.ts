@@ -11,7 +11,7 @@
  * Pure TypeScript, no dependencies.
  */
 import { enclosureFaceDrilling } from './enclosureFaces';
-import { backPanelDrilling, doorDrilling, dualDim, dualSize, type DrawingContext, type DrillingPlan } from './derive';
+import { backPanelDrilling, doorDrilling, dualDim, dualSize, inch3, type DrawingContext, type DrillingPlan } from './derive';
 
 const LAYERS: [string, number][] = [['OUTLINE', 7], ['HOLES', 1], ['CUTOUTS', 5], ['NOTCH_OPTIONAL', 6], ['TEMPLATE', 8], ['TEXT', 3], ['DIMS', 4]];
 
@@ -109,10 +109,13 @@ class DxfWriter {
 export function drillingDxf(plan: DrillingPlan, projectName = '', opts: DxfOptions = {}): string {
   const units = opts.units ?? 'in';
   const w = new DxfWriter(units === 'in' ? 1 / 25.4 : 1, units, Boolean(opts.cutOnly));
+  // labels in the file's own unit first: inch [mm] in the inch file, mm [inch] in the mm file
+  const dim = (mm: number) => (units === 'in' ? dualDim(mm) : `${mm.toFixed(1)} [${inch3(mm)}]`);
+  const size = (a: number, b: number) => (units === 'in' ? dualSize(a, b) : `${a.toFixed(1)} x ${b.toFixed(1)} [${inch3(a)} x ${inch3(b)}]`);
   w.poly('OUTLINE', [[0, 0], [plan.w, 0], [plan.w, plan.h], [0, plan.h]]);
   for (const h of plan.holes) {
     w.circle('HOLES', h.x, h.y, h.dia / 2);
-    w.text('TEXT', h.x + h.dia / 2 + 1, h.y + h.dia / 2 + 0.5, 2.5, `${h.id}${h.tap ? ` ${h.tap} TAP,` : ''} Ø${dualDim(h.dia)}${h.tap ? ' DRILL' : ''}`);
+    w.text('TEXT', h.x + h.dia / 2 + 1, h.y + h.dia / 2 + 0.5, 2.5, `${h.id}${h.tap ? ` ${h.tap} TAP,` : ''} Ø${dim(h.dia)}${h.tap ? ' DRILL' : ''}`);
   }
   for (const c of plan.cutouts) {
     if (c.template) {
@@ -128,14 +131,14 @@ export function drillingDxf(plan: DrillingPlan, projectName = '', opts: DxfOptio
       w.circle('CUTOUTS', c.x, c.y, c.w / 2);
       if (c.notch) w.poly('NOTCH_OPTIONAL', [[c.x - c.notch.w / 2, c.y + c.w / 2 - 0.3], [c.x + c.notch.w / 2, c.y + c.w / 2 - 0.3], [c.x + c.notch.w / 2, c.y + c.w / 2 + c.notch.d], [c.x - c.notch.w / 2, c.y + c.w / 2 + c.notch.d]]);
     } else w.rect('CUTOUTS', c.x, c.y, c.w, c.h);
-    w.text('TEXT', c.x - c.w / 2, c.y - c.h / 2 - 5, 3, `${c.id} ${c.tag} ${c.kind === 'round' ? `Ø${dualDim(c.w)}` : dualSize(c.w, c.h)}`);
+    w.text('TEXT', c.x - c.w / 2, c.y - c.h / 2 - 5, 3, `${c.id} ${c.tag} ${c.kind === 'round' ? `Ø${dim(c.w)}` : size(c.w, c.h)}`);
   }
   // datum mark and title
   w.line('DIMS', -10, 0, 10, 0);
   w.line('DIMS', 0, -10, 0, 10);
   w.text('TEXT', 2, -8, 3, 'DATUM 0,0');
   w.text('TEXT', 0, -20, 5, `${plan.title} - ${plan.part}${projectName ? ` - ${projectName}` : ''}`);
-  w.text('TEXT', 0, -28, 3.5, `SCALE 1:1   DRAWING UNITS: ${units === 'in' ? 'INCH' : 'MM'}   DIMENSIONS INCH [MM]   SIZE ${dualSize(plan.w, plan.h)}   HOLES ${plan.holes.length}   CUTOUTS ${plan.cutouts.length}`);
+  w.text('TEXT', 0, -28, 3.5, `SCALE 1:1   DRAWING UNITS: ${units === 'in' ? 'INCH' : 'MM'}   DIMENSIONS ${units === 'in' ? 'INCH [MM]' : 'MM [INCH]'}   SIZE ${size(plan.w, plan.h)}   HOLES ${plan.holes.length}   CUTOUTS ${plan.cutouts.length}`);
   plan.codes.forEach((c, i) => w.text('TEXT', 0, -35 - i * 5, 2.5, `${c.code} (${c.count}x): ${c.spec}${c.verified ? '' : ' - VERIFY WITH DATASHEET'}`));
   return w.toString();
 }
