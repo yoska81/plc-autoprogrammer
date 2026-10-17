@@ -104,6 +104,11 @@ export interface ResolvedComponent {
   fuse?: CatalogPart;
 }
 
+/** A device tag as a whole word in free text — also IEC tags with a leading "-" ("-K5"), where \b does not apply. */
+export function tagRe(tag: string, flags = ''): RegExp {
+  return new RegExp(`(?<![\\w-])${tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w])`, flags);
+}
+
 /** Fuse cartridge (goes into a holder; not a protective "device" position on its own). */
 export function isFuseCartridge(c: ResolvedComponent): boolean {
   if (c.category !== 'fuse') return false;
@@ -602,7 +607,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     protectedPoles: phases === 1 ? 1 : Math.min(2, poles(xfmrProt, 2)),
   } : undefined;
   const psBranches: PsBranch[] = pss.map((ps) => {
-    const byName = psProt.find((p) => !used.has(p) && new RegExp(`\\b${ps.tag}\\b`, 'i').test(p.comp.function));
+    const byName = psProt.find((p) => !used.has(p) && tagRe(ps.tag, 'i').test(p.comp.function));
     const protection = byName ?? psProt.filter((p) => !used.has(p))[0];
     if (protection) used.add(protection);
     const inPh = num(ps.part?.ratings, 'phases', 'inputPhases');
@@ -676,11 +681,11 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const needNc = [...new Set([...edm, ...motors.filter((mm) => mm.motor.reversing && mm.contactors.length === 2).flatMap((mm) => mm.contactors.map((c) => c.tag))])];
   const blocks = rc.filter((c) => /auxiliary contact block/i.test(c.part?.description ?? '') || /^SZ-A(11|S1|22|S2)T$/i.test(c.partNumber));
   const unassigned = blocks.flatMap((b) => Array.from({ length: Math.max(1, b.comp.quantity) }, () => b))
-    .filter((b) => !b.comp.motorTag && !needNc.some((t) => new RegExp(`\\b${t}\\b`).test(b.comp.function)));
+    .filter((b) => !b.comp.motorTag && !needNc.some((t) => tagRe(t).test(b.comp.function)));
   for (const tag of needNc) {
     const k = rc.find((c) => c.tag === tag);
     const family = str(k?.part?.ratings, 'family');
-    const blk = blocks.find((b) => new RegExp(`\\b${tag}\\b`).test(b.comp.function))
+    const blk = blocks.find((b) => tagRe(tag).test(b.comp.function))
       ?? blocks.find((b) => b.comp.motorTag && b.comp.motorTag === k?.comp.motorTag && !auxNcUsed(b))
       ?? (family && NO_INTERNAL_AUX.test(family) ? unassigned.shift() : undefined);
     const side = (b: ResolvedComponent) => /side/i.test(b.part?.description ?? '') || /^SZ-AS/i.test(b.partNumber);
@@ -693,7 +698,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const extraRelays: SafetyModel['extraRelays'] = srs.filter((c) => c !== relay && (isTwoHand(c) || isCurtain(c))).map((c) => {
     const kind = isTwoHand(c) ? 'two-hand' as const : 'light-curtain' as const;
     // The devices feeding it: the two-hand station / the light curtains (by the relay's tag in their function).
-    const inputs = rc.filter((d) => d !== c && new RegExp(`\\b${c.tag}\\b`).test(d.comp.function) && (kind === 'two-hand' ? d.category === 'pushbutton' : d.category === 'sensor')).map((d) => d.tag);
+    const inputs = rc.filter((d) => d !== c && tagRe(c.tag).test(d.comp.function) && (kind === 'two-hand' ? d.category === 'pushbutton' : d.category === 'sensor')).map((d) => d.tag);
     return { relay: c, kind, inputs };
   });
   const safety: SafetyModel = { relay, estops: estopTags, guards: guardTags, reset, mcr, edm, edmTerms: edm.map((t) => ncOf(t).join('-')), outputSupply: hasSafety ? '24+S' : '24+', extraRelays };
@@ -2707,6 +2712,21 @@ export function designWarnings(ctx: DrawingContext): string[] {
     const t = mm.motor.tag;
     if (!mm.protection) w.push(`${t}: no branch short-circuit protection (breaker/fuses/MMP) assigned (set motorTag on the part).`);
     if (mm.motor.starter === 'vfd' && !mm.vfd) w.push(`${t}: starter type VFD but no VFD part assigned.`);
+    // Drives listed with Class T fuses (their SCCR condition): the branch must use them, in an orderable Class T block.
+    const dr = mm.vfd?.part?.ratings;
+    if (mm.vfd && dr && String(dr.fuseClass ?? '').toUpperCase() === 'T' && dr.fusePart && !isIec(ctx.region)) {
+      const fusePn = String(dr.fusePart);
+      const have = mm.protection?.category === 'fuse' && String(mm.protection.fuse?.ratings.fuseClass ?? '').toUpperCase() === 'T';
+      if (!have) {
+        const fuse = ALL_PARTS.find((p) => p.partNumber === fusePn);
+        const poles = mm.motor.voltage && /1PH/i.test(mm.motor.voltage) ? 2 : 3;
+        const holder = String(fuse?.ratings.holder ?? '').split('/').map((h) => ALL_PARTS.find((p) => p.partNumber === h.trim())).find((h) => h && num(h.ratings, 'poles') === poles);
+        const fa = num(fuse?.ratings, 'amps') ?? num(dr, 'fuseAmps');
+        w.push(holder
+          ? `${mm.vfd.tag}: the ${mm.vfd.partNumber} SCCR needs Class T ${fusePn} fuses (${fa} A) — use them in a ${holder.partNumber} block instead of ${mm.protection ? `${mm.protection.tag} ${mm.protection.partNumber}` : 'the present branch protection'}.`
+          : `No orderable Class T fuse holder above 60 A for ${mm.vfd.tag} (${mm.vfd.partNumber} needs Class T ${fusePn}, ${fa} A, for its ${num(dr, 'sccrKA') ?? '?'} kA SCCR) — use an open-style Class T fuse block from another maker (Bussmann, Mersen, Littelfuse), or keep ${mm.protection ? `${mm.protection.tag} ${mm.protection.partNumber}` : 'a branch breaker'} and mark the lower SCCR the drive manual gives for it.`);
+      }
+    }
     if (mm.motor.starter === 'contactor-overload') {
       if (!mm.contactors.length) w.push(`${t}: no contactor assigned.`);
       if (!mm.overload) w.push(`${t}: no overload relay assigned.`);

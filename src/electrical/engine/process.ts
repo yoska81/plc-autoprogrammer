@@ -91,8 +91,10 @@ export function processLoads(pk: Picker, tags: Tags, heaters: ModelHeater[], sup
     // Branch fuses, named with the path they feed (the power sheet prints this as the branch's load).
     if (holder && fuse) {
       const path = [br.contactor, br.ssr].filter(Boolean).join(' and ');
-      add(comp(tags.next('FU'), holder.partNumber, 1, `${name}${path ? ` via ${path}` : ''} — branch fuses ${num(fuse.ratings.amps)} A Class ${fuse.ratings.fuseClass}${ssr ? ' high-speed (SSR protection)' : ''}, >= 1.25 x ${amps.toFixed(1)} A heater current`));
-      add(comp(tags.next('FU'), fuse.partNumber, poles, `Fuse cartridges for the ${h.tag} branch`));
+      // the cartridges take the holder's tag + F (like the motor branch fuses): they are drawn in the holder
+      const ft = tags.next('FU');
+      add(comp(ft, holder.partNumber, 1, `${name}${path ? ` via ${path}` : ''} — branch fuses ${num(fuse.ratings.amps)} A Class ${fuse.ratings.fuseClass}${ssr ? ' high-speed (SSR protection)' : ''}, >= 1.25 x ${amps.toFixed(1)} A heater current`));
+      add(comp(`${ft}F`, fuse.partNumber, poles, `Fuse cartridges for ${ft} (the ${h.tag} branch)`));
     } else out.notes.push(`${name}: no fuse holder / fuses in the catalog for ${amps.toFixed(1)} A x 1.25 on ${poles} pole(s) — select the branch protection.`);
     out.heaters.push(br);
   }

@@ -40,6 +40,10 @@ def report(level: str, where: str, msg: str):
     results.append((level, where, msg))
 
 
+# parts that are not drawn as a tagged device (enclosure, back panel, rails, duct, terminals, ground bar)
+NOT_DRAWN = {'enclosure', 'dinRail', 'wireDuct', 'terminal', 'terminalAccessory', 'groundBar'}
+
+
 def bom_parts(data) -> dict[str, tuple[str, str]]:
     """tag → (part number, manufacturer) from the BOM."""
     out = {}
@@ -48,6 +52,10 @@ def bom_parts(data) -> dict[str, tuple[str, str]]:
             for t in line.get('tags') or []:
                 out[t] = (line.get('partNumber') or '', line.get('manufacturer') or '')
     return out
+
+
+def bom_categories(data) -> dict[str, str]:
+    return {t: line.get('category') or sec.get('category') or '' for sec in data['bom'] for line in sec['lines'] for t in line.get('tags') or []}
 
 
 def read_dxf(name: str, text: bytes):
@@ -119,16 +127,17 @@ def check_autocad(v: str, z: zipfile.ZipFile, data) -> list[str]:
                 if ins.dxf.layer != 'WIRENO':
                     report('FAIL', where, f'wire number {w} on layer {ins.dxf.layer}')
                 if w not in wires:
-                    report('WARN', where, f'wire number {w} is not in the wire list')
+                    report('FAIL', where, f'wire number {w} is drawn but not in the wire list')
     if not n_dev:
         report('FAIL', v, 'autocad: no ISA_DEVICE blocks')
     if not n_wn:
         report('FAIL', v, 'autocad: no ISA_WIRENO blocks')
     # accessories (DS1S shaft, ES1C contact block, K1-AUX) are drawn with their device
     accessory = lambda t: any(t != s and t.startswith(s) for s in seen_tags)  # noqa: E731
-    missing = sorted(t for t, (pn, _) in parts.items() if pn and t not in seen_tags and not accessory(t) and not t.startswith(('ENC', 'SP', 'DIN', 'WD', 'GB', 'TB')))
+    cats = bom_categories(data)
+    missing = sorted(t for t, (pn, _) in parts.items() if pn and t not in seen_tags and not accessory(t) and cats.get(t) not in NOT_DRAWN and not t.startswith(('ENC', 'SP', 'DIN', 'WD', 'GB', 'TB')))
     if missing:
-        report('WARN', v, f'autocad: BOM devices without an ISA_DEVICE block: {", ".join(missing[:12])}')
+        report('FAIL', v, f'autocad: BOM devices drawn nowhere with their tag: {", ".join(missing[:12])}')
     print(f'{v}: autocad {len(dxfs)} sheets, {n_dev} device blocks ({len(seen_tags)} tags), {n_wn} wire numbers')
     return dxfs
 

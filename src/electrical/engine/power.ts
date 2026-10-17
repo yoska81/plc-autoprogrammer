@@ -61,11 +61,27 @@ export function pickBranchBreaker(pk: Picker, supply: SupplyVoltage, current: nu
   return pk.pick('breaker', ok(current * factor), amps) ?? pk.pick('breaker', ok(current * 1.25), amps);
 }
 
+const isClass = (p: CatalogPart, cls: string) => String(p.ratings.fuseClass ?? '').toUpperCase() === cls;
+
 /** Class CC time-delay fuses (Canada / 600 V): holder with the poles, cartridges ≥ 1.25×FLA (CEC Table 29 allows up to 175%). */
 function pickFuses(pk: Picker, current: number, poles: number): { holder: CatalogPart; fuse: CatalogPart } | null {
-  const holder = pk.pick('fuse', (p) => num(p.ratings.poles) === poles && amps(p) >= current * 1.25, amps);
-  const fuse = pk.pick('fuse', (p) => num(p.ratings.poles) === undefined && amps(p) >= current * 1.25 && amps(p) <= (holder ? amps(holder) : 30), amps);
+  const holder = pk.pick('fuse', (p) => isClass(p, 'CC') && num(p.ratings.poles) === poles && amps(p) >= current * 1.25, amps);
+  const fuse = pk.pick('fuse', (p) => isClass(p, 'CC') && num(p.ratings.poles) === undefined && amps(p) >= current * 1.25 && amps(p) <= (holder ? amps(holder) : 30), amps);
   return holder && fuse ? { holder, fuse } : null;
+}
+
+/**
+ * The drive's own branch fuses from its manual's fuse chart (`ratings.fuseClass` / `fusePart`, Class T for the
+ * DURApulse drives — the condition of their 100 kA SCCR) and a Class T block with the poles. `holder` is null when
+ * the catalog has no block for that size (AutomationDirect's Class T blocks stop at 60 A).
+ */
+export function driveFuses(pk: Picker, drive: CatalogPart, poles: number): { fuse: CatalogPart; holder: CatalogPart | null; qty: number } | null {
+  const base = String(drive.ratings.fusePart ?? '');
+  if (!base || !isClass(drive, 'T')) return null;
+  const fuse = pk.byNumber(`${base}-1`) ?? pk.byNumber(base);
+  if (!fuse) return null;
+  const holder = String(fuse.ratings.holder ?? '').split('/').map((h) => pk.byNumber(h.trim())).find((h) => !!h && num(h.ratings.poles) === poles) ?? null;
+  return { fuse, holder, qty: Math.ceil(poles / (num(fuse.ratings.packQty) ?? 1)) };
 }
 
 function pickContactor(pk: Picker, supply: SupplyVoltage, fla: number, hp: number): CatalogPart | null {
@@ -155,7 +171,15 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
       if (mp) components.push(comp(tags.next('MP'), mp.partNumber, 1, `${name} motor protector (branch protection + overload) — dial ${num(mp.ratings.minAmps)}-${num(mp.ratings.maxAmps)} A covers FLA ${fla.toFixed(1)} A`, m.tag));
       else { notes.push(`${m.tag}: no motor protector covers ${fla.toFixed(1)} A — breaker, contactor and overload used instead.`); start = 'dol'; }
     }
-    if (start !== 'motor-protector') {
+    // Drive branches (UL / CSA): the drive's own Class T fuses in a Class T block — the condition of its SCCR. Without
+    // an orderable block for that fuse size the branch keeps a breaker and the design review says so.
+    const df = vfd && !isIec(region) ? driveFuses(pk, vfd.part, poles) : null;
+    if (df?.holder) {
+      const t = tags.next('FU');
+      components.push(comp(t, df.holder.partNumber, 1, `Motor ${m.tag} drive branch fuses — Class T block (the ${vfd!.part.partNumber} fuses for its ${num(vfd!.part.ratings.sccrKA) ?? '?'} kA SCCR)`, m.tag));
+      components.push(comp(`${t}F`, df.fuse.partNumber, df.qty, `Class T fuses ${amps(df.fuse)}A for ${t} — ${vfd!.part.partNumber} manual fuse chart`, m.tag));
+    } else if (start !== 'motor-protector') {
+      if (df && !df.holder) notes.push(`${m.tag} ${name}: the ${vfd!.part.partNumber} needs Class T ${String(vfd!.part.ratings.fusePart)} (${amps(df.fuse)} A) for its SCCR, but no orderable Class T fuse block that size is in the catalog — branch breaker used; see the design review.`);
       const factor = vfd ? 1.75 : 2;
       const f = fuses ? pickFuses(pk, fla * (vfd ? 1.4 : 1), poles) : null;
       if (f) {
