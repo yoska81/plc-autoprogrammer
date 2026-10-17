@@ -158,7 +158,7 @@ ${io}
 
 ${opts.profile.id === 'click' ? 'CLICK I/O module grouping for the Diagnostics screen: X001–X0xx / Y001–Y0xx are the CPU\'s built-in points, X1xx/Y1xx slot 1, X2xx/Y2xx slot 2, and so on.\n\n' : ''}Design the complete HMI screen set.`;
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'design',
     system: system(opts.hmi, opts.guidelines, opts.comms), messages: [{ role: 'user', content }], schema: SCHEMA,
   });
   let parsed: Omit<HmiDesign, 'hmiPartNumber' | 'generatedAt' | 'screens' | 'notes'> & { notes: unknown; explanation: string; machineName: string; screens: RawScreen[] };
@@ -228,7 +228,7 @@ Unused fields: address/action/targetScreenId/onText/offText/units/min/max/note n
     { type: 'text', text: `Screen name: ${opts.screenName}\n\nPhysical I/O (address, type, description):\n${io}\n\nExisting HMI tags (address, name, description):\n${tags}\n\nRecreate this screen.` },
   ];
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, system: sys, messages: [{ role: 'user', content }], schema: RECREATE_SCHEMA,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'design', system: sys, messages: [{ role: 'user', content }], schema: RECREATE_SCHEMA,
   });
   let parsed: { explanation: string; elements: RawElement[]; tags: HmiTag[] };
   try {

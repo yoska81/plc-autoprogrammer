@@ -3,6 +3,12 @@ import { persist } from 'zustand/middleware';
 
 export type AIProvider = 'anthropic' | 'openai';
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+/** fast: each AI task thinks only as hard as it needs (src/lib/ai/tasks.ts); thorough: every task at the Settings effort. */
+export type Speed = 'fast' | 'thorough';
+/** How Update builds a stage: rules only (seconds), rules first then the AI's version, or the AI's version only. */
+export type StageMode = 'quick' | 'quick-then-ai' | 'ai';
+export type ModeStage = 'equipment' | 'electrical' | 'hmi' | 'program';
+export const DEFAULT_STAGE_MODES: Record<ModeStage, StageMode> = { equipment: 'ai', electrical: 'quick-then-ai', hmi: 'quick-then-ai', program: 'quick-then-ai' };
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-5-5';
 
@@ -11,6 +17,18 @@ export const ANTHROPIC_MODELS = [
   { value: 'claude-fable-5-1', label: 'Claude Fable 5.1 — more capable, about 2.5× more expensive' },
   { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 — faster, cheaper' },
   { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 — fastest, cheapest' },
+];
+
+export const SPEEDS: { value: Speed; label: string }[] = [
+  { value: 'fast', label: 'Fast — each task thinks only as hard as it needs (recommended)' },
+  { value: 'thorough', label: 'Thorough — every task at the thinking depth above (slow)' },
+];
+
+/** '' = the main model. Only small JSON tasks (HMI names, equipment choice) use it. */
+export const SMALL_TASK_MODELS = [
+  { value: '', label: 'Same as the main model' },
+  { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 — faster' },
+  { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 — fastest' },
 ];
 
 export const EFFORT_LEVELS: { value: Effort; label: string }[] = [
@@ -35,6 +53,13 @@ interface SettingsStore {
   /** How hard Claude thinks before answering. */
   effort: Effort;
   setEffort: (e: Effort) => void;
+  speed: Speed;
+  setSpeed: (s: Speed) => void;
+  /** Model for the small tasks ('' = the main model). */
+  smallTaskModel: string;
+  setSmallTaskModel: (m: string) => void;
+  stageModes: Record<ModeStage, StageMode>;
+  setStageMode: (stage: ModeStage, mode: StageMode) => void;
 
   openaiApiKey: string;
   setOpenaiApiKey: (key: string) => void;
@@ -54,6 +79,12 @@ export const useSettingsStore = create<SettingsStore>()(
       setAnthropicModel: (anthropicModel) => set({ anthropicModel }),
       effort: 'max',
       setEffort: (effort) => set({ effort }),
+      speed: 'fast',
+      setSpeed: (speed) => set({ speed }),
+      smallTaskModel: '',
+      setSmallTaskModel: (smallTaskModel) => set({ smallTaskModel }),
+      stageModes: DEFAULT_STAGE_MODES,
+      setStageMode: (stage, mode) => set((s) => ({ stageModes: { ...s.stageModes, [stage]: mode } })),
 
       openaiApiKey: '',
       setOpenaiApiKey: (openaiApiKey) => set({ openaiApiKey }),

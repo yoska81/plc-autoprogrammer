@@ -90,7 +90,7 @@ export function mergeMachineModel(ai: AiModel, base: MachineModel, inputs: Desig
 /** Only the AI's placement details for a designer motor (its power and starter stay the designer's). */
 const pick = (m: ModelMotor | undefined): Partial<ModelMotor> => (m ? { ...(m.zone ? { zone: m.zone } : {}), ...(m.vertical ? { vertical: true } : {}) } : {});
 
-export interface AiOptions { apiKey: string; model: string; effort: Effort; signal?: AbortSignal }
+export interface AiOptions { apiKey: string; model: string; effort: Effort; signal?: AbortSignal; /** May answer from the answer cache (Update all). */ cache?: boolean }
 
 export async function machineModelFromSpec(opts: AiOptions & { spec: string; io: IOPoint[]; inputs: DesignInputs }): Promise<{ model: MachineModel; reasoning: string | null; promptChars: number }> {
   const base = defaultMachineModel(opts.io, opts.inputs, opts.spec);
@@ -99,7 +99,7 @@ export async function machineModelFromSpec(opts: AiOptions & { spec: string; io:
   const motors = opts.inputs.motors.filter((m) => kept.has(m.tag)).map((m) => `${m.tag}: ${m.description}, ${m.hp} HP, ${m.starter}${m.reversing ? ', reversing' : ''}`).join('\n') || '(none)';
   const io = opts.io.map((p) => `${p.type}\t${p.description}`).join('\n') || '(no I/O yet)';
   const content = `Machine specification:\n${opts.spec || '(not given)'}\n\nSupply: ${opts.inputs.supply}\nDesigner's motor list:\n${motors}\n\nI/O list (type, description):\n${io}`;
-  const { text, reasoning } = await callClaude({ ...opts, system: SYSTEM, messages: [{ role: 'user', content }], schema: MACHINE_MODEL_SCHEMA });
+  const { text, reasoning } = await callClaude({ ...opts, task: 'machine', system: SYSTEM, messages: [{ role: 'user', content }], schema: MACHINE_MODEL_SCHEMA });
   let parsed: AiModel;
   try { parsed = JSON.parse(text); } catch (err) { throw new Error('The AI answer could not be read.', { cause: err }); }
   return { model: mergeMachineModel(parsed, base, opts.inputs), reasoning, promptChars: SYSTEM.length + content.length + JSON.stringify(MACHINE_MODEL_SCHEMA).length };
@@ -122,7 +122,7 @@ export async function generateRuleBasedDesign(opts: Partial<AiOptions> & Omit<En
   let model = base, reasoning: string | null = null, source: RuleDesignResult['source'] = 'rules', aiError: string | undefined;
   if (opts.apiKey && opts.model && opts.effort) {
     try {
-      const r = await machineModelFromSpec({ apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, spec: opts.spec, io: opts.io, inputs: opts.inputs });
+      const r = await machineModelFromSpec({ apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, cache: opts.cache, spec: opts.spec, io: opts.io, inputs: opts.inputs });
       model = r.model; reasoning = r.reasoning; source = 'ai';
     } catch (err) {
       if (opts.signal?.aborted) throw err;

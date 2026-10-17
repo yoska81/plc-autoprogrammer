@@ -161,7 +161,7 @@ Catalog specifics per brand:
 ${vendorNotes(catalog)}`;
 
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'design',
     system: SYSTEM,
     messages: [{ role: 'user', content: [{ type: 'text', text: catalogBlock, cache_control: { type: 'ephemeral' } }, { type: 'text', text: content }] }],
     schema: designSchema(ioAddrs, catalog),

@@ -1,11 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { reportAiProgress } from './progress';
-import type { Effort } from '../../store/useSettingsStore';
+import { useSettingsStore, type Effort } from '../../store/useSettingsStore';
 import { IS_PREVIEW } from '../../preview/mode';
 import { callClaudeAccount } from '../../preview/claudeAccount';
 import { trackAi } from './busy';
 import { KIND_TEXT, totalLimitFor, withRetries, withWatchdog, type AiErrorInfo } from './errors';
 import { reportRetry } from './jobs';
+import { effectiveEffort, effectiveModel, type AiTask } from './tasks';
+import { cachedAnswer } from './cache';
+import { aiNow, logAiCall } from './timing';
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
@@ -46,6 +49,10 @@ export type ClaudeOptions = {
    * back in `sources`. Not combined with `schema`: the answer is asked for as JSON in the prompt.
    */
   webSearch?: { maxUses?: number; allowedDomains?: string[] };
+  /** What the request is for: sets its effort in Speed "fast" (src/lib/ai/tasks.ts) and names it in the timing log. */
+  task?: AiTask;
+  /** May be answered from the answer cache (Update all). Without it the request is always made (a page's Generate); the answer is stored either way. */
+  cache?: boolean;
 };
 
 /**
@@ -62,12 +69,36 @@ export function setClaudeInterceptor(fn: ClaudeInterceptor | null) { interceptor
  * 5xx) or a timeout is retried up to 3 times with backoff ("retrying (2/3)…" in the status bar), then
  * reported in plain English. `opts.signal` stops it (job Cancel).
  */
-export function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
-  return trackAi(() => withRetries(() => (interceptor ? interceptor(opts, requestClaude) : requestClaude(opts)), {
-    signal: opts.signal,
-    onRetry: (n) => reportRetry(opts.signal, n),
-    explain: (err, info) => explainFailure(err, info, opts.model),
-  }));
+export async function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
+  // Speed "fast": the task's own effort level (and the small-task model when one is set).
+  const { speed, smallTaskModel } = useSettingsStore.getState();
+  const o: ClaudeOptions = { ...opts, effort: effectiveEffort(opts.effort, opts.task, speed), model: effectiveModel(opts.model, opts.task, smallTaskModel) };
+  const startedAt = aiNow();
+  const promptChars = o.system.length + JSON.stringify(o.messages).length + (o.schema ? JSON.stringify(o.schema).length : 0);
+  const log = (ok: boolean, outChars: number, cached: 'memory' | 'stored' | 'shared' | null) =>
+    logAiCall({ task: o.task ?? 'other', model: o.model, effort: o.effort, startedAt, endedAt: aiNow(), promptChars, outChars, cached, ok });
+  try {
+    const { answer, hit } = await cachedAnswer({ model: o.model, effort: o.effort, system: o.system, messages: o.messages, schema: o.schema }, () => trackAi(() => withRetries(() => (interceptor ? interceptor(o, requestClaude) : requestClaude(o)), {
+      signal: o.signal,
+      onRetry: (n) => reportRetry(o.signal, n),
+      explain: (err, info) => explainFailure(err, info, o.model),
+    })), { fresh: !o.cache, signal: o.signal });
+    log(true, answer.text.length, hit);
+    return answer;
+  } catch (err) {
+    log(false, 0, null);
+    throw err;
+  }
+}
+
+// The preview's Claude account answers two requests at a time reliably (more get rate-limited).
+const PREVIEW_PARALLEL = 2;
+let previewRunning = 0;
+const previewQueue: (() => void)[] = [];
+async function previewSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (previewRunning >= PREVIEW_PARALLEL) await new Promise<void>((resolve) => previewQueue.push(resolve));
+  previewRunning++;
+  try { return await fn(); } finally { previewRunning--; previewQueue.shift()?.(); }
 }
 
 /** Final message for a failed request (after any retries). */
@@ -91,8 +122,8 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   if (IS_PREVIEW && opts.webSearch) throw new Error('Web search needs your own Anthropic API key (Settings); the preview cannot search the web.');
   if (IS_PREVIEW) {
     // plain answers stream their text (progress); JSON answers arrive at once (total cap only)
-    return withWatchdog((signal, progress) => callClaudeAccount({ ...(opts as Parameters<typeof callClaudeAccount>[0]), signal, onProgress: (chars) => { progress(); if (chars !== undefined) reportAiProgress(opts.signal, chars); } }),
-      { signal: opts.signal, totalMs, reportsProgress: !opts.schema });
+    return previewSlot(() => withWatchdog((signal, progress) => callClaudeAccount({ ...(opts as Parameters<typeof callClaudeAccount>[0]), signal, onProgress: (chars) => { progress(); if (chars !== undefined) reportAiProgress(opts.signal, chars); } }),
+      { signal: opts.signal, totalMs, reportsProgress: !opts.schema }));
   }
   // Keys live in the user's own browser; there is no backend to proxy through.
   // Retries are done by callClaude (also for streams that drop half-way), not by the SDK.

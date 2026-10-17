@@ -6,7 +6,6 @@ import { inferRoles } from '../../hmi/engine/roles';
 import { rungAddresses, rungWrites, type LadderProgram } from '../../plc/core/ladder';
 import { callClaude } from './anthropic';
 import type { AiOptions } from './machineModelAI';
-import { ANSWERED_RULE } from '../../components/questions/classify';
 
 /**
  * HMI, rules first and AI second: the rule-based engine (src/hmi/engine) builds every screen from the
@@ -22,17 +21,15 @@ export const HMI_CONTENT_SCHEMA = obj({
   machineName: { type: 'string' },
   actuators: { type: 'array', items: obj({ index: { type: 'integer' }, name: { type: 'string' }, manual: { type: 'boolean' } }) },
   states: { type: 'array', items: obj({ value: { type: 'integer' }, text: { type: 'string' }, style: { type: 'string', enum: STYLES } }) },
-  questions: { type: 'array', items: { type: 'string' } },
 });
 
 const SYSTEM = `You name things on an operator touch panel whose screens a rule-based generator builds from the machine's I/O list (it lays out every screen and assigns every PLC tag — never give coordinates, addresses or screens).
 - machineName: short machine name for the header (2–4 words, from the specification).
 - actuators: for each actuator listed (by index) a short operator name (1–3 words, e.g. "Infeed Belt", "Sealing Head") and manual = true when an operator may jog it by hand in Manual mode (false for heaters, safety dump valves, anything dangerous to jog).
-- states: the machine-state word texts in the order the PLC sets them: 0 Stopped (normal) first; Running (ok); one entry per main step of the cycle the specification describes (e.g. "Sealing", "Cooling", ok); then Faulted (alarm), Manual (warning) and Safety Stop (alarm). 4–10 entries, values 0,1,2… in order, texts of 1–2 words.
-- questions: what the customer must confirm for the panel (password levels, extra screens wanted), one short sentence each, at most 4.
-${ANSWERED_RULE}`;
+- states: the machine-state word texts in the order the PLC sets them: 0 Stopped (normal) first; Running (ok); one entry per main step of the cycle the specification describes (e.g. "Sealing", "Cooling", ok); then Faulted (alarm), Manual (warning) and Safety Stop (alarm). 4–10 entries, values 0,1,2… in order, texts of 1–2 words.`;
 
-interface AiContent { machineName: string; actuators: { index: number; name: string; manual: boolean }[]; states: HmiState[]; questions: string[] }
+// questions are asked at the machine description stage; older recorded answers may still carry some
+interface AiContent { machineName: string; actuators: { index: number; name: string; manual: boolean }[]; states: HmiState[]; questions?: string[] }
 
 /** The AI's small choices on top of the rules' content; anything invalid is ignored. */
 export function mergeHmiContent(ai: AiContent, base: HmiContent): HmiContent {
@@ -79,7 +76,7 @@ export function projectHmiContent(o: HmiProjectInput): HmiContent {
 export async function hmiContentFromSpec(opts: AiOptions & { spec: string; base: HmiContent }): Promise<{ content: HmiContent; promptChars: number }> {
   const acts = opts.base.actuators.map((a, i) => `${i}: ${a.kind} "${a.name}" — ${[a.run, a.reverse, a.extend, a.retract].filter(Boolean).map((p) => p!.description).join(', ')}`).join('\n') || '(none)';
   const content = `Machine specification:\n${opts.spec || '(not given)'}\n\nActuators found in the I/O list:\n${acts}\n\nAnalog values: ${opts.base.analogs.map((a) => a.name).join(', ') || 'none'}`;
-  const { text } = await callClaude({ apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, system: SYSTEM, messages: [{ role: 'user', content }], schema: HMI_CONTENT_SCHEMA });
+  const { text } = await callClaude({ apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, cache: opts.cache, task: 'hmi-names', system: SYSTEM, messages: [{ role: 'user', content }], schema: HMI_CONTENT_SCHEMA });
   let parsed: AiContent;
   try { parsed = JSON.parse(text); } catch (err) { throw new Error('The AI answer could not be read.', { cause: err }); }
   return { content: mergeHmiContent(parsed, opts.base), promptChars: SYSTEM.length + content.length + JSON.stringify(HMI_CONTENT_SCHEMA).length };
@@ -93,7 +90,7 @@ export async function generateRuleBasedHmi(opts: Partial<AiOptions> & HmiProject
   let content = base, source: RuleHmiResult['source'] = 'rules', aiError: string | undefined;
   if (opts.apiKey && opts.model && opts.effort) {
     try {
-      content = (await hmiContentFromSpec({ apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, spec: opts.spec, base })).content;
+      content = (await hmiContentFromSpec({ apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, cache: opts.cache, spec: opts.spec, base })).content;
       source = 'ai';
     } catch (err) {
       if (opts.signal?.aborted) throw err;
