@@ -50,3 +50,12 @@ for (const p of CATALOG) {
 }
 assert.ok(!/· 24$/.test(keyRatings(CATALOG.find((p) => p.ratings.outputVolts === 24)!)), 'output voltage has its unit');
 console.log('voltage and motor branch tests passed');
+
+// SCCR (UL 508A SB4): a drive or power supply rating always says which upstream protection it depends on and where it is published.
+for (const p of CATALOG.filter((x) => (x.category === 'vfd' || x.category === 'powerSupply') && x.ratings.sccrKA !== undefined)) {
+  assert.ok(String(p.ratings.sccrCondition ?? '').length > 20, `${p.partNumber}: sccrCondition`);
+  assert.match(String(p.ratings.sccrSource ?? ''), /^https:\/\//, `${p.partNumber}: sccrSource`);
+}
+assert.equal(getPart('GS23-45P0')!.ratings.sccrKA, 100);
+assert.equal(getPart('ATV320U07N4B')!.ratings.sccrKA, 5, 'ATV320 without the line reactor');
+console.log('SCCR rating tests passed');

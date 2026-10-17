@@ -513,7 +513,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 127,
-    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 3, duty: 'heavy (HHD, 150% 60 s)', kw: 0.4, hp230: 0.5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 0.4 kW, rated output current 3 A, 3-phase 200-240 V; Dimensions table: W 68 x H 127 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2004 (Constant Torque 3 A / 0.5 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 3, duty: 'heavy (HHD, 150% 60 s)', kw: 0.4, hp230: 0.5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 0.4 kW, rated output current 3 A, 3-phase 200-240 V; Dimensions table: W 68 x H 127 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2004 (Constant Torque 3 A / 0.5 HP)', sccrKA: 100, sccrCondition: '200 V class, three-phase, 240 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 10 A (HHD/HND), 600 VAC; or an inverse-time circuit breaker max 15 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -526,7 +526,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 127,
-    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 5, duty: 'heavy (HHD, 150% 60 s)', kw: 0.75, hp230: 1, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 0.75 kW, rated output current 5 A, 3-phase 200-240 V; Dimensions table: W 68 x H 127 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2007 (Constant Torque 5 A / 1 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 5, duty: 'heavy (HHD, 150% 60 s)', kw: 0.75, hp230: 1, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 0.75 kW, rated output current 5 A, 3-phase 200-240 V; Dimensions table: W 68 x H 127 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2007 (Constant Torque 5 A / 1 HP)', sccrKA: 100, sccrCondition: '200 V class, three-phase, 240 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 15 A (HHD/HND), 600 VAC; or an inverse-time circuit breaker max 15 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -539,7 +539,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 110,
     heightMm: 130,
-    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 8, duty: 'heavy (HHD, 150% 60 s)', kw: 1.5, hp230: 2, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 1.5 kW, rated output current 8 A, 3-phase 200-240 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2015 (Constant Torque 8 A / 2 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 8, duty: 'heavy (HHD, 150% 60 s)', kw: 1.5, hp230: 2, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 1.5 kW, rated output current 8 A, 3-phase 200-240 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2015 (Constant Torque 8 A / 2 HP)', sccrKA: 100, sccrCondition: '200 V class, three-phase, 240 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 20 A (HHD/HND), 600 VAC; or an inverse-time circuit breaker max 20 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -552,7 +552,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 110,
     heightMm: 130,
-    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 11, duty: 'heavy (HHD, 150% 60 s)', kw: 2.2, hp230: 3, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 2.2 kW, rated output current 11 A, 3-phase 200-240 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2022 (Constant Torque 11 A / 3 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 11, duty: 'heavy (HHD, 150% 60 s)', kw: 2.2, hp230: 3, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 2.2 kW, rated output current 11 A, 3-phase 200-240 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2022 (Constant Torque 11 A / 3 HP)', sccrKA: 100, sccrCondition: '200 V class, three-phase, 240 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 30 A (HHD/HND), 600 VAC; or an inverse-time circuit breaker max 30 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -565,7 +565,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 130,
-    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 17.5, duty: 'heavy (HHD, 150% 60 s)', kw: 3.7, hp230: 5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 3.7 kW, rated output current 17.5 A, 3-phase 200-240 V; Dimensions table: W 140 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2037 (Constant Torque 17.5 A / 5 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 17.5, duty: 'heavy (HHD, 150% 60 s)', kw: 3.7, hp230: 5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 3.7 kW, rated output current 17.5 A, 3-phase 200-240 V; Dimensions table: W 140 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2037 (Constant Torque 17.5 A / 5 HP)', sccrKA: 100, sccrCondition: '200 V class, three-phase, 240 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 40 A HHD / 50 A HND, 600 VAC; or an inverse-time circuit breaker max 50 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -578,7 +578,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 180,
     heightMm: 220,
-    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 25, duty: 'heavy (HHD, 150% 60 s)', kw: 5.5, hp230: 7.5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 5.5 kW, rated output current 25 A, 3-phase 200-240 V; Dimensions table: W 180 x H 220 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2055 (Constant Torque 25 A / 7.5 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 25, duty: 'heavy (HHD, 150% 60 s)', kw: 5.5, hp230: 7.5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 5.5 kW, rated output current 25 A, 3-phase 200-240 V; Dimensions table: W 180 x H 220 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2055 (Constant Torque 25 A / 7.5 HP)', sccrKA: 100, sccrCondition: '200 V class, three-phase, 240 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 60 A HHD / 80 A HND, 600 VAC; or an inverse-time circuit breaker max 80 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -591,7 +591,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 180,
     heightMm: 220,
-    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 33, duty: 'heavy (HHD, 150% 60 s)', kw: 7.5, hp230: 10, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 7.5 kW, rated output current 33 A, 3-phase 200-240 V; Dimensions table: W 180 x H 220 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2075 (Constant Torque 33 A / 10 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '200-240', inputPhases: 3, outputAmps: 33, duty: 'heavy (HHD, 150% 60 s)', kw: 7.5, hp230: 10, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 7.5 kW, rated output current 33 A, 3-phase 200-240 V; Dimensions table: W 180 x H 220 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A2075 (Constant Torque 33 A / 10 HP)', sccrKA: 100, sccrCondition: '200 V class, three-phase, 240 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 80 A HHD / 100 A HND, 600 VAC; or an inverse-time circuit breaker max 100 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -604,7 +604,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 110,
     heightMm: 130,
-    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 1.8, duty: 'heavy (HHD, 150% 60 s)', kw: 0.4, hp480: 0.5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 0.4 kW, rated output current 1.8 A, 3-phase 380-480 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4004 (Constant Torque 1.8 A / 0.5 HP); https://industrial.omron.eu/en/products/3G3M1-A4004' },
+    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 1.8, duty: 'heavy (HHD, 150% 60 s)', kw: 0.4, hp480: 0.5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 0.4 kW, rated output current 1.8 A, 3-phase 380-480 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4004 (Constant Torque 1.8 A / 0.5 HP); https://industrial.omron.eu/en/products/3G3M1-A4004', sccrKA: 100, sccrCondition: '400 V class, three-phase, 480 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 3 A HHD / 6 A HD, HND, ND, 600 VAC; or an inverse-time circuit breaker max 15 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -617,7 +617,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 110,
     heightMm: 130,
-    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 3.4, duty: 'heavy (HHD, 150% 60 s)', kw: 0.75, hp480: 1, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 0.75 kW, rated output current 3.4 A, 3-phase 380-480 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4007 (Constant Torque 3.4 A / 1 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 3.4, duty: 'heavy (HHD, 150% 60 s)', kw: 0.75, hp480: 1, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 0.75 kW, rated output current 3.4 A, 3-phase 380-480 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4007 (Constant Torque 3.4 A / 1 HP)', sccrKA: 100, sccrCondition: '400 V class, three-phase, 480 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 6 A HHD / 10 A HD, HND, ND, 600 VAC; or an inverse-time circuit breaker max 15 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -630,7 +630,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 110,
     heightMm: 130,
-    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 4.8, duty: 'heavy (HHD, 150% 60 s)', kw: 1.5, hp480: 2, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 1.5 kW, rated output current 4.8 A, 3-phase 380-480 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4015 (Constant Torque 4.8 A / 2 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 4.8, duty: 'heavy (HHD, 150% 60 s)', kw: 1.5, hp480: 2, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 1.5 kW, rated output current 4.8 A, 3-phase 380-480 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4015 (Constant Torque 4.8 A / 2 HP)', sccrKA: 100, sccrCondition: '400 V class, three-phase, 480 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 10 A HHD / 15 A HD, HND, ND, 600 VAC; or an inverse-time circuit breaker max 15 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -643,7 +643,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 110,
     heightMm: 130,
-    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 5.5, duty: 'heavy (HHD, 150% 60 s)', kw: 2.2, hp480: 3, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 2.2 kW, rated output current 5.5 A, 3-phase 380-480 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4022 (Constant Torque 5.5 A / 3 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 5.5, duty: 'heavy (HHD, 150% 60 s)', kw: 2.2, hp480: 3, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 2.2 kW, rated output current 5.5 A, 3-phase 380-480 V; Dimensions table: W 110 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4022 (Constant Torque 5.5 A / 3 HP)', sccrKA: 100, sccrCondition: '400 V class, three-phase, 480 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 20 A (all modes), 600 VAC; or an inverse-time circuit breaker max 20 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -656,7 +656,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 140,
     heightMm: 130,
-    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 9.2, duty: 'heavy (HHD, 150% 60 s)', kw: 4, hp480: 5.5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 4 kW, rated output current 9.2 A, 3-phase 380-480 V; Dimensions table: W 140 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4040 (Constant Torque 9.2 A / 5.5 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 9.2, duty: 'heavy (HHD, 150% 60 s)', kw: 4, hp480: 5.5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 4 kW, rated output current 9.2 A, 3-phase 380-480 V; Dimensions table: W 140 x H 130 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4040 (Constant Torque 9.2 A / 5.5 HP)', sccrKA: 100, sccrCondition: '400 V class, three-phase, 480 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 30 A (all modes), 600 VAC; or an inverse-time circuit breaker max 30 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -669,7 +669,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 180,
     heightMm: 220,
-    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 14.8, duty: 'heavy (HHD, 150% 60 s)', kw: 5.5, hp480: 7.5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 5.5 kW, rated output current 14.8 A, 3-phase 380-480 V; Dimensions table: W 180 x H 220 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4055 (Constant Torque 14.8 A / 7.5 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 14.8, duty: 'heavy (HHD, 150% 60 s)', kw: 5.5, hp480: 7.5, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 5.5 kW, rated output current 14.8 A, 3-phase 380-480 V; Dimensions table: W 180 x H 220 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4055 (Constant Torque 14.8 A / 7.5 HP)', sccrKA: 100, sccrCondition: '400 V class, three-phase, 480 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 30 A HHD / 40 A HD, HND / 60 A ND, 600 VAC; or an inverse-time circuit breaker max 50 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {
@@ -682,7 +682,7 @@ export const OMRON: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 180,
     heightMm: 220,
-    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 18, duty: 'heavy (HHD, 150% 60 s)', kw: 7.5, hp480: 10, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 7.5 kW, rated output current 18 A, 3-phase 380-480 V; Dimensions table: W 180 x H 220 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4075 (Constant Torque 18 A / 10 HP)' },
+    ratings: { series: '3G3M1', inputVolts: '380-480', inputPhases: 3, outputAmps: 18, duty: 'heavy (HHD, 150% 60 s)', kw: 7.5, hp480: 10, network: 'Modbus-RTU (RS-485)', ratingsSource: 'https://assets.omron.com/asset/4abc9f3b-ebbb-4e01-b320-e6b19ff51223/M1-STD-Inverter-Datasheet.pdf (ratings table: HHD max. applicable motor 7.5 kW, rated output current 18 A, 3-phase 380-480 V; Dimensions table: W 180 x H 220 mm); https://automation.omron.com/en/us/products/family/3G3M1/3G3M1-A4075 (Constant Torque 18 A / 10 HP)', sccrKA: 100, sccrCondition: '400 V class, three-phase, 480 V. 100 kA with any of three listed protection types: UL 61800-5-1 recognized semiconductor fuses (Mersen/Bussmann, per the manual\'s semiconductor fuse table); UL Class CC, J or T fuses max 60 A HHD, HD, HND / 70 A ND, 600 VAC; or an inverse-time circuit breaker max 70 A. Per M1 Series Standard Type User\'s Manual I669-E1-06, UL/cUL Standards Cautions (UL 61800-5-1), and the M1-STD datasheet tables.', sccrSource: 'https://assets.omron.com/asset/cd3867ae-cca6-423c-987b-f8c09900e6bd/M1-Inverter-Standard-Type-Users-Manual.pdf' },
     verified: true,
   },
   {

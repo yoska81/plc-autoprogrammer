@@ -1400,7 +1400,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 128,
-    ratings: { series: 'GS10', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 4.8, vtAmps: 5, frame: 'A5', hp230: 1, hp1ph: 0.5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS13N-21P0.pdf' },
+    ratings: { series: 'GS10', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 4.8, vtAmps: 5, frame: 'A5', hp230: 1, hp1ph: 0.5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS13N-21P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS10 drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS10 User Manual 1st Ed. Rev B ch.2 p.2-15, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 20 A (TJN20) for this 230 V model (Appendix A p.A-1 Fuse Specification Chart). Chart also lists high-speed Class J JHL20 (non-UL only) and a 15 A circuit breaker (G3P-015), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf' },
     verified: true,
   },
   {
@@ -1412,7 +1412,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 142,
-    ratings: { series: 'GS10', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 7.5, vtAmps: 8, frame: 'B1', hp230: 2, hp1ph: 1, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS13N-22P0.pdf' },
+    ratings: { series: 'GS10', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 7.5, vtAmps: 8, frame: 'B1', hp230: 2, hp1ph: 1, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS13N-22P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS10 drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS10 User Manual 1st Ed. Rev B ch.2 p.2-15, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 35 A (TJN35) for this 230 V model (Appendix A p.A-1 Fuse Specification Chart). Chart also lists high-speed Class J JHL35 (non-UL only) and a 25 A circuit breaker (G3P-025), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf' },
     verified: true,
   },
   {
@@ -1424,7 +1424,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 128,
-    ratings: { series: 'GS10', inputVolts: 460, inputPhases: '3', outputAmps: 2.7, vtAmps: 3, frame: 'A6', hp480: 1, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS13N-41P0.pdf' },
+    ratings: { series: 'GS10', inputVolts: 460, inputPhases: '3', outputAmps: 2.7, vtAmps: 3, frame: 'A6', hp480: 1, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS13N-41P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS10 drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS10 User Manual 1st Ed. Rev B ch.2 p.2-15, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 15 A (TJS15) for this 460 V model (Appendix A p.A-1 Fuse Specification Chart). Chart also lists high-speed Class J JHL15 (non-UL only) and a 15 A circuit breaker (G3P-015), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf' },
     verified: true,
   },
   {
@@ -1436,7 +1436,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 142,
-    ratings: { series: 'GS10', inputVolts: 460, inputPhases: '3', outputAmps: 4.2, vtAmps: 4.6, frame: 'B1', hp480: 2, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS13N-42P0.pdf' },
+    ratings: { series: 'GS10', inputVolts: 460, inputPhases: '3', outputAmps: 4.2, vtAmps: 4.6, frame: 'B1', hp480: 2, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS13N-42P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS10 drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS10 User Manual 1st Ed. Rev B ch.2 p.2-15, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 20 A (TJS20) for this 460 V model (Appendix A p.A-1 Fuse Specification Chart). Chart also lists high-speed Class J JHL20 (non-UL only) and a 15 A circuit breaker (G3P-015), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf' },
     verified: true,
   },
   {
@@ -1448,7 +1448,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 128,
-    ratings: { series: 'GS20', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 2.8, vtAmps: 3.2, frame: 'A2', hp230: 0.5, hp1ph: 0.25, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-20P5.pdf' },
+    ratings: { series: 'GS20', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 2.8, vtAmps: 3.2, frame: 'A2', hp230: 0.5, hp1ph: 0.25, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-20P5.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS20(X) drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS20 & GS20X User Manual 1st Ed. Rev E p.2-21, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 15 A (TJN15) for this 230 V model (Appendix A p.A-2 Fuse Specification Chart). Chart also lists high-speed Class J JHL15 (non-UL only) and a 15 A circuit breaker (G3P-015), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs20m/gs20m.pdf' },
     verified: true,
   },
   {
@@ -1460,7 +1460,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 128,
-    ratings: { series: 'GS20', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 4.8, vtAmps: 5, frame: 'A5', hp230: 1, hp1ph: 0.5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-21P0.pdf' },
+    ratings: { series: 'GS20', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 4.8, vtAmps: 5, frame: 'A5', hp230: 1, hp1ph: 0.5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-21P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS20(X) drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS20 & GS20X User Manual 1st Ed. Rev E p.2-21, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 20 A (TJN20) for this 230 V model (Appendix A p.A-2 Fuse Specification Chart). Chart also lists high-speed Class J JHL20 (non-UL only) and a 15 A circuit breaker (G3P-015), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs20m/gs20m.pdf' },
     verified: true,
   },
   {
@@ -1472,7 +1472,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 142,
-    ratings: { series: 'GS20', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 7.5, vtAmps: 8.5, frame: 'B1', hp230: 2, hp1ph: 1, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-22P0.pdf' },
+    ratings: { series: 'GS20', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 7.5, vtAmps: 8.5, frame: 'B1', hp230: 2, hp1ph: 1, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-22P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS20(X) drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS20 & GS20X User Manual 1st Ed. Rev E p.2-21, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 35 A (TJN35) for this 230 V model (Appendix A p.A-2 Fuse Specification Chart). Chart also lists high-speed Class J JHL35 (non-UL only) and a 25 A circuit breaker (G3P-025), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs20m/gs20m.pdf' },
     verified: true,
   },
   {
@@ -1484,7 +1484,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 87,
     heightMm: 157,
-    ratings: { series: 'GS20', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 11, vtAmps: 12.5, frame: 'C', hp230: 3, hp1ph: 1.5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-23P0.pdf' },
+    ratings: { series: 'GS20', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 11, vtAmps: 12.5, frame: 'C', hp230: 3, hp1ph: 1.5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-23P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS20(X) drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS20 & GS20X User Manual 1st Ed. Rev E p.2-21, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 50 A (TJN50) for this 230 V model (Appendix A p.A-2 Fuse Specification Chart). Chart also lists high-speed Class J JHL50 (non-UL only) and a 40 A circuit breaker (G3P-040), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs20m/gs20m.pdf' },
     verified: true,
   },
   {
@@ -1496,7 +1496,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 87,
     heightMm: 157,
-    ratings: { series: 'GS20', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 17, vtAmps: 19.5, frame: 'C', hp230: 5, hp1ph: 2.5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-25P0.pdf' },
+    ratings: { series: 'GS20', inputVolts: 230, inputPhases: '3 and 1', outputAmps: 17, vtAmps: 19.5, frame: 'C', hp230: 5, hp1ph: 2.5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-25P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS20(X) drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS20 & GS20X User Manual 1st Ed. Rev E p.2-21, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 80 A (TJN80) for this 230 V model (Appendix A p.A-2 Fuse Specification Chart). Chart also lists high-speed Class J JHL80 (non-UL only) and a 60 A circuit breaker (G3P-060), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs20m/gs20m.pdf' },
     verified: true,
   },
   {
@@ -1508,7 +1508,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 128,
-    ratings: { series: 'GS20', inputVolts: 460, inputPhases: '3', outputAmps: 1.5, vtAmps: 1.8, frame: 'A4', hp480: 0.5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-40P5.pdf' },
+    ratings: { series: 'GS20', inputVolts: 460, inputPhases: '3', outputAmps: 1.5, vtAmps: 1.8, frame: 'A4', hp480: 0.5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-40P5.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS20(X) drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS20 & GS20X User Manual 1st Ed. Rev E p.2-21, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 10 A (TJS10) for this 460 V model (Appendix A p.A-2 Fuse Specification Chart). Chart also lists high-speed Class J JHL10 (non-UL only) and a 15 A circuit breaker (G3P-015), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs20m/gs20m.pdf' },
     verified: true,
   },
   {
@@ -1520,7 +1520,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 68,
     heightMm: 128,
-    ratings: { series: 'GS20', inputVolts: 460, inputPhases: '3', outputAmps: 2.7, vtAmps: 3, frame: 'A5', hp480: 1, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-41P0.pdf' },
+    ratings: { series: 'GS20', inputVolts: 460, inputPhases: '3', outputAmps: 2.7, vtAmps: 3, frame: 'A5', hp480: 1, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-41P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS20(X) drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS20 & GS20X User Manual 1st Ed. Rev E p.2-21, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 15 A (TJS15) for this 460 V model (Appendix A p.A-2 Fuse Specification Chart). Chart also lists high-speed Class J JHL15 (non-UL only) and a 15 A circuit breaker (G3P-015), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs20m/gs20m.pdf' },
     verified: true,
   },
   {
@@ -1532,7 +1532,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 142,
-    ratings: { series: 'GS20', inputVolts: 460, inputPhases: '3', outputAmps: 4.2, vtAmps: 4.6, frame: 'B1', hp480: 2, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-42P0.pdf' },
+    ratings: { series: 'GS20', inputVolts: 460, inputPhases: '3', outputAmps: 4.2, vtAmps: 4.6, frame: 'B1', hp480: 2, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-42P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS20(X) drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS20 & GS20X User Manual 1st Ed. Rev E p.2-21, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 20 A (TJS20) for this 460 V model (Appendix A p.A-2 Fuse Specification Chart). Chart also lists high-speed Class J JHL20 (non-UL only) and a 15 A circuit breaker (G3P-015), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs20m/gs20m.pdf' },
     verified: true,
   },
   {
@@ -1544,7 +1544,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 87,
     heightMm: 157,
-    ratings: { series: 'GS20', inputVolts: 460, inputPhases: '3', outputAmps: 5.5, vtAmps: 6.5, frame: 'C', hp480: 3, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-43P0.pdf' },
+    ratings: { series: 'GS20', inputVolts: 460, inputPhases: '3', outputAmps: 5.5, vtAmps: 6.5, frame: 'C', hp480: 3, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-43P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS20(X) drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS20 & GS20X User Manual 1st Ed. Rev E p.2-21, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 25 A (TJS25) for this 460 V model (Appendix A p.A-2 Fuse Specification Chart). Chart also lists high-speed Class J JHL25 (non-UL only) and a 20 A circuit breaker (G3P-020), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs20m/gs20m.pdf' },
     verified: true,
   },
   {
@@ -1556,7 +1556,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 87,
     heightMm: 157,
-    ratings: { series: 'GS20', inputVolts: 460, inputPhases: '3', outputAmps: 9, vtAmps: 10.5, frame: 'C', hp480: 5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-45P0.pdf' },
+    ratings: { series: 'GS20', inputVolts: 460, inputPhases: '3', outputAmps: 9, vtAmps: 10.5, frame: 'C', hp480: 5, footprintSource: 'https://cdn.automationdirect.com/static/drawings/GS23-45P0.pdf', sccrKA: 100, sccrCondition: 'All DURApulse GS20(X) drives: suitable for use on a circuit capable of delivering not more than 100,000 rms symmetrical amperes (GS20 & GS20X User Manual 1st Ed. Rev E p.2-21, \'Short Circuit Withstand (SCCR)\'), same rating for all voltages; UL installations must use the Appendix A fuses: Class T 45 A (TJS45) for this 460 V model (Appendix A p.A-2 Fuse Specification Chart). Chart also lists high-speed Class J JHL45 (non-UL only) and a 30 A circuit breaker (G3P-030), but the manual does not state the SCCR with the breaker.', sccrSource: 'https://cdn.automationdirect.com/static/manuals/gs20m/gs20m.pdf' },
     verified: true,
   },
   {

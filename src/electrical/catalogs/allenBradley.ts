@@ -426,7 +426,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 152,
-    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 2.3, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 1, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 2.3, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 1, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (380-480V 3-phase) lists Class CC, J or T fuses, max 10 A, or a 140MT-C3E-B40 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
@@ -439,7 +439,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 152,
-    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 4, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 2, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 4, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 2, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (380-480V 3-phase) lists Class CC, J or T fuses, max 15 A, or a 140MT-C3E-B63 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
@@ -452,7 +452,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 152,
-    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 6, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 3, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 6, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 3, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (380-480V 3-phase) lists Class CC, J or T fuses, max 15 A, or a 140MT-C3E-C10 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
@@ -465,7 +465,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 87,
     heightMm: 180,
-    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 10.5, duty: 'normal duty (same HP for heavy duty per description)', frame: 'B', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame B width 87 x height 180 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 10.5, duty: 'normal duty (same HP for heavy duty per description)', frame: 'B', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame B width 87 x height 180 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (380-480V 3-phase) lists Class CC, J or T fuses, max 30 A, or a 140MT-D9E-C16 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
@@ -478,7 +478,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 109,
     heightMm: 220,
-    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 13, duty: 'normal duty (same HP for heavy duty per description)', frame: 'C', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 7.5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame C width 109 x height 220 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 13, duty: 'normal duty (same HP for heavy duty per description)', frame: 'C', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 7.5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame C width 109 x height 220 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (380-480V 3-phase) lists Class CC, J or T fuses, max 35 A, or a 140MT-D9E-C20 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
@@ -491,7 +491,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 109,
     heightMm: 220,
-    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 17, duty: 'normal duty (same HP for heavy duty per description)', frame: 'C', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 10, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame C width 109 x height 220 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '380-480VAC', inputPhases: 3, outputAmps: 17, duty: 'normal duty (same HP for heavy duty per description)', frame: 'C', network: 'EtherNet/IP (embedded), Safe Torque Off', hp480: 10, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame C width 109 x height 220 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (380-480V 3-phase) lists Class CC, J or T fuses, max 40 A, or a 140MT-D9E-C20 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
@@ -504,7 +504,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 152,
-    ratings: { series: 'PowerFlex 525', inputVolts: '200-240VAC', inputPhases: 3, outputAmps: 5, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp230: 1, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '200-240VAC', inputPhases: 3, outputAmps: 5, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp230: 1, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (200-240V 3-phase) lists Class CC, J or T fuses, max 15 A, or a 140MT-D9E-B63 or 140UT-D7D3-B80 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
@@ -517,7 +517,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 152,
-    ratings: { series: 'PowerFlex 525', inputVolts: '200-240VAC', inputPhases: 3, outputAmps: 8, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp230: 2, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '200-240VAC', inputPhases: 3, outputAmps: 8, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp230: 2, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (200-240V 3-phase) lists Class CC, J or T fuses, max 20 A, or a 140MT-D9E-C10 or 140UT-D7D3-C10 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
@@ -530,7 +530,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 72,
     heightMm: 152,
-    ratings: { series: 'PowerFlex 525', inputVolts: '200-240VAC', inputPhases: 3, outputAmps: 11, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp230: 3, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '200-240VAC', inputPhases: 3, outputAmps: 11, duty: 'normal duty (same HP for heavy duty per description)', frame: 'A', network: 'EtherNet/IP (embedded), Safe Torque Off', hp230: 3, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame A width 72 x height 152 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (200-240V 3-phase) lists Class CC, J or T fuses, max 30 A, or a 140MT-D9E-C16 or 140UT-D7D3-C15 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
@@ -543,7 +543,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 87,
     heightMm: 180,
-    ratings: { series: 'PowerFlex 525', inputVolts: '200-240VAC', inputPhases: 3, outputAmps: 17.5, duty: 'normal duty (same HP for heavy duty per description)', frame: 'B', network: 'EtherNet/IP (embedded), Safe Torque Off', hp230: 5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame B width 87 x height 180 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '200-240VAC', inputPhases: 3, outputAmps: 17.5, duty: 'normal duty (same HP for heavy duty per description)', frame: 'B', network: 'EtherNet/IP (embedded), Safe Torque Off', hp230: 5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame B width 87 x height 180 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (200-240V 3-phase) lists Class CC, J or T fuses, max 45 A, or a 140M-F8E-C25/140MT-F9E-C25 or 140UT-D7D3-C25 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
@@ -556,7 +556,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 109,
     heightMm: 220,
-    ratings: { series: 'PowerFlex 525', inputVolts: '200-240VAC', inputPhases: 3, outputAmps: 24, duty: 'normal duty (same HP for heavy duty per description)', frame: 'C', network: 'EtherNet/IP (embedded), Safe Torque Off', hp230: 7.5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame C width 109 x height 220 mm; frame per catalog-number table)' },
+    ratings: { series: 'PowerFlex 525', inputVolts: '200-240VAC', inputPhases: 3, outputAmps: 24, duty: 'normal duty (same HP for heavy duty per description)', frame: 'C', network: 'EtherNet/IP (embedded), Safe Torque Off', hp230: 7.5, ratingsSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/td/520-td001_-en-e.pdf (520-TD001 Drive Dimensions: Frame C width 109 x height 220 mm; frame per catalog-number table)', sccrKA: 100, sccrCondition: 'Maximum short circuit rating 100,000 A symmetrical (520-UM001 electrical specifications); the actual rating is set by the AIC rating of the installed fuse or circuit breaker. The UL 61800-5-1 protection table (200-240V 3-phase) lists Class CC, J or T fuses, max 60 A, or a 140M-F8E-C32/140MT-F9E-C32 self-protected (Type E) combination motor controller. The 140M/140MT AIC varies (see 140-TD005) and is UL listed for 480Y/277 V but not 480 V delta.', sccrSource: 'https://literature.rockwellautomation.com/idc/groups/literature/documents/um/520-um001_-en-e.pdf' },
     verified: true,
   },
   {
