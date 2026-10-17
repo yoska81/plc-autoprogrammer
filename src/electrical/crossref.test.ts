@@ -26,3 +26,14 @@ for (const g of crossReference().filter((x) => x.fn === 'breaker')) {
   assert.equal(kinds.size, 1, g.key);
 }
 console.log(`cross-reference tests passed (${crossReference().length} groups)`);
+
+// Sourcing: page records, with lifecycle / successor where the maker names one.
+import { isObsolete, sourcingOf } from './sourcing';
+const cpu = sourcingOf('C0-10DD1E-D');
+assert.ok(cpu.listPrice && cpu.currency === 'USD' && /automationdirect\.com/.test(cpu.priceSource ?? '') && cpu.checked, 'CLICK CPU price with source and date');
+const bm = sourcingOf('BM3RHB-001');
+assert.equal(bm.lifecycle, 'end-of-life');
+assert.equal(bm.successor, 'MPW40-3-U001');
+assert.ok(isObsolete(bm));
+assert.equal(sourcingOf('6AV2124-0GC01-0AX0').lifecycle, 'mature', 'Comfort panel: phase-out announced (legacy in the HMI review)');
+console.log('sourcing tests passed');

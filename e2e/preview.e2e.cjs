@@ -69,6 +69,11 @@ function reply(system) {
     const downloads = {
       save: async ({ filename, data }) => {
         if (window.__saveError) throw { code: window.__saveError };
+        // Like the real runtime: one save at a time (the viewer answers a prompt); a second one meanwhile is refused.
+        if (window.__saving) throw { code: 'rate_limited' };
+        window.__saving = true;
+        await new Promise((r) => setTimeout(r, 300));
+        window.__saving = false;
         const buf = data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : new TextEncoder().encode(String(data));
         let bin = '';
         for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
@@ -201,6 +206,37 @@ function reply(system) {
   await notice.waitFor({ timeout: 10000 });
   log('Save error notice:', await notice.innerText());
   await page.evaluate(() => { window.__saveError = null; });
+
+  // Cabinet pictures and HMI screen images: one save each, a ZIP of real PNGs, and a "Saved" note.
+  await page.goto(BASE + '/#/export');
+  for (const [name, want] of [['Cabinet pictures (ZIP)', /_cabinet_(inside|door)\.png$/], ['Screen images (ZIP)', /^\d\d_.+\.png$/]]) {
+    await page.evaluate(() => window.__saves.splice(0));
+    await page.getByRole('button', { name, exact: true }).click();
+    await page.waitForFunction(() => window.__saves.length > 0, null, { timeout: 120000 });
+    await page.waitForTimeout(1500);
+    const got = await saves();
+    check(got.length === 1 && got[0].filename.endsWith('.zip'), `${name}: one ZIP saved (${got.map((g) => g.filename).join(', ')})`);
+    fs.writeFileSync(OUT + got[0].filename, Buffer.from(got[0].b64, 'base64'));
+    const zip = await JSZip.loadAsync(Buffer.from(got[0].b64, 'base64'));
+    const pngs = Object.keys(zip.files).filter((f) => want.test(f));
+    check(pngs.length >= (name.startsWith('Cabinet') ? 2 : 1) && pngs.length === Object.keys(zip.files).length, `${name}: PNGs inside (${Object.keys(zip.files).join(', ')})`);
+    for (const f of pngs) {
+      const b = await zip.file(f).async('nodebuffer');
+      check(b.subarray(1, 4).toString() === 'PNG' && b.length > 5000, `${name}: ${f} is a real PNG (${b.length} bytes)`);
+    }
+    const saved = page.getByText(`Saved: ${got[0].filename}`);
+    await saved.waitFor({ timeout: 10000 });
+    check(!(await page.getByText('Another save is waiting').count()), `${name}: no "another save" error`);
+    log(`${name}: ${got[0].filename} → ${pngs.join(', ')}`);
+  }
+
+  // Sourcing: Live check is off in the preview, said plainly (not a key problem, no Settings link).
+  await page.goto(BASE + '/#/sourcing');
+  const off = page.getByTestId('live-off');
+  await off.waitFor();
+  check(/runs in the Windows app/.test(await off.innerText()) && !(await off.getByRole('link').count()), 'Live check: preview note without a key problem');
+  check(await page.getByRole('button', { name: /^Live check/ }).isDisabled(), 'Live check button disabled in the preview');
+  log('Live check in the preview:', await off.innerText());
 
   // The example project updates (new seed version) while the viewer works in their own project:
   // their project stays open and intact, the example sits beside it, and a backup can be reopened.

@@ -165,7 +165,16 @@ export function ioCsv(p: ProjectSnapshot): string {
   return ['ID,PLC Address,Type,Category,Description', ...p.io.map((x) => [x.id, p.addresses.get(x.id) ?? '', x.type, x.category, x.description].map(cell).join(','))].join('\r\n');
 }
 
-const dataUrlToBlob = async (url: string) => (await fetch(url)).blob();
+/** A data: URL as a Blob, decoded here: fetch() of a data URL can be blocked by the preview frame's content policy. */
+export async function dataUrlToBlob(url: string): Promise<Blob> {
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(url);
+  if (!m) return (await fetch(url)).blob();
+  if (!m[2]) return new Blob([decodeURIComponent(m[3])], { type: m[1] });
+  const bin = atob(m[3]);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: m[1] || 'application/octet-stream' });
+}
 
 /** Everything in one ZIP. */
 export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step: string) => void): Promise<Blob> {
@@ -238,7 +247,11 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
 export function saveBlobResult(name: string, blob: Blob): Promise<{ ok: boolean; path?: string }> {
   // The preview can't download directly: the viewer's Claude app offers the file.
   if (IS_PREVIEW) {
-    return saveViaAccount(name, blob).then((ok) => { if (!ok) notify('Saving files is not available in this view. Run the app on your PC to download.'); return { ok }; })
+    return saveViaAccount(name, blob).then((r) => {
+      if (r === 'unavailable') notify('Saving files is not available in this view. Run the app on your PC to download.');
+      else if (r === 'saved') notify(`Saved: ${name}`);
+      return { ok: r !== 'unavailable' };
+    })
       .catch((e: unknown) => { notify(e instanceof Error ? e.message : String(e)); return { ok: false }; });
   }
   // Windows app: native Save dialog.
@@ -254,6 +267,7 @@ export function saveBlobResult(name: string, blob: Blob): Promise<{ ok: boolean;
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+  notify(`Downloaded: ${name}`);
   return Promise.resolve({ ok: true });
 }
 

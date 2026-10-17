@@ -23,6 +23,8 @@
  *  - C-more Micro EA3 is still sold in 3", 4" and 6" sizes. EA3-T8CL and
  *    EA3-T10CL are retired.
  *
+ * List prices (listPrice, USD each) read on each product page on 2026-10-17.
+ *
  * Dimensions: width x height in landscape orientation, in mm as printed on the
  * AutomationDirect drawing (cutout = panel hole, bezel = outside of the front bezel).
  */
@@ -89,6 +91,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 102.1, height: 70.1 },
     bezelMm: { width: 120.9, height: 88.3 },
     url: `${PN_URL}CM5-T4W`,
+    listPrice: 340,
     verified: true,
   },
   {
@@ -109,6 +112,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 189.5, height: 140.0 },
     bezelMm: { width: 205.2, height: 155.8 },
     url: `${PN_URL}CM5-T7W`,
+    listPrice: 499,
     verified: true,
   },
   {
@@ -129,6 +133,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 235.0, height: 179.6 },
     bezelMm: { width: 268.0, height: 195.9 },
     url: `${PN_URL}CM5-T10W`,
+    listPrice: 785,
     verified: true,
   },
   {
@@ -149,6 +154,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 302.5, height: 226.6 },
     bezelMm: { width: 318.8, height: 242.9 },
     url: `${PN_URL}CM5-T12W`,
+    listPrice: 1074,
     verified: true,
   },
   {
@@ -169,6 +175,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 391.9, height: 265.9 },
     bezelMm: { width: 407.7, height: 281.5 },
     url: `${PN_URL}CM5-T15W`,
+    listPrice: 1699,
     verified: true,
   },
   {
@@ -190,6 +197,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 526.8, height: 344.7 },
     bezelMm: { width: 542.0, height: 360.0 },
     url: `${PN_URL}CM5-T22W`,
+    listPrice: 2199,
     verified: true,
   },
   {
@@ -206,6 +214,7 @@ export const HMI_MODELS: HmiModel[] = [
     serial: 'Port 1: 15-pin D-sub RS-232C/RS-422/485; Port 2: 3-wire terminal block RS-485.',
     supportsClickEthernet: true,
     url: `${PN_URL}CM5-RHMI`,
+    listPrice: 649,
     verified: true,
   },
 
@@ -232,6 +241,9 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 235.0, height: 179.7 },
     bezelMm: { width: 284.0, height: 195.4 },
     url: `${PN_URL}EA9-T10WCL`,
+    listPrice: 1096,
+    legacy: true,
+    successor: 'CM5-T10W',
     verified: true,
   },
   {
@@ -248,6 +260,9 @@ export const HMI_MODELS: HmiModel[] = [
     serial: 'Port 1: 15-pin D-sub RS-232C/RS-422/485; Port 2: 3-wire terminal block RS-485.',
     supportsClickEthernet: true,
     url: `${PN_URL}EA9-RHMI`,
+    listPrice: 632,
+    legacy: true,
+    successor: 'CM5-RHMI',
     verified: true,
   },
 
@@ -278,6 +293,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 102.0, height: 70.0 },
     bezelMm: { width: 120.9, height: 88.3 },
     url: `${PN_URL}EA3-T4CL`,
+    listPrice: 393,
     verified: true,
   },
   {
@@ -298,6 +314,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 161.0, height: 122.2 },
     bezelMm: { width: 174.0, height: 135.4 },
     url: `${PN_URL}EA3-T6CL`,
+    listPrice: 472,
     verified: true,
   },
   {
@@ -318,6 +335,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 102.0, height: 70.0 },
     bezelMm: { width: 114.4, height: 82.4 },
     url: `${PN_URL}EA3-S3ML`,
+    listPrice: 342,
     verified: true,
   },
   {
@@ -338,6 +356,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 102.0, height: 70.0 },
     bezelMm: { width: 114.4, height: 82.4 },
     url: `${PN_URL}EA3-S3ML-R`,
+    listPrice: 229,
     verified: true,
   },
   {
@@ -358,6 +377,7 @@ export const HMI_MODELS: HmiModel[] = [
     cutoutMm: { width: 102.0, height: 70.0 },
     bezelMm: { width: 114.4, height: 82.4 },
     url: `${PN_URL}EA3-S3ML-RN`,
+    listPrice: 184,
     verified: true,
   },
 ];

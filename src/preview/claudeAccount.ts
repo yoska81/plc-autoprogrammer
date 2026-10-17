@@ -199,9 +199,10 @@ export async function callClaudeAccount(opts: {
 const ALLOWED = new Set(['gif', 'png', 'jpg', 'jpeg', 'webp', 'mp4', 'webm', 'txt', 'json', 'md', 'docx', 'pptx', 'epub', 'csv', 'ttf', 'html', 'svg', 'pdf', 'xlsx', 'zip']);
 
 /** Offer a file in the preview. Returns false when downloads are unavailable here. */
-export async function saveViaAccount(filename: string, data: Blob): Promise<boolean> {
+/** Offer a file through the viewer's Claude app: 'saved', 'declined' (the viewer said no) or 'unavailable' (no downloads here). */
+export async function saveViaAccount(filename: string, data: Blob): Promise<'saved' | 'declined' | 'unavailable'> {
   const dl = await getDownloads();
-  if (!dl) return false;
+  if (!dl) return 'unavailable';
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   let name = filename;
   let blob = data;
@@ -216,8 +217,8 @@ export async function saveViaAccount(filename: string, data: Blob): Promise<bool
     await dl.save({ filename: name, data: blob });
   } catch (e) {
     const code = (e as SampleError)?.code;
-    if (code === 'declined') return true;
+    if (code === 'declined') return 'declined';
     throw new Error(code === 'rate_limited' ? 'Another save is waiting for your answer. Try again in a moment.' : `The file could not be saved here (${code ?? 'error'}).`, { cause: e });
   }
-  return true;
+  return 'saved';
 }

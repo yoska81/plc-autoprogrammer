@@ -5,6 +5,7 @@
  * checking engineer does by hand: spec ↔ I/O, I/O ↔ program, safety gating,
  * HMI ↔ program, approvals.
  */
+import { engineerChecksFor } from '../engineer/checks';
 import type { ProjectSnapshot } from '../deliverables/collect';
 import { buildModel, designWarnings, spareSpace } from '../electrical/derive';
 import { codeRuleFindings } from './codeRules';
@@ -326,6 +327,60 @@ const GUARD_RE = /\b(light curtains?|safety mats?|guard doors?|door switch(?:es)
 const VFD_RE = /\b(vfds?|variable speed|variable frequency|drives? so we can set the speed|inverters?|speed drives?)\b/i;
 const SERVO_RE = /\bservo\b/i;
 const HP_RE = /(\d+(?:\.\d+)?|\d+\/\d+)\s*hp\b/gi;
+// Words that don't name a motor: the motor's name is the nearest other word next to its rating.
+const NOT_A_NAME = new Set(['the', 'a', 'an', 'and', 'or', 'with', 'of', 'on', 'for', 'each', 'one', 'two', 'three', 'four', 'motor', 'motors', 'drive', 'drives', 'hp', 'kw', 'at', 'is', 'are', 'to', 'v', 'vac', 'vdc', 'phase', 'rated', 'by', 'via', 'its', 'their', 'it', 'has', 'have', 'uses', 'use', 'runs', 'driven', 'about', 'approx', 'approximately', 'tefc', 'induction', 'gear', 'gearmotor', 'new', 'existing', 'yes', 'no', 'answer', 'question']);
+
+/**
+ * Distinct motors the spec gives a rating for, e.g. ["conveyor 2 HP", "m2 1 HP"]. A motor described in two
+ * sections (the overview and an answered question) counts once: each rating is paired with what names its
+ * motor (a tag like M1 and/or the nearest word that names something); mentions of one rating that share a
+ * name or tag are one motor, and unnamed mentions count only as often as one section repeats them. Never
+ * counts more motors than the spec describes.
+ */
+export function specMotorRatings(sections: Record<string, string | undefined>): string[] {
+  const isName = (w: string) => /^[a-z][a-z-]{1,}$/.test(w) && !NOT_A_NAME.has(w);
+  const wordsOf = (t: string) => t.toLowerCase().split(/[^a-z0-9/.]+/).filter(Boolean);
+  /** What names the motor of one rating: the clause's naming words before it (or after it, up to "motor"), and its tag. */
+  const idsOf = (clause: string, m: RegExpMatchArray) => {
+    const before = wordsOf(clause.slice(0, m.index));
+    const after = wordsOf(clause.slice(m.index! + m[0].length));
+    const stop = after.findIndex((w) => /^(motors?|drives?|gearmotors?)$/.test(w));
+    const ids = new Set([...before, ...(stop >= 0 ? after.slice(0, stop) : after.slice(0, 1))].filter(isName));
+    const tag = /\bm\d+\b/i.exec(clause)?.[0];
+    if (tag) ids.add(tag.toLowerCase());
+    return ids;
+  };
+  // Every mention, by rating: its section and what names it (empty = unnamed).
+  const mentions = new Map<string, { section: number; ids: Set<string> }[]>();
+  Object.values(sections).forEach((text, section) => {
+    for (const clause of (text ?? '').split(/[;:\n!?,()]+|\.(?=\s|$)|\b(?:and|or|with)\b/i)) {
+      for (const m of clause.matchAll(HP_RE)) {
+        const [n, d] = m[1].split('/');
+        const v = String(d ? Number(n) / Number(d) : Number(n));
+        mentions.set(v, [...(mentions.get(v) ?? []), { section, ids: idsOf(clause, m) }]);
+      }
+    }
+  });
+  const out: string[] = [];
+  for (const [v, list] of mentions) {
+    // mentions of one rating that share a name or tag are one motor, across the whole spec
+    let groups: Set<string>[] = [];
+    for (const { ids } of list) {
+      if (!ids.size) continue;
+      const same = groups.filter((g) => [...ids].some((i) => g.has(i)));
+      groups = [...groups.filter((g) => !same.includes(g)), new Set([...ids, ...same.flatMap((g) => [...g])])];
+    }
+    // per section: the motors it names, or its unnamed mentions (which may be one of those): the larger, never the sum
+    let count = groups.length;
+    for (const section of new Set(list.map((x) => x.section))) {
+      const here = list.filter((x) => x.section === section);
+      const named = new Set(here.filter((x) => x.ids.size).map((x) => groups.findIndex((g) => [...x.ids].some((i) => g.has(i)))));
+      count = Math.max(count, named.size, here.filter((x) => !x.ids.size).length);
+    }
+    for (let i = 0; i < count; i++) out.push(`${groups[i] ? [...groups[i]].join(' ') : 'motor'} ${v} HP`);
+  }
+  return out;
+}
 
 /**
  * Spec coverage: things the machine description asks for that the generated
@@ -367,11 +422,11 @@ function specCoverage({ p, cautions = [] }: ReviewInput): Finding[] {
     }
   }
   // motors and drives
-  const specHp = [...spec.matchAll(HP_RE)].length;
+  const specMotors = specMotorRatings(p.spec);
   const designMotors = p.electrical?.inputs.motors.length ?? 0;
-  if (p.electrical && specHp > designMotors) {
-    out.push(finding('spec-motors', 'major', 'electrical', 'electrical', '', `The spec names ${specHp} motor rating${specHp > 1 ? 's' : ''}, the panel has ${designMotors} motor${designMotors === 1 ? '' : 's'}`,
-      'Some motors described in the specification have no starter, overload or drive in the electrical design.', 'Add every motor (HP, voltage, starter or VFD) to the electrical design inputs and regenerate.'));
+  if (p.electrical && specMotors.length > designMotors) {
+    out.push(finding('spec-motors', 'major', 'electrical', 'electrical', '', `The spec names ${specMotors.length} motor${specMotors.length > 1 ? 's' : ''}, the panel has ${designMotors}`,
+      `Some motors described in the specification have no starter, overload or drive in the electrical design. Motors in the spec: ${specMotors.join(', ')}.`, 'Add every motor (HP, voltage, starter or VFD) to the electrical design inputs and regenerate.'));
   }
   if (p.electrical && VFD_RE.test(spec) && !comps.some((c) => catOf(c.partNumber) === 'vfd')) {
     out.push(finding('spec-vfd', 'major', 'electrical', 'electrical', '', 'The spec asks for variable-speed drives; the panel has none',
@@ -391,6 +446,9 @@ export function runChecks(input: ReviewInput): Finding[] {
     ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input), ...driveChecks(input),
     ...programChecks(input), ...hmiChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
   ];
+  // The Engineer review's rule checks (SCCR weak link, heat, voltage drop…) count here too: one set of findings everywhere.
+  const eng = engineerChecksFor(input.p);
+  all.push(...eng.filter((e) => !all.some((f) => f.title === e.title)));
   const seen = new Set<string>();
   return all.filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)));
 }

@@ -93,11 +93,12 @@ function DrawingDocument({ plan, shown, idx, setActive, zoom, setZoom, width, he
   return (
     <div className="flex h-full min-h-0 bg-gray-100">
       <nav className="w-52 shrink-0 border-r border-gray-300 bg-white flex flex-col min-h-0" aria-label="Drawing sheets">
-        <div className="px-2 py-1.5 border-b border-gray-200 flex items-center justify-between">
-          <span className="text-xs font-semibold text-gray-700">Sheets ({shown.length})</span>
-          <div className="flex rounded border border-gray-300 overflow-hidden text-[11px]">
+        {/* wraps the zoom buttons below the title when the list is narrow, never cuts them off */}
+        <div className="px-2 py-1.5 border-b border-gray-200 flex flex-wrap items-center justify-between gap-1">
+          <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">Sheets ({shown.length})</span>
+          <div role="group" aria-label="Zoom" className="flex shrink-0 rounded border border-gray-300 overflow-hidden text-[11px]">
             {(['fit', 1, 2] as Zoom[]).map((z) => (
-              <button key={String(z)} onClick={() => setZoom(z)} className={`px-1.5 py-0.5 ${zoom === z ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
+              <button key={String(z)} onClick={() => setZoom(z)} className={`px-1.5 py-0.5 whitespace-nowrap ${zoom === z ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
                 {z === 'fit' ? 'Fit' : `${z * 100}%`}
               </button>
             ))}

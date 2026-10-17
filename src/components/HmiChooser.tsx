@@ -77,6 +77,8 @@ function GroupRows({ name, list, need, cpuId, selected, suggested, onPick }: {
       <tr role="rowgroup" aria-label={name}><td colSpan={6} className="px-3 pt-3 pb-1 text-xs font-semibold text-steel-700 border-b border-steel-200 bg-white">{name} <span className="font-normal text-steel-400">· {list.length}</span></td></tr>
       {list.map((r) => {
         const f = r.legacy ? { ok: false, reason: `Legacy model${r.successor ? `; successor ${r.successor}` : ''}.` }
+          : r.builtIn && r.pn !== cpuId ? { ok: false, reason: `Built into the ${r.pn} PLC: choose it as the PLC.` }
+          : r.builtIn ? { ok: true, reason: null }
           : r.model ? hmiFit(r.model, need, cpuId) : { ok: false, reason: "Resolution not confirmed on the maker's datasheet yet." };
         const isSel = selected === r.pn;
         return (
@@ -87,7 +89,7 @@ function GroupRows({ name, list, need, cpuId, selected, suggested, onPick }: {
             <td className={td}>{r.sizeIn ? `${r.sizeIn}"` : '—'}</td>
             <td className={td}>{r.res}</td>
             <td className={`${td} text-xs`}>{r.price ?? '—'}</td>
-            <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes</span> : f.reason}</td>
+            <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">{r.builtIn ? 'Yes · built into the PLC' : 'Yes'}</span> : f.reason}</td>
           </tr>
         );
       })}

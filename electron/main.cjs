@@ -153,6 +153,14 @@ ipcMain.handle('isa:save-file', async (e, name, bytes) => {
       defaultPath: path.join(app.getPath('documents'), path.basename(String(name))),
       filters: [...(ext ? [{ name: FILTERS[ext] ?? `${ext.toUpperCase()} file`, extensions: [ext] }] : []), { name: 'All files', extensions: ['*'] }],
     });
+    if (r.canceled || !r.filePath) return { ok: false, cancelled: true };
+    await fs.promises.writeFile(r.filePath, Buffer.from(bytes));
+    writablePaths.add(r.filePath);
+    return { ok: true, path: r.filePath };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+});
 
 // Save again to a file the user already chose (project Save without a dialog).
 ipcMain.handle('isa:write-file', async (_e, filePath, bytes) => {
@@ -160,14 +168,6 @@ ipcMain.handle('isa:write-file', async (_e, filePath, bytes) => {
     if (!writablePaths.has(filePath)) return { ok: false, error: 'not a file chosen in this session' };
     await fs.promises.writeFile(filePath, Buffer.from(bytes));
     return { ok: true, path: filePath };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-});
-    if (r.canceled || !r.filePath) return { ok: false, cancelled: true };
-    await fs.promises.writeFile(r.filePath, Buffer.from(bytes));
-    writablePaths.add(r.filePath);
-    return { ok: true, path: r.filePath };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

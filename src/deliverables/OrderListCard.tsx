@@ -18,6 +18,9 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [paste, setPaste] = useState<SupplierGroup | null>(null);
+  // Long tables start collapsed: the page stays short and scrollable.
+  const [showParts, setShowParts] = useState(false);
+  const [showSpares, setShowSpares] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // The order is the panel parts; recommended spares are a separate, optional order (never mixed in).
   const ol = useMemo(() => buildOrderList(p, { ...PANEL_ORDER, labels }), [p, labels]);
@@ -60,7 +63,7 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
                   To order: sign in at automationdirect.com, open the Shopping Cart, click <b>CSV Upload</b>, then either choose the order file or paste the copied lines into <b>Enter Items</b>, and click <b>Upload Items</b>. AutomationDirect reports any part number it does not recognise on the cart page.
                 </p>
               )}
-              <div className="overflow-x-auto">
+              {(spare ? showSpares : showParts) && <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead className="text-steel-500 uppercase"><tr>{['Part number', 'Description', 'Needed', 'Spares', 'Order', 'Unit price', 'Extended'].map((h) => <th key={h} className={`py-1 px-2 ${['Part number', 'Description'].includes(h) ? 'text-left' : 'text-right'}`}>{h}</th>)}</tr></thead>
                   <tbody className="divide-y divide-steel-100">
@@ -77,8 +80,13 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </div>}
             </div>
+  );
+  const toggle = (open: boolean, set: (v: boolean) => void, what: string, n: number) => (
+    <button type="button" aria-expanded={open} onClick={() => set(!open)} className="text-xs font-medium text-brand-700 hover:underline">
+      {open ? `Hide ${what}` : `Show ${what} (${n} line${n === 1 ? '' : 's'})`}
+    </button>
   );
 
   return (
@@ -94,11 +102,13 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
       </div>
       {empty ? <p className="text-sm text-steel-500">No electrical design yet.</p> : (
         <>
+          <div>{toggle(showParts, setShowParts, 'parts list', ol.groups.reduce((n, g) => n + g.lines.length, 0))}</div>
           {ol.groups.map((g) => group(g, false))}
           {sp && sp.groups.length > 0 && (
             <div className="space-y-2 border-t border-amber-200 pt-3">
               <h4 className="text-sm font-semibold text-steel-800">Recommended spares — a separate, optional order</h4>
               <p className="text-xs text-steel-500">Spare parts to keep on site (same recommendation as the maintenance chapter). They are not in the panel order file; order them only if the customer wants spares. Spares total: {money(sp.total)}{sp.unpriced ? ` + ${sp.unpriced} price to confirm` : ''}.</p>
+              <div>{toggle(showSpares, setShowSpares, 'spare parts', sp.groups.reduce((n, g) => n + g.lines.length, 0))}</div>
               {sp.groups.map((g) => group(g, true))}
             </div>
           )}
