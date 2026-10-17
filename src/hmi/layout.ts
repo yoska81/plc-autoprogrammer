@@ -62,7 +62,10 @@ export function cutTexts(e: HmiElement): { text: string; need: number; room: num
 }
 
 /** Check one screen against the panel size and the layout rules. */
-export function checkScreen(screen: HmiScreen, widthPx: number, heightPx: number, design?: HmiDesign): LayoutIssue[] {
+/** `text`: also report text the screen would cut off (the HMI page's check; see cutTexts). */
+export interface CheckOptions { text?: boolean }
+
+export function checkScreen(screen: HmiScreen, widthPx: number, heightPx: number, design?: HmiDesign, opts: CheckOptions = {}): LayoutIssue[] {
   const out: LayoutIssue[] = [];
   const add = (el: HmiElement | null, severity: LayoutIssue['severity'], message: string) => out.push({ screenId: screen.id, elementId: el?.id ?? null, severity, message });
   const els = screen.elements;
@@ -72,7 +75,7 @@ export function checkScreen(screen: HmiScreen, widthPx: number, heightPx: number
     if (e.kind === 'nav' && e.targetScreenId && design && !design.screens.some((s) => s.id === e.targetScreenId)) add(e, 'error', `“${e.label}” goes to a screen that does not exist (${e.targetScreenId}).`);
     if ((e.kind === 'button' || e.kind === 'indicator' || e.kind === 'numeric' || e.kind === 'numeric-entry' || e.kind === 'multistate' || e.kind === 'bar' || e.kind === 'trend') && !e.address) add(e, 'warning', `“${e.label || e.id}” has no PLC address.`);
     if (e.kind === 'multistate' && !(e.states?.length)) add(e, 'warning', `“${e.label || e.id}” has no state texts.`);
-    for (const c of cutTexts(e)) add(e, 'warning', `“${c.text}” does not fit its ${e.kind === 'nav' ? 'navigation button' : e.kind} and is cut off (needs about ${c.need} px, has ${c.room}); widen it or shorten the text.`);
+    if (opts.text) for (const c of cutTexts(e)) add(e, 'warning', `“${c.text}” does not fit its ${e.kind === 'nav' ? 'navigation button' : e.kind} and is cut off (needs about ${c.need} px, has ${c.room}); widen it or shorten the text.`);
   }
   for (let i = 0; i < els.length; i++) {
     for (let j = i + 1; j < els.length; j++) {
@@ -88,8 +91,8 @@ export function checkScreen(screen: HmiScreen, widthPx: number, heightPx: number
   return out;
 }
 
-export function checkDesign(design: HmiDesign, widthPx: number, heightPx: number): LayoutIssue[] {
-  const out = design.screens.flatMap((s) => checkScreen(s, widthPx, heightPx, design));
+export function checkDesign(design: HmiDesign, widthPx: number, heightPx: number, opts: CheckOptions = {}): LayoutIssue[] {
+  const out = design.screens.flatMap((s) => checkScreen(s, widthPx, heightPx, design, opts));
   // Every address used on a screen should be in the tag list (the PLC program implements tags).
   const tagged = new Set(design.tags.map((t) => t.address.toUpperCase()));
   const missing = new Set<string>();

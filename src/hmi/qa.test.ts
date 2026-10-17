@@ -24,7 +24,8 @@ test('text that does not fit its element is reported (and fitting text is not)',
   // An indicator with ON / OFF texts shows those, not its label.
   assert.deepEqual(cutTexts(el('indicator', 'i', { label: 'A very long indicator label here', onText: 'On', offText: 'Off', w: 160 })), []);
   const d = design([{ id: 's', name: 'Main', purpose: '', elements: [el('header', 'h', { x: 0, y: 0, w: 800, h: 56 }), el('button', 'b', { label: 'Select Manual Mode Now', x: 40, y: 100, w: 120 })] }]);
-  assert.ok(checkDesign(d, 800, 480).some((i) => i.elementId === 'b' && /does not fit/.test(i.message)));
+  assert.ok(checkDesign(d, 800, 480, { text: true }).some((i) => i.elementId === 'b' && /does not fit/.test(i.message)));
+  assert.ok(!checkDesign(d, 800, 480).some((i) => /does not fit/.test(i.message)), 'text fit only when asked');
 });
 
 test('the password lock badge takes room from a protected button\'s text', () => {
