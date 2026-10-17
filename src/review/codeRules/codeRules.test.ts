@@ -160,5 +160,47 @@ test('safety-reset: separate reset ok; no reset or reset = Start fails', () => {
   assert.equal(run('safety-reset', { ctx: ctxOf(startIsReset) }).length, 1);
 });
 
+// Sealing head: two-hand start, light curtain, heater with thermocouple (the QA case of the rule-based pipeline).
+const io = (address: string, deviceTag: string, deviceType: ElectricalDesign['ioWiring'][number]['deviceType'], description: string, location = 'Sealing station') => ({ address, deviceTag, deviceType, description, location });
+const SEAL: ElectricalDesign = add({
+  ...DESIGN,
+  ioWiring: [...DESIGN.ioWiring,
+    io('X010', 'PB8', 'pushbutton-no', 'Two-hand start button left', 'Cabinet door'), io('X011', 'PB9', 'pushbutton-no', 'Two-hand start button right', 'Cabinet door'),
+    io('X012', 'LS9', 'sensor-pnp', 'Light curtain clear (OSSD)'), io('X013', 'TS1', 'limit-switch', 'Heater over-temperature limit tripped'),
+    io('Y010', 'CR9', 'relay-coil', 'Seal heater on (SSR)', 'Cabinet')],
+}, { tag: 'LS9', partNumber: 'PNK-AP-3H', quantity: 1, function: 'Light curtain clear (OSSD)', motorTag: null }, { tag: 'CR9', partNumber: 'KPR-SCS-24VACDC-1', quantity: 1, function: 'Interposing relay: Seal heater on (SSR)', motorTag: null });
+const sealSpec = { ...SPEC, overview: 'Heat-sealing head: two-hand start, light curtain, heater with thermocouple.' };
+
+test('two-hand-control: plain buttons to PLC inputs and on the door fail; the example has none', () => {
+  assert.equal(run('two-hand-control', { ctx: base }).length, 0);
+  const hits = run('two-hand-control', { ctx: ctxOf(SEAL), spec: sealSpec });
+  assert.deepEqual(hits.map((h) => h.severity).sort(), ['critical', 'major']);
+  assert.ok(hits.every((h) => h.area === 'safety' && /13851/.test(h.clause)));
+});
+
+test('safety-device-standard-part + light-curtain-relay: prox sensor as a light curtain, E-stop relay only', () => {
+  assert.equal(run('safety-device-standard-part', { ctx: base }).length + run('light-curtain-relay', { ctx: base }).length, 0);
+  const std = run('safety-device-standard-part', { ctx: ctxOf(SEAL), spec: sealSpec });
+  assert.equal(std.length, 1);
+  assert.ok(std[0].severity === 'critical' && /LS9/.test(std[0].title));
+  const lc = run('light-curtain-relay', { ctx: ctxOf(SEAL), spec: sealSpec });
+  assert.equal(lc.length, 1);
+  assert.ok(/OSSD/.test(lc[0].detail));
+  // a relay made for light curtains clears it
+  const xps = getPart('XPSUAF13AP') ? 'XPSUAF13AP' : undefined;
+  if (xps) assert.equal(run('light-curtain-relay', { ctx: ctxOf(add(SEAL, { tag: 'SR2', partNumber: xps, quantity: 1, function: 'Light curtain safety relay', motorTag: null })), spec: sealSpec }).length, 0);
+});
+
+test('heater-power-circuit + heater-overtemperature: heater on an interposing relay, limit only to the PLC, thermocouple without transmitter', () => {
+  assert.equal(run('heater-power-circuit', { ctx: base }).length + run('heater-overtemperature', { ctx: base }).length, 0, 'the example has no heater');
+  assert.equal(run('heater-overtemperature', { ctx: base, spec: { ...SPEC, overview: 'Keep the cabinet heat dissipation low; heat sink on the drive.' } }).length, 0, '"heat" in passing is not a heater');
+  const pw = run('heater-power-circuit', { ctx: ctxOf(SEAL), spec: sealSpec });
+  assert.equal(pw.length, 1);
+  assert.ok(/Y010/.test(pw[0].title) && /SSR|contactor/.test(pw[0].detail));
+  const ctx: DrawingContext = { ...ctxOf(SEAL), analog: [{ pointId: 'tc', description: 'Seal heater temperature (thermocouple)', kind: 'input', channel: 'CPU AD1', partNumber: 'C0-12DD1E-D', terminal: 'AD1I', address: 'DF1', range: '4-20mA', scaleMin: 0, scaleMax: 300, units: '°C' }] };
+  const ot = run('heater-overtemperature', { ctx, spec: sealSpec });
+  assert.deepEqual(ot.map((h) => h.title).sort(), ['Heater over-temperature cutoff is not hardwired', 'Thermocouple without a transmitter or thermocouple input']);
+});
+
 console.log(failures.length ? `\n${failures.length} failed: ${failures.join(', ')}` : `\n${passed} passed, 0 failed`);
 process.exit(failures.length ? 1 : 0);
