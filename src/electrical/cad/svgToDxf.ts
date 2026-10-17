@@ -168,7 +168,7 @@ export function svgToDxf(svg: SvgNode, opts: SheetDxfOptions = {}): { dxf: strin
     if (n.tag === 'image' || n.tag === 'use' || n.tag === 'foreignObject') { stats.skipped++; return; }
     const m = mul(m0, parseTransform(n.attrs.transform));
     const s = {
-      cad: n.attrs['data-cad'] ?? inh.cad, sheet: n.attrs['data-sheet'] ?? inh.sheet,
+      cad: n.attrs['data-cad'] ?? inh.cad, sheet: n.attrs['data-cad-sheet'] ?? inh.sheet,
       stroke: n.attrs.stroke ?? inh.stroke, fill: n.attrs.fill ?? inh.fill,
       mono: n.attrs['font-family'] ? /mono|courier|consol/i.test(n.attrs['font-family']) : inh.mono,
       size: n.attrs['font-size'] ? num(n.attrs['font-size'], inh.size) : inh.size,

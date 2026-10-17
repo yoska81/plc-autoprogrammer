@@ -11,7 +11,7 @@ import { getPart } from '../catalog';
 import type { DrawingContext } from '../derive';
 import { parseSvg, textOf } from './svgTree';
 import { flattenPath, parseTransform, svgToDxf } from './svgToDxf';
-import { amlDocument, endpointOf, eplanPackage, symbolOf, uuidOf } from './eplan';
+import { amlDocument, endpointOf, eplanPackage, symbolOf, symbolTable, uuidOf } from './eplan';
 
 // ---- svgTree
 const t = parseSvg('<svg viewBox="0 0 100 50"><!-- c --><g data-cad="TAGS"><text x="1" y="2">A &amp; B<tspan>&#x3A9;</tspan></text></g><line x1="0" y1="0" x2="10" y2="0"/></svg>');
@@ -32,7 +32,7 @@ assert.ok(flattenPath('M0 0 C 0 10 10 10 10 0')[0].pts.length > 4, 'curves are s
 // ---- svg → dxf
 const devices = new Map([['K1', { tag: 'K1', desc: 'Motor contactor', part: 'XTCE009B10TD', mfr: 'Eaton' }]]);
 const svg = parseSvg(`<svg viewBox="0 0 200 100" data-cad="BORDER"><rect x="0" y="0" width="200" height="100"/>
-  <g data-cad="GRAPHICS"><g data-sheet="control">
+  <g data-cad="GRAPHICS"><g data-cad-sheet="control">
     <g data-cad="SYMS"><circle cx="50" cy="10" r="3"/></g>
     <line x1="10" y1="10" x2="90" y2="10" data-cad="WIRES"/>
     <text x="50" y="20">K1</text>
@@ -52,7 +52,7 @@ assert.equal((entities.match(/\n\s*0\r?\nSEQEND\r?\n/g) ?? []).length, 2);
 // y flipped: the wire at svg y 10 lies at DXF y 90
 assert.match(entities, /\n\s*20\r?\n90(\.0+)?\r?\n/);
 // a tag on a sheet that is not a device sheet stays text
-assert.equal(svgToDxf(parseSvg('<svg viewBox="0 0 10 10"><g data-sheet="cover"><text x="1" y="1">K1</text></g></svg>'), { devices }).stats.devices, 0);
+assert.equal(svgToDxf(parseSvg('<svg viewBox="0 0 10 10"><g data-cad-sheet="cover"><text x="1" y="1">K1</text></g></svg>'), { devices }).stats.devices, 0);
 
 // ---- EPLAN helpers
 assert.deepEqual(endpointOf('K1:A1'), { device: 'K1', point: 'A1' });
@@ -61,6 +61,15 @@ assert.deepEqual(endpointOf('TB1 24+'), { device: 'TB1', point: '24+' });
 assert.equal(symbolOf('X001', 'Start PB (green)'), 'Start_PB_green');
 assert.equal(symbolOf('X001', '1st sensor'), '_1st_sensor');
 assert.equal(uuidOf('a'), uuidOf('a'));
+// long descriptions cut to 24 characters stay unique tag names (the address is appended)
+{
+  const long = 'Pouch present at sealing station';
+  const pts = [1, 2, 3].map((i) => ({ address: `X00${i}`, description: `${long} ${i}` }));
+  const model = { groups: [{ points: pts }] } as unknown as Parameters<typeof symbolTable>[0];
+  const t = symbolTable(model, { analog: [] } as unknown as DrawingContext);
+  assert.equal(new Set(t.values()).size, 3, [...t.values()].join(' '));
+  assert.ok([...t.values()].every((n) => n.length <= 24));
+}
 assert.notEqual(uuidOf('a'), uuidOf('b'));
 assert.match(uuidOf('x'), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 

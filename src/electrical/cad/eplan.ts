@@ -37,6 +37,28 @@ export function symbolOf(address: string, description: string, symbols?: Map<str
   return s.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').replace(/^(\d)/, '_$1').slice(0, 24) || address;
 }
 
+/**
+ * Symbolic address of every I/O point, unique within the project (EPLAN and the PLC key tags by name): a name already
+ * taken (long descriptions cut to 24 characters can collide) gets the address appended.
+ */
+export function symbolTable(model: ElectricalModel, ctx: DrawingContext, symbols?: Map<string, string>): Map<string, string> {
+  const out = new Map<string, string>();
+  const used = new Set<string>();
+  const points = [...model.groups.flatMap((g) => g.points.map((p) => [p.address, p.description] as const)), ...(ctx.analog ?? []).map((a) => [a.address, a.description] as const)];
+  for (const [address, description] of points) {
+    if (out.has(address)) continue;
+    let name = symbolOf(address, description, symbols);
+    if (used.has(name.toLowerCase())) {
+      const tail = `_${address.replace(/[^A-Za-z0-9_]+/g, '_')}`;
+      name = `${name.slice(0, 24 - tail.length)}${tail}`;
+      for (let k = 2; used.has(name.toLowerCase()); k++) name = `${name.slice(0, 24 - tail.length - String(k).length)}${k}${tail}`;
+    }
+    used.add(name.toLowerCase());
+    out.set(address, name);
+  }
+  return out;
+}
+
 /** "K1:A1" → K1 / A1; "TB2-4" → TB2 / 4; "TB1 24+" → TB1 / 24+; anything else is a device with point 1. */
 export function endpointOf(s: string): { device: string; point: string } {
   const c = /^([^:\s]+):(.+)$/.exec(s);
@@ -129,6 +151,7 @@ export function amlDocument(ctx: DrawingContext, opts: EplanOptions = {}, model:
   const project = ctx.projectName || 'Project';
   const stats: AmlStats = { devices: 0, plcModules: 0, tags: 0, channels: 0, connectionPoints: 0, connections: 0, cables: 0 };
   const partOf = (pn?: string) => (pn ? ctx.getPart(pn) : undefined);
+  const sym = symbolTable(model, ctx, opts.symbols);
 
   // ---- PLC configuration (AR APC): Device → DeviceItems (CPU slot 0, modules 1..n) with Channels; tags at the CPU.
   const plcTag = model.plcTag || 'PLC';
@@ -154,7 +177,7 @@ export function amlDocument(ctx: DrawingContext, opts: EplanOptions = {}, model:
         const ioType = p.type === 'input' ? 'Input' : 'Output';
         const chId = uuidOf(`ch/${p.address}`), tId = uuidOf(`tag/${p.address}`);
         chans.push(`<ExternalInterface Name="${esc(`${ioType}_${k}`)}" ID="${chId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Channel">${attr('Type', 'Digital')}${attr('IoType', ioType)}${attr('Number', k, 'xs:int')}${attr('Length', 1, 'xs:int')}</ExternalInterface>`);
-        tagIf.push(`<ExternalInterface Name="${esc(symbolOf(p.address, p.description, opts.symbols))}" ID="${tId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Tag">${attr('DataType', 'BOOL')}${attr('IoType', ioType)}${attr('LogicalAddress', p.address)}${attr('Comment', p.description)}</ExternalInterface>`);
+        tagIf.push(`<ExternalInterface Name="${esc(sym.get(p.address) ?? p.address)}" ID="${tId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Tag">${attr('DataType', 'BOOL')}${attr('IoType', ioType)}${attr('LogicalAddress', p.address)}${attr('Comment', p.description)}</ExternalInterface>`);
         links.push(`<InternalLink Name="${esc(`LinkToTag_${p.address}`)}" ID="${uuidOf(`link/${p.address}`)}" RefPartnerSideA="${chId}" RefPartnerSideB="${tId}" />`);
         stats.channels++; stats.tags++;
       });
@@ -163,7 +186,7 @@ export function amlDocument(ctx: DrawingContext, opts: EplanOptions = {}, model:
       const ioType = a.kind === 'output' ? 'Output' : 'Input';
       const chId = uuidOf(`ch/${a.address}`), tId = uuidOf(`tag/${a.address}`);
       chans.push(`<ExternalInterface Name="${esc(`Analog${ioType}_${a.channel || k}`)}" ID="${chId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Channel">${attr('Type', 'Analog')}${attr('IoType', ioType)}${attr('Number', k, 'xs:int')}${attr('Length', 16, 'xs:int')}</ExternalInterface>`);
-      tagIf.push(`<ExternalInterface Name="${esc(symbolOf(a.address, a.description, opts.symbols))}" ID="${tId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Tag">${attr('DataType', 'REAL')}${attr('IoType', ioType)}${attr('LogicalAddress', a.address)}${attr('Comment', `${a.description} (${a.range}, ${a.scaleMin}..${a.scaleMax} ${a.units})`.trim())}</ExternalInterface>`);
+      tagIf.push(`<ExternalInterface Name="${esc(sym.get(a.address) ?? a.address)}" ID="${tId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Tag">${attr('DataType', 'REAL')}${attr('IoType', ioType)}${attr('LogicalAddress', a.address)}${attr('Comment', `${a.description} (${a.range}, ${a.scaleMin}..${a.scaleMax} ${a.units})`.trim())}</ExternalInterface>`);
       links.push(`<InternalLink Name="${esc(`LinkToTag_${a.address}`)}" ID="${uuidOf(`link/${a.address}`)}" RefPartnerSideA="${chId}" RefPartnerSideB="${tId}" />`);
       stats.channels++; stats.tags++;
     });
@@ -240,9 +263,10 @@ const fileSafe = (s: string) => s.replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '
 
 /** PLC assignment list: one row per I/O point, with EPLAN's property names as column headers. */
 export function plcAssignmentCsv(model: ElectricalModel, ctx: DrawingContext, symbols?: Map<string, string>): string {
+  const sym = symbolTable(model, ctx, symbols);
   const rows: unknown[][] = [['PLC card', 'Part number (PLC card)', 'Connection point', 'Address', 'Symbolic address', 'Data type', 'Function text', 'Device tag (field device)', 'Signal type']];
-  for (const g of model.groups) g.points.forEach((p, k) => rows.push([g.devTag, g.devTag === model.plcTag ? ctx.plc.cpuPartNumber : g.partNumber ?? '', k, p.address, symbolOf(p.address, p.description, symbols), 'BOOL', p.description, p.deviceTag, p.type === 'input' ? 'Digital input' : 'Digital output']));
-  for (const a of ctx.analog ?? []) rows.push([analogCard(ctx, a, model.plcTag), a.partNumber, a.terminal || a.channel, a.address, symbolOf(a.address, a.description, symbols), 'REAL', a.description, '', `Analog ${a.kind === 'output' ? 'output' : 'input'}`]);
+  for (const g of model.groups) g.points.forEach((p, k) => rows.push([g.devTag, g.devTag === model.plcTag ? ctx.plc.cpuPartNumber : g.partNumber ?? '', k, p.address, sym.get(p.address) ?? p.address, 'BOOL', p.description, p.deviceTag, p.type === 'input' ? 'Digital input' : 'Digital output']));
+  for (const a of ctx.analog ?? []) rows.push([analogCard(ctx, a, model.plcTag), a.partNumber, a.terminal || a.channel, a.address, sym.get(a.address) ?? a.address, 'REAL', a.description, '', `Analog ${a.kind === 'output' ? 'output' : 'input'}`]);
   return csv(rows);
 }
 
