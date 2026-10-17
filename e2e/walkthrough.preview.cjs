@@ -101,8 +101,8 @@ function reply(system) {
   await page.getByText('Organized the description').waitFor({ timeout: 15000 });
   await shot('wizard_2_described');
   await click('Next →');
-  await click(/Suggest equipment/);
-  await page.getByRole('button', { name: 'Suggest again' }).waitFor({ timeout: 15000 });
+  await click(/Suggest for me/);
+  await page.getByRole('button', { name: /Suggest again/ }).waitFor({ timeout: 15000 });
   await shot('wizard_3_equipment');
   await click('Use this selection');
   await click('Next →');

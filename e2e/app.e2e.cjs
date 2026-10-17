@@ -127,8 +127,8 @@ function sse(model, text) {
   await page.getByText('Organized the description').waitFor({ timeout: 15000 });
   await snap(page, 'wizard_2');
   await page.getByRole('button', { name: 'Next →' }).click();
-  await page.getByRole('button', { name: 'Suggest equipment' }).click();
-  await page.getByRole('button', { name: 'Suggest again' }).waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: /Suggest for me/ }).click();
+  await page.getByRole('button', { name: /Suggest again/ }).waitFor({ timeout: 15000 });
   await snap(page, 'wizard_3_recommendation');
   // Equipment chooser: weak CPUs are greyed, a bigger one can be chosen.
   const greyCpus = await page.locator('input[aria-label^="Choose C"][disabled]').count();
