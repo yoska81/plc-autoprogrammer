@@ -13,7 +13,7 @@ import { panelLayout, spareSpace, terminalCounts, motorFla, type DrawingContext 
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
 import { getHmi } from '../../hmi/hmiCatalog';
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, MotorSpec } from '../types';
-import { defaultMachineModel, type MachineModel } from './machineModel';
+import { defaultMachineModel, drivesFromIo, type MachineModel } from './machineModel';
 import { comp, controlPower, mainDisconnect, motorBranches, Tags } from './power';
 import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
 import { processLoads } from './process';
@@ -37,6 +37,8 @@ export interface EngineInput {
   hmiPartNumber?: string | null;
   analog?: AnalogSetupRow[];
   projectName?: string;
+  /** The specification (motor powers for drives found only in the I/O list). */
+  spec?: string;
   /** Timestamp for generatedAt (tests pass a fixed one). */
   now?: string;
 }
@@ -80,7 +82,8 @@ function enclosureCandidates(pk: Picker, rating: DesignInputs['enclosureRating']
 }
 
 export function generateDesign(input: EngineInput): EngineResult {
-  const { model, inputs, getPart } = input;
+  const { inputs, getPart } = input;
+  const model = drivesFromIo(input.model, input.io, input.spec ?? '');
   const supply = inputs.supply;
   const pk = new Picker(input.pref ?? DEFAULT_PREFERENCE);
   const tags = new Tags(['PLC', 'ENC1', 'SP1', 'DS1', 'SR1']);

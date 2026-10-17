@@ -266,7 +266,9 @@ const STRESS_EXTRA: [string, 'input' | 'output', IOCategory, string][] = Array.f
 async function setupRules(v: string) {
   setupVariant(v === 'rules-big' ? 'big' : 'us480');
   if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress') {
-    useSpecStore.getState().setSections({ ...useSpecStore.getState().sections, overview: SEALING_SPEC });
+    // Only the sealing head's own description: the example's other sections (its conveyor) must not leak in.
+    const sections = useSpecStore.getState().sections;
+    useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC });
     // "-long": descriptions as long as the AI I/O step writes them (location, function and device in one line)
     const long = v === 'rules-sealing-long' || v === 'rules-stress';
     const LONG_TAIL = [' — operator station at the sealing head, front side', ' (wired to the PLC through junction box at the sealing station)', ', monitored by the PLC for the cycle interlocks and alarms'];

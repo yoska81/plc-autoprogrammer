@@ -95,16 +95,7 @@ export function defaultMachineModel(io: IOPoint[], inputs: DesignInputs, spec = 
   for (const m of inputs.motors.filter((x) => stale.has(x.tag))) {
     assumptions.push(`${m.tag} ${m.description} (${m.hp} HP) is in the motor list but not in the machine description or I/O list, so it was left out of the design: add it back on the Design tab if this machine has it.`);
   }
-  // A designer motor the I/O list drives through a VFD (run / fault on a drive) is drawn on a drive: the I/O wins.
-  const driveIo = io.filter((p) => p.deviceType === 'vfd-input' || /\b(vfd|drive|inverter)\b/i.test(p.description));
-  const motors: ModelMotor[] = inputs.motors.filter((m) => !stale.has(m.tag)).map((m) => {
-    const start: MotorStart = m.starter === 'vfd' ? 'vfd' : m.starter === 'motor-protector' ? 'motor-protector' : m.reversing ? 'reversing' : 'dol';
-    if (start !== 'vfd' && driveIo.some((p) => wordsShared(p.description, m.description))) {
-      assumptions.push(`${m.tag} ${m.description} is on a contactor in the motor list, but the I/O list runs it through a VFD: it is drawn on a drive — change the starter on the Design tab if that is wrong.`);
-      return { tag: m.tag, description: m.description, hp: m.hp, start: 'vfd' };
-    }
-    return { tag: m.tag, description: m.description, hp: m.hp, start };
-  });
+  const motors: ModelMotor[] = inputs.motors.filter((m) => !stale.has(m.tag)).map((m) => ({ tag: m.tag, description: m.description, hp: m.hp, start: m.starter === 'vfd' ? 'vfd' : m.starter === 'motor-protector' ? 'motor-protector' : m.reversing ? 'reversing' : 'dol' }));
   if (!motors.length) {
     // One motor per output that runs one (contactor / VFD run), not per direction or speed.
     const outs = io.filter((p) => p.type === 'output' && !/\b(heat\w*|lamp|light|horn|valve|solenoid)\b/i.test(p.description)
@@ -164,6 +155,33 @@ function specPower(spec: string, name: string): number | undefined {
   const m = new RegExp(`\\b${key}\\w*\\b[^.\\n]{0,40}?(\\d+(?:\\.\\d+)?)\\s*(hp|kw)\\b`, 'i').exec(spec);
   if (!m) return undefined;
   return Number(m[1]) * (m[2].toLowerCase() === 'kw' ? 1.341 : 1);
+}
+
+/**
+ * Motors the I/O list runs through a VFD (run / fault on a drive) are designed on a drive whatever the motor
+ * list or the AI said — otherwise the drive I/O would be wired to a drive that is not in the design.
+ */
+export function drivesFromIo(model: MachineModel, io: IOPoint[], spec = ''): MachineModel {
+  const driveIo = io.filter((p) => p.deviceType === 'vfd-input' || /\b(vfd|drive|inverter)\b/i.test(p.description));
+  const notes: string[] = [];
+  const motors = model.motors.map((m) => {
+    if (m.start === 'vfd' || !driveIo.some((p) => wordsShared(p.description, m.description))) return m;
+    notes.push(`${m.tag} ${m.description} was on a ${m.start === 'reversing' ? 'reversing starter' : 'contactor'}, but the I/O list runs it through a VFD: it is designed on a drive — change the starter on the Design tab if that is wrong.`);
+    return { ...m, start: 'vfd' as const };
+  });
+  // A drive run output no motor matches (the motor list is from another machine): a motor on a drive for it.
+  const runs = driveIo.filter((p) => p.type === 'output' && p.signal !== 'analog' && !/\b(rev|reverse|speed|preset|fault)\b/i.test(p.description));
+  for (const p of runs) {
+    if (motors.some((m) => wordsShared(p.description, m.description))) continue;
+    if (runs.length === 1 && motors.filter((m) => m.start === 'vfd').length === 1) continue; // the one drive is this one
+    const name0 = p.description.split(/\s+[—–-]\s+|[(,;]/)[0].replace(HP_RE, '').replace(/\b(run|contactor|starter|coil|output|on|vfd|drive)\b/gi, '').replace(/\s+/g, ' ').trim() || 'Drive';
+    const hp = specPower(spec, name0) ?? 1;
+    let n = motors.length + 1;
+    while (motors.some((m) => m.tag === `M${n}`)) n++;
+    motors.push({ tag: `M${n}`, description: /motor/i.test(name0) ? name0 : `${name0} motor`, hp, start: 'vfd' });
+    notes.push(`${p.description}: no motor in the motor list matches this drive output — ${`M${n}`} (${hp} HP${specPower(spec, name0) ? '' : ', assumed'}) on a drive was added; confirm it on the Design tab.`);
+  }
+  return notes.length ? { ...model, motors, assumptions: [...model.assumptions, ...notes] } : model;
 }
 
 function wordsShared(a: string, b: string): boolean {
