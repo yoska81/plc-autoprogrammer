@@ -206,7 +206,7 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
   // Labels and the complete package PDF (reuses the PDFs built above).
   const { addPackageToZip } = await import('./fullPackage');
   await addPackageToZip(zip, p, pre, onProgress);
-  zip.file('spec.md', `# ${p.projectName}\n\n${Object.entries(p.spec).filter(([, t]) => t.trim()).map(([k, t]) => `## ${k}\n${t}`).join('\n\n')}\n`);
+  zip.file('spec.md', `# ${p.projectName}\n\n${Object.entries(p.spec).filter((e): e is [string, string] => typeof e[1] === 'string' && Boolean(e[1].trim())).map(([k, t]) => `## ${k}\n${t}`).join('\n\n')}\n`);
   onProgress?.('Packing');
   return zip.generateAsync({ type: 'blob' });
 }

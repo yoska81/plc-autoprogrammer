@@ -113,6 +113,118 @@ const sizeOfWire = (env: Env, wire: string): number | null => {
 
 export const AC_POWER = /incoming supply|power bus|line side|contactor to overload|motor leads|motor cable|primary|disconnect to main|feed$/i;
 
+// Safety devices and process heaters the I/O list or spec asks for, checked against what the design
+// actually has: plain PLC inputs and standard sensors are not a safety function, and a heater needs
+// its own power circuit and an over-temperature cutoff that does not depend on the PLC.
+const TWO_HAND = /\btwo[- ]?hand/i;
+const LIGHT_CURTAIN = /\blight[- ]?curtain|\bOSSD\b|\bsafety (light )?(mat|edge|scanner)/i;
+const HEATER = /\bheat(er|ers|ing)\b|\bhot ?plate\b|\bseal(ing)? (bar|jaw)s?\b/i;
+/** A heater the machine has, as the spec words it (not "heat dissipation" or "heat sink"). */
+const HEATER_SPEC = /\bheaters?\b|\bheating element|\bhot ?plate\b|\bseal(ing)? (bar|jaw)s?\b|\bheat[- ]seal/i;
+const OVERTEMP = /\bover[- ]?temp\w*|\bhigh[- ]?limit\b|\btemperature limit\b|\bthermal (cut-?out|limit)\b/i;
+const THERMOCOUPLE = /\bthermocouple|\bT\/C\b|\btype [JK]\b/i;
+const partText = (c: ResolvedComponent) => `${c.part?.description ?? ''} ${c.comp.function} ${c.partNumber}`;
+const specText = (i: CodeInput) => Object.values(i.spec ?? {}).filter((t): t is string => typeof t === 'string').join('\n');
+const ioOf = (i: CodeInput) => [...(i.ctx.design.ioWiring ?? []).map((w) => ({ address: w.address, description: w.description, tag: w.deviceTag, location: w.location ?? '' })),
+  ...(i.ctx.analog ?? []).map((a) => ({ address: a.address, description: a.description, tag: '', location: '' }))];
+
+const SAFETY_PROCESS_RULES: CodeRule[] = [
+  {
+    id: 'two-hand-control',
+    name: 'Two-hand control through a two-hand safety relay',
+    clause: { US: 'ANSI B11.19 / ISO 13851 type IIIC, NFPA 79 9.2.3.8 (verify clause)', Canada: 'CSA Z432 / ISO 13851 type IIIC (verify clause)', IEC: 'IEC 60204-1 9.2.3.8 / ISO 13851 type IIIC (verify clause)' },
+    run: (i, env) => {
+      const pts = ioOf(i).filter((p) => TWO_HAND.test(p.description));
+      if (!pts.length && !TWO_HAND.test(specText(i))) return [];
+      const relay = env.m.rc.find((c) => c.category === 'safetyRelay' && /two[- ]?hand|13851|type III/i.test(partText(c)));
+      const onDoor = pts.filter((p) => /door|cabinet/i.test(p.location));
+      const out: ReturnType<CodeRule['run']> = [];
+      if (!relay) out.push({
+        subject: 'two-hand', severity: 'critical', area: 'safety', title: 'Two-hand control without a two-hand safety relay',
+        detail: `${pts.length ? `${pts.map((p) => `${p.address} ${p.description}`).join(', ')} ${pts.length > 1 ? 'are' : 'is'} wired as plain pushbuttons to PLC inputs` : 'The specification asks for a two-hand start, but the design has no two-hand control device'}. A two-hand control is a safety function: each button needs an N.O. + N.C. contact into a two-hand safety relay that requires both within 0.5 s and stops the hazardous motion when either is released; the PLC only reads the relay's output.`,
+        fix: 'Add a two-hand control relay (type IIIC) and two-hand buttons with N.O. + N.C. contacts; drive the closing valve from the relay\'s safety output, give the PLC its status input.',
+      });
+      if (onDoor.length) out.push({
+        subject: 'two-hand-door', severity: 'major', area: 'safety', title: 'Two-hand buttons on the cabinet door',
+        detail: `${onDoor.map((p) => p.tag || p.address).join(', ')} are placed on the cabinet door. Two-hand buttons belong on an operator station at the machine, at the safety distance from the hazard (ISO 13855), shrouded against accidental operation and far enough apart that one hand (or hand and elbow) cannot press both.`,
+        fix: 'Move the two-hand buttons to a two-hand station at the sealing head; size the distance from the closing time.',
+      });
+      return out;
+    },
+  },
+  {
+    id: 'safety-device-standard-part',
+    name: 'Safety devices are safety-rated parts',
+    clause: { US: 'ANSI B11.19 / NFPA 79 9.4 (verify clause)', Canada: 'CSA Z432 (verify clause)', IEC: 'IEC 60204-1 9.4 / IEC 61496 (verify clause)' },
+    run: (i, env) => ioOf(i).filter((p) => LIGHT_CURTAIN.test(p.description) && p.tag).flatMap((p) => {
+      const c = env.m.rc.find((x) => x.tag === p.tag);
+      if (!c || c.category === 'safetyRelay' || !/sensor|other/.test(c.category)) return [];
+      return [{
+        subject: p.tag, severity: 'critical' as const, area: 'safety' as const, title: `${p.tag} "${p.description}" is a standard sensor, not a safety device`,
+        detail: `${p.address} ${p.description} is wired to ${p.tag} ${c.partNumber} (${c.part?.description ?? c.category}). A light curtain / safety sensor must be a safety-rated device (type 4 ESPE, IEC 61496) whose OSSD outputs go to a safety relay; a standard sensor on a PLC input gives no protection.`,
+        fix: 'Remove the standard sensor from the BOM; select a type 4 light curtain and wire its OSSDs to a safety relay channel; the PLC reads the relay status.',
+      }];
+    }),
+  },
+  {
+    id: 'light-curtain-relay',
+    name: 'Light curtain on a safety relay that accepts OSSD outputs',
+    clause: { US: 'ANSI B11.19 / ISO 13855 (verify clause)', Canada: 'CSA Z432 / ISO 13855 (verify clause)', IEC: 'IEC 61496-1 / ISO 13855 / IEC 60204-1 9.4 (verify clause)' },
+    run: (i, env) => {
+      if (!ioOf(i).some((p) => LIGHT_CURTAIN.test(p.description)) && !LIGHT_CURTAIN.test(specText(i))) return [];
+      if (env.m.rc.some((c) => c.category === 'safetyRelay' && /light curtain|OSSD|ESPE|universal|semiconductor/i.test(partText(c)))) return [];
+      const relays = env.m.rc.filter((c) => c.category === 'safetyRelay').map((c) => `${c.tag} ${c.partNumber}`);
+      return [{
+        subject: 'light-curtain', severity: 'critical', area: 'safety', title: 'Light curtain without a safety relay channel for its OSSD outputs',
+        detail: `The machine has a light curtain but ${relays.length ? `the only safety relay (${relays.join(', ')}) is an E-stop / gate relay with dry-contact inputs` : 'no safety relay'}. OSSD outputs are 24 V semiconductor outputs with their own cross-fault test: they need a safety relay input made for them, normally with automatic reset (start interlock) separate from the E-stop's manual reset, and they must stop the closing stroke.`,
+        fix: 'Add a safety relay (or a channel of a configurable safety relay) that accepts OSSD inputs for the light curtain; its output removes the closing valve\'s supply; the PLC reads its status.',
+      }];
+    },
+  },
+  {
+    id: 'heater-power-circuit',
+    name: 'Heater has its own power circuit',
+    clause: { US: 'NFPA 79 7.2 / UL 508A (verify clause)', Canada: 'CSA C22.2 No. 14 (verify clause)', IEC: 'IEC 60204-1 7.2 (verify clause)' },
+    run: (i, env) => ioOf(i).filter((p) => /^Y|^Q/.test(p.address) && HEATER.test(p.description) && !/\b(light|lamp|pilot|alarm)\b/i.test(p.description)).flatMap((p) => {
+      const switching = env.m.rc.filter((c) => (c.category === 'contactor' || c.category === 'relay' || /solid.state|SSR/i.test(partText(c))) && HEATER.test(partText(c)) && !/interposing/i.test(c.comp.function));
+      const protectedBy = env.m.rc.filter((c) => (c.category === 'breaker' || c.category === 'fuse') && HEATER.test(partText(c)));
+      if (switching.length && protectedBy.length) return [];
+      return [{
+        subject: p.address, severity: 'major' as const, area: 'electrical' as const, title: `Heater output ${p.address} has no heater power circuit`,
+        detail: `${p.address} "${p.description}" drives ${p.tag || 'a relay'} only. The heater itself is not in the design: it needs a solid-state relay (zero-cross, with heat sink) or a contactor rated for the heater current, its own branch protection, and its load in the disconnect and supply sizing.${switching.length ? '' : ' No SSR / heater contactor found.'}${protectedBy.length ? '' : ' No heater branch protection found.'}`,
+        fix: 'Add the heater (power, voltage), an SSR or contactor and fuses / breaker for it; size the disconnect for the heater current.',
+      }];
+    }),
+  },
+  {
+    id: 'heater-overtemperature',
+    name: 'Independent over-temperature cutoff for heaters',
+    clause: { US: 'NFPA 79 7.4 (verify clause)', Canada: 'CSA C22.2 No. 14 (verify clause)', IEC: 'IEC 60204-1 7.4 (verify clause)' },
+    run: (i, env) => {
+      const io = ioOf(i);
+      const heater = io.some((p) => HEATER.test(p.description) && /^Y|^Q/.test(p.address)) || HEATER_SPEC.test(specText(i));
+      if (!heater) return [];
+      const out: ReturnType<CodeRule['run']> = [];
+      const limits = io.filter((p) => OVERTEMP.test(p.description));
+      const hardwired = env.m.rc.some((c) => OVERTEMP.test(c.comp.function) && /contactor|safety|cut/i.test(`${c.category} ${c.comp.function}`) && c.category !== 'sensor');
+      if (!hardwired) out.push({
+        subject: 'overtemp', severity: 'major', area: 'safety', title: 'Heater over-temperature cutoff is not hardwired',
+        detail: limits.length
+          ? `${limits.map((p) => `${p.address} ${p.description}`).join(', ')} only signals the PLC. An over-temperature limit must switch the heater off by itself (high-limit controller or thermal cut-out opening the heater contactor), so a stuck SSR or a PLC fault cannot overheat the seal bar.`
+          : 'The design has a heater but no independent over-temperature limit. A stuck SSR or a PLC fault would heat the seal bar without limit.',
+        fix: 'Add a high-limit controller / thermal cut-out (own sensor) that opens a heater contactor in series with the SSR; manual reset; the PLC reads its status.',
+      });
+      const tc = io.filter((p) => THERMOCOUPLE.test(p.description));
+      if (tc.length && !env.m.rc.some((c) => /thermocouple|transmitter|THM|TC input/i.test(partText(c)) && c.category !== 'sensor')) out.push({
+        subject: 'thermocouple', severity: 'major', area: 'electrical', title: 'Thermocouple without a transmitter or thermocouple input',
+        detail: `${tc.map((p) => `${p.address} ${p.description}`).join(', ')}: a thermocouple gives millivolts and needs cold-junction compensation; it cannot connect to a 4-20 mA / 0-10 V input${tc.some((p) => /transmitter/i.test(p.description)) ? ' — the I/O list counts on a transmitter, but none is in the design\'s parts list' : ''}. The design has neither a thermocouple transmitter nor a thermocouple input module.`,
+        fix: 'Add a thermocouple transmitter (TC → 4-20 mA, type J/K as fitted) or a thermocouple input module, with thermocouple extension cable of the same type.',
+      });
+      return out;
+    },
+  },
+];
+
 export const RULES: CodeRule[] = [
   {
     id: 'min-conductor',
@@ -433,6 +545,8 @@ export const RULES: CodeRule[] = [
         detail: 'Resetting the safety function must not start the machine; the reset must be a separate action from Start.', fix: 'Use a separate reset pushbutton.' }] : [];
     },
   },
+  ...SAFETY_PROCESS_RULES,
+
 ];
 
 /** Run every rule (region-aware clauses). */

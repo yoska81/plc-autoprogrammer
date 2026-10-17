@@ -88,7 +88,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const setChoice = (next: EquipmentChoice | null | ((c: EquipmentChoice | null) => EquipmentChoice | null)) =>
     setPending({ basis, choice: typeof next === 'function' ? next(choice) : next });
 
-  const specEmpty = !Object.values(spec).some((t) => t.trim());
+  const specEmpty = !Object.values(spec).some((t) => typeof t === 'string' && t.trim());
   const apiKey = settings.anthropicApiKey;
 
   // What the machine needs: the AI estimate, or the real I/O list once it exists (whichever is larger).
