@@ -3,7 +3,7 @@ import type { CpuModel, PlcProfile } from '../../plc/core/profile';
 import type { IOPoint } from '../../types/io';
 import type { HmiDesign, HmiElement, HmiScreen } from '../../hmi/types';
 import { HMI_ELEMENT_KINDS, MACHINE_SYMBOL_KINDS } from '../../hmi/types';
-import type { HmiModel } from '../../hmi/hmiCatalog';
+import { hmiMaker, type HmiModel } from '../../hmi/hmiCatalog';
 import { checkDesign, fixDesignLayout, layoutBands, MIN_TOUCH, GAP } from '../../hmi/layout';
 import { specToText, type SpecSections } from '../../spec/types';
 import { callClaude, type RichTurn } from './anthropic';
@@ -78,7 +78,7 @@ function system(hmi: HmiModel, guidelines: string, comms: string) {
   const b = layoutBands(W, H);
   const navCount = 6;
   const navW = Math.floor((W - GAP * (navCount + 1)) / navCount);
-  return `You are a senior HMI designer at a professional machine builder. Design the complete operator panel for an AutomationDirect ${hmi.partNumber} (${hmi.sizeIn}" ${W}x${H} px touch panel) connected to the machine's PLC. The customer is not an engineer and wants it as detailed and professional as a top machine builder's HMI: ISA-101 high-performance practice in a dark minimal console style.
+  return `You are a senior HMI designer at a professional machine builder. Design the complete operator panel for a ${hmiMaker(hmi)} ${hmi.partNumber} (${hmi.sizeIn}" ${W}x${H} px touch panel) connected to the machine's PLC. The customer is not an engineer and wants it as detailed and professional as a top machine builder's HMI: ISA-101 high-performance practice in a dark minimal console style.
 
 SCREEN SET (always produce all of these, adapted to the machine; ids in brackets):
 1. Main [main] — overview: a "machine" schematic of the machine (conveyors, motors, cylinders, sensors, parts bound to their bits), machine state as a "multistate" (Stopped / Running / sequence steps / Faulted ...), mode, cycle state, key counts and rates (numeric), a short production "trend", Start / Stop / Reset buttons, and an "alarm-banner" with the newest alarm.
@@ -214,7 +214,7 @@ export async function recreateScreenFromPicture(opts: {
   const W = opts.hmi.widthPx, H = opts.hmi.heightPx;
   const io = opts.io.map((p) => `${opts.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.description}`).join('\n') || '(none)';
   const tags = opts.tags.map((t) => `${t.address}\t${t.name}\t${t.description}`).join('\n') || '(none)';
-  const sys = `You recreate an existing operator-panel screen for an AutomationDirect ${opts.hmi.partNumber} (${W}x${H} px touch panel) from a picture of it.
+  const sys = `You recreate an existing operator-panel screen for a ${hmiMaker(opts.hmi)} ${opts.hmi.partNumber} (${W}x${H} px touch panel) from a picture of it.
 The image you get is exactly ${W}x${H} px and shows the panel area: element coordinates are image pixels.
 Find every operator element in the picture (push buttons, screen-change buttons, indicator lamps, numeric displays and entries, bar graphs, multistate texts, alarm banners, static texts and group frames) and return one element per item at the position and size where it appears.
 Element kinds: ${HMI_ELEMENT_KINDS.join(', ')}; prefer button, nav, indicator, numeric, numeric-entry, bar, multistate, text, alarm-banner, panel. Keep each element's label as written in the picture (short).

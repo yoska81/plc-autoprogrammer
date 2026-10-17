@@ -19,7 +19,7 @@ import { cpuFit, findCpu } from '../plc/core/fit';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
 import { generateHmiDesign } from '../lib/ai/hmiAI';
 import { reviseLadder, generateLadder } from '../plc/ai/ladderAI';
-import { getHmi, CLICK_HMI_COMMUNICATION, HMI_DESIGN_GUIDELINES } from '../hmi/hmiCatalog';
+import { getHmi, hmiCommsText, HMI_DESIGN_GUIDELINES } from '../hmi/hmiCatalog';
 
 export type UpdateStep = 'equipment' | 'io' | 'electrical' | 'hmi' | 'program';
 export interface StepResult { step: UpdateStep; status: 'skipped' | 'done' | 'proposal' | 'failed'; message: string }
@@ -110,7 +110,7 @@ async function runStep(step: UpdateStep, onStep: (r: StepResult) => void, signal
         const model = getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
         if (!model) { onStep({ step, status: 'skipped', message: 'No HMI chosen.' }); return true; }
         const io = ioNow();
-        const r = await generateHmiDesign({ ...ai, hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: CLICK_HMI_COMMUNICATION, spec, io, addresses: resolveAddresses(profile, cpu, io, slots), profile, cpu });
+        const r = await generateHmiDesign({ ...ai, hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: hmiCommsText(model, profile.id, `${profile.vendor} ${cpu.label}`), spec, io, addresses: resolveAddresses(profile, cpu, io, slots), profile, cpu });
         // Keep the look the user picked (Siemens or dark console) across a regeneration.
         hmi.setDesign(hmi.design?.look ? { ...r.design, look: hmi.design.look } : r.design, r.explanation);
         mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(r.design) });

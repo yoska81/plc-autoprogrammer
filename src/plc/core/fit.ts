@@ -3,7 +3,8 @@ import { moduleSlots, ioCapacity } from './modules';
 import { getPart } from '../../electrical/catalog';
 import type { HmiModel } from '../../hmi/hmiCatalog';
 import type { CpuModel } from './profile';
-import { platformById, platformFit, type Platform } from './platforms';
+import { driversOf, hmiCompatible, platformById, platformFit, type Platform } from './platforms';
+import { panelPart } from '../../hmi/panels';
 
 export interface Need {
   digitalInputs: number;
@@ -59,11 +60,22 @@ export function cpuFit(cpu: CpuModel, modules: string[], need: Need): Fit {
   return { ok: !reason, reason, spareIn, spareOut };
 }
 
+/**
+ * Can this touch panel be used with the chosen CPU? C-more panels: CLICK over Ethernet only.
+ * Panels of other makers (parts catalog): the maker's PLC driver list / shared protocol
+ * (hmiCompatible); with a CLICK CPU the maker's driver list must name CLICK.
+ */
 export function hmiFit(hmi: HmiModel, need: Need, cpuId?: string): Fit {
   let reason: string | null = null;
   const platform = cpuId ? platformOf(cpuId) : undefined;
-  if (platform) reason = `C-more panels are set up for CLICK only; not checked with the ${platform.name}.`;
+  if (hmi.catalog) {
+    const raw = getPart(hmi.partNumber);
+    const part = raw ? panelPart(raw) : undefined;
+    if (!part) reason = 'Not in the parts catalog.';
+    else if (platform) reason = hmiCompatible(platform, part).reason;
+    else if (!driversOf(part).includes('click')) reason = `CLICK is not in ${part.manufacturer}'s PLC driver list${part.ratings.plcDrivers === undefined ? ' (no driver list in the catalog yet)' : ''}.`;
+  } else if (platform) reason = `C-more panels are set up for CLICK only; not checked with the ${platform.name}.`;
   else if (!hmi.supportsClickEthernet) reason = 'Cannot connect to CLICK over Ethernet.';
-  else if (need.minHmiSizeIn && hmi.sizeIn < need.minHmiSizeIn) reason = `Smaller than the ${need.minHmiSizeIn}" the screens need.`;
+  if (!reason && need.minHmiSizeIn && hmi.sizeIn < need.minHmiSizeIn) reason = `Smaller than the ${need.minHmiSizeIn}" the screens need.`;
   return { ok: !reason, reason, spareIn: 0, spareOut: 0 };
 }

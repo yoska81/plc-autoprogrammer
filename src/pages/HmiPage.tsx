@@ -5,7 +5,9 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useStageStore } from '../store/useStageStore';
 import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, hmiFingerprint } from '../spec/useStages';
-import { HMI_MODELS, getHmi, CLICK_HMI_COMMUNICATION, HMI_DESIGN_GUIDELINES, type HmiModel } from '../hmi/hmiCatalog';
+import { HMI_MODELS, getHmi, hmiCommsText, hmiMaker, isCmore, HMI_DESIGN_GUIDELINES, type HmiModel } from '../hmi/hmiCatalog';
+import { catalogPanels } from '../hmi/panels';
+import { hmiFit, type Need } from '../plc/core/fit';
 import { generateHmiDesign, recreateScreenFromPicture } from '../lib/ai/hmiAI';
 import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
@@ -27,6 +29,9 @@ import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
 import { withAnalogScale } from '../hmi/analogScale';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
+
+/** Panels listed in the picker: those that can talk to the PLC at all (no machine-specific needs). */
+const ANY_NEED: Need = { digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null };
 
 const input = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white';
 const fieldLabel = 'block text-[11px] font-medium text-gray-500 uppercase tracking-wide';
@@ -182,13 +187,14 @@ function PanelSpecs({ model, design }: { model: HmiModel; design: HmiDesign }) {
   const gcd = (a: number, c: number): number => (c ? gcd(c, a % c) : a);
   const g = gcd(model.widthPx, model.heightPx);
   const items: [string, string][] = [
-    ['Panel', `${model.partNumber} · ${model.family}`],
+    ['Panel', `${model.partNumber} · ${isCmore(model) ? model.family : `${hmiMaker(model)} ${model.family}`}`],
     ['Display', `${model.sizeIn}" ${model.color ? 'colour' : 'mono'} ${model.touch ? 'touch' : ''}`],
     ['Resolution', `${model.widthPx} × ${model.heightPx} px (${model.widthPx / g}:${model.heightPx / g})`],
     ['Bands', `header ${b.header.h} px · nav ${b.nav.h} px`],
     ['Screens', String(design.screens.length)],
     ['Tags / alarms', `${design.tags.length} / ${design.alarms.length}`],
-    ['PLC link', model.supportsClickEthernet ? 'CLICK Ethernet (Modbus TCP 502)' : 'Serial'],
+    ['PLC link', isCmore(model) ? (model.supportsClickEthernet ? 'CLICK Ethernet (Modbus TCP 502)' : 'Serial') : "Maker's PLC driver (Ethernet)"],
+    ...(model.software ? [['Software', model.software] as [string, string]] : []),
   ];
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
@@ -424,7 +430,7 @@ export default function HmiPage() {
         try {
           return await generateHmiDesign({
             apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
-            hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: CLICK_HMI_COMMUNICATION,
+            hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: hmiCommsText(model, profile.id, `${profile.vendor} ${cpu.label}`),
             spec: fp.spec, io, addresses, profile, cpu,
           });
         } finally { useHmiStore.getState().setIsGenerating(false); }
@@ -461,16 +467,20 @@ export default function HmiPage() {
     </button>
   );
 
+  // Panels that can talk to this project's PLC (C-more for CLICK; other makers by their driver lists).
+  const pickable = [...HMI_MODELS.filter((m) => m.touch), ...catalogPanels().flatMap((o) => (o.model?.touch ? [o.model] : []))]
+    .filter((m) => hmiFit(m, ANY_NEED, cpu.id).ok);
   const picker = (
     <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
       <h3 className="text-sm font-semibold text-gray-800">Which HMI are you using?</h3>
+      <p className="text-xs text-gray-500">Touch panels that can talk to the {profile.vendor} {cpu.label} (the maker's PLC driver list), {pickable.length} in all.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        {HMI_MODELS.filter((m) => m.touch).map((m) => (
+        {pickable.map((m) => (
           <button key={m.partNumber} onClick={() => { hmi.setHmiPartNumber(m.partNumber); setChoosing(false); }}
             className={`text-left rounded border p-3 ${m.partNumber === (model?.partNumber ?? '') ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-brand-300'}`}>
             <div className="font-mono text-sm font-semibold text-gray-800">{m.partNumber}</div>
-            <div className="text-xs text-gray-600">{m.family} · {m.sizeIn}" · {m.widthPx}×{m.heightPx}{m.ethernet ? ' · Ethernet' : ''}</div>
-            {!m.supportsClickEthernet && <div className="text-xs text-amber-700">No built-in Ethernet to CLICK</div>}
+            <div className="text-xs text-gray-600">{hmiMaker(m)} {m.family} · {m.sizeIn}" · {m.widthPx}×{m.heightPx}{m.ethernet ? ' · Ethernet' : ''}</div>
+            {isCmore(m) && !m.supportsClickEthernet && <div className="text-xs text-amber-700">No built-in Ethernet to CLICK</div>}
             <div className="text-xs text-gray-400 mt-1 line-clamp-2">{m.description}</div>
           </button>
         ))}
@@ -604,7 +614,7 @@ export default function HmiPage() {
                     )}
                   </div>
                   <div className="flex justify-between items-center mt-1.5 px-1 text-[10px] tracking-widest text-gray-500 uppercase">
-                    <span>C-more {model.family === 'C-more' ? model.partNumber.split('-')[0] : model.family}</span>
+                    <span>{isCmore(model) ? `C-more ${model.family === 'C-more' ? model.partNumber.split('-')[0] : model.family}` : `${hmiMaker(model)} ${model.family}`}</span>
                     <span>{model.sizeIn}"</span>
                   </div>
                 </div>
