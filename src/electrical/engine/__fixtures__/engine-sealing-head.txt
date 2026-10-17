@@ -1,7 +1,7 @@
 supply 480VAC-3PH | NEMA 12
 motor M1 0.5 HP vfd — Unwinder motor
 
-ENC1     SCE-36EL3012LP     x1    Main enclosure 36x30x12 NEMA 12 — smallest catalog enclosure with everything placed and 67% spare panel space (target >= 25%)
+ENC1     SCE-36EL3012LP     x1    Main enclosure 36x30x12 NEMA 12 — smallest catalog enclosure with everything placed and 66% spare panel space (target >= 25%)
 SP1      SCE-36P30          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 5.5 A (motors + 25% of the largest + 125% of the heaters + control) x 1.15
 DS1H     14831111           x1    Disconnect handle
@@ -37,7 +37,7 @@ SOL1     100222016324002    x1    Sealing head solenoid valve (double solenoid)
 PL1      GCX1232-24L        x1    Machine running
 PL2      GCX1231-24L        x1    Fault
 PB4      GCX1104            x1    Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)
-TB1      DN-T10-A           x39   Feed-through terminals
+TB1      DN-T10-A           x40   Feed-through terminals
 TBG      DN-G10             x4    Ground terminals
 TBC      DN-EC1210          x3    Terminal end covers
 TBE      DN-EB35            x6    End brackets
@@ -77,4 +77,4 @@ note: Motor currents from NEC Table 430.250 / 430.248: M1 0.5 HP 1.1 A — confi
 note: PRS1 (Air pressure OK): field device to select (not in the catalog); wired as a dry contact to X105.
 note: VFD1: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.
 
-explanation: Rule-based design: NEMA 12 SCE-36EL3012LP, 480 V 3-phase through 30A — load 5.5 A (motors + 25% of the largest + 125% of the heaters + control) x 1.15 disconnect; motors: M1 0.5 HP on GS23-40P5 (STO); 24 VDC from PSR-24-120-3 for 1.7 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 67% spare panel space.
+explanation: Rule-based design: NEMA 12 SCE-36EL3012LP, 480 V 3-phase through 30A — load 5.5 A (motors + 25% of the largest + 125% of the heaters + control) x 1.15 disconnect; motors: M1 0.5 HP on GS23-40P5 (STO); 24 VDC from PSR-24-120-3 for 1.7 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 66% spare panel space.

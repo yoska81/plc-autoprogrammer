@@ -29,7 +29,7 @@ LS2      PNK-AP-3H          x1    Head down sensor
 LS3      PNK-AP-3H          x1    Sealing bar temperature OK
 SOL1     100222016324002    x1    Head solenoid valve (double solenoid)
 PB2      GCX1104            x1    Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)
-TB1      DN-T10-A           x35   Feed-through terminals
+TB1      DN-T10-A           x36   Feed-through terminals
 TBG      DN-G10             x4    Ground terminals
 TBC      DN-EC1210          x3    Terminal end covers
 TBE      DN-EB35            x6    End brackets
