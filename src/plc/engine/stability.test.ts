@@ -99,4 +99,34 @@ assert.notEqual(r.stepRegister, 'DS1101'); assert.notEqual(r.cycleCounter, 'CT2'
   const fresh = buildHmi(content, { partNumber: 'P', widthPx: 800, heightPx: 480, usedAddresses: programAddr });
   for (const t of fresh.tags) assert.ok(!programAddr.has(t.address) || /^[XY]/.test(t.address), `${t.name} collides with the program's ${t.address}`);
 }
+// 6. The example program (hand-made): stopped during a push, the part left at the eye is pushed after the restart.
+{
+  const sim = createSimulator(LADDER);
+  const m = buildMachineModel(io.map((p) => ({ address: addresses.get(p.id)!, description: p.description, type: p.type, category: p.category })), []);
+  for (const [a, v] of machineInputs(m)) sim.setInput(a, v);
+  const scan = (ms: number) => { for (let t = 0; t < ms; t += 10) { for (const [a, v] of stepMachine(m, sim.outputs(), 10)) sim.setInput(a, v); sim.step(10); } };
+  scan(200); sim.write('C1001', true); scan(100); sim.write('C1001', false);
+  for (let t = 0; t < 20_000 && !sim.readBit('Y002'); t += 10) scan(10);
+  assert.equal(sim.readBit('Y002'), true, 'push started');
+  sim.write('C1002', true); scan(50); sim.write('C1002', false); scan(1500);
+  assert.equal(sim.readBit('Y002'), false, 'Stop ends the push');
+  const atEye = sim.readBit('X004');
+  sim.write('C1001', true); scan(100); sim.write('C1001', false);
+  if (atEye) {
+    let pushed = false;
+    for (let t = 0; t < 3000 && !pushed; t += 10) { scan(10); pushed = sim.readBit('Y002'); }
+    assert.ok(pushed, 'the part left at the eye is pushed after the restart');
+  }
+  assert.equal(sim.readBit('C1101'), false, 'no fault');
+}
+// 7. Checker dead-logic warnings: internal memory read but never written, or written but never read.
+{
+  const dead = validateProgram({ tags: [], rungs: [
+    { id: 'a', comment: '', branches: [[{ type: 'NO', address: 'X001' }, { type: 'NO', address: 'C50' }]], outputs: [{ type: 'OUT', address: 'Y001' }] },
+    { id: 'b', comment: '', branches: [[{ type: 'NO', address: 'X002' }]], outputs: [{ type: 'OUT', address: 'C51' }, { type: 'TMR', address: 'T5', mode: 'ON_DELAY', preset: '3', unit: 'sec', accumulate: false, resetAddress: null }] },
+    { id: 'c', comment: '', branches: [[{ type: 'NO', address: 'C1001' }]], outputs: [{ type: 'OUT', address: 'C1201' }, { type: 'CNT', address: 'CT4', direction: 'UP', preset: '10', resetAddress: 'X003' }] },
+  ] }, profile, ioSet).map((i) => `${i.rungId}: ${i.message}`);
+  assert.deepEqual(dead, ['a: C50 is read but never written: it is always 0 / OFF.', 'b: C51 is written but never read: this logic does nothing.', 'b: T5 is written but never read: this logic does nothing.'],
+    'HMI ranges and counters are left out');
+}
 console.log('address stability tests passed');

@@ -72,7 +72,10 @@ has('"Valve_position_raw" := REAL_TO_INT(SCALE_X(MIN := 0.0, VALUE := NORM_X(MIN
 has('      Fill_Timer : TONR_TIME;');
 has('      Cycles : CTU_DINT;');
 has('      RT_1 : R_TRIG;');
-has('DATA_BLOCK "Machine_DB"\n{ S7_Optimized_Access := \'TRUE\' }\nVERSION : 0.1\nNON_RETAIN\n"Machine"');
+has('DATA_BLOCK "Machine_DB"\n{ S7_Optimized_Access := \'TRUE\' }\nVERSION : 0.1\n"Machine"');
+// Setpoints, counters (and run hours) are RETAIN statics: they survive a power cycle like CLICK's retentive memory.
+has('   VAR RETAIN\n');
+assert.ok(!scl.includes('NON_RETAIN'), 'the instance DB keeps the FB\'s retentivity');
 has('ORGANIZATION_BLOCK "Main"\nTITLE = "Main Program Sweep (Cycle)"\n{ S7_Optimized_Access := \'TRUE\' }');
 assert.deepEqual(st.warnings, []);
 assert.deepEqual(tags.map((t) => `${t.name}=${t.address}:${t.type}${t.inferred ? '?' : ''}`), ['Start_PB=%I0.0:Bool', 'Stop_PB=%I0.1:Bool', 'Pump_run=%Q0.0:Bool', 'Tank_level_raw=%IW64:Int?', 'Valve_position_raw=%QW112:Int?']);

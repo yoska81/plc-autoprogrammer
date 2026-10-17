@@ -144,11 +144,16 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   const c = SIEMENS_CPUS.find((x) => x.id === ctx.cpuId) ?? SIEMENS_CPUS[1];
   const tags: SiemensTag[] = [];
   const st = toIecSt(program, ctx, sclDialect(ctx, c, tags));
+  // Setpoints, counters and run hours survive a power cycle (CLICK keeps DS / DD / DH / DF registers and
+  // counters retentive): those statics are RETAIN in the optimized instance DB, the rest are not.
+  const RETAIN_RE = /^(DS|DD|DH|DF|CT|CTD)\d+$/i;
+  const line = (v: { name: string; type: string; comment: string }) => `      ${v.name} : ${v.type};   // ${v.comment.replace(/[\r\n]+/g, ' ')}`;
   const decl = [
     '      Initialized : Bool;   // set after the first scan',
     '      FirstScan : Bool;   // TRUE on the first scan after a start',
-    ...st.variables.map((v) => `      ${v.name} : ${v.type};   // ${v.comment.replace(/[\r\n]+/g, ' ')}`),
+    ...st.variables.filter((v) => !RETAIN_RE.test(v.base)).map(line),
   ];
+  const retain = st.variables.filter((v) => RETAIN_RE.test(v.base)).map(line);
   const indent = (s: string) => (s ? `   ${s}` : s);
   const body = st.body.split('\n').map(indent).join('\n');
   const scl = `${BOM}FUNCTION_BLOCK "Machine"
@@ -157,7 +162,7 @@ VERSION : 0.1
    VAR
 ${decl.join('\n')}
    END_VAR
-
+${retain.length ? `   VAR RETAIN\n${retain.join('\n')}\n   END_VAR\n` : ''}
 BEGIN
 ${body}
 END_FUNCTION_BLOCK
@@ -165,7 +170,6 @@ END_FUNCTION_BLOCK
 DATA_BLOCK "Machine_DB"
 { S7_Optimized_Access := 'TRUE' }
 VERSION : 0.1
-NON_RETAIN
 "Machine"
 
 BEGIN

@@ -123,7 +123,7 @@ export function compileSequence(seq: CycleSequence, base: ProgramResult, opts: {
       const last = i === steps.length - 1;
       R(`Step ${v(i)} — ${st.name}: done ${st.waitFor.length ? `when ${st.waitFor.map((w) => (w.input ? `${w.input} ${w.on === false ? 'OFF' : 'ON'}` : `${w.seconds} s`)).join(' and ')}` : 'at once'} → ${last ? 'cycle complete, back to step 10' : `step ${v(i + 1)}`}`,
         [[NO(RUN), NO(SAFE), CMP(S, '==', v(i)), ...conds]],
-        [{ type: 'COPY', source: last ? '10' : v(i + 1), dest: S }, ...(last ? [{ type: 'CNT', address: counter, direction: 'UP', preset: '32767', resetAddress: opts.countReset ?? 'C98' } as LadderOutput] : [])]);
+        [{ type: 'COPY', source: last ? '10' : v(i + 1), dest: S }, ...(last ? [{ type: 'CNT', address: counter, direction: 'UP', preset: '32767', resetAddress: opts.countReset ?? base.internal.reset } as LadderOutput] : [])]);
     }
   }
   // Request bits: ON in the steps that list them (one OUT each).
@@ -172,7 +172,8 @@ export function programWithCycle(input: ProgramInput & { spec: string; sequence?
   const role = (r: string) => base.roles.get(r);
   const sequence = input.sequence ?? defaultSequence(input.content, input.spec);
   const { program, cycleCounter } = compileSequence(sequence, base, {
-    alarm: role('alarm:step'), countReset: role('cmd:countreset'), stateWord: role('word:state'), states: input.content.states,
+    // Cycle count reset: the HMI's count reset, else Service done (maintenance counters), else the Reset bit.
+    alarm: role('alarm:step'), countReset: role('cmd:countreset') ?? role('cmd:servicedone') ?? base.internal.reset, stateWord: role('word:state'), states: input.content.states,
   });
   const notes = base.notes.filter((n) => !/automatic sequence .* not written yet/i.test(n) || !sequence.steps.length);
   return { program, sequence: program.sequence ?? sequence, cycleCounter, stepRegister: program.sequence?.register ?? STEP_REGISTER, notes: [...notes, ...sequence.questions], base };
