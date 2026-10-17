@@ -4,7 +4,7 @@
  * This finds those leftovers (compared with the example's seed data) and clears them, keeping the
  * user's machine description and — if they want — their I/O list. A backup is taken first.
  */
-import { DESIGN, EXAMPLE_ID, HMI, LADDER, RECOMMENDATION, SPEC } from '../preview/sampleProject';
+import { DESIGN, DOC_CONTROL, EXAMPLE_ID, HMI, LADDER, RECOMMENDATION, SPEC } from '../preview/sampleProject';
 import { useProjectStore } from '../store/useProjectStore';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useHmiStore } from '../store/useHmiStore';
@@ -19,7 +19,7 @@ import { backupActiveProject, useProjectsStore } from '../store/useProjectsStore
 import { specToText } from './types';
 import { looksLeftOver } from './leftovers';
 
-export type LeftoverKey = 'equipment' | 'electrical' | 'motors' | 'hmi' | 'program' | 'notes' | 'questions';
+export type LeftoverKey = 'docControl' | 'equipment' | 'electrical' | 'motors' | 'hmi' | 'program' | 'notes' | 'questions';
 export interface Leftover { key: LeftoverKey; label: string }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -32,6 +32,8 @@ export function exampleLeftovers(): Leftover[] {
   if (same(spec, SPEC)) return [];
   const specText = specToText(spec);
   const out: Leftover[] = [];
+  const doc = exampleDocControl();
+  if (doc.length) out.push({ key: 'docControl', label: `the example's document control (${doc.join(', ')})` });
   const rec = useProjectStore.getState().recommendation;
   if (rec && same(rec, RECOMMENDATION)) out.push({ key: 'equipment', label: "the example's equipment suggestion" });
   const el = useElectricalStore.getState();
@@ -50,6 +52,22 @@ export function exampleLeftovers(): Leftover[] {
   return out;
 }
 
+/** Title-block fields still holding the example's values, as "customer Example Foods Inc."… */
+function exampleDocControl(): string[] {
+  const info = useProjectStore.getState().info;
+  const labels: Record<keyof typeof DOC_CONTROL, string> = { customer: 'customer', site: 'site', projectNumber: 'project no.', drawingPrefix: 'drawing prefix', preparedBy: 'prepared by' };
+  const out = (Object.keys(DOC_CONTROL) as (keyof typeof DOC_CONTROL)[]).filter((k) => k !== 'preparedBy' && info[k].trim() === DOC_CONTROL[k]).map((k) => `${labels[k]} ${DOC_CONTROL[k]}`);
+  if (out.length && info.revisions.some((r) => r.description === 'Issued for review' && r.by === 'AI')) out.push('its revision history');
+  return out;
+}
+
+/** Drawing prefix from the project name: initials ("Sealing Head" → "SH"), or its first letters. */
+export function prefixFromName(name: string): string {
+  const words = name.toUpperCase().match(/[A-Z0-9]+/g) ?? [];
+  const p = words.length > 1 ? words.map((w) => w[0]).join('') : (words[0] ?? '').slice(0, 3);
+  return p.slice(0, 8);
+}
+
 /**
  * Clear every stage output that came from the example (equipment suggestion, electrical design
  * and its motors/notes/required parts, HMI, program and its notes, design-review results, the
@@ -59,6 +77,17 @@ export function exampleLeftovers(): Leftover[] {
 export function startClean({ keepIo }: { keepIo: boolean }) {
   backupActiveProject('Before "Start clean from my description"');
   const project = useProjectStore.getState();
+  // The example's document control: its customer, site, job number, prefix and revision history.
+  if (exampleDocControl().length) {
+    const info = project.info;
+    const reset = <K extends keyof typeof DOC_CONTROL>(k: K) => (info[k].trim() === DOC_CONTROL[k] ? '' : info[k]);
+    const name = useProjectsStore.getState().projects.find((p) => p.id === useProjectsStore.getState().activeId)?.name ?? '';
+    project.setInfo({
+      customer: reset('customer'), site: reset('site'), projectNumber: reset('projectNumber'), preparedBy: reset('preparedBy'),
+      drawingPrefix: info.drawingPrefix.trim() === DOC_CONTROL.drawingPrefix ? prefixFromName(name) : info.drawingPrefix,
+      revisions: [], checkedBy: '', approvedBy: '',
+    });
+  }
   project.setRecommendation(null);
   project.setModules([]);
   project.setPlc(project.plcId, '');

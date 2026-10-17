@@ -54,7 +54,7 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   const banner = page.getByTestId('start-clean');
   const text = (await banner.innerText()).replace(/\s+/g, ' ');
   log('Banner:', text.slice(0, 260));
-  for (const part of ['equipment suggestion', 'electrical design', 'HMI screens', 'PLC program', 'program notes']) check(text.includes(part), `banner names ${part}`);
+  for (const part of ['document control', 'Example Foods Inc.', '24-117', 'drawing prefix CNV', 'revision history', 'equipment suggestion', 'electrical design', 'HMI screens', 'PLC program', 'program notes']) check(text.includes(part), `banner names ${part}`);
 
   const before = await page.evaluate(async () => ({
     io: (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.length,
@@ -73,9 +73,11 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
     const proj = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState();
     const spec = (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().sections;
     const stages = (await import('/src/spec/useStages.ts')).stagesNow();
+    const info = proj.info;
     return {
       io, design: Boolean(el.design), motors: el.inputs.motors.length, hmi: Boolean(hmi.design), rungs: prog.ladder.rungs.length, notes: prog.userPrompt,
       rec: Boolean(proj.recommendation), overview: spec.overview, backups: Object.keys(localStorage).filter((k) => k.startsWith('plc-backup:')).length,
+      doc: { customer: info.customer, site: info.site, projectNumber: info.projectNumber, prefix: info.drawingPrefix, revisions: info.revisions.length },
       stages: Object.fromEntries(Object.entries(stages).map(([k, v]) => [k, v.status])),
     };
   });
@@ -83,10 +85,19 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   check(after.io === before.io && after.io > 0, 'I/O list kept');
   check(after.overview === OWN, 'description kept');
   check(!after.design && !after.motors && !after.hmi && !after.rungs && !after.notes && !after.rec, "the example's outputs are cleared");
+  check(!after.doc.customer && !after.doc.site && !after.doc.projectNumber && after.doc.prefix === 'SH' && after.doc.revisions === 0, `the example's document control is reset (prefix from the name, no revisions): ${JSON.stringify(after.doc)}`);
+  const cover = await page.evaluate(async () => { const { currentRevision } = await import('/src/store/useProjectStore.ts'); return currentRevision((await import('/src/store/useProjectStore.ts')).useProjectStore.getState().info).rev; });
+  check(cover === 'A', 'starts at Rev A');
   check(after.backups === before.backups + 1, 'a backup was taken first');
   check(after.stages.electrical === 'empty' && after.stages.hmi === 'empty' && after.stages.program === 'empty', 'electrical, HMI and program are to do');
   const done = (await page.getByTestId('start-clean').innerText()).replace(/\s+/g, ' ');
   check(/Cleared/.test(done) && /Build everything from my description/.test(done), 'offers to build everything again');
+  // Project data (the title-block fields every drawing and the machine spec use).
+  await page.goto(BASE + '/project');
+  await page.waitForTimeout(800);
+  const fields = (await page.locator('main input').evaluateAll((els) => els.map((e) => e.value))).join(' | ').toUpperCase();
+  check(!/EXAMPLE FOODS|LINE 3|24-117|\bCNV\b/.test(fields), `Project data no longer holds the example's customer, site, job or prefix: ${fields.slice(0, 200)}`);
+  check(/\bSH\b/.test(fields), 'drawing prefix from the project name (SH)');
 
   await page.reload();
   await page.waitForTimeout(800);
