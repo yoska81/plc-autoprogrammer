@@ -13,7 +13,7 @@ const STATUS: Record<Question['status'], { text: string; cls: string }> = {
 /** One question with its answer directly under it (Q, then A). */
 function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource: boolean }) {
   const projectId = useActiveProjectId();
-  const { answer, reopen } = useQuestionStore();
+  const { answer } = useQuestionStore();
   const [draft, setDraft] = useDraft(`answer.${q.id}`, q.answer);
   const [editing, setEditing] = useUi(`answer.${q.id}.editing`, q.status === 'open');
   const choices = quickChoices(q.text);
@@ -60,7 +60,8 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
               <span className="text-steel-500 font-semibold mr-1">A:</span>{q.status === 'assumed' ? <em>{answerText(q)}</em> : q.answer}
               <div className="text-[11px] text-steel-400 mt-0.5">Part of the specification · {q.date}</div>
             </div>
-            <button type="button" onClick={() => { setDraft(q.answer); setEditing(true); reopen(projectId, q.id); }} className="text-xs text-steel-500 underline pt-1.5">Change</button>
+            {/* Editing keeps the saved answer (and the stages built on it) until a new one is saved; Cancel leaves it. */}
+            <button type="button" onClick={() => { setDraft(q.answer); setEditing(true); }} className="text-xs text-steel-500 underline pt-1.5">Change</button>
           </div>
         )}
       </div>

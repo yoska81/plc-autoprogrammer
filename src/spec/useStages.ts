@@ -12,6 +12,7 @@ import { moduleSlots } from '../plc/core/modules';
 import { changedSections, fingerprint, type SpecSections } from './types';
 import type { IOPoint } from '../types/io';
 import type { HmiDesign } from '../hmi/types';
+import { SOURCE_LABEL, type QuestionSource } from '../components/questions/useQuestionStore';
 
 export type StageStatus = 'empty' | 'stale' | 'ready';
 
@@ -55,6 +56,28 @@ export function useFingerprints() {
   }), [sections, io, hmi, plcId, cpuId, modules, info.region]);
 }
 
+/** Questions whose answers a stage is built on (the stages before it ask the rest). */
+const QA_SOURCES: Partial<Record<StageId, QuestionSource[]>> = {
+  equipment: ['spec', 'io'], io: ['spec', 'io'], electrical: ['spec', 'io', 'electrical'], hmi: ['spec', 'io', 'hmi'],
+  program: ['spec', 'io', 'electrical', 'hmi', 'review'],
+};
+
+/**
+ * The spec as one stage sees it: the sections, and only the answers to the questions it depends on.
+ * An answer "use the AI's assumption" is left out: the stage was already built on that assumption.
+ */
+export function specForStage(spec: Record<string, string>, stage: StageId): Record<string, string> {
+  const sources = QA_SOURCES[stage];
+  const { qa: all = '', ...sections } = spec;
+  if (!sources) return spec;
+  const labels = new Set(sources.map((s) => SOURCE_LABEL[s]));
+  const qa = all.split(/\n(?=Q \()/)
+    .filter((b) => { const m = b.match(/^Q \(([^)]*)\):/); return b.trim() && (!m || labels.has(m[1])) && !/\nA: \(AI's assumption/.test(b); })
+    .join('\n');
+  // No answers that matter here and no answers at all compare the same.
+  return qa ? { ...sections, qa } : sections;
+}
+
 export interface StageInputs {
   fp: { spec: Record<string, string>; specFp: string; ioFp: string; addrFp?: string; region?: string; hmiFp: string };
   sources: Partial<Record<StageId, StageSource>>;
@@ -73,9 +96,11 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
     const src = sources[id];
     if (!src) return { id, status: 'ready', reason: null }; // made by hand or before tracking
     const reasons: string[] = [];
-    if (deps.spec && src.specFp !== fp.specFp) {
+    // With the spec the stage was built from, compare only what it depends on (its questions' answers).
+    const specChanged = src.spec ? fingerprint(specForStage(src.spec, id)) !== fingerprint(specForStage(fp.spec, id)) : src.specFp !== fp.specFp;
+    if (deps.spec && specChanged) {
       // Say exactly what changed: answering a question (e.g. during an update) is not the same as editing the description.
-      const changed = src.spec ? changedSections(src.spec, fp.spec as SpecSections) : [];
+      const changed = src.spec ? changedSections(specForStage(src.spec, id) as SpecSections, specForStage(fp.spec, id) as SpecSections) : [];
       reasons.push(changed.length === 1 && changed[0] === 'Questions and answers' ? 'new answers to questions' : changed.length ? `the machine description changed (${changed.slice(0, 3).join(', ')}${changed.length > 3 ? '…' : ''})` : 'the spec changed');
     }
     if (deps.io && src.ioFp !== undefined && src.ioFp !== fp.ioFp) reasons.push('the I/O list changed');
