@@ -15,10 +15,17 @@ test('price comes from the verified price list with its date', () => {
   assert.equal(s.price?.price, 60);
   assert.match(s.price?.date ?? '', /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(sourcingOf('NO-SUCH-PART').lead, 'unknown');
+  assert.equal(sourcingOf('NO-SUCH-PART').lifecycle, 'unknown');
+  // a panel the maker marks legacy, with its successor
+  const legacy = sourcingOf('6AV2128-3XB06-0AX0');
+  assert.equal(legacy.lifecycle, 'nrnd');
+  assert.equal(sourcingFlags(legacy)[0].level, 'orange');
 });
 
-test('flags: back-order and obsolete are red, long lead and end of life orange', () => {
-  assert.deepEqual(sourcingFlags({ lead: 'backorder', lifecycle: 'obsolete', successor: 'X2' }).map((f) => f.level), ['red', 'red']);
+test('flags: back-order and discontinued are red, long lead and end of life orange', () => {
+  assert.deepEqual(sourcingFlags({ lead: 'backorder', lifecycle: 'active' }).map((f) => f.level), ['red']);
+  // a discontinued part is one red flag, not also "back-order"
+  assert.deepEqual(sourcingFlags({ lead: 'backorder', lifecycle: 'obsolete', successor: 'X2' }).map((f) => f.text), ['Discontinued (successor X2)']);
   assert.deepEqual(sourcingFlags({ lead: 'long', lifecycle: 'eol' }).map((f) => f.level), ['orange', 'orange']);
   assert.deepEqual(sourcingFlags({ lead: 'stock', lifecycle: 'active' }), []);
 });

@@ -16,7 +16,7 @@ import { optimise, DEFAULT_GOALS, type Goals } from '../sourcing/optimise';
 import type { WebSource } from '../lib/ai/anthropic';
 import type { ElectricalDesign } from '../electrical/types';
 
-const money = (n: number) => `$${n.toFixed(2)}`;
+const money = (n: number, currency: 'USD' | 'EUR' = 'USD') => `${currency === 'EUR' ? '€' : '$'}${n.toFixed(2)}`;
 const flagCls = { red: 'bg-red-50 text-red-700 border-red-200', orange: 'bg-orange-50 text-orange-800 border-orange-200' };
 const th = 'text-left py-1.5 pr-3 font-medium';
 
@@ -25,7 +25,7 @@ interface SwapRecord { from: string; to: string; impact: ImpactLine[]; before: E
 
 function PriceCell({ s, qty }: { s: Sourcing; qty: number }) {
   if (!s.price) return <span className="text-steel-400">to confirm</span>;
-  return <span title={`${s.price.unit}, read ${s.price.date}`}>{money(s.price.price)}{qty > 1 && s.price.unit === 'each' ? <span className="text-steel-400"> ×{qty} = {money(s.price.price * qty)}</span> : <span className="text-steel-400"> / {s.price.unit}</span>}</span>;
+  return <span title={`${s.price.unit}, read ${s.price.date}`}>{money(s.price.price, s.price.currency)}{qty > 1 && s.price.unit === 'each' ? <span className="text-steel-400"> ×{qty} = {money(s.price.price * qty, s.price.currency)}</span> : <span className="text-steel-400"> / {s.price.unit}</span>}</span>;
 }
 
 function LiveCell({ r }: { r?: LiveResult }) {
@@ -61,7 +61,8 @@ export default function SourcingPage() {
   const groups = useMemo(() => (ctx ? billOfMaterials(ctx).map((g) => ({ ...g, lines: g.lines.filter((l) => l.partNumber && !l.note) })).filter((g) => g.lines.length) : []), [ctx]);
   const lines = useMemo(() => groups.flatMap((g) => g.lines), [groups]);
   const flagged = lines.filter((l) => sourcingFlags(sourcingOf(l.partNumber)).length);
-  const total = lines.reduce((n, l) => { const p = sourcingOf(l.partNumber).price; return p && p.unit === 'each' ? n + p.price * l.qty : n; }, 0);
+  // Totals per currency (a EUR list price is never converted).
+  const totals = lines.reduce((t, l) => { const p = sourcingOf(l.partNumber).price; if (p && p.unit === 'each') t[p.currency] = (t[p.currency] ?? 0) + p.price * l.qty; return t; }, {} as Partial<Record<'USD' | 'EUR', number>>);
   const unpriced = lines.filter((l) => !sourcingOf(l.partNumber).price).length;
   const proposals = useMemo(() => optimise(lines.map((l) => ({ partNumber: l.partNumber, qty: l.qty })), goals), [lines, goals]);
 
@@ -134,7 +135,7 @@ export default function SourcingPage() {
           <>
             <div className="flex flex-wrap gap-4 text-sm text-steel-700">
               <span><b>{lines.length}</b> parts</span>
-              <span>List price <b>{money(total)}</b>{unpriced ? <span className="text-steel-500"> + {unpriced} to confirm</span> : ''}</span>
+              <span>List price <b>{(Object.entries(totals) as ['USD' | 'EUR', number][]).map(([c, n]) => money(n, c)).join(' + ') || money(0)}</b>{unpriced ? <span className="text-steel-500"> + {unpriced} to confirm</span> : ''}</span>
               <span className={flagged.length ? 'text-red-700 font-medium' : ''}>{flagged.length} flagged</span>
             </div>
             {groups.map((g) => (
@@ -219,7 +220,7 @@ export default function SourcingPage() {
                   <tr key={p.from} className="align-top">
                     <td className="px-3 py-1.5 font-mono">{p.qty}× {p.from}</td>
                     <td className="px-3 py-1.5"><span className="font-mono">{p.to}</span> <span className="text-steel-500">{p.manufacturer}</span></td>
-                    <td className="px-3 py-1.5">{p.saving === null ? <span className="text-steel-400">not known</span> : p.saving >= 0 ? <span className="text-emerald-700">{money(p.saving)}</span> : <span className="text-red-700">costs {money(-p.saving)} more</span>}</td>
+                    <td className="px-3 py-1.5">{p.saving === null ? <span className="text-steel-400">not known</span> : p.saving >= 0 ? <span className="text-emerald-700">{money(p.saving, p.currency)}</span> : <span className="text-red-700">costs {money(-p.saving, p.currency)} more</span>}</td>
                     <td className="px-3 py-1.5">{p.leadGain ?? '—'}</td>
                     <td className="px-3 py-1.5 text-xs text-steel-600">{p.risks.join('; ') || 'none known'}</td>
                     <td className="px-3 py-1.5 text-right"><button onClick={() => swap(p.from, p.to)} className="rounded bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">Accept</button></td>

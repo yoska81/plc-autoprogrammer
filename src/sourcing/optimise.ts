@@ -17,6 +17,8 @@ export interface Proposal {
   manufacturer: string;
   /** Total saving for the line (positive = cheaper), null when a price is not known. */
   saving: number | null;
+  /** Currency of the saving. */
+  currency: 'USD' | 'EUR';
   /** "Long lead → In stock", null when the lead time does not improve. */
   leadGain: string | null;
   risks: string[];
@@ -34,7 +36,7 @@ function quality(p: CatalogPart, s: Sourcing): number {
 
 /** Score of a candidate (higher is better), relative to the current part. */
 function score(c: CatalogPart, s: Sourcing, cur: { part: CatalogPart; s: Sourcing }, g: Goals, brand: string | null): number {
-  const priceTerm = s.price && cur.s.price ? (cur.s.price.price - s.price.price) / Math.max(1, cur.s.price.price) : 0;
+  const priceTerm = s.price && cur.s.price && s.price.currency === cur.s.price.currency ? (cur.s.price.price - s.price.price) / Math.max(1, cur.s.price.price) : 0;
   const leadTerm = (LEAD_RANK[cur.s.lead] - LEAD_RANK[s.lead]) / 4;
   const qualityTerm = quality(c, s) - quality(cur.part, cur.s);
   const brandTerm = brand ? (c.manufacturer === brand ? 1 : 0) - (cur.part.manufacturer === brand ? 1 : 0) : 0;
@@ -60,12 +62,13 @@ export function optimise(lines: { partNumber: string; qty: number }[], goals: Go
       if (v > 0.05 && (!best || v > best.v)) best = { ...c, v };
     }
     if (!best) continue;
-    const saving = best.s.price && cur.s.price ? Math.round((cur.s.price.price - best.s.price.price) * l.qty * 100) / 100 : null;
+    const saving = best.s.price && cur.s.price && best.s.price.currency === cur.s.price.currency ? Math.round((cur.s.price.price - best.s.price.price) * l.qty * 100) / 100 : null;
     const leadGain = LEAD_RANK[best.s.lead] < LEAD_RANK[cur.s.lead] ? `${LEAD_LABEL[cur.s.lead]} → ${LEAD_LABEL[best.s.lead]}` : null;
     const risks = differencesOf(part, best.part);
     if (!best.s.price) risks.push('price not known');
+    else if (cur.s.price && best.s.price.currency !== cur.s.price.currency) risks.push(`prices in different currencies (${cur.s.price.currency} / ${best.s.price.currency}): compare them yourself`);
     if (best.s.lead === 'unknown') risks.push('availability not known: run a live check');
-    out.push({ from: l.partNumber, to: best.part.partNumber, qty: l.qty, manufacturer: best.part.manufacturer, saving, leadGain, risks });
+    out.push({ from: l.partNumber, to: best.part.partNumber, qty: l.qty, manufacturer: best.part.manufacturer, saving, currency: cur.s.price?.currency ?? 'USD', leadGain, risks });
   }
   return out;
 }
