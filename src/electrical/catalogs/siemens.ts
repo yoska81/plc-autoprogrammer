@@ -763,7 +763,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 18,
     heightMm: 90,
-    ratings: { family: '5SY4', amps: 6, poles: 1, curve: 'C', volts: '230/400 VAC', interruptingKA: 10, ul: '1077' },
+    ratings: { family: '5SY4', amps: 6, poles: 1, curve: 'C', volts: '230/400 VAC', interruptingKA: 10, ul: '1077 (supplementary protector, not branch rated)', interruptingKAUL1077: 5, branchRated: 'no', interruptingNote: '10 kA per IEC/EN 60898; 5 kA per UL 1077 / CSA C22.2 No.235' },
     verified: true,
   },
   {
@@ -944,7 +944,7 @@ export const SIEMENS: CatalogPart[] = [
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=8WH9000-1PA00&language=en&caller=SIOS',
     mount: 'backplate',
     widthMm: 2.2,
-    ratings: { family: '8WH1', forUse: '8WH1000-0AF.. / 0AG.. / 0CF07 / 0CG07', kind: 'end plate' },
+    ratings: { family: '8WH1', forUse: '8WH through-type screw terminals, terminal size 2.5-10 mm2 (8WH1000-0AF.. / 0AG.. / 0CF07 / 0CG07)', kind: 'end plate' },
     verified: true,
   },
   {
