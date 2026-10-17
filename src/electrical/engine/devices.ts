@@ -243,7 +243,7 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
   const fieldW = ioWiring.filter((w) => w.location && w.location !== CABINET && w.location !== DOOR);
   const motorLocations = Object.fromEntries(branches.map((b) => [b.motor.tag, b.motor.zone && zones.includes(b.motor.zone) ? b.motor.zone : zoneOf(b.motor.description, zones)]));
   const usedZones = zones.filter((z) => fieldW.some((w) => w.location === z) || Object.values(motorLocations).includes(z));
-  const jbPart = pk.pick('enclosure', (p) => p.ratings.kind === 'enclosure', (p) => (num(p.ratings.heightIn) ?? 99) * (num(p.ratings.widthIn) ?? 99));
+  const jbPart = pk.pick('enclosure', (p) => p.ratings.kind === 'enclosure' && !/stainless|fiberglass|polycarbonate/i.test(String(p.ratings.material ?? '')), (p) => (num(p.ratings.heightIn) ?? 99) * (num(p.ratings.widthIn) ?? 99));
   const junctionBoxes: MachineWiring['junctionBoxes'] = [];
   const routing: Record<string, string | null> = {};
   for (const z of usedZones) {
