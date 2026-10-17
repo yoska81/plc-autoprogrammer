@@ -42,7 +42,7 @@ const SYSTEM = `You read a machine specification and its I/O list and describe t
 - motors: every motor the machine has, in order. Keep the designer's motor list exactly (tag, power, start method) and add motors the spec or I/O list mentions that are missing. "power" + "unit" as stated; when not stated estimate it and set powerGiven false. "start": vfd when the spec mentions variable speed, a drive, ramps or speed setpoints; reversing for an across-the-line motor that runs both ways; motor-protector only when the spec asks for one; otherwise dol. "vertical" for hoists, lifts and other overhauling loads. "zone": the machine area it is in.
 - estops: number of E-stop buttons (at least 1: the cabinet door).
 - guardDoors / lightCurtains: each interlocked guard door / light curtain the spec mentions, with its zone.
-- zones: the machine areas in order (e.g. "Infeed conveyor", "Pusher station"), 1–6 short names.
+- zones: the machine areas in order (e.g. "Infeed conveyor", "Pusher station"), 1-6 short names.
 - interfaces: the I/O descriptions of outputs that signal another machine or robot.
 - questions: what the designer must confirm (unstated motor powers, supply, safety assumptions), one short sentence each.`;
 
@@ -58,12 +58,13 @@ interface AiModel {
 
 /** The AI's model on top of the rules' own reading: the designer's motor list always wins. */
 export function mergeMachineModel(ai: AiModel, base: MachineModel, inputs: DesignInputs): MachineModel {
-  const own = new Set(inputs.motors.map((m) => m.tag));
+  // The designer's motors still in the base model (stale ones were left out by defaultMachineModel).
+  const own = new Set(base.motors.filter((m) => inputs.motors.some((x) => x.tag === m.tag)).map((m) => m.tag));
   const aiMotors: ModelMotor[] = ai.motors.map((m) => ({
     tag: m.tag, description: m.description, hp: Math.max(0.25, m.unit === 'kW' ? m.power / 0.7457 : m.power), start: m.start,
     ...(m.vertical ? { vertical: true } : {}), ...(m.zone ? { zone: m.zone } : {}),
   }));
-  const motors = inputs.motors.length
+  const motors = own.size
     ? [...base.motors.map((m) => ({ ...m, ...pick(aiMotors.find((a) => a.tag === m.tag)) })), ...aiMotors.filter((m) => !own.has(m.tag))]
     : aiMotors.length ? aiMotors : base.motors;
   const zones = ai.zones.map((z) => z.trim()).filter(Boolean).slice(0, 6);
@@ -74,7 +75,7 @@ export function mergeMachineModel(ai: AiModel, base: MachineModel, inputs: Desig
     zones: zones.length ? zones : base.zones,
     interfaces: [...new Set([...base.interfaces, ...ai.interfaces])],
     enclosureRating: base.enclosureRating,
-    assumptions: [...new Set([...notGiven, ...ai.questions])],
+    assumptions: [...new Set([...base.assumptions.filter((a) => /left out of the design/.test(a)), ...notGiven, ...ai.questions])],
   };
 }
 /** Only the AI's placement details for a designer motor (its power and starter stay the designer's). */
@@ -84,7 +85,9 @@ export interface AiOptions { apiKey: string; model: string; effort: Effort; sign
 
 export async function machineModelFromSpec(opts: AiOptions & { spec: string; io: IOPoint[]; inputs: DesignInputs }): Promise<{ model: MachineModel; reasoning: string | null; promptChars: number }> {
   const base = defaultMachineModel(opts.io, opts.inputs, opts.spec);
-  const motors = opts.inputs.motors.map((m) => `${m.tag}: ${m.description}, ${m.hp} HP, ${m.starter}${m.reversing ? ', reversing' : ''}`).join('\n') || '(none)';
+  // Only the designer's motors this machine mentions (left-over ones would be copied back by the AI).
+  const kept = new Set(base.motors.map((m) => m.tag));
+  const motors = opts.inputs.motors.filter((m) => kept.has(m.tag)).map((m) => `${m.tag}: ${m.description}, ${m.hp} HP, ${m.starter}${m.reversing ? ', reversing' : ''}`).join('\n') || '(none)';
   const io = opts.io.map((p) => `${p.type}\t${p.description}`).join('\n') || '(no I/O yet)';
   const content = `Machine specification:\n${opts.spec || '(not given)'}\n\nSupply: ${opts.inputs.supply}\nDesigner's motor list:\n${motors}\n\nI/O list (type, description):\n${io}`;
   const { text, reasoning } = await callClaude({ ...opts, system: SYSTEM, messages: [{ role: 'user', content }], schema: MACHINE_MODEL_SCHEMA });
