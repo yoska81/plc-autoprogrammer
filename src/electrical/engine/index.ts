@@ -9,10 +9,10 @@ import type { AnalogSetupRow } from '../../plc/core/analog';
 import type { Region } from '../../standards/regions';
 import { enclosureText, powerText, SUPPLY_INFO } from '../../standards/regions';
 import { DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
-import { enclosureFamily, panelLayout, spareSpace, terminalCounts, motorFla, type DrawingContext } from '../derive';
+import { enclosureFamily, enclosurePanelArea, enclosureRank, enclosureSize, enclosuresFor, panelLayout, SPARE_RULE, spareSpace, terminalCounts, motorFla, type DrawingContext } from '../derive';
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
 import { getHmi } from '../../hmi/hmiCatalog';
-import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, MotorSpec } from '../types';
+import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, EnclosureChoice, MotorSpec } from '../types';
 import { defaultMachineModel, drivesFromIo, type MachineModel } from './machineModel';
 import { comp, controlPower, mainDisconnect, motorBranches, Tags } from './power';
 import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
@@ -78,9 +78,10 @@ function enclosureCandidates(pk: Picker, rating: DesignInputs['enclosureRating']
   // NEMA 4X: stainless; otherwise painted steel. Non-metallic enclosures are the designer's choice (Electrical page).
   const fit = all.filter((p) => enclosureFamily(p) === (stainless ? 'stainless' : 'steel')
     && (n === '1' || String(p.ratings.nema ?? '').split('/').includes(n)));
-  const area = (p: CatalogPart) => (num(p.ratings.heightIn) ?? 0) * (num(p.ratings.widthIn) ?? 0) * 1000 + (num(p.ratings.depthIn) ?? 0);
-  return (fit.length ? fit : all).sort((a, b) => area(a) - area(b));
+  return [...(fit.length ? fit : all)].sort(enclosureRank);
 }
+
+interface Trial { components: DesignComponent[]; spare: number; fits: boolean; ok: boolean; enc: CatalogPart; notes: string[]; score: number[] }
 
 export function generateDesign(input: EngineInput): EngineResult {
   const { inputs, getPart } = input;
@@ -192,12 +193,12 @@ export function generateDesign(input: EngineInput): EngineResult {
   // Terminal counts come from the terminal plan, which does not depend on the enclosure.
   const counts = terminalCounts(ctxOf([...core, ...accessories({ feed: 1, ground: 1, fused: 0, endPlates: 1, endStops: 2 }, 1, 1)]));
 
-  // When no enclosure fits, the closest one wins: fewest back-panel parts left out, then a door that fits
-  // (HMI, operators, handle), then the most spare space — never simply the smallest (all score 0 % spare).
-  let best: { components: DesignComponent[]; spare: number; ok: boolean; enc: CatalogPart; score: number[] } | undefined;
-  const better = (a: number[], b: number[]) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i]; return false; };
-  for (const enc of enclosureCandidates(pk, inputs.enclosureRating)) {
-    const sub = pk.byNumber(String(enc.ratings.subpanel ?? ''));
+  // Every enclosure tried is laid out with its own disconnect (depth), rails and duct quantities.
+  const trials = new Map<string, Trial>();
+  const tryEnclosure = (enc: CatalogPart): Trial => {
+    const hit = trials.get(enc.partNumber);
+    if (hit) return hit;
+    const sub = pk.byNumber(String(enc.ratings.subpanel ?? '')) ?? getPart(String(enc.ratings.subpanel ?? ''));
     const depth = num(enc.ratings.depthIn) ?? 8;
     const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps);
     const head = [
@@ -210,18 +211,54 @@ export function generateDesign(input: EngineInput): EngineResult {
     const L = panelLayout(ctxOf(trial));
     const railPcs = Math.ceil(L.rails.reduce((s, r) => s + r.w, 0) / (num(rail?.ratings.lengthMm) ?? 1000));
     const ductPcs = Math.ceil(L.ducts.reduce((s, d) => s + Math.max(d.w, d.h), 0) / ((num(duct?.ratings.lengthM) ?? 2) * 1000));
-    let components = [...head, ...core, ...accessories(counts, railPcs, ductPcs)];
+    const components = [...head, ...core, ...accessories(counts, railPcs, ductPcs)];
     const ctx = ctxOf(components);
     const L2 = panelLayout(ctx);
     const spare = spareSpace(ctx).panel;
-    components = components.map((c) => (c.tag === 'ENC1' ? { ...c, function: `${c.function} — ${spare >= 0.25 ? 'smallest catalog enclosure with everything placed and' : 'everything placed, but only'} ${Math.round(spare * 100)}% spare panel space (target >= 25%)` } : c));
-    const ok = !L2.overflow && !L2.notFit.length && !L2.door.overflow && spare >= 0.25;
-    const score = [ok ? 1 : 0, -L2.notFit.length, L2.door.overflow ? 0 : 1, spare];
-    if (!best || ok || better(score, best.score)) best = { components, spare, ok, enc, score };
-    if (ok) { if (ds.notes.length) notes.push(...ds.notes); break; }
+    const fits = !L2.overflow && !L2.notFit.length && !L2.door.overflow;
+    const t: Trial = { components, spare, fits, ok: fits && spare >= SPARE_RULE, enc, notes: ds.notes, score: [fits && spare >= SPARE_RULE ? 1 : 0, -L2.notFit.length, L2.door.overflow ? 0 : 1, spare] };
+    trials.set(enc.partNumber, t);
+    return t;
+  };
+  // Recommended: the first enclosure (wall-mount single-door first, smallest back panel) that holds everything with
+  // the spare-space rule. When none does, the closest one: fewest back-panel parts left out, then a door that fits
+  // (HMI, operators, handle), then the most spare space — never simply the smallest (all score 0 % spare).
+  const better = (a: number[], b: number[]) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i]; return false; };
+  const candidates = enclosureCandidates(pk, inputs.enclosureRating);
+  let rec: Trial | undefined;
+  for (const enc of candidates) {
+    const t = tryEnclosure(enc);
+    if (!rec || t.ok || better(t.score, rec.score)) rec = t;
+    if (t.ok) break;
   }
-  if (!best) throw new Error('No enclosure in the catalog.');
-  if (!best.ok) notes.push(`No catalog enclosure leaves 25% spare panel space: ${best.enc.partNumber} is the largest tried (${Math.round(best.spare * 100)}% spare) — consider a larger or a second enclosure.`);
+  if (!rec) throw new Error('No enclosure in the catalog.');
+  // The designer's pick: kept when everything fits (even when larger than needed); too small -> the smallest of its
+  // rating and material that holds the parts, with a note. The pick stays in the inputs either way.
+  let best = rec;
+  const prefPart = inputs.enclosurePreference ? getPart(inputs.enclosurePreference) : undefined;
+  let choice: EnclosureChoice = { recommended: rec.ok ? rec.enc.partNumber : null, preferred: null, used: rec.enc.partNumber, status: 'recommended' };
+  if (prefPart && prefPart.category === 'enclosure' && prefPart.ratings.kind !== 'subpanel') {
+    const t = tryEnclosure(prefPart);
+    const recPn = rec.ok ? rec.enc.partNumber : null;
+    if (t.fits) {
+      best = t;
+      const larger = !!recPn && recPn !== prefPart.partNumber && enclosurePanelArea(prefPart) > enclosurePanelArea(rec.enc);
+      const status: EnclosureChoice['status'] = !recPn || recPn === prefPart.partNumber ? 'recommended' : larger ? 'larger' : 'kept';
+      choice = { recommended: recPn, preferred: prefPart.partNumber, used: prefPart.partNumber, status,
+        note: status === 'larger' ? `This cabinet is bigger than needed — the recommended size is ${enclosureSize(rec.enc)} (${rec.enc.partNumber}).`
+          : status === 'kept' ? `Your size (${enclosureSize(prefPart)}) holds the parts with only ${Math.round(t.spare * 100)} % spare space; the recommended size is ${enclosureSize(rec.enc)} (${rec.enc.partNumber}).` : undefined };
+    } else {
+      const works = enclosuresFor(inputs.enclosureRating, enclosureFamily(prefPart)).map(tryEnclosure).find((x) => x.fits);
+      if (works) best = works;
+      choice = { recommended: recPn, preferred: prefPart.partNumber, used: best.enc.partNumber, status: 'tooSmall',
+        note: works ? `Your size (${enclosureSize(prefPart)}) was too small for the parts; we use ${enclosureSize(works.enc)} (${works.enc.partNumber}).`
+          : `Your size (${enclosureSize(prefPart)}) is too small for the parts and no catalog enclosure of its rating and material holds them; using ${best.enc.partNumber} — split the panel.` };
+    }
+    if (choice.note) notes.push(choice.note);
+  }
+  if (best.notes.length) notes.push(...best.notes);
+  best = { ...best, components: best.components.map((c) => (c.tag === 'ENC1' ? { ...c, function: `${c.function} — ${choice.preferred ? 'chosen by the designer,' : best.ok ? 'smallest catalog enclosure with everything placed and' : 'everything placed, but only'} ${Math.round(best.spare * 100)}% spare panel space (target >= ${Math.round(SPARE_RULE * 100)}%)` } : c)) };
+  if (!rec.ok) notes.push(`No catalog enclosure leaves ${Math.round(SPARE_RULE * 100)}% spare panel space: ${rec.enc.partNumber} is the closest (${Math.round(rec.spare * 100)}% spare) — consider a second enclosure.`);
 
   const motorsText = power.branches.map((b) => `${b.motor.tag} ${powerText(b.motor.hp, input.region)} ${b.vfd ? `on ${getPart(best!.components.find((c) => c.tag === b.vfd)?.partNumber ?? '')?.partNumber ?? 'a VFD'}${b.sto ? ' (STO)' : ''}` : b.reversing ? 'reversing starter' : 'across the line'}`).join(', ');
   const ps = best.components.find((c) => getPart(c.partNumber)?.category === 'powerSupply');
@@ -235,10 +272,11 @@ export function generateDesign(input: EngineInput): EngineResult {
       notes: [...askUser, ...notes],
       askUser,
       machine: dev.machine,
+      enclosureChoice: choice,
       generatedAt: input.now ?? new Date().toISOString(),
     },
     explanation,
-    layoutOk: best.ok,
+    layoutOk: best.fits && (best.ok || choice.status === 'kept'),
   };
 }
 

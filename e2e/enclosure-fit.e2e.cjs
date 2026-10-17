@@ -1,6 +1,7 @@
 // Enclosure fit: a NEMA 4X design in a stainless enclosure too small for its parts shows the red banner on the
 // Electrical page with the ways out (larger stainless, 4X fiberglass, relax to NEMA 12, split); choosing the
-// larger stainless one swaps ENC1 / SP1 and the banner goes away. Uses the example project (dev build).
+// larger stainless one swaps ENC1 / SP1 and the banner goes away. The Enclosure control: a bigger pick is kept with a
+// note, a too-small pick is bumped with a note and stays recorded. Uses the example project (dev build).
 //
 //   npm run dev -- --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/enclosure-fit.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
@@ -55,6 +56,29 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
   log('Enclosure now:', enc.pn, enc.material);
   check(/stainless/.test(String(enc.material)) && enc.pn !== 'SCE-16EL1206SSLP', 'a larger stainless enclosure');
   await page.screenshot({ path: OUT + '02-fixed.png' });
+
+  // The Enclosure control: the pick from the banner is the designer's choice now; pick a much bigger size -> kept,
+  // with a "bigger than needed" note; pick the 16x12 -> bumped to the smallest that works, with a note.
+  const control = page.getByTestId('enclosure-control');
+  await control.waitFor();
+  log('Enclosure control:', (await control.innerText()).replace(/\s+/g, ' ').slice(0, 200));
+  const size = control.getByLabel('Enclosure size');
+  const options = await size.locator('option').allInnerTexts();
+  log('Size options:', options.length, '|', options.slice(0, 3).join(' | '));
+  check(options.length > 10 && options.some((o) => /★ .* — recommended$/.test(o)), 'size list with the recommended one marked');
+  await size.selectOption('SCE-48EL3612SSLP');
+  await page.getByTestId('enclosure-note').filter({ hasText: 'bigger than needed' }).waitFor({ timeout: 20000 });
+  check(/SCE-48EL3612SSLP/.test(await page.getByTestId('enclosure-current').innerText()), 'bigger pick kept');
+  await page.screenshot({ path: OUT + '03-bigger.png' });
+  await size.selectOption('SCE-16EL1206SSLP');
+  await page.getByTestId('enclosure-note').filter({ hasText: 'was too small for the parts' }).waitFor({ timeout: 20000 });
+  const cur = await page.getByTestId('enclosure-current').innerText();
+  log('After a too-small pick:', cur, '|', await page.getByTestId('enclosure-note').innerText());
+  check(!/SCE-16EL1206SSLP/.test(cur), 'too-small pick bumped');
+  check(await page.getByTestId('enclosure-fit-banner').count() === 0, 'no fit banner after the bump');
+  const pref = await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().inputs.enclosurePreference);
+  check(pref === 'SCE-16EL1206SSLP', 'the pick stays recorded: ' + pref);
+  await page.screenshot({ path: OUT + '04-too-small.png' });
 
   check(!errors.length, 'no browser errors: ' + errors.join(' | '));
   await browser.close();

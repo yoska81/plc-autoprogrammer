@@ -25,7 +25,7 @@ import type { AnalogSetupRow } from '../plc/core/analog';
 import { analogWiring, type AnalogWiring } from './analog';
 import { driveControls, type DriveControl, type DriveTerminal } from './vfd';
 import type {
-  CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, EnclosureRating, FieldDeviceType, IOWiring, JunctionBox,
+  CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, EnclosureChoice, EnclosureRating, FieldDeviceType, IOWiring, JunctionBox,
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
 } from './types';
 import { getHmi, hmiMaker } from '../hmi/hmiCatalog';
@@ -2178,7 +2178,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   };
 }
 
-/** Spare mounting space on the back panel, for the "25 % spare" design rule. */
+/** Spare mounting space on the back panel, for the spare-space design rule (SPARE_RULE). */
 export interface SpareSpace {
   /** Per DIN rail (top to bottom): usable length, length taken by parts, spare fraction. */
   rails: { rail: number; lengthMm: number; usedMm: number; spare: number }[];
@@ -2223,21 +2223,50 @@ export interface EnclosureFit {
   current: boolean;
 }
 
-/** Spare space the panel should keep for later additions (customer / panel-shop rule). */
-export const SPARE_RULE = 0.25;
+/** Spare space the panel should keep for later additions (panel-shop rule: 20–30 %; the enclosure is sized for at least this). */
+export const SPARE_RULE = 0.2;
 
 const STAINLESS = (p: CatalogPart) => /stainless/i.test(String(p.ratings.material ?? ''));
 /** Enclosure material family: steel (painted carbon steel), stainless, or non-metallic (fiberglass, polycarbonate). */
 export const enclosureFamily = (p: CatalogPart): 'steel' | 'stainless' | 'nonmetallic' =>
   STAINLESS(p) ? 'stainless' : /fiberglass|polyester|polycarbonate|plastic|pvc|abs/i.test(String(p.ratings.material ?? '')) ? 'nonmetallic' : 'steel';
 
+/** Usable back-panel area of an enclosure (in²). */
+export const enclosurePanelArea = (p: CatalogPart) => (num(p.ratings, 'panelWidthIn') ?? 0) * (num(p.ratings, 'panelHeightIn') ?? 0) || (p.widthMm ?? 0) * (p.heightMm ?? 0) / 645;
+const isFloorEnclosure = (p: CatalogPart) => /floor|free/i.test(`${p.ratings.mounting ?? ''} ${p.ratings.floorStand ?? ''}`);
+
+/**
+ * Order in which enclosures are tried and listed: wall-mount single-door before floor-standing / two-door,
+ * then the smaller back panel, 304 before 316 stainless, the shallower one, portrait before landscape.
+ */
+export function enclosureRank(a: CatalogPart, b: CatalogPart): number {
+  const key = (p: CatalogPart) => [Number(isFloorEnclosure(p)), Number((num(p.ratings, 'doors') ?? 1) > 1), enclosurePanelArea(p), Number(/316/.test(String(p.ratings.material ?? ''))), num(p.ratings, 'depthIn') ?? 0, -(num(p.ratings, 'heightIn') ?? 0)];
+  const ka = key(a), kb = key(b);
+  for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+  return a.partNumber.localeCompare(b.partNumber);
+}
+
+/** Catalog enclosures (not subpanels) meeting a rating, of one material family, in enclosureRank order. */
+export function enclosuresFor(rating: string | undefined, family?: ReturnType<typeof enclosureFamily>): CatalogPart[] {
+  const need = String(rating ?? '').replace(/^NEMA\s*/i, '').toUpperCase();
+  return ALL_PARTS
+    .filter((p) => p.category === 'enclosure' && String(p.ratings.kind ?? '') !== 'subpanel' && enclosurePanelArea(p) > 0 && (!family || enclosureFamily(p) === family))
+    .filter((p) => !need || need === '1' || String(p.ratings.nema ?? '').toUpperCase().split('/').map((x) => x.trim()).includes(need))
+    .sort(enclosureRank);
+}
+
+/** "24x20x8" from the catalog's inch dimensions. */
+export const enclosureSize = (p?: CatalogPart) => (p ? `${num(p.ratings, 'heightIn')}x${num(p.ratings, 'widthIn')}${num(p.ratings, 'depthIn') ? `x${num(p.ratings, 'depthIn')}` : ''}` : '');
+
 export interface EnclosureSearch {
-  /** Spare panel space the enclosure must leave (default the 25 % rule). */
+  /** Spare panel space the enclosure must leave (default SPARE_RULE). */
   spare?: number;
   /** Enclosure rating to meet (default the design's). */
   rating?: string;
   /** Which materials to try: the current enclosure's family (steel / stainless / non-metallic; default), stainless only, non-metallic only, or any. */
   material?: 'same' | 'steel' | 'stainless' | 'nonStainless' | 'any';
+  /** Ignore the design's own enclosure (the recommendation: the smallest that fits, not "the current one is fine"). */
+  fromScratch?: boolean;
 }
 
 /** The design with another enclosure (and its subpanel, or none when the enclosure has a fixed panel). */
@@ -2281,22 +2310,57 @@ export function smallestEnclosure(ctx: DrawingContext, opt: number | EnclosureSe
   const candidates = ALL_PARTS
     .filter((p) => p.category === 'enclosure' && String(p.ratings.kind ?? '') !== 'subpanel' && panelArea(p) > 0 && okMaterial(p))
     .filter((p) => !need || need === '1' || String(p.ratings.nema ?? '').toUpperCase().split('/').map((x) => x.trim()).includes(need))
-    .sort((a, b) => Number(b.manufacturer === maker) - Number(a.manufacturer === maker) || panelArea(a) - panelArea(b));
+    .sort((a, b) => Number(b.manufacturer === maker) - Number(a.manufacturer === maker) || enclosureRank(a, b));
   const subOf = (p: CatalogPart) => { const s = String(p.ratings.subpanel ?? ''); return ALL_PARTS.some((x) => x.partNumber === s) ? s : undefined; };
   const fits = (design: ElectricalDesign) => {
     const c2: DrawingContext = { ...ctx, design, machineLayout: undefined };
     return layoutFits(c2) ? spareSpace(c2).panel : null;
   };
   const curOk = encC && okMaterial(encC.part ?? ({ ratings: {} } as CatalogPart)) && (!need || need === '1' || String(encC.part?.ratings.nema ?? '').toUpperCase().split('/').map((x) => x.trim()).includes(need));
-  const cur = curOk ? fits(ctx.design) : null;
+  const cur = curOk && !o.fromScratch ? fits(ctx.design) : null;
   if (cur !== null && cur >= spare && encC) return { enclosure: encC.partNumber, subpanel: subC?.partNumber, description: encC.part?.description ?? encC.partNumber, spare: cur, current: true };
   for (const p of candidates) {
     if (p.partNumber === encC?.partNumber && !curOk) continue;
+    if (p.partNumber === encC?.partNumber && cur !== null) { if (cur >= spare) return { enclosure: p.partNumber, subpanel: subC?.partNumber, description: p.description, spare: cur, current: true }; continue; }
     const sp = subOf(p);
     const f = fits(withEnclosure(ctx.design, ctx.getPart, p.partNumber, sp));
     if (f !== null && f >= spare) return { enclosure: p.partNumber, subpanel: sp, description: p.description, spare: f, current: false };
   }
   return null;
+}
+
+/**
+ * Apply the designer's enclosure pick (or the recommendation when there is none) to a design: the pick is kept when
+ * the parts fit it, even when it is larger than needed (with a note); when it is too small the smallest enclosure of
+ * its rating and material that holds the parts is used (with a note) and the pick stays recorded in the inputs.
+ */
+export function chooseEnclosure(ctx: DrawingContext, preference: string | null | undefined): { design: ElectricalDesign; choice: EnclosureChoice } {
+  const pref = preference ? ALL_PARTS.find((p) => p.partNumber === preference && p.category === 'enclosure') : undefined;
+  const sub = (p: CatalogPart) => { const s = String(p.ratings.subpanel ?? ''); return ALL_PARTS.some((x) => x.partNumber === s) ? s : undefined; };
+  const material = pref ? (enclosureFamily(pref) === 'stainless' ? 'stainless' : enclosureFamily(pref) === 'nonmetallic' ? 'nonStainless' : 'steel') as EnclosureSearch['material'] : undefined;
+  const rec = smallestEnclosure(ctx, { fromScratch: true, material }) ?? smallestEnclosure(ctx, { fromScratch: true, material, spare: 0 });
+  const encC = buildModel(ctx).rc.find((c) => c.category === 'enclosure' && !isSubpanel(c));
+  const recPart = rec ? ALL_PARTS.find((p) => p.partNumber === rec.enclosure) : undefined;
+  const set = (pn: string, sp: string | undefined) => (pn === encC?.partNumber ? ctx.design : withEnclosure(ctx.design, ctx.getPart, pn, sp));
+  const done = (design: ElectricalDesign, choice: EnclosureChoice) => ({ design: { ...design, inputs: { ...design.inputs, enclosurePreference: preference ?? null }, enclosureChoice: choice }, choice });
+  if (!pref) {
+    const design = rec ? set(rec.enclosure, rec.subpanel) : ctx.design;
+    return done(design, { recommended: rec?.enclosure ?? null, preferred: null, used: rec?.enclosure ?? encC?.partNumber ?? '', status: 'recommended' });
+  }
+  const withPref = set(pref.partNumber, sub(pref));
+  if (layoutFits({ ...ctx, design: withPref, machineLayout: undefined })) {
+    const larger = !!recPart && recPart.partNumber !== pref.partNumber && enclosurePanelArea(pref) > enclosurePanelArea(recPart);
+    const status: EnclosureChoice['status'] = !recPart || recPart.partNumber === pref.partNumber ? 'recommended' : larger ? 'larger' : 'kept';
+    const note = status === 'larger' ? `This cabinet is bigger than needed — the recommended size is ${enclosureSize(recPart)} (${recPart!.partNumber}).`
+      : status === 'kept' ? `Your size (${enclosureSize(pref)}) holds the parts with less than ${Math.round(SPARE_RULE * 100)} % spare space; the recommended size is ${enclosureSize(recPart)} (${recPart!.partNumber}).` : undefined;
+    return done(withPref, { recommended: recPart?.partNumber ?? null, preferred: pref.partNumber, used: pref.partNumber, status, note });
+  }
+  // too small: the smallest of the pick's rating and material that holds the parts (any spare)
+  const works = smallestEnclosure(ctx, { fromScratch: true, material, spare: 0 });
+  const usedPart = works ? ALL_PARTS.find((p) => p.partNumber === works.enclosure) : undefined;
+  if (!works || !usedPart) return done(withPref, { recommended: null, preferred: pref.partNumber, used: pref.partNumber, status: 'tooSmall', note: `Your size (${enclosureSize(pref)}) is too small for the parts and no catalog enclosure of its rating and material holds them: split the panel.` });
+  return done(set(works.enclosure, works.subpanel), { recommended: recPart?.partNumber ?? works.enclosure, preferred: pref.partNumber, used: works.enclosure, status: 'tooSmall',
+    note: `Your size (${enclosureSize(pref)}) was too small for the parts; we use ${enclosureSize(usedPart)} (${usedPart.partNumber}).` });
 }
 
 /** A way out when the parts don't fit the enclosure (Electrical page banner). */
@@ -2318,7 +2382,7 @@ export interface FitProblem {
   options: FitOption[];
 }
 
-const sizeText = (p?: CatalogPart) => (p ? `${num(p.ratings, 'heightIn')}x${num(p.ratings, 'widthIn')}${num(p.ratings, 'depthIn') ? `x${num(p.ratings, 'depthIn')}` : ''}` : '');
+const sizeText = enclosureSize;
 
 /** Null when everything fits; else what doesn't fit and the options (larger enclosure, other 4X material, relaxed rating, split). */
 export function enclosureFitProblem(ctx: DrawingContext): FitProblem | null {
@@ -2671,7 +2735,7 @@ export function designWarnings(ctx: DrawingContext): string[] {
   const cpus = m.rc.filter((c) => c.category === 'plc');
   if (cpus.length > 1) w.push(`${cpus.length} PLC CPUs in the design (${cpus.map((c) => `${c.tag} ${c.partNumber}`).join(', ')}): keep only the project's CPU ${ctx.plc.cpuPartNumber} — remove the others or update the design.`);
   {
-    // enclosure sized from the real footprints: too small (or no 25 % spare) -> name the smallest that fits
+    // enclosure sized from the real footprints: too small (or below the spare rule) -> name the smallest that fits
     const fit = smallestEnclosure(ctx);
     if (fit && !fit.current) {
       const enc = m.rc.find((c) => c.category === 'enclosure' && !isSubpanel(c));

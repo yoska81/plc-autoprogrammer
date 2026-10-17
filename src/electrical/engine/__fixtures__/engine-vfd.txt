@@ -2,7 +2,7 @@ supply 480VAC-3PH | NEMA 12
 motor M1 1 HP vfd reversing — Infeed conveyor motor
 motor M2 2 HP contactor-overload — Lift motor
 
-ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 30% spare panel space (target >= 25%)
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 30% spare panel space (target >= 20%)
 SP1      SCE-30P24          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 6.5 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle

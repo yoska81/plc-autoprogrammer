@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
 import { getPart } from '../catalog';
-import { buildModel, designWarnings, doorDrilling, enclosureFitProblem, layoutFits, panelLayout, spareSpace, withEnclosure, type DrawingContext } from '../derive';
+import { buildModel, chooseEnclosure, designWarnings, doorDrilling, enclosureFitProblem, enclosureSize, enclosuresFor, layoutFits, panelLayout, spareSpace, SPARE_RULE, withEnclosure, type DrawingContext } from '../derive';
 import { cabinetHeat } from '../thermal';
 import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
@@ -29,10 +29,12 @@ const pt = (description: string, type: 'input' | 'output', extra: Partial<P> = {
 interface Scenario {
   name: string; points: P[]; supply: SupplyVoltage; region?: Region; motors?: MotorSpec[];
   cpu?: string; modules?: string[]; hmi?: string | null; spec?: string; rating?: DesignInputs['enclosureRating'];
-  /** Largest catalog enclosure is still under 25% spare: everything must fit, spare may be lower. */
+  /** Largest catalog enclosure is still under the spare-space rule: everything must fit, spare may be lower. */
   tight?: boolean;
   /** Parts the designer chose (equipment list). */
   required?: DesignInputs['requiredParts'];
+  /** Enclosure the designer picked (Electrical page "Enclosure"). */
+  enclosure?: string;
 }
 
 const EXAMPLE: P[] = [
@@ -123,7 +125,7 @@ function run(s: Scenario): { r: EngineResult; ctx: DrawingContext } {
   const cpu = getCpu(profile, s.cpu ?? 'C0-10DD1E-D');
   const addresses = resolveAddresses(profile, cpu, io, moduleSlots(s.modules ?? []));
   const plc = { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label };
-  const inputs: DesignInputs = { supply: s.supply, enclosureRating: s.rating ?? 'NEMA 12', notes: '', motors: s.motors ?? [], requiredParts: s.required ?? [] };
+  const inputs: DesignInputs = { supply: s.supply, enclosureRating: s.rating ?? 'NEMA 12', notes: '', motors: s.motors ?? [], requiredParts: s.required ?? [], ...(s.enclosure ? { enclosurePreference: s.enclosure } : {}) };
   const hmi = s.hmi === undefined ? 'CM5-T7W' : s.hmi;
   const r = generateDefaultDesign({ io, addresses, spec: s.spec ?? '', inputs, plc, modules: s.modules ?? [], region: s.region ?? 'US', getPart, hmiPartNumber: hmi, now: '2026-01-01T00:00:00.000Z', projectName: s.name });
   const ctx: DrawingContext = { projectName: s.name, design: r.design, getPart, plc, io: io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type })), region: s.region ?? 'US', hmiPartNumber: hmi };
@@ -155,8 +157,8 @@ for (const s of SCENARIOS) {
     assert.equal(g, fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), `${s.name}: golden differs (UPDATE=1 to regenerate after an intended change)`);
     const gaps = designWarnings(ctx).filter((w) => GAP.test(w));
     assert.deepEqual(gaps, [], `${s.name}: design gaps`);
-    assert.ok(r.layoutOk || s.tight, `${s.name}: panel layout does not fit with 25% spare`);
-    assert.ok(spareSpace(ctx).panel >= (s.tight ? 0.1 : 0.25), `${s.name}: spare space`);
+    assert.ok(r.layoutOk || s.tight, `${s.name}: panel layout does not fit with the spare-space rule`);
+    assert.ok(spareSpace(ctx).panel >= (s.tight ? 0.1 : SPARE_RULE), `${s.name}: spare space`);
     // Every discrete PLC point is wired to a device.
     const discrete = ctx.io.filter((p) => p.address && !/^DF/.test(p.address));
     assert.equal(r.design.ioWiring.length, discrete.length, `${s.name}: ioWiring per I/O point`);
@@ -254,7 +256,7 @@ for (const s of SCENARIOS) {
   const ss = run({ ...big, name: 'big-4x', rating: 'NEMA 4X' });
   const ssEnc = getPart(ss.r.design.components.find((c) => c.tag === 'ENC1')!.partNumber)!;
   assert.match(String(ssEnc.ratings.material), /stainless/, 'big-4x: a stainless enclosure');
-  assert.ok(ss.r.layoutOk || (layoutFits(ss.ctx) && ss.r.design.notes.some((n) => /25% spare/.test(n))), `big-4x: everything fits in ${ssEnc.partNumber}`);
+  assert.ok(ss.r.layoutOk || (layoutFits(ss.ctx) && ss.r.design.notes.some((n) => /% spare/.test(n))), `big-4x: everything fits in ${ssEnc.partNumber}`);
   assert.equal(enclosureFitProblem(ss.ctx), null, 'big-4x: no fit problem');
 
   // Floor-standing double door on 12in stands: devices on one leaf (never across the split), 0.6–1.7 m above
@@ -306,6 +308,57 @@ for (const s of SCENARIOS) {
   // A design that already has two CPUs (made before the fix) is flagged.
   const two = { ...ctx, design: { ...ctx.design, components: [...ctx.design.components, { tag: 'X1', partNumber: 'C0-10DD2E-D', quantity: 1, function: 'Required by the designer', motorTag: null }] } };
   assert.ok(designWarnings(two).some((w) => /2 PLC CPUs in the design \(PLC C0-10DD1E-D, X1 C0-10DD2E-D\)/.test(w)), 'two CPUs flagged');
+}
+
+// The designer's enclosure pick (Electrical page "Enclosure"): the sealing head in stainless.
+{
+  const seal = SCENARIOS.find((x) => x.name === 'sealing-head')!;
+  const base = { ...seal, rating: 'NEMA 4X' as const };
+  const encOf = (r: EngineResult) => r.design.components.find((c) => c.tag === 'ENC1')!.partNumber;
+  // Recommended: a sensibly sized wall-mount single-door stainless box (not the giant one), no note.
+  const rec = run({ ...base, name: 'seal-4x-rec' });
+  const recPart = getPart(encOf(rec.r))!;
+  assert.equal(rec.r.design.enclosureChoice?.status, 'recommended');
+  assert.equal(rec.r.design.enclosureChoice?.note, undefined);
+  assert.equal(rec.r.design.enclosureChoice?.recommended, recPart.partNumber);
+  assert.match(String(recPart.ratings.material), /stainless/); assert.doesNotMatch(String(recPart.ratings.material), /316/, "304 before 316");
+  assert.ok(recPart.ratings.mounting !== 'floor' && (recPart.ratings.doors ?? 1) === 1, `${recPart.partNumber}: wall-mount, one door`);
+  assert.ok((recPart.ratings.heightIn as number) <= 36 && (recPart.ratings.widthIn as number) <= 30, `${recPart.partNumber}: not oversized`);
+  const sp = spareSpace(rec.ctx).panel;
+  assert.ok(sp >= SPARE_RULE && sp < 0.5, `spare ${Math.round(sp * 100)} %`);
+  // Too small (the user's 20x16): the smallest stainless that works, a note, the pick stays recorded.
+  const small = run({ ...base, name: 'seal-4x-small', enclosure: 'SCE-20EL1608SSLP' });
+  assert.equal(small.r.design.enclosureChoice?.status, 'tooSmall');
+  assert.equal(small.r.design.inputs.enclosurePreference, 'SCE-20EL1608SSLP', 'the pick stays recorded');
+  assert.ok(layoutFits(small.ctx), `fits in ${encOf(small.r)}`);
+  assert.match(String(getPart(encOf(small.r))!.ratings.material), /stainless/);
+  assert.ok(small.r.design.notes.some((n) => /^Your size \(20x16x8\) was too small for the parts; we use \d+x\d+x\d+ \(SCE-/.test(n)), 'too-small note');
+  // Too big: kept, with a note naming the recommended size; never changed by itself.
+  const big = run({ ...base, name: 'seal-4x-big', enclosure: 'SCE-48EL3612SSLP' });
+  assert.equal(encOf(big.r), 'SCE-48EL3612SSLP', 'a larger pick is kept');
+  assert.equal(big.r.design.enclosureChoice?.status, 'larger');
+  assert.ok(big.r.design.notes.some((n) => n === `This cabinet is bigger than needed — the recommended size is ${enclosureSize(recPart)} (${recPart.partNumber}).`), 'bigger-than-needed note');
+  // Picking the recommended one: no note.
+  const same = run({ ...base, name: 'seal-4x-same', enclosure: recPart.partNumber });
+  assert.equal(encOf(same.r), recPart.partNumber);
+  assert.equal(same.r.design.enclosureChoice?.status, 'recommended');
+  assert.ok(!same.r.design.notes.some((n) => /bigger than needed|too small for the parts/.test(n)));
+  // Regeneration (Update design / Update all) keeps the pick: the inputs carry it.
+  const again = run({ ...base, name: 'seal-4x-again', enclosure: big.r.design.inputs.enclosurePreference! });
+  assert.equal(encOf(again.r), 'SCE-48EL3612SSLP');
+  // The same rules on an existing design (the Electrical page pick and the AI path).
+  const kept = chooseEnclosure(rec.ctx, 'SCE-48EL3612SSLP');
+  assert.equal(kept.choice.status, 'larger');
+  assert.equal(kept.design.components.find((c) => c.tag === 'ENC1')!.partNumber, 'SCE-48EL3612SSLP');
+  const bumped = chooseEnclosure(rec.ctx, 'SCE-20EL1608SSLP');
+  assert.equal(bumped.choice.status, 'tooSmall');
+  assert.ok(layoutFits({ ...rec.ctx, design: bumped.design }), 'bumped design fits');
+  assert.equal(bumped.design.inputs.enclosurePreference, 'SCE-20EL1608SSLP');
+  assert.equal(chooseEnclosure(rec.ctx, null).choice.used, recPart.partNumber, 'no pick: the recommended one');
+  // The list for the picker: wall-mount single-door first, sorted by size.
+  const list = enclosuresFor('NEMA 4X', 'stainless');
+  const firstFloor = list.findIndex((p) => /floor|free/i.test(`${p.ratings.mounting ?? ''} ${p.ratings.floorStand ?? ''}`));
+  assert.ok(firstFloor < 0 || list.slice(firstFloor).every((p) => /floor|free/i.test(`${p.ratings.mounting ?? ''} ${p.ratings.floorStand ?? ''}`) || Number(p.ratings.doors ?? 1) > 1), 'floor-standing after wall-mount');
 }
 
 // Guard doors and pressure switches come from the catalog: the interlock (+ actuator) in series with the E-stops

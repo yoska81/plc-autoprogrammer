@@ -21,6 +21,7 @@ import { applyRegion, regionOption } from '../standards/applyRegion';
 import { bomCsv, cableScheduleCsv, designWarnings, motorFla, wireListCsv } from '../electrical/derive';
 import CabinetPictures from '../electrical/CabinetPictures';
 import EnclosureFitBanner from '../electrical/EnclosureFitBanner';
+import EnclosureControl from '../electrical/EnclosureControl';
 import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
 import MachineLayoutPanel from '../electrical/layout/MachineLayoutPanel';
@@ -200,6 +201,7 @@ export default function ElectricalPage() {
         <button onClick={() => generate()} disabled={el.isGenerating} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
+      {ctx && el.design && <EnclosureControl ctx={ctx} />}
       {ctx && el.design && <EnclosureFitBanner ctx={ctx} />}
       {tab === 'labels' ? (
         <LabelsPanel ctx={ctx} fileBase={base} projectName={projectName} />

@@ -1,7 +1,7 @@
 supply 120VAC-1PH | NEMA 12
 motor M1 0.5 HP contactor-overload — Conveyor motor
 
-ENC1     SCE-24EL2008LP     x1    Main enclosure 24x20x8 NEMA 12 — smallest catalog enclosure with everything placed and 27% spare panel space (target >= 25%)
+ENC1     SCE-24EL2008LP     x1    Main enclosure 24x20x8 NEMA 12 — smallest catalog enclosure with everything placed and 27% spare panel space (target >= 20%)
 SP1      SCE-24P20          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 12.5 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle

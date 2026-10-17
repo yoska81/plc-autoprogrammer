@@ -58,6 +58,23 @@ export interface DesignInputs {
   motors: MotorSpec[];
   /** Parts the designer already chose; the AI must use them. */
   requiredParts: { partNumber: string; quantity: number }[];
+  /** Enclosure the designer picked (part number). Kept when the parts fit (even when larger than needed); when it is
+   * too small the smallest enclosure that holds the parts is used and the pick stays recorded. Null/absent = recommended. */
+  enclosurePreference?: string | null;
+}
+
+/** How the design's enclosure was chosen (Electrical page "Enclosure" control). */
+export interface EnclosureChoice {
+  /** Smallest enclosure of the rating / material that holds the parts with the normal spare space. */
+  recommended: string | null;
+  /** The designer's pick, when there is one. */
+  preferred: string | null;
+  /** The enclosure in the design. */
+  used: string;
+  /** recommended: no pick, or the pick is the recommended one; kept: the pick holds the parts (maybe larger than needed);
+   * tooSmall: the pick could not hold the parts, `used` is the smallest that does. */
+  status: 'recommended' | 'kept' | 'larger' | 'tooSmall';
+  note?: string;
 }
 
 export type StarterType = 'contactor-overload' | 'motor-protector' | 'vfd';
@@ -134,5 +151,7 @@ export interface ElectricalDesign {
   askUser?: string[];
   /** Field wiring outside the cabinet; derived with defaults when absent. */
   machine?: MachineWiring;
+  /** How the enclosure was chosen (absent on older designs). */
+  enclosureChoice?: EnclosureChoice;
   generatedAt: string;
 }

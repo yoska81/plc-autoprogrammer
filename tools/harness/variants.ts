@@ -139,7 +139,7 @@ export function setupVariant(v: Variant) {
     elec.setDesign(design({
       supply: '120VAC-1PH', motors, ioWiring: io, enclosureRating: undefined,
       components: [
-        c('ENC1', 'SCE-16EL1206LP', 1, 'Main enclosure 16x12x6'), c('SP1', 'SCE-16P12', 1, 'Back panel'),
+        c('ENC1', 'SCE-24EL2008LP', 1, 'Main enclosure 24x20x8'), c('SP1', 'SCE-24P20', 1, 'Back panel'),
         c('DS1', '22013003', 1, 'Main disconnect 30A'), c('DS1H', '14831111', 1, 'Disconnect handle'), c('DS1S', '14070520', 1, 'Disconnect shaft'),
         c('CB1', 'GMCBU-1C-20', 1, 'Motor M1 branch protection', 'M1'), c('CB2', 'GMCBU-1C-5', 1, '24VDC power supply primary'),
         c('PS1', 'PSL-24-060', 1, '24VDC power supply'),

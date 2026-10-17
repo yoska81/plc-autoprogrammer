@@ -17,8 +17,9 @@ export default function EnclosureFitBanner({ ctx }: { ctx: DrawingContext }) {
     const design = withEnclosure(el.design, ctx.getPart, o.fit.enclosure, o.fit.subpanel);
     const inputs = o.rating ? { ...design.inputs, enclosureRating: o.rating } : design.inputs;
     const note = `Enclosure changed to ${o.fit.enclosure}${o.fit.subpanel ? ` with back panel ${o.fit.subpanel}` : ''}${o.rating ? ` (rating relaxed to ${o.rating})` : ''} because the parts did not fit.`;
-    el.setDesign({ ...design, inputs, notes: [...design.notes, note] }, el.source ?? 'generated', el.explanation);
-    if (o.rating) el.setInputs({ ...el.inputs, enclosureRating: o.rating });
+    // the pick is recorded as the designer's enclosure choice, so regeneration keeps it
+    el.setDesign({ ...design, inputs: { ...inputs, enclosurePreference: o.fit.enclosure }, notes: [...design.notes, note] }, el.source ?? 'generated', el.explanation);
+    el.setInputs({ ...el.inputs, enclosurePreference: o.fit.enclosure, ...(o.rating ? { enclosureRating: o.rating } : {}) });
     notify(note);
   };
   const what = [
