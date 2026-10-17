@@ -1,5 +1,5 @@
 import type { HmiElement, MachineSymbol } from './types';
-import { fitText, hmiTheme, type HmiTheme } from './theme';
+import { fitText, frameTitle, hmiTheme, type HmiTheme } from './theme';
 
 /** Small padlock with the level letter (M = maintenance, E = engineer), anchored at its top-right corner. */
 export function LockBadge({ x, y, letter, color, t = hmiTheme('dark') }: { x: number; y: number; letter: string; color?: string; t?: HmiTheme }) {
@@ -137,23 +137,34 @@ export function MachineSymbolShape({ s, ox, oy, on, live, t }: { s: MachineSymbo
   }
 }
 
-/** Title bar height of a Siemens-look group frame. */
+/** Title bar height of a panel-look group frame. */
 export const FRAME_TITLE_H = 22;
 
+/** Title strip across the top of a frame or table: filled (strip / band) or just a rule under the caption (line). */
+export function TitleStrip({ x, y, w, h, t }: { x: number; y: number; w: number; h: number; t: HmiTheme }) {
+  const { fill } = frameTitle(t);
+  const r = Math.max(0, Math.min(t.shape.boxRadius, 8, h / 2) - 1);
+  return (
+    <g>
+      {fill && <path d={`M${x + 1} ${y + h} V${y + 1 + r} a${r} ${r} 0 0 1 ${r} ${-r} H${x + w - 1 - r} a${r} ${r} 0 0 1 ${r} ${r} V${y + h} Z`} fill={fill} />}
+      <rect x={x + (fill ? 1 : 8)} y={y + h} width={w - (fill ? 2 : 16)} height={1} fill={fill ? t.line : t.lineSoft} />
+    </g>
+  );
+}
+
 /**
- * Siemens-look group frame (WinCC "group box"): light panel with a 1 px border
- * and a title strip. Without a title it is just the bordered panel.
+ * Panel-look group frame (WinCC "group box"): panel with a 1 px border and a title
+ * strip in the look's frame style. Without a title it is just the bordered panel.
  */
 export function GroupFrame({ el, t, title = el.label }: { el: HmiElement; t: HmiTheme; title?: string }) {
   const th = Math.min(FRAME_TITLE_H, el.h / 2);
   return (
     <g>
-      <rect x={el.x + 0.5} y={el.y + 0.5} width={el.w - 1} height={el.h - 1} rx={2} fill={t.panel} stroke={t.line} />
+      <rect x={el.x + 0.5} y={el.y + 0.5} width={el.w - 1} height={el.h - 1} rx={Math.min(t.shape.boxRadius, 8)} fill={t.panel} stroke={t.line} />
       {title && (
         <>
-          <path d={`M${el.x + 1} ${el.y + th} V${el.y + 3} a2 2 0 0 1 2 -2 H${el.x + el.w - 3} a2 2 0 0 1 2 2 V${el.y + th} Z`} fill={t.surfaceUp} />
-          <rect x={el.x + 1} y={el.y + th} width={el.w - 2} height={1} fill={t.line} />
-          <text x={el.x + 10} y={el.y + th / 2 + 0.5} fill={t.text} fontSize={12} fontFamily={t.font} fontWeight={700} dominantBaseline="central"
+          <TitleStrip x={el.x} y={el.y} w={el.w} h={th} t={t} />
+          <text x={el.x + 10} y={el.y + th / 2 + 0.5} fill={frameTitle(t).text} fontSize={12} fontFamily={t.font} fontWeight={t.shape.weight} dominantBaseline="central"
             style={{ pointerEvents: 'none' }}>{fitText(title, el.w - 20, 12)}</text>
         </>
       )}
@@ -165,8 +176,8 @@ export function GroupFrame({ el, t, title = el.label }: { el: HmiElement; t: Hmi
 export function MachineGraphic({ el, read, t = hmiTheme('dark') }: { el: HmiElement; read?: (address: string) => boolean | number; t?: HmiTheme }) {
   return (
     <g>
-      {t.look === 'siemens' ? <GroupFrame el={el} t={t} /> : <rect x={el.x} y={el.y} width={el.w} height={el.h} rx={10} fill={t.panel} stroke={t.lineSoft} />}
-      {el.label && t.look !== 'siemens' && <text x={el.x + 14} y={el.y + 16} fill={t.faint} fontSize={10} fontFamily={t.font} fontWeight={600} letterSpacing={t.ls(1.6)} dominantBaseline="central">{fitText(t.caps(el.label), el.w - 28, 10, 1.6)}</text>}
+      {t.shape.family === 'panel' ? <GroupFrame el={el} t={t} /> : <rect x={el.x} y={el.y} width={el.w} height={el.h} rx={10} fill={t.panel} stroke={t.lineSoft} />}
+      {el.label && t.shape.family !== 'panel' && <text x={el.x + 14} y={el.y + 16} fill={t.faint} fontSize={10} fontFamily={t.font} fontWeight={600} letterSpacing={t.ls(1.6)} dominantBaseline="central">{fitText(t.caps(el.label), el.w - 28, 10, 1.6)}</text>}
       {(el.symbols ?? []).map((s, i) => (
         <MachineSymbolShape key={i} s={s} ox={el.x} oy={el.y} on={s.address && read ? Boolean(read(s.address)) : false} live={Boolean(read)} t={t} />
       ))}

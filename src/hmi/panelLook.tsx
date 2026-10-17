@@ -1,45 +1,64 @@
 import type { HmiElement, HmiStyle } from './types';
-import { fitSize, fitText, fmtTime, LEVEL_SHORT, stateTextColor, styleColor, textWidth, type HmiTheme } from './theme';
+import { fitSize, fitText, fmtTime, frameTitle, LEVEL_SHORT, onWarning, shade, stateTextColor, styleColor, textWidth, type HmiTheme } from './theme';
 import { HmiIcon } from './icons';
 import { iconFor, type HmiIconName } from './iconRules';
-import { FRAME_TITLE_H, GroupFrame, LockBadge } from './symbols';
+import { FRAME_TITLE_H, GroupFrame, LockBadge, TitleStrip } from './symbols';
 import { showNum, stateFor, type Ctx } from './viewCtx';
 import { lockInset } from './layout';
 
 /**
- * Siemens look: a WinCC Comfort / Unified style operator panel in the app's
- * blues. Light grey screen, light raised buttons with a darker bottom edge,
- * filled green START / red STOP, F-key style navigation tiles (the current
- * screen filled blue), white value fields with an inset border, plain
- * (not upper-case) Arial text. Colour carries state only (ISA-101).
+ * Operator-panel looks: Siemens WinCC Comfort / Unified, the ISA-101 grey
+ * high-performance look and the maker styles (src/hmi/theme.ts). One renderer,
+ * steered by the look's palette and shape: raised, glossy or flat buttons with
+ * the look's corner radius, round / square lamps with or without a lens, F-key
+ * tiles or flat tabs for navigation, a header bar with a stripe, gloss or rule,
+ * value fields sunken or flat. Colour carries state (ISA-101); the high-performance
+ * look keeps even START / STOP grey.
  */
 
-/** Fill, edge and text colours of a raised button. */
-interface Tone { fill: string; edge: string; text: string }
+/** Fill, edge and text colours of a button; `neutral` = the plain (off) key face. */
+interface Tone { fill: string; edge: string; text: string; neutral?: boolean }
 
 const toneOf = (t: HmiTheme, kind: 'neutral' | 'start' | 'stop' | 'accent' | 'warning'): Tone => {
+  if (!t.shape.colorKeys && (kind === 'start' || kind === 'stop')) kind = 'neutral';
   switch (kind) {
-    case 'start': return { fill: t.ok, edge: '#147a3c', text: '#ffffff' };
-    case 'stop': return { fill: t.alarm, edge: '#a11f1f', text: '#ffffff' };
-    case 'accent': return { fill: t.accent, edge: '#0a4fb8', text: t.onAccent };
-    case 'warning': return { fill: t.warning, edge: '#a86f00', text: t.text };
-    default: return { fill: '#f7f8fa', edge: t.bevel, text: t.text };
+    case 'start': return { fill: t.ok, edge: shade(t.ok, -0.25), text: '#ffffff' };
+    case 'stop': return { fill: t.alarm, edge: shade(t.alarm, -0.25), text: '#ffffff' };
+    case 'accent': return { fill: t.accent, edge: shade(t.accent, -0.25), text: t.onAccent };
+    case 'warning': return { fill: t.warning, edge: shade(t.warning, -0.25), text: onWarning(t) };
+    default: return { fill: t.button, edge: t.bevel, text: t.buttonText, neutral: true };
   }
 };
 
 /**
- * Raised WinCC-like button body: 1 px edge on the sides and top, a 2 px darker
- * edge at the bottom and a light highlight; pressed it sinks (edge on top, no highlight).
+ * Button body in the look's style. Bevel (WinCC-like): 1 px edge on the sides and top, a 2 px
+ * darker edge at the bottom and a light highlight; pressed it sinks. Gloss: a light upper half
+ * over the face. Flat: one face with a 1 px border. Pressed keys lose their highlight.
  */
 function Raised({ x, y, w, h, tone, pressed, t }: { x: number; y: number; w: number; h: number; tone: Tone; pressed?: boolean; t: HmiTheme }) {
-  const fill = pressed ? (tone.fill === '#f7f8fa' ? t.pressed : tone.edge) : tone.fill;
+  const fill = pressed ? (tone.neutral ? t.pressed : tone.edge) : tone.fill;
+  const r = Math.max(0, Math.min(t.shape.radius, h / 2, w / 2));
+  const r1 = Math.max(0, r - 1);
+  if (t.shape.button === 'flat') {
+    return <rect x={x + 0.5} y={y + 0.5} width={w - 1} height={h - 1} rx={r} fill={fill} stroke={tone.neutral && !pressed ? t.line : tone.edge} />;
+  }
+  if (t.shape.button === 'gloss') {
+    return (
+      <g>
+        <rect x={x} y={y} width={w} height={h} rx={r} fill={tone.edge} />
+        <rect x={x + 1} y={y + 1} width={w - 2} height={h - 2} rx={r1} fill={fill} />
+        {!pressed && <rect x={x + 2} y={y + 2} width={w - 4} height={(h - 4) * 0.46} rx={Math.max(0, r - 2)} fill="#ffffff" opacity={tone.neutral && t.light ? 0.6 : 0.2} />}
+        {!pressed && <rect x={x + 1} y={y + 1 + (h - 2) * 0.72} width={w - 2} height={(h - 2) * 0.28} rx={r1} fill="#000" opacity={0.06} />}
+      </g>
+    );
+  }
   return (
     <g>
-      <rect x={x} y={y} width={w} height={h} rx={3} fill={tone.edge} />
-      <rect x={x + 1} y={y + (pressed ? 2 : 1)} width={w - 2} height={h - 3} rx={2} fill={fill} />
-      {!pressed && <rect x={x + 1} y={y + 1 + (h - 3) * 0.45} width={w - 2} height={(h - 3) * 0.55} rx={2} fill="#000" opacity={0.018} />}
-      {!pressed && <rect x={x + 1} y={y + 1 + (h - 3) * 0.75} width={w - 2} height={(h - 3) * 0.25} rx={2} fill="#000" opacity={0.018} />}
-      {!pressed && <rect x={x + 3} y={y + 1.5} width={w - 6} height={1} fill="#ffffff" opacity={tone.fill === '#f7f8fa' ? 0.9 : 0.25} />}
+      <rect x={x} y={y} width={w} height={h} rx={r} fill={tone.edge} />
+      <rect x={x + 1} y={y + (pressed ? 2 : 1)} width={w - 2} height={h - 3} rx={r1} fill={fill} />
+      {!pressed && <rect x={x + 1} y={y + 1 + (h - 3) * 0.45} width={w - 2} height={(h - 3) * 0.55} rx={r1} fill="#000" opacity={0.018} />}
+      {!pressed && <rect x={x + 1} y={y + 1 + (h - 3) * 0.75} width={w - 2} height={(h - 3) * 0.25} rx={r1} fill="#000" opacity={0.018} />}
+      {!pressed && <rect x={x + 1 + Math.max(2, r1)} y={y + 1.5} width={Math.max(0, w - 2 - 2 * Math.max(2, r1))} height={1} fill="#ffffff" opacity={tone.neutral && t.light ? 0.9 : 0.25} />}
     </g>
   );
 }
@@ -55,30 +74,32 @@ function IconLabel({ x, y, w, h, icon, text, color, size, weight, t, dy = 0, ins
   inset?: number;
 }) {
   const cx = x + w / 2, cy = y + h / 2 + dy;
+  // Bold upper-case labels run about a tenth wider than the width estimate: fit them into less room.
+  const k = t.shape.upper && weight >= 600 ? 1.12 : 1;
   const avail = w - 16 - 2 * inset;
   // Icon above the text in tall boxes, unless a second line (interlock state) needs the room.
   const stacked = icon && h >= 72 && w >= 64 && dy === 0;
   if (icon && stacked) {
     const is = Math.min(26, h * 0.32);
-    const fs = fitSize(text, avail, size, 10);
+    const fs = fitSize(text, avail / k, size, 10);
     const top = cy - (is + 6 + fs) / 2;
     return (
       <g>
         <HmiIcon name={icon} x={cx - is / 2} y={top} size={is} color={color} />
         <text x={cx} y={top + is + 6 + fs / 2} fill={color} fontSize={fs} fontFamily={t.font} fontWeight={weight} textAnchor="middle" dominantBaseline="central"
-          style={{ pointerEvents: 'none' }}>{fitText(text, avail, fs)}</text>
+          style={{ pointerEvents: 'none' }}>{fitText(text, avail / k, fs)}</text>
       </g>
     );
   }
   const is = Math.max(12, Math.min(20, h * 0.36));
-  const withIcon = icon && textWidth(text, 10) <= avail - is - 7;
+  const withIcon = icon && textWidth(text, 10) * k <= avail - is - 7;
   const textAvail = withIcon ? avail - is - 7 : avail;
-  const fs = fitSize(text, textAvail, size, 10);
-  const shown = fitText(text, textAvail, fs);
+  const fs = fitSize(text, textAvail / k, size, 10);
+  const shown = fitText(text, textAvail / k, fs);
   if (!withIcon) {
     return <text x={cx} y={cy} fill={color} fontSize={fs} fontFamily={t.font} fontWeight={weight} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{shown}</text>;
   }
-  const groupW = is + 7 + Math.min(textAvail, textWidth(shown, fs));
+  const groupW = is + 7 + Math.min(textAvail, textWidth(shown, fs) * k);
   const left = cx - groupW / 2;
   return (
     <g>
@@ -88,41 +109,46 @@ function IconLabel({ x, y, w, h, icon, text, color, size, weight, t, dy = 0, ins
   );
 }
 
-/** White display / entry field with an inset (sunken) border. */
+/** Display / entry field: sunken (inset border) or flat, in the look's field colour. */
 function Field({ x, y, w, h, t, border }: { x: number; y: number; w: number; h: number; t: HmiTheme; border?: string }) {
   return (
     <g>
-      <rect x={x + 0.5} y={y + 0.5} width={w - 1} height={h - 1} rx={1.5} fill={t.field} stroke={border ?? t.line} strokeWidth={border ? 1.5 : 1} />
-      {!border && <path d={`M${x + 1.5} ${y + h - 2} V${y + 1.5} H${x + w - 2}`} fill="none" stroke={t.bevel} strokeWidth={1} opacity={0.7} />}
+      <rect x={x + 0.5} y={y + 0.5} width={w - 1} height={h - 1} rx={Math.min(t.shape.boxRadius, h / 2)} fill={t.field} stroke={border ?? t.line} strokeWidth={border ? 1.5 : 1} />
+      {!border && t.shape.fieldInset && <path d={`M${x + 1.5} ${y + h - 2} V${y + 1.5} H${x + w - 2}`} fill="none" stroke={t.bevel} strokeWidth={1} opacity={0.7} />}
     </g>
   );
 }
 
 /** Light panel with a 1 px border (no title). */
 function Box({ el, t, stroke }: { el: HmiElement; t: HmiTheme; stroke?: string }) {
-  return <rect x={el.x + 0.5} y={el.y + 0.5} width={el.w - 1} height={el.h - 1} rx={2} fill={t.surface} stroke={stroke ?? t.line} />;
+  return <rect x={el.x + 0.5} y={el.y + 0.5} width={el.w - 1} height={el.h - 1} rx={Math.min(t.shape.boxRadius, el.h / 2)} fill={t.surface} stroke={stroke ?? t.line} />;
 }
 
 /** Lamp colour when ON: plain 'normal' lamps are green; E-stop lamps are always red. */
 const lampColor = (el: HmiElement, t: HmiTheme) =>
   /\b(e-?stop|emergency)\b/i.test(`${el.label} ${el.onText ?? ''}`) ? t.alarm : el.style === 'normal' ? t.ok : styleColor(el.style, t);
 
-/** A lamp: grey when off, coloured with a highlight when on. */
-function Lamp({ cx, cy, r, on, color }: { cx: number; cy: number; r: number; on: boolean; color: string }) {
+/** A lamp in the look's shape: the off colour when off, coloured when on; with a lens highlight in glossy looks. */
+function Lamp({ cx, cy, r, on, color, t }: { cx: number; cy: number; r: number; on: boolean; color: string; t: HmiTheme }) {
+  const fill = on ? color : t.lampOff;
+  const stroke = on ? 'rgba(0,0,0,0.28)' : t.bevel;
+  const body = t.shape.lamp === 'round'
+    ? <circle cx={cx} cy={cy} r={r} fill={fill} stroke={stroke} strokeWidth={1} />
+    : <rect x={cx - r} y={cy - r} width={2 * r} height={2 * r} rx={t.shape.lamp === 'rounded' ? r * 0.45 : 1} fill={fill} stroke={stroke} strokeWidth={1} />;
   return (
     <g>
-      <circle cx={cx} cy={cy} r={r} fill={on ? color : '#c3cad1'} stroke={on ? 'rgba(0,0,0,0.28)' : '#8c96a0'} strokeWidth={1} />
-      <circle cx={cx - r * 0.3} cy={cy - r * 0.32} r={r * 0.32} fill="#ffffff" opacity={on ? 0.45 : 0.6} />
+      {body}
+      {t.shape.lampGloss && <circle cx={cx - r * 0.3} cy={cy - r * 0.32} r={r * 0.32} fill="#ffffff" opacity={on ? 0.45 : 0.6} />}
     </g>
   );
 }
 
-/** Fill and text colours of a state badge (mode, alarm counter) on the dark blue header. */
+/** Fill and text colours of a state badge (mode, alarm counter) on the header bar. */
 const badgeTone = (t: HmiTheme, style: HmiStyle) =>
   style === 'alarm' ? { fill: t.alarm, stroke: t.alarm, text: '#ffffff' }
-    : style === 'warning' ? { fill: t.warning, stroke: t.warning, text: t.text }
+    : style === 'warning' ? { fill: t.warning, stroke: t.warning, text: onWarning(t) }
       : style === 'ok' ? { fill: t.ok, stroke: t.ok, text: '#ffffff' }
-        : { fill: 'rgba(255,255,255,0.10)', stroke: 'rgba(255,255,255,0.28)', text: t.headerText };
+        : { fill: t.headerBadge, stroke: t.headerBadgeLine, text: t.headerText };
 
 function Header({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
   const { t } = ctx;
@@ -130,34 +156,41 @@ function Header({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
   const fs = Math.max(13, Math.min(19, h * 0.38));
   const small = Math.max(11, Math.min(13, h * 0.28));
   const cy = el.y + (h - 3) / 2;
-  const machine = el.label || ctx.design?.machineName || 'Machine';
-  const screenName = ctx.screen.name;
+  const machine = t.caps(el.label || ctx.design?.machineName || 'Machine');
+  const screenName = t.caps(ctx.screen.name);
   // Right-hand cluster, laid out right to left: clock, alarm counter, mode.
   const clockX = el.x + el.w - 12;
   const clockW = textWidth('00:00:00', fs * 0.9) + 8;
+  const badgeR = Math.min(t.shape.badgeRadius, 14);
   const badgeH = Math.min(28, h - 14);
   const by = cy - badgeH / 2;
   const alarmsOn = ctx.activeCount > 0;
   const anyAlarm = ctx.rows.some((r) => r.active && r.severity === 'alarm');
-  const alarmText = alarmsOn ? `Alarms ${ctx.activeCount}` : 'No alarms';
-  const alarmW = Math.max(104, textWidth('Alarms 00', small) + 40);
+  const alarmText = t.caps(alarmsOn ? `Alarms ${ctx.activeCount}` : 'No alarms');
+  const alarmW = Math.max(104, textWidth(t.caps('Alarms 00'), small) + 40);
   const alarmX = clockX - clockW - 12 - alarmW;
   const alarmTone = badgeTone(t, alarmsOn ? (anyAlarm ? 'alarm' : 'warning') : 'normal');
   const modeVal = el.address && ctx.read ? Number(ctx.read(el.address)) : 0;
   const mode = el.address ? (stateFor(el.states, modeVal) ?? { value: modeVal, text: el.states?.length ? `Mode ${modeVal}` : 'Auto', style: 'normal' as const }) : null;
-  const modeW = mode ? textWidth(mode.text, small) + 34 : 0;
+  const modeText = mode ? t.caps(mode.text) : '';
+  const modeW = mode ? textWidth(modeText, small) + 34 : 0;
   const modeX = alarmX - 8 - modeW;
   const modeTone = badgeTone(t, mode?.style ?? 'normal');
-  const nameFs = fitSize(machine, el.w * 0.32, fs, 11);
-  const nameW = Math.min(el.w * 0.32, textWidth(machine, nameFs));
+  // Bold upper-case names run about a tenth wider than the width estimate.
+  const k = t.shape.upper ? 1.12 : 1;
+  const nameFs = fitSize(machine, (el.w * 0.32) / k, fs, 11);
+  const nameW = Math.min(el.w * 0.32, textWidth(machine, nameFs) * k);
   const titleX = el.x + 16 + nameW + 25;
   const locked = ctx.screen.level && ctx.screen.level !== 'operator' ? ctx.screen.level : null;
   const titleMax = (mode ? modeX : alarmX) - titleX - 12 - (locked ? 26 : 0);
   return (
     <g>
       <rect x={el.x} y={el.y} width={el.w} height={h} fill={t.header} />
-      <rect x={el.x} y={el.y + h - 3} width={el.w} height={3} fill={t.accent} />
-      <text x={el.x + 16} y={cy} fill={t.headerText} fontSize={nameFs} fontFamily={t.font} fontWeight={700} dominantBaseline="central">{fitText(machine, el.w * 0.32, nameFs)}</text>
+      {t.shape.header === 'gloss' && <rect x={el.x} y={el.y} width={el.w} height={h * 0.5} fill="#ffffff" opacity={0.1} />}
+      {t.headerAccent !== t.header
+        ? <rect x={el.x} y={el.y + h - 3} width={el.w} height={3} fill={t.headerAccent} />
+        : <rect x={el.x} y={el.y + h - 1} width={el.w} height={1} fill={t.headerLine} />}
+      <text x={el.x + 16} y={cy} fill={t.headerText} fontSize={nameFs} fontFamily={t.font} fontWeight={700} dominantBaseline="central">{fitText(machine, (el.w * 0.32) / k, nameFs)}</text>
       <rect x={el.x + 16 + nameW + 12} y={cy - fs * 0.6} width={1} height={fs * 1.2} fill={t.headerLine} />
       {titleMax > 30 && (
         <text x={titleX} y={cy} fill={t.headerDim} fontSize={fs} fontFamily={t.font} fontWeight={400} dominantBaseline="central">{fitText(screenName, titleMax, fs)}</text>
@@ -167,13 +200,13 @@ function Header({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
       )}
       {mode && (
         <g>
-          <rect x={modeX} y={by} width={modeW} height={badgeH} rx={3} fill={modeTone.fill} stroke={modeTone.stroke} />
+          <rect x={modeX} y={by} width={modeW} height={badgeH} rx={badgeR} fill={modeTone.fill} stroke={modeTone.stroke} />
           <circle cx={modeX + 13} cy={cy} r={4} fill={mode.style === 'normal' ? t.headerDim : modeTone.text} />
-          <text x={modeX + 23} y={cy} fill={modeTone.text} fontSize={small} fontFamily={t.font} fontWeight={700} dominantBaseline="central">{mode.text}</text>
+          <text x={modeX + 23} y={cy} fill={modeTone.text} fontSize={small} fontFamily={t.font} fontWeight={700} dominantBaseline="central">{modeText}</text>
         </g>
       )}
       <g style={{ cursor: el.targetScreenId ? 'pointer' : undefined }} data-nav={el.targetScreenId ?? undefined}>
-        <rect x={alarmX} y={by} width={alarmW} height={badgeH} rx={3} fill={alarmTone.fill} stroke={alarmTone.stroke} />
+        <rect x={alarmX} y={by} width={alarmW} height={badgeH} rx={badgeR} fill={alarmTone.fill} stroke={alarmTone.stroke} />
         <HmiIcon name="warning" x={alarmX + 8} y={cy - 8} size={16} color={alarmsOn ? alarmTone.text : t.headerDim} />
         <text x={alarmX + 30} y={cy} fill={alarmsOn ? alarmTone.text : t.headerDim} fontSize={small} fontFamily={t.font} fontWeight={700} dominantBaseline="central">{alarmText}</text>
       </g>
@@ -194,14 +227,14 @@ function Button({ el, value, ctx }: { el: HmiElement; value: boolean | number | 
   const roleIcon = iconFor(el.label);
   const role = roleIcon === 'stop' || el.style === 'alarm' ? 'stop' : roleIcon === 'play' || el.style === 'ok' ? 'start' : el.style === 'warning' ? 'warning' : 'neutral';
   const tone = toneOf(t, latched && role === 'neutral' ? 'accent' : role);
-  const text = latched && el.onText ? el.onText : !latched && el.offText && el.action === 'toggle' ? el.offText : el.label;
+  const text = t.caps(latched && el.onText ? el.onText : !latched && el.offText && el.action === 'toggle' ? el.offText : el.label);
   const sub = el.interlock && el.h >= 52 ? (interlocked === true ? 'Interlocked' : interlocked === false ? 'Ready' : 'Permissive') : null;
   const size = Math.max(12, Math.min(18, el.h * 0.3));
   const sink = pressed || (latched && role !== 'neutral') ? 1 : 0;
   return (
     <g opacity={interlocked ? 0.45 : 1}>
       <Raised x={el.x} y={el.y} w={el.w} h={el.h} tone={tone} pressed={pressed || (latched && role !== 'neutral')} t={t} />
-      <IconLabel x={el.x} y={el.y + sink} w={el.w} h={el.h - 2} icon={icon} text={text} color={tone.text} size={size} weight={700} t={t} dy={sub ? -7 : 0} inset={lockInset(el)} />
+      <IconLabel x={el.x} y={el.y + sink} w={el.w} h={el.h - 2} icon={icon} text={text} color={tone.text} size={size} weight={t.shape.weight} t={t} dy={sub ? -7 : 0} inset={lockInset(el)} />
       {sub && (
         <g>
           <circle cx={el.x + el.w / 2 - textWidth(sub, 10) / 2 - 7} cy={el.y + el.h / 2 + 11} r={3.5}
@@ -218,14 +251,29 @@ function Nav({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
   const active = el.targetScreenId === ctx.screen.id;
   const target = ctx.design?.screens.find((s) => s.id === el.targetScreenId);
   const lock = target?.level && target.level !== 'operator' ? target.level : null;
-  const tone = toneOf(t, active ? 'accent' : 'neutral');
   const icon = iconFor(el.label, target?.name);
+  const size = Math.max(12, Math.min(16, el.h * 0.3));
+  const weight = active ? t.shape.weight : 400;
+  if (t.shape.nav === 'tabs') {
+    // Flat tab: the current screen filled and marked by a bar along its bottom edge.
+    const r = Math.max(0, Math.min(t.shape.radius, el.h / 2));
+    const color = active ? t.navActiveText : t.navText;
+    return (
+      <g>
+        <rect x={el.x + 0.5} y={el.y + 0.5} width={el.w - 1} height={el.h - 1} rx={r} fill={active ? t.navActive : t.navBand} stroke={active ? t.accent : t.lineSoft} strokeOpacity={active ? 0.5 : 1} />
+        {active && <rect x={el.x + Math.max(2, r)} y={el.y + el.h - 4} width={el.w - 2 * Math.max(2, r)} height={3} rx={1} fill={t.accent} />}
+        <IconLabel x={el.x} y={el.y} w={el.w - (lock ? 10 : 0)} h={el.h - 2} icon={icon} text={t.caps(el.label)} color={color} size={size} weight={weight} t={t} />
+        {lock && <LockBadge x={el.x + el.w - 5} y={el.y + 4} letter={LEVEL_SHORT[lock]} color={color} t={t} />}
+      </g>
+    );
+  }
+  const tone: Tone = active ? { fill: t.navActive, edge: shade(t.navActive, -0.25), text: t.navActiveText } : toneOf(t, 'neutral');
   return (
     <g>
       <Raised x={el.x} y={el.y} w={el.w} h={el.h} tone={tone} t={t} />
-      <IconLabel x={el.x} y={el.y} w={el.w - (lock ? 10 : 0)} h={el.h - 2} icon={icon} text={el.label} color={tone.text}
-        size={Math.max(12, Math.min(16, el.h * 0.3))} weight={active ? 700 : 400} t={t} />
-      {lock && <LockBadge x={el.x + el.w - 5} y={el.y + 4} letter={LEVEL_SHORT[lock]} color={active ? t.onAccent : t.dim} t={t} />}
+      <IconLabel x={el.x} y={el.y} w={el.w - (lock ? 10 : 0)} h={el.h - 2} icon={icon} text={t.caps(el.label)} color={tone.text}
+        size={size} weight={weight} t={t} />
+      {lock && <LockBadge x={el.x + el.w - 5} y={el.y + 4} letter={LEVEL_SHORT[lock]} color={active ? t.navActiveText : t.dim} t={t} />}
     </g>
   );
 }
@@ -242,8 +290,8 @@ function Indicator({ el, value, ctx }: { el: HmiElement; value: boolean | number
   return (
     <g>
       <Box el={el} t={t} />
-      <Lamp cx={el.x + 8 + r} cy={el.y + el.h / 2} r={r} on={on} color={color} />
-      <text x={tx} y={el.y + el.h / 2} fill={on ? t.text : t.dim} fontSize={fs} fontFamily={t.font} fontWeight={on ? 700 : 400} dominantBaseline="central">
+      <Lamp cx={el.x + 8 + r} cy={el.y + el.h / 2} r={r} on={on} color={color} t={t} />
+      <text x={tx} y={el.y + el.h / 2} fill={on ? t.text : t.dim} fontSize={fs} fontFamily={t.font} fontWeight={on ? t.shape.weight : 400} dominantBaseline="central">
         {fitText(text, maxW, fs)}
       </text>
     </g>
@@ -272,7 +320,7 @@ function Multistate({ el, value, ctx }: { el: HmiElement; value: boolean | numbe
       </text>
       <Field x={fx} y={fy} w={fw} h={fh} t={t} />
       <circle cx={fx + 12} cy={fy + fh / 2} r={4.5} fill={dot} />
-      <text x={fx + 23} y={fy + fh / 2} fill={color} fontSize={valueSize} fontFamily={t.font} fontWeight={700} dominantBaseline="central">{fitText(st.text, fw - 30, valueSize)}</text>
+      <text x={fx + 23} y={fy + fh / 2} fill={color} fontSize={valueSize} fontFamily={t.font} fontWeight={t.shape.weight} dominantBaseline="central">{fitText(st.text, fw - 30, valueSize)}</text>
     </g>
   );
 }
@@ -302,7 +350,7 @@ function Numeric({ el, value, ctx }: { el: HmiElement; value: boolean | number |
       </text>
       {range && <text x={el.x + 10} y={el.y + el.h / 2 + 9} fill={t.dim} fontSize={Math.max(10, labelSize - 2)} fontFamily={t.font} dominantBaseline="central">{fitText(range, Math.max(24, labelMax), Math.max(10, labelSize - 2))}</text>}
       <Field x={fx} y={fy} w={fw} h={fh} t={t} border={entry ? t.accent : undefined} />
-      <text x={fx + fw - 8 - unitsW} y={fy + fh / 2} fill={t.text} fontSize={fitSize(valueText, fw - unitsW - 16, valueSize, 10)} fontFamily={t.font} fontWeight={700}
+      <text x={fx + fw - 8 - unitsW} y={fy + fh / 2} fill={t.text} fontSize={fitSize(valueText, fw - unitsW - 16, valueSize, 10)} fontFamily={t.font} fontWeight={t.shape.weight}
         textAnchor="end" dominantBaseline="central">{valueText}</text>
       {el.units && <text x={fx + fw - 8} y={fy + fh / 2} fill={t.dim} fontSize={unitSize} fontFamily={t.font} textAnchor="end" dominantBaseline="central">{el.units}</text>}
       {entry && <path d={`M${fx + fw - 1.5} ${fy + fh - 9} V${fy + fh - 1.5} H${fx + fw - 9} Z`} fill={t.accent} />}
@@ -324,7 +372,7 @@ function Bar({ el, value, ctx }: { el: HmiElement; value: boolean | number | und
   return (
     <g>
       <text x={el.x} y={textY} fill={t.dim} fontSize={fs} fontFamily={t.font} dominantBaseline="central">{fitText(el.label, el.w * 0.6, fs)}</text>
-      <text x={el.x + el.w} y={textY} fill={t.text} fontSize={fs + 1} fontFamily={t.font} fontWeight={700} textAnchor="end" dominantBaseline="central">{valueText}</text>
+      <text x={el.x + el.w} y={textY} fill={t.text} fontSize={fs + 1} fontFamily={t.font} fontWeight={t.shape.weight} textAnchor="end" dominantBaseline="central">{valueText}</text>
       <Field x={el.x} y={ty} w={el.w} h={trackH} t={t} />
       {frac > 0 && <rect x={el.x + 2} y={ty + 2} width={Math.max(0, (el.w - 4) * frac)} height={trackH - 4} fill={styleColor(el.style, t)} />}
       {[0.25, 0.5, 0.75].map((f) => <rect key={f} x={el.x + 2 + (el.w - 4) * f} y={ty + trackH - 5} width={1} height={3} fill={t.bevel} />)}
@@ -345,13 +393,13 @@ function Trend({ el, value, ctx }: { el: HmiElement; value: number | undefined; 
   const hi = hiRaw === lo ? lo + 1 : hiRaw;
   const pts = samples.map((v, i) => `${px + (samples.length > 1 ? (i / (samples.length - 1)) * pw : pw)},${py + ph - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * ph}`);
   const last = pts[pts.length - 1];
-  const line = el.style === 'normal' ? t.accent : styleColor(el.style, t);
+  const line = el.style === 'normal' ? t.trend : styleColor(el.style, t);
   const reading = ctx.live ? `${value ?? 0}${el.units ? ` ${el.units}` : ''}` : (el.units ?? '');
   const readingW = reading ? textWidth(reading, 12) + 12 : 0;
   return (
     <g>
       <GroupFrame el={el} t={t} title={fitText(el.label, el.w - readingW - 24, 12)} />
-      {reading && <text x={el.x + el.w - 10} y={el.y + th / 2 + 0.5} fill={t.text} fontSize={12} fontFamily={t.font} fontWeight={700} textAnchor="end" dominantBaseline="central">{reading}</text>}
+      {reading && <text x={el.x + el.w - 10} y={el.y + th / 2 + 0.5} fill={frameTitle(t).text} fontSize={12} fontFamily={t.font} fontWeight={700} textAnchor="end" dominantBaseline="central">{reading}</text>}
       {fh > 20 && (
         <g>
           <Field x={fx} y={fy} w={fw} h={fh} t={t} />
@@ -395,11 +443,10 @@ function AlarmList({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
   const more = rows.length - shown.length;
   return (
     <g>
-      <rect x={el.x + 0.5} y={el.y + 0.5} width={el.w - 1} height={el.h - 1} rx={2} fill={t.field} stroke={t.line} />
-      <path d={`M${el.x + 1} ${el.y + headH} V${el.y + 3} a2 2 0 0 1 2 -2 H${el.x + el.w - 3} a2 2 0 0 1 2 2 V${el.y + headH} Z`} fill={t.surfaceUp} />
-      <rect x={el.x + 1} y={el.y + headH} width={el.w - 2} height={1} fill={t.line} />
+      <rect x={el.x + 0.5} y={el.y + 0.5} width={el.w - 1} height={el.h - 1} rx={Math.min(t.shape.boxRadius, 8)} fill={t.field} stroke={t.line} />
+      <TitleStrip x={el.x} y={el.y} w={el.w} h={headH} t={t} />
       {([['Time', el.x + 22], [el.label || 'Message', msgX], ['State', stateX]] as [string, number][]).map(([head, x]) => (
-        <text key={head} x={x} y={el.y + headH / 2} fill={t.text} fontSize={12} fontFamily={t.font} fontWeight={700} dominantBaseline="central">{fitText(head, msgW, 12)}</text>
+        <text key={head} x={x} y={el.y + headH / 2} fill={frameTitle(t).text} fontSize={12} fontFamily={t.font} fontWeight={700} dominantBaseline="central">{fitText(head, msgW, 12)}</text>
       ))}
       {shown.length === 0 && (
         <text x={el.x + el.w / 2} y={el.y + headH + (el.h - headH) / 2} fill={t.dim} fontSize={13} fontFamily={t.font} textAnchor="middle" dominantBaseline="central">No alarms</text>
@@ -414,7 +461,7 @@ function AlarmList({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
           <g key={i}>
             {i % 2 === 1 && <rect x={el.x + 1} y={y} width={el.w - 2} height={rowH} fill={t.surface} />}
             <rect x={el.x + 1} y={y + rowH - 1} width={el.w - 2} height={1} fill={t.lineSoft} />
-            <rect x={el.x + 8} y={y + rowH / 2 - 5} width={10} height={10} rx={1.5} fill={lit ? col : '#c3cad1'} />
+            <rect x={el.x + 8} y={y + rowH / 2 - 5} width={10} height={10} rx={t.shape.lamp === 'round' ? 5 : 1.5} fill={lit ? col : t.lampOff} stroke={lit ? 'none' : t.bevel} strokeWidth={0.75} />
             <text x={el.x + 22} y={y + rowH / 2} fill={r.active ? t.text : t.dim} fontSize={fs} fontFamily={t.mono} dominantBaseline="central">{r.on ? fmtTime(r.on) : '--:--:--'}</text>
             <text x={msgX} y={y + rowH / 2} fill={r.active ? t.text : t.dim} fontSize={fs} fontFamily={t.font} fontWeight={r.active ? 700 : 400} dominantBaseline="central">{fitText(r.message, msgW, fs)}</text>
             <text x={stateX} y={y + rowH / 2} fill={lit ? textCol : t.dim} fontSize={fs} fontFamily={t.font} fontWeight={700} dominantBaseline="central">
@@ -435,13 +482,13 @@ function AlarmBanner({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
   const active = ctx.rows.filter((a) => a.active);
   const alarm = active.some((a) => a.severity === 'alarm');
   const fill = !active.length ? t.surface : alarm ? t.alarm : t.warning;
-  const color = !active.length ? t.dim : alarm ? '#ffffff' : t.text;
+  const color = !active.length ? t.dim : alarm ? '#ffffff' : onWarning(t);
   const fs = Math.max(12, Math.min(16, el.h * 0.42));
   const is = Math.max(12, Math.min(18, el.h * 0.5));
   const text = active.length ? `${active[0].message}${active.length > 1 ? `  (+${active.length - 1} more)` : ''}` : 'No active alarms';
   return (
     <g>
-      <rect x={el.x + 0.5} y={el.y + 0.5} width={el.w - 1} height={el.h - 1} rx={2} fill={fill} stroke={active.length ? fill : t.line} />
+      <rect x={el.x + 0.5} y={el.y + 0.5} width={el.w - 1} height={el.h - 1} rx={Math.min(t.shape.boxRadius, el.h / 2)} fill={fill} stroke={active.length ? fill : t.line} />
       {active.length
         ? <HmiIcon name="warning" x={el.x + 10} y={el.y + el.h / 2 - is / 2} size={is} color={color} />
         : <circle cx={el.x + 10 + is / 2} cy={el.y + el.h / 2} r={Math.min(5, is / 3)} fill={t.ok} />}
@@ -460,7 +507,7 @@ function DateTime({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
     <g>
       <Field x={el.x} y={el.y + 4} w={el.w} h={fh} t={t} />
       <text x={el.x + 10} y={el.y + el.h / 2} fill={t.dim} fontSize={Math.max(11, fs * 0.6)} fontFamily={t.font} dominantBaseline="central">{t.date(ctx.now)}</text>
-      <text x={el.x + el.w - 10} y={el.y + el.h / 2} fill={t.text} fontSize={fs} fontFamily={t.font} fontWeight={700} textAnchor="end" dominantBaseline="central">{fmtTime(ctx.now)}</text>
+      <text x={el.x + el.w - 10} y={el.y + el.h / 2} fill={t.text} fontSize={fs} fontFamily={t.font} fontWeight={t.shape.weight} textAnchor="end" dominantBaseline="central">{fmtTime(ctx.now)}</text>
     </g>
   );
 }
@@ -470,7 +517,7 @@ function Text({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
   if (el.h >= 32) {
     const fs = Math.min(26, el.h * 0.58);
     return (
-      <text x={el.x} y={el.y + el.h / 2} fill={t.text} fontSize={fs} fontFamily={t.font} fontWeight={700} dominantBaseline="central" style={{ pointerEvents: 'none' }}>
+      <text x={el.x} y={el.y + el.h / 2} fill={t.text} fontSize={fs} fontFamily={t.font} fontWeight={t.shape.weight} dominantBaseline="central" style={{ pointerEvents: 'none' }}>
         {fitText(el.label, el.w, fs)}
       </text>
     );
@@ -490,8 +537,8 @@ function Text({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
   );
 }
 
-/** One element in the Siemens look (kinds listed in SIEMENS_KINDS). */
-export function SiemensElement({ el, value, ctx }: { el: HmiElement; value: boolean | number | undefined; ctx: Ctx }) {
+/** One element in a panel look (kinds listed in PANEL_KINDS). */
+export function PanelElement({ el, value, ctx }: { el: HmiElement; value: boolean | number | undefined; ctx: Ctx }) {
   switch (el.kind) {
     case 'header': return <Header el={el} ctx={ctx} />;
     case 'panel': return <GroupFrame el={el} t={ctx.t} />;
@@ -511,8 +558,8 @@ export function SiemensElement({ el, value, ctx }: { el: HmiElement; value: bool
 }
 
 /**
- * WinCC-style navigation bar behind the bottom row of screen buttons: a slightly
- * darker band with a top edge. Drawn only when the nav tiles sit along the bottom.
+ * Navigation band behind the bottom row of screen buttons (WinCC F-key bar, tab strip):
+ * the look's band colour with a top edge. Drawn only when the screen buttons sit along the bottom.
  */
 export function NavBand({ elements, widthPx, heightPx, t }: { elements: HmiElement[]; widthPx: number; heightPx: number; t: HmiTheme }) {
   const navs = elements.filter((e) => e.kind === 'nav');
@@ -523,7 +570,7 @@ export function NavBand({ elements, widthPx, heightPx, t }: { elements: HmiEleme
   const y = Math.max(0, top - 4);
   return (
     <g style={{ pointerEvents: 'none' }}>
-      <rect x={0} y={y} width={widthPx} height={heightPx - y} fill="#d5dbe1" />
+      <rect x={0} y={y} width={widthPx} height={heightPx - y} fill={t.navBand} />
       <rect x={0} y={y} width={widthPx} height={1} fill={t.line} />
     </g>
   );
