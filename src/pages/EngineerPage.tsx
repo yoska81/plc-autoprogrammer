@@ -8,13 +8,12 @@ import { useSpecStore } from '../store/useSpecStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useDraft } from '../store/useDraftStore';
 import { usePlc } from '../plc/core/usePlc';
-import { ioCapacity, moduleSlots } from '../plc/core/modules';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 import { collectProject } from '../deliverables/collect';
 import { saveBlob } from '../deliverables/files';
 import { checksFor } from '../review/actions';
 import { SEVERITY_LABEL, SEVERITY_ORDER, sortFindings, type Severity } from '../review/types';
-import { engineerChecks, type EngineerFinding } from '../engineer/checks';
+import type { EngineerFinding } from '../engineer/checks';
 import { runEngineerAI } from '../engineer/engineerAI';
 import { buildReviewPackage, reviewMailto } from '../engineer/package';
 import { impactOf, swapInDesign, type ImpactLine } from '../sourcing/swap';
@@ -39,15 +38,11 @@ export default function EngineerPage() {
   useTakeResult<{ summary: string; findings: EngineerFinding[]; at: string }>('engineer', setAi);
   const error = useAiJobError('engineer');
 
+  // The Design review's checks on the electrical side, which include the engineer rule checks (one set of findings, so the counts agree).
   const rules = useMemo<EngineerFinding[]>(() => {
     if (!ctx) return [];
-    const cap = ioCapacity(cpu, moduleSlots(modules));
-    const used = { inputs: io.filter((p) => p.type === 'input' && addresses.get(p.id)).length, outputs: io.filter((p) => p.type === 'output' && addresses.get(p.id)).length };
-    const pl = `${spec.safety} ${spec.guarding}`.match(/\bPL\s*([a-e])\b/i)?.[1] ?? null;
-    const own = engineerChecks({ ctx, io: { ...used, capInputs: cap.inputs, capOutputs: cap.outputs }, requiredPL: pl });
-    // The Design review's rules on the electrical side (code rules, wiring, protection, safety).
-    const review = checksFor(collectProject()).filter((f) => f.area === 'electrical' || f.area === 'safety');
-    return [...own, ...review.filter((f) => !own.some((o) => o.title === f.title))];
+    return checksFor(collectProject()).filter((f) => f.area === 'electrical' || f.area === 'safety' || f.id.startsWith('eng:'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the stores below feed collectProject()
   }, [ctx, cpu, modules, io, addresses, spec]);
   const all = useMemo(() => sortFindings([...rules, ...(ai?.findings ?? [])]) as EngineerFinding[], [rules, ai]);
 

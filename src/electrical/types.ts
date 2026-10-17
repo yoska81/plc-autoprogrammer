@@ -106,6 +106,14 @@ export type FieldDeviceType =
   | 'sensor-pnp' | 'sensor-npn' | 'limit-switch' | 'pressure-switch' | 'safety-relay-output'
   | 'contactor-coil' | 'relay-coil' | 'solenoid' | 'pilot-light' | 'stack-light' | 'vfd-input' | 'other';
 
+/** Field device types in words. */
+export const FIELD_DEVICE_LABEL: Record<FieldDeviceType, string> = {
+  'pushbutton-no': 'pushbutton (NO)', 'pushbutton-nc': 'pushbutton (NC)', selector: 'selector switch', 'estop-contact': 'E-stop contact',
+  'sensor-pnp': 'sensor (PNP)', 'sensor-npn': 'sensor (NPN)', 'limit-switch': 'limit switch', 'pressure-switch': 'pressure switch',
+  'safety-relay-output': 'safety relay output', 'contactor-coil': 'contactor coil', 'relay-coil': 'relay coil', solenoid: 'solenoid valve',
+  'pilot-light': 'pilot light', 'stack-light': 'stack light', 'vfd-input': 'drive input', other: 'other',
+};
+
 /** How one PLC I/O point is wired in the field. */
 export interface IOWiring {
   /** PLC address, e.g. "X001". */

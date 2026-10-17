@@ -119,6 +119,16 @@ test('construction guard: open criticals block, override marks them accepted', (
   assert.equal(openCounts(useReviewStore.getState()).critical, 0);
 });
 
+test('engineer rule checks are part of the design review (one set of counts)', () => {
+  seedSampleProject();
+  const got = check();
+  const weak = got.find((f) => f.id.startsWith('eng:sccr-weak:'));
+  assert.ok(weak, `the SCCR weak link is a review finding: ${got.map((f) => f.id).join(', ')}`);
+  // the site fault current is not known: advice, not a defect
+  assert.equal(weak!.severity, 'minor');
+  assert.equal(new Set(got.map((f) => f.title)).size, got.length, 'no finding twice under two ids');
+});
+
 test('spec motors: a motor described in two sections counts once; a match is never a mismatch', () => {
   const three = {
     overview: 'Conveyor cell: M1 infeed conveyor 2 HP, M2 transfer conveyor 1 HP and an M3 discharge conveyor 1/2 HP.',
