@@ -4,7 +4,7 @@ import { DESIGN } from '../preview/sampleProject';
 import { getPart } from './catalog';
 import type { CatalogPart } from './types';
 import type { DrawingContext, ResolvedComponent } from './derive';
-import { conditionMet, panelSccr } from './sccr';
+import { conditionMet, panelSccr, shortCondition } from './sccr';
 
 let passed = 0;
 const failures: string[] = [];
@@ -21,6 +21,15 @@ test('fuse class and amp limit', () => {
   assert.equal(conditionMet('with Class CC fuses, 30 A max.', ccHolder).met, true);
   assert.equal(conditionMet('with Class J fuses', ccHolder).met, false, 'J required, CC fitted');
   assert.equal(conditionMet('with Class CC fuses, 6 A max.', ccHolder).met, false, '10 A fitted, 6 A allowed');
+});
+
+test('class lists and the short form of catalog prose', () => {
+  const yaskawa = '100 kA at 480 V max with Bussmann FWH-80BC semiconductor fuse or Class CC/J/T time-delay fuse max 30 A, drive in a protected enclosure';
+  assert.equal(conditionMet(yaskawa, rc('FU2', 'fuse', { fuseClass: 'J' }, '', { fuseClass: 'J', amps: 20 })).met, true, 'J is one of CC/J/T');
+  assert.equal(conditionMet(yaskawa, rc('FU2', 'fuse', { fuseClass: 'RK5' }, '', { fuseClass: 'RK5', amps: 20 })).met, false);
+  assert.equal(conditionMet(yaskawa, rc('FU2', 'fuse', { fuseClass: 'CC' }, '', { fuseClass: 'CC', amps: 35 })).met, false, '35 A > 30 A max.');
+  assert.equal(shortCondition(yaskawa), 'Class CC/J/T fuses, 30 A max.');
+  assert.equal(shortCondition('UL installations must use the Appendix A fuses: Class T 10 A (TJS10) for this 460 V model'), 'Class T fuses');
 });
 
 test('breaker, Type E and unknown wording', () => {
@@ -44,6 +53,8 @@ test('example panel: the disconnect condition is a requirement on the upstream p
   assert.ok(ds && ds.condition && ds.met, JSON.stringify(ds));
   assert.ok(sc.conditions.some((c) => c.tag === 'DS1' && /upstream/.test(c.condition)));
   assert.ok(!sc.unmet.length, JSON.stringify(sc.unmet));
+  // power supplies publish no SCCR: listed for the SB4 exemption check, never blocking the panel value
+  assert.ok(sc.exemptCheck.includes('PS1') && !sc.unknown.includes('PS1'), JSON.stringify({ e: sc.exemptCheck, u: sc.unknown }));
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

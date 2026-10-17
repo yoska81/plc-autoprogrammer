@@ -28,8 +28,28 @@ export interface PanelSccr {
   result: string;
   /** Counted ratings that hold only under a condition ("SCCR valid with …" on the nameplate). */
   conditions: { tag: string; condition: string }[];
+  /** Parts without a published SCCR that UL 508A SB4 may exempt (power supplies): not counted, not blocking. */
+  exemptCheck: string[];
   /** Ratings not counted because the design does not (visibly) meet their condition. */
   unmet: { tag: string; condition: string; why: string }[];
+}
+
+const CLASS = '(?:J|CC|T|RK1|RK5|L|G)';
+/** Fuse classes a text names, slash lists included ("Class CC/J/T" → CC, J, T). */
+function fuseClasses(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(new RegExp(`\\bclass\\s*(${CLASS}(?:\\s*\\/\\s*${CLASS})*)\\b`, 'gi'))) for (const c of m[1].split('/')) out.add(c.trim().toUpperCase());
+  return [...out];
+}
+
+/** The protection a condition asks for, in a few words for the nameplate and the review ("CLASS CC/J/T FUSES, 30 A MAX."). */
+export function shortCondition(condition: string): string {
+  const classes = fuseClasses(condition);
+  const maxA = /max\.?\s*(\d+(?:\.\d+)?)\s*A\b/i.exec(condition)?.[1] ?? /(\d+(?:\.\d+)?)\s*A\s*max/i.exec(condition)?.[1];
+  if (classes.length) return `Class ${classes.join('/')} fuses${maxA ? `, ${maxA} A max.` : ''}`;
+  if (/\btype e\b|self[- ]protected/i.test(condition)) return 'Type E self-protected starter';
+  if (/\b(circuit )?breaker|\bMCCB\b/i.test(condition)) return `branch-circuit breaker${maxA ? `, ${maxA} A max.` : ''}`;
+  return condition.length > 70 ? `${condition.slice(0, 67).replace(/\s+\S*$/, '')}...` : condition;
 }
 
 /**
@@ -41,10 +61,10 @@ export function conditionMet(condition: string, prot: ResolvedComponent | undefi
   if (!prot) return { met: false, why: 'no protective device ahead of it in the design' };
   const rr = prot.part?.ratings ?? {};
   const desc = `${prot.part?.description ?? ''} ${prot.fuse?.description ?? ''}`;
-  const cls = /\bclass\s*(J|CC|T|RK1|RK5|L|G)\b/i.exec(condition)?.[1]?.toUpperCase();
-  if (cls) {
-    const have = String(prot.fuse?.ratings.fuseClass ?? rr.fuseClass ?? (/\bclass\s*(J|CC|T|RK1|RK5|L|G)\b/i.exec(desc)?.[1] ?? '')).toUpperCase();
-    if (prot.category !== 'fuse' || have !== cls) return { met: false, why: `${prot.tag} is not a Class ${cls} fuse` };
+  const classes = fuseClasses(condition);
+  if (classes.length) {
+    const have = String(prot.fuse?.ratings.fuseClass ?? rr.fuseClass ?? (fuseClasses(desc)[0] ?? '')).toUpperCase();
+    if (prot.category !== 'fuse' || !classes.includes(have)) return { met: false, why: `${prot.tag} is not a Class ${classes.join(' / ')} fuse` };
   } else if (/\b(circuit )?breaker|\bMCCB\b|inverse[- ]time/i.test(condition)) {
     if (prot.category !== 'breaker' || /no/i.test(String(rr.branchRated ?? ''))) return { met: false, why: `${prot.tag} is not a branch-circuit breaker` };
   } else if (/\btype e\b|self[- ]protected|manual motor (starter|protector)/i.test(condition)) {
@@ -72,6 +92,7 @@ export function panelSccr(ctx: DrawingContext): PanelSccr {
   const rows: SccrRow[] = [];
   const unknown: string[] = [];
   const conditions: PanelSccr['conditions'] = [];
+  const exemptCheck: string[] = [];
   const unmet: PanelSccr['unmet'] = [];
   let lowest: number | null = null, limiting: string[] = [];
   // The protection ahead of each part, for its rating's condition. The main disconnect without main protection
@@ -91,8 +112,9 @@ export function panelSccr(ctx: DrawingContext): PanelSccr {
       const prot = protOf.get(c);
       const chk = prot === 'upstream' ? { met: true, why: '' } : conditionMet(condition, prot);
       met = chk.met;
-      if (met) conditions.push({ tag: c.tag, condition: prot === 'upstream' ? `${condition} (upstream protection by others)` : condition });
-      else unmet.push({ tag: c.tag, condition, why: chk.why });
+      const short = shortCondition(condition);
+      if (met) conditions.push({ tag: c.tag, condition: prot === 'upstream' ? `${short} (upstream protection by others)` : short });
+      else unmet.push({ tag: c.tag, condition: short, why: chk.why });
     }
     rows.push({ tag: c.tag, component: `${c.tag} ${c.partNumber}`, circuit, kA, source, note: [note, condition && `${met ? 'Valid with' : 'NOT COUNTED — needs'}: ${condition}`].filter(Boolean).join('; '), condition, met, sourceUrl });
     if (kA === null) { unknown.push(c.tag); return; }
@@ -137,7 +159,15 @@ export function panelSccr(ctx: DrawingContext): PanelSccr {
   if (m.xfmrBranch) { protectiveRow(m.xfmrBranch.protection, 'Control transformer'); add(m.xfmrBranch.xfmr, 'Control transformer', num(r(m.xfmrBranch.xfmr).sccrKA), 'Not published', 'Confirm rating / exemption with the manufacturer'); }
   for (const b of m.psBranches) {
     protectiveRow(b.protection, `${b.ps.tag} primary`);
-    if (!b.fromXfmr) { const k = kA(b.ps); add(b.ps, `${b.ps.tag} primary`, k, k !== null ? 'Catalog SCCR' : 'Not published in catalog', k !== null ? '' : 'Obtain SCCR from the manufacturer before marking the panel'); }
+    if (b.fromXfmr) continue;
+    const k = kA(b.ps);
+    if (k !== null) { add(b.ps, `${b.ps.tag} primary`, k, 'Catalog SCCR'); continue; }
+    // Makers publish no SCCR for power supplies: not counted and not blocking, listed for the UL 508A SB4 check
+    // (Class 2 / isolated-secondary sources and branch-protected supplies are handled by the SB4 exemptions).
+    const class2 = /yes/i.test(String(r(b.ps).necClass2 ?? ''));
+    exemptCheck.push(b.ps.tag);
+    rows.push({ tag: b.ps.tag, component: `${b.ps.tag} ${b.ps.partNumber}`, circuit: `${b.ps.tag} primary`, kA: null, source: 'Not published by the maker',
+      note: `Check the UL 508A SB4 exemption${class2 ? ' (NEC Class 2 supply)' : b.protection ? ` (branch protection ${b.protection.tag} ahead)` : ''}; not counted`, condition: '', met: true });
   }
   for (const b of m.auxBranches) protectiveRow(b.protection, b.protection.comp.function || 'Auxiliary');
   const powerTerms = terminalPlan(ctx).flatMap((s) => s.terminals).filter((t) => m.motors.some((mm) => mm.loadWires.includes(t.wire)));
@@ -148,8 +178,8 @@ export function panelSccr(ctx: DrawingContext): PanelSccr {
   const low = lowest as number | null;
   const result = low === null
     ? 'Panel SCCR cannot be determined: no component ratings available.'
-    : `Preliminary panel SCCR = ${low} kA at ${supplyText(m.supply)} (lowest rating, limited by ${limiting.join(', ')}).${unknown.length ? ` UNKNOWN ratings for ${unknown.join(', ')} must be obtained before the nameplate is marked.` : ''}${unmet.length ? ` Not counted (condition not met): ${unmet.map((u) => `${u.tag} needs ${u.condition}`).join('; ')}.` : ''}${conditions.length ? ` Valid with: ${conditions.map((x) => `${x.tag} ${x.condition}`).join('; ')}.` : ''} The available fault current at the installation must not exceed the marked SCCR.`;
-  const out = { rows, lowest: low, limiting, unknown, result, conditions, unmet };
+    : `Preliminary panel SCCR = ${low} kA at ${supplyText(m.supply)} (lowest rating, limited by ${limiting.join(', ')}).${unknown.length ? ` UNKNOWN ratings for ${unknown.join(', ')} must be obtained before the nameplate is marked.` : ''}${unmet.length ? ` Not counted (condition not met): ${unmet.map((u) => `${u.tag} needs ${u.condition}`).join('; ')}.` : ''}${conditions.length ? ` Valid with: ${conditions.map((x) => `${x.tag} ${x.condition}`).join('; ')}.` : ''}${exemptCheck.length ? ` Not published, check the UL 508A SB4 exemption: ${exemptCheck.join(', ')}.` : ''} The available fault current at the installation must not exceed the marked SCCR.`;
+  const out = { rows, lowest: low, limiting, unknown, result, conditions, unmet, exemptCheck };
   cache.set(ctx, out);
   return out;
 }

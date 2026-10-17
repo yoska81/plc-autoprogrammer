@@ -495,6 +495,9 @@ export const RULES: CodeRule[] = [
       // Missing datasheet data, not a design error: minor until the ratings are looked up.
       if (s?.unknown.length) out.push({ subject: 'unknown', severity: 'minor', area: 'electrical', title: `SCCR cannot be determined: no rating for ${s.unknown.join(', ')}`,
         detail: 'Every power-circuit component needs a short-circuit rating (or the default from UL 508A Table SB4.1) before the panel SCCR can be marked.', fix: 'Get the ratings from the datasheets or use parts with published SCCR.' });
+      const pe = panelSccr(input.ctx).exemptCheck;
+      if (pe.length) out.push({ subject: 'exempt', severity: 'minor', area: 'electrical', title: `No published SCCR for ${pe.join(', ')}: check the UL 508A SB4 exemption`,
+        detail: 'Power supply makers publish no short-circuit rating. These parts are not counted in the panel SCCR; confirm they fall under the Supplement SB4 exemptions (e.g. Class 2 / isolated secondary sources, branch-protected supplies).', fix: 'Confirm the exemption, or get a rating from the manufacturer.' });
       // a conditional rating counts only when the design meets its condition (protection ahead of the part)
       for (const u of panelSccr(input.ctx).unmet) out.push({ subject: `condition:${u.tag}`, severity: 'major', area: 'electrical', title: `${u.tag} SCCR not counted: valid only ${u.condition}`,
         detail: `The catalog rating of ${u.tag} holds only ${u.condition}; ${u.why}.`, fix: `Protect ${u.tag} as its rating requires, or use the default / a part rated without that condition.` });
