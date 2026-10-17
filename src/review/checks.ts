@@ -217,7 +217,7 @@ function stageChecks({ stages }: ReviewInput): Finding[] {
   return out;
 }
 
-const MAJOR_WARN_RE = /\b(no reset|no safety relay|no e-stop|below the motor|transformer is required|not rated|without contactor|needs two contactors|no plc output)\b/i;
+const MAJOR_WARN_RE = /\b(no reset|no safety relay|no e-stop|below the motor|transformer is required|not rated|without contactor|needs two contactors|no plc output|not possible with these parts)\b/i;
 /** Design warnings a code rule already reports (with its clause): not listed twice in the review. */
 const COVERED_BY_CODE_RULES = /safety relay has no reset pushbutton/i;
 // PLC I/O capacity is one finding, in Equipment (critical), with the same count as the Equipment page

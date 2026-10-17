@@ -119,6 +119,43 @@ export function isFusedDisconnect(c: ResolvedComponent | undefined): boolean {
   return !!c && c.category === 'disconnect' && /\bfused\b/i.test(c.part?.description ?? '') && !/non-?fused/i.test(c.part?.description ?? '');
 }
 
+/** 18 AWG control conductor rating (NFPA 79 Table 12.5.1), the smallest DC wire the design uses. */
+const DC_WIRE_A = 7;
+const psOutA = (ps: ResolvedComponent | undefined) => num(ps?.part?.ratings, 'outputAmps', 'amps') ?? ((num(ps?.part?.ratings, 'watts') ?? 0) / 24);
+const isClass2 = (ps: ResolvedComponent | undefined) => /yes/i.test(String(ps?.part?.ratings.necClass2 ?? ''));
+/** Fuse rating for 24 VDC branches that leave the cabinet, when the supply is not Class 2 and can exceed the wire rating. */
+function dcBranchFuse(ps: ResolvedComponent | undefined): string | undefined {
+  return ps && !isClass2(ps) && psOutA(ps) > DC_WIRE_A ? '4 A' : undefined;
+}
+
+/** Small-conductor / 75 °C copper ampacity for the OCPD limit (NEC 240.4(D), Table 310.16). */
+const AWG_OCPD: Record<string, number> = { '14 AWG': 15, '12 AWG': 20, '10 AWG': 30, '8 AWG': 50, '6 AWG': 65, '4 AWG': 85, '3 AWG': 100, '2 AWG': 115, '1 AWG': 130, '1/0 AWG': 150, '2/0 AWG': 175, '3/0 AWG': 200, '4/0 AWG': 230 };
+const STD_OCPD = [15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250];
+
+/**
+ * Supply protection the panel relies on from outside: with a non-fused disconnect and no main breaker nothing in
+ * the panel protects the main bus, so the feeder's overcurrent device (by others) must. Its rating must carry the
+ * panel load (125 % of the largest motor + the other loads, NEC 430.24 / 409.20) and protect the bus conductors and
+ * the disconnect (NEC 240.4, 430.62). null when the panel has its own main protection.
+ */
+export function upstreamOcpd(ctx: DrawingContext): { minA: number; maxA: number | null; text: string; conflict: boolean } | null {
+  const m = buildModel(ctx);
+  if (m.mainBreaker || isFusedDisconnect(m.disconnect)) return null;
+  const motorFla = m.motors.map((x) => x.fla);
+  const largest = motorFla.length ? Math.max(...motorFla) : 0;
+  const control = m.psBranches.length * 2 + (m.transformer ? 2 : 0);
+  const load = motorFla.reduce((a, b) => a + b, 0) + largest * 0.25 + control;
+  const minA = STD_OCPD.find((a) => a >= load) ?? Math.ceil(load);
+  const discA = num(m.disconnect?.part?.ratings, 'amps', 'ratedAmps', 'currentA');
+  const wireA = AWG_OCPD[m.mainAwg];
+  const limits = [discA, wireA].filter((x): x is number => x !== undefined);
+  const maxA = limits.length ? Math.min(...limits) : null;
+  const conflict = maxA !== null && minA > maxA;
+  const ds = m.disconnect?.tag ?? 'the disconnect';
+  const text = `${ds} is not fused and the panel has no main breaker: the supply must be protected upstream (by others) by a branch-circuit overcurrent device of ${minA} A min.${maxA !== null ? ` and ${maxA} A max. (protects the ${m.mainAwg} bus${discA !== undefined ? ` and the ${discA} A disconnect` : ''})` : ''}${conflict ? ' — not possible with these parts: use a fused disconnect / main breaker or larger bus conductors' : ''}.`;
+  return { minA, maxA, text, conflict };
+}
+
 const TAG_CATEGORY: [RegExp, CatalogCategory][] = [
   [/^ENC/, 'enclosure'], [/^(DS|DISC|SW)\d*/, 'disconnect'], [/^(MMP|MP)\d/, 'motorProtector'],
   [/^(CB|MCB)\d*/, 'breaker'], [/^(FU|F)\d/, 'fuse'], [/^PS\d/, 'powerSupply'], [/^OL\d/, 'overload'],
@@ -731,9 +768,14 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     zero.push('TB3 LOAD 0V');
     if (anySink) outSupply.push('TB3 LOAD 24+S');
   }
-  for (const c of plus) add(tb1, { wire: '24+', internal: `${psMain}:+V`, external: c, kind: 'feed', group: '24+' });
-  if (safety.outputSupply === '24+S') for (const c of outSupply) add(tb1, { wire: '24+S', internal: relay ? `${mcr ? mcr.tag : relay.tag}:14` : `${estopTags.at(-1) ?? 'ES'}:12`, external: c, kind: 'feed', group: '24+S' });
-  else for (const c of outSupply) add(tb1, { wire: '24+', internal: `${psMain}:+V`, external: c, kind: 'feed', group: '24+' });
+  // A supply that is not Class 2 and can deliver more than the 18 AWG control wiring carries: the feeds that
+  // leave for the field strips get fused terminals (NFPA 79 7.2.4 / 12.5); a smaller supply's current limit
+  // protects the wiring itself (design note).
+  const fieldFuse = dcBranchFuse(psBranches[0]?.ps);
+  const fuseOf = (c: string) => (fieldFuse && /^TB\d+ (FIELD|LOAD) /.test(c) ? { fuse: fieldFuse } : {});
+  for (const c of plus) add(tb1, { wire: '24+', internal: `${psMain}:+V`, external: c, kind: 'feed', group: '24+', ...fuseOf(c) });
+  if (safety.outputSupply === '24+S') for (const c of outSupply) add(tb1, { wire: '24+S', internal: relay ? `${mcr ? mcr.tag : relay.tag}:14` : `${estopTags.at(-1) ?? 'ES'}:12`, external: c, kind: 'feed', group: '24+S', ...fuseOf(c) });
+  else for (const c of outSupply) add(tb1, { wire: '24+', internal: `${psMain}:+V`, external: c, kind: 'feed', group: '24+', ...fuseOf(c) });
   if (hmiTag && hmiPn) {
     zero.push(`${hmiTag}:0V`);
     hmi = { tag: hmiTag, partNumber: hmiPn, fuse: '2 A', link: hmiLink, fuseTerminal: '' };
@@ -1484,8 +1526,10 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
   apply(feedLine, tc.feed, 'Feed-through terminal blocks');
   if (tc.fused && !all.some((l) => /fused terminal/i.test(l.description))) {
     const fp = ctx.getPart('DN-F6L24');
-    const tags = m.strips.flatMap((st) => st.terminals.filter((t) => t.fuse).map((t) => t.label));
-    const line: BomLine = { item: 0, qty: 1, partNumber: fp ? fp.partNumber : '', manufacturer: fp?.manufacturer ?? '', description: `${fp?.description ?? 'Fused terminal block with blown-fuse LED'} — ${tc.fused} used (${tags.join(', ')}); fit 2 A time-delay 1/4x1-1/4in fuses`, tags, category: fp ? 'terminal' : 'note', note: !fp };
+    const fused = m.strips.flatMap((st) => st.terminals.filter((t) => t.fuse));
+    const tags = fused.map((t) => t.label);
+    const sizes = [...new Set(fused.map((t) => t.fuse))].map((f) => `${f} (${fused.filter((t) => t.fuse === f).map((t) => t.label).join(', ')})`).join(', ');
+    const line: BomLine = { item: 0, qty: tc.fused, partNumber: fp ? fp.partNumber : '', manufacturer: fp?.manufacturer ?? '', description: `${fp?.description ?? 'Fused terminal block with blown-fuse LED'} — ${tc.fused} used; fit time-delay 1/4x1-1/4in fuses: ${sizes}`, tags, category: fp ? 'terminal' : 'note', note: !fp };
     (fp ? all : notes).push(line);
   }
   if (m.hmi) notes.push({ item: 0, qty: 1, partNumber: '', manufacturer: '', description: m.hmi.link === 'ethernet' ? `Shielded Cat6 Ethernet patch cable ${m.plcTag} to ${m.hmi.tag}, length for the door hinge loop (select part)` : `RS-232 programming/communication cable ${m.plcTag} port 2 to ${m.hmi.tag} (select part per HMI manual)`, tags: [m.hmi.tag], category: 'note', note: true });
@@ -2280,6 +2324,15 @@ export function designWarnings(ctx: DrawingContext): string[] {
   for (const p of m.io) if (p.location !== 'field' && p.deviceType !== 'safety-relay-output') usedBy(p.deviceTag, p.address);
   for (const [tag, why] of orphan) w.push(`${tag} is drawn and wired (${why.join(', ')}) but is not in the component list, so it is not in the BOM: add it back on the Design tab, or regenerate the design.`);
   if (!m.disconnect) w.push('No main disconnect in the design (NFPA 79 5.3 requires a supply disconnecting means).');
+  const up = isIec(ctx.region) ? null : upstreamOcpd(ctx);
+  if (up) w.push(up.text);
+  for (const b of m.psBranches) {
+    if (isClass2(b.ps) || !b.ps.part) continue;
+    const a = psOutA(b.ps);
+    w.push(a > DC_WIRE_A
+      ? `${b.ps.tag} (${a} A, not NEC Class 2) can exceed the ${DC_WIRE_A} A rating of the 18 AWG control wiring: the 24 VDC feeds to the field strips are fused terminals (4 A); add fused terminals or DC breakers for any other branch wired smaller than its full output.`
+      : `${b.ps.tag} (${a} A${a ? ` / ${Math.round(a * 24)} W` : ''}) is not an NEC Class 2 supply: its current limit is below the ${DC_WIRE_A} A rating of the 18 AWG control wiring, so the wiring needs no extra 24 V branch protection, but the 24 VDC field circuits are Class 1 / NFPA 79 control circuits (not Class 2). Choose a Class 2 supply (100 W max.) if the 24 VDC load allows and Class 2 field wiring is wanted.`);
+  }
   if (!m.rc.some((c) => c.category === 'enclosure')) w.push('No enclosure selected.');
   if (!m.psBranches.length) w.push('No 24VDC power supply in the design.');
   const xfmrFused = /yes/i.test(String(m.transformer?.part?.ratings.fused ?? ''));

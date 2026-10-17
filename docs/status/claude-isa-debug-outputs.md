@@ -296,3 +296,10 @@ Findings, ranked (✔ = fixed here, → = routed to the coordinator):
 | 3 | ZIP spec.md raw, no program listing, no Order list Excel | spec.md = full machine specification; plc/…_program_listing.pdf; purchasing/…_order_list.xlsx (spares sheet) |
 | 4 | HMI screens PDF without document control | header (company, project, project no.), footer (status, revision, date, page i of n), PDF title |
 | 5 | cosmetics | check-out PDF named with fileBase; mm DXFs "DIMENSIONS MM [INCH]" and mm-first labels; drawings / machining PDF Title metadata; Order list CSV includes the spares section when "Show recommended spares" is on |
+
+## Engineering notes from the electrical QA (coordinator)
+| note | fix |
+|---|---|
+| 120 W 24 V supply, not Class 2, no secondary protection | design note per supply: within the 18 AWG rating (7 A) its current limit protects the wiring, field circuits are Class 1 / NFPA 79 (Class 2 supply as the alternative); above 7 A the TB1 feeds to the field strips become 4 A fused terminals (BOM lists fuse sizes per terminal) |
+| non-fused 30 A disconnect, 14 AWG bus, no upstream protection stated | `upstreamOcpd`: required feeder OCPD by others, min. from the panel load (125 % largest motor + rest, NEC 430.24), max. from the bus conductor (NEC 240.4(D) / 310.16) and the disconnect rating; on the power sheet and as a design note (major when min > max) |
+| SCCR "TBD" | SB4 calculation moved to `src/electrical/sccr.ts` (shared by the documents, the review and the drawings); the nameplate prints "N kA RMS SYM., V MAX (UL 508A SB4; LIMITED BY …)" once every power-circuit rating is known, else "TBD: RATING NEEDED FOR …" (us480: PS1; big: VFD1–4, PS1 — not in the catalog, no default in Table SB4.1) |

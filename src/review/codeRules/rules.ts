@@ -493,8 +493,9 @@ export const RULES: CodeRule[] = [
       // Missing datasheet data, not a design error: minor until the ratings are looked up.
       if (s?.unknown.length) out.push({ subject: 'unknown', severity: 'minor', area: 'electrical', title: `SCCR cannot be determined: no rating for ${s.unknown.join(', ')}`,
         detail: 'Every power-circuit component needs a short-circuit rating (or the default from UL 508A Table SB4.1) before the panel SCCR can be marked.', fix: 'Get the ratings from the datasheets or use parts with published SCCR.' });
-      if (/tbd/i.test(panelNameplate(input.ctx).sccr) || !env.m.disconnect) out.push({ subject: 'marking', severity: 'minor', area: 'electrical', title: `Nameplate SCCR not stated${s?.lowest ? ` (SB calculation: ${s.lowest} kA)` : ''}`,
-        detail: 'The panel nameplate must show the short-circuit current rating; it currently reads "to be determined".', fix: `Mark the SCCR on the nameplate${s?.lowest ? ` (${s.lowest} kA after review)` : ''} and confirm the available fault current at the site.` });
+      // the nameplate carries the SB4 value once every rating is known (drawings, label sheet)
+      if (!s || s.lowest === null || s.unknown.length || !env.m.disconnect) out.push({ subject: 'marking', severity: 'minor', area: 'electrical', title: `Nameplate SCCR not stated${s?.lowest ? ` (SB calculation so far: ${s.lowest} kA)` : ''}`,
+        detail: 'The panel nameplate must show the short-circuit current rating; it reads "to be determined" until every power-circuit rating is known.', fix: `Get the missing ratings so the nameplate can be marked${s?.lowest ? ` (${s.lowest} kA or lower)` : ''}, and confirm the available fault current at the site.` });
       return out;
     },
   },
