@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { looksLeftOver } from '../../../spec/leftovers';
 import { ArrowsRightLeftIcon, PrinterIcon } from '@heroicons/react/20/solid';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
@@ -87,6 +88,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const stages = useStages();
   const { sources, markGenerated } = useStageStore();
   const specText = specToText(fp.spec);
+  const notesCheck = looksLeftOver(userPrompt, specText);
   const machineText = [specText, userPrompt.trim() && `Additional notes for the program:\n${userPrompt}`].filter(Boolean).join('\n\n');
   const recordSource = () => markGenerated('program', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, hmiFp: fp.hmiFp });
 
@@ -254,6 +256,12 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 placeholder="Anything program-specific that isn't in the spec, e.g. 'Use DS1 as the step register', 'Keep rung comments short'."
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
               />
+              {notesCheck.leftOver && (
+                <div className="px-3 py-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded" role="alert" data-testid="leftover-notes">
+                  These notes don't match your machine description (they mention {notesCheck.terms.join(', ')}). They may be left over from another project.
+                  <button onClick={() => store.setUserPrompt('')} className="ml-2 underline font-medium">Clear the notes</button>
+                </div>
+              )}
               <button
                 onClick={handleGenerate}
                 disabled={isGenerating || !ready || !machineText.trim()}

@@ -31,6 +31,8 @@ export function classifyAiError(err: unknown, signal?: AbortSignal): AiErrorInfo
   if (name === 'APIUserAbortError' || name === 'AbortError' || e?.code === 'cancelled') return { kind: 'cancelled', transient: false };
   // preview (claude.ai account) error codes
   if (e?.code === 'rate_limited') return { kind: 'overloaded', transient: true };
+  // an empty or unreadable answer is usually a one-off: ask again
+  if (e?.code === 'empty_completion' || e?.code === 'invalid_json') return { kind: 'overloaded', transient: true };
   if (e?.code === 'session_expired' || e?.code === 'not_granted') return { kind: 'auth', transient: false };
   const status = typeof e?.status === 'number' ? e.status : undefined;
   if (name === 'WatchdogTimeout' || name === 'APIConnectionTimeoutError' || /timed? ?out|timeout/i.test(msg)) return { kind: 'timeout', transient: true, status };
