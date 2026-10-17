@@ -1,0 +1,57 @@
+supply 600VAC-3PH | NEMA 12
+motor M1 2 HP contactor-overload — Conveyor motor
+
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 35% spare panel space (target >= 25%)
+SP1      SCE-30P24          x1    Back panel
+DS1      22013003           x1    Main disconnect 30A — load 3.6 A (motors + 25% of the largest + control) x 1.15
+DS1H     14831111           x1    Disconnect handle
+DS1S     14070532           x1    Disconnect shaft
+FU1      EHCC3DU            x1    Motor M1 branch fuses — Class CC (CEC branch protection) [M1]
+FU1F     EDCC5              x3    Class CC fuses 5A for FU1 — time-delay, >= 1.25 x FLA 2.7 A [M1]
+K1       SC-E02PG-24VDC     x1    Conveyor motor contactor — rated 5 HP at 600 V 3-phase >= 2 HP / 2.7 A, 24 VDC coil [M1]
+K1-AUX   SZ-A11T            x1    K1 aux contact — N.C. 61-62 for the safety relay feedback (EDM); SC-E02PG-24VDC has no built-in aux [M1]
+OL1      TK-E02-340         x1    Conveyor motor overload — range 2.2-3.4 A, set to FLA 2.7 A [M1]
+T1       CT-015-060-12-1    x1    Control transformer 600:120 V, 150 VA — no 24 VDC supply takes 600 V; >= 89 VA for PSL-24-060 + 25%
+T1FP     EDCC1              x2    Class CC fuses 1A, T1 primary (integral fuse block)
+T1FS     EDCC2              x1    Class CC fuse 2A, T1 secondary (integral fuse block)
+PS1      PSL-24-060         x1    24VDC control power supply, fed from T1 120 V secondary — 2.5 A >= load 1.4 A + 25%
+PLC      C0-10DD1E-D        x1    PLC CPU
+SR1      LG5925-48-61-24    x1    E-stop safety relay — dual channel, monitored manual reset, removes power from the motion outputs (24+S)
+ES1      GCX1131            x1    Emergency stop, cabinet door — dual channel into SR1
+ES1C     ECX1030-2          x1    Second NC contact for dual-channel E-stop ES1
+ES1L     ECX1651            x1    EMERGENCY STOP legend plate for ES1
+PB1      GCX1102            x1    Start
+PB2      GCX1101            x1    Stop
+PE1      C18D-0P-1A         x1    Part at end photo-eye
+LS1      PNK-AP-3H          x1    Pusher extended
+LS2      PNK-AP-3H          x1    Pusher retracted
+SOL1     100222015324006    x1    Pusher valve
+SOL2     100222033324004    x1    Main air dump valve
+PB3      GCX1104            x1    Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)
+TB1      DN-T10-A           x32   Feed-through terminals
+TBG      DN-G10             x4    Ground terminals
+TBC      DN-EC1210          x3    Terminal end covers
+TBE      DN-EB35            x6    End brackets
+DIN      DN-R35S1           x2    DIN rail
+WD       T1-1530G-1         x2    Wire duct
+GB1      SCE-GB10           x1    Ground bar
+
+X001   SR1    safety-relay-output  Cabinet        E-Stop OK (safety relay)
+X002   PB1    pushbutton-no        Cabinet door   Start Button
+X003   PB2    pushbutton-nc        Cabinet door   Stop Button
+X004   PE1    sensor-pnp           Pusher         Part at end photo-eye
+X005   LS1    sensor-pnp           Pusher         Pusher extended
+X006   LS2    sensor-pnp           Pusher         Pusher retracted
+Y001   K1     contactor-coil       Cabinet        Conveyor motor contactor
+Y002   SOL1   solenoid             Pusher         Pusher solenoid
+Y003   SOL2   solenoid             Pusher         Main air dump valve
+
+zones ["Pusher","Conveyor"]
+junctionBoxes [{"tag":"JB1","location":"Pusher","partNumber":"SCE-16EL1206LP"}]
+motorLocations {"M1":"Conveyor"}
+routing {"PE1":"JB1","LS1":"JB1","LS2":"JB1","SOL1":"JB1","SOL2":"JB1"}
+
+note: Motor currents from NEC Table 430.250 / 430.248: M1 2 HP 2.7 A — confirm the nameplates.
+note: T1 fuses sized from the transformer rating (primary 0.63 A min., secondary 1.56 A min.): confirm against the transformer label (NEC 450.3 / CEC Rule 26-256).
+
+explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 600 V 3-phase through 30A — load 3.6 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 2 HP across the line; 24 VDC from PSL-24-060 for 1.4 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 35% spare panel space.

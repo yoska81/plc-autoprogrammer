@@ -1,0 +1,144 @@
+import { rungAddresses, rungWrites, type LadderProgram, type Rung } from './ladder';
+import type { PlcProfile } from './profile';
+
+export interface ValidationIssue {
+  rungId: string | null;
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+/**
+ * Check a ladder program against the PLC's address rules and the project's
+ * I/O map. Run on every AI result and every manual edit, and the issues are
+ * fed back to the AI when asked to fix them.
+ */
+export function validateProgram(
+  program: LadderProgram,
+  profile: PlcProfile,
+  ioAddresses: Set<string>,
+  /** The project's HMI: a tag the HMI shows that no rung writes, or a command no rung reads, is an error. */
+  hmi?: { tags: { address: string; name: string; access: string }[] },
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const outCoils = new Map<string, number>();
+
+  const check = (rung: Rung, address: string, role: string, opts: { bit?: boolean; write?: boolean; valueOk?: boolean } = {}) => {
+    const add = (severity: ValidationIssue['severity'], message: string) =>
+      issues.push({ rungId: rung.id, severity, message });
+    const a = address.trim();
+    if (!a) return add('error', `${role} has no address.`);
+    const info = profile.parseAddress(a);
+    if (!info) return add('error', `${role} "${a}" is not a valid ${profile.name} address.`);
+    if (info.kind === 'constant' && !opts.valueOk) return add('error', `${role} cannot be a constant (${a}).`);
+    if (opts.bit && !info.isBit) add('error', `${role} "${a}" is not a bit address.`);
+    if (opts.write && (info.kind === 'input' || info.kind === 'system')) add('error', `${role} writes to read-only ${info.kind} "${a}".`);
+    if ((info.kind === 'input' || info.kind === 'output') && !ioAddresses.has(a)) {
+      add('warning', `${a} is not assigned to any point in the I/O list.`);
+    }
+  };
+
+  for (const rung of program.rungs) {
+    for (const extra of profile.checkRung?.(rung) ?? []) issues.push({ rungId: rung.id, ...extra });
+    if (rung.outputs.length === 0) issues.push({ rungId: rung.id, severity: 'error', message: 'Rung has no output instruction.' });
+
+    for (const branch of rung.branches) {
+      for (const el of branch) {
+        if (el.type === 'CMP') {
+          check(rung, el.left, 'Compare left side', { valueOk: true });
+          check(rung, el.right, 'Compare right side', { valueOk: true });
+        } else {
+          check(rung, el.address, 'Contact', { bit: true });
+        }
+      }
+    }
+
+    for (const o of rung.outputs) {
+      switch (o.type) {
+        case 'OUT':
+          check(rung, o.address, 'Coil', { bit: true, write: true });
+          outCoils.set(o.address, (outCoils.get(o.address) ?? 0) + 1);
+          break;
+        case 'SET': case 'RST':
+          check(rung, o.address, `${o.type} coil`, { bit: true, write: true });
+          break;
+        case 'TMR': {
+          check(rung, o.address, 'Timer', { write: true });
+          if (profile.parseAddress(o.address)?.kind !== 'timer') issues.push({ rungId: rung.id, severity: 'error', message: `Timer must use a timer address, not "${o.address}".` });
+          check(rung, o.preset, 'Timer setpoint', { valueOk: true });
+          if (o.accumulate && !o.resetAddress) issues.push({ rungId: rung.id, severity: 'warning', message: `Accumulating timer ${o.address} has no reset.` });
+          if (o.resetAddress) check(rung, o.resetAddress, 'Timer reset', { bit: true });
+          break;
+        }
+        case 'CNT':
+          check(rung, o.address, 'Counter', { write: true });
+          if (profile.parseAddress(o.address)?.kind !== 'counter') issues.push({ rungId: rung.id, severity: 'error', message: `Counter must use a counter address, not "${o.address}".` });
+          check(rung, o.preset, 'Counter setpoint', { valueOk: true });
+          if (!o.resetAddress) issues.push({ rungId: rung.id, severity: 'warning', message: `Counter ${o.address} has no reset.` });
+          else check(rung, o.resetAddress, 'Counter reset', { bit: true });
+          break;
+        case 'COPY':
+          check(rung, o.source, 'Copy source', { valueOk: true });
+          check(rung, o.dest, 'Copy destination', { write: true });
+          break;
+        case 'MATH':
+          check(rung, o.dest, 'Math result', { write: true });
+          break;
+      }
+    }
+  }
+
+  if (hmi && program.rungs.length) {
+    const writes = new Set<string>(), reads = new Set<string>();
+    for (const r of program.rungs) {
+      for (const w of rungWrites(r)) writes.add(w.trim().toUpperCase());
+      for (const o of r.outputs) {
+        if (o.type === 'TMR') writes.add(`TD${o.address.trim().toUpperCase().slice(1)}`);
+        if (o.type === 'CNT') writes.add(`CTD${o.address.trim().toUpperCase().slice(2)}`);
+      }
+      for (const a of rungAddresses(r)) reads.add(a.trim().toUpperCase());
+      for (const o of r.outputs) if (o.type === 'MATH') for (const m of o.expression.toUpperCase().match(/[A-Z]+\d+/g) ?? []) reads.add(m);
+    }
+    for (const t of hmi.tags) {
+      const a = t.address.trim().toUpperCase();
+      if (/^[XY]\d/.test(a) || /^DF\d+$/.test(a) && t.access === 'read') continue;
+      if (t.access === 'read' && !writes.has(a)) issues.push({ rungId: null, severity: 'error', message: `HMI tag ${a} ${t.name} is shown on the HMI but no rung writes it.` });
+      else if (t.access !== 'read' && !reads.has(a)) issues.push({ rungId: null, severity: 'error', message: `HMI command / setpoint ${a} ${t.name} is never read by the program, so it does nothing.` });
+    }
+  }
+
+  // Dead logic in internal memory: bits / registers read but never written (always 0 / OFF), or written but never
+  // read (logic that does nothing). Physical I/O, system bits, HMI tags, timer / counter values and constants are
+  // left out; so are the standard HMI ranges C1001–C1300 / DS1001–DS1200 / DF101–DF200 (a panel, SCADA or a later
+  // HMI reads and writes them; the HMI check above covers the project's own HMI) and counters (their count is shown online).
+  if (program.rungs.length) {
+    const reads = new Map<string, string>(), writes = new Map<string, string>();
+    const note = (m: Map<string, string>, a: string, rung: string) => { const k = a.trim().toUpperCase(); if (k && !m.has(k)) m.set(k, rung); };
+    for (const r of program.rungs) {
+      for (const b of r.branches) for (const e of b) for (const a of e.type === 'CMP' ? [e.left, e.right] : [e.address]) note(reads, a, r.id);
+      for (const o of r.outputs) {
+        if (o.type === 'COPY') note(reads, o.source, r.id);
+        if (o.type === 'MATH') for (const a of o.expression.toUpperCase().match(/[A-Z]+\d+/g) ?? []) note(reads, a, r.id);
+        if (o.type === 'TMR' || o.type === 'CNT') { note(reads, o.preset, r.id); if (o.resetAddress) note(reads, o.resetAddress, r.id); }
+      }
+      for (const w of rungWrites(r)) note(writes, w, r.id);
+    }
+    const hmiAddr = new Set((hmi?.tags ?? []).map((t) => t.address.trim().toUpperCase()));
+    const hmiRange = (a: string) => /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/.test(a);
+    const skip = (a: string) => {
+      const info = profile.parseAddress(a);
+      if (!info || info.kind === 'constant' || info.kind === 'input' || info.kind === 'output' || info.kind === 'system') return true;
+      if (/^(TD|CTD)\d+$/.test(a) || hmiAddr.has(a) || ioAddresses.has(a)) return true;
+      return hmiRange(a);
+    };
+    const timerRead = (a: string) => /^CT\d+$/.test(a) || reads.has(a) || hmiAddr.has(a.replace(/^T(\d+)$/, 'TD$1')) || reads.has(a.replace(/^T(\d+)$/, 'TD$1'));
+    for (const [a, rung] of reads) if (!writes.has(a) && !skip(a) && !/^(T|CT)\d+$/.test(a)) issues.push({ rungId: rung, severity: 'warning', message: `${a} is read but never written: it is always 0 / OFF.` });
+    for (const [a, rung] of writes) if (!timerRead(a) && !skip(a)) issues.push({ rungId: rung, severity: 'warning', message: `${a} is written but never read: this logic does nothing.` });
+  }
+
+  for (const [address, count] of outCoils) {
+    if (count > 1) {
+      issues.push({ rungId: null, severity: 'warning', message: `${address} is driven by OUT coils in ${count} rungs; only the last one wins (double coil).` });
+    }
+  }
+  return issues;
+}

@@ -1,0 +1,45 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+dist-preview
+e2e/out/
+e2e/out-preview/
+e2e/out-sweep/
+e2e/out-layout/
+e2e/out-sealing-head/
+e2e/out-ai-jobs/
+tools/out/
+tools/.venv/
+__pycache__/
+
+# Desktop app
+dist-desktop
+release
+electron/vendor/
+e2e/out-desktop/
+tools/ai-quality/out/
+e2e/out-hmi-editor/
+installer/
+e2e/out-walkthrough/
+.claude/worktrees/

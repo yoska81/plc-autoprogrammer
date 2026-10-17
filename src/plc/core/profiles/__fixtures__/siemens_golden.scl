@@ -1,0 +1,65 @@
+﻿FUNCTION_BLOCK "Machine"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR
+      Initialized : Bool;   // set after the first scan
+      FirstScan : Bool;   // TRUE on the first scan after a start
+      Start_PB : Bool;   // Start PB
+      Stop_PB : Bool;   // Stop PB
+      Run : Bool;   // C1
+      Pump_run : Bool;   // Pump run
+      Fill_Timer : TONR_TIME;   // T1
+      RT_1 : R_TRIG;   // RT_1
+   END_VAR
+   VAR RETAIN
+      Tank_level : Real;   // Tank level
+      Level_SP : Real;   // %
+      Cycles : CTU_DINT;   // CT1
+      Valve_position : Real;   // Valve position
+   END_VAR
+
+BEGIN
+   (* Test skid — S7-1200 CPU 1214C *)
+   (* TIA Portal SCL external source: External source files › Add new external file, then "Generate blocks from source". *)
+
+   (* First scan after every start (non-retentive statics restart at FALSE) *)
+   #FirstScan := NOT #Initialized;
+   #Initialized := TRUE;
+
+   (* ===== Inputs ===== *)
+   #Start_PB := "Start_PB";
+   #Stop_PB := "Stop_PB";
+   #Tank_level := SCALE_X(MIN := 0.0, VALUE := NORM_X(MIN := 0, VALUE := "Tank_level_raw", MAX := 27648), MAX := 100.0);
+
+   (* ===== General ===== *)
+   (* Run seal-in *)
+   #Run := (#Start_PB AND NOT #Stop_PB) OR (#Run AND NOT #Stop_PB);
+   #Pump_run := #Run AND (#Tank_level < #Level_SP);
+   #Fill_Timer(IN := #Run AND (#Tank_level < #Level_SP), R := #Stop_PB, PT := T#30000ms);
+   #RT_1(CLK := #Pump_run);
+   #Cycles(CU := #RT_1.Q, R := FALSE, PV := 1000);
+   (* Defaults *)
+   IF #FirstScan THEN #Level_SP := 80.0; END_IF;
+   #Valve_position := #Level_SP * 0.5;
+
+   (* ===== Outputs ===== *)
+   "Pump_run" := #Pump_run;
+   "Valve_position_raw" := REAL_TO_INT(SCALE_X(MIN := 0.0, VALUE := NORM_X(MIN := 0.0, VALUE := #Valve_position, MAX := 100.0), MAX := 27648.0));
+
+END_FUNCTION_BLOCK
+
+DATA_BLOCK "Machine_DB"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+"Machine"
+
+BEGIN
+END_DATA_BLOCK
+
+ORGANIZATION_BLOCK "Main"
+TITLE = "Main Program Sweep (Cycle)"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+BEGIN
+   "Machine_DB"();
+END_ORGANIZATION_BLOCK
