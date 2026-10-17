@@ -4,7 +4,11 @@ import { useIOStore } from '../store/useIOStore';
 import { useHmiStore } from '../store/useHmiStore';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useProgramStore } from '../store/useProgramStore';
-import { useStageStore, type StageId, type StageSource } from '../store/useStageStore';
+import { setAddressFingerprint, useStageStore, type StageId, type StageSource } from '../store/useStageStore';
+import { useProjectStore } from '../store/useProjectStore';
+import { getCpu, getProfile } from '../plc/core/profiles';
+import { resolveAddresses } from '../plc/core/profile';
+import { moduleSlots } from '../plc/core/modules';
 import { fingerprint } from './types';
 import type { IOPoint } from '../types/io';
 import type { HmiDesign } from '../hmi/types';
@@ -22,21 +26,36 @@ export const ioFingerprint = (io: IOPoint[]) =>
   fingerprint(io.map((p) => [p.id, p.description, p.type, p.plcAddress ?? '', p.deviceType ?? '']));
 export const hmiFingerprint = (d: HmiDesign | null) => fingerprint(d?.tags ?? []);
 
+/** PLC profile, CPU and the resolved address of every I/O point (what the I/O-based stages bind to). */
+export function addressFingerprint(plcId: string, cpuId: string, modules: string[], io: IOPoint[]): string {
+  const profile = getProfile(plcId);
+  const cpu = getCpu(profile, cpuId);
+  const addresses = resolveAddresses(profile, cpu, io, moduleSlots(modules));
+  return fingerprint([profile.id, cpu.id, io.map((p) => [p.id, addresses.get(p.id) ?? ''])]);
+}
+const addressFingerprintNow = () => {
+  const { plcId, cpuId, modules } = useProjectStore.getState();
+  return addressFingerprint(plcId, cpuId, modules, useIOStore.getState().projectIO);
+};
+setAddressFingerprint(addressFingerprintNow);
+
 /** Current fingerprints of the inputs each stage depends on. */
 export function useFingerprints() {
   const sections = useSpecStore((s) => s.sections);
   const io = useIOStore((s) => s.projectIO);
   const hmi = useHmiStore((s) => s.design);
+  const { plcId, cpuId, modules } = useProjectStore();
   return useMemo(() => ({
     spec: sections,
     specFp: fingerprint(sections),
     ioFp: ioFingerprint(io),
+    addrFp: addressFingerprint(plcId, cpuId, modules, io),
     hmiFp: hmiFingerprint(hmi),
-  }), [sections, io, hmi]);
+  }), [sections, io, hmi, plcId, cpuId, modules]);
 }
 
 export interface StageInputs {
-  fp: { spec: Record<string, string>; specFp: string; ioFp: string; hmiFp: string };
+  fp: { spec: Record<string, string>; specFp: string; ioFp: string; addrFp?: string; hmiFp: string };
   sources: Partial<Record<StageId, StageSource>>;
   ioCount: number;
   hasDesign: boolean;
@@ -55,6 +74,7 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
     const reasons: string[] = [];
     if (deps.spec && src.specFp !== fp.specFp) reasons.push('the spec changed');
     if (deps.io && src.ioFp !== undefined && src.ioFp !== fp.ioFp) reasons.push('the I/O list changed');
+    else if (deps.io && src.addrFp !== undefined && fp.addrFp !== undefined && src.addrFp !== fp.addrFp) reasons.push('the PLC or its I/O addresses changed');
     if (deps.hmi && src.hmiFp !== undefined && src.hmiFp !== fp.hmiFp) reasons.push('the HMI tags changed');
     return reasons.length ? { id, status: 'stale', reason: `Out of date: ${reasons.join(' and ')}.` } : { id, status: 'ready', reason: null };
   };
@@ -75,7 +95,7 @@ export function stagesNow(): Record<StageId, StageInfo> {
   const hmi = useHmiStore.getState().design;
   const prog = useProgramStore.getState();
   return computeStages({
-    fp: { spec: sections, specFp: fingerprint(sections), ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(hmi) },
+    fp: { spec: sections, specFp: fingerprint(sections), ioFp: ioFingerprint(io), addrFp: addressFingerprintNow(), hmiFp: hmiFingerprint(hmi) },
     sources: useStageStore.getState().sources,
     ioCount: io.length,
     hasDesign: Boolean(useElectricalStore.getState().design),
