@@ -1,6 +1,6 @@
 /** Machining sheets: back-panel drilling and door cutouts (lower-left datum, ordinate dimensions in inch [mm]). */
 import { dualDim, dualSize, type DrillCutout, type DrillHole } from '../../derive';
-import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
+import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, textWidth, wrapText } from '../geometry';
 import { DRILL_ROWS_CONT, type DrawingPlan, type DrillRow, type PlannedSheet, type SheetSpec } from '../plan';
 import { drillSheetScale, scaleText } from '../scale';
 import { Line, Txt } from '../symbols';
@@ -42,8 +42,11 @@ function DrillDrawing({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, 
       {/* datum */}
       <circle cx={px(0)} cy={py(0)} r={1.4} strokeWidth={LW_THIN} />
       <path d={`M ${px(0)} ${py(0)} L ${px(0) + 1.4} ${py(0)} A 1.4 1.4 0 0 0 ${px(0)} ${py(0) - 1.4} Z`} fill="#000" stroke="none" />
-      {d.holes.map((h) => <HoleMark key={h.id} h={h} x={px(h.x)} y={py(h.y)} s={s} />)}
-      {d.cutouts.map((c) => <CutoutMark key={c.id} c={c} x={px(c.x)} y={py(c.y)} s={s} />)}
+      {placeHoleLabels(d.holes, px, py, s).map(({ h, corner }) => <HoleMark key={h.id} h={h} x={px(h.x)} y={py(h.y)} s={s} corner={corner} />)}
+      {d.cutouts.map((c) => {
+        const pl = c.template ? templateLabelPlace(c, d.cutouts, px, py, s, { x0: px(0) + 4.5, y0: py(d.h) + 4.5, x1: px(d.w) - 4.5, y1: py(0) - 4.5 }) : {};
+        return <CutoutMark key={c.id} c={c} x={px(c.x)} y={py(c.y)} s={s} {...pl} />;
+      })}
       {/* ordinate dimensions: X along the bottom, Y along the left */}
       {xsShown.map((v) => (
         <g key={`x${v}`}>
@@ -66,19 +69,61 @@ function DrillDrawing({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, 
   );
 }
 
-function HoleMark({ h, x, y, s }: { h: DrillHole; x: number; y: number; s: number }) {
+/**
+ * Where the two label lines of a template mark go: above or below it, left- or right-aligned to it —
+ * the first placement inside the part (clear of the edge band) that touches no other cutout.
+ */
+function templateLabelPlace(c: DrillCutout, all: DrillCutout[], px: (v: number) => number, py: (v: number) => number, s: number, inner: { x0: number; y0: number; x1: number; y1: number }) {
+  const x = px(c.x), y = py(c.y), rw = (c.w / 2) * s, rh = (c.h / 2) * s;
+  const w = Math.max(textWidth(`${c.id} ${c.tag}`, 2.0, true) * 1.08, textWidth(c.template ?? '', 1.8));
+  const others = all.filter((o) => o !== c).map((o) => ({ x0: px(o.x) - (o.w / 2) * s - 1, x1: px(o.x) + (o.w / 2) * s + 1, y0: py(o.y) - (o.h / 2) * s - 1, y1: py(o.y) + (o.h / 2) * s + 4 }));
+  for (const labelBelow of [false, true]) for (const labelRight of [false, true]) {
+    const b = { x0: labelRight ? x + rw - w : x - rw, x1: labelRight ? x + rw : x - rw + w, y0: labelBelow ? y + rh + 2.4 : y - rh - 6.8, y1: labelBelow ? y + rh + 7.2 : y - rh - 2.0 };
+    const inside = b.x0 >= inner.x0 && b.x1 <= inner.x1 && b.y0 >= inner.y0 && b.y1 <= inner.y1;
+    if (inside && !others.some((o) => b.x0 < o.x1 && o.x0 < b.x1 && b.y0 < o.y1 && o.y0 < b.y1)) return { labelBelow, labelRight };
+  }
+  // nowhere free: above, shrunk to the room left before the edge band
+  return { labelBelow: false, labelRight: false, labelMaxW: Math.max(8, inner.x1 - (x - rw)) };
+}
+
+type Corner = 'ne' | 'nw' | 'se' | 'sw';
+const LABEL_H = 1.9;
+/** Label box of a hole mark for a corner: right/left of the mark, above/below it. */
+function labelBox(id: string, x: number, y: number, r: number, c: Corner) {
+  const w = textWidth(id, 1.8, true) + 0.4;
+  const x0 = c === 'ne' || c === 'se' ? x + r + 0.4 : x - r - 0.4 - w;
+  const y0 = c === 'ne' || c === 'nw' ? y - r - LABEL_H + 0.1 : y + r + 0.1;
+  return { x0, y0, x1: x0 + w, y1: y0 + LABEL_H };
+}
+
+/** Each hole's label at the first corner where it overlaps no label placed before it (close hole patterns). */
+function placeHoleLabels(holes: DrillHole[], px: (v: number) => number, py: (v: number) => number, s: number): { h: DrillHole; corner: Corner }[] {
+  const placed: ReturnType<typeof labelBox>[] = [];
+  return holes.map((h) => {
+    const r = Math.max(0.7, (h.dia / 2) * s);
+    const boxes = (['ne', 'nw', 'se', 'sw'] as Corner[]).map((c) => ({ c, b: labelBox(h.id, px(h.x), py(h.y), r, c) }));
+    const free = boxes.find(({ b }) => !placed.some((q) => b.x0 < q.x1 && q.x0 < b.x1 && b.y0 < q.y1 && q.y0 < b.y1)) ?? boxes[0];
+    placed.push(free.b);
+    return { h, corner: free.c };
+  });
+}
+
+function HoleMark({ h, x, y, s, corner = 'ne' }: { h: DrillHole; x: number; y: number; s: number; corner?: Corner }) {
   const r = Math.max(0.7, (h.dia / 2) * s);
+  const lb = labelBox(h.id, x, y, r, corner);
   return (
     <g>
       <circle cx={x} cy={y} r={r} strokeWidth={LW_THIN} strokeDasharray={h.verified ? undefined : '0.5 0.4'} />
       <Line x1={x - r - 0.8} y1={y} x2={x + r + 0.8} y2={y} w={0.1} />
       <Line x1={x} y1={y - r - 0.8} x2={x} y2={y + r + 0.8} w={0.1} />
-      <Txt x={x + r + 0.6} y={y - r - 0.3} size={1.8} mono>{h.id}</Txt>
+      {/* the reference duct / rail outlines break at the label */}
+      <rect x={lb.x0} y={lb.y0} width={lb.x1 - lb.x0} height={LABEL_H} fill="#fff" stroke="none" />
+      <Txt x={lb.x0 + 0.2} y={lb.y1 - 0.4} size={1.8} mono>{h.id}</Txt>
     </g>
   );
 }
 
-function CutoutMark({ c, x, y, s }: { c: DrillCutout; x: number; y: number; s: number }) {
+function CutoutMark({ c, x, y, s, labelBelow, labelRight, labelMaxW }: { c: DrillCutout; x: number; y: number; s: number; labelBelow?: boolean; labelRight?: boolean; labelMaxW?: number }) {
   if (c.template) {
     // size not from the catalog: dashed outline and centre mark, machined per the part's template
     const rw = (c.w / 2) * s, rh = (c.h / 2) * s;
@@ -89,8 +134,9 @@ function CutoutMark({ c, x, y, s }: { c: DrillCutout; x: number; y: number; s: n
           : <circle cx={x} cy={y} r={rw} strokeWidth={LW_THIN} strokeDasharray="0.8 0.6" />}
         <Line x1={x - rw - 2} y1={y} x2={x + rw + 2} y2={y} w={0.12} />
         <Line x1={x} y1={y - rh - 2} x2={x} y2={y + rh + 2} w={0.12} />
-        <Txt x={x + rw + 1} y={y - rh - 0.5} size={2.0} mono bold>{`${c.id} ${c.tag}`}</Txt>
-        <Txt x={x + rw + 1} y={y - rh + 2.3} size={1.8}>{c.template}</Txt>
+        {/* above the shape (below it when the part edge is too close): clear of its centre lines and the outline */}
+        <Txt x={labelRight ? x + rw : x - rw} anchor={labelRight ? 'end' : 'start'} y={labelBelow ? y + rh + 4.2 : y - rh - 5.0} size={2.0} mono bold maxW={labelMaxW}>{`${c.id} ${c.tag}`}</Txt>
+        <Txt x={labelRight ? x + rw : x - rw} anchor={labelRight ? 'end' : 'start'} y={labelBelow ? y + rh + 6.6 : y - rh - 2.6} size={1.8} maxW={labelMaxW}>{c.template}</Txt>
       </g>
     );
   }

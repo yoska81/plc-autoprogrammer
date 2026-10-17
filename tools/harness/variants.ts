@@ -238,10 +238,37 @@ const text = (s: string) => btoa(unescape(encodeURIComponent(s)));
  * Rule-based engine variants ("rules", "rules-big", "rules-eu"): the example / big / EU project with
  * its design replaced by the engine's (no AI: the same path as Generate without an API key).
  */
+/** The user's "Sealing Head": two-hand start, light curtain, heater with thermocouple, unwinder on a VFD. */
+const SEALING_SPEC = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, holds for the dwell time at the set temperature, then opens. Two-hand start, light curtain, heater with thermocouple. The film comes off an unwinder driven by a 0.5 HP motor on a VFD. CLICK PLC with a C-more 7" touch panel; the operator sets the seal temperature and the dwell time on the HMI. 480 V 3-phase supply.';
+const SEALING_IO: [string, 'input' | 'output', IOCategory, string, AnalogSpec?][] = [
+  ['Safety relay OK (E-stop and light curtain)', 'input', 'Safety', 'safety-relay-output'], ['Two-hand start button left', 'input', 'Operator/HMI', 'pushbutton-no'],
+  ['Two-hand start button right', 'input', 'Operator/HMI', 'pushbutton-no'], ['Light curtain clear (OSSD)', 'input', 'Safety', 'other'],
+  ['Stop button', 'input', 'Operator/HMI', 'pushbutton-nc'], ['Fault reset button', 'input', 'Operator/HMI', 'pushbutton-no'],
+  ['Sealing head up (retracted)', 'input', 'Pneumatic', 'sensor-pnp'], ['Sealing head down (sealing position)', 'input', 'Pneumatic', 'sensor-pnp'],
+  ['Air pressure OK', 'input', 'Pneumatic', 'pressure-switch'], ['Heater over-temperature limit tripped', 'input', 'Analog/Process', 'other'],
+  ['Unwinder VFD fault', 'input', 'Conveyor', 'vfd-input'], ['Film roll low sensor', 'input', 'Product Detection', 'sensor-pnp'],
+  ['Seal heater temperature (thermocouple transmitter)', 'input', 'Analog/Process', 'other', { range: '4-20mA', min: 0, max: 300, units: '°C' }],
+  ['Sealing head down solenoid', 'output', 'Pneumatic', 'solenoid'], ['Sealing head up solenoid', 'output', 'Pneumatic', 'solenoid'],
+  ['Seal heater on (SSR)', 'output', 'Analog/Process', 'other'], ['Unwinder VFD run', 'output', 'Conveyor', 'vfd-input'],
+  ['Machine running light', 'output', 'Operator/HMI', 'pilot-light'], ['Fault light', 'output', 'Operator/HMI', 'pilot-light'],
+  ['Unwinder speed reference', 'output', 'Conveyor', 'other', { range: '4-20mA', min: 0, max: 100, units: '%' }],
+];
+
 async function setupRules(v: string) {
   setupVariant(v === 'rules-big' ? 'big' : 'us480');
+  if (v === 'rules-sealing' || v === 'rules-sealing-long') {
+    useSpecStore.getState().setSections({ ...useSpecStore.getState().sections, overview: SEALING_SPEC });
+    // "-long": descriptions as long as the AI I/O step writes them (location, function and device in one line)
+    const long = v === 'rules-sealing-long';
+    const LONG_TAIL = [' — operator station at the sealing head, front side', ' (wired to the PLC through junction box at the sealing station)', ', monitored by the PLC for the cycle interlocks and alarms'];
+    useIOStore.setState({ projectIO: SEALING_IO.map(([description, type, category, deviceType, analog], i) => ({ id: `seal${i + 1}`, description: long ? description + LONG_TAIL[i % 3] : description, type, category, deviceType, ...(analog ? { signal: 'analog' as const, analog } : {}) })) });
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-12DD1E-D', modules: ['C0-16ND3', 'C0-08TD1'] });
+    useHmiStore.getState().setHmiPartNumber('CM5-T7W');
+    useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [{ partNumber: 'C0-12DD1E-D', quantity: 1 }, { partNumber: 'C0-16ND3', quantity: 1 }, { partNumber: 'C0-08TD1', quantity: 1 }] });
+  }
   const el = useElectricalStore.getState();
-  let inputs = el.design?.inputs ?? el.inputs;
+  let inputs = v === 'rules-sealing' ? el.inputs : el.design?.inputs ?? el.inputs;
   if (v === 'rules-eu') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
@@ -271,10 +298,15 @@ async function loadAiProject(machine: string) {
   useProgramStore.setState({ ladder: d.ladder });
 }
 
-export async function build(v: Variant | `ai-${string}` | `rules${string}`): Promise<Record<string, string>> {
+/** Load a variant into the stores (no outputs built). */
+export async function setup(v: Variant | `ai-${string}` | `rules${string}`): Promise<void> {
   if (v.startsWith('ai-')) await loadAiProject(v.slice(3));
   else if (v.startsWith('rules')) await setupRules(v);
   else setupVariant(v as Variant);
+}
+
+export async function build(v: Variant | `ai-${string}` | `rules${string}`): Promise<Record<string, string>> {
+  await setup(v);
   const p = collectProject();
   const ctx = p.drawingCtx!;
   const out: Record<string, string> = {};

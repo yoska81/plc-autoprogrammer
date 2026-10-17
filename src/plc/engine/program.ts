@@ -45,6 +45,8 @@ export interface ProgramResult {
   /** Internal bits / registers the cycle block may use freely. */
   free: { bits: string; steps: string; timers: string };
   notes: string[];
+  /** HMI tag address per role (the HMI's own, else the plan's). */
+  roles: Map<string, string>;
 }
 
 export function buildProgram(input: ProgramInput): ProgramResult {
@@ -98,7 +100,8 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   for (const a of c.actuators) {
     const key = (a.extend ?? a.run)?.address;
     if (key) sp(`sp:timeout:${key}`, 1, 30, 3, `${a.name} timeout (s)`);
-    if (a.speedRef) sp(`sp:speed:${a.speedRef.address}`, a.speedRef.min, a.speedRef.max, Math.round((a.speedRef.min + a.speedRef.max) / 2), `${a.name} speed`);
+    // A speed below 10% of the range (e.g. 0 Hz from a fresh PLC) counts as not set: load the mid-range default.
+    if (a.speedRef) sp(`sp:speed:${a.speedRef.address}`, a.speedRef.min + (a.speedRef.max - a.speedRef.min) * 0.1, a.speedRef.max, Math.round((a.speedRef.min + a.speedRef.max) / 2), `${a.name} speed`);
   }
   for (const an of c.analogs.filter((x) => x.kind === 'input')) {
     const span = an.max - an.min;
@@ -204,7 +207,12 @@ export function buildProgram(input: ProgramInput): ProgramResult {
       const r = req.get(out.address)!;
       const opposite = out === a.extend ? a.retract : out === a.retract ? a.extend : out === a.run ? a.reverse : out === a.reverse ? a.run : undefined;
       if (a.kind === 'valve') { R('outputs', `${out.description}: on only while Safety OK (loss of safety exhausts the air)`, [[NO(SAFE)]], [OUT(out.address)]); continue; }
-      if (a.kind === 'heater') { R('outputs', `${out.description}: on while Safety OK and no fault (confirm the heater may stay on while stopped)`, [[NO(SAFE), NC(FAULT)]], [OUT(out.address)]); continue; }
+      if (a.kind === 'heater') {
+        // Overtemperature: an analog temperature high alarm switches the heater off (a temperature switch is shown as its feedback).
+        const overTemp = c.analogs.filter((x) => x.kind === 'input' && /\b(temp\w*)\b/i.test(x.name)).map((x) => alarm(`alarm:high:${x.address}`)).filter((x): x is string => !!x);
+        R('outputs', `${out.description}: on while Safety OK and no fault${overTemp.length ? ', off on overtemperature' : ''} (confirm the heater may stay on while stopped)`, [[NO(SAFE), NC(FAULT), ...overTemp.map(NC)]], [OUT(out.address)]);
+        continue;
+      }
       const gate = [NO(SAFE), ...(faultAlm ? [NC(faultAlm)] : []), ...(opposite ? [NC(opposite.address)] : [])];
       R('outputs', `${out.description}: automatic (cycle running) or manual request, Safety OK${faultAlm ? ', no fault' : ''}${opposite ? `, never with ${opposite.description}` : ''}`,
         [[NO(r.auto), NO(RUN), ...gate], ...(r.manual ? [[NO(r.manual), ...gate]] : [])], [OUT(out.address)]);
@@ -295,6 +303,7 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   return {
     program: { blocks: blocks.filter((b) => rungs.some((r) => r.block === b.id)), rungs, tags },
     autoBits,
+    roles: new Map([...byRole].map(([k, t]) => [k, t.address])),
     free: { bits: `C${Math.max(nextBit, 60)}-C99`, steps: 'DS1150-DS1159', timers: `T${nextTimer + 10}-T${nextTimer + 29}` },
     notes,
   };

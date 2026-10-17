@@ -133,6 +133,8 @@ function Desc({ x, y, p }: { x: number; y: number; p: IoPoint }) {
 // Inputs
 // ---------------------------------------------------------------------------
 
+/** Right edge of the line-number column (LineNumbers). */
+const LINE_COL = AREA.x + 13;
 const I = { R24: 34, R0: 42, TBS: 58, DEV: 100, TBX: 150, PLC: 190, PLCW: 32, DESC: 232 };
 
 function InputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan; sheet: PlannedSheet; g: IoGroup; rows: IoRow[]; last: boolean }) {
@@ -152,7 +154,8 @@ function InputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan;
       <TableHead />
       <Line x1={I.R24} y1={yOf(0) + 4} x2={I.R24} y2={railEnd} w={0.5} />
       <Line x1={I.R0} y1={yOf(0) + 4} x2={I.R0} y2={railEnd} w={0.5} />
-      <Txt x={I.R24 - 1} y={yOf(0) + 7.0} size={1.8} mono anchor="end">{ref24 ? `FROM ${ref24}` : ''}</Txt>
+      {/* between the line-number column and the 24+ rail: shrink to the gap rather than cross the column line */}
+      <Txt x={I.R24 - 1} y={yOf(0) + 7.0} size={1.8} mono anchor="end" maxW={I.R24 - 1 - (LINE_COL + 0.8)}>{ref24 ? `FROM ${ref24}` : ''}</Txt>
       <Txt x={I.R0 + 1} y={yOf(0) + 7.0} size={1.8} mono>{ref0 ? `FROM ${ref0}` : ''}</Txt>
       <PlcColumn x={I.PLC} w={I.PLCW} rows={rows} labels={labels} title={`${g.devTag} — ${g.label}`} terminalSide="left" common={last} />
       {ioRows.map((r, i) => (r.point

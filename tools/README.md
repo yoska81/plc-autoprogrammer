@@ -24,6 +24,8 @@ tools/check-all.sh                # all variants; or: tools/check-all.sh us480 c
 | `rules` | The example with its design made by the rule-based engine (`src/electrical/engine`, no AI) |
 | `rules-big` | The `big` project designed by the engine (VFDs with STO, interposing relays, enclosure sized from the layout) |
 | `rules-eu` | The example in the EU: 400 V 3-ph, IEC motor currents, A3 drawings, designed by the engine |
+| `rules-sealing` | The user's "Sealing Head" (two-hand start, light curtain, heater with thermocouple, unwinder VFD, C0-12DD1E-D + 2 modules) designed by the engine |
+| `rules-sealing-long` | The same with I/O descriptions as long as the AI I/O step writes them (stress test for text fitting) |
 
 `gen-outputs.cjs` loads the harness through the Vite dev server, seeds the stores, calls the same
 `buildEverythingZip` the Export page uses, and writes to `tools/out/<variant>/`:
@@ -37,6 +39,7 @@ alarms, STEP summary) used by the checkers.
 |---|---|
 | `check_dxf.py` | `$INSUNITS`/`$MEASUREMENT` for mm and inch; closed outline = catalog back panel / enclosure door 1:1 at the datum; holes and cutouts inside with edge distance; no duplicates / overlaps; Ø22.5 operators; HMI cutout = `hmiCatalog`; cut-only has only OUTLINE/HOLES/CUTOUTS and no text; coordinates = hole tables; ZIP copies identical; handle and door-device clearances |
 | `check_step.py` | OCP loads the file; every solid valid (BRepCheck); names and colours; enclosure shell = catalog size; duplicate products; door bodies on the DXF cutout centres |
+| `check_overlap.cjs` | Renders every drawing sheet in the browser (like the PDF export), takes each text's ink box (getBBox → sheet mm) and every stroked line (lines hidden under a filled shape drawn later are not seen): FAIL on text over text ≥ 0.5 mm² or a line running ≥ 1 mm through a text. Same result as measuring the printed PDF (PyMuPDF) |
 | `check_pdf.py` | Page sizes (drawings ANSI B 17x11, documents Letter); no `undefined` / `NaN` / `null` / `[object Object]` / replacement glyphs; "Page x of y" and "Sheet x of y"; TOC page numbers; renders every page at 60 dpi into `tools/out/<variant>/pages/` for a visual pass (`--no-render` to skip) |
 | `check_xlsx.py` | Every sheet has a header and data; no bad text; numbers in quantity / rung / amps columns stored as numbers |
 | `layout_summary.py` | Per variant: rails, parts placed / not fitting, lowest used point, device area; FAIL when a part overlaps another part or a wire duct or leaves the back panel |

@@ -40,7 +40,7 @@ export default function StartCleanBanner() {
 
   if (step === 'cleaned') return (
     <div role="status" className="border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-900 flex flex-wrap items-center gap-3" data-testid="start-clean">
-      <span className="flex-1 min-w-64">Cleared. Your description{cleanedIo ? ' and I/O list are' : ' is'} kept; a backup of the project before this is under Project › Recover work. Now build every stage from your description.</span>
+      <span className="flex-1 min-w-64">Cleared. Your description{cleanedIo ? ' and I/O list are' : ' is'} kept; a backup of the project before this is on the Project data page under “Recover saved work”. Now build every stage from your description.</span>
       <button onClick={build} disabled={!apiKey || running} title={apiKey ? undefined : 'Add your Anthropic API key in Settings'}
         className="px-3 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-50">{running ? 'Building…' : 'Build everything from my description'}</button>
       <button onClick={() => setStep('idle')} className="px-2 py-1 text-green-800 hover:underline">Close</button>

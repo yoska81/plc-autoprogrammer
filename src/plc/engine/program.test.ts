@@ -10,8 +10,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildProgram } from './program';
+import { checkSequence, programWithCycle, sequenceTable, type CycleSequence } from './sequence';
 import { buildHmi, defaultHmiContent } from '../../hmi/engine';
-import { generateRuleBasedProgram, mergeCycle } from '../ai/cycleAI';
+import { generateRuleBasedProgram } from '../ai/cycleAI';
 import { setClaudeInterceptor } from '../../lib/ai/anthropic';
 import { getCpu, getProfile } from '../core/profiles';
 import { resolveAddresses } from '../core/profile';
@@ -19,6 +20,7 @@ import { moduleSlots } from '../core/modules';
 import { validateProgram } from '../core/validate';
 import { rungAddresses, rungWrites, type LadderProgram } from '../core/ladder';
 import { createSimulator } from '../sim/engine';
+import { buildMachineModel, machineInputs, stepMachine } from '../sim/machineModel';
 import type { IOPoint } from '../../types/io';
 import type { HmiDesign } from '../../hmi/types';
 
@@ -28,7 +30,7 @@ const pt = (description: string, type: 'input' | 'output', extra: Partial<IOPoin
 const profile = getProfile('click');
 
 function project(points: P[], cpuId = 'C0-10DD1E-D', modules: string[] = []) {
-  const io = points.map((p, i) => ({ category: 'Operator/HMI', ...p, id: `p${i}` })) as IOPoint[];
+  const io = points.map((p, i) => ({ category: p.type === 'output' && /conveyor|belt/i.test(p.description) ? 'Conveyor' : 'Operator/HMI', ...p, id: `p${i}` })) as IOPoint[];
   const cpu = getCpu(profile, cpuId);
   const addresses = resolveAddresses(profile, cpu, io, moduleSlots(modules));
   const content = defaultHmiContent({ io, addresses, machineName: 'M' });
@@ -92,90 +94,139 @@ const SEALING = [
   pt('Unwinder motor run', 'output'), pt('Heater contactor', 'output'), pt('Head down solenoid', 'output'), pt('Head up solenoid', 'output'),
 ];
 
-for (const [name, points, cpu, modules] of [['example', EXAMPLE, 'C0-10DD1E-D', []], ['big', BIG, 'C0-11DD1E-D', ['C0-16ND3', 'C0-08TD1', 'C0-04AD-1', 'C0-04DA-1']], ['sealing', SEALING, 'C0-10DD1E-D', []]] as const) {
+const SPECS: Record<string, string> = {
+  example: 'Conveyor brings parts to the end photo-eye; the pusher pushes each part off and retracts.',
+  big: 'Belts feed parts to the gripper; the gripper closes and opens for each part.',
+  sealing: 'Film comes off the unwinder; the head comes down, seals for the dwell time of 2 s and goes up.',
+};
+const CASES = [['example', EXAMPLE, 'C0-10DD1E-D', []], ['big', BIG, 'C0-11DD1E-D', ['C0-16ND3', 'C0-08TD1', 'C0-04AD-1', 'C0-04DA-1']], ['sealing', SEALING, 'C0-10DD1E-D', []]] as const;
+
+for (const [name, points, cpu, modules] of CASES) {
   const pr = project([...points], cpu, [...modules]);
   const t0 = performance.now();
-  const r = buildProgram({ content: pr.content, hmiTags: pr.hmi.tags });
+  const r = programWithCycle({ content: pr.content, hmiTags: pr.hmi.tags, spec: SPECS[name] });
   assert.ok(performance.now() - t0 < 200, 'built in milliseconds');
+  assert.ok(r.sequence.steps.length >= 2, `${name}: a default cycle`);
+  assert.deepEqual(checkSequence(r.sequence, r.base, new Set(pr.content.io.filter((p) => p.type === 'input').map((p) => p.address))), []);
   const ioSet = new Set([...pr.addresses.values()]);
   const issues = validateProgram(r.program, profile, ioSet);
   assert.deepEqual(issues.map((i) => `${i.severity}: ${i.message}`), [], `${name}: checker issues`);
   assert.deepEqual(reviewProblems(r.program, pr.io, pr.addresses, pr.hmi), [], `${name}: design review problems`);
   assert.equal(new Set(r.program.rungs.map((x) => x.id)).size, r.program.rungs.length, 'unique rung ids');
-  golden(name, r.program, r.notes);
+  assert.equal(sequenceTable(r.sequence).length, r.sequence.steps.length);
+  golden(name, r.program, [...r.notes, ...sequenceTable(r.sequence).map((x) => `step ${x.step}: ${x.does} | waits ${x.waits} | timeout ${x.timeout}`)]);
 }
 
-// The example runs: Start -> conveyor runs (default cycle); E-stop -> everything off, safety alarm; Manual jog with the permit.
-{
-  const pr = project(EXAMPLE);
-  const { program } = buildProgram({ content: pr.content, hmiTags: pr.hmi.tags });
+/** Closed loop: the generated program against the simulator's plant model (cylinders, conveyors, parts, drives). */
+function closedLoop(name: string, sequence?: CycleSequence) {
+  const [, points, cpu, modules] = CASES.find((x) => x[0] === name)!;
+  const pr = project([...points], cpu, [...modules]);
+  const r = programWithCycle({ content: pr.content, hmiTags: pr.hmi.tags, spec: SPECS[name], sequence });
+  const sim = createSimulator(r.program);
+  const m = buildMachineModel(pr.io.map((p) => ({ address: pr.addresses.get(p.id)!, description: p.description, type: p.type, category: p.category, ...(p.signal === 'analog' && p.analog ? { analog: p.analog } : {}) })), []);
+  for (const [a, v] of machineInputs(m)) sim.setInput(a, v);
+  const scan = (ms: number) => { for (let t = 0; t < ms; t += 10) { for (const [a, v] of stepMachine(m, sim.outputs(), 10, (x) => sim.readWord(x))) sim.setInput(a, v); sim.step(10); } };
   const tag = (role: string) => pr.hmi.tags.find((t) => t.role === role)!.address;
-  const sim = createSimulator(program);
-  sim.setInput('X001', true); sim.setInput('X003', true); sim.setInput('X006', true); // safety OK, stop PB (NC) closed, pusher retracted
-  sim.run(200);
-  assert.equal(sim.readBit('Y003'), true, 'air dump valve follows Safety OK');
-  sim.write(tag('cmd:start'), true); sim.run(100); sim.write(tag('cmd:start'), false); sim.run(100);
-  assert.equal(sim.readBit('Y001'), true, 'conveyor runs after HMI Start');
+  const cycles = () => sim.readWord(`CTD${r.cycleCounter.slice(2)}`);
+  const press = (role: string) => { sim.write(tag(role), true); scan(100); sim.write(tag(role), false); scan(100); };
+  return { sim, m, r, pr, scan, tag, cycles, press };
+}
+
+// ACCEPTANCE: Start in Auto runs full automatic cycles; every step is reached and the cycle count increments.
+for (const name of ['example', 'sealing', 'big']) {
+  const { sim, r, scan, cycles, press, tag } = closedLoop(name);
+  scan(200);
+  press('cmd:start');
+  assert.equal(sim.readBit(tag('sts:running')), true, `${name}: running after Start`);
+  const seen = new Set<number>();
+  for (let t = 0; t < 120_000 && cycles() < 3; t += 20) { scan(20); seen.add(sim.readWord('DS1150')); }
+  const want = r.sequence.steps.map((_, i) => (i + 1) * 10);
+  assert.deepEqual(want.filter((v) => !seen.has(v)), [], `${name}: every step reached (${r.sequence.steps.map((x) => x.name).join(' → ')})`);
+  assert.ok(cycles() >= 3, `${name}: 3 cycles completed (got ${cycles()})`);
+  assert.equal(sim.readBit('C3'), false, `${name}: no fault`);
+  console.log(`  ${name}: ${cycles()} automatic cycles, steps ${[...seen].filter((v) => v).sort((a, b) => a - b).join(', ')}`);
+}
+
+// FAULT: a position sensor that never comes on -> timeout alarm stops the cycle -> sensor back + Reset -> Start runs again.
+for (const [name, sensor] of [['example', 'X005'], ['sealing', 'X004']] as const) {
+  const { sim, scan, cycles, press, tag, pr } = closedLoop(name);
+  assert.ok(pr.content.io.some((p) => p.address === sensor), `${name}: ${sensor} exists`);
+  scan(200);
+  press('cmd:start');
+  sim.force(sensor, false);
+  for (let t = 0; t < 30_000 && !sim.readBit('C3'); t += 50) scan(50);
+  assert.equal(sim.readBit('C3'), true, `${name}: missing ${sensor} -> fault`);
+  const latched = pr.hmi.alarms.filter((a) => sim.readBit(a.address)).map((a) => a.message);
+  assert.ok(latched.some((m) => /in time/.test(m)), `${name}: timeout alarm (${latched.join('; ')})`);
+  assert.equal(sim.readBit(tag('sts:running')), false, `${name}: the cycle stopped`);
+  sim.force(sensor, null);
+  scan(2000);
+  press('cmd:reset');
+  assert.equal(sim.readBit('C3'), false, `${name}: Reset clears the fault once the sensor is back`);
+  const before = cycles();
+  press('cmd:start');
+  for (let t = 0; t < 60_000 && cycles() <= before; t += 50) scan(50);
+  assert.ok(cycles() > before, `${name}: runs again after Reset and Start`);
+}
+
+// The example's safety and manual behaviour.
+{
+  const { sim, scan, press, tag, m } = closedLoop('example');
+  const estop = m.devices.find((d) => d.kind === 'estop');
+  assert.ok(estop && estop.kind === 'estop');
+  scan(200);
+  press('cmd:start');
+  scan(500);
+  assert.equal(sim.readBit('Y001'), true, 'conveyor feeds in step 10');
   assert.equal(sim.readWord(tag('word:state')), 1, 'state Running');
-  sim.setInput('X001', false); sim.run(100);
+  estop.state.pressed = true; scan(100);
   assert.equal(sim.readBit('Y001'), false, 'safety loss stops the conveyor');
   assert.equal(sim.readBit(tag('alarm:safety')), true, 'safety open alarm');
   assert.equal(sim.readWord(tag('word:state')), 4, 'state Safety Stop');
-  sim.setInput('X001', true); sim.run(100);
+  estop.state.pressed = false; scan(300);
   assert.equal(sim.readBit('Y001'), false, 'no restart by itself');
-  sim.write(tag('cmd:manual'), true); sim.run(100);
+  sim.write(tag('cmd:manual'), true); scan(100);
   assert.equal(sim.readBit(tag('sts:manual')), true, 'Manual mode');
-  sim.write(tag('jog:Y002'), true); sim.run(100);
+  sim.write(tag('jog:Y002'), true); scan(100);
   assert.equal(sim.readBit('Y002'), true, 'hold-to-run extend while permitted');
-  sim.write(tag('jog:Y002'), false); sim.run(100);
+  sim.write(tag('jog:Y002'), false); scan(100);
   assert.equal(sim.readBit('Y002'), false, 'stops on release');
-  // Extended feedback never comes -> timeout alarm after the 3 s default setpoint.
-  sim.write(tag('jog:Y002'), true); sim.setInput('X006', false); sim.run(3500);
-  assert.equal(sim.readBit(tag('alarm:timeout:Y002')), true, 'pusher timeout alarm');
 }
 
-// The AI cycle block: accepted when it keeps to its bits; rejected (rules kept) when it writes an output.
-{
-  const pr = project(SEALING);
-  const base = buildProgram({ content: pr.content, hmiTags: pr.hmi.tags });
-  const head = base.autoBits.find((b) => b.what === 'extend')!;
-  const good = mergeCycle(base, { rungs: [{ id: 'x', comment: 'Step 10: head down', branches: [[{ type: 'NO', address: 'C2' }, { type: 'CMP', left: 'DS1150', op: '==', right: '10' }]], outputs: [{ type: 'OUT', address: head.bit }] }], tags: [] }, undefined, () => []);
-  assert.deepEqual(good.problems, []);
-  assert.ok(good.program.rungs.some((r) => r.id === 'r_cycle_1' && r.block === 'cycle'));
-  const bad = mergeCycle(base, { rungs: [{ id: 'x', comment: 'bad', branches: [[]], outputs: [{ type: 'OUT', address: 'Y002' }] }], tags: [] }, undefined, () => []);
-  assert.match(bad.problems[0], /writes Y002/);
-  assert.equal(bad.program, base.program);
-}
-
-// Pipeline: AI fails -> rules program with a note; recorded cycle -> used.
+// Pipeline: AI fails -> default cycle with a note; recorded steps -> used; bad steps -> default kept.
 {
   const pr = project(SEALING);
   const ctx = { profile, cpu: pr.cpu, io: pr.io, addresses: pr.addresses };
   const ai = { provider: 'anthropic' as const, apiKey: 'k', model: 'm', effort: 'low' as const };
   setClaudeInterceptor(async () => { throw new Error('Anthropic API is overloaded'); });
-  const failed = await generateRuleBasedProgram({ ai, ctx, spec: 'Sealing head', hmi: pr.hmi });
+  const failed = await generateRuleBasedProgram({ ai, ctx, spec: SPECS.sealing, hmi: pr.hmi });
   assert.equal(failed.source, 'rules');
   assert.match(failed.notes[0], /could not write the cycle/);
+  assert.ok(failed.sequence.steps.length >= 3);
   let prompt = 0;
-  setClaudeInterceptor(async (o) => {
-    prompt = o.system.length + JSON.stringify(o.messages).length + JSON.stringify(o.schema).length;
-    const down = failed.program.tags.find((t) => /Auto_Head_extend/.test(t.nickname))!.address;
-    const up = failed.program.tags.find((t) => /Auto_Head_retract/.test(t.nickname))!.address;
-    const unw = failed.program.tags.find((t) => /Auto_Unwinder_run/.test(t.nickname))!.address;
-    return { reasoning: null, text: JSON.stringify({ explanation: 'Head down, dwell 2 s, head up; the unwinder runs while the head is up.', tags: [{ address: 'T25', nickname: 'Tmr_Dwell', comment: 'Seal dwell' }], rungs: [
-      { id: 'a', block: 'cycle', comment: 'Step 0 when not running', branches: [[{ type: 'NC', address: 'C2' }]], outputs: [{ type: 'COPY', source: '0', dest: 'DS1150' }] },
-      { id: 'b', block: 'cycle', comment: 'Step 10: head down until down', branches: [[{ type: 'NO', address: 'C2' }, { type: 'CMP', left: 'DS1150', op: '==', right: '10' }]], outputs: [{ type: 'OUT', address: down }] },
-      { id: 'c', block: 'cycle', comment: 'Step 20: dwell', branches: [[{ type: 'CMP', left: 'DS1150', op: '==', right: '20' }]], outputs: [{ type: 'TMR', address: 'T25', mode: 'ON_DELAY', preset: '2', unit: 'sec', accumulate: false, resetAddress: null }] },
-      { id: 'd', block: 'cycle', comment: 'Step 30: head up', branches: [[{ type: 'CMP', left: 'DS1150', op: '==', right: '30' }]], outputs: [{ type: 'OUT', address: up }] },
-      { id: 'e', block: 'cycle', comment: 'Unwinder runs while the head is up and the cycle runs', branches: [[{ type: 'NO', address: 'C2' }, { type: 'NO', address: 'X003' }]], outputs: [{ type: 'OUT', address: unw }] },
-    ] }) };
-  });
-  const good = await generateRuleBasedProgram({ ai, ctx, spec: 'Sealing head', hmi: pr.hmi });
-  setClaudeInterceptor(null);
+  const steps = [
+    { name: 'Feed film', actions: [{ actuator: 'Unwinder', what: 'run' }], waitFor: [{ input: null, on: true, seconds: 1.5 }], timeoutSec: null },
+    { name: 'Head down', actions: [{ actuator: 'Head', what: 'extend' }], waitFor: [{ input: 'X004', on: true, seconds: null }], timeoutSec: 4 },
+    { name: 'Sealing', actions: [], waitFor: [{ input: null, on: true, seconds: 2 }], timeoutSec: null },
+    { name: 'Head up', actions: [{ actuator: 'Head', what: 'retract' }], waitFor: [{ input: 'X003', on: true, seconds: null }], timeoutSec: 4 },
+  ];
+  setClaudeInterceptor(async (o) => { prompt = o.system.length + JSON.stringify(o.messages).length + JSON.stringify(o.schema).length; return { reasoning: null, text: JSON.stringify({ explanation: 'Feed, head down, seal 2 s, head up.', steps, questions: ['Seal time?'] }) }; });
+  const good = await generateRuleBasedProgram({ ai, ctx, spec: SPECS.sealing, hmi: pr.hmi });
   assert.equal(good.source, 'ai', good.aiError);
-  assert.ok(good.program.rungs.some((r) => /Step 20: dwell/.test(r.comment)));
-  assert.ok(!good.program.rungs.some((r) => /not written yet/.test(r.comment)));
+  assert.deepEqual(good.sequence.steps.map((x) => x.name), ['Feed film', 'Head down', 'Sealing', 'Head up']);
+  assert.ok(good.program.rungs.some((x) => /Step 30 — Sealing/.test(x.comment)));
   assert.deepEqual(validateProgram(good.program, profile, new Set(pr.addresses.values())).filter((i) => i.severity === 'error'), []);
+  // The AI's sequence also runs the plant.
+  const loop = closedLoop('sealing', good.sequence);
+  loop.scan(200); loop.press('cmd:start');
+  for (let t = 0; t < 60_000 && loop.cycles() < 2; t += 20) loop.scan(20);
+  assert.ok(loop.cycles() >= 2, 'the AI cycle runs in the simulator');
+  setClaudeInterceptor(async () => ({ reasoning: null, text: JSON.stringify({ explanation: '', steps: [{ name: 'Bad', actions: [{ actuator: 'Robot', what: 'run' }], waitFor: [], timeoutSec: null }], questions: [] }) }));
+  const bad = await generateRuleBasedProgram({ ai, ctx, spec: SPECS.sealing, hmi: pr.hmi });
+  setClaudeInterceptor(null);
+  assert.equal(bad.source, 'rules');
+  assert.match(bad.notes[0], /not used: step 1: no request bit for "Robot run"/);
   console.log(`cycle prompt ${prompt} chars (~${Math.round(prompt / 4)} tokens)`);
 }
+void buildProgram;
 console.log('program engine tests passed');

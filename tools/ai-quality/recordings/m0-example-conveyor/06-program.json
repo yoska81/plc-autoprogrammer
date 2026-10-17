@@ -1,5 +1,5 @@
 {
  "stage": "program",
  "model": "e2e-fixture",
- "text": "{\"explanation\":\"Step register reset while stopped.\",\"tags\":[{\"address\":\"DS1150\",\"nickname\":\"Step_Cycle\",\"comment\":\"Cycle step\"}],\"rungs\":[{\"id\":\"a\",\"block\":\"cycle\",\"comment\":\"Step 0 while the cycle is not running\",\"branches\":[[{\"type\":\"NC\",\"address\":\"C2\"}]],\"outputs\":[{\"type\":\"COPY\",\"source\":\"0\",\"dest\":\"DS1150\"}]}]}"
+ "text": "{\"explanation\":\"Feed until a part is at the end, push it off, retract.\",\"questions\":[],\"steps\":[{\"name\":\"Feed\",\"actions\":[{\"actuator\":\"Conveyor\",\"what\":\"run\"}],\"waitFor\":[{\"input\":\"X004\",\"on\":true,\"seconds\":null}],\"timeoutSec\":null},{\"name\":\"Push\",\"actions\":[{\"actuator\":\"Pusher\",\"what\":\"extend\"}],\"waitFor\":[{\"input\":\"X005\",\"on\":true,\"seconds\":null}],\"timeoutSec\":5},{\"name\":\"Retract\",\"actions\":[],\"waitFor\":[{\"input\":\"X006\",\"on\":true,\"seconds\":null}],\"timeoutSec\":5}]}"
 }

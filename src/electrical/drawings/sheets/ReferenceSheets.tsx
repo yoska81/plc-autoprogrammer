@@ -151,7 +151,8 @@ export function LegendSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }
         return (
           <g key={s.name}>
             <rect x={x} y={y - 5.8} width={32} height={rowH - 2} strokeWidth={0.12} />
-            <g>{s.draw(x + 16, y + 0.8)}</g>
+            {/* 85 % and centred in the cell: the tallest symbols (IEC pressure switch) otherwise reach over the cell line */}
+            <g transform={`translate(${x + 16} ${y + 1.2}) scale(0.85) translate(${-(x + 16)} ${-(y + 0.8)})`}>{s.draw(x + 16, y + 0.8)}</g>
             <Txt x={x + 35} y={y + 0.2} size={2.2} bold maxW={colW - 37}>{s.name}</Txt>
             {s.note && <Txt x={x + 35} y={y + 3.4} size={1.9} maxW={colW - 37}>{plan.ctx.designations === 'iec81346' ? iecStripText(s.note) : s.note}</Txt>}
           </g>

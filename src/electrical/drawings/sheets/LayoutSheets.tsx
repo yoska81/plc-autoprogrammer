@@ -54,12 +54,12 @@ function ItemRect({ it, ox, oy, s }: { it: PlacedItem; ox: number; oy: number; s
       ))}
       {it.sub
         ? it.sub.map((p, i) => <ItemLabel key={i} x={ox + p.x * s} y={oy + p.y * s} w={p.w * s} h={p.h * s} label={it.label.split('/')[i] ?? p.tag} pn={p.partNumber} />)
-        : <ItemLabel x={x} y={y} w={w} h={h} label={it.label} pn={isTb ? '' : it.partNumber} />}
+        : <ItemLabel x={x} y={y} w={w} h={h} label={it.label} pn={isTb ? '' : it.partNumber} strip={isTb} />}
     </g>
   );
 }
 
-function ItemLabel({ x, y, w, h, label, pn }: { x: number; y: number; w: number; h: number; label: string; pn: string }) {
+function ItemLabel({ x, y, w, h, label, pn, strip }: { x: number; y: number; w: number; h: number; label: string; pn: string; strip?: boolean }) {
   const size = 2.3;
   const lw = textWidth(label, size, true);
   if (lw + 1 <= w) {
@@ -72,8 +72,22 @@ function ItemLabel({ x, y, w, h, label, pn }: { x: number; y: number; w: number;
       </g>
     );
   }
-  // vertical label for narrow parts
-  return <Txt x={x + w / 2 + 0.8} y={y + h / 2} size={Math.min(size, w - 0.4)} mono bold anchor="middle" rotate={-90} maxW={h - 1}>{label}</Txt>;
+  // a short terminal strip: across the terminals a turned label would cross every terminal line, so it
+  // goes just below the strip (its balloon is above)
+  if (strip) {
+    const sw = textWidth(label, 2.0, true);
+    return (
+      <g>
+        <rect x={x + w / 2 - sw / 2 - 0.4} y={y + h + 0.3} width={sw + 0.8} height={2.6} fill="#fff" stroke="none" />
+        <Txt x={x + w / 2} y={y + h + 2.4} size={2.0} mono bold anchor="middle">{label}</Txt>
+      </g>
+    );
+  }
+  // vertical label for narrow parts, centred on the part by its own size; none when it would be
+  // unreadably small (slim relays at a small scale — the balloon and the callout table name them)
+  const fs = Math.min(size, w - 0.4);
+  if (fs < 0.9) return null;
+  return <Txt x={x + w / 2 + fs * 0.35} y={y + h / 2} size={fs} mono bold anchor="middle" rotate={-90} maxW={h - 1}>{label}</Txt>;
 }
 
 function PanelNotes({ plan, x, w, y }: { plan: DrawingPlan; x: number; w: number; y: number }) {
@@ -178,12 +192,17 @@ export function PanelLayoutSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Pl
         </g>
       ))}
       {/* rail / duct identifiers */}
-      {sched.map((r) => (
-        <g key={r.id}>
-          <rect x={ox + r.x * s + 0.3} y={oy + r.y * s - 1.3} width={r.id.length * 1.3 + 1} height={2.6} fill="#fff" strokeWidth={0.1} />
-          <Txt x={ox + r.x * s + 0.8} y={oy + r.y * s + 0.7} size={1.8} mono bold>{r.id}</Txt>
-        </g>
-      ))}
+      {sched.map((r) => {
+        // rail tags sit just left of the rail (over the vertical duct): devices start at the rail's left end
+        const w = r.id.length * 1.3 + 1;
+        const x = r.id.startsWith('R') ? ox + r.x * s - w - 0.4 : ox + r.x * s + 0.3;
+        return (
+          <g key={r.id}>
+            <rect x={x} y={oy + r.y * s - 1.3} width={w} height={2.6} fill="#fff" strokeWidth={0.1} />
+            <Txt x={x + 0.5} y={oy + r.y * s + 0.7} size={1.8} mono bold>{r.id}</Txt>
+          </g>
+        );
+      })}
       {/* ordinate dimensions of rail / duct centrelines from the top of the back panel */}
       <Line x1={CHX} y1={oy + bp.y * s} x2={CHX + 4} y2={oy + bp.y * s} w={0.12} />
       <Txt x={CHX + 5} y={oy + bp.y * s + 0.7} size={1.8} mono>0</Txt>
@@ -271,7 +290,8 @@ function DoorDevice({ d, x, y, s, detail }: { d: DoorItem; x: number; y: number;
         <g>
           <rect x={x - plateW / 2} y={y - r - plateH - 1.2 * s * 4} width={plateW} height={plateH} strokeWidth={LW_THIN} fill="#fff" />
           {d.legend.slice(0, 2).map((l, i, arr) => (
-            <Txt key={i} x={x} y={y - r - 1.2 * s * 4 - plateH / 2 + 0.9 + (arr.length === 2 ? (i === 0 ? -1.5 : 1.5) : 0)} size={arr.length === 2 ? 2.0 : 2.3} bold anchor="middle" maxW={plateW - 1.2}>{l}</Txt>
+            // line spacing and size follow the plate height (small detail scales give a 4–6 mm plate)
+            <Txt key={i} x={x} y={y - r - 1.2 * s * 4 - plateH / 2 + (arr.length === 2 ? (i === 0 ? -0.08 : 0.42) * plateH : 0.3 * Math.min(2.3, plateH * 0.55))} size={arr.length === 2 ? Math.min(2.0, plateH * 0.36) : Math.min(2.3, plateH * 0.55)} bold anchor="middle" maxW={plateW - 1.2}>{l}</Txt>
           ))}
         </g>
       )}
@@ -324,14 +344,16 @@ export function DoorLayoutSheet({ plan }: { plan: DrawingPlan; sheet: PlannedShe
         <g>
           <circle cx={ox + hd.cx * s} cy={oy + hd.cy * s} r={Math.max(4, 30 * s)} strokeWidth={LW} />
           <rect x={ox + hd.cx * s - 1} y={oy + hd.cy * s - Math.max(5, 36 * s)} width={2} height={2 * Math.max(5, 36 * s)} strokeWidth={LW_THIN} fill="#fff" />
-          <Txt x={ox + hd.cx * s} y={oy + hd.cy * s + Math.max(4, 30 * s) + 3.4} size={2.2} mono bold anchor="middle">{hd.tag}</Txt>
-          <Txt x={ox + hd.cx * s} y={oy + hd.cy * s + Math.max(4, 30 * s) + 6.4} size={2.0} anchor="middle">HANDLE</Txt>
+          {/* below the end of the handle bar (it is longer than the escutcheon radius at large scales) */}
+          <Txt x={ox + hd.cx * s} y={oy + hd.cy * s + Math.max(5, 36 * s, 30 * s + 1) + 2.6} size={2.2} mono bold anchor="middle">{hd.tag}</Txt>
+          <Txt x={ox + hd.cx * s} y={oy + hd.cy * s + Math.max(5, 36 * s, 30 * s + 1) + 5.6} size={2.0} anchor="middle">HANDLE</Txt>
         </g>
       )}
       {D.items.map((d) => <DoorDevice key={d.tag} d={d} x={ox + d.cx * s} y={oy + d.cy * s} s={s} detail={false} />)}
       {ops.length > 0 && (
         <g>
-          <rect x={ox + (minX - 5) * s} y={oy + (minY - 5) * s} width={(maxX - minX + 10) * s} height={(maxY - minY + 10) * s} strokeWidth={LW_THIN} strokeDasharray="2 1" />
+          {/* down past the tags printed under the lowest devices */}
+          <rect x={ox + (minX - 5) * s} y={oy + (minY - 5) * s} width={(maxX - minX + 10) * s} height={(maxY - minY + 10) * s + 3.5} strokeWidth={LW_THIN} strokeDasharray="2 1" />
           <Txt x={ox + (minX - 5) * s} y={oy + (minY - 5) * s - 1.2} size={2.3} bold>DETAIL A</Txt>
         </g>
       )}

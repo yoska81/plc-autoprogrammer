@@ -150,7 +150,8 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
             {prot ? <Poles x={PX} ys={protYs} kind={protKind(prot)} /> : integral ? <Poles x={PX} ys={protYsShown} kind="fuse" /> : protYs.map((yy, k) => <Line key={k} x1={PX - 5} y1={yy} x2={PX + 5} y2={yy} />)}
             <Txt x={PX} y={ys[0] - 4.6} size={2.8} mono bold anchor="middle">{prot?.tag ?? (integral ? `${xfmr?.tag ?? 'T1'} FU` : 'NO PROTECTION')}</Txt>
             <Txt x={PX} y={ys[ys.length - 1] + 5} size={2.3} anchor="middle">{integral ? (br.type === 'xfmr' ? 'INTEGRAL PRIMARY FUSES' : 'INTEGRAL SECONDARY FUSE') : ratingText(prot)}</Txt>
-            {fromX && <Txt x={124} y={ys[1] + 4.6} size={2.0} anchor="start">{`FROM ${m.xfmrBranch?.xfmr.tag ?? 'T1'} ${plan.xref.get('xfmr') ?? ''}`}</Txt>}
+            {/* above the X1 wire right of its arrow: below the branch is the protection's note, left of it the bus */}
+            {fromX && <Txt x={125} y={ys[0] - 1.4} size={2.0} maxW={PX - 7 - 125}>{`FROM ${m.xfmrBranch?.xfmr.tag ?? 'T1'} ${plan.xref.get('xfmr') ?? ''}`.trim()}</Txt>}
             {br.type === 'xfmr' ? <XfmrBox plan={plan} br={br.b} ys={ys} y0={y(br.idx)} pitch={POWER_PITCH} /> : br.type === 'ps' ? <PsBox plan={plan} br={br.b} ys={ys} y0={y(br.idx)} pitch={POWER_PITCH} /> : (
               <g>
                 {ys.map((yy, k) => <Line key={k} x1={PX + 5} y1={yy} x2={208} y2={yy} />)}

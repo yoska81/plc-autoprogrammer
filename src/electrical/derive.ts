@@ -1819,7 +1819,8 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     const s = `${str(c.part?.ratings, 'color', 'lensColor', 'buttonColor') ?? ''} ${c.part?.description ?? ''} ${c.comp.function}`.toLowerCase();
     return (s.match(/\b(red|green|amber|yellow|blue|white|black|clear)\b/)?.[1] ?? (c.category === 'estop' ? 'red' : '')).toUpperCase();
   };
-  const legendOf = (c: ResolvedComponent) => wrapWords((str(c.part?.ratings, 'legend') ?? c.comp.function ?? c.tag).toUpperCase(), 12).slice(0, 2);
+  // The plate names the device ("SAFETY RESET"), not the rest of its function text ("— blue, monitored manual reset of SR1 …").
+  const legendOf = (c: ResolvedComponent) => wrapWords((str(c.part?.ratings, 'legend') ?? ((c.comp.function || c.tag).split(/\s+[—–-]\s+|[(:;,]/)[0].trim() || c.tag)).toUpperCase(), 12).slice(0, 2);
   const hmis = doorRc.filter((c) => c.category === 'hmi');
   // Stack lights mount on the enclosure top (direct base mount), not through the door face.
   for (const c of doorRc.filter((x) => x.category === 'stackLight')) unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Enclosure top mounted (stack light) — drill per manufacturer mounting template' });

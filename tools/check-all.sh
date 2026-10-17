@@ -14,4 +14,6 @@ for c in layout_summary check_dxf check_step check_pdf check_xlsx check_consiste
   echo "== $c"
   $PY tools/$c.py "$@" || rc=1
 done
+echo "== check_overlap"
+node tools/check_overlap.cjs "$@" || rc=1
 exit $rc
