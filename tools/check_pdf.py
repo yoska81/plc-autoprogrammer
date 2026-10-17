@@ -68,7 +68,7 @@ def check_pdf(path: Path, kind: str, render: bool, vname: str):
     want = {'drawings': {'ANSI B'}, 'machining': {'ANSI B'}, 'doc': {'Letter portrait', 'Letter'}, 'hmi': {'Letter'},
             'bundle': {'Letter portrait', 'Letter', 'ANSI B'}, 'labels': None}[kind]
     # IEC regions draw on A3 (src/standards/drawingOptions.ts).
-    if want is not None and kind in ('drawings', 'bundle') and is_iec(vname):
+    if want is not None and kind in ('drawings', 'machining', 'bundle') and is_iec(vname):
         want = (want - {'ANSI B'}) | {'A3'}
     for s, pages in sizes.items():
         if want is not None and s not in want:
@@ -132,9 +132,10 @@ def check_machining(path: Path, texts, z: Path, vname: str):
         m = re.search(r'SHEET\s+(\d+)\s+OF\s+\d+', t)
         if m:
             sheets[m.group(1)] = norm(t)
-    want = 'BACK PANEL DRILLING' if 'back_panel' in path.name else 'DOOR CUTOUTS'
+    want = ('BACK PANEL DRILLING' if 'back_panel' in path.name else 'ENCLOSURE (?:BOTTOM|TOP|LEFT SIDE|RIGHT SIDE) CUTOUTS' if 'enclosure' in path.name
+            else 'DOOR CUTOUTS')
     # the sheet heading reads "<TITLE> — <part> — SCALE …" or "<TITLE> (2 OF 3) — …" (sheet 1 = cover, its index lists them too)
-    in_set = sorted((n for n, t in sheets.items() if n != "1" and re.search(re.escape(want) + r'( \(\d+ OF \d+\))? — .+ — ', t)), key=int)
+    in_set = sorted((n for n, t in sheets.items() if n != "1" and re.search(want + r'( \(\d+ OF \d+\))? — .+ — ', t)), key=int)
     got = []
     for i, t in enumerate(texts):
         m = re.search(r'SHEET\s+(\d+)\s+OF\s+\d+', t)
@@ -142,7 +143,7 @@ def check_machining(path: Path, texts, z: Path, vname: str):
             report('FAIL', where, f'p{i + 1}: no "SHEET x OF y" in the title block')
             continue
         got.append(m.group(1))
-        if want not in t:
+        if not re.search(want, t):
             report('FAIL', where, f'p{i + 1}: not a {want} sheet')
         if norm(t) != sheets.get(m.group(1)):
             report('FAIL', where, f'p{i + 1}: differs from sheet {m.group(1)} of the drawing set')

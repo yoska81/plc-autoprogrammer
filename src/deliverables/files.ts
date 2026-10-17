@@ -5,7 +5,7 @@ import { IS_PREVIEW } from '../preview/mode';
 import { saveViaAccount } from '../preview/claudeAccount';
 import { notify } from '../store/useNoticeStore';
 import { desktopBridge } from '../desktop/bridge';
-import { backPanelDxf, doorDxf } from '../electrical/dxf';
+import { backPanelDxf, doorDxf, enclosureFaceDxfs } from '../electrical/dxf';
 import { cabinetStep } from '../electrical/step/cabinetStep';
 import { createElement, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -17,7 +17,7 @@ import { SHEET_H, SHEET_W } from '../electrical/drawings/geometry';
 import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
 import { getHmi } from '../hmi/hmiCatalog';
-import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv, buildModel, type DrawingContext } from '../electrical/derive';
+import { bomCsv, wireListCsv, terminalPlanCsv, cableScheduleCsv, buildModel, type DrawingContext, type DrillingPlan } from '../electrical/derive';
 import { driveParamsCsv } from '../electrical/vfd';
 import { analogSetup, analogSetupCsv } from '../plc/core/analog';
 import { moduleSlots } from '../plc/core/modules';
@@ -70,9 +70,10 @@ export async function buildDrawingsPdf(p: ProjectSnapshot): Promise<Blob | null>
  * sheets of the drawing set (dimensions from the datum, hole table, title block with the sheet
  * scale) on the project's paper. Null when the design has nothing to machine there.
  */
-export async function buildMachiningPdf(ctx: DrawingContext, which: 'backpanel' | 'door' | 'all' = 'all'): Promise<Blob | null> {
+export async function buildMachiningPdf(ctx: DrawingContext, which: DrillingPlan['kind'] | 'walls' | 'all' = 'all'): Promise<Blob | null> {
   const plan = planDrawings(ctx);
-  const sheets = plan.sheets.filter((s) => s.spec.kind === 'drill' && (which === 'all' || s.spec.drill.kind === which));
+  const isWall = (k: DrillingPlan['kind']) => k !== 'backpanel' && k !== 'door';
+  const sheets = plan.sheets.filter((s) => s.spec.kind === 'drill' && (which === 'all' || s.spec.drill.kind === which || (which === 'walls' && isWall(s.spec.drill.kind))));
   if (!sheets.length) return null;
   return sheetsPdf(ctx, createElement('div', null, ...sheets.map((s) => createElement(SheetView, { key: s.n, plan, sheet: s }))));
 }
@@ -170,6 +171,7 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     for (const units of ['in', 'mm'] as const) {
       zip.file(`electrical/machining/back_panel_drilling_1to1_${units}.dxf`, backPanelDxf(p.drawingCtx, { units }));
       zip.file(`electrical/machining/door_cutouts_1to1_${units}.dxf`, doorDxf(p.drawingCtx, { units }));
+      for (const f of enclosureFaceDxfs(p.drawingCtx, { units })) zip.file(`electrical/machining/enclosure_${f.face}_cutouts_1to1_${units}.dxf`, f.dxf);
     }
     // ... and the same parts as dimensioned drawings to print for the shop.
     onProgress?.('Machining drawings');
@@ -177,6 +179,8 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     if (bpPdf) zip.file(`electrical/machining/${p.fileBase}_back_panel_drilling.pdf`, bpPdf);
     const doorPdf = await buildMachiningPdf(p.drawingCtx, 'door');
     if (doorPdf) zip.file(`electrical/machining/${p.fileBase}_door_cutouts.pdf`, doorPdf);
+    const wallsPdf = await buildMachiningPdf(p.drawingCtx, 'walls');
+    if (wallsPdf) zip.file(`electrical/machining/${p.fileBase}_enclosure_cutouts.pdf`, wallsPdf);
     zip.file(`electrical/3d/${p.fileBase}_cabinet.step`, cabinetStep(p.drawingCtx));
     onProgress?.('Cabinet pictures');
     const hmiPart = p.hmi?.hmiPartNumber ?? null;
