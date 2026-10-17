@@ -190,7 +190,8 @@ function sse(model, text) {
   check(await ioRows() === 7, 'filter cleared shows all 7');
 
   const dl = async (name) => {
-    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 180000 }), page.getByRole('button', { name, exact: true }).click()]);
+    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 180000 }), page.getByRole('button', { name, exact: true }).click()])
+      .catch(async (e) => { await page.screenshot({ path: OUT + 'download_failed.png', fullPage: true }); throw new Error(`${name}: ${e.message}`); });
     const path = OUT + d.suggestedFilename();
     await d.saveAs(path);
     return path;
@@ -701,6 +702,22 @@ function sse(model, text) {
   if (ps.getPageCount() !== 1) throw new Error('purchase summary is not one page');
   const ox = await JSZip.loadAsync(fs.readFileSync(await dl('Order list (Excel)')));
   log('Order list Excel sheets:', [...(await ox.file('xl/workbook.xml').async('string')).matchAll(/name="([^"]+)"/g)].map((m) => m[1]).join(', '));
+  if (!/Build time/.test(await ox.file('xl/workbook.xml').async('string'))) throw new Error('order list Excel has no Build time sheet');
+  // Shop build time: total on the card, a rate edit changes it, CSV, back to typical rates.
+  const total0 = await page.getByTestId('build-total').innerText();
+  await page.getByRole('button', { name: 'Show and edit rates' }).click();
+  await page.getByLabel('Rate: Field cable (gland, strip, terminate both ends)').fill('90');
+  const total1 = await page.getByTestId('build-total').innerText();
+  if (total0 === total1) throw new Error('editing a build-time rate did not change the total');
+  await page.getByLabel('Shop labour rate').fill('100');
+  if (!/\$/.test(await page.getByTestId('build-total').innerText())) throw new Error('labour cost not shown');
+  const btCsv = fs.readFileSync(await dl('Build time (CSV)'), 'utf8');
+  if (!/Field wiring,.*,90,/.test(btCsv)) throw new Error('build-time CSV does not carry the edited rate');
+  await page.getByRole('button', { name: 'Back to typical rates' }).click();
+  if (await page.getByTestId('build-total').innerText() !== total0) throw new Error('typical rates not restored');
+  log('Shop build time:', total0, '→', total1, 'with 90 min per field cable');
+  const cert = await PDFDocument.load(fs.readFileSync(await dl('Certification pack PDF')));
+  log('Certification pack PDF pages:', cert.getPageCount());
   const full = await dl('Download full package PDF');
   const fullDoc = await PDFDocument.load(fs.readFileSync(full));
   const outlines = fullDoc.catalog.lookup(PDFName.of('Outlines'));

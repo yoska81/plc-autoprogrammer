@@ -14,6 +14,8 @@ import { backPanelDxf, doorDxf, enclosureFaceDxfs } from '../electrical/dxf';
 import { cabinetStep, cabinetStepSummary } from '../electrical/step/cabinetStep';
 import { printLabelPdf, printMessage } from '../electrical/labels/print';
 import OrderListCard from '../deliverables/OrderListCard';
+import BuildTimeCard from '../deliverables/BuildTimeCard';
+import { isIec } from '../standards/regions';
 import ReviewCard from '../review/ReviewCard';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40';
@@ -140,7 +142,7 @@ export default function ExportPage() {
           <div className="bg-white rounded-sm border-2 border-brand-200 p-5 flex flex-wrap items-center gap-4">
             <div className="flex-1 min-w-64">
               <h3 className="text-sm font-semibold text-steel-800">Everything in one ZIP</h3>
-              <p className="text-xs text-steel-500">Excel report, full package PDF, engineering package, electrical drawings PDF with BOM / wire list / terminal plan, machining DXFs, cabinet STEP model, HMI screens (PDF + PNG), PLC program files, label files, I/O list and the spec.</p>
+              <p className="text-xs text-steel-500">Excel report, full package PDF, engineering package, electrical drawings PDF with BOM / wire list / terminal plan, machining DXFs, cabinet STEP model, HMI screens (PDF + PNG), PLC program files, label files, purchasing files (with the shop build time), the certification pack, I/O list and the spec.</p>
             </div>
             <B busy={busy} label="Download everything" primary onClick={run('Download everything', async () => {
               saveBlob(`${p.fileBase}_deliverables.zip`, await buildEverythingZip(collectProject(), (s) => setBusy(`Building ${s.toLowerCase()}`)));
@@ -167,6 +169,18 @@ export default function ExportPage() {
           </Card>
 
           <OrderListCard p={p} fileBase={p.fileBase} />
+
+          <BuildTimeCard p={p} />
+
+          <Card title={isIec(p.info.region) ? 'Certification pack — CE technical file (PDF)' : 'Certification pack — UL 508A file (PDF)'} info={stages.electrical} to="/electrical">
+            <p className="text-xs text-steel-500">{isIec(p.info.region)
+              ? 'For the CE technical file: rating plate, short-circuit rating with the weakest part, safety functions with PL and category, parts and their listings, wire size / protection / spacing statements, enclosure rating, the draft declaration of conformity, the risk assessment summary and the standards list.'
+              : 'For the UL 508A file: nameplate data, the SCCR calculation with the weakest part, safety functions with PL and category, parts and their UL / CSA / CE listings, wire size / protection / spacing statements and the enclosure rating.'} Everything comes from the design; what the design cannot prove is marked "to confirm" and listed first.</p>
+            <B busy={busy} label="Certification pack PDF" disabled={!hasElec} onClick={run('Certification pack PDF', async () => {
+              const { buildCertPackPdf } = await import('../deliverables/certPack');
+              saveBlob(`${p.fileBase}_certification_pack.pdf`, await buildCertPackPdf(collectProject()));
+            })} />
+          </Card>
 
           <Card title="Labels" info={stages.electrical} to="/electrical?tab=labels">
             <p className="text-xs text-steel-500">Wire, terminal, device, cable and door labels. Choose the label size and content, preview and print in Electrical design → Labels.</p>
