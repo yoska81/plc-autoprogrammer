@@ -8,6 +8,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
 import { useProgramStore } from '../../../store/useProgramStore';
 import { generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../ai/ladderAI';
+import { generateRuleBasedProgram } from '../../ai/cycleAI';
+import { useElectricalStore } from '../../../store/useElectricalStore';
 import { validateProgram, type ValidationIssue } from '../../core/validate';
 import { diffPrograms, summarizeDiff, type RungChange } from '../../core/diff';
 import type { LadderProgram, Rung } from '../../core/ladder';
@@ -93,6 +95,9 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const stages = useStages();
   const { sources, markGenerated } = useStageStore();
   const specText = specToText(fp.spec);
+  // Only the machine-specific block names count (generic PLC words like alarms, modes, seal-in or first-scan are not leftovers).
+  const programText = (ladder.blocks ?? []).map((b) => b.name).join(' ');
+  const programLeftOver = ladder.blocks?.length ? looksLeftOver(programText, `${specText} ${io.map((p) => p.description).join(' ')}`, 1) : { leftOver: false, terms: [] as string[] };
   const notesCheck = /^the machine specification and\/or i\/o list changed|^current specification:/i.test(userPrompt.trim()) || userPrompt.length > 600 && specText && userPrompt.includes(specText.slice(0, 80))
     ? { leftOver: true, terms: ['a copy of the update message / specification'] }
     : looksLeftOver(userPrompt, specText);
@@ -102,7 +107,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   // A finding sent from the Design review page opens Fix & Ask with the request filled in.
   const [fromReview] = useState(() => useReviewStore.getState().fixRequest?.stage === 'program' ? useReviewStore.getState().fixRequest : null);
   const [searchParams] = useSearchParams();
-  const [tab, setTab] = useUi<Tab>('program.tab', ladder.rungs.length || fromReview ? 'fix' : 'describe');
+  const [tab, setTab] = useUi<Tab>('program.tab', fromReview ? 'fix' : 'describe');
   const [request, setRequest] = useDraft('program.request', fromReview?.text ?? '');
   // A request from the review replaces whatever was remembered.
   useEffect(() => {
@@ -177,8 +182,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const rungNumber = (id: string) => (review?.display ?? ladder).rungs.findIndex((r) => r.id === id) + 1;
 
   /** Run an AI step as a global job: it keeps going (and its result is applied) when the user leaves the page. */
-  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal) => Promise<T>, apply: (r: T) => void) => {
-    if (!ready || isGenerating) return;
+  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal) => Promise<T>, apply: (r: T) => void, needsKey = true) => {
+    if ((needsKey && !ready) || isGenerating) return;
     setError(null);
     void startAiJob({
       kind, label,
@@ -190,11 +195,25 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     });
   };
 
-  const handleGenerate = () => {
-    if (!machineText.trim()) return;
-    if (ladder.rungs.length && !confirm('Replace the current program with a new one? (The current one is kept in History.)')) return;
-    setTab('fix');
-    return runAI('program', 'PLC program', async (signal) => {
+  /**
+   * Generate: the standard blocks (safety & modes, alarms, manual, outputs, HMI status) come from the rules
+   * in milliseconds and implement every HMI tag; with a key the AI writes only the machine's cycle block.
+   * `full` = the older all-AI program (experimental).
+   */
+  const handleGenerate = (full = false) => {
+    if (full && !machineText.trim()) return;
+    if (ladder.rungs.length && !programLeftOver.leftOver && !confirm('Build a new program from your project? (The current one is kept in History.)')) return;
+    setTab('describe');
+    if (!full) {
+      return runAI('program', 'PLC program', (signal) => generateRuleBasedProgram({
+        ai: ready && ai.apiKey ? { ...ai, signal } : undefined, ctx, spec: machineText,
+        electrical: useElectricalStore.getState().design, hmi: hmiDesign,
+      }), (r) => {
+        useProgramStore.getState().setGeneratedLadder(r.program, r.explanation, r.reasoning);
+        recordSource();
+      }, false);
+    }
+    return runAI('program', 'PLC program (full AI)', async (signal) => {
       const r = await generateLadder({ ...ai, signal }, ctx, machineText);
       if (!r.program) throw new Error('The AI did not return a program. Add more detail and try again.');
       return { ...r, program: r.program };
@@ -242,14 +261,26 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       {/* Assistant panel */}
       <ResizablePane id="program.assistant" defaultSize={384} min={260} max={800} className="flex flex-col border-r border-gray-200 bg-white">
         <div className="flex border-b border-gray-200">
-          {tabButton('describe', 'Describe')}
-          {tabButton('fix', 'Fix & Ask')}
+          {tabButton('describe', 'Build')}
+          {tabButton('fix', 'Change')}
           {tabButton('history', `History (${versions.length})`)}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {tab === 'describe' && (
             <>
+              {programLeftOver.leftOver && (
+                <div className="px-3 py-2 text-sm bg-amber-50 border border-amber-300 text-amber-900 rounded" role="alert" data-testid="leftover-program">
+                  <b>The current program is from another machine</b> (it mentions {programLeftOver.terms.join(', ')}, which are not in your machine description). Build a new program from your project.
+                </div>
+              )}
+              <button
+                onClick={() => handleGenerate()}
+                disabled={isGenerating}
+                className="w-full py-3 bg-brand-600 text-white text-sm font-semibold rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isGenerating ? <><Spinner /> Building the program…</> : 'Build program from my project'}
+              </button>
               <div className="text-sm text-gray-700 bg-brand-50 border border-brand-200 rounded px-3 py-2" data-testid="program-sources">
                 <div className="font-medium text-gray-800 mb-1">The program is made directly from:</div>
                 <ul className="text-xs space-y-0.5">
@@ -259,6 +290,15 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 </ul>
                 {specText ? <div className="text-xs text-gray-500 mt-1">You don't need to copy anything here: change the machine description and press Generate.</div> : <div className="text-xs text-amber-800 mt-1">The machine description is empty: describe the machine first.</div>}
               </div>
+              {ladder.rungs.length > 0 && chat[0]?.role === 'assistant' && chat[0].outcome === 'applied' && (
+                <div className="text-xs text-gray-700 bg-green-50 border border-green-200 rounded px-3 py-2 whitespace-pre-wrap" data-testid="program-summary">
+                  <div className="font-medium text-green-800 mb-0.5">Current program</div>{chat[0].text}
+                </div>
+              )}
+              <p className="text-xs text-gray-500">To change something small in the existing program instead, use the <button onClick={() => setTab('fix')} className="underline">Change</button> tab.</p>
+              <details className="text-sm" open={Boolean(userPrompt.trim())}>
+                <summary className="cursor-pointer text-xs text-gray-500">Advanced: extra notes for the program only</summary>
+                <div className="mt-2 space-y-2">
               <label htmlFor="prompt" className="block text-sm font-medium text-gray-700">Extra notes for the program only <span className="font-normal text-gray-400">(optional, usually empty)</span></label>
               <textarea
                 id="prompt"
@@ -274,14 +314,12 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                   <button onClick={() => store.setUserPrompt('')} className="ml-2 underline font-medium">Clear the notes</button>
                 </div>
               )}
-              <button
-                onClick={handleGenerate}
-                disabled={isGenerating || !ready || !machineText.trim()}
-                className="w-full py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {isGenerating ? <><Spinner /> Thinking & writing ladder…</> : ladder.rungs.length ? 'Generate New Program' : 'Generate Program'}
-              </button>
-              <p className="text-xs text-gray-400">Uses the {ctx.profile.name} {ctx.cpu.id} rules. Deep thinking can take a few minutes.</p>
+                </div>
+              </details>
+              <button onClick={() => handleGenerate(true)} disabled={isGenerating || !ready || !machineText.trim()}
+                title="The AI writes the whole program itself (slower); the standard program uses the AI only for the machine's cycle"
+                className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-40">AI full program (experimental)</button>
+              <p className="text-xs text-gray-400">Standard blocks for the {ctx.profile.name} {ctx.cpu.id} from the I/O list and HMI in seconds{ready ? '; the AI writes the machine\'s cycle from your description.' : '.'}</p>
             </>
           )}
 
@@ -358,6 +396,12 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               placeholder={proposal ? 'Approve or reject the proposed change first' : ladder.rungs.length ? 'Describe a problem or change… (Enter to send)' : 'Generate a program first'}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none disabled:bg-gray-50"
             />
+            {request.length > 600 && (
+              <div className="px-3 py-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded" role="alert" data-testid="change-too-long">
+                This looks like a whole machine description. You don't need to type it here: the program is built from your <Link to="/spec" className="underline">Machine description</Link>, I/O list and HMI.
+                Put it there and press <button onClick={() => setTab('describe')} className="underline font-medium">Build program from my project</button>. Use Change only for small fixes, e.g. "add a 2 s delay before the cylinder goes up".
+              </div>
+            )}
             <button
               onClick={() => handleRevise(request)}
               disabled={isGenerating || !ready || !request.trim() || Boolean(proposal) || !ladder.rungs.length}

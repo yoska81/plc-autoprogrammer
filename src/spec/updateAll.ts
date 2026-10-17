@@ -23,7 +23,9 @@ import { analogSetup } from '../plc/core/analog';
 import { getPart } from '../electrical/catalog';
 import { vendorPreference } from '../store/useProjectStore';
 import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
-import { reviseLadder, generateLadder } from '../plc/ai/ladderAI';
+import { mergeRegenerated } from '../hmi/engine/regenerate';
+import { reviseLadder } from '../plc/ai/ladderAI';
+import { generateRuleBasedProgram } from '../plc/ai/cycleAI';
 import { getHmi } from '../hmi/hmiCatalog';
 
 export type UpdateStep = 'equipment' | 'io' | 'electrical' | 'hmi' | 'program';
@@ -142,8 +144,10 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, s
           electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
         });
         // Keep the look the user picked (Siemens or dark console) across a regeneration.
-        hmi.setDesign(hmi.design?.look ? { ...r.design, look: hmi.design.look } : r.design, r.explanation);
-        mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(r.design) });
+        // Screens edited by hand are kept (re-bound to the new tags).
+        const merged = mergeRegenerated(hmi.design, r.design).design;
+        hmi.setDesign(hmi.design?.look ? { ...merged, look: hmi.design.look } : merged, r.explanation);
+        mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(merged) });
         onStep({ step, status: 'done', message: `${r.design.screens.length} screens, ${r.design.tags.length} tags.` });
       }
 
@@ -157,8 +161,8 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, s
         const ctx = { profile, cpu, io, addresses, wiring, hmi };
         const aiCfg = { ...ai, provider: settings.provider };
         if (!prog.ladder.rungs.length) {
-          const r = await generateLadder(aiCfg, ctx, specToText(spec));
-          if (!r.program) throw new Error('No program returned.');
+          // Standard blocks from the rules (every HMI tag implemented); the AI writes only the cycle block.
+          const r = await generateRuleBasedProgram({ ai: aiCfg.apiKey ? aiCfg : undefined, ctx, spec: specToText(spec), electrical: useElectricalStore.getState().design, hmi: hmi ?? null });
           prog.setGeneratedLadder(r.program, r.explanation, r.reasoning);
           mark('program', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(hmi ?? null) });
           onStep({ step, status: 'done', message: `${r.program.rungs.length} rungs written.` });

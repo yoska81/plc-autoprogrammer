@@ -10,7 +10,9 @@ import { catalogPanels } from '../hmi/panels';
 import { setProjectPanel } from '../hmi/retarget';
 import { hmiFit, type Need } from '../plc/core/fit';
 import { generateHmiDesign, recreateScreenFromPicture } from '../lib/ai/hmiAI';
-import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
+import { generateRuleBasedHmi, projectHmiContent } from '../lib/ai/hmiContentAI';
+import { buildHmi } from '../hmi/engine';
+import { markEdited, mergeRegenerated, rebuildScreen } from '../hmi/engine/regenerate';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { specToText } from '../spec/types';
@@ -157,7 +159,7 @@ function ElementEditor({ el, screens, onChange, onDelete }: { el: HmiElement; sc
   );
 }
 
-function ScreenInfo({ screen, issues, onLevel, onRename, onDelete }: { screen: HmiScreen; issues: LayoutIssue[]; onLevel: (l: AccessLevel) => void; onRename: (name: string) => void; onDelete?: () => void }) {
+function ScreenInfo({ screen, issues, onLevel, onRename, onDelete, onRebuild }: { screen: HmiScreen; issues: LayoutIssue[]; onLevel: (l: AccessLevel) => void; onRename: (name: string) => void; onDelete?: () => void; onRebuild?: () => void }) {
   const counts = new Map<string, number>();
   for (const e of screen.elements) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
   const addresses = new Set(screen.elements.flatMap((e) => [e.address, e.interlock ?? null].filter(Boolean)));
@@ -182,6 +184,8 @@ function ScreenInfo({ screen, issues, onLevel, onRename, onDelete }: { screen: H
         {[...counts].map(([k, n]) => <span key={k} className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{n} × {KIND_LABEL[k as HmiElement['kind']] ?? k}</span>)}
       </div>
       <p className="text-xs text-gray-400">Click an element on the screen to edit it.</p>
+      {screen.edited && <p className="text-xs text-gray-500">Edited by hand: kept when the screens are regenerated.</p>}
+      {screen.edited && onRebuild && <button onClick={onRebuild} className="block text-xs text-brand-700 hover:underline">Rebuild this screen from scratch</button>}
       {onDelete && <button onClick={onDelete} className="text-xs text-red-600 hover:underline">Delete this screen</button>}
     </div>
   );
@@ -284,7 +288,18 @@ export default function HmiPage() {
   const bounds = { w: W, h: H };
   const commit = (next: HmiDesign) => {
     if (design) setHist((h) => ({ ...h, past: [...h.past, design].slice(-100), future: [] }));
-    hmi.setDesign(syncHandTags(next, (a) => ioDesc.get(a)), hmi.explanation);
+    // Screens changed by hand are marked edited: a regeneration keeps them.
+    hmi.setDesign(syncHandTags(markEdited(design, next), (a) => ioDesc.get(a)), hmi.explanation);
+  };
+  /** "Rebuild this screen": the rules' version of this screen replaces the hand-edited one (one undo step). */
+  const rebuildThis = (id: string) => {
+    if (!design || !model) return;
+    const gen = buildHmi(projectHmiContent({ io, addresses, machineName: design.machineName || useProgramStore.getState().projectName, spec: '', electrical: useElectricalStore.getState().design, panel: model }),
+      { ...model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}` });
+    const next = rebuildScreen(design, gen, id);
+    if (!next) { notify('This screen is not one the generator makes (you added it), so it cannot be rebuilt.'); return; }
+    setHist((h) => ({ ...h, past: [...h.past, design].slice(-100), future: [] }));
+    hmi.setDesign(next, hmi.explanation);
   };
   const stepHistory = (dir: 'undo' | 'redo') => {
     const from = dir === 'undo' ? hist.past : hist.future;
@@ -456,9 +471,10 @@ export default function HmiPage() {
         } finally { useHmiStore.getState().setIsGenerating(false); }
       },
       apply: (r) => {
-        // Keep the look the user picked (Siemens or dark console) across a regeneration.
-        useHmiStore.getState().setDesign(look ? { ...r.design, look } : r.design, r.explanation);
-        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(r.design) });
+        // Screens edited by hand are kept (re-bound to the new tags); keep the look the user picked.
+        const merged = mergeRegenerated(useHmiStore.getState().design, r.design).design;
+        useHmiStore.getState().setDesign(look ? { ...merged, look } : merged, r.explanation);
+        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(merged) });
       },
     });
   };
@@ -666,7 +682,7 @@ export default function HmiPage() {
                   ) : (
                     <ScreenInfo screen={screen} issues={screenIssues} onLevel={(l) => setScreenLevel(screen.id, l)}
                       onRename={(name) => updateScreen({ ...screen, name })}
-                      onDelete={design.screens.length > 1 ? () => deleteScreen(screen.id) : undefined} />
+                      onDelete={design.screens.length > 1 ? () => deleteScreen(screen.id) : undefined} onRebuild={() => rebuildThis(screen.id)} />
                   )}
                 </section>
                 <section className="bg-white rounded-lg border border-gray-200 p-4">

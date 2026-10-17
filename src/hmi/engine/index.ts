@@ -3,4 +3,4 @@
  * seconds, no AI. See ./content.ts (what is shown) and ./build.ts (screens, layout, tags).
  */
 export { defaultHmiContent, type HmiContent, type HmiActuator, type HmiAnalog, type HmiPoint } from './content';
-export { buildHmi, type BuildOptions } from './build';
+export { buildHmi, planHmiTags, type BuildOptions } from './build';
