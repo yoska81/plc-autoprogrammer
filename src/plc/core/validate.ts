@@ -1,4 +1,4 @@
-import type { LadderProgram, Rung } from './ladder';
+import { rungAddresses, rungWrites, type LadderProgram, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
 
 export interface ValidationIssue {
@@ -16,6 +16,8 @@ export function validateProgram(
   program: LadderProgram,
   profile: PlcProfile,
   ioAddresses: Set<string>,
+  /** The project's HMI: a tag the HMI shows that no rung writes, or a command no rung reads, is an error. */
+  hmi?: { tags: { address: string; name: string; access: string }[] },
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const outCoils = new Map<string, number>();
@@ -82,6 +84,25 @@ export function validateProgram(
           check(rung, o.dest, 'Math result', { write: true });
           break;
       }
+    }
+  }
+
+  if (hmi && program.rungs.length) {
+    const writes = new Set<string>(), reads = new Set<string>();
+    for (const r of program.rungs) {
+      for (const w of rungWrites(r)) writes.add(w.trim().toUpperCase());
+      for (const o of r.outputs) {
+        if (o.type === 'TMR') writes.add(`TD${o.address.trim().toUpperCase().slice(1)}`);
+        if (o.type === 'CNT') writes.add(`CTD${o.address.trim().toUpperCase().slice(2)}`);
+      }
+      for (const a of rungAddresses(r)) reads.add(a.trim().toUpperCase());
+      for (const o of r.outputs) if (o.type === 'MATH') for (const m of o.expression.toUpperCase().match(/[A-Z]+\d+/g) ?? []) reads.add(m);
+    }
+    for (const t of hmi.tags) {
+      const a = t.address.trim().toUpperCase();
+      if (/^[XY]\d/.test(a) || /^DF\d+$/.test(a) && t.access === 'read') continue;
+      if (t.access === 'read' && !writes.has(a)) issues.push({ rungId: null, severity: 'error', message: `HMI tag ${a} ${t.name} is shown on the HMI but no rung writes it.` });
+      else if (t.access !== 'read' && !reads.has(a)) issues.push({ rungId: null, severity: 'error', message: `HMI command / setpoint ${a} ${t.name} is never read by the program, so it does nothing.` });
     }
   }
 

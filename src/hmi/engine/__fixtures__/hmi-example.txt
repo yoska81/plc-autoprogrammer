@@ -22,7 +22,7 @@ C1205   STS_Pusher_Extend_Permit     BIT   read       PLC sets ON when Manual mo
 C1006   HMI_Pusher_Extend            BIT   write      Hold-to-run: while ON and C1205 is ON the PLC energizes Y002 (Pusher solenoid); spring return retracts on release.
 DS1001  SP_Pusher_Timeout            INT   read-write Seconds allowed for Pusher to reach X005 (Pusher extended) / X006 (Pusher retracted) (1–30, default 3 on the first scan).
 C1103   ALM_Pusher_Timeout           BIT   read       PLC latches ON when Pusher does not reach its feedback position within DS1001 seconds after its valve switches; Reset (C1003) clears it.
-CTD1    Part_Count                   INT2  read       Counter CT1 counts each rising edge of X004 (Part at end photo-eye).
+CTD1    Part_Count                   INT2  read       Counter value: the PLC counts each rising edge of X004 (Part at end photo-eye).
 C1007   HMI_Count_Reset              BIT   write      Momentary: resets the part counter CT1.
 DS1002  SP_Batch_Target              INT   read-write Batch size in parts (0 = no limit): the PLC stops the cycle when CTD1 reaches it.
 DS1102  Parts_Per_Min                INT   read       Parts counted in the last 60 s.

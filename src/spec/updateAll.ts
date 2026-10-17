@@ -142,6 +142,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, s
         const r = await generateRuleBasedHmi({
           ...ai, io, addresses: resolveAddresses(profile, cpu, io, slots), spec: specToText(spec), machineName: useProgramStore.getState().projectName,
           electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
+          existingHmi: hmi.design, program: useProgramStore.getState().ladder,
         });
         // Keep the look the user picked (Siemens or dark console) across a regeneration.
         // Screens edited by hand are kept (re-bound to the new tags).

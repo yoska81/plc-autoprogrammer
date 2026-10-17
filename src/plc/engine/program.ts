@@ -8,7 +8,8 @@
  * rules leave to the AI (./cycleAI.ts): it writes the "cycle" block that sets the auto request bits.
  */
 import type { CompareOp, LadderElement, LadderOutput, LadderProgram, ProgramBlock, Rung, TagDefinition } from '../core/ladder';
-import type { HmiTag } from '../../hmi/types';
+import type { HmiAlarm, HmiScreen, HmiTag } from '../../hmi/types';
+import { inferRoles } from '../../hmi/engine/roles';
 import { planHmiTags, type HmiActuator, type HmiContent, type HmiPoint } from '../../hmi/engine';
 
 const NO = (address: string): LadderElement => ({ type: 'NO', address });
@@ -34,8 +35,11 @@ function feedbackOf(a: HmiActuator): { ext?: HmiPoint; ret?: HmiPoint } {
 
 export interface ProgramInput {
   content: HmiContent;
-  /** The HMI's tags (rule-based HMIs carry roles); missing → the plan the HMI engine would make. */
+  /** The HMI's tags (rule-based HMIs carry roles; older ones get roles inferred); missing → the plan the HMI engine would make. */
   hmiTags?: HmiTag[];
+  /** The HMI's screens and alarms (button interlocks name the permits, the alarm list names the alarms). */
+  hmiScreens?: HmiScreen[];
+  hmiAlarms?: HmiAlarm[];
 }
 
 export interface ProgramResult {
@@ -47,20 +51,27 @@ export interface ProgramResult {
   notes: string[];
   /** HMI tag address per role (the HMI's own, else the plan's). */
   roles: Map<string, string>;
+  /** Internal machine bits (the cycle template uses them). */
+  internal: { safe: string; run: string; fault: string; reset: string };
+  /** Every address in use (HMI and program): the cycle template allocates around them. */
+  taken: Set<string>;
+  /** HMI tags no rule implements (also checker errors when the HMI is passed to the checker). */
+  unmatched: HmiTag[];
 }
 
 export function buildProgram(input: ProgramInput): ProgramResult {
   const c = input.content;
   const notes: string[] = [];
-  const plan = planHmiTags(c);
+  // Address stability: every function the HMI already has keeps its address (roles inferred for older
+  // HMIs); functions it lacks get free addresses — never one the HMI uses for something else.
+  const hmiTags = input.hmiTags ?? [];
+  const inferred = inferRoles(hmiTags, { content: c, screens: input.hmiScreens, alarms: input.hmiAlarms });
+  const taken = new Set(hmiTags.map((t) => t.address.toUpperCase()));
+  const plan = planHmiTags(c, { reuse: new Map(inferred.tags.filter((t) => t.role).map((t) => [t.role!, t] as const)), taken });
   const byRole = new Map<string, HmiTag>();
   for (const t of plan.tags) if (t.role) byRole.set(t.role, t);
-  // The HMI's own tags win (it may have been edited or renamed); fall back to the plan by role.
-  if (input.hmiTags?.length) {
-    const roled = input.hmiTags.filter((t) => t.role);
-    if (!roled.length) notes.push('The HMI was not made by the rule-based screens: the program uses the standard tag plan; regenerate the HMI screens so they match.');
-    for (const t of roled) byRole.set(t.role!, t);
-  }
+  for (const t of inferred.tags) if (t.role) byRole.set(t.role, t);
+  for (const t of plan.tags) taken.add(t.address.toUpperCase());
   const tag = (role: string) => byRole.get(role)?.address;
   const must = (role: string) => {
     const a = tag(role);
@@ -68,12 +79,17 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     return a;
   };
 
-  // Internal memory (neutral CLICK-style): C1–C19 machine bits, C20–C59 request bits, C60–C99 free for the cycle.
-  const SAFE = 'C1', RUN = 'C2', FAULT = 'C3', BATCH = 'C4', HOUR = 'C5', PULSE = 'C6', RESET = 'C7';
-  let nextBit = 20;
+  // Internal memory (neutral CLICK-style), allocated around every address the HMI uses: machine bits from C1,
+  // request bits from C20, timers from T1, never a T / CT whose TD / CTD the HMI shows for something else.
+  let nextBit = 1;
+  const freeBit = () => { let a: string; do { a = `C${nextBit++}`; } while (taken.has(a)); taken.add(a); return a; };
+  const SAFE = tag('int:safety') ?? freeBit(), RUN = tag('int:running') ?? freeBit();
+  taken.add(SAFE); taken.add(RUN);
+  const FAULT = freeBit(), BATCH = freeBit(), HOUR = freeBit(), PULSE = freeBit(), RESET = freeBit();
+  nextBit = Math.max(nextBit, 20);
   let nextTimer = 1;
-  const bit = () => `C${nextBit++}`;
-  const timer = () => `T${nextTimer++}`;
+  const bit = freeBit;
+  const timer = () => { let a: string; do { a = `T${nextTimer++}`; } while (taken.has(a) || taken.has(`TD${a.slice(1)}`)); taken.add(a); return a; };
   const tags: TagDefinition[] = [];
   const nick = (address: string, nickname: string, comment: string) => { if (!tags.some((t) => t.address === address)) tags.push({ address, nickname: nickname.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24), comment }); };
   const rungs: Rung[] = [];
@@ -121,7 +137,7 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   R('safety', `Cycle running: ${startPb ? `${startPb.description} or ` : ''}HMI Start seals in; ${stopPb ? `${stopPb.description} (NC), ` : ''}HMI Stop, safety loss, a fault, Manual mode or batch complete drops it`,
     [...(startPb ? [[RISE(startPb.address), ...stopChain]] : []), [RISE(start), ...stopChain], [NO(RUN), ...stopChain]], [OUT(RUN)]);
   nick(RUN, 'Cycle_Running', 'Automatic cycle running');
-  R('safety', 'Running status for the HMI', [[NO(RUN)]], [OUT(running)]);
+  if (running !== RUN) R('safety', 'Running status for the HMI', [[NO(RUN)]], [OUT(running)]);
 
   // ---- Per actuator: request bits, timeouts, faults
   const autoBits: ProgramResult['autoBits'] = [];
@@ -144,7 +160,9 @@ export function buildProgram(input: ProgramInput): ProgramResult {
       const sp = tag(`sp:timeout:${key}`) ?? '3';
       const alm = alarm(`alarm:timeout:${key}`);
       const ext = a.extend!.address, ret = a.retract?.address;
-      const tExt = timer(), tRet = timer();
+      // The HMI may show the extend timeout timer (e.g. TD1 "Push_Timer"): use that timer.
+      const shown = tag(`timer:timeout:${key}`);
+      const tExt = shown ? `T${shown.slice(2)}` : timer(), tRet = timer();
       // Only while Safety OK: with the air dumped a cylinder may sag, which is not a timeout.
       if (fb.ext) R(id, `${a.name}: extend timeout — valve on but not at ${fb.ext.description} within the setpoint`, [[NO(SAFE), NO(ext), NC(fb.ext.address)]], [TMR(tExt, sp)]);
       if (fb.ret) R(id, `${a.name}: retract timeout — valve${ret ? ` ${ret} on` : ' off'} but not at ${fb.ret.description} within the setpoint`, [[NO(SAFE), ret ? NO(ret) : NC(ext), NC(fb.ret.address)]], [TMR(tRet, sp)]);
@@ -288,6 +306,23 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     if (due && interval) R('alarms', 'Service due warning: hours since service reached the service interval', [[CMP(since, '>=', interval), CMP(interval, '>', '0')]], [OUT(due)]);
   }
 
+  // HMI tags no role matches: a counter whose description names its output ("counts each Y002 rising edge;
+  // reset by C1008") is implemented at the HMI's own address; the rest are reported, never reused.
+  const unmatched: HmiTag[] = [];
+  const handled = new Set<string>();
+  for (const t of inferred.unmatched) {
+    const a = t.address.toUpperCase();
+    const ctd = /^CTD(\d+)$/.exec(a);
+    const y = /\b(Y\d{3})\b/i.exec(t.description)?.[1]?.toUpperCase();
+    if (ctd && y && c.io.some((p) => p.address === y)) {
+      const rst = /\b(C\d{3,4})\b/.exec(t.description.replace(new RegExp(`\\bC${ctd[1]}\\b`), ''))?.[1]?.toUpperCase();
+      R('status', `${t.name}: counts each time ${y} turns on (HMI counter ${a})${rst ? `, reset by ${rst}` : ''}`, [[NO(y)]], [{ type: 'CNT', address: `CT${ctd[1]}`, direction: 'UP', preset: '32767', resetAddress: rst ?? null }]);
+      handled.add(a); if (rst) handled.add(rst);
+    }
+  }
+  for (const t of inferred.unmatched) if (!handled.has(t.address.toUpperCase()) && t.address.toUpperCase() !== SAFE && t.address.toUpperCase() !== RUN) unmatched.push(t);
+  if (unmatched.length) notes.push(`HMI tags the program does not implement (they would stay 0 / do nothing — change them on the HMI or add the logic): ${unmatched.map((t) => `${t.address} ${t.name}`).join(', ')}.`);
+
   // The cycle block (AI) goes between the actuator blocks and Manual; until then the auto requests stay off.
   blocks.splice(2, 0, { id: 'cycle', name: 'Cycle', description: 'The machine\'s automatic sequence: sets the automatic request bits while the cycle runs.' });
   // Default cycle (no AI): motors and drives run while the cycle runs; cylinders wait for the real sequence.
@@ -304,6 +339,9 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     program: { blocks: blocks.filter((b) => rungs.some((r) => r.block === b.id)), rungs, tags },
     autoBits,
     roles: new Map([...byRole].map(([k, t]) => [k, t.address])),
+    internal: { safe: SAFE, run: RUN, fault: FAULT, reset: RESET },
+    taken,
+    unmatched,
     free: { bits: `C${Math.max(nextBit, 60)}-C99`, steps: 'DS1150-DS1159', timers: `T${nextTimer + 10}-T${nextTimer + 29}` },
     notes,
   };

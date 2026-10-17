@@ -163,7 +163,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     );
   };
 
-  const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet), [ladder, ctx.profile, ioAddressSet]);
+  const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet, hmiDesign ?? undefined), [ladder, ctx.profile, ioAddressSet, hmiDesign]);
 
   // While reviewing an AI change, show the proposed program with removed rungs kept in place.
   const review = useMemo(() => {
@@ -175,9 +175,9 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       display,
       changes,
       summary: summarizeDiff(entries),
-      issues: validateProgram(proposal.program, ctx.profile, ioAddressSet),
+      issues: validateProgram(proposal.program, ctx.profile, ioAddressSet, hmiDesign ?? undefined),
     };
-  }, [proposal, ladder, ctx.profile, ioAddressSet]);
+  }, [proposal, ladder, ctx.profile, ioAddressSet, hmiDesign]);
 
   const rungNumber = (id: string) => (review?.display ?? ladder).rungs.findIndex((r) => r.id === id) + 1;
 

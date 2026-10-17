@@ -7,7 +7,7 @@ export default function SequenceTable({ sequence, labels }: { sequence: CycleSeq
   return (
     <details open className="border-b border-gray-200 bg-white text-xs" data-testid="cycle-steps">
       <summary className="px-4 py-2 cursor-pointer font-medium text-gray-700">
-        Automatic cycle: {rows.length} step{rows.length === 1 ? '' : 's'} ({sequence.source === 'ai' ? 'from the description' : 'default from the I/O list'}) — step register DS1150, after the last step back to step 10
+        Automatic cycle: {rows.length} step{rows.length === 1 ? '' : 's'} ({sequence.source === 'ai' ? 'from the description' : 'default from the I/O list'}) — step register {sequence.register ?? 'DS1150'}, after the last step back to step 10
       </summary>
       <table className="mx-4 mb-2 w-[calc(100%-2rem)]">
         <thead className="text-gray-500 uppercase"><tr>{['Step', 'Name', 'What happens', 'Waits for', 'Timeout'].map((h) => <th key={h} className="text-left py-1 pr-3 font-medium">{h}</th>)}</tr></thead>

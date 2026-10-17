@@ -467,6 +467,7 @@ export default function HmiPage() {
             apiKey: apiKey || undefined, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
             io, addresses, spec: specToText(fp.spec), machineName: useProgramStore.getState().projectName,
             electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
+            existingHmi: useHmiStore.getState().design, program: useProgramStore.getState().ladder,
           });
         } finally { useHmiStore.getState().setIsGenerating(false); }
       },

@@ -32,26 +32,48 @@ const ident = (s: string) => s.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g
 class TagPlan {
   tags: HmiTag[] = [];
   alarms: HmiAlarm[] = [];
-  private n = { cmd: 1001, alm: 1101, sts: 1201, sp: 1001, word: 1101, df: 101 };
+  private n = { cmd: 1001, alm: 1101, sts: 1201, sp: 1001, word: 1101, df: 101, ctd: 1 };
   private role = '';
+  /**
+   * `reuse`: tags of the existing HMI / program by role — their address (and name) are kept, so an address
+   * never changes its meaning. `taken`: every address already in use; new tags get the next free one.
+   */
+  private reuse: Map<string, HmiTag>;
+  private taken: Set<string>;
+  constructor(reuse: Map<string, HmiTag> = new Map(), taken: Set<string> = new Set()) { this.reuse = reuse; this.taken = taken; }
   /** Role of the next tag added (see HmiTag.role). */
   as(role: string) { this.role = role; return this; }
+  private address(prefix: string, key: keyof TagPlan['n']): string {
+    const old = this.role ? this.reuse.get(this.role) : undefined;
+    if (old) return old.address;
+    let a: string;
+    do { a = `${prefix}${this.n[key]++}`; } while (this.taken.has(a));
+    this.taken.add(a);
+    return a;
+  }
   private add(address: string, name: string, dataType: HmiTag['dataType'], access: HmiTag['access'], description: string) {
-    this.tags.push({ name, address, dataType, access, description, ...(this.role ? { role: this.role } : {}) });
+    const old = this.role ? this.reuse.get(this.role) : undefined;
+    this.tags.push({ name: old?.name ?? name, address, dataType, access, description, ...(this.role ? { role: this.role } : {}) });
     this.role = '';
     return address;
   }
-  cmd(name: string, description: string, access: HmiTag['access'] = 'write') { return this.add(`C${this.n.cmd++}`, `HMI_${ident(name)}`, 'BIT', access, description); }
-  sts(name: string, description: string) { return this.add(`C${this.n.sts++}`, `STS_${ident(name)}`, 'BIT', 'read', description); }
+  cmd(name: string, description: string, access: HmiTag['access'] = 'write') { return this.add(this.address('C', 'cmd'), `HMI_${ident(name)}`, 'BIT', access, description); }
+  sts(name: string, description: string) { return this.add(this.address('C', 'sts'), `STS_${ident(name)}`, 'BIT', 'read', description); }
   alarm(name: string, message: string, severity: HmiAlarm['severity'], description: string) {
-    const a = this.add(`C${this.n.alm++}`, `${severity === 'alarm' ? 'ALM' : 'WRN'}_${ident(name)}`, 'BIT', 'read', description);
+    const a = this.add(this.address('C', 'alm'), `${severity === 'alarm' ? 'ALM' : 'WRN'}_${ident(name)}`, 'BIT', 'read', description);
     this.alarms.push({ address: a, message, severity });
     return a;
   }
-  sp(name: string, description: string) { return this.add(`DS${this.n.sp++}`, `SP_${ident(name)}`, 'INT', 'read-write', description); }
-  word(name: string, description: string) { return this.add(`DS${this.n.word++}`, ident(name), 'INT', 'read', description); }
-  df(name: string, description: string) { return this.add(`DF${this.n.df++}`, `SP_${ident(name)}`, 'FLOAT', 'read-write', description); }
-  raw(address: string, name: string, dataType: HmiTag['dataType'], description: string) { return this.add(address, name, dataType, 'read', description); }
+  sp(name: string, description: string) { return this.add(this.address('DS', 'sp'), `SP_${ident(name)}`, 'INT', 'read-write', description); }
+  word(name: string, description: string) { return this.add(this.address('DS', 'word'), ident(name), 'INT', 'read', description); }
+  df(name: string, description: string) { return this.add(this.address('DF', 'df'), `SP_${ident(name)}`, 'FLOAT', 'read-write', description); }
+  /** A counter's current value (CTDn), the next free one unless the role exists. */
+  counter(name: string, description: string) { return this.add(this.address('CTD', 'ctd'), name, 'INT2', 'read', description); }
+  raw(address: string, name: string, dataType: HmiTag['dataType'], description: string) {
+    const old = this.role ? this.reuse.get(this.role) : undefined;
+    if (!old) this.taken.add(address);
+    return this.add(old?.address ?? address, name, dataType, 'read', description);
+  }
 }
 
 interface ManualCmd { label: string; address: string; permit: string; output: string; note: string }
@@ -125,7 +147,7 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
     plan.limits.set(an.address, { hi, lo, almHi, almLo });
   }
   if (c.partSensor) {
-    const counter = t.as('word:count').raw('CTD1', 'Part_Count', 'INT2', `Counter CT1 counts each rising edge of ${c.partSensor.address} (${c.partSensor.description}).`);
+    const counter = t.as('word:count').counter('Part_Count', `Counter value: the PLC counts each rising edge of ${c.partSensor.address} (${c.partSensor.description}).`);
     const resetC = t.as('cmd:countreset').cmd('Count_Reset', 'Momentary: resets the part counter CT1.');
     const batch = t.as('sp:batch').sp('Batch_Target', 'Batch size in parts (0 = no limit): the PLC stops the cycle when CTD1 reaches it.');
     const rate = t.as('word:rate').word('Parts_Per_Min', 'Parts counted in the last 60 s.');
@@ -146,8 +168,8 @@ function verb(desc: string | undefined, fallback: string): string {
 }
 
 /** The HMI tag plan for some content (the same addresses buildHmi assigns), for the PLC program templates. */
-export function planHmiTags(c: HmiContent): { tags: HmiTag[]; alarms: HmiAlarm[] } {
-  const t = new TagPlan();
+export function planHmiTags(c: HmiContent, keep: { reuse?: Map<string, HmiTag>; taken?: Set<string> } = {}): { tags: HmiTag[]; alarms: HmiAlarm[] } {
+  const t = new TagPlan(keep.reuse, keep.taken ? new Set(keep.taken) : new Set());
   planTags(c, t);
   return { tags: t.tags, alarms: t.alarms };
 }
@@ -208,7 +230,13 @@ function placeBlock(prefix: string, b: Block, r: Rect, rowH: number): HmiElement
 // Screens
 // ---------------------------------------------------------------------------
 
-export interface BuildOptions { partNumber: string; widthPx: number; heightPx: number; now?: string; plcText?: string }
+export interface BuildOptions {
+  partNumber: string; widthPx: number; heightPx: number; now?: string; plcText?: string;
+  /** Tags of the existing HMI (roles inferred for old ones): every function keeps its address. */
+  keepTags?: HmiTag[];
+  /** Addresses already used (existing HMI, PLC program): new tags never take them. */
+  usedAddresses?: Iterable<string>;
+}
 
 export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
   const W = o.widthPx, H = o.heightPx;
@@ -216,7 +244,8 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
   const area = bands.content;
   const rowH = Math.max(MIN_TOUCH.h, H <= 300 ? 48 : H <= 600 ? 52 : 60);
   const lampH = H <= 300 ? 26 : 30;
-  const t = new TagPlan();
+  const reuse = new Map((o.keepTags ?? []).filter((x) => x.role).map((x) => [x.role!, x] as const));
+  const t = new TagPlan(reuse, new Set([...(o.usedAddresses ?? []), ...(o.keepTags ?? []).map((x) => x.address)].map((a) => a.toUpperCase())));
   const p = planTags(c, t);
   const level: AccessLevel = 'maintenance';
   const safetyLamp = (label = 'Safety OK'): Cell | null => (c.safetyOk ? { kind: 'indicator', label, more: { address: c.safetyOk.address, style: 'ok', onText: 'Safety OK', offText: 'Safety Open' } } : null);

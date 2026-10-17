@@ -60,7 +60,7 @@ DF102   SP_Tank_Level_High           FLOAT read-write High alarm limit for DF1 T
 DF103   SP_Tank_Level_Low            FLOAT read-write Low alarm limit for DF1 Tank Level (%); default 10 on the first scan.
 C1108   WRN_Tank_Level_High          BIT   read       PLC sets ON while DF1 >= DF102 (with a small deadband).
 C1109   WRN_Tank_Level_Low           BIT   read       PLC sets ON while DF1 <= DF103 (with a small deadband).
-CTD1    Part_Count                   INT2  read       Counter CT1 counts each rising edge of X004 (Part at end photo-eye).
+CTD1    Part_Count                   INT2  read       Counter value: the PLC counts each rising edge of X004 (Part at end photo-eye).
 C1017   HMI_Count_Reset              BIT   write      Momentary: resets the part counter CT1.
 DS1002  SP_Batch_Target              INT   read-write Batch size in parts (0 = no limit): the PLC stops the cycle when CTD1 reaches it.
 DS1102  Parts_Per_Min                INT   read       Parts counted in the last 60 s.
