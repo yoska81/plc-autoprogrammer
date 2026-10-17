@@ -181,13 +181,17 @@ function reply(text) {
     return checksFor(collectProject()).map((f) => `${f.severity}|${f.title}`);
   });
   fs.writeFileSync(OUT + 'findings.txt', findings.join('\n'));
-  for (const [sev, re] of [['critical', /Two-hand control without a two-hand safety relay/], ['major', /Two-hand buttons on the cabinet door/], ['critical', /is a standard sensor, not a safety device/],
+  // palm buttons are placed at the machine (no longer on the cabinet door)
+  const palm = (state.electrical.design?.ioWiring ?? []).filter((w) => /two-hand/i.test(w.description));
+  check(palm.length === 2 && palm.every((w) => !/door/i.test(w.location ?? '')), `two-hand buttons at the machine: ${palm.map((w) => `${w.deviceTag}@${w.location}`).join(', ')}`);
+  check(!findings.some((f) => /^Wire DF\d+[+-]? is /.test(f.split('|')[1] ?? '')), 'analog signal pairs not flagged by the wire colour rule');
+  for (const [sev, re] of [['critical', /Two-hand control without a two-hand safety relay/], ['critical', /is a standard sensor, not a safety device/],
     ['critical', /Light curtain without a safety relay channel/], ['major', /has no heater power circuit/], ['major', /over-temperature cutoff is not hardwired/], ['major', /Thermocouple without a transmitter/]]) {
     check(findings.some((f) => f.startsWith(sev + '|') && re.test(f)), `review: ${sev} ${re}`);
   }
   log('Stages:', JSON.stringify(state.stages));
   log('PLC:', JSON.stringify(state.plc), '| IO', state.io.length, '| components', state.electrical.design?.components?.length, '| HMI screens', state.hmi?.screens?.length);
-  check(['equipment', 'io', 'electrical', 'hmi', 'program'].every((k) => stageLog.includes(`${k} done`)), `every stage done: ${stageLog.join(', ')}`);
+  check(['Equipment', 'I/O list', 'Electrical design', 'HMI screens', 'PLC program'].every((k) => stageLog.some((s) => s.startsWith(k))), `every stage done: ${stageLog.join(', ')}`);
   check(state.plc.cpuId === 'C0-12DD1E-D' && state.hmi?.screens?.length > 0, 'equipment and HMI applied');
   check(state.electrical.design?.components?.some((c) => c.tag === 'VFD1'), 'unwinder VFD in the design');
   for (const e of errors) fails.push(`page error: ${e.slice(0, 160)}`);

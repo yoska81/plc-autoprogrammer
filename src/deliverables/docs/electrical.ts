@@ -157,7 +157,7 @@ export function calcTable(s: CalcSection): DocTable {
 /** UL 508A Supplement SB style SCCR determination. */
 export function sccrTable(p: ProjectSnapshot): { table: DocTable; result: string; unknown: string[]; lowest: number | null } {
   const sc = p.drawingCtx ? panelSccr(p.drawingCtx) : null;
-  const rows = (sc?.rows ?? []).map((r) => [r.component, r.circuit, r.kA !== null ? `${r.kA} kA` : 'UNKNOWN', r.source, r.note]);
+  const rows = (sc?.rows ?? []).map((r) => [r.component, r.circuit, r.kA !== null ? `${r.kA} kA${r.met ? '' : ' (not counted)'}` : 'UNKNOWN', r.sourceUrl ? `${r.source} (${r.sourceUrl})` : r.source, r.note]);
   rows.push(['24 VDC control circuit', 'Load side of the power supply', 'n/a', 'Isolated secondary control circuit', 'Not considered in the SCCR determination (UL 508A SB) — verify']);
   return { table: makeTable([['Component', 30], ['Circuit', 20], ['SCCR / IR', 12, 'center'], ['Source', 40], ['Note', 50]], rows), result: sc?.result ?? 'Panel SCCR cannot be determined: no electrical design.', unknown: sc?.unknown ?? [], lowest: sc?.lowest ?? null };
 }

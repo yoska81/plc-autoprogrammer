@@ -14,6 +14,7 @@ import type { SpecSections } from '../../spec/types';
 import type { ReviewArea, Severity } from '../types';
 import { IEC_RULES } from './iec';
 import { isIec } from '../../standards/regions';
+import { panelSccr } from '../../electrical/sccr';
 
 export interface CodeInput {
   ctx: DrawingContext;
@@ -451,6 +452,7 @@ export const RULES: CodeRule[] = [
     run: (_i, env) => {
       const expect = (w: WireRecord): string[] | null => {
         if (/\(cable\)/.test(w.color)) return null; // factory core colours of multiconductor cables
+        if (/\b(4-20 ?mA|0-20 ?mA|0-10 ?V|0-5 ?V)\b/.test(w.function)) return null; // analog pair: the shielded cable's own core colours
         if (w.wire === 'PE' || /protective earth|ground$|ground\b(?!ed)|\bshield\b|\bdrain\b/i.test(w.function)) return ['GN/YE', 'GN']; // shields / drains land on PE
         if (/^X1$/.test(w.wire) || /secondary 120VAC|120VAC feed/i.test(w.function)) return ['RD'];
         if (/^(X2|N)$/.test(w.wire) || /neutral|grounded conductor/i.test(w.function)) return ['WH', 'GY'];
@@ -493,8 +495,11 @@ export const RULES: CodeRule[] = [
       // Missing datasheet data, not a design error: minor until the ratings are looked up.
       if (s?.unknown.length) out.push({ subject: 'unknown', severity: 'minor', area: 'electrical', title: `SCCR cannot be determined: no rating for ${s.unknown.join(', ')}`,
         detail: 'Every power-circuit component needs a short-circuit rating (or the default from UL 508A Table SB4.1) before the panel SCCR can be marked.', fix: 'Get the ratings from the datasheets or use parts with published SCCR.' });
+      // a conditional rating counts only when the design meets its condition (protection ahead of the part)
+      for (const u of panelSccr(input.ctx).unmet) out.push({ subject: `condition:${u.tag}`, severity: 'major', area: 'electrical', title: `${u.tag} SCCR not counted: valid only ${u.condition}`,
+        detail: `The catalog rating of ${u.tag} holds only ${u.condition}; ${u.why}.`, fix: `Protect ${u.tag} as its rating requires, or use the default / a part rated without that condition.` });
       // the nameplate carries the SB4 value once every rating is known (drawings, label sheet)
-      if (!s || s.lowest === null || s.unknown.length || !env.m.disconnect) out.push({ subject: 'marking', severity: 'minor', area: 'electrical', title: `Nameplate SCCR not stated${s?.lowest ? ` (SB calculation so far: ${s.lowest} kA)` : ''}`,
+      if (!s || s.lowest === null || s.unknown.length || panelSccr(input.ctx).unmet.length || !env.m.disconnect) out.push({ subject: 'marking', severity: 'minor', area: 'electrical', title: `Nameplate SCCR not stated${s?.lowest ? ` (SB calculation so far: ${s.lowest} kA)` : ''}`,
         detail: 'The panel nameplate must show the short-circuit current rating; it reads "to be determined" until every power-circuit rating is known.', fix: `Get the missing ratings so the nameplate can be marked${s?.lowest ? ` (${s.lowest} kA or lower)` : ''}, and confirm the available fault current at the site.` });
       return out;
     },
