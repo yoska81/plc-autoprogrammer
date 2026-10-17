@@ -219,6 +219,12 @@ for (const s of SCENARIOS) {
   const ol = run({ ...SCENARIOS.find((x) => x.name === 'sealing-head-from-example')!, name: 'ol', points: [...SCENARIOS.find((x) => x.name === 'sealing-head-from-example')!.points, pt('Unwinder motor overload', 'input')] }).r.design;
   const olW = ol.ioWiring.find((w) => w.description === 'Unwinder motor overload')!;
   assert.ok(ol.components.some((c) => c.tag === olW.deviceTag && /overload/i.test(c.function)), `overload input wired to the unwinder's overload relay (got ${olW.deviceTag})`);
+  // The motor list says contactor, the I/O list runs it on a drive: the drive is a real component (no orphan VFD tag).
+  const seal = SCENARIOS.find((x) => x.name === 'sealing-head')!;
+  const sd = run({ ...seal, name: 'seal-motor-list', motors: [motor('M1', 'Unwinder motor', 1, '480VAC-3PH')] }).r.design;
+  const vfdTags = new Set(sd.ioWiring.filter((w) => w.deviceType === 'vfd-input').map((w) => w.deviceTag));
+  assert.ok(vfdTags.size === 1 && [...vfdTags].every((t) => sd.components.some((c) => c.tag === t && /GS2/.test(c.partNumber))), `drive component for ${[...vfdTags].join(', ')}`);
+  assert.ok(sd.askUser?.some((q) => /runs it through a VFD/.test(q)), 'the starter change is asked about');
   // The example itself keeps its motor (the spec mentions the conveyor motor).
   assert.equal(run(SCENARIOS[0]).r.design.inputs.motors.length, 1);
 }

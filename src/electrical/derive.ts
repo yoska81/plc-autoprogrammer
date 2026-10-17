@@ -790,6 +790,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const fieldFuse = dcBranchFuse(psBranches[0]?.ps);
   const fuseOf = (c: string) => (fieldFuse && /^TB\d+ (FIELD|LOAD) /.test(c) ? { fuse: fieldFuse } : {});
   for (const c of plus) add(tb1, { wire: '24+', internal: `${psMain}:+V`, external: c, kind: 'feed', group: '24+', ...fuseOf(c) });
+  /** Load supply of a sinking output: 24+S for motion, the unswitched 24+ for lamps. */
+  const lampSupply = (p: IoPoint) => (p.deviceType === 'pilot-light' || p.deviceType === 'stack-light' ? '24+' : safety.outputSupply);
   // 24+S leaves the last safety output in series: the MCR, a light-curtain relay after SR1, or SR1 itself.
   const lcRelays = (safety.extraRelays ?? []).filter((x) => x.kind === 'light-curtain').map((x) => x.relay.tag);
   const sPlus = relay ? `${mcr ? mcr.tag : lcRelays.at(-1) ?? relay.tag}:14` : `${estopTags.at(-1) ?? 'ES'}:12`;
@@ -846,7 +848,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       const ch = p.coilChain && !p.coilChain.sink && p.coilChain.devices.length ? p.coilChain : undefined;
       const lastDev = ch?.devices[ch.devices.length - 1];
       p.signalTerminal = add(tb3, { wire: ch ? ch.wires[ch.wires.length - 1] : p.address, internal: lastDev ? `${lastDev.tag}:${lastDev.terminals.split('-')[1]}` : `${plcTag}:${p.address}`, external: p.jb ? `${p.jb} (${tag})` : pin, kind: 'feed', group: p.jb ?? tag });
-      const retWire = sink ? safety.outputSupply : '0V';
+      // Lamps on a sinking module stay on the unswitched 24+ (a fault lamp must light during a safety stop).
+      const retWire = sink ? (p.deviceType === 'pilot-light' || p.deviceType === 'stack-light' ? '24+' : safety.outputSupply) : '0V';
       const key = p.jb ? `${p.jb}|${retWire}` : `${tag}|${retWire}`;
       if (retDone.has(key)) p.returnTerminal = retDone.get(key);
       else {
@@ -1095,11 +1098,11 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       } else if (p.signalTerminal) {
         addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
-        if (p.returnTerminal) addWire({ wire: sink ? safety.outputSupply : '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
+        if (p.returnTerminal) addWire({ wire: sink ? lampSupply(p) : '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       } else {
         addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: `${tag}:${p.deviceType === 'vfd-input' ? 'DI' : p.deviceType === 'pilot-light' ? 'X1' : 'A1'}`, color: 'BU', size: '18 AWG', function: p.description });
         if (p.deviceType === 'vfd-input') addWire({ wire: '0V', from: `${tag}:DCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} digital input common` });
-        else addWire({ wire: sink ? safety.outputSupply : '0V', from: `${tag}:${p.deviceType === 'pilot-light' ? 'X2' : 'A2'}`, to: `TB1 ${sink ? safety.outputSupply : '0V'}`, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
+        else addWire({ wire: sink ? lampSupply(p) : '0V', from: `${tag}:${p.deviceType === 'pilot-light' ? 'X2' : 'A2'}`, to: `TB1 ${sink ? lampSupply(p) : '0V'}`, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       }
     }
   }

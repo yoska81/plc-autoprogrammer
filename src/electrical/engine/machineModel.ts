@@ -95,19 +95,28 @@ export function defaultMachineModel(io: IOPoint[], inputs: DesignInputs, spec = 
   for (const m of inputs.motors.filter((x) => stale.has(x.tag))) {
     assumptions.push(`${m.tag} ${m.description} (${m.hp} HP) is in the motor list but not in the machine description or I/O list, so it was left out of the design: add it back on the Design tab if this machine has it.`);
   }
-  const motors: ModelMotor[] = inputs.motors.filter((m) => !stale.has(m.tag)).map((m) => ({ tag: m.tag, description: m.description, hp: m.hp, start: m.starter === 'vfd' ? 'vfd' : m.starter === 'motor-protector' ? 'motor-protector' : m.reversing ? 'reversing' : 'dol' }));
+  // A designer motor the I/O list drives through a VFD (run / fault on a drive) is drawn on a drive: the I/O wins.
+  const driveIo = io.filter((p) => p.deviceType === 'vfd-input' || /\b(vfd|drive|inverter)\b/i.test(p.description));
+  const motors: ModelMotor[] = inputs.motors.filter((m) => !stale.has(m.tag)).map((m) => {
+    const start: MotorStart = m.starter === 'vfd' ? 'vfd' : m.starter === 'motor-protector' ? 'motor-protector' : m.reversing ? 'reversing' : 'dol';
+    if (start !== 'vfd' && driveIo.some((p) => wordsShared(p.description, m.description))) {
+      assumptions.push(`${m.tag} ${m.description} is on a contactor in the motor list, but the I/O list runs it through a VFD: it is drawn on a drive — change the starter on the Design tab if that is wrong.`);
+      return { tag: m.tag, description: m.description, hp: m.hp, start: 'vfd' };
+    }
+    return { tag: m.tag, description: m.description, hp: m.hp, start };
+  });
   if (!motors.length) {
     // One motor per output that runs one (contactor / VFD run), not per direction or speed.
     const outs = io.filter((p) => p.type === 'output' && !/\b(heat\w*|lamp|light|horn|valve|solenoid)\b/i.test(p.description)
       && (p.deviceType === 'contactor-coil' || p.deviceType === 'vfd-input' || (MOTOR_RE.test(p.description) && !/\b(rev|reverse|speed|fault|light)\b/i.test(p.description))));
     for (const p of outs) {
       if (/\b(rev|reverse)\b/i.test(p.description)) continue;
-      const name0 = p.description.replace(HP_RE, '').replace(/\b(run|contactor|starter|coil|output|on|vfd|drive)\b/gi, '').replace(/\s+/g, ' ').trim();
+      const name0 = p.description.split(/\s+[—–-]\s+|[(,;]/)[0].replace(HP_RE, '').replace(/\b(run|contactor|starter|coil|output|on|vfd|drive)\b/gi, '').replace(/\s+/g, ' ').trim();
       const fromSpec = specPower(spec, name0);
       const hp = Number(HP_RE.exec(p.description)?.[1] ?? 0) * (/kw/i.test(HP_RE.exec(p.description)?.[2] ?? '') ? 1.341 : 1) || fromSpec || 1;
       const vfd = p.deviceType === 'vfd-input' || /\b(vfd|drive|speed)\b/i.test(p.description);
       const reversing = io.some((q) => q !== p && q.type === 'output' && /\b(rev|reverse)\b/i.test(q.description) && wordsShared(p.description, q.description));
-      const name = p.description.replace(HP_RE, '').replace(/\b(run|contactor|starter|coil|output|on|vfd|drive)\b/gi, '').replace(/\s+/g, ' ').trim() || 'Motor';
+      const name = name0 || 'Motor';
       // New tags skip the left-over motors' tags, so "M1 Conveyor motor … left out" never names a different motor.
       let n = motors.length + 1;
       while (stale.has(`M${n}`) || motors.some((m) => m.tag === `M${n}`)) n++;
