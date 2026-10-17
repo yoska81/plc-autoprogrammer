@@ -47,3 +47,4 @@ installer/
 e2e/out-walkthrough/
 .claude/worktrees/
 tools/bench/out/
+e2e/out-voice-edit/

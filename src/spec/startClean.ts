@@ -12,6 +12,7 @@ import { useProgramStore } from '../store/useProgramStore';
 import { useIOStore } from '../store/useIOStore';
 import { useSpecStore } from '../store/useSpecStore';
 import { useStageStore } from '../store/useStageStore';
+import { useEditsStore } from '../edits/useEditsStore';
 import { useDraftStore } from '../store/useDraftStore';
 import { useReviewStore } from '../review/useReviewStore';
 import { useQuestionStore } from '../components/questions/useQuestionStore';
@@ -132,4 +133,6 @@ export function startClean({ keepIo, clearSections = true }: { keepIo: boolean; 
   const keep = keepIo ? ['io'] : [];
   useStageStore.setState((s) => ({ sources: Object.fromEntries(Object.entries(s.sources).filter(([k]) => keep.includes(k))) }));
   useDraftStore.setState((s) => ({ drafts: Object.fromEntries(Object.entries(s.drafts).filter(([k]) => k.startsWith('spec.'))) }));
+  // Values typed over the example's outputs (prices, labels, notes); I/O description edits stay with the kept I/O.
+  useEditsStore.setState((s) => ({ bom: {}, labels: {}, notes: {}, texts: Object.fromEntries(Object.entries(s.texts).filter(([k]) => keepIo && k.startsWith('io:'))) }));
 }

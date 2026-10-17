@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { testAnthropicConnection } from '../lib/ai/anthropic';
 import { clearAiCache } from '../lib/ai/cache';
+import VoiceSettingsCard from '../voice/VoiceSettingsCard';
 import { IS_PREVIEW, PREVIEW_ACCOUNT_KEY } from '../preview/mode';
 import {
   useSettingsStore,
@@ -149,7 +150,7 @@ export default function SettingsPage() {
     <>
       <header className="px-4 py-2.5 bg-white border-b border-gray-200">
         <h2 className="text-base font-semibold text-gray-800">Settings</h2>
-        <p className="text-xs text-gray-400 mt-0.5">AI provider, API keys, and generation quality</p>
+        <p className="text-xs text-gray-400 mt-0.5">AI provider, API keys, generation quality and voice</p>
       </header>
 
       <div className="flex-1 overflow-auto bg-gray-50 p-6">
@@ -280,6 +281,9 @@ export default function SettingsPage() {
             {saved && <span className="text-sm text-green-600 font-medium">Saved!</span>}
             {!saved && isDirty && <span className="text-xs text-steel-500">Not saved yet: Save, or leave the page to keep the changes.</span>}
           </div>
+
+          {/* Voice settings apply as they are changed (no API keys in them). */}
+          <VoiceSettingsCard />
         </div>
       </div>
     </>

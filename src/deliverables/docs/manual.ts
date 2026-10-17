@@ -76,7 +76,7 @@ export function bomTable(p: ProjectSnapshot): DocTable {
 
 export function designReviewTable(p: ProjectSnapshot): DocTable {
   // Design review findings (src/review): consistency checks, electrical design warnings, calculations and the AI review.
-  const rows = reviewRows(p).map((r) => [r.id, `${r.severity}`, `${r.title} — ${r.fix} (${r.area}, ${r.source})`, r.status === 'open' ? '' : `${r.status === 'resolved' ? 'Resolved' : 'Accepted'}: ${r.reason}`, r.date]);
+  const rows = reviewRows(p).map((r) => [r.id, `${r.severity}`, `${r.title} — ${r.fix} (${r.area}, ${r.source})`, [r.status === 'open' ? '' : `${r.status === 'resolved' ? 'Resolved' : 'Accepted'}: ${r.reason}`, r.note && `Note: ${r.note}`].filter(Boolean).join(' — '), r.date]);
   return makeTable([['ID', 8], ['Severity', 12], ['Item to check — recommended fix', 78], ['Resolution', 28], ['Date', 12]], rows, 8);
 }
 

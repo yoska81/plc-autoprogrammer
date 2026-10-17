@@ -83,3 +83,21 @@ npx tsx src/hmi/editor.test.ts                               # editor model: mov
 BASE_URL=http://localhost:5204 node e2e/field.e2e.cjs   # checklist tick / fail + note / sign, PDF + Excel (page and Deliverables), reload; redline on a sheet + field change → apply → M1 edited, revision with the change list
 ```
 Screenshots and files land in `e2e/out-field/`.
+
+## Voice and hand edits
+
+```bash
+npx vite --port 5205 &
+BASE_URL=http://localhost:5205 node e2e/voice-edit.e2e.cjs
+```
+Voice (speech services faked in the page, fake microphone): dictation with live words, Done / add vs replace / Cancel,
+speaker buttons, hands-free answers (question read, answer heard, "yes" saves), Settings → Voice (language, Hebrew voice,
+test voice), recording + OpenAI transcription (mocked: model and language checked), on-device model download failure
+explained. Hand edits: order-list price / quantity / part number / description (marked "entered by you", in the total and
+the CSV), machine spec text, label text, cable and wire notes (in the CSVs), I/O description and back to generated, review
+note, HMI alarm text, rung comment; all kept after a reload, in the .isap file and after the electrical design is generated
+again; a new project starts clean. Screenshots land in `e2e/out-voice-edit/`.
+
+Unit tests: `npx tsx src/edits/edits.test.ts` (store, order list totals and files, labels, notes in CSVs, rung comments and
+HMI alarm texts kept through regeneration) and `npx tsx src/voice/text.test.ts` (add / replace, engine choice, spoken
+yes / no / skip / stop in several languages, Markdown read aloud, long texts split for speech).

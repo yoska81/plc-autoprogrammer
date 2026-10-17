@@ -6,6 +6,7 @@ import { SPEC_SECTIONS } from '../spec/types';
 import SpecIntake from '../components/SpecIntake';
 import QuestionList from '../components/questions/QuestionList';
 import { duplicateOpen, useQuestions } from '../components/questions/useQuestionStore';
+import VoiceTextarea from '../voice/VoiceTextarea';
 
 export default function SpecPage() {
   const navigate = useNavigate();
@@ -50,10 +51,11 @@ export default function SpecPage() {
             {SPEC_SECTIONS.map((s) => (
               <div key={s.id} className="px-5 py-3">
                 <label htmlFor={`spec-${s.id}`} className="block text-sm font-medium text-steel-700">{s.title}</label>
-                <textarea
+                <VoiceTextarea
                   id={`spec-${s.id}`}
+                  speak
                   value={spec.sections[s.id] ?? ''}
-                  onChange={(e) => spec.setSection(s.id, e.target.value)}
+                  onValueChange={(v) => spec.setSection(s.id, v)}
                   placeholder={s.hint}
                   rows={Math.min(12, Math.max(2, (spec.sections[s.id] ?? '').split('\n').length + 1))}
                   className="mt-1 w-full border border-steel-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder:text-steel-400"

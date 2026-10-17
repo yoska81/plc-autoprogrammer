@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectSnapshot } from './collect';
-import { buildOrderList, money, orderListCsv, PANEL_ORDER, PASTE_LIMIT, SPARES_ORDER, supplierCsv, supplierText, type SupplierGroup } from './purchasing';
+import { buildOrderList, money, unitPrice, orderListCsv, PANEL_ORDER, PASTE_LIMIT, SPARES_ORDER, supplierCsv, supplierText, type SupplierGroup } from './purchasing';
 import { priceBasis } from './purchaseSummaryPdf';
 import { orderListXlsx } from './orderListXlsx';
 import { saveBlob } from './files';
 import { Spinner } from '../components/common';
 import { useUi } from '../store/useUiStore';
+import { useEditsStore } from '../edits/useEditsStore';
+import { EditableCell, EditedMark } from '../edits/EditedMark';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40 flex items-center gap-2';
 const primary = 'px-3 py-1.5 text-sm rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2';
@@ -20,8 +22,13 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
   const [paste, setPaste] = useState<SupplierGroup | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   // The order is the panel parts; recommended spares are a separate, optional order (never mixed in).
-  const ol = useMemo(() => buildOrderList(p, { ...PANEL_ORDER, labels }), [p, labels]);
-  const sp = useMemo(() => (spares ? buildOrderList(p, SPARES_ORDER) : null), [p, spares]);
+  // Prices, quantities, part numbers and descriptions typed over the generated ones (kept by part number).
+  const edits = useEditsStore((s) => s.bom);
+  const setBom = useEditsStore((s) => s.setBom);
+  const resetBom = useEditsStore((s) => s.resetBom);
+  const ol = useMemo(() => buildOrderList(p, { ...PANEL_ORDER, labels, edits }), [p, labels, edits]);
+  const sp = useMemo(() => (spares ? buildOrderList(p, { ...SPARES_ORDER, edits }) : null), [p, spares, edits]);
+  const num = (v: string) => { const n = Number(v.replace(/[$,\s]/g, '')); return v.trim() && Number.isFinite(n) && n >= 0 ? n : undefined; };
   const empty = !ol.groups.length;
 
   // Deep link from the Electrical page ("Order list").
@@ -64,17 +71,49 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
                 <table className="w-full text-xs">
                   <thead className="text-steel-500 uppercase"><tr>{['Part number', 'Description', 'Needed', 'Spares', 'Order', 'Unit price', 'Extended'].map((h) => <th key={h} className={`py-1 px-2 ${['Part number', 'Description'].includes(h) ? 'text-left' : 'text-right'}`}>{h}</th>)}</tr></thead>
                   <tbody className="divide-y divide-steel-100">
-                    {g.lines.map((l) => (
-                      <tr key={l.partNumber}>
-                        <td className="px-2 py-1 font-mono whitespace-nowrap">{l.partNumber}</td>
-                        <td className="px-2 py-1 text-steel-700">{l.description}{l.note && <div className="text-steel-500">{l.note}</div>}</td>
+                    {g.lines.map((l) => {
+                      // Label supplies come from the Labels tab, spares follow the panel lines: typed over only in the panel order.
+                      const editable = !spare && l.source !== 'labels';
+                      const key = l.generatedPartNumber;
+                      const e = l.edited;
+                      return (
+                      <tr key={key} data-part={key}>
+                        <td className="px-2 py-1 font-mono whitespace-nowrap">
+                          {editable ? <EditableCell value={l.partNumber} label={`Part number ${key}`} edited={e?.partNumber !== undefined} generated={e?.partNumber} markLabel="entered by you"
+                            onCommit={(v) => setBom(key, { partNumber: v.trim() && v.trim() !== key ? v.trim() : undefined })} onReset={() => resetBom(key, 'partNumber')} inputClassName="font-mono !w-32" /> : l.partNumber}
+                        </td>
+                        <td className="px-2 py-1 text-steel-700 min-w-56">
+                          {editable ? <EditableCell value={l.description} label={`Description of ${key}`} edited={e?.description !== undefined} generated={e?.description} markLabel="entered by you"
+                            onCommit={(v) => setBom(key, { description: v.trim() && v !== (e?.description ?? l.description) ? v : undefined })} onReset={() => resetBom(key, 'description')} wrap={45} /> : l.description}
+                          {l.note && <div className="text-steel-500 px-1">{l.note}</div>}
+                        </td>
                         <td className="px-2 py-1 text-right tabular-nums">{l.bomQty || ''}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{l.spareQty || ''}</td>
-                        <td className="px-2 py-1 text-right tabular-nums font-semibold whitespace-nowrap">{l.orderQty}{l.packQty > 1 ? ` × ${l.source === 'labels' ? 'roll' : 'pack'}` : ''}</td>
-                        <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">{l.price ? <a href={l.price.sourceUrl} target="_blank" rel="noreferrer" title={`List price as of ${l.price.date}, ${l.price.unit}`} className="underline decoration-dotted">{money(l.price.price)}</a> : <span className="text-amber-700">price to confirm</span>}</td>
+                        <td className="px-2 py-1 text-right tabular-nums font-semibold whitespace-nowrap">
+                          {editable ? (
+                            <span className="inline-flex items-center gap-1">
+                              <EditableCell type="number" align="right" value={String(l.orderQty)} label={`Order quantity of ${key}`} edited={e?.orderQty !== undefined} generated={e?.orderQty !== undefined ? String(e.orderQty) : undefined} markLabel="entered by you"
+                                onCommit={(v) => { const n = num(v) !== undefined ? Math.round(num(v)!) : undefined; setBom(key, { qty: n !== (e?.orderQty ?? l.orderQty) ? n : undefined }); }} onReset={() => resetBom(key, 'qty')} inputClassName="!w-14 font-semibold" />
+                              {l.packQty > 1 ? `× ${l.source === 'labels' ? 'roll' : 'pack'}` : ''}
+                            </span>
+                          ) : <>{l.orderQty}{l.packQty > 1 ? ` × ${l.source === 'labels' ? 'roll' : 'pack'}` : ''}</>}
+                        </td>
+                        <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                          {editable ? (
+                            <span className="inline-flex flex-col items-end">
+                              <EditableCell type="number" align="right" value={l.userPrice !== undefined ? String(l.userPrice) : ''} label={`Unit price of ${key}`}
+                                placeholder={l.price ? l.price.price.toFixed(2) : 'to confirm'} edited={l.userPrice !== undefined} mark={false}
+                                onCommit={(v) => setBom(key, { price: num(v) })} inputClassName={`!w-[5.5rem] ${l.userPrice === undefined && !l.price ? 'placeholder:text-amber-700' : 'placeholder:text-steel-700'}`} />
+                              {l.userPrice !== undefined
+                                ? <EditedMark label="entered by you" generated={l.price ? money(l.price.price) : 'price to confirm'} onReset={() => resetBom(key, 'price')} />
+                                : l.price && <a href={l.price.sourceUrl} target="_blank" rel="noreferrer" title={`List price as of ${l.price.date}, ${l.price.unit}`} className="text-[10px] text-steel-500 underline decoration-dotted">list price {l.price.date}</a>}
+                            </span>
+                          ) : unitPrice(l) !== undefined ? money(unitPrice(l)!) : <span className="text-amber-700">price to confirm</span>}
+                        </td>
                         <td className="px-2 py-1 text-right tabular-nums">{l.extended !== undefined ? money(l.extended) : '—'}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -87,7 +126,7 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
         <h3 className="text-sm font-semibold text-steel-800">Purchasing — order list</h3>
         <span className="text-xs text-steel-500">{ol.groups.reduce((s, g) => s + g.lines.length, 0)} lines · {ol.groups.length} supplier{ol.groups.length === 1 ? '' : 's'}</span>
       </div>
-      <p className="text-xs text-steel-500">Everything to buy for this panel, rolled up per part number and in the supplier's selling units (packs where parts come in packs). Part numbers come from the design.</p>
+      <p className="text-xs text-steel-500">Everything to buy for this panel, rolled up per part number and in the supplier's selling units (packs where parts come in packs). Part numbers come from the design. Click a part number, description, quantity or price to type your own: it is marked "entered by you", used in the totals and files, and kept when the design is generated again.</p>
       <div className="flex flex-wrap gap-4 text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" checked={spares} onChange={(e) => setSpares(e.target.checked)} /> Show recommended spares (separate order)</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={labels} onChange={(e) => setLabels(e.target.checked)} /> Include label supplies (printer chosen on the Labels tab)</label>
@@ -103,7 +142,7 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
             </div>
           )}
           <div className="flex flex-wrap items-baseline gap-3">
-            <span className="text-sm font-semibold text-steel-800">Panel parts, total of verified prices: {money(ol.total)}</span>
+            <span className="text-sm font-semibold text-steel-800" data-testid="order-total">Panel parts, total of {ol.groups.some((g) => g.lines.some((l) => l.userPrice !== undefined)) ? 'known prices' : 'verified prices'}: {money(ol.total)}</span>
             {ol.unpriced > 0 && <span className="text-xs text-amber-700">+ {ol.unpriced} line{ol.unpriced === 1 ? '' : 's'} with price to confirm (not in the total)</span>}
           </div>
           <p className="text-xs text-steel-500">{priceBasis(ol)}</p>

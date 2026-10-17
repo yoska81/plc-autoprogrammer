@@ -6,6 +6,9 @@ import { answerText } from './qa';
 import { SOURCE_LABEL, useActiveProjectId, useQuestionStore, type Question } from './useQuestionStore';
 import { useDraft } from '../../store/useDraftStore';
 import { useUi } from '../../store/useUiStore';
+import VoiceTextarea from '../../voice/VoiceTextarea';
+import SpeakButton from '../../voice/SpeakButton';
+import HandsFreeQuestions from '../../voice/HandsFreeQuestions';
 
 const STATUS: Record<Question['status'], { text: string; cls: string }> = {
   open: { text: 'Open', cls: 'bg-amber-100 text-amber-900' },
@@ -39,6 +42,7 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
       <div className="flex items-start gap-2 px-3 pt-2.5">
         <span className="text-xs font-semibold text-steel-400 tabular-nums pt-0.5">{n}.</span>
         <p className="flex-1 text-sm font-medium text-steel-900"><span className="text-steel-500 font-semibold mr-1">Q:</span>{q.text}</p>
+        <SpeakButton text={() => (q.status === 'open' ? q.text : `${q.text}\n${answerText(q)}`)} label="Read the question aloud" size="xs" />
         <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold ${st.cls}`}>{st.text}</span>
       </div>
       {showSource && <p className="px-3 pl-8 text-[11px] text-steel-400">{q.source === 'spec' ? 'Asked for the machine description' : `Found while designing: ${SOURCE_LABEL[q.source]}`}</p>}
@@ -54,7 +58,7 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
                 ))}
               </div>
             )}
-            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} aria-label={`Answer to: ${q.text}`}
+            <VoiceTextarea value={draft} onValueChange={setDraft} rows={2} aria-label={`Answer to: ${q.text}`}
               placeholder="Type your answer here…"
               className="w-full rounded border border-steel-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
             <div className="flex flex-wrap items-center gap-2">
@@ -114,6 +118,7 @@ export default function QuestionList({ questions, title = 'Questions to answer',
       <div className="flex flex-wrap items-baseline gap-2">
         <h3 className="text-sm font-semibold text-steel-900">{title}</h3>
         <span className="text-xs text-steel-600">{open.length} open · {done.length} answered</span>
+        <HandsFreeQuestions questions={questions} />
         {!all && done.length > 0 && open.length > 0 && (
           <button type="button" onClick={() => setShowDone((v) => !v)} className="ml-auto text-xs text-steel-600 underline">{showDone ? 'Hide answered' : `Show answered (${done.length})`}</button>
         )}

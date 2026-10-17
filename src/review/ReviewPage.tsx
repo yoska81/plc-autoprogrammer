@@ -15,6 +15,11 @@ import { AREA_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, pageRoute, sortFindings, ty
 import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
 import { startAiJob, useAiJobError, useAiJobRunning } from '../lib/ai/jobs';
+import SpeakButton from '../voice/SpeakButton';
+import { useEditsStore } from '../edits/useEditsStore';
+import { reviewNoteKey } from './report';
+import VoiceTextarea from '../voice/VoiceTextarea';
+import MicButton from '../voice/MicButton';
 
 const SEV_STYLE: Record<Severity, string> = {
   critical: 'bg-red-600 text-white',
@@ -32,21 +37,28 @@ function Row({ f, onGo, onFix }: { f: Finding; onGo: () => void; onFix: (() => v
   const [marking, setMarking] = useState<FindingStatus | null>(null);
   const st = statusOf(marks, f.id);
   const m = marks[f.id];
+  const note = useEditsStore((s) => s.notes[reviewNoteKey(f.id)] ?? '');
+  const setNote = useEditsStore((s) => s.setNote);
   return (
     <>
       <tr className={`border-t border-steel-100 align-top ${st !== 'open' ? 'opacity-60' : ''}`}>
         <td className="py-2 pl-3 pr-2"><span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-bold uppercase ${SEV_STYLE[f.severity]}`}>{SEVERITY_LABEL[f.severity]}</span></td>
         <td className="py-2 pr-2 text-steel-600 whitespace-nowrap">{AREA_LABEL[f.area]}</td>
         <td className="py-2 pr-2">
-          <button type="button" onClick={() => setOpen((v) => !v)} className="flex items-start gap-1 text-left font-medium text-steel-900 hover:underline">
+          <button type="button" onClick={() => setOpen((v) => !v)} className="inline-flex items-start gap-1 text-left font-medium text-steel-900 hover:underline">
             {open ? <ChevronDownIcon className="mt-0.5 h-4 w-4 shrink-0" /> : <ChevronRightIcon className="mt-0.5 h-4 w-4 shrink-0" />}
             <span>{f.title}</span>
           </button>
+          {note && !open && <span className="ml-1 rounded-sm bg-sky-100 px-1 text-[10px] font-semibold text-sky-800" title={note}>✎ note</span>}
+          <SpeakButton text={() => `${SEVERITY_LABEL[f.severity]}. ${f.title}. ${f.detail}. Fix: ${f.fix}`} label="Read the finding aloud" size="xs" className="ml-1 align-middle" />
           {open && (
             <div className="mt-1 space-y-1 pl-5 text-[12.5px] text-steel-700">
               <p>{f.detail}</p>
               <p><span className="font-semibold text-steel-800">Fix: </span>{f.fix}</p>
               {m && <p className="text-steel-500">{m.status === 'resolved' ? 'Resolved' : 'Ignored'}: {m.reason || '—'} · {new Date(m.at).toLocaleString()}</p>}
+              <VoiceTextarea value={note} onValueChange={(v) => setNote(reviewNoteKey(f.id), v)} rows={2} aria-label={`Your note on: ${f.title}`}
+                placeholder="Your note (optional): printed with the finding in the engineering package"
+                className="w-full rounded border border-steel-300 px-2 py-1 text-[12.5px] focus:outline-none focus:ring-2 focus:ring-brand-500" />
             </div>
           )}
         </td>
@@ -77,6 +89,7 @@ function Row({ f, onGo, onFix }: { f: Finding; onGo: () => void; onFix: (() => v
               <label className="text-[12px] font-medium text-steel-700" htmlFor={`r-${f.id}`}>{marking === 'resolved' ? 'How was it resolved?' : 'Why is it acceptable?'}</label>
               <input id={`r-${f.id}`} autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (shown in the engineering package)"
                 className="flex-1 rounded border border-steel-300 px-2 py-1 text-[12.5px] focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              <MicButton value={reason} onChange={setReason} />
               <button type="submit" disabled={!reason.trim()} className="rounded bg-brand-600 px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-40">Save</button>
               <button type="button" onClick={() => setMarking(null)} className="rounded border border-steel-300 px-3 py-1 text-[12px]">Cancel</button>
             </form>
@@ -175,7 +188,7 @@ export default function ReviewPage() {
             <span>Checks: {checks.length} finding{checks.length === 1 ? '' : 's'}{checkedAt ? ` · ${new Date(checkedAt).toLocaleString()}` : ''}</span>
             <span>AI review: {ai ? `${ai.findings.length} finding${ai.findings.length === 1 ? '' : 's'} · ${new Date(ai.at).toLocaleString()}` : 'not run yet'}</span>
           </div>
-          {ai?.summary && <p className="mt-1.5"><span className="font-semibold text-steel-800">Reviewer's verdict: </span>{ai.summary}</p>}
+          {ai?.summary && <p className="mt-1.5"><span className="font-semibold text-steel-800">Reviewer's verdict: </span>{ai.summary}<SpeakButton text={ai.summary} label="Read the verdict aloud" size="xs" className="ml-1 align-middle" /></p>}
         </div>
 
         {openQuestions > 0 && (

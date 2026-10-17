@@ -29,6 +29,8 @@ import type { AnalogSetupRow } from '../../core/analog';
 import { useDraft } from '../../../store/useDraftStore';
 import { useUi } from '../../../store/useUiStore';
 import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
+import VoiceTextarea from '../../../voice/VoiceTextarea';
+import SpeakButton from '../../../voice/SpeakButton';
 
 type Tab = 'describe' | 'fix' | 'history';
 
@@ -315,10 +317,10 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 <summary className="cursor-pointer text-xs text-gray-500">Advanced: extra notes for the program only</summary>
                 <div className="mt-2 space-y-2">
               <label htmlFor="prompt" className="block text-sm font-medium text-gray-700">Extra notes for the program only <span className="font-normal text-gray-400">(optional, usually empty)</span></label>
-              <textarea
+              <VoiceTextarea
                 id="prompt"
                 value={userPrompt}
-                onChange={(e) => store.setUserPrompt(e.target.value)}
+                onValueChange={store.setUserPrompt}
                 rows={6}
                 placeholder="Anything program-specific that isn't in the spec, e.g. 'Use DS1 as the step register', 'Keep rung comments short'."
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
@@ -353,6 +355,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               )}
               {chat.map((m, i) => (
                 <div key={i} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand-600 text-white ml-6' : 'bg-gray-100 text-gray-800 mr-2'}`}>
+                  {m.role === 'assistant' && <SpeakButton text={m.text} label="Read the answer aloud" size="xs" className="float-right -mr-1 -mt-0.5 ml-1" />}
                   {m.text}
                   {m.outcome && (
                     <div className={`mt-1 text-xs font-medium ${m.outcome === 'applied' ? 'text-green-700' : m.outcome === 'rejected' ? 'text-red-600' : 'text-gray-500'}`}>
@@ -402,9 +405,10 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 Ask AI to fix the {issues.length} checker issue{issues.length !== 1 && 's'}
               </button>
             )}
-            <textarea
+            <VoiceTextarea
               value={request}
-              onChange={(e) => setRequest(e.target.value)}
+              onValueChange={setRequest}
+              aria-label="Describe a problem or change"
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleRevise(request); } }}
               rows={3}
               disabled={Boolean(proposal) || !ladder.rungs.length}

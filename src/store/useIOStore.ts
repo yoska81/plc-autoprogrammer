@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AnalogSpec, IOPoint, IOCategory, TemplatePoint } from '../types/io';
+import { useEditsStore } from '../edits/useEditsStore';
 
 interface IOStore {
   projectIO: IOPoint[];
@@ -112,6 +113,8 @@ export const useIOStore = create<IOStore>()(
       },
 
       importPoints: (points, replace) => {
+        // A new list: description edits of the old points no longer apply.
+        if (replace) useEditsStore.getState().clearTexts('io:');
         set((s) => {
           let current = replace ? [] : [...s.projectIO];
           for (const p of points) {
@@ -123,6 +126,8 @@ export const useIOStore = create<IOStore>()(
       },
 
       applyIOUpdate: (kept, added, removedIds) => {
+        // Kept points keep their (hand-edited) descriptions; dropped points drop their edits.
+        for (const id of removedIds) useEditsStore.getState().resetText(`io:${id}`);
         set((s) => {
           const keptById = new Map(kept.map((k) => [k.id, k]));
           const removed = new Set(removedIds);
@@ -138,6 +143,7 @@ export const useIOStore = create<IOStore>()(
       },
 
       deletePoint: (id: string) => {
+        useEditsStore.getState().resetText(`io:${id}`);
         set((s) => ({ projectIO: s.projectIO.filter((p) => p.id !== id) }));
       },
     }),
