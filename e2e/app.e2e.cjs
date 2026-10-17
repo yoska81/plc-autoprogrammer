@@ -38,7 +38,7 @@ function reply(system, body = {}) {
     : system.includes('industrial control panel') ? 'electrical'
     : system.includes("describe the machine's electrical load and safety") ? 'machine'
     : system.includes('You name things on an operator touch panel') ? 'hmiNames'
-    : system.includes('You write ONE block of a ladder program') ? 'cycle'
+    : system.includes("You describe a machine's automatic cycle as a STEP SEQUENCE") ? 'cycle'
     : system.includes('HMI designer') ? 'hmi'
     : system.includes('ladder logic') ? 'ladder' : 'unknown';
   counts[k] = (counts[k] ?? 0) + 1;
@@ -58,7 +58,7 @@ function reply(system, body = {}) {
       motors: F.DESIGN.inputs.motors.map((x) => ({ tag: x.tag, description: x.description, power: x.hp, unit: 'hp', powerGiven: true, start: 'dol', vertical: false, zone: m.motorLocations[x.tag] ?? '' })),
       estops: 1, guardDoors: [], lightCurtains: [], zones: m.zones, interfaces: [], questions: ['Confirm the conveyor motor nameplate current.'],
     };
-    case 'cycle': return { explanation: 'Step register reset while stopped.', tags: [{ address: 'DS1150', nickname: 'Step_Cycle', comment: 'Cycle step' }], rungs: [{ id: 'a', block: 'cycle', comment: 'Step 0 while the cycle is not running', branches: [[{ type: 'NC', address: 'C2' }]], outputs: [{ type: 'COPY', source: '0', dest: 'DS1150' }] }] };
+    case 'cycle': return { explanation: 'No cycle steps (the rules keep their default cycle).', steps: [], questions: [] };
     case 'hmiNames': return { machineName: 'Conveyor Cell', actuators: [], states: [], questions: ['Which operator password levels are needed?'] };
     case 'hmi': return { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [{ kind: 'question', text: 'Which operator password levels are needed?' }, { kind: 'issue', text: 'Alarm banner colour chosen for contrast with the header.' }] };
     case 'ladder': {
@@ -360,6 +360,8 @@ function sse(model, text) {
   log('Rule-based program:', (await page.getByText(/Program from the standard blocks/).first().innerText()).slice(0, 160));
   check(counts.cycle === 1, 'cycle block: one small AI request');
   check(await page.getByText(/Checker: no problems found/).count() === 1, 'rule-based program: checker clean');
+  check(await page.getByTestId('cycle-steps').count() === 1, 'step sequence table shown on the Program page');
+  log('Cycle steps:', (await page.getByTestId('cycle-steps').locator('summary').innerText()).slice(0, 120));
   // The older all-AI program is still there (the steps below use its fixture program).
   await page.getByRole('button', { name: 'Describe' }).click();
   await page.getByRole('button', { name: 'AI full program (experimental)' }).click();

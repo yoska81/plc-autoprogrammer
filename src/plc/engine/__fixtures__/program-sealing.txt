@@ -23,19 +23,45 @@ block status "HMI & status"
 [safety] Running status for the HMI
     NO:C2  ->  OUT C1202
 [alarms] Head did not reach its position in time: latched
-    NO:T1 | NO:T2  ->  SET C1102
+    NO:T1 | NO:T2  ->  SET C1103
 [alarms] Head timeout reset: Reset once the valve is off
-    NO:C7 NC:Y003 NC:Y004  ->  RST C1102
+    NO:C7 NC:Y003 NC:Y004  ->  RST C1103
 [alarms] Safety circuit open alarm while Safety OK is off
-    NC:C1  ->  OUT C1101
-[alarms] Any fault (stops the cycle): C1102
-    NO:C1102  ->  OUT C3
+    NC:C1  ->  OUT C1102
+[alarms] Any fault (stops the cycle): C1103
+    NO:C1103 | NO:C1101  ->  OUT C3
 [alarms] Service due warning: hours since service reached the service interval
-    DS1103>=DS1002 DS1002>0  ->  OUT C1103
-[cycle] Default cycle: Unwinder runs whenever the cycle runs (the machine's own sequence replaces this)
-    NO:C2  ->  OUT C20
-[cycle] Automatic sequence not written yet: Head extend, Head retract stay off in Auto (the AI or you write this block)
-    NC:SC1  ->  OUT C21, OUT C22
+    DS1103>=DS1002 DS1002>0  ->  OUT C1104
+[cycle] Cycle not running: step 0 (idle)
+    NC:C2  ->  COPY 0->DS1150
+[cycle] Cycle start: step 10 — Run Unwinder
+    NO:C2 DS1150==0  ->  COPY 10->DS1150
+[cycle] Step 10 time: 2 s
+    DS1150==10  ->  TMR T4 2sec
+[cycle] Step 20 timeout: 5 s
+    DS1150==20  ->  TMR T5 5sec
+[cycle] Step 30 time: 2 s
+    DS1150==30  ->  TMR T6 2sec
+[cycle] Step 40 timeout: 5 s
+    DS1150==40  ->  TMR T7 5sec
+[cycle] A cycle step did not finish in time: latched (stops the cycle)
+    NO:T5 | NO:T7  ->  SET C1101
+[cycle] Step timeout reset: Reset while the cycle is stopped
+    NO:C7 NC:C2  ->  RST C1101
+[cycle] Step 40 — Head up until Head up sensor: done when X003 ON → cycle complete, back to step 10
+    NO:C2 NO:C1 DS1150==40 NO:X003  ->  COPY 10->DS1150, CNT CT1 rst C98
+[cycle] Step 30 — Seals 2 s: done when 2 s → step 40
+    NO:C2 NO:C1 DS1150==30 NO:T6  ->  COPY 40->DS1150
+[cycle] Step 20 — Head down until Head down sensor: done when X004 ON → step 30
+    NO:C2 NO:C1 DS1150==20 NO:X004  ->  COPY 30->DS1150
+[cycle] Step 10 — Run Unwinder: done when 2 s → step 20
+    NO:C2 NO:C1 DS1150==10 NO:T4  ->  COPY 20->DS1150
+[cycle] Unwinder run: in step 10
+    DS1150==10  ->  OUT C20
+[cycle] Head extend: in step 20
+    DS1150==20  ->  OUT C21
+[cycle] Head retract: in step 40
+    DS1150==40  ->  OUT C22
 [head] Head: extend timeout — valve on but not at Head down sensor within the setpoint
     NO:C1 NO:Y003 NC:X004  ->  TMR T1 DS1001sec
 [head] Head: retract timeout — valve Y004 on but not at Head up sensor within the setpoint
@@ -101,5 +127,16 @@ C26 Man_Head_Y004: Manual request Head up solenoid
 C6 Pulse_1s: One scan every second
 T3 Tmr_Run_Hour: Run-hour timer
 C5 Run_Hour_Pulse: One run hour reached
+DS1150 Step_Cycle: Automatic cycle step (0 idle, 10, 20…)
+CT1 Cnt_Cycles: Completed automatic cycles
+T4 Tmr_Step_10: Step 10 time
+T5 Tmr_Step_20_Tmo: Step 20 timeout
+T6 Tmr_Step_30: Step 30 time
+T7 Tmr_Step_40_Tmo: Step 40 timeout
 
-note: The automatic sequence for Head is not written yet: those actuators move only in Manual until the cycle block is written.
+note: The automatic cycle was built from the I/O list (Run Unwinder → Head down until Head down sensor → Seals 2 s → Head up until Head up sensor); describe the cycle in the specification, or edit the steps, if it is different.
+note: Default cycle: seals time 2 s after Head down — confirm.
+note: step 10: Unwinder run | waits 2 s | timeout —
+note: step 20: Head extend | waits X004 ON | timeout 5 s
+note: step 30: — | waits 2 s | timeout —
+note: step 40: Head retract | waits X003 ON | timeout 5 s

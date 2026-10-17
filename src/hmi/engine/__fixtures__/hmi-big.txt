@@ -6,12 +6,12 @@ screen manual3 "Manual 3/4" [maintenance]: panel "Diverter 2", button "Extend" C
 screen manual4 "Manual 4/4" [maintenance]: panel "Diverter 6", button "Extend" C1015, indicator "Extend permitted" C1214, panel "Diverter 7", button "Extend" C1016, indicator "Extend permitted" C1215, nav "< Prev"
 screen process "Process": panel "Belt 1 Speed (DF5)", bar "Belt 1 Speed" DF5, numeric "Hz" DF5, panel "Tank Level (DF1)", bar "Tank Level" DF1, numeric "%" DF1
 screen setup "Setup" [maintenance]: panel "Timeouts", numeric-entry "Pusher timeout" DS1001, panel "Drive speeds", numeric-entry "Belt 1 speed" DF101, panel "Tank Level alarms", numeric-entry "High" DF102, numeric-entry "Low" DF103, panel "Production", numeric-entry "Batch target" DS1002, panel "Service", numeric-entry "Service interval" DS1003
-screen alarms "Alarms": alarm-list "Message", button "Reset" C1003, indicator "Safety circuit open (E-st..." C1101, indicator "Belt 1: drive fault" C1102, indicator "Belt 2: drive fault" C1103, indicator "Belt 3: drive fault" C1104, indicator "Belt 4: drive fault" C1105, indicator "Pusher did not reach its ..." C1106
+screen alarms "Alarms": alarm-list "Message", button "Reset" C1003, indicator "A cycle step did not fini..." C1101, indicator "Safety circuit open (E-st..." C1102, indicator "Belt 1: drive fault" C1103, indicator "Belt 2: drive fault" C1104, indicator "Belt 3: drive fault" C1105, indicator "Belt 4: drive fault" C1106
 screen diag "Diagnostics 1/4": panel "Inputs (CPU)  X001–X008", indicator "X001 E-Stop OK (safety relay)" X001, indicator "X002 Start Button" X002, indicator "X003 Stop Button" X003, indicator "X004 Part at end photo-eye" X004, indicator "X005 Pusher extended" X005, indicator "X006 Pusher retracted" X006, indicator "X007 Infeed part present 1" X007, indicator "X008 Infeed part present 2" X008, panel "Inputs (slot 1)  X101–X116", indicator "X101 Infeed part present 3" X101, indicator "X102 Infeed part present 4" X102, indicator "X103 Infeed part present 5" X103, indicator "X104 Infeed part present 6" X104, indicator "X105 Infeed part present 7" X105, indicator "X106 Infeed part present 8" X106, indicator "X107 Infeed part present 9" X107, indicator "X108 Infeed part present 10" X108, nav "Next >"
 screen diag2 "Diagnostics 2/4": panel "Inputs (slot 1)  X101–X116 (cont.)", indicator "X109 Infeed part present 11" X109, indicator "X110 Infeed part present 12" X110, indicator "X111 Outfeed part present 13" X111, indicator "X112 Outfeed part present 14" X112, indicator "X113 Outfeed part present 15" X113, indicator "X114 Outfeed part present 16" X114, indicator "X115 Outfeed part present 17" X115, indicator "X116 Outfeed part present 18" X116, panel "Inputs (slot 2)  X201–X210", indicator "X201 Outfeed part present 19" X201, indicator "X202 Outfeed part present 20" X202, indicator "X203 Outfeed part present 21" X203, indicator "X204 Outfeed part present 22" X204, indicator "X205 Outfeed part present 23" X205, indicator "X206 Outfeed part present 24" X206, indicator "X207 Belt 1 VFD fault" X207, indicator "X208 Belt 2 VFD fault" X208, nav "< Prev", nav "Next >"
 screen diag3 "Diagnostics 3/4": panel "Inputs (slot 2)  X201–X210 (cont.)", indicator "X209 Belt 3 VFD fault" X209, indicator "X210 Belt 4 VFD fault" X210, panel "Outputs (CPU)  Y001–Y006", indicator "Y001 Conveyor motor contactor" Y001, indicator "Y002 Pusher solenoid" Y002, indicator "Y003 Main air dump valve" Y003, indicator "Y004 Belt 1 VFD run" Y004, indicator "Y005 Belt 2 VFD run" Y005, indicator "Y006 Belt 3 VFD run" Y006, nav "< Prev", nav "Next >"
 screen diag4 "Diagnostics 4/4": panel "Outputs (slot 3)  Y301–Y307", indicator "Y301 Belt 4 VFD run" Y301, indicator "Y302 Diverter 2 solenoid" Y302, indicator "Y303 Diverter 3 solenoid" Y303, indicator "Y304 Diverter 4 solenoid" Y304, indicator "Y305 Diverter 5 solenoid" Y305, indicator "Y306 Diverter 6 solenoid" Y306, indicator "Y307 Diverter 7 solenoid" Y307, panel "Communications", indicator "PLC heartbeat" C1203, nav "< Prev"
-screen maint "Maintenance": panel "Counters", numeric "Parts" CTD1, button "Reset Parts" C1017, panel "Run time", numeric "Run hours" DS1103, numeric "Since service" DS1104, button "Service Done" C1018, indicator "Service Due" C1109, panel "Clock", datetime "Date / Time", numeric "Service interval" DS1003
+screen maint "Maintenance": panel "Counters", numeric "Parts" CTD1, button "Reset Parts" C1017, panel "Run time", numeric "Run hours" DS1103, numeric "Since service" DS1104, button "Service Done" C1018, indicator "Service Due" C1110, panel "Clock", datetime "Date / Time", numeric "Service interval" DS1003
 
 C1001   HMI_Start                    BIT   write      Momentary Start: the PLC starts the automatic cycle when Safety OK (X001) is ON, no alarm is latched and Manual mode is off.
 C1002   HMI_Stop                     BIT   write      Momentary Stop: the PLC ends the automatic cycle (stops all motion).
@@ -21,26 +21,27 @@ C1201   STS_Manual_Mode              BIT   read       PLC sets ON while Manual m
 C1202   STS_Running                  BIT   read       PLC sets ON while the automatic cycle runs.
 C1203   STS_Heartbeat                BIT   read       PLC toggles every second (communication watchdog on the Diagnostics screen).
 DS1101  Machine_State                INT   read       PLC writes 0 Stopped, 1 Running, 2 Faulted, 3 Manual, 4 Safety Stop (highest applicable wins).
-C1101   ALM_Safety_Open              BIT   read       PLC sets ON while Safety OK (X001) is OFF.
+C1101   ALM_Cycle_Step_Timeout       BIT   read       PLC latches ON when a step of the automatic cycle lasts longer than its timeout (step table on the Program page) and stops the cycle; Reset (C1003) clears it while stopped.
+C1102   ALM_Safety_Open              BIT   read       PLC sets ON while Safety OK (X001) is OFF.
 C1204   STS_Conveyor_Jog_Permit      BIT   read       PLC sets ON when Manual mode (C1201) active, Safety OK (X001) ON and no other motion (Y004, Y005, Y006, Y301, Y002, Y302, Y303, Y304, Y305, Y306, Y307 OFF).
 C1005   HMI_Conveyor_Jog             BIT   write      Hold-to-run: while ON and C1204 is ON the PLC energizes Y001 (Conveyor motor contactor); stops on release.
 C1205   STS_Belt_1_Jog_Permit        BIT   read       PLC sets ON when Manual mode (C1201) active, Safety OK (X001) ON and no other motion (Y001, Y005, Y006, Y301, Y002, Y302, Y303, Y304, Y305, Y306, Y307 OFF).
 C1006   HMI_Belt_1_Jog               BIT   write      Hold-to-run: while ON and C1205 is ON the PLC energizes Y004 (Belt 1 VFD run); stops on release.
-C1102   ALM_Belt_1_Fault             BIT   read       PLC latches ON when X207 (Belt 1 VFD fault) is ON and stops Belt 1; Reset (C1003) clears it once the input is OFF.
+C1103   ALM_Belt_1_Fault             BIT   read       PLC latches ON when X207 (Belt 1 VFD fault) is ON and stops Belt 1; Reset (C1003) clears it once the input is OFF.
 DF101   SP_Belt_1_Speed              FLOAT read-write Belt 1 speed setpoint (Hz, 0–60); the PLC copies it to DF5 while Belt 1 runs, 0 when stopped; safe default on the first scan.
 C1206   STS_Belt_2_Jog_Permit        BIT   read       PLC sets ON when Manual mode (C1201) active, Safety OK (X001) ON and no other motion (Y001, Y004, Y006, Y301, Y002, Y302, Y303, Y304, Y305, Y306, Y307 OFF).
 C1007   HMI_Belt_2_Jog               BIT   write      Hold-to-run: while ON and C1206 is ON the PLC energizes Y005 (Belt 2 VFD run); stops on release.
-C1103   ALM_Belt_2_Fault             BIT   read       PLC latches ON when X208 (Belt 2 VFD fault) is ON and stops Belt 2; Reset (C1003) clears it once the input is OFF.
+C1104   ALM_Belt_2_Fault             BIT   read       PLC latches ON when X208 (Belt 2 VFD fault) is ON and stops Belt 2; Reset (C1003) clears it once the input is OFF.
 C1207   STS_Belt_3_Jog_Permit        BIT   read       PLC sets ON when Manual mode (C1201) active, Safety OK (X001) ON and no other motion (Y001, Y004, Y005, Y301, Y002, Y302, Y303, Y304, Y305, Y306, Y307 OFF).
 C1008   HMI_Belt_3_Jog               BIT   write      Hold-to-run: while ON and C1207 is ON the PLC energizes Y006 (Belt 3 VFD run); stops on release.
-C1104   ALM_Belt_3_Fault             BIT   read       PLC latches ON when X209 (Belt 3 VFD fault) is ON and stops Belt 3; Reset (C1003) clears it once the input is OFF.
+C1105   ALM_Belt_3_Fault             BIT   read       PLC latches ON when X209 (Belt 3 VFD fault) is ON and stops Belt 3; Reset (C1003) clears it once the input is OFF.
 C1208   STS_Belt_4_Jog_Permit        BIT   read       PLC sets ON when Manual mode (C1201) active, Safety OK (X001) ON and no other motion (Y001, Y004, Y005, Y006, Y002, Y302, Y303, Y304, Y305, Y306, Y307 OFF).
 C1009   HMI_Belt_4_Jog               BIT   write      Hold-to-run: while ON and C1208 is ON the PLC energizes Y301 (Belt 4 VFD run); stops on release.
-C1105   ALM_Belt_4_Fault             BIT   read       PLC latches ON when X210 (Belt 4 VFD fault) is ON and stops Belt 4; Reset (C1003) clears it once the input is OFF.
+C1106   ALM_Belt_4_Fault             BIT   read       PLC latches ON when X210 (Belt 4 VFD fault) is ON and stops Belt 4; Reset (C1003) clears it once the input is OFF.
 C1209   STS_Pusher_Extend_Permit     BIT   read       PLC sets ON when Manual mode (C1201) active, Safety OK (X001) ON and no other motion (Y001, Y004, Y005, Y006, Y301, Y302, Y303, Y304, Y305, Y306, Y307 OFF).
 C1010   HMI_Pusher_Extend            BIT   write      Hold-to-run: while ON and C1209 is ON the PLC energizes Y002 (Pusher solenoid); spring return retracts on release.
 DS1001  SP_Pusher_Timeout            INT   read-write Seconds allowed for Pusher to reach X005 (Pusher extended) / X006 (Pusher retracted) (1–30, default 3 on the first scan).
-C1106   ALM_Pusher_Timeout           BIT   read       PLC latches ON when Pusher does not reach its feedback position within DS1001 seconds after its valve switches; Reset (C1003) clears it.
+C1107   ALM_Pusher_Timeout           BIT   read       PLC latches ON when Pusher does not reach its feedback position within DS1001 seconds after its valve switches; Reset (C1003) clears it.
 C1210   STS_Diverter_2_Extend_Permit BIT   read       PLC sets ON when Manual mode (C1201) active, Safety OK (X001) ON and no other motion (Y001, Y004, Y005, Y006, Y301, Y002, Y303, Y304, Y305, Y306, Y307 OFF).
 C1011   HMI_Diverter_2_Extend        BIT   write      Hold-to-run: while ON and C1210 is ON the PLC energizes Y302 (Diverter 2 solenoid); spring return retracts on release.
 C1211   STS_Diverter_3_Extend_Permit BIT   read       PLC sets ON when Manual mode (C1201) active, Safety OK (X001) ON and no other motion (Y001, Y004, Y005, Y006, Y301, Y002, Y302, Y304, Y305, Y306, Y307 OFF).
@@ -57,8 +58,8 @@ DF5     AO_Belt_1_Speed              FLOAT read       Analog output Belt 1 Speed
 DF1     AI_Tank_Level                FLOAT read       Analog input Tank Level in % (0-100), scaled by the PLC's analog setup.
 DF102   SP_Tank_Level_High           FLOAT read-write High alarm limit for DF1 Tank Level (%); default 90 on the first scan.
 DF103   SP_Tank_Level_Low            FLOAT read-write Low alarm limit for DF1 Tank Level (%); default 10 on the first scan.
-C1107   WRN_Tank_Level_High          BIT   read       PLC sets ON while DF1 >= DF102 (with a small deadband).
-C1108   WRN_Tank_Level_Low           BIT   read       PLC sets ON while DF1 <= DF103 (with a small deadband).
+C1108   WRN_Tank_Level_High          BIT   read       PLC sets ON while DF1 >= DF102 (with a small deadband).
+C1109   WRN_Tank_Level_Low           BIT   read       PLC sets ON while DF1 <= DF103 (with a small deadband).
 CTD1    Part_Count                   INT2  read       Counter CT1 counts each rising edge of X004 (Part at end photo-eye).
 C1017   HMI_Count_Reset              BIT   write      Momentary: resets the part counter CT1.
 DS1002  SP_Batch_Target              INT   read-write Batch size in parts (0 = no limit): the PLC stops the cycle when CTD1 reaches it.
@@ -67,17 +68,18 @@ DS1103  Run_Hours                    INT   read       Retentive machine run hour
 DS1104  Hours_Since_Service          INT   read       Retentive run hours since the last Service Done.
 DS1003  SP_Service_Interval          INT   read-write Run hours between services (50–2000, default 500 on the first scan).
 C1018   HMI_Service_Done             BIT   write      Momentary: resets the hours since service (DS1104) to 0.
-C1109   WRN_Service_Due              BIT   read       PLC sets ON when DS1104 >= DS1003.
+C1110   WRN_Service_Due              BIT   read       PLC sets ON when DS1104 >= DS1003.
 
-alarm C1101 alarm: Safety circuit open (E-stop or guard)
-alarm C1102 alarm: Belt 1: drive fault
-alarm C1103 alarm: Belt 2: drive fault
-alarm C1104 alarm: Belt 3: drive fault
-alarm C1105 alarm: Belt 4: drive fault
-alarm C1106 alarm: Pusher did not reach its position in time
-alarm C1107 warning: Tank Level high
-alarm C1108 warning: Tank Level low
-alarm C1109 warning: Service due: run hours reached
+alarm C1101 alarm: A cycle step did not finish in time
+alarm C1102 alarm: Safety circuit open (E-stop or guard)
+alarm C1103 alarm: Belt 1: drive fault
+alarm C1104 alarm: Belt 2: drive fault
+alarm C1105 alarm: Belt 3: drive fault
+alarm C1106 alarm: Belt 4: drive fault
+alarm C1107 alarm: Pusher did not reach its position in time
+alarm C1108 warning: Tank Level high
+alarm C1109 warning: Tank Level low
+alarm C1110 warning: Service due: run hours reached
 
-note: Rule-based HMI: 13 screens (Main, Manual, Process, Setup, Alarms, Diagnostics, Maintenance), 55 HMI tags in the standard ranges (commands C1001-, alarms C1101-, status C1201-, setpoints DS1001-/DF101-, status words DS1101-).
+note: Rule-based HMI: 13 screens (Main, Manual, Process, Setup, Alarms, Diagnostics, Maintenance), 56 HMI tags in the standard ranges (commands C1001-, alarms C1101-, status C1201-, setpoints DS1001-/DF101-, status words DS1101-).
 note: Passwords: Maintenance for Manual, Setup and counter resets; Engineer for the service interval. Confirm the levels with the customer.
