@@ -168,6 +168,22 @@ export default function ExportPage() {
 
           <OrderListCard p={p} fileBase={p.fileBase} />
 
+          <Card title="Spare parts" info={stages.electrical} to="/electrical?tab=improve">
+            <p className="text-xs text-steel-500">The parts to keep on the shelf (fuses, relays, contactors, power supply, PLC and I/O, touch panel, drives), how many, and why: how critical each one is and how often that kind of part fails.</p>
+            <div className="flex flex-wrap gap-2">
+              <B busy={busy} label="Spare parts (Excel)" disabled={!hasElec} onClick={run('Spare parts (Excel)', async () => {
+                const [{ sparePartsXlsx }, { spareParts }] = await Promise.all([import('../deliverables/sparePartsFiles'), import('../electrical/improve/spares')]);
+                const snap = collectProject();
+                saveBlob(`${p.fileBase}_spare_parts.xlsx`, await sparePartsXlsx(spareParts(snap.drawingCtx!), snap.projectName));
+              })} />
+              <B busy={busy} label="Spare parts (PDF)" disabled={!hasElec} onClick={run('Spare parts (PDF)', async () => {
+                const { sparePartsPdf } = await import('../deliverables/sparePartsFiles');
+                const pdf = await sparePartsPdf(collectProject());
+                if (pdf) saveBlob(`${p.fileBase}_spare_parts.pdf`, pdf);
+              })} />
+            </div>
+          </Card>
+
           <Card title="Labels" info={stages.electrical} to="/electrical?tab=labels">
             <p className="text-xs text-steel-500">Wire, terminal, device, cable and door labels. Choose the label size and content, preview and print in Electrical design → Labels.</p>
             <div className="flex flex-wrap gap-2">

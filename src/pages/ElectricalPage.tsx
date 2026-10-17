@@ -22,6 +22,7 @@ import { bomCsv, cableScheduleCsv, designWarnings, motorFla, wireListCsv } from 
 import CabinetPictures from '../electrical/CabinetPictures';
 import MachiningPanel from '../electrical/MachiningPanel';
 import LabelsPanel from '../electrical/labels/LabelsPanel';
+import ImprovePanel from '../electrical/improve/ImprovePanel';
 import MachineLayoutPanel from '../electrical/layout/MachineLayoutPanel';
 import { userNotes } from '../components/questions/classify';
 import QuestionList from '../components/questions/QuestionList';
@@ -61,9 +62,9 @@ const card = 'bg-white rounded-sm border border-steel-200 p-5';
 
 const download = (name: string, content: string, mime: string) => saveBlob(name, new Blob([content], { type: mime }));
 
-type Tab = 'design' | 'cabinet' | 'machine' | 'layout' | 'picture' | 'machining' | 'labels';
+type Tab = 'design' | 'cabinet' | 'machine' | 'layout' | 'picture' | 'machining' | 'labels' | 'improve';
 
-const TAB_TITLE: Record<Tab, string> = { design: 'Design', cabinet: 'Cabinet wiring', machine: 'Machine wiring', layout: 'Machine layout', picture: 'Cabinet picture', machining: 'Machining (DXF)', labels: 'Labels' };
+const TAB_TITLE: Record<Tab, string> = { design: 'Design', cabinet: 'Cabinet wiring', machine: 'Machine wiring', layout: 'Machine layout', picture: 'Cabinet picture', machining: 'Machining (DXF)', labels: 'Labels', improve: 'Improve design' };
 
 /** The motor a component belongs to (its branch protection is limited by the motor current). */
 function motorContext(d: ElectricalDesign, tag: string | null | undefined, iec: boolean) {
@@ -87,7 +88,7 @@ export default function ElectricalPage() {
 
   const [params, setParams] = useSearchParams();
   const urlTab = params.get('tab') as Tab | null;
-  const tab: Tab = urlTab && ['design', 'cabinet', 'machine', 'layout', 'picture', 'machining', 'labels'].includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
+  const tab: Tab = urlTab && (Object.keys(TAB_TITLE) as string[]).includes(urlTab) ? urlTab : el.design ? 'cabinet' : 'design';
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   const [localError, setError] = useState<string | null>(null);
   // AI generation runs as a global job (keeps going across pages).
@@ -199,7 +200,9 @@ export default function ElectricalPage() {
         <button onClick={() => generate()} disabled={el.isGenerating} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
           {el.isGenerating ? 'Updating…' : 'Update design'}
         </button>} />
-      {tab === 'labels' ? (
+      {tab === 'improve' ? (
+        <ImprovePanel fileBase={base} />
+      ) : tab === 'labels' ? (
         <LabelsPanel ctx={ctx} fileBase={base} projectName={projectName} />
       ) : tab === 'layout' ? (
         <MachineLayoutPanel ctx={rawCtx} />

@@ -138,6 +138,7 @@ export default function App() {
           { label: 'Cabinet picture', to: '/electrical?tab=picture' },
           { label: 'Machining (DXF)', to: '/electrical?tab=machining' },
           { label: 'Labels', to: '/electrical?tab=labels' },
+          { label: 'Improve design', to: '/electrical?tab=improve' },
         ],
       },
       {

@@ -280,6 +280,13 @@ export async function addPackageToZip(zip: JSZip, p: ProjectSnapshot, pre: Prebu
       for (const g of sp.groups) zip.file(`purchasing/${p.fileBase}_${slug(g.supplier)}_spares_order.csv`, supplierCsv(g));
     }
   }
+  if (p.drawingCtx) {
+    onProgress?.('Spare parts');
+    const [{ sparePartsXlsx, sparePartsPdf }, { spareParts }] = await Promise.all([import('./sparePartsFiles'), import('../electrical/improve/spares')]);
+    zip.file(`maintenance/${p.fileBase}_spare_parts.xlsx`, await sparePartsXlsx(spareParts(p.drawingCtx), p.projectName));
+    const pdf = await sparePartsPdf(p);
+    if (pdf) zip.file(`maintenance/${p.fileBase}_spare_parts.pdf`, pdf);
+  }
   if (Object.values(p.checkout ?? {}).some((c) => c.verified || c.note)) {
     const { buildCheckoutPdf } = await import('../online/checkoutPdf');
     zip.file(`commissioning/${p.fileBase}_IO_checkout.pdf`, await buildCheckoutPdf(p, p.checkout));
