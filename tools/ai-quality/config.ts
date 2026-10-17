@@ -12,7 +12,11 @@ export function stageOfPrompt(system: string): Stage {
   // Generate / Update all: the AI reads the machine model, the rule-based engine designs the panel.
   if (system.includes("describe the machine's electrical load")) return 'electrical';
   if (system.includes('HMI designer')) return 'hmi';
+  // Design / Update all: rule-based screens, the AI only names things (src/lib/ai/hmiContentAI.ts).
+  if (system.includes('You name things on an operator touch panel')) return 'hmi';
   if (system.includes('ladder logic')) return 'program';
+  // Generate / Update all: rule-based blocks, the AI writes only the cycle block (src/plc/ai/cycleAI.ts).
+  if (system.includes('You write ONE block of a ladder program')) return 'program';
   return 'unknown';
 }
 

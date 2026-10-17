@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { backPanelDrilling, doorDrilling, dualDim, dualSize, type DrawingContext, type DrillingPlan } from './derive';
 import { drillingDxf, type DxfOptions } from './dxf';
+import { enclosureFaceDrilling } from './enclosureFaces';
 import ResizablePane from '../components/ResizablePane';
 import { buildMachiningPdf, saveBlob } from '../deliverables/files';
 import { useUi } from '../store/useUiStore';
@@ -21,12 +22,12 @@ function PlanView({ plan, selected, onSelect }: { plan: DrillingPlan; selected: 
         <rect x={0} y={0} width={plan.w} height={plan.h} fill="#f7f8f6" stroke="#1d2327" strokeWidth={1.2} />
         {plan.cutouts.map((c) => {
           const on = selected === c.id;
-          const stroke = on ? '#b3cc1c' : c.code === 'G' ? '#8a9aa2' : '#1d2327';
+          const stroke = on ? '#b3cc1c' : c.template ? '#8a9aa2' : '#1d2327';
           return (
             <g key={c.id} onClick={() => onSelect(c.id)} className="cursor-pointer">
               {c.kind === 'round'
-                ? <circle cx={c.x} cy={c.y} r={c.w / 2} fill={on ? '#bcd3fd' : '#fff'} stroke={stroke} strokeWidth={on ? 2 : 1} strokeDasharray={c.code === 'G' ? '4 3' : undefined} />
-                : <rect x={c.x - c.w / 2} y={c.y - c.h / 2} width={c.w} height={c.h} fill={on ? '#bcd3fd' : '#fff'} stroke={stroke} strokeWidth={on ? 2 : 1} />}
+                ? <circle cx={c.x} cy={c.y} r={c.w / 2} fill={on ? '#bcd3fd' : '#fff'} stroke={stroke} strokeWidth={on ? 2 : 1} strokeDasharray={c.template ? '4 3' : undefined} />
+                : <rect x={c.x - c.w / 2} y={c.y - c.h / 2} width={c.w} height={c.h} fill={on ? '#bcd3fd' : '#fff'} stroke={stroke} strokeWidth={on ? 2 : 1} strokeDasharray={c.template ? '4 3' : undefined} />}
             </g>
           );
         })}
@@ -47,28 +48,39 @@ function PlanView({ plan, selected, onSelect }: { plan: DrillingPlan; selected: 
  * Machining: back-panel drilling and door cutouts for the machine shop, with
  * 1:1 DXF downloads (inch by default, or mm), plus the hole tables in dual dimensions inch [mm].
  */
+type Part = DrillingPlan['kind'];
+const PART_LABEL: Record<Part, string> = { backpanel: 'Back panel', door: 'Front door', bottom: 'Enclosure bottom', top: 'Enclosure top', left: 'Enclosure left side', right: 'Enclosure right side' };
+const FILE: Record<Part, string> = { backpanel: 'back_panel_drilling', door: 'door_cutouts', bottom: 'enclosure_bottom_cutouts', top: 'enclosure_top_cutouts', left: 'enclosure_left_cutouts', right: 'enclosure_right_cutouts' };
+
 export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext | null; fileBase: string }) {
-  const [which, setWhich] = useUi<'backpanel' | 'door'>('machining.which', 'backpanel');
+  const [whichPref, setWhich] = useUi<Part>('machining.which', 'backpanel');
   const [units, setUnits] = useUi<'mm' | 'in'>('machining.units', 'in');
   const [cutOnly, setCutOnly] = useUi('machining.cutOnly', false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [busy, setBusy] = useState<'backpanel' | 'door' | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const plans = useMemo(() => (ctx ? { backpanel: backPanelDrilling(ctx), door: doorDrilling(ctx) } : null), [ctx]);
+  const plans = useMemo(() => {
+    if (!ctx) return null;
+    const out: Partial<Record<Part, DrillingPlan>> = { backpanel: backPanelDrilling(ctx), door: doorDrilling(ctx) };
+    for (const f of enclosureFaceDrilling(ctx)) out[f.kind] = f;
+    return out;
+  }, [ctx]);
   if (!ctx || !plans) {
     return <div className="flex-1 flex items-center justify-center text-sm text-steel-500">No design yet. Fill in the Design tab and click Generate.</div>;
   }
-  const plan = plans[which];
+  const parts = (Object.keys(PART_LABEL) as Part[]).filter((k) => plans[k]);
+  const which = plans[whichPref] ? whichPref : 'backpanel';
+  const plan = plans[which]!;
   const opts: DxfOptions = { units, cutOnly };
-  const name = (kind: 'backpanel' | 'door') => `${fileBase}_${kind === 'backpanel' ? 'back_panel_drilling' : 'door_cutouts'}_1to1_${units}${cutOnly ? '_cut' : ''}.dxf`;
-  const download = (kind: 'backpanel' | 'door') => save(name(kind), drillingDxf(plans[kind], ctx.projectName, opts));
-  const downloadPdf = async (kind: 'backpanel' | 'door') => {
-    setBusy(kind);
+  const download = () => save(`${fileBase}_${FILE[which]}_1to1_${units}${cutOnly ? '_cut' : ''}.dxf`, drillingDxf(plan, ctx.projectName, opts));
+  const downloadPdf = async () => {
+    setBusy(true);
     try {
-      const pdf = await buildMachiningPdf(ctx, kind);
-      if (pdf) saveBlob(`${fileBase}_${kind === 'backpanel' ? 'back_panel_drilling' : 'door_cutouts'}.pdf`, pdf);
-    } finally { setBusy(null); }
+      const pdf = await buildMachiningPdf(ctx, which);
+      if (pdf) saveBlob(`${fileBase}_${FILE[which]}.pdf`, pdf);
+    } finally { setBusy(false); }
   };
+  const count = (k: Part) => { const p = plans[k]!; return k === 'backpanel' ? `${p.holes.length} holes` : `${p.cutouts.length} cutouts`; };
   const rows = [...plan.cutouts.map((c) => ({ id: c.id, tag: c.tag, code: c.code, x: c.x, y: c.y, size: c.kind === 'round' ? `Ø${dualDim(c.w)}` : dualSize(c.w, c.h), verified: c.verified })),
     ...plan.holes.map((h) => ({ id: h.id, tag: h.tag, code: h.code, x: h.x, y: h.y, size: `Ø${dualDim(h.dia)}`, verified: h.verified }))];
 
@@ -76,10 +88,10 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 px-4 py-1.5 bg-[#f7f8f9] border-b border-steel-200">
         <div className="flex" role="group" aria-label="Part">
-          {(['backpanel', 'door'] as const).map((k) => (
-            <button key={k} onClick={() => { setWhich(k); setSelected(null); }}
+          {parts.map((k) => (
+            <button key={k} onClick={() => { setWhich(k); setSelected(null); }} aria-pressed={which === k}
               className={`px-3 h-7 border text-[13px] ${which === k ? 'bg-brand-600 border-brand-500 text-white font-medium' : 'bg-white border-steel-300 hover:bg-steel-50'}`}>
-              {k === 'backpanel' ? `Back panel (${plans.backpanel.holes.length} holes)` : `Front door (${plans.door.cutouts.length} cutouts)`}
+              {`${PART_LABEL[k]} (${count(k)})`}
             </button>
           ))}
         </div>
@@ -94,23 +106,18 @@ export default function MachiningPanel({ ctx, fileBase }: { ctx: DrawingContext 
           <input type="checkbox" checked={cutOnly} onChange={(e) => setCutOnly(e.target.checked)} /> Cutting geometry only
         </label>
         <div className="ml-auto flex gap-2">
-          <button onClick={() => download('backpanel')} className="h-7 px-3 flex items-center gap-1.5 bg-brand-600 text-white font-medium rounded-sm hover:bg-brand-700">
-            <ArrowDownTrayIcon className="w-4 h-4" /> Back panel DXF
+          <button onClick={download} className="h-7 px-3 flex items-center gap-1.5 bg-brand-600 text-white font-medium rounded-sm hover:bg-brand-700">
+            <ArrowDownTrayIcon className="w-4 h-4" /> {PART_LABEL[which]} DXF
           </button>
-          <button onClick={() => download('door')} className="h-7 px-3 flex items-center gap-1.5 bg-brand-600 text-white font-medium rounded-sm hover:bg-brand-700">
-            <ArrowDownTrayIcon className="w-4 h-4" /> Front door DXF
+          <button onClick={() => void downloadPdf()} disabled={busy} title="Dimensioned drawing to print: hole table, title block, sheet scale"
+            className="h-7 px-3 flex items-center gap-1.5 bg-white border border-steel-300 font-medium rounded-sm hover:bg-steel-50 disabled:opacity-60">
+            <ArrowDownTrayIcon className="w-4 h-4" /> {busy ? 'Building PDF…' : `${PART_LABEL[which]} PDF`}
           </button>
-          {(['backpanel', 'door'] as const).map((k) => (
-            <button key={k} onClick={() => void downloadPdf(k)} disabled={busy !== null} title="Dimensioned drawing to print: hole table, title block, sheet scale"
-              className="h-7 px-3 flex items-center gap-1.5 bg-white border border-steel-300 font-medium rounded-sm hover:bg-steel-50 disabled:opacity-60">
-              <ArrowDownTrayIcon className="w-4 h-4" /> {busy === k ? 'Building PDF…' : k === 'backpanel' ? 'Back panel PDF' : 'Front door PDF'}
-            </button>
-          ))}
         </div>
       </div>
       <div className="px-4 py-1.5 text-xs text-steel-600 bg-white border-b border-steel-200">
         Scale <b>1:1</b> — every coordinate is the real size in {units === 'in' ? 'inches' : 'millimetres'}; the file header declares the unit so CAM software imports it at full size. Tables and DXF labels show inch [mm].
-        Datum 0,0 is the lower-left corner{which === 'door' ? ', seen from outside the door' : ''}. Layers: OUTLINE, HOLES, CUTOUTS{cutOnly ? '' : ', NOTCH_OPTIONAL, TEMPLATE (do not cut), TEXT, DIMS'}.
+        Datum 0,0 is the lower-left corner{which === 'backpanel' ? '' : ', seen from outside'}. Layers: OUTLINE, HOLES, CUTOUTS{cutOnly ? '' : ', NOTCH_OPTIONAL, TEMPLATE (do not cut), TEXT, DIMS'}.
       </div>
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 min-w-0 p-4 bg-steel-100 overflow-hidden">

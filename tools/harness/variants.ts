@@ -17,6 +17,7 @@ import { useSpecStore } from '../../src/store/useSpecStore';
 import { collectProject } from '../../src/deliverables/collect';
 import { buildEverythingZip } from '../../src/deliverables/files';
 import { drillingDxf } from '../../src/electrical/dxf';
+import { enclosureFaceDrilling } from '../../src/electrical/enclosureFaces';
 import {
   backPanelDrilling, billOfMaterials, cableSchedule, designWarnings, doorDrilling, motorFla, panelLayout,
   panelNameplate, revisionState, spareSpace, terminalPlan, wireNumbers, buildModel,
@@ -279,7 +280,8 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
   const out: Record<string, string> = {};
   out['everything.zip'] = await b64(await buildEverythingZip(p));
   const bpPlan = backPanelDrilling(ctx), doorPlan = doorDrilling(ctx);
-  for (const [k, plan] of [['back_panel', bpPlan], ['door', doorPlan]] as const) {
+  const facePlans = enclosureFaceDrilling(ctx);
+  for (const [k, plan] of [['back_panel', bpPlan], ['door', doorPlan], ...facePlans.map((f) => [`enclosure_${f.kind}`, f] as const)] as const) {
     out[`dxf/${k}_mm.dxf`] = text(drillingDxf(plan, ctx.projectName, { units: 'mm' }));
     out[`dxf/${k}_in.dxf`] = text(drillingDxf(plan, ctx.projectName, { units: 'in' }));
     out[`dxf/${k}_mm_cut.dxf`] = text(drillingDxf(plan, ctx.projectName, { units: 'mm', cutOnly: true }));
@@ -304,7 +306,7 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     cables: cableSchedule(ctx),
     warnings: designWarnings(ctx),
     layout: { enclosure: layout.enclosure, backplate: layout.backplate, door: { w: layout.door.w, h: layout.door.h, items: layout.door.items, handle: layout.door.handle }, overflow: layout.overflow, notFit: layout.notFit, warnings: layout.warnings, items: layout.items.map(({ tag, label, category, x, y, w, h }) => ({ tag, label, category, x, y, w, h })), rails: layout.rails, ducts: layout.ducts },
-    drilling: { backpanel: bpPlan, door: doorPlan },
+    drilling: { backpanel: bpPlan, door: doorPlan, faces: facePlans },
     hmiModel: p.hmi ? getHmi(p.hmi.hmiPartNumber) ?? null : null,
     labels,
     calcs: calculations(p),

@@ -1995,12 +1995,16 @@ export interface DrillCutout {
   verified: boolean;
   /** Optional anti-rotation notch (22 mm operators): width x depth at 12 o'clock. */
   notch?: { w: number; d: number };
+  /** Size not known from the catalog: centre mark and outline only (not cut), machined per this note. */
+  template?: string;
 }
 
 export interface HoleCode { code: string; spec: string; count: number; verified: boolean }
 
+export type EnclosureFace = 'bottom' | 'top' | 'left' | 'right';
+
 export interface DrillingPlan {
-  kind: 'backpanel' | 'door';
+  kind: 'backpanel' | 'door' | EnclosureFace;
   title: string;
   /** Part / tag being machined. */
   part: string;
@@ -2031,7 +2035,7 @@ function spaced(a: number, b: number, pitch: number): number[] {
   return Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
 }
 
-function finishCodes(holes: DrillHole[], cutouts: DrillCutout[], specs: Record<string, string>): HoleCode[] {
+export function finishCodes(holes: DrillHole[], cutouts: DrillCutout[], specs: Record<string, string>): HoleCode[] {
   const out: HoleCode[] = [];
   for (const [code, spec] of Object.entries(specs)) {
     const hs = holes.filter((h) => h.code === code), cs = cutouts.filter((c) => c.code === code);
@@ -2041,7 +2045,7 @@ function finishCodes(holes: DrillHole[], cutouts: DrillCutout[], specs: Record<s
   return out;
 }
 
-function numberIds<T extends { id: string; code: string; x: number; y: number }>(list: T[]): T[] {
+export function numberIds<T extends { id: string; code: string; x: number; y: number }>(list: T[]): T[] {
   const byCode = new Map<string, number>();
   // top-to-bottom, left-to-right: the order a machinist reads the drawing
   return [...list].sort((a, b) => a.code.localeCompare(b.code) || b.y - a.y || a.x - b.x).map((h) => {
@@ -2121,7 +2125,7 @@ export function doorDrilling(ctx: DrawingContext): DrillingPlan {
       cutouts.push({ id: '', tag: d.tag, kind: 'rect', x: r1(d.cx), y: Y(d.cy), w: r1(c.w), h: r1(c.h), code: 'F', verified: c.verified });
     } else cutouts.push({ id: '', tag: d.tag, kind: 'round', x: r1(d.cx), y: Y(d.cy), w: 22.5, h: 22.5, code: 'E', verified: true, notch: { w: 3.2, d: 1.7 } });
   }
-  if (D.handle) cutouts.push({ id: '', tag: D.handle.tag, kind: 'round', x: r1(D.handle.cx), y: Y(D.handle.cy), w: 22.5, h: 22.5, code: 'G', verified: false });
+  if (D.handle) cutouts.push({ id: '', tag: D.handle.tag, kind: 'round', x: r1(D.handle.cx), y: Y(D.handle.cy), w: 22.5, h: 22.5, code: 'G', verified: false, template: 'PER HANDLE TEMPLATE' });
   const ids = numberIds(cutouts);
   const hmi = ids.find((c) => c.code === 'F');
   const specs = {
@@ -2134,7 +2138,7 @@ export function doorDrilling(ctx: DrawingContext): DrillingPlan {
     w: r1(D.w), h: r1(D.h), holes: [], cutouts: ids, codes: finishCodes([], ids, specs),
     notes: [
       'DATUM: LOWER-LEFT CORNER OF DOOR, OUTSIDE (FRONT) VIEW. DIMENSIONS IN INCHES [mm]. TOLERANCE ±0.020 [±0.5] UNLESS NOTED.',
-      ...L.unplaced.filter((u) => /stack light/i.test(u.reason)).map((u) => `NOT ON THE DOOR: ${u.tag} ${u.partNumber} STACK LIGHT — ENCLOSURE TOP, DRILL PER MANUFACTURER TEMPLATE.`),
+      ...L.unplaced.filter((u) => /stack light/i.test(u.reason)).map((u) => `NOT ON THE DOOR: ${u.tag} ${u.partNumber} STACK LIGHT — ON THE ENCLOSURE TOP, SEE THE ENCLOSURE TOP SHEET.`),
       'DOOR SIZE TAKEN AS ENCLOSURE OUTSIDE SIZE — CHECK FLANGE/RETURN AND HINGE CLEARANCE BEFORE CUTTING.',
       'HANDLE: ALIGN WITH DISCONNECT SHAFT CENTRE ON THE BACK PANEL; DRILL MOUNTING HOLES FROM THE HANDLE TEMPLATE.',
       'REINFORCE DOOR AROUND LARGE CUTOUTS; KEEP GASKET LAND CLEAR. DEBURR AND TOUCH UP PAINT.',

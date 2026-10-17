@@ -3,6 +3,7 @@ import type { ProjectSnapshot } from '../collect';
 import { getPart } from '../../electrical/catalog';
 import { getHmi } from '../../hmi/hmiCatalog';
 import { awgFor, motorFla } from '../../electrical/derive';
+import { ALLOWED_RISE_C, cabinetHeat } from '../../electrical/thermal';
 import type { CatalogCategory } from '../../electrical/types';
 
 /**
@@ -18,9 +19,7 @@ export interface CalcSection { title: string; lines: CalcLine[]; result: string;
 export const DC_LOAD_A: Partial<Record<CatalogCategory, number>> = {
   plc: 0.3, plcModule: 0.05, safetyRelay: 0.1, relay: 0.03, pilotLight: 0.02, stackLight: 0.1, sensor: 0.03, contactor: 0.1,
 };
-export const HEAT_W: Partial<Record<CatalogCategory, number>> = {
-  plc: 5, plcModule: 2, safetyRelay: 2, relay: 0.6, contactor: 2.5, overload: 2, motorProtector: 3, breaker: 1.5, terminal: 0.1,
-};
+export { HEAT_W } from '../../electrical/thermal';
 
 export function num(v: unknown): number | null {
   const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
@@ -108,39 +107,16 @@ export function calculations(p: ProjectSnapshot): CalcSection[] {
     });
   }
 
-  // 3. Cabinet heat
-  const heatLines: CalcLine[] = [];
-  let heat = 0;
-  for (const { c, part } of parts) {
-    if (!part || part.mount !== 'backplate') continue;
-    let w: number | null = null;
-    let basis = '';
-    if (part.category === 'powerSupply' && num(part.ratings.watts)) { w = num(part.ratings.watts)! * 0.12; basis = '~12% loss of rated output'; }
-    else if (part.category === 'vfd') { const hp = num(part.ratings.hp480 ?? part.ratings.hp230 ?? part.ratings.hp) ?? 1; w = hp * 746 * 0.04; basis = '~4% of drive rating'; }
-    else if (part.ratings.kind === 'transformer' && num(part.ratings.va)) { w = num(part.ratings.va)! * 0.05; basis = '~5% of VA'; }
-    else if (HEAT_W[part.category] !== undefined) { w = HEAT_W[part.category]!; basis = 'typical'; }
-    if (w === null) continue;
-    w *= c.quantity;
-    heat += w;
-    heatLines.push({ item: `${c.tag} ${part.partNumber}${c.quantity > 1 ? ` x${c.quantity}` : ''}`, value: `${w.toFixed(1)} W`, basis, estimate: true });
-  }
-  if (hmi) {
-    // The HMI electronics sit inside the door: its power ends up as heat in the cabinet.
-    const w = (hmi.sizeIn >= 10 ? 1.0 : 0.6) * 24;
-    heat += w;
-    heatLines.push({ item: `HMI ${hmi.partNumber} (door)`, value: `${w.toFixed(1)} W`, basis: 'supply current x 24 V (typical)', estimate: true });
-  }
-  const enc = parts.find(({ part }) => part?.category === 'enclosure' && part.ratings.kind === 'enclosure')?.part;
-  if (enc) {
-    const h = (num(enc.ratings.heightIn) ?? 24) * 0.0254, w = (num(enc.ratings.widthIn) ?? 20) * 0.0254, dd = (num(enc.ratings.depthIn) ?? 8) * 0.0254;
-    // Wall-mounted: back not counted (IEC/TR 60890 style effective area, simplified).
-    const area = h * w + 2 * h * dd + 2 * w * dd;
-    const rise = heat / (5.5 * area);
+  // 3. Cabinet heat (shared with the enclosure machining, which adds the filter-fan cutouts)
+  const th = cabinetHeat(d.components, getPart, hmi ? { partNumber: hmi.partNumber, sizeIn: hmi.sizeIn } : undefined);
+  if (th.enclosure && th.area !== null && th.rise !== null) {
+    const v = th.ventilation;
     sections.push({
       title: 'Cabinet temperature rise',
-      lines: [...heatLines, { item: 'Effective surface area', value: `${area.toFixed(2)} m²`, basis: `${enc.partNumber}, wall mounted`, estimate: false }],
-      result: `${heat.toFixed(0)} W in ${area.toFixed(2)} m² -> about ${rise.toFixed(1)} °C above room temperature (painted steel, k ~ 5.5 W/m²K). ${rise > 15 ? 'Above 15 °C: add a filter fan or a larger enclosure.' : 'Natural cooling is enough at normal room temperatures (<= 40 °C).'}`,
-      ok: rise <= 15,
+      lines: [...th.lines, { item: 'Effective surface area', value: `${th.area.toFixed(2)} m²`, basis: `${th.enclosure.partNumber}, wall mounted`, estimate: false },
+        ...(v ? [{ item: 'Filter fan air flow', value: `${Math.ceil(v.airflowM3h)} m³/h (${Math.ceil(v.airflowM3h / 1.699)} CFM)`, basis: `V = 3.1 x ${v.wattsToRemove.toFixed(0)} W / ${ALLOWED_RISE_C} K (heat above what the walls shed at ${ALLOWED_RISE_C} °C rise)`, estimate: true }] : [])],
+      result: `${th.watts.toFixed(0)} W in ${th.area.toFixed(2)} m² -> about ${th.rise.toFixed(1)} °C above room temperature (painted steel, k ~ 5.5 W/m²K). ${v ? `Above ${ALLOWED_RISE_C} °C: add a filter fan of at least ${Math.ceil(v.airflowM3h)} m³/h (with an outlet filter), or a larger enclosure.` : 'Natural cooling is enough at normal room temperatures (<= 40 °C).'}`,
+      ok: !v,
     });
   }
 

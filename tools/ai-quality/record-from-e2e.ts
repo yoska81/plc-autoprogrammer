@@ -28,8 +28,15 @@ const replies: [string, unknown][] = [
     motors: F.DESIGN.inputs.motors.map((x: { tag: string; description: string; hp: number }) => ({ tag: x.tag, description: x.description, power: x.hp, unit: 'hp', powerGiven: true, start: 'dol', vertical: false, zone: m.motorLocations[x.tag] ?? '' })),
     estops: 1, guardDoors: [], lightCurtains: [], zones: m.zones, interfaces: [], questions: ['Confirm the conveyor motor nameplate current.'],
   }],
-  ['hmi', { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [] }],
-  ['program', { explanation: 'Program written from the spec.', program: F.LADDER }],
+  // HMI stage = the names / machine states on top of the rule-based screens (src/lib/ai/hmiContentAI.ts).
+  ['hmi', {
+    machineName: 'Conveyor Cell', actuators: [{ index: 0, name: 'Conveyor', manual: true }, { index: 1, name: 'Pusher', manual: true }],
+    states: [{ value: 0, text: 'Stopped', style: 'normal' }, { value: 1, text: 'Running', style: 'ok' }, { value: 2, text: 'Pushing Part', style: 'ok' }, { value: 3, text: 'Faulted', style: 'alarm' }, { value: 4, text: 'Manual', style: 'warning' }, { value: 5, text: 'Safety Stop', style: 'alarm' }],
+    questions: ['Which operator password levels are needed?'],
+  }],
+  // Program stage = the cycle block on top of the rule-based blocks (src/plc/ai/cycleAI.ts).
+  ['program', { explanation: 'Step register reset while stopped.', tags: [{ address: 'DS1150', nickname: 'Step_Cycle', comment: 'Cycle step' }],
+    rungs: [{ id: 'a', block: 'cycle', comment: 'Step 0 while the cycle is not running', branches: [[{ type: 'NC', address: 'C2' }]], outputs: [{ type: 'COPY', source: '0', dest: 'DS1150' }] }] }],
 ];
 const dir = path.join(ROOT, 'tools/ai-quality/recordings/m0-example-conveyor');
 fs.rmSync(dir, { recursive: true, force: true });

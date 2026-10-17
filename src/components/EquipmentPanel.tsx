@@ -78,15 +78,18 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   // The selection being edited; starts from what's applied, else the recommendation. Kept with the
   // project until applied (so leaving the page never loses it), and dropped if the applied
   // equipment changes elsewhere (wizard, update all stages).
-  const appliedChoice: EquipmentChoice | null = project.cpuId && project.recommendation ? { cpuId: project.cpuId, modules: project.modules, hmiPartNumber: appliedHmi || null }
-    : project.recommendation ? recommendedChoice(project.recommendation) : null;
+  // Without any AI suggestion the chooser starts from the project's current equipment: everything can be chosen by hand.
+  const firstCpu = PLC_PROFILES.find((p) => p.available && p.language === 'ladder')?.cpuModels[0]?.id ?? '';
+  const appliedChoice: EquipmentChoice | null = project.cpuId ? { cpuId: project.cpuId, modules: project.modules, hmiPartNumber: appliedHmi || null }
+    : project.recommendation ? recommendedChoice(project.recommendation)
+    : firstCpu ? { cpuId: firstCpu, modules: [], hmiPartNumber: null } : null;
   const basis = JSON.stringify([project.cpuId, project.modules, appliedHmi || null]);
   const [pending, setPending] = useDraft<{ basis: string; choice: EquipmentChoice | null } | null>('equipment.choice', null);
   const choice = pending && pending.basis === basis ? pending.choice : appliedChoice;
   const setChoice = (next: EquipmentChoice | null | ((c: EquipmentChoice | null) => EquipmentChoice | null)) =>
     setPending({ basis, choice: typeof next === 'function' ? next(choice) : next });
 
-  const specEmpty = !Object.values(spec).some((t) => t.trim());
+  const specEmpty = !Object.values(spec).some((t) => typeof t === 'string' && t.trim());
   const apiKey = settings.anthropicApiKey;
 
   // What the machine needs: the AI estimate, or the real I/O list once it exists (whichever is larger).
@@ -133,7 +136,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const cpu = choice ? findCpu(choice.cpuId) : null;
   const fit = cpu && choice ? cpuFit(cpu, choice.modules, need) : null;
   const cap = cpu && choice ? ioCapacity(cpu, moduleSlots(choice.modules)) : null;
-  const applied = Boolean(project.recommendation) && choice?.cpuId === project.cpuId
+  const applied = choice?.cpuId === project.cpuId
     && JSON.stringify(choice?.modules) === JSON.stringify(project.modules) && (choice?.hmiPartNumber ?? '') === (appliedHmi ?? '');
 
   const set = (patch: Partial<EquipmentChoice>) => setChoice((c) => ({ cpuId: c?.cpuId ?? cpus[0].id, modules: c?.modules ?? [], hmiPartNumber: c?.hmiPartNumber ?? null, ...patch }));
@@ -149,11 +152,11 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
       <div className="bg-white border border-steel-200 p-4 flex flex-wrap items-center gap-4">
         <div className="flex-1 min-w-64">
           <h3 className="font-semibold text-steel-900">Control equipment</h3>
-          <p className="text-steel-600">The AI suggests a configuration from your description. You decide: every option is listed below. Options too small for this machine are grey; anything that fits can be chosen, including bigger than suggested.</p>
+          <p className="text-steel-600">Choose the PLC, I/O modules and touch panel yourself in the lists below, or let the AI suggest a configuration from your description (optional). Options too small for this machine are grey.</p>
         </div>
         <button onClick={recommend} disabled={busy || !apiKey || specEmpty}
           className="px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
-          {busy ? <><Spinner /> Selecting equipment…</> : rec ? 'Suggest again' : 'Suggest equipment'}
+          {busy ? <><Spinner /> Selecting equipment…</> : rec ? 'Suggest again (AI)' : 'Suggest for me (AI, optional)'}
         </button>
         {specEmpty && <p className="w-full text-amber-800">Describe the machine first on the <Link to="/spec" className="underline">Machine description</Link> step.</p>}
         {!apiKey && !specEmpty && <p className="w-full text-amber-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</p>}

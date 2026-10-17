@@ -11,6 +11,7 @@ import {
   type AuxBranch, type Cable, type CableCore, type JbTerminal, type JunctionBoxPlan, type MachineDevice, type BomLine, type DrawingContext, type ElectricalModel, type IoGroup, type IoPoint,
   type MotorModel, type PanelLayout, type XfmrBranch, type PsBranch, type Terminal, type TerminalStrip,
 } from '../derive';
+import { enclosureFaceDrilling } from '../enclosureFaces';
 import { lineNo } from './geometry';
 
 export type RungEnd = { kind: 'rail' } | { kind: 'node'; label: string } | { kind: 'xref'; label: string };
@@ -317,8 +318,8 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   specs.push({ title: 'PANEL LAYOUT — BACKPLATE', spec: { kind: 'panel' } });
   if (layout.door.items.length) specs.push({ title: 'DOOR LAYOUT — OPERATOR DEVICES', spec: { kind: 'door' } });
 
-  // machining drawings (back panel drilling, door cutouts)
-  for (const d of [backPanelDrilling(ctx), doorDrilling(ctx)]) {
+  // machining drawings (back panel drilling, door cutouts, enclosure walls)
+  for (const d of [backPanelDrilling(ctx), doorDrilling(ctx), ...enclosureFaceDrilling(ctx)]) {
     const rows: DrillRow[] = [
       ...d.holes.map((h) => ({ id: h.id, tag: h.tag, x: h.x, y: h.y, size: h.code, verified: h.verified })),
       ...d.cutouts.map((c) => ({ id: c.id, tag: c.tag, x: c.x, y: c.y, size: c.kind === 'rect' ? `${c.code} ${dualSize(c.w, c.h)}` : `${c.code} Ø${dualDim(c.w)}`, verified: c.verified })),

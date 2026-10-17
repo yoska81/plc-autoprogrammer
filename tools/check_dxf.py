@@ -46,7 +46,7 @@ def bbox(pts):
     return min(xs), min(ys), max(xs), max(ys)
 
 
-def check_file(path: Path, plan: dict, expect_w: float, expect_h: float, units: str, cut: bool, hmi_cut):
+def check_file(path: Path, plan: dict, expect_w: float, expect_h: float, units: str, cut: bool, hmi_cut, round_sizes=(22.5,)):
     where = f'{path.parent.parent.name}/{path.name}'
     k = 25.4 if units == 'in' else 1.0  # drawing unit -> mm
     try:
@@ -112,15 +112,15 @@ def check_file(path: Path, plan: dict, expect_w: float, expect_h: float, units: 
     # Standard sizes
     for f in feats:
         kind, cx, cy, fw, fh, layer = f
-        if layer == 'CUTOUTS' and kind == 'circle' and abs(fw - 22.5) > TOL:
-            report('FAIL', where, f'operator cutout Ø{fw:.2f} at ({cx:.1f},{cy:.1f}) is not Ø22.5')
+        if layer == 'CUTOUTS' and kind == 'circle' and not any(abs(fw - s) <= TOL for s in round_sizes):
+            report('FAIL', where, f'round cutout Ø{fw:.2f} at ({cx:.1f},{cy:.1f}) is not a standard size {round_sizes}')
         if layer == 'CUTOUTS' and kind == 'rect' and hmi_cut and (abs(fw - hmi_cut[0]) > TOL or abs(fh - hmi_cut[1]) > TOL):
             report('FAIL', where, f'HMI cutout {fw:.2f}x{fh:.2f}, catalog says {hmi_cut[0]}x{hmi_cut[1]}')
         if layer == 'HOLES' and round(fw, 2) not in (4.0, 5.0, 6.35, 4.2, 3.3, 5.1):
             report('WARN', where, f'unusual hole Ø{fw:.2f}')
     # Same coordinates as the drilling plan (the sheet's hole table)
     plan_feats = [(h['x'], h['y'], h['dia']) for h in plan['holes']] + [
-        (c['x'], c['y'], c['w']) for c in plan['cutouts'] if c['code'] != 'G']
+        (c['x'], c['y'], c['w']) for c in plan['cutouts'] if not c.get('template')]
     dxf_xy = sorted((round(f[1], 2), round(f[2], 2)) for f in feats)
     plan_xy = sorted((round(x, 2), round(y, 2)) for x, y, _ in plan_feats)
     if len(dxf_xy) != len(plan_xy):
@@ -154,7 +154,37 @@ def check_variant(vdir: Path):
                 f = vdir / 'dxf' / f'{part}_{units}{"_cut" if cut else ""}.dxf'
                 check_file(f, plan, ew, eh, units, cut, hmi_cut if part == 'door' else None)
     # ZIP copies (inch and mm) must be byte-identical to the Machining-tab exports
-    for zbase, part in (('back_panel_drilling', 'back_panel'), ('door_cutouts', 'door')):
+    faces = data['drilling'].get('faces', [])
+    enc_d = lay['enclosure'].get('d') or 200
+    gland_holes = (16.5, 20.5, 25.5, 32.5, 40.5, 50.5, 63.5, 22.2, 28.2, 34.9, 44.0, 50.4, 62.7)
+    for fp in faces:
+        fw, fh = (enc_w, enc_d) if fp['kind'] in ('bottom', 'top') else (enc_d, enc_h)
+        if abs(fp['w'] - fw) > TOL or abs(fp['h'] - fh) > TOL:
+            report('FAIL', v, f'{fp["kind"]} plan {fp["w"]}x{fp["h"]} differs from the enclosure wall {fw}x{fh}')
+        for units in ('mm', 'in'):
+            for cut in (False, True):
+                check_file(vdir / 'dxf' / f'enclosure_{fp["kind"]}_{units}{"_cut" if cut else ""}.dxf', fp, fw, fh, units, cut, None, gland_holes)
+    # Cable entries: one per cable leaving the cabinet + the supply (or listed as not fitting)
+    jbs = {c['to'] for c in data['cables'] if c['kind'] == 'trunk'}
+    leaving = [c['tag'] for c in data['cables'] if c['from'] not in jbs] + ['SUPPLY']
+    bottom = next((f for f in faces if f['kind'] == 'bottom'), None)
+    entered = {c['tag'] for c in (bottom['cutouts'] if bottom else []) if c['code'] == 'H'}
+    overflow = ' '.join(n for n in (bottom['notes'] if bottom else []) if n.startswith('DOES NOT FIT'))
+    missing = [t for t in leaving if t not in entered and t not in overflow]
+    if missing:
+        report('FAIL', v, f'cables leaving the cabinet without an entry on the bottom: {missing}')
+    print(f'{v}: {len(entered)} cable entries for {len(leaving)} cables leaving the cabinet; walls {[f["kind"] for f in faces]}')
+    # Ventilation: a failed temperature-rise calculation needs fan + outlet filter cutouts
+    temp = next((c for c in data['calcs'] if c['title'] == 'Cabinet temperature rise'), None)
+    fans = [c for f in faces for c in f['cutouts'] if c['code'] == 'J']
+    if temp and not temp['ok'] and len(fans) < 2:
+        report('FAIL', v, 'temperature rise above the limit but no filter fan / outlet filter cutouts on the walls')
+    if temp and temp['ok'] and fans and not any('FAN' in c['tag'] for c in fans):
+        report('WARN', v, 'fan cutouts although natural cooling is enough')
+    for c in (c for f in faces for c in f['cutouts']):
+        if c.get('template') and c['code'] == 'H':
+            report('WARN', v, f'cable {c["tag"]}: no standard gland size for its OD — sized per cable OD')
+    for zbase, part in (('back_panel_drilling', 'back_panel'), ('door_cutouts', 'door'), *((f'enclosure_{f["kind"]}_cutouts', f'enclosure_{f["kind"]}') for f in faces)):
         for units in ('in', 'mm'):
             z = vdir / 'zip' / 'electrical' / 'machining' / f'{zbase}_1to1_{units}.dxf'
             if not z.exists():
@@ -162,7 +192,7 @@ def check_variant(vdir: Path):
             elif z.read_bytes() != (vdir / 'dxf' / f'{part}_{units}.dxf').read_bytes():
                 report('FAIL', v, f'ZIP {z.name} differs from the {units} export')
     # inch and mm files describe the same geometry (x 25.4), entity by entity
-    for part in ('back_panel', 'door'):
+    for part in ('back_panel', 'door', *(f'enclosure_{f["kind"]}' for f in faces)):
         for cut in ('', '_cut'):
             g = {}
             for units, k in (('in', 25.4), ('mm', 1.0)):
@@ -192,9 +222,9 @@ def check_variant(vdir: Path):
     if pdf:
         txt = subprocess.run(['pdftotext', '-layout', str(pdf), '-'], capture_output=True, text=True).stdout
         rows = {}
-        for m in re.finditer(r'(?<!\S)([A-G]\d+)\s{2,}(\S+(?: \S+)*?)\s{2,}(\d+\.\d{3}) \[(\d+\.\d)\]\s+(\d+\.\d{3}) \[(\d+\.\d)\]', txt):
+        for m in re.finditer(r'(?<!\S)([A-L]\d+)\s{2,}(\S+(?: \S+)*?)\s{2,}(\d+\.\d{3}) \[(\d+\.\d)\]\s+(\d+\.\d{3}) \[(\d+\.\d)\]', txt):
             rows[m.group(1) + '|' + m.group(2).strip()] = tuple(float(m.group(i)) for i in (3, 4, 5, 6))
-        for plan in (bp_plan, door_plan):
+        for plan in (bp_plan, door_plan, *faces):
             for f in plan['holes'] + plan['cutouts']:
                 key = next((k for k in rows if k.split('|')[0] == f['id'] and k.split('|')[1] == f['tag']), None)
                 if not key:

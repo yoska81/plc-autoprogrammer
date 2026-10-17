@@ -185,3 +185,62 @@ Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 althoug
 - **Bug found and fixed**: drilling/cutout sheet heading said "SCALE 1:6" while the title block said "1:5" (big door 1:8 vs 1:6). The heading used `drillScale(w, h·168/150)`, the title block `drillScale(w, h)`. Both now use `drillSheetScale` in `scale.ts`. `check_pdf.py` now fails any sheet whose heading scale differs from the title block.
 - `e2e/persist.e2e.cjs`: the selected-sheet case uses the sheet list (tabs removed in 7f3b37d).
 - Checks: tsc, eslint, all unit tests, `check-all.sh` 0 FAIL / 0 WARN on 5 variants. E2E pass: app, ai-jobs, layout, persist, old-data, hmi-editor, sweep.
+
+## Enclosure wall machining (coordinator, after #50): glands, fans, stack light, air inlet
+- New `src/electrical/enclosureFaces.ts`, `enclosureFaceDrilling(ctx)`: one machining plan per wall that has something on it (bottom / top / left / right). Each is drawn as a drilling sheet in the drawing set, with dimensions from the datum and a hole table.
+- **Cable entries (bottom, code H)**: one per cable leaving the cabinet (cable schedule rows not starting at a JB) plus the incoming supply.
+  - OD is estimated from the core count and conductor size (stated on the sheet as an estimate).
+  - Gland: IEC → metric (EN 62444, hole = thread + 0.5); US/Canada → NPT cord grip in a standard conduit knockout (1/2" = 22.2 mm …). Clamping ranges are typical, marked "check the datasheet".
+  - Layout: control cables from the left, motor cables and the supply from the right (disconnect side). Rows are clear of the walls (40 mm), the door return (60 mm) and the back wall (40 mm). Anything that doesn't fit is listed in a note.
+- **Ventilation (code J)**: when the heat calculation needs it, a filter fan goes low on the left and an outlet filter high on the right.
+  - Air flow: V = 3.1 · (P − k·A·15 K) / 15 K. The calc document now states this flow too.
+  - The heat logic was moved to a shared `src/electrical/thermal.ts`, so the calc and the machining agree.
+  - The cutout is the typical cutout of that fan size class (92/125/177/224/292 mm), labelled ASSUMED, drawn as a template (centre mark + dashed outline on the TEMPLATE layer, never cut).
+- **Stack light (code K, top)**: centre mark + base outline (Ø from the catalog); drill per the manufacturer's template.
+- **Air inlet (code L, bottom)**: only when solenoid valves are inside the cabinet. Bulkhead for the valve's port size from the catalog description. Template only.
+- Generic `template` flag on cutouts (the door handle uses it too): DXF centre mark + outline on TEMPLATE; the sheet draws it dashed with the reason.
+- Outputs:
+  - Machining page: part selector (back panel, door, each wall); DXF + PDF of the selected part.
+  - Deliverables: "Enclosure walls DXF / PDF".
+  - ZIP: `electrical/machining/enclosure_<wall>_cutouts_1to1_{in,mm}.dxf` + `<base>_enclosure_cutouts.pdf`.
+  - Full package: under "Machining drawings".
+- Checkers:
+  - `check_dxf.py` covers the walls: outline = W×D / D×H, standard gland holes, templates not cut, inch = mm geometry, ZIP copies, sheet hole tables.
+  - Every cable leaving the cabinet has an entry. A failed temperature calc requires fan cutouts.
+  - `check_pdf.py`: wall PDFs = drawing-set sheets; machining PDFs on A3 for IEC variants.
+- Results: us480 3 entries (bottom only); big 12 entries + fan/outlet + stack light (4 walls); analog 6; ca600 5; us120 5; rules 7; rules-big 11 + fan + stack light; rules-eu 7 metric glands.
+- Test: `src/electrical/enclosureFaces.test.ts` covers OD estimates, one entry per cable + supply, NPT vs metric, clearances, supply on the disconnect side, fan/outlet placement and air flow, stack light, air inlet with port size, and that templates are never on the CUTOUTS layer.
+
+## QA: the user's "Sealing Head" through the rule-based pipeline (preview build, window.claude mocked)
+Flow: copy of the example + Sealing Head description → Start clean ("make the I/O list again") → Build everything (equipment → I/O → electrical engine → HMI engine → program) → deliverables. The mocks answer as a good AI would within the app's vocabulary: CLICK C0-12DD1E-D + C0-16ND3 + C0-08TD1, C-more CM5-T7W, 20 I/O (two-hand L/R, light curtain, heater SSR output, over-temp limit, TC via 4-20 mA, unwinder VFD run/fault/speed).
+Regression test: `e2e/sealing-head.e2e.cjs` (needs `VITE_PREVIEW=1 npx vite --port 5206`).
+
+Findings, ranked (✔ = fixed here, → = routed to the coordinator):
+1. CRITICAL → **Two-hand control is not a safety function.** PB1/PB2 are plain green N.O. buttons on the cabinet door, wired to PLC inputs X002/X003. There is no two-hand relay (ISO 13851 type IIIC: N.O.+N.C. per button, 0.5 s synchronism), none in the catalog, nothing in the engine (machine model has no `twoHand`). The buttons belong at the machine, at the ISO 13855 distance.
+2. CRITICAL → **The light curtain gets a standard inductive prox sensor (PNK-AP-3H) in the BOM** and goes to PLC input X004. Cause: `deviceTypeOf` sends any input of type `other` to `sensor-pnp`. There is no OSSD channel either: the only relay is the E-stop/gate SR1 (dry-contact inputs, manual reset), and the safety circuit sheet shows only the E-stop. Only the Schneider XPSU in the catalog takes light curtains.
+3. CRITICAL → **The HMI can close the heated head without two-hand.** `HMI_Start` "starts the automatic cycle" and `HMI_Sealing_Head_Extend` is a hold-to-run jog of the closing stroke from the touch screen. On a two-hand machine the closing stroke must only come from the two-hand relay; the jog of a closing press/head needs two-hand or reduced force/speed.
+4. MAJOR → **The heater has no power circuit.** Y003 "Seal heater on (SSR)" drives CR1 "Interposing relay … dry contact", and CR1's contacts go nowhere. No SSR or heater contactor, no heater branch protection, no heater on the power sheet. The disconnect is sized for 1.5 A, without the heater. There are no SSR / heater parts in the catalog.
+5. MAJOR → **The over-temperature limit is not hardwired.** X106 "Heater over-temperature limit tripped" is only a PLC input, and it also got a prox sensor (same cause as 2). An independent high-limit must open the heater contactor (NFPA 79 / IEC 60204-1 7.4).
+6. MAJOR → **No thermocouple support.** The analog ranges are only 4-20 mA / 0-20 mA / 0-5 V / 0-10 V. There is no TC transmitter or CLICK C0-04THM in the catalog, and the TC point is wired as a 4-20 mA two-wire loop with no transmitter part. The C0-04AD-1 is current-only.
+7. MAJOR → **The HMI has no seal-temperature setpoint and no dwell time**, although the spec says the operator sets both. It only has high/low alarm limits. The program AI therefore invents DF201 / DS2, which no HMI screen writes.
+8. MAJOR → **Missing alarms:** heater over-temperature (X106), air pressure low (X105), film roll low (X108). The HMI engine only makes alarms for VFD faults, timeouts and analog limits.
+9. MAJOR → **Start clean keeps the example's document control**: customer "EXAMPLE FOODS INC.", site "LINE 3", project no. 24-117, drawing prefix CNV-E-… on every drawing and in the machine spec.
+10. MAJOR ✔ **The deliverables ZIP crashed** (`t.trim` of undefined) on a project whose spec had `qa: undefined`. Root cause: `useSpecStore.setSections` wrote `qa: undefined`. Fixed in the store (no undefined key), in `files.ts` spec.md (string guard) and in `EquipmentPanel` (same `.trim()` pattern on an empty spec).
+11. MAJOR ✔ **The design review did not see any of 1–6.** New code rules (US / Canada / IEC):
+    - `two-hand-control` (critical; major when on the door)
+    - `safety-device-standard-part` (critical)
+    - `light-curtain-relay` (critical)
+    - `heater-power-circuit` (major)
+    - `heater-overtemperature` (major, plus the thermocouple-without-transmitter hit)
+    Tests in codeRules.test.ts (21 pass); the E2E checks they fire on the sealing head.
+12. MINOR → **Zones:** light curtain, over-temp limit, air pressure and film-low fall back to the first zone ("Unwind"); JB1 at the unwinder collects sealing-station devices.
+13. MINOR → **Safety Functions table** lists only the E-stop and the reset (no light curtain, no two-hand SF).
+14. MINOR → **Pilot lights on 24+S:** all PLC outputs, the fault lamp included, are on the safety-switched supply, so the fault lamp goes dark on a safety stop.
+15. MINOR → **HMI tag/alarm names carry a stray space:** "Seal Heater Temperature (thermocouple )".
+16. INFO **What works:**
+    - equipment → I/O → electrical → HMI → program in the preview;
+    - VFD analog speed 4-20 mA matched to drive AI2 (P03.29);
+    - STO from SR1; double-solenoid head valve;
+    - analog setup CSV;
+    - wire labels for every number; machining incl. bottom glands;
+    - 54-file ZIP.
