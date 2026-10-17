@@ -138,11 +138,13 @@ async function analogPass(browser, problems) {
   for (const tab of ['cabinet', 'machine']) {
     await page.goto(`${BASE}/electrical?tab=${tab}`);
     await page.waitForTimeout(1200);
-    const t = page.locator('[role="tab"][title*="ANALOG"]');
+    const t = page.locator('nav[aria-label="Drawing sheets"] button[title*="ANALOG"]');
     if (await t.count()) {
       await t.first().click();
       await page.waitForTimeout(800);
-      const svgText = await page.locator('main svg').first().textContent().catch(() => '');
+      // The sheet list and the stacked sheets are in the same order.
+      const i = (await page.locator('nav[aria-label="Drawing sheets"] button[title]').evaluateAll((bs) => bs.map((b) => b.title))).findIndex((t) => t.includes('ANALOG'));
+      const svgText = (await page.locator('[data-sheet]').nth(i).textContent().catch(() => '')) ?? '';
       if (!svgText.includes('psi') && !svgText.includes(made[0]?.address ?? '§')) fail('analog sheet does not show the analog input');
       await check(`drawing_${tab}`);
       break;

@@ -59,6 +59,10 @@ const CASES = [
     await page.getByRole('button', { name: 'Use this selection' }).first().click();
     await page.waitForTimeout(500);
     const applied = await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
+    // The example's HMI, drawings and program were made for CLICK addresses: now out of date.
+    const stale = await page.evaluate(async () => { const s = (await import('/src/spec/useStages.ts')).stagesNow(); return ['electrical', 'hmi', 'program'].map((k) => s[k].reason ?? 'ready'); });
+    log(`${c.name}: after the PLC change: ${stale.join(' | ')}`);
+    check(stale.every((r) => /PLC or its I\/O addresses changed/.test(r)), `${c.name}: electrical, HMI and program out of date after the PLC change`);
     check(applied === c.panel, `${c.name}: panel applied (${applied})`);
 
     // HMI page: screens at the panel's resolution, maker named.
