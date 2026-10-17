@@ -7,7 +7,11 @@ import { usePlc } from '../plc/core/usePlc';
 import { getPart, partsIn } from '../electrical/catalog';
 import { catalogFor } from '../electrical/catalogs';
 import PartPicker from '../electrical/PartPicker';
-import { saveBlob } from '../deliverables/files';
+import { buildDrawingsPdf, saveBlob } from '../deliverables/files';
+import { collectProject } from '../deliverables/collect';
+import { printPdf } from '../deliverables/printPdf';
+import { sheetOnPaper } from '../standards/regions';
+import { notify } from '../store/useNoticeStore';
 import { keyRatings } from '../electrical/strength';
 import { useProjectStore, useVendorPreference, type Region } from '../store/useProjectStore';
 import { REGIONS, regionSpec, SUPPLY_INFO } from '../standards/regions';
@@ -94,6 +98,26 @@ export default function ElectricalPage() {
     setInputs({ motors: inputs.motors.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
 
   const warnings = useMemo(() => (ctx ? designWarnings(ctx) : []), [ctx]);
+  const [pdfBusy, setPdfBusy] = useState<'print' | 'save' | null>(null);
+  // The drawing set as a real PDF (one page per sheet, 1:1 on the project's paper): print it or save it.
+  const drawingsPdf = async (mode: 'print' | 'save') => {
+    setPdfBusy(mode);
+    try {
+      const pdf = await buildDrawingsPdf(collectProject());
+      if (!pdf) { notify('There is no electrical design to print yet.'); return; }
+      const name = `${base}_drawings.pdf`;
+      if (mode === 'save') saveBlob(name, pdf);
+      else {
+        const paper = sheetOnPaper(ctx?.sheet ?? 'ANSI B').paper;
+        const r = await printPdf(pdf, name, { wMm: paper.w, hMm: paper.h });
+        if (r === 'saved') notify('Printing is not available here, so the drawings PDF was saved: open it and print from the PDF reader.');
+      }
+    } catch (e) {
+      notify(`The drawings PDF could not be made: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPdfBusy(null);
+    }
+  };
   const base = projectName.trim().replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'panel';
   const apiKey = settings.anthropicApiKey;
 
@@ -136,7 +160,8 @@ export default function ElectricalPage() {
           </div>
           {el.design && (
             <div className="flex gap-2">
-              <Link to="/print-electrical" target="_blank" className="px-3 py-1.5 text-sm bg-steel-800 text-white rounded hover:bg-steel-900">Print / PDF</Link>
+              <button onClick={() => void drawingsPdf('print')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm bg-steel-800 text-white rounded hover:bg-steel-900 disabled:opacity-60">{pdfBusy === 'print' ? 'Preparing…' : 'Print'}</button>
+              <button onClick={() => void drawingsPdf('save')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-60">{pdfBusy === 'save' ? 'Preparing…' : 'Drawings PDF'}</button>
               {ctx && <button onClick={() => download(`${base}_BOM.csv`, bomCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">BOM CSV</button>}
               {ctx && <Link to="/export#order-list" className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Order list</Link>}
               {ctx && <button onClick={() => download(`${base}_cable_schedule.csv`, cableScheduleCsv(ctx), 'text/csv')} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50">Cable schedule CSV</button>}

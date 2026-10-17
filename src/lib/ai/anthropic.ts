@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { reportAiProgress } from './progress';
 import type { Effort } from '../../store/useSettingsStore';
 import { IS_PREVIEW } from '../../preview/mode';
 import { callClaudeAccount } from '../../preview/claudeAccount';
@@ -75,7 +76,7 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   const totalMs = totalLimitFor(opts.effort);
   if (IS_PREVIEW) {
     // plain answers stream their text (progress); JSON answers arrive at once (total cap only)
-    return withWatchdog((signal, progress) => callClaudeAccount({ ...(opts as Parameters<typeof callClaudeAccount>[0]), signal, onProgress: progress }),
+    return withWatchdog((signal, progress) => callClaudeAccount({ ...(opts as Parameters<typeof callClaudeAccount>[0]), signal, onProgress: (chars) => { progress(); if (chars !== undefined) reportAiProgress(opts.signal, chars); } }),
       { signal: opts.signal, totalMs, reportsProgress: !opts.schema });
   }
   // Keys live in the user's own browser; there is no backend to proxy through.
@@ -101,6 +102,7 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
       messages: opts.messages,
     }, { signal });
     stream.on('streamEvent', progress);
+    stream.on('text', (_delta, snapshot) => reportAiProgress(opts.signal, snapshot.length));
     return stream.finalMessage();
   }, { signal: opts.signal, totalMs, reportsProgress: true });
 
