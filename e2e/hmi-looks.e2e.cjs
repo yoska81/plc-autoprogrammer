@@ -55,6 +55,44 @@ const screenButtons = (page) => page.locator('nav[aria-label="Screens"] > button
   await page.locator('[role="listbox"]').screenshot({ path: path.join(OUT, '00_picker.png') });
   await page.keyboard.press('Escape');
 
+  // 2b. The list stays inside the window: with the picker near the bottom it opens upward (or
+  // shrinks and scrolls); near the top it opens downward.
+  const inWindow = async (where) => {
+    await picker.evaluate((b, where) => {
+      // Scroll the picker's scroll container (or the page) so the button sits near the bottom / top.
+      let sc = b.parentElement;
+      while (sc && !(sc.scrollHeight > sc.clientHeight && /auto|scroll/.test(getComputedStyle(sc).overflowY))) sc = sc.parentElement;
+      const r = b.getBoundingClientRect();
+      const target = where === 'bottom' ? window.innerHeight - r.height - 20 : 80;
+      (sc ?? document.scrollingElement).scrollBy(0, r.top - target);
+    }, where);
+    await picker.click();
+    const list = page.locator('[role="listbox"][aria-label="HMI looks"]');
+    const b = await list.boundingBox();
+    const btn = await picker.boundingBox();
+    const vh = page.viewportSize().height;
+    const placement = await list.getAttribute('data-placement');
+    const scrolls = await list.evaluate((el) => el.scrollHeight > el.clientHeight);
+    log(`Picker near the ${where} (button at y=${Math.round(btn.y)}): list opens ${placement}, ${Math.round(b.y)}–${Math.round(b.y + b.height)} of ${vh}${scrolls ? ', scrolls' : ''}`);
+    check(b.y >= 0 && b.y + b.height <= vh, `picker near the ${where}: list inside the window (${Math.round(b.y)}–${Math.round(b.y + b.height)} of ${vh})`);
+    // Not cut off by the panel it sits in either: its first and last rows are what is drawn there.
+    const visible = await list.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return [r.top + 6, r.bottom - 6].every((y) => el.contains(document.elementFromPoint(r.left + r.width / 2, y)));
+    });
+    check(visible, `picker near the ${where}: top and bottom of the list are visible (not clipped)`);
+    await page.screenshot({ path: path.join(OUT, `00_picker_${where}.png`) });
+    await page.keyboard.press('Escape');
+    return { placement, btn };
+  };
+  await page.setViewportSize({ width: 1600, height: 700 });
+  const low = await inWindow('bottom');
+  if (low.btn.y > 700 / 2) check(low.placement === 'up', 'low picker opens upward');
+  await page.setViewportSize({ width: 1600, height: 1400 });
+  const high = await inWindow('top');
+  check(high.btn.y + 416 < 1400 ? high.placement === 'down' : true, 'picker with room below opens downward');
+  await page.setViewportSize({ width: 1600, height: 1000 });
+
   // 3. Every look × every screen: texts inside their element, no two texts on top of each other, layout check clean.
   const nScreens = await screenButtons(page).count();
   for (const look of theme.looks) {
