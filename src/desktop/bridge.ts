@@ -90,7 +90,8 @@ export interface IsaDesktop {
   /** Native Save dialog, then write the file. */
   saveFile?(name: string, bytes: Uint8Array): Promise<DesktopSaveResult>;
   /** A project file (.isap) opened from Explorer (double-click / "Open with"). */
-  onOpenFile?(cb: (name: string, bytes: Uint8Array, filePath: string) => void): void;
+  /** Returns an unsubscribe (older app builds return nothing). */
+  onOpenFile?(cb: (name: string, bytes: Uint8Array, filePath: string) => void): (() => void) | void;
   /** Write again to a file chosen earlier in a Save dialog (or opened from Explorer). */
   writeFile?(filePath: string, bytes: Uint8Array): Promise<DesktopSaveResult>;
   /** Connect to PLC over Modbus TCP (desktop app only: a browser can't open TCP sockets). */
