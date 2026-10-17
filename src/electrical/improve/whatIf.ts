@@ -117,8 +117,13 @@ export function runDesign(base: BaseInput, option: WhatIfOption | null): WhatIfR
 /** Plain-words differences of an option against the project as it is. */
 export function differences(a: DesignFacts, b: DesignFacts): string[] {
   const out: string[] = [];
+  // A cost difference means something only when both sides price the same parts: a part "to confirm" on
+  // one side is missing from its total (a stainless enclosure without a price would look cheaper).
+  const onlyB = b.unpricedParts.filter((pn) => !a.unpricedParts.includes(pn));
+  const onlyA = a.unpricedParts.filter((pn) => !b.unpricedParts.includes(pn));
   const dc = b.cost - a.cost;
-  if (Math.abs(dc) >= 0.01) out.push(`${dc < 0 ? 'Saves' : 'Adds'} $${Math.abs(dc).toFixed(2)}${b.unpriced !== a.unpriced ? ` (${b.unpriced} part${b.unpriced !== 1 ? 's' : ''} still without a price)` : ''}`);
+  if (onlyB.length || onlyA.length) out.push(`Cost not comparable: no price yet for ${[...onlyB, ...onlyA].join(', ')}`);
+  else if (Math.abs(dc) >= 0.01) out.push(`${dc < 0 ? 'Saves' : 'Adds'} $${Math.abs(dc).toFixed(2)}`);
   if (b.enclosure.text !== a.enclosure.text) out.push(`Enclosure ${b.enclosure.areaIn2 < a.enclosure.areaIn2 ? 'smaller' : b.enclosure.areaIn2 > a.enclosure.areaIn2 ? 'larger' : 'changes'}: ${b.enclosure.text}`);
   if (Math.abs(b.heatW - a.heatW) >= 1) out.push(`${b.heatW < a.heatW ? 'Less' : 'More'} heat: ${b.heatW} W`);
   if (b.lead !== a.lead) out.push(`Slowest part: ${b.lead === 'stock' ? 'everything in stock' : b.lead === 'short' ? '1-3 weeks' : '4+ weeks'}`);

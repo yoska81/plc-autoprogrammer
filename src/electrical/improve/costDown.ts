@@ -11,7 +11,8 @@ import { dcLoad } from '../engine';
 import { coversSupply, hpKeys, num } from '../engine/select';
 import { isIec, SUPPLY_INFO } from '../../standards/regions';
 import type { CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, SupplyVoltage } from '../types';
-import { piecePrice, usd } from './facts';
+import { usd } from './facts';
+import { piecePrice, priceLine } from '../pricing';
 
 export interface Swap { tag: string; from: string; to: string }
 
@@ -47,15 +48,15 @@ function hpRating(p: CatalogPart, supply: SupplyVoltage): number | undefined {
   return undefined;
 }
 
-/** Saving of `qty` pieces from → to; null when either price is not verified. */
-function savingOf(from: string, to: string, qty: number, getPart: (pn: string) => CatalogPart | undefined): number | null {
-  const a = piecePrice(from, getPart(from)), b = piecePrice(to, getPart(to));
-  return a === undefined || b === undefined ? null : Math.round((a - b) * qty * 100) / 100;
+/** Saving of `qty` pieces from → to, as the order list would price both; null when either price is not known. */
+function savingOf(from: string, to: string, qty: number): number | null {
+  const a = priceLine(from, qty, undefined, false).extended, b = priceLine(to, qty, undefined, false).extended;
+  return a === undefined || b === undefined ? null : Math.round((a - b) * 100) / 100;
 }
 
 /** Smallest candidate by `size`, ties broken by price (cheapest first). */
 function smallest(cands: CatalogPart[], size: (p: CatalogPart) => number): CatalogPart | undefined {
-  return [...cands].sort((a, b) => size(a) - size(b) || (piecePrice(a.partNumber, a) ?? Infinity) - (piecePrice(b.partNumber, b) ?? Infinity))[0];
+  return [...cands].sort((a, b) => size(a) - size(b) || (piecePrice(a.partNumber) ?? Infinity) - (piecePrice(b.partNumber) ?? Infinity))[0];
 }
 
 const fieldInputs = (d: ElectricalDesign, getPart: DrawingContext['getPart']) =>
@@ -80,7 +81,7 @@ export function costDownPass(ctx: DrawingContext): CostDown {
     let saving: number | null = 0;
     for (const s of swaps) {
       const qty = d.components.find((x) => x.tag === s.tag)?.quantity ?? 1;
-      const v = savingOf(s.from, s.to, qty, get);
+      const v = savingOf(s.from, s.to, qty);
       saving = v === null || saving === null ? null : saving + v;
     }
     // A smaller part that costs the same or more is no saving: keep the fitted one.

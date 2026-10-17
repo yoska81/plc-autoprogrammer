@@ -5,7 +5,8 @@ import { supplierOfPart } from '../electrical/catalogs';
 import { getHmi, hmiMakerOf } from '../hmi/hmiCatalog';
 import { sparePartsTable } from './docs/maintenance';
 import { isGroup } from './docs/table';
-import { priceOf, type PartPrice } from '../electrical/prices';
+import type { PartPrice } from '../electrical/prices';
+import { packOf, priceLine } from '../electrical/pricing';
 import { listLabels } from '../electrical/labels/list';
 import { labelSetupFor, sizeOf } from '../electrical/labels/setup';
 import { supplyByPart } from '../electrical/labels/printers';
@@ -62,6 +63,8 @@ export interface OrderList {
   toSelect: string[];
   total: number;
   unpriced: number;
+  /** The panel parts alone (no label supplies): the figure Sourcing and Improve design show. */
+  parts: { total: number; unpriced: number };
   /** Oldest price date used, for "list price as of …". */
   priceDate: string | null;
   currency: 'USD';
@@ -88,10 +91,6 @@ function supplierOf(partNumber: string): string {
   return supplierOfPart(getPart(partNumber)) ?? 'Supplier to confirm';
 }
 
-const packOf = (partNumber: string): number => {
-  const n = Number(getPart(partNumber)?.ratings?.packQty);
-  return Number.isFinite(n) && n > 1 ? n : 1;
-};
 
 export function buildOrderList(p: ProjectSnapshot, o: OrderOptions): OrderList {
   const lines = new Map<string, OrderLine>();
@@ -134,14 +133,10 @@ export function buildOrderList(p: ProjectSnapshot, o: OrderOptions): OrderList {
   const edits = o.edits ?? currentEdits().bom;
   const out: OrderLine[] = [...lines.values()].map((l) => {
     const pieces = l.bomQty + l.spareQty;
-    const genQty = Math.ceil(pieces / l.packQty);
     const e = edits[l.partNumber];
-    const partNumber = e?.partNumber?.trim() || l.partNumber;
-    // A typed quantity is for the panel order; the spares order keeps its own.
-    const orderQty = !o.sparesOnly && e?.qty !== undefined && e.qty >= 0 ? e.qty : genQty;
-    const userPrice = e?.price !== undefined && e.price >= 0 ? e.price : undefined;
-    const price = priceOf(partNumber);
-    const unit = userPrice ?? price?.price;
+    // One price source for every total (src/electrical/pricing.ts). A typed quantity is for the panel order; the spares order keeps its own.
+    const pl = priceLine(l.partNumber, pieces, edits, !o.sparesOnly);
+    const { partNumber, orderQty, generatedQty: genQty, price, userPrice } = pl;
     const source = [l.bomQty ? 'BOM' : '', l.spareQty ? 'spares' : ''].filter(Boolean).join(' + ');
     const edited = e ? {
       ...(partNumber !== l.partNumber ? { partNumber: l.partNumber } : {}),
@@ -151,7 +146,7 @@ export function buildOrderList(p: ProjectSnapshot, o: OrderOptions): OrderList {
     } : undefined;
     return {
       ...l, partNumber, description: e?.description ?? l.description, orderQty, source, price, userPrice,
-      extended: unit !== undefined ? +(unit * orderQty).toFixed(2) : undefined,
+      extended: pl.extended,
       note: l.packQty > 1 ? `Sold in packs of ${l.packQty}: ${pieces} needed → ${genQty} pack${genQty > 1 ? 's' : ''}` : undefined,
       edited: edited && Object.keys(edited).length ? edited : undefined,
     };
@@ -187,6 +182,10 @@ export function buildOrderList(p: ProjectSnapshot, o: OrderOptions): OrderList {
     groups, toSelect,
     total: +groups.reduce((s, g) => s + g.subtotal, 0).toFixed(2),
     unpriced: groups.reduce((s, g) => s + g.unpriced, 0),
+    parts: {
+      total: +out.filter((l) => l.source !== 'labels').reduce((s, l) => s + (l.extended ?? 0), 0).toFixed(2),
+      unpriced: out.filter((l) => l.source !== 'labels' && l.extended === undefined).length,
+    },
     priceDate: dates[0] ?? null,
     currency: 'USD',
   };

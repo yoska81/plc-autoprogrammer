@@ -27,7 +27,13 @@ assert.notDeepEqual(v240.ctx.design.components.map((c) => c.partNumber), now.ctx
 const x4 = runDesign(base, opts.find((o) => o.id === 'enclosure:NEMA 4X')!);
 const enc = x4.ctx.design.components.find((c) => c.tag === 'ENC1')!;
 assert.match(String(base.getPart(enc.partNumber)?.ratings.material), /stainless/i);
-assert.ok(differences(now.facts, x4.facts).some((t) => /Adds \$|price/.test(t) || /Enclosure/.test(t)), 'differences in plain words');
+// The stainless enclosure has no price yet: no "saves $…" claim, the cost is marked not comparable.
+const d4x = differences(now.facts, x4.facts);
+if (x4.facts.unpricedParts.some((pn) => !now.facts.unpricedParts.includes(pn))) {
+  assert.ok(d4x.some((t) => /^Cost not comparable: no price yet for .*SCE-/.test(t)), `4X cost not comparable: ${d4x}`);
+  assert.ok(!d4x.some((t) => /^Saves/.test(t)), 'no saving claimed with an unpriced enclosure');
+} else assert.ok(d4x.some((t) => /^(Adds|Saves) \$/.test(t)));
+assert.ok(x4.layoutOk, 'the 4X option ran the full fit (everything placed, 25% spare)');
 
 // Another PLC: the CPU changes, the CLICK CPU leaves, addresses are re-made for the new PLC.
 const plcOpt = opts.find((o) => o.kind === 'plc')!;
