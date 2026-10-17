@@ -87,9 +87,11 @@ const title = (s: string) => s.replace(/\s+/g, ' ').trim().replace(/(^|\s)\w/g, 
 /** Name of an actuator from its output description ("Pusher solenoid" -> "Pusher"). */
 function nameOf(desc: string): string {
   // Ratings are not part of the name: "Film unwinder (0.18 kW, 1800 rpm, with STO)" / "Pump 5 HP 480 V" -> "Film Unwinder" / "Pump".
-  const bare = desc.replace(/\([^)]*\)/g, ' ').replace(/\b\d+(\.\d+)?\s*(kw|hp|rpm|vac|vdc|v|a|amps?|hz|ph|phase)\b/gi, ' ').replace(/\b(approx\.?|with sto|sto)\b/gi, ' ');
-  const w = keyWords(bare);
-  return title(w.join(' ')) || title(keyWords(desc).join(' ')) || title(desc);
+  // Only the name part: a description often goes on ("AC motor with 1:10 gear reducer, runs until the mark is seen").
+  const head = desc.split(/[:;,(—–]| - |\b(?:with|runs?|controlled|until|for|which|that|driven|via)\b/i)[0].trim() || desc;
+  const bare = head.replace(/\([^)]*\)/g, ' ').replace(/\b\d+(\.\d+)?\s*(kw|hp|rpm|vac|vdc|v|a|amps?|hz|ph|phase)\b/gi, ' ').replace(/\b(approx\.?|with sto|sto)\b/gi, ' ');
+  const w = keyWords(bare.replace(/\b(ac|dc|3-?ph|three[- ]phase|single[- ]phase)\b/gi, ' ')).slice(0, 4);
+  return title(w.join(' ')) || title(keyWords(desc).slice(0, 4).join(' ')) || title(desc);
 }
 
 const PART = /\b(part|product|present|presence|photo|eye|count|carton|box|bottle|pouch)\b/i;
