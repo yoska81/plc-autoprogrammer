@@ -319,7 +319,8 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
     { head: 'PE', symbol: 'ground', where: `${model.groundBar?.tag ?? 'PE BAR'} / GROUND BAR`, body: ['PROTECTIVE EARTH.', 'MAIN BONDING POINT. GREEN/YELLOW CONDUCTORS ONLY.'] },
   ];
   const LW_ = 60, LH = 26;
-  const ly = npY + NPH + 14;
+  // a third note line under the nameplate (SCCR conditions) moves the labels down
+  const ly = npY + NPH + 14 + (!iec && sccrValid.length ? 3 : 0);
   const perRow = Math.floor((NPW + 2) / (LW_ + 4));
   // ---- marking conventions
   const conv = [
