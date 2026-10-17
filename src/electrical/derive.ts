@@ -128,6 +128,12 @@ function dcBranchFuse(ps: ResolvedComponent | undefined): string | undefined {
   return ps && !isClass2(ps) && psOutA(ps) > DC_WIRE_A ? '4 A' : undefined;
 }
 
+/** Current of an auxiliary load (heater …) from its branch protection, which is sized at >= 1.25 x the load. */
+function auxLoadA(b: AuxBranch): number {
+  const a = num(b.protection.fuse?.ratings, 'amps') ?? num(b.protection.part?.ratings, 'amps');
+  return a ? a / 1.25 : 0;
+}
+
 /** Small-conductor / 75 °C copper ampacity for the OCPD limit (NEC 240.4(D), Table 310.16). */
 const AWG_OCPD: Record<string, number> = { '14 AWG': 15, '12 AWG': 20, '10 AWG': 30, '8 AWG': 50, '6 AWG': 65, '4 AWG': 85, '3 AWG': 100, '2 AWG': 115, '1 AWG': 130, '1/0 AWG': 150, '2/0 AWG': 175, '3/0 AWG': 200, '4/0 AWG': 230 };
 const STD_OCPD = [15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250];
@@ -144,7 +150,7 @@ export function upstreamOcpd(ctx: DrawingContext): { minA: number; maxA: number 
   const motorFla = m.motors.map((x) => x.fla);
   const largest = motorFla.length ? Math.max(...motorFla) : 0;
   const control = m.psBranches.length * 2 + (m.transformer ? 2 : 0);
-  const load = motorFla.reduce((a, b) => a + b, 0) + largest * 0.25 + control;
+  const load = motorFla.reduce((a, b) => a + b, 0) + largest * 0.25 + control + m.auxBranches.reduce((s, b) => s + auxLoadA(b), 0);
   const minA = STD_OCPD.find((a) => a >= load) ?? Math.ceil(load);
   const discA = num(m.disconnect?.part?.ratings, 'amps', 'ratedAmps', 'currentA');
   const wireA = AWG_OCPD[m.mainAwg];
@@ -306,7 +312,13 @@ export interface WireRecord {
 export interface PsBranch { protection?: ResolvedComponent; ps: ResolvedComponent; feedWires: string[]; protectedPoles: number; fromXfmr?: boolean }
 /** Control power transformer branch: bus -> primary protection -> T1 (H1/H2) -> X1/X2 secondary. */
 export interface XfmrBranch { protection?: ResolvedComponent; xfmr: ResolvedComponent; primaryWires: string[]; /** Same as primaryWires (uniform with other branches). */ feedWires: string[]; protectedPoles: number }
-export interface AuxBranch { protection: ResolvedComponent; feedWires: string[]; protectedPoles: number }
+export interface AuxBranch {
+  protection: ResolvedComponent; feedWires: string[]; protectedPoles: number;
+  /** Load fed through switching devices ("Seal heater via K1 and SSR1"): contactor first, then the SSR (first pole). */
+  path?: ResolvedComponent[];
+  /** Name of the load ("Seal heater"). */
+  load?: string;
+}
 
 export interface MotorModel {
   motor: MotorSpec;
@@ -340,6 +352,9 @@ export interface IoPoint {
   signalTerminal?: string;
   supplyTerminal?: string;
   returnTerminal?: string;
+  /** Load terminals the output switches ([feed, return]): A1/A2, B1/B2 for a second coil of the same device
+   *  (double solenoid), X1/X2 for a pilot light. */
+  pins: [string, string];
   /** Machine zone ("Cabinet door" for door devices, "Cabinet" for panel devices). */
   zone: string;
   /** Junction box the field device is wired through, or null for a home-run cable. */
@@ -575,7 +590,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const auxBranches: AuxBranch[] = rest.filter((c) => !used.has(c)).map((protection) => {
     const p = Math.min(poles(protection, phases === 1 ? 1 : 2), phases === 1 ? 1 : 3);
     const feedWires = phases === 1 ? [`${wt(protection.tag)}-L1`, 'N'] : Array.from({ length: p }, (_, k) => `${wt(protection.tag)}-L${k + 1}`);
-    return { protection, feedWires, protectedPoles: p };
+    // "Seal heater via K1 and SSR1 — branch fuses …": the devices the load is switched through
+    const via = /^(.*?)\s+via\s+(\S+)(?:\s+and\s+(\S+))?\s+—/.exec(protection.comp.function);
+    const path = via ? [via[2], via[3]].map((t) => rc.find((c) => c.tag === t)).filter((c): c is ResolvedComponent => !!c) : [];
+    return { protection, feedWires, protectedPoles: p, ...(path.length ? { path, load: via![1] } : {}) };
   });
   const groundBar = byCat(rc, 'groundBar')[0];
 
@@ -674,8 +692,15 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     let location = loc;
     const where = wiring?.location?.trim();
     if (where && loc !== 'internal') location = DOOR_RE.test(where) ? 'door' : 'field';
-    return { address: p.address, type: p.type, description: p.description || wiring?.description || '', wiring, deviceTag, deviceType, location, zone: '', jb: null, group: groupKey(p.address, p.type, i), wire: p.address };
+    return { address: p.address, type: p.type, description: p.description || wiring?.description || '', wiring, deviceTag, deviceType, location, zone: '', jb: null, group: groupKey(p.address, p.type, i), wire: p.address, pins: ['A1', 'A2'] as [string, string] };
   });
+  // load terminals per output: each coil of a multi-coil device (double solenoid) on its own pair
+  for (const p of io) {
+    if (p.type !== 'output') continue;
+    if (p.deviceType === 'pilot-light') { p.pins = ['X1', 'X2']; continue; }
+    const k = io.filter((q) => q.type === 'output' && q.deviceTag && q.deviceTag === p.deviceTag && q.deviceType !== 'stack-light').indexOf(p);
+    if (k > 0) p.pins = [`${String.fromCharCode(65 + k)}1`, `${String.fromCharCode(65 + k)}2`];
+  }
   const mw = effectiveMachine(ctx, io, motors);
 
   // groups
@@ -773,9 +798,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   }
   for (const p of io) {
     if (!p.coilChain) continue;
-    if (!p.coilChain.sink) { if (p.location !== 'field') zero.push(`${p.deviceTag}:A2`); continue; }
+    if (!p.coilChain.sink) { if (p.location !== 'field') zero.push(`${p.deviceTag}:${p.pins[1]}`); continue; }
     const d0 = p.coilChain.devices[0];
-    const first = d0 ? `${d0.tag}:${d0.terminals.split('-')[0]}` : `${p.deviceTag}:A1`;
+    const first = d0 ? `${d0.tag}:${d0.terminals.split('-')[0]}` : `${p.deviceTag}:${p.pins[0]}`;
     (safety.outputSupply === '24+S' ? outSupply : plus).push(first);
   }
   if (io.some((p) => p.type === 'input' && p.location === 'field')) { plus.push('TB2 FIELD 24+'); zero.push('TB2 FIELD 0V'); }
@@ -843,20 +868,30 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       const tag = p.deviceTag || p.address;
       const g = groups.find((x) => x.key === p.group);
       const sink = g?.outputStyle === 'sinking';
-      const pin = p.deviceType === 'stack-light' ? `${tag}:${(p.description.match(/red|amber|yellow|green|blue|white|horn|buzzer/i)?.[0] ?? p.address).toUpperCase()}` : `${tag}:${p.deviceType === 'pilot-light' ? 'X1' : 'A1'}`;
+      const pin = p.deviceType === 'stack-light' ? `${tag}:${(p.description.match(/red|amber|yellow|green|blue|white|horn|buzzer/i)?.[0] ?? p.address).toUpperCase()}` : `${tag}:${p.pins[0]}`;
+      // Sinking output with a series safety contact: 24+S -> chain -> coil feed terminal, coil return terminal -> output.
+      const sinkCh = p.coilChain?.sink && p.coilChain.devices.length ? p.coilChain : undefined;
+      if (sinkCh) {
+        const last = sinkCh.devices[sinkCh.devices.length - 1];
+        p.signalTerminal = add(tb3, { wire: sinkCh.wires[sinkCh.wires.length - 1], internal: `${last.tag}:${last.terminals.split('-')[1]}`, external: p.jb ? `${p.jb} (${tag})` : pin, kind: 'feed', group: p.jb ?? tag });
+        p.returnTerminal = add(tb3, { wire: p.address, internal: `${plcTag}:${p.address}`, external: p.jb ? `${p.jb} ${p.address}` : `${tag}:${p.pins[1]}`, kind: 'feed', group: p.jb ?? tag });
+        if (!p.jb && !retDone.has(`${tag}|PE`)) { add(tb3, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${tag}:PE`, kind: 'ground', group: tag }); retDone.set(`${tag}|PE`, ''); }
+        continue;
+      }
       // Through a series safety contact (coil chain): the terminal is fed from the chain's last contact.
       const ch = p.coilChain && !p.coilChain.sink && p.coilChain.devices.length ? p.coilChain : undefined;
       const lastDev = ch?.devices[ch.devices.length - 1];
       p.signalTerminal = add(tb3, { wire: ch ? ch.wires[ch.wires.length - 1] : p.address, internal: lastDev ? `${lastDev.tag}:${lastDev.terminals.split('-')[1]}` : `${plcTag}:${p.address}`, external: p.jb ? `${p.jb} (${tag})` : pin, kind: 'feed', group: p.jb ?? tag });
       // Lamps on a sinking module stay on the unswitched 24+ (a fault lamp must light during a safety stop).
       const retWire = sink ? (p.deviceType === 'pilot-light' || p.deviceType === 'stack-light' ? '24+' : safety.outputSupply) : '0V';
-      const key = p.jb ? `${p.jb}|${retWire}` : `${tag}|${retWire}`;
+      // one return per coil (double solenoid: A2 and B2), shared by a stack light's lamps and inside a JB
+      const key = p.jb ? `${p.jb}|${retWire}` : `${tag}|${retWire}${p.deviceType === 'stack-light' ? '' : `|${p.pins[1]}`}`;
       if (retDone.has(key)) p.returnTerminal = retDone.get(key);
       else {
-        p.returnTerminal = add(tb3, { wire: retWire, internal: `TB1 ${retWire} (jumper)`, external: p.jb ? `${p.jb} ${retWire}` : `${tag}:${p.deviceType === 'pilot-light' ? 'X2' : p.deviceType === 'stack-light' ? 'COM' : 'A2'}`, kind: 'feed', group: p.jb ?? tag });
+        p.returnTerminal = add(tb3, { wire: retWire, internal: `TB1 ${retWire} (jumper)`, external: p.jb ? `${p.jb} ${retWire}` : `${tag}:${p.deviceType === 'stack-light' ? 'COM' : p.pins[1]}`, kind: 'feed', group: p.jb ?? tag });
         retDone.set(key, p.returnTerminal);
-        // home-run device cable: its PE core on its own clamp (one conductor per terminal)
-        if (!p.jb) add(tb3, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${tag}:PE`, kind: 'ground', group: tag });
+        // home-run device cable: its PE core on its own clamp (one conductor per terminal, one per device)
+        if (!p.jb && !retDone.has(`${tag}|PE`)) { add(tb3, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${tag}:PE`, kind: 'ground', group: tag }); retDone.set(`${tag}|PE`, ''); }
       }
     }
     add(tb3, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: 'FIELD PE', kind: 'ground', group: 'PE' });
@@ -867,7 +902,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const pe = groundBar?.tag ?? 'PE BAR';
   const dsTag = disconnect?.tag ?? 'DS1';
   const loadPhase = (k: number) => (phases === 1 && k === 1 ? 'N' : `T${k + 1}`);
-  const fullLoad = motors.reduce((s, m) => s + m.fla, 0);
+  // auxiliary loads (heaters …) count with their current, estimated from the branch protection (sized >= 1.25 x)
+  const auxA = auxBranches.reduce((s, b) => s + auxLoadA(b), 0);
+  const fullLoad = motors.reduce((s, m) => s + m.fla, 0) + auxA;
   const largest = motors.reduce((s, m) => Math.max(s, m.fla), 0);
   // IEC: never thinner than the fixed 14 AWG (2.5 mm²) feeds the bus supplies (power supplies, transformer, aux).
   const busFeeds = psBranches.some((b) => !b.fromXfmr) || Boolean(xfmrBranch) || auxBranches.length > 0;
@@ -918,7 +955,28 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     addWire({ wire: '0V', from: `${b.ps.tag}:-V`, to: 'TB1 0V', color: 'WH/BU', size: '16 AWG', function: '0V DC common' });
   }
   if (psBranches.length) addWire({ wire: '0V', from: 'TB1 0V', to: pe, color: 'WH/BU', size: '14 AWG', function: '0V bonded to PE (grounded DC control circuit)' });
-  for (const b of auxBranches) b.feedWires.forEach((w, k) => addWire({ wire: w, from: `${b.protection.tag}:T${k + 1}`, to: b.protection.comp.function || 'LOAD', color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: b.protection.comp.function }));
+  for (const b of auxBranches) {
+    if (!b.path) {
+      b.feedWires.forEach((w, k) => addWire({ wire: w, from: `${b.protection.tag}:T${k + 1}`, to: b.protection.comp.function || 'LOAD', color: w === 'N' ? 'WH' : 'BK', size: '14 AWG', function: b.protection.comp.function }));
+      continue;
+    }
+    // protection → contactor main contacts → SSR (first pole) → load, numbered on the load side of each device
+    const [k, ssr] = b.path;
+    const fuseA = num(b.protection.fuse?.ratings, 'amps') ?? num(b.protection.part?.ratings, 'amps') ?? 15;
+    const size = iec ? mm2Text(mm2For(fuseA)) : awgFor(fuseA);
+    const load = b.load ?? 'LOAD';
+    // the load's terminals by its tag ("HTR1 Seal heater" → HTR1:1)
+    const dest = /^-?[A-Z]+\d+\b/.exec(load)?.[0] ?? load.toUpperCase();
+    b.feedWires.forEach((w, i) => {
+      const col = w === 'N' ? 'WH' : 'BK';
+      addWire({ wire: w, from: w === 'N' ? 'N' : `${b.protection.tag}:T${i + 1}`, to: `${k.tag}:L${i + 1}`, color: col, size, function: `${load} feed` });
+      const kOut = w === 'N' ? 'N' : `${wt(k.tag)}-T${i + 1}`;
+      if (i === 0 && ssr && ssr !== k) {
+        addWire({ wire: kOut, from: `${k.tag}:T1`, to: `${ssr.tag}:1`, color: col, size, function: `${load} through ${k.tag} to ${ssr.tag}` });
+        addWire({ wire: `${wt(ssr.tag)}-T1`, from: `${ssr.tag}:2`, to: `${dest}:1`, color: col, size, function: `${load} (switched by ${ssr.tag})` });
+      } else addWire({ wire: kOut, from: `${k.tag}:T${i + 1}`, to: `${dest}:${i + 1}`, color: col, size, function: `${load} (through ${k.tag})` });
+    });
+  }
   for (const m of motors) {
     const prot = m.protection?.tag;
     // VFD with a line contactor (safety stop by contactor): protection -> K:L, K:T -> VFD:L
@@ -1087,22 +1145,32 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         const start = ch.sink ? `TB1 ${safety.outputSupply}` : `${plcTag}:${p.address}`;
         ch.devices.forEach((d, k) => addWire({ wire: ch.wires[k], from: k === 0 ? start : `${ch.devices[k - 1].tag}:${ch.devices[k - 1].terminals.split('-')[1]}`, to: `${d.tag}:${d.terminals.split('-')[0]}`, color: 'BU', size: '18 AWG', function: p.description }));
         const last = ch.devices.length ? `${ch.devices[ch.devices.length - 1].tag}:${ch.devices[ch.devices.length - 1].terminals.split('-')[1]}` : start;
+        if (p.signalTerminal && ch.sink) {
+          // Sinking field coil: chain -> feed terminal -> coil; coil -> return terminal -> output.
+          addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });
+          addWire({ wire: ch.wires[ch.wires.length - 1], from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
+          if (p.returnTerminal) {
+            addWire({ wire: p.address, from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: 'BU', size: '18 AWG', function: `${p.description} (sinking output)` });
+            addWire({ wire: p.address, from: p.returnTerminal, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: `${p.description} (sinking output)` });
+          }
+          continue;
+        }
         if (p.signalTerminal && !ch.sink) {
           // Field coil: from the chain through its output terminal, returning through the field return terminal.
           addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });
           addWire({ wire: ch.wires[ch.wires.length - 1], from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
           if (p.returnTerminal) addWire({ wire: '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: 'WH/BU', size: '18 AWG', function: `${tag} return` });
-        } else addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: `${tag}:A1`, color: 'BU', size: '18 AWG', function: p.description });
-        if (p.signalTerminal && !ch.sink) { /* return wired above */ } else if (ch.sink) addWire({ wire: p.address, from: `${tag}:A2`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: `${p.description} (sinking output)` });
-        else addWire({ wire: '0V', from: `${tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} coil return` });
+        } else addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: `${tag}:${p.pins[0]}`, color: 'BU', size: '18 AWG', function: p.description });
+        if (p.signalTerminal && !ch.sink) { /* return wired above */ } else if (ch.sink) addWire({ wire: p.address, from: `${tag}:${p.pins[1]}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: `${p.description} (sinking output)` });
+        else addWire({ wire: '0V', from: `${tag}:${p.pins[1]}`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} coil return` });
       } else if (p.signalTerminal) {
         addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
         if (p.returnTerminal) addWire({ wire: sink ? lampSupply(p) : '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       } else {
-        addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: `${tag}:${p.deviceType === 'vfd-input' ? 'DI' : p.deviceType === 'pilot-light' ? 'X1' : 'A1'}`, color: 'BU', size: '18 AWG', function: p.description });
+        addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: `${tag}:${p.deviceType === 'vfd-input' ? 'DI' : p.pins[0]}`, color: 'BU', size: '18 AWG', function: p.description });
         if (p.deviceType === 'vfd-input') addWire({ wire: '0V', from: `${tag}:DCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} digital input common` });
-        else addWire({ wire: sink ? lampSupply(p) : '0V', from: `${tag}:${p.deviceType === 'pilot-light' ? 'X2' : 'A2'}`, to: `TB1 ${sink ? lampSupply(p) : '0V'}`, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
+        else addWire({ wire: sink ? lampSupply(p) : '0V', from: `${tag}:${p.pins[1]}`, to: `TB1 ${sink ? lampSupply(p) : '0V'}`, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       }
     }
   }
@@ -1368,9 +1436,17 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
       cores.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: from !== 'CABINET' ? `${from}:PE` : 'PE', to: `${d.tag}:PE` });
       type = '3-core 18 AWG control cable (2 + PE)';
     } else {
-      d.points.forEach((p, k) => cores.push({ core: String(k + 1), color: 'BU', wire: p.wire, from: term(p, 'sig'), to: `${d.tag}:${d.points.length > 1 ? (p.description.match(/red|amber|yellow|green|blue|white|horn|buzzer/i)?.[0] ?? p.address).toUpperCase() : t === 'pilot-light' ? 'X1' : 'A1'}` }));
-      const rw = retWire(p0);
-      cores.push({ core: String(d.points.length + 1), color: rw === '0V' ? 'WH/BU' : 'BU', wire: rw, from: term(p0, 'ret'), to: `${d.tag}:${d.points.length > 1 ? 'COM' : t === 'pilot-light' ? 'X2' : 'A2'}` });
+      const stack = t === 'stack-light';
+      // the wire number on the device's terminal (a coil behind a safety contact carries the chain's number)
+      const sigWire = (p: IoPoint) => (p.signalTerminal ? stripWire.get(p.signalTerminal) ?? p.wire : p.wire);
+      d.points.forEach((p, k) => cores.push({ core: String(k + 1), color: 'BU', wire: sigWire(p), from: term(p, 'sig'), to: `${d.tag}:${stack && d.points.length > 1 ? (p.description.match(/red|amber|yellow|green|blue|white|horn|buzzer/i)?.[0] ?? p.address).toUpperCase() : p.pins[0]}` }));
+      // return cores: a stack light's common; otherwise one per return terminal (each coil of a double solenoid)
+      const rets = stack && d.points.length > 1 ? [{ p: p0, to: 'COM' }]
+        : [...new Map(d.points.map((p) => [p.returnTerminal ?? p.address, p] as const)).values()].map((p) => ({ p, to: d.points.filter((q) => (q.returnTerminal ?? q.address) === (p.returnTerminal ?? p.address)).map((q) => q.pins[1]).join('+') }));
+      for (const r of rets) {
+        const rw = retWire(r.p);
+        cores.push({ core: String(cores.length + 1), color: rw === '0V' ? 'WH/BU' : 'BU', wire: rw, from: term(r.p, 'ret'), to: `${d.tag}:${r.to}` });
+      }
       cores.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: from !== 'CABINET' ? `${from}:PE` : 'PE', to: `${d.tag}:PE` });
       type = `${cores.length}-core 18 AWG control cable (${cores.length - 1} + PE)${t === 'solenoid' ? ', DIN plug end' : ''}`;
     }

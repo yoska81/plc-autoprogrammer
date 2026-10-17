@@ -173,6 +173,9 @@ function reply(text) {
   log('ZIP:', names.length, 'files');
   for (const want of [/^spec\.md$/, /_full_package\.pdf$/, /labels\/.*_label_printer\.pdf$/, /machining\/.*_back_panel_drilling\.pdf$/, /machining\/enclosure_bottom_cutouts_1to1_in\.dxf$/, /plc\/.*_analog_setup\.csv$/]) check(names.some((n) => want.test(n)), `ZIP has ${want}`);
   check(/Sealing head/i.test(await z.file('spec.md').async('string')), 'spec.md has the description');
+  // Start clean replaced the example's document control (customer, project no., drawing prefix)
+  const specMd = await z.file('spec.md').async('string');
+  check(!/example foods|24-117/i.test(specMd) && !Object.keys(z.files).some((n) => /CNV/i.test(n)), 'no example document control after Start clean');
   check(/Two-hand start/.test(spec) && /Seal heater/.test(spec), 'machine spec lists the sealing head I/O');
   // The design review says what the engines could not design (instead of a silently unsafe panel).
   const findings = await page.evaluate(async () => {
@@ -185,9 +188,14 @@ function reply(text) {
   const palm = (state.electrical.design?.ioWiring ?? []).filter((w) => /two-hand/i.test(w.description));
   check(palm.length === 2 && palm.every((w) => !/door/i.test(w.location ?? '')), `two-hand buttons at the machine: ${palm.map((w) => `${w.deviceTag}@${w.location}`).join(', ')}`);
   check(!findings.some((f) => /^Wire DF\d+[+-]? is /.test(f.split('|')[1] ?? '')), 'analog signal pairs not flagged by the wire colour rule');
-  for (const [sev, re] of [['critical', /Two-hand control without a two-hand safety relay/], ['critical', /is a standard sensor, not a safety device/],
-    ['critical', /Light curtain without a safety relay channel/], ['major', /has no heater power circuit/], ['major', /over-temperature cutoff is not hardwired/], ['major', /Thermocouple without a transmitter/]]) {
-    check(findings.some((f) => f.startsWith(sev + '|') && re.test(f)), `review: ${sev} ${re}`);
+  // Dev 2's #64 put the safety and heater functions in the design; the review no longer raises them
+  for (const re of [/Two-hand control without a two-hand safety relay/, /is a standard sensor, not a safety device/, /Light curtain without a safety relay channel/,
+    /has no heater power circuit/, /over-temperature cutoff is not hardwired/, /Thermocouple without a transmitter/, /cannot switch: its circuit does not match/]) {
+    check(!findings.some((f) => re.test(f)), `review no longer: ${re}`);
+  }
+  const parts = (state.electrical.design?.components ?? []).map((c) => c.partNumber);
+  for (const [what, re] of [['two-hand relay', /^BG5933/], ['safety light curtain', /^SH4-/], ['curtain OSSD relay', /^LG5925-48-900/], ['over-temperature limit', /^SCU-3100/], ['heater SSR', /^GRSH/], ['TC transmitter', /^XTD2/]]) {
+    check(parts.some((pn) => re.test(pn)), `design has the ${what}`);
   }
   log('Stages:', JSON.stringify(state.stages));
   log('PLC:', JSON.stringify(state.plc), '| IO', state.io.length, '| components', state.electrical.design?.components?.length, '| HMI screens', state.hmi?.screens?.length);

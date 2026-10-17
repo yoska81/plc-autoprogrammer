@@ -30,7 +30,7 @@ SOL1     100222016324002    x1    Gripper solenoid valve (double solenoid)
 CR1      KPR-SCS-24VACDC-1  x1    Interposing relay: Ready signal to robot — dry contact, no PLC output wired straight to another controller
 PL1      GCX1231-24L        x1    Fault
 PB3      GCX1104            x1    Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)
-TB1      DN-T10-A           x38   Feed-through terminals
+TB1      DN-T10-A           x39   Feed-through terminals
 TBG      DN-G10             x9    Ground terminals
 TBC      DN-EC1210          x3    Terminal end covers
 TBE      DN-EB35            x6    End brackets
