@@ -88,7 +88,11 @@ function templateLabelPlace(c: DrillCutout, all: DrillCutout[], px: (v: number) 
     if (inside && !others.some((o) => b.x0 < o.x1 && o.x0 < b.x1 && b.y0 < o.y1 && o.y0 < b.y1)) return { labelBelow, labelRight };
   }
   // nowhere free: above, shrunk to the room left before the edge band
-  return { labelBelow: false, labelRight: false, labelMaxW: Math.max(8, inner.x1 - (x - rw)) };
+  if (y - rh - 6.8 >= inner.y0) return { labelBelow: false, labelRight: false, labelMaxW: Math.max(8, inner.x1 - (x - rw)) };
+  // ... unless "above" crosses the outline (a mark near the top of a narrow side wall): centred on the mark below it,
+  // shrunk to the part's inner width
+  const maxW = Math.max(8, inner.x1 - inner.x0);
+  return { labelBelow: true, labelRight: false, labelMaxW: maxW, labelCenterX: Math.min(Math.max(x, inner.x0 + maxW / 2), inner.x1 - maxW / 2) };
 }
 
 type Corner = 'ne' | 'nw' | 'se' | 'sw';
@@ -131,7 +135,7 @@ function HoleMark({ h, x, y, s, corner = 'ne' }: { h: DrillHole; x: number; y: n
   );
 }
 
-function CutoutMark({ c, x, y, s, labelBelow, labelRight, labelMaxW, idOnly }: { c: DrillCutout; x: number; y: number; s: number; labelBelow?: boolean; labelRight?: boolean; labelMaxW?: number; idOnly?: boolean }) {
+function CutoutMark({ c, x, y, s, labelBelow, labelRight, labelMaxW, labelCenterX, idOnly }: { c: DrillCutout; x: number; y: number; s: number; labelBelow?: boolean; labelRight?: boolean; labelMaxW?: number; labelCenterX?: number; idOnly?: boolean }) {
   if (c.template) {
     // size not from the catalog: dashed outline and centre mark, machined per the part's template
     const rw = (c.w / 2) * s, rh = (c.h / 2) * s;
@@ -143,8 +147,8 @@ function CutoutMark({ c, x, y, s, labelBelow, labelRight, labelMaxW, idOnly }: {
         <Line x1={x - rw - 2} y1={y} x2={x + rw + 2} y2={y} w={0.12} />
         <Line x1={x} y1={y - rh - 2} x2={x} y2={y + rh + 2} w={0.12} />
         {/* above the shape (below it when the part edge is too close): clear of its centre lines and the outline */}
-        <Txt x={labelRight ? x + rw : x - rw} anchor={labelRight ? 'end' : 'start'} y={labelBelow ? y + rh + 4.2 : y - rh - 5.0} size={2.0} mono bold maxW={labelMaxW}>{`${c.id} ${c.tag}`}</Txt>
-        <Txt x={labelRight ? x + rw : x - rw} anchor={labelRight ? 'end' : 'start'} y={labelBelow ? y + rh + 6.6 : y - rh - 2.6} size={1.8} maxW={labelMaxW}>{c.template}</Txt>
+        <Txt x={labelCenterX ?? (labelRight ? x + rw : x - rw)} anchor={labelCenterX !== undefined ? 'middle' : labelRight ? 'end' : 'start'} y={labelBelow ? y + rh + 4.2 : y - rh - 5.0} size={2.0} mono bold maxW={labelMaxW}>{`${c.id} ${c.tag}`}</Txt>
+        <Txt x={labelCenterX ?? (labelRight ? x + rw : x - rw)} anchor={labelCenterX !== undefined ? 'middle' : labelRight ? 'end' : 'start'} y={labelBelow ? y + rh + 6.6 : y - rh - 2.6} size={1.8} maxW={labelMaxW}>{c.template}</Txt>
       </g>
     );
   }

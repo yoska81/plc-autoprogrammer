@@ -6,7 +6,7 @@ motor M4 5 HP vfd — Belt 2 motor
 motor M5 5 HP vfd — Belt 3 motor
 motor M6 5 HP vfd — Belt 4 motor
 
-ENC1     SCE-42EL3612LP     x1    Main enclosure 42x36x12 NEMA 12 — smallest catalog enclosure with everything placed and 46% spare panel space (target >= 25%)
+ENC1     SCE-42EL3612LP     x1    Main enclosure 42x36x12 NEMA 12 — smallest catalog enclosure with everything placed and 38% spare panel space (target >= 20%)
 SP1      SCE-42P36          x1    Back panel
 DS1      22013006           x1    Main disconnect 60A — load 39.4 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle
@@ -19,15 +19,19 @@ CB2      GMCBU-3C-10        x1    Motor M2 branch protection — 10 A C-curve, 2
 K2       SC-E02PG-24VDC     x1    Pump motor contactor — rated 5 HP at 480 V 3-phase >= 3 HP / 4.8 A, 24 VDC coil [M2]
 K2-AUX   SZ-A11T            x1    K2 aux contact — N.C. 61-62 for the safety relay feedback (EDM); SC-E02PG-24VDC has no built-in aux [M2]
 OL2      TK-E02-600         x1    Pump motor overload — range 4-6 A, set to FLA 4.8 A [M2]
-CB3      GMCBU-3C-15        x1    Motor M3 branch protection — 15 A C-curve, 2.0 x FLA 7.6 A (rides through the start, max. 250% NEC 430.52) [M3]
+FU1      T60060-3CR         x1    Motor M3 drive branch fuses — Class T block (the GS23-45P0 fuses for its 100 kA SCCR) [M3]
+FU1F     TJS45-1            x3    Class T fuses 45A for FU1 — GS23-45P0 manual fuse chart [M3]
 VFD1     GS23-45P0          x1    Belt 1 motor drive, STO from safety relay — 9 A output >= FLA 7.6 A; Safe Torque Off for the safety stop [M3]
-CB4      GMCBU-3C-15        x1    Motor M4 branch protection — 15 A C-curve, 2.0 x FLA 7.6 A (rides through the start, max. 250% NEC 430.52) [M4]
+FU2      T60060-3CR         x1    Motor M4 drive branch fuses — Class T block (the GS23-45P0 fuses for its 100 kA SCCR) [M4]
+FU2F     TJS45-1            x3    Class T fuses 45A for FU2 — GS23-45P0 manual fuse chart [M4]
 VFD2     GS23-45P0          x1    Belt 2 motor drive, STO from safety relay — 9 A output >= FLA 7.6 A; Safe Torque Off for the safety stop [M4]
-CB5      GMCBU-3C-15        x1    Motor M5 branch protection — 15 A C-curve, 2.0 x FLA 7.6 A (rides through the start, max. 250% NEC 430.52) [M5]
+FU3      T60060-3CR         x1    Motor M5 drive branch fuses — Class T block (the GS23-45P0 fuses for its 100 kA SCCR) [M5]
+FU3F     TJS45-1            x3    Class T fuses 45A for FU3 — GS23-45P0 manual fuse chart [M5]
 VFD3     GS23-45P0          x1    Belt 3 motor drive, STO from safety relay — 9 A output >= FLA 7.6 A; Safe Torque Off for the safety stop [M5]
-CB6      GMCBU-3C-15        x1    Motor M6 branch protection — 15 A C-curve, 2.0 x FLA 7.6 A (rides through the start, max. 250% NEC 430.52) [M6]
+FU4      T60060-3CR         x1    Motor M6 drive branch fuses — Class T block (the GS23-45P0 fuses for its 100 kA SCCR) [M6]
+FU4F     TJS45-1            x3    Class T fuses 45A for FU4 — GS23-45P0 manual fuse chart [M6]
 VFD4     GS23-45P0          x1    Belt 4 motor drive, STO from safety relay — 9 A output >= FLA 7.6 A; Safe Torque Off for the safety stop [M6]
-CB7      GMCBU-3C-3         x1    24VDC power supply primary — 3 A for a 120 W supply (inrush)
+CB3      GMCBU-3C-3         x1    24VDC power supply primary — 3 A for a 120 W supply (inrush)
 PS1      PSR-24-120-3       x1    24VDC control power supply, 3-phase 480 VAC input — 5 A >= load 3.5 A + 25%
 PLC      C0-11DD1E-D        x1    PLC CPU
 IO1      C0-16ND3           x1    I/O module, slot 1
@@ -86,8 +90,8 @@ TB1      DN-T10-A           x100  Feed-through terminals
 TBG      DN-G10             x10   Ground terminals
 TBC      DN-EC1210          x3    Terminal end covers
 TBE      DN-EB35            x6    End brackets
-DIN      DN-R35S1           x3    DIN rail
-WD       T1-2240G-1         x3    Wire duct
+DIN      DN-R35S1           x4    DIN rail
+WD       T1-2240G-1         x4    Wire duct
 GB1      SCE-GB10           x2    Ground bar
 
 X001   SR1    safety-relay-output  Cabinet        E-Stop OK (safety relay)
@@ -155,4 +159,4 @@ routing {"PE1":"JB1","PE2":"JB1","PE3":"JB1","PE4":"JB1","PE5":"JB1","PE6":"JB1"
 note: Motor currents from NEC Table 430.250 / 430.248: M1 1 HP 2.1 A, M2 3 HP 4.8 A, M3 5 HP 7.6 A, M4 5 HP 7.6 A, M5 5 HP 7.6 A, M6 5 HP 7.6 A — confirm the nameplates.
 note: VFD1, VFD2, VFD3, VFD4: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.
 
-explanation: Rule-based design: NEMA 12 SCE-42EL3612LP, 480 V 3-phase through 60A — load 39.4 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP across the line, M2 3 HP across the line, M3 5 HP on GS23-45P0 (STO), M4 5 HP on GS23-45P0 (STO), M5 5 HP on GS23-45P0 (STO), M6 5 HP on GS23-45P0 (STO); 24 VDC from PSR-24-120-3 for 3.5 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 46% spare panel space.
+explanation: Rule-based design: NEMA 12 SCE-42EL3612LP, 480 V 3-phase through 60A — load 39.4 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP across the line, M2 3 HP across the line, M3 5 HP on GS23-45P0 (STO), M4 5 HP on GS23-45P0 (STO), M5 5 HP on GS23-45P0 (STO), M6 5 HP on GS23-45P0 (STO); 24 VDC from PSR-24-120-3 for 3.5 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 38% spare panel space.

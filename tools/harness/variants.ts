@@ -16,6 +16,8 @@ import { useProgramStore } from '../../src/store/useProgramStore';
 import { useSpecStore } from '../../src/store/useSpecStore';
 import { collectProject } from '../../src/deliverables/collect';
 import { buildEverythingZip } from '../../src/deliverables/files';
+import { autocadZip, eplanZip } from '../../src/deliverables/cadExport';
+import { drawingSetDxf } from '../../src/electrical/cad/drawingsDxf';
 import { drillingDxf } from '../../src/electrical/dxf';
 import { enclosureFaceDrilling } from '../../src/electrical/enclosureFaces';
 import {
@@ -139,7 +141,7 @@ export function setupVariant(v: Variant) {
     elec.setDesign(design({
       supply: '120VAC-1PH', motors, ioWiring: io, enclosureRating: undefined,
       components: [
-        c('ENC1', 'SCE-16EL1206LP', 1, 'Main enclosure 16x12x6'), c('SP1', 'SCE-16P12', 1, 'Back panel'),
+        c('ENC1', 'SCE-24EL2008LP', 1, 'Main enclosure 24x20x8'), c('SP1', 'SCE-24P20', 1, 'Back panel'),
         c('DS1', '22013003', 1, 'Main disconnect 30A'), c('DS1H', '14831111', 1, 'Disconnect handle'), c('DS1S', '14070520', 1, 'Disconnect shaft'),
         c('CB1', 'GMCBU-1C-20', 1, 'Motor M1 branch protection', 'M1'), c('CB2', 'GMCBU-1C-5', 1, '24VDC power supply primary'),
         c('PS1', 'PSL-24-060', 1, '24VDC power supply'),
@@ -266,7 +268,7 @@ const STRESS_EXTRA: [string, 'input' | 'output', IOCategory, string][] = Array.f
 
 async function setupRules(v: string) {
   setupVariant(v === 'rules-big' || v === 'rules-floor' ? 'big' : 'us480');
-  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress') {
+  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress' || v === 'rules-sealing-4x') {
     // Only the sealing head's own description: the example's other sections (its conveyor) must not leak in.
     const sections = useSpecStore.getState().sections;
     useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC });
@@ -280,8 +282,15 @@ async function setupRules(v: string) {
     useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [{ partNumber: 'C0-12DD1E-D', quantity: 1 }, { partNumber: 'C0-16ND3', quantity: v === 'rules-stress' ? 2 : 1 }, { partNumber: 'C0-08TD1', quantity: 1 }] });
   }
+  // "rules-sealing-4x": the user's Sealing Head — NEMA 4X (stainless), a C0-10DD1E-D with input / output / analog
+  // modules, and the CPU changed on the PLC page after the equipment choice (C0-10DD2E-D still in the required parts).
+  if (v === 'rules-sealing-4x') {
+    const modules = ['C0-08ND3', 'C0-08TD1', 'C0-04AD-1', 'C0-04DA-1'];
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-10DD1E-D', modules });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, enclosureRating: 'NEMA 4X', motors: [], requiredParts: [{ partNumber: 'C0-10DD2E-D', quantity: 1 }, ...modules.map((partNumber) => ({ partNumber, quantity: 1 }))] });
+  }
   const el = useElectricalStore.getState();
-  let inputs = v === 'rules-sealing' ? el.inputs : el.design?.inputs ?? el.inputs;
+  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' ? el.inputs : el.design?.inputs ?? el.inputs;
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
@@ -341,6 +350,10 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     out[`dxf/${k}_mm_cut.dxf`] = text(drillingDxf(plan, ctx.projectName, { units: 'mm', cutOnly: true }));
     out[`dxf/${k}_in_cut.dxf`] = text(drillingDxf(plan, ctx.projectName, { units: 'in', cutOnly: true }));
   }
+  // CAD exports (Electrical page "Save as AutoCAD" / "Save as EPLAN"), as the app builds them.
+  const sheets = drawingSetDxf(ctx);
+  out['cad/autocad.zip'] = await b64(await autocadZip(p, sheets));
+  out['cad/eplan.zip'] = await b64(await eplanZip(p, sheets, { now: '2026-01-01T00:00:00Z' }));
   const labels = buildLabels(ctx);
   out['labels.csv'] = text(labelsCsv(labels, 'code+description', false));
   const layout = panelLayout(ctx);
@@ -359,13 +372,16 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     terminals: terminalPlan(ctx),
     cables: cableSchedule(ctx),
     warnings: designWarnings(ctx),
-    layout: { enclosure: layout.enclosure, backplate: layout.backplate, door: { w: layout.door.w, h: layout.door.h, items: layout.door.items, handle: layout.door.handle, leaves: layout.door.leaves, leaf: layout.door.leaf, plinth: layout.door.plinth }, overflow: layout.overflow, notFit: layout.notFit, warnings: layout.warnings, items: layout.items.map(({ tag, label, category, x, y, w, h }) => ({ tag, label, category, x, y, w, h })), rails: layout.rails, ducts: layout.ducts },
+    layout: { enclosure: layout.enclosure, backplate: layout.backplate, door: { w: layout.door.w, h: layout.door.h, items: layout.door.items, handle: layout.door.handle, leaves: layout.door.leaves, leaf: layout.door.leaf, plinth: layout.door.plinth, overflow: layout.door.overflow }, overflow: layout.overflow, notFit: layout.notFit, warnings: layout.warnings, items: layout.items.map(({ tag, label, category, x, y, w, h }) => ({ tag, label, category, x, y, w, h })), rails: layout.rails, ducts: layout.ducts },
     drilling: { backpanel: bpPlan, door: doorPlan, faces: facePlans },
     hmiModel: p.hmi ? getHmi(p.hmi.hmiPartNumber) ?? null : null,
     labels,
     calcs: calculations(p),
     alarms: alarmRows(p, info),
     motors: m.motors.map((x) => ({ tag: x.motor.tag, hp: x.motor.hp, voltage: x.motor.voltage, fla: x.fla, tableFla: motorFla(x.motor.hp, x.motor.voltage) })),
+    // drive branch protection against the drive's listed fuses (check_consistency: Class T fuses or the review finding)
+    drives: m.motors.filter((x) => x.vfd).map((x) => ({ motor: x.motor.tag, tag: x.vfd!.tag, partNumber: x.vfd!.partNumber, fuseClass: x.vfd!.part?.ratings.fuseClass ?? null, fusePart: x.vfd!.part?.ratings.fusePart ?? null,
+      protection: x.protection ? { tag: x.protection.tag, partNumber: x.protection.partNumber, category: x.protection.category, fuseClass: x.protection.fuse?.ratings.fuseClass ?? null, fuse: x.protection.fuse?.partNumber ?? null } : null })),
     nameplate: panelNameplate(ctx),
     step: cabinetStepSummary(ctx),
     spare: spareSpace(ctx),

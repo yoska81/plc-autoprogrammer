@@ -393,3 +393,119 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - engine.test checks: the guard interlock and its actuator, the door-closed input on 33-34, the S11 / S21 chains through GS1, and the pressure switch on its DIN pins.
   - The catalog test allowlists 3SE5112-0QV10 with its reason.
   - The machine-model AI test now expects the real interlock instead of the note.
+
+## Enclosure: the designer's choice, no over-sizing, no silent overflow, PLC drawn twice (integration afcaf88 + Dev 1's 540333b)
+- **Reported by the user:**
+  - The Sealing Head showed parts that "do not fit" in SCE-20EL1608SSLP.
+  - After the 4X catalog arrived, it was placed in a huge, mostly empty cabinet.
+  - The PLC was listed twice: PLC C0-10DD1E-D and X1 C0-10DD2E-D.
+- **Cause of the over-sizing:**
+  - The catalog sizes come in big steps, and the spare rule was 25 %.
+  - The sealing head reached 24 % in the 30x24 steel and in the 24x30 / 30x24 stainless, so it jumped to 36x30 (66 %) and to 36x24 (54 %).
+  - There was no ranking by mounting or by door count.
+- **Cause of the PLC twice:**
+  - The equipment choice writes its CPU into the electrical required parts.
+  - After the CPU was changed on the PLC page, the old CPU stayed in that list. The engine added it under the fallback tag "X1".
+- **Ranking:** `enclosureRank` and `enclosuresFor` are shared by the engine, the derive sizing and the picker.
+  - Order: wall-mount single-door, then floor / two-door; smaller back panel; 304 before 316; shallower.
+  - The material family is kept: steel, stainless or non-metallic.
+- **Spare rule:** `SPARE_RULE` is now 20 % (shop rule 20–30 %).
+  - The sealing head now lands in the 30x24 steel (24 %).
+  - In 4X it lands in a wall-mount single-door 304 stainless enclosure, at most 36x30.
+- **The designer's pick:**
+  - `DesignInputs.enclosurePreference` is saved in the .isap and carried through regeneration and Update all. The engine, the AI path (`chooseEnclosure`) and the page all follow it.
+  - Kept when the parts fit. When it's larger than needed, the note reads "This cabinet is bigger than needed — the recommended size is …".
+  - When too small: the smallest enclosure of its rating and material that holds the parts is used, with the note "Your size (20x16x8) was too small for the parts; we use …". The pick stays recorded.
+  - Squeezing: the layout's existing compact pass (tall parts share rails, fewer rails and ducts) is what tries to fit a pick. A narrower duct or tighter rail pitch is not added yet.
+- **UI:**
+  - An "Enclosure" control comes first on the Electrical page. It shows:
+    - the current enclosure, with "recommended" or "your choice";
+    - a material select;
+    - a size list of every enclosure of that rating and material, with part number, H×W×D in inches and mm, door count and mounting. The recommended one is starred.
+    - the note.
+  - A red banner appears when parts still don't fit, offering a larger enclosure, 4X fiberglass, relax to NEMA 12, or split. Choosing one records it as the pick.
+  - Known gap: a pick on the page swaps ENC1 / SP1 but doesn't recount DIN rail or duct lengths. "Update design" recounts them.
+- **PLC twice:**
+  - The engine never adds a CPU or module from the required parts, and a note names the stale part.
+  - The design review warns on more than one CPU.
+- **Checkers:**
+  - `layout_summary` fails on parts left off the back panel, a door that doesn't fit, or two CPUs.
+  - New variant `rules-sealing-4x`: the user's case with NEMA 4X, CPU 10DD1E-D, modules, and the stale 10DD2E-D in the required parts.
+  - The us120 fixture moved from 16x12 to the 24x20 the engine picks (its parts never fitted the 16x12).
+- **Tests (engine.test):**
+  - Recommended: a wall-mount single-door 304 enclosure, at most 36x30, spare 20–50 %, no note.
+  - Too small: bumped, with the note, and the pick recorded.
+  - Too big: kept, with the note.
+  - Picking the recommended one gives no note.
+  - Regeneration keeps the pick.
+  - `chooseEnclosure` follows the same rules.
+  - The list order.
+  - seal-4x: exactly one CPU.
+- **Tests (E2E):** `e2e/enclosure-fit.e2e.cjs` covers:
+  - the banner and its one-click fix;
+  - the size list with the starred recommendation;
+  - a bigger pick kept with its note;
+  - a too-small pick bumped with its note and still recorded.
+- **CAD exports:** parked as local commit 1c6cf94 (branch `cad-exports-wip`). They go into the next PR.
+
+## CAD exports: Save as AutoCAD / Save as EPLAN (Electrical page)
+- **Drawings to DXF:**
+  - The sheets are rendered from the same SheetView components as the PDF, using react-dom/server markup → `svgTree` → `svgToDxf`.
+  - There is one DXF per sheet, in mm at 1:1.
+- **Layers:** BORDER, SYMS, WIRES, WIRENO, TAGS, TEXT, GRAPHICS.
+- **Text styles:** ISA_SANS (arial.ttf) and ISA_MONO (cour.ttf).
+- **Blocks:**
+  - ISA_DEVICE, with AutoCAD Electrical attribute names: TAG1 (visible), DESC1, MFG and CAT. It is placed at every device tag on the device sheets.
+  - ISA_WIRENO, with attribute WIRENO, at every wire number.
+- **Format, stated honestly:** the writer (@tarikjabiri/dxf) produces DXF R2007 (AC1021), which opens directly in AutoCAD 2007 and later, LT and Electrical.
+  - The browser button says "Save as AutoCAD (DXF)".
+  - In the desktop app, if the ODA File Converter is installed (`electron/oda.cjs` detects it), the zip also holds AutoCAD 2018 DWG files. If it isn't installed, a notice explains why, and the DXF is saved instead.
+- **EPLAN package (zip)** — EPLAN's own project files (.elk / .zw1) cannot be written by another program, so the zip holds the formats EPLAN imports:
+  - `<project>.aml`: CAEX 3.0, with AR APC 1.4.0 classes (Device / DeviceItem / Channel / Tag / TagTable) for EPLAN's AutomationML AR APC PLC import. It also has an "ElectricalDesign" hierarchy: devices, terminal strips, cables, and connections as InternalLinks named by wire number.
+  - `plc_assignment_list.csv`
+  - `parts_eplan.xml`: EPLAN parts-management XML, one part per BOM part number.
+  - `device_list.csv`, `terminal_plan.csv`, `cable_schedule.csv`, `connection_list.csv`
+  - `dxf/`
+  - `README.txt`: the import steps in EPLAN, plus the CAEX 2.15 note.
+- **Checker `tools/check_cad.py`** (in check-all; the CAEX 3.0 XSD is in `tools/schemas/`):
+  - every DXF passes an ezdxf audit with 0 errors and 0 fixes;
+  - layers, text styles and blocks/attributes are present;
+  - CAT/MFG match the BOM, and wire numbers match the wire list;
+  - the AML is schema-valid, with unique IDs, valid link partners and resolved class paths, and one tag per I/O point;
+  - the CSVs and the parts XML parse, with matching counts.
+- **Tests:**
+  - `src/electrical/cad/cad.test.ts` covers the parser, transforms and paths, svg→dxf (layers, attributes, one SEQEND per insert, y flip), and the EPLAN helpers and package.
+  - `e2e/cad-export.e2e.cjs` clicks both buttons and checks the zip contents.
+- **Bugs the checker found and I fixed:**
+  - tags of modules after the CPU were dropped from the AML tag table;
+  - analog points were missing from the AML and from the assignment list;
+  - the parts XML missed BOM-only parts (HMI, duct);
+  - enclosure sizes in the parts XML used the panel size instead of the outer size.
+
+## Class T drive fuses; the CAD checker's warnings traced to generator bugs (Dev 1's 477ee37 / 25cf3e0)
+- **Class T drive branches:**
+  - The engine gives each UL/CSA drive branch the drive's own fuses from the manual chart (`ratings.fuseClass` 'T' / `fusePart`), in a Class T block with the right number of poles (`driveFuses`). These fuses are the condition of the drive's 100 kA SCCR, and the SCCR check now passes for them.
+  - Single fuses (`-1`) are used where they exist; otherwise whole packs.
+  - The Class CC `pickFuses` only picks Class CC parts now (before, the new Class T parts could leak in).
+- **Class T over 60 A (no orderable block from AutomationDirect)** — this covers GS23-4020 and up, GS23-2010 and up, GS23-25P0 and all GS30:
+  - the branch keeps its breaker;
+  - the engine adds a note;
+  - the design review says: "No orderable Class T fuse holder above 60 A for VFDx (… needs Class T TJxxx, n A, for its 100 kA SCCR) — use an open-style Class T fuse block from another maker (Bussmann, Mersen, Littelfuse), or keep the breaker and mark the lower SCCR the drive manual gives for it."
+  - If a block exists but the design has other protection, the review names the block to use.
+- **check-all:** `check_consistency` fails a drive with a Class T `fusePart` unless its branch has those Class T fuses or the review says why.
+- **engine.test:**
+  - the vfd scenario gets Class T fuses, three cartridges, its SCCR condition met, and no finding;
+  - 5 HP at 230 V (GS23-25P0, TJN80) keeps its breaker, with the note and the finding.
+- **Wire numbers drawn on the safety sheets but missing from the wire list:**
+  - **Y004A / Y005A (rules-big, rules-floor):** an engine bug.
+    - "VFD1 run" was matched to motor M1's contactor K1, because the tag lookup took M1, VFD1 or K1 for any "…1". So K1 had two coil outputs (Y001 and Y004).
+    - Separately, `drivesFromIo` added two phantom drive motors (M7/M8, VFD5/VFD6) for "VFD1 run" / "VFD2 run" that the drawings wired up.
+    - Fix: `motorFor` honours the prefix (VFD1 is a drive tag) and keeps "VFD/drive" descriptions on drive branches. `drivesFromIo` lets generic "VFDn run" / "Drive n run" outputs take the declared drives before adding motors.
+    - Covered by a new engine.test case ("vfd-numbers").
+  - **OSSD1 and -K5-1 (rules-stress, IEC):** the light-curtain / two-hand relay inputs are found by the relay's tag in the device's function, and `\b-K5\b` never matches an IEC tag with a leading "-". The inputs came out empty, the drawing drew a "?" device with its wire numbers, and the wire list had none.
+    - Fix: new `tagRe` (escaped, lookarounds), used for that lookup and the PS-protection and N.C.-block lookups.
+- **Tags with no tag text on the drawings:**
+  - FU2 / -F2 were the heater fuse cartridges with a tag of their own. They now take the holder tag + F, like the motor fuses (FU2 → FU2F).
+  - LC1 / LC1W are fixed by `tagRe`: the light curtain is now drawn with its tag.
+  - -U1 / -U2 / -U3 are the enclosure and back panel under IEC tags. check_cad now excludes undrawn parts by BOM category, not by tag prefix.
+- **check_cad:** both former warnings are now FAIL (a drawn wire number not in the wire list; a BOM device whose tag is drawn nowhere). On the 7 affected variants: CAD 0 FAIL / 0 WARN, CONSISTENCY 0, LAYOUT 0.

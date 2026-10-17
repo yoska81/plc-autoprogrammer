@@ -171,10 +171,16 @@ export function drivesFromIo(model: MachineModel, io: IOPoint[], spec = ''): Mac
   });
   // A drive run output no motor matches (the motor list is from another machine): a motor on a drive for it.
   const runs = driveIo.filter((p) => p.type === 'output' && p.signal !== 'analog' && !/\b(rev|reverse|speed|preset|fault)\b/i.test(p.description));
+  // drives on the motor list a run output already stands for (by shared words); generic outputs ("VFD1 run",
+  // "Drive 2 run") take the drives no output names, in order — they are not extra motors
+  const claimed = new Set(runs.flatMap((p) => motors.filter((m) => m.start === 'vfd' && wordsShared(p.description, m.description)).map((m) => m.tag)));
   for (const p of runs) {
     if (motors.some((m) => wordsShared(p.description, m.description))) continue;
     if (runs.length === 1 && motors.filter((m) => m.start === 'vfd').length === 1) continue; // the one drive is this one
     const name0 = p.description.split(/\s+[—–-]\s+|[(,;]/)[0].replace(HP_RE, '').replace(/\b(run|contactor|starter|coil|output|on|vfd|drive)\b/gi, '').replace(/\s+/g, ' ').trim() || 'Drive';
+    const generic = /^((vfd|drive|inverter)\s*-?\d+|\d+|drive)$/i.test(name0);
+    const free = generic ? motors.find((m) => m.start === 'vfd' && !claimed.has(m.tag)) : undefined;
+    if (free) { claimed.add(free.tag); continue; }
     const hp = specPower(spec, name0) ?? 1;
     let n = motors.length + 1;
     while (motors.some((m) => m.tag === `M${n}`)) n++;

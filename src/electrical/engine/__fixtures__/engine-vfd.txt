@@ -2,18 +2,19 @@ supply 480VAC-3PH | NEMA 12
 motor M1 1 HP vfd reversing — Infeed conveyor motor
 motor M2 2 HP contactor-overload — Lift motor
 
-ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 30% spare panel space (target >= 25%)
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 27% spare panel space (target >= 20%)
 SP1      SCE-30P24          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 6.5 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle
 DS1S     14070532           x1    Disconnect shaft
-CB1      GMCBU-3C-5         x1    Motor M1 branch protection — 5 A C-curve, 2.4 x FLA 2.1 A (rides through the start, max. 250% NEC 430.52) [M1]
+FU1      T60030-3SR         x1    Motor M1 drive branch fuses — Class T block (the GS23-41P0 fuses for its 100 kA SCCR) [M1]
+FU1F     TJS15-1            x3    Class T fuses 15A for FU1 — GS23-41P0 manual fuse chart [M1]
 VFD1     GS23-41P0          x1    Infeed conveyor motor drive, STO from safety relay — 2.7 A output >= FLA 2.1 A; Safe Torque Off for the safety stop [M1]
-CB2      GMCBU-3C-10        x1    Motor M2 branch protection — 10 A C-curve, 2.9 x FLA 3.4 A (rides through the start, max. 250% NEC 430.52) [M2]
+CB1      GMCBU-3C-10        x1    Motor M2 branch protection — 10 A C-curve, 2.9 x FLA 3.4 A (rides through the start, max. 250% NEC 430.52) [M2]
 K1       SC-E02PG-24VDC     x1    Lift motor contactor — rated 5 HP at 480 V 3-phase >= 2 HP / 3.4 A, 24 VDC coil [M2]
 K1-AUX   SZ-A11T            x1    K1 aux contact — N.C. 61-62 for the safety relay feedback (EDM); SC-E02PG-24VDC has no built-in aux [M2]
 OL1      TK-E02-340         x1    Lift motor overload — range 2.2-3.4 A, set to FLA 3.4 A [M2]
-CB3      GMCBU-3C-3         x1    24VDC power supply primary — 3 A for a 120 W supply (inrush)
+CB2      GMCBU-3C-3         x1    24VDC power supply primary — 3 A for a 120 W supply (inrush)
 PS1      PSR-24-120-3       x1    24VDC control power supply, 3-phase 480 VAC input — 5 A >= load 0.9 A + 25%
 PLC      C0-10DD1E-D        x1    PLC CPU
 IO1      C0-08TD1           x1    I/O module, slot 1
@@ -72,4 +73,4 @@ note: LS1 (Lift up limit switch): field device to select (not in the catalog); w
 note: LS2 (Lift down limit switch): field device to select (not in the catalog); wired as a dry contact to X007.
 note: VFD1: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.
 
-explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 480 V 3-phase through 30A — load 6.5 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP on GS23-41P0 (STO), M2 2 HP across the line; 24 VDC from PSR-24-120-3 for 0.9 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 30% spare panel space.
+explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 480 V 3-phase through 30A — load 6.5 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP on GS23-41P0 (STO), M2 2 HP across the line; 24 VDC from PSR-24-120-3 for 0.9 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 27% spare panel space.

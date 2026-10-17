@@ -11,8 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
 import { getPart } from '../catalog';
-import { buildModel, designWarnings, doorDrilling, panelLayout, spareSpace, type DrawingContext } from '../derive';
+import { buildModel, chooseEnclosure, designWarnings, doorDrilling, enclosureFitProblem, enclosureSize, enclosuresFor, layoutFits, panelLayout, spareSpace, SPARE_RULE, withEnclosure, type DrawingContext } from '../derive';
 import { cabinetHeat } from '../thermal';
+import { panelSccr } from '../sccr';
 import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
 import { moduleSlots } from '../../plc/core/modules';
@@ -29,8 +30,12 @@ const pt = (description: string, type: 'input' | 'output', extra: Partial<P> = {
 interface Scenario {
   name: string; points: P[]; supply: SupplyVoltage; region?: Region; motors?: MotorSpec[];
   cpu?: string; modules?: string[]; hmi?: string | null; spec?: string; rating?: DesignInputs['enclosureRating'];
-  /** Largest catalog enclosure is still under 25% spare: everything must fit, spare may be lower. */
+  /** Largest catalog enclosure is still under the spare-space rule: everything must fit, spare may be lower. */
   tight?: boolean;
+  /** Parts the designer chose (equipment list). */
+  required?: DesignInputs['requiredParts'];
+  /** Enclosure the designer picked (Electrical page "Enclosure"). */
+  enclosure?: string;
 }
 
 const EXAMPLE: P[] = [
@@ -121,7 +126,7 @@ function run(s: Scenario): { r: EngineResult; ctx: DrawingContext } {
   const cpu = getCpu(profile, s.cpu ?? 'C0-10DD1E-D');
   const addresses = resolveAddresses(profile, cpu, io, moduleSlots(s.modules ?? []));
   const plc = { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label };
-  const inputs: DesignInputs = { supply: s.supply, enclosureRating: s.rating ?? 'NEMA 12', notes: '', motors: s.motors ?? [], requiredParts: [] };
+  const inputs: DesignInputs = { supply: s.supply, enclosureRating: s.rating ?? 'NEMA 12', notes: '', motors: s.motors ?? [], requiredParts: s.required ?? [], ...(s.enclosure ? { enclosurePreference: s.enclosure } : {}) };
   const hmi = s.hmi === undefined ? 'CM5-T7W' : s.hmi;
   const r = generateDefaultDesign({ io, addresses, spec: s.spec ?? '', inputs, plc, modules: s.modules ?? [], region: s.region ?? 'US', getPart, hmiPartNumber: hmi, now: '2026-01-01T00:00:00.000Z', projectName: s.name });
   const ctx: DrawingContext = { projectName: s.name, design: r.design, getPart, plc, io: io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type })), region: s.region ?? 'US', hmiPartNumber: hmi };
@@ -153,8 +158,8 @@ for (const s of SCENARIOS) {
     assert.equal(g, fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), `${s.name}: golden differs (UPDATE=1 to regenerate after an intended change)`);
     const gaps = designWarnings(ctx).filter((w) => GAP.test(w));
     assert.deepEqual(gaps, [], `${s.name}: design gaps`);
-    assert.ok(r.layoutOk || s.tight, `${s.name}: panel layout does not fit with 25% spare`);
-    assert.ok(spareSpace(ctx).panel >= (s.tight ? 0.1 : 0.25), `${s.name}: spare space`);
+    assert.ok(r.layoutOk || s.tight, `${s.name}: panel layout does not fit with the spare-space rule`);
+    assert.ok(spareSpace(ctx).panel >= (s.tight ? 0.1 : SPARE_RULE), `${s.name}: spare space`);
     // Every discrete PLC point is wired to a device.
     const discrete = ctx.io.filter((p) => p.address && !/^DF/.test(p.address));
     assert.equal(r.design.ioWiring.length, discrete.length, `${s.name}: ioWiring per I/O point`);
@@ -247,13 +252,13 @@ for (const s of SCENARIOS) {
   // The door check itself: the 10" HMI on a 16x12 door does not fit.
   const small = { ...ctx, design: { ...ctx.design, components: ctx.design.components.map((c) => (c.tag === 'ENC1' ? { ...c, partNumber: 'SCE-16EL1206LP' } : c)) } };
   assert.ok(panelLayout(small).door.overflow, '16x12 door too small for CM5-T10W and the operators');
-  // A real overflow: NEMA 4X needs stainless, and the catalog's stainless enclosures stop at 20x16.
-  // The closest one is used (fewest parts left out), not the smallest, and the layout says it does not fit.
+  // NEMA 4X needs stainless: the larger stainless enclosures (up to 36x30) hold the big machine; the engine
+  // never leaves parts off when a stainless enclosure fits.
   const ss = run({ ...big, name: 'big-4x', rating: 'NEMA 4X' });
-  const ssEnc = ss.r.design.components.find((c) => c.tag === 'ENC1')!;
-  assert.ok(!ss.r.layoutOk, 'big-4x: no stainless enclosure fits');
-  assert.equal(ssEnc.partNumber, 'SCE-20EL1608SSLP', 'big-4x: the largest stainless enclosure, not the 16x12');
-  assert.ok(panelLayout(ss.ctx).notFit.length > 0 || panelLayout(ss.ctx).overflow, 'big-4x: the layout reports what does not fit');
+  const ssEnc = getPart(ss.r.design.components.find((c) => c.tag === 'ENC1')!.partNumber)!;
+  assert.match(String(ssEnc.ratings.material), /stainless/, 'big-4x: a stainless enclosure');
+  assert.ok(ss.r.layoutOk || (layoutFits(ss.ctx) && ss.r.design.notes.some((n) => /% spare/.test(n))), `big-4x: everything fits in ${ssEnc.partNumber}`);
+  assert.equal(enclosureFitProblem(ss.ctx), null, 'big-4x: no fit problem');
 
   // Floor-standing double door on 12in stands: devices on one leaf (never across the split), 0.6–1.7 m above
   // the floor; the door plan is that leaf; the thermal area leaves out the bottom.
@@ -271,6 +276,131 @@ for (const s of SCENARIOS) {
   assert.ok(Math.abs(dd.w - (lf.x1 - lf.x0)) < 0.1 && dd.cutouts.every((c) => c.x > 0 && c.x < dd.w), 'door plan = the leaf, leaf-relative X');
   const heat = (pn: string) => cabinetHeat([{ tag: 'ENC1', partNumber: pn, quantity: 1 }], getPart).area!;
   assert.ok(heat('SCE-72EL7218LPPL') < 1.83 * 1.83 + 2 * 1.83 * 0.457 + 2 * 1.83 * 0.457 - 0.5, 'floor-standing: bottom not in the cooling area');
+}
+
+// The user's Sealing Head: NEMA 4X, CPU changed on the PLC page after the equipment choice (the old CPU still in
+// the required parts), modules C0-08ND3 + C0-04AD-1. One CPU only, and an enclosure that holds everything.
+{
+  const seal = SCENARIOS.find((x) => x.name === 'sealing-head')!;
+  const s4 = { ...seal, name: 'seal-4x', rating: 'NEMA 4X' as const, cpu: 'C0-10DD1E-D', modules: ['C0-08ND3', 'C0-04AD-1'],
+    required: [{ partNumber: 'C0-10DD2E-D', quantity: 1 }, { partNumber: 'C0-08ND3', quantity: 1 }, { partNumber: 'C0-04AD-1', quantity: 1 }] };
+  const { r, ctx } = run(s4);
+  const cpus = r.design.components.filter((c) => getPart(c.partNumber)?.category === 'plc');
+  assert.deepEqual(cpus.map((c) => `${c.tag} ${c.partNumber}`), ['PLC C0-10DD1E-D'], 'one CPU: the project\'s');
+  assert.equal(r.design.components.filter((c) => c.partNumber === 'C0-08ND3').length, 1, 'each module once');
+  assert.ok(r.design.notes.some((n) => /C0-10DD2E-D from the equipment list is not used/.test(n)), 'the stale CPU is reported');
+  assert.ok(!designWarnings(ctx).some((w) => /PLC CPUs in the design/.test(w)));
+  const enc = getPart(r.design.components.find((c) => c.tag === 'ENC1')!.partNumber)!;
+  assert.match(String(enc.ratings.material), /stainless/);
+  assert.ok(layoutFits(ctx), `seal-4x: everything fits in ${enc.partNumber}`);
+  assert.equal(enclosureFitProblem(ctx), null);
+
+  // A saved design with the 20x16 stainless (what the user had): the problem and the ways out.
+  const small = { ...ctx, design: withEnclosure(ctx.design, getPart, 'SCE-20EL1608SSLP', 'SCE-20P16') };
+  const pr = enclosureFitProblem(small)!;
+  assert.ok(pr && (pr.notFit.length > 0 || pr.door), 'the 20x16 is too small');
+  const kinds = pr.options.map((o) => o.kind);
+  assert.equal(kinds[0], 'larger');
+  assert.match(String(getPart(pr.options[0].fit!.enclosure)!.ratings.material), /stainless/, 'larger: stainless stays stainless');
+  assert.ok(layoutFits({ ...small, design: withEnclosure(small.design, getPart, pr.options[0].fit!.enclosure, pr.options[0].fit!.subpanel) }), 'the larger option fits');
+  assert.ok(kinds.includes('rating') && kinds.includes('split'), `options ${kinds.join(', ')}`);
+  const fg = pr.options.find((o) => o.kind === 'material');
+  if (fg) assert.ok(!/stainless/i.test(String(getPart(fg.fit!.enclosure)!.ratings.material)) && /4X/.test(String(getPart(fg.fit!.enclosure)!.ratings.nema)), 'material: a non-stainless 4X');
+  // A design that already has two CPUs (made before the fix) is flagged.
+  const two = { ...ctx, design: { ...ctx.design, components: [...ctx.design.components, { tag: 'X1', partNumber: 'C0-10DD2E-D', quantity: 1, function: 'Required by the designer', motorTag: null }] } };
+  assert.ok(designWarnings(two).some((w) => /2 PLC CPUs in the design \(PLC C0-10DD1E-D, X1 C0-10DD2E-D\)/.test(w)), 'two CPUs flagged');
+}
+
+// The designer's enclosure pick (Electrical page "Enclosure"): the sealing head in stainless.
+{
+  const seal = SCENARIOS.find((x) => x.name === 'sealing-head')!;
+  const base = { ...seal, rating: 'NEMA 4X' as const };
+  const encOf = (r: EngineResult) => r.design.components.find((c) => c.tag === 'ENC1')!.partNumber;
+  // Recommended: a sensibly sized wall-mount single-door stainless box (not the giant one), no note.
+  const rec = run({ ...base, name: 'seal-4x-rec' });
+  const recPart = getPart(encOf(rec.r))!;
+  assert.equal(rec.r.design.enclosureChoice?.status, 'recommended');
+  assert.equal(rec.r.design.enclosureChoice?.note, undefined);
+  assert.equal(rec.r.design.enclosureChoice?.recommended, recPart.partNumber);
+  assert.match(String(recPart.ratings.material), /stainless/); assert.doesNotMatch(String(recPart.ratings.material), /316/, "304 before 316");
+  assert.ok(recPart.ratings.mounting !== 'floor' && (recPart.ratings.doors ?? 1) === 1, `${recPart.partNumber}: wall-mount, one door`);
+  assert.ok((recPart.ratings.heightIn as number) <= 36 && (recPart.ratings.widthIn as number) <= 30, `${recPart.partNumber}: not oversized`);
+  const sp = spareSpace(rec.ctx).panel;
+  assert.ok(sp >= SPARE_RULE && sp < 0.5, `spare ${Math.round(sp * 100)} %`);
+  // Too small (the user's 20x16): the smallest stainless that works, a note, the pick stays recorded.
+  const small = run({ ...base, name: 'seal-4x-small', enclosure: 'SCE-20EL1608SSLP' });
+  assert.equal(small.r.design.enclosureChoice?.status, 'tooSmall');
+  assert.equal(small.r.design.inputs.enclosurePreference, 'SCE-20EL1608SSLP', 'the pick stays recorded');
+  assert.ok(layoutFits(small.ctx), `fits in ${encOf(small.r)}`);
+  assert.match(String(getPart(encOf(small.r))!.ratings.material), /stainless/);
+  assert.ok(small.r.design.notes.some((n) => /^Your size \(20x16x8\) was too small for the parts; we use \d+x\d+x\d+ \(SCE-/.test(n)), 'too-small note');
+  // Too big: kept, with a note naming the recommended size; never changed by itself.
+  const big = run({ ...base, name: 'seal-4x-big', enclosure: 'SCE-48EL3612SSLP' });
+  assert.equal(encOf(big.r), 'SCE-48EL3612SSLP', 'a larger pick is kept');
+  assert.equal(big.r.design.enclosureChoice?.status, 'larger');
+  assert.ok(big.r.design.notes.some((n) => n === `This cabinet is bigger than needed — the recommended size is ${enclosureSize(recPart)} (${recPart.partNumber}).`), 'bigger-than-needed note');
+  // Picking the recommended one: no note.
+  const same = run({ ...base, name: 'seal-4x-same', enclosure: recPart.partNumber });
+  assert.equal(encOf(same.r), recPart.partNumber);
+  assert.equal(same.r.design.enclosureChoice?.status, 'recommended');
+  assert.ok(!same.r.design.notes.some((n) => /bigger than needed|too small for the parts/.test(n)));
+  // Regeneration (Update design / Update all) keeps the pick: the inputs carry it.
+  const again = run({ ...base, name: 'seal-4x-again', enclosure: big.r.design.inputs.enclosurePreference! });
+  assert.equal(encOf(again.r), 'SCE-48EL3612SSLP');
+  // The same rules on an existing design (the Electrical page pick and the AI path).
+  const kept = chooseEnclosure(rec.ctx, 'SCE-48EL3612SSLP');
+  assert.equal(kept.choice.status, 'larger');
+  assert.equal(kept.design.components.find((c) => c.tag === 'ENC1')!.partNumber, 'SCE-48EL3612SSLP');
+  const bumped = chooseEnclosure(rec.ctx, 'SCE-20EL1608SSLP');
+  assert.equal(bumped.choice.status, 'tooSmall');
+  assert.ok(layoutFits({ ...rec.ctx, design: bumped.design }), 'bumped design fits');
+  assert.equal(bumped.design.inputs.enclosurePreference, 'SCE-20EL1608SSLP');
+  assert.equal(chooseEnclosure(rec.ctx, null).choice.used, recPart.partNumber, 'no pick: the recommended one');
+  // The list for the picker: wall-mount single-door first, sorted by size.
+  const list = enclosuresFor('NEMA 4X', 'stainless');
+  const firstFloor = list.findIndex((p) => /floor|free/i.test(`${p.ratings.mounting ?? ''} ${p.ratings.floorStand ?? ''}`));
+  assert.ok(firstFloor < 0 || list.slice(firstFloor).every((p) => /floor|free/i.test(`${p.ratings.mounting ?? ''} ${p.ratings.floorStand ?? ''}`) || Number(p.ratings.doors ?? 1) > 1), 'floor-standing after wall-mount');
+}
+
+// Drive branches use the drive's own Class T fuses (its SCCR condition) in a Class T block; above 60 A AutomationDirect has
+// no orderable Class T block, so the branch keeps a breaker and the design review says so.
+{
+  const v = SCENARIOS.find((x) => x.name === 'vfd')!;
+  const { r, ctx } = run({ ...v, name: 'vfd-classT' });
+  const m = buildModel(ctx);
+  const drive = m.motors.find((x) => x.vfd)!;
+  const fusePn = String(drive.vfd!.part!.ratings.fusePart);
+  assert.equal(drive.protection?.category, 'fuse', `${drive.motor.tag}: fuse-protected`);
+  assert.match(String(drive.protection?.part?.ratings.fuseClass), /^T$/, 'a Class T block');
+  assert.ok([fusePn, `${fusePn}-1`].includes(String(drive.protection?.fuse?.partNumber)), `${fusePn} in it`);
+  assert.ok(r.design.components.some((c) => c.partNumber.startsWith(fusePn) && c.quantity === 3), 'three cartridges');
+  assert.ok(panelSccr(ctx).unmet.every((u) => u.tag !== drive.vfd!.tag), 'the drive SCCR condition is met');
+  assert.ok(!designWarnings(ctx).some((w) => /Class T/.test(w)), 'no Class T finding');
+  // 5 HP at 230 V: GS23-25P0 needs TJN80 — no orderable Class T block that size.
+  const big = run({ ...v, name: 'vfd-classT-80A', supply: '240VAC-3PH', motors: [motor('M1', 'Infeed conveyor', 5, '240VAC-3PH', 'vfd')] });
+  const bm = buildModel(big.ctx).motors.find((x) => x.vfd)!;
+  if (bm.vfd!.partNumber === 'GS23-25P0') {
+    assert.equal(bm.protection?.category, 'breaker', 'breaker kept');
+    assert.ok(big.r.design.notes.some((n) => /needs Class T TJN80 \(80 A\).*no orderable Class T fuse block/.test(n)), 'engine note');
+    assert.ok(designWarnings(big.ctx).some((w) => w.startsWith(`No orderable Class T fuse holder above 60 A for ${bm.vfd!.tag} (GS23-25P0 needs Class T TJN80, 80 A`)), 'review finding');
+  } else assert.fail(`expected GS23-25P0 for 5 HP 230 V, got ${bm.vfd!.partNumber}`);
+}
+
+// "VFD1 run" belongs to drive VFD1, not to motor M1's contactor: one PLC output per coil (rules-big drew Y004 "VFD1 run"
+// as a second coil rung for K1 while the wire list sent it to the drive).
+{
+  const { r, ctx } = run({
+    name: 'vfd-numbers', supply: '480VAC-3PH', hmi: null, modules: ['C0-08TD1'],
+    motors: [motor('M1', 'Conveyor motor', 1, '480VAC-3PH'), motor('M2', 'Pump motor', 3, '480VAC-3PH'), motor('M3', 'Belt 1 motor', 5, '480VAC-3PH', 'vfd'), motor('M4', 'Belt 2 motor', 5, '480VAC-3PH', 'vfd')],
+    points: [pt('E-stop OK', 'input'), pt('Start PB', 'input'), pt('Stop PB', 'input'), pt('Conveyor motor contactor', 'output'), pt('Pump motor contactor', 'output'), pt('VFD1 run', 'output', { deviceType: 'vfd-input' }), pt('VFD2 run', 'output', { deviceType: 'vfd-input' })],
+  });
+  const w = r.design.ioWiring;
+  for (const d of ['VFD1 run', 'VFD2 run']) assert.equal(w.find((x) => x.description === d)?.deviceType, 'vfd-input', `${d}: a drive input`);
+  const coils = w.filter((x) => x.deviceType === 'contactor-coil').map((x) => x.deviceTag);
+  assert.equal(new Set(coils).size, coils.length, `one output per contactor coil: ${coils.join(', ')}`);
+  const vfdTags = buildModel(ctx).motors.filter((x) => x.vfd).map((x) => x.vfd!.tag);
+  assert.equal(vfdTags.length, 2, `the two declared drives, no extra motors for "VFD1 run" / "VFD2 run": ${vfdTags.join(', ')}`);
+  assert.deepEqual(w.filter((x) => /^VFD\d run$/.test(x.description)).map((x) => x.deviceTag).sort(), [...vfdTags].sort(), 'each run output on its own drive');
 }
 
 // Guard doors and pressure switches come from the catalog: the interlock (+ actuator) in series with the E-stops

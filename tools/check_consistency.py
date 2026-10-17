@@ -223,6 +223,16 @@ def check(vdir: Path):
             report('FAIL', v, f'{mo["tag"]} {mo["hp"]} HP {mo["voltage"]}: FLA {mo["fla"]} A, NEC/CEC table says {ref} A')
         if f'{mo["fla"]} A' not in eng_flat:
             report('WARN', v, f'{mo["tag"]} FLA {mo["fla"]} A not printed in the engineering package')
+    # ---- Drive branches: the drive's listed Class T fuses (its SCCR condition), or the review says why not
+    iec = str(data.get('region', '')) not in ('US', 'Canada', '')
+    for dr in data.get('drives', []):
+        if str(dr.get('fuseClass') or '').upper() != 'T' or not dr.get('fusePart') or iec:
+            continue
+        pr = dr.get('protection') or {}
+        fine = pr.get('category') == 'fuse' and str(pr.get('fuseClass') or '').upper() == 'T' and str(pr.get('fuse') or '') in (dr['fusePart'], f'{dr["fusePart"]}-1')
+        flagged = any(dr['tag'] in w and 'Class T' in w for w in data['warnings'])
+        if not fine and not flagged:
+            report('FAIL', v, f'{dr["tag"]} {dr["partNumber"]}: branch protection {pr.get("tag")} {pr.get("partNumber")} is not its Class T {dr["fusePart"]} fuses, and the design review does not say why')
     for s in data['calcs']:
         if s['title'].startswith('24 VDC'):
             tot = sum(float(l['value'].split()[0]) for l in s['lines'])
