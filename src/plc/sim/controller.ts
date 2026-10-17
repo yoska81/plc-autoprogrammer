@@ -7,7 +7,7 @@ import type { IOWiring } from '../../electrical/types';
 import type { LadderProgram } from '../core/ladder';
 import { createSimulator, normAddress } from './engine';
 import type { CounterState, RungPower, Simulator, TimerState } from './engine';
-import { addPart, buildMachineModel, machineAnalogValues, machineInputs, removePart, setAnalogValue, setDeviceBypass, setDriveFault, stepMachine } from './machineModel';
+import { addPart, buildMachineModel, machineAnalogValues, machineInputs, removePart, resetSafetyRelay, setAnalogValue, setDeviceBypass, setDriveFault, stepMachine } from './machineModel';
 import type { MachineModel, SimDevice, SimIOPoint } from './machineModel';
 import { blockOfRung, externalSignals } from './blocks';
 import type { ExternalSignal } from './blocks';
@@ -329,11 +329,12 @@ export class SimController {
     this.emit();
   }
 
-  /** Toggle a latching device: E-stop, selector, manual sensor. */
+  /** Toggle a latching device: E-stop, selector, manual sensor; on a safety relay: its manual reset. */
   toggle(id: string) {
     const d = this.device(id);
     if (!d) return;
     if (d.kind === 'estop') d.state.pressed = !d.state.pressed;
+    else if (d.kind === 'safetyRelay') resetSafetyRelay(this.machine, id);
     else if (d.kind === 'selector' || d.kind === 'sensor') d.state.on = !d.state.on;
     else return;
     this.syncInputs();
@@ -401,10 +402,17 @@ export class SimController {
    */
   selectBlock(blockId: string | null) {
     this.block = blockId;
+    // Before the first scan, registers are still 0: hold the values the first scan sets (setpoint defaults).
+    let words = this.sim;
+    if (blockId !== null && this.sim.state.scanCount === 0) {
+      words = createSimulator(this.program);
+      for (const [a, v] of machineInputs(this.machine)) words.setInput(a, v);
+      words.step(10);
+    }
     this.blockSignals = blockId === null ? [] : externalSignals(
       this.program, blockId,
       (a) => this.program.tags.find((t) => normAddress(t.address) === a)?.nickname ?? this.io.find((p) => normAddress(p.address) === a)?.description ?? '',
-      (a) => this.sim.readWord(a),
+      (a) => words.readWord(a),
     ).map((s) => ({ ...s, held: true }));
     if (blockId === null) this.blockOnly = false;
     this.syncEngine();

@@ -20,7 +20,7 @@ import { moduleSlots } from '../core/modules';
 import { validateProgram } from '../core/validate';
 import { rungAddresses, rungWrites, type LadderProgram } from '../core/ladder';
 import { createSimulator } from '../sim/engine';
-import { buildMachineModel, machineInputs, stepMachine } from '../sim/machineModel';
+import { buildMachineModel, machineInputs, resetSafetyRelay, stepMachine } from '../sim/machineModel';
 import type { IOPoint } from '../../types/io';
 import type { HmiDesign } from '../../hmi/types';
 
@@ -184,6 +184,9 @@ for (const [name, sensor] of [['example', 'X005'], ['sealing', 'X004']] as const
   assert.equal(sim.readBit(tag('alarm:safety')), true, 'safety open alarm');
   assert.equal(sim.readWord(tag('word:state')), 4, 'state Safety Stop');
   estop.state.pressed = false; scan(300);
+  assert.equal(sim.readBit(tag('alarm:safety')), true, 'the safety relay waits for its manual reset');
+  resetSafetyRelay(m, m.devices.find((d) => d.kind === 'safetyRelay')!.id); scan(100);
+  assert.equal(sim.readBit(tag('alarm:safety')), false, 'relay reset: safety OK');
   assert.equal(sim.readBit('Y001'), false, 'no restart by itself');
   sim.write(tag('cmd:manual'), true); scan(100);
   assert.equal(sim.readBit(tag('sts:manual')), true, 'Manual mode');

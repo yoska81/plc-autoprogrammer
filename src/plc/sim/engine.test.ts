@@ -231,6 +231,23 @@ test('builds devices for the conveyor cell', () => {
   assert.equal(inputs.get('X002'), false);
 });
 
+test('a dump valve is a valve, not a cylinder; the safety relay needs a manual reset', () => {
+  const m = buildMachineModel([
+    { address: 'X001', description: 'E-Stop OK (safety relay)', type: 'input', category: 'Safety' },
+    { address: 'X002', description: 'Reset Button', type: 'input', category: 'Operator/HMI' },
+    { address: 'Y001', description: 'Pusher solenoid', type: 'output', category: 'Pneumatic' },
+    { address: 'Y002', description: 'Main air dump valve', type: 'output', category: 'Pneumatic' },
+  ], []);
+  assert.deepEqual(m.devices.filter((d) => d.kind === 'cylinder').map((d) => (d as CylinderDevice).extendOutput), ['Y001']);
+  const dv = m.devices.find((d) => d.kind === 'indicator');
+  assert.ok(dv?.kind === 'indicator' && dv.output === 'Y002' && dv.style === 'valve');
+  const es = m.devices.find((d) => d.kind === 'estop')!, rb = m.devices.find((d) => d.kind === 'pushbutton')!;
+  if (es.kind !== 'estop' || rb.kind !== 'pushbutton') throw new Error('devices');
+  es.state.pressed = true; assert.equal(machineInputs(m).get('X001'), false);
+  es.state.pressed = false; assert.equal(machineInputs(m).get('X001'), false, 'stays off until Reset');
+  rb.state.pressed = true; assert.equal(machineInputs(m).get('X001'), true, 'Reset button resets the relay');
+});
+
 test('pairs solenoids / motors with feedback by description', () => {
   const io = [
     { address: 'Y001', description: 'Clamp 1 extend solenoid', type: 'output', category: 'Pneumatic' },
@@ -441,6 +458,16 @@ test('controller: pusher block alone with held signals, block-only run, clear al
   assert.equal(ctl.getSnapshot().block, null);
 });
 
+test('controller: a block selected before the first scan holds the first-scan defaults', () => {
+  const p: LadderProgram = { tags: [], blocks: [{ id: 'setup', name: 'Setup', description: '' }, { id: 'feed', name: 'Feed', description: '' }], rungs: [
+    { id: 'd', block: 'setup', comment: '', branches: [[NO('SC2')]], outputs: [{ type: 'COPY', source: '50', dest: 'DS1001' }] },
+    { id: 'f', block: 'feed', comment: '', branches: [[{ type: 'CMP', left: 'DS1001', op: '>', right: '0' }]], outputs: [OUT('Y001')] },
+  ] };
+  const ctl = new SimController(p, [], []);
+  ctl.selectBlock('feed');
+  assert.equal(ctl.getSnapshot().holds.get('DS1001'), 50, 'the default setpoint, not 0 from before the first scan');
+});
+
 console.log('\nretentive memory, register presets, HMI presses');
 
 test('power cycle keeps DS registers and counters, clears bits and timers', () => {
@@ -588,7 +615,10 @@ test('example: safety stop and pusher fault set alarms and the state word', () =
   assert.equal(r('DS1101'), 5, 'safety stop');
   assert.equal(r('C2'), false);
   ctl.toggle(es.id); ctl.advance(100);
-  assert.equal(r('C1102'), false);
+  assert.equal(r('C1102'), true, 'E-stop released: the safety relay waits for its manual reset');
+  const sr = ctl.getSnapshot().devices.find((d) => d.kind === 'safetyRelay')!;
+  ctl.toggle(sr.id); ctl.advance(100);
+  assert.equal(r('C1102'), false, 'relay reset');
   // pusher never reaches extended -> fault after DS1001 s
   ctl.handle.write('DS1001', 2);
   const cyl = ctl.getSnapshot().devices.find((d) => d.kind === 'cylinder')!;
