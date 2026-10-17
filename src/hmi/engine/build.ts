@@ -78,6 +78,9 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
     manual: new Map(), faults: new Map(), timeouts: new Map(), speed: new Map(), limits: new Map(),
     runHours: '', sinceService: '', serviceInterval: '', serviceDone: '', serviceDue: '',
   };
+  if (c.actuators.some((a) => a.kind === 'cylinder' || a.kind === 'motor' || a.kind === 'drive')) {
+    t.as('alarm:step').alarm('Cycle_Step_Timeout', 'A cycle step did not finish in time', 'alarm', `PLC latches ON when a step of the automatic cycle lasts longer than its timeout (step table on the Program page) and stops the cycle; Reset (${reset}) clears it while stopped.`);
+  }
   if (c.safetyOk) plan.safetyAlarm = t.as('alarm:safety').alarm('Safety_Open', 'Safety circuit open (E-stop or guard)', 'alarm', `PLC sets ON while ${safeText} is OFF.`);
 
   const outputsOf = (a: HmiActuator) => [a.run, a.reverse, a.extend, a.retract].filter((p): p is NonNullable<typeof p> => !!p);

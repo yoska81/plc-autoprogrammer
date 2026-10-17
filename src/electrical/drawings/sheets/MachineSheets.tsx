@@ -5,6 +5,7 @@ import {
   CABLE_ROWS, OV_ROW_H, OV_ZONE_HEAD, type DrawingPlan, type PlannedSheet, type SheetSpec, type ZonePlan, type ZoneRow,
 } from '../plan';
 import { Dot, Ground, Line, TermBox, Txt } from '../symbols';
+import { powerText } from '../../../standards/regions';
 
 const TYPE_SHORT: Record<string, string> = {
   'sensor-pnp': 'PNP SENSOR', 'sensor-npn': 'NPN SENSOR', 'limit-switch': 'LIMIT SWITCH', 'pressure-switch': 'PRESSURE SW.',
@@ -46,23 +47,23 @@ export function MachineOverviewSheet({ plan, sheet }: { plan: DrawingPlan; sheet
       <Txt x={(CAB_X0 + CAB_X1) / 2} y={top + 10} size={3} bold anchor="middle">CABINET</Txt>
       {cabLines.map((l, i) => <Txt key={i} x={CAB_X0 + 2} y={top + 17 + i * 3.6} size={2.2} mono maxW={CAB_X1 - CAB_X0 - 4}>{l}</Txt>)}
       {doorLines.map((l, i) => <Txt key={`d${i}`} x={CAB_X0 + 2} y={top + 19 + cabLines.length * 3.6 + i * 3.2} size={2.2} maxW={CAB_X1 - CAB_X0 - 4}>{l}</Txt>)}
-      {placed.map(({ z, at }) => <ZoneBlock key={z.zone} z={z} y0={at} />)}
+      {placed.map(({ z, at }) => <ZoneBlock key={z.zone} z={z} y0={at} region={plan.ctx.region} />)}
     </g>
   );
 }
 
-function ZoneBlock({ z, y0 }: { z: ZonePlan; y0: number }) {
+function ZoneBlock({ z, y0, region }: { z: ZonePlan; y0: number; region?: string }) {
   return (
     <g>
       <rect x={ZONE_X0} y={y0} width={ZONE_X1 - ZONE_X0} height={z.height} strokeWidth={LW} strokeDasharray="3 1.5" rx={2} fill="#fff" />
       <rect x={ZONE_X0} y={y0} width={Math.min(140, 8 + z.zone.length * 2.2)} height={7} fill="#e8e8e8" stroke="none" />
       <Txt x={ZONE_X0 + 3} y={y0 + 5} size={2.8} bold maxW={135}>{`ZONE: ${z.zone.toUpperCase()}`}</Txt>
-      {z.rows.map((r, i) => <ZoneRowView key={i} r={r} rowTop={y0 + OV_ZONE_HEAD + i * OV_ROW_H} prevJbBus={i > 0 && !r.firstOfJb && r.jb ? y0 + OV_ZONE_HEAD + (i - 1) * OV_ROW_H + 5 : undefined} />)}
+      {z.rows.map((r, i) => <ZoneRowView key={i} r={r} region={region} rowTop={y0 + OV_ZONE_HEAD + i * OV_ROW_H} prevJbBus={i > 0 && !r.firstOfJb && r.jb ? y0 + OV_ZONE_HEAD + (i - 1) * OV_ROW_H + 5 : undefined} />)}
     </g>
   );
 }
 
-function ZoneRowView({ r, rowTop, prevJbBus }: { r: ZoneRow; rowTop: number; prevJbBus?: number }) {
+function ZoneRowView({ r, rowTop, prevJbBus, region }: { r: ZoneRow; rowTop: number; prevJbBus?: number; region?: string }) {
   const busY = rowTop + 5;
   const lastX = DEV_X0 + (r.devices.length - 1) * DEV_PITCH;
   const jbR = JB_X + JB_W;
@@ -91,12 +92,12 @@ function ZoneRowView({ r, rowTop, prevJbBus }: { r: ZoneRow; rowTop: number; pre
           <Txt x={ZONE_X0 + 4} y={busY - 1.2} size={2.1} italic>HOME-RUN CABLES (CABLE TRAY)</Txt>
         </g>
       )}
-      {r.devices.map((d, k) => <DeviceNode key={d.tag} d={d} cx={DEV_X0 + k * DEV_PITCH} busY={busY} />)}
+      {r.devices.map((d, k) => <DeviceNode key={d.tag} d={d} cx={DEV_X0 + k * DEV_PITCH} busY={busY} region={region} />)}
     </g>
   );
 }
 
-function DeviceNode({ d, cx, busY }: { d: MachineDevice; cx: number; busY: number }) {
+function DeviceNode({ d, cx, busY, region }: { d: MachineDevice; cx: number; busY: number; region?: string }) {
   const top = busY + 8;
   return (
     <g>
@@ -108,7 +109,7 @@ function DeviceNode({ d, cx, busY }: { d: MachineDevice; cx: number; busY: numbe
           <circle cx={cx} cy={top + 6.5} r={6.5} strokeWidth={0.5} fill="#fff" />
           <Txt x={cx} y={top + 8} size={3.6} bold anchor="middle">M</Txt>
           <Txt x={cx + 8} y={top + 5} size={2.5} mono bold>{d.tag}</Txt>
-          <Txt x={cx + 8} y={top + 8.6} size={2.0}>{`${d.motor?.motor.hp ?? ''} HP`}</Txt>
+          <Txt x={cx + 8} y={top + 8.6} size={2.0}>{d.motor ? powerText(d.motor.motor.hp, region).toUpperCase() : ''}</Txt>
           <Txt x={cx + 8} y={top + 11.8} size={2.0}>{d.motor?.vfd ? 'VFD' : 'DOL'}</Txt>
         </g>
       ) : (

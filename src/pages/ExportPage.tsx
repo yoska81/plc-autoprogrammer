@@ -106,7 +106,8 @@ export default function ExportPage() {
   const hasElec = Boolean(p.drawingCtx);
   const hasHmi = Boolean(p.hmi);
   const progFiles = programFiles(p);
-  const stale = (['io', 'electrical', 'hmi', 'program'] as const).filter((s) => stages[s].status === 'stale');
+  const STAGE_NAME = { equipment: 'Equipment', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI screens', program: 'PLC program' } as const;
+  const stale = (['equipment', 'io', 'electrical', 'hmi', 'program'] as const).filter((s) => stages[s].status === 'stale').map((s) => STAGE_NAME[s]);
 
 
   return (

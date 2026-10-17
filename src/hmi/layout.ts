@@ -1,4 +1,5 @@
 import type { HmiDesign, HmiElement, HmiScreen } from './types';
+import { textWidth } from './theme';
 
 /**
  * Layout rules shared by the AI prompt, the post-processing of a generated
@@ -32,6 +33,34 @@ const contains = (outer: HmiElement, inner: HmiElement) =>
 /** Group frames and machine graphics may hold other elements; everything else must not touch. */
 const isContainer = (e: HmiElement) => e.kind === 'panel' || e.kind === 'machine';
 
+/** Room the password lock badge (top-right corner of a protected button) takes from its centred one-line label. */
+export const lockInset = (el: Pick<HmiElement, 'level' | 'h'>) => (el.level && el.level !== 'operator' && el.h < 72 ? 22 : 0);
+
+/**
+ * Texts the screen draws for an element and the room each gets, as the renderer lays them out
+ * (upper case and letter spacing of the dark look, the wider of the two looks; smallest font
+ * the renderer shrinks to). A text wider than its room is drawn shortened ("SELECT MAN…").
+ */
+function textBoxes(e: HmiElement): { text: string; room: number; size: number; spacing: number }[] {
+  const caps = (s: string | null | undefined) => (s ?? '').toUpperCase();
+  const texts = (...xs: (string | null | undefined)[]) => [...new Set(xs.map(caps).filter(Boolean))];
+  switch (e.kind) {
+    case 'button': return texts(e.label, e.onText, e.action === 'toggle' ? e.offText : null).map((text) => ({ text, room: e.w - 16 - 2 * lockInset(e), size: 10, spacing: 1.5 }));
+    case 'nav': return texts(e.label).map((text) => ({ text, room: e.w - 18, size: 10, spacing: 0.8 }));
+    case 'indicator': return texts(e.onText || e.label, e.offText || e.label).map((text) => ({ text, room: e.w - 40 - 2 * Math.min(e.h * 0.28, 7), size: 10.5, spacing: 1.2 }));
+    case 'text':
+      if (e.h >= 32) return texts(e.label).map((text) => ({ text, room: e.w, size: Math.min(30, e.h * 0.62), spacing: 3 }));
+      if (e.style !== 'normal' || e.h < 24) return texts(e.label).map((text) => ({ text, room: e.w, size: Math.max(10, Math.min(13, e.h * 0.55)), spacing: 1.6 }));
+      return texts(e.label).map((text) => ({ text, room: e.w - 16, size: 10, spacing: 1.5 }));
+    default: return [];
+  }
+}
+
+/** Texts of an element that do not fit it, with the width they need. */
+export function cutTexts(e: HmiElement): { text: string; need: number; room: number }[] {
+  return textBoxes(e).map((b) => ({ text: b.text, need: Math.ceil(textWidth(b.text, b.size, b.spacing)), room: Math.max(0, Math.floor(b.room)) })).filter((b) => b.need > b.room);
+}
+
 /** Check one screen against the panel size and the layout rules. */
 export function checkScreen(screen: HmiScreen, widthPx: number, heightPx: number, design?: HmiDesign): LayoutIssue[] {
   const out: LayoutIssue[] = [];
@@ -43,6 +72,7 @@ export function checkScreen(screen: HmiScreen, widthPx: number, heightPx: number
     if (e.kind === 'nav' && e.targetScreenId && design && !design.screens.some((s) => s.id === e.targetScreenId)) add(e, 'error', `“${e.label}” goes to a screen that does not exist (${e.targetScreenId}).`);
     if ((e.kind === 'button' || e.kind === 'indicator' || e.kind === 'numeric' || e.kind === 'numeric-entry' || e.kind === 'multistate' || e.kind === 'bar' || e.kind === 'trend') && !e.address) add(e, 'warning', `“${e.label || e.id}” has no PLC address.`);
     if (e.kind === 'multistate' && !(e.states?.length)) add(e, 'warning', `“${e.label || e.id}” has no state texts.`);
+    for (const c of cutTexts(e)) add(e, 'warning', `“${c.text}” does not fit its ${e.kind === 'nav' ? 'navigation button' : e.kind} and is cut off (needs about ${c.need} px, has ${c.room}); widen it or shorten the text.`);
   }
   for (let i = 0; i < els.length; i++) {
     for (let j = i + 1; j < els.length; j++) {
@@ -67,6 +97,13 @@ export function checkDesign(design: HmiDesign, widthPx: number, heightPx: number
     for (const a of [e.address, e.interlock ?? null, ...(e.symbols ?? []).map((x) => x.address)]) {
       if (a && !tagged.has(a.toUpperCase()) && !/^[XY]\d+$/i.test(a)) missing.add(a.toUpperCase());
     }
+  }
+  // Every screen must be reachable: a navigation button (or the header's alarm link) on another screen goes to it.
+  const home = design.screens[0]?.id;
+  for (const s of design.screens) {
+    if (s.id === home) continue;
+    const reachable = design.screens.some((o) => o.id !== s.id && o.elements.some((e) => (e.kind === 'nav' || e.kind === 'header') && e.targetScreenId === s.id));
+    if (!reachable) out.push({ screenId: s.id, elementId: null, severity: 'warning', message: `No screen has a navigation button to “${s.name}”: operators cannot reach it. Add it to the navigation bar.` });
   }
   if (missing.size) out.push({ screenId: '', elementId: null, severity: 'warning', message: `Addresses used on screens but missing from the tag list: ${[...missing].join(', ')}.` });
   for (const a of design.alarms) if (!tagged.has(a.address.toUpperCase())) out.push({ screenId: '', elementId: null, severity: 'warning', message: `Alarm bit ${a.address} is not in the tag list.` });

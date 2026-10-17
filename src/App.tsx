@@ -36,8 +36,10 @@ function Menu({ label, children }: { label: string; children: ReactNode }) {
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
   }, [open]);
   return (
     <div ref={ref} className="relative">

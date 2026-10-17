@@ -4,7 +4,7 @@
  * Coordinates are the panel's native pixels.
  */
 import { MIN_TOUCH } from './layout';
-import type { HmiDesign, HmiElement, HmiElementKind, HmiScreen, HmiTag } from './types';
+import type { AccessLevel, HmiDesign, HmiElement, HmiElementKind, HmiScreen, HmiTag } from './types';
 
 export const GRID = 8;
 export const MIN_SIZE = 16;
@@ -284,4 +284,35 @@ export function addNavEntry(design: HmiDesign, screenId: string, label: string, 
   }
   if (reason) return { design, added: false, reason };
   return { design: { ...design, screens: design.screens.map((s) => out.get(s.id) ?? s) }, added: true, reason: null };
+}
+
+/**
+ * Rename a screen; navigation buttons to it that showed its old name (on every screen) take the new
+ * one. A button relabelled by hand ("Diag." for "Diagnostics") keeps its own text.
+ */
+export function renameScreen(design: HmiDesign, screenId: string, name: string): HmiDesign {
+  const old = design.screens.find((s) => s.id === screenId)?.name;
+  if (old === undefined) return design;
+  const same = (a: string) => a.trim().toLowerCase() === old.trim().toLowerCase();
+  return {
+    ...design,
+    screens: design.screens.map((s) => {
+      const elements = s.elements.map((e) => (e.kind === 'nav' && e.targetScreenId === screenId && same(e.label) ? { ...e, label: name } : e));
+      const changed = elements.some((e, i) => e !== s.elements[i]);
+      return s.id === screenId ? { ...s, name, elements } : changed ? { ...s, elements } : s;
+    }),
+  };
+}
+
+/** Password level needed to open a screen ('operator' = none). */
+export function setScreenLevel(design: HmiDesign, screenId: string, level: AccessLevel): HmiDesign {
+  return {
+    ...design,
+    screens: design.screens.map((s) => {
+      if (s.id !== screenId) return s;
+      const next = { ...s };
+      if (level === 'operator') delete next.level; else next.level = level;
+      return next;
+    }),
+  };
 }

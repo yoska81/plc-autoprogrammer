@@ -59,7 +59,8 @@ export default function OrderListCard({ p, fileBase }: { p: ProjectSnapshot; fil
   const empty = !ol.groups.length;
 
   // Deep link from the Electrical page ("Order list").
-  useEffect(() => { if (location.hash === '#order-list') ref.current?.scrollIntoView({ block: 'start' }); }, []);
+  // With hash routing the address is …#/export#order-list.
+  useEffect(() => { if (location.hash.endsWith('#order-list')) ref.current?.scrollIntoView({ block: 'start' }); }, []);
 
   const run = (label: string, fn: () => Promise<void> | void) => async () => {
     setBusy(label);

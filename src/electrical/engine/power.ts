@@ -5,7 +5,7 @@
  * through the Picker; anything the catalog cannot cover becomes a note, never an invented part.
  */
 import { motorFla } from '../derive';
-import { SUPPLY_INFO, type Region } from '../../standards/regions';
+import { isIec, powerText, SUPPLY_INFO, type Region } from '../../standards/regions';
 import type { CatalogPart, DesignComponent, SupplyVoltage } from '../types';
 import type { ModelMotor } from './machineModel';
 import { coversSupply, hpKeys, num, type Picker } from './select';
@@ -134,6 +134,7 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
   const auxBlock = pk.byNumber('SZ-A11T');
   const interlock = pk.byNumber('SZ-RM');
 
+  const P = (hp: number) => powerText(hp, region);
   for (const m of motors) {
     const fla = motorFla(m.hp, supply);
     const name = m.description || `Motor ${m.tag}`;
@@ -145,7 +146,7 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
     let vfd: { part: CatalogPart; sto: boolean } | null = null;
     if (start === 'vfd') {
       vfd = pickVfd(pk, supply, fla, m.hp);
-      if (!vfd) { notes.push(`${m.tag} ${name}: no catalog VFD for ${SUPPLY_INFO[supply].label} ${m.hp} HP — designed across the line (contactor + overload); select a drive.`); start = 'dol'; }
+      if (!vfd) { notes.push(`${m.tag} ${name}: no catalog VFD for ${SUPPLY_INFO[supply].label} ${P(m.hp)} — designed across the line (contactor + overload); select a drive.`); start = 'dol'; }
     }
 
     // Branch short-circuit protection
@@ -163,7 +164,7 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
         components.push(comp(`${t}F`, f.fuse.partNumber, poles, `Class CC fuses ${amps(f.fuse)}A for ${t} — time-delay, >= 1.25 x FLA ${fla.toFixed(1)} A`, m.tag));
       } else {
         const cb = pickBranchBreaker(pk, supply, fla, poles, factor);
-        if (cb) components.push(comp(tags.next('CB'), cb.partNumber, 1, `Motor ${m.tag} branch protection — ${amps(cb)} A ${cb.ratings.curve ?? ''}-curve, ${(amps(cb) / fla).toFixed(1)} x FLA ${fla.toFixed(1)} A (rides through the start, max. 250% NEC 430.52)`.replace(' -curve', ''), m.tag));
+        if (cb) components.push(comp(tags.next('CB'), cb.partNumber, 1, `Motor ${m.tag} branch protection — ${amps(cb)} A ${cb.ratings.curve ?? ''}-curve, ${(amps(cb) / fla).toFixed(1)} x FLA ${fla.toFixed(1)} A (rides through the start, ${isIec(region) ? 'IEC 60947-2 / IEC 60204-1 7.2.10' : region === 'Canada' ? 'CEC 28-200' : 'max. 250% NEC 430.52'})`.replace(' -curve', ''), m.tag));
         else notes.push(`${m.tag}: no branch breaker in the catalog for ${fla.toFixed(1)} A at ${SUPPLY_INFO[supply].label} — select branch protection.`);
       }
     }
@@ -188,13 +189,13 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
     }
 
     const k = pickContactor(pk, supply, fla, m.hp);
-    if (!k) { notes.push(`${m.tag}: no 24 VDC-coil contactor in the catalog for ${m.hp} HP / ${fla.toFixed(1)} A — select a starter.`); branches.push(branch); continue; }
+    if (!k) { notes.push(`${m.tag}: no 24 VDC-coil contactor in the catalog for ${P(m.hp)} / ${fla.toFixed(1)} A — select a starter.`); branches.push(branch); continue; }
     const dirs = reversing ? ['forward', 'reverse'] : [''];
     for (const d of dirs) {
       const kt = tags.next('K');
       branch.contactors.push(kt);
       const rating = hpRating(k, supply);
-      components.push(comp(kt, k.partNumber, 1, `${name} ${d ? `${d} ` : ''}contactor — ${rating !== undefined && SUPPLY_INFO[supply].hz !== 50 ? `rated ${rating} HP at ${SUPPLY_INFO[supply].label}` : `AC-3 ${amps(k)} A`} >= ${m.hp} HP / ${fla.toFixed(1)} A, 24 VDC coil`, m.tag));
+      components.push(comp(kt, k.partNumber, 1, `${name} ${d ? `${d} ` : ''}contactor — ${rating !== undefined && SUPPLY_INFO[supply].hz !== 50 ? `rated ${rating} HP at ${SUPPLY_INFO[supply].label}` : `AC-3 ${amps(k)} A`} >= ${P(m.hp)} / ${fla.toFixed(1)} A, 24 VDC coil`, m.tag));
       if (auxBlock && needsAuxBlock(k)) components.push(comp(`${kt}-AUX`, auxBlock.partNumber, 1, `${kt} aux contact — N.C. 61-62 for the safety relay feedback (EDM)${reversing ? ' and the reversing interlock' : ''}; ${k.partNumber} has no built-in aux`, m.tag));
     }
     if (reversing) {

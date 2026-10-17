@@ -34,9 +34,12 @@ const replies: [string, unknown][] = [
     states: [{ value: 0, text: 'Stopped', style: 'normal' }, { value: 1, text: 'Running', style: 'ok' }, { value: 2, text: 'Pushing Part', style: 'ok' }, { value: 3, text: 'Faulted', style: 'alarm' }, { value: 4, text: 'Manual', style: 'warning' }, { value: 5, text: 'Safety Stop', style: 'alarm' }],
     questions: ['Which operator password levels are needed?'],
   }],
-  // Program stage = the cycle block on top of the rule-based blocks (src/plc/ai/cycleAI.ts).
-  ['program', { explanation: 'Step register reset while stopped.', tags: [{ address: 'DS1150', nickname: 'Step_Cycle', comment: 'Cycle step' }],
-    rungs: [{ id: 'a', block: 'cycle', comment: 'Step 0 while the cycle is not running', branches: [[{ type: 'NC', address: 'C2' }]], outputs: [{ type: 'COPY', source: '0', dest: 'DS1150' }] }] }],
+  // Program stage = the cycle steps on top of the rule-based blocks (src/plc/ai/cycleAI.ts).
+  ['program', { explanation: 'Feed until a part is at the end, push it off, retract.', questions: [], steps: [
+    { name: 'Feed', actions: [{ actuator: 'Conveyor', what: 'run' }], waitFor: [{ input: 'X004', on: true, seconds: null }], timeoutSec: null },
+    { name: 'Push', actions: [{ actuator: 'Pusher', what: 'extend' }], waitFor: [{ input: 'X005', on: true, seconds: null }], timeoutSec: 5 },
+    { name: 'Retract', actions: [], waitFor: [{ input: 'X006', on: true, seconds: null }], timeoutSec: 5 },
+  ] }],
 ];
 const dir = path.join(ROOT, 'tools/ai-quality/recordings/m0-example-conveyor');
 fs.rmSync(dir, { recursive: true, force: true });

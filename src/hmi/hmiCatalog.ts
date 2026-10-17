@@ -381,6 +381,12 @@ export function getHmi(partNumber: string): HmiModel | undefined {
   return HMI_MODELS.find((m) => m.partNumber === key) ?? (key ? catalogPanel(key) : undefined);
 }
 
+/** Smallest touch screen the designer lays out screens for (a 4.3" 480×272 panel and up). */
+export const MIN_DESIGN_PX = { w: 320, h: 240 };
+
+/** Screens can be designed for it: a touch panel of at least MIN_DESIGN_PX (not a 128×64 text display). */
+export const designable = (m: Pick<HmiModel, 'touch' | 'widthPx' | 'heightPx'>) => m.touch && m.widthPx >= MIN_DESIGN_PX.w && m.heightPx >= MIN_DESIGN_PX.h;
+
 /** Maker of a panel model. */
 export const hmiMaker = (m: Pick<HmiModel, 'manufacturer'>) => m.manufacturer ?? 'AutomationDirect';
 /** Maker of a panel by part number (AutomationDirect for the C-more list and unknown numbers). */

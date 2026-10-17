@@ -4,7 +4,7 @@
  * (Anthropic / OpenAI from the browser) and the preview's Claude-account path.
  */
 
-export type AiErrorKind = 'network' | 'overloaded' | 'timeout' | 'auth' | 'limit' | 'cancelled' | 'other';
+export type AiErrorKind = 'network' | 'overloaded' | 'timeout' | 'auth' | 'limit' | 'cancelled' | 'answer' | 'other';
 
 export interface AiErrorInfo {
   kind: AiErrorKind;
@@ -32,7 +32,7 @@ export function classifyAiError(err: unknown, signal?: AbortSignal): AiErrorInfo
   // preview (claude.ai account) error codes
   if (e?.code === 'rate_limited') return { kind: 'overloaded', transient: true };
   // an empty or unreadable answer is usually a one-off: ask again
-  if (e?.code === 'empty_completion' || e?.code === 'invalid_json') return { kind: 'overloaded', transient: true };
+  if (e?.code === 'empty_completion' || e?.code === 'invalid_json') return { kind: 'answer', transient: true };
   if (e?.code === 'session_expired' || e?.code === 'not_granted') return { kind: 'auth', transient: false };
   const status = typeof e?.status === 'number' ? e.status : undefined;
   if (name === 'WatchdogTimeout' || name === 'APIConnectionTimeoutError' || /timed? ?out|timeout/i.test(msg)) return { kind: 'timeout', transient: true, status };
@@ -61,6 +61,7 @@ export const KIND_TEXT: Record<AiErrorKind, string> = {
   limit: 'The AI account has reached a limit',
   cancelled: 'Stopped',
   other: 'The AI request failed',
+  answer: 'The AI\'s answer could not be used',
 };
 
 /** Automatic retries after the first attempt, and the wait before each (ms). */

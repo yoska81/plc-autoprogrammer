@@ -51,5 +51,5 @@ export const IEC_LETTERS: [RegExp, string, string][] = [
   [/^-S\d/, '-S', 'MANUAL CONTROL: PUSHBUTTON, SELECTOR, E-STOP'],
   [/^-T\d/, '-T', 'CONVERTING ENERGY: POWER SUPPLY, TRANSFORMER, DRIVE'],
   [/^-U\d/, '-U', 'ENCLOSURE, BACK PANEL, JUNCTION BOX'],
-  [/^(-X|TB)\d/, '-X', 'TERMINALS (STRIPS KEEP TB1…)'],
+  [/^(-X|TB)\d/, '-X', 'TERMINAL STRIPS (-X1, -X2…)'],
 ];

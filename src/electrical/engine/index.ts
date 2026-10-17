@@ -7,7 +7,7 @@
 import type { IOPoint } from '../../types/io';
 import type { AnalogSetupRow } from '../../plc/core/analog';
 import type { Region } from '../../standards/regions';
-import { SUPPLY_INFO } from '../../standards/regions';
+import { enclosureText, powerText, SUPPLY_INFO } from '../../standards/regions';
 import { DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
 import { panelLayout, spareSpace, terminalCounts, motorFla, type DrawingContext } from '../derive';
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
@@ -135,7 +135,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   }));
   if (power.branches.length) {
     const basis = SUPPLY_INFO[supply].hz === 50 ? 'IEC 60947-4-1 Annex G' : 'NEC Table 430.250 / 430.248';
-    askUser.push(`Motor currents from ${basis}: ${power.branches.map((b) => `${b.motor.tag} ${b.motor.hp} HP ${motorFla(b.motor.hp, supply).toFixed(1)} A`).join(', ')} — confirm the nameplates.`);
+    askUser.push(`Motor currents from ${basis}: ${power.branches.map((b) => `${b.motor.tag} ${powerText(b.motor.hp, input.region)} ${motorFla(b.motor.hp, supply).toFixed(1)} A`).join(', ')} — confirm the nameplates.`);
   }
   const sto = power.branches.filter((b) => b.sto).map((b) => b.vfd);
   if (sto.length) notes.push(`${sto.join(', ')}: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.`);
@@ -183,7 +183,7 @@ export function generateDesign(input: EngineInput): EngineResult {
     const depth = num(enc.ratings.depthIn) ?? 8;
     const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth);
     const head = [
-      comp('ENC1', enc.partNumber, 1, `Main enclosure ${enc.ratings.heightIn}x${enc.ratings.widthIn}x${enc.ratings.depthIn} ${inputs.enclosureRating ?? 'NEMA 12'}`),
+      comp('ENC1', enc.partNumber, 1, `Main enclosure ${enc.ratings.heightIn}x${enc.ratings.widthIn}x${enc.ratings.depthIn} ${enclosureText(inputs.enclosureRating, input.region)}`),
       ...(sub ? [comp('SP1', sub.partNumber, 1, 'Back panel')] : []),
       ...ds.components,
     ];
@@ -204,9 +204,9 @@ export function generateDesign(input: EngineInput): EngineResult {
   if (!best) throw new Error('No enclosure in the catalog.');
   if (!best.ok) notes.push(`No catalog enclosure leaves 25% spare panel space: ${best.enc.partNumber} is the largest tried (${Math.round(best.spare * 100)}% spare) — consider a larger or a second enclosure.`);
 
-  const motorsText = power.branches.map((b) => `${b.motor.tag} ${b.motor.hp} HP ${b.vfd ? `on ${getPart(best!.components.find((c) => c.tag === b.vfd)?.partNumber ?? '')?.partNumber ?? 'a VFD'}${b.sto ? ' (STO)' : ''}` : b.reversing ? 'reversing starter' : 'across the line'}`).join(', ');
+  const motorsText = power.branches.map((b) => `${b.motor.tag} ${powerText(b.motor.hp, input.region)} ${b.vfd ? `on ${getPart(best!.components.find((c) => c.tag === b.vfd)?.partNumber ?? '')?.partNumber ?? 'a VFD'}${b.sto ? ' (STO)' : ''}` : b.reversing ? 'reversing starter' : 'across the line'}`).join(', ');
   const ps = best.components.find((c) => getPart(c.partNumber)?.category === 'powerSupply');
-  const explanation = `Rule-based design: ${inputs.enclosureRating ?? 'NEMA 12'} ${best.enc.partNumber}, ${SUPPLY_INFO[supply].label} through ${best.components.find((c) => c.tag === 'DS1')?.function.replace('Main disconnect ', '') ?? 'a'} disconnect${motorsText ? `; motors: ${motorsText}` : ''}; 24 VDC from ${ps?.partNumber ?? '(select a supply)'} for ${loadA.toFixed(1)} A load + 25%; dual-channel E-stop${model.safety.estops > 1 ? 's' : ''} into a safety relay with monitored manual reset; ${Math.round(best.spare * 100)}% spare panel space.`;
+  const explanation = `Rule-based design: ${enclosureText(inputs.enclosureRating, input.region)} ${best.enc.partNumber}, ${SUPPLY_INFO[supply].label} through ${best.components.find((c) => c.tag === 'DS1')?.function.replace('Main disconnect ', '') ?? 'a'} disconnect${motorsText ? `; motors: ${motorsText}` : ''}; 24 VDC from ${ps?.partNumber ?? '(select a supply)'} for ${loadA.toFixed(1)} A load + 25%; dual-channel E-stop${model.safety.estops > 1 ? 's' : ''} into a safety relay with monitored manual reset; ${Math.round(best.spare * 100)}% spare panel space.`;
 
   return {
     design: {

@@ -102,6 +102,8 @@ export interface LadderProgram {
   blocks?: ProgramBlock[];
   /** Nicknames for internal memory the program uses (C, T, CT, DS ...). */
   tags: TagDefinition[];
+  /** The automatic cycle as steps, when the program was built from the templates (shown as a table; exporters ignore it). */
+  sequence?: import('../engine/sequence').CycleSequence;
 }
 
 export const EMPTY_PROGRAM: LadderProgram = { rungs: [], tags: [] };

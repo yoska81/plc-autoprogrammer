@@ -6,6 +6,7 @@ import { HmiRuntimeTracker, type HmiRuntime } from './runtime';
 import type { HmiDesign, HmiElement } from './types';
 import { LEVEL_LABEL } from './theme';
 import { useUi } from '../store/useUiStore';
+import NumericKeypad from './NumericKeypad';
 
 /**
  * The HMI running against the simulated PLC: buttons write bits, lamps and
@@ -16,6 +17,8 @@ export default function LiveHmi({ handle, design }: { handle: SimHandle; design:
   const [screenId, setScreenId] = useUi('liveHmi.screen', design.screens[0]?.id ?? '');
   const tracker = useMemo(() => new HmiRuntimeTracker(design), [design]);
   const [runtime, setRuntime] = useState<HmiRuntime | null>(null);
+  // Setpoint being entered on the panel's keypad.
+  const [entry, setEntry] = useState<HmiElement | null>(null);
 
   // Re-draw whenever the simulator publishes new values, and once a second for the clock.
   useEffect(() => {
@@ -52,12 +55,16 @@ export default function LiveHmi({ handle, design }: { handle: SimHandle; design:
           {design.screens.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </label>
-      <div className="bg-gray-900 rounded-xl p-2 shadow-lg ring-1 ring-black/40">
+      <div className="relative bg-gray-900 rounded-xl p-2 shadow-lg ring-1 ring-black/40">
         <HmiScreenView screen={screen} widthPx={model.widthPx} heightPx={model.heightPx} design={design}
-          read={handle.read} onPress={press} onNavigate={setScreenId} runtime={runtime ?? undefined} />
+          read={handle.read} onPress={press} onNavigate={(id) => { setEntry(null); setScreenId(id); }} onEntry={setEntry} runtime={runtime ?? undefined} />
+        {entry?.address && (
+          <NumericKeypad el={entry} current={handle.read(entry.address)} onClose={() => setEntry(null)}
+            onEnter={(v) => { if (entry.address && !(entry.interlock && !handle.read(entry.interlock))) handle.write(entry.address, v); }} />
+        )}
       </div>
       <p className="text-xs text-gray-500">
-        {model.partNumber} · {model.widthPx}×{model.heightPx} · press and hold buttons like a real touch panel
+        {model.partNumber} · {model.widthPx}×{model.heightPx} · press and hold buttons like a real touch panel; tap a setpoint to type a new value
         {active ? ` · ${active} active alarm${active > 1 ? 's' : ''}` : ''}
         {screen.level ? ` · ${LEVEL_LABEL[screen.level]} password on the real panel` : ''}
       </p>

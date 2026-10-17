@@ -5,7 +5,6 @@
 import { sheetOnPaper } from '../../standards/regions';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DrawingContext } from '../derive';
-import { SHEET_H, SHEET_W } from './geometry';
 import { planDrawings } from './plan';
 import SheetView from './SheetView';
 import { useUi } from '../../store/useUiStore';
@@ -50,8 +49,8 @@ export default function DrawingSet({ ctx, printMode, section = 'all' }: DrawingS
     );
   }
 
-  const width = zoom === 'fit' ? '100%' : `${SHEET_W * zoom}mm`;
-  const height = zoom === 'fit' ? undefined : `${SHEET_H * zoom}mm`;
+  const width = zoom === 'fit' ? '100%' : `${paper.paper.w * zoom}mm`;
+  const height = zoom === 'fit' ? undefined : `${paper.paper.h * zoom}mm`;
   return <DrawingDocument plan={plan} shown={shown} idx={idx} setActive={setActive} zoom={zoom} setZoom={setZoom} width={width} height={height} />;
 }
 

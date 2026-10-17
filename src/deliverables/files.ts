@@ -13,7 +13,6 @@ import type { ProjectSnapshot } from './collect';
 import DrawingSet from '../electrical/drawings/DrawingSet';
 import SheetView from '../electrical/drawings/SheetView';
 import { planDrawings } from '../electrical/drawings/plan';
-import { SHEET_H, SHEET_W } from '../electrical/drawings/geometry';
 import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
 import { getHmi } from '../hmi/hmiCatalog';
@@ -48,7 +47,7 @@ async function sheetsPdf(ctx: DrawingContext, el: ReactElement): Promise<Blob> {
   const on = sheetOnPaper(ctx.sheet);
   const PW = on.paper.w, PH = on.paper.h;
   return renderOffscreen(el, async (host) => {
-    const sheets = [...host.querySelectorAll<SVGSVGElement>(`svg[viewBox="0 0 ${SHEET_W} ${SHEET_H}"]`)];
+    const sheets = [...host.querySelectorAll<SVGSVGElement>(`svg[viewBox="0 0 ${PW} ${PH}"]`)];
     if (!sheets.length) throw new Error('No drawing sheets were produced.');
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [PW, PH] });
     for (let i = 0; i < sheets.length; i++) {

@@ -68,7 +68,7 @@ export default function SpecIntake() {
               className={`flex items-center justify-center border-2 border-dashed rounded py-4 text-sm cursor-pointer ${dragOver ? 'border-brand-500 bg-brand-50' : 'border-steel-300 text-steel-600 hover:border-brand-400'}`}
             >
               Drop spec documents here or click to choose (PDF, Word .docx, text)
-              <input type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { setFiles((f) => [...f, ...(e.target.files ?? [])]); e.target.value = ''; }} />
+              <input type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { const picked = [...(e.target.files ?? [])]; e.target.value = ''; setFiles((f) => [...f, ...picked]); }} />
             </label>
             {files.length > 0 && (
               <ul className="flex flex-wrap gap-2">

@@ -4,6 +4,7 @@ import { HmiIcon } from './icons';
 import { iconFor, type HmiIconName } from './iconRules';
 import { FRAME_TITLE_H, GroupFrame, LockBadge } from './symbols';
 import { showNum, stateFor, type Ctx } from './viewCtx';
+import { lockInset } from './layout';
 
 /**
  * Siemens look: a WinCC Comfort / Unified style operator panel in the app's
@@ -48,11 +49,13 @@ function Raised({ x, y, w, h, tone, pressed, t }: { x: number; y: number; w: num
  * when the box is tall. The text stays its own <text> element (tests and
  * screen readers find a button by its label). Without room the icon is left out.
  */
-function IconLabel({ x, y, w, h, icon, text, color, size, weight, t, dy = 0 }: {
+function IconLabel({ x, y, w, h, icon, text, color, size, weight, t, dy = 0, inset = 0 }: {
   x: number; y: number; w: number; h: number; icon: HmiIconName | null; text: string; color: string; size: number; weight: number; t: HmiTheme; dy?: number;
+  /** Room kept free on both sides of the centred text (the password lock badge in the top-right corner). */
+  inset?: number;
 }) {
   const cx = x + w / 2, cy = y + h / 2 + dy;
-  const avail = w - 16;
+  const avail = w - 16 - 2 * inset;
   // Icon above the text in tall boxes, unless a second line (interlock state) needs the room.
   const stacked = icon && h >= 72 && w >= 64 && dy === 0;
   if (icon && stacked) {
@@ -198,7 +201,7 @@ function Button({ el, value, ctx }: { el: HmiElement; value: boolean | number | 
   return (
     <g opacity={interlocked ? 0.45 : 1}>
       <Raised x={el.x} y={el.y} w={el.w} h={el.h} tone={tone} pressed={pressed || (latched && role !== 'neutral')} t={t} />
-      <IconLabel x={el.x} y={el.y + sink} w={el.w} h={el.h - 2} icon={icon} text={text} color={tone.text} size={size} weight={700} t={t} dy={sub ? -7 : 0} />
+      <IconLabel x={el.x} y={el.y + sink} w={el.w} h={el.h - 2} icon={icon} text={text} color={tone.text} size={size} weight={700} t={t} dy={sub ? -7 : 0} inset={lockInset(el)} />
       {sub && (
         <g>
           <circle cx={el.x + el.w / 2 - textWidth(sub, 10) / 2 - 7} cy={el.y + el.h / 2 + 11} r={3.5}

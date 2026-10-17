@@ -9,6 +9,7 @@ import {
   BreakerPole, CellTxt, Coil, Contact, Dot, Fuse, Ground, Lamp, LimitSwitch, Line, Motor, OverloadHeater, PressureSwitch, Pushbutton,
   Selector, Sensor3W, Solenoid, SwitchPole, TermBox, TermPt, Txt, WireNo, XrefArrow,
 } from '../symbols';
+import { iecStripText, stripTag } from '../../../standards/designations';
 
 // ---------------------------------------------------------------------------
 // Symbols & abbreviations
@@ -153,7 +154,7 @@ export function LegendSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }
             {/* 85 % and centred in the cell: the tallest symbols (IEC pressure switch) otherwise reach over the cell line */}
             <g transform={`translate(${x + 16} ${y + 1.2}) scale(0.85) translate(${-(x + 16)} ${-(y + 0.8)})`}>{s.draw(x + 16, y + 0.8)}</g>
             <Txt x={x + 35} y={y + 0.2} size={2.2} bold maxW={colW - 37}>{s.name}</Txt>
-            {s.note && <Txt x={x + 35} y={y + 3.4} size={1.9} maxW={colW - 37}>{s.note}</Txt>}
+            {s.note && <Txt x={x + 35} y={y + 3.4} size={1.9} maxW={colW - 37}>{plan.ctx.designations === 'iec81346' ? iecStripText(s.note) : s.note}</Txt>}
           </g>
         );
       })}
@@ -187,7 +188,7 @@ export function LegendSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }
       {(() => {
         const ny = tpTop + tpHalf * 3.5 + 4;
         const notes = [
-          plan.ctx.designations === 'iec81346' ? 'DOT = CLASS USED IN THIS DRAWING SET. DESIGNATION = "-" + IEC 81346-2 CLASS LETTER + NUMBER (-K1, -S2); TERMINALS -K1:A1. TERMINAL STRIPS KEEP TB1…' : 'DOT = PREFIX USED IN THIS DRAWING SET. TAG = PREFIX + SEQUENCE NUMBER (K1, PB2). MULTI-DEVICE PARTS: TAG.n (TB.2).',
+          plan.ctx.designations === 'iec81346' ? 'DOT = CLASS USED IN THIS DRAWING SET. DESIGNATION = "-" + IEC 81346-2 CLASS LETTER + NUMBER (-K1, -S2); TERMINALS -K1:A1. TERMINAL STRIPS -X1, -X2…; WIRE NUMBERS WITHOUT THE "-" (M1-L1).' : 'DOT = PREFIX USED IN THIS DRAWING SET. TAG = PREFIX + SEQUENCE NUMBER (K1, PB2). MULTI-DEVICE PARTS: TAG.n (TB.2).',
           'LINE REFERENCES: "SHEET.LINE" — 5.04 = SHEET 5, LINE 04. LINE NUMBERS ARE PRINTED DOWN THE LEFT EDGE OF EVERY SCHEMATIC SHEET.',
           'WIRE COLOURS AND WIRE NUMBERING: SEE COVER SHEET. SPARE PLC POINTS ARE SHOWN "SPARE" ON THE I/O SHEETS.',
         ].flatMap((n) => wrapText(n, RW, 1.9));
@@ -314,7 +315,7 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   // ---- marking conventions
   const conv = [
     `WIRE MARKERS: WHITE HEAT-SHRINK OR PRINTED SLEEVES, BLACK TEXT, 2.5 mm MIN. TEXT HEIGHT, AT BOTH ENDS OF EVERY CONDUCTOR, READING FROM THE TERMINAL OUTWARD (${iec ? 'IEC 60204-1 13.2.1' : 'NFPA 79 13.2.1'}). TEXT = WIRE NUMBER ON THE SCHEMATIC.`,
-    'TERMINAL MARKERS: CLIP-IN MARKERS, CONSECUTIVE NUMBERS 1, 2, 3… PER STRIP; STRIP TAG (TB1, TB2…) ON A GROUP MARKER AT EACH END STOP.',
+    `TERMINAL MARKERS: CLIP-IN MARKERS, CONSECUTIVE NUMBERS 1, 2, 3… PER STRIP; STRIP TAG (${stripTag(plan.ctx.designations, 1)}, ${stripTag(plan.ctx.designations, 2)}…) ON A GROUP MARKER AT EACH END STOP.`,
     'DEVICE ID LABELS: ADHESIVE LABEL WITH THE DEVICE TAG ON THE PANEL OR DUCT NEXT TO EVERY BACK-PANEL DEVICE (NOT ON THE REMOVABLE DEVICE). DOOR DEVICES: TAG ON THE INSIDE OF THE DOOR.',
     'FIELD CABLES: CABLE TAG (W001…) ON BOTH ENDS; FIELD DEVICES: ENGRAVED / UV-STABLE TAG WITH THE DEVICE TAG.',
     'LEGEND PLATES: LAMINATED PHENOLIC (LAMICOID) OR THE OPERATOR SERIES LEGEND PLATE; ENGRAVED UPPER CASE, SANS-SERIF.',
@@ -419,8 +420,9 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
       {/* wire marker illustration: a real wire of this project (first PLC point landed on a strip) */}
       {(() => {
         const p = model.io.find((x) => x.signalTerminal);
-        const [strip, n] = (p?.signalTerminal ?? 'TB1-1').split('-');
-        const ex = { strip, n: Number(n) || 1, wire: p?.wire ?? '24+', to: p ? `${model.plcTag}:${p.address}` : `${model.plcTag}:24V` };
+        const term = p?.signalTerminal ?? `${stripTag(plan.ctx.designations, 1)}-1`;
+        const cut = term.lastIndexOf('-'); // "TB2-4", IEC "-X2-4"
+        const ex = { strip: term.slice(0, cut), n: Number(term.slice(cut + 1)) || 1, wire: p?.wire ?? '24+', to: p ? `${model.plcTag}:${p.address}` : `${model.plcTag}:24V` };
         const iy = convEnd + 6;
         const ix = TX + 4;
         const ly0 = iy + 16;

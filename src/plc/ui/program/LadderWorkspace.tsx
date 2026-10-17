@@ -9,6 +9,7 @@ import { useReviewStore } from '../../../review/useReviewStore';
 import { useProgramStore } from '../../../store/useProgramStore';
 import { generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../ai/ladderAI';
 import { generateRuleBasedProgram } from '../../ai/cycleAI';
+import SequenceTable from './SequenceTable';
 import { useElectricalStore } from '../../../store/useElectricalStore';
 import { validateProgram, type ValidationIssue } from '../../core/validate';
 import { diffPrograms, summarizeDiff, type RungChange } from '../../core/diff';
@@ -476,6 +477,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
           {review ? (
             <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} />
           ) : ladder.rungs.length ? (
+            <>
+            {ladder.sequence && (activeBlock === null || activeBlock === 'cycle') && <SequenceTable sequence={ladder.sequence} labels={labels} />}
             <LadderView
               program={shown}
               onChange={activeBlock === null ? store.editLadder : (p) => store.editLadder(mergeBlock(ladder, activeBlock, p))}
@@ -485,6 +488,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               selectedRungId={selectedRungId}
               onSelectRung={setSelectedRungId}
             />
+            </>
           ) : isGenerating ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-gray-500">
               <Spinner className="h-8 w-8 text-brand-800" />
