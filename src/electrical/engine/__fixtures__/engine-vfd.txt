@@ -2,7 +2,7 @@ supply 480VAC-3PH | NEMA 12
 motor M1 1 HP vfd reversing — Infeed conveyor motor
 motor M2 2 HP contactor-overload — Lift motor
 
-ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 34% spare panel space (target >= 25%)
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 32% spare panel space (target >= 25%)
 SP1      SCE-30P24          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 6.5 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle
@@ -28,12 +28,12 @@ CR1      KPR-SCS-24VACDC-1  x1    Interposing relay: Ready signal to robot — d
 PL1      GCX1231-24L        x1    Fault
 PB3      GCX1104            x1    Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)
 TB1      DN-T10-A           x38   Feed-through terminals
-TBG      DN-G10             x5    Ground terminals
+TBG      DN-G10             x9    Ground terminals
 TBC      DN-EC1210          x3    Terminal end covers
 TBE      DN-EB35            x6    End brackets
 DIN      DN-R35S1           x2    DIN rail
 WD       T1-1530G-1         x2    Wire duct
-GB1      SCE-GB10           x1    Ground bar
+GB1      SCE-GB10           x2    Ground bar
 
 X001   ES1    estop-contact        Cabinet door   E-stop pressed
 X002   SR1    safety-relay-output  Cabinet        Safety OK
@@ -66,4 +66,4 @@ note: LS2 (Lift down limit switch): field device to select (not in the catalog);
 note: PRS1 (Air pressure switch): field device to select (not in the catalog); wired as a dry contact to X008.
 note: VFD1: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.
 
-explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 480 V 3-phase through 30A — load 6.5 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP on GS23-41P0 (STO), M2 2 HP across the line; 24 VDC from PSR-24-120-3 for 0.8 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 34% spare panel space.
+explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 480 V 3-phase through 30A — load 6.5 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP on GS23-41P0 (STO), M2 2 HP across the line; 24 VDC from PSR-24-120-3 for 0.8 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 32% spare panel space.

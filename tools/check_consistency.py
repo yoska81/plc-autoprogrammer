@@ -163,7 +163,7 @@ def check(vdir: Path):
         report('FAIL', v, f'terminal labels vs plan differ: {sorted({t for t, _ in t_csv} ^ t_lbl)[:8]}')
     # strip size vs BOM quantity of feed-through terminals
     n_term = len(tp)
-    tb_q = sum(q for pn, q in csv_q.items() if pn.startswith('DN-T'))
+    tb_q = sum(q for pn, q in csv_q.items() if pn.startswith(('DN-T', 'DN-F')))  # feed-through + fused
     if tb_q and tb_q < n_term - sum(1 for r in tp if r.get('Type') == 'ground'):
         report('WARN', v, f'BOM has {tb_q} feed-through terminals, terminal plan needs {n_term}')
 

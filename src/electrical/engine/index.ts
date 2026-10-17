@@ -175,7 +175,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   };
 
   // Terminal counts come from the terminal plan, which does not depend on the enclosure.
-  const counts = terminalCounts(ctxOf([...core, ...accessories({ feed: 1, ground: 1, endPlates: 1, endStops: 2 }, 1, 1)]));
+  const counts = terminalCounts(ctxOf([...core, ...accessories({ feed: 1, ground: 1, fused: 0, endPlates: 1, endStops: 2 }, 1, 1)]));
 
   let best: { components: DesignComponent[]; spare: number; ok: boolean; enc: CatalogPart } | undefined;
   for (const enc of enclosureCandidates(pk, inputs.enclosureRating)) {

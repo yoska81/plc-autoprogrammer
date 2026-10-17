@@ -360,7 +360,7 @@ export default function ElectricalPage() {
                             </td>
                             <td className="py-1 pr-2"><input type="number" min={1} value={c.quantity} onChange={(e) => el.updateComponent(i, { ...c, quantity: Math.max(1, Number(e.target.value)) })} className={`${input} w-16`} aria-label="Quantity" /></td>
                             <td className="py-1 pr-2 text-steel-600">{c.function}</td>
-                            <td className="py-1"><button onClick={() => el.removeComponent(i)} className="text-steel-400 hover:text-red-600" aria-label="Remove component">✕</button></td>
+                            <td className="py-1"><button onClick={() => { if (confirm(`Remove ${c.tag || 'this component'}${c.partNumber ? ` (${c.partNumber})` : ''}? Where the I/O list or the motor list still uses it, the drawings keep it and flag it as not in the BOM until the design is regenerated.`)) el.removeComponent(i); }} className="text-steel-400 hover:text-red-600" aria-label="Remove component">✕</button></td>
                           </tr>
                         );
                       })}

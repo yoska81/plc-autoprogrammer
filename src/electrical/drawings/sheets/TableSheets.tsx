@@ -234,7 +234,7 @@ export function TerminalSheet({ sheet }: { plan: DrawingPlan; sheet: PlannedShee
                   <Txt x={x + cols[1] + 1.5} y={yy - 1.4} size={2.4} mono bold maxW={cols[2] - cols[1] - 3}>{t.wire || '—'}</Txt>
                   <Txt x={x + cols[2] + 1.5} y={yy - 1.4} size={2.3} mono maxW={cols[3] - cols[2] - 3}>{t.internal}</Txt>
                   <Txt x={x + cols[3] + 1.5} y={yy - 1.4} size={2.3} mono maxW={cols[4] - cols[3] - 3}>{t.external}</Txt>
-                  <Txt x={x + cols[4] + 1.5} y={yy - 1.4} size={2.2} maxW={colW - cols[4] - 3}>{t.kind === 'ground' ? 'PE (GN/YE)' : t.kind === 'spare' ? 'SPARE' : t.group === t.wire ? 'JUMPERED' : 'FEED'}</Txt>
+                  <Txt x={x + cols[4] + 1.5} y={yy - 1.4} size={2.2} maxW={colW - cols[4] - 3}>{t.kind === 'ground' ? 'PE (GN/YE)' : t.kind === 'spare' ? 'SPARE' : t.fuse ? `FUSED ${t.fuse}` : t.group === t.wire ? 'JUMPERED' : 'FEED'}</Txt>
                   <Line x1={x} y1={yy} x2={x + colW} y2={yy} w={0.12} />
                 </g>
               );

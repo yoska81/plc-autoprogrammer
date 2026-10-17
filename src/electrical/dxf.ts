@@ -112,7 +112,7 @@ export function drillingDxf(plan: DrillingPlan, projectName = '', opts: DxfOptio
   w.poly('OUTLINE', [[0, 0], [plan.w, 0], [plan.w, plan.h], [0, plan.h]]);
   for (const h of plan.holes) {
     w.circle('HOLES', h.x, h.y, h.dia / 2);
-    w.text('TEXT', h.x + h.dia / 2 + 1, h.y + h.dia / 2 + 0.5, 2.5, `${h.id} Ø${dualDim(h.dia)}`);
+    w.text('TEXT', h.x + h.dia / 2 + 1, h.y + h.dia / 2 + 0.5, 2.5, `${h.id}${h.tap ? ` ${h.tap} TAP,` : ''} Ø${dualDim(h.dia)}${h.tap ? ' DRILL' : ''}`);
   }
   for (const c of plan.cutouts) {
     if (c.template) {

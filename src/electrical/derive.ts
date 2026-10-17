@@ -352,6 +352,8 @@ export interface Terminal {
   external: string;
   kind: 'feed' | 'ground' | 'spare';
   group: string;
+  /** Fused terminal: fuse rating, e.g. "2 A" (branch protection of the circuit it feeds). */
+  fuse?: string;
 }
 
 export interface TerminalStrip {
@@ -391,6 +393,18 @@ export interface ElectricalModel {
   machine: MachineModel;
   /** N.C. auxiliary contact used for EDM feedback / reversing interlock, per contactor tag. */
   auxNc: Map<string, AuxNc>;
+  /** The door HMI: its 24 VDC feed and its link to the PLC. */
+  hmi?: HmiLink;
+}
+
+/** The door HMI's power (own fused terminal on TB1) and communication link to the PLC. */
+export interface HmiLink {
+  tag: string;
+  partNumber: string;
+  /** Fused TB1 terminal feeding it, e.g. "TB1-12". */
+  fuseTerminal: string;
+  fuse: string;
+  link: 'ethernet' | 'serial';
 }
 
 /** Where a contactor's N.C. auxiliary contact comes from. */
@@ -675,6 +689,14 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     m.terminals = m.loadWires.map((w, k) => add(tb1, { wire: w, internal: `${src}:T${k + 1}`, external: `${m.motor.tag}:T${k + 1}`, kind: 'feed', group: m.motor.tag }));
     m.peTerminal = add(tb1, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${m.motor.tag}:PE`, kind: 'ground', group: m.motor.tag });
   }
+  // The door HMI (a design component, or the one chosen on the HMI page): 24 VDC through its own fused
+  // terminal (the supply can deliver more than the 18 AWG door wiring carries), Ethernet to the PLC when both have it.
+  const hmiRc = rc.find((c) => c.category === 'hmi');
+  const hmiPn = hmiRc?.partNumber ?? ctx.hmiPartNumber ?? undefined;
+  const hmiTag = hmiRc?.tag ?? (hmiPn ? 'HMI1' : undefined);
+  const hmiModel = hmiPn ? getHmi(hmiPn) : undefined;
+  const hmiLink: HmiLink['link'] = String(plcPart?.ratings?.ethernet ?? 'yes') !== 'no' && hmiModel?.ethernet !== false ? 'ethernet' : 'serial';
+  let hmi: HmiLink | undefined;
   // 24VDC consumers
   const plus: string[] = [`${plcTag}:24V`];
   const zero: string[] = [`${plcTag}:0V`];
@@ -706,6 +728,11 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   for (const c of plus) add(tb1, { wire: '24+', internal: `${psMain}:+V`, external: c, kind: 'feed', group: '24+' });
   if (safety.outputSupply === '24+S') for (const c of outSupply) add(tb1, { wire: '24+S', internal: relay ? `${mcr ? mcr.tag : relay.tag}:14` : `${estopTags.at(-1) ?? 'ES'}:12`, external: c, kind: 'feed', group: '24+S' });
   else for (const c of outSupply) add(tb1, { wire: '24+', internal: `${psMain}:+V`, external: c, kind: 'feed', group: '24+' });
+  if (hmiTag && hmiPn) {
+    zero.push(`${hmiTag}:0V`);
+    hmi = { tag: hmiTag, partNumber: hmiPn, fuse: '2 A', link: hmiLink, fuseTerminal: '' };
+    hmi.fuseTerminal = add(tb1, { wire: '24+H', internal: 'TB1 24+ (jumper)', external: `${hmiTag}:+24V`, kind: 'feed', group: hmiTag, fuse: hmi.fuse });
+  }
   for (const c of zero) add(tb1, { wire: '0V', internal: `${psMain}:-V`, external: c, kind: 'feed', group: '0V' });
   add(tb1, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${psMain}:PE`, kind: 'ground', group: 'PE' });
   addSpares(tb1, 2);
@@ -725,6 +752,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${tag}:${sensor ? 'BK' : 'NO'}`, kind: 'feed', group: tag });
       p.supplyTerminal = add(tb2, { wire: '24+', internal: 'TB1 24+ (jumper)', external: `${tag}:${sensor ? 'BN' : 'C'}`, kind: 'feed', group: tag });
       if (sensor) p.returnTerminal = add(tb2, { wire: '0V', internal: 'TB1 0V (jumper)', external: `${tag}:BU`, kind: 'feed', group: tag });
+      // the device cable's PE core gets its own clamp (one conductor per terminal)
+      else add(tb2, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${tag}:PE`, kind: 'ground', group: tag });
     }
     // one 24+ / 0V pair per junction box, commoned inside the box
     for (const jb of mw.wiring.junctionBoxes) {
@@ -753,6 +782,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       else {
         p.returnTerminal = add(tb3, { wire: retWire, internal: `TB1 ${retWire} (jumper)`, external: p.jb ? `${p.jb} ${retWire}` : `${tag}:${p.deviceType === 'pilot-light' ? 'X2' : p.deviceType === 'stack-light' ? 'COM' : 'A2'}`, kind: 'feed', group: p.jb ?? tag });
         retDone.set(key, p.returnTerminal);
+        // home-run device cable: its PE core on its own clamp (one conductor per terminal)
+        if (!p.jb) add(tb3, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${tag}:PE`, kind: 'ground', group: tag });
       }
     }
     add(tb3, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: 'FIELD PE', kind: 'ground', group: 'PE' });
@@ -876,6 +907,15 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   // PLC power & commons
   addWire({ wire: '24+', from: 'TB1 24+', to: `${plcTag}:24V`, color: 'BU', size: '18 AWG', function: 'PLC power' });
   addWire({ wire: '0V', from: `${plcTag}:0V`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: 'PLC power' });
+  if (hmi) {
+    addWire({ wire: '24+', from: 'TB1 24+', to: hmi.fuseTerminal, color: 'BU', size: '18 AWG', function: `${hmi.tag} supply into fused terminal (${hmi.fuse} fuse)` });
+    addWire({ wire: '24+H', from: hmi.fuseTerminal, to: `${hmi.tag}:+24V`, color: 'BU', size: '18 AWG', function: `${hmi.tag} power (door, through the hinge loop)` });
+    addWire({ wire: '0V', from: `${hmi.tag}:0V`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${hmi.tag} power` });
+    addWire({ wire: 'PE', from: `${hmi.tag}:FG`, to: pe, color: 'GN/YE', size: '14 AWG', function: `${hmi.tag} frame ground` });
+    addWire(hmi.link === 'ethernet'
+      ? { wire: 'ENET1', from: `${plcTag}:ETH`, to: `${hmi.tag}:LAN`, color: 'Cat6 STP (cable)', size: 'Cat6', function: `Ethernet ${plcTag} to ${hmi.tag}: shielded patch cable, direct (add a switch for more Ethernet devices)` }
+      : { wire: 'COM2', from: `${plcTag}:PORT2`, to: `${hmi.tag}:PORT1`, color: 'RS-232 (cable)', size: 'RS-232', function: `Serial ${plcTag} port 2 to ${hmi.tag}: RS-232 cable (PLC has no Ethernet port)` });
+  }
   for (const g of groups) {
     const slot = g.key.split(':')[1];
     if (g.type === 'input') addWire({ wire: g.commonTo, from: `${g.devTag}:COM`, to: `TB1 ${g.commonTo}`, color: g.commonTo === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `Input common slot ${slot}` });
@@ -963,13 +1003,22 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     internal: new Map(drives.flatMap((c) => c.terminals.filter((t) => t.role === 'speed').map((t) => [t.address, { tag: c.drive.tag, plus: t.terminal, minus: t.common }] as const))),
     moduleTag: (slot, pn) => modules.find((mm) => mm.partNumber === pn)?.tag ?? `${plcTag}-S${slot}`,
   });
+  // Every PE clamp on the strips is wired from the ground bar, and the enclosure, back panel and door are bonded to it
+  // (NFPA 79 8.2.3 / IEC 60204-1 8.2.1: protective bonding circuit continuity does not rely on hinges or mounting screws).
+  for (const st of strips) for (const t of st.terminals.filter((x) => x.kind === 'ground')) {
+    const mt = motors.find((mm) => mm.peTerminal === t.label);
+    addWire({ wire: 'PE', from: pe, to: t.label, color: 'GN/YE', size: mt ? mt.awg : '14 AWG', function: `PE to ${t.external}` });
+  }
+  addWire({ wire: 'PE', from: 'ENCLOSURE (ground stud)', to: pe, color: 'GN/YE', size: mainAwg, function: 'Enclosure bonding' });
+  addWire({ wire: 'PE', from: 'BACK PANEL (ground stud)', to: pe, color: 'GN/YE', size: mainAwg, function: 'Back panel bonding' });
+  addWire({ wire: 'PE', from: 'DOOR (ground stud)', to: 'ENCLOSURE (ground stud)', color: 'GN/YE', size: '14 AWG', function: 'Door bonding jumper (flexible, across the hinge)' });
   wires.push(...analog.wires);
   if (analog.strip) strips.push(analog.strip);
   machine.cables.push(...analog.cables);
   if (iec) toIec(wires, machine.cables);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, hmi,
   };
 }
 
@@ -1269,7 +1318,8 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
     // home-run devices
     for (const d of zDevices.filter((x) => x.kind === 'io' && !x.jb)) {
       const c = deviceCable(d, 'CABINET', (p, role) => (role === 'sig' ? p.signalTerminal : role === 'sup' ? p.supplyTerminal : p.returnTerminal) ?? '?');
-      const stripPe = strips.find((st) => st.tag === (d.points[0].signalTerminal ?? '').split('-')[0])?.terminals.find((t) => t.kind === 'ground')?.label;
+      const st = strips.find((x) => x.tag === (d.points[0].signalTerminal ?? '').split('-')[0]);
+      const stripPe = (st?.terminals.find((t) => t.kind === 'ground' && t.group === d.tag) ?? st?.terminals.find((t) => t.kind === 'ground'))?.label;
       for (const k of c.cores) if (k.from === 'PE') k.from = stripPe ?? peBar;
       c.from = rangeText(c.cores.map((k) => k.from).filter((f) => /^TB\d+-\d+$/.test(f)));
       d.cable = c.tag;
@@ -1369,12 +1419,12 @@ export function categoryTitle(c: CatalogCategory | 'note'): string { return c ==
 /** Terminal counts implied by the terminal plan. */
 export function terminalCounts(ctx: DrawingContext) {
   const strips = terminalPlan(ctx);
-  let feed = 0, ground = 0, endPlates = 0, endStops = 0;
+  let feed = 0, ground = 0, fused = 0, endPlates = 0, endStops = 0;
   for (const s of strips) {
-    for (const t of s.terminals) if (t.kind === 'ground') ground++; else feed++;
+    for (const t of s.terminals) if (t.kind === 'ground') ground++; else if (t.fuse) fused++; else feed++;
     endPlates += s.endPlates; endStops += s.endStops;
   }
-  return { feed, ground, endPlates, endStops };
+  return { feed, ground, fused, endPlates, endStops };
 }
 
 export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
@@ -1411,7 +1461,7 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
   const notes: BomLine[] = [...notesFromLayout];
   const all = [...lines.values()];
   const isGround = (l: BomLine) => /ground|pe\b|earth/i.test(`${l.description} ${ctx.getPart(l.partNumber)?.ratings?.type ?? ''}`);
-  const feedLine = all.find((l) => l.category === 'terminal' && !isGround(l));
+  const feedLine = all.find((l) => l.category === 'terminal' && !isGround(l) && !/fused terminal/i.test(l.description));
   const groundLine = all.find((l) => l.category === 'terminal' && isGround(l));
   const acc = all.filter((l) => l.category === 'terminalAccessory');
   const endPlateLine = acc.find((l) => /end (cover|plate|barrier)/i.test(l.description));
@@ -1422,6 +1472,13 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
     else notes.push({ item: 0, qty: n, partNumber: '', manufacturer: '', description: `${what}: ${n} required (select part)`, tags: [], category: 'note', note: true });
   };
   apply(feedLine, tc.feed, 'Feed-through terminal blocks');
+  if (tc.fused && !all.some((l) => /fused terminal/i.test(l.description))) {
+    const fp = ctx.getPart('DN-F6L24');
+    const tags = m.strips.flatMap((st) => st.terminals.filter((t) => t.fuse).map((t) => t.label));
+    const line: BomLine = { item: 0, qty: 1, partNumber: fp ? fp.partNumber : '', manufacturer: fp?.manufacturer ?? '', description: `${fp?.description ?? 'Fused terminal block with blown-fuse LED'} — ${tc.fused} used (${tags.join(', ')}); fit 2 A time-delay 1/4x1-1/4in fuses`, tags, category: fp ? 'terminal' : 'note', note: !fp };
+    (fp ? all : notes).push(line);
+  }
+  if (m.hmi) notes.push({ item: 0, qty: 1, partNumber: '', manufacturer: '', description: m.hmi.link === 'ethernet' ? `Shielded Cat6 Ethernet patch cable ${m.plcTag} to ${m.hmi.tag}, length for the door hinge loop (select part)` : `RS-232 programming/communication cable ${m.plcTag} port 2 to ${m.hmi.tag} (select part per HMI manual)`, tags: [m.hmi.tag], category: 'note', note: true });
   apply(groundLine, tc.ground, 'Ground (PE) terminal blocks');
   apply(endPlateLine, tc.endPlates, 'Terminal end plates');
   apply(endStopLine, tc.endStops, 'Terminal end stops');
@@ -1996,9 +2053,11 @@ export interface DrillHole {
   tag: string;
   x: number;
   y: number;
-  /** Nominal diameter drawn (thread major diameter for tapped holes). */
+  /** Diameter drawn and cut: the tap-drill size for tapped holes (the tap is in the hole code's callout). */
   dia: number;
   code: string;
+  /** Thread tapped after drilling ("M5", "1/4-20"); the callout beside the hole. */
+  tap?: string;
   verified: boolean;
 }
 
@@ -2076,6 +2135,9 @@ export function numberIds<T extends { id: string; code: string; x: number; y: nu
   });
 }
 
+/** Tap-drill diameters (mm): the hole drilled before tapping. */
+const TAP_DRILL = { M4: 3.3, M5: 4.2, '1/4-20': 5.1 } as const;
+
 /** Back-panel drilling: DIN rail, wire duct, ground bar and panel-mounted device holes. */
 export function backPanelDrilling(ctx: DrawingContext): DrillingPlan {
   const L = panelLayout(ctx);
@@ -2084,32 +2146,33 @@ export function backPanelDrilling(ctx: DrawingContext): DrillingPlan {
   const X = (x: number) => r1(x - bp.x);
   const Y = (y: number) => r1(bp.y + bp.h - y);
   const holes: DrillHole[] = [];
-  const add = (code: string, tag: string, x: number, y: number, dia: number, verified: boolean) => holes.push({ id: '', tag, x: X(x), y: Y(y), dia, code, verified });
+  const TAP_OF: Record<string, string> = { A: 'M5', B: 'M4', C: '1/4-20', D: 'M5' };
+  const add = (code: string, tag: string, x: number, y: number, dia: number, verified: boolean) => holes.push({ id: '', tag, x: X(x), y: Y(y), dia, code, tap: TAP_OF[code], verified });
   // panel-mounted (non-DIN) devices: VFDs and transformers
   const panelMount = L.items.filter((it) => it.category === 'vfd' || m.rc.some((c) => c.tag === it.tag && isTransformer(c)));
   const covered = (x: number, y: number) => panelMount.some((p) => x >= p.x - 2 && x <= p.x + p.w + 2 && y >= p.y - 2 && y <= p.y + p.h + 2);
   L.rails.forEach((r, i) => {
     const cy = r.y + r.h / 2;
-    for (const x of spaced(r.x + 25, r.x + r.w - 25, 150)) if (!covered(x, cy)) add('A', `RAIL ${i + 1}`, x, cy, 5, true);
+    for (const x of spaced(r.x + 25, r.x + r.w - 25, 150)) if (!covered(x, cy)) add('A', `RAIL ${i + 1}`, x, cy, TAP_DRILL.M5, true);
   });
   L.ducts.forEach((d, i) => {
-    if (d.orientation === 'h') { const cy = d.y + d.h / 2; for (const x of spaced(d.x + 50, d.x + d.w - 50, 300)) add('B', `DUCT ${i + 1}`, x, cy, 4, true); }
-    else { const cx = d.x + d.w / 2; for (const y of spaced(d.y + 50, d.y + d.h - 50, 300)) add('B', `DUCT ${i + 1}`, cx, y, 4, true); }
+    if (d.orientation === 'h') { const cy = d.y + d.h / 2; for (const x of spaced(d.x + 50, d.x + d.w - 50, 300)) add('B', `DUCT ${i + 1}`, x, cy, TAP_DRILL.M4, true); }
+    else { const cx = d.x + d.w / 2; for (const y of spaced(d.y + 50, d.y + d.h - 50, 300)) add('B', `DUCT ${i + 1}`, cx, y, TAP_DRILL.M4, true); }
   });
   for (const it of L.items.filter((i) => i.category === 'groundBar')) {
     const part = m.rc.find((c) => c.tag === it.tag)?.part;
     const sp = num(part?.ratings, 'holeSpacingMm', 'mountingHoleSpacingMm');
     const half = sp !== undefined ? sp / 2 : it.w / 2 - 12.7;
-    for (const dx of [-half, half]) add('C', it.tag, it.x + it.w / 2 + dx, it.y + it.h / 2, 6.35, sp !== undefined);
+    for (const dx of [-half, half]) add('C', it.tag, it.x + it.w / 2 + dx, it.y + it.h / 2, TAP_DRILL['1/4-20'], sp !== undefined);
   }
   for (const it of panelMount) {
     const part = m.rc.find((c) => c.tag === it.tag)?.part;
     const hw = num(part?.ratings, 'mountHoleSpacingWMm', 'holeSpacingWMm');
     const hh = num(part?.ratings, 'mountHoleSpacingHMm', 'holeSpacingHMm');
     const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
-    if (hw !== undefined && hh !== undefined) for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add('D', it.tag, cx + (dx * hw) / 2, cy + (dy * hh) / 2, 5, true);
-    else if (it.w < 80) for (const dy of [-1, 1]) add('D', it.tag, cx, cy + dy * (it.h / 2 - 6), 5, false);
-    else for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add('D', it.tag, cx + dx * (it.w / 2 - 6), cy + dy * (it.h / 2 - 6), 5, false);
+    if (hw !== undefined && hh !== undefined) for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add('D', it.tag, cx + (dx * hw) / 2, cy + (dy * hh) / 2, TAP_DRILL.M5, true);
+    else if (it.w < 80) for (const dy of [-1, 1]) add('D', it.tag, cx, cy + dy * (it.h / 2 - 6), TAP_DRILL.M5, false);
+    else for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add('D', it.tag, cx + dx * (it.w / 2 - 6), cy + dy * (it.h / 2 - 6), TAP_DRILL.M5, false);
   }
   const ids = numberIds(holes);
   const specs = {
@@ -2199,6 +2262,13 @@ export function designWarnings(ctx: DrawingContext): string[] {
     else if (!c.part.verified) unverified.set(c.partNumber, [...(unverified.get(c.partNumber) ?? []), c.tag]);
   }
   if (unverified.size) w.push(`${unverified.size} part number(s) have catalog data not yet verified against the datasheet: ${[...unverified].map(([pn, tags]) => `${pn} (${tags.join(', ')})`).join('; ')}.`);
+  // Panel and door devices the I/O list still draws and wires although they are not in the component list
+  // (removed on the Design tab): drawn, but nothing orders them.
+  const inBom = new Set(m.rc.map((c) => c.tag));
+  const orphan = new Map<string, string[]>();
+  const usedBy = (tag: string, why: string) => { if (tag && !inBom.has(tag)) orphan.set(tag, [...(orphan.get(tag) ?? []), why]); };
+  for (const p of m.io) if (p.location !== 'field' && p.deviceType !== 'safety-relay-output') usedBy(p.deviceTag, p.address);
+  for (const [tag, why] of orphan) w.push(`${tag} is drawn and wired (${why.join(', ')}) but is not in the component list, so it is not in the BOM: add it back on the Design tab, or regenerate the design.`);
   if (!m.disconnect) w.push('No main disconnect in the design (NFPA 79 5.3 requires a supply disconnecting means).');
   if (!m.rc.some((c) => c.category === 'enclosure')) w.push('No enclosure selected.');
   if (!m.psBranches.length) w.push('No 24VDC power supply in the design.');

@@ -27,7 +27,9 @@ export function MachineOverviewSheet({ plan, sheet }: { plan: DrawingPlan; sheet
   const m = plan.model;
   const top = AREA.y + 14;
   const enc = m.rc.find((c) => c.category === 'enclosure' && c.part?.ratings.kind !== 'subpanel');
-  const door = m.io.filter((p) => p.location === 'door').map((p) => p.deviceTag).filter((t, i, a) => t && a.indexOf(t) === i);
+  // everything on the door (operators, E-stop, HMI, lamps), not only the PLC-wired ones
+  const door = [...plan.layout.door.items.filter((d) => d.kind !== 'other').map((d) => d.tag), ...m.io.filter((p) => p.location === 'door').map((p) => p.deviceTag)]
+    .filter((t, i, a) => t && a.indexOf(t) === i).sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
   const cabLines = [
     ...(enc ? [`${enc.tag} ${enc.partNumber}`] : []),
     ...m.strips.map((s) => `${s.tag}: ${s.title.replace(/\s*\(FIELD\)/, '')}`),

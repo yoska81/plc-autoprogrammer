@@ -116,8 +116,8 @@ def check_file(path: Path, plan: dict, expect_w: float, expect_h: float, units: 
             report('FAIL', where, f'round cutout Ø{fw:.2f} at ({cx:.1f},{cy:.1f}) is not a standard size {round_sizes}')
         if layer == 'CUTOUTS' and kind == 'rect' and hmi_cut and (abs(fw - hmi_cut[0]) > TOL or abs(fh - hmi_cut[1]) > TOL):
             report('FAIL', where, f'HMI cutout {fw:.2f}x{fh:.2f}, catalog says {hmi_cut[0]}x{hmi_cut[1]}')
-        if layer == 'HOLES' and round(fw, 2) not in (4.0, 5.0, 6.35, 4.2, 3.3, 5.1):
-            report('WARN', where, f'unusual hole Ø{fw:.2f}')
+        if layer == 'HOLES' and round(fw, 2) not in (4.2, 3.3, 5.1):
+            report('WARN', where, f'unusual hole Ø{fw:.2f} (tapped holes are drawn at the tap-drill size: M5 4.2, M4 3.3, 1/4-20 5.1)')
     # Same coordinates as the drilling plan (the sheet's hole table)
     plan_feats = [(h['x'], h['y'], h['dia']) for h in plan['holes']] + [
         (c['x'], c['y'], c['w']) for c in plan['cutouts'] if not c.get('template')]

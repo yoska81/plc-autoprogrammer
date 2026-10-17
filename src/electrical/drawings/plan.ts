@@ -12,6 +12,7 @@ import {
   type MotorModel, type PanelLayout, type XfmrBranch, type PsBranch, type Terminal, type TerminalStrip,
 } from '../derive';
 import { enclosureFaceDrilling } from '../enclosureFaces';
+import { getHmi, hmiMaker } from '../../hmi/hmiCatalog';
 import { lineNo } from './geometry';
 
 export type RungEnd = { kind: 'rail' } | { kind: 'node'; label: string } | { kind: 'xref'; label: string };
@@ -19,7 +20,8 @@ export type RungEl =
   | { t: 'contact'; nc: boolean; tag: string; term: string; dev: 'pb' | 'estop' | 'relay' | 'ol' | 'sr' }
   | { t: 'coil'; tag: string }
   | { t: 'lamp'; tag: string; color: string }
-  | { t: 'box'; tag: string; left: string; right: string };
+  | { t: 'box'; tag: string; left: string; right: string; label?: string }
+  | { t: 'fuse'; tag: string; rating: string };
 export interface Rung {
   idx: number;
   start: RungEnd;
@@ -186,6 +188,13 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
       wires: ['24+', ...es.slice(1).map((_, k) => `ES${k + 1}`), '24+S', ...(s.mcr ? ['0V'] : [])],
       desc: ['E-STOP CHAIN (HARDWIRED, NO SAFETY RELAY)', 'REVIEW REQUIRED — SEE NOTES'], key: s.mcr ? `coil:${s.mcr.tag}` : 'rung:24+S',
     });
+  }
+  // door HMI: unswitched 24+ through its fused terminal (it keeps running through an E-stop)
+  if (model.hmi) {
+    const h = model.hmi;
+    if (out.length) out.push({ start: { kind: 'node', label: '' }, end: { kind: 'node', label: '' }, els: [], wires: [], desc: [] });
+    out.push({ start: rail, end: rail, els: [{ t: 'fuse', tag: h.fuseTerminal, rating: h.fuse }, { t: 'box', tag: h.tag, left: '+24V', right: '0V', label: 'HMI' }], wires: ['24+', '24+H', '0V'],
+      desc: [`OPERATOR PANEL ${h.tag} SUPPLY (${h.partNumber})`, h.link === 'ethernet' ? `ETHERNET ENET1 TO ${model.plcTag} (SHIELDED CAT6, DIRECT)` : `RS-232 COM2 TO ${model.plcTag} PORT 2`], key: `ps:${h.tag}` });
   }
   // VFD line contactors held by the safety-switched supply (safety stop by contactor, not by a PLC output)
   const ioTags = new Set(model.io.map((p) => p.deviceTag));
@@ -564,6 +573,7 @@ function deviceTags(ctx: DrawingContext, model: ElectricalModel): string[] {
   for (const p of model.io) if (p.deviceTag) tags.add(p.deviceTag);
   for (const m of ctx.design.inputs.motors) tags.add(m.tag);
   for (const j of model.machine.jbs) tags.add(j.tag);
+  if (model.hmi) tags.add(model.hmi.tag);
   return [...tags].sort(naturalCompare);
 }
 
@@ -578,9 +588,13 @@ function deviceRows(plan: DrawingPlan): DeviceRow[] {
     const io = model.io.find((p) => p.deviceTag === tag);
     const motor = ctx.design.inputs.motors.find((m) => m.tag === tag);
     const jb = model.machine.jbs.find((j) => j.tag === tag);
+    const hmi = !c && model.hmi?.tag === tag ? model.hmi : undefined;
+    const hmiModel = hmi ? getHmi(hmi.partNumber) : undefined;
     let location: string;
     if (c?.category === 'enclosure') location = 'ENCLOSURE';
-    else if (c?.mount === 'door' || io?.location === 'door') location = 'DOOR';
+    // operator accessories (legend plates, contact blocks, lamp modules) sit with their operator on the door
+    else if (c?.mount === 'door' || io?.location === 'door' || tag === model.hmi?.tag
+      || (c && /\b(legend plate|contact block|lamp module)\b/i.test(`${c.comp.function} ${c.part?.description ?? ''}`))) location = 'DOOR';
     else if (md || motor || jb) location = `FIELD — ${(md?.zone ?? jb?.zone ?? model.machine.wiring.motorLocations[tag] ?? 'MACHINE').toUpperCase()}`;
     else if (c?.mount === 'field' || io?.location === 'field') location = 'FIELD';
     else if (c?.category === 'fan') location = 'ENCLOSURE (SIDE/DOOR)';
@@ -590,10 +604,10 @@ function deviceRows(plan: DrawingPlan): DeviceRow[] {
     const refs = [...(ref ? [`/${ref}`] : []), ...sheetsOf.filter((n) => !ref || String(n) !== ref.split('.')[0]).map(String)].join(', ');
     return {
       tag,
-      fn: (c?.comp.function || motor?.description || io?.description || (jb ? `Junction box, ${jb.zone}` : '')).toUpperCase(),
-      partNumber: c?.partNumber || md?.partNumber || (jb?.partNumber ?? '') || '',
-      manufacturer: c?.part?.manufacturer ?? '',
-      description: c?.part?.description ?? (motor ? `${motor.hp} HP ${motor.voltage.replace('-', ' ')} MOTOR (BY OTHERS)` : jb ? 'ENCLOSURE TO BE SELECTED' : c ? 'PART NOT IN CATALOG — VERIFY' : 'NO PART SELECTED'),
+      fn: (c?.comp.function || motor?.description || io?.description || (jb ? `Junction box, ${jb.zone}` : '') || (hmi ? 'Operator touch panel' : '')).toUpperCase(),
+      partNumber: c?.partNumber || md?.partNumber || (jb?.partNumber ?? '') || (hmi?.partNumber ?? ''),
+      manufacturer: c?.part?.manufacturer ?? (hmiModel ? hmiMaker(hmiModel) : ''),
+      description: c?.part?.description ?? (hmi ? hmiModel?.description ?? 'OPERATOR TOUCH PANEL' : motor ? `${motor.hp} HP ${motor.voltage.replace('-', ' ')} MOTOR (BY OTHERS)` : jb ? 'ENCLOSURE TO BE SELECTED' : c ? 'PART NOT IN CATALOG — VERIFY' : io && io.location !== 'field' ? 'NOT IN COMPONENT LIST / BOM — VERIFY' : 'NO PART SELECTED'),
       qty: c?.comp.quantity ?? 1,
       location,
       refs: refs || '—',

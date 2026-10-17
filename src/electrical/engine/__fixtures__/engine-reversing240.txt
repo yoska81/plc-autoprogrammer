@@ -1,7 +1,7 @@
 supply 240VAC-3PH | NEMA 4
 motor M1 3 HP contactor-overload reversing — Gate motor
 
-ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 4 — smallest catalog enclosure with everything placed and 48% spare panel space (target >= 25%)
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 4 — smallest catalog enclosure with everything placed and 47% spare panel space (target >= 25%)
 SP1      SCE-30P24          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 12.1 A (motors + 25% of the largest + control) x 1.15
 DS1H     148D1111           x1    Disconnect handle
@@ -26,7 +26,7 @@ PB3      GCX1101            x1    Stop
 PL1      GCX1234-24L        x1    Gate moving
 PB4      GCX1104            x1    Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)
 TB1      DN-T10-A           x26   Feed-through terminals
-TBG      DN-G10             x3    Ground terminals
+TBG      DN-G10             x5    Ground terminals
 TBC      DN-EC1210          x2    Terminal end covers
 TBE      DN-EB35            x4    End brackets
 DIN      DN-R35S1           x2    DIN rail
@@ -52,4 +52,4 @@ note: Motor currents from NEC Table 430.250 / 430.248: M1 3 HP 9.6 A — confirm
 note: LS1 (Gate open limit switch): field device to select (not in the catalog); wired as a dry contact to X005.
 note: LS2 (Gate closed limit switch): field device to select (not in the catalog); wired as a dry contact to X006.
 
-explanation: Rule-based design: NEMA 4 SCE-30EL2410LP, 240 V 3-phase through 30A — load 12.1 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 3 HP reversing starter; 24 VDC from PSL-24-030 for 0.7 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 48% spare panel space.
+explanation: Rule-based design: NEMA 4 SCE-30EL2410LP, 240 V 3-phase through 30A — load 12.1 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 3 HP reversing starter; 24 VDC from PSL-24-030 for 0.7 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 47% spare panel space.

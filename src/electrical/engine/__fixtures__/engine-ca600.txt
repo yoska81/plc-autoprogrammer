@@ -1,7 +1,7 @@
 supply 600VAC-3PH | NEMA 12
 motor M1 2 HP contactor-overload — Conveyor motor
 
-ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 36% spare panel space (target >= 25%)
+ENC1     SCE-30EL2410LP     x1    Main enclosure 30x24x10 NEMA 12 — smallest catalog enclosure with everything placed and 35% spare panel space (target >= 25%)
 SP1      SCE-30P24          x1    Back panel
 DS1      22013003           x1    Main disconnect 30A — load 3.6 A (motors + 25% of the largest + control) x 1.15
 DS1H     14831111           x1    Disconnect handle
@@ -28,7 +28,7 @@ LS2      PNK-AP-3H          x1    Pusher retracted
 SOL1     100222015324006    x1    Pusher valve
 SOL2     100222033324004    x1    Main air dump valve
 PB3      GCX1104            x1    Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)
-TB1      DN-T10-A           x31   Feed-through terminals
+TB1      DN-T10-A           x32   Feed-through terminals
 TBG      DN-G10             x4    Ground terminals
 TBC      DN-EC1210          x3    Terminal end covers
 TBE      DN-EB35            x6    End brackets
@@ -54,4 +54,4 @@ routing {"PE1":"JB1","LS1":"JB1","LS2":"JB1","SOL1":"JB1","SOL2":"JB1"}
 note: Motor currents from NEC Table 430.250 / 430.248: M1 2 HP 2.7 A — confirm the nameplates.
 note: T1 fuses sized from the transformer rating (primary 0.63 A min., secondary 1.56 A min.): confirm against the transformer label (NEC 450.3 / CEC Rule 26-256).
 
-explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 600 V 3-phase through 30A — load 3.6 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 2 HP across the line; 24 VDC from PSL-24-060 for 1.4 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 36% spare panel space.
+explanation: Rule-based design: NEMA 12 SCE-30EL2410LP, 600 V 3-phase through 30A — load 3.6 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 2 HP across the line; 24 VDC from PSL-24-060 for 1.4 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 35% spare panel space.

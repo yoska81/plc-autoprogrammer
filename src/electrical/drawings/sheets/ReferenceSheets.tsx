@@ -324,7 +324,9 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   const cy0 = ptop + (shownPlates.length + (hmi ? 1 : 0) + 2) * prow + 14;
   const convLines = conv.map((c) => wrapText(c, TW - 6, 2.1));
   const convEnd = cy0 + 7 + convLines.reduce((h, ls) => h + ls.length * 2.9 + 1.2, 0);
-  const idTags = model.rc.filter((c) => c.mount === 'backplate' && !isFuseCartridge(c) && !['enclosure', 'dinRail', 'wireDuct', 'terminal', 'terminalAccessory'].includes(c.category) && !/handle|shaft|jumper|marker/i.test(`${c.comp.function} ${c.part?.description ?? ''}`))
+  // accessories are left out by what they are (the description's first clause: DS1 "disconnect switch … order handle + shaft" stays)
+  const idTags = model.rc.filter((c) => c.mount === 'backplate' && !isFuseCartridge(c) && !['enclosure', 'dinRail', 'wireDuct', 'terminal', 'terminalAccessory'].includes(c.category)
+    && !/handle|shaft|jumper|marker/i.test(`${c.comp.function} ${(c.part?.description ?? '').split(/[,;(]/)[0]}`))
     .map((c) => c.tag).concat(model.strips.map((st) => st.tag)).filter((t, i, a) => a.indexOf(t) === i).sort((x, y) => x.localeCompare(y, 'en', { numeric: true }));
   return (
     <g>
@@ -414,8 +416,11 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
           );
         });
       })()}
-      {/* wire marker illustration */}
+      {/* wire marker illustration: a real wire of this project (first PLC point landed on a strip) */}
       {(() => {
+        const p = model.io.find((x) => x.signalTerminal);
+        const [strip, n] = (p?.signalTerminal ?? 'TB1-1').split('-');
+        const ex = { strip, n: Number(n) || 1, wire: p?.wire ?? '24+', to: p ? `${model.plcTag}:${p.address}` : `${model.plcTag}:24V` };
         const iy = convEnd + 6;
         const ix = TX + 4;
         const ly0 = iy + 16;
@@ -440,17 +445,17 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
                 {idTags.length > shown.length && <Txt x={AREA_R - 4} y={ly0} size={1.9} italic anchor="end">{`+${idTags.length - shown.length} MORE (SEE DEVICE LIST)`}</Txt>}
               </g>
             )}
-            <TermBox x={ix} y={iy} n={4} />
-            <Txt x={ix} y={iy - 3.4} size={1.8} mono anchor="middle">TB2</Txt>
+            <TermBox x={ix} y={iy} n={ex.n} />
+            <Txt x={ix} y={iy - 3.4} size={1.8} mono anchor="middle">{ex.strip}</Txt>
             <Line x1={ix + 2.5} y1={iy} x2={ix + 90} y2={iy} w={0.6} />
             {[ix + 9, ix + 75].map((sx) => (
               <g key={sx}>
                 <rect x={sx} y={iy - 1.8} width={11} height={3.6} strokeWidth={LW_THIN} fill="#fff" />
-                <Txt x={sx + 5.5} y={iy + 0.8} size={2.0} mono bold anchor="middle">X101</Txt>
+                <Txt x={sx + 5.5} y={iy + 0.8} size={2.0} mono bold anchor="middle" maxW={10.4}>{ex.wire}</Txt>
               </g>
             ))}
             <TermPt x={ix + 90.7} y={iy} />
-            <Txt x={ix + 92.5} y={iy + 0.8} size={1.9} mono>PLC1:X101</Txt>
+            <Txt x={ix + 92.5} y={iy + 0.8} size={1.9} mono>{ex.to}</Txt>
             <Txt x={ix + 42} y={iy + 5.5} size={1.9} anchor="middle">SAME WIRE NUMBER ON BOTH SLEEVES — MATCHES THE SCHEMATIC</Txt>
           </g>
         );
