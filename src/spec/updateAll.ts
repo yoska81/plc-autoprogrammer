@@ -23,6 +23,7 @@ import { analogSetup } from '../plc/core/analog';
 import { getPart } from '../electrical/catalog';
 import { vendorPreference } from '../store/useProjectStore';
 import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
+import { mergeRegenerated } from '../hmi/engine/regenerate';
 import { reviseLadder, generateLadder } from '../plc/ai/ladderAI';
 import { getHmi } from '../hmi/hmiCatalog';
 
@@ -142,8 +143,10 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, s
           electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
         });
         // Keep the look the user picked (Siemens or dark console) across a regeneration.
-        hmi.setDesign(hmi.design?.look ? { ...r.design, look: hmi.design.look } : r.design, r.explanation);
-        mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(r.design) });
+        // Screens edited by hand are kept (re-bound to the new tags).
+        const merged = mergeRegenerated(hmi.design, r.design).design;
+        hmi.setDesign(hmi.design?.look ? { ...merged, look: hmi.design.look } : merged, r.explanation);
+        mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(merged) });
         onStep({ step, status: 'done', message: `${r.design.screens.length} screens, ${r.design.tags.length} tags.` });
       }
 
