@@ -7,7 +7,7 @@
  * must do (the PLC program is generated from these).
  */
 import type { AccessLevel, HmiAlarm, HmiDesign, HmiElement, HmiScreen, HmiState, HmiTag, MachineSymbol, MachineSymbolKind } from '../types';
-import { GAP, MIN_TOUCH, layoutBands } from '../layout';
+import { GAP, MIN_TOUCH, cutTexts, layoutBands } from '../layout';
 import type { HmiActuator, HmiContent } from './content';
 
 interface Rect { x: number; y: number; w: number; h: number }
@@ -268,7 +268,7 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
       blocks.push({ title: a.name, rows: [
         cmds.map((m): Cell => ({ kind: 'button', label: m.label, more: { address: m.address, action: 'momentary', interlock: m.permit, level, note: `Hold to run; ${m.note}` } })),
         [...cmds.map((m): Cell => ({ kind: 'indicator', label: `${m.label} permitted`, more: { address: m.permit, style: 'ok', onText: `${m.label} OK`, offText: `${m.label} blocked` } })),
-          ...a.feedback.slice(0, 2).map((f): Cell => { const t = shortName(f.description, a.name); return { kind: 'indicator', label: t, more: { address: f.address, onText: t, offText: t } }; })],
+          ...a.feedback.slice(0, 2).map((f): Cell => { const t = shortName(f.description, a.name); return { kind: 'indicator', label: t, more: { address: f.address, onText: t, offText: `Not ${t.toLowerCase()}` } }; })],
       ] });
     }
     groups.push({ id: 'manual', name: 'Manual', purpose: 'Hold-to-run jog of each actuator in Manual mode; every button shows its interlock.', level, blocks });
@@ -299,7 +299,7 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
     [{ kind: 'numeric', label: 'Run hours', more: { address: p.runHours, units: 'h' } }, { kind: 'numeric', label: 'Since service', more: { address: p.sinceService, units: 'h' } }],
     [{ kind: 'button', label: 'Service Done', more: { address: p.serviceDone, action: 'momentary', level, note: 'Resets the hours since service' } }, { kind: 'indicator', label: 'Service Due', more: { address: p.serviceDue, style: 'warning', onText: 'Service Due', offText: 'Service OK' } }],
   ] });
-  maint.push({ title: 'Clock', rows: [[{ kind: 'datetime', label: 'Date / Time' }, { kind: 'numeric', label: 'Service interval', more: { address: p.serviceInterval, units: 'h' } }]] });
+  maint.push({ title: 'Clock', rows: [[{ kind: 'datetime', label: 'Date / Time' }], [{ kind: 'numeric', label: 'Service interval', more: { address: p.serviceInterval, units: 'h' } }]] });
 
   // Diagnostics: every discrete point by module (CLICK X0xx = CPU, X1xx slot 1 …; others 16 per group).
   const diag: Block[] = [];
@@ -353,6 +353,8 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
     });
   }
 
+  for (const s of screens) s.elements = s.elements.map(fitTexts);
+
   return {
     hmiPartNumber: o.partNumber, machineName: c.machineName, screens, alarms: t.alarms, tags: t.tags,
     notes: [
@@ -391,8 +393,11 @@ function mainScreen(c: HmiContent, p: Plan, a: Rect, id: string, rowH: number): 
     ? [['numeric', 'Parts', { address: p.count.counter }], ['numeric', 'Rate', { address: p.count.rate, units: '/min' }], ['indicator', 'Running', { address: p.running, style: 'ok', onText: 'Running', offText: 'Stopped' }]]
     : [['indicator', 'Running', { address: p.running, style: 'ok', onText: 'Running', offText: 'Stopped' }]];
   const statsY = left.y + left.h - rowH;
-  const sw = (left.w - GAP * (stats.length - 1)) / stats.length;
-  stats.forEach(([kind, label, more], i) => out.push(el(`${id}-s${i}`, kind, label, { x: left.x + i * (sw + GAP), y: statsY, w: sw, h: rowH }, more)));
+  // The lamp gets more room than the numbers: its texts (Running / Stopped) are wider.
+  const weight = (k: HmiElement['kind']) => (k === 'indicator' && stats.length > 1 ? 1.5 : 1);
+  const unit = (left.w - GAP * (stats.length - 1)) / stats.reduce((s, [k]) => s + weight(k), 0);
+  let sx = left.x;
+  stats.forEach(([kind, label, more], i) => { const w = unit * weight(kind); out.push(el(`${id}-s${i}`, kind, label, { x: sx, y: statsY, w, h: rowH }, more)); sx += w + GAP; });
   const pic = { x: left.x, y: left.y, w: left.w, h: left.h - rowH - GAP };
   if (pic.h >= 60) out.push(el(`${id}-mach`, 'machine', `${c.machineName}`, pic, { symbols: symbols(c, pic) }));
   out.push(el(`${id}-banner`, 'alarm-banner', 'Alarms', { x: a.x, y: a.y + a.h - bannerH, w: a.w, h: bannerH }));
@@ -436,8 +441,41 @@ function alarmScreen(alarms: HmiAlarm[], p: Plan, a: Rect, id: string, rowH: num
   ];
   const lampH = 36;
   const room = Math.floor((a.h - rowH - GAP) / (lampH + GAP));
-  alarms.slice(0, room).forEach((al, i) => out.push(el(`${id}-a${i}`, 'indicator', al.message.length > 28 ? `${al.message.slice(0, 25)}...` : al.message,
+  alarms.slice(0, room).forEach((al, i) => out.push(el(`${id}-a${i}`, 'indicator', al.message,
     { x: a.x + a.w - sideW, y: a.y + rowH + GAP + i * (lampH + GAP), w: sideW, h: lampH }, { address: al.address, style: al.severity === 'alarm' ? 'alarm' : 'warning' })));
+  return out;
+}
+
+/** Operator-panel abbreviations, longest words first; tried one by one before a text is shortened with "…". */
+const ABBR: [RegExp, string][] = [
+  [/\bMaintenance\b/i, 'Maint'], [/\bDiagnostics\b/i, 'Diag'], [/\bTemperature\b/i, 'Temp'], [/\bProduction\b/i, 'Prod'],
+  [/\bRunning\b/i, 'Run'], [/\bStopped\b/i, 'Stop'], [/\bConveyor\b/i, 'Conv'], [/\bRetracted\b/i, 'Retr'], [/\bExtended\b/i, 'Ext'], [/\bPosition\b/i, 'Pos'], [/\bInterval\b/i, 'Int'],
+  [/\bCircuit\b/i, 'Circ'], [/\bSelect\b/i, 'Sel'], [/\bManual\b/i, 'Man'], [/\bService\b/i, 'Svc'], [/\bBlocked\b/i, 'Blk'],
+  [/\bRetract\b/i, 'Retr'], [/\bExtend\b/i, 'Ext'], [/\bActive\b/i, 'On'], [/\bSafety\b/i, 'Safe'], [/\bMode\b/i, ''],
+];
+
+/**
+ * Every text the screen draws fits its element, measured as the renderer draws it (layout.ts cutTexts):
+ * standard abbreviations first, then shortened with "…". On / off texts that differed stay different.
+ */
+export function fitTexts(e: HmiElement): HmiElement {
+  if (!cutTexts(e).length) return e;
+  let out = { ...e };
+  const fits = (field: 'label' | 'onText' | 'offText', v: string) => !cutTexts({ ...out, [field]: v }).some((c) => c.text === v.toUpperCase());
+  for (const field of ['label', 'onText', 'offText'] as const) {
+    const text = out[field];
+    if (!text || fits(field, text)) continue;
+    let v = text;
+    for (const [re, r] of ABBR) {
+      if (!re.test(v)) continue;
+      v = v.replace(re, r).replace(/\s+/g, ' ').trim() || v;
+      if (fits(field, v)) break;
+    }
+    const short = v;
+    for (let n = short.length - 1; n > 0 && !fits(field, v); n--) v = `${short.slice(0, n).trimEnd()}…`;
+    out = { ...out, [field]: v };
+  }
+  if (e.onText && e.offText && e.onText !== e.offText && out.onText === out.offText) out = { ...out, offText: `${out.offText!.replace(/…$/, '').slice(0, -1)}…` };
   return out;
 }
 

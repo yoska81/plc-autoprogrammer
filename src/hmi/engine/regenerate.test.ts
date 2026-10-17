@@ -59,13 +59,29 @@ assert.ok(keptAlarms.elements.some((e) => e.label === 'Clear'), 'user label kept
 assert.ok(keptAlarms.elements.some((e) => e.address === newTimeout) && !keptAlarms.elements.some((e) => e.address === oldTimeout && e.kind === 'indicator' && /did not reach/.test(e.label)),
   `alarm lamp re-bound by tag name (${oldTimeout} -> ${newTimeout})`);
 const added = merged.screens.find((s) => s.id === 'alarms-added')!;
-assert.ok(added.elements.some((e) => /Safety circuit open/.test(e.label)), 'the new Safety Open lamp is on "Alarms (added)"');
+const safetyAlarm = v2.alarms.find((a) => /Safety circuit open/.test(a.message))!.address;
+assert.ok(added.elements.some((e) => e.kind === 'indicator' && e.address === safetyAlarm), 'the new Safety Open lamp is on "Alarms (added)"');
+// Every screen is reachable: the "(added)" screen has a button in each navigation bar.
+assert.ok(merged.screens.every((s) => s.elements.some((e) => e.kind === 'nav' && e.targetScreenId === 'alarms-added')), '"Alarms (added)" in every navigation bar');
+assert.deepEqual(checkDesign(merged, 800, 480).filter((i) => /cannot reach it/.test(i.message)).map((i) => i.message), [], 'no unreachable screen');
 const manualAdded = merged.screens.find((s) => s.id === 'manual-added');
 assert.ok(!manualAdded || manualAdded.elements.every((e) => !/^Push Out$/.test(e.label)));
 assert.ok(notes.some((n) => /Kept your edited screen "Alarms"/.test(n)) && notes.some((n) => /Alarms \(added\)/.test(n)));
-assert.equal(merged.screens.find((s) => s.id === 'setup')!.elements.length, v2.screens.find((s) => s.id === 'setup')!.elements.length, 'untouched screens replaced by the new ones');
+const body = (d: HmiDesign, id: string) => d.screens.find((s) => s.id === id)!.elements.filter((e) => !/-nav-/.test(e.id));
+assert.deepEqual(body(merged, 'setup'), body(v2, 'setup'), 'untouched screens replaced by the new ones');
 assert.deepEqual(checkDesign(merged, 800, 480).filter((i) => i.severity === 'error').map((i) => i.message), []);
 assert.ok(v2.screens.some((s) => s.elements.some((e) => e.label === 'Close')) && v2.screens.some((s) => s.elements.some((e) => e.label === 'Open')), 'gripper buttons say Close / Open');
+
+// A hand-added screen keeps its navigation button (here on the Main bar, which the regeneration replaces).
+{
+  const mine = { id: 'mine', name: 'Recipes', purpose: '', edited: true, elements: [{ ...userText, id: 'm-t', y: 100 }] };
+  const mainV1 = v1.screens.find((s) => s.id === 'main')!;
+  const navBtn = { ...mainV1.elements.find((e) => e.kind === 'nav')!, id: 'main-nav-mine', label: 'Recipes', targetScreenId: 'mine' };
+  const withMine = { ...v1, screens: [...v1.screens.map((s) => (s.id === 'main' ? { ...s, elements: [...s.elements, navBtn] } : s)), mine] };
+  const m = mergeRegenerated(withMine, v2).design;
+  assert.ok(m.screens.find((s) => s.id === 'main')!.elements.some((e) => e.kind === 'nav' && e.targetScreenId === 'mine' && e.label === 'Recipes'), 'the button to the hand-added screen is kept');
+  assert.deepEqual(checkDesign(m, 800, 480).filter((i) => i.severity === 'error' || /cannot reach it/.test(i.message)).map((i) => i.message), []);
+}
 
 // Rebuild this screen: the generated Alarms replaces the user's, its "(added)" page goes away.
 const rebuilt = rebuildScreen(merged, v2, 'alarms')!;

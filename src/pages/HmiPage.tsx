@@ -481,6 +481,10 @@ export default function HmiPage() {
    */
   const generate = (full = false) => {
     if (!model || hmi.isGenerating || (full && !apiKey)) return;
+    // An HMI the generator did not make (drawn by hand, the example, an AI full design): its unedited screens would be replaced.
+    const current = useHmiStore.getState().design;
+    if (!full && current?.screens.length && !current.notes?.some((n) => n.startsWith('Rule-based HMI')) && !current.screens.every((s) => s.edited)
+      && !confirm('This HMI was not made by the screen generator. Redesign replaces every screen you have not edited here with generated ones; every address keeps its function. You can undo this. Continue?')) return;
     setError(null);
     const look = design?.look, snap = { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp };
     void startAiJob({
@@ -505,8 +509,12 @@ export default function HmiPage() {
       },
       apply: (r) => {
         // Screens edited by hand are kept (re-bound to the new tags); keep the look the user picked.
-        const merged = mergeRegenerated(useHmiStore.getState().design, r.design).design;
+        const prev = useHmiStore.getState().design;
+        const { design: merged, notes } = mergeRegenerated(prev, r.design);
+        // One undo step back to the design before the redesign.
+        if (prev) setHist((x) => ({ ...x, past: [...x.past, prev].slice(-100), future: [] }));
         useHmiStore.getState().setDesign(look ? { ...merged, look } : merged, r.explanation);
+        if (notes.length) notify(notes.join(' '));
         useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(merged) });
       },
     });
