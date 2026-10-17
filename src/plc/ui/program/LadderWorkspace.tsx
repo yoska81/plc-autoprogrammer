@@ -289,6 +289,11 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 </ul>
                 {specText ? <div className="text-xs text-gray-500 mt-1">You don't need to copy anything here: change the machine description and press Generate.</div> : <div className="text-xs text-amber-800 mt-1">The machine description is empty: describe the machine first.</div>}
               </div>
+              {ladder.rungs.length > 0 && chat[0]?.role === 'assistant' && chat[0].outcome === 'applied' && (
+                <div className="text-xs text-gray-700 bg-green-50 border border-green-200 rounded px-3 py-2 whitespace-pre-wrap" data-testid="program-summary">
+                  <div className="font-medium text-green-800 mb-0.5">Current program</div>{chat[0].text}
+                </div>
+              )}
               <p className="text-xs text-gray-500">To change something small in the existing program instead, use the <button onClick={() => setTab('fix')} className="underline">Change</button> tab.</p>
               <details className="text-sm" open={Boolean(userPrompt.trim())}>
                 <summary className="cursor-pointer text-xs text-gray-500">Advanced: extra notes for the program only</summary>
