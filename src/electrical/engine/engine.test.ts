@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
 import { getPart } from '../catalog';
@@ -20,7 +21,7 @@ import type { IOPoint } from '../../types/io';
 import type { DesignInputs, MotorSpec, SupplyVoltage } from '../types';
 import type { Region } from '../../standards/regions';
 
-const FIX = path.join(path.dirname(new URL(import.meta.url).pathname), '__fixtures__');
+const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), '__fixtures__');
 type P = Omit<IOPoint, 'id' | 'category'> & { category?: IOPoint['category'] };
 const pt = (description: string, type: 'input' | 'output', extra: Partial<P> = {}): P => ({ description, type, ...extra });
 

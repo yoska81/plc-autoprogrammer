@@ -4,6 +4,7 @@ consistent, table of contents page numbers pointing at the right pages, and a 60
 every page into tools/out/<variant>/pages/ for a visual pass (pdftoppm).
 Usage: tools/.venv/bin/python tools/check_pdf.py [--no-render] [variant ...]
 """
+import json
 import re
 import subprocess
 import sys
@@ -21,9 +22,16 @@ def report(level, where, msg):
     results.append((level, where, msg))
 
 
+def is_iec(vname):
+    try:
+        return json.loads((OUT / vname / 'data.json').read_text())['region'] in ('EU', 'Israel', 'IEC')
+    except (OSError, KeyError, ValueError):
+        return False
+
+
 def size_name(w, h):
     w_in, h_in = w / 72, h / 72
-    for name, (a, b) in {'ANSI B': (17, 11), 'Letter': (11, 8.5), 'Letter portrait': (8.5, 11), 'ANSI B portrait': (11, 17), 'A4': (297 / 25.4, 210 / 25.4), 'A4 portrait': (210 / 25.4, 297 / 25.4)}.items():
+    for name, (a, b) in {'ANSI B': (17, 11), 'Letter': (11, 8.5), 'Letter portrait': (8.5, 11), 'ANSI B portrait': (11, 17), 'A4': (297 / 25.4, 210 / 25.4), 'A4 portrait': (210 / 25.4, 297 / 25.4), 'A3': (420 / 25.4, 297 / 25.4)}.items():
         if abs(w_in - a) < 0.02 and abs(h_in - b) < 0.02:
             return name
     return f'{w_in:.2f}x{h_in:.2f}in'
@@ -59,6 +67,9 @@ def check_pdf(path: Path, kind: str, render: bool, vname: str):
             report('WARN', where, f'p{i + 1}: almost no text ({len(t.strip())} chars)')
     want = {'drawings': {'ANSI B'}, 'doc': {'Letter portrait', 'Letter'}, 'hmi': {'Letter'},
             'bundle': {'Letter portrait', 'Letter', 'ANSI B'}, 'labels': None}[kind]
+    # IEC regions draw on A3 (src/standards/drawingOptions.ts).
+    if want is not None and kind in ('drawings', 'bundle') and is_iec(vname):
+        want = (want - {'ANSI B'}) | {'A3'}
     for s, pages in sizes.items():
         if want is not None and s not in want:
             report('FAIL', where, f'pages {pages[:8]} are {s}, expected {sorted(want)}')

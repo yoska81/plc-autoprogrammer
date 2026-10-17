@@ -47,7 +47,16 @@ def sheet_rows(wb, name):
     return [dict(zip(hdr, r)) for r in rows[1:] if any(c not in (None, '') for c in r)]
 
 
+# IEC 60947-4-1 Annex G rated currents (kW, 230 V, 400 V, 690 V), next rating up — 50 Hz supplies.
+IEC_MOTOR = [(0.37, 1.9, 1.1, 0.64), (0.55, 2.6, 1.5, 0.87), (0.75, 3.3, 1.9, 1.1), (1.1, 4.7, 2.7, 1.6), (1.5, 6.3, 3.6, 2.1),
+             (2.2, 8.5, 4.9, 2.8), (3, 11.3, 6.5, 3.8), (4, 15, 8.5, 4.9), (5.5, 20, 11.5, 6.7), (7.5, 27, 15.5, 9), (11, 39, 22, 12.9)]
+
+
 def nec_fla(hp, volt):
+    if volt in ('400VAC-3PH', '690VAC-3PH'):
+        kw = hp * 0.7457
+        row = next((r for r in IEC_MOTOR if r[0] >= kw - 0.005), IEC_MOTOR[-1])
+        return row[3] if volt == '690VAC-3PH' else row[2]
     if volt == '120VAC-1PH':
         k = min((h for h in NEC_1PH_115 if h >= hp - 1e-9), default=5)
         return NEC_1PH_115[k]

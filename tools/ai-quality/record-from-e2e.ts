@@ -23,9 +23,10 @@ const replies: [string, unknown][] = [
   ['spec', { sections: F.SPEC, questions: ['How many parts per minute at most?'], summary: 'Organized the description into sections.' }],
   ['equipment', F.RECOMMENDATION],
   ['io', { explanation: '5 inputs, 2 outputs.', points: IO_POINTS, questions: [] }],
+  // Electrical stage = the machine model the rule-based engine designs from (src/lib/ai/machineModelAI.ts).
   ['electrical', {
-    explanation: 'NEMA 12 panel, 480 VAC.', components: F.DESIGN.components, ioWiring: F.DESIGN.ioWiring, notes: F.DESIGN.notes, motors: F.DESIGN.inputs.motors,
-    machine: { zones: m.zones, junctionBoxes: m.junctionBoxes, motorLocations: Object.entries(m.motorLocations).map(([motorTag, location]) => ({ motorTag, location })), routing: Object.entries(m.routing).map(([deviceTag, junctionBox]) => ({ deviceTag, junctionBox })) },
+    motors: F.DESIGN.inputs.motors.map((x: { tag: string; description: string; hp: number }) => ({ tag: x.tag, description: x.description, power: x.hp, unit: 'hp', powerGiven: true, start: 'dol', vertical: false, zone: m.motorLocations[x.tag] ?? '' })),
+    estops: 1, guardDoors: [], lightCurtains: [], zones: m.zones, interfaces: [], questions: ['Confirm the conveyor motor nameplate current.'],
   }],
   ['hmi', { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [] }],
   ['program', { explanation: 'Program written from the spec.', program: F.LADDER }],

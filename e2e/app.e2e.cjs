@@ -36,6 +36,7 @@ function reply(system, body = {}) {
     : system.includes('choosing the control equipment') ? 'equipment'
     : system.includes('complete discrete PLC I/O list') ? 'io'
     : system.includes('industrial control panel') ? 'electrical'
+    : system.includes("describe the machine's electrical load and safety") ? 'machine'
     : system.includes('HMI designer') ? 'hmi'
     : system.includes('ladder logic') ? 'ladder' : 'unknown';
   counts[k] = (counts[k] ?? 0) + 1;
@@ -50,6 +51,10 @@ function reply(system, body = {}) {
     case 'electrical': return {
       explanation: 'NEMA 12 panel, 480 VAC.', components: F.DESIGN.components, ioWiring: F.DESIGN.ioWiring, notes: F.DESIGN.notes, motors: F.DESIGN.inputs.motors,
       machine: { zones: m.zones, junctionBoxes: m.junctionBoxes, motorLocations: Object.entries(m.motorLocations).map(([motorTag, location]) => ({ motorTag, location })), routing: Object.entries(m.routing).map(([deviceTag, junctionBox]) => ({ deviceTag, junctionBox })) },
+    };
+    case 'machine': return {
+      motors: F.DESIGN.inputs.motors.map((x) => ({ tag: x.tag, description: x.description, power: x.hp, unit: 'hp', powerGiven: true, start: 'dol', vertical: false, zone: m.motorLocations[x.tag] ?? '' })),
+      estops: 1, guardDoors: [], lightCurtains: [], zones: m.zones, interfaces: [], questions: ['Confirm the conveyor motor nameplate current.'],
     };
     case 'hmi': return { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [{ kind: 'question', text: 'Which operator password levels are needed?' }, { kind: 'issue', text: 'Alarm banner colour chosen for contrast with the header.' }] };
     case 'ladder': {
@@ -188,9 +193,20 @@ function sse(model, text) {
   };
 
   // Electrical
+  // Generate = AI machine model (small prompt, no catalog) -> rule-based engine picks every part.
   await page.goto(BASE + '/electrical?tab=design');
   await page.getByRole('button', { name: /Generate (Electrical Design|New Design)/ }).click();
   await page.getByRole('button', { name: 'BOM CSV' }).waitFor({ timeout: 15000 });
+  await page.goto(BASE + '/electrical?tab=design');
+  const ruleSummary = await page.getByText(/Rule-based design:/).first().innerText();
+  log('Rule-based design:', ruleSummary.slice(0, 160));
+  check(counts.machine === 1 && !/Catalog|partNumber/.test(lastUser.machine ?? ''), 'machine-model prompt sent without the catalog');
+  check(await page.getByRole('button', { name: 'Change K1', exact: true }).count() === 1 && await page.getByRole('button', { name: 'Change SR1', exact: true }).count() === 1, 'rule-based design has the motor contactor and the safety relay');
+  // The older all-AI design is still there as an experimental option (the steps below use its design).
+  await page.getByRole('button', { name: 'AI full design (experimental)' }).click();
+  await page.getByText('NEMA 12 panel, 480 VAC.').first().waitFor({ timeout: 15000 });
+  check(counts.electrical === 1, 'AI full design (experimental) still works');
+  await page.waitForURL(/tab=cabinet/);
   await page.goto(BASE + '/electrical?tab=design');
   check(await page.locator('select').filter({ hasText: '600 V 3-phase' }).first().inputValue() !== '', 'supply select present');
   log('Electrical supply / code:', await page.locator('select').filter({ hasText: '600 V 3-phase' }).first().inputValue(), '/', await page.getByLabel('Electrical code').inputValue());
@@ -579,7 +595,7 @@ function sse(model, text) {
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1600, height: 950 });
   await page.goto(BASE + '/electrical?tab=design');
-  await page.getByRole('button', { name: 'Change K1' }).click();
+  await page.getByRole('button', { name: 'Change K1', exact: true }).click();
   const abChoices = await page.getByLabel(/^Choose 100-C\d\dEJ10$/).count();
   log('Allen-Bradley contactors offered for K1:', abChoices);
   check(abChoices >= 3, 'Allen-Bradley contactors offered when the brand is preferred');
