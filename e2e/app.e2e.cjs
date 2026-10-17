@@ -129,8 +129,8 @@ function sse(model, text) {
   await page.getByText('Organized the description').waitFor({ timeout: 15000 });
   await snap(page, 'wizard_2');
   await page.getByRole('button', { name: 'Next →' }).click();
-  await page.getByRole('button', { name: 'Suggest equipment' }).click();
-  await page.getByRole('button', { name: 'Suggest again' }).waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: /Suggest for me/ }).click();
+  await page.getByRole('button', { name: /Suggest again/ }).waitFor({ timeout: 15000 });
   await snap(page, 'wizard_3_recommendation');
   // Equipment chooser: weak CPUs are greyed, a bigger one can be chosen.
   const greyCpus = await page.locator('input[aria-label^="Choose C"][disabled]').count();
@@ -353,9 +353,9 @@ function sse(model, text) {
 
   // Program
   await page.goto(BASE + '/program');
-  await page.getByRole('button', { name: 'Describe' }).click();
+  await page.getByRole('button', { name: 'Build', exact: true }).click();
   // Generate = standard blocks from the rules (every HMI tag implemented), the AI writes only the cycle block.
-  await page.getByRole('button', { name: 'Generate Program' }).click();
+  await page.getByRole('button', { name: 'Build program from my project' }).click();
   await page.getByText(/Program from the standard blocks/).first().waitFor({ timeout: 15000 });
   log('Rule-based program:', (await page.getByText(/Program from the standard blocks/).first().innerText()).slice(0, 160));
   check(counts.cycle === 1, 'cycle block: one small AI request');
@@ -363,7 +363,7 @@ function sse(model, text) {
   check(await page.getByTestId('cycle-steps').count() === 1, 'step sequence table shown on the Program page');
   log('Cycle steps:', (await page.getByTestId('cycle-steps').locator('summary').innerText()).slice(0, 120));
   // The older all-AI program is still there (the steps below use its fixture program).
-  await page.getByRole('button', { name: 'Describe' }).click();
+  await page.getByRole('button', { name: 'Build', exact: true }).click();
   await page.getByRole('button', { name: 'AI full program (experimental)' }).click();
   await page.getByText('Cycle running: panel or HMI Start').waitFor({ timeout: 15000 });
   log('Tree status dots (done/stale):', await page.locator('nav [title="Done"]').count(), '/', await page.locator('nav [title="Out of date"]').count());
