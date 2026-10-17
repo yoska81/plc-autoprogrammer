@@ -185,3 +185,28 @@ Open, for others: drawing sheet 4 prints "NO PROTECTION" over T1 and PS1 althoug
 - **Bug found and fixed**: drilling/cutout sheet heading said "SCALE 1:6" while the title block said "1:5" (big door 1:8 vs 1:6). The heading used `drillScale(w, h·168/150)`, the title block `drillScale(w, h)`. Both now use `drillSheetScale` in `scale.ts`. `check_pdf.py` now fails any sheet whose heading scale differs from the title block.
 - `e2e/persist.e2e.cjs`: the selected-sheet case uses the sheet list (tabs removed in 7f3b37d).
 - Checks: tsc, eslint, all unit tests, `check-all.sh` 0 FAIL / 0 WARN on 5 variants. E2E pass: app, ai-jobs, layout, persist, old-data, hmi-editor, sweep.
+
+## Enclosure wall machining (coordinator, after #50): glands, fans, stack light, air inlet
+- New `src/electrical/enclosureFaces.ts`, `enclosureFaceDrilling(ctx)`: one machining plan per wall that has something on it (bottom / top / left / right). Each is drawn as a drilling sheet in the drawing set, with dimensions from the datum and a hole table.
+- **Cable entries (bottom, code H)**: one per cable leaving the cabinet (cable schedule rows not starting at a JB) plus the incoming supply.
+  - OD is estimated from the core count and conductor size (stated on the sheet as an estimate).
+  - Gland: IEC → metric (EN 62444, hole = thread + 0.5); US/Canada → NPT cord grip in a standard conduit knockout (1/2" = 22.2 mm …). Clamping ranges are typical, marked "check the datasheet".
+  - Layout: control cables from the left, motor cables and the supply from the right (disconnect side). Rows are clear of the walls (40 mm), the door return (60 mm) and the back wall (40 mm). Anything that doesn't fit is listed in a note.
+- **Ventilation (code J)**: when the heat calculation needs it, a filter fan goes low on the left and an outlet filter high on the right.
+  - Air flow: V = 3.1 · (P − k·A·15 K) / 15 K. The calc document now states this flow too.
+  - The heat logic was moved to a shared `src/electrical/thermal.ts`, so the calc and the machining agree.
+  - The cutout is the typical cutout of that fan size class (92/125/177/224/292 mm), labelled ASSUMED, drawn as a template (centre mark + dashed outline on the TEMPLATE layer, never cut).
+- **Stack light (code K, top)**: centre mark + base outline (Ø from the catalog); drill per the manufacturer's template.
+- **Air inlet (code L, bottom)**: only when solenoid valves are inside the cabinet. Bulkhead for the valve's port size from the catalog description. Template only.
+- Generic `template` flag on cutouts (the door handle uses it too): DXF centre mark + outline on TEMPLATE; the sheet draws it dashed with the reason.
+- Outputs:
+  - Machining page: part selector (back panel, door, each wall); DXF + PDF of the selected part.
+  - Deliverables: "Enclosure walls DXF / PDF".
+  - ZIP: `electrical/machining/enclosure_<wall>_cutouts_1to1_{in,mm}.dxf` + `<base>_enclosure_cutouts.pdf`.
+  - Full package: under "Machining drawings".
+- Checkers:
+  - `check_dxf.py` covers the walls: outline = W×D / D×H, standard gland holes, templates not cut, inch = mm geometry, ZIP copies, sheet hole tables.
+  - Every cable leaving the cabinet has an entry. A failed temperature calc requires fan cutouts.
+  - `check_pdf.py`: wall PDFs = drawing-set sheets; machining PDFs on A3 for IEC variants.
+- Results: us480 3 entries (bottom only); big 12 entries + fan/outlet + stack light (4 walls); analog 6; ca600 5; us120 5; rules 7; rules-big 11 + fan + stack light; rules-eu 7 metric glands.
+- Test: `src/electrical/enclosureFaces.test.ts` covers OD estimates, one entry per cable + supply, NPT vs metric, clearances, supply on the disconnect side, fan/outlet placement and air flow, stack light, air inlet with port size, and that templates are never on the CUTOUTS layer.

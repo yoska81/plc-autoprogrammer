@@ -74,7 +74,7 @@ export async function buildPackageParts(p: ProjectSnapshot, onProgress?: Progres
       children: () => (docMeta(p).drawings?.sheets ?? []).map((s, i) => ({ title: `${s.no} ${s.title}`, page: i })),
     });
     // The machine shop's part of the set on its own, next to the 1:1 DXFs.
-    steps.push({ title: 'Machining drawings', description: 'Back panel drilling and door cutouts: dimensions from the datum, hole tables, sheet scale (cut from the 1:1 DXFs)', run: () => buildMachiningPdf(p.drawingCtx!) });
+    steps.push({ title: 'Machining drawings', description: 'Back panel drilling, door cutouts and enclosure wall cutouts (cable entries, fans, stack light): dimensions from the datum, hole tables, sheet scale (cut from the 1:1 DXFs)', run: () => buildMachiningPdf(p.drawingCtx!) });
   }
   if (p.hmi) {
     steps.push({

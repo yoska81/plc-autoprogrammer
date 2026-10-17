@@ -37,7 +37,7 @@ function DrillDrawing({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, 
       <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`${d.title} — ${d.part} — SCALE ${scaleText(s)} — DIMENSIONS IN INCHES [mm] FROM LOWER-LEFT DATUM`}</Txt>
       {ref && L.ducts.map((u, i) => <rect key={`d${i}`} x={px(u.x - bp.x)} y={py(bp.y + bp.h - u.y)} width={u.w * s} height={u.h * s} strokeWidth={0.12} strokeDasharray="1 0.8" />)}
       {ref && L.rails.map((r, i) => <rect key={`r${i}`} x={px(r.x - bp.x)} y={py(bp.y + bp.h - r.y)} width={r.w * s} height={r.h * s} strokeWidth={0.12} strokeDasharray="0.4 0.6" />)}
-      {!ref && <rect x={px(0) + 3} y={py(d.h) + 3} width={d.w * s - 6} height={d.h * s - 6} strokeWidth={0.12} strokeDasharray="1 0.8" />}
+      {d.kind === 'door' && <rect x={px(0) + 3} y={py(d.h) + 3} width={d.w * s - 6} height={d.h * s - 6} strokeWidth={0.12} strokeDasharray="1 0.8" />}
       <rect x={px(0)} y={py(d.h)} width={d.w * s} height={d.h * s} strokeWidth={0.6} />
       {/* datum */}
       <circle cx={px(0)} cy={py(0)} r={1.4} strokeWidth={LW_THIN} />
@@ -79,15 +79,18 @@ function HoleMark({ h, x, y, s }: { h: DrillHole; x: number; y: number; s: numbe
 }
 
 function CutoutMark({ c, x, y, s }: { c: DrillCutout; x: number; y: number; s: number }) {
-  if (c.code === 'G') {
-    const r = (c.w / 2) * s;
+  if (c.template) {
+    // size not from the catalog: dashed outline and centre mark, machined per the part's template
+    const rw = (c.w / 2) * s, rh = (c.h / 2) * s;
     return (
       <g>
-        <circle cx={x} cy={y} r={r} strokeWidth={LW_THIN} strokeDasharray="0.8 0.6" />
-        <Line x1={x - r - 2} y1={y} x2={x + r + 2} y2={y} w={0.12} />
-        <Line x1={x} y1={y - r - 2} x2={x} y2={y + r + 2} w={0.12} />
-        <Txt x={x + r + 1} y={y - r - 0.5} size={2.0} mono bold>{`${c.id} ${c.tag}`}</Txt>
-        <Txt x={x + r + 1} y={y - r + 2.3} size={1.8}>PER HANDLE TEMPLATE</Txt>
+        {c.kind === 'rect'
+          ? <rect x={x - rw} y={y - rh} width={rw * 2} height={rh * 2} strokeWidth={LW_THIN} strokeDasharray="0.8 0.6" />
+          : <circle cx={x} cy={y} r={rw} strokeWidth={LW_THIN} strokeDasharray="0.8 0.6" />}
+        <Line x1={x - rw - 2} y1={y} x2={x + rw + 2} y2={y} w={0.12} />
+        <Line x1={x} y1={y - rh - 2} x2={x} y2={y + rh + 2} w={0.12} />
+        <Txt x={x + rw + 1} y={y - rh - 0.5} size={2.0} mono bold>{`${c.id} ${c.tag}`}</Txt>
+        <Txt x={x + rw + 1} y={y - rh + 2.3} size={1.8}>{c.template}</Txt>
       </g>
     );
   }
