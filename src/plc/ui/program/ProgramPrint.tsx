@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PrinterIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import type { LadderProgram } from '../../core/ladder';
@@ -6,6 +6,11 @@ import type { ValidationIssue } from '../../core/validate';
 import LadderView from '../ladder/LadderView';
 import { useProjectStore, currentRevision } from '../../../store/useProjectStore';
 import type { AnalogSetupRow } from '../../core/analog';
+import { collectProject } from '../../../deliverables/collect';
+import { buildProgramListingPdf } from '../../../deliverables/programListingPdf';
+import { printPdf } from '../../../deliverables/printPdf';
+import { saveBlob } from '../../../deliverables/files';
+import { notify } from '../../../store/useNoticeStore';
 import { GENERAL, blockOf, crossReference, issueStatus, naturalAddress } from './programIndex';
 
 interface Props {
@@ -59,13 +64,33 @@ export default function ProgramPrint({ program, projectName, plcName, issues, la
   const th = 'border-b border-gray-400 px-2 py-1 text-left font-semibold';
   const td = 'border-b border-gray-200 px-2 py-1 align-top';
 
+  // The program listing as a real PDF (works in the Windows app, the browser and the preview window).
+  const [busy, setBusy] = useState(false);
+  const listing = async (mode: 'print' | 'save') => {
+    setBusy(true);
+    try {
+      const pdf = await buildProgramListingPdf(collectProject());
+      if (!pdf) { notify('There is no program to print yet.'); return; }
+      const name = `${projectName.replace(/[^\w-]+/g, '_') || 'program'}_program.pdf`;
+      if (mode === 'save') saveBlob(name, pdf);
+      else if ((await printPdf(pdf, name, { wMm: 215.9, hMm: 279.4 })) === 'saved') notify('Printing is not available here, so the program PDF was saved: open it and print from the PDF reader.');
+    } catch (e) {
+      notify(`The program PDF could not be made: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return createPortal(
     <div className="program-print print-page fixed inset-0 z-50 overflow-auto bg-white text-gray-900" role="dialog" aria-label="Print program">
       <style>{PRINT_CSS}</style>
       <div className="no-print sticky top-0 z-10 flex items-center gap-2 border-b border-gray-200 bg-white px-6 py-2 shadow-sm">
         <span className="flex-1 text-sm font-semibold">Print program · {program.rungs.length} rungs in {blocks.length} blocks</span>
-        <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">
-          <PrinterIcon className="h-4 w-4" /> Print / Save as PDF
+        <button type="button" onClick={() => void listing('print')} disabled={busy} className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+          <PrinterIcon className="h-4 w-4" /> {busy ? 'Preparing…' : 'Print'}
+        </button>
+        <button type="button" onClick={() => void listing('save')} disabled={busy} className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-60">
+          Program PDF
         </button>
         <button type="button" onClick={onClose} className="inline-flex items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50">
           <XMarkIcon className="h-4 w-4" /> Close

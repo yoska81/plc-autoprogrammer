@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { percentOf, useAiProgressStore } from '../lib/ai/progress';
 import { cancelAiJob, dismissAiJob, retryAiJob, useAiJobs, type AiJob } from '../lib/ai/jobs';
 import { KIND_TEXT } from '../lib/ai/errors';
 import { useProjectsStore } from '../store/useProjectsStore';
@@ -17,6 +18,7 @@ export default function AiJobsIndicator() {
   const failed = jobs.filter((j) => j.status === 'failed' && !j.dismissed);
   const held = jobs.filter((j) => j.held);
   const [now, setNow] = useState(() => Date.now());
+  const progress = useAiProgressStore((s) => s.byKey);
   useEffect(() => {
     if (!running.length) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -24,7 +26,8 @@ export default function AiJobsIndicator() {
   }, [running.length]);
 
   if (!running.length && !failed.length && !held.length) return null;
-  const runningText = (j: AiJob) => `${j.label}${j.stage ? ` · ${j.stage}` : ''} · ${mmss(now - j.startedAt)}${j.retry ? ` · ${KIND_TEXT[j.retry.kind]}, retrying (${j.retry.attempt}/${j.retry.max})…` : ''}`;
+  const pctText = (j: AiJob) => { const pct = percentOf(j.kind, progress[j.kind]); return pct === null ? ' · thinking' : ` · ${pct}%`; };
+  const runningText = (j: AiJob) => `${j.label}${j.stage ? ` · ${j.stage}` : ''}${j.kind === 'update-all' ? '' : pctText(j)} · ${mmss(now - j.startedAt)}${j.retry ? ` · ${KIND_TEXT[j.retry.kind]}, retrying (${j.retry.attempt}/${j.retry.max})…` : ''}`;
   return (
     <span className="flex items-center gap-3 min-w-0" data-testid="ai-jobs" aria-live="polite">
       {running.map((j) => (

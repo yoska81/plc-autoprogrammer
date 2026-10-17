@@ -220,6 +220,14 @@ function sse(model, text) {
   // Machining: units, cut-only, DXF download.
   await page.goto(BASE + '/electrical?tab=machining');
   await page.getByLabel('DXF units').selectOption('in');
+  // Drawings as a real PDF from the Electrical page (Print / Drawings PDF buttons, no new tab).
+  {
+    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: 'Drawings PDF' }).click()]);
+    const f = OUT + d.suggestedFilename(); await d.saveAs(f);
+    const doc = await PDFDocument.load(fs.readFileSync(f));
+    log('Drawings PDF from the Electrical page:', d.suggestedFilename(), doc.getPageCount(), 'pages');
+    check(doc.getPageCount() > 5, 'drawings PDF has every sheet');
+  }
   await page.getByText('X in [mm]').waitFor();
   await page.getByLabel('Cutting geometry only').check();
   {

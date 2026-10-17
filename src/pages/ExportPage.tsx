@@ -4,6 +4,7 @@ import { useStages, type StageInfo } from '../spec/useStages';
 import { collectProject } from '../deliverables/collect';
 import { buildExcelReport } from '../deliverables/excelReport';
 import { buildEngineeringPdf } from '../deliverables/engineering';
+import { buildProgramListingPdf } from '../deliverables/programListingPdf';
 import { buildDrawingsPdf, buildEverythingZip, buildHmiImages, buildHmiPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv, wireListCsv } from '../electrical/derive';
 import { Spinner } from '../components/common';
@@ -245,7 +246,7 @@ export default function ExportPage() {
                   {progFiles.map((f) => (
                     <B busy={busy} key={f.name} label={f.name} onClick={run(f.name, () => saveBlob(f.name, new Blob([f.content], { type: 'text/plain' })))} />
                   ))}
-                  {p.profile.language === 'ladder' && <Link to="/print" target="_blank" className={btn}>Printable ladder</Link>}
+                  {p.profile.language === 'ladder' && <B busy={busy} label="Program listing PDF" onClick={run('Program listing PDF', async () => { const pdf = await buildProgramListingPdf(p); if (pdf) saveBlob(`${p.fileBase}_program.pdf`, pdf); })} />}
                 </div>
                 {p.profile.id === 'click' && (
                   <ol className="list-decimal pl-5 text-xs text-steel-600 space-y-1">
