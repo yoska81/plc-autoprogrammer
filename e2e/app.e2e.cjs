@@ -253,6 +253,18 @@ function sse(model, text) {
   await page.getByLabel('Number + description beside it').check();
   await page.getByLabel('Label size').selectOption('25x10');
   log('Labels to print:', await page.getByText(/labels selected/).innerText(), '| preview labels', await page.locator('[data-testid=label-preview] svg').count());
+  // The preview shows every label once (copies as ×N), so no wire number hides behind 20 copies of 24+.
+  const nWires = Number((await page.locator('section label').filter({ hasText: 'Wire markers' }).innerText()).trim().split('\n').pop());
+  const shownCodes = new Set((await page.locator('[data-testid=label-preview] svg').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? ''))));
+  if (!(nWires > 2) || shownCodes.size < nWires) throw new Error(`label preview shows ${shownCodes.size} distinct labels, ${nWires} wire numbers exist`);
+  // Labels unticked in the list (kept with the project) are called out with a one-click fix.
+  await page.getByLabel('Filter labels').fill('24+');
+  await page.getByRole('button', { name: 'Select none' }).click();
+  await page.getByTestId('labels-unticked').waitFor();
+  log('Unticked warning:', await page.getByTestId('labels-unticked').innerText());
+  await page.getByTestId('labels-unticked').getByRole('button', { name: 'Tick all' }).click();
+  await page.getByTestId('labels-unticked').waitFor({ state: 'detached' });
+  await page.getByLabel('Filter labels').fill('');
   await snap(page, 'labels');
   const lpdf = fs.readFileSync(await dl('Labels PDF for label printer'), 'latin1');
   const boxes = [...lpdf.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number));
