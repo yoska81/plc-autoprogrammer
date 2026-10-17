@@ -27,8 +27,9 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)automationdirect\.com$/, makers: /./ },
   { host: /(^|\.)rockwellautomation\.com$/, makers: /allen[- ]?bradley|rockwell/i },
   // siemens.com includes the official download cache (cache.industry.siemens.com) and support portal;
-  // docs.tia.siemens.cloud is Siemens' official TIA Portal documentation site
-  { host: /(^|\.)(siemens\.com|tia\.siemens\.cloud)$/, makers: /siemens/i },
+  // docs.tia.siemens.cloud is Siemens' official TIA Portal documentation site; apim.industry.siemens.cloud serves the
+  // product datasheets that support.industry.siemens.com/teddatasheet links redirect to
+  { host: /(^|\.)(siemens\.com|tia\.siemens\.cloud|industry\.siemens\.cloud)$/, makers: /siemens/i },
   { host: /(^|\.)(se\.com|schneider-electric\.com|schneider-electric\.us)$/, makers: /schneider|square ?d|telemecanique/i },
   { host: /(^|\.)ifm\.com$/, makers: /\bifm\b/i },
   { host: /(^|\.)yaskawa\.(com|eu)$/, makers: /yaskawa/i },
