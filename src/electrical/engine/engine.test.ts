@@ -187,7 +187,15 @@ for (const s of SCENARIOS) {
   assert.ok(!d.components.some((c) => /conveyor/i.test(c.function)), 'nothing from the example conveyor');
   assert.ok(d.askUser?.some((q) => /M1 Conveyor motor .* not in the machine description/.test(q)), 'left-over motor asked about');
   assert.ok(!/example/i.test(r.explanation));
-  assert.ok(d.ioWiring.some((w) => w.description === 'Heater contactor' && w.deviceType === 'contactor-coil'));
+  const heater = d.ioWiring.find((w) => w.description === 'Heater contactor')!;
+  assert.equal(heater.deviceType, 'contactor-coil');
+  const unwinderK = d.ioWiring.find((w) => w.description === 'Unwinder motor run')!.deviceTag;
+  assert.notEqual(heater.deviceTag, unwinderK, 'the heater contactor is its own, not the unwinder motor\'s');
+  assert.ok(d.askUser?.some((q) => q.startsWith(`${heater.deviceTag} (Heater contactor)`)), 'its load is asked about');
+  // An overload input without "trip" / "fault" in its text is the motor's overload contact.
+  const ol = run({ ...SCENARIOS.find((x) => x.name === 'sealing-head-from-example')!, name: 'ol', points: [...SCENARIOS.find((x) => x.name === 'sealing-head-from-example')!.points, pt('Unwinder motor overload', 'input')] }).r.design;
+  const olW = ol.ioWiring.find((w) => w.description === 'Unwinder motor overload')!;
+  assert.ok(ol.components.some((c) => c.tag === olW.deviceTag && /overload/i.test(c.function)), `overload input wired to the unwinder's overload relay (got ${olW.deviceTag})`);
   // The example itself keeps its motor (the spec mentions the conveyor motor).
   assert.equal(run(SCENARIOS[0]).r.design.inputs.motors.length, 1);
 }

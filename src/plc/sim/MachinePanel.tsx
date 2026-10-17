@@ -205,7 +205,7 @@ function SelectorControl({ d, inputs, onToggle }: { d: SelectorDevice; inputs: M
   );
 }
 
-function SafetyRelayStatus({ d, inputs, onSet }: { d: SafetyRelayDevice; inputs: Map<string, boolean>; onSet: MachineActions['setBypass'] }) {
+function SafetyRelayStatus({ d, inputs, onSet, onReset }: { d: SafetyRelayDevice; inputs: Map<string, boolean>; onSet: MachineActions['setBypass']; onReset: () => void }) {
   const ok = inputs.get(d.input) ?? false;
   const byp = !!d.bypass?.on;
   return (
@@ -213,8 +213,11 @@ function SafetyRelayStatus({ d, inputs, onSet }: { d: SafetyRelayDevice; inputs:
       <Led on color={ok ? 'green' : 'red'} size={12} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[11.5px] font-semibold text-steel-700">{d.label}{d.tag ? ` (${d.tag})` : ''}</div>
-        <div className={`text-[10.5px] font-bold ${byp ? 'text-amber-700' : ok ? 'text-emerald-700' : 'text-red-700'}`}>{byp ? 'BYPASSED: reads OK' : ok ? 'SAFETY OK' : 'SAFETY TRIPPED (E-stop)'}</div>
+        <div className={`text-[10.5px] font-bold ${byp ? 'text-amber-700' : ok ? 'text-emerald-700' : 'text-red-700'}`}>{byp ? 'BYPASSED: reads OK' : ok ? 'SAFETY OK' : d.state.ok ? 'SAFETY TRIPPED (E-stop)' : 'SAFETY TRIPPED: release the E-stop, then Reset'}</div>
       </div>
+      {!ok && !byp && (
+        <button onClick={onReset} title="Manual reset of the safety relay (or press the Reset button)" className="rounded border border-steel-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-steel-700 hover:bg-steel-50">Reset relay</button>
+      )}
       <AddrChip address={d.input} on={ok} kind="in" />
       <BypassControl d={d} onSet={onSet} />
     </div>
@@ -229,7 +232,7 @@ function OperatorStation({ devices, inputs, actions }: { devices: SimDevice[]; i
   return (
     <Card title="Operator station" accent={tripped ? 'border-red-300' : undefined}>
       <div className="space-y-2">
-        {relays.map((d) => <SafetyRelayStatus key={d.id} d={d} inputs={inputs} onSet={actions.setBypass} />)}
+        {relays.map((d) => <SafetyRelayStatus key={d.id} d={d} inputs={inputs} onSet={actions.setBypass} onReset={() => actions.toggle(d.id)} />)}
         <div className="flex flex-wrap justify-around gap-x-1 gap-y-2 pt-1">
           {controls.map((d) => {
             let ctl: React.ReactNode = null;
@@ -476,8 +479,8 @@ function IndicatorsCard({ items, bits }: { items: IndicatorDevice[]; bits: Map<s
                   <circle cx="15" cy="15" r="4" fill="#334155" />
                   {on && <circle cx="15" cy="15" r="9" fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />}
                 </svg>
-              ) : d.style === 'relay' ? (
-                <span className={`flex h-[30px] w-[30px] items-center justify-center rounded border font-mono text-[10px] font-bold ${on ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : 'border-steel-300 bg-steel-50 text-steel-400'}`}>CR</span>
+              ) : d.style === 'relay' || d.style === 'valve' ? (
+                <span className={`flex h-[30px] w-[30px] items-center justify-center rounded border font-mono text-[10px] font-bold ${on ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : 'border-steel-300 bg-steel-50 text-steel-400'}`}>{d.style === 'valve' ? 'SOL' : 'CR'}</span>
               ) : (
                 <span className="h-[30px] w-[30px] rounded-full border-2 border-steel-400 transition-all"
                   style={{ background: on ? c.on : c.off, boxShadow: on ? `0 0 14px 4px ${c.glow}` : 'inset 0 2px 4px rgba(0,0,0,0.15)' }} />

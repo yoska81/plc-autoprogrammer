@@ -1,4 +1,4 @@
-import type { LadderProgram, Rung } from './ladder';
+import { rungAddresses, rungWrites, type LadderProgram, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
 
 export interface ValidationIssue {
@@ -16,6 +16,8 @@ export function validateProgram(
   program: LadderProgram,
   profile: PlcProfile,
   ioAddresses: Set<string>,
+  /** The project's HMI: a tag the HMI shows that no rung writes, or a command no rung reads, is an error. */
+  hmi?: { tags: { address: string; name: string; access: string }[] },
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const outCoils = new Map<string, number>();
@@ -83,6 +85,54 @@ export function validateProgram(
           break;
       }
     }
+  }
+
+  if (hmi && program.rungs.length) {
+    const writes = new Set<string>(), reads = new Set<string>();
+    for (const r of program.rungs) {
+      for (const w of rungWrites(r)) writes.add(w.trim().toUpperCase());
+      for (const o of r.outputs) {
+        if (o.type === 'TMR') writes.add(`TD${o.address.trim().toUpperCase().slice(1)}`);
+        if (o.type === 'CNT') writes.add(`CTD${o.address.trim().toUpperCase().slice(2)}`);
+      }
+      for (const a of rungAddresses(r)) reads.add(a.trim().toUpperCase());
+      for (const o of r.outputs) if (o.type === 'MATH') for (const m of o.expression.toUpperCase().match(/[A-Z]+\d+/g) ?? []) reads.add(m);
+    }
+    for (const t of hmi.tags) {
+      const a = t.address.trim().toUpperCase();
+      if (/^[XY]\d/.test(a) || /^DF\d+$/.test(a) && t.access === 'read') continue;
+      if (t.access === 'read' && !writes.has(a)) issues.push({ rungId: null, severity: 'error', message: `HMI tag ${a} ${t.name} is shown on the HMI but no rung writes it.` });
+      else if (t.access !== 'read' && !reads.has(a)) issues.push({ rungId: null, severity: 'error', message: `HMI command / setpoint ${a} ${t.name} is never read by the program, so it does nothing.` });
+    }
+  }
+
+  // Dead logic in internal memory: bits / registers read but never written (always 0 / OFF), or written but never
+  // read (logic that does nothing). Physical I/O, system bits, HMI tags, timer / counter values and constants are
+  // left out; so are the standard HMI ranges C1001–C1300 / DS1001–DS1200 / DF101–DF200 (a panel, SCADA or a later
+  // HMI reads and writes them; the HMI check above covers the project's own HMI) and counters (their count is shown online).
+  if (program.rungs.length) {
+    const reads = new Map<string, string>(), writes = new Map<string, string>();
+    const note = (m: Map<string, string>, a: string, rung: string) => { const k = a.trim().toUpperCase(); if (k && !m.has(k)) m.set(k, rung); };
+    for (const r of program.rungs) {
+      for (const b of r.branches) for (const e of b) for (const a of e.type === 'CMP' ? [e.left, e.right] : [e.address]) note(reads, a, r.id);
+      for (const o of r.outputs) {
+        if (o.type === 'COPY') note(reads, o.source, r.id);
+        if (o.type === 'MATH') for (const a of o.expression.toUpperCase().match(/[A-Z]+\d+/g) ?? []) note(reads, a, r.id);
+        if (o.type === 'TMR' || o.type === 'CNT') { note(reads, o.preset, r.id); if (o.resetAddress) note(reads, o.resetAddress, r.id); }
+      }
+      for (const w of rungWrites(r)) note(writes, w, r.id);
+    }
+    const hmiAddr = new Set((hmi?.tags ?? []).map((t) => t.address.trim().toUpperCase()));
+    const hmiRange = (a: string) => /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/.test(a);
+    const skip = (a: string) => {
+      const info = profile.parseAddress(a);
+      if (!info || info.kind === 'constant' || info.kind === 'input' || info.kind === 'output' || info.kind === 'system') return true;
+      if (/^(TD|CTD)\d+$/.test(a) || hmiAddr.has(a) || ioAddresses.has(a)) return true;
+      return hmiRange(a);
+    };
+    const timerRead = (a: string) => /^CT\d+$/.test(a) || reads.has(a) || hmiAddr.has(a.replace(/^T(\d+)$/, 'TD$1')) || reads.has(a.replace(/^T(\d+)$/, 'TD$1'));
+    for (const [a, rung] of reads) if (!writes.has(a) && !skip(a) && !/^(T|CT)\d+$/.test(a)) issues.push({ rungId: rung, severity: 'warning', message: `${a} is read but never written: it is always 0 / OFF.` });
+    for (const [a, rung] of writes) if (!timerRead(a) && !skip(a)) issues.push({ rungId: rung, severity: 'warning', message: `${a} is written but never read: this logic does nothing.` });
   }
 
   for (const [address, count] of outCoils) {

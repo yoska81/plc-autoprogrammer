@@ -1,6 +1,7 @@
 import type { HmiDesign } from '../../hmi/types';
 import type { ElectricalDesign } from '../../electrical/types';
 import { projectHmiContent } from '../../lib/ai/hmiContentAI';
+import { inferRoles } from '../../hmi/engine/roles';
 import { callClaude } from '../../lib/ai/anthropic';
 import { callOpenAI } from '../../lib/ai/openai';
 import type { LadderProgram } from '../core/ladder';
@@ -79,10 +80,10 @@ export interface RuleProgramResult { program: LadderProgram; explanation: string
 export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcContext; spec: string; electrical?: ElectricalDesign | null; hmi?: HmiDesign | null }): Promise<RuleProgramResult> {
   const content = projectHmiContent({ io: o.ctx.io, addresses: o.ctx.addresses, machineName: o.hmi?.machineName ?? 'Machine', spec: o.spec, electrical: o.electrical, panel: { partNumber: '', widthPx: 800, heightPx: 480 } });
   // The HMI's own machine states (it may have the cycle's steps from the AI).
-  const stateTag = o.hmi?.tags.find((t) => t.role === 'word:state')?.address;
+  const stateTag = o.hmi ? inferRoles(o.hmi.tags, { content, screens: o.hmi.screens, alarms: o.hmi.alarms }).tags.find((t) => t.role === 'word:state')?.address : undefined;
   const stateEl = o.hmi?.screens.flatMap((s) => s.elements).find((e) => e.kind === 'multistate' && e.address === stateTag && e.states?.length);
   if (stateEl?.states) content.states = stateEl.states;
-  const input = { content, hmiTags: o.hmi?.tags, spec: o.spec };
+  const input = { content, hmiTags: o.hmi?.tags, hmiScreens: o.hmi?.screens, hmiAlarms: o.hmi?.alarms, spec: o.spec };
   const ioSet = new Set([...o.ctx.addresses.values()].filter(Boolean).map((a) => a.toUpperCase()));
   const inputs = content.io.filter((p) => p.type === 'input');
   let source: RuleProgramResult['source'] = 'rules', aiError: string | undefined, explanation = '';
@@ -93,7 +94,7 @@ export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcConte
       const problems = checkSequence(r.sequence, result.base, new Set(inputs.map((i) => i.address.toUpperCase())));
       if (problems.length) throw new Error(`its cycle steps were not used: ${problems.slice(0, 3).join('; ')}`);
       const withAi = programWithCycle({ ...input, sequence: r.sequence });
-      const errors = validateProgram(withAi.program, o.ctx.profile, ioSet).filter((i) => i.severity === 'error');
+      const errors = validateProgram(withAi.program, o.ctx.profile, ioSet, o.hmi ?? undefined).filter((i) => i.severity === 'error');
       if (errors.length) throw new Error(`its cycle did not pass the checker: ${errors[0].message}`);
       result = withAi; source = 'ai'; explanation = r.explanation;
     } catch (err) {
@@ -105,6 +106,6 @@ export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcConte
   const { program, notes, sequence } = result;
   return {
     program, sequence, source, aiError, notes, reasoning: null,
-    explanation: `${source === 'ai' ? 'Program from the standard blocks with the cycle steps written from the specification' : 'Program from the standard blocks with the default cycle (rules)'}: ${program.rungs.length} rungs in ${program.blocks?.length ?? 0} blocks; cycle ${sequence.steps.map((st, i) => `${(i + 1) * 10} ${st.name}`).join(' → ') || 'none'}.${explanation ? ` ${explanation}` : ''}${notes.length ? ` Notes: ${notes.join(' ')}` : ''}`,
+    explanation: `${source === 'ai' ? 'Program from the standard blocks with the cycle steps written by the AI from the specification' : aiError ? 'Program from the standard blocks with the default cycle (rules): the AI\'s cycle was not used, see the notes' : `Program from the standard blocks with the default cycle (rules${o.ai?.apiKey ? '' : ', no AI connected'})`}: ${program.rungs.length} rungs in ${program.blocks?.length ?? 0} blocks; cycle ${sequence.steps.map((st, i) => `${(i + 1) * 10} ${st.name}`).join(' → ') || 'none'}.${explanation ? ` ${explanation}` : ''}${notes.length ? ` Notes: ${notes.join(' ')}` : ''}`,
   };
 }

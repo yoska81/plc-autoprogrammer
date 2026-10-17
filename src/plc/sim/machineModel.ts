@@ -61,6 +61,8 @@ export interface EstopDevice extends Base {
 export interface SafetyRelayDevice extends Base {
   kind: 'safetyRelay';
   input: string;
+  /** Manual reset: after an E-stop the output stays off until Reset (the relay's reset or a Reset button). */
+  state: { ok: boolean };
 }
 
 export interface SensorDevice extends Base {
@@ -129,7 +131,8 @@ export interface ConveyorDevice extends Base {
 export interface IndicatorDevice extends Base {
   kind: 'indicator';
   output: string;
-  style: 'light' | 'buzzer' | 'relay';
+  /** valve: a solenoid valve without a stroke (air dump, blow-off). */
+  style: 'light' | 'buzzer' | 'relay' | 'valve';
   color: LightColor;
 }
 
@@ -209,7 +212,7 @@ function colorOf(s: string): LightColor | null {
 // ------------------------------------------------------------ classification
 
 type InKind = 'pushbutton' | 'selector' | 'estop' | 'safetyRelay' | 'sensor';
-type OutKind = 'solenoid' | 'motor' | 'light' | 'stack' | 'buzzer' | 'relay';
+type OutKind = 'solenoid' | 'motor' | 'light' | 'stack' | 'buzzer' | 'relay' | 'valve';
 
 function classifyInput(p: SimIOPoint, t: FieldDeviceType | undefined): { kind: InKind; nc: boolean } {
   const d = p.description;
@@ -234,10 +237,14 @@ function classifyInput(p: SimIOPoint, t: FieldDeviceType | undefined): { kind: I
   return { kind: 'sensor', nc: false };
 }
 
+/** A valve without a stroke: air dump / supply / exhaust, blow-off, vacuum — on / off, no cylinder. */
+const PLAIN_VALVE_RE = /\b(dump|exhaust|main air|air supply|supply valve|soft ?start|blow ?-?off|air knife|air blast|vacuum)\b/;
+
 function classifyOutput(p: SimIOPoint, t: FieldDeviceType | undefined): OutKind {
   const d = p.description;
+  const plainValve = has(d, PLAIN_VALVE_RE) && !has(d, /\b(cylinder|cyl|clamp|gripper|pusher|extend|retract)\b/);
   switch (t) {
-    case 'solenoid': return 'solenoid';
+    case 'solenoid': return plainValve ? 'valve' : 'solenoid';
     case 'contactor-coil': case 'vfd-input': return 'motor';
     case 'stack-light': return has(d, /\b(buzzer|horn|siren|audible)\b/) ? 'buzzer' : 'stack';
     case 'pilot-light': return 'light';
@@ -246,6 +253,7 @@ function classifyOutput(p: SimIOPoint, t: FieldDeviceType | undefined): OutKind 
   if (has(d, /\b(stack|tower)\b/)) return 'stack';
   if (has(d, /\b(buzzer|horn|siren|beacon audible|audible)\b/)) return 'buzzer';
   if (has(d, /\b(light|lamp|pilot|indicator|led|beacon)\b/)) return 'light';
+  if (plainValve) return 'valve';
   if (has(d, /\b(solenoid|sol|valve|cylinder|cyl|vacuum|gripper|clamp)\b/) || p.category === 'Pneumatic') return 'solenoid';
   if (has(d, /\b(motor|contactor|starter|vfd|drive|pump|fan|conveyor|belt|spindle|mixer|blower)\b/) || p.category === 'Conveyor') return 'motor';
   return 'relay';
@@ -400,10 +408,10 @@ export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): Machine
     const d = descOf(o);
     if (k === 'stack' || (k === 'buzzer' && has(d, /\b(stack|tower)\b/))) {
       stack.segments.push({ output: o.address, label: d, color: k === 'buzzer' ? 'buzzer' : colorOf(d) ?? 'white' });
-    } else if (k === 'light' || k === 'buzzer' || k === 'relay') {
+    } else if (k === 'light' || k === 'buzzer' || k === 'relay' || k === 'valve') {
       devices.push({
         id: id('ind'), kind: 'indicator', label: d, tag: tagOf(o.address), output: o.address,
-        style: k === 'relay' ? 'relay' : k, color: colorOf(d) ?? (k === 'buzzer' ? 'amber' : 'green'),
+        style: k, color: colorOf(d) ?? (k === 'buzzer' ? 'amber' : 'green'),
       });
     }
   }
@@ -437,7 +445,7 @@ export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): Machine
       }
       case 'safetyRelay':
         hasRelay = true;
-        front.push({ id: id('sr'), kind, label: d, tag, input: p.address });
+        front.push({ id: id('sr'), kind, label: d, tag, input: p.address, state: { ok: true } });
         break;
       case 'sensor':
         devices.push({ id: id('sen'), kind, label: d, tag, input: p.address, state: { on: false } });
@@ -487,18 +495,34 @@ function capital(s: string): string {
 
 // ------------------------------------------------------------ runtime
 
+const RESET_RE = /\breset\b/i;
+
+/** Reset a safety relay (its own reset button); no effect while an E-stop is pressed. */
+export function resetSafetyRelay(model: MachineModel, id: string): void {
+  const d = model.devices.find((x) => x.id === id);
+  const pressed = model.devices.some((x) => x.kind === 'estop' && x.state.pressed && !x.bypass?.on);
+  if (d?.kind === 'safetyRelay' && !pressed) d.state.ok = true;
+}
+
 /** Every input value the machine currently drives. */
 export function machineInputs(model: MachineModel): Map<string, boolean> {
   const out = new Map<string, boolean>();
   const byp = (d: SimDevice) => !!d.bypass?.on;
   const estopPressed = model.devices.some((d) => d.kind === 'estop' && d.state.pressed && !byp(d));
+  // Safety relays with manual reset: an E-stop drops them; a Reset press with every E-stop released resets them.
+  const resetPressed = model.devices.some((d) => d.kind === 'pushbutton' && d.state.pressed && RESET_RE.test(d.label) && !/\b(count|counter|service)\b/i.test(d.label));
+  for (const d of model.devices) {
+    if (d.kind !== 'safetyRelay') continue;
+    if (estopPressed) d.state.ok = false;
+    else if (resetPressed) d.state.ok = true;
+  }
   for (const d of model.devices) {
     const held = d.bypass?.on ? d.bypass.value : undefined;
     switch (d.kind) {
       case 'pushbutton': out.set(d.input, held ?? (d.nc ? !d.state.pressed : d.state.pressed)); break;
       case 'selector': out.set(d.input, held ?? d.state.on); break;
       case 'estop': if (d.input) out.set(d.input, byp(d) || !d.state.pressed); break;
-      case 'safetyRelay': out.set(d.input, byp(d) || !estopPressed); break;
+      case 'safetyRelay': out.set(d.input, byp(d) || (d.state.ok && !estopPressed)); break;
       case 'sensor': out.set(d.input, held ?? d.state.on); break;
       case 'cylinder':
         if (d.extendedInput) out.set(d.extendedInput, d.state.pos >= 0.999);

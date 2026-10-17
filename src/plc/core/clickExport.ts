@@ -10,6 +10,15 @@ import type { IOPoint } from '../../types/io';
  */
 
 const BIT_ADDRESS = /^(X\d{3}|Y\d{3}|C\d+|T\d+|CT\d+)$/;
+/** CLICK data type of an address in the nickname CSV (bits, the timer / counter values and the registers); null = not exported. */
+function dataTypeOf(address: string): string | null {
+  if (BIT_ADDRESS.test(address)) return 'BIT';
+  if (/^(DS|TD)\d+$/.test(address)) return 'INT';
+  if (/^(DD|CTD)\d+$/.test(address)) return 'INT2';
+  if (/^DH\d+$/.test(address)) return 'HEX';
+  if (/^DF\d+$/.test(address)) return 'FLOAT';
+  return null;
+}
 
 /** CLICK nicknames: no spaces; keep them short and unique. */
 function toNickname(text: string, used: Set<string>): string {
@@ -32,10 +41,12 @@ export function clickNicknameCsv(program: LadderProgram, io: IOPoint[], addresse
   const rows: string[] = ['Address,Data Type,Nickname,Initial Value,Retentive,Address Comment'];
   const seen = new Set<string>();
   const add = (address: string, nickname: string, comment: string) => {
-    if (!BIT_ADDRESS.test(address) || seen.has(address)) return;
+    const type = dataTypeOf(address);
+    if (!type || seen.has(address)) return;
     seen.add(address);
-    const retentive = address.startsWith('CT') ? 'Yes' : 'No';
-    rows.push([address, 'BIT', q(toNickname(nickname, used)), '0', retentive, q(comment)].join(','));
+    // CLICK keeps registers (DS / DD / DH / DF) and counters through a power cycle; bits and timer values reset.
+    const retentive = /^(CT|CTD|DS|DD|DH|DF)\d+$/.test(address) ? 'Yes' : 'No';
+    rows.push([address, type, q(toNickname(nickname, used)), '0', retentive, q(comment)].join(','));
   };
   for (const p of io) {
     const a = addresses.get(p.id);

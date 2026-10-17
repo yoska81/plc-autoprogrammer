@@ -7,7 +7,7 @@
  * must do (the PLC program is generated from these).
  */
 import type { AccessLevel, HmiAlarm, HmiDesign, HmiElement, HmiScreen, HmiState, HmiTag, MachineSymbol, MachineSymbolKind } from '../types';
-import { GAP, MIN_TOUCH, layoutBands } from '../layout';
+import { GAP, MIN_TOUCH, cutTexts, layoutBands } from '../layout';
 import type { HmiActuator, HmiContent } from './content';
 
 interface Rect { x: number; y: number; w: number; h: number }
@@ -32,26 +32,48 @@ const ident = (s: string) => s.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g
 class TagPlan {
   tags: HmiTag[] = [];
   alarms: HmiAlarm[] = [];
-  private n = { cmd: 1001, alm: 1101, sts: 1201, sp: 1001, word: 1101, df: 101 };
+  private n = { cmd: 1001, alm: 1101, sts: 1201, sp: 1001, word: 1101, df: 101, ctd: 1 };
   private role = '';
+  /**
+   * `reuse`: tags of the existing HMI / program by role — their address (and name) are kept, so an address
+   * never changes its meaning. `taken`: every address already in use; new tags get the next free one.
+   */
+  private reuse: Map<string, HmiTag>;
+  private taken: Set<string>;
+  constructor(reuse: Map<string, HmiTag> = new Map(), taken: Set<string> = new Set()) { this.reuse = reuse; this.taken = taken; }
   /** Role of the next tag added (see HmiTag.role). */
   as(role: string) { this.role = role; return this; }
+  private address(prefix: string, key: keyof TagPlan['n']): string {
+    const old = this.role ? this.reuse.get(this.role) : undefined;
+    if (old) return old.address;
+    let a: string;
+    do { a = `${prefix}${this.n[key]++}`; } while (this.taken.has(a));
+    this.taken.add(a);
+    return a;
+  }
   private add(address: string, name: string, dataType: HmiTag['dataType'], access: HmiTag['access'], description: string) {
-    this.tags.push({ name, address, dataType, access, description, ...(this.role ? { role: this.role } : {}) });
+    const old = this.role ? this.reuse.get(this.role) : undefined;
+    this.tags.push({ name: old?.name ?? name, address, dataType, access, description, ...(this.role ? { role: this.role } : {}) });
     this.role = '';
     return address;
   }
-  cmd(name: string, description: string, access: HmiTag['access'] = 'write') { return this.add(`C${this.n.cmd++}`, `HMI_${ident(name)}`, 'BIT', access, description); }
-  sts(name: string, description: string) { return this.add(`C${this.n.sts++}`, `STS_${ident(name)}`, 'BIT', 'read', description); }
+  cmd(name: string, description: string, access: HmiTag['access'] = 'write') { return this.add(this.address('C', 'cmd'), `HMI_${ident(name)}`, 'BIT', access, description); }
+  sts(name: string, description: string) { return this.add(this.address('C', 'sts'), `STS_${ident(name)}`, 'BIT', 'read', description); }
   alarm(name: string, message: string, severity: HmiAlarm['severity'], description: string) {
-    const a = this.add(`C${this.n.alm++}`, `${severity === 'alarm' ? 'ALM' : 'WRN'}_${ident(name)}`, 'BIT', 'read', description);
+    const a = this.add(this.address('C', 'alm'), `${severity === 'alarm' ? 'ALM' : 'WRN'}_${ident(name)}`, 'BIT', 'read', description);
     this.alarms.push({ address: a, message, severity });
     return a;
   }
-  sp(name: string, description: string) { return this.add(`DS${this.n.sp++}`, `SP_${ident(name)}`, 'INT', 'read-write', description); }
-  word(name: string, description: string) { return this.add(`DS${this.n.word++}`, ident(name), 'INT', 'read', description); }
-  df(name: string, description: string) { return this.add(`DF${this.n.df++}`, `SP_${ident(name)}`, 'FLOAT', 'read-write', description); }
-  raw(address: string, name: string, dataType: HmiTag['dataType'], description: string) { return this.add(address, name, dataType, 'read', description); }
+  sp(name: string, description: string) { return this.add(this.address('DS', 'sp'), `SP_${ident(name)}`, 'INT', 'read-write', description); }
+  word(name: string, description: string) { return this.add(this.address('DS', 'word'), ident(name), 'INT', 'read', description); }
+  df(name: string, description: string) { return this.add(this.address('DF', 'df'), `SP_${ident(name)}`, 'FLOAT', 'read-write', description); }
+  /** A counter's current value (CTDn), the next free one unless the role exists. */
+  counter(name: string, description: string) { return this.add(this.address('CTD', 'ctd'), name, 'INT2', 'read', description); }
+  raw(address: string, name: string, dataType: HmiTag['dataType'], description: string) {
+    const old = this.role ? this.reuse.get(this.role) : undefined;
+    if (!old) this.taken.add(address);
+    return this.add(old?.address ?? address, name, dataType, 'read', description);
+  }
 }
 
 interface ManualCmd { label: string; address: string; permit: string; output: string; note: string }
@@ -125,7 +147,7 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
     plan.limits.set(an.address, { hi, lo, almHi, almLo });
   }
   if (c.partSensor) {
-    const counter = t.as('word:count').raw('CTD1', 'Part_Count', 'INT2', `Counter CT1 counts each rising edge of ${c.partSensor.address} (${c.partSensor.description}).`);
+    const counter = t.as('word:count').counter('Part_Count', `Counter value: the PLC counts each rising edge of ${c.partSensor.address} (${c.partSensor.description}).`);
     const resetC = t.as('cmd:countreset').cmd('Count_Reset', 'Momentary: resets the part counter CT1.');
     const batch = t.as('sp:batch').sp('Batch_Target', 'Batch size in parts (0 = no limit): the PLC stops the cycle when CTD1 reaches it.');
     const rate = t.as('word:rate').word('Parts_Per_Min', 'Parts counted in the last 60 s.');
@@ -146,8 +168,8 @@ function verb(desc: string | undefined, fallback: string): string {
 }
 
 /** The HMI tag plan for some content (the same addresses buildHmi assigns), for the PLC program templates. */
-export function planHmiTags(c: HmiContent): { tags: HmiTag[]; alarms: HmiAlarm[] } {
-  const t = new TagPlan();
+export function planHmiTags(c: HmiContent, keep: { reuse?: Map<string, HmiTag>; taken?: Set<string> } = {}): { tags: HmiTag[]; alarms: HmiAlarm[] } {
+  const t = new TagPlan(keep.reuse, keep.taken ? new Set(keep.taken) : new Set());
   planTags(c, t);
   return { tags: t.tags, alarms: t.alarms };
 }
@@ -208,7 +230,13 @@ function placeBlock(prefix: string, b: Block, r: Rect, rowH: number): HmiElement
 // Screens
 // ---------------------------------------------------------------------------
 
-export interface BuildOptions { partNumber: string; widthPx: number; heightPx: number; now?: string; plcText?: string }
+export interface BuildOptions {
+  partNumber: string; widthPx: number; heightPx: number; now?: string; plcText?: string;
+  /** Tags of the existing HMI (roles inferred for old ones): every function keeps its address. */
+  keepTags?: HmiTag[];
+  /** Addresses already used (existing HMI, PLC program): new tags never take them. */
+  usedAddresses?: Iterable<string>;
+}
 
 export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
   const W = o.widthPx, H = o.heightPx;
@@ -216,7 +244,8 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
   const area = bands.content;
   const rowH = Math.max(MIN_TOUCH.h, H <= 300 ? 48 : H <= 600 ? 52 : 60);
   const lampH = H <= 300 ? 26 : 30;
-  const t = new TagPlan();
+  const reuse = new Map((o.keepTags ?? []).filter((x) => x.role).map((x) => [x.role!, x] as const));
+  const t = new TagPlan(reuse, new Set([...(o.usedAddresses ?? []), ...(o.keepTags ?? []).map((x) => x.address)].map((a) => a.toUpperCase())));
   const p = planTags(c, t);
   const level: AccessLevel = 'maintenance';
   const safetyLamp = (label = 'Safety OK'): Cell | null => (c.safetyOk ? { kind: 'indicator', label, more: { address: c.safetyOk.address, style: 'ok', onText: 'Safety OK', offText: 'Safety Open' } } : null);
@@ -239,7 +268,7 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
       blocks.push({ title: a.name, rows: [
         cmds.map((m): Cell => ({ kind: 'button', label: m.label, more: { address: m.address, action: 'momentary', interlock: m.permit, level, note: `Hold to run; ${m.note}` } })),
         [...cmds.map((m): Cell => ({ kind: 'indicator', label: `${m.label} permitted`, more: { address: m.permit, style: 'ok', onText: `${m.label} OK`, offText: `${m.label} blocked` } })),
-          ...a.feedback.slice(0, 2).map((f): Cell => { const t = shortName(f.description, a.name); return { kind: 'indicator', label: t, more: { address: f.address, onText: t, offText: t } }; })],
+          ...a.feedback.slice(0, 2).map((f): Cell => { const t = shortName(f.description, a.name); return { kind: 'indicator', label: t, more: { address: f.address, onText: t, offText: `Not ${t.toLowerCase()}` } }; })],
       ] });
     }
     groups.push({ id: 'manual', name: 'Manual', purpose: 'Hold-to-run jog of each actuator in Manual mode; every button shows its interlock.', level, blocks });
@@ -270,7 +299,7 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
     [{ kind: 'numeric', label: 'Run hours', more: { address: p.runHours, units: 'h' } }, { kind: 'numeric', label: 'Since service', more: { address: p.sinceService, units: 'h' } }],
     [{ kind: 'button', label: 'Service Done', more: { address: p.serviceDone, action: 'momentary', level, note: 'Resets the hours since service' } }, { kind: 'indicator', label: 'Service Due', more: { address: p.serviceDue, style: 'warning', onText: 'Service Due', offText: 'Service OK' } }],
   ] });
-  maint.push({ title: 'Clock', rows: [[{ kind: 'datetime', label: 'Date / Time' }, { kind: 'numeric', label: 'Service interval', more: { address: p.serviceInterval, units: 'h' } }]] });
+  maint.push({ title: 'Clock', rows: [[{ kind: 'datetime', label: 'Date / Time' }], [{ kind: 'numeric', label: 'Service interval', more: { address: p.serviceInterval, units: 'h' } }]] });
 
   // Diagnostics: every discrete point by module (CLICK X0xx = CPU, X1xx slot 1 …; others 16 per group).
   const diag: Block[] = [];
@@ -324,6 +353,8 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
     });
   }
 
+  for (const s of screens) s.elements = s.elements.map(fitTexts);
+
   return {
     hmiPartNumber: o.partNumber, machineName: c.machineName, screens, alarms: t.alarms, tags: t.tags,
     notes: [
@@ -362,8 +393,11 @@ function mainScreen(c: HmiContent, p: Plan, a: Rect, id: string, rowH: number): 
     ? [['numeric', 'Parts', { address: p.count.counter }], ['numeric', 'Rate', { address: p.count.rate, units: '/min' }], ['indicator', 'Running', { address: p.running, style: 'ok', onText: 'Running', offText: 'Stopped' }]]
     : [['indicator', 'Running', { address: p.running, style: 'ok', onText: 'Running', offText: 'Stopped' }]];
   const statsY = left.y + left.h - rowH;
-  const sw = (left.w - GAP * (stats.length - 1)) / stats.length;
-  stats.forEach(([kind, label, more], i) => out.push(el(`${id}-s${i}`, kind, label, { x: left.x + i * (sw + GAP), y: statsY, w: sw, h: rowH }, more)));
+  // The lamp gets more room than the numbers: its texts (Running / Stopped) are wider.
+  const weight = (k: HmiElement['kind']) => (k === 'indicator' && stats.length > 1 ? 1.5 : 1);
+  const unit = (left.w - GAP * (stats.length - 1)) / stats.reduce((s, [k]) => s + weight(k), 0);
+  let sx = left.x;
+  stats.forEach(([kind, label, more], i) => { const w = unit * weight(kind); out.push(el(`${id}-s${i}`, kind, label, { x: sx, y: statsY, w, h: rowH }, more)); sx += w + GAP; });
   const pic = { x: left.x, y: left.y, w: left.w, h: left.h - rowH - GAP };
   if (pic.h >= 60) out.push(el(`${id}-mach`, 'machine', `${c.machineName}`, pic, { symbols: symbols(c, pic) }));
   out.push(el(`${id}-banner`, 'alarm-banner', 'Alarms', { x: a.x, y: a.y + a.h - bannerH, w: a.w, h: bannerH }));
@@ -407,8 +441,41 @@ function alarmScreen(alarms: HmiAlarm[], p: Plan, a: Rect, id: string, rowH: num
   ];
   const lampH = 36;
   const room = Math.floor((a.h - rowH - GAP) / (lampH + GAP));
-  alarms.slice(0, room).forEach((al, i) => out.push(el(`${id}-a${i}`, 'indicator', al.message.length > 28 ? `${al.message.slice(0, 25)}...` : al.message,
+  alarms.slice(0, room).forEach((al, i) => out.push(el(`${id}-a${i}`, 'indicator', al.message,
     { x: a.x + a.w - sideW, y: a.y + rowH + GAP + i * (lampH + GAP), w: sideW, h: lampH }, { address: al.address, style: al.severity === 'alarm' ? 'alarm' : 'warning' })));
+  return out;
+}
+
+/** Operator-panel abbreviations, longest words first; tried one by one before a text is shortened with "…". */
+const ABBR: [RegExp, string][] = [
+  [/\bMaintenance\b/i, 'Maint'], [/\bDiagnostics\b/i, 'Diag'], [/\bTemperature\b/i, 'Temp'], [/\bProduction\b/i, 'Prod'],
+  [/\bRunning\b/i, 'Run'], [/\bStopped\b/i, 'Stop'], [/\bConveyor\b/i, 'Conv'], [/\bRetracted\b/i, 'Retr'], [/\bExtended\b/i, 'Ext'], [/\bPosition\b/i, 'Pos'], [/\bInterval\b/i, 'Int'],
+  [/\bCircuit\b/i, 'Circ'], [/\bSelect\b/i, 'Sel'], [/\bManual\b/i, 'Man'], [/\bService\b/i, 'Svc'], [/\bBlocked\b/i, 'Blk'],
+  [/\bRetract\b/i, 'Retr'], [/\bExtend\b/i, 'Ext'], [/\bActive\b/i, 'On'], [/\bSafety\b/i, 'Safe'], [/\bMode\b/i, ''],
+];
+
+/**
+ * Every text the screen draws fits its element, measured as the renderer draws it (layout.ts cutTexts):
+ * standard abbreviations first, then shortened with "…". On / off texts that differed stay different.
+ */
+export function fitTexts(e: HmiElement): HmiElement {
+  if (!cutTexts(e).length) return e;
+  let out = { ...e };
+  const fits = (field: 'label' | 'onText' | 'offText', v: string) => !cutTexts({ ...out, [field]: v }).some((c) => c.text === v.toUpperCase());
+  for (const field of ['label', 'onText', 'offText'] as const) {
+    const text = out[field];
+    if (!text || fits(field, text)) continue;
+    let v = text;
+    for (const [re, r] of ABBR) {
+      if (!re.test(v)) continue;
+      v = v.replace(re, r).replace(/\s+/g, ' ').trim() || v;
+      if (fits(field, v)) break;
+    }
+    const short = v;
+    for (let n = short.length - 1; n > 0 && !fits(field, v); n--) v = `${short.slice(0, n).trimEnd()}…`;
+    out = { ...out, [field]: v };
+  }
+  if (e.onText && e.offText && e.onText !== e.offText && out.onText === out.offText) out = { ...out, offText: `${out.offText!.replace(/…$/, '').slice(0, -1)}…` };
   return out;
 }
 
