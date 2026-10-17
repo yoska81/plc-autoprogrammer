@@ -108,3 +108,21 @@ const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlo
 for (const pl of PLATFORMS) assert.ok(DRIVER_IDS.has(pl.id), `platform ${pl.id} is on the driver id list`);
 for (const p of ALL_HMIS()) for (const id of driversOf(p)) assert.ok(DRIVER_IDS.has(id), `${p.partNumber}: driver id ${id} is a known platform id`);
 console.log('driver list tests passed');
+
+// Panel specs for the vendor-neutral HMI designer, from the maker's datasheet. A key is left out
+// (never guessed) where the maker's page could not be read or contradicts itself; those are listed here.
+const NO_RESOLUTION: Record<string, string> = {
+  HMIG3U: 'box module without a display (pairs with the HMIDT732 display)',
+  G09C1000: 'maker page not found; only the sibling G09C0000 was readable',
+  CR10000400000210: 'maker spec table not reachable', CR10001000000210: 'maker spec table not reachable', CR30001500000420: 'maker spec table not reachable',
+};
+for (const p of ALL_HMIS().filter((h) => h.vendor && h.vendor !== 'automationdirect')) {
+  const r = p.ratings;
+  if (r.resolutionPx !== undefined) assert.match(String(r.resolutionPx), /^\d+x\d+$/, `${p.partNumber}: resolutionPx is WxH`);
+  else assert.ok(NO_RESOLUTION[p.partNumber], `${p.partNumber}: resolutionPx from the datasheet`);
+  if (p.partNumber !== 'HMIG3U') assert.equal(typeof r.displayIn, 'number', `${p.partNumber}: displayIn`);
+  if (r.touch !== undefined) assert.match(String(r.touch), /^(resistive|capacitive|yes|none)$/, `${p.partNumber}: touch type`);
+  for (const k of ['ethernetPorts', 'serialPorts', 'usbPorts']) if (r[k] !== undefined) assert.ok(Number.isInteger(r[k]) && Number(r[k]) >= 0, `${p.partNumber}: ${k}`);
+}
+assert.equal(getPart('HMIG3U')!.ratings.pairsWith, 'HMIDT732');
+console.log('HMI panel spec tests passed');
