@@ -136,8 +136,8 @@ def check(vdir: Path):
     short = [f"{l['Number']} {l['Copies']}/{ends.get(l['Number'])}" for l in labels if l['Type'] == 'Wire markers' and int(l['Copies']) != ends.get(l['Number'])]
     if short:
         report('FAIL', v, f'wire marker copies differ from 2 per conductor: {short[:8]}')
-    # pypdf joins texts on one baseline without a space ("Y003AOL2" = wire Y003A, then contact tag OL2)
-    missing = sorted(w for w in wires_csv if not re.search(r'(?<![\w-])' + re.escape(w) + r'(?:(?![\w-])|(?=[A-Z]{1,4}\d))', drw_all))
+    # pypdf joins texts on one baseline without a space ("Y003AOL2" / IEC "Y004A-F1" = wire, then contact tag)
+    missing = sorted(w for w in wires_csv if not re.search(r'(?<![\w-])' + re.escape(w) + r'(?:(?![\w-])|(?=-?[A-Z]{1,4}\d))', drw_all))
     if missing:
         report('FAIL', v, f'{len(missing)} wire numbers from the wire list never appear on the drawings: {missing[:12]}')
     for r in wl:
@@ -158,7 +158,8 @@ def check(vdir: Path):
     t_xl = {(str(r['Terminal']), str(r['Wire'] or '')) for r in sheet_rows(wb, 'Terminal Plan') if r.get('Terminal') and r.get('Internal (panel)') is not None or (r.get('Terminal') and r.get('Kind'))}
     if t_csv != t_xl:
         report('FAIL', v, f'terminal plan CSV vs Excel differ: {sorted(t_csv ^ t_xl)[:6]}')
-    t_lbl = {l['Number'] for l in labels if l['Type'] == 'Terminal markers' and '-' in l['Number']}
+    # terminal markers "TB2-4" / IEC "-X2-4" (not the strip group markers "TB2" / "-X2")
+    t_lbl = {l['Number'] for l in labels if l['Type'] == 'Terminal markers' and re.search(r'.-\d+$', l['Number'])}
     if {t for t, _ in t_csv} != t_lbl:
         report('FAIL', v, f'terminal labels vs plan differ: {sorted({t for t, _ in t_csv} ^ t_lbl)[:8]}')
     # strip size vs BOM quantity of feed-through terminals
