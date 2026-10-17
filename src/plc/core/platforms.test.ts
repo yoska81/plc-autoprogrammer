@@ -119,13 +119,14 @@ const NO_RESOLUTION: Record<string, string> = {
 };
 for (const p of ALL_HMIS().filter((h) => h.vendor && h.vendor !== 'automationdirect')) {
   const r = p.ratings;
+  const headless = r.touch === 'none'; // gateways / servers without a display
   if (r.resolutionPx !== undefined) assert.match(String(r.resolutionPx), /^\d+x\d+$/, `${p.partNumber}: resolutionPx is WxH`);
-  else assert.ok(NO_RESOLUTION[p.partNumber], `${p.partNumber}: resolutionPx from the datasheet`);
-  if (p.partNumber !== 'HMIG3U') assert.equal(typeof r.displayIn, 'number', `${p.partNumber}: displayIn`);
+  else assert.ok(headless || NO_RESOLUTION[p.partNumber], `${p.partNumber}: resolutionPx from the datasheet`);
+  if (p.partNumber !== 'HMIG3U' && !headless) assert.equal(typeof r.displayIn, 'number', `${p.partNumber}: displayIn`);
   if (r.touch !== undefined) assert.match(String(r.touch), /^(resistive|capacitive|yes|none)$/, `${p.partNumber}: touch type`);
   for (const k of ['ethernetPorts', 'serialPorts', 'usbPorts']) if (r[k] !== undefined) assert.ok(Number.isInteger(r[k]) && Number(r[k]) >= 0, `${p.partNumber}: ${k}`);
 }
-assert.equal(getPart('HMIG3U')!.ratings.pairsWith, 'HMIDT732');
+assert.ok(String(getPart('HMIG3U')!.ratings.pairsWith).split(',').includes('HMIDT732'), 'GTU box pairs with its displays');
 console.log('HMI panel spec tests passed');
 
 // Update all: the CPU must hold the real I/O list; CLICK modules are added for the shortfall, or null (a bigger CPU).
