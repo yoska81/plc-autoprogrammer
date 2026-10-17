@@ -1,6 +1,6 @@
 /** Power distribution, motor circuits and 24VDC control/safety ladder sheets. */
 import { powerText, isIec } from '../../../standards/regions';
-import { isFusedDisconnect, ratingText, supplyText, type MotorModel, type ResolvedComponent, type XfmrBranch } from '../../derive';
+import { isFusedDisconnect, ratingText, upstreamOcpd, supplyText, type MotorModel, type ResolvedComponent, type XfmrBranch } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW_THIN, lineNo } from '../geometry';
 import {
   CONTROL_PITCH, CONTROL_RUNGS, MOTOR_LINES, MOTOR_PITCH, POWER_PITCH, resolveRefs,
@@ -64,6 +64,7 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const BX = m.phases === 3 ? [104, 110, 116] : [104, 110];
   const nPh = BX.length;
   const ds = m.disconnect;
+  const up = isIec(plan.ctx.region) ? null : upstreamOcpd(plan.ctx);
   const dsX = 62;
   const mbX = 84;
   const lastTap = Math.max(...sp.branches.map((b) => b.idx + b.b.feedWires.length - 1), 2 + nPh - 1);
@@ -197,6 +198,7 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
         <Txt x={44} y={gy + 18} size={2.3}>ALL PE CONDUCTORS GREEN/YELLOW. ONE CONDUCTOR PER TERMINAL. BOND DOOR WITH FLEXIBLE STRAP (NFPA 79 CH. 8).</Txt>
       </g>
       <Txt x={AREA_R - 2} y={AREA_B - 2} size={2.3} anchor="end" italic>BRANCH WIRES ARE NUMBERED &lt;DEVICE&gt;-L1.. ON THE LOAD SIDE OF THE BRANCH PROTECTION</Txt>
+      {up && <Txt x={AREA_R - 2} y={AREA_B - 5.6} size={2.3} anchor="end" bold maxW={AREA_R - 32}>{`UPSTREAM PROTECTION BY OTHERS: BRANCH-CIRCUIT OCPD ${up.minA} A MIN.${up.maxA !== null ? ` / ${up.maxA} A MAX.` : ''} — ${tagLabel(ds, 'DS1')} IS NOT FUSED, NO MAIN BREAKER IN THE PANEL${up.conflict ? ' — NOT POSSIBLE, SEE DESIGN NOTES' : ''}`}</Txt>}
     </g>
   );
 }

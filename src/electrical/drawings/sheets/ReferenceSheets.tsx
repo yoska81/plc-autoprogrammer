@@ -10,6 +10,7 @@ import {
   Selector, Sensor3W, Solenoid, SwitchPole, TermBox, TermPt, Txt, WireNo, XrefArrow,
 } from '../symbols';
 import { iecStripText, stripTag } from '../../../standards/designations';
+import { panelSccr, type PanelSccr } from '../../sccr';
 
 // ---------------------------------------------------------------------------
 // Symbols & abbreviations
@@ -266,6 +267,12 @@ function WarnLabel({ x, y, w, h, head, body, symbol }: { x: number; y: number; w
   );
 }
 
+/** Nameplate SCCR: the SB4 value with the parts that limit it once every rating is known, else blank with what is missing. */
+function sccrText(sc: PanelSccr, volts: number, std: string): string {
+  if (sc.lowest !== null && !sc.unknown.length) return `${sc.lowest} kA RMS SYM., ${volts} V MAX (${std}; LIMITED BY ${sc.limiting.join(', ')})`;
+  return `____ kA RMS SYM., ${volts} V MAX — TBD${sc.unknown.length ? `: RATING NEEDED FOR ${sc.unknown.join(', ')}` : ''} (${std})`;
+}
+
 export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet }) {
   const { ctx, model, layout, doc } = plan;
   const np = panelNameplate(ctx);
@@ -285,7 +292,7 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
     ['SUPPLY', iec ? np.supplyText : `${np.volts} VAC, ${np.phases} PH, ${np.phases === 3 ? '3 W + PE' : '2 W + PE'}, ${np.hz} Hz`],
     ['FULL-LOAD CURRENT', `${np.fullLoadAmps} A (MOTORS ${np.motorAmps} A + CONTROL ${np.controlAmps} A EST.) — VERIFY`],
     ['LARGEST MOTOR FLA', np.largestMotorFla !== null ? `${np.largestMotorFla} A` : 'N/A (NO MOTORS)'],
-    iec ? ['SHORT-CIRCUIT RATING', `Icc ____ kA (IEC 61439-1 5.3) — ${np.sccr}`] : ['SCCR', `____ kA RMS SYM., ${np.volts} V MAX — ${np.sccr} (${canada ? 'CSA C22.2 No. 14' : 'UL 508A SB'})`],
+    iec ? ['SHORT-CIRCUIT RATING', `Icc ____ kA (IEC 61439-1 5.3) — ${np.sccr}`] : ['SCCR', sccrText(panelSccr(ctx), np.volts, canada ? 'CSA C22.2 No. 14' : 'UL 508A SB4')],
     iec ? ['DEGREE OF PROTECTION', `${NEMA_TO_IP[np.enclosureType] ?? np.enclosureType} (IEC 60529)`] : ['ENCLOSURE TYPE', np.enclosureType.toUpperCase().replace(/^NEMA\s*/, 'TYPE ')],
     ['CONTROL VOLTAGE', `24 VDC${model.transformer ? ' / 120 VAC (TRANSFORMER)' : ''}`],
   ];
