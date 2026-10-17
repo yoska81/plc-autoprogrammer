@@ -44,3 +44,4 @@ installer/
 e2e/out-walkthrough/
 .claude/worktrees/
 e2e/out-voice-edit/
+e2e/out-desktop-mic/
