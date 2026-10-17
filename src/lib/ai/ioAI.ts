@@ -53,13 +53,14 @@ const SCHEMA = obj({
   questions: { type: 'array', items: { type: 'string' } },
 });
 
-/** Update all keeps only the points: no reason per point, no explanation, no questions (a quarter less to write). */
+/** Update all: no reason per point and no explanation (it shows neither); the questions stay (they reach the Machine description page). */
 const LEAN_SCHEMA = obj({
   points: { type: 'array', items: obj(Object.fromEntries(Object.entries((SCHEMA.properties.points as { items: { properties: Record<string, unknown> } }).items.properties).filter(([k]) => k !== 'reason'))) },
+  questions: SCHEMA.properties.questions,
 });
 const leanSystem = (sys: string) => sys
-  .replace(/^- "(reason|questions|explanation)":.*(\n|$)/gm, '')
-  .replace(' and ask in "questions"', '').replace(' — say so in "questions"', '').replace(' Count the analog inputs and outputs in "explanation".', '')
+  .replace(/^- "(reason|explanation)":.*(\n|$)/gm, '')
+  .replace(' Count the analog inputs and outputs in "explanation".', '')
   .trimEnd();
 
 const SYSTEM = `You are a senior controls engineer. From the machine specification, produce the complete discrete PLC I/O list.
@@ -81,7 +82,7 @@ Rules:
 export async function generateIOFromSpec(opts: {
   apiKey: string; model: string; effort: Effort; signal?: AbortSignal; cache?: boolean;
   spec: SpecSections; existing: IOPoint[]; profile: PlcProfile; cpu: CpuModel;
-  /** Only the points (Update all): no reasons, explanation or questions. */
+  /** Update all: no reasons per point and no explanation. */
   lean?: boolean;
 }): Promise<{ points: GeneratedPoint[]; explanation: string; questions: string[]; reasoning: string | null }> {
   const existing = opts.existing.length
