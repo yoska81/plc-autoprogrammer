@@ -2,6 +2,11 @@
 
 Current: **Unitronics as a PLC brand, end to end** (manager request) — draft PR → `claude/optimistic-maxwell-6nfcs6`. Sealing head (#64, #67) merged. No blockers (real-AI scores still wait for an API key in the environment settings).
 
+## Program page full screen (manager / user request)
+- [x] "Full screen" button (icon + text) on the program toolbar, Ctrl+Shift+F, Esc (an open instruction editor closes first): the ladder workspace (block list, ladder, instruction editor, step table / checker bar — both collapsible, Save version, Clear) covers the window; Fullscreen API on the document (Chromium / Electron) plus a fixed overlay, which is also the fallback.
+- [x] New on the toolbar (also outside full screen): zoom out / 100% / zoom in / Fit (diagram only; the instruction editor is not scaled), undo / redo of hand edits (buttons, Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y; a program set from elsewhere starts a new history). There was no ladder context menu or undo before; none of the other branches has one.
+- [x] `e2e/app.e2e.cjs`: covers the window, block list, zoom, add rung, undo/redo by key and button, instruction editor over it, Esc order, Save version, Ctrl+Shift+F toggle.
+
 ## Unitronics (manager request: new PLC brand end to end)
 - [x] **Datasheets** (scratchpad research, Unitronics' own PDFs / help only): UniStream built-in US5/US7/US10/US15 (-B5-B1, -B10-TR22, US15-B10-B1), USC-B10-TR22, USC-P-B10 + USP-070/104/156-B10, Uni-I/O UID-1600/0016T/0016R/0808T/0808R, UIA-0402N, UIS-04PTN, UIS-WCB1; Vision V130-33-T38/TR34, V350-35-TR34/TR20/T38, V700-T20BJ, V1040-T20B, V1210-T20BJ + V200-18-E1B/E2B/E3XB/E46B snap-ins; Samba SM43/SM70-J-T20, SM35-J-TA22; Jazz JZ20-R31/T40/J-T20HS. Left out where only a drawing gives the value (USC dims), UIS-04PTN external supply, lifecycle (none discontinued).
 - [x] **Catalog** `src/electrical/catalogs/unitronics.ts` (vendor `unitronics`): all-in-ones are ONE plc part with the panel ratings (`builtInPanel`, `resolutionPx`, `displayIn`, cutout, `plcDrivers` = own platform); `outputStyle` explicit (TR22/TR34 = relay; derive.ts honours it first), `npnOutputs`, `analogSharedWith`.

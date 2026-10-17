@@ -42,6 +42,8 @@ export interface LadderViewProps {
   issues?: ValidationIssue[];
   selectedRungId?: string | null;
   onSelectRung?: (id: string) => void;
+  /** Diagram scale (1 = 100%); the instruction editor popover is not scaled. */
+  zoom?: number;
 }
 
 type EditPath =
@@ -395,7 +397,7 @@ function RungRow(props: RungRowProps) {
 }
 
 export default function LadderView({
-  program, onChange, labels, changes, issues = [], selectedRungId = null, onSelectRung, numberOf,
+  program, onChange, labels, changes, issues = [], selectedRungId = null, onSelectRung, numberOf, zoom = 1,
 }: LadderViewProps) {
   const [editing, setEditing] = useState<EditPath | null>(null);
   const [editingComment, setEditingComment] = useState<string | null>(null);
@@ -454,7 +456,7 @@ export default function LadderView({
           <IssueList issues={globalIssues} />
         </div>
       )}
-      <div className="inline-block min-w-full py-2">
+      <div className="inline-block min-w-full py-2" style={zoom !== 1 ? { zoom } : undefined} data-ladder-width={GUTTER_W + diagramWidth(cols)}>
         {/* top rail cap */}
         <div className="flex">
           <div className="shrink-0" style={{ width: GUTTER_W }} />

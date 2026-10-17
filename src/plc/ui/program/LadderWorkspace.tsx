@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';
 import { useHmiStore } from '../../../store/useHmiStore';
 import { useIOStore } from '../../../store/useIOStore';
 import { looksLeftOver } from '../../../spec/leftovers';
-import { ArrowsRightLeftIcon, PrinterIcon } from '@heroicons/react/20/solid';
+import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, MagnifyingGlassMinusIcon, MagnifyingGlassPlusIcon, PrinterIcon } from '@heroicons/react/20/solid';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
 import { useProgramStore } from '../../../store/useProgramStore';
@@ -24,6 +24,7 @@ import { useStageStore } from '../../../store/useStageStore';
 import { changedSections, specToText } from '../../../spec/types';
 import BlockTree from './BlockTree';
 import CrossRefPanel from './CrossRefPanel';
+import { useFullScreen, useLadderHistory } from './workspaceView';
 import ProgramPrint from './ProgramPrint';
 import type { AnalogSetupRow } from '../../core/analog';
 import { useDraft } from '../../../store/useDraftStore';
@@ -140,6 +141,16 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const shown: LadderProgram = activeBlock === null ? ladder : { ...ladder, rungs: ladder.rungs.filter((r) => blockOf(r) === activeBlock) };
   const realNumber = (id: string) => ladder.rungs.findIndex((r) => r.id === id) + 1;
   const [xrefOpen, setXrefOpen] = useUi('program.xrefOpen', false);
+  // Full screen (button, Ctrl+Shift+F, Esc), zoom of the diagram, undo / redo of hand edits.
+  const { full, toggle: toggleFull } = useFullScreen();
+  const [zoom, setZoom] = useUi('program.zoom', 1);
+  const zoomBy = (f: number) => setZoom(Math.round(Math.min(2, Math.max(0.4, zoom * f)) * 100) / 100);
+  const ladderBox = useRef<HTMLDivElement>(null);
+  const fitZoom = () => {
+    const box = ladderBox.current, w = Number(box?.querySelector('[data-ladder-width]')?.getAttribute('data-ladder-width') ?? 0);
+    if (box && w) setZoom(Math.round(Math.min(2, Math.max(0.4, (box.clientWidth - 24) / w)) * 100) / 100);
+  };
+  const history = useLadderHistory(ladder, store.editLadder);
   const [xrefAddress, setXrefAddress] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(() => (searchParams.get('rung') ? { id: searchParams.get('rung')!, n: 0 } : null));
@@ -433,7 +444,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       </ResizablePane>
 
       {/* Ladder area */}
-      <section className="flex-1 flex flex-col overflow-hidden bg-white">
+      <section className={`flex flex-col overflow-hidden bg-white ${full ? 'fixed inset-0 z-40' : 'flex-1'}`} data-testid="ladder-workspace" data-fullscreen={full || undefined}>
         {!proposal && (
           <StageBanner info={stages.program} action={
             <button onClick={updateFromSpec} disabled={isGenerating || !ready} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
@@ -465,7 +476,18 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 Regenerate this block
               </button>
             )}
-            <div className="ml-auto flex items-center gap-1.5">
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              <button onClick={history.undo} disabled={!history.canUndo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Undo the last hand edit (Ctrl+Z)" aria-label="Undo"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /></button>
+              <button onClick={history.redo} disabled={!history.canRedo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" aria-label="Redo"><ArrowUturnRightIcon className="h-3.5 w-3.5" /></button>
+              <span className="mx-1 h-4 border-l border-gray-300" />
+              <button onClick={() => zoomBy(1 / 1.1)} disabled={zoom <= 0.4} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" aria-label="Zoom out"><MagnifyingGlassMinusIcon className="h-3.5 w-3.5" /></button>
+              <button onClick={() => setZoom(1)} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40 w-12 justify-center tabular-nums" title="Back to 100%" aria-label="Zoom level">{Math.round(zoom * 100)}%</button>
+              <button onClick={() => zoomBy(1.1)} disabled={zoom >= 2} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" aria-label="Zoom in"><MagnifyingGlassPlusIcon className="h-3.5 w-3.5" /></button>
+              <button onClick={fitZoom} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Fit the ladder to the width">Fit</button>
+              <span className="mx-1 h-4 border-l border-gray-300" />
+              <button onClick={toggleFull} aria-pressed={full} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title={full ? 'Leave full screen (Esc or Ctrl+Shift+F)' : 'Ladder over the whole window (Ctrl+Shift+F)'}>
+                {full ? <ArrowsPointingInIcon className="h-3.5 w-3.5" /> : <ArrowsPointingOutIcon className="h-3.5 w-3.5" />} {full ? 'Exit full screen' : 'Full screen'}
+              </button>
               <button onClick={() => setXrefOpen((v) => !v)} aria-pressed={xrefOpen}
                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border ${xrefOpen ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-brand-50'}`}
                 title="Pick an address and see every rung that reads or writes it">
@@ -491,15 +513,16 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               onBlock={(id) => { setBlock(id); setSelectedRungId(null); }} onRung={jumpToRung} />
           </ResizablePane>
         )}
-        <div className="flex-1 min-w-0 overflow-auto">
+        <div ref={ladderBox} className="flex-1 min-w-0 overflow-auto">
           {review ? (
-            <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} />
+            <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} zoom={zoom} />
           ) : ladder.rungs.length ? (
             <>
             {ladder.sequence && (activeBlock === null || activeBlock === 'cycle') && <SequenceTable sequence={ladder.sequence} labels={labels} />}
             <LadderView
               program={shown}
-              onChange={activeBlock === null ? store.editLadder : (p) => store.editLadder(mergeBlock(ladder, activeBlock, p))}
+              onChange={activeBlock === null ? history.edit : (p) => history.edit(mergeBlock(ladder, activeBlock, p))}
+              zoom={zoom}
               numberOf={activeBlock === null ? undefined : realNumber}
               labels={labels}
               issues={issues}

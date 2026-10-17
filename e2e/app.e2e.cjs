@@ -383,6 +383,52 @@ function sse(model, text) {
   await snap(page, 'program_block');
   await page.getByRole('button', { name: /^All\s*8$/ }).click().catch(() => {});
 
+  // Full screen: the ladder workspace over the whole window (button, Ctrl+Shift+F, Esc); zoom, hand edits,
+  // undo / redo and Save version work in it.
+  const ws = page.getByTestId('ladder-workspace');
+  const vp = page.viewportSize();
+  await page.getByRole('button', { name: 'Full screen' }).click();
+  await page.getByRole('button', { name: 'Exit full screen' }).waitFor();
+  const wsBox = await ws.boundingBox();
+  check(Math.abs(wsBox.x) < 1 && Math.abs(wsBox.y) < 1 && Math.abs(wsBox.width - vp.width) < 2 && Math.abs(wsBox.height - vp.height) < 2, `full screen: workspace covers the window (${Math.round(wsBox.width)}x${Math.round(wsBox.height)})`);
+  check(await ws.getByRole('navigation').count() > 0 || await ws.getByRole('button', { name: /^Pusher\s*2$/ }).count() === 1, 'full screen: block list shown');
+  check(await page.getByTestId('cycle-steps').count() <= 1, 'full screen: step table (collapsible) where the program has one');
+  const zoomLabel = ws.getByRole('button', { name: 'Zoom level' });
+  const z0 = await zoomLabel.innerText();
+  await ws.getByRole('button', { name: 'Zoom in' }).click();
+  const z1 = await zoomLabel.innerText();
+  await ws.getByRole('button', { name: 'Fit' }).click();
+  log('Zoom:', z0, '→', z1, '→ fit', await zoomLabel.innerText());
+  check(z0 === '100%' && z1 === '110%', 'full screen: zoom in');
+  await zoomLabel.click();
+  await snap(page, 'program_fullscreen');
+  const rungCount = async () => (await rungNumbers()).length;
+  const rungs0 = await rungCount();
+  await ws.getByRole('button', { name: 'Add rung' }).click();
+  check(await rungCount() === rungs0 + 1, 'full screen: hand edit (add rung)');
+  await page.keyboard.press('Control+z');
+  check(await rungCount() === rungs0, 'full screen: Ctrl+Z undoes it');
+  await page.keyboard.press('Control+Shift+z');
+  check(await rungCount() === rungs0 + 1, 'full screen: Ctrl+Shift+Z redoes it');
+  await ws.getByRole('button', { name: 'Undo' }).click();
+  check(await rungCount() === rungs0, 'full screen: Undo button');
+  // An instruction editor opens over the full-screen workspace; Esc closes it first, then leaves full screen.
+  await ws.locator('[data-rung-id] div[role=button][tabindex="0"]').first().click();
+  await page.getByRole('dialog').waitFor();
+  check(await page.getByRole('dialog').isVisible(), 'full screen: the instruction editor opens over the workspace');
+  await page.keyboard.press('Escape');
+  check(await page.getByRole('dialog').count() === 0 && await page.getByRole('button', { name: 'Exit full screen' }).count() === 1, 'full screen: Esc closes the instruction editor first');
+  await ws.getByRole('button', { name: 'Save version' }).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Full screen' }).waitFor();
+  check(await ws.getAttribute('data-fullscreen') === null, 'full screen: Esc leaves it');
+  await page.keyboard.press('Control+Shift+F');
+  await page.getByRole('button', { name: 'Exit full screen' }).waitFor();
+  await page.keyboard.press('Control+Shift+F');
+  await page.getByRole('button', { name: 'Full screen' }).waitFor();
+  check(true, 'full screen: Ctrl+Shift+F toggles');
+  await snap(page, 'program_fullscreen_off');
+
   // Simulate
   await page.goto(BASE + '/simulate');
   await page.getByRole('button', { name: /^Run$/ }).first().click();
