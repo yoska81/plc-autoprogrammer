@@ -37,6 +37,7 @@ function reply(system, body = {}) {
     : system.includes('complete discrete PLC I/O list') ? 'io'
     : system.includes('industrial control panel') ? 'electrical'
     : system.includes("describe the machine's electrical load and safety") ? 'machine'
+    : system.includes('You name things on an operator touch panel') ? 'hmiNames'
     : system.includes('HMI designer') ? 'hmi'
     : system.includes('ladder logic') ? 'ladder' : 'unknown';
   counts[k] = (counts[k] ?? 0) + 1;
@@ -56,6 +57,7 @@ function reply(system, body = {}) {
       motors: F.DESIGN.inputs.motors.map((x) => ({ tag: x.tag, description: x.description, power: x.hp, unit: 'hp', powerGiven: true, start: 'dol', vertical: false, zone: m.motorLocations[x.tag] ?? '' })),
       estops: 1, guardDoors: [], lightCurtains: [], zones: m.zones, interfaces: [], questions: ['Confirm the conveyor motor nameplate current.'],
     };
+    case 'hmiNames': return { machineName: 'Conveyor Cell', actuators: [], states: [], questions: ['Which operator password levels are needed?'] };
     case 'hmi': return { explanation: 'Three screens.', screens: F.HMI.screens, alarms: F.HMI.alarms, tags: F.HMI.tags, notes: [{ kind: 'question', text: 'Which operator password levels are needed?' }, { kind: 'issue', text: 'Alarm banner colour chosen for contrast with the header.' }] };
     case 'ladder': {
       if (counts.ladder === 1) return { explanation: 'Program written from the spec.', program: F.LADDER };
@@ -312,8 +314,16 @@ function sse(model, text) {
   // HMI (part preselected by equipment)
   await page.goto(BASE + '/hmi');
   log('HMI preselected:', await page.getByText(/CM5-T7W · 7"/).count() > 0);
+  // Design = rule-based screens from the I/O list (the AI only names things), then the older all-AI design.
   await page.getByRole('button', { name: 'Design the HMI screens' }).click();
   await page.getByRole('button', { name: 'Redesign screens' }).waitFor({ timeout: 15000 });
+  await page.getByText(/^Rule-based HMI for/).first().waitFor({ timeout: 15000 });
+  const ruleScreens = await page.locator('nav[aria-label="Screens"] > button').count();
+  log('Rule-based HMI:', ruleScreens, 'screens |', (await page.getByText(/^Rule-based HMI for/).first().innerText()).slice(0, 140));
+  check(counts.hmiNames === 1 && ruleScreens >= 6, 'rule-based HMI: standard screens, one small AI request');
+  await page.getByRole('button', { name: 'AI full design (experimental)' }).click();
+  await page.getByText('Three screens.').first().waitFor({ timeout: 15000 });
+  check(counts.hmi === 1, 'HMI AI full design (experimental) still works');
   log('HMI screens:', await page.locator('nav[aria-label="Screens"] > button').count(), '| tags tab:', (await page.getByRole('button', { name: /^Tags\s*\d+/ }).innerText()).replace(/\s+/g, ' '));
   await snap(page, 'hmi');
 
@@ -498,7 +508,8 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Air is not dumped on an E-stop', exact: true }).waitFor({ timeout: 15000 });
   log('Review verdict shown:', await page.getByText(/Reviewer's verdict/).count() > 0, '| critical open:', await page.locator('div', { hasText: /^Critical open$/ }).locator('xpath=following-sibling::div').first().innerText());
   const rowOf = (t) => page.locator('tr', { hasText: t });
-  check(await rowOf('HMI: Alarm banner colour').count() === 1, 'HMI technical issue is a design review finding (not a question)');
+  // Update all made the HMI with the rules: its summary note (not a question) is a review finding.
+  check(await rowOf('HMI: Rule-based HMI').count() === 1, 'HMI technical note is a design review finding (not a question)');
   const badge = page.locator('nav a', { hasText: 'Design review' }).locator('span[aria-label$="open critical or major findings"]');
   log('Review badge / status bar:', await badge.innerText(), '|', await page.getByRole('link', { name: /^Review: / }).innerText());
   check(Number(await badge.innerText()) >= 1, 'tree badge counts open critical/major findings');

@@ -4,6 +4,16 @@ Each prompt / check change made for real-machine quality, with the reason. Score
 `tools/ai-quality/run.ts`; "not measured" means no recorded real-AI run exists yet (no API key in
 the environment where the change was made).
 
+## 2026-10-17 — HMI: rule-based screens, AI only names things (Dev 2)
+- **hmi**: Design / Update all build every screen with `src/hmi/engine` from the I/O list; the AI only
+  returns machine name, actuator names / manual flags, the cycle's machine-state texts and questions
+  (`src/lib/ai/hmiContentAI.ts`, ~2k-char prompt instead of ~23k + a long positioned answer). The old
+  all-AI layout stays as "AI full design (experimental)". Fixture recording `05-hmi.json` is now a names
+  answer. m0 replay: hmi 88 -> 0 (22 major "HMI tag never written by the PLC"): the replayed program was
+  recorded for the old 3-screen fixture HMI and does not implement the standard tags (permits, state word,
+  run hours...). In real use the program is generated after the HMI from its tag list; the planned program
+  templates (plan step 3) implement these tags deterministically. Real-AI scores: not measured.
+
 ## 2026-10-17 — electrical design: rules first, AI second (Dev 2)
 - **electrical**: Generate / Update all no longer ask the AI for the whole panel. The AI reads the spec
   into a small machine model (`src/lib/ai/machineModelAI.ts`: motors with power and start method,

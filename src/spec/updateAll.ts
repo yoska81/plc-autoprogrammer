@@ -22,9 +22,9 @@ import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
 import { analogSetup } from '../plc/core/analog';
 import { getPart } from '../electrical/catalog';
 import { vendorPreference } from '../store/useProjectStore';
-import { generateHmiDesign } from '../lib/ai/hmiAI';
+import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
 import { reviseLadder, generateLadder } from '../plc/ai/ladderAI';
-import { getHmi, hmiCommsText, HMI_DESIGN_GUIDELINES } from '../hmi/hmiCatalog';
+import { getHmi } from '../hmi/hmiCatalog';
 
 export type UpdateStep = 'equipment' | 'io' | 'electrical' | 'hmi' | 'program';
 export interface StepResult { step: UpdateStep; status: 'skipped' | 'done' | 'proposal' | 'failed'; message: string }
@@ -136,7 +136,11 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, s
         const model = getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
         if (!model) { onStep({ step, status: 'skipped', message: 'No HMI chosen.' }); return true; }
         const io = ioNow();
-        const r = await generateHmiDesign({ ...ai, hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: hmiCommsText(model, profile.id, `${profile.vendor} ${cpu.label}`), spec, io, addresses: resolveAddresses(profile, cpu, io, slots), profile, cpu });
+        // Rule-based screens from the I/O list; the AI only names things and adds the cycle steps (src/hmi/engine).
+        const r = await generateRuleBasedHmi({
+          ...ai, io, addresses: resolveAddresses(profile, cpu, io, slots), spec: specToText(spec), machineName: useProgramStore.getState().projectName,
+          electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
+        });
         // Keep the look the user picked (Siemens or dark console) across a regeneration.
         hmi.setDesign(hmi.design?.look ? { ...r.design, look: hmi.design.look } : r.design, r.explanation);
         mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(r.design) });

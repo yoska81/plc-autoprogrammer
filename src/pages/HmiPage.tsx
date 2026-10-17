@@ -10,6 +10,10 @@ import { catalogPanels } from '../hmi/panels';
 import { setProjectPanel } from '../hmi/retarget';
 import { hmiFit, type Need } from '../plc/core/fit';
 import { generateHmiDesign, recreateScreenFromPicture } from '../lib/ai/hmiAI';
+import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
+import { useElectricalStore } from '../store/useElectricalStore';
+import { useProgramStore } from '../store/useProgramStore';
+import { specToText } from '../spec/types';
 import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
 import ResizablePane from '../components/ResizablePane';
@@ -423,19 +427,31 @@ export default function HmiPage() {
     return [...m];
   }, [io, addresses, design?.tags]);
 
-  const generate = () => {
-    if (!apiKey || !model || hmi.isGenerating) return;
+  /**
+   * Generate: the rule-based engine builds every screen from the I/O list (seconds, no key needed); with
+   * a key the AI only names things and adds the cycle's machine states. `full` = the older all-AI
+   * design (experimental: the AI lays out every element).
+   */
+  const generate = (full = false) => {
+    if (!model || hmi.isGenerating || (full && !apiKey)) return;
     setError(null);
     const look = design?.look, snap = { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp };
     void startAiJob({
-      kind: 'hmi', label: 'HMI screens', keepResult: true,
+      kind: 'hmi', label: full ? 'HMI screens (full AI)' : 'HMI screens', keepResult: true,
       run: async (h) => {
         useHmiStore.getState().setIsGenerating(true);
         try {
-          return await generateHmiDesign({
-            apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
-            hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: hmiCommsText(model, profile.id, `${profile.vendor} ${cpu.label}`),
-            spec: fp.spec, io, addresses, profile, cpu,
+          if (full) {
+            return await generateHmiDesign({
+              apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
+              hmi: model, guidelines: HMI_DESIGN_GUIDELINES, comms: hmiCommsText(model, profile.id, `${profile.vendor} ${cpu.label}`),
+              spec: fp.spec, io, addresses, profile, cpu,
+            });
+          }
+          return await generateRuleBasedHmi({
+            apiKey: apiKey || undefined, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
+            io, addresses, spec: specToText(fp.spec), machineName: useProgramStore.getState().projectName,
+            electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
           });
         } finally { useHmiStore.getState().setIsGenerating(false); }
       },
@@ -446,7 +462,7 @@ export default function HmiPage() {
       },
     });
   };
-  useTakeResult<Awaited<ReturnType<typeof generateHmiDesign>>>('hmi', (r) => {
+  useTakeResult<{ design: HmiDesign; reasoning: string | null }>('hmi', (r) => {
     setReasoning(r.reasoning);
     setScreenId(r.design.screens[0]?.id ?? null);
   });
@@ -465,10 +481,16 @@ export default function HmiPage() {
   };
 
   const genButton = (label: string) => (
-    <button onClick={generate} disabled={hmi.isGenerating || !apiKey || !model}
+    <button onClick={() => generate()} disabled={hmi.isGenerating || !model}
       className="px-4 py-2 text-sm bg-brand-600 text-white font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
       {hmi.isGenerating ? <><Spinner /> Designing screens…</> : label}
     </button>
+  );
+
+  const fullButton = (
+    <button onClick={() => generate(true)} disabled={hmi.isGenerating || !apiKey || !model}
+      title="The AI lays out every screen element itself (slower; the standard design uses the AI only for names and cycle steps)"
+      className="px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-40 whitespace-nowrap">AI full design (experimental)</button>
   );
 
   // Panels that can talk to this project's PLC (C-more for CLICK; other makers by their driver lists).
@@ -515,6 +537,7 @@ export default function HmiPage() {
             <Link to="/simulate" className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Try it live</Link>
             <button onClick={() => setChoosing((v) => !v)} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Change HMI</button>
             {genButton('Redesign screens')}
+            {fullButton}
           </div>
         )}
       </header>
@@ -531,10 +554,11 @@ export default function HmiPage() {
         {!design && (
           <div className="flex flex-wrap items-center gap-3">
             {genButton('Design the HMI screens')}
+            {fullButton}
             {model && <span className="text-sm text-gray-500">or make screens yourself:</span>}
             {model && <button onClick={() => void addScreen()} className="px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50">New blank screen</button>}
             {model && <PictureButton label="New screen from picture…" onFile={(f) => void addScreen(f)} />}
-            {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link>.</span>}
+            {!apiKey && <span className="text-xs text-gray-500">Without an API key the screens are made from the I/O list by the rules only. Add a key in <Link to="/settings" className="underline">Settings</Link> to let the AI name things and add the cycle steps.</span>}
             {!model && <span className="text-sm text-gray-500">Choose an HMI above first.</span>}
           </div>
         )}
