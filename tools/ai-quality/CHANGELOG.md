@@ -4,6 +4,11 @@ Each prompt / check change made for real-machine quality, with the reason. Score
 `tools/ai-quality/run.ts`; "not measured" means no recorded real-AI run exists yet (no API key in
 the environment where the change was made).
 
+## 2026-10-17 — PLC program: the cycle as a step sequence (Dev 2)
+- **program**: the AI now returns the automatic cycle as steps (actions, waits, timeout; ~2.5k-char prompt);
+  the template compiles them (step register, transitions, timers, timeouts, cycle counter) and the simulator
+  runs them against the plant model in the tests. Fixture `06-program.json` = a 3-step cycle. m0 replay 98.
+
 ## 2026-10-17 — PLC program: rule-based blocks, AI writes only the cycle (Dev 2)
 - **program**: Generate / Update all (new program) build safety & modes, alarms, manual, outputs and HMI status
   from the rules (`src/plc/engine/program.ts`), implementing every HMI tag by its role; the AI writes only the

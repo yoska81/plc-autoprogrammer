@@ -25,19 +25,37 @@ block status "HMI & status"
 [safety] Running status for the HMI
     NO:C2  ->  OUT C1202
 [alarms] Pusher did not reach its position in time: latched
-    NO:T1 | NO:T2  ->  SET C1102
+    NO:T1 | NO:T2  ->  SET C1103
 [alarms] Pusher timeout reset: Reset once the valve is off
-    NO:C7 NC:Y002  ->  RST C1102
+    NO:C7 NC:Y002  ->  RST C1103
 [alarms] Safety circuit open alarm while Safety OK is off
-    NC:C1  ->  OUT C1101
-[alarms] Any fault (stops the cycle): C1102
-    NO:C1102  ->  OUT C3
+    NC:C1  ->  OUT C1102
+[alarms] Any fault (stops the cycle): C1103
+    NO:C1103 | NO:C1101  ->  OUT C3
 [alarms] Service due warning: hours since service reached the service interval
-    DS1104>=DS1003 DS1003>0  ->  OUT C1103
-[cycle] Default cycle: Conveyor runs whenever the cycle runs (the machine's own sequence replaces this)
-    NO:C2  ->  OUT C20
-[cycle] Automatic sequence not written yet: Pusher extend stay off in Auto (the AI or you write this block)
-    NC:SC1  ->  OUT C21
+    DS1104>=DS1003 DS1003>0  ->  OUT C1104
+[cycle] Cycle not running: step 0 (idle)
+    NC:C2  ->  COPY 0->DS1150
+[cycle] Cycle start: step 10 — Feed until a part is at Part at end photo-eye
+    NO:C2 DS1150==0  ->  COPY 10->DS1150
+[cycle] Step 20 timeout: 5 s
+    DS1150==20  ->  TMR T5 5sec
+[cycle] Step 30 timeout: 5 s
+    DS1150==30  ->  TMR T6 5sec
+[cycle] A cycle step did not finish in time: latched (stops the cycle)
+    NO:T5 | NO:T6  ->  SET C1101
+[cycle] Step timeout reset: Reset while the cycle is stopped
+    NO:C7 NC:C2  ->  RST C1101
+[cycle] Step 30 — Pusher retract until Pusher retracted: done when X006 ON → cycle complete, back to step 10
+    NO:C2 NO:C1 DS1150==30 NO:X006  ->  COPY 10->DS1150, CNT CT2 rst C1007
+[cycle] Step 20 — Pusher extend until Pusher extended: done when X005 ON → step 30
+    NO:C2 NO:C1 DS1150==20 NO:X005  ->  COPY 30->DS1150
+[cycle] Step 10 — Feed until a part is at Part at end photo-eye: done when X004 ON → step 20
+    NO:C2 NO:C1 DS1150==10 NO:X004  ->  COPY 20->DS1150
+[cycle] Conveyor run: in step 10
+    DS1150==10  ->  OUT C20
+[cycle] Pusher extend: in step 20
+    DS1150==20  ->  OUT C21
 [pusher] Pusher: extend timeout — valve on but not at Pusher extended within the setpoint
     NO:C1 NO:Y002 NC:X005  ->  TMR T1 DS1001sec
 [pusher] Pusher: retract timeout — valve off but not at Pusher retracted within the setpoint
@@ -107,5 +125,12 @@ C4 Batch_Done: Batch target reached
 T3 Tmr_Rate: 10 s rate window
 T4 Tmr_Run_Hour: Run-hour timer
 C5 Run_Hour_Pulse: One run hour reached
+DS1150 Step_Cycle: Automatic cycle step (0 idle, 10, 20…)
+CT2 Cnt_Cycles: Completed automatic cycles
+T5 Tmr_Step_20_Tmo: Step 20 timeout
+T6 Tmr_Step_30_Tmo: Step 30 timeout
 
-note: The automatic sequence for Pusher is not written yet: those actuators move only in Manual until the cycle block is written.
+note: The automatic cycle was built from the I/O list (Feed until a part is at Part at end photo-eye → Pusher extend until Pusher extended → Pusher retract until Pusher retracted); describe the cycle in the specification, or edit the steps, if it is different.
+note: step 10: Conveyor run | waits X004 ON | timeout —
+note: step 20: Pusher extend | waits X005 ON | timeout 5 s
+note: step 30: — | waits X006 ON | timeout 5 s
