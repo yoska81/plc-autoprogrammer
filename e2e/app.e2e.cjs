@@ -256,7 +256,8 @@ function sse(model, text) {
     check(/_in_cut\.dxf$/.test(d.suggestedFilename()) && ok, 'inch, cut-only DXF');
   }
   // A printable PDF drawing next to each DXF: the drilling / cutout sheet(s) on the project's paper.
-  for (const [btn, re] of [['Back panel PDF', /_back_panel_drilling\.pdf$/], ['Front door PDF', /_door_cutouts\.pdf$/]]) {
+  for (const [part, btn, re] of [['Back panel', 'Back panel PDF', /_back_panel_drilling\.pdf$/], ['Front door', 'Front door PDF', /_door_cutouts\.pdf$/], ['Enclosure bottom', 'Enclosure bottom PDF', /_enclosure_bottom_cutouts\.pdf$/]]) {
+    await page.getByRole('group', { name: 'Part' }).getByRole('button', { name: new RegExp(`^${part} \\(`) }).click();
     const [d] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: btn }).click()]);
     const f = OUT + d.suggestedFilename(); await d.saveAs(f);
     const doc = await PDFDocument.load(fs.readFileSync(f));
