@@ -230,7 +230,7 @@ function classifyInput(p: SimIOPoint, t: FieldDeviceType | undefined): { kind: I
     return has(d, /\b(ok|healthy|relay|safety|reset)\b/) ? { kind: 'safetyRelay', nc: false } : { kind: 'estop', nc: true };
   }
   if (has(d, /\b(safety|guard|light curtain|interlock)\b/) && has(d, /\b(ok|relay|healthy)\b/)) return { kind: 'safetyRelay', nc: false };
-  if (has(d, /\b(selector|switch.*(auto|manual|mode)|mode|auto\/manual|hand|ss\d*)\b/) && !has(d, /\blimit\b/)) return { kind: 'selector', nc: false };
+  if (has(d, /\b(selector|switch.*(auto|manual|mode)|mode|auto\/manual|hand|ss\d*)\b/) && !has(d, /\blimit\b|two[- ]?hand/)) return { kind: 'selector', nc: false };
   if (has(d, /\b(button|pb\d*|push ?button|start|stop|reset|jog|ack|acknowledge)\b/) && !has(d, /\b(sensor|prox|eye)\b/)) {
     return { kind: 'pushbutton', nc: has(d, /\bstop\b/) };
   }
@@ -448,7 +448,8 @@ export function buildMachineModel(io: SimIOPoint[], wiring: IOWiring[]): Machine
         front.push({ id: id('sr'), kind, label: d, tag, input: p.address, state: { ok: true } });
         break;
       case 'sensor':
-        devices.push({ id: id('sen'), kind, label: d, tag, input: p.address, state: { on: false } });
+        // "OK" / "clear" switches (air pressure OK, light curtain clear) start healthy (ON).
+        devices.push({ id: id('sen'), kind, label: d, tag, input: p.address, state: { on: /\b(ok|clear|healthy|ready)\b/i.test(d) && !/\b(not|fault|trip\w*)\b/i.test(d) } });
         break;
     }
   }

@@ -319,7 +319,7 @@ export default function HmiPage() {
   /** "Rebuild this screen": the rules' version of this screen replaces the hand-edited one (one undo step). */
   const rebuildThis = (id: string) => {
     if (!design || !model) return;
-    const gen = buildHmi(projectHmiContent({ io, addresses, machineName: design.machineName || useProgramStore.getState().projectName, spec: '', electrical: useElectricalStore.getState().design, panel: model }),
+    const gen = buildHmi(projectHmiContent({ io, addresses, machineName: design.machineName || useProgramStore.getState().projectName, spec: specToText(fp.spec), electrical: useElectricalStore.getState().design, panel: model }),
       { ...model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}` });
     const next = rebuildScreen(design, gen, id);
     if (!next) { notify('This screen is not one the generator makes (you added it), so it cannot be rebuilt.'); return; }

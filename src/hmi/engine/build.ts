@@ -81,6 +81,8 @@ interface Plan {
   start: string; stop: string; reset: string; manualSel: string; manualSts: string; running: string; heartbeat: string; state: string;
   safetyAlarm?: string; manual: Map<HmiActuator, ManualCmd[]>; faults: Map<HmiActuator, string>; timeouts: Map<HmiActuator, { sp: string; alarm: string }>;
   speed: Map<HmiActuator, string>; limits: Map<string, { hi: string; lo: string; almHi: string; almLo: string }>;
+  /** Process setpoints: the heater's temperature (DF) and the dwell time in ms (DS). */
+  tempSp?: string; dwellSp?: string;
   count?: { counter: string; reset: string; batch: string; rate: string };
   runHours: string; sinceService: string; serviceInterval: string; serviceDone: string; serviceDue: string;
 }
@@ -122,7 +124,9 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
         add(a.reverse ? 'Jog Fwd' : 'Jog', a.run, 'stops on release.');
         add('Jog Rev', a.reverse, 'stops on release.');
       } else if (a.kind === 'cylinder') {
-        add(verb(a.extend?.description, 'Extend'), a.extend, a.retract ? 'holds position on release (double solenoid).' : 'spring return retracts on release.');
+        // With two-hand control the closing stroke is never jogged from the panel: only the two-hand station may close it.
+        const closing = c.twoHand?.length && /\b(down|close|closing|lower|clamp|press)\b/i.test(a.extend?.description ?? '');
+        if (!closing) add(verb(a.extend?.description, 'Extend'), a.extend, a.retract ? 'holds position on release (double solenoid).' : 'spring return retracts on release.');
         add(verb(a.retract?.description, 'Retract'), a.retract, 'holds position on release.');
       }
       plan.manual.set(a, cmds);
@@ -145,6 +149,20 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
     const almHi = t.as(`alarm:high:${an.address}`).alarm(`${an.name}_High`, `${an.name} high`, 'warning', `PLC sets ON while ${an.address} >= ${hi} (with a small deadband).`);
     const almLo = t.as(`alarm:low:${an.address}`).alarm(`${an.name}_Low`, `${an.name} low`, 'warning', `PLC sets ON while ${an.address} <= ${lo} (with a small deadband).`);
     plan.limits.set(an.address, { hi, lo, almHi, almLo });
+  }
+  // Inputs that are alarms in themselves (over-temperature limit, air pressure low, film low / out).
+  for (const ai of c.alarmInputs ?? []) {
+    t.as(`alarm:input:${ai.point.address}`).alarm(ai.text.replace(/\s+/g, '_').slice(0, 24), ai.text, ai.severity,
+      ai.severity === 'alarm'
+        ? `PLC latches ON while ${ai.point.address} (${ai.point.description}) is ${ai.activeWhen ? 'ON' : 'OFF'} and stops the cycle; Reset (${reset}) clears it once the cause is gone.`
+        : `PLC sets ON while ${ai.point.address} (${ai.point.description}) is ${ai.activeWhen ? 'ON' : 'OFF'}.`);
+  }
+  if (c.process?.temp) {
+    const { pv, default: def } = c.process.temp;
+    plan.tempSp = t.as(`sp:temp:${pv.address}`).df(`${pv.name}_SP`, `Temperature setpoint (${pv.units}, ${pv.min}-${pv.max}, default ${def} on the first scan): the PLC switches ${c.process.temp.heater.address} (${c.process.temp.heater.description}) to hold ${pv.address} at it; the cycle starts only within the ready band.`);
+  }
+  if (c.process?.dwell) {
+    plan.dwellSp = t.as('sp:dwell').sp(c.process.dwell.name.replace(/\s+/g, '_'), `${c.process.dwell.name} in ms (100-10000, default ${c.process.dwell.defaultMs} on the first scan): the cycle's ${c.process.dwell.name.toLowerCase()} step lasts this long.`);
   }
   if (c.partSensor) {
     const counter = t.as('word:count').counter('Part_Count', `Counter value: the PLC counts each rising edge of ${c.partSensor.address} (${c.partSensor.description}).`);
@@ -282,6 +300,11 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
   const setup: Block[] = [];
   const entry = (label: string, address: string, units: string, min: number, max: number, lvl: AccessLevel = level, note: string | null = null): Cell =>
     ({ kind: 'numeric-entry', label, more: { address, units, min, max, level: lvl, note } });
+  // Process setpoints first: what the operator changes most.
+  const processRows: Cell[][] = [];
+  if (p.tempSp && c.process?.temp) processRows.push([entry(`${c.process.temp.pv.name.replace(/\b(seal )?heater\b/i, '').trim() || 'Temperature'} setpoint`, p.tempSp, c.process.temp.pv.units, c.process.temp.pv.min, c.process.temp.pv.max, 'operator')]);
+  if (p.dwellSp && c.process?.dwell) processRows.push([entry(c.process.dwell.name, p.dwellSp, 'ms', 100, 10000, 'operator')]);
+  if (processRows.length) setup.push({ title: 'Process', rows: processRows });
   const timeouts = [...p.timeouts].map(([a, x]) => entry(`${a.name} timeout`, x.sp, 's', 1, 30));
   if (timeouts.length) setup.push({ title: 'Timeouts', rows: timeouts.map((x) => [x]) });
   const speeds = [...p.speed].map(([a, x]) => entry(`${a.name} speed`, x, a.speedRef!.units, a.speedRef!.min, a.speedRef!.max));
