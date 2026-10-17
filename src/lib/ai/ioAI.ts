@@ -53,6 +53,16 @@ const SCHEMA = obj({
   questions: { type: 'array', items: { type: 'string' } },
 });
 
+/** Update all: no reason per point and no explanation (it shows neither); the questions stay (they reach the Machine description page). */
+const LEAN_SCHEMA = obj({
+  points: { type: 'array', items: obj(Object.fromEntries(Object.entries((SCHEMA.properties.points as { items: { properties: Record<string, unknown> } }).items.properties).filter(([k]) => k !== 'reason'))) },
+  questions: SCHEMA.properties.questions,
+});
+const leanSystem = (sys: string) => sys
+  .replace(/^- "(reason|explanation)":.*(\n|$)/gm, '')
+  .replace(' Count the analog inputs and outputs in "explanation".', '')
+  .trimEnd();
+
 const SYSTEM = `You are a senior controls engineer. From the machine specification, produce the complete discrete PLC I/O list.
 
 Rules:
@@ -70,13 +80,17 @@ Rules:
 - "explanation": a short summary of the I/O list (counts and main groups).`;
 
 export async function generateIOFromSpec(opts: {
-  apiKey: string; model: string; effort: Effort; signal?: AbortSignal;
+  apiKey: string; model: string; effort: Effort; signal?: AbortSignal; cache?: boolean;
   spec: SpecSections; existing: IOPoint[]; profile: PlcProfile; cpu: CpuModel;
+  /** Update all: no reasons per point and no explanation. */
+  lean?: boolean;
 }): Promise<{ points: GeneratedPoint[]; explanation: string; questions: string[]; reasoning: string | null }> {
   const existing = opts.existing.length
     ? opts.existing.map((p) => `${p.type}\t${p.category}\t${p.description}${p.signal === 'analog' && p.analog ? `\tanalog ${p.analog.range} ${p.analog.min}–${p.analog.max} ${p.analog.units}` : ''}`).join('\n')
     : '(none yet)';
-  const content = `PLC: ${opts.profile.vendor} ${opts.profile.name}, CPU ${opts.cpu.label}
+  // Only the PLC family: the I/O list does not depend on the CPU model, so it can be asked while the
+  // equipment step is still choosing the CPU (and an unchanged spec gives the same request: cached).
+  const content = `PLC: ${opts.profile.vendor} ${opts.profile.name}
 
 Machine specification:
 ${specToText(opts.spec) || '(empty)'}
@@ -86,11 +100,12 @@ ${existing}
 
 Produce the I/O list.`;
   const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal,
-    system: SYSTEM, messages: [{ role: 'user', content }], schema: SCHEMA,
+    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, cache: opts.cache, task: 'io',
+    system: opts.lean ? leanSystem(SYSTEM) : SYSTEM, messages: [{ role: 'user', content }], schema: opts.lean ? LEAN_SCHEMA : SCHEMA,
   });
   try {
-    return { ...(JSON.parse(text) as { points: GeneratedPoint[]; explanation: string; questions: string[] }), reasoning };
+    const r = JSON.parse(text) as { points: GeneratedPoint[]; explanation?: string; questions?: string[] };
+    return { points: r.points.map((p) => ({ ...p, reason: p.reason ?? '' })), explanation: r.explanation ?? '', questions: r.questions ?? [], reasoning };
   } catch (err) {
     throw new Error('The AI returned an I/O list the app could not read. Please try again.', { cause: err });
   }

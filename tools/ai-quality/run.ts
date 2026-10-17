@@ -15,6 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { setClaudeInterceptor, type ClaudeOptions, type ClaudeResult } from '../../src/lib/ai/anthropic';
+import { setAiTimingQuiet } from '../../src/lib/ai/timing';
 import { organizeSpec } from '../../src/lib/ai/specAI';
 import { runUpdateAll, type StepResult } from '../../src/spec/updateAll';
 import { EMPTY_SECTIONS } from '../../src/spec/types';
@@ -99,7 +100,11 @@ async function runMachine(machine: string, mode: Mode): Promise<MachineResult> {
   resetProject();
   intercept(machine, mode);
   const key = process.env.ANTHROPIC_API_KEY ?? 'replay';
-  useSettingsStore.setState({ provider: 'anthropic', anthropicApiKey: key, ...(process.env.AI_MODEL ? { anthropicModel: process.env.AI_MODEL } : {}), effort: (process.env.AI_EFFORT as never) ?? useSettingsStore.getState().effort });
+  useSettingsStore.setState({
+    provider: 'anthropic', anthropicApiKey: key, ...(process.env.AI_MODEL ? { anthropicModel: process.env.AI_MODEL } : {}), effort: (process.env.AI_EFFORT as never) ?? useSettingsStore.getState().effort,
+    // Speed and the small-task model (Settings): compare e.g. AI_SMALL_MODEL=claude-haiku-5-5 against the main model
+    speed: process.env.AI_SPEED === 'thorough' ? 'thorough' : 'fast', smallTaskModel: process.env.AI_SMALL_MODEL ?? '',
+  });
   if (setup.region) useProjectStore.getState().setInfo({ region: setup.region });
   if (setup.supply) useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, supply: setup.supply as SupplyVoltage });
 
@@ -156,6 +161,7 @@ function report(results: MachineResult[], skipped: string[]): string {
 }
 
 async function main() {
+  setAiTimingQuiet(true);
   const args = process.argv.slice(2);
   const forceRecord = args.includes('--record');
   const only = args.filter((a) => !a.startsWith('--'));

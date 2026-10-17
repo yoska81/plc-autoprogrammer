@@ -13,7 +13,10 @@ npx tsx tools/ai-quality/run.ts m5-mixing-tank --record          # one machine, 
 tools/ai-quality/check-outputs.sh                                # + Debug 2's DXF/STEP/PDF/XLSX/consistency checkers (dev server on BASE_URL)
 ```
 
-- The API key comes from the environment only; it is never written to a file. `AI_MODEL` / `AI_EFFORT` override the model and effort.
+- The API key comes from the environment only; it is never written to a file. `AI_MODEL` / `AI_EFFORT` override the model and effort,
+  `AI_SPEED=thorough` runs every request at that effort (default: Speed fast, per-task effort), and `AI_SMALL_MODEL=<model id>`
+  answers the small tasks (HMI names, equipment) with another model — record both ways and compare the hmi / equipment scores
+  before switching the Settings default.
 - Without a key, machines that have no recording are skipped (the report lists them).
 - `m0-example-conveyor` replays the E2E mock answers (`record-from-e2e.ts`) to test the harness itself — it is not real AI output.
 - Score per stage: 100 − 30 per critical − 12 per major − 3 per minor finding attributed to that stage (approval findings excluded); a failed stage scores 0.

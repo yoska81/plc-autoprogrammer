@@ -1,0 +1,5 @@
+{
+ "stage": "electrical",
+ "model": "hand-written",
+ "text": "{\"motors\": [{\"tag\": \"M1\", \"description\": \"Outfeed roller conveyor\", \"power\": 0.5, \"unit\": \"hp\", \"powerGiven\": false, \"start\": \"dol\", \"vertical\": false, \"zone\": \"Outfeed\"}], \"estops\": 1, \"guardDoors\": [{\"zone\": \"Erector\"}], \"lightCurtains\": [], \"zones\": [\"Magazine\", \"Erector\", \"Tape head\", \"Outfeed\"], \"interfaces\": [], \"questions\": [\"Confirm the outfeed conveyor motor nameplate (0.5 HP assumed).\"]}"
+}

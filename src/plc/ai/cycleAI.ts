@@ -63,7 +63,7 @@ ${r.inputs.map((i) => `${i.address}\t${i.description}`).join('\n')}
 
 List the automatic cycle steps.`;
   const text = r.ai.provider === 'anthropic'
-    ? (await callClaude({ ...r.ai, system: SYSTEM, messages: [{ role: 'user', content }], schema: CYCLE_SCHEMA })).text
+    ? (await callClaude({ ...r.ai, task: 'cycle', system: SYSTEM, messages: [{ role: 'user', content }], schema: CYCLE_SCHEMA })).text
     : await callOpenAI({ ...r.ai, system: SYSTEM, messages: [{ role: 'user', content }], schema: CYCLE_SCHEMA });
   let parsed: { explanation: string; steps: (Omit<CycleStep, 'waitFor'> & { waitFor: { input: string | null; on: boolean; seconds: number | null }[] })[]; questions: string[] };
   try { parsed = JSON.parse(text); } catch (err) { throw new Error('The AI answer could not be read.', { cause: err }); }
@@ -72,6 +72,27 @@ List the automatic cycle steps.`;
     waitFor: st.waitFor.map((w) => (w.input ? { input: w.input.trim().toUpperCase(), on: w.on !== false } : { seconds: w.seconds ?? 1 })),
   }));
   return { sequence: { steps, questions: parsed.questions ?? [], source: 'ai' }, explanation: parsed.explanation, promptChars: SYSTEM.length + content.length + JSON.stringify(CYCLE_SCHEMA).length };
+}
+
+/**
+ * The AI's actions named after the request's actuators, renamed to the program's: matched by the
+ * output they switch. The request is built from the I/O list alone (no electrical design), so it can
+ * be asked as soon as the I/O list is ready and is the same request whatever the electrical design
+ * calls a motor ("Outfeed Conveyor" vs "Outfeed Roller Conveyor", a reversing pair as one motor).
+ */
+export function renameActions(seq: CycleSequence, asked: ProgramResult['autoBits'], final: ProgramResult['autoBits']): CycleSequence {
+  const output = new Map(asked.map((b) => [`${b.actuator}|${b.what}`, b.output]));
+  const byOutput = new Map(final.map((b) => [b.output, b]));
+  return {
+    ...seq,
+    steps: seq.steps.map((st) => ({
+      ...st,
+      actions: st.actions.map((a) => {
+        const f = byOutput.get(output.get(`${a.actuator}|${a.what}`) ?? '');
+        return f ? { actuator: f.actuator, what: f.what as typeof a.what } : a;
+      }),
+    })),
+  };
 }
 
 export interface RuleProgramResult { program: LadderProgram; explanation: string; reasoning: null; source: 'ai' | 'rules'; notes: string[]; aiError?: string; sequence: CycleSequence }
@@ -90,7 +111,10 @@ export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcConte
   let result = programWithCycle(input);
   if (o.ai?.apiKey && result.base.autoBits.length) {
     try {
-      const r = await cycleFromSpec({ ai: o.ai, base: result.base, spec: o.spec, inputs });
+      // The request from the I/O list alone (see renameActions); the answer renamed to this program's actuators.
+      const asked = o.electrical ? programWithCycle({ ...input, content: projectHmiContent({ io: o.ctx.io, addresses: o.ctx.addresses, machineName: content.machineName, spec: o.spec, panel: { partNumber: '', widthPx: 800, heightPx: 480 } }) }).base : result.base;
+      const r0 = await cycleFromSpec({ ai: o.ai, base: asked, spec: o.spec, inputs });
+      const r = { ...r0, sequence: renameActions(r0.sequence, asked.autoBits, result.base.autoBits) };
       const problems = checkSequence(r.sequence, result.base, new Set(inputs.map((i) => i.address.toUpperCase())));
       if (problems.length) throw new Error(`its cycle steps were not used: ${problems.slice(0, 3).join('; ')}`);
       const withAi = programWithCycle({ ...input, sequence: r.sequence });
