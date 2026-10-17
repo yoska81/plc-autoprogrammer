@@ -1,3 +1,4 @@
+import { isAnalog } from '../types/io';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -90,14 +91,14 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
 
   // What the machine needs: the AI estimate, or the real I/O list once it exists (whichever is larger).
   const need: Need = useMemo(() => {
-    const realIn = ioPoints.filter((p) => p.type === 'input').length;
-    const realOut = ioPoints.filter((p) => p.type === 'output').length;
+    // Analog points count against analog channels, not the discrete inputs/outputs.
+    const count = (type: 'input' | 'output', analog: boolean) => ioPoints.filter((p) => p.type === type && isAnalog(p) === analog).length;
     const recHmi = rec?.hmi ? getHmi(rec.hmi.partNumber) : undefined;
     return {
-      digitalInputs: Math.max(rec?.estimatedIO.digitalInputs ?? 0, realIn),
-      digitalOutputs: Math.max(rec?.estimatedIO.digitalOutputs ?? 0, realOut),
-      analogInputs: rec?.estimatedIO.analogInputs ?? 0,
-      analogOutputs: rec?.estimatedIO.analogOutputs ?? 0,
+      digitalInputs: Math.max(rec?.estimatedIO.digitalInputs ?? 0, count('input', false)),
+      digitalOutputs: Math.max(rec?.estimatedIO.digitalOutputs ?? 0, count('output', false)),
+      analogInputs: Math.max(rec?.estimatedIO.analogInputs ?? 0, count('input', true)),
+      analogOutputs: Math.max(rec?.estimatedIO.analogOutputs ?? 0, count('output', true)),
       ethernetHmi: Boolean(choice?.hmiPartNumber),
       minHmiSizeIn: recHmi ? recHmi.sizeIn : null,
     };

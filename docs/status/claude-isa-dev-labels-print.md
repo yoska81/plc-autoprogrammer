@@ -92,6 +92,8 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Heater fuses: Edison HCLR10..30 (class CC fast, fit EHCC holders), JHL20-1/25-1/30-1 (class J high-speed) with CH30J1/2/3 holders.
   - Temperature: C0-04THM (4-ch thermocouple), XTD2-0-UNV-S / XTD2-0500F-K / SC6-7102 (TC to 4-20 mA), SCU-3100 limit alarm (latching relay; AutomationDirect sells no FM high-limit controller; needs SCU-PDM2 to program).
 
+- [x] **QA findings (manager)**: (1) "Change…" now reads voltage ratings written as text (`parseVolts`: '480Y/277 VAC/125 VDC', '240 VAC/125 VDC', '10-36VDC', '24VAC/VDC'); a lower AC rating (or DC-only on an AC circuit) is grey, e.g. GMCBU-3C-30 (240 V) on a 480 V branch. Breakers / fuse cartridges in a motor branch are grey when above the NEC 430.52 maximum (250 % breaker, 175 % time-delay, 300 % non-time-delay fuse, next standard size; not for IEC regions), e.g. 30 A for a 2.1 A motor (max 15 A). (2) Key ratings no longer double units ("480Y/277 VAC/125 VDC", "10-36VDC") and bare voltages get "V" ("24 V"). (3) Equipment fit: analog I/O points count against analog channels, not discrete inputs/outputs.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.
