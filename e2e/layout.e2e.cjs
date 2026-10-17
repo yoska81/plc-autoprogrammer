@@ -104,7 +104,7 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
 
   // 7. the drawing set has a machine layout sheet
   await page.goto(BASE + '/electrical?tab=machine');
-  const sheetItem = page.getByRole('tab', { name: /MACHINE LAYOUT/ });
+  const sheetItem = page.locator('nav[aria-label="Drawing sheets"]').getByRole('button', { name: /MACHINE LAYOUT/ });
   await sheetItem.waitFor();
   await sheetItem.click();
   await page.getByText(/MACHINE LAYOUT — CABINET, JUNCTION BOXES/).first().waitFor();
