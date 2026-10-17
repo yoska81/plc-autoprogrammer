@@ -4,6 +4,13 @@ Each prompt / check change made for real-machine quality, with the reason. Score
 `tools/ai-quality/run.ts`; "not measured" means no recorded real-AI run exists yet (no API key in
 the environment where the change was made).
 
+## 2026-10-17 — PLC program: rule-based blocks, AI writes only the cycle (Dev 2)
+- **program**: Generate / Update all (new program) build safety & modes, alarms, manual, outputs and HMI status
+  from the rules (`src/plc/engine/program.ts`), implementing every HMI tag by its role; the AI writes only the
+  "cycle" block (`src/plc/ai/cycleAI.ts`, ~4.7k-char prompt), checked before it is used. The old all-AI
+  program stays as "AI full program (experimental)"; revising an existing program still uses the AI chat.
+  Fixture recording `06-program.json` is now a cycle-block answer. m0 replay: hmi 0 -> 97, program 100, total 98.
+
 ## 2026-10-17 — HMI: rule-based screens, AI only names things (Dev 2)
 - **hmi**: Design / Update all build every screen with `src/hmi/engine` from the I/O list; the AI only
   returns machine name, actuator names / manual flags, the cycle's machine-state texts and questions

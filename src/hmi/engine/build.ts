@@ -33,8 +33,12 @@ class TagPlan {
   tags: HmiTag[] = [];
   alarms: HmiAlarm[] = [];
   private n = { cmd: 1001, alm: 1101, sts: 1201, sp: 1001, word: 1101, df: 101 };
+  private role = '';
+  /** Role of the next tag added (see HmiTag.role). */
+  as(role: string) { this.role = role; return this; }
   private add(address: string, name: string, dataType: HmiTag['dataType'], access: HmiTag['access'], description: string) {
-    this.tags.push({ name, address, dataType, access, description });
+    this.tags.push({ name, address, dataType, access, description, ...(this.role ? { role: this.role } : {}) });
+    this.role = '';
     return address;
   }
   cmd(name: string, description: string, access: HmiTag['access'] = 'write') { return this.add(`C${this.n.cmd++}`, `HMI_${ident(name)}`, 'BIT', access, description); }
@@ -61,20 +65,20 @@ interface Plan {
 
 function planTags(c: HmiContent, t: TagPlan): Plan {
   const safeText = c.safetyOk ? `Safety OK (${c.safetyOk.address})` : 'Safety OK';
-  const start = t.cmd('Start', `Momentary Start: the PLC starts the automatic cycle when ${safeText} is ON, no alarm is latched and Manual mode is off.`);
-  const stop = t.cmd('Stop', 'Momentary Stop: the PLC ends the automatic cycle (stops all motion).');
-  const reset = t.cmd('Reset', 'Momentary Reset: clears latched alarms whose cause is gone. Never restarts anything by itself.');
-  const manualSel = t.cmd('Manual_Select', 'Toggle from the HMI: ON requests Manual mode; the PLC accepts it only while the cycle is stopped.', 'read-write');
-  const manualSts = t.sts('Manual_Mode', `PLC sets ON while Manual mode is active (${manualSel} ON and the cycle stopped); Start is blocked while ON.`);
-  const running = t.sts('Running', 'PLC sets ON while the automatic cycle runs.');
-  const heartbeat = t.sts('Heartbeat', 'PLC toggles every second (communication watchdog on the Diagnostics screen).');
-  const state = t.word('Machine_State', `PLC writes ${c.states.map((s) => `${s.value} ${s.text}`).join(', ')} (highest applicable wins).`);
+  const start = t.as('cmd:start').cmd('Start', `Momentary Start: the PLC starts the automatic cycle when ${safeText} is ON, no alarm is latched and Manual mode is off.`);
+  const stop = t.as('cmd:stop').cmd('Stop', 'Momentary Stop: the PLC ends the automatic cycle (stops all motion).');
+  const reset = t.as('cmd:reset').cmd('Reset', 'Momentary Reset: clears latched alarms whose cause is gone. Never restarts anything by itself.');
+  const manualSel = t.as('cmd:manual').cmd('Manual_Select', 'Toggle from the HMI: ON requests Manual mode; the PLC accepts it only while the cycle is stopped.', 'read-write');
+  const manualSts = t.as('sts:manual').sts('Manual_Mode', `PLC sets ON while Manual mode is active (${manualSel} ON and the cycle stopped); Start is blocked while ON.`);
+  const running = t.as('sts:running').sts('Running', 'PLC sets ON while the automatic cycle runs.');
+  const heartbeat = t.as('sts:heartbeat').sts('Heartbeat', 'PLC toggles every second (communication watchdog on the Diagnostics screen).');
+  const state = t.as('word:state').word('Machine_State', `PLC writes ${c.states.map((s) => `${s.value} ${s.text}`).join(', ')} (highest applicable wins).`);
   const plan: Plan = {
     start, stop, reset, manualSel, manualSts, running, heartbeat, state,
     manual: new Map(), faults: new Map(), timeouts: new Map(), speed: new Map(), limits: new Map(),
     runHours: '', sinceService: '', serviceInterval: '', serviceDone: '', serviceDue: '',
   };
-  if (c.safetyOk) plan.safetyAlarm = t.alarm('Safety_Open', 'Safety circuit open (E-stop or guard)', 'alarm', `PLC sets ON while ${safeText} is OFF.`);
+  if (c.safetyOk) plan.safetyAlarm = t.as('alarm:safety').alarm('Safety_Open', 'Safety circuit open (E-stop or guard)', 'alarm', `PLC sets ON while ${safeText} is OFF.`);
 
   const outputsOf = (a: HmiActuator) => [a.run, a.reverse, a.extend, a.retract].filter((p): p is NonNullable<typeof p> => !!p);
   for (const a of c.actuators) {
@@ -85,8 +89,8 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
       const add = (label: string, out: { address: string; description: string } | undefined, hold: string) => {
         if (!out) return;
         const opposite = out === a.retract ? a.extend : out === a.extend ? a.retract : undefined;
-        const permit = t.sts(`${a.name}_${label}_Permit`, `PLC sets ON when ${permitWhy}${opposite ? ` and ${opposite.address} OFF` : ''}.`);
-        const cmd = t.cmd(`${a.name}_${label}`, `Hold-to-run: while ON and ${permit} is ON the PLC energizes ${out.address} (${out.description}); ${hold}`);
+        const permit = t.as(`permit:${out.address}`).sts(`${a.name}_${label}_Permit`, `PLC sets ON when ${permitWhy}${opposite ? ` and ${opposite.address} OFF` : ''}.`);
+        const cmd = t.as(`jog:${out.address}`).cmd(`${a.name}_${label}`, `Hold-to-run: while ON and ${permit} is ON the PLC energizes ${out.address} (${out.description}); ${hold}`);
         cmds.push({ label, address: cmd, permit, output: out.address, note: hold });
       };
       if (a.kind === 'motor' || a.kind === 'drive') {
@@ -98,37 +102,37 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
       }
       plan.manual.set(a, cmds);
     }
-    if (a.fault) plan.faults.set(a, t.alarm(`${a.name}_Fault`, `${a.name}: ${a.kind === 'drive' ? 'drive fault' : 'overload tripped'}`, 'alarm',
+    if (a.fault) plan.faults.set(a, t.as(`alarm:fault:${a.fault.address}`).alarm(`${a.name}_Fault`, `${a.name}: ${a.kind === 'drive' ? 'drive fault' : 'overload tripped'}`, 'alarm',
       `PLC latches ON when ${a.fault.address} (${a.fault.description}) is ON and stops ${a.name}; Reset (${reset}) clears it once the input is OFF.`));
     if (a.kind === 'cylinder' && a.feedback.length) {
-      const sp = t.sp(`${a.name}_Timeout`, `Seconds allowed for ${a.name} to reach ${a.feedback.map((f) => `${f.address} (${f.description})`).join(' / ')} (1–30, default 3 on the first scan).`);
-      const alarm = t.alarm(`${a.name}_Timeout`, `${a.name} did not reach its position in time`, 'alarm', `PLC latches ON when ${a.name} does not reach its feedback position within ${sp} seconds after its valve switches; Reset (${reset}) clears it.`);
+      const sp = t.as(`sp:timeout:${(a.extend ?? a.run)?.address}`).sp(`${a.name}_Timeout`, `Seconds allowed for ${a.name} to reach ${a.feedback.map((f) => `${f.address} (${f.description})`).join(' / ')} (1–30, default 3 on the first scan).`);
+      const alarm = t.as(`alarm:timeout:${(a.extend ?? a.run)?.address}`).alarm(`${a.name}_Timeout`, `${a.name} did not reach its position in time`, 'alarm', `PLC latches ON when ${a.name} does not reach its feedback position within ${sp} seconds after its valve switches; Reset (${reset}) clears it.`);
       plan.timeouts.set(a, { sp, alarm });
     }
-    if (a.speedRef) plan.speed.set(a, t.df(`${a.name}_Speed`, `${a.name} speed setpoint (${a.speedRef.units}, ${a.speedRef.min}–${a.speedRef.max}); the PLC copies it to ${a.speedRef.address} while ${a.name} runs, 0 when stopped; safe default on the first scan.`));
+    if (a.speedRef) plan.speed.set(a, t.as(`sp:speed:${a.speedRef.address}`).df(`${a.name}_Speed`, `${a.name} speed setpoint (${a.speedRef.units}, ${a.speedRef.min}–${a.speedRef.max}); the PLC copies it to ${a.speedRef.address} while ${a.name} runs, 0 when stopped; safe default on the first scan.`));
   }
   // Analog values shown on screens (already in engineering units: the PLC's analog setup scales them).
-  for (const an of c.analogs) t.raw(an.address, `${an.kind === 'input' ? 'AI' : 'AO'}_${ident(an.name)}`, 'FLOAT', `${an.kind === 'input' ? 'Analog input' : 'Analog output'} ${an.name} in ${an.units || 'engineering units'} (${an.min}-${an.max}), scaled by the PLC's analog setup.`);
+  for (const an of c.analogs) t.as(`analog:${an.address}`).raw(an.address, `${an.kind === 'input' ? 'AI' : 'AO'}_${ident(an.name)}`, 'FLOAT', `${an.kind === 'input' ? 'Analog input' : 'Analog output'} ${an.name} in ${an.units || 'engineering units'} (${an.min}-${an.max}), scaled by the PLC's analog setup.`);
   for (const an of c.analogs.filter((x) => x.kind === 'input')) {
     const span = an.max - an.min;
-    const hi = t.df(`${an.name}_High`, `High alarm limit for ${an.address} ${an.name} (${an.units}); default ${an.min + span * 0.9} on the first scan.`);
-    const lo = t.df(`${an.name}_Low`, `Low alarm limit for ${an.address} ${an.name} (${an.units}); default ${an.min + span * 0.1} on the first scan.`);
-    const almHi = t.alarm(`${an.name}_High`, `${an.name} high`, 'warning', `PLC sets ON while ${an.address} >= ${hi} (with a small deadband).`);
-    const almLo = t.alarm(`${an.name}_Low`, `${an.name} low`, 'warning', `PLC sets ON while ${an.address} <= ${lo} (with a small deadband).`);
+    const hi = t.as(`sp:high:${an.address}`).df(`${an.name}_High`, `High alarm limit for ${an.address} ${an.name} (${an.units}); default ${an.min + span * 0.9} on the first scan.`);
+    const lo = t.as(`sp:low:${an.address}`).df(`${an.name}_Low`, `Low alarm limit for ${an.address} ${an.name} (${an.units}); default ${an.min + span * 0.1} on the first scan.`);
+    const almHi = t.as(`alarm:high:${an.address}`).alarm(`${an.name}_High`, `${an.name} high`, 'warning', `PLC sets ON while ${an.address} >= ${hi} (with a small deadband).`);
+    const almLo = t.as(`alarm:low:${an.address}`).alarm(`${an.name}_Low`, `${an.name} low`, 'warning', `PLC sets ON while ${an.address} <= ${lo} (with a small deadband).`);
     plan.limits.set(an.address, { hi, lo, almHi, almLo });
   }
   if (c.partSensor) {
-    const counter = t.raw('CTD1', 'Part_Count', 'INT2', `Counter CT1 counts each rising edge of ${c.partSensor.address} (${c.partSensor.description}).`);
-    const resetC = t.cmd('Count_Reset', 'Momentary: resets the part counter CT1.');
-    const batch = t.sp('Batch_Target', 'Batch size in parts (0 = no limit): the PLC stops the cycle when CTD1 reaches it.');
-    const rate = t.word('Parts_Per_Min', 'Parts counted in the last 60 s.');
+    const counter = t.as('word:count').raw('CTD1', 'Part_Count', 'INT2', `Counter CT1 counts each rising edge of ${c.partSensor.address} (${c.partSensor.description}).`);
+    const resetC = t.as('cmd:countreset').cmd('Count_Reset', 'Momentary: resets the part counter CT1.');
+    const batch = t.as('sp:batch').sp('Batch_Target', 'Batch size in parts (0 = no limit): the PLC stops the cycle when CTD1 reaches it.');
+    const rate = t.as('word:rate').word('Parts_Per_Min', 'Parts counted in the last 60 s.');
     plan.count = { counter, reset: resetC, batch, rate };
   }
-  plan.runHours = t.word('Run_Hours', 'Retentive machine run hours (count while the cycle runs).');
-  plan.sinceService = t.word('Hours_Since_Service', `Retentive run hours since the last Service Done.`);
-  plan.serviceInterval = t.sp('Service_Interval', 'Run hours between services (50–2000, default 500 on the first scan).');
-  plan.serviceDone = t.cmd('Service_Done', `Momentary: resets the hours since service (${plan.sinceService}) to 0.`);
-  plan.serviceDue = t.alarm('Service_Due', 'Service due: run hours reached', 'warning', `PLC sets ON when ${plan.sinceService} >= ${plan.serviceInterval}.`);
+  plan.runHours = t.as('word:runhours').word('Run_Hours', 'Retentive machine run hours (count while the cycle runs).');
+  plan.sinceService = t.as('word:sinceservice').word('Hours_Since_Service', `Retentive run hours since the last Service Done.`);
+  plan.serviceInterval = t.as('sp:serviceinterval').sp('Service_Interval', 'Run hours between services (50–2000, default 500 on the first scan).');
+  plan.serviceDone = t.as('cmd:servicedone').cmd('Service_Done', `Momentary: resets the hours since service (${plan.sinceService}) to 0.`);
+  plan.serviceDue = t.as('alarm:servicedue').alarm('Service_Due', 'Service due: run hours reached', 'warning', `PLC sets ON when ${plan.sinceService} >= ${plan.serviceInterval}.`);
   return plan;
 }
 
@@ -136,6 +140,13 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
 function verb(desc: string | undefined, fallback: string): string {
   const m = /\b(close|clamp|unclamp|open|down|up|advance|return|lift|lower|in|out)\b/i.exec(desc ?? '');
   return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() : fallback;
+}
+
+/** The HMI tag plan for some content (the same addresses buildHmi assigns), for the PLC program templates. */
+export function planHmiTags(c: HmiContent): { tags: HmiTag[]; alarms: HmiAlarm[] } {
+  const t = new TagPlan();
+  planTags(c, t);
+  return { tags: t.tags, alarms: t.alarms };
 }
 
 // ---------------------------------------------------------------------------

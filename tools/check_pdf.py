@@ -68,7 +68,7 @@ def check_pdf(path: Path, kind: str, render: bool, vname: str):
     want = {'drawings': {'ANSI B'}, 'machining': {'ANSI B'}, 'doc': {'Letter portrait', 'Letter'}, 'hmi': {'Letter'},
             'bundle': {'Letter portrait', 'Letter', 'ANSI B'}, 'labels': None}[kind]
     # IEC regions draw on A3 (src/standards/drawingOptions.ts).
-    if want is not None and kind in ('drawings', 'bundle') and is_iec(vname):
+    if want is not None and kind in ('drawings', 'bundle', 'machining') and is_iec(vname):
         want = (want - {'ANSI B'}) | {'A3'}
     for s, pages in sizes.items():
         if want is not None and s not in want:

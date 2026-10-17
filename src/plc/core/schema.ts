@@ -41,7 +41,8 @@ const output = {
   ],
 };
 
-const rung = obj({
+/** One rung (exported for block-sized AI requests, e.g. the cycle block). */
+export const RUNG_SCHEMA = obj({
   id: str,
   comment: str,
   /** Block id from program.blocks, or "" for none. */
@@ -52,7 +53,7 @@ const rung = obj({
 
 const program = obj({
   blocks: { type: 'array', items: obj({ id: str, name: str, description: str }) },
-  rungs: { type: 'array', items: rung },
+  rungs: { type: 'array', items: RUNG_SCHEMA },
   tags: { type: 'array', items: obj({ address: str, nickname: str, comment: str }) },
 });
 

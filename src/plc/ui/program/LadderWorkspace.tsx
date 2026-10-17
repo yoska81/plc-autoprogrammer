@@ -8,6 +8,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
 import { useProgramStore } from '../../../store/useProgramStore';
 import { generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../ai/ladderAI';
+import { generateRuleBasedProgram } from '../../ai/cycleAI';
+import { useElectricalStore } from '../../../store/useElectricalStore';
 import { validateProgram, type ValidationIssue } from '../../core/validate';
 import { diffPrograms, summarizeDiff, type RungChange } from '../../core/diff';
 import type { LadderProgram, Rung } from '../../core/ladder';
@@ -177,8 +179,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const rungNumber = (id: string) => (review?.display ?? ladder).rungs.findIndex((r) => r.id === id) + 1;
 
   /** Run an AI step as a global job: it keeps going (and its result is applied) when the user leaves the page. */
-  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal) => Promise<T>, apply: (r: T) => void) => {
-    if (!ready || isGenerating) return;
+  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal) => Promise<T>, apply: (r: T) => void, needsKey = true) => {
+    if ((needsKey && !ready) || isGenerating) return;
     setError(null);
     void startAiJob({
       kind, label,
@@ -190,11 +192,25 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     });
   };
 
-  const handleGenerate = () => {
-    if (!machineText.trim()) return;
+  /**
+   * Generate: the standard blocks (safety & modes, alarms, manual, outputs, HMI status) come from the rules
+   * in milliseconds and implement every HMI tag; with a key the AI writes only the machine's cycle block.
+   * `full` = the older all-AI program (experimental).
+   */
+  const handleGenerate = (full = false) => {
+    if (full && !machineText.trim()) return;
     if (ladder.rungs.length && !confirm('Replace the current program with a new one? (The current one is kept in History.)')) return;
     setTab('fix');
-    return runAI('program', 'PLC program', async (signal) => {
+    if (!full) {
+      return runAI('program', 'PLC program', (signal) => generateRuleBasedProgram({
+        ai: ready && ai.apiKey ? { ...ai, signal } : undefined, ctx, spec: machineText,
+        electrical: useElectricalStore.getState().design, hmi: hmiDesign,
+      }), (r) => {
+        useProgramStore.getState().setGeneratedLadder(r.program, r.explanation, r.reasoning);
+        recordSource();
+      }, false);
+    }
+    return runAI('program', 'PLC program (full AI)', async (signal) => {
       const r = await generateLadder({ ...ai, signal }, ctx, machineText);
       if (!r.program) throw new Error('The AI did not return a program. Add more detail and try again.');
       return { ...r, program: r.program };
@@ -275,13 +291,16 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 </div>
               )}
               <button
-                onClick={handleGenerate}
-                disabled={isGenerating || !ready || !machineText.trim()}
+                onClick={() => handleGenerate()}
+                disabled={isGenerating}
                 className="w-full py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isGenerating ? <><Spinner /> Thinking & writing ladder…</> : ladder.rungs.length ? 'Generate New Program' : 'Generate Program'}
               </button>
-              <p className="text-xs text-gray-400">Uses the {ctx.profile.name} {ctx.cpu.id} rules. Deep thinking can take a few minutes.</p>
+              <button onClick={() => handleGenerate(true)} disabled={isGenerating || !ready || !machineText.trim()}
+                title="The AI writes the whole program itself (slower); the standard program uses the AI only for the machine's cycle"
+                className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-40">AI full program (experimental)</button>
+              <p className="text-xs text-gray-400">Standard blocks for the {ctx.profile.name} {ctx.cpu.id} from the I/O list and HMI in seconds{ready ? '; the AI writes the machine\'s cycle from the description' : '; add an API key in Settings to let the AI write the machine\'s cycle'}.</p>
             </>
           )}
 
