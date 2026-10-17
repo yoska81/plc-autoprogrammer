@@ -138,6 +138,7 @@ export default function App() {
           { label: 'Cabinet picture', to: '/electrical?tab=picture' },
           { label: 'Machining (DXF)', to: '/electrical?tab=machining' },
           { label: 'Labels', to: '/electrical?tab=labels' },
+          { label: 'Redlines / field changes', to: '/redlines' },
         ],
       },
       {
@@ -149,6 +150,7 @@ export default function App() {
           { label: 'I/O addressing', to: '/plc' },
           { label: 'Simulation', to: '/simulate' },
           { label: 'Online (real PLC)', to: '/online' },
+          { label: 'Commissioning checklist', to: '/commissioning' },
         ],
       },
       { label: 'Design review', to: '/review', badge: <ReviewTreeBadge /> },

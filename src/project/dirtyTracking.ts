@@ -6,6 +6,8 @@ import { isProjectLoading, PROJECT_STORE_LIST, useProjectsStore } from '../store
 import { useLayoutStore } from '../electrical/layout/useLayoutStore';
 import { useQuestionStore } from '../components/questions/useQuestionStore';
 import { useCheckoutStore } from '../online/useCheckoutStore';
+import { useCommissioningStore } from '../commissioning/useCommissioningStore';
+import { useRedlineStore } from '../redlines/useRedlineStore';
 import { useLabelSetupStore } from '../electrical/labels/setup';
 import { useFileStore } from './useFileStore';
 
@@ -42,7 +44,7 @@ export function installDirtyTracking(): void {
       if (changed(a, b)) mark();
     });
   }
-  const perProject = [useLayoutStore, useQuestionStore, useCheckoutStore, useLabelSetupStore] as unknown as { subscribe: (fn: (s: { byProject: Record<string, unknown> }, p: { byProject: Record<string, unknown> }) => void) => () => void }[];
+  const perProject = [useLayoutStore, useQuestionStore, useCheckoutStore, useLabelSetupStore, useCommissioningStore, useRedlineStore] as unknown as { subscribe: (fn: (s: { byProject: Record<string, unknown> }, p: { byProject: Record<string, unknown> }) => void) => () => void }[];
   for (const st of perProject) {
     st.subscribe((s, p) => {
       const id = useProjectsStore.getState().activeId;

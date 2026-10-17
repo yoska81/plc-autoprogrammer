@@ -14,6 +14,7 @@ import { listLabels } from '../electrical/labels/list';
 import { labelPrinterPdf, labelSheetPdf, labelsXlsx } from '../electrical/labels/labelOutput';
 import { labelSetupFor } from '../electrical/labels/setup';
 import { useProjectsStore } from '../store/useProjectsStore';
+import { commissioningFor } from '../commissioning/useCommissioningStore';
 import { buildPurchaseSummaryPdf } from './purchaseSummaryPdf';
 import { buildOrderList, orderListCsv, PANEL_ORDER, SPARES_ORDER, supplierCsv } from './purchasing';
 
@@ -283,6 +284,14 @@ export async function addPackageToZip(zip: JSZip, p: ProjectSnapshot, pre: Prebu
   if (Object.values(p.checkout ?? {}).some((c) => c.verified || c.note)) {
     const { buildCheckoutPdf } = await import('../online/checkoutPdf');
     zip.file(`commissioning/${p.fileBase}_IO_checkout.pdf`, await buildCheckoutPdf(p, p.checkout));
+  }
+  // The commissioning checklist once work on site has started (ticks, notes or a signature).
+  const comm = commissioningFor(useProjectsStore.getState().activeId);
+  if (Object.keys(comm.results).length || comm.signoff) {
+    const [{ commissioningItems }, { commissioningPdf, commissioningXlsx }] = await Promise.all([import('../commissioning/checklist'), import('../commissioning/export')]);
+    const items = commissioningItems(p);
+    zip.file(`commissioning/${p.fileBase}_commissioning_checklist.pdf`, await commissioningPdf(p, items, comm));
+    zip.file(`commissioning/${p.fileBase}_commissioning_checklist.xlsx`, await commissioningXlsx(p.projectName, items, comm));
   }
   onProgress?.('Full package PDF');
   zip.file(`${p.fileBase}_full_package.pdf`, await buildFullPackagePdf(p, undefined, pre));

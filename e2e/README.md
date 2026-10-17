@@ -58,3 +58,10 @@ text on lime. `old-data/<commit>.json` is the browser storage the example projec
 BASE_URL=http://localhost:5203 node e2e/hmi-editor.e2e.cjs   # picture behind a screen, place/move/resize/undo, tags, AI recreate (mocked), simulator, PNG export
 npx tsx src/hmi/editor.test.ts                               # editor model: move, resize, snap, align, distribute, duplicate, undo, tags
 ```
+
+## On site: commissioning checklist and redlines
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/field.e2e.cjs   # checklist tick / fail + note / sign, PDF + Excel (page and Deliverables), reload; redline on a sheet + field change → apply → M1 edited, revision with the change list
+```
+Screenshots and files land in `e2e/out-field/`.
