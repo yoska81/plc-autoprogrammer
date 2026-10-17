@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { testAnthropicConnection } from '../lib/ai/anthropic';
 import { IS_PREVIEW, PREVIEW_ACCOUNT_KEY } from '../preview/mode';
 import {
@@ -61,10 +61,24 @@ function ProviderCard({ title, active, children }: { title: string; active: bool
   );
 }
 
+type SettingsDraft = Pick<ReturnType<typeof useSettingsStore.getState>, 'provider' | 'anthropicApiKey' | 'anthropicModel' | 'effort' | 'openaiApiKey' | 'openaiModel'>;
+
+/** Write the edited settings to the store. */
+function commit(d: SettingsDraft) {
+  const s = useSettingsStore.getState();
+  s.setProvider(d.provider);
+  s.setAnthropicApiKey(d.anthropicApiKey.trim() || (IS_PREVIEW ? PREVIEW_ACCOUNT_KEY : ''));
+  s.setAnthropicModel(d.anthropicModel);
+  s.setEffort(d.effort);
+  s.setOpenaiApiKey(d.openaiApiKey.trim());
+  s.setOpenaiModel(d.openaiModel.trim() || 'gpt-4o');
+}
+
 export default function SettingsPage() {
   const s = useSettingsStore();
 
-  // Edit locally, commit on Save, so a half-typed key never gets used.
+  // Edit locally, commit on Save (so a half-typed key is never used while typing). Leaving the page
+  // saves what was typed too: changes are never lost without a word.
   const [draft, setDraft] = useState({
     provider: s.provider,
     anthropicApiKey: s.anthropicApiKey,
@@ -80,19 +94,29 @@ export default function SettingsPage() {
     setTest({ busy: false, ...(await testAnthropicConnection(draft.anthropicApiKey, draft.anthropicModel)) });
   };
   const update = <K extends keyof typeof draft>(k: K, v: (typeof draft)[K]) => {
-    setDraft((d) => ({ ...d, [k]: v }));
+    const next = { ...draft, [k]: v };
+    setDraft(next);
+    dirty.current = next;
+    setDirty(true);
     setSaved(false);
   };
 
+  const dirty = useRef<typeof draft | null>(null);
+  const [isDirty, setDirty] = useState(false);
   const handleSave = () => {
-    s.setProvider(draft.provider);
-    s.setAnthropicApiKey(draft.anthropicApiKey.trim() || (IS_PREVIEW ? PREVIEW_ACCOUNT_KEY : ''));
-    s.setAnthropicModel(draft.anthropicModel);
-    s.setEffort(draft.effort);
-    s.setOpenaiApiKey(draft.openaiApiKey.trim());
-    s.setOpenaiModel(draft.openaiModel.trim() || 'gpt-4o');
+    commit(draft);
+    dirty.current = null;
+    setDirty(false);
     setSaved(true);
   };
+
+  // Leaving the page (unmount only) keeps what was typed.
+  useEffect(() => () => { if (dirty.current) commit(dirty.current); }, []);
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => { if (dirty.current) e.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, []);
 
   const providers: { id: AIProvider; label: string }[] = [
     { id: 'anthropic', label: 'Anthropic (Claude)' },
@@ -194,6 +218,7 @@ export default function SettingsPage() {
               Save Settings
             </button>
             {saved && <span className="text-sm text-green-600 font-medium">Saved!</span>}
+            {!saved && isDirty && <span className="text-xs text-steel-500">Not saved yet: Save, or leave the page to keep the changes.</span>}
           </div>
         </div>
       </div>

@@ -34,6 +34,7 @@ import { CABINET, type LayoutForDesign } from './layout/types';
 import { iecColor, iecMotorCurrent, isIec, mm2For, mm2FromAwg, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
 import { ALL_PARTS } from './catalogs';
 import { withIecStrips } from '../standards/designations';
+import { issuedForConstruction } from '../standards/issue';
 
 export interface DrawingContext {
   projectName: string;
@@ -2443,13 +2444,11 @@ export interface RevisionState {
   current?: RevisionEntry;
 }
 
-const FOR_CONSTRUCTION = (d: string) => /construction|\bIFC\b/i.test(d) && !/not\s+for\s+construction/i.test(d);
-
 /** Current revision, issue status and history from the project's document control data. */
 export function revisionState(doc: DocInfo | undefined): RevisionState {
   const revisions = (doc?.revisions ?? []).filter((r) => r && (r.rev || r.description || r.date));
   const current = revisions[revisions.length - 1];
-  const preliminary = !revisions.some((r) => FOR_CONSTRUCTION(r.description ?? ''));
+  const preliminary = !issuedForConstruction({ revisions, checkedBy: doc?.checkedBy, approvedBy: doc?.approvedBy });
   const rev = current?.rev?.trim() || 'A';
   let status = 'PRELIMINARY — NOT FOR CONSTRUCTION';
   if (!preliminary) status = /as[- ]?built/i.test(current?.description ?? '') ? 'AS-BUILT' : 'ISSUED FOR CONSTRUCTION';
