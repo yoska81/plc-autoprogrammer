@@ -128,8 +128,8 @@ function ProjectData() {
             <div className="px-3 pb-3 grid grid-cols-3 gap-3">
               <Field label="Device designations" hint="CB1, K1, PB1 or IEC 81346 -Q1, -K1, -S1">
                 <select value={opts.designations} onChange={(e) => setInfo({ drawing: { ...info.drawing, designations: e.target.value as DesignationStyle } })} className={input} aria-label="Device designations">
-                  <option value="nfpa">NFPA 79 tags (CB1, K1, PB1)</option>
-                  <option value="iec81346">IEC 81346 (-Q1, -K1, -S1)</option>
+                  <option value="nfpa">NFPA 79 (CB1, K1)</option>
+                  <option value="iec81346">IEC 81346 (-Q1, -K1)</option>
                 </select>
               </Field>
               <Field label="Drawing symbols">

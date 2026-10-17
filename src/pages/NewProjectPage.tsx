@@ -172,7 +172,7 @@ export default function NewProjectPage() {
                 <section className="space-y-2">
                   <h3 className="text-sm font-semibold text-steel-800">Standards</h3>
                   <div className="flex flex-wrap gap-4">
-                    {STANDARDS.map((s) => (
+                    {(isIec(region) ? regionSpec(region).standards : STANDARDS).map((s) => (
                       <label key={s} className="flex items-center gap-2 text-sm text-steel-700">
                         <input type="checkbox" checked={standards.includes(s)} onChange={(e) => setStandards((cur) => e.target.checked ? [...cur, s] : cur.filter((x) => x !== s))} />
                         {s}

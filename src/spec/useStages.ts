@@ -37,25 +37,26 @@ const addressFingerprintNow = () => {
   const { plcId, cpuId, modules } = useProjectStore.getState();
   return addressFingerprint(plcId, cpuId, modules, useIOStore.getState().projectIO);
 };
-setAddressFingerprint(addressFingerprintNow);
+setAddressFingerprint(addressFingerprintNow, () => useProjectStore.getState().info.region);
 
 /** Current fingerprints of the inputs each stage depends on. */
 export function useFingerprints() {
   const sections = useSpecStore((s) => s.sections);
   const io = useIOStore((s) => s.projectIO);
   const hmi = useHmiStore((s) => s.design);
-  const { plcId, cpuId, modules } = useProjectStore();
+  const { plcId, cpuId, modules, info } = useProjectStore();
   return useMemo(() => ({
     spec: sections,
     specFp: fingerprint(sections),
     ioFp: ioFingerprint(io),
     addrFp: addressFingerprint(plcId, cpuId, modules, io),
+    region: info.region,
     hmiFp: hmiFingerprint(hmi),
-  }), [sections, io, hmi, plcId, cpuId, modules]);
+  }), [sections, io, hmi, plcId, cpuId, modules, info.region]);
 }
 
 export interface StageInputs {
-  fp: { spec: Record<string, string>; specFp: string; ioFp: string; addrFp?: string; hmiFp: string };
+  fp: { spec: Record<string, string>; specFp: string; ioFp: string; addrFp?: string; region?: string; hmiFp: string };
   sources: Partial<Record<StageId, StageSource>>;
   ioCount: number;
   hasDesign: boolean;
@@ -67,7 +68,7 @@ export interface StageInputs {
 export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram }: StageInputs): Record<StageId, StageInfo> {
   const specEmpty = !Object.values(fp.spec).some((t) => t.trim());
   const hasEquipment = Boolean(sources.equipment);
-  const info = (id: StageId, has: boolean, deps: { spec?: boolean; io?: boolean; hmi?: boolean }): StageInfo => {
+  const info = (id: StageId, has: boolean, deps: { spec?: boolean; io?: boolean; hmi?: boolean; region?: boolean }): StageInfo => {
     if (!has) return { id, status: 'empty', reason: null };
     const src = sources[id];
     if (!src) return { id, status: 'ready', reason: null }; // made by hand or before tracking
@@ -75,6 +76,7 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
     if (deps.spec && src.specFp !== fp.specFp) reasons.push('the spec changed');
     if (deps.io && src.ioFp !== undefined && src.ioFp !== fp.ioFp) reasons.push('the I/O list changed');
     else if (deps.io && src.addrFp !== undefined && fp.addrFp !== undefined && src.addrFp !== fp.addrFp) reasons.push('the PLC or its I/O addresses changed');
+    if (deps.region && src.region !== undefined && fp.region !== undefined && src.region !== fp.region) reasons.push('the installation region changed');
     if (deps.hmi && src.hmiFp !== undefined && src.hmiFp !== fp.hmiFp) reasons.push('the HMI tags changed');
     return reasons.length ? { id, status: 'stale', reason: `Out of date: ${reasons.join(' and ')}.` } : { id, status: 'ready', reason: null };
   };
@@ -82,7 +84,7 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
     spec: { id: 'spec', status: specEmpty ? 'empty' : 'ready', reason: null },
     equipment: info('equipment', hasEquipment, { spec: true }),
     io: info('io', ioCount > 0, { spec: true }),
-    electrical: info('electrical', hasDesign, { spec: true, io: true }),
+    electrical: info('electrical', hasDesign, { spec: true, io: true, region: true }),
     hmi: info('hmi', hasHmi, { spec: true, io: true }),
     program: info('program', hasProgram, { spec: true, io: true, hmi: true }),
   };
@@ -95,7 +97,7 @@ export function stagesNow(): Record<StageId, StageInfo> {
   const hmi = useHmiStore.getState().design;
   const prog = useProgramStore.getState();
   return computeStages({
-    fp: { spec: sections, specFp: fingerprint(sections), ioFp: ioFingerprint(io), addrFp: addressFingerprintNow(), hmiFp: hmiFingerprint(hmi) },
+    fp: { spec: sections, specFp: fingerprint(sections), ioFp: ioFingerprint(io), addrFp: addressFingerprintNow(), region: useProjectStore.getState().info.region, hmiFp: hmiFingerprint(hmi) },
     sources: useStageStore.getState().sources,
     ioCount: io.length,
     hasDesign: Boolean(useElectricalStore.getState().design),
