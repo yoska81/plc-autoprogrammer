@@ -6,7 +6,7 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const fs = require('fs');
 
 const BASE = process.env.BASE_URL || 'http://localhost:5204';
-const ALL = ['us480', 'big', 'analog', 'rules-eu', 'rules-sealing', 'rules-sealing-long', 'ca600', 'us120', 'rules', 'rules-big', 'rules-stress'];
+const ALL = ['us480', 'big', 'analog', 'rules-eu', 'rules-sealing', 'rules-sealing-long', 'ca600', 'us120', 'rules', 'rules-big', 'rules-stress', 'rules-floor'];
 const args = process.argv.slice(2);
 const jsonAt = args.indexOf('--json');
 const jsonOut = jsonAt >= 0 ? args[jsonAt + 1] : null;

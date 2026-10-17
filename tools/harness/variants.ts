@@ -264,7 +264,7 @@ const STRESS_EXTRA: [string, 'input' | 'output', IOCategory, string][] = Array.f
 ]);
 
 async function setupRules(v: string) {
-  setupVariant(v === 'rules-big' ? 'big' : 'us480');
+  setupVariant(v === 'rules-big' || v === 'rules-floor' ? 'big' : 'us480');
   if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress') {
     // Only the sealing head's own description: the example's other sections (its conveyor) must not leak in.
     const sections = useSpecStore.getState().sections;
@@ -293,7 +293,14 @@ async function setupRules(v: string) {
   });
   el.setInputs(r.design.inputs);
   // AI-length component functions: the device list, legend and cross-reference columns must wrap or cut, never overlap
-  const design = v !== 'rules-stress' ? r.design : { ...r.design, components: r.design.components.map((x) => ({ ...x, function: `${x.function} — supplied and wired by the panel builder, see the schematic and terminal plan for its connections`.slice(0, 120) })) };
+  let design = v !== 'rules-stress' ? r.design : { ...r.design, components: r.design.components.map((x) => ({ ...x, function: `${x.function} — supplied and wired by the panel builder, see the schematic and terminal plan for its connections`.slice(0, 120) })) };
+  // "rules-floor": the big machine in a floor-standing double-door enclosure on 12in stands (two leaves, stands, floor heights).
+  if (v === 'rules-floor') {
+    const enc = design.components.find((x) => x.tag === 'ENC1');
+    const sub = enc && getPart(enc.partNumber)?.ratings.subpanel;
+    design = { ...design, components: design.components.map((x) => (x.tag === 'ENC1' ? { ...x, partNumber: 'SCE-72EL7218LPPL', function: 'Main enclosure 72x72x18 NEMA 12, floor-standing, two doors' }
+      : sub && x.partNumber === sub ? { ...x, partNumber: 'SCE-72P72', function: 'Subpanel for ENC1' } : x)) };
+  }
   el.setDesign(design, 'generated', r.explanation);
 }
 
@@ -351,7 +358,7 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     terminals: terminalPlan(ctx),
     cables: cableSchedule(ctx),
     warnings: designWarnings(ctx),
-    layout: { enclosure: layout.enclosure, backplate: layout.backplate, door: { w: layout.door.w, h: layout.door.h, items: layout.door.items, handle: layout.door.handle }, overflow: layout.overflow, notFit: layout.notFit, warnings: layout.warnings, items: layout.items.map(({ tag, label, category, x, y, w, h }) => ({ tag, label, category, x, y, w, h })), rails: layout.rails, ducts: layout.ducts },
+    layout: { enclosure: layout.enclosure, backplate: layout.backplate, door: { w: layout.door.w, h: layout.door.h, items: layout.door.items, handle: layout.door.handle, leaves: layout.door.leaves, leaf: layout.door.leaf, plinth: layout.door.plinth }, overflow: layout.overflow, notFit: layout.notFit, warnings: layout.warnings, items: layout.items.map(({ tag, label, category, x, y, w, h }) => ({ tag, label, category, x, y, w, h })), rails: layout.rails, ducts: layout.ducts },
     drilling: { backpanel: bpPlan, door: doorPlan, faces: facePlans },
     hmiModel: p.hmi ? getHmi(p.hmi.hmiPartNumber) ?? null : null,
     labels,

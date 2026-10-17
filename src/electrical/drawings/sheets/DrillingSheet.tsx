@@ -32,6 +32,11 @@ function DrillDrawing({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, 
   const bp = L.backplate;
   const ref = d.kind === 'backpanel';
   const notes = d.notes.flatMap((n) => wrapText(n, TX - ox - 10, 2.2));
+  // Round cutouts close together at a small scale (22 mm operators on a 72" door): the ID alone under the
+  // hole, the tag is in the hole table.
+  const round = d.cutouts.filter((c) => c.kind === 'round' && !c.template);
+  const lw = (c: DrillCutout) => textWidth(`${c.id} ${c.tag}`, 1.9, true);
+  const crowded = new Set(round.filter((c) => round.some((o) => o !== c && Math.abs(py(o.y) - py(c.y)) < 2.6 && Math.abs(px(o.x) - px(c.x)) < (lw(c) + lw(o)) / 2 + 0.6)).map((c) => c.id));
   return (
     <g>
       <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`${d.title} — ${d.part} — SCALE ${scaleText(s)} — DIMENSIONS IN INCHES [mm] FROM LOWER-LEFT DATUM`}</Txt>
@@ -45,7 +50,7 @@ function DrillDrawing({ plan, sp }: { plan: DrawingPlan; sp: Extract<SheetSpec, 
       {placeHoleLabels(d.holes, px, py, s).map(({ h, corner }) => <HoleMark key={h.id} h={h} x={px(h.x)} y={py(h.y)} s={s} corner={corner} />)}
       {d.cutouts.map((c) => {
         const pl = c.template ? templateLabelPlace(c, d.cutouts, px, py, s, { x0: px(0) + 4.5, y0: py(d.h) + 4.5, x1: px(d.w) - 4.5, y1: py(0) - 4.5 }) : {};
-        return <CutoutMark key={c.id} c={c} x={px(c.x)} y={py(c.y)} s={s} {...pl} />;
+        return <CutoutMark key={c.id} c={c} x={px(c.x)} y={py(c.y)} s={s} idOnly={crowded.has(c.id)} {...pl} />;
       })}
       {/* ordinate dimensions: X along the bottom, Y along the left */}
       {xsShown.map((v) => (
@@ -96,13 +101,16 @@ function labelBox(id: string, x: number, y: number, r: number, c: Corner) {
   return { x0, y0, x1: x0 + w, y1: y0 + LABEL_H };
 }
 
-/** Each hole's label at the first corner where it overlaps no label placed before it (close hole patterns). */
+/** Each hole's label at the first corner where it overlaps no label placed before it and no other hole's mark (close hole patterns). */
 function placeHoleLabels(holes: DrillHole[], px: (v: number) => number, py: (v: number) => number, s: number): { h: DrillHole; corner: Corner }[] {
   const placed: ReturnType<typeof labelBox>[] = [];
+  const marks = holes.map((h) => { const e = Math.max(0.7, (h.dia / 2) * s) + 0.8; return { h, x0: px(h.x) - e, x1: px(h.x) + e, y0: py(h.y) - e, y1: py(h.y) + e }; });
+  const hit = (b: ReturnType<typeof labelBox>, q: { x0: number; x1: number; y0: number; y1: number }) => b.x0 < q.x1 && q.x0 < b.x1 && b.y0 < q.y1 && q.y0 < b.y1;
   return holes.map((h) => {
     const r = Math.max(0.7, (h.dia / 2) * s);
     const boxes = (['ne', 'nw', 'se', 'sw'] as Corner[]).map((c) => ({ c, b: labelBox(h.id, px(h.x), py(h.y), r, c) }));
-    const free = boxes.find(({ b }) => !placed.some((q) => b.x0 < q.x1 && q.x0 < b.x1 && b.y0 < q.y1 && q.y0 < b.y1)) ?? boxes[0];
+    const free = boxes.find(({ b }) => !placed.some((q) => hit(b, q)) && !marks.some((m) => m.h !== h && hit(b, m)))
+      ?? boxes.find(({ b }) => !placed.some((q) => hit(b, q))) ?? boxes[0];
     placed.push(free.b);
     return { h, corner: free.c };
   });
@@ -123,7 +131,7 @@ function HoleMark({ h, x, y, s, corner = 'ne' }: { h: DrillHole; x: number; y: n
   );
 }
 
-function CutoutMark({ c, x, y, s, labelBelow, labelRight, labelMaxW }: { c: DrillCutout; x: number; y: number; s: number; labelBelow?: boolean; labelRight?: boolean; labelMaxW?: number }) {
+function CutoutMark({ c, x, y, s, labelBelow, labelRight, labelMaxW, idOnly }: { c: DrillCutout; x: number; y: number; s: number; labelBelow?: boolean; labelRight?: boolean; labelMaxW?: number; idOnly?: boolean }) {
   if (c.template) {
     // size not from the catalog: dashed outline and centre mark, machined per the part's template
     const rw = (c.w / 2) * s, rh = (c.h / 2) * s;
@@ -141,14 +149,17 @@ function CutoutMark({ c, x, y, s, labelBelow, labelRight, labelMaxW }: { c: Dril
     );
   }
   if (c.kind === 'rect') {
+    // inside the cutout under its centre mark; above it when the cutout is too short on paper for both lines
+    const inside = (c.h / 2) * s >= 8;
+    const ty = inside ? y + 4 : y - (c.h / 2) * s - 3.6;
     return (
       <g>
         <rect x={x - (c.w / 2) * s} y={y - (c.h / 2) * s} width={c.w * s} height={c.h * s} strokeWidth={LW} strokeDasharray={c.verified ? undefined : '1 0.6'} />
         <Line x1={x - 2} y1={y} x2={x + 2} y2={y} w={0.12} />
         <Line x1={x} y1={y - 2} x2={x} y2={y + 2} w={0.12} />
-        <Txt x={x} y={y + 4} size={2.0} mono bold anchor="middle">{`${c.id} ${c.tag}`}</Txt>
+        <Txt x={x} y={ty} size={2.0} mono bold anchor="middle">{`${c.id} ${c.tag}`}</Txt>
         {/* font size shrinks to fit the cutout (svg2pdf cannot squeeze text with textLength) */}
-        <Txt x={x} y={y + 6.6} size={Math.min(1.7, (c.w * s - 2) / (dualSize(c.w, c.h).length * 0.62))} mono anchor="middle">{dualSize(c.w, c.h)}</Txt>
+        <Txt x={x} y={ty + 2.6} size={Math.min(1.7, (c.w * s - 2) / (dualSize(c.w, c.h).length * 0.62))} mono anchor="middle">{dualSize(c.w, c.h)}</Txt>
       </g>
     );
   }
@@ -159,7 +170,7 @@ function CutoutMark({ c, x, y, s, labelBelow, labelRight, labelMaxW }: { c: Dril
       {c.notch && <rect x={x - (c.notch.w / 2) * s} y={y - r - c.notch.d * s} width={c.notch.w * s} height={c.notch.d * s + 0.1} strokeWidth={0.1} strokeDasharray="0.3 0.3" />}
       <Line x1={x - r - 0.8} y1={y} x2={x + r + 0.8} y2={y} w={0.1} />
       <Line x1={x} y1={y - r - 0.8} x2={x} y2={y + r + 0.8} w={0.1} />
-      <Txt x={x} y={y + r + 2.6} size={1.9} mono anchor="middle">{`${c.id} ${c.tag}`}</Txt>
+      <Txt x={x} y={y + r + 2.6} size={1.9} mono anchor="middle">{idOnly ? c.id : `${c.id} ${c.tag}`}</Txt>
     </g>
   );
 }

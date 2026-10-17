@@ -351,3 +351,18 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
 - Fix (panelLayout): every door item (HMI bezel, operators) must be at least 25 mm from the door edges, or the door overflows with a warning. The door check already covered rows, width and the handle zone.
 - Test: `engine.test.ts` "big-overflow" asserts that the chosen enclosure is not the smallest, its door fits with 25 mm clear, and a 16x12 door with CM5-T10W flags overflow. The test fails without the fix.
 - rules-big now uses SCE-36EL3012LP (36x30) and check-all passes with 0 FAILs. Six parts still do not fit the back panel (PLC, IO2–IO4, SR1, TB1). That is a real "does not fit" and is reported in the layout and STEP notes: the catalog's largest NEMA 12 enclosure is 36x30, so the fix is a larger enclosure in the catalog or a second panel.
+
+## Large catalog enclosures (Dev 1, #69, integration ce316da)
+- **Overflow test:** with 72x72 enclosures in the catalog, the big machine fits. The "closest enclosure" path is now tested with `big-4x`: NEMA 4X needs stainless, and the catalog's stainless enclosures stop at 20x16. The test expects SCE-20EL1608SSLP, not the 16x12, and fails on the old ranking.
+- **rules-big:** now picks SCE-42EL3612LP (42x36 wall, single door), everything placed, 29% spare. Two overlaps from the smaller sheet scale are fixed:
+  - Sheet 23: the balloon of a stacked part (OL1 under K1) went just left of the part and landed on the neighbouring OL1 tag. It now goes left if clear, else below the part over the duct, and avoids part outlines and other balloons.
+  - Sheet 24: "DETAIL A" ran into the HMI bezel. It now moves left of its box, or inside its corner.
+- **New harness variant `rules-floor`:** the big machine in an SCE-72EL7218LPPL, a floor-standing double-door enclosure on 12in stands.
+  - **Door layout:** HMI, operators and handle all go on the leaf in front of the disconnect, never across the centre split, and stay 25 mm clear of that leaf's edges. The door sheet draws the split line, both hinge sides, the latch on the device leaf and the LEFT/RIGHT DOOR labels. Its legend gives X from that leaf's lower-left corner.
+  - **Floor-standing heights:** the top device is at most 1.7 m above the floor, stands included. Operators below 0.6 m get a warning. The `mounting-heights` review rule reports the actual heights instead of "mount the enclosure bottom at…".
+  - **Door drilling and DXF:** the plan covers the device leaf ("RIGHT DOOR CUTOUTS"), with the leaf as datum and a double-door note.
+  - **STEP:** two leaf plates hinged on the outer edges, cutouts on the device leaf, latch at the split, floor stands under the body.
+  - **Thermal:** a floor-standing enclosure's bottom is no longer counted in the cooling area. The calcs basis text says so.
+  - **Drilling sheets at small scale:** crowded 22 mm holes show their ID only (the tag stays in the table). An HMI cutout label moves above a short cutout. Hole labels avoid other holes' crosshairs.
+  - **Checkers:** check_dxf and check_step take the door leaf and the stands into account.
+- **Not done:** the in-app 3D and door views don't draw the split line yet. The layout data (`door.leaves`) is there.

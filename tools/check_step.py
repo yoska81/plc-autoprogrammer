@@ -173,7 +173,11 @@ def check_variant(vdir: Path):
     dims = sorted([x1 - x0, y1 - y0, z1 - z0])
     exp_dims = sorted([enc['w'], enc['h'], enc.get('d') or 0])
     print(f'{v}: {path.name} solids={solids_total} leaves={len(names)} bbox={x1 - x0:.1f} x {y1 - y0:.1f} x {z1 - z0:.1f} mm; enclosure {enc["w"]:.1f} x {enc["h"]:.1f} x {enc.get("d") or 0:.1f}')
-    # The overall box may exceed the enclosure only by door hardware (handle, E-stop) and mounting feet.
+    # The overall box may exceed the enclosure only by door hardware (handle, E-stop), mounting feet and floor stands.
+    door = data['layout'].get('door') or {}
+    plinth = door.get('plinth') or 0
+    if plinth:
+        exp_dims = sorted([enc['w'], enc['h'] + plinth, enc.get('d') or 0])
     if dims[2] < exp_dims[2] - 0.5 or dims[1] < exp_dims[1] - 0.5:
         report('FAIL', v, f'model smaller than the enclosure: {dims} vs {exp_dims}')
     if dims[2] > exp_dims[2] + 150 or dims[1] > exp_dims[1] + 150:
@@ -189,12 +193,15 @@ def check_variant(vdir: Path):
             exp.Next()
         bx = max(boxes, key=lambda b: (b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2]))
         bd = sorted([bx[3] - bx[0], bx[4] - bx[1], bx[5] - bx[2]])
-        if any(abs(a - b) > 0.5 for a, b in zip(bd, exp_dims)):
-            report('FAIL', v, f'enclosure body {[round(d, 2) for d in bd]} differs from catalog {[round(d, 2) for d in exp_dims]}')
+        cat_dims = sorted([enc['w'], enc['h'], enc.get('d') or 0])
+        if any(abs(a - b) > 0.5 for a, b in zip(bd, cat_dims)):
+            report('FAIL', v, f'enclosure body {[round(d, 2) for d in bd]} differs from catalog {[round(d, 2) for d in cat_dims]}')
     else:
         report('WARN', v, f'no product named after the enclosure tag {enc.get("tag")}')
     # Door devices in the 3D model sit on the same centres as the DXF door cutouts (x right, z up = DXF y).
-    cut = {c['tag']: c for c in data['drilling']['door']['cutouts']}
+    # A double door's DXF is the leaf with the cutouts, dimensioned from that leaf's lower-left corner.
+    lx0 = ((door.get('leaves') or [{}])[door.get('leaf') or 0] or {}).get('x0', 0) if door.get('leaves') else 0
+    cut = {c['tag']: {**c, 'x': c['x'] + lx0} for c in data['drilling']['door']['cutouts']}
     for b in s.get('bodies', []):
         if b['kind'] not in ('doorDevice', 'hmi', 'handle'):
             continue

@@ -1733,7 +1733,13 @@ export interface PanelLayout {
   /** Back-panel parts that could not be placed inside the back panel. */
   notFit: { tag: string; partNumber: string; w: number; h: number }[];
   overflow: boolean;
-  door: { w: number; h: number; items: DoorItem[]; overflow: boolean; handle?: { tag: string; partNumber: string; cx: number; cy: number } };
+  door: {
+    w: number; h: number; items: DoorItem[]; overflow: boolean; handle?: { tag: string; partNumber: string; cx: number; cy: number };
+    /** Door leaves left to right (one, or two meeting at the centre); `leaf` holds the HMI, operators and handle. */
+    leaves: { x0: number; x1: number }[]; leaf: number;
+    /** Floor-standing enclosure: height of the floor stands under it (0 = sits on the floor), mm. */
+    plinth?: number;
+  };
   warnings: string[];
 }
 
@@ -2084,7 +2090,17 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   const ops = doorRc.filter((c) => c.category !== 'hmi' && c.category !== 'stackLight' && !isLayoutAccessoryDoor(c));
   const kindOf = (c: ResolvedComponent): DoorItem['kind'] => c.category === 'pushbutton' ? 'pushbutton' : c.category === 'estop' ? 'estop' : c.category === 'pilotLight' ? 'pilot' : c.category === 'selector' ? 'selector' : 'other';
   const order: DoorItem['kind'][] = ['pilot', 'selector', 'pushbutton', 'other', 'estop'];
+  // Double door: the HMI, operators and handle go on one leaf (the one in front of the disconnect), never across
+  // the centre split. Floor-standing: operators 0.6 m to 1.7 m above the floor (NFPA 79 / EN 60204-1 reach).
+  const dsItem = items.find((i) => i.category === 'disconnect');
+  const leaves = (num(er, 'doors') ?? 1) >= 2 ? [{ x0: 0, x1: encW / 2 }, { x0: encW / 2, x1: encW }] : [{ x0: 0, x1: encW }];
+  const leaf = leaves.length > 1 && dsItem && dsItem.x + dsItem.w / 2 < encW / 2 ? 0 : leaves.length - 1;
+  const { x0: LX0, x1: LX1 } = leaves[leaf];
+  const LCX = (LX0 + LX1) / 2;
+  const stand = str(er, 'floorStand') ?? '';
+  const plinth = str(er, 'mounting') === 'floor' ? (/included|bolted/i.test(stand) && !/optional|not in/i.test(stand) ? inMm(parseFloat(/(\d+(?:\.\d+)?)\s*in\b/i.exec(stand)?.[1] ?? '0')) ?? 0 : 0) : undefined;
   let dy = Math.min(90, encH * 0.15);
+  if (plinth !== undefined) dy = Math.max(dy, encH + plinth - 1700);
   let doorOverflow = false;
   const hmiList: { tag: string; partNumber: string; rc?: ResolvedComponent }[] = hmis.map((h) => ({ tag: h.tag, partNumber: h.partNumber, rc: h }));
   if (!hmiList.length && ctx.hmiPartNumber) hmiList.push({ tag: 'HMI1', partNumber: ctx.hmiPartNumber });
@@ -2092,16 +2108,16 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     const model = getHmi(h.partNumber);
     const d = model?.bezelMm ? { w: model.bezelMm.width, h: model.bezelMm.height, estimated: false } : h.rc ? dims(h.rc) : { w: 200, h: 150, estimated: true };
     const cut = model?.cutoutMm ? { w: model.cutoutMm.width, h: model.cutoutMm.height, verified: model.verified } : { w: d.w - 15, h: d.h - 15, verified: false };
-    doorItems.push({ tag: h.tag, partNumber: h.partNumber, kind: 'hmi', cx: encW / 2, cy: dy + d.h / 2, w: d.w, h: d.h, legend: [], color: '', estimated: d.estimated, cutout: cut });
+    doorItems.push({ tag: h.tag, partNumber: h.partNumber, kind: 'hmi', cx: LCX, cy: dy + d.h / 2, w: d.w, h: d.h, legend: [], color: '', estimated: d.estimated, cutout: cut });
     dy += d.h + 40;
   }
   const pitchX = 60, pitchY = 75;
-  const cols = Math.max(1, Math.min(6, Math.floor((encW - 80) / pitchX)));
+  const cols = Math.max(1, Math.min(6, Math.floor((LX1 - LX0 - 80) / pitchX)));
   for (const kind of order) {
     const list = ops.filter((c) => kindOf(c) === kind).sort((a, b) => naturalCompare(a.tag, b.tag));
     for (let i = 0; i < list.length; i += cols) {
       const rowList = list.slice(i, i + cols);
-      const x0 = encW / 2 - ((rowList.length - 1) * pitchX) / 2;
+      const x0 = LCX - ((rowList.length - 1) * pitchX) / 2;
       rowList.forEach((c, k) => {
         const big = kind === 'estop';
         doorItems.push({ tag: c.tag, partNumber: c.partNumber, kind, cx: x0 + k * pitchX, cy: dy + 20, w: big ? 40 : 30, h: big ? 40 : 30, legend: big ? ['EMERGENCY', 'STOP'] : legendOf(c), color: colorOf(c), estimated: !c.part?.widthMm });
@@ -2127,20 +2143,24 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
       const left = Math.min(...row.map((d) => d.cx - d.w / 2)), right = Math.max(...row.map((d) => d.cx + d.w / 2));
       const toLeft = handle.cx - KEEP - 3 - right, toRight = handle.cx + KEEP + 3 - left;
       const shift = handle.cx >= (left + right) / 2 ? toLeft : toRight;
-      if (left + shift >= 25 && right + shift <= encW - 25) for (const d of row) d.cx += shift;
+      if (left + shift >= LX0 + 25 && right + shift <= LX1 - 25) for (const d of row) d.cx += shift;
       else { doorOverflow = true; warnings.push(`Door layout: ${row.map((d) => d.tag).join(', ')} collide with the disconnect handle ${handle.tag} — rearrange the door.`); }
     }
   }
 
-  // Every door item (HMI bezel, operators) at least 25 mm from the door edges: else the door is too small.
-  const tight = doorItems.filter((d) => d.cx - d.w / 2 < 25 || d.cx + d.w / 2 > encW - 25 || d.cy - d.h / 2 < 25 || d.cy + d.h / 2 > encH - 25);
-  if (tight.length && !doorOverflow) { doorOverflow = true; warnings.push(`Door layout: ${tight.map((d) => d.tag).join(', ')} closer than 25 mm to the door edge — the door is too small.`); }
+  // Every door item (HMI bezel, operators) at least 25 mm from the edges of its door leaf: else the door is too small.
+  const tight = doorItems.filter((d) => d.cx - d.w / 2 < LX0 + 25 || d.cx + d.w / 2 > LX1 - 25 || d.cy - d.h / 2 < 25 || d.cy + d.h / 2 > encH - 25);
+  if (tight.length && !doorOverflow) { doorOverflow = true; warnings.push(`Door layout: ${tight.map((d) => d.tag).join(', ')} closer than 25 mm to the door ${leaves.length > 1 ? 'leaf edge or the centre split' : 'edge'} — the door is too small.`); }
+  if (plinth !== undefined) {
+    const low = doorItems.filter((d) => d.kind !== 'hmi' && encH + plinth - d.cy < 600);
+    if (low.length) warnings.push(`Door layout: ${low.map((d) => d.tag).join(', ')} less than 600 mm above the floor — operator devices belong 0.6 m to 1.7 m above the floor.`);
+  }
 
   return {
     enclosure: { w: encW, h: encH, d: inMm(num(er, 'depthIn')) ?? num(er, 'depthMm', 'depth'), partNumber: enc?.partNumber, tag: enc?.tag, estimated: encEst },
     backplate, rails, ducts, items, unplaced, notFit, overflow,
     door: {
-      w: encW, h: encH, items: doorItems, overflow: doorOverflow, handle,
+      w: encW, h: encH, items: doorItems, overflow: doorOverflow, handle, leaves, leaf, plinth,
     }, warnings,
   };
 }
@@ -2394,15 +2414,20 @@ export function backPanelDrilling(ctx: DrawingContext): DrillingPlan {
 export function doorDrilling(ctx: DrawingContext): DrillingPlan {
   const L = panelLayout(ctx);
   const D = L.door;
+  // Double door: the plan is the leaf that carries the devices, dimensioned from its own lower-left corner.
+  const lf = D.leaves[D.leaf] ?? { x0: 0, x1: D.w };
+  const two = D.leaves.length > 1;
+  const side = two ? (D.leaf === 0 ? 'LEFT' : 'RIGHT') : '';
+  const X = (x: number) => r1(x - lf.x0);
   const Y = (y: number) => r1(D.h - y);
   const cutouts: DrillCutout[] = [];
   for (const d of D.items) {
     if (d.kind === 'hmi') {
       const c = d.cutout ?? { w: d.w - 15, h: d.h - 15, verified: false };
-      cutouts.push({ id: '', tag: d.tag, kind: 'rect', x: r1(d.cx), y: Y(d.cy), w: r1(c.w), h: r1(c.h), code: 'F', verified: c.verified });
-    } else cutouts.push({ id: '', tag: d.tag, kind: 'round', x: r1(d.cx), y: Y(d.cy), w: 22.5, h: 22.5, code: 'E', verified: true, notch: { w: 3.2, d: 1.7 } });
+      cutouts.push({ id: '', tag: d.tag, kind: 'rect', x: X(d.cx), y: Y(d.cy), w: r1(c.w), h: r1(c.h), code: 'F', verified: c.verified });
+    } else cutouts.push({ id: '', tag: d.tag, kind: 'round', x: X(d.cx), y: Y(d.cy), w: 22.5, h: 22.5, code: 'E', verified: true, notch: { w: 3.2, d: 1.7 } });
   }
-  if (D.handle) cutouts.push({ id: '', tag: D.handle.tag, kind: 'round', x: r1(D.handle.cx), y: Y(D.handle.cy), w: 22.5, h: 22.5, code: 'G', verified: false, template: 'PER HANDLE TEMPLATE' });
+  if (D.handle) cutouts.push({ id: '', tag: D.handle.tag, kind: 'round', x: X(D.handle.cx), y: Y(D.handle.cy), w: 22.5, h: 22.5, code: 'G', verified: false, template: 'PER HANDLE TEMPLATE' });
   const ids = numberIds(cutouts);
   const hmi = ids.find((c) => c.code === 'F');
   const specs = {
@@ -2411,10 +2436,11 @@ export function doorDrilling(ctx: DrawingContext): DrillingPlan {
     G: 'DISCONNECT HANDLE: CENTRE MARK ONLY — DRILL PER HANDLE TEMPLATE (e.g. SOCOMEC S0)',
   };
   return {
-    kind: 'door', title: 'DOOR CUTOUTS', part: `DOOR ${L.enclosure.tag ?? ''} ${L.enclosure.partNumber ?? ''}`.trim(),
-    w: r1(D.w), h: r1(D.h), holes: [], cutouts: ids, codes: finishCodes([], ids, specs),
+    kind: 'door', title: two ? `${side} DOOR CUTOUTS` : 'DOOR CUTOUTS', part: `${two ? `${side} ` : ''}DOOR ${L.enclosure.tag ?? ''} ${L.enclosure.partNumber ?? ''}`.trim(),
+    w: r1(lf.x1 - lf.x0), h: r1(D.h), holes: [], cutouts: ids, codes: finishCodes([], ids, specs),
     notes: [
-      'DATUM: LOWER-LEFT CORNER OF DOOR, OUTSIDE (FRONT) VIEW. DIMENSIONS IN INCHES [mm]. TOLERANCE ±0.020 [±0.5] UNLESS NOTED.',
+      `DATUM: LOWER-LEFT CORNER OF ${two ? `THE ${side} DOOR` : 'DOOR'}, OUTSIDE (FRONT) VIEW. DIMENSIONS IN INCHES [mm]. TOLERANCE ±0.020 [±0.5] UNLESS NOTED.`,
+      ...(two ? [`DOUBLE-DOOR ENCLOSURE: ALL CUTOUTS ON THE ${side} DOOR, NONE ON THE ${side === 'RIGHT' ? 'LEFT' : 'RIGHT'} DOOR. DOOR WIDTH TAKEN AS HALF THE ENCLOSURE WIDTH — CHECK THE CENTRE OVERLAP BEFORE CUTTING.`] : []),
       ...L.unplaced.filter((u) => /stack light/i.test(u.reason)).map((u) => `NOT ON THE DOOR: ${u.tag} ${u.partNumber} STACK LIGHT — ON THE ENCLOSURE TOP, SEE THE ENCLOSURE TOP SHEET.`),
       'DOOR SIZE TAKEN AS ENCLOSURE OUTSIDE SIZE — CHECK FLANGE/RETURN AND HINGE CLEARANCE BEFORE CUTTING.',
       'HANDLE: ALIGN WITH DISCONNECT SHAFT CENTRE ON THE BACK PANEL; DRILL MOUNTING HOLES FROM THE HANDLE TEMPLATE.',

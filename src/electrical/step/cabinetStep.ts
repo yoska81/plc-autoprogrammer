@@ -274,6 +274,9 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
       });
     }
   }
+  // Floor-standing on stands (e.g. 12in removable floor stands): one stand under each side.
+  const plinth = L.door.plinth ?? 0;
+  if (plinth > 0) for (const x0 of [0, W - 60]) encSolids.push(bx('floor stand', COL.charcoal, x0, 0, -plinth, x0 + 60, D, 0));
   const shell: StepPart = { kind: 'part', name: encName, description: encPart?.description ?? 'Enclosure (estimated size)', solids: encSolids, at: [0, 0, 0] };
   record(shell, [0, 0, 0], { tag: encTag, partNumber: encPn, kind: 'enclosure', category: 'enclosure', assembly: 'cabinet', sizeEstimated: L.enclosure.estimated, depthEstimated }, COL.enclosure);
 
@@ -451,11 +454,14 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
       doorItems.unshift({ tag: 'HMI1', partNumber: m?.partNumber ?? hmiPn, kind: 'hmi', cx: W / 2, cy: top + bh / 2, w: bw, h: bh, legend: [], color: '', estimated: !m?.bezelMm });
     }
     const holes: Extract<SolidGeom, { type: 'plate' }>['holes'] = [];
+    // Double door: two leaves meeting at the centre, hinged on the outer edges; the cutouts are all on one leaf.
+    const two = L.door.leaves.length > 1;
+    const lf = L.door.leaves[L.door.leaf] ?? { x0: 0, x1: W };
     const holeBoxes: { x0: number; z0: number; x1: number; z1: number; tag: string }[] = [];
     /** Adds the door cutout; false when the device is off the door (device then not modelled). */
     const addHole = (tag: string, pn: string, h: (typeof holes)[number]): boolean => {
       const b = h.kind === 'circle' ? { x0: h.cx - h.r, z0: h.cz - h.r, x1: h.cx + h.r, z1: h.cz + h.r } : h;
-      if (!(b.x0 > 2 && b.z0 > 2 && b.x1 < W - 2 && b.z1 < H - 2)) {
+      if (!(b.x0 > lf.x0 + 2 && b.z0 > 2 && b.x1 < lf.x1 - 2 && b.z1 < H - 2)) {
         notModelled.push({ tag, partNumber: pn, reason: 'Off the door in the door layout (door overflow)' });
         return false;
       }
@@ -536,7 +542,14 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
 
     // Door: plate with cutouts, gasket, hinges on the left, quarter-turn latches on the right.
     const doorName = named(`${encTag}-DOOR`, encPn);
-    const doorSolids: StepSolid[] = [{ name: 'door', color: COL.enclosure, at: [0, -DOOR_T, 0], geom: { type: 'plate', w: W, h: H, t: DOOR_T, holes } }];
+    const GAP = 2;
+    const doorSolids: StepSolid[] = two
+      ? L.door.leaves.map((l, i) => {
+        const x0 = l.x0 + (i === 1 ? GAP / 2 : 0), x1 = l.x1 - (i === 0 ? GAP / 2 : 0);
+        const own = i === L.door.leaf ? holes.map((h) => (h.kind === 'circle' ? { ...h, cx: h.cx - x0 } : { ...h, x0: h.x0 - x0, x1: h.x1 - x0 })) : [];
+        return { name: i === 0 ? 'left door' : 'right door', color: COL.enclosure, at: [x0, -DOOR_T, 0] as [number, number, number], geom: { type: 'plate' as const, w: x1 - x0, h: H, t: DOOR_T, holes: own } };
+      })
+      : [{ name: 'door', color: COL.enclosure, at: [0, -DOOR_T, 0], geom: { type: 'plate', w: W, h: H, t: DOOR_T, holes } }];
     const gasket: StepSolid = {
       name: 'door gasket', color: COL.gasket, at: [3, 0, 3],
       geom: { type: 'plate', w: W - 6, h: H - 6, t: GASKET_T, holes: [{ kind: 'rect', x0: 8, z0: 8, x1: W - 14, z1: H - 14 }] },
@@ -548,8 +561,13 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
       for (const z0 of zs) {
         doorSolids.push(cylZ('hinge knuckle', COL.charcoal, 4, -DOOR_T - 4, z0, z0 + hl, 8));
         doorSolids.push(bx('hinge leaf', COL.charcoal, 8.6, -DOOR_T - 2, z0 + 4, 30, -DOOR_T, z0 + hl - 4));
+        if (two) {
+          doorSolids.push(cylZ('hinge knuckle', COL.charcoal, W - 4, -DOOR_T - 4, z0, z0 + hl, 8));
+          doorSolids.push(bx('hinge leaf', COL.charcoal, W - 30, -DOOR_T - 2, z0 + 4, W - 8.6, -DOOR_T, z0 + hl - 4));
+        }
       }
-      const lx = W - 22;
+      // Latch next to the free edge of the leaf that opens first (at the centre split on a double door).
+      const lx = two ? (L.door.leaf === 1 ? W / 2 + 22 : W / 2 - 22) : W - 22;
       const free = (z: number) => doorFoot.every((f) => lx + 13 < f.x0 || lx - 13 > f.x1 || z + 13 < f.z0 || z - 13 > f.z1);
       const want = H > 1000 ? 2 : 1;
       const latchZ: number[] = [];
@@ -568,7 +586,7 @@ function build(ctx: DrawingContext, opts: CabinetStepOptions = {}): Built {
     const doorBody = { tag: `${encTag}-DOOR`, partNumber: encPn, kind: 'door' as const, category: 'enclosure' as const, assembly: 'door' as const, sizeEstimated: L.enclosure.estimated, depthEstimated: false };
     record(door, [0, 0, 0], doorBody, COL.enclosure);
     bodies.splice(1, 0, bodies.pop()!);
-    children.push({ kind: 'assembly', name: uniqueName(`${encTag} door assembly`), description: 'Door with operator devices (closed; hinge line on the left edge along Z)', at: [0, 0, 0], children: [door, ...doorKids] });
+    children.push({ kind: 'assembly', name: uniqueName(`${encTag} door assembly`), description: two ? 'Double door with operator devices (closed; leaves hinged on the left and right edges along Z, meeting at the centre)' : 'Door with operator devices (closed; hinge line on the left edge along Z)', at: [0, 0, 0], children: [door, ...doorKids] });
   }
 
   children.push({ kind: 'assembly', name: uniqueName(`${encTag} back panel assembly`), description: 'Back panel with DIN rails, wire ducts and components', at: bpOrigin, children: bpKids });

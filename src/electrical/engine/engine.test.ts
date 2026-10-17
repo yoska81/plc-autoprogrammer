@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
 import { getPart } from '../catalog';
-import { designWarnings, panelLayout, spareSpace, type DrawingContext } from '../derive';
+import { designWarnings, doorDrilling, panelLayout, spareSpace, type DrawingContext } from '../derive';
+import { cabinetHeat } from '../thermal';
 import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
 import { moduleSlots } from '../../plc/core/modules';
@@ -245,6 +246,30 @@ for (const s of SCENARIOS) {
   // The door check itself: the 10" HMI on a 16x12 door does not fit.
   const small = { ...ctx, design: { ...ctx.design, components: ctx.design.components.map((c) => (c.tag === 'ENC1' ? { ...c, partNumber: 'SCE-16EL1206LP' } : c)) } };
   assert.ok(panelLayout(small).door.overflow, '16x12 door too small for CM5-T10W and the operators');
+  // A real overflow: NEMA 4X needs stainless, and the catalog's stainless enclosures stop at 20x16.
+  // The closest one is used (fewest parts left out), not the smallest, and the layout says it does not fit.
+  const ss = run({ ...big, name: 'big-4x', rating: 'NEMA 4X' });
+  const ssEnc = ss.r.design.components.find((c) => c.tag === 'ENC1')!;
+  assert.ok(!ss.r.layoutOk, 'big-4x: no stainless enclosure fits');
+  assert.equal(ssEnc.partNumber, 'SCE-20EL1608SSLP', 'big-4x: the largest stainless enclosure, not the 16x12');
+  assert.ok(panelLayout(ss.ctx).notFit.length > 0 || panelLayout(ss.ctx).overflow, 'big-4x: the layout reports what does not fit');
+
+  // Floor-standing double door on 12in stands: devices on one leaf (never across the split), 0.6–1.7 m above
+  // the floor; the door plan is that leaf; the thermal area leaves out the bottom.
+  const sub = getPart(enc.partNumber)?.ratings.subpanel;
+  const fl = { ...ctx, design: { ...ctx.design, components: ctx.design.components.map((c) => (c.tag === 'ENC1' ? { ...c, partNumber: 'SCE-72EL7218LPPL' } : c.partNumber === sub ? { ...c, partNumber: 'SCE-72P72' } : c)) } };
+  const F = panelLayout(fl).door;
+  assert.equal(F.leaves.length, 2, 'two door leaves');
+  assert.ok(Math.abs((F.plinth ?? 0) - 304.8) < 0.1, '12in floor stands');
+  const lf = F.leaves[F.leaf];
+  assert.ok(F.items.every((d) => d.cx - d.w / 2 >= lf.x0 + 25 && d.cx + d.w / 2 <= lf.x1 - 25), 'door devices on one leaf, clear of the split');
+  assert.ok(!F.handle || (F.handle.cx > lf.x0 && F.handle.cx < lf.x1), 'handle on the same leaf');
+  const above = (y: number) => F.h + F.plinth! - y;
+  assert.ok(F.items.every((d) => above(d.cy - d.h / 2) <= 1700.5 && (d.kind === 'hmi' || above(d.cy) >= 600)), 'devices 0.6–1.7 m above the floor');
+  const dd = doorDrilling(fl);
+  assert.ok(Math.abs(dd.w - (lf.x1 - lf.x0)) < 0.1 && dd.cutouts.every((c) => c.x > 0 && c.x < dd.w), 'door plan = the leaf, leaf-relative X');
+  const heat = (pn: string) => cabinetHeat([{ tag: 'ENC1', partNumber: pn, quantity: 1 }], getPart).area!;
+  assert.ok(heat('SCE-72EL7218LPPL') < 1.83 * 1.83 + 2 * 1.83 * 0.457 + 2 * 1.83 * 0.457 - 0.5, 'floor-standing: bottom not in the cooling area');
 }
 
 // The default model reads motors from the I/O list when there is no motor list.

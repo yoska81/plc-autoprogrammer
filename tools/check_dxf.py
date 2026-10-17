@@ -141,14 +141,18 @@ def check_variant(vdir: Path):
     # Expected sizes straight from the catalog values used by the layout
     bp_w, bp_h = lay['backplate']['w'], lay['backplate']['h']
     enc_w, enc_h = lay['enclosure']['w'], lay['enclosure']['h']
+    # Double door: the door plan is the leaf with the cutouts
+    door = lay.get('door') or {}
+    leaf = (door.get('leaves') or [None])[door.get('leaf') or 0] if door.get('leaves') else None
+    door_w = leaf['x1'] - leaf['x0'] if leaf else enc_w
     v = vdir.name
     if lay['backplate'].get('estimated'):
         report('WARN', v, 'back panel size is ESTIMATED (not from catalog)')
     if abs(bp_plan['w'] - bp_w) > TOL or abs(bp_plan['h'] - bp_h) > TOL:
         report('FAIL', v, f'drilling plan {bp_plan["w"]}x{bp_plan["h"]} differs from back panel {bp_w}x{bp_h} (rounding)')
-    if abs(door_plan['w'] - enc_w) > TOL or abs(door_plan['h'] - enc_h) > TOL:
-        report('FAIL', v, f'door plan {door_plan["w"]}x{door_plan["h"]} differs from enclosure {enc_w}x{enc_h}')
-    for part, plan, ew, eh in (('back_panel', bp_plan, bp_w, bp_h), ('door', door_plan, enc_w, enc_h)):
+    if abs(door_plan['w'] - door_w) > TOL or abs(door_plan['h'] - enc_h) > TOL:
+        report('FAIL', v, f'door plan {door_plan["w"]}x{door_plan["h"]} differs from {"door leaf" if leaf else "enclosure"} {door_w}x{enc_h}')
+    for part, plan, ew, eh in (('back_panel', bp_plan, bp_w, bp_h), ('door', door_plan, door_w, enc_h)):
         for units in ('mm', 'in'):
             for cut in (False, True):
                 f = vdir / 'dxf' / f'{part}_{units}{"_cut" if cut else ""}.dxf'

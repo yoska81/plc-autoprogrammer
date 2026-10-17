@@ -432,6 +432,18 @@ export const RULES: CodeRule[] = [
       const top = env.iec ? 1.9 : 2.0;
       if (!D.handle && !D.items.length) return [];
       const fromBottom = (cy: number) => (D.h - cy) / 1000;
+      if (D.plinth !== undefined) {
+        // Floor-standing: the heights are fixed by the enclosure (on the floor or on its stands).
+        const z = (cy: number) => fromBottom(cy) + D.plinth! / 1000;
+        const handle = D.handle ? z(D.handle.cy) : null;
+        const ops = D.items.filter((d) => d.kind !== 'hmi');
+        const low = ops.length ? Math.min(...ops.map((d) => z(d.cy + d.h / 2))) : null;
+        const out: Omit<CodeHit, 'rule' | 'clause'>[] = [];
+        if (handle !== null && handle > top) out.push({ subject: 'door', severity: 'minor', area: 'electrical', title: `Disconnect handle ${handle.toFixed(2)} m above the floor (max ${top} m)`, detail: `Floor-standing enclosure${D.plinth ? ` on ${Math.round(D.plinth)} mm stands` : ''}: the handle centre is ${handle.toFixed(2)} m above the floor.`, fix: 'Move the disconnect lower on the back panel or add a platform.' });
+        if (low !== null && low < 0.6) out.push({ subject: 'door', severity: 'minor', area: 'electrical', title: `Operator device ${low.toFixed(2)} m above the floor (min 0.6 m)`, detail: 'The lowest operator device on the door is below 0.6 m.', fix: 'Move the operators up the door or use enclosure floor stands.' });
+        if (!out.length) out.push({ subject: 'door', severity: 'info', area: 'electrical', title: 'Floor-standing enclosure: handle and operator heights fixed', detail: `Handle centre ${handle !== null ? `${handle.toFixed(2)} m` : '—'}, lowest operator device ${low !== null ? `${low.toFixed(2)} m` : '—'} above the floor${D.plinth ? ` (on ${Math.round(D.plinth)} mm stands)` : ''}.`, fix: 'No action.' });
+        return out;
+      }
       const handleUp = D.handle ? fromBottom(D.handle.cy) : null;
       const lowest = D.items.length ? Math.min(...D.items.map((d) => fromBottom(d.cy + d.h / 2))) : null;
       const maxBottom = handleUp !== null ? top - handleUp : Infinity;

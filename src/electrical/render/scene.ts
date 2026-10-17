@@ -414,9 +414,10 @@ function doorItems(L: PanelLayout, hmiPartNumber: string | null): { items: DoorI
   const top = Math.min(90, L.door.h * 0.15);
   const shift = h + 40;
   const shifted = items.map((d) => ({ ...d, cy: d.cy + shift }));
-  const hmi: DoorItem = { tag: 'HMI', partNumber: hmiPartNumber, kind: 'hmi', cx: L.door.w / 2, cy: top + h / 2, w, h, legend: [], color: '', estimated: !b };
+  const lf = L.door.leaves[L.door.leaf] ?? { x0: 0, x1: L.door.w };
+  const hmi: DoorItem = { tag: 'HMI', partNumber: hmiPartNumber, kind: 'hmi', cx: (lf.x0 + lf.x1) / 2, cy: top + h / 2, w, h, legend: [], color: '', estimated: !b };
   const lowest = Math.max(top + h, ...shifted.map((d) => d.cy + (d.kind === 'estop' ? 30 : 22)));
-  return { items: [hmi, ...shifted], hmiOverflow: lowest > L.door.h - 30 || w > L.door.w - 40 };
+  return { items: [hmi, ...shifted], hmiOverflow: lowest > L.door.h - 30 || w > lf.x1 - lf.x0 - 40 };
 }
 
 export function doorItemBox(d: DoorItem): Rect {
