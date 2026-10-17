@@ -2132,6 +2132,10 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     }
   }
 
+  // Every door item (HMI bezel, operators) at least 25 mm from the door edges: else the door is too small.
+  const tight = doorItems.filter((d) => d.cx - d.w / 2 < 25 || d.cx + d.w / 2 > encW - 25 || d.cy - d.h / 2 < 25 || d.cy + d.h / 2 > encH - 25);
+  if (tight.length && !doorOverflow) { doorOverflow = true; warnings.push(`Door layout: ${tight.map((d) => d.tag).join(', ')} closer than 25 mm to the door edge — the door is too small.`); }
+
   return {
     enclosure: { w: encW, h: encH, d: inMm(num(er, 'depthIn')) ?? num(er, 'depthMm', 'depth'), partNumber: enc?.partNumber, tag: enc?.tag, estimated: encEst },
     backplate, rails, ducts, items, unplaced, notFit, overflow,

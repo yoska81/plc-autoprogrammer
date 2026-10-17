@@ -185,7 +185,10 @@ export function generateDesign(input: EngineInput): EngineResult {
   // Terminal counts come from the terminal plan, which does not depend on the enclosure.
   const counts = terminalCounts(ctxOf([...core, ...accessories({ feed: 1, ground: 1, fused: 0, endPlates: 1, endStops: 2 }, 1, 1)]));
 
-  let best: { components: DesignComponent[]; spare: number; ok: boolean; enc: CatalogPart } | undefined;
+  // When no enclosure fits, the closest one wins: fewest back-panel parts left out, then a door that fits
+  // (HMI, operators, handle), then the most spare space — never simply the smallest (all score 0 % spare).
+  let best: { components: DesignComponent[]; spare: number; ok: boolean; enc: CatalogPart; score: number[] } | undefined;
+  const better = (a: number[], b: number[]) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i]; return false; };
   for (const enc of enclosureCandidates(pk, inputs.enclosureRating)) {
     const sub = pk.byNumber(String(enc.ratings.subpanel ?? ''));
     const depth = num(enc.ratings.depthIn) ?? 8;
@@ -206,7 +209,8 @@ export function generateDesign(input: EngineInput): EngineResult {
     const spare = spareSpace(ctx).panel;
     components = components.map((c) => (c.tag === 'ENC1' ? { ...c, function: `${c.function} — ${spare >= 0.25 ? 'smallest catalog enclosure with everything placed and' : 'everything placed, but only'} ${Math.round(spare * 100)}% spare panel space (target >= 25%)` } : c));
     const ok = !L2.overflow && !L2.notFit.length && !L2.door.overflow && spare >= 0.25;
-    if (!best || ok || spare > best.spare) best = { components, spare, ok, enc };
+    const score = [ok ? 1 : 0, -L2.notFit.length, L2.door.overflow ? 0 : 1, spare];
+    if (!best || ok || better(score, best.score)) best = { components, spare, ok, enc, score };
     if (ok) { if (ds.notes.length) notes.push(...ds.notes); break; }
   }
   if (!best) throw new Error('No enclosure in the catalog.');

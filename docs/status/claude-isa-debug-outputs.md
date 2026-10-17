@@ -340,6 +340,14 @@ Findings, ranked (✔ = fixed here, → = routed to the coordinator):
 | 10–11 | ZIP crash, review rules | FIXED | |
 | 12 | zones | FIXED | LC1 / sealing sensors "Sealing station", air pressure and film-low at the unwinder, TAH1 in the cabinet |
 | 13 | Safety Functions table | FIXED | SF-01 … SF-05 from the design |
-| 14 | fault lamp on 24+S | OPEN | PL2 X2 returns on TB1 24+S (sinking outputs): goes dark on a safety stop |
+| 14 | fault lamp on 24+S | FIXED (Dev 2, f5187ae; checked after the cfad3dd merge) | lamps on sinking modules return on the unswitched 24+; combined with the per-coil return key and p.pins[1] terminals, consistent in TB3 and the direct returns |
 | 15 | stray space "(thermocouple )" | FIXED | "(thermocouple)" |
 | new | double solenoid SOL1 (Y001 down / Y002 up) wired to the same A1/A2 | FIXED here | per-coil terminal pairs (A1/A2, B1/B2) in wiring, TB3 (one return per coil), cable cores; the sinking coil behind SR3 goes 24+S → SR3 → TB3 → A1, A2 → TB3 → Y001; found by the output-load-circuit rule (critical) |
+
+## Enclosure sizing: the door counts (integration cfad3dd)
+rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), far too small for the CM5-T10W, the operators and the DS1H handle.
+- Cause: no catalog enclosure fits rules-big's back panel, and the fallback kept the candidate with the most spare space; all of them had 0 %, so the first one won, which was the smallest.
+- Fix (engine): when nothing fits, the closest enclosure wins. Ranking: fewest back-panel parts left out, then a door that fits, then the most spare space.
+- Fix (panelLayout): every door item (HMI bezel, operators) must be at least 25 mm from the door edges, or the door overflows with a warning. The door check already covered rows, width and the handle zone.
+- Test: `engine.test.ts` "big-overflow" asserts that the chosen enclosure is not the smallest, its door fits with 25 mm clear, and a 16x12 door with CM5-T10W flags overflow. The test fails without the fix.
+- rules-big now uses SCE-36EL3012LP (36x30) and check-all passes with 0 FAILs. Six parts still do not fit the back panel (PLC, IO2–IO4, SR1, TB1). That is a real "does not fit" and is reported in the layout and STEP notes: the catalog's largest NEMA 12 enclosure is 36x30, so the fix is a larger enclosure in the catalog or a second panel.

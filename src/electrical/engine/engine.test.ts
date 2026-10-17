@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
 import { getPart } from '../catalog';
-import { designWarnings, spareSpace, type DrawingContext } from '../derive';
+import { designWarnings, panelLayout, spareSpace, type DrawingContext } from '../derive';
 import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
 import { moduleSlots } from '../../plc/core/modules';
@@ -227,6 +227,23 @@ for (const s of SCENARIOS) {
   assert.ok(sd.askUser?.some((q) => /runs it through a VFD/.test(q)), 'the starter change is asked about');
   // The example itself keeps its motor (the spec mentions the conveyor motor).
   assert.equal(run(SCENARIOS[0]).r.design.inputs.motors.length, 1);
+}
+
+// No catalog enclosure fits the back panel: the closest one is used (fewest parts left out, a door that holds the
+// HMI and operators clear of its edges), not the smallest.
+{
+  const big = SCENARIOS.find((x) => x.name === 'big')!;
+  const over = { ...big, name: 'big-overflow', motors: [...big.motors!, ...[5, 6, 7, 8, 9, 10].map((n) => motor(`M${n + 2}`, `Belt ${n} motor`, 5, '480VAC-3PH', 'vfd'))] };
+  const { r, ctx } = run(over);
+  const L = panelLayout(ctx);
+  const enc = r.design.components.find((c) => c.tag === 'ENC1')!;
+  assert.ok(!r.layoutOk, 'big-overflow: no enclosure fits');
+  assert.notEqual(enc.partNumber, 'SCE-16EL1206LP', 'not the smallest enclosure');
+  assert.ok(!L.door.overflow, `big-overflow: door fits (${enc.partNumber})`);
+  assert.ok(L.door.items.every((d) => d.cx - d.w / 2 >= 25 && d.cx + d.w / 2 <= L.enclosure.w - 25 && d.cy - d.h / 2 >= 25 && d.cy + d.h / 2 <= L.enclosure.h - 25), 'door items 25 mm clear of the edges');
+  // The door check itself: the 10" HMI on a 16x12 door does not fit.
+  const small = { ...ctx, design: { ...ctx.design, components: ctx.design.components.map((c) => (c.tag === 'ENC1' ? { ...c, partNumber: 'SCE-16EL1206LP' } : c)) } };
+  assert.ok(panelLayout(small).door.overflow, '16x12 door too small for CM5-T10W and the operators');
 }
 
 // The default model reads motors from the I/O list when there is no motor list.
