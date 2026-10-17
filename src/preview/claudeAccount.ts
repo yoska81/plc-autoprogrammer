@@ -4,6 +4,7 @@
  * (`claude.use("sample")`). The first request asks the viewer to allow it.
  * Files are offered through `claude.use("downloads")`.
  */
+import { loadPdfjs } from '../lib/pdfjs';
 import JSZip from 'jszip';
 
 interface SampleError { code: string; message: string; text?: string }
@@ -89,8 +90,7 @@ type Block = { type: string; text?: string; source?: { type: string; media_type?
 /** Plain text of a PDF (base64), page by page; '' when it has no text layer. */
 async function pdfText(data: string): Promise<string> {
   try {
-    const pdfjs = await import('pdfjs-dist');
-    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    const pdfjs = await loadPdfjs();
     const bin = atob(data);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);

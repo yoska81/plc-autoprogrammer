@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
+import { loadPdfjs } from '../../lib/pdfjs';
 import { buildModel, type DrawingContext } from '../derive';
 import { useElectricalStore } from '../../store/useElectricalStore';
 import { useProjectsStore } from '../../store/useProjectsStore';
@@ -42,8 +43,7 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 async function readBackground(file: File, page: number): Promise<{ dataUrl: string; w: number; h: number }> {
   const canvas = document.createElement('canvas');
   if (/pdf$/i.test(file.type) || /\.pdf$/i.test(file.name)) {
-    const pdfjs = await import('pdfjs-dist');
-    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    const pdfjs = await loadPdfjs();
     const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
     const pg = await doc.getPage(Math.min(Math.max(1, page), doc.numPages));
     const v1 = pg.getViewport({ scale: 1 });
