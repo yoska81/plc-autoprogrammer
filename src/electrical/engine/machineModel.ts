@@ -89,7 +89,10 @@ export function defaultMachineModel(io: IOPoint[], inputs: DesignInputs, spec = 
       const vfd = p.deviceType === 'vfd-input' || /\b(vfd|drive|speed)\b/i.test(p.description);
       const reversing = io.some((q) => q !== p && q.type === 'output' && /\b(rev|reverse)\b/i.test(q.description) && wordsShared(p.description, q.description));
       const name = p.description.replace(HP_RE, '').replace(/\b(run|contactor|starter|coil|output|on|vfd|drive)\b/gi, '').replace(/\s+/g, ' ').trim() || 'Motor';
-      motors.push({ tag: `M${motors.length + 1}`, description: /motor/i.test(name) ? name : `${name} motor`, hp, start: vfd ? 'vfd' : reversing ? 'reversing' : 'dol', ...(/\b(hoist|lift|elevat\w*|crane|winch)\b/i.test(name) ? { vertical: true } : {}) });
+      // New tags skip the left-over motors' tags, so "M1 Conveyor motor … left out" never names a different motor.
+      let n = motors.length + 1;
+      while (stale.has(`M${n}`) || motors.some((m) => m.tag === `M${n}`)) n++;
+      motors.push({ tag: `M${n}`, description: /motor/i.test(name) ? name : `${name} motor`, hp, start: vfd ? 'vfd' : reversing ? 'reversing' : 'dol', ...(/\b(hoist|lift|elevat\w*|crane|winch)\b/i.test(name) ? { vertical: true } : {}) });
       if (!HP_RE.test(p.description)) assumptions.push(`${name}: motor power not given — assumed ${hp} HP; confirm the nameplate.`);
     }
   }

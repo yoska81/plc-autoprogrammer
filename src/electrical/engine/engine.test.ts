@@ -80,6 +80,15 @@ const SCENARIOS: Scenario[] = [
   { name: 'ca600', points: EXAMPLE, supply: '600VAC-3PH', region: 'Canada', motors: [motor('M1', 'Conveyor motor', 2, '600VAC-3PH')] },
   { name: 'us120', points: EXAMPLE, supply: '120VAC-1PH', motors: [motor('M1', 'Conveyor motor', 0.5, '120VAC-1PH')], hmi: null },
   {
+    // A project copied from the example: the motor list still has the example's conveyor motor, the new spec has none.
+    name: 'sealing-head-from-example', supply: '480VAC-3PH', hmi: null, modules: ['C0-08TD1'],
+    spec: 'Sealing head: film comes off an unwinder (small gear motor, run output), a heated sealing bar (heater on a contactor, temperature switch) is closed by a pneumatic head cylinder. The operator presses both palm buttons, the head comes down, seals for the dwell time and opens.',
+    motors: [motor('M1', 'Conveyor motor', 1, '480VAC-3PH')],
+    points: [pt('Safety OK', 'input'), pt('Left palm button', 'input', { deviceType: 'pushbutton-no' }), pt('Right palm button', 'input', { deviceType: 'pushbutton-no' }),
+      pt('Head up sensor', 'input'), pt('Head down sensor', 'input'), pt('Sealing bar temperature OK', 'input'),
+      pt('Unwinder motor run', 'output'), pt('Heater contactor', 'output'), pt('Head down solenoid', 'output'), pt('Head up solenoid', 'output')],
+  },
+  {
     name: 'reversing240', supply: '240VAC-3PH', hmi: null, rating: 'NEMA 4',
     points: [pt('E-stop OK', 'input'), pt('Open PB', 'input'), pt('Close PB', 'input'), pt('Stop PB', 'input'), pt('Gate open limit switch', 'input'), pt('Gate closed limit switch', 'input'),
       pt('Gate motor forward', 'output'), pt('Gate motor reverse', 'output'), pt('Gate moving light', 'output')],
@@ -170,21 +179,14 @@ for (const s of SCENARIOS) {
   assert.ok(eu.components.some((c) => /^PSR-24-\d+-3$/.test(c.partNumber)), '400 V: 3-phase supply');
 }
 
-// A project copied from the example with a new machine: the example's conveyor motor is left out and asked about.
+// A project copied from the example: the example's conveyor motor is left out and asked about; the unwinder comes from the I/O list.
 {
-  const spec = 'Sealing head: a heated sealing bar (heater on a contactor, temperature switch) closed by two pneumatic cylinders. Operator loads a pouch, presses both palm buttons, the head comes down, seals for the dwell time and opens.';
-  const s: Scenario = {
-    name: 'sealing', supply: '480VAC-3PH', spec, hmi: null,
-    motors: [motor('M1', 'Conveyor motor', 1, '480VAC-3PH')],
-    points: [pt('Safety OK', 'input'), pt('Left palm button', 'input', { deviceType: 'pushbutton-no' }), pt('Right palm button', 'input', { deviceType: 'pushbutton-no' }),
-      pt('Head up sensor', 'input'), pt('Head down sensor', 'input'), pt('Sealing bar temperature OK', 'input'),
-      pt('Heater contactor', 'output'), pt('Head down solenoid', 'output'), pt('Head up solenoid', 'output')],
-  };
-  const d = run(s).r.design;
-  assert.deepEqual(d.inputs.motors, [], 'no motor for a sealing head');
+  const r = run(SCENARIOS.find((x) => x.name === 'sealing-head-from-example')!).r;
+  const d = r.design;
+  assert.deepEqual(d.inputs.motors.map((m) => m.description), ['Unwinder motor'], 'only the unwinder');
   assert.ok(!d.components.some((c) => /conveyor/i.test(c.function)), 'nothing from the example conveyor');
   assert.ok(d.askUser?.some((q) => /M1 Conveyor motor .* not in the machine description/.test(q)), 'left-over motor asked about');
-  assert.ok(!/example/i.test(run(s).r.explanation));
+  assert.ok(!/example/i.test(r.explanation));
   assert.ok(d.ioWiring.some((w) => w.description === 'Heater contactor' && w.deviceType === 'contactor-coil'));
   // The example itself keeps its motor (the spec mentions the conveyor motor).
   assert.equal(run(SCENARIOS[0]).r.design.inputs.motors.length, 1);

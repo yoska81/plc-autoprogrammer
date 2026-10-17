@@ -121,6 +121,8 @@ export interface HmiScreen {
   level?: AccessLevel;
   /** Picture drawn behind the elements. */
   background?: HmiBackground;
+  /** Changed by hand in the editor: a regeneration keeps it (re-binds addresses, adds missing items elsewhere). */
+  edited?: boolean;
 }
 
 export interface HmiAlarm {

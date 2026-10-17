@@ -84,7 +84,8 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
       const cmds: ManualCmd[] = [];
       const add = (label: string, out: { address: string; description: string } | undefined, hold: string) => {
         if (!out) return;
-        const permit = t.sts(`${a.name}_${label}_Permit`, `PLC sets ON when ${permitWhy}${label === 'Retract' && a.extend ? ` and ${a.extend.address} OFF` : label === 'Extend' && a.retract ? ` and ${a.retract.address} OFF` : ''}.`);
+        const opposite = out === a.retract ? a.extend : out === a.extend ? a.retract : undefined;
+        const permit = t.sts(`${a.name}_${label}_Permit`, `PLC sets ON when ${permitWhy}${opposite ? ` and ${opposite.address} OFF` : ''}.`);
         const cmd = t.cmd(`${a.name}_${label}`, `Hold-to-run: while ON and ${permit} is ON the PLC energizes ${out.address} (${out.description}); ${hold}`);
         cmds.push({ label, address: cmd, permit, output: out.address, note: hold });
       };
@@ -92,8 +93,8 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
         add(a.reverse ? 'Jog Fwd' : 'Jog', a.run, 'stops on release.');
         add('Jog Rev', a.reverse, 'stops on release.');
       } else if (a.kind === 'cylinder') {
-        add('Extend', a.extend, a.retract ? 'holds position on release (double solenoid).' : 'spring return retracts on release.');
-        add('Retract', a.retract, 'holds position on release.');
+        add(verb(a.extend?.description, 'Extend'), a.extend, a.retract ? 'holds position on release (double solenoid).' : 'spring return retracts on release.');
+        add(verb(a.retract?.description, 'Retract'), a.retract, 'holds position on release.');
       }
       plan.manual.set(a, cmds);
     }
@@ -131,6 +132,12 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
   return plan;
 }
 
+/** Button text from the coil's own word (gripper "close" / "open", head "down" / "up"), else the default. */
+function verb(desc: string | undefined, fallback: string): string {
+  const m = /\b(close|clamp|unclamp|open|down|up|advance|return|lift|lower|in|out)\b/i.exec(desc ?? '');
+  return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() : fallback;
+}
+
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
@@ -139,7 +146,7 @@ const PANEL_TITLE = 28;
 
 /** Pack blocks into the content area: columns top to bottom, full-width blocks across; returns pages of placed blocks. */
 function pack(blocks: Block[], area: Rect, rowH: number): { block: Block; r: Rect }[][] {
-  const cols = area.w >= 700 ? 2 : 1;
+  const cols = area.w >= 600 ? 2 : 1;
   const cw = (area.w - GAP * (cols - 1)) / cols;
   const heightOf = (b: Block) => PANEL_TITLE + b.rows.length * ((b.rowH ?? rowH) + GAP);
   // Split blocks too tall for one page.
