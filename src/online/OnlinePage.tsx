@@ -112,22 +112,22 @@ export default function OnlinePage() {
   const model = hmi ? getHmi(hmi.hmiPartNumber) : undefined;
   const screen = hmi?.screens.find((s) => s.id === screenId) ?? hmi?.screens[0];
   const tabBtn = (t: Tab, label: string) => (
-    <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === t ? 'border-brand-600 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>{label}</button>
+    <button key={t} onClick={() => setTab(t)} className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 ${tab === t ? 'border-brand-600 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>{label}</button>
   );
 
   return (
     <>
-      <header className="px-6 pt-4 bg-white border-b border-steel-200">
-        <div className="flex items-start gap-3">
-          <h2 className="flex-1 text-base font-semibold text-steel-800">Online — connect to the PLC</h2>
+      <header className="px-4 sm:px-6 pt-4 bg-white border-b border-steel-200">
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+          <h2 className="min-w-0 flex-[1_1_16rem] text-base font-semibold text-steel-800">Online — connect to the PLC</h2>
           <LoadIntoPlc />
         </div>
         <p className="text-xs text-steel-500 mt-0.5">Live values from the real {profile.name} {cpu.id} over Ethernet (Modbus TCP). Read-only unless you switch on writes. Use it at the machine during commissioning: watch the ladder, the HMI and every I/O point, and tick the I/O check-out.</p>
-        <div className="flex mt-2">{tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}{tabBtn('troubleshoot', 'Fault finding')}</div>
+        <div className="flex mt-2 overflow-x-auto">{tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}{tabBtn('troubleshoot', 'Fault finding')}</div>
       </header>
 
       {/* Connection bar */}
-      <div className="px-6 py-2 bg-white border-b border-steel-200 flex flex-wrap items-end gap-3 text-sm">
+      <div className="px-4 sm:px-6 py-2 bg-white border-b border-steel-200 flex flex-wrap items-end gap-3 text-sm">
         <label className="text-xs text-steel-600">PLC IP address<br />
           <input aria-label="PLC IP address" value={st.settings.host} onChange={(e) => st.setSettings({ host: e.target.value })} disabled={connected} className={`${input} w-36 font-mono`} /></label>
         <label className="text-xs text-steel-600">Port<br />
