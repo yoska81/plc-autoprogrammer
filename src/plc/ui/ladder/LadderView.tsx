@@ -346,7 +346,7 @@ interface RungRowProps {
 
 function anchorOf(e: React.MouseEvent<HTMLElement>): Anchor {
   const r = e.currentTarget.getBoundingClientRect();
-  return { left: r.left, top: r.top, bottom: r.bottom };
+  return { left: r.left, top: r.top, bottom: r.bottom, el: e.currentTarget };
 }
 
 // Memoized: selecting or editing one rung redraws that rung only.
