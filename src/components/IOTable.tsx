@@ -5,9 +5,10 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { usePlc } from '../plc/core/usePlc';
 import type { IOPoint } from '../types/io';
 import type { IOFilter } from './IOToolbar';
+import type { Rack } from '../plc/core/addressCheck';
 
-function Group({ title, color, points, addresses, dupes, devices }: {
-  title: string; color: string; points: IOPoint[]; addresses: Map<string, string>; dupes: Set<string>; devices: Map<string, string>;
+function Group({ title, color, points, addresses, dupes, devices, rack }: {
+  title: string; color: string; points: IOPoint[]; addresses: Map<string, string>; dupes: Set<string>; devices: Map<string, string>; rack: Rack;
 }) {
   if (!points.length) return null;
   return (
@@ -17,14 +18,15 @@ function Group({ title, color, points, addresses, dupes, devices }: {
           <span className={`inline-block w-2 h-2 rounded-sm mr-2 ${color}`} />{title} ({points.length})
         </td>
       </tr>
-      {points.map((p) => <IORow key={p.id} point={p} address={addresses.get(p.id) ?? ''} duplicate={dupes.has(addresses.get(p.id) ?? '')} device={devices.get((addresses.get(p.id) ?? '').toUpperCase())} />)}
+      {points.map((p) => <IORow key={p.id} point={p} address={addresses.get(p.id) ?? ''} duplicate={dupes.has(addresses.get(p.id) ?? '')} device={devices.get((addresses.get(p.id) ?? '').toUpperCase())} rack={rack} />)}
     </>
   );
 }
 
 export function IOTable({ filter }: { filter: IOFilter }) {
   const { projectIO } = useIOStore();
-  const { profile, addresses } = usePlc();
+  const { profile, cpu, modules, addresses } = usePlc();
+  const rack: Rack = { profile, cpu, modules };
   // The field device wired to each address in the electrical design (tag and type).
   const ioWiring = useElectricalStore((st) => st.design?.ioWiring);
   const devices = new Map((ioWiring ?? []).map((w) => [w.address.toUpperCase(), `${w.deviceTag} · ${FIELD_DEVICE_LABEL[w.deviceType] ?? w.deviceType}`]));
@@ -68,8 +70,8 @@ export function IOTable({ filter }: { filter: IOFilter }) {
             </tr>
           </thead>
           <tbody>
-            <Group title="Inputs" color="bg-brand-600" points={shown.filter((p) => p.type === 'input')} addresses={addresses} dupes={dupes} devices={devices} />
-            <Group title="Outputs" color="bg-amber-500" points={shown.filter((p) => p.type === 'output')} addresses={addresses} dupes={dupes} devices={devices} />
+            <Group title="Inputs" color="bg-brand-600" points={shown.filter((p) => p.type === 'input')} addresses={addresses} dupes={dupes} devices={devices} rack={rack} />
+            <Group title="Outputs" color="bg-amber-500" points={shown.filter((p) => p.type === 'output')} addresses={addresses} dupes={dupes} devices={devices} rack={rack} />
           </tbody>
         </table>
         {!shown.length && <p className="px-3 py-3 text-steel-500">Nothing matches the filter.</p>}

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { TrashIcon } from '@heroicons/react/24/outline';
 import type { IOPoint, IOCategory } from '../types/io';
 import { useIOStore } from '../store/useIOStore';
@@ -6,6 +7,7 @@ import { useEditsStore } from '../edits/useEditsStore';
 import { EditedMark } from '../edits/EditedMark';
 import MicButton from '../voice/MicButton';
 import { FIELD_DEVICE_LABEL, type FieldDeviceType } from '../electrical/types';
+import { checkIOAddress, type Rack } from '../plc/core/addressCheck';
 
 const ALL_CATEGORIES: IOCategory[] = [
   'Safety', 'Operator/HMI', 'External Machine', 'Product Detection',
@@ -25,11 +27,21 @@ interface IORowProps {
   duplicate: boolean;
   /** The field device wired to this address in the electrical design, e.g. "PB1 · pushbutton (NO)". */
   device?: string;
+  /** PLC, CPU and modules: a typed address is checked against them (checkIOAddress). */
+  rack: Rack;
 }
 
-export function IORow({ point, address, duplicate, device }: IORowProps) {
+export function IORow({ point, address, duplicate, device, rack }: IORowProps) {
   const { updateDescription, updateCategory, deletePoint, setPlcAddress } = useIOStore();
   const isManual = Boolean(point.plcAddress);
+  // A typed address the PLC does not have stays in the field with the reason; it is not saved.
+  const [bad, setBad] = useState<{ text: string; reason: string } | null>(null);
+  const typedAddress = (text: string) => {
+    const r = checkIOAddress(rack, point, text);
+    if (!r.ok) { setBad({ text, reason: r.reason }); return; }
+    setBad(null);
+    if (r.address !== (point.plcAddress ?? '')) setPlcAddress(point.id, r.address);
+  };
   // A generated description the user rewrote: marked, with a way back (kept by I/O id).
   const key = `io:${point.id}`;
   const edit = useEditsStore((s) => s.texts[key]);
@@ -49,18 +61,20 @@ export function IORow({ point, address, duplicate, device }: IORowProps) {
       <td className={`${td} whitespace-nowrap`}>
         <div className="flex items-center gap-1">
           <input
-            key={address}
-            defaultValue={isManual ? address : ''}
+            key={`${address}|${bad?.text ?? ''}`}
+            defaultValue={bad ? bad.text : isManual ? address : ''}
+            aria-invalid={bad ? true : undefined}
             placeholder={address || '—'}
             aria-label={`PLC address for ${point.id}`}
             title={isManual ? 'Manual address. Clear it to assign automatically.' : 'Assigned automatically. Type to override.'}
-            onBlur={(e) => { if (e.target.value.trim().toUpperCase() !== (point.plcAddress ?? '')) setPlcAddress(point.id, e.target.value); }}
+            onBlur={(e) => typedAddress(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-            className={`${cell} w-20 font-mono ${duplicate ? 'border-red-400 text-red-700' : isManual ? 'text-brand-800 font-semibold' : 'placeholder:text-steel-700'}`}
+            className={`${cell} w-20 font-mono ${bad || duplicate ? 'border-red-400 text-red-700' : isManual ? 'text-brand-800 font-semibold' : 'placeholder:text-steel-700'}`}
           />
           {duplicate && <span className="text-[10px] text-white bg-red-600 px-1 rounded-sm" title="Two I/O points use this address">DUP</span>}
           {isManual && !duplicate && <span className="text-[10px] text-brand-800" title="Manual address">M</span>}
         </div>
+        {bad && <p role="alert" className="mt-0.5 max-w-xs whitespace-normal text-[11px] leading-snug text-red-700">{bad.reason}</p>}
       </td>
       <td className={td}>
         <div className="flex items-center gap-1">
