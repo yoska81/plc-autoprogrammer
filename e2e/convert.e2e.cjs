@@ -157,11 +157,24 @@ function sse(model, text) {
     const el = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState();
     const io = (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
     const info = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().info;
-    return { region: info.region, supply: el.design?.inputs.supply, motors: el.design?.inputs.motors.map((m) => `${m.tag} ${m.hp}HP ${m.starter}${m.reversing ? ' rev' : ''}`), io: io.length, parts: el.design?.components.length };
+    // what the conversion hands over (the original I/O, the E-stop on the safety relay, its Safety OK into the PLC)
+    const { convertMachine } = await import('/src/convert/convert.ts');
+    const { CHINESE_CONVEYOR } = await import('/src/convert/__fixtures__/chineseConveyor.ts');
+    const { similarity } = await import('/src/convert/functionKept.ts');
+    // matched by function, as the function-kept check does (the operator station may name a button "Start pushbutton")
+    const left = io.map((p) => ({ type: p.type, description: p.description }));
+    const missing = convertMachine(CHINESE_CONVEYOR).io.filter((o) => {
+      const i = left.findIndex((n) => n.type === o.type && (n.description === o.description || similarity(n.description, o.description) >= 0.5));
+      return i < 0 || !left.splice(i, 1);
+    }).map((o) => o.description);
+    return { region: info.region, supply: el.design?.inputs.supply, motors: el.design?.inputs.motors.map((m) => `${m.tag} ${m.hp}HP ${m.starter}${m.reversing ? ' rev' : ''}`), io: io.length, parts: el.design?.components.length,
+      missing, added: left.map((n) => n.description) };
   });
   log('New design:', JSON.stringify(after));
   check(after.region === 'US' && after.supply === '480VAC-3PH', 'new design on 480 V for the US');
-  check(after.io === 15, 'every original I/O point in the new I/O list (the E-stop on the safety relay, its Safety OK into the PLC)');
+  check(after.missing.length === 0, `every converted I/O point in the new I/O list (the E-stop on the safety relay, its Safety OK into the PLC)${after.missing.length ? `: missing ${after.missing.join(', ')}` : ''}`);
+  // no touch panel: the design adds what the operator needs at the door (a Reset pushbutton), nothing else
+  check(after.added.every((d) => /^Reset pushbutton/i.test(d)), `only the operator station's Reset added (${after.added.join(', ') || 'none'})`);
 
   // Function kept
   const kept = page.getByTestId('convert-kept');
