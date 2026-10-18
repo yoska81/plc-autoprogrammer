@@ -121,6 +121,12 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
 - Rittal (29): Blue e+ filter fans (20-910 m³/h) and outlet filters, Blue e+ cooling units (780-5,500 W at L35/L35, plus the L35/L50 figure), TopTherm heat exchangers (17.5-60 W/K), SK 3110.000 thermostat. Part numbers use the existing '3237.710' style. The old TopTherm fans have been discontinued since 29 Apr 2025.
 - Keys for the engine: `kind` (filter fan / exhaust filter / air conditioner / heat exchanger / thermostat), `airflowCfm` (+ `airflowM3h` for Rittal), `coolingW` / `coolingBtuh`, `wPerK`, `cutoutWidthMm`/`cutoutHeightMm`, or `cutout1..2WidthMm/HeightMm` + `cutoutCount` for two-opening units, `cutoutNote` where the cutout isn't a single rectangle (most AC/HX units; Hoffman AC cutouts are only in the instruction manuals), and `pairsWith` from fan to exhaust filter.
 - Cross-reference: new "Enclosure cooling" groups for filter fans by CFM class and supply (AC / 24 VDC), air conditioners by capacity in W (BTU/h ÷ 3.412 when only BTU/h is published) and heat exchangers by W/K. That is 17 groups across AD / Hoffman / Rittal. A swap shows the airflow, cooling and cutout differences.
+- Picker for the engine (src/electrical/cooling.ts):
+  - `pickFilterFan(airflowM3h, { vendors, supply: 'AC'|'24VDC', volts, nema })` returns the smallest fan that moves the airflow with filters fitted, plus its exhaust filter.
+  - `pickAirConditioner(watts, …)` and `pickHeatExchanger(watts, deltaK, …)` pick by capacity in the same way.
+  - The `nema` filter doesn't count a type the part only reaches with an accessory hood (Rittal 4X).
+  - Its input is `cabinetHeat().ventilation` (thermal.ts). Wiring it into the engine, layout and door/side drilling is Debug 2's work.
+  - Test: src/electrical/cooling.test.ts. There is no 4X air conditioner in the catalog; 4X cabinets get the Stratus TE…-4X heat exchangers.
 - Test change: the `amps` plausibility floor is now 0.01 A, since small fans draw 0.06 A.
 
 ## How it was verified
