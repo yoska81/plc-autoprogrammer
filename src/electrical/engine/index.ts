@@ -56,7 +56,7 @@ export interface EngineResult {
 const TAG_PREFIX: Partial<Record<CatalogCategory, string>> = {
   breaker: 'CB', fuse: 'FU', powerSupply: 'PS', contactor: 'K', overload: 'OL', motorProtector: 'MP', vfd: 'VFD', relay: 'CR',
   safetyRelay: 'SR', pushbutton: 'PB', estop: 'ES', pilotLight: 'PL', selector: 'SS', stackLight: 'STK', sensor: 'PX',
-  solenoidValve: 'SOL', plcModule: 'IO', hmi: 'HMI', fan: 'FAN',
+  solenoidValve: 'SOL', plcModule: 'IO', hmi: 'HMI', fan: 'FAN', servoDrive: 'SVD', servoMotor: 'SVM', encoder: 'ENC',
 };
 
 /** Typical 24 VDC draw of the design (same figures as the calculations document). */

@@ -11,7 +11,8 @@ export type CatalogCategory =
   | 'relay' | 'safetyRelay' | 'terminal' | 'terminalAccessory'
   | 'pushbutton' | 'estop' | 'pilotLight' | 'selector' | 'stackLight'
   | 'plc' | 'plcModule' | 'hmi' | 'sensor' | 'solenoidValve'
-  | 'dinRail' | 'wireDuct' | 'groundBar' | 'fan' | 'other';
+  | 'dinRail' | 'wireDuct' | 'groundBar' | 'fan' | 'other'
+  | 'servoDrive' | 'servoMotor' | 'encoder';
 
 /** Where the part is mounted; drives which layout sheet it appears on. */
 export type MountLocation = 'backplate' | 'door' | 'field';

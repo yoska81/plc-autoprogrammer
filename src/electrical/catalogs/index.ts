@@ -46,8 +46,8 @@ export const GROUP_TITLE: Record<VendorGroup, string> = {
 export const GROUP_OF: Record<CatalogCategory, VendorGroup> = {
   plc: 'plc', plcModule: 'plc',
   hmi: 'hmi',
-  vfd: 'drives',
-  sensor: 'field', solenoidValve: 'field',
+  vfd: 'drives', servoDrive: 'drives',
+  sensor: 'field', solenoidValve: 'field', servoMotor: 'field', encoder: 'field',
   enclosure: 'enclosure',
   disconnect: 'panel', breaker: 'panel', fuse: 'panel', powerSupply: 'panel', contactor: 'panel', overload: 'panel',
   motorProtector: 'panel', relay: 'panel', safetyRelay: 'panel', terminal: 'panel', terminalAccessory: 'panel',
