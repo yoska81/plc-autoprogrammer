@@ -149,7 +149,7 @@ const MACHINES = [
   {
     key: 'upgrade', name: 'Bottle Capper Upgrade', region: 'United States', start: 'program', keepProgram: true,
     model: { motors: [], estops: 1, guardDoors: [{ zone: 'Capper' }], lightCurtains: [], zones: ['Capper'], interfaces: [], questions: [] },
-    di: 0, do: 0, ai: 0, ao: 0, io: [], routes: ['/upgrade'],
+    di: 0, do: 0, ai: 0, ao: 0, io: [], routes: ['/import?tab=program'],
   },
 ];function reply(mc, system) {
   if (system.includes('taking over an existing machine from its electrical drawings')) return mc.drawings;
@@ -226,6 +226,16 @@ async function sweep(page, mc, where) {
   return clicked;
 }
 
+/** The program reader / upgrade page, opened from the project tree as a user would (no typed address). */
+async function openProgramReader(page, mc) {
+  const link = page.getByRole('link', { name: 'PLC program: read / upgrade' }).first();
+  if (!(await link.waitFor({ timeout: 5000 }).then(() => true, () => false))) {
+    problem(mc.key, 'import', 'no "PLC program: read / upgrade" in the project tree: went to /import?tab=program by its address');
+    await page.goto(BASE + '/import?tab=program');
+  } else await link.click();
+  await page.waitForURL(/\/import\?tab=program/, { timeout: 10000 });
+}
+
 async function journey(browser, mc) {
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 950 }, acceptDownloads: true });
   const page = await ctx.newPage();
@@ -278,12 +288,8 @@ async function journey(browser, mc) {
       const kept = await page.getByTestId('convert-kept').innerText().catch(() => '');
       for (const l of kept.split('\n').filter((x) => /Missing/.test(x))) problem(mc.key, 'function kept', l);
     } else {
-      // The Program tab of the Import page reads the program; until it is there, the Upgrade page does.
-      await page.getByRole('button', { name: 'Program', exact: true }).click().catch(() => {});
-      if (!(await page.getByTestId('program-file').count())) {
-        problem(mc.key, 'import', 'the Import page has no program reader (Program tab): went to /upgrade by its address — no menu leads there');
-        await page.goto(BASE + '/upgrade');
-      }
+      // The project tree: Existing machine (import) → PLC program: read / upgrade (the Import page's Program tab).
+      await openProgramReader(page, mc);
       await page.getByTestId('program-file').setInputFiles(__dirname + '/../src/plc/import/__fixtures__/capper.L5X');
       await page.getByTestId('program-found').waitFor({ timeout: 10000 });
       log(mc.key, 'found', (await page.getByTestId('program-found').innerText()).split('\n').slice(0, 3).join(' | '));
@@ -357,7 +363,7 @@ async function journey(browser, mc) {
     log(mc.key, 'program rungs', n);
   });
   if (mc.start === 'program') await step('upgraded program download', async () => {
-    await page.goto(BASE + '/upgrade');
+    await openProgramReader(page, mc);
     await page.getByTestId('upgrade-original').waitFor({ timeout: 10000 });
     log(mc.key, 'original vs now', await page.getByTestId('upgrade-diff-summary').innerText());
     await page.getByTestId('upgrade-export').click();
