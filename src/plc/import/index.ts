@@ -12,6 +12,7 @@ import { convertForeign } from './convert';
 import { decodeCsv, isGxComments, isGxProgram, isIlComments, isIlText, readGxCsv, readIlText } from './gxCsv';
 import { isSiemensTagTable, mergeSiemensTags, readSiemensTags } from './siemensTags';
 import { isStlSource, readStlSource } from './stl';
+import { readTiaXml } from './tiaXml';
 import type { ForeignProgram, ImportedProgram, SourceFormat } from './types';
 
 export { materialize } from './convert';
@@ -68,6 +69,7 @@ function read(format: SourceFormat, text: string): ForeignProgram {
     case 'mitsubishi-csv': return readGxCsv(text);
     case 'il-text': return readIlText(text);
     case 'siemens-stl': return readStlSource(text);
+    case 'siemens-xml': return readTiaXml(text);
     default: throw new Error('This file type is not read yet.');
   }
 }
@@ -112,7 +114,7 @@ export function importProgramFiles(files: { name: string; text: string }[]): { p
   }
   // Siemens: the PLC tag table gives the addresses the SCL source does not have.
   const table = files.find((f) => f !== main && isSiemensTagTable(f.text));
-  if (table && (format === 'siemens-scl' || format === 'siemens-stl' || format === 'st' || format === 'plcopen')) {
+  if (table && (format === 'siemens-scl' || format === 'siemens-stl' || format === 'siemens-xml' || format === 'st' || format === 'plcopen')) {
     const fp = read(format, main.text);
     mergeSiemensTags(fp, readSiemensTags(table.text));
     return { program: convertForeign(fp, main.name), main };

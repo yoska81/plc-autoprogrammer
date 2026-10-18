@@ -49,7 +49,7 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
     <div className="space-y-4">
       <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
         <h3 className="text-sm font-semibold text-gray-800">The machine's PLC program</h3>
-        <p className="text-xs text-gray-500">Export the program from the PLC software and choose the file here. Rockwell: File › Save As › .L5X (or .L5K). CODESYS and others: PLCopen XML. Siemens: SCL or STL (AWL) source. Mitsubishi GX Works: Export to CSV for the program and the device comments (choose both). Delta / Inovance / Xinje: the instruction list as text, with the device comment list. Siemens: add the PLC tag table. CLICK: the nickname list (.csv).</p>
+        <p className="text-xs text-gray-500">Export the program from the PLC software and choose the file here. Rockwell: File › Save As › .L5X (or .L5K). CODESYS and others: PLCopen XML. Siemens: SCL or STL (AWL) source, or LAD blocks exported as XML (TIA Openness). Mitsubishi GX Works: Export to CSV for the program and the device comments (choose both). Delta / Inovance / Xinje: the instruction list as text, with the device comment list. Siemens: add the PLC tag table. CLICK: the nickname list (.csv).</p>
         <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg py-6 cursor-pointer border-gray-300 hover:border-blue-400">
           <span className="text-sm font-medium text-gray-700">{busy ? 'Reading…' : 'Choose the program file (and its comment file)'}</span>
           <span className="text-xs text-gray-400 mt-1">.L5X · .L5K · PLCopen .xml · .scl · .st · Mitsubishi GX Works .csv · Delta / Inovance / Xinje instruction list · CLICK .csv</span>
