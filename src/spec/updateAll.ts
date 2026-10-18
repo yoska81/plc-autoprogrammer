@@ -294,13 +294,17 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         onStep({ step, status: 'done', message: `${r.program.rungs.length} rungs written.` });
         return true;
       }
-      if (mode === 'quick') {
-        // Quick on an existing program: the rules' program becomes a proposal (nothing written by hand is lost).
+      // The rules' program for an existing one goes in as a proposal (nothing written by hand is lost); `why` says
+      // why the AI did not write it, and a proposal still waiting is named as replaced.
+      const rulesProposal = async (why: string | null) => {
         const q = await rulesProgram(false);
-        prog.setProposal({ program: q.program, explanation: q.explanation, reasoning: null, specUpdate: true });
-        onStep({ step, status: 'proposal', message: `A rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.` });
+        const replaced = useProgramStore.getState().proposal ? ' It replaces the proposal that was waiting.' : '';
+        prog.setProposal({ program: q.program, explanation: `${why ? `${why}: this is the rules' program (default cycle) for the current spec, I/O and HMI. ` : ''}${q.explanation}`, reasoning: null, specUpdate: true });
+        onStep({ step, status: 'proposal', message: `${why ? `${why}: a` : 'A'} rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.${replaced}` });
         return true;
-      }
+      };
+      if (mode === 'quick') return rulesProposal(null);
+      if (!aiCfg.apiKey) return rulesProposal('No API key — built from rules');
       const changed = changedSections(useStageStore.getState().sources.program?.spec ?? null, spec);
       const request = `The machine specification, I/O list and/or HMI changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. Update the program to match, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specToText(spec)}`;
       const ioSet = new Set([...addresses.values()].filter(Boolean));
@@ -311,11 +315,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         // Cancel stops the stage; any other AI failure falls back to the rules, as the electrical and HMI stages
         // do: the rules' program becomes a proposal (the program written by hand stays until it is approved).
         if (signal?.aborted) throw err;
-        const why = err instanceof Error ? err.message : String(err);
-        const q = await rulesProgram(false);
-        prog.setProposal({ program: q.program, explanation: `The AI could not update the program (${why}): this is the rules' program (default cycle) for the current spec, I/O and HMI. ${q.explanation}`, reasoning: null, specUpdate: true });
-        onStep({ step, status: 'proposal', message: `The AI could not update the program (${why}): a rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.` });
-        return true;
+        return rulesProposal(`The AI could not update the program (${err instanceof Error ? err.message : String(err)})`);
       }
       prog.addChat({ role: 'user', text: 'Update the program for the latest spec, I/O and HMI changes.' });
       if (r.program) {

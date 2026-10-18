@@ -198,7 +198,8 @@ export async function dataUrlToBlob(url: string): Promise<Blob> {
 }
 
 /** Everything in one ZIP. */
-export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step: string) => void): Promise<Blob> {
+/** `failed`: filled with the HMI screens that could not be drawn (the ZIP has a note for them, and so can the page). */
+export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step: string) => void, failed: HmiImageFailure[] = []): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const pre: import('./fullPackage').Prebuilt = {};
@@ -237,7 +238,6 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
   }
   if (p.hmi) {
     onProgress?.('HMI screens');
-    const failed: HmiImageFailure[] = [];
     const images = await buildHmiImages(p, failed);
     for (const img of images) zip.file(`hmi/${img.name}`, await dataUrlToBlob(img.dataUrl));
     if (failed.length) zip.file('hmi/SCREENS_NOT_DRAWN.txt', hmiImagesNote(failed));

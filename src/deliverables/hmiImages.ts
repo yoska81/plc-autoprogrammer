@@ -35,3 +35,8 @@ export function hmiImagesNote(failed: HmiImageFailure[]): string {
     'The screens themselves are in the project. Download the ZIP again; if a screen still fails, open it in the HMI editor.',
   ].join('\n');
 }
+
+/** One line for the page after a download: which screens are missing from it. */
+export function hmiMissingLine(failed: HmiImageFailure[], file: string): string {
+  return `Downloaded, but ${failed.length} HMI screen${failed.length === 1 ? '' : 's'} could not be drawn and ${failed.length === 1 ? 'is' : 'are'} not in it: ${failed.map((f) => f.screen).join(', ')}. See ${file} in the ZIP.`;
+}
