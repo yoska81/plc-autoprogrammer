@@ -4,10 +4,23 @@ import type { AnalogChannel, CpuModel, ModuleSlot, PlcProfile } from './profile'
 
 /**
  * Analog points → channels, in list order: each takes the first free channel of its kind that
- * accepts its range (else the first free one of its kind and signal family — a 'thermocouple' range vs
- * every other; none left = unassigned, the engineer adds a module).
+ * accepts its range (else the first free one of its kind that takes the signal's family, see
+ * acceptsRange; none left = unassigned, the engineer adds a module).
  * A manual address override pins the point to the channel with that register.
  */
+/**
+ * Does a channel take a signal of this range's family? The family comes from the range alone: a thermocouple
+ * only on a thermocouple channel (C0-04THM); a current signal (4-20 / 0-20 mA) only on a channel with a current
+ * range (never the 0-10 V inputs on an S7-1200 CPU); a voltage signal on a channel with any voltage range (a
+ * 0-10 V signal on a 0-5 V input is a scaling question). A channel with no published ranges takes anything.
+ */
+export function acceptsRange(ch: AnalogChannel, range: AnalogRange): boolean {
+  if (!ch.ranges.length) return true;
+  if (range === 'thermocouple') return ch.ranges.includes('thermocouple');
+  if (range.endsWith('mA')) return ch.ranges.some((r) => r.endsWith('mA'));
+  return ch.ranges.some((r) => r.endsWith('V'));
+}
+
 export function assignAnalog(io: IOPoint[], channels: AnalogChannel[]): Map<string, AnalogChannel> {
   const out = new Map<string, AnalogChannel>();
   const used = new Set<string>();
@@ -19,14 +32,9 @@ export function assignAnalog(io: IOPoint[], channels: AnalogChannel[]): Map<stri
   for (const p of io.filter(isAnalog)) {
     if (out.has(p.id)) continue;
     const free = channels.filter((c) => c.kind === p.type && !used.has(c.address));
-    // The signal family comes from the range alone: only a point whose range is 'thermocouple' may use a
-    // thermocouple channel (C0-04THM), and it uses nothing else; every other range (the 4-20 mA default included)
-    // is a voltage / current signal and never lands on a thermocouple-only channel.
+    // exact range first, else any free channel of the signal's family (acceptsRange)
     const range = p.analog?.range ?? '4-20mA';
-    const tc = range === 'thermocouple';
-    const tcOnly = (c: AnalogChannel) => c.ranges.length > 0 && c.ranges.every((r) => r === 'thermocouple');
-    const fits = (c: AnalogChannel) => (tc ? !c.ranges.length || c.ranges.includes('thermocouple') : !tcOnly(c));
-    const ch = free.find((c) => c.ranges.includes(range)) ?? free.find(fits);
+    const ch = free.find((c) => c.ranges.includes(range)) ?? free.find((c) => acceptsRange(c, range));
     if (ch) { out.set(p.id, ch); used.add(ch.address); }
   }
   return out;

@@ -100,7 +100,7 @@ await test('cycle request renamed to the program\'s actuators by output', () => 
 
 await test('rules equipment: keeps a CPU that fits, adds modules or picks a bigger CPU from the I/O counts', () => {
   const io = (i: number, o: number) => [...Array.from({ length: i }, () => ({ type: 'input' })), ...Array.from({ length: o }, () => ({ type: 'output' }))];
-  assert.deepEqual(needFromIo(io(10, 5), true), { digitalInputs: 12, digitalOutputs: 6, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null });
+  assert.deepEqual(needFromIo(io(10, 5), true), { digitalInputs: 12, digitalOutputs: 6, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null, analogRanges: { input: [], output: [] } });
   const small = rulesEquipment(io(4, 3), { plcId: 'click', cpuId: 'C0-11DD1E-D', modules: [], hmiPartNumber: null });
   assert.equal(small?.kept, true);
   assert.deepEqual(small?.modules, []);
