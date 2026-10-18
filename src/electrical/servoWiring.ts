@@ -82,7 +82,7 @@ export function servoControls(
       let terminal = '';
       // A relay contact cannot make a pulse train: pulse / direction from relay outputs are not wired.
       if (outStyle === 'relay' && (role === 'pulse' || role === 'direction')) {
-        notes.push(`${t}: ${p.address} is a relay output — it cannot drive the ${role === 'pulse' ? 'pulse' : 'direction'} input; use transistor outputs (CLICK PLUS C2-14D1 / C2-14D2, pulse on Y001 / Y003 / Y005). Not wired.`);
+        notes.push(`${t}: ${p.address} is a relay output — it cannot drive the ${role === 'pulse' ? 'pulse' : 'direction'} input; use transistor pulse outputs (CLICK PLUS: a C2-14D1 / C2-14D2 option-slot module, pulses on its Y1 / Y3 / Y5 — Y101 / Y103 / Y105 in slot 1). Not wired.`);
         terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal: 'NOT WIRED', label: ROLE_LABEL[role] });
         continue;
       }

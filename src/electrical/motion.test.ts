@@ -168,6 +168,14 @@ assert.equal(safetyOutputCount('2 N.O. relay'), 2);
   assert.ok(mcr.safety.mcr, 'MCR in the design');
   assert.ok(mcr.wires.some((w) => w.from === `${sr.tag}:14` && w.to === `${drive}:CN10-3`), 'STO_A straight from the safety relay 13-14 with an MCR');
   assert.ok(!mcr.wires.some((w) => w.wire === '24+S' && w.to === `${drive}:CN10-3`), 'never 24+S through the MCR');
+  // A light-curtain relay in series in 24+S: both STO channels still straight from SR1 (the curtain must never
+  // open channel A alone), and a warning that the curtain does not stop the servo.
+  const lc = swap(sr.partNumber, [{ tag: 'SR9', partNumber: 'LG5925-48-900-61', quantity: 1, function: 'Light curtain controller', motorTag: null }]);
+  assert.ok(lc.mm.safety.extraRelays?.some((x) => x.kind === 'light-curtain'), 'light-curtain relay in the design');
+  assert.ok(lc.mm.wires.some((w) => w.from === `${sr.tag}:14` && w.to === `${drive}:CN10-3`), 'STO_A from SR1 13-14, not through the curtain relay');
+  assert.ok(lc.mm.wires.some((w) => w.from === `${sr.tag}:34` && w.to === `${drive}:CN10-5`), 'STO_B from SR1 33-34');
+  assert.ok(!lc.mm.wires.some((w) => w.wire === '24+S' && w.to === `${drive}:CN10-3`), 'never 24+S through the curtain relay');
+  assert.ok(designWarnings(lc.c2).some((w) => /light curtain relay SR9 does not stop the servo/.test(w)), 'warned: curtain does not stop the servo');
 }
 // No safety relay: STO not wired and a design warning (the drive can never run).
 {
@@ -216,7 +224,7 @@ const plan = planDrawings(ctx);
 const sheet = plan.sheets.find((x) => x.spec.kind === 'servo');
 assert.ok(sheet, 'servo axis sheet planned');
 const svg = renderToStaticMarkup(createElement('svg', null, createElement(ServoSheet, { plan, sheet: sheet! })));
-for (const t of ['CN1-41', 'CN1-37', 'CN1-9', 'CN10-3', 'CN10-5', 'CN10-7', 'STO_A+', 'STO_B+', 'FDBK+', 'SAFETY STOP: STO, TWO CHANNELS']) assert.ok(svg.includes(t), `servo sheet shows ${t}`);
+for (const t of ['CN1-41', 'CN1-37', 'CN1-9', 'CN10-3', 'CN10-5', 'CN10-7', 'STO_A+', 'STO_B+', 'FDBK+', 'SAFETY STOP: STO, TWO CHANNELS', 'PULL HI_P', 'COM+ — DIGITAL INPUT COMMON (24+)']) assert.ok(svg.includes(t), `servo sheet shows ${t}`);
 console.log(`motion tests passed (${r.design.components.length} parts, ${wires.length} wires; notes: ${r.design.notes.filter((n) => /Axis|SVD|SE\d|LT\d/.test(n)).length})`);
 if (process.env.SHOW) {
   console.log(designWarnings(ctx).join('\n'));

@@ -321,7 +321,7 @@ export function motionDesign(input: MotionInput): MotionResult {
       out.ioWiring.push({ address: a, deviceTag: axis.drive || `SVD?${key}`, deviceType: 'servo-drive', description: p.description, location: 'Cabinet' });
     }
     const has = (r: ServoRole) => axis.signals.some((s) => s.role === r);
-    if (!has('pulse') || !has('direction')) out.notes.push(`Axis ${key}: no ${!has('pulse') ? 'pulse' : 'direction'} output in the I/O list — position control needs pulse and direction outputs (CLICK PLUS: C2-14D1 option module, pulse on Y001 / Y003 / Y005).`);
+    if (!has('pulse') || !has('direction')) out.notes.push(`Axis ${key}: no ${!has('pulse') ? 'pulse' : 'direction'} output in the I/O list — position control needs pulse and direction outputs (CLICK PLUS: a C2-14D1 option-slot module, pulses on its Y1 / Y3 / Y5 — Y101 / Y103 / Y105 in slot 1).`);
     out.axes.push(axis);
   }
 

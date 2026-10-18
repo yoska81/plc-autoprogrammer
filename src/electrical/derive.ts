@@ -1221,13 +1221,15 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   // Servo axes: power, STO and each PLC signal on its drive terminal (electrical/servoWiring.ts).
   const servoOut = groups.find((g) => g.type === 'output' && g.points.some((p) => p.deviceType === 'servo-drive'))?.outputStyle ?? 'sinking';
   const servoIn = groups.find((g) => g.type === 'input' && g.points.some((p) => p.deviceType === 'servo-drive'))?.commonTo === '24+' ? '24+' : '0V';
-  // STO channels, each straight from a safety-relay output: A from 13-14 (the 24+S it feeds when there is no
-  // MCR; with an MCR, 24+S comes through a standard relay contact, so A taps SR14 at the relay), B from a free output.
+  // STO channels, each straight from a safety-relay output: A from 13-14, B from a free output. A uses 24+S only
+  // when 24+S is 13-14 itself; with an MCR (a standard relay contact) or light-curtain relays in series (which
+  // would open channel A alone: a channel-mismatch fault, and a one-channel stop) A taps SR14 at the relay, so
+  // both channels are opened by the same safety functions.
   let sto: StoFeed | null = null;
   if (relay && servoBase.length && stoFree) {
     addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:${stoFree[0]}`, color: 'BU', size: '18 AWG', function: 'STO channel B supply (second safety output)' });
     sto = {
-      a: mcr ? { wire: 'SR14', from: `${relay.tag}:14` } : { wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}` },
+      a: mcr || lcRelays.length ? { wire: 'SR14', from: `${relay.tag}:14` } : { wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}` },
       b: { wire: `SR${stoFree[1]}`, from: `${relay.tag}:${stoFree[1]}` },
     };
   }
@@ -2893,6 +2895,8 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (m.motors.some((x) => x.vfd)) w.push('VFD: enter the drive parameters marked NAMEPLATE / SET ON SITE on the drive sheets at commissioning; Safe Torque Off is not used (factory jumper) unless the risk assessment calls for it.');
   const noWiring = m.io.filter((p) => !p.wiring);
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
+  const curtains = (m.safety.extraRelays ?? []).filter((x) => x.kind === 'light-curtain').map((x) => x.relay.tag);
+  if (curtains.length && m.servos.some((a) => a.sto)) w.push(`${m.servos.filter((a) => a.sto).map((a) => a.drive.tag).join(', ')}: both STO channels come straight from the safety relay ${m.safety.relay?.tag ?? ''}, so a trip of the light curtain relay ${curtains.join(', ')} does not stop the servo. If the axis is in the guarded area, wire the light curtain into the safety relay's inputs (or use a relay with two safety outputs for each curtain).`);
   for (const a of m.servos.filter((x) => !x.sto && x.stoMissing)) {
     w.push(a.stoMissing === 'no-relay'
       ? `${a.drive.tag}: Safe Torque Off (STO) is not wired because the design has no safety relay — the servo drive cannot run without it. Add a safety relay with at least two N.O. safety outputs.`

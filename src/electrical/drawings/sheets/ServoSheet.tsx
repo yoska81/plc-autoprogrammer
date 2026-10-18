@@ -21,10 +21,15 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const tb = stripTag(plan.ctx.designations, 1);
   // Rows: drive terminal, wire number, function, and where the wire comes from (its real source).
   const tbOf = (wire: string) => `${tb} ${wire}`;
+  // Pull-ups and COM+ only as wired (sinking pulse outputs; COM+ on the one supply it uses).
+  const wireTo = (term: string) => plan.model.wires.find((w) => w.to === `${d.tag}:${term}`);
+  const wireFrom = (term: string) => plan.model.wires.find((w) => w.from === `${d.tag}:${term}`);
+  const pulled = (term: string) => wireTo(term) ? [[term, wireTo(term)!.wire, '', wireTo(term)!.from]] : [];
+  const com = P && (wireTo(P.com) ?? wireFrom(P.com));
   const pullUps: string[][] = P ? [
-    ...(a.terminals.some((t) => t.role === 'pulse') ? [[P.pulse.pullHi, '24+', 'PULL HI_P — PULSE INPUT PULL-UP (OPEN COLLECTOR)', tbOf('24+')]] : []),
-    ...(a.terminals.some((t) => t.role === 'direction') ? [[P.direction.pullHi, '24+', 'PULL HI_S — SIGN INPUT PULL-UP (OPEN COLLECTOR)', tbOf('24+')]] : []),
-    [P.com, '24+ / 0V', 'COM+ — DIGITAL INPUT COMMON', tbOf('24+ / 0V')],
+    ...pulled(P.pulse.pullHi).map(([t, w, , f]) => [t, w, 'PULL HI_P — PULSE INPUT PULL-UP (OPEN COLLECTOR)', f]),
+    ...pulled(P.direction.pullHi).map(([t, w, , f]) => [t, w, 'PULL HI_S — SIGN INPUT PULL-UP (OPEN COLLECTOR)', f]),
+    ...(com ? [[P.com, com.wire, `COM+ — DIGITAL INPUT COMMON (${com.wire})`, com.to === `${d.tag}:${P.com}` ? com.from : com.to]] : []),
   ] : [];
   // STO channels from their own safety-relay outputs; FDBK in the relay's S33-S34 feedback loop.
   const relayTag = plan.model.safety.relay?.tag ?? 'SR';
