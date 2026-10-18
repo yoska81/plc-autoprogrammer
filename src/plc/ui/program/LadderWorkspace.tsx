@@ -1,8 +1,8 @@
 import { noTouchPanelNow } from '../../../spec/panelNow';
 import { useSettingsStore } from '../../../store/useSettingsStore';
+import { useActiveHmiDesign } from '../../../hmi/projectPanel';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';
-import { useHmiStore } from '../../../store/useHmiStore';
 import { useIOStore } from '../../../store/useIOStore';
 import { looksLeftOver } from '../../../spec/leftovers';
 import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, MagnifyingGlassMinusIcon, MagnifyingGlassPlusIcon, PrinterIcon } from '@heroicons/react/20/solid';
@@ -105,7 +105,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const { ladder, proposal, chat, versions, isGenerating, userPrompt } = store;
   const fp = useFingerprints();
   const io = useIOStore((s) => s.projectIO);
-  const hmiDesign = useHmiStore((s) => s.design);
+  const hmiDesign = useActiveHmiDesign();
   const stages = useStages();
   const { sources, markGenerated } = useStageStore();
   const specText = specToText(fp.spec);

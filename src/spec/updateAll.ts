@@ -32,6 +32,8 @@ import { stagesNow } from './useStages';
 import { missingOperatorIo } from './operatorIo';
 import { aiNow } from '../lib/ai/timing';
 import type { AIConfig, PlcContext } from '../plc/ai/ladderAI';
+import { activeHmiDesign, noTouchPanelNow } from '../hmi/projectPanel';
+
 
 export { UPDATE_GROUPS, type StepResult, type UpdateStep } from './updateSteps';
 import type { StepResult, UpdateStep } from './updateSteps';
@@ -228,6 +230,8 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const { profile, cpu, slots } = plc();
       const hmi = useHmiStore.getState();
       const existing = hmi.design;
+      // No touch panel: nothing to design, and screens left from an earlier panel stay as they are.
+      if (noTouchPanelNow()) { onStep({ step, status: 'skipped', message: 'No touch panel: the operator uses pushbuttons and lamps.' }); return true; }
       const model = getHmi(existing?.hmiPartNumber ?? hmi.hmiPartNumber);
       if (!model) { onStep({ step, status: 'skipped', message: 'No HMI chosen.' }); return true; }
       const io = ioNow();
@@ -266,7 +270,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const io = ioNow();
       const addresses = resolveAddresses(profile, cpu, io, slots);
       const wiring = new Map((useElectricalStore.getState().design?.ioWiring ?? []).map((w) => [w.address, { deviceTag: w.deviceTag, deviceType: w.deviceType }]));
-      const hmi = useHmiStore.getState().design ?? undefined;
+      const hmi = activeHmiDesign() ?? undefined;
       const ctxP: PlcContext = { profile, cpu, io, addresses, wiring, hmi };
       const aiCfg: AIConfig = { ...ai, provider: settings.provider };
       const mode = stageMode('program');

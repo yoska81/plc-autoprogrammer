@@ -3,7 +3,7 @@ import { fitSize, fitText, fmtTime, frameTitle, LEVEL_SHORT, onWarning, shade, s
 import { HmiIcon } from './icons';
 import { iconFor, type HmiIconName } from './iconRules';
 import { FRAME_TITLE_H, GroupFrame, LockBadge, TitleStrip } from './symbols';
-import { showNum, stateFor, type Ctx } from './viewCtx';
+import { barLimits, showNum, stateFor, type Ctx } from './viewCtx';
 import { lockInset } from './layout';
 
 /**
@@ -369,13 +369,15 @@ function Bar({ el, value, ctx }: { el: HmiElement; value: boolean | number | und
   const textY = el.y + (el.h - trackH - 2) / 2;
   const fs = Math.max(11, Math.min(14, el.h * 0.26));
   const valueText = `${showNum(v)}${el.units ? ` ${el.units}` : ''}`;
+  const lim = barLimits(el, ctx, v);
   return (
     <g>
       <text x={el.x} y={textY} fill={t.dim} fontSize={fs} fontFamily={t.font} dominantBaseline="central">{fitText(el.label, el.w * 0.6, fs)}</text>
-      <text x={el.x + el.w} y={textY} fill={t.text} fontSize={fs + 1} fontFamily={t.font} fontWeight={t.shape.weight} textAnchor="end" dominantBaseline="central">{valueText}</text>
+      <text x={el.x + el.w} y={textY} fill={lim.beyond ? t.warningText : t.text} fontSize={fs + 1} fontFamily={t.font} fontWeight={t.shape.weight} textAnchor="end" dominantBaseline="central">{valueText}</text>
       <Field x={el.x} y={ty} w={el.w} h={trackH} t={t} />
-      {frac > 0 && <rect x={el.x + 2} y={ty + 2} width={Math.max(0, (el.w - 4) * frac)} height={trackH - 4} fill={styleColor(el.style, t)} />}
+      {frac > 0 && <rect x={el.x + 2} y={ty + 2} width={Math.max(0, (el.w - 4) * frac)} height={trackH - 4} fill={lim.beyond ? t.warning : styleColor(el.style, t)} />}
       {[0.25, 0.5, 0.75].map((f) => <rect key={f} x={el.x + 2 + (el.w - 4) * f} y={ty + trackH - 5} width={1} height={3} fill={t.bevel} />)}
+      {lim.marks.map((f, i) => <rect key={`lim${i}`} data-limit="" x={el.x + 1 + (el.w - 4) * f} y={ty - 1} width={2} height={trackH + 2} fill={t.warningText} />)}
     </g>
   );
 }

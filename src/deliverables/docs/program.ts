@@ -243,7 +243,7 @@ export function alarmRows(p: ProjectSnapshot, info = programInfo(p)): AlarmRow[]
 }
 
 export function alarmTable(p: ProjectSnapshot, info = programInfo(p)): DocTable {
-  return makeTable([['ID', 9], ['PLC address', 9], ['Message (HMI)', 26], ['Probable cause', 46], ['Operator action', 38], ['Severity', 14], ['Effect', 22]],
+  return makeTable([['ID', 9], ['PLC address', 9], [p.hmi ? 'Message (HMI)' : 'Message', 26], ['Probable cause', 46], ['Operator action', 38], ['Severity', 14], ['Effect', 22]],
     alarmRows(p, info).map((a) => [a.id, a.address, a.message, a.cause, a.action, a.severity, a.effect]));
 }
 
@@ -290,10 +290,12 @@ export function tagTable(p: ProjectSnapshot, info = programInfo(p)): DocTable {
     hmiUse.set(k, l);
   }
   const order: Kind[] = ['input', 'output', 'bit', 'timer', 'counter', 'register', 'timerValue', 'counterValue', 'system', 'unknown', 'constant'];
+  // The "HMI screens" column only when there are screens.
   const rows = [...all].sort(([a], [b]) => order.indexOf(info.kind(a)) - order.indexOf(info.kind(b)) || naturalCompare(a, b)).map(([a, v]) => [
-    a, v.nick, v.comment || info.name(a), KIND_TEXT[info.kind(a)], (info.reads.get(a) ?? []).join(', ') || '—', (info.writes.get(a) ?? []).join(', ') || '—', (hmiUse.get(a) ?? []).join(', ') || '—',
+    a, v.nick, v.comment || info.name(a), KIND_TEXT[info.kind(a)], (info.reads.get(a) ?? []).join(', ') || '—', (info.writes.get(a) ?? []).join(', ') || '—',
+    ...(p.hmi ? [(hmiUse.get(a) ?? []).join(', ') || '—'] : []),
   ]);
-  return makeTable([['Address', 9], ['Nickname', 20], ['Description / comment', 40], ['Type', 14], ['Read in rungs', 14], ['Written in rungs', 12], ['HMI screens', 20]], rows);
+  return makeTable([['Address', 9], ['Nickname', 20], ['Description / comment', 40], ['Type', 14], ['Read in rungs', 14], ['Written in rungs', 12], ...(p.hmi ? [['HMI screens', 20] as [string, number]] : [])], rows);
 }
 
 /** I/O cross reference: each physical I/O address -> rungs that read / write it. */

@@ -8,7 +8,7 @@
  */
 import type { AccessLevel, HmiAlarm, HmiDesign, HmiElement, HmiScreen, HmiState, HmiTag, MachineSymbol, MachineSymbolKind } from '../types';
 import { GAP, MIN_TOUCH, cutTexts, layoutBands } from '../layout';
-import type { HmiActuator, HmiContent } from './content';
+import type { HmiActuator, HmiAxis, HmiContent, HmiEncoder } from './content';
 
 interface Rect { x: number; y: number; w: number; h: number }
 type More = Partial<Omit<HmiElement, 'id' | 'kind' | 'label' | 'x' | 'y' | 'w' | 'h'>>;
@@ -85,6 +85,15 @@ interface Plan {
   tempSp?: string; dwellSp?: string;
   count?: { counter: string; reset: string; batch: string; rate: string };
   runHours: string; sinceService: string; serviceInterval: string; serviceDone: string; serviceDue: string;
+  axes: Map<HmiAxis, AxisTags>;
+  encoders: Map<HmiEncoder, { pos: string; speed: string; zero: string }>;
+}
+
+/** HMI tags of one servo axis (roles axis:<key>:…, see planTags). */
+interface AxisTags {
+  enable: string; home: string; jogPos: string; jogNeg: string; move: string; reset: string;
+  enabled: string; homed: string; inPos: string; moving: string; jogPermit: string;
+  target: string; speed: string; jogSpeed: string; pos: string; actSpeed: string; fault: string;
 }
 
 function planTags(c: HmiContent, t: TagPlan): Plan {
@@ -100,7 +109,7 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
   const plan: Plan = {
     start, stop, reset, manualSel, manualSts, running, heartbeat, state,
     manual: new Map(), faults: new Map(), timeouts: new Map(), speed: new Map(), aoSp: new Map(), limits: new Map(),
-    runHours: '', sinceService: '', serviceInterval: '', serviceDone: '', serviceDue: '',
+    runHours: '', sinceService: '', serviceInterval: '', serviceDone: '', serviceDue: '', axes: new Map(), encoders: new Map(),
   };
   if (c.actuators.some((a) => a.kind === 'cylinder' || a.kind === 'motor' || a.kind === 'drive')) {
     t.as('alarm:step').alarm('Cycle_Step_Timeout', 'A cycle step did not finish in time', 'alarm', `PLC latches ON when a step of the automatic cycle lasts longer than its timeout (step table on the Program page) and stops the cycle; Reset (${reset}) clears it while stopped.`);
@@ -162,6 +171,40 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
       ai.severity === 'alarm'
         ? `PLC latches ON while ${ai.point.address} (${ai.point.description}) is ${ai.activeWhen ? 'ON' : 'OFF'} and stops the cycle; Reset (${reset}) clears it once the cause is gone.`
         : `PLC sets ON while ${ai.point.address} (${ai.point.description}) is ${ai.activeWhen ? 'ON' : 'OFF'}.`);
+  }
+  // Servo / stepper axes: commands, status, setpoints and readouts the PLC program implements with its motion
+  // instructions (or the drive's own I/O). Roles axis:<key>:… keep every address when the screens are rebuilt.
+  for (const ax of c.axes ?? []) {
+    const k = ax.key, n = ax.name, u = ax.units;
+    const io = (x: { address: string; description: string } | undefined) => (x ? `${x.address} (${x.description})` : '');
+    const enabled = t.as(`axis:${k}:enabled`).sts(`${n}_Enabled`, `PLC sets ON while ${n} is enabled${ax.ready ? ` and its drive reports ready on ${io(ax.ready)}` : ''}.`);
+    const fault = t.as(`alarm:axis:${k}:fault`).alarm(`${n}_Fault`, `${n}: servo fault`, 'alarm',
+      `PLC latches ON when ${ax.fault ? `${io(ax.fault)} is ON` : `${n}'s drive or motion instruction reports an error`}, disables ${n} and stops the cycle; Reset clears it once the cause is gone.`);
+    const homed = t.as(`axis:${k}:homed`).sts(`${n}_Homed`, `PLC sets ON once ${n} has completed homing${ax.homed ? ` (${io(ax.homed)})` : ''}; OFF when it is disabled or faults. Moves and the cycle need it.`);
+    const inPos = t.as(`axis:${k}:inpos`).sts(`${n}_In_Position`, `PLC sets ON while ${n} is at its target position${ax.inPos ? ` (${io(ax.inPos)})` : ''} and not moving.`);
+    const moving = t.as(`axis:${k}:moving`).sts(`${n}_Moving`, `PLC sets ON while ${n} is moving (homing, jogging or a move).`);
+    const jogPermit = t.as(`axis:${k}:jogpermit`).sts(`${n}_Jog_Permit`, `PLC sets ON when Manual mode (${plan.manualSts}) is active, ${safeText} is ON, ${n} is enabled and not faulted${ax.limitPos || ax.limitNeg ? '; each jog direction also stops at its limit switch' : ''}.`);
+    const enable = t.as(`axis:${k}:enable`).cmd(`${n}_Enable`, `Toggle from the HMI: ON asks the PLC to enable ${n}${ax.enable ? ` (switches ${io(ax.enable)})` : ''} while ${safeText} is ON; OFF disables it.`, 'read-write');
+    const home = t.as(`axis:${k}:home`).cmd(`${n}_Home`, `Momentary: the PLC starts ${n}'s homing sequence when it is enabled, not faulted and the cycle is stopped.`);
+    const jogPos = t.as(`axis:${k}:jogpos`).cmd(`${n}_Jog_Plus`, `Hold-to-run: while ON and ${jogPermit} is ON the PLC jogs ${n} in the positive direction at the jog speed${ax.limitPos ? `, stopping at ${io(ax.limitPos)}` : ''}; stops on release.`);
+    const jogNeg = t.as(`axis:${k}:jogneg`).cmd(`${n}_Jog_Minus`, `Hold-to-run: while ON and ${jogPermit} is ON the PLC jogs ${n} in the negative direction at the jog speed${ax.limitNeg ? `, stopping at ${io(ax.limitNeg)}` : ''}; stops on release.`);
+    const target = t.as(`axis:${k}:target`).df(`${n}_Target`, `Target position for ${n} (${u}); used by Move.`);
+    const speed = t.as(`axis:${k}:speed`).df(`${n}_Speed`, `Move speed for ${n} (${u}/s, > 0; safe default on the first scan).`);
+    const jogSpeed = t.as(`axis:${k}:jogspeed`).df(`${n}_Jog_Speed`, `Jog speed for ${n} (${u}/s, > 0; slow default on the first scan).`);
+    const move = t.as(`axis:${k}:move`).cmd(`${n}_Move`, `Momentary: the PLC moves ${n} to ${target} at ${speed} when it is enabled, homed, not faulted and in Manual mode (${plan.manualSts}).`);
+    const reset = t.as(`axis:${k}:reset`).cmd(`${n}_Reset`, `Momentary: the PLC resets ${n}'s drive / motion error and clears ${fault} once the cause is gone. Never moves the axis.`);
+    const pos = t.as(`axis:${k}:pos`).df(`${n}_Position`, `PLC writes ${n}'s actual position (${u}) every scan.`);
+    const actSpeed = t.as(`axis:${k}:actspeed`).df(`${n}_Actual_Speed`, `PLC writes ${n}'s actual speed (${u}/s) every scan.`);
+    plan.axes.set(ax, { enable, home, jogPos, jogNeg, move, reset, enabled, homed, inPos, moving, jogPermit, target, speed, jogSpeed, pos, actSpeed, fault });
+  }
+  // Encoders on high-speed counters: scaled position and speed, zeroed from the panel.
+  for (const en of c.encoders ?? []) {
+    const k = en.key, n = en.name, u = en.units;
+    const chans = en.channels.map((x) => x.address).join(' / ');
+    const pos = t.as(`enc:${k}:pos`).df(`${n}_Position`, `PLC writes ${n}'s position (${u}) from its high-speed counter (${chans}) scaled to ${u}, every scan.`);
+    const speed = t.as(`enc:${k}:speed`).df(`${n}_Speed`, `PLC writes ${n}'s speed (${u}/s) from the counter's change over time.`);
+    const zero = t.as(`enc:${k}:zero`).cmd(`${n}_Zero`, `Momentary: the PLC sets ${n}'s position (the counter) to 0.`);
+    plan.encoders.set(en, { pos, speed, zero });
   }
   if (c.process?.temp) {
     const { pv, default: def } = c.process.temp;
@@ -298,8 +341,46 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
     groups.push({ id: 'manual', name: 'Manual', purpose: 'Hold-to-run jog of each actuator in Manual mode; every button shows its interlock.', level, blocks });
   }
 
+  // Motion: one full-width panel per servo axis (state, readouts, commands, setpoints), then the encoders.
+  const motion: Block[] = [];
+  // Four controls a row on wide panels; two on narrow ones (each control keeps room for its text).
+  const wide = area.w >= 640;
+  const fitRow = (row: Cell[]): Cell[][] => (wide ? [row] : row.map((c) => ({ ...c, span: 1 })).reduce<Cell[][]>((rows, c, i) => (i % 2 ? rows[rows.length - 1].push(c) : rows.push([c]), rows), []));
+  for (const [ax, x] of p.axes) {
+    const u = ax.units;
+    motion.push({ title: ax.name, full: true, rows: ([
+      [
+        { kind: 'indicator', label: 'Enabled', more: { address: x.enabled, style: 'ok', onText: 'Enabled', offText: 'Disabled' } },
+        { kind: 'indicator', label: 'Homed', more: { address: x.homed, style: 'ok', onText: 'Homed', offText: 'Not homed' } },
+        { kind: 'indicator', label: 'In position', more: { address: x.inPos, style: 'ok', onText: 'In position', offText: 'Not in position' } },
+        { kind: 'indicator', label: 'Fault', more: { address: x.fault, style: 'alarm', onText: 'Fault', offText: 'No fault' } },
+      ],
+      [
+        { kind: 'numeric', label: 'Position', span: 2, more: { address: x.pos, units: u } },
+        { kind: 'numeric', label: 'Speed', span: 2, more: { address: x.actSpeed, units: `${u}/s` } },
+      ],
+      [
+        { kind: 'button', label: 'Enable', more: { address: x.enable, action: 'toggle', onText: 'Disable', offText: 'Enable', note: 'Enables / disables the drive' } },
+        { kind: 'button', label: 'Home', more: { address: x.home, action: 'momentary', note: 'Starts homing (cycle stopped)' } },
+        { kind: 'button', label: 'Reset', more: { address: x.reset, action: 'momentary', note: 'Resets the drive error once the cause is gone' } },
+        { kind: 'button', label: 'Move', more: { address: x.move, action: 'momentary', level, note: 'Moves to the target at the move speed (Manual mode, homed)' } },
+      ],
+      [
+        { kind: 'button', label: 'Jog −', more: { address: x.jogNeg, action: 'momentary', interlock: x.jogPermit, level, note: 'Hold to jog; stops on release' } },
+        { kind: 'button', label: 'Jog +', more: { address: x.jogPos, action: 'momentary', interlock: x.jogPermit, level, note: 'Hold to jog; stops on release' } },
+        { kind: 'numeric-entry', label: 'Target', more: { address: x.target, units: u, min: null, max: null, level } },
+        { kind: 'numeric-entry', label: 'Speed', more: { address: x.speed, units: `${u}/s`, min: 0, max: null, level } },
+      ],
+    ] as Cell[][]).flatMap(fitRow) });
+  }
+  for (const [en, x] of p.encoders) motion.push({ title: en.name, rows: [[
+    { kind: 'numeric', label: 'Position', more: { address: x.pos, units: en.units } },
+    { kind: 'numeric', label: 'Speed', more: { address: x.speed, units: `${en.units}/s` } },
+  ], [{ kind: 'button', label: 'Zero', more: { address: x.zero, action: 'momentary', level, note: 'Sets the position to 0' } }]] });
+  if (motion.length) groups.push({ id: 'motion', name: 'Motion', purpose: 'Servo axes (enable, home, jog, move to a position, speed, fault and reset, position readout) and encoder readouts.', blocks: motion });
+
   const process: Block[] = c.analogs.map((an) => ({ title: `${an.name} (${an.address})`, rows: [[
-    { kind: 'bar', label: an.name, span: 2, more: { address: an.address, units: an.units, min: an.min, max: an.max } },
+    { kind: 'bar', label: an.name, span: 2, more: { address: an.address, units: an.units, min: an.min, max: an.max, ...(an.kind === 'input' && p.limits.has(an.address) ? { limits: { hi: p.limits.get(an.address)!.hi, lo: p.limits.get(an.address)!.lo } } : {}) } },
     { kind: 'numeric', label: an.units || 'Value', more: { address: an.address, units: an.units || null } },
   ]] }));
 
@@ -315,6 +396,8 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
   if (timeouts.length) setup.push({ title: 'Timeouts', rows: timeouts.map((x) => [x]) });
   const speeds = [...p.speed].map(([a, x]) => entry(`${a.name} speed`, x, a.speedRef!.units, a.speedRef!.min, a.speedRef!.max));
   if (speeds.length) setup.push({ title: 'Drive speeds', rows: speeds.map((x) => [x]) });
+  const jogSpeeds = [...p.axes].map(([ax, x]) => entry(`${ax.name} jog speed`, x.jogSpeed, `${ax.units}/s`, 0, 9999));
+  if (jogSpeeds.length) setup.push({ title: 'Axis jog speeds', rows: jogSpeeds.map((x) => [x]) });
   const aoRows = c.analogs.filter((an) => p.aoSp.has(an.address)).map((an) => entry(an.name, p.aoSp.get(an.address)!, an.units, an.min, an.max));
   if (aoRows.length) setup.push({ title: 'Analog outputs', rows: aoRows.map((x) => [x]) });
   for (const an of c.analogs.filter((x) => x.kind === 'input')) {

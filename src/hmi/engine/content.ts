@@ -37,6 +37,25 @@ export interface HmiAnalog { address: string; name: string; units: string; min: 
 /** A discrete input that is itself an alarm or warning (over-temperature limit, air pressure low, film low). */
 export interface HmiAlarmInput { point: HmiPoint; text: string; /** The input value that means "alarm". */ activeWhen: boolean; severity: 'alarm' | 'warning' }
 
+/**
+ * A servo / stepper axis: its drive's status inputs and enable output. The HMI shows its state and
+ * position, and commands it (enable, home, jog, move to a target) through HMI tags the PLC program
+ * turns into motion (motion instructions or the drive's own I/O).
+ */
+export interface HmiAxis {
+  name: string;
+  /** Stable key for the tag roles: the axis's lowest PLC address. */
+  key: string;
+  /** Position units: mm (default), deg, or counts. */
+  units: string;
+  ready?: HmiPoint; fault?: HmiPoint; homed?: HmiPoint; inPos?: HmiPoint; limitPos?: HmiPoint; limitNeg?: HmiPoint; enable?: HmiPoint;
+  /** Every I/O point of the axis. */
+  points: HmiPoint[];
+}
+
+/** An incremental encoder on a high-speed counter: the HMI shows its scaled position and speed and can zero it. */
+export interface HmiEncoder { name: string; key: string; units: string; channels: HmiPoint[] }
+
 /** Process setpoints the operator sets: the heater's temperature and the dwell (seal) time. */
 export interface HmiProcess {
   /** Temperature control of a heater from an analog temperature input. */
@@ -52,6 +71,10 @@ export interface HmiContent {
   /** Input that counts parts (part-at-end photo-eye, product sensor). */
   partSensor?: HmiPoint;
   analogs: HmiAnalog[];
+  /** Servo / stepper axes (Motion screen). */
+  axes?: HmiAxis[];
+  /** Encoders on high-speed counters (Motion screen). */
+  encoders?: HmiEncoder[];
   /** Machine state word texts (value 0 = stopped). */
   states: HmiState[];
   /** Two-hand start buttons: the cycle starts only with both (anti-tie-down in the PLC, safety in the two-hand relay). */
@@ -114,8 +137,10 @@ export function defaultHmiContent(opts: {
   const typeOf = (x: { p: IOPoint; address: string }): FieldDeviceType => wiring.get(x.address)?.deviceType ?? deviceTypeOf(x.p);
   const point = (x: { p: IOPoint; address: string }): HmiPoint => ({ address: x.address, description: x.p.description || x.address });
   const discrete = pts.filter((x) => x.p.signal !== 'analog');
-  const inputs = discrete.filter((x) => x.p.type === 'input');
-  const outputs = discrete.filter((x) => x.p.type === 'output');
+  // Servo axes and encoders first: their fault / limit inputs and enable outputs are not alarms, actuators or feedback.
+  const { axes, encoders, taken } = motionContent(discrete.map((x) => ({ ...point(x), type: x.p.type, category: x.p.category })));
+  const inputs = discrete.filter((x) => x.p.type === 'input' && !taken.has(x.address));
+  const outputs = discrete.filter((x) => x.p.type === 'output' && !taken.has(x.address));
   const used = new Set<string>();
   const actuators: HmiActuator[] = [];
   const questions: string[] = [];
@@ -191,7 +216,7 @@ export function defaultHmiContent(opts: {
 
   // Analog points: values on a Process screen; a speed reference belongs to its drive.
   const analogs: HmiAnalog[] = pts.filter((x) => x.p.signal === 'analog').map((x) => ({
-    address: x.address, name: title(x.p.description.replace(/\b(transmitter|sensor|signal|reference|ref)\b/gi, '').replace(/\(\s*([^)]*?)\s*\)/g, (_, w: string) => (w ? `(${w})` : '')).replace(/\(\s*\)/g, '')) || x.address,
+    address: x.address, name: title(x.p.description.replace(/\(\s*(ultrasonic|radar|laser|sonar|4-20\s*ma|0-10\s*v|analog)\s*\)/gi, '').replace(/\b(transmitter|sensor|signal|reference|ref|ultrasonic)\b/gi, '').replace(/\(\s*([^)]*?)\s*\)/g, (_, w: string) => (w ? `(${w})` : '')).replace(/\(\s*\)/g, '')) || x.address,
     units: x.p.analog?.units ?? '', min: x.p.analog?.min ?? 0, max: x.p.analog?.max ?? 100, kind: x.p.type,
   }));
   // A speed reference: drive units (Hz, %, rpm, m/min) or "speed" / "frequency" in its name (a 4-20 mA reference may be in mA).
@@ -248,6 +273,8 @@ export function defaultHmiContent(opts: {
     ...(twoHand.length ? { twoHand: twoHand.map(point) } : {}),
     ...(alarmInputs.length ? { alarmInputs } : {}),
     ...(process.temp || process.dwell ? { process } : {}),
+    ...(axes.length ? { axes } : {}),
+    ...(encoders.length ? { encoders } : {}),
     analogs,
     states: [
       { value: 0, text: 'Stopped', style: 'normal' },
@@ -259,4 +286,64 @@ export function defaultHmiContent(opts: {
     io: discrete.map((x) => ({ ...point(x), type: x.p.type })).sort((a, b) => (a.type === b.type ? a.address.localeCompare(b.address, undefined, { numeric: true }) : a.type === 'input' ? -1 : 1)),
     questions,
   };
+}
+
+const AXIS_RE = /\b(servo|stepper|axis)\b/i;
+const ENCODER_RE = /\bencoder\b/i;
+
+/** Position units from the I/O texts: degrees, counts / pulses, else millimetres. */
+const unitsOf = (texts: string[]) => (texts.some((t) => /\b(deg|degrees?|rotary|indexer|turntable)\b|°/i.test(t)) ? 'deg' : texts.some((t) => /\b(counts?|pulses?|ppr)\b/i.test(t)) ? 'counts' : 'mm');
+
+/**
+ * Servo / stepper axes and encoders from the discrete I/O: points in the Servo/Axis category or naming a
+ * servo, stepper or axis, grouped by axis number ("Axis 1 …") or name; encoder channels (A / B / Z) per encoder.
+ * Power supplies ("Servo Power OK / Enable") are the safety circuit's, not an axis.
+ */
+export function motionContent(pts: (HmiPoint & { type: 'input' | 'output'; category?: string })[]): { axes: HmiAxis[]; encoders: HmiEncoder[]; taken: Set<string> } {
+  const taken = new Set<string>();
+  const groupOf = (d: string, words: RegExp) => {
+    const n = /\baxis\s*(\d+|[xyzuvw])\b/i.exec(d) ?? /\b([xyzuvw])[- ]axis\b/i.exec(d) ?? /\b(?:servo|stepper|encoder)\s*(\d+)\b/i.exec(d);
+    if (n) return /^\d+$/.test(n[1]) ? `Axis ${n[1]}` : `${n[1].toUpperCase()} Axis`;
+    const rest = d.replace(words, ' ').replace(/\b(servo|stepper|axis|drive|encoder|channel|phase|ready|fault|alarm|home\w*|complete|done|in\s*position|positive|negative|limit|enable\w*|command|jog\w*|move\w*|to|position|[abz]|ok|pulse|input|output)\b/gi, ' ');
+    return title(keyWords(rest).slice(0, 3).join(' ')) || 'Axis';
+  };
+  const axisPts = pts.filter((x) => (x.category === 'Servo/Axis' || AXIS_RE.test(x.description)) && !ENCODER_RE.test(x.description) && !/\bpower\b/i.test(x.description));
+  const byAxis = new Map<string, typeof axisPts>();
+  for (const x of axisPts) byAxis.set(groupOf(x.description, AXIS_RE), [...(byAxis.get(groupOf(x.description, AXIS_RE)) ?? []), x]);
+  const axes: HmiAxis[] = [];
+  for (const [name, xs] of byAxis) {
+    const ins = xs.filter((x) => x.type === 'input'), outs = xs.filter((x) => x.type === 'output');
+    const find = (list: typeof xs, re: RegExp, not?: RegExp) => list.find((x) => re.test(x.description) && !(not && not.test(x.description)));
+    const pt = (x?: (typeof xs)[number]) => (x ? { address: x.address, description: x.description } : undefined);
+    const a: HmiAxis = {
+      name, key: [...xs].sort((p, q) => p.address.localeCompare(q.address, undefined, { numeric: true }))[0].address, units: unitsOf(xs.map((x) => x.description)),
+      points: xs.map((x) => ({ address: x.address, description: x.description })),
+    };
+    const set = <K extends keyof HmiAxis>(k: K, v: HmiAxis[K] | undefined) => { if (v) a[k] = v; };
+    set('fault', pt(find(ins, /\b(fault|alarm|error)\b/i)));
+    set('ready', pt(find(ins, /\b(ready|servo on|enabled)\b/i)));
+    set('homed', pt(find(ins, /\bhome(d)?\b.*\b(complete|done|ok)\b|\bhomed\b/i)));
+    set('inPos', pt(find(ins, /\bin[- ]?position\b|\binpos\b/i)));
+    set('limitPos', pt(find(ins, /\b(positive|forward|\+)\s*(limit|overtravel)\b|\b(limit|overtravel)\s*(\+|positive|fwd)/i)));
+    set('limitNeg', pt(find(ins, /\b(negative|reverse|-)\s*(limit|overtravel)\b|\b(limit|overtravel)\s*(-|negative|rev)/i)));
+    set('enable', pt(find(outs, /\b(enable|servo on)\b/i)));
+    for (const x of xs) taken.add(x.address);
+    axes.push(a);
+  }
+  // Encoders: counting channels only (an "Encoder position OK" status input is an ordinary input).
+  const encPts = pts.filter((x) => x.type === 'input' && ENCODER_RE.test(x.description) && !/\b(ok|fault|alarm|error)\b/i.test(x.description));
+  const byEnc = new Map<string, typeof encPts>();
+  for (const x of encPts) {
+    const k = groupOf(x.description, ENCODER_RE).replace(/^Axis$/, 'Encoder');
+    byEnc.set(k, [...(byEnc.get(k) ?? []), x]);
+  }
+  const encoders: HmiEncoder[] = [...byEnc].map(([name, xs]) => {
+    for (const x of xs) taken.add(x.address);
+    return {
+      name: /encoder/i.test(name) ? name : `${name} encoder`, units: unitsOf(xs.map((x) => x.description)),
+      key: [...xs].sort((p, q) => p.address.localeCompare(q.address, undefined, { numeric: true }))[0].address,
+      channels: xs.map((x) => ({ address: x.address, description: x.description })),
+    };
+  });
+  return { axes, encoders, taken };
 }
