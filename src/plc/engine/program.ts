@@ -11,6 +11,7 @@ import type { CompareOp, LadderElement, LadderOutput, LadderProgram, ProgramBloc
 import type { HmiAlarm, HmiScreen, HmiTag } from '../../hmi/types';
 import { inferRoles } from '../../hmi/engine/roles';
 import { TWO_HAND_RE } from '../../electrical/engine/machineModel';
+import { buildMotion } from './motion';
 import { planHmiTags, type HmiActuator, type HmiContent, type HmiPoint } from '../../hmi/engine';
 
 const NO = (address: string): LadderElement => ({ type: 'NO', address });
@@ -99,6 +100,10 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   // Internal float registers above the HMI's DF101-DF200.
   let nextDf = 201;
   const freeDf = () => { let a: string; do { a = `DF${nextDf++}`; } while (taken.has(a)); taken.add(a); return a; };
+  // Motion registers: DD from DD1, error codes in DS from DS1 (clear of the HMI's DS1001-DS1200 and the step register).
+  let nextDd = 1, nextDs = 1;
+  const freeDd = () => { let a: string; do { a = `DD${nextDd++}`; } while (taken.has(a)); taken.add(a); return a; };
+  const freeDs = () => { let a: string; do { a = `DS${nextDs++}`; } while (taken.has(a)); taken.add(a); return a; };
   const timer = () => { let a: string; do { a = `T${nextTimer++}`; } while (taken.has(a) || taken.has(`TD${a.slice(1)}`)); taken.add(a); return a; };
   const tags: TagDefinition[] = [];
   const nick = (address: string, nickname: string, comment: string) => { if (!tags.some((t) => t.address === address)) tags.push({ address, nickname: nickname.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24), comment }); };
@@ -257,6 +262,9 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     if (hi && aHi) R('alarms', `${an.name} high warning: value at or above the high limit`, [[CMP(an.address, '>=', hi)]], [OUT(aHi)]);
     if (lo && aLo) R('alarms', `${an.name} low warning: value at or below the low limit`, [[CMP(an.address, '<=', lo)]], [OUT(aLo)]);
   }
+  // Servo / stepper axes and encoders (their faults stop the cycle too).
+  const motion = buildMotion(c, { R, tag, bit, timer, freeDf, freeDd, freeDs, nick, blocks, notes, faultBits, SAFE, RESET, RUN, manual, panel });
+
   // Any latched fault stops the cycle.
   R('alarms', `Any fault (stops the cycle): ${faultBits.length ? faultBits.join(', ') : 'none latched yet'}`, faultBits.length ? faultBits.map((f) => [NO(f)]) : [[NC('SC1')]], [OUT(FAULT)]);
   nick(FAULT, 'Any_Fault', 'A latched fault: stops the cycle');
@@ -454,7 +462,7 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   const order = new Map(blocks.map((b, i) => [b.id, i]));
   rungs.sort((x, y) => (order.get(x.block ?? '') ?? 99) - (order.get(y.block ?? '') ?? 99));
   return {
-    program: { blocks: blocks.filter((b) => rungs.some((r) => r.block === b.id)), rungs, tags },
+    program: { blocks: blocks.filter((b) => rungs.some((r) => r.block === b.id)), rungs, tags, ...(motion ? { motion } : {}) },
     autoBits,
     roles: new Map([...byRole].map(([k, t]) => [k, t.address])),
     internal: { safe: SAFE, run: RUN, fault: FAULT, reset: RESET },

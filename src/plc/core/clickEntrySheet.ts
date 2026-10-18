@@ -67,6 +67,34 @@ export function clickEntryBlocks(program: LadderProgram, labels: Map<string, str
   return groups.map((g) => ({ name: g.name, description: g.description, rungs: [...g.ids].sort((a, b) => num.get(a)! - num.get(b)!).map((id) => entryRung(byId.get(id)!, num.get(id)!, label)) }));
 }
 
+/**
+ * The motion the PLC runs itself (program.motion): what to set up in High Speed I/O Setup (CLICK PLUS, option module
+ * in slot 0; CLICK help 292) and one rung per motion instruction (Home / Velocity Move / Position Move for PTO Axis,
+ * help 294–296), each enabled by its request bit, typed after the program's rungs and before END.
+ */
+export function clickMotionEntry(program: LadderProgram, labels: Map<string, string>): { setup: string[]; rungs: EntryRung[] } {
+  const m = program.motion;
+  if (!m || (!m.axes.length && !m.counters.length)) return { setup: [], rungs: [] };
+  const label = (a: string) => (labels.get(a.toUpperCase()) ? ` (${labels.get(a.toUpperCase())})` : '');
+  const setup: string[] = [];
+  for (const a of m.axes) setup.push(`High Speed I/O Setup: PTO Axis ${a.axis} "${a.name}" — pulse ${a.pulse} (fixed: Y001 / Y003 / Y005 of the slot-0 module), direction ${a.direction || '(add one)'}; ${a.pulsesPerUnit} pulses per ${a.units}; current position → ${a.position}, current velocity → ${a.velocity}${a.limitPos || a.limitNeg ? `; limit inputs ${[a.limitPos && `+ ${a.limitPos}`, a.limitNeg && `− ${a.limitNeg}`].filter(Boolean).join(', ')} (a limit faults the move, error 103)` : ''}.`);
+  for (const c of m.counters) setup.push(`High Speed I/O Setup: high-speed counter "${c.name}" on ${c.channels.join(' / ')} — ${c.quadrature ? `quadrature A-B${c.withZ ? ' with Z' : ''}` : 'single input, up'}; current count → ${c.count} (signed DD). The rungs scale it.`);
+  let n = program.rungs.length;
+  const KIND: Record<string, string> = { home: 'Home for PTO Axis', velocity: 'Velocity Move for PTO Axis', position: 'Position Move for PTO Axis' };
+  const rungs: EntryRung[] = m.instructions.map((i) => {
+    const ax = m.axes.find((a) => a.axis === i.axis)!;
+    const fields: [string, string][] = [['Axis', `Axis ${i.axis} (${ax.name})`]];
+    if (i.kind === 'home') fields.push(['Mode', i.homeSwitch ? `origin search on a switch — Switch: ${i.homeSwitch}${label(i.homeSwitch)} (help 294)` : 'set current position (no home switch)'], ['Set position on completion', '0']);
+    if (i.kind === 'velocity') fields.push(['Target Velocity', `${i.target}${label(i.target!)} (pulses/s, signed)`], ['Direction', 'Use Velocity Sign']);
+    if (i.kind === 'position') fields.push(['Target Position', `${i.target}${label(i.target!)} (pulses)`], ['Mode', 'ABS'], ['Target Velocity', `${i.velocity}${label(i.velocity!)} (pulses/s)`], ['Direction', 'Use Velocity Sign']);
+    fields.push(['Acceleration', `${i.accel} pulses/s²`], ['Deceleration', `${i.decel} pulses/s²`], ['Immediate Stop', 'off (decelerates when disabled)'],
+      ['Busy', `${i.busy}${label(i.busy)}`], ['Complete', `${i.complete}${label(i.complete)}`], ['Success', `${i.success}${label(i.success)}`], ['Error', `${i.error}${label(i.error)}`], ['Error code', `${i.errorCode}${label(i.errorCode)}`]);
+    return { number: ++n, comment: `${KIND[i.kind]} — ${ax.name}, runs while ${i.enable} is ON`, rows: [[{ column: 1, instruction: 'NO contact (normally open)', fields: [['Address', `${i.enable}${label(i.enable)}`]] }]],
+      outputs: [{ instruction: KIND[i.kind], fields, note: 'Set the acceleration / deceleration for the machine; the values given are a safe start.' }] };
+  });
+  return { setup, rungs };
+}
+
 const fieldText = (f: [string, string][]) => f.map(([k, v]) => `${k}: ${v}`).join(' · ');
 
 /** Plain-text version (same content as the printable sheet). */
@@ -82,7 +110,18 @@ export function clickEntryText(program: LadderProgram, labels: Map<string, strin
       lines.push('');
     }
   }
-  lines.push(`[ ] Rung ${program.rungs.length + 1} — END instruction on its own rung, the last rung of the main program (CLICK needs it to run).`);
+  const mo = clickMotionEntry(program, labels);
+  if (mo.setup.length) {
+    lines.push('=== Motion — set up first, then the motion instruction rungs ===', '');
+    for (const x of mo.setup) lines.push(`[ ] ${x}`);
+    lines.push('');
+    for (const r of mo.rungs) {
+      lines.push(`[ ] Rung ${r.number} — ${r.comment}`, `    Row 1: ${r.rows[0].map((c) => `col ${c.column} ${c.instruction} [${fieldText(c.fields)}]`).join('  →  ')}`);
+      r.outputs.forEach((o) => { lines.push(`    Output: ${o.instruction} [${fieldText(o.fields)}]`); if (o.note) lines.push(`      ${o.note}`); });
+      lines.push('');
+    }
+  }
+  lines.push(`[ ] Rung ${program.rungs.length + mo.rungs.length + 1} — END instruction on its own rung, the last rung of the main program (CLICK needs it to run).`);
   return lines.join('\r\n') + '\r\n';
 }
 
@@ -91,6 +130,7 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 /** Printable HTML entry sheet with a tick box per rung (open in a browser, print or tick on screen). */
 export function clickEntrySheetHtml(program: LadderProgram, labels: Map<string, string>, header: string, cpuAndModules: string[]): string {
   const blocks = clickEntryBlocks(program, labels);
+  const mo = clickMotionEntry(program, labels);
   const fields = (f: [string, string][]) => `<table class="f">${f.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>`;
   const rung = (r: EntryRung) => `
 <section class="rung">
@@ -125,7 +165,8 @@ table.f{border-collapse:collapse;margin-top:2px} .f th{font-weight:normal;color:
 <li>Finish with the END instruction on its own last rung, then check the program (it must show no errors) and save.</li>
 </ol></div>
 ${blocks.map((b) => `<h2>${esc(b.name)}${b.description ? ` — <span class="c">${esc(b.description)}</span>` : ''}</h2>${b.rungs.map(rung).join('')}`).join('\n')}
-<section class="rung"><h3><label><input type="checkbox"> Rung ${program.rungs.length + 1}</label> <span class="c">END — the last rung of the main program</span></h3><p>Add the <b>END</b> instruction on its own rung (no contacts). CLICK needs it to run.</p></section>
+${mo.setup.length ? `<h2>Motion — <span class="c">set up first (High Speed I/O Setup), then the motion instruction rungs</span></h2><div class="steps"><ol>${mo.setup.map((x) => `<li><label><input type="checkbox"> ${esc(x)}</label></li>`).join('')}</ol></div>${mo.rungs.map(rung).join('')}` : ''}
+<section class="rung"><h3><label><input type="checkbox"> Rung ${program.rungs.length + mo.rungs.length + 1}</label> <span class="c">END — the last rung of the main program</span></h3><p>Add the <b>END</b> instruction on its own rung (no contacts). CLICK needs it to run.</p></section>
 </body></html>
 `;
 }
