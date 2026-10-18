@@ -12,8 +12,8 @@
  * Types are the parts of Debug 4's WiringPath / Step / FaultLogEntry this reads (structurally the same).
  */
 
-import { findSymptom, rankedCauses, symptomMap, type MachineSymptom, type MachineSymptomMap, type SymptomCause } from './machineSymptoms';
-import type { SymptomKind } from './deviceFaults';
+import { findSymptom, rankedCauses, symptomMap, type MachineSymptom, type MachineSymptomMap, type SymptomCause } from './kbStub';
+import type { SymptomKind } from './kbStub';
 
 export type Symptom = 'never-on' | 'always-on' | 'flickers' | 'output-dead' | 'analog-wrong';
 

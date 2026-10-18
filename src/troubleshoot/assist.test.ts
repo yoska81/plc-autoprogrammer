@@ -127,11 +127,18 @@ const asks = (reply: string | Error): Ask => async () => { if (reply instanceof 
   assert.deepEqual(c.slice(0, 2).map((x) => x.text), ['PE1: Lens dirty or misaligned', 'PE1: Sensitivity set too low']);
   assert.match(c[0].why, /maker's manual: https:\/\/example.com\/e3z.pdf p.12/);
   assert.ok(!c.some((x) => /does not switch: misaligned/.test(x.text)), 'the general device cause is replaced');
-  const m = matchMachineSymptom('the parts are too long', 'Roll former line 2');
+  // A small map of the same shape as Dev 1's (their data is passed in by the app once it lands).
+  const cause = (rank: number, text: string) => ({ rank, cause: text, devices: {}, checks: [`check ${text}`], fix: [], source: 'test' });
+  const maps = [{ machineType: 'roll-former', title: 'Roll former', aliases: ['roll former', 'flying shear'], sources: [], symptoms: [
+    { id: 'cut-length-wrong', symptom: 'Cut length wrong (parts too long or too short)', aliases: ['length drifts'], causes: [cause(2, 'B'), cause(1, 'A')] },
+    { id: 'shear-does-not-fire', symptom: 'Shear does not cut', aliases: ['misses cuts'], causes: [cause(1, 'C')] },
+  ] }];
+  const m = matchMachineSymptom('the parts are too long', 'Roll former line 2', maps);
   assert.equal(m?.symptom.id, 'cut-length-wrong');
-  assert.ok(m!.causes.length > 0 && m!.causes[0].rank <= m!.causes[m!.causes.length - 1].rank, 'causes most likely first');
-  assert.equal(matchMachineSymptom('the parts are too long', 'Bottle capper'), null, 'no map for this machine type');
-  assert.equal(matchMachineSymptom('shear misses cuts sometimes', 'flying shear')?.symptom.id, 'shear-does-not-fire');
+  assert.deepEqual(m!.causes.map((c) => c.cause), ['A', 'B'], 'causes most likely first');
+  assert.equal(matchMachineSymptom('the parts are too long', 'Bottle capper', maps), null, 'no map for this machine type');
+  assert.equal(matchMachineSymptom('shear misses cuts sometimes', 'flying shear', maps)?.symptom.id, 'shear-does-not-fire');
+  assert.equal(matchMachineSymptom('the parts are too long', 'Roll former'), null, 'no knowledge loaded: nothing, never a guess');
 }
 
 console.log('assist.test: all passed');
