@@ -20,6 +20,21 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.goto(BASE + '/hmi');
   await page.getByRole('button', { name: 'Edit screen' }).click();
+  // Every addressed element of the first screen, as generated: nothing flagged.
+  const ids = await page.evaluate(async () => {
+    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+    return d.screens[0].elements.filter((e) => e.address).map((e) => ({ id: e.id, kind: e.kind, interlock: e.interlock ?? null }));
+  });
+  let flagged = 0;
+  for (const e of ids) {
+    const b = await page.locator(`[data-testid="hmi-editor"] [data-el="${e.id}"]`).first().boundingBox();
+    if (!b) continue;
+    await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+    await page.waitForTimeout(80);
+    flagged += await page.getByTestId('address-problem').count() + await page.getByTestId('interlock-problem').count();
+  }
+  log(`${ids.length} addressed elements on the first screen, ${flagged} flagged`);
+  check(ids.length > 0 && flagged === 0, 'the generated addresses are all accepted');
   const lamp = await page.evaluate(async () => {
     const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
     return d.screens[0].elements.find((e) => e.kind === 'indicator' && e.address)?.id;
@@ -36,21 +51,6 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   }
   check((await typed('C1201')) === '', 'a valid bit shows nothing');
   check(/Type X001/.test(await typed('X1')), 'X1 hints X001');
-  // Every addressed element of the first screen, as generated: nothing flagged.
-  const ids = await page.evaluate(async () => {
-    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
-    return d.screens[0].elements.filter((e) => e.address && e.kind !== 'indicator').map((e) => ({ id: e.id, kind: e.kind, interlock: e.interlock ?? null }));
-  });
-  let flagged = 0;
-  for (const e of ids) {
-    const b = await page.locator(`[data-testid="hmi-editor"] [data-el="${e.id}"]`).first().boundingBox();
-    if (!b) continue;
-    await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
-    await page.waitForTimeout(80);
-    flagged += await page.getByTestId('address-problem').count() + await page.getByTestId('interlock-problem').count();
-  }
-  log(`${ids.length} addressed elements on the first screen, ${flagged} flagged`);
-  check(ids.length > 0 && flagged === 0, 'the generated addresses are all accepted');
   const button = ids.find((e) => e.kind === 'button');
   if (button) {
     const b = await page.locator(`[data-testid="hmi-editor"] [data-el="${button.id}"]`).first().boundingBox();

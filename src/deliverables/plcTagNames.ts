@@ -8,7 +8,7 @@ import { exportContext } from './exportContext';
 
 export function plcTagNameOf(p: ProjectSnapshot): (address: string) => PlcTagName {
   const names = p.profile.language === 'ladder' ? plcTagNames(p.profile, p.ladder, exportContext(p)) : new Map<string, PlcTagName>();
-  const modules = exportContext(p).modules;
+  const { modules, cpuId } = exportContext(p);
   return (a) => names.get(a.toUpperCase())
-    ?? (p.profile.id === 'click' ? { name: a, scope: 'CLICK', dataType: '' } : { name: '', scope: '', dataType: '', io: p.profile.ioTag?.(a, modules) ?? undefined });
+    ?? (p.profile.id === 'click' ? { name: a, scope: 'CLICK', dataType: '' } : { name: '', scope: '', dataType: '', io: p.profile.ioTag?.(a, modules ?? [], cpuId) ?? undefined });
 }

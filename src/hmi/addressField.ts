@@ -6,6 +6,7 @@
  * either for state displays and the header's mode. Buttons and entries cannot write what the PLC sets itself.
  */
 import { checkMemoryAddress, nativeName, rackTerminals, type Rack } from '../plc/core/addressCheck';
+import { platformById } from '../plc/core/platforms';
 import type { HmiElement } from './types';
 
 const NUMBER: HmiElement['kind'][] = ['numeric', 'numeric-entry', 'bar', 'trend'];
@@ -20,19 +21,28 @@ function tidy(a: string): string | null {
   return t === a ? null : t;
 }
 
+/** A PLC name as typed, for comparing: no spaces, no "on-board" (Unitronics I0, "I 0", "on-board I0"). */
+const key = (s: string) => s.toUpperCase().replace(/\s+/g, '').replace(/^ON-?BOARD/, '');
+
 export function hmiAddressProblem(rack: Rack, io: Set<string>, kind: HmiElement['kind'], raw: string | null | undefined): string | null {
-  const { profile } = rack;
+  const { profile, cpu } = rack;
   // Generic Structured Text names points by the project's own ids: any name is an address there.
   if (profile.id === 'generic-st') return null;
+  // The CPU's own family when it differs from the profile's (a 1769 CompactLogix 5370 on the Logix profile).
+  const plcName = (cpu.platformId && platformById(cpu.platformId)?.name) || profile.name;
   const typed = (raw ?? '').trim();
   const a = typed.toUpperCase();
   if (!a) return null;
-  // The PLC's own name of one of its terminals (%I0.0, Local:1:I.Pt00.Data, _IO_EM_DI_00).
-  const own = [...rackTerminals(rack, 'input'), ...rackTerminals(rack, 'output')].find((t) => nativeName(rack, t)?.toUpperCase() === a);
-  if (own) return `${typed} is ${own} on the screens: type ${own}. The export names it ${typed} again.`;
+  // The PLC's own name of one of its terminals or analog channels (%I0.0, %IW64, Local:1:I.Pt00.Data, _IO_EM_DI_00, I 0).
+  const channels = (profile.analogChannels?.(cpu, rack.modules) ?? []).map((c) => c.address);
+  const own = [...rackTerminals(rack, 'input'), ...rackTerminals(rack, 'output'), ...channels].find((t) => { const n = nativeName(rack, t); return n !== null && key(n) === key(a); });
+  if (own) return `${typed} is ${own} on the screens: type ${own}. The export names it ${nativeName(rack, own)} again.`;
   const fixed = tidy(a);
   if (/^[XY]\d+$/.test(a)) {
-    if (!io.has(a)) return fixed && io.has(fixed) ? `Type ${fixed}: inputs and outputs have three digits.` : `${a} is not in the I/O list.`;
+    if (!io.has(a)) {
+      if (!fixed) return `${a} is not in the I/O list.`;
+      return io.has(fixed) ? `Type ${fixed}: inputs and outputs have three digits.` : `Inputs and outputs have three digits (${fixed}), and ${fixed} is not in the I/O list.`;
+    }
     if (kind === 'button' && a.startsWith('X')) return `${a} is an input: the PLC reads it from the wiring, a button cannot write it. Use a memory bit (e.g. C1001).`;
     if (NUMBER.includes(kind)) return `${a} is an on/off point; this shows a number.`;
     return null;
@@ -40,7 +50,7 @@ export function hmiAddressProblem(rack: Rack, io: Set<string>, kind: HmiElement[
   const info = profile.parseAddress(a);
   if (!info) {
     if (fixed && profile.parseAddress(fixed)) return `Type ${fixed}: memory addresses have no leading zeros.`;
-    return `"${typed}" is not an address on ${profile.name}.${profile.id === 'click' ? '' : ` The screens use the app's addresses on every PLC (C1 for a bit, DS1 for a number, X001 / Y001 for I/O); the export gives them their ${profile.name} names.`}`;
+    return `"${typed}" is not an address on ${plcName}.${profile.id === 'click' ? '' : ` The screens use the app's addresses on every PLC (C1 for a bit, DS1 for a number, X001 / Y001 for I/O); the export gives them their ${plcName} names.`}`;
   }
   if (info.kind === 'constant') return `${a} is a number, not an address. Type a register such as DS1, or a bit such as C1.`;
   // What the PLC sets itself (same rule as the program checker for system memory).
