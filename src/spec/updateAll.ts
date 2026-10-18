@@ -1,3 +1,4 @@
+import { noTouchPanelNow, projectPanelPartNow } from './panelNow';
 import { bindProgress, finishProgress } from '../lib/ai/progress';
 import { useSpecStore } from '../store/useSpecStore';
 import { useIOStore } from '../store/useIOStore';
@@ -27,7 +28,7 @@ import { reviseLadder } from '../plc/ai/ladderAI';
 import { generateRuleBasedProgram } from '../plc/ai/cycleAI';
 import { getHmi } from '../hmi/hmiCatalog';
 import { rulesEquipment } from './equipmentRules';
-import { noTouchPanelNow, stagesNow } from './useStages';
+import { stagesNow } from './useStages';
 import { missingOperatorIo } from './operatorIo';
 import { aiNow } from '../lib/ai/timing';
 import type { AIConfig, PlcContext } from '../plc/ai/ladderAI';
@@ -194,11 +195,10 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       // AI reads the machine model, the rule-based engine designs the panel (src/electrical/engine).
       // Both versions start from the same inputs (the rules' version must not become the AI's "designer's motor list").
       const proj = useProjectStore.getState();
-      const hmiState = useHmiStore.getState();
       const input = {
         spec: specToText(spec), io, addresses: resolveAddresses(profile, cpu, io, slots), inputs: el.inputs, region: proj.info.region,
         pref: vendorPreference(), getPart, modules: proj.modules, analog: analogSetup(profile, cpu, slots, io),
-        hmiPartNumber: hmiState.design?.hmiPartNumber || hmiState.hmiPartNumber || null, projectName: useProgramStore.getState().projectName,
+        hmiPartNumber: projectPanelPartNow(), projectName: useProgramStore.getState().projectName,
         plc: { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label },
       };
       const apply = (r: Awaited<ReturnType<typeof generateRuleBasedDesign>>) => {
@@ -297,7 +297,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const changed = changedSections(useStageStore.getState().sources.program?.spec ?? null, spec);
       const request = `The machine specification, I/O list and/or HMI changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. Update the program to match, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specToText(spec)}`;
       const ioSet = new Set([...addresses.values()].filter(Boolean));
-      const r = await reviseLadder(aiCfg, ctxP, prog.ladder, validateProgram(prog.ladder, profile, ioSet), [{ role: 'user', content: `Machine specification:\n${specToText(spec)}` }], request);
+      const r = await reviseLadder(aiCfg, ctxP, prog.ladder, validateProgram(prog.ladder, profile, ioSet, undefined, { noPanel: noTouchPanelNow() }), [{ role: 'user', content: `Machine specification:\n${specToText(spec)}` }], request);
       prog.addChat({ role: 'user', text: 'Update the program for the latest spec, I/O and HMI changes.' });
       if (r.program) {
         prog.addChat({ role: 'assistant', text: r.explanation });

@@ -1,4 +1,4 @@
-import { noTouchPanelNow } from '../../../spec/useStages';
+import { noTouchPanelNow } from '../../../spec/panelNow';
 import { useSettingsStore } from '../../../store/useSettingsStore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';

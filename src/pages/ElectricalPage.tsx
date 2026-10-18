@@ -1,3 +1,4 @@
+import { useProjectPanelPart } from '../spec/panelNow';
 import { useMemo, useState } from 'react';
 import { IS_PREVIEW } from '../preview/mode';
 import { looksLeftOver } from '../spec/leftovers';
@@ -36,7 +37,6 @@ import { useDrawingContext } from '../electrical/useDrawingContext';
 import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
-import { useHmiStore } from '../store/useHmiStore';
 import type { CatalogCategory, DesignInputs, EnclosureRating, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
 import { Spinner, ReasoningPanel } from '../components/common';
 import StageBanner from '../components/StageBanner';
@@ -89,7 +89,7 @@ export default function ElectricalPage() {
   const specText = specToText(fp.spec);
   const { profile, cpu, io, addresses, analog } = usePlc();
   const modules = useProjectStore((s) => s.modules);
-  const hmiPartNumber = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
+  const hmiPartNumber = useProjectPanelPart();
   const ctx = useDrawingContext();
   // The layout editor stores device tags: it works with the design's own tags.
   const rawCtx = useDrawingContext({ raw: true });

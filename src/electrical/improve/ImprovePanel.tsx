@@ -1,3 +1,4 @@
+import { useProjectPanelPart } from '../../spec/panelNow';
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useElectricalStore } from '../../store/useElectricalStore';
@@ -105,7 +106,7 @@ function useBaseInput(): BaseInput {
   const modules = useProjectStore((s) => s.modules);
   const region = useProjectStore((s) => s.info.region);
   const pref = useVendorPreference();
-  const hmiPartNumber = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
+  const hmiPartNumber = useProjectPanelPart();
   const projectName = useProgramStore((s) => s.projectName);
   const fp = useFingerprints();
   return useMemo(() => ({

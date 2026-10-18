@@ -1,3 +1,4 @@
+import { noTouchPanelNow } from '../spec/panelNow';
 import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useIOStore } from '../store/useIOStore';
@@ -5,7 +6,6 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useStageStore } from '../store/useStageStore';
 import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, ioFingerprint } from '../spec/useStages';
-import { noTouchPanelNow } from '../spec/useStages';
 import { missingOperatorIo } from '../spec/operatorIo';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge, type IOMergePlan } from '../lib/ai/ioAI';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';

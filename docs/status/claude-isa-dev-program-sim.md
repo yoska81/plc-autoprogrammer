@@ -12,6 +12,13 @@ Current: **Unitronics as a PLC brand, end to end** (manager request) — draft P
   - The Auto/Manual selector (with or without a panel) puts the machine in Manual and stops the cycle.
   - New lamp rules: horn / buzzer while faulted, Ready / Power / white = Safety OK with no fault and stopped, Reset / blue lamp = fault latched.
 - **Electrical:** the door already took the devices from the I/O list. Fixed the pushbutton colour regex: "...button" matched `on\b`, so Reset and Fault reset were green; now black (sealing-head and unitronics-v700 goldens updated). engine.test checks the no-panel door, parts, wiring, and that there's no HMI in the BOM or network.
+- **Panel rule:** `src/spec/panelNow.ts` has `noTouchPanelNow()`, `projectPanelPartNow()` and `useProjectPanelPart()`. The project's panel is the equipment choice only, so a leftover HMI design no longer puts the old panel on the door. Used by the drawing context, cabinet pictures, Improve panel, Electrical page and the Update all electrical step. Same names and rule as Dev 5's `src/hmi/projectPanel.ts`: switch the imports to it once both branches are in integration.
+- **Debug 4's journey `nohmi` (PR #87, bench press) is the acceptance case, and it passes (0 problems, 0 critical / major review findings):**
+  - With no panel and no Start PB, both two-hand buttons start the machine and each cycle.
+  - "Run / setup", "Auto / hand" and "Auto / manual" selectors are recognised (ON = Manual unless the text says ON = Auto / Run, with a note to check).
+  - With no panel, the heartbeat, Service Done, HMI jog (Manual block) and count-reset rungs aren't generated.
+- **Checker:** `validateProgram(…, hmi, { noPanel })` adds "X can never turn on: every way to switch it on needs B, which nothing writes". It's an error when B is a panel bit on a no-panel machine, a warning otherwise. Update all and the cycle AI pass `noPanel`; collect.ts (the review) needs `{ noPanel: p.noHmi }` (Dev 5's file).
+- **Alarm list:** with no panel, the alarm bits the program writes get `ALM_…` names and comments, so the deliverables' alarm list isn't empty. `operatorRole(point)` in operatorIo.ts gives Dev 5's operator-station section the role of each door point.
 - **Tests:** `src/plc/engine/noPanel.test.ts` runs closed loop: Start and Stop from the door, the selector to Manual stops the cycle, E-stop turns the Fault lamp on, Reset, and no rung reads an HMI command bit. New harness variant `rules-nopanel` (sealing head, no HMI) is in gen-outputs and check_overlap.
 
 ## Load into PLC + Online check (manager: URGENT, user connects a CLICK C0-11DD2E-D tomorrow)

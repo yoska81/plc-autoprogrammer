@@ -18,6 +18,8 @@ export function validateProgram(
   ioAddresses: Set<string>,
   /** The project's HMI: a tag the HMI shows that no rung writes, or a command no rung reads, is an error. */
   hmi?: { tags: { address: string; name: string; access: string }[] },
+  /** noPanel: the machine has no touch panel, so nothing writes the panel ranges C1001–C1300 / DS1001–DS1200 / DF101–DF200. */
+  opts: { noPanel?: boolean } = {},
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const outCoils = new Map<string, number>();
@@ -133,6 +135,36 @@ export function validateProgram(
     const timerRead = (a: string) => /^CT\d+$/.test(a) || reads.has(a) || hmiAddr.has(a.replace(/^T(\d+)$/, 'TD$1')) || reads.has(a.replace(/^T(\d+)$/, 'TD$1'));
     for (const [a, rung] of reads) if (!writes.has(a) && !skip(a) && !/^(T|CT)\d+$/.test(a)) issues.push({ rungId: rung, severity: 'warning', message: `${a} is read but never written: it is always 0 / OFF.` });
     for (const [a, rung] of writes) if (!timerRead(a) && !skip(a)) issues.push({ rungId: rung, severity: 'warning', message: `${a} is written but never read: this logic does nothing.` });
+  }
+
+  // A coil that can never turn on: every branch that could switch it on (its own seal-in aside) needs a contact on a
+  // bit nothing writes — e.g. Cycle running started only from a panel Start bit on a machine with no touch panel.
+  if (program.rungs.length) {
+    const written = new Set(program.rungs.flatMap((r) => rungWrites(r).map((a) => a.trim().toUpperCase())));
+    for (const t of hmi?.tags ?? []) if (t.access !== 'read') written.add(t.address.trim().toUpperCase());
+    const panelRange = (a: string) => /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/.test(a);
+    const dead = (a: string) => {
+      const info = profile.parseAddress(a);
+      if (!info || info.kind === 'constant' || info.kind === 'input' || info.kind === 'output' || info.kind === 'system' || ioAddresses.has(a) || written.has(a)) return false;
+      if (/^(T|TD|CT|CTD)\d+$/.test(a)) return false;
+      return !panelRange(a) || Boolean(opts.noPanel);
+    };
+    const coils = new Map<string, Rung[]>();
+    for (const r of program.rungs) for (const o of r.outputs) if (o.type === 'OUT' || o.type === 'SET') { const k = o.address.trim().toUpperCase(); coils.set(k, [...(coils.get(k) ?? []), r]); }
+    for (const [a, rs] of coils) {
+      const blockers = new Set<string>();
+      const live = rs.some((r) => r.branches.some((b) => {
+        const contacts = b.filter((e): e is Extract<typeof e, { address: string }> => (e.type === 'NO' || e.type === 'RISE') && 'address' in e).map((e) => e.address.trim().toUpperCase());
+        if (contacts.includes(a)) return false; // its own seal-in
+        const d = contacts.filter(dead);
+        d.forEach((x) => blockers.add(x));
+        return !d.length;
+      }) || !r.branches.length);
+      if (live || !blockers.size) continue;
+      const panelOnly = [...blockers].some(panelRange);
+      issues.push({ rungId: rs[0].id, severity: panelOnly && opts.noPanel ? 'error' : 'warning',
+        message: `${a} can never turn on: every way to switch it on needs ${[...blockers].join(' / ')}, which nothing writes${panelOnly && opts.noPanel ? ' (a touch-panel command, and this machine has no touch panel — use a pushbutton input)' : ''}.` });
+    }
   }
 
   for (const [address, count] of outCoils) {

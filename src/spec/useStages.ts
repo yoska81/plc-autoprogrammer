@@ -134,13 +134,8 @@ export function stagesNow(): Record<StageId, StageInfo> {
     hasDesign: Boolean(useElectricalStore.getState().design),
     hasHmi: Boolean(hmi),
     hasProgram: prog.ladder.rungs.length > 0 || Boolean(prog.generatedCode),
-    noHmi: noTouchPanelNow(),
+    noHmi: Boolean(useStageStore.getState().sources.equipment) && !useHmiStore.getState().hmiPartNumber,
   });
-}
-
-/** Equipment chosen with "No touch panel": the operator works the machine from door pushbuttons, a selector and lamps. */
-export function noTouchPanelNow(): boolean {
-  return Boolean(useStageStore.getState().sources.equipment) && !useHmiStore.getState().hmiPartNumber;
 }
 
 /** Status of every stage: empty, out of date (with reason) or ready. */

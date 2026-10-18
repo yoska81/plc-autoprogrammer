@@ -1,13 +1,13 @@
+import { useProjectPanelPart } from '../spec/panelNow';
 import type { DrawingContext } from './derive';
 import CabinetRender from './render/CabinetRender';
-import { useHmiStore } from '../store/useHmiStore';
 import { useUi } from '../store/useUiStore';
 
 type View = 'both' | 'inside' | 'door';
 
 /** Realistic pictures of the designed cabinet: open (inside) and closed (door). */
 export default function CabinetPictures({ ctx }: { ctx: DrawingContext | null }) {
-  const hmiPart = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
+  const hmiPart = useProjectPanelPart();
   const [view, setView] = useUi<View>('pictures.view', 'both');
   const [labels, setLabels] = useUi('pictures.labels', true);
 
