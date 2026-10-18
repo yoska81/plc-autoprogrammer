@@ -24,6 +24,14 @@ await test('empty, renamed, cut-off or drawing-less files: what is wrong, in pla
   assert.match(String(await checkUploadFile(file('E-01.pdf', 'Hello, this is a Word file renamed'))), /is not a PDF/);
   const pdf = fixture('sorting_conveyor_drawings.pdf');
   assert.match(String(await checkUploadFile(file('half.pdf', pdf.subarray(0, Math.floor(pdf.length / 2))))), /is cut off/);
+  // a signed / linearized PDF with more than 8 KB after its end marker is fine; with none in the last 64 KB it is cut off
+  const trailing = new Uint8Array(pdf.length + 20000); trailing.set(pdf); trailing.fill(0x20, pdf.length);
+  assert.equal(await checkUploadFile(file('signed.pdf', trailing)), null);
+  const noEnd = new Uint8Array(pdf.length + 70000); noEnd.set(pdf.subarray(0, pdf.length - 10)); noEnd.fill(0x20, pdf.length - 10);
+  assert.match(String(await checkUploadFile(file('noend.pdf', noEnd))), /is cut off/);
+  // a DXF whose drawing is all in blocks still has its INSERTs in ENTITIES; only header text and an empty ENTITIES is no drawing
+  assert.equal(await checkUploadFile(file('blocks.dxf', '0\nSECTION\n2\nENTITIES\n0\nINSERT\n2\nTITLE\n0\nENDSEC\n0\nEOF\n')), null);
+  assert.match(String(await checkUploadFile(file('header.dxf', '0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1015\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n'))), /has no drawing/);
   assert.match(String(await checkUploadFile(file('photo.png', 'GIF89a…'))), /is not a PNG image/);
   assert.match(String(await checkUploadFile(file('E-03.dxf', 'garbage, not a drawing\n'))), /is not a DXF file/);
   assert.match(String(await checkUploadFile(file('E-03.dxf', 'AutoCAD Binary DXF\r\n\u001a\u0000…'))), /binary DXF.*ASCII/);
