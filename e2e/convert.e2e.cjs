@@ -99,7 +99,8 @@ function sse(model, text) {
   await page.getByTestId('convert-files').setInputFiles([FIX + 'sorting_conveyor_drawings.pdf', FIX + 'E-03_PLC_IO.dxf']);
   await page.getByRole('button', { name: 'Read the drawings' }).click();
   await page.getByTestId('convert-recognised').waitFor({ timeout: 60000 });
-  check(derives.length === 3 && PARTS.every((p) => derives.includes(p.marker)), `the drawings are read as three parts at once (${derives.join(', ')})`);
+  // one request by default; the three-part reading (split) is tested in src/convert/convert.test.ts
+  check(derives.length === 1 && derives[0] === 'one request', `the drawings are read in one request (${derives.join(', ')})`);
   const derive = requests.find((r) => sysText(r.system).includes('taking over an existing machine'));
   const content = derive?.messages[0].content ?? [];
   check(content.some((b) => b.type === 'document' && b.source?.media_type === 'application/pdf'), 'the PDF goes to the AI as a document');

@@ -597,7 +597,7 @@ await test('the reading as three parts at once: every field in exactly one part;
   });
   try {
     const file = new File([readFileSync(new URL('../../e2e/fixtures/convert/roll-former.dxf', import.meta.url), 'utf8')], 'roll-former.dxf');
-    const three = await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low' }, [file], 'note');
+    const three = await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low', split: true }, [file], 'note');
     assert.equal(seen.length, 3);
     assert.ok(seen.every((o) => o.system === seen[0].system), 'one system prompt');
     const prefixes = seen.map((o) => JSON.stringify((o.messages[0].content as unknown[]).slice(0, -1)));
@@ -605,12 +605,53 @@ await test('the reading as three parts at once: every field in exactly one part;
     assert.deepEqual((seen[0].messages[0].content as { cache_control?: unknown }[]).slice(-2, -1)[0].cache_control, { type: 'ephemeral' }, 'the prefix is cached at its last block');
     assert.deepEqual(seen.map((o) => Object.keys((o.schema as { properties: object }).properties).length), DERIVE_PARTS.map((p) => p.fields.length + 1));
     seen.length = 0;
-    const one = await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low', split: false }, [file], 'note');
-    assert.equal(seen.length, 1, 'split: false asks once');
+    const one = await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low' }, [file], 'note');
+    assert.equal(seen.length, 1, 'one request unless split is asked for');
     assert.deepEqual(three.machine, one.machine);
+
+    // warm-up: the other two parts start when the first one's answer begins (its prompt, files included, is cached by then)
+    const order: string[] = [];
+    setClaudeInterceptor(async (o) => {
+      const i = DERIVE_PARTS.findIndex((p) => JSON.stringify(o.messages).includes(p.instruction));
+      order.push(`start ${i}`);
+      if (i === 0) { await new Promise((r) => setTimeout(r, 20)); order.push('answer 0 begins'); o.onStarted?.(); await new Promise((r) => setTimeout(r, 30)); }
+      order.push(`end ${i}`);
+      return { reasoning: null, text: JSON.stringify(Object.fromEntries([...DERIVE_PARTS[i].fields, 'uncertainties'].map((k) => [k, (full as Record<string, unknown>)[k]]))) };
+    });
+    await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low', split: true }, [file], 'warm');
+    assert.deepEqual(order.slice(0, 2), ['start 0', 'answer 0 begins'], `the first part starts alone, the others wait for its answer to begin: ${order.join(', ')}`);
+    assert.ok(order.indexOf('start 1') < order.indexOf('end 0') && order.indexOf('start 2') < order.indexOf('end 0'), `parts 2 and 3 start while part 1 is answering: ${order.join(', ')}`);
+
+    // one part failing stops the others and the reading fails
+    const signals: AbortSignal[] = [];
+    setClaudeInterceptor(async (o) => {
+      const i = DERIVE_PARTS.findIndex((p) => JSON.stringify(o.messages).includes(p.instruction));
+      signals[i] = o.signal!;
+      if (i === 0) { o.onStarted?.(); await new Promise((r) => setTimeout(r, 50)); return { reasoning: null, text: '{}' }; }
+      if (i === 1) throw new Error('bad request');
+      await new Promise((r) => setTimeout(r, 50));
+      return { reasoning: null, text: '{}' };
+    });
+    await assert.rejects(deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low', split: true }, [file], 'fail'), /bad request/);
+    assert.ok(signals.every((x) => x.aborted), 'the other parts are stopped');
   } finally {
     setClaudeInterceptor(null);
   }
+});
+
+await test('merging the parts cross-checks them: unknown tags, a tag listed twice, PLC vs logic', () => {
+  const answers = [
+    { components: [...CN_ROLLFORMER_01_READING.components, CN_ROLLFORMER_01_READING.components.find((c) => c.tag === 'KA1')!], motors: CN_ROLLFORMER_01_READING.motors, plc: { vendor: 'Mitsubishi', model: 'FX3U', cpuPartNumber: null } },
+    { io: CN_ROLLFORMER_01_READING.io, circuits: [...CN_ROLLFORMER_01_READING.circuits, { ...CN_ROLLFORMER_01_READING.circuits[0], output: 'KA99', devices: ['SB2', 'KA99', 'XS7'] }], controller: 'relays' as const },
+    { safety: { ...CN_ROLLFORMER_01_READING.safety, estops: ['SB0', 'SB11'] } },
+  ] as Partial<ExistingMachine>[];
+  const u = mergeParts(answers).uncertainties!;
+  assert.ok(u.some((x) => /Not in the parts list or the I\/O.*KA99 \(circuit KA99\).*XS7 \(circuit KA99\).*SB11 \(the safety circuit\)/.test(x)), u.join(' | '));
+  assert.ok(u.some((x) => /Listed twice in the parts: KA1\./.test(x)));
+  assert.ok(u.some((x) => /A PLC \(Mitsubishi FX3U\) was read, but the logic was read as run by relays/.test(x)));
+  // the reading of cn-rollformer-01 split into its parts raises none of these
+  const clean = mergeParts(DERIVE_PARTS.map((p) => Object.fromEntries(p.fields.map((k) => [k, (CN_ROLLFORMER_01_READING as unknown as Record<string, unknown>)[k]]))) as Partial<ExistingMachine>[]);
+  assert.deepEqual(clean.uncertainties, []);
 });
 
 await test('retag: whole tags only', () => {

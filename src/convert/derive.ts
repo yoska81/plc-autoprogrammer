@@ -142,14 +142,33 @@ const pick = (keys: readonly string[]) => Object.fromEntries(keys.map((k) => [k,
 /** A part's answer: its own fields and its uncertainties. */
 export const partSchema = (part: (typeof DERIVE_PARTS)[number]) => obj({ ...pick(part.fields), uncertainties: EXISTING_PROPS.uncertainties });
 
-/** The three answers as one reading (each part's own fields; uncertainties from all, once each). */
+/**
+ * The three answers as one reading: each part's own fields, uncertainties from all (once each), and what the
+ * parts don't agree on as more uncertainties: a tag in the circuits or the safety circuit that neither the
+ * parts list nor the I/O has, a tag listed twice in the parts, a PLC but "no PLC" logic (or the reverse).
+ */
 export function mergeParts(answers: Partial<ExistingMachine>[]): Partial<ExistingMachine> {
   const out: Record<string, unknown> = {};
   answers.forEach((a, i) => { for (const k of DERIVE_PARTS[i].fields) if ((a as Record<string, unknown>)[k] !== undefined) out[k] = (a as Record<string, unknown>)[k]; });
-  return { ...(out as Partial<ExistingMachine>), uncertainties: [...new Set(answers.flatMap((a) => a.uncertainties ?? []))] };
+  const m = out as Partial<ExistingMachine>;
+  const checks: string[] = [];
+  const parts = (m.components ?? []).map((c) => c.tag);
+  const known = new Set([...parts, ...(m.io ?? []).map((p) => p.deviceTag).filter((t): t is string => Boolean(t)), ...(m.motors ?? []).map((x) => x.tag)]);
+  const tagOf = (t: string) => t.trim().split(/\s+/)[0];
+  const used = new Map<string, string>();
+  for (const c of m.circuits ?? []) for (const t of [tagOf(c.output), ...c.devices.map(tagOf)]) if (t && !used.has(t)) used.set(t, `circuit ${c.output}`);
+  const sf = m.safety;
+  for (const t of [...(sf?.estops ?? []), ...(sf?.guards ?? []), ...(sf?.safetyRelay ? [tagOf(sf.safetyRelay)] : []), ...(sf?.drives ?? []).map((d) => d.tag)]) if (t && !used.has(tagOf(t))) used.set(tagOf(t), 'the safety circuit');
+  const unknown = [...used].filter(([t]) => /^[A-Z][A-Z0-9-]*\d/.test(t) && !known.has(t));
+  if (unknown.length) checks.push(`Not in the parts list or the I/O read from the drawings: ${unknown.map(([t, where]) => `${t} (${where})`).join(', ')}. Check these tags on the drawings.`);
+  const twice = [...new Set(parts.filter((t, i) => parts.indexOf(t) !== i))];
+  if (twice.length) checks.push(`Listed twice in the parts: ${twice.join(', ')}. Check whether these are two devices.`);
+  if (m.plc && m.controller && m.controller !== 'plc') checks.push(`A PLC (${m.plc.vendor} ${m.plc.model}) was read, but the logic was read as run by ${m.controller}. Check which one runs the machine.`);
+  if (m.plc === null && m.controller === 'plc') checks.push('The logic was read as run by a PLC, but no PLC was found on the drawings. Check the controller.');
+  return { ...m, uncertainties: [...new Set([...answers.flatMap((a) => a.uncertainties ?? []), ...checks])] };
 }
 
-/** split (default): the three parts at the same time; false: one request for everything. */
+/** split: the three parts (hardware first; the other two once its answer starts, on the cached files); default one request. */
 export interface DeriveOptions { apiKey: string; model: string; effort: Effort; signal?: AbortSignal; split?: boolean }
 
 const NO_RATINGS: DrawnRatings = { amps: null, poles: null, coilVoltage: null, kA: null, curve: null, minAmps: null, maxAmps: null, kw: null, outputVolts: null, outputAmps: null };
@@ -193,8 +212,8 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
 }
 
 /**
- * Read the upload and build the existing machine: three AI requests at the same time on the same files
- * (DERIVE_PARTS; the files are sent once as a cached prefix), or one request with `split: false`. `extra`:
+ * Read the upload and build the existing machine: one AI request, or with `split` three parts (DERIVE_PARTS)
+ * on the same files: the first writes them to the prompt cache, the other two start as its answer begins. `extra`:
  * more content for the same request, e.g. a PLC program's symbol table or rung listing from the program
  * reader (src/plc/import/).
  */
@@ -207,16 +226,32 @@ export async function deriveFromUpload(opts: DeriveOptions, files: File[], note 
   const read = (text: string) => {
     try { return JSON.parse(text) as Partial<ExistingMachine>; } catch (err) { throw new Error('The AI returned a result the app could not read. Please try again.', { cause: err }); }
   };
-  if (opts.split === false) {
+  if (!opts.split) {
     const { text, reasoning } = await callClaude({ ...base, schema: EXISTING_SCHEMA, messages: [{ role: 'user', content: [...blocks, { type: 'text', text: ask }] }] });
     return { machine: normalizeMachine(read(text)), reasoning, notes };
   }
-  // the same prefix for every part (the files, cached once), then the part's own instruction and schema
+  // the same prefix for every part (the files, cached at the last block), then the part's own instruction and schema
   const prefix = blocks.map((b, i) => (i === blocks.length - 1 && b.type !== 'tool_use' && b.type !== 'tool_result' ? { ...b, cache_control: { type: 'ephemeral' as const } } : b)) as Anthropic.Beta.Messages.BetaContentBlockParam[];
-  const answers = await Promise.all(DERIVE_PARTS.map((part) => callClaude({
-    ...base, schema: partSchema(part),
-    messages: [{ role: 'user', content: [...prefix, { type: 'text', text: `${ask}\n\n${part.instruction}` }] }],
-  })));
+  // one part failing stops the others (and Cancel stops all)
+  const ctl = new AbortController();
+  const stop = () => ctl.abort();
+  if (opts.signal?.aborted) stop(); else opts.signal?.addEventListener('abort', stop, { once: true });
+  let started = () => {};
+  const firstStarted = new Promise<void>((resolve) => { started = resolve; });
+  const ask1 = (i: number) => callClaude({
+    ...base, signal: ctl.signal, schema: partSchema(DERIVE_PARTS[i]), ...(i === 0 ? { onStarted: () => started() } : {}),
+    messages: [{ role: 'user', content: [...prefix, { type: 'text', text: `${ask}\n\n${DERIVE_PARTS[i].instruction}` }] }],
+  }).catch((err) => { stop(); throw err; });
+  let answers: Awaited<ReturnType<typeof callClaude>>[];
+  try {
+    // the first part writes the files to the prompt cache; the others start once its answer begins and read it
+    const first = ask1(0);
+    await Promise.race([firstStarted, first.then(() => undefined, () => undefined)]);
+    if (ctl.signal.aborted) await first;
+    answers = await Promise.all([first, ...DERIVE_PARTS.slice(1).map((_, k) => ask1(k + 1))]);
+  } finally {
+    opts.signal?.removeEventListener('abort', stop);
+  }
   const reasoning = answers.map((a) => a.reasoning).filter(Boolean).join('\n\n') || null;
   return { machine: normalizeMachine(mergeParts(answers.map((a) => read(a.text)))), reasoning, notes };
 }

@@ -93,7 +93,8 @@ function sse(model, text) {
   await page.getByTestId('convert-files').setInputFiles([FIX + 'roll-former.dxf']);
   await page.getByRole('button', { name: 'Read the drawings' }).click();
   await page.getByTestId('convert-recognised').waitFor({ timeout: 60000 });
-  check(derives.length === 3 && PARTS.every((p) => derives.includes(p.marker)), `the drawings are read as three parts at once (${derives.join(', ')})`);
+  // one request by default; the three-part reading (split) is tested in src/convert/convert.test.ts
+  check(derives.length === 1 && derives[0] === 'one request', `the drawings are read in one request (${derives.join(', ')})`);
   const sent = requests.find((r) => sysText(r.system).includes('taking over an existing machine'))?.messages[0].content.find((b) => b.type === 'text' && b.text.startsWith('roll-former.dxf'))?.text ?? '';
   fs.writeFileSync(OUT + 'sent_to_ai.txt', sent);
   check(/6 sheets side by side/.test(sent) && (sent.match(/^--- Sheet \d of 6/gm) ?? []).length === 6, 'the DXF goes to the AI split into its 6 sheets');
