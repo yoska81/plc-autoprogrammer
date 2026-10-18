@@ -4,6 +4,7 @@
  * motors, the I/O list, the electrical components, HMI screens and alarms, and the PLC program
  * structure. Built only from the project's data (no AI), so it always matches what was designed.
  */
+import { OPERATOR_STATION_HEAD, operatorInterfaceText, operatorStationRows } from './docs/operatorStation';
 import { SPEC_SECTIONS } from '../spec/types';
 import { regionSpec, SUPPLY_INFO } from '../standards/regions';
 import { currentRevision } from '../store/useProjectStore';
@@ -57,6 +58,7 @@ export function machineSpecText(p: ProjectSnapshot): string {
     ['PLC CPU', p.cpu.id, `${p.profile.vendor} ${p.profile.name} · ${p.cpu.label}`],
     ...p.modules.map((m, i) => [`I/O module, slot ${i + 1}`, m, getPart(m)?.description ?? '']),
     ...(p.hmi ? [['Operator panel (HMI)', p.hmi.hmiPartNumber, hmiText(p.hmi.hmiPartNumber)]] : []),
+    ...(!p.hmi && p.noHmi ? [['Operator interface', '—', 'Operator station: pushbuttons, selector and lamps (no touch panel)']] : []),
   ]));
   if (p.equipment?.why) out.push('', `Why: ${p.equipment.why}`);
 
@@ -99,6 +101,13 @@ export function machineSpecText(p: ProjectSnapshot): string {
       out.push('', '**Alarms**');
       out.push(table(['Address', 'Message', 'Severity'], p.hmi.alarms.map((a) => [a.address, a.message, a.severity])));
     }
+  }
+
+  if (!p.hmi && p.noHmi) {
+    h(2, `${next()}. Operator station (no touch panel)`);
+    out.push(operatorInterfaceText(p));
+    const rows = operatorStationRows(p);
+    if (rows.length) out.push('', table(OPERATOR_STATION_HEAD, rows));
   }
 
   if (p.ladder.rungs.length) {

@@ -68,7 +68,7 @@ const labelListPdf = (p: ProjectSnapshot) => {
 /** Build every part of the package. */
 export async function buildPackageParts(p: ProjectSnapshot, onProgress?: Progress, pre: Prebuilt = {}): Promise<PackagePart[]> {
   const steps: { title: string; description: string; run: () => Promise<Blob | null>; children?: () => { title: string; page: number }[] }[] = [
-    { title: 'Engineering package', description: 'Design basis, functional specification, calculations, safety, PLC and HMI description, FAT / SAT, operator manual, maintenance', run: async () => pre.engineering ?? buildEngineeringPdf(p, p.equipment) },
+    { title: 'Engineering package', description: `Design basis, functional specification, calculations, safety, PLC and ${p.noHmi ? 'operator station' : 'HMI'} description, FAT / SAT, operator manual, maintenance`, run: async () => pre.engineering ?? buildEngineeringPdf(p, p.equipment) },
   ];
   if (p.drawingCtx) {
     // The machining sheets are printed once, inside the drawing set; the machine shop's own PDF (same sheets)
