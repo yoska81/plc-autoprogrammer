@@ -23,6 +23,7 @@ import { withTagNames } from '../hmi/tagLabels';
 import { specToText } from '../spec/types';
 import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
+import ProgramOutOfStep from '../components/ProgramOutOfStep';
 import ResizablePane from '../components/ResizablePane';
 import { Spinner, ReasoningPanel } from '../components/common';
 import { type AccessLevel, type HmiAlarm, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
@@ -625,6 +626,7 @@ export default function HmiPage() {
         )}
       </header>
       <StageBanner info={stages.hmi} action={noPanel ? undefined : genButton('Update screens')} />
+      {!noPanel && <ProgramOutOfStep where="hmi" />}
 
       <div className="flex-1 overflow-auto bg-gray-50 p-5 space-y-4">
         {noPanel && !choosing && (

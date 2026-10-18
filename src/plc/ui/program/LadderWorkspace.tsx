@@ -19,6 +19,7 @@ import type { LadderProgram, Rung } from '../../core/ladder';
 import LadderView from '../ladder/LadderView';
 import { Spinner, ReasoningPanel } from '../../../components/common';
 import StageBanner from '../../../components/StageBanner';
+import ProgramOutOfStep from '../../../components/ProgramOutOfStep';
 import ResizablePane from '../../../components/ResizablePane';
 import PhoneTabs from '../../../components/PhoneTabs';
 import { useNarrow } from '../../../components/useNarrow';
@@ -466,6 +467,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               {isGenerating ? 'Updating…' : 'Update program'}
             </button>} />
         )}
+        {!proposal && <ProgramOutOfStep where="program" />}
         {review ? (
           <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-200 flex items-center gap-3">
             <div className="flex-1 text-sm text-indigo-900">
