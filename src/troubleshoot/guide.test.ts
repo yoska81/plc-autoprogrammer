@@ -106,11 +106,12 @@ const ctx = { io: CONVEYOR_IO.map((p) => ({ ...p })) };
   const p: LadderProgram = { tags: [], rungs: [
     { id: 'a', comment: 'Hot enough', branches: [[{ type: 'CMP', left: 'DF1', op: '>=', right: 'DS6' }]], outputs: [{ type: 'OUT', address: 'Y001' }] },
     { id: 'b', comment: 'Panel start', branches: [[{ type: 'NO', address: 'C1001' }]], outputs: [{ type: 'OUT', address: 'Y002' }] },
+    { id: 'c', comment: 'First scan: DS6 outside 50-300 → 160', branches: [[{ type: 'NO', address: 'SC2' }, { type: 'CMP', left: 'DS6', op: '<', right: '50' }], [{ type: 'NO', address: 'SC2' }, { type: 'CMP', left: 'DS6', op: '>', right: '300' }]], outputs: [{ type: 'COPY', source: '160', dest: 'DS6' }] },
   ] };
   const v = values({}, { DF1: 150, DS6: 180 });
   const st = startGuide({ program: p, values: v, target: { output: 'Y001' }, ctx: { io: [{ address: 'DF1', description: 'Temp', type: 'input' }] }, paths: [] });
   assert.equal(st.step, null);
-  assert.equal(st.result!.settingChange?.address, 'DS6');
+  assert.deepEqual([st.result!.settingChange?.address, st.result!.settingChange?.to], ['DS6', 160], 'the declared default, never a made-up value');
   const lg = startGuide({ program: p, values: v, target: { output: 'Y002' }, paths: [] });
   assert.ok(lg.result!.editSteps?.some((x) => /Replace the contact C1001/.test(x)));
   const none = startGuide({ program: CONVEYOR_PROGRAM, values: values({}), target: { output: 'Y001' }, ctx, paths: [] });

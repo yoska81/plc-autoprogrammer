@@ -30,6 +30,8 @@ export interface Blocker {
   path: string[];
   explain: string;
   next: 'wiring' | 'setting' | 'logic' | 'operator' | 'none';
+  /** Setting findings: the range the program declares for the register (its first-scan "outside min–max → default" rung). */
+  limits?: { min: number; max: number; default?: number };
 }
 
 export interface WhyStuck {
@@ -102,13 +104,25 @@ export function whyStuck(program: LadderProgram, values: Values, target: StuckTa
     return undefined;
   };
 
+  // The range a setting register is declared with: a first-scan rung "a < min or a > max → COPY default to a".
+  const limitsOf = (a: string): Blocker['limits'] => {
+    for (const r of wordWriters.get(up(a)) ?? []) {
+      const cmp = r.branches.flatMap((b) => (b.some((e) => e.type === 'NO' && up(e.address) === 'SC2') ? b : [])).filter((e): e is CompareElement => e.type === 'CMP' && up(e.left) === up(a) && isNum(e.right));
+      const min = cmp.find((e) => e.op === '<'), max = cmp.find((e) => e.op === '>');
+      const def = r.outputs.find((o) => o.type === 'COPY' && up(o.dest) === up(a) && isNum(o.source));
+      if (min && max) return { min: Number(min.right), max: Number(max.right), ...(def && def.type === 'COPY' ? { default: Number(def.source) } : {}) };
+    }
+    return undefined;
+  };
+
   const out: Blocker[] = [];
   const seen = new Set<string>();
   const add = (b: Omit<Blocker, 'rungNo' | 'description'> & { description?: string }) => {
     const key = `${b.kind}:${b.point}`;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ ...b, description: b.description ?? desc.get(up(b.point)), rungNo: rungNo.get(b.rungId) ?? 0 });
+    const limits = b.kind === 'setting' ? limitsOf(b.point) : undefined;
+    out.push({ ...b, description: b.description ?? desc.get(up(b.point)), rungNo: rungNo.get(b.rungId) ?? 0, ...(limits ? { limits } : {}) });
   };
 
   /** The branch closest to true (fewest contacts not made), its own seal-in left out when `self` is off. */

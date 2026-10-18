@@ -15,25 +15,44 @@ export interface SettingChange {
   address: string;
   from: number;
   to: number;
+  /** The range the program declares for the register: values outside it are refused. */
+  min: number;
+  max: number;
   /** The confirmation the operator answers before the write. */
   question: string;
-  /** Written live from Online (C / DS), or only by editing the program (DF, DD, presets in the program). */
+  /** Written live from Online (DS registers), or only by editing the program (DF). */
   live: boolean;
 }
 
-/** The setting change a finding suggests (the default the program loads on the first scan, or the operator's value). */
-export function settingChange(b: Blocker, to: number): SettingChange | null {
-  if (b.kind !== 'setting') return null;
-  const live = isWritable(b.point);
+/** Only setpoint registers: DS (16-bit integer) and DF (float). Never bits (C, T, CT, X, Y, SC) or other words. */
+const SETPOINT = /^(DS|DF)\d+$/;
+
+/**
+ * The setting change a finding suggests: only for a DS / DF setpoint the program declares a range for
+ * (its first-scan "outside min–max → default" rung); `to` defaults to that rung's default. Null otherwise.
+ */
+export function settingChange(b: Blocker, to?: number): SettingChange | null {
+  if (b.kind !== 'setting' || !SETPOINT.test(b.point.toUpperCase()) || !b.limits) return null;
+  const value = to ?? b.limits.default;
+  if (value === undefined || !valueOk(b.point, value, b.limits.min, b.limits.max)) return null;
+  const live = /^DS/i.test(b.point) && isWritable(b.point);
   return {
-    address: b.point, from: Number(b.actual), to, live,
-    question: `Write ${to} to ${b.point}${b.description ? ` (${b.description})` : ''}? It is ${b.actual} now. The machine uses the new value at once.`,
+    address: b.point.toUpperCase(), from: Number(b.actual), to: value, min: b.limits.min, max: b.limits.max, live,
+    question: `Write ${value} to ${b.point.toUpperCase()}${b.description ? ` (${b.description})` : ''}? It is ${b.actual} now; the program allows ${b.limits.min}–${b.limits.max}. The machine uses the new value at once.`,
   };
 }
 
-/** Change it on the PLC: asks `confirm` first; the write itself is logged by Online (writes list). */
+function valueOk(address: string, v: number, min: number, max: number): boolean {
+  if (!Number.isFinite(v) || v < min || v > max) return false;
+  if (/^DS/i.test(address)) return Number.isInteger(v) && v >= -32768 && v <= 32767;
+  return true;
+}
+
+/** Change it on the PLC: checks the register and the range again, asks `confirm`, then writes (Online logs the write). */
 export async function applySettingChange(c: SettingChange, confirm: (question: string) => boolean | Promise<boolean>, write = writePlc): Promise<'written' | 'cancelled'> {
-  if (!c.live) throw new Error(`${c.address} cannot be written from here (only C bits and DS registers): change it in the program (see the edit steps).`);
+  if (!SETPOINT.test(c.address.toUpperCase())) throw new Error(`${c.address} is not a setpoint register: only DS / DF settings are changed here.`);
+  if (!valueOk(c.address, c.to, c.min, c.max)) throw new Error(`${c.to} is outside the range the program allows for ${c.address} (${c.min}–${c.max}${/^DS/i.test(c.address) ? ', whole numbers' : ''}).`);
+  if (!c.live) throw new Error(`${c.address} cannot be written from here (Online writes DS registers only): change it in the program (see the edit steps).`);
   if (!(await confirm(c.question))) return 'cancelled';
   await write(c.address, c.to);
   return 'written';
@@ -55,7 +74,7 @@ export function clickEditSteps(b: Blocker, change: string): string[] {
 export function nextAction(b: Blocker): { kind: 'wiring' | 'setting' | 'edit' | 'operator' | 'wait'; text: string; steps?: string[] } {
   switch (b.next) {
     case 'wiring': return { kind: 'wiring', text: `Check the field wiring of ${b.point}${b.description ? ` (${b.description})` : ''}: follow it from the PLC terminal to the device.` };
-    case 'setting': return { kind: 'setting', text: `${b.point} is a setting: change it${isWritable(b.point) ? ' live from Online (with confirmation)' : ' in the program'}.`, ...(isWritable(b.point) ? {} : { steps: clickEditSteps(b, `Change the value of ${b.point} (or the preset that reads it) to the right value.`) }) };
+    case 'setting': { const live = Boolean(settingChange(b)?.live); return { kind: 'setting', text: `${b.point} is a setting: change it${live ? ' live from Online (with confirmation)' : ' in the program'}${b.limits ? ` (allowed ${b.limits.min}–${b.limits.max})` : ''}.`, ...(live ? {} : { steps: clickEditSteps(b, `Change the value of ${b.point} (or the preset that reads it) to the right value.`) }) }; }
     case 'logic': return { kind: 'edit', text: b.explain, steps: clickEditSteps(b, /touch-panel command|Nothing in the program switches/.test(b.explain)
       ? `Replace the contact ${b.point} with the input that should start it (e.g. the pushbutton's X address), or add a rung that writes ${b.point}.`
       : `Correct the logic of rung ${b.rungNo} so ${b.point} can change: ${b.explain}`) };
