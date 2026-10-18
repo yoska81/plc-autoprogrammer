@@ -61,7 +61,7 @@ console.log('analog wiring tests passed');
   const { getCpu, getProfile } = await import('../plc/core/profiles');
   const { moduleSlots } = await import('../plc/core/modules');
   const profile = getProfile('click');
-  const io = [{ id: 'I009', description: 'Seal bar temperature (thermocouple)', type: 'input', category: 'Analog/Process', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } }] as Parameters<typeof analogSetup>[3];
+  const io = [{ id: 'I009', description: 'Seal bar temperature (thermocouple)', type: 'input', category: 'Analog/Process', signal: 'analog', analog: { range: 'thermocouple', min: 0, max: 300, units: '°C' } }] as Parameters<typeof analogSetup>[3];
   const rows = analogSetup(profile, getCpu(profile, 'C0-11DD2E-D'), moduleSlots(['C0-08ND3', 'C0-04THM']), io);
   assert.equal(rows[0].range, 'thermocouple', 'a C0-04THM channel is a thermocouple input');
   assert.equal(rows[0].terminal, 'CH1+');

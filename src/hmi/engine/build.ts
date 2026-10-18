@@ -213,10 +213,14 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
   if (c.process?.dwell) {
     plan.dwellSp = t.as('sp:dwell').sp(c.process.dwell.name.replace(/\s+/g, '_'), `${c.process.dwell.name} in ms (100-10000, default ${c.process.dwell.defaultMs} on the first scan): the cycle's ${c.process.dwell.name.toLowerCase()} step lasts this long.`);
   }
-  if (c.partSensor) {
-    const counter = t.as('word:count').counter('Part_Count', `Counter value: the PLC counts each rising edge of ${c.partSensor.address} (${c.partSensor.description}).`);
-    const resetC = t.as('cmd:countreset').cmd('Count_Reset', 'Momentary: resets the part counter CT1.');
-    const batch = t.as('sp:batch').sp('Batch_Target', 'Batch size in parts (0 = no limit): the PLC stops the cycle when CTD1 reaches it.');
+  if (c.partSensor || c.programCount) {
+    const counter = t.as('word:count').counter('Part_Count', c.programCount
+      ? `Counter value: the program's counter ${c.programCount.name}.`
+      : `Counter value: the PLC counts each rising edge of ${c.partSensor!.address} (${c.partSensor!.description}).`);
+    // The counter's own name (CTD3 counts in CT3), whichever counter the program uses.
+    const ct = counter.replace(/^CTD/i, 'CT');
+    const resetC = t.as('cmd:countreset').cmd('Count_Reset', `Momentary: resets the part counter ${ct}.`);
+    const batch = t.as('sp:batch').sp('Batch_Target', `Batch size in parts (0 = no limit): the PLC stops the cycle when ${counter} reaches it.`);
     const rate = t.as('word:rate').word('Parts_Per_Min', 'Parts counted in the last 60 s.');
     plan.count = { counter, reset: resetC, batch, rate };
   }

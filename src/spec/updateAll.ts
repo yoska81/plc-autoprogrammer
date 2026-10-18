@@ -16,12 +16,15 @@ import { ioFingerprint, hmiFingerprint } from './useStages';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge } from '../lib/ai/ioAI';
 import { recommendEquipment } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice } from './equipment';
-import { cpuFit, findCpu, modulesToFit, type Need } from '../plc/core/fit';
+import { analogRangesOf, cpuFit, findCpu, modulesToFit, type Need } from '../plc/core/fit';
+import type { AnalogRange } from '../types/io';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
 import { analogSetup } from '../plc/core/analog';
 import { getPart } from '../electrical/catalog';
 import { vendorPreference } from '../store/useProjectStore';
 import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
+import { useDraftStore } from '../store/useDraftStore';
+import { projectUpgradeRoles } from '../plc/import/ui/applyUpgrade';
 import { mergeRegenerated } from '../hmi/engine/regenerate';
 import { reviseLadder } from '../plc/ai/ladderAI';
 import { generateRuleBasedProgram } from '../plc/ai/cycleAI';
@@ -238,6 +241,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         io, addresses: resolveAddresses(profile, cpu, io, slots), spec: specToText(spec), machineName: useProgramStore.getState().projectName,
         electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
         existingHmi: existing, program: useProgramStore.getState().ladder,
+        upgradeRoles: projectUpgradeRoles(useDraftStore.getState().drafts, useProgramStore.getState().ladder),
       };
       const before = hmiFingerprint(existing);
       const apply = (r: Awaited<ReturnType<typeof generateRuleBasedHmi>>) => {
@@ -341,12 +345,12 @@ function prefetchCycle(ctx: RunCtx, signal?: AbortSignal): void {
 }
 
 /** After the I/O step: the CPU + modules must hold every point; missing modules are added (and become required parts). */
-function ensureIoFits(io: { type: string; signal?: string }[]): { note?: string; error?: string } | null {
+function ensureIoFits(io: { type: string; signal?: string; analog?: { range: AnalogRange } }[]): { note?: string; error?: string } | null {
   const { cpuId, modules, recommendation } = useProjectStore.getState();
   const cpu = findCpu(cpuId);
   if (!cpu) return null;
   const n = (type: string, analog: boolean) => io.filter((p) => p.type === type && (p.signal === 'analog') === analog).length;
-  const need: Need = { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: Boolean(useHmiStore.getState().hmiPartNumber), minHmiSizeIn: null };
+  const need: Need = { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: Boolean(useHmiStore.getState().hmiPartNumber), minHmiSizeIn: null, analogRanges: analogRangesOf(io) };
   if (cpuFit(cpu, modules, need).ok) return null;
   const mods = modulesToFit(cpuId, modules, need);
   if (!mods) return { error: `${cpuId} with ${modules.length} module(s) cannot hold the ${need.digitalInputs} inputs / ${need.digitalOutputs} outputs of the I/O list, even with more modules: choose a bigger CPU on the Equipment page.` };

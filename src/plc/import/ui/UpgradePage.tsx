@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useDraftStore } from '../../../store/useDraftStore';
 import { useProgramStore } from '../../../store/useProgramStore';
+import { useProjectStore } from '../../../store/useProjectStore';
 import { usePlc } from '../../core/usePlc';
 import { diffPrograms, summarizeDiff, type RungChange } from '../../core/diff';
 import type { LadderProgram } from '../../core/ladder';
@@ -13,6 +14,7 @@ import { useIOStore } from '../../../store/useIOStore';
 import { UPGRADE_KEY } from '../upgrade';
 import { exportUpgrade, upgradeChanges, type UpgradeExport } from '../exportUpgrade';
 import { gunzipText } from '../gz';
+import { programFindings } from '../findings';
 import { upgradeOriginal } from './applyUpgrade';
 import ProgramImport from './ProgramImport';
 
@@ -34,6 +36,7 @@ export default function UpgradePage() {
   const [understood, setUnderstood] = useState(false);
   const [busy, setBusy] = useState(false);
   const changes = useMemo(() => (original ? upgradeChanges(original, io, ladder) : null), [original, io, ladder]);
+  const findings = useMemo(() => programFindings(ladder, labels), [ladder, labels]);
 
   const diff = useMemo(() => {
     if (!original) return null;
@@ -49,8 +52,10 @@ export default function UpgradePage() {
     setBusy(true);
     try {
       const file = original.fileGz ? await gunzipText(original.fileGz).catch(() => null) : null;
+      // The PLC as it is now (a click right after changing the PLC may come before this page shows it).
+      const plcId = useProjectStore.getState().plcId;
       const snap = collectProject();
-      setPrepared({ ex: exportUpgrade(original, file, ladder, { plcId: profile.id, ctx: exportContext(snap), fullFiles: () => programFiles(snap) }), ladder, plcId: profile.id });
+      setPrepared({ ex: exportUpgrade(original, file, ladder, { plcId, ctx: exportContext(snap), fullFiles: () => programFiles(snap) }), ladder, plcId });
       setUnderstood(false);
     } finally { setBusy(false); }
   };
@@ -78,6 +83,7 @@ export default function UpgradePage() {
                     <h3 className="text-sm font-semibold text-gray-800">Original: {original.source.projectName}</h3>
                     <p className="text-xs text-gray-500">{original.source.fileName} · {[original.source.vendor, original.source.controller].filter(Boolean).join(' ')} · read {new Date(original.importedAt).toLocaleString()}</p>
                     <p className="text-xs text-gray-500">{original.report.converted} of {original.report.rungs} rungs converted · now on {profile.vendor} {profile.name} {cpu.id}</p>
+                    {original.cpuNote && <p className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1" data-testid="upgrade-cpu-note">{original.cpuNote}</p>}
                   </div>
                   <button
                     onClick={() => { if (window.confirm('Read another program? The comparison with this original is dropped; the project keeps its current program and I/O.')) clearDraft(UPGRADE_KEY); }}
@@ -93,6 +99,16 @@ export default function UpgradePage() {
                 </div>
               </div>
 
+              {findings.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2" data-testid="upgrade-findings">
+                  <h3 className="text-sm font-semibold text-amber-900">Possible problems in the program ({findings.length})</h3>
+                  <ul className="list-disc ml-5 text-sm text-amber-900 space-y-1">
+                    {findings.map((f) => <li key={`${f.kind}${f.rungId}${f.address}`}>{f.message} <Link to="/program" className="underline text-xs">Open the program</Link></li>)}
+                  </ul>
+                  <p className="text-xs text-amber-800">They are also asked on the Machine description page. Fix them in the program (or ask the AI there), then compare with the original below.</p>
+                </div>
+              )}
+
               <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
                 <div className="flex items-center gap-3">
                   <h3 className="text-sm font-semibold text-gray-800 flex-1">Original vs now: <span data-testid="upgrade-diff-summary">{diff.summary}</span></h3>
@@ -102,7 +118,7 @@ export default function UpgradePage() {
                 {prepared && (
                   <div className="border border-gray-200 rounded p-3 space-y-2 text-sm" data-testid="upgrade-prepared">
                     {prepared.mode === 'patch' ? (
-                      <p data-testid="upgrade-mode-patch">Your changes go into a copy of your original file, <b>{prepared.files[0].name}</b>. {prepared.changed.length ? <>Rewritten: {prepared.changed.join(', ')}.</> : 'Nothing changed: it is your original file.'}{prepared.added.length ? <> New routines: {prepared.added.join(', ')}.</> : null}{prepared.newTags.length ? <> New tags: {prepared.newTags.join(', ')}.</> : null} Everything else (modules, add-on instructions, other routines, tasks) is exactly as it was. In Studio 5000: File › Open the .L5X, then download to the controller.</p>
+                      <p data-testid="upgrade-mode-patch">Your changes go into a copy of your original file, <b>{prepared.files[0].name}</b>. {prepared.changed.length ? <>Rewritten: {prepared.changed.join(', ')}.</> : 'Nothing changed: it is your original file.'}{prepared.added.length ? <> New routines: {prepared.added.join(', ')}.</> : null}{prepared.newTags.length ? <> New tags: {prepared.newTags.join(', ')}.</> : null} {prepared.howTo}</p>
                     ) : (
                       <p>A new set of files for {profile.vendor} {profile.name}: {prepared.files.map((f) => f.name).join(', ')}.</p>
                     )}

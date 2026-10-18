@@ -1,6 +1,6 @@
 import type { Effort } from '../../store/useSettingsStore';
 import type { CpuModel, PlcProfile } from '../../plc/core/profile';
-import { ANALOG_RANGES, type AnalogSpec, type IOCategory, type IOPoint } from '../../types/io';
+import { ANALOG_RANGES, withAnalogRange, type AnalogSpec, type IOCategory, type IOPoint } from '../../types/io';
 import type { FieldDeviceType } from '../../electrical/types';
 import { specToText, type SpecSections } from '../../spec/types';
 import { callClaude } from './anthropic';
@@ -25,7 +25,7 @@ export interface GeneratedPoint {
 export function generatedToPoint(g: GeneratedPoint): Omit<IOPoint, 'id'> {
   return {
     description: g.description, type: g.type, category: g.category, deviceType: g.deviceType,
-    ...(g.signal === 'analog' && g.analog ? { signal: 'analog' as const, analog: g.analog } : {}),
+    ...(g.signal === 'analog' && g.analog ? { signal: 'analog' as const, analog: withAnalogRange(g.description, g.analog) } : {}),
   };
 }
 
@@ -33,7 +33,7 @@ export function generatedToPoint(g: GeneratedPoint): Omit<IOPoint, 'id'> {
 export function keptUpdate(point: IOPoint, g: GeneratedPoint): Pick<IOPoint, 'id' | 'category' | 'deviceType' | 'signal' | 'analog'> {
   const base = { id: point.id, category: g.category, deviceType: g.deviceType };
   if (g.signal === undefined) return base; // older answers without a signal: keep the point's own setting
-  return g.signal === 'analog' && g.analog ? { ...base, signal: 'analog', analog: g.analog } : { ...base, signal: undefined, analog: undefined };
+  return g.signal === 'analog' && g.analog ? { ...base, signal: 'analog', analog: withAnalogRange(point.description, g.analog) } : { ...base, signal: undefined, analog: undefined };
 }
 
 const obj = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
@@ -72,7 +72,7 @@ Rules:
 - Safety devices: light curtains, safety mats, interlocked guard doors and pull-cords are wired to a safety relay, not to the PLC as plain inputs. Give the PLC one status input per independent safety function / zone (e.g. "Light curtain zone 1 OK (safety relay)", category Safety, deviceType safety-relay-output) and the reset pushbutton only if the PLC must see it.
 - Other equipment (robot, upstream / downstream machine): one point per handshake signal in each direction (e.g. "Robot ready" input, "Robot start pick" output), category External Machine; outputs that switch another machine's input are relay-coil, inputs from its dry contacts are "other".
 - VFD-driven motors: run (and direction if reversing) outputs and a fault input (deviceType vfd-input); a speed set from the screen is one analog output per drive (speed reference, 0-10V or 4-20mA, 0–60 Hz); fixed speeds only → preset-speed outputs instead.
-- Every point has "signal": "discrete" (on/off, 24 VDC; "analog": null) or "analog". Analog points are 4-20 mA / 0-10 V signals on an analog channel: transmitters (level, pressure, temperature with a 4-20 mA transmitter, flow, weight), analog speed references to VFDs, proportional / modulating valve positions. For each give "analog": { "range": "4-20mA" (preferred for field transmitters) | "0-20mA" | "0-5V" | "0-10V", "min" and "max" = the engineering values at the bottom / top of the range, "units" (e.g. 0–500 "gal", 0–150 "°C", 0–60 "Hz") }, category "Analog/Process", deviceType "other". Use the ranges the spec gives; when it gives none, choose sensible ones and ask in "questions". Raw RTD / thermocouple sensors need a temperature transmitter (4-20 mA) — say so in "questions". Level / pressure / temperature SWITCHES (on/off) stay discrete. Count the analog inputs and outputs in "explanation".
+- Every point has "signal": "discrete" (on/off, 24 VDC; "analog": null) or "analog". Analog points are 4-20 mA / 0-10 V signals on an analog channel: transmitters (level, pressure, temperature with a 4-20 mA transmitter, flow, weight), analog speed references to VFDs, proportional / modulating valve positions. For each give "analog": { "range": "4-20mA" (preferred for field transmitters) | "0-20mA" | "0-5V" | "0-10V", "min" and "max" = the engineering values at the bottom / top of the range, "units" (e.g. 0–500 "gal", 0–150 "°C", 0–60 "Hz") }, category "Analog/Process", deviceType "other". Use the ranges the spec gives; when it gives none, choose sensible ones and ask in "questions". A thermocouple read directly by a thermocouple input module (e.g. CLICK C0-04THM, no transmitter): "range": "thermocouple", units °C. Raw RTD sensors, and thermocouples where the PLC has no thermocouple input, need a temperature transmitter (4-20 mA) — say so in "questions". Level / pressure / temperature SWITCHES (on/off) stay discrete. Count the analog inputs and outputs in "explanation".
 - Servo axes: the drive's handshake points (enable, home, start move / position select, in position, fault) — never the motor or encoder wiring, which is the drive's.
 - Descriptions are short and specific, the way they'd appear on a drawing ("Pusher cylinder extended", "Conveyor 1 motor contactor").
 - If an existing I/O list is given, KEEP the descriptions of points that are still needed exactly as written so their wiring is preserved, add what's missing, and drop what the spec no longer needs.

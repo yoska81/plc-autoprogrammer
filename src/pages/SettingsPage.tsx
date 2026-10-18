@@ -226,7 +226,7 @@ export default function SettingsPage() {
               <select id="settings-small-model" value={draft.smallTaskModel} onChange={(e) => update('smallTaskModel', e.target.value)} className={inputClass}>
                 {SMALL_TASK_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
-              <p className="text-xs text-gray-400 mt-1">Used only to name HMI items and choose the equipment. A faster model answers these in a few seconds; the engineering stays with the rules.</p>
+              <p className="text-xs text-gray-400 mt-1">Used only to name HMI items, choose the equipment and help with fault finding (matching the problem to a point, ordering causes, plainer steps). A faster model answers these in a few seconds; the engineering stays with the rules.</p>
             </div>
           </ProviderCard>
 

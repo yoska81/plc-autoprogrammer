@@ -4,12 +4,22 @@ import type { AnalogChannel, CpuModel, ModuleSlot, PlcProfile } from './profile'
 
 /**
  * Analog points → channels, in list order: each takes the first free channel of its kind that
- * accepts its range (else the first free one of its kind and signal family — thermocouple vs voltage /
- * current; none left = unassigned, the engineer adds a module).
+ * accepts its range (else the first free one of its kind that takes the signal's family, see
+ * acceptsRange; none left = unassigned, the engineer adds a module).
  * A manual address override pins the point to the channel with that register.
  */
-const TC_RE = /thermocouple|\bT\/C\b|\btype [JKTENRSB]\b/i;
-const ELECTRICAL_RE = /\d\s*-\s*\d+\s*(m?A|V)\b|\bmA\b|\btransmitter\b|\btransducer\b/i;
+/**
+ * Does a channel take a signal of this range's family? The family comes from the range alone: a thermocouple
+ * only on a thermocouple channel (C0-04THM); a current signal (4-20 / 0-20 mA) only on a channel with a current
+ * range (never the 0-10 V inputs on an S7-1200 CPU); a voltage signal on a channel with any voltage range (a
+ * 0-10 V signal on a 0-5 V input is a scaling question). A channel with no published ranges takes anything.
+ */
+export function acceptsRange(ch: AnalogChannel, range: AnalogRange): boolean {
+  if (!ch.ranges.length) return true;
+  if (range === 'thermocouple') return ch.ranges.includes('thermocouple');
+  if (range.endsWith('mA')) return ch.ranges.some((r) => r.endsWith('mA'));
+  return ch.ranges.some((r) => r.endsWith('V'));
+}
 
 export function assignAnalog(io: IOPoint[], channels: AnalogChannel[]): Map<string, AnalogChannel> {
   const out = new Map<string, AnalogChannel>();
@@ -22,17 +32,9 @@ export function assignAnalog(io: IOPoint[], channels: AnalogChannel[]): Map<stri
   for (const p of io.filter(isAnalog)) {
     if (out.has(p.id)) continue;
     const free = channels.filter((c) => c.kind === p.type && !used.has(c.address));
-    // The signal family: a voltage / current signal by a voltage range or a description naming mA / V / a
-    // transmitter ("thermocouple transmitter" is 4-20 mA); else a thermocouple by its range or its description
-    // (the range may still be the list's 4-20 mA default).
+    // exact range first, else any free channel of the signal's family (acceptsRange)
     const range = p.analog?.range ?? '4-20mA';
-    const electrical = range !== 'thermocouple' && (/V$/.test(range) || ELECTRICAL_RE.test(p.description));
-    const tc = range === 'thermocouple' || (!electrical && TC_RE.test(p.description));
-    const tcOnly = (c: AnalogChannel) => c.ranges.length > 0 && c.ranges.every((r) => r === 'thermocouple');
-    // fallback: never a thermocouple-only channel (C0-04THM) for a voltage / current signal, nor a voltage / current
-    // channel for a thermocouple
-    const fits = (c: AnalogChannel) => (tc ? !c.ranges.length || c.ranges.includes('thermocouple') : !(electrical && tcOnly(c)));
-    const ch = free.find((c) => (tc ? c.ranges.includes('thermocouple') : !p.analog || c.ranges.includes(range))) ?? free.find(fits);
+    const ch = free.find((c) => c.ranges.includes(range)) ?? free.find((c) => acceptsRange(c, range));
     if (ch) { out.set(p.id, ch); used.add(ch.address); }
   }
   return out;
@@ -77,9 +79,8 @@ export function analogSetup(profile: PlcProfile, cpu: CpuModel, modules: ModuleS
   const { byPoint } = analogMap(profile, cpu, modules, io);
   return io.filter(isAnalog).map((p) => {
     const ch = byPoint.get(p.id);
-    // A channel that takes only one kind of signal decides it (a thermocouple module is never a 4-20 mA loop).
-    const asked: AnalogRange = p.analog?.range ?? '4-20mA';
-    const range: AnalogRange = ch && ch.ranges.length && !ch.ranges.includes(asked) && ch.ranges.every((r) => r === 'thermocouple') ? 'thermocouple' : asked;
+    // the point's own range, as asked: a point pinned by hand to a channel of another family shows up as such
+    const range: AnalogRange = p.analog?.range ?? '4-20mA';
     return {
       pointId: p.id, description: p.description, kind: p.type,
       channel: ch?.label ?? '(no free channel)', partNumber: ch?.partNumber ?? '', terminal: ch ? channelTerminal(ch, range) : '',

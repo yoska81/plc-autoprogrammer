@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ANALOG_RANGES, type AnalogRange, type AnalogSpec, type IOPoint } from '../../../types/io';
+import { ANALOG_RANGES, withAnalogRange, type AnalogRange, type AnalogSpec, type IOPoint } from '../../../types/io';
 import { useIOStore } from '../../../store/useIOStore';
 import { useProjectStore } from '../../../store/useProjectStore';
 
@@ -34,16 +34,17 @@ export default function AnalogCell({ point, address }: { point: IOPoint; address
   };
   return (
     <div className="flex flex-wrap items-center gap-1">
-      <button type="button" onClick={() => setAnalog(point.id, a ? null : DEFAULT)} aria-pressed={Boolean(a)}
+      <button type="button" onClick={() => setAnalog(point.id, a ? null : withAnalogRange(point.description, DEFAULT))} aria-pressed={Boolean(a)}
         title={a ? 'Analog signal (4-20 mA / 0-10 V) on an analog channel — click for discrete' : 'Discrete on/off point — click to make it analog'}
         className={`rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold ${a ? 'border-brand-600 bg-brand-600 text-white' : 'border-steel-300 bg-white text-steel-500 hover:bg-steel-50'}`}>
         {a ? 'Analog' : 'Discrete'}
       </button>
       {a && (
         <>
-          <select aria-label={`Signal range of ${point.id}`} value={a.range} onChange={(e) => set({ range: e.target.value as AnalogRange })} className={box}>
+          <select aria-label={`Signal range of ${point.id}`} value={a.range} onChange={(e) => set({ range: e.target.value as AnalogRange, assumed: undefined })} className={box}>
             {ANALOG_RANGES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
+          {a.assumed && <span role="note" title="The original program does not say this signal's range: check the transmitter, then pick the range." className="rounded-sm bg-amber-100 px-1 text-[11px] font-semibold text-amber-800" data-testid={`range-to-check-${point.id}`}>to check</span>}
           <input aria-label={`Scale minimum of ${point.id}`} defaultValue={a.min} key={`min${a.min}`} onBlur={(e) => setScale(e.target, 'min')} className={`${box} w-12 text-right`} />
           <span className="text-xs text-steel-400">–</span>
           <input aria-label={`Scale maximum of ${point.id}`} defaultValue={a.max} key={`max${a.max}`} onBlur={(e) => setScale(e.target, 'max')} className={`${box} w-14 text-right`} />

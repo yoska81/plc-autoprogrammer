@@ -1,7 +1,7 @@
 /**
  * Download of an upgraded program, without silent loss:
- * - same PLC and the original .L5X kept: the changes are written INTO that file (l5xPatch.ts), so
- *   everything the app did not change stays as it was;
+ * - same PLC and the original file kept (.L5X, Siemens SCL source, TIA Portal PLCopen XML): the changes
+ *   are written INTO that file (l5xPatch.ts, stPatch.ts), so everything the app did not change stays as it was;
  * - otherwise the app's own export for the chosen PLC, with the list of what the files will not have
  *   (`missing`); the page asks the user to confirm it before downloading.
  */
@@ -9,6 +9,7 @@ import type { LadderProgram } from '../core/ladder';
 import type { ExportContext } from '../core/profile';
 import type { IOPoint } from '../../types/io';
 import { patchL5x } from './l5xPatch';
+import { patchPlcopen, patchScl } from './stPatch';
 import type { UpgradeOriginal } from './upgrade';
 
 export interface UpgradeExport {
@@ -21,6 +22,15 @@ export interface UpgradeExport {
   added: string[];
   newTags: string[];
   warnings: string[];
+  /** Patch: what stays as it was and how to load the file, in plain words. */
+  howTo: string;
+}
+
+/** Can the changes be written into the original file (same PLC, a format the app patches)? */
+export function canPatch(o: Pick<UpgradeOriginal, 'plcId' | 'source'>, plcId: string): boolean {
+  if (plcId !== o.plcId) return false;
+  const f = o.source.format;
+  return f === 'l5x' || (o.plcId === 'siemens-s7' && (f === 'siemens-scl' || f === 'plcopen'));
 }
 
 export function exportUpgrade(
@@ -30,15 +40,24 @@ export function exportUpgrade(
   target: { plcId: string; fullFiles: () => { name: string; content: string }[]; ctx: ExportContext },
 ): UpgradeExport {
   const r = o.report;
-  if (target.plcId === o.plcId && o.source.format === 'l5x' && originalFile) {
-    const p = patchL5x({ originalXml: originalFile, original: o.program, current, names: o.names, blockOrigin: o.blockOrigin, ctx: target.ctx });
+  if (canPatch(o, target.plcId) && originalFile) {
+    const f = o.source.format;
+    const input = { originalText: originalFile, original: o.program, current, names: o.names, blockOrigin: o.blockOrigin, ctx: target.ctx };
+    const p = f === 'l5x'
+      ? (({ xml, ...x }) => ({ ...x, text: xml }))(patchL5x({ ...input, originalXml: originalFile, rungOrigin: o.rungOrigin ?? {} }))
+      : f === 'siemens-scl' ? patchScl(input) : patchPlcopen(input);
+    const howTo = f === 'l5x'
+      ? 'Everything else (modules, add-on instructions, other routines, tasks) is exactly as it was. In Studio 5000: File › Open the .L5X, then download to the controller.'
+      : f === 'siemens-scl'
+        ? 'Every other block is exactly as it was. In TIA Portal: External source files › Add new external file, then right-click it › Generate blocks from source (the changed blocks are replaced), compile and download.'
+        : 'Every other block is exactly as it was. Import the file into TIA Portal the way the original was exported, compile and download.';
     const changedNames = new Set(p.changed.map((c) => c.split(' / ').pop()!.toLowerCase()));
     // Only what could not be brought in from a routine that is now rewritten is lost.
     const missing = r.notConverted
       .filter((n) => !n.kept && (changedNames.has(n.where.toLowerCase()) || changedNames.has(n.where.split(' / ').pop()!.toLowerCase())))
       .map((n) => `${n.where}: ${n.text}`);
-    const name = o.source.fileName.replace(/(\.[^.]+)?$/, (ext) => `_upgraded${ext || '.L5X'}`);
-    return { mode: 'patch', files: [{ name, content: p.xml }], missing, changed: p.changed, added: p.added, newTags: p.newTags, warnings: p.warnings };
+    const name = o.source.fileName.replace(/(\.[^.]+)?$/, (ext) => `_upgraded${ext || (f === 'l5x' ? '.L5X' : f === 'siemens-scl' ? '.scl' : '.xml')}`);
+    return { mode: 'patch', files: [{ name, content: p.text }], missing, changed: p.changed, added: p.added, newTags: p.newTags, warnings: p.warnings, howTo };
   }
 
   const vendor = target.plcId;
@@ -56,7 +75,7 @@ export function exportUpgrade(
       if (undeclared.length) missing.push(`Definitions of the tags these kept instructions name (the original was an L5K or they were not in the file): ${undeclared.map((x) => (x.type === 'RAW' ? x.text : '')).join(', ')}`);
     }
   }
-  return { mode: 'full', files: target.fullFiles(), missing, changed: [], added: [], newTags: [], warnings: [] };
+  return { mode: 'full', files: target.fullFiles(), missing, changed: [], added: [], newTags: [], warnings: [], howTo: '' };
 }
 
 /** Is this kept instruction (by its text) in the program for the target PLC's own vendor? */

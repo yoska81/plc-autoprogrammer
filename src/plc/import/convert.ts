@@ -9,6 +9,8 @@
 import { rawTextNames, type LadderElement, type LadderOutput, type LadderProgram, type ProgramBlock, type Rung, type TagDefinition } from '../core/ladder';
 import type { CpuModel, ModuleSlot, PlcProfile } from '../core/profile';
 import { resolveAddresses } from '../core/profile';
+import { siemensAddress, siemensAnalogChannels } from '../core/profiles/siemens';
+import type { AnalogRange } from '../../types/io';
 import type { IOPoint } from '../../types/io';
 import type { ForeignProgram, ForeignTag, ImportedIoPoint, ImportedProgram, ImportReport } from './types';
 import { slug } from './l5x';
@@ -146,6 +148,8 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     const lower = base.toLowerCase();
     if (ioIndex.has(lower)) continue;
     if (/^S:FS$/i.test(base) || /^(FirstScan|First_Scan|%?M?\s*FirstScan)$/i.test(base)) { map.set(lower, 'SC2'); continue; }
+    // The app's own system bits (a reader already mapped the PLC's: SC1 always on, SC7 1-second clock).
+    if (/^SC\d+$/.test(base)) { map.set(lower, base); continue; }
     const kind = kindOf(base, roles);
     const addr = alloc(kind === 'bit' ? 'C' : kind === 'int' ? 'DS' : kind === 'dint' ? 'DD' : kind === 'real' ? 'DF' : kind === 'timer' ? 'T' : 'CT');
     map.set(lower, addr);
@@ -219,6 +223,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   const usedIds = new Set<string>();
   const notConverted: ImportReport['notConverted'] = [];
   const blockOrigin: ImportedProgram['blockOrigin'] = {};
+  const rungOrigin: ImportedProgram['rungOrigin'] = {};
   for (const r of fp.routines) {
     for (const u of r.untranslated) notConverted.push({ where: r.name, text: u });
     if (!r.rungs.length) continue;
@@ -227,27 +232,34 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     if (r.origin) blockOrigin[id] = r.origin;
     blocks.push({ id, name: r.name, description: `Imported from ${fp.vendor} ${r.language === 'ladder' ? 'ladder' : r.language.toUpperCase()} routine "${r.name}"` });
     for (const g of r.rungs) {
-      // Rung ids end in the original rung number (readers: `<routine>_<n>`).
-      const n = /_(\d+)(?:_\d+)?$/.exec(g.id)?.[1];
+      const n = r.rungNumbers?.[g.id];
       for (const x of [...g.branches.flat(), ...g.outputs]) if (x.type === 'RAW') notConverted.push({ where: r.name, text: `${n ? `Rung ${n}: ` : ''}${x.text}`, kept: true });
       let rid = `r_${g.id}`;
       while (usedIds.has(rid)) rid += '_';
       usedIds.add(rid);
+      if (n !== undefined) rungOrigin[rid] = n;
       outRungs.push({ id: rid, block: id, comment: g.comment, branches: g.branches.map((b) => b.map(trEl)), outputs: g.outputs.map(trOut) });
     }
   }
+  linkCounterResets(outRungs, tags, () => alloc('C'), rungOrigin);
   const program: LadderProgram = { rungs: outRungs, blocks, tags };
   const total = outRungs.length + notConverted.filter((n) => !n.kept).length;
   const converted = outRungs.filter((r) => ![...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW')).length;
   return {
     source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName },
-    program, io, names, blockOrigin,
+    program, io, names, blockOrigin, rungOrigin,
     report: { rungs: total, converted, notConverted, notes: [...new Set(notes)], outside: fp.outside ?? [] },
   };
 }
 
 /** CLICK nickname for an original tag name: letters, digits and _, at most 24 characters (only for a CLICK target). */
-export const nickOf = (name: string): string => name.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24);
+export const nickOf = (name: string): string => {
+  const s = name.replace(/[^A-Za-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+  if (s.length <= 24) return s;
+  // Cut at a word ("_") so the nickname doesn't end mid-word, else at 24.
+  const cut = s.slice(0, 25).lastIndexOf('_');
+  return (cut >= 8 ? s.slice(0, cut) : s.slice(0, 24)).replace(/_+$/, '');
+};
 
 /** "Conv1_Start_PB" → "Conv1 Start PB". */
 export function pretty(name: string): string {
@@ -258,6 +270,47 @@ export function pretty(name: string): string {
  * The imported program for a chosen PLC: I/O points get that PLC's addresses (analog points their
  * analog channel register) and every "@IN:n" / "@OUT:n" in the program is replaced.
  */
+/**
+ * Signal range of an imported analog point: as its description or tag comment says ("0-10 V", "4…20 mA", "0-20 mA",
+ * a thermocouple); an S7-1200 onboard input word (%IW64 / %IW66) is 0–10 V (the CPU's inputs take nothing else).
+ * Otherwise 4–20 mA, the usual transmitter signal, `assumed` (asked, and shown "to check" in the I/O list).
+ */
+export function importedRange(original: string, text = ''): { range: AnalogRange; assumed: boolean } {
+  const said: [RegExp, AnalogRange][] = [
+    [/\b4\s*(?:-|–|\.\.\.?|…|to)\s*20\s*mA\b/i, '4-20mA'],
+    [/\b0\s*(?:-|–|\.\.\.?|…|to)\s*20\s*mA\b/i, '0-20mA'],
+    [/(?:^|[^\d.])0\s*(?:-|–|\.\.\.?|…|to)\s*10\s*V(DC)?\b/i, '0-10V'],
+    [/(?:^|[^\d.])0\s*(?:-|–|\.\.\.?|…|to)\s*5\s*V(DC)?\b/i, '0-5V'],
+    [/thermocouple|\bT\/C\b|\btype [JKTENRSB]\b/i, 'thermocouple'],
+  ];
+  const hit = said.find(([re]) => re.test(text));
+  if (hit) return { range: hit[1], assumed: false };
+  if (/^%?IW6[46]$/i.test(original.trim())) return { range: '0-10V', assumed: false };
+  return { range: '4-20mA', assumed: true };
+}
+
+/** The app's address of an S7 bit or analog word as written in the original (%IX0.2, %I0.2, I0.2 → X003; %IW96 → its channel), or null. */
+function s7Terminal(original: string, cpu: CpuModel, modules: ModuleSlot[]): string | null {
+  // An analog word (%IW96): the channel at that address, on the CPU or a module.
+  const w = /^%?([IQ])W(\d+)$/i.exec(original.trim());
+  if (w) {
+    const want = `%${w[1].toUpperCase()}W${Number(w[2])}`;
+    return siemensAnalogChannels(cpu, modules).find((ch) => siemensAddress(ch.address, cpu, modules)?.address === want)?.address ?? null;
+  }
+  const m = /^%?([IQ])X?(\d+)\.([0-7])$/i.exec(original.trim());
+  if (!m) return null;
+  const want = `%${m[1].toUpperCase()}${Number(m[2])}.${m[3]}`;
+  const isIn = m[1].toUpperCase() === 'I';
+  const slots = [isIn ? cpu.builtInInputs : cpu.builtInOutputs, ...modules.map((x) => (isIn ? x.inputs : x.outputs))];
+  for (let slot = 0; slot < slots.length && slot < 10; slot++) {
+    for (let n = 1; n <= Math.min(slots[slot], 99); n++) {
+      const base = `${isIn ? 'X' : 'Y'}${slot}${String(n).padStart(2, '0')}`;
+      if (siemensAddress(base, cpu, modules)?.address === want) return base;
+    }
+  }
+  return null;
+}
+
 export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuModel, modules: ModuleSlot[] = []): { program: LadderProgram; io: IOPoint[]; names: Record<string, string> } {
   let i = 0, o = 0;
   // The imported program scales its own analog values: the app's channel scaling passes the raw counts through
@@ -266,7 +319,11 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   const points: IOPoint[] = imp.io.map((p) => ({
     id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++o).padStart(3, '0')}`,
     description: p.description, type: p.type, category: 'Spare',
-    ...(p.analog ? { signal: 'analog' as const, analog: { range: '4-20mA' as const, min: 0, max: full, units: 'raw counts' } } : {}),
+    ...(p.analog ? (() => { const r = importedRange(p.original, p.description); return { signal: 'analog' as const, analog: { range: r.range, min: 0, max: full, units: 'raw counts', ...(r.assumed ? { assumed: true } : {}) } }; })() : {}),
+    // A CLICK program going back on a CLICK keeps its terminals (X001 stays X001, gaps included); an S7
+    // program keeps its %I / %Q bits (%Q0.2 stays %Q0.2).
+    ...(profile.id === 'click' && /^[XY]\d{3}$/i.test(p.original) && profile.parseAddress(p.original.toUpperCase()) ? { plcAddress: p.original.toUpperCase() } : {}),
+    ...(profile.id === 'siemens-s7' ? (() => { const a = s7Terminal(p.original, cpu, modules); return a ? { plcAddress: a } : {}; })() : {}),
   }));
   const addr = resolveAddresses(profile, cpu, points, modules);
   const ph = new Map<string, string>();
@@ -301,4 +358,36 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   const names: Record<string, string> = {};
   for (const [k, v] of Object.entries(imp.names)) names[sub(k)] = v;
   return { program, io: points, names };
+}
+
+/**
+ * A counter reset in a rung of its own (Logix RES, Mitsubishi RST C0) becomes the counter's reset input,
+ * the form the app (and CLICK) uses: one plain contact is used as it is; any other condition drives a reset
+ * bit of its own (the conditions of all the reset rungs, OR'ed). Rungs left with no output are dropped.
+ */
+export function linkCounterResets(rungs: Rung[], tags: TagDefinition[], newBit: () => string, origin: Record<string, string> = {}): void {
+  for (const cnt of rungs.flatMap((r) => r.outputs).filter((o): o is Extract<LadderOutput, { type: 'CNT' }> => o.type === 'CNT')) {
+    if (cnt.resetAddress) continue;
+    const a = cnt.address.toUpperCase();
+    const rst = rungs.filter((r) => r.outputs.some((o) => o.type === 'RST' && o.address.toUpperCase() === a));
+    if (!rst.length) continue;
+    const single = rst.length === 1 && rst[0].branches.length === 1 && rst[0].branches[0].length === 1 && rst[0].branches[0][0].type === 'NO' ? rst[0].branches[0][0].address : null;
+    if (single) cnt.resetAddress = single;
+    else {
+      const bit = newBit();
+      const tag = tags.find((t) => t.address.toUpperCase() === a);
+      // Named after the counter, or its description when its name is only a device (C0).
+      const nick = tag?.nickname && !/^[A-Z]{1,3}\d+$/i.test(tag.nickname) ? tag.nickname : (tag?.comment.match(/[A-Za-z0-9]+/g) ?? []).slice(0, 3).join('_') || 'Counter';
+      tags.push({ address: bit, nickname: `${nick}_Reset`, comment: `Reset of ${nick} (from the original reset rung${rst.length > 1 ? 's' : ''})` });
+      const always = rst.some((r) => !r.branches.length);
+      const at = rungs.indexOf(rst[0]);
+      // It stands for the original reset rung (the patch export copies that rung while unchanged).
+      const id = `${rst[0].id}_rst`;
+      if (origin[rst[0].id] !== undefined) origin[id] = origin[rst[0].id];
+      rungs.splice(at, 0, { id, ...(rst[0].block ? { block: rst[0].block } : {}), comment: `Reset ${nick}`, branches: always ? [] : rst.flatMap((r) => r.branches), outputs: [{ type: 'OUT', address: bit }] });
+      cnt.resetAddress = bit;
+    }
+    for (const r of rst) r.outputs = r.outputs.filter((o) => !(o.type === 'RST' && o.address.toUpperCase() === a));
+  }
+  for (let i = rungs.length - 1; i >= 0; i--) if (!rungs[i].outputs.length) rungs.splice(i, 1);
 }
