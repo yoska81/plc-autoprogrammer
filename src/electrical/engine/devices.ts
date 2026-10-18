@@ -196,6 +196,7 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
     if (EXTEND.test(a.point.description) && RETRACT.test(b.point.description) && strip(a.point.description) && strip(a.point.description) === strip(b.point.description)) { doubles.add(a.point.id); doubles.add(b.point.id); }
   }
   let estopIdx = 0;
+  let thIdx = 0;
 
   for (const { point: p, address } of points) {
     const desc = p.description || address;
@@ -206,7 +207,11 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
 
     if (p.type === 'input') {
       if (LIGHT_CURTAIN_RE.test(desc) && !/\b(safety relay|e-?stop)\b/i.test(desc) && lcRelay) { tag = lcRelay; type = 'safety-relay-output'; }
-      else if (TWO_HAND_RE.test(desc) && thStation) { tag = thStation; type = 'pushbutton-no'; location = model.safety.twoHand?.zone ?? field(); }
+      else if (TWO_HAND_RE.test(desc) && thStation) {
+        // each button of the station has its own tag (station + L / R, else A, B…): two inputs never share a device terminal or cable core
+        tag = `${thStation}${/\bleft\b/i.test(desc) ? 'L' : /\bright\b/i.test(desc) ? 'R' : String.fromCharCode(65 + thIdx)}`; thIdx++;
+        type = 'pushbutton-no'; location = model.safety.twoHand?.zone ?? field();
+      }
       else if (OVER_TEMP_RE.test(desc) && proc?.limit) { tag = proc.limit; type = 'other'; }
       else if (guardIo.some((g) => g.point === p) && guardTags.length) { tag = guardTags[Math.min(guardIdx++, guardTags.length - 1)]; type = 'limit-switch'; location = guardZones[Math.min(guardIdx - 1, guardZones.length - 1)]; }
       else if (type === 'safety-relay-output') { tag = srTag ?? 'SR1'; }

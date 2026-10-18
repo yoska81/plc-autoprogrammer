@@ -1,0 +1,3154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0201" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <fileHeader companyName="Siemens AG" productName="TIA Portal" productVersion="V18 Update 3" creationDateTime="2026-08-27T10:41:12" contentDescription="Mixing tank MT01 - FB_Mixer (LAD), FC_ScaleAnalog (SCL)"/>
+  <contentHeader name="MixTank_MT01" version="1.4" modificationDateTime="2026-08-27T10:41:12" organization="Plant 2 - Utilities" author="j.berger" language="en-US">
+    <Comment>Mixing tank MT01, CPU 1214C DC/DC/DC (6ES7214-1AG40-0XB0, firmware V4.6) with SM 1231 AI4 (6ES7231-4HD32-0XB0).</Comment>
+    <coordinateInfo>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <ld><scaling x="1" y="1"/></ld>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+  <types>
+    <dataTypes/>
+    <pous>
+      <pou name="FC_ScaleAnalog" pouType="function">
+        <interface>
+          <returnType><REAL/></returnType>
+          <inputVars>
+            <variable name="Raw">
+              <type><INT/></type>
+              <documentation>
+                <xhtml:p>Analog input word (S7 format)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="LoEng">
+              <type><REAL/></type>
+              <documentation>
+                <xhtml:p>Engineering value at 4 mA</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="HiEng">
+              <type><REAL/></type>
+              <documentation>
+                <xhtml:p>Engineering value at 20 mA</xhtml:p>
+              </documentation>
+            </variable>
+          </inputVars>
+          <outputVars>
+            <variable name="Fault">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Wire break or out of range</xhtml:p>
+              </documentation>
+            </variable>
+          </outputVars>
+          <tempVars>
+            <variable name="Norm">
+              <type><REAL/></type>
+              <documentation>
+                <xhtml:p>Normalised value 0..1</xhtml:p>
+              </documentation>
+            </variable>
+          </tempVars>
+        </interface>
+        <body>
+          <ST>
+            <xhtml:p><![CDATA[// Scale an S7 analog input word from a 4-20 mA channel to engineering units.
+// S7-1200 nominal range for 4-20 mA: 4 mA = 0, 20 mA = 27648; overrange up to 32511,
+// 32767 (16#7FFF) = wire break / overflow, -4864 = underrange limit.
+IF #Raw > 32511 OR #Raw < -4864 THEN
+    #Fault := TRUE;
+    #FC_ScaleAnalog := #LoEng;
+    RETURN;
+END_IF;
+#Fault := FALSE;
+
+// Normalise raw counts to 0.0 .. 1.0
+#Norm := NORM_X(MIN := 0, VALUE := #Raw, MAX := 32767);
+
+// Engineering units
+#FC_ScaleAnalog := SCALE_X(MIN := #LoEng, VALUE := #Norm, MAX := #HiEng);
+]]></xhtml:p>
+          </ST>
+        </body>
+        <addData>
+          <data name="http://www.siemens.com/automation/Openness/SW/Interface/v5" handleUnknown="discard">
+            <BlockInfo xmlns="urn:fixture:siemens-blockinfo" Number="10" ProgrammingLanguage="SCL" MemoryLayout="Optimized"/>
+          </data>
+        </addData>
+        <documentation>
+          <xhtml:p>Scale a 4-20 mA analog input word to engineering units with wire-break detection.</xhtml:p>
+        </documentation>
+      </pou>
+      <pou name="FB_Mixer" pouType="functionBlock">
+        <interface>
+          <localVars>
+            <variable name="S_Idle">
+              <type><BOOL/></type>
+              <initialValue><simpleValue value="TRUE"/></initialValue>
+              <documentation>
+                <xhtml:p>Step: idle, ready for start</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="S_FillA">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Step: fill ingredient A</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="S_FillB">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Step: fill ingredient B</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="S_Heat">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Step: heat with agitation</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="S_Mix">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Step: timed mix at temperature</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="S_Drain">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Step: drain tank</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="S_Done">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Step: batch complete, wait for acknowledge</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Fault">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Any alarm active</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Alm_EStop">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Alarm: emergency stop</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Alm_AgitOverload">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Alarm: agitator motor overload</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Alm_HeaterOvertemp">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Alarm: heater safety thermostat tripped</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Alm_LevelHH">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Alarm: tank level high-high</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Alm_LevelSensor">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Alarm: level transmitter wire break / out of range</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Alm_TempSensor">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Alarm: temperature transmitter wire break / out of range</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Alm_AgitFeedback">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Alarm: agitator commanded but no running feedback</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Alm_FillTimeout">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Alarm: filling took longer than 10 min</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Level_Pct">
+              <type><REAL/></type>
+              <documentation>
+                <xhtml:p>Tank level, %</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Temp_C">
+              <type><REAL/></type>
+              <documentation>
+                <xhtml:p>Tank temperature, degC</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Level_Fault">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Level input out of range</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Temp_Fault">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Temperature input out of range</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Level_Above_Min">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Level above agitator / heater minimum</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="SP_Level_A">
+              <type><REAL/></type>
+              <initialValue><simpleValue value="40.0"/></initialValue>
+              <documentation>
+                <xhtml:p>Setpoint: level after ingredient A, %</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="SP_Level_B">
+              <type><REAL/></type>
+              <initialValue><simpleValue value="80.0"/></initialValue>
+              <documentation>
+                <xhtml:p>Setpoint: level after ingredient B, %</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="SP_Temp">
+              <type><REAL/></type>
+              <initialValue><simpleValue value="65.0"/></initialValue>
+              <documentation>
+                <xhtml:p>Setpoint: batch temperature, degC</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Agit_Min_Level">
+              <type><REAL/></type>
+              <initialValue><simpleValue value="20.0"/></initialValue>
+              <documentation>
+                <xhtml:p>Minimum level for agitator and heater, %</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="SP_Drain_Empty">
+              <type><REAL/></type>
+              <initialValue><simpleValue value="3.0"/></initialValue>
+              <documentation>
+                <xhtml:p>Level considered empty when draining, %</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Mix_Time">
+              <type><TIME/></type>
+              <initialValue><simpleValue value="T#5M"/></initialValue>
+              <documentation>
+                <xhtml:p>Mix time at temperature</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Batch_Count">
+              <type><INT/></type>
+              <documentation>
+                <xhtml:p>Completed batches</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="T_AgitFB">
+              <type><derived name="TON"/></type>
+              <documentation>
+                <xhtml:p>Agitator feedback watchdog</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="T_FillTimeout">
+              <type><derived name="TON"/></type>
+              <documentation>
+                <xhtml:p>Fill watchdog</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="T_Mix">
+              <type><derived name="TON"/></type>
+              <documentation>
+                <xhtml:p>Mix timer</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="T_DrainDelay">
+              <type><derived name="TON"/></type>
+              <documentation>
+                <xhtml:p>Drain run-on after empty</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="C_Batch">
+              <type><derived name="CTU"/></type>
+              <documentation>
+                <xhtml:p>Batch counter</xhtml:p>
+              </documentation>
+            </variable>
+          </localVars>
+          <externalVars>
+            <variable name="Start_PB">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Start pushbutton S1 (NO)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Stop_PB">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Stop pushbutton S2 (NC, TRUE = not pressed)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="EStop_OK">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>E-stop safety relay K0 OK</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Agitator_Running">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Agitator contactor K3 auxiliary contact (running feedback)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Agitator_OL_OK">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Agitator motor protector Q3 not tripped</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="LSHH_OK">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>High-high level switch LSHH101 (NC, TRUE = level not high-high)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Outlet_Valve_Closed">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Outlet valve XV103 closed limit switch</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Lid_Closed">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Tank lid / manway closed switch</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Reset_PB">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Reset / acknowledge pushbutton S3 (NO)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Heater_OT_OK">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Heater safety thermostat TSH102 OK (not over-temperature)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Inlet_Valve_A">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Ingredient A (water) inlet valve XV101</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Inlet_Valve_B">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Ingredient B (syrup) inlet valve XV102</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Outlet_Valve">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Outlet / drain valve XV103</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Agitator_Run">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Agitator motor M1 contactor K3</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Heater_On">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Immersion heater E1 contactor K4</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Lamp_Running">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Batch running lamp H1 (green)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Lamp_Fault">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Fault lamp H2 (red)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Lamp_Batch_Done">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Batch complete lamp H3 (white)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Level_Raw">
+              <type><INT/></type>
+              <documentation>
+                <xhtml:p>Level transmitter LT101, 4-20 mA = 0-100 % (SM 1231 ch0, raw 0..27648)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Temp_Raw">
+              <type><INT/></type>
+              <documentation>
+                <xhtml:p>Temperature transmitter TT101, 4-20 mA = 0-150 degC (SM 1231 ch1, raw 0..27648)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="HMI_Reset_Count">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>HMI button: reset batch counter</xhtml:p>
+              </documentation>
+            </variable>
+          </externalVars>
+        </interface>
+        <body>
+          <LD>
+            <comment localId="1" height="20" width="400">
+              <position x="0" y="20"/>
+              <content>
+                <xhtml:p>Scale level transmitter LT101 (4-20 mA -&gt; 0-100 %)</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="2" height="40" width="3">
+              <position x="0" y="50"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <inVariable localId="4" height="20" width="80" negated="false">
+              <position x="60" y="110"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>Level_Raw</expression>
+            </inVariable>
+            <inVariable localId="5" height="20" width="80" negated="false">
+              <position x="60" y="140"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>0.0</expression>
+            </inVariable>
+            <inVariable localId="6" height="20" width="80" negated="false">
+              <position x="60" y="170"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>100.0</expression>
+            </inVariable>
+            <block localId="3" width="120" height="160" typeName="FC_ScaleAnalog">
+              <position x="160" y="50"/>
+              <inputVariables>
+                <variable formalParameter="EN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="2"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="Raw">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="4"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="LoEng">
+                  <connectionPointIn>
+                    <relPosition x="0" y="70"/>
+                    <connection refLocalId="5"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="HiEng">
+                  <connectionPointIn>
+                    <relPosition x="0" y="100"/>
+                    <connection refLocalId="6"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="ENO">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="Ret_Val">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="Fault">
+                  <connectionPointOut>
+                    <relPosition x="120" y="70"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <outVariable localId="7" height="20" width="80" negated="false">
+              <position x="320" y="110"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="3" formalParameter="Ret_Val"/>
+              </connectionPointIn>
+              <expression>Level_Pct</expression>
+            </outVariable>
+            <outVariable localId="8" height="20" width="80" negated="false">
+              <position x="320" y="140"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="3" formalParameter="Fault"/>
+              </connectionPointIn>
+              <expression>Level_Fault</expression>
+            </outVariable>
+            <rightPowerRail localId="9" height="40" width="3">
+              <position x="460" y="50"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="3" formalParameter="ENO"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="10" height="20" width="400">
+              <position x="0" y="230"/>
+              <content>
+                <xhtml:p>Scale temperature transmitter TT101 (4-20 mA -&gt; 0-150 degC)</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="11" height="40" width="3">
+              <position x="0" y="260"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <inVariable localId="13" height="20" width="80" negated="false">
+              <position x="60" y="320"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>Temp_Raw</expression>
+            </inVariable>
+            <inVariable localId="14" height="20" width="80" negated="false">
+              <position x="60" y="350"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>0.0</expression>
+            </inVariable>
+            <inVariable localId="15" height="20" width="80" negated="false">
+              <position x="60" y="380"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>150.0</expression>
+            </inVariable>
+            <block localId="12" width="120" height="160" typeName="FC_ScaleAnalog">
+              <position x="160" y="260"/>
+              <inputVariables>
+                <variable formalParameter="EN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="11"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="Raw">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="13"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="LoEng">
+                  <connectionPointIn>
+                    <relPosition x="0" y="70"/>
+                    <connection refLocalId="14"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="HiEng">
+                  <connectionPointIn>
+                    <relPosition x="0" y="100"/>
+                    <connection refLocalId="15"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="ENO">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="Ret_Val">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="Fault">
+                  <connectionPointOut>
+                    <relPosition x="120" y="70"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <outVariable localId="16" height="20" width="80" negated="false">
+              <position x="320" y="320"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="12" formalParameter="Ret_Val"/>
+              </connectionPointIn>
+              <expression>Temp_C</expression>
+            </outVariable>
+            <outVariable localId="17" height="20" width="80" negated="false">
+              <position x="320" y="350"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="12" formalParameter="Fault"/>
+              </connectionPointIn>
+              <expression>Temp_Fault</expression>
+            </outVariable>
+            <rightPowerRail localId="18" height="40" width="3">
+              <position x="460" y="260"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="12" formalParameter="ENO"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="19" height="20" width="400">
+              <position x="0" y="440"/>
+              <content>
+                <xhtml:p>Level above minimum for agitator and heater</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="20" height="40" width="3">
+              <position x="0" y="470"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <inVariable localId="22" height="20" width="80" negated="false">
+              <position x="60" y="530"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>Level_Pct</expression>
+            </inVariable>
+            <inVariable localId="23" height="20" width="80" negated="false">
+              <position x="60" y="560"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>Agit_Min_Level</expression>
+            </inVariable>
+            <block localId="21" width="120" height="130" typeName="GE">
+              <position x="160" y="470"/>
+              <inputVariables>
+                <variable formalParameter="EN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="20"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN1">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="22"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN2">
+                  <connectionPointIn>
+                    <relPosition x="0" y="70"/>
+                    <connection refLocalId="23"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="ENO">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="OUT">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <coil localId="24" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="380" y="470"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="21" formalParameter="OUT"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Level_Above_Min</variable>
+            </coil>
+            <rightPowerRail localId="25" height="40" width="3">
+              <position x="460" y="470"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="24"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="26" height="20" width="400">
+              <position x="0" y="650"/>
+              <content>
+                <xhtml:p>Alarm: Emergency stop pressed</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="27" height="40" width="3">
+              <position x="0" y="680"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="28" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="160" y="680"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="27"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>EStop_OK</variable>
+            </contact>
+            <coil localId="29" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="260" y="680"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="28"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_EStop</variable>
+            </coil>
+            <rightPowerRail localId="30" height="40" width="3">
+              <position x="340" y="680"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="29"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="31" height="20" width="400">
+              <position x="0" y="860"/>
+              <content>
+                <xhtml:p>Alarm: Agitator motor overload</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="32" height="40" width="3">
+              <position x="0" y="890"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="33" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="160" y="890"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="32"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Agitator_OL_OK</variable>
+            </contact>
+            <coil localId="34" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="260" y="890"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="33"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_AgitOverload</variable>
+            </coil>
+            <rightPowerRail localId="35" height="40" width="3">
+              <position x="340" y="890"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="34"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="36" height="20" width="400">
+              <position x="0" y="1070"/>
+              <content>
+                <xhtml:p>Alarm: Heater safety thermostat tripped</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="37" height="40" width="3">
+              <position x="0" y="1100"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="38" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="160" y="1100"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="37"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Heater_OT_OK</variable>
+            </contact>
+            <coil localId="39" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="260" y="1100"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="38"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_HeaterOvertemp</variable>
+            </coil>
+            <rightPowerRail localId="40" height="40" width="3">
+              <position x="340" y="1100"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="39"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="41" height="20" width="400">
+              <position x="0" y="1280"/>
+              <content>
+                <xhtml:p>Alarm: Tank level high-high</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="42" height="40" width="3">
+              <position x="0" y="1310"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="43" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="160" y="1310"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="42"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>LSHH_OK</variable>
+            </contact>
+            <coil localId="44" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="260" y="1310"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="43"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_LevelHH</variable>
+            </coil>
+            <rightPowerRail localId="45" height="40" width="3">
+              <position x="340" y="1310"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="44"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="46" height="20" width="400">
+              <position x="0" y="1490"/>
+              <content>
+                <xhtml:p>Alarm: Level transmitter fault</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="47" height="40" width="3">
+              <position x="0" y="1520"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="48" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="1520"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="47"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Level_Fault</variable>
+            </contact>
+            <coil localId="49" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="260" y="1520"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="48"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_LevelSensor</variable>
+            </coil>
+            <rightPowerRail localId="50" height="40" width="3">
+              <position x="340" y="1520"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="49"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="51" height="20" width="400">
+              <position x="0" y="1700"/>
+              <content>
+                <xhtml:p>Alarm: Temperature transmitter fault</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="52" height="40" width="3">
+              <position x="0" y="1730"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="53" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="1730"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="52"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Temp_Fault</variable>
+            </contact>
+            <coil localId="54" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="260" y="1730"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="53"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_TempSensor</variable>
+            </coil>
+            <rightPowerRail localId="55" height="40" width="3">
+              <position x="340" y="1730"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="54"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="56" height="20" width="400">
+              <position x="0" y="1910"/>
+              <content>
+                <xhtml:p>Alarm: Agitator no running feedback</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="57" height="40" width="3">
+              <position x="0" y="1940"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="58" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="1940"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="57"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Agitator_Run</variable>
+            </contact>
+            <contact localId="59" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="220" y="1940"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="58"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Agitator_Running</variable>
+            </contact>
+            <inVariable localId="61" height="20" width="80" negated="false">
+              <position x="180" y="2000"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>T#3S</expression>
+            </inVariable>
+            <block localId="60" width="120" height="100" typeName="TON" instanceName="T_AgitFB">
+              <position x="280" y="1940"/>
+              <inputVariables>
+                <variable formalParameter="IN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="59"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="PT">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="61"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="Q">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="ET">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <coil localId="62" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="500" y="1940"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="60" formalParameter="Q"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_AgitFeedback</variable>
+            </coil>
+            <rightPowerRail localId="63" height="40" width="3">
+              <position x="580" y="1940"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="62"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="64" height="20" width="400">
+              <position x="0" y="2120"/>
+              <content>
+                <xhtml:p>Alarm: Fill timeout</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="65" height="40" width="3">
+              <position x="0" y="2150"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="66" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="2150"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="65"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillA</variable>
+            </contact>
+            <contact localId="67" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="2190"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="65"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillB</variable>
+            </contact>
+            <inVariable localId="69" height="20" width="80" negated="false">
+              <position x="120" y="2210"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>T#10M</expression>
+            </inVariable>
+            <block localId="68" width="120" height="100" typeName="TON" instanceName="T_FillTimeout">
+              <position x="220" y="2150"/>
+              <inputVariables>
+                <variable formalParameter="IN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="66"/>
+                    <connection refLocalId="67"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="PT">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="69"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="Q">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="ET">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <coil localId="70" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="440" y="2150"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="68" formalParameter="Q"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_FillTimeout</variable>
+            </coil>
+            <rightPowerRail localId="71" height="40" width="3">
+              <position x="520" y="2150"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="70"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="72" height="20" width="400">
+              <position x="0" y="2330"/>
+              <content>
+                <xhtml:p>Acknowledge alarms (conditions still present set again)</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="73" height="40" width="3">
+              <position x="0" y="2360"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="74" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="2360"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="73"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Reset_PB</variable>
+            </contact>
+            <coil localId="75" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="2360"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="74"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_EStop</variable>
+            </coil>
+            <coil localId="76" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="2400"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="74"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_AgitOverload</variable>
+            </coil>
+            <coil localId="77" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="2440"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="74"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_HeaterOvertemp</variable>
+            </coil>
+            <coil localId="78" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="2480"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="74"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_LevelHH</variable>
+            </coil>
+            <coil localId="79" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="2520"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="74"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_LevelSensor</variable>
+            </coil>
+            <coil localId="80" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="2560"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="74"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_TempSensor</variable>
+            </coil>
+            <coil localId="81" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="2600"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="74"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_AgitFeedback</variable>
+            </coil>
+            <coil localId="82" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="2640"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="74"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_FillTimeout</variable>
+            </coil>
+            <rightPowerRail localId="83" height="320" width="3">
+              <position x="340" y="2360"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="75"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="50"/>
+                <connection refLocalId="76"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="90"/>
+                <connection refLocalId="77"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="130"/>
+                <connection refLocalId="78"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="170"/>
+                <connection refLocalId="79"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="210"/>
+                <connection refLocalId="80"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="250"/>
+                <connection refLocalId="81"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="290"/>
+                <connection refLocalId="82"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="84" height="20" width="400">
+              <position x="0" y="2740"/>
+              <content>
+                <xhtml:p>Fault summary</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="85" height="40" width="3">
+              <position x="0" y="2770"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="86" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="2770"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="85"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_EStop</variable>
+            </contact>
+            <contact localId="87" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="2810"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="85"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_AgitOverload</variable>
+            </contact>
+            <contact localId="88" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="2850"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="85"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_HeaterOvertemp</variable>
+            </contact>
+            <contact localId="89" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="2890"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="85"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_LevelHH</variable>
+            </contact>
+            <contact localId="90" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="2930"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="85"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_LevelSensor</variable>
+            </contact>
+            <contact localId="91" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="2970"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="85"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_TempSensor</variable>
+            </contact>
+            <contact localId="92" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="3010"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="85"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_AgitFeedback</variable>
+            </contact>
+            <contact localId="93" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="3050"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="85"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Alm_FillTimeout</variable>
+            </contact>
+            <coil localId="94" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="260" y="2770"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="86"/>
+                <connection refLocalId="87"/>
+                <connection refLocalId="88"/>
+                <connection refLocalId="89"/>
+                <connection refLocalId="90"/>
+                <connection refLocalId="91"/>
+                <connection refLocalId="92"/>
+                <connection refLocalId="93"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Fault</variable>
+            </coil>
+            <rightPowerRail localId="95" height="40" width="3">
+              <position x="340" y="2770"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="94"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="96" height="20" width="400">
+              <position x="0" y="2950"/>
+              <content>
+                <xhtml:p>Stop or fault: abort batch, back to idle</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="97" height="40" width="3">
+              <position x="0" y="2980"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="98" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="160" y="2980"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="97"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Stop_PB</variable>
+            </contact>
+            <contact localId="99" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="3020"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="97"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Fault</variable>
+            </contact>
+            <coil localId="100" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="2980"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="98"/>
+                <connection refLocalId="99"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillA</variable>
+            </coil>
+            <coil localId="101" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="3020"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="98"/>
+                <connection refLocalId="99"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillB</variable>
+            </coil>
+            <coil localId="102" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="3060"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="98"/>
+                <connection refLocalId="99"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Heat</variable>
+            </coil>
+            <coil localId="103" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="3100"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="98"/>
+                <connection refLocalId="99"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Mix</variable>
+            </coil>
+            <coil localId="104" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="3140"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="98"/>
+                <connection refLocalId="99"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Drain</variable>
+            </coil>
+            <coil localId="105" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="260" y="3180"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="98"/>
+                <connection refLocalId="99"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Done</variable>
+            </coil>
+            <coil localId="106" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="260" y="3220"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="98"/>
+                <connection refLocalId="99"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Idle</variable>
+            </coil>
+            <rightPowerRail localId="107" height="280" width="3">
+              <position x="340" y="2980"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="100"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="50"/>
+                <connection refLocalId="101"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="90"/>
+                <connection refLocalId="102"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="130"/>
+                <connection refLocalId="103"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="170"/>
+                <connection refLocalId="104"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="210"/>
+                <connection refLocalId="105"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="250"/>
+                <connection refLocalId="106"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="108" height="20" width="400">
+              <position x="0" y="3320"/>
+              <content>
+                <xhtml:p>Idle -&gt; Fill A: start with outlet closed and lid closed</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="109" height="40" width="3">
+              <position x="0" y="3350"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="110" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="3350"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="109"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Idle</variable>
+            </contact>
+            <contact localId="111" height="20" width="21" negated="false" edge="rising" storage="none">
+              <position x="220" y="3350"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="110"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Start_PB</variable>
+            </contact>
+            <contact localId="112" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="280" y="3350"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="111"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Stop_PB</variable>
+            </contact>
+            <contact localId="113" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="340" y="3350"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="112"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Fault</variable>
+            </contact>
+            <contact localId="114" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="400" y="3350"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="113"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Outlet_Valve_Closed</variable>
+            </contact>
+            <contact localId="115" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="460" y="3350"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="114"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Lid_Closed</variable>
+            </contact>
+            <coil localId="116" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="560" y="3350"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="115"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Idle</variable>
+            </coil>
+            <coil localId="117" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="560" y="3390"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="115"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillA</variable>
+            </coil>
+            <rightPowerRail localId="118" height="80" width="3">
+              <position x="640" y="3350"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="116"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="50"/>
+                <connection refLocalId="117"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="119" height="20" width="400">
+              <position x="0" y="3530"/>
+              <content>
+                <xhtml:p>Fill A -&gt; Fill B at level setpoint A</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="120" height="40" width="3">
+              <position x="0" y="3560"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="121" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="3560"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="120"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillA</variable>
+            </contact>
+            <inVariable localId="123" height="20" width="80" negated="false">
+              <position x="120" y="3620"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>Level_Pct</expression>
+            </inVariable>
+            <inVariable localId="124" height="20" width="80" negated="false">
+              <position x="120" y="3650"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>SP_Level_A</expression>
+            </inVariable>
+            <block localId="122" width="120" height="130" typeName="GE">
+              <position x="220" y="3560"/>
+              <inputVariables>
+                <variable formalParameter="EN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="121"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN1">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="123"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN2">
+                  <connectionPointIn>
+                    <relPosition x="0" y="70"/>
+                    <connection refLocalId="124"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="ENO">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="OUT">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <coil localId="125" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="440" y="3560"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="122" formalParameter="OUT"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillA</variable>
+            </coil>
+            <coil localId="126" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="440" y="3600"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="122" formalParameter="OUT"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillB</variable>
+            </coil>
+            <rightPowerRail localId="127" height="80" width="3">
+              <position x="520" y="3560"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="125"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="50"/>
+                <connection refLocalId="126"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="128" height="20" width="400">
+              <position x="0" y="3740"/>
+              <content>
+                <xhtml:p>Fill B -&gt; Heat at level setpoint B</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="129" height="40" width="3">
+              <position x="0" y="3770"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="130" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="3770"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="129"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillB</variable>
+            </contact>
+            <inVariable localId="132" height="20" width="80" negated="false">
+              <position x="120" y="3830"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>Level_Pct</expression>
+            </inVariable>
+            <inVariable localId="133" height="20" width="80" negated="false">
+              <position x="120" y="3860"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>SP_Level_B</expression>
+            </inVariable>
+            <block localId="131" width="120" height="130" typeName="GE">
+              <position x="220" y="3770"/>
+              <inputVariables>
+                <variable formalParameter="EN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="130"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN1">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="132"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN2">
+                  <connectionPointIn>
+                    <relPosition x="0" y="70"/>
+                    <connection refLocalId="133"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="ENO">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="OUT">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <coil localId="134" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="440" y="3770"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="131" formalParameter="OUT"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillB</variable>
+            </coil>
+            <coil localId="135" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="440" y="3810"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="131" formalParameter="OUT"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Heat</variable>
+            </coil>
+            <rightPowerRail localId="136" height="80" width="3">
+              <position x="520" y="3770"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="134"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="50"/>
+                <connection refLocalId="135"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="137" height="20" width="400">
+              <position x="0" y="3950"/>
+              <content>
+                <xhtml:p>Heat -&gt; Mix at temperature setpoint</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="138" height="40" width="3">
+              <position x="0" y="3980"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="139" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="3980"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="138"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Heat</variable>
+            </contact>
+            <inVariable localId="141" height="20" width="80" negated="false">
+              <position x="120" y="4040"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>Temp_C</expression>
+            </inVariable>
+            <inVariable localId="142" height="20" width="80" negated="false">
+              <position x="120" y="4070"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>SP_Temp</expression>
+            </inVariable>
+            <block localId="140" width="120" height="130" typeName="GE">
+              <position x="220" y="3980"/>
+              <inputVariables>
+                <variable formalParameter="EN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="139"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN1">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="141"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN2">
+                  <connectionPointIn>
+                    <relPosition x="0" y="70"/>
+                    <connection refLocalId="142"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="ENO">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="OUT">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <coil localId="143" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="440" y="3980"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="140" formalParameter="OUT"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Heat</variable>
+            </coil>
+            <coil localId="144" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="440" y="4020"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="140" formalParameter="OUT"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Mix</variable>
+            </coil>
+            <rightPowerRail localId="145" height="80" width="3">
+              <position x="520" y="3980"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="143"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="50"/>
+                <connection refLocalId="144"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="146" height="20" width="400">
+              <position x="0" y="4160"/>
+              <content>
+                <xhtml:p>Mix for Mix_Time, then drain</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="147" height="40" width="3">
+              <position x="0" y="4190"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="148" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="4190"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="147"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Mix</variable>
+            </contact>
+            <inVariable localId="150" height="20" width="80" negated="false">
+              <position x="120" y="4250"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>Mix_Time</expression>
+            </inVariable>
+            <block localId="149" width="120" height="100" typeName="TON" instanceName="T_Mix">
+              <position x="220" y="4190"/>
+              <inputVariables>
+                <variable formalParameter="IN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="148"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="PT">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="150"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="Q">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="ET">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <coil localId="151" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="440" y="4190"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="149" formalParameter="Q"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Mix</variable>
+            </coil>
+            <coil localId="152" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="440" y="4230"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="149" formalParameter="Q"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Drain</variable>
+            </coil>
+            <rightPowerRail localId="153" height="80" width="3">
+              <position x="520" y="4190"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="151"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="50"/>
+                <connection refLocalId="152"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="154" height="20" width="400">
+              <position x="0" y="4370"/>
+              <content>
+                <xhtml:p>Drain until empty plus 10 s</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="155" height="40" width="3">
+              <position x="0" y="4400"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="156" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="4400"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="155"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Drain</variable>
+            </contact>
+            <inVariable localId="158" height="20" width="80" negated="false">
+              <position x="120" y="4460"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>Level_Pct</expression>
+            </inVariable>
+            <inVariable localId="159" height="20" width="80" negated="false">
+              <position x="120" y="4490"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>SP_Drain_Empty</expression>
+            </inVariable>
+            <block localId="157" width="120" height="130" typeName="LE">
+              <position x="220" y="4400"/>
+              <inputVariables>
+                <variable formalParameter="EN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="156"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN1">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="158"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN2">
+                  <connectionPointIn>
+                    <relPosition x="0" y="70"/>
+                    <connection refLocalId="159"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="ENO">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="OUT">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <inVariable localId="161" height="20" width="80" negated="false">
+              <position x="300" y="4460"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>T#10S</expression>
+            </inVariable>
+            <block localId="160" width="120" height="100" typeName="TON" instanceName="T_DrainDelay">
+              <position x="400" y="4400"/>
+              <inputVariables>
+                <variable formalParameter="IN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="157" formalParameter="OUT"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="PT">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="161"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="Q">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="ET">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <coil localId="162" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="620" y="4400"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="160" formalParameter="Q"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Drain</variable>
+            </coil>
+            <coil localId="163" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="620" y="4440"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="160" formalParameter="Q"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Done</variable>
+            </coil>
+            <rightPowerRail localId="164" height="80" width="3">
+              <position x="700" y="4400"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="162"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="50"/>
+                <connection refLocalId="163"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="165" height="20" width="400">
+              <position x="0" y="4580"/>
+              <content>
+                <xhtml:p>Count completed batches</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="166" height="40" width="3">
+              <position x="0" y="4610"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="167" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="4610"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="166"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Done</variable>
+            </contact>
+            <inVariable localId="169" height="20" width="80" negated="false">
+              <position x="120" y="4670"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>HMI_Reset_Count</expression>
+            </inVariable>
+            <inVariable localId="170" height="20" width="80" negated="false">
+              <position x="120" y="4700"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>9999</expression>
+            </inVariable>
+            <block localId="168" width="120" height="130" typeName="CTU" instanceName="C_Batch">
+              <position x="220" y="4610"/>
+              <inputVariables>
+                <variable formalParameter="CU">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="167"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="R">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="169"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="PV">
+                  <connectionPointIn>
+                    <relPosition x="0" y="70"/>
+                    <connection refLocalId="170"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="Q">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="CV">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <outVariable localId="171" height="20" width="80" negated="false">
+              <position x="380" y="4670"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="168" formalParameter="CV"/>
+              </connectionPointIn>
+              <expression>Batch_Count</expression>
+            </outVariable>
+            <rightPowerRail localId="172" height="40" width="3">
+              <position x="520" y="4610"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="168" formalParameter="Q"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="173" height="20" width="400">
+              <position x="0" y="4790"/>
+              <content>
+                <xhtml:p>Done -&gt; Idle on acknowledge</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="174" height="40" width="3">
+              <position x="0" y="4820"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="175" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="4820"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="174"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Done</variable>
+            </contact>
+            <contact localId="176" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="220" y="4820"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="175"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Reset_PB</variable>
+            </contact>
+            <coil localId="177" height="20" width="21" negated="false" edge="none" storage="reset">
+              <position x="320" y="4820"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="176"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Done</variable>
+            </coil>
+            <coil localId="178" height="20" width="21" negated="false" edge="none" storage="set">
+              <position x="320" y="4860"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="176"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Idle</variable>
+            </coil>
+            <rightPowerRail localId="179" height="80" width="3">
+              <position x="400" y="4820"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="177"/>
+              </connectionPointIn>
+              <connectionPointIn>
+                <relPosition x="0" y="50"/>
+                <connection refLocalId="178"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="180" height="20" width="400">
+              <position x="0" y="5000"/>
+              <content>
+                <xhtml:p>Inlet valve A</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="181" height="40" width="3">
+              <position x="0" y="5030"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="182" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="5030"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="181"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillA</variable>
+            </contact>
+            <contact localId="183" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="220" y="5030"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="182"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Fault</variable>
+            </contact>
+            <contact localId="184" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="280" y="5030"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="183"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>LSHH_OK</variable>
+            </contact>
+            <contact localId="185" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="340" y="5030"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="184"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Outlet_Valve_Closed</variable>
+            </contact>
+            <coil localId="186" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="440" y="5030"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="185"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Inlet_Valve_A</variable>
+            </coil>
+            <rightPowerRail localId="187" height="40" width="3">
+              <position x="520" y="5030"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="186"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="188" height="20" width="400">
+              <position x="0" y="5210"/>
+              <content>
+                <xhtml:p>Inlet valve B</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="189" height="40" width="3">
+              <position x="0" y="5240"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="190" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="5240"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="189"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillB</variable>
+            </contact>
+            <contact localId="191" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="220" y="5240"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="190"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Fault</variable>
+            </contact>
+            <contact localId="192" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="280" y="5240"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="191"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>LSHH_OK</variable>
+            </contact>
+            <contact localId="193" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="340" y="5240"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="192"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Outlet_Valve_Closed</variable>
+            </contact>
+            <coil localId="194" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="440" y="5240"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="193"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Inlet_Valve_B</variable>
+            </coil>
+            <rightPowerRail localId="195" height="40" width="3">
+              <position x="520" y="5240"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="194"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="196" height="20" width="400">
+              <position x="0" y="5420"/>
+              <content>
+                <xhtml:p>Agitator: heat and mix steps, overload OK, lid closed, level above minimum</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="197" height="40" width="3">
+              <position x="0" y="5450"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="198" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="5450"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="197"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Heat</variable>
+            </contact>
+            <contact localId="199" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="5490"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="197"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Mix</variable>
+            </contact>
+            <contact localId="200" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="220" y="5450"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="198"/>
+                <connection refLocalId="199"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Fault</variable>
+            </contact>
+            <contact localId="201" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="280" y="5450"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="200"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Agitator_OL_OK</variable>
+            </contact>
+            <contact localId="202" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="340" y="5450"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="201"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Lid_Closed</variable>
+            </contact>
+            <contact localId="203" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="400" y="5450"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="202"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Level_Above_Min</variable>
+            </contact>
+            <coil localId="204" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="500" y="5450"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="203"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Agitator_Run</variable>
+            </coil>
+            <rightPowerRail localId="205" height="40" width="3">
+              <position x="580" y="5450"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="204"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="206" height="20" width="400">
+              <position x="0" y="5630"/>
+              <content>
+                <xhtml:p>Heater: heat and mix steps, agitator running, level above minimum, thermostat OK, below setpoint</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="207" height="40" width="3">
+              <position x="0" y="5660"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="208" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="5660"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="207"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Heat</variable>
+            </contact>
+            <contact localId="209" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="5700"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="207"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Mix</variable>
+            </contact>
+            <contact localId="210" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="220" y="5660"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="208"/>
+                <connection refLocalId="209"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Fault</variable>
+            </contact>
+            <contact localId="211" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="280" y="5660"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="210"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Agitator_Running</variable>
+            </contact>
+            <contact localId="212" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="340" y="5660"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="211"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Level_Above_Min</variable>
+            </contact>
+            <contact localId="213" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="400" y="5660"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="212"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Heater_OT_OK</variable>
+            </contact>
+            <inVariable localId="215" height="20" width="80" negated="false">
+              <position x="360" y="5720"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>Temp_C</expression>
+            </inVariable>
+            <inVariable localId="216" height="20" width="80" negated="false">
+              <position x="360" y="5750"/>
+              <connectionPointOut>
+                <relPosition x="80" y="10"/>
+              </connectionPointOut>
+              <expression>SP_Temp</expression>
+            </inVariable>
+            <block localId="214" width="120" height="130" typeName="LT">
+              <position x="460" y="5660"/>
+              <inputVariables>
+                <variable formalParameter="EN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="213"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN1">
+                  <connectionPointIn>
+                    <relPosition x="0" y="40"/>
+                    <connection refLocalId="215"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="IN2">
+                  <connectionPointIn>
+                    <relPosition x="0" y="70"/>
+                    <connection refLocalId="216"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="ENO">
+                  <connectionPointOut>
+                    <relPosition x="120" y="10"/>
+                  </connectionPointOut>
+                </variable>
+                <variable formalParameter="OUT">
+                  <connectionPointOut>
+                    <relPosition x="120" y="40"/>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <coil localId="217" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="680" y="5660"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="214" formalParameter="OUT"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Heater_On</variable>
+            </coil>
+            <rightPowerRail localId="218" height="40" width="3">
+              <position x="760" y="5660"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="217"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="219" height="20" width="400">
+              <position x="0" y="5840"/>
+              <content>
+                <xhtml:p>Outlet valve</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="220" height="40" width="3">
+              <position x="0" y="5870"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="221" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="5870"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="220"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Drain</variable>
+            </contact>
+            <contact localId="222" height="20" width="21" negated="true" edge="none" storage="none">
+              <position x="220" y="5870"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="221"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Fault</variable>
+            </contact>
+            <coil localId="223" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="320" y="5870"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="222"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Outlet_Valve</variable>
+            </coil>
+            <rightPowerRail localId="224" height="40" width="3">
+              <position x="400" y="5870"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="223"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="225" height="20" width="400">
+              <position x="0" y="6050"/>
+              <content>
+                <xhtml:p>Running lamp</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="226" height="40" width="3">
+              <position x="0" y="6080"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="227" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="6080"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="226"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillA</variable>
+            </contact>
+            <contact localId="228" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="6120"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="226"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_FillB</variable>
+            </contact>
+            <contact localId="229" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="6160"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="226"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Heat</variable>
+            </contact>
+            <contact localId="230" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="6200"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="226"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Mix</variable>
+            </contact>
+            <contact localId="231" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="6240"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="226"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Drain</variable>
+            </contact>
+            <coil localId="232" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="260" y="6080"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="227"/>
+                <connection refLocalId="228"/>
+                <connection refLocalId="229"/>
+                <connection refLocalId="230"/>
+                <connection refLocalId="231"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Lamp_Running</variable>
+            </coil>
+            <rightPowerRail localId="233" height="40" width="3">
+              <position x="340" y="6080"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="232"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="234" height="20" width="400">
+              <position x="0" y="6260"/>
+              <content>
+                <xhtml:p>Fault lamp</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="235" height="40" width="3">
+              <position x="0" y="6290"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="236" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="6290"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="235"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Fault</variable>
+            </contact>
+            <coil localId="237" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="260" y="6290"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="236"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Lamp_Fault</variable>
+            </coil>
+            <rightPowerRail localId="238" height="40" width="3">
+              <position x="340" y="6290"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="237"/>
+              </connectionPointIn>
+            </rightPowerRail>
+            <comment localId="239" height="20" width="400">
+              <position x="0" y="6470"/>
+              <content>
+                <xhtml:p>Batch done lamp</xhtml:p>
+              </content>
+            </comment>
+            <leftPowerRail localId="240" height="40" width="3">
+              <position x="0" y="6500"/>
+              <connectionPointOut formalParameter="">
+                <relPosition x="3" y="10"/>
+              </connectionPointOut>
+            </leftPowerRail>
+            <contact localId="241" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="160" y="6500"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="240"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>S_Done</variable>
+            </contact>
+            <coil localId="242" height="20" width="21" negated="false" edge="none" storage="none">
+              <position x="260" y="6500"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="241"/>
+              </connectionPointIn>
+              <connectionPointOut>
+                <relPosition x="21" y="10"/>
+              </connectionPointOut>
+              <variable>Lamp_Batch_Done</variable>
+            </coil>
+            <rightPowerRail localId="243" height="40" width="3">
+              <position x="340" y="6500"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="242"/>
+              </connectionPointIn>
+            </rightPowerRail>
+          </LD>
+        </body>
+        <addData>
+          <data name="http://www.siemens.com/automation/Openness/SW/Interface/v5" handleUnknown="discard">
+            <BlockInfo xmlns="urn:fixture:siemens-blockinfo" Number="1" ProgrammingLanguage="LAD" MemoryLayout="Optimized" InstanceDB="Mixer_DB" InstanceDBNumber="1"/>
+          </data>
+        </addData>
+        <documentation>
+          <xhtml:p>Mixing tank MT01 batch sequence, interlocks and alarms.</xhtml:p>
+        </documentation>
+      </pou>
+    </pous>
+  </types>
+  <instances>
+    <configurations>
+      <configuration name="PLC_1">
+        <resource name="PLC_1">
+          <task name="Main" priority="1">
+            <pouInstance name="Mixer_DB" typeName="FB_Mixer">
+              <documentation>
+                <xhtml:p>Called from OB1 "Main" (Program cycle).</xhtml:p>
+              </documentation>
+            </pouInstance>
+          </task>
+          <globalVars name="Default tag table">
+            <variable name="Start_PB" address="%I0.0">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Start pushbutton S1 (NO)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Stop_PB" address="%I0.1">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Stop pushbutton S2 (NC, TRUE = not pressed)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="EStop_OK" address="%I0.2">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>E-stop safety relay K0 OK</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Agitator_Running" address="%I0.3">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Agitator contactor K3 auxiliary contact (running feedback)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Agitator_OL_OK" address="%I0.4">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Agitator motor protector Q3 not tripped</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="LSHH_OK" address="%I0.5">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>High-high level switch LSHH101 (NC, TRUE = level not high-high)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Outlet_Valve_Closed" address="%I0.6">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Outlet valve XV103 closed limit switch</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Lid_Closed" address="%I0.7">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Tank lid / manway closed switch</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Reset_PB" address="%I1.0">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Reset / acknowledge pushbutton S3 (NO)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Heater_OT_OK" address="%I1.1">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Heater safety thermostat TSH102 OK (not over-temperature)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Inlet_Valve_A" address="%Q0.0">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Ingredient A (water) inlet valve XV101</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Inlet_Valve_B" address="%Q0.1">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Ingredient B (syrup) inlet valve XV102</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Outlet_Valve" address="%Q0.2">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Outlet / drain valve XV103</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Agitator_Run" address="%Q0.3">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Agitator motor M1 contactor K3</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Heater_On" address="%Q0.4">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Immersion heater E1 contactor K4</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Lamp_Running" address="%Q0.5">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Batch running lamp H1 (green)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Lamp_Fault" address="%Q0.6">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Fault lamp H2 (red)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Lamp_Batch_Done" address="%Q0.7">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>Batch complete lamp H3 (white)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Level_Raw" address="%IW96">
+              <type><INT/></type>
+              <documentation>
+                <xhtml:p>Level transmitter LT101, 4-20 mA = 0-100 % (SM 1231 ch0, raw 0..27648)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="Temp_Raw" address="%IW98">
+              <type><INT/></type>
+              <documentation>
+                <xhtml:p>Temperature transmitter TT101, 4-20 mA = 0-150 degC (SM 1231 ch1, raw 0..27648)</xhtml:p>
+              </documentation>
+            </variable>
+            <variable name="HMI_Reset_Count" address="%M10.0">
+              <type><BOOL/></type>
+              <documentation>
+                <xhtml:p>HMI button: reset batch counter</xhtml:p>
+              </documentation>
+            </variable>
+          </globalVars>
+          <addData>
+            <data name="urn:fixture:siemens-hardware" handleUnknown="discard">
+              <Hardware xmlns="urn:fixture:siemens-hardware" Cpu="CPU 1214C DC/DC/DC" OrderNumber="6ES7214-1AG40-0XB0" Firmware="V4.6">
+              <Module Slot="1" Name="PLC_1" OrderNumber="6ES7214-1AG40-0XB0"/>
+              <Module Slot="2" Name="AI 4x13BIT_1" OrderNumber="6ES7231-4HD32-0XB0"/>
+              </Hardware>
+            </data>
+          </addData>
+        </resource>
+      </configuration>
+    </configurations>
+  </instances>
+</project>

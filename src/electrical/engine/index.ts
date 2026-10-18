@@ -12,6 +12,8 @@ import { DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
 import { enclosureFamily, enclosurePanelArea, enclosureRank, enclosureSize, enclosuresFor, panelLayout, SPARE_RULE, spareSpace, terminalCounts, motorFla, vendorTerminal, type DrawingContext } from '../derive';
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
 import { getHmi } from '../../hmi/hmiCatalog';
+import { ALLOWED_RISE_C, cabinetHeat } from '../thermal';
+import { coolingWatts, dcFanAmps, pickAirConditioner, pickFanThermostat, pickFilterFan, pickHeatExchanger } from '../cooling';
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, EnclosureChoice, MotorSpec } from '../types';
 import { defaultMachineModel, drivesFromIo, type MachineModel } from './machineModel';
 import { comp, controlPower, mainDisconnect, motorBranches, Tags } from './power';
@@ -53,7 +55,7 @@ export interface EngineResult {
 const TAG_PREFIX: Partial<Record<CatalogCategory, string>> = {
   breaker: 'CB', fuse: 'FU', powerSupply: 'PS', contactor: 'K', overload: 'OL', motorProtector: 'MP', vfd: 'VFD', relay: 'CR',
   safetyRelay: 'SR', pushbutton: 'PB', estop: 'ES', pilotLight: 'PL', selector: 'SS', stackLight: 'STK', sensor: 'PX',
-  solenoidValve: 'SOL', plcModule: 'IO', hmi: 'HMI', fan: 'FAN',
+  solenoidValve: 'SOL', plcModule: 'IO', hmi: 'HMI', fan: 'FAN', servoDrive: 'SVD', servoMotor: 'SVM', encoder: 'ENC',
 };
 
 /** Typical 24 VDC draw of the design (same figures as the calculations document). */
@@ -156,7 +158,9 @@ export function generateDesign(input: EngineInput): EngineResult {
     required.push(comp(tags.next(TAG_PREFIX[p?.category ?? 'other'] ?? 'X'), r.partNumber, r.quantity, `Required by the designer${p ? `: ${p.description}` : ''}`));
   }
 
-  const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(dev.components.find((c) => c.tag === w.deviceTag)?.partNumber ?? '')).length;
+  // a button of a station (PB1L / PB1R on station PB1) is the station's part, not an uncatalogued sensor
+  const compOf = (tag: string) => dev.components.find((c) => c.tag === tag) ?? dev.components.find((c) => tag.startsWith(c.tag) && /^[A-Z]$/.test(tag.slice(c.tag.length)));
+  const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(compOf(w.deviceTag)?.partNumber ?? '')).length;
   const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
   const ctl = controlPower(pk, tags, supply, loadA);
   notes.push(...ctl.notes);
@@ -273,6 +277,60 @@ export function generateDesign(input: EngineInput): EngineResult {
     }
     if (choice.note) notes.push(choice.note);
   }
+  // ---- Cooling: the heat the walls cannot shed (thermal.ts, 15 °C rise) leaves through a filter fan (NEMA 1/12;
+  // 24 VDC from the control supply, or AC when the panel has a control voltage), switched by a thermostat. A sealed
+  // enclosure (NEMA 4/4X: a fan breaks the seal), or no fan big enough: the next enclosure size of the same material
+  // that sheds the heat itself, else a heat exchanger (ambient up to 40 °C), else an air conditioner.
+  const hmiForHeat = input.hmiPartNumber ? getHmi(input.hmiPartNumber) : undefined;
+  const heatOf = (t: Trial) => cabinetHeat(t.components, getPart, hmiForHeat && getPart(input.hmiPartNumber!)?.category !== 'plc' ? { partNumber: hmiForHeat.partNumber, sizeIn: hmiForHeat.sizeIn } : undefined);
+  const rating = String(inputs.enclosureRating ?? 'NEMA 12').replace('NEMA ', '');
+  const sealed = /^4X?$/.test(rating);
+  const coolVendors = [...new Set([...(input.pref ?? DEFAULT_PREFERENCE).enclosure, 'automationdirect' as const])];
+  const acVolts = supply === '120VAC-1PH' ? '115' : supply === '230VAC-1PH' ? '230' : best.components.some((c) => getPart(c.partNumber)?.ratings.kind === 'transformer') ? '115' : undefined;
+  const heat = heatOf(best);
+  const cooling: DesignComponent[] = [];
+  if (heat.ventilation) {
+    const v = heat.ventilation;
+    const fan = sealed ? null : pickFilterFan(v.airflowM3h, { supply: '24VDC', nema: rating, vendors: coolVendors })
+      ?? (acVolts ? pickFilterFan(v.airflowM3h, { supply: 'AC', volts: acVolts, nema: rating, vendors: coolVendors }) : null);
+    if (fan) {
+      const th = pickFanThermostat();
+      const dc = dcFanAmps(fan.fan) !== null;
+      cooling.push(comp('FAN1', fan.fan.partNumber, 1, `Filter fan (inlet, low on the left wall) — ${Math.round(fan.airflowM3h)} m³/h with filters >= ${Math.ceil(v.airflowM3h)} m³/h to carry ${Math.round(v.wattsToRemove)} W (${heat.watts.toFixed(0)} W in the cabinet, ${heat.rise!.toFixed(0)} °C rise without it, limit ${ALLOWED_RISE_C} °C)${dc ? `, 24 VDC ${dcFanAmps(fan.fan)!.toFixed(2)} A` : `, ${acVolts} VAC`}`));
+      // the outlet filter is the fan's accessory: its tag + F (like fuse cartridges in a holder)
+      if (fan.exhaust) cooling.push(comp('FAN1F', fan.exhaust.partNumber, 1, `Exhaust filter for FAN1 (outlet, high on the right wall)`));
+      else notes.push(`FAN1 ${fan.fan.partNumber}: no matching exhaust filter in the catalog — select the maker's outlet filter for it.`);
+      if (th) cooling.push(comp('TH1', th.partNumber, 1, `Thermostat for FAN1 — N.O. closes on rise; set to ~35 °C`));
+      if (dc) {
+        const ps = best.components.find((c) => getPart(c.partNumber)?.category === 'powerSupply');
+        const psA = ps ? num(getPart(ps.partNumber)?.ratings.amps ?? getPart(ps.partNumber)?.ratings.outputAmps) : undefined;
+        const need = (loadA + dcFanAmps(fan.fan)!) * 1.25;
+        if (psA !== undefined && psA + 0.05 < need) notes.push(`${ps!.tag} ${ps!.partNumber} (${psA} A): with FAN1 the 24 VDC load is ${(loadA + dcFanAmps(fan.fan)!).toFixed(1)} A + 25% = ${need.toFixed(1)} A — select the next larger supply.`);
+      }
+    } else {
+      // a bigger enclosure of the same material and mounting that sheds the heat through its walls (not past the
+      // designer's pick); at most twice the panel area — beyond that a heat exchanger / air conditioner is the sane choice
+      const area0 = enclosurePanelArea(best.enc);
+      const floor0 = best.enc.ratings.mounting === 'floor';
+      const bigger = choice.preferred ? undefined : candidates
+        .filter((e) => enclosurePanelArea(e) > area0 && enclosurePanelArea(e) <= 2 * area0 && (e.ratings.mounting === 'floor') === floor0)
+        .map(tryEnclosure).find((t) => t.fits && !heatOf(t).ventilation);
+      if (bigger) {
+        notes.push(`Enclosure ${bigger.enc.partNumber} instead of ${best.enc.partNumber}: ${heat.watts.toFixed(0)} W would raise the ${best.enc.partNumber} ${heat.rise!.toFixed(0)} °C (limit ${ALLOWED_RISE_C} °C)${sealed ? ` and a ${inputs.enclosureRating} enclosure takes no filter fan` : ' and no catalog filter fan fits'}; the larger enclosure sheds it through its walls.`);
+        best = bigger;
+        choice = { ...choice, used: bigger.enc.partNumber };
+      } else {
+        const hx = pickHeatExchanger(v.wattsToRemove, ALLOWED_RISE_C, { nema: rating, vendors: coolVendors });
+        const ac = hx ? null : pickAirConditioner(v.wattsToRemove, { nema: rating, vendors: coolVendors });
+        const unit = hx ?? ac;
+        if (unit) {
+          cooling.push(comp(hx ? 'HX1' : 'AC1', unit.partNumber, 1, `${hx ? `Heat exchanger — ${num(unit.ratings.wPerK)} W/K x ${ALLOWED_RISE_C} K >= ${Math.round(v.wattsToRemove)} W (ambient up to ~40 °C; hotter needs an air conditioner)` : `Air conditioner — ${Math.round(coolingWatts(unit) ?? 0)} W cooling >= ${Math.round(v.wattsToRemove)} W`}, closed-loop, keeps ${inputs.enclosureRating}; supply ${unit.ratings.volts ?? 'per maker'}, cutout per maker drawing`));
+          notes.push(`${hx ? 'HX1' : 'AC1'} ${unit.partNumber}: wire its supply (${unit.ratings.volts ?? 'per maker'}) and cut the enclosure per the maker's drawing — not drawn.`);
+        } else notes.push(`Cooling: ${Math.round(v.wattsToRemove)} W must leave the ${inputs.enclosureRating} enclosure (${heat.rise!.toFixed(0)} °C rise, limit ${ALLOWED_RISE_C} °C) and no catalog fan, heat exchanger or air conditioner fits — select the cooling.`);
+      }
+    }
+  }
+  if (cooling.length) best = { ...best, components: [...best.components, ...cooling] };
   if (best.notes.length) notes.push(...best.notes);
   best = { ...best, components: best.components.map((c) => (c.tag === 'ENC1' ? { ...c, function: `${c.function} — ${choice.preferred ? 'chosen by the designer,' : best.ok ? 'smallest catalog enclosure with everything placed and' : 'everything placed, but only'} ${Math.round(best.spare * 100)}% spare panel space (target >= ${Math.round(SPARE_RULE * 100)}%)` } : c)) };
   if (!rec.ok) notes.push(`No catalog enclosure leaves ${Math.round(SPARE_RULE * 100)}% spare panel space: ${rec.enc.partNumber} is the closest (${Math.round(rec.spare * 100)}% spare) — consider a second enclosure.`);

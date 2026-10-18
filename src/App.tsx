@@ -182,7 +182,7 @@ export default function App() {
           <MenuItem onClick={projectFile.save}>Save<span className="float-right pl-6 text-steel-400">Ctrl+S</span></MenuItem>
           <MenuItem onClick={projectFile.saveAs}>Save as…<span className="float-right pl-6 text-steel-400">Ctrl+Shift+S</span></MenuItem>
           <div className="border-t border-steel-200 my-1" />
-          <MenuItem onClick={() => navigate('/import')}>Import existing system…</MenuItem>
+          <MenuItem onClick={() => navigate('/import')}>Import existing machine (drawings / program)…</MenuItem>
           <MenuItem onClick={() => navigate('/project')}>Project data and revisions…</MenuItem>
           <div className="border-t border-steel-200 my-1" />
           <MenuItem onClick={() => navigate('/review')}>Design review…</MenuItem>
@@ -207,7 +207,7 @@ export default function App() {
         <ToolButton title={dirty ? 'Save (Ctrl+S) — unsaved changes' : 'Save (Ctrl+S)'} onClick={projectFile.save}>
           <span className="relative"><ArrowDownOnSquareIcon className="w-5 h-5" />{dirty && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500" />}</span>
         </ToolButton>
-        <ToolButton title="Import existing system" onClick={() => navigate('/import')}><ArrowUpTrayIcon className="w-5 h-5" /></ToolButton>
+        <ToolButton title="Import existing machine (drawings / program)" onClick={() => navigate('/import')}><ArrowUpTrayIcon className="w-5 h-5" /></ToolButton>
         {projectFile.input}
         <span className="w-px h-6 bg-steel-200 mx-1" />
         <ToolButton title="Simulation" onClick={() => navigate('/simulate')}><PlayIcon className="w-5 h-5" /></ToolButton>
