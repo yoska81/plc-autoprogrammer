@@ -243,7 +243,9 @@ const ACTIVE: Record<string, [string, string]> = {
 function signalMeasure(c: Ctx, p: IoPoint, at: string, wire: string): Measure {
   const ref = c.zeroRef;
   if (p.type === 'input') {
-    const npn = p.deviceType === 'sensor-npn';
+    // A group with its common on +24 V (NPN sensors in it) switches 0 V: every device in it, dry contacts
+    // too, reads about 0 V when ON and 24 V when OFF.
+    const npn = p.deviceType === 'sensor-npn' || c.m.groups.find((g) => g.key === p.group)?.commonTo === '24+';
     const [on, off] = ACTIVE[p.deviceType] ?? ['when the device is ON', 'when it is OFF'];
     return { between: [at, ref], kind: 'VDC', expect: npn ? 'about 0 V' : '24 VDC', when: on, otherwise: `${npn ? '24 VDC' : 'about 0 V'} ${off}` };
   }
@@ -536,11 +538,14 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
   // A 0 V return is checked from 24 V: 24 VDC across means the 0 V side is connected (an open 0 V floats up).
   const retMeasure = (at: string): Measure => ({ between: [c.plusRef, at], kind: 'VDC', expect: '24 VDC', when: `with ${dTag || 'the device'} powered`, otherwise: `about 0 V: the 0 V wire is open between here and the power supply` });
   for (const n of [...new Set(back)]) {
-    const pin = pins && [...pins.entries()].find(([, x]) => x === n)?.[0];
+    // The contact's own partner pin when it is on 0 V (a dry contact fed from 0 V on an NPN common), else
+    // the device's first 0 V pin.
+    const partner = deviceEnd ? partnerPins(deviceEnd.pin).find((pp) => pins?.get(pp) === n) : undefined;
+    const pin = partner ?? (pins && [...pins.entries()].find(([, x]) => x === n)?.[0]);
     if (pin && deviceEnd && !deviceEnd.jbDevice) {
       const e = (c.byNet.get(n) ?? []).find((x) => (x.a.tag === dTag && x.a.pin.toUpperCase() === pin) || (x.b.tag === dTag && x.b.pin.toUpperCase() === pin));
       const end = e ? (e.a.tag === dTag ? e.a : e.b) : undefined;
-      if (end) ret.push({ ...hopOf(c, end, n, point, e!.color), kind: 'device', measure: retMeasure(`${dTag}:${end.pin}`) });
+      if (end) ret.push({ ...hopOf(c, end, n, point, e!.color), kind: 'device', measure: partner ? { ...retMeasure(`${dTag}:${end.pin}`), when: '', otherwise: 'about 0 V: the 0 V feed of the contact is open' } : retMeasure(`${dTag}:${end.pin}`) });
     }
     const t = termOn(n);
     if (t) ret.push({ ...hopOf(c, t.t, n, point, t.color), measure: retMeasure(t.t.raw) });

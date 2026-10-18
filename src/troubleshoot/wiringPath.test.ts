@@ -564,6 +564,24 @@ test('review safety: lock-out in the thermocouple, transmitter and power-supply 
   assert.ok(say.indexOf('Keep everyone clear') < say.indexOf('force'), say);
 });
 
+test('dry contacts on an NPN common (+24 V): ON reads 0 V, the contact is fed from 0 V through its partner pin', () => {
+  const pb = npnPt('X002');
+  assert.equal(pb.signal[0].measure!.expect, 'about 0 V', 'a pushbutton on the NPN group switches 0 V');
+  assert.equal(`${pb.ret[0].tag}:${pb.ret[0].terminal}`, 'PB1L:C', 'its 0 V feed is the contact common');
+  assert.ok(pb.supply.every((h) => h.common || h.kind === 'source' || h.wire === '24+'), 'the only 24 V hops are the module common');
+  const vfd = npnPt('X103');
+  assert.equal(vfd.signal[0].measure!.expect, 'about 0 V');
+  assert.equal(`${vfd.ret[0].tag}:${vfd.ret[0].terminal}`, 'VFD1:R1', 'the fault relay is fed through its common R1, not DCM');
+  // Sensor not switching vs. an open 0 V feed: answered by hand from the circuit.
+  const ok = play(pb, 'never-on', ['yes', 'no', 'no', 'no', 'yes']).s.verdict!.text;
+  assert.match(ok, /PB1L has 24 V and 0 V but gives no signal/);
+  const open = play(pb, 'never-on', ['yes', 'no', 'no', 'no', 'no', 'yes']).s.verdict!.text;
+  assert.match(open, /0 V return is good at Terminal strip TB2, terminal 7 but missing at PB1L/);
+  // Stuck ON on an NPN group: a short to 0 V.
+  const n = startSession(pb, 'always-on').steps.length;
+  assert.match(play(pb, 'always-on', ['yes', ...Array(n - 1).fill('no'), 'yes']).s.verdict!.text, /shorted to 0 V/);
+});
+
 // Fault sweep: every discrete point × every single fault on its path, answered truthfully by the practice
 // meter; the verdict must name the fault (the wire, at the right hop). Target ≥ 97 %.
 test('fault sweep: every point × every single wiring fault is found (example + Sealing Head)', () => {
