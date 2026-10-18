@@ -125,9 +125,13 @@ export function buildMotion(c: HmiContent, api: MotionApi): ProgramMotion | unde
 
     // Homing: Home asks, the instruction runs while the request is on; Success = homed.
     R(id, `${n} home request: ${homeCmd ? 'Home' : 'the cycle sets it'} while enabled, no fault and the cycle stopped`, homeCmd ? [[NO(homeCmd), NO(enabled), NC(fault), NC(RUN)]] : [[NC('SC1')]], [SET(instr.home.enable)]);
-    R(id, `${n} home request ends: homing complete, disabled or a fault`, [[NO(instr.home.complete)], [NC(enabled)], [NO(fault)]], [RST(instr.home.enable)]);
-    R(id, `${n} homed: the Home instruction succeeded (lost when disabled or faulted)`, [[NO(instr.home.success)]], [SET(homed)]);
-    R(id, `${n} not homed once disabled or faulted`, [[NC(enabled)], [NO(fault)]], [RST(homed)]);
+    // Complete stays on until the instruction is enabled again: its rising edge ends the request, or a second Home / Move
+    // would be cleared in the scan that asks for it.
+    R(id, `${n} home request ends: homing complete, disabled or a fault`, [[{ type: 'RISE', address: instr.home.complete }], [NC(enabled)], [NO(fault)]], [RST(instr.home.enable)]);
+    // Success stays on until Home runs again, so only its rising edge homes the axis: after a
+    // Safety OK / STO loss and re-enable the axis must be homed again.
+    R(id, `${n} homed: the Home instruction just succeeded, enabled and Safety OK (lost when disabled, Safety OK drops or faulted)`, [[{ type: 'RISE', address: instr.home.success }, NO(enabled), NO(SAFE)]], [SET(homed)]);
+    R(id, `${n} not homed once disabled, Safety OK drops or faulted`, [[NC(enabled)], [NC(SAFE)], [NO(fault)]], [RST(homed)]);
     m.instructions.push({ kind: 'home', axis: axisNo, ...instr.home, accel, decel, ...(home ? { homeSwitch: home.address } : {}) });
     if (!home) api.notes.push(`${n}: no home switch in the I/O list — set the Home instruction to "set current position" (CLICK help 294) or add the switch.`);
 
@@ -143,7 +147,7 @@ export function buildMotion(c: HmiContent, api: MotionApi): ProgramMotion | unde
     // Move: to the target at the move speed, only once homed, in Manual (the cycle uses the same request bit).
     R(id, `${n} move request: Move while enabled, homed, no fault, Manual mode — target and speed in pulses`, moveCmd ? [[NO(moveCmd), NO(enabled), NO(homed), NC(fault), NO(manual)]] : [[NC('SC1')]],
       [MATH(tgtDD, `${target} * ${fmt(ppu)}`), MATH(spdDD, `${speed} * ${fmt(ppu)}`), SET(instr.pos.enable)]);
-    R(id, `${n} move request ends: move complete, disabled or a fault`, [[NO(instr.pos.complete)], [NC(enabled)], [NO(fault)]], [RST(instr.pos.enable)]);
+    R(id, `${n} move request ends: move complete, disabled or a fault`, [[{ type: 'RISE', address: instr.pos.complete }], [NC(enabled)], [NO(fault)]], [RST(instr.pos.enable)]);
     m.instructions.push({ kind: 'position', axis: axisNo, ...instr.pos, target: tgtDD, velocity: spdDD, accel, decel });
 
     // Status and readouts.
@@ -160,7 +164,9 @@ export function buildMotion(c: HmiContent, api: MotionApi): ProgramMotion | unde
     const { ppu, known, unit } = pulsesPerUnit(en.channels.map((p) => p.description));
     const enUnits = unit ?? en.units;
     api.blocks.push({ id, name: n, description: `${n}: high-speed counter scaled to ${enUnits}, speed and zero.` });
-    if (!known) api.notes.push(`${n}: counts per ${enUnits} not given in the I/O list — 1 count = 1 ${enUnits}. Set the real value in its scaling rung.`);
+    if (!known) api.notes.push(/^counts?$/i.test(enUnits)
+      ? `${n}: the distance per count (e.g. mm per rev of the wheel) is not given in the I/O list — its position is in counts. Set the real scale in its scaling rung.`
+      : `${n}: counts per ${enUnits} not given in the I/O list — 1 count = 1 ${enUnits}. Set the real value in its scaling rung.`);
     const withZ = en.channels.some((p) => /\b(z|index|marker)\b/i.test(p.description));
     const count = api.freeDd(), offset = api.freeDd(), last = api.freeDd();
     nick(count, `${n.replace(/\s+/g, '_')}_Count`, `${n} count, written by the high-speed counter`); nick(offset, `${n.replace(/\s+/g, '_')}_Zero`, `${n} count at the last Zero`); nick(last, `${n.replace(/\s+/g, '_')}_Last`, `${n} count 100 ms ago`);

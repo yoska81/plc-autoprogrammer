@@ -348,7 +348,8 @@ export function motionContent(pts: (HmiPoint & { type: 'input' | 'output'; categ
     // "Encoder 1 A" is Encoder 1; "Servo 2 ready" is Axis 2.
     const k = /\b(servo|stepper|encoder)\s*(\d+)\b(?!\s*(?:ppr|p\/r|pulses?|counts?|cpr|khz|mm|rpm))/i.exec(d);
     if (k) return `${/encoder/i.test(k[1]) ? 'Encoder' : 'Axis'} ${k[2]}`;
-    const rest = d.replace(/\([^)]*\)/g, ' ').replace(words, ' ').replace(/\b(servo|stepper|axis|drive|encoder|channel|phase|ready|fault|alarm|home\w*|complete|done|in\s*position|positive|negative|limit|enable\w*|command|jog\w*|move\w*|to|position|[abz]|ok|pulse|input|output)\b/gi, ' ');
+    // Ratings and signal types ("1000 ppr", "line driver", "NPN") are not part of the name.
+    const rest = d.replace(/\([^)]*\)/g, ' ').replace(/\b\d+(\.\d+)?\s*(ppr|p\/r|cpr|pulses?\/rev|counts?\/rev|khz|rpm)\b/gi, ' ').replace(/\b(line[- ]?driver|npn|pnp|push-?pull|open[- ]collector)\b/gi, ' ').replace(words, ' ').replace(/\b(servo|stepper|axis|drive|encoder|channel|phase|ready|fault|alarm|home\w*|complete|done|in\s*position|positive|negative|limit|enable\w*|command|jog\w*|move\w*|to|position|[abz]|ok|pulse|input|output)\b/gi, ' ');
     return title(keyWords(rest).slice(0, 3).join(' ')) || 'Axis';
   };
   const axisPts = pts.filter((x) => (x.category === 'Servo/Axis' || AXIS_RE.test(x.description)) && !ENCODER_RE.test(x.description) && !/\bpower\b/i.test(x.description) && !operator(x));

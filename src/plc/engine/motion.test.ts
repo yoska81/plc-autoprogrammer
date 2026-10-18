@@ -63,6 +63,16 @@ sim.setInput('X007', true); run(50);
 // Home → homed, position 0.
 pulse(role(`${K}:home`)); run(1200);
 assert.equal(sim.readBit(role(`${K}:homed`)), true, 'homed after the Home instruction');
+// Safety OK (STO) lost and back: the drive re-enables but Home's Success is still on — the axis is not homed until
+// it is homed again.
+sim.setInput('X007', false); run(100);
+assert.equal(sim.readBit(role(`${K}:homed`)), false, 'Safety lost: not homed');
+sim.setInput('X007', true); run(200);
+assert.equal(sim.readBit('Y004'), true, 're-enabled after Safety OK');
+assert.equal(sim.readBit(m.instructions[0].success), true, 'Home Success still on');
+assert.equal(sim.readBit(role(`${K}:homed`)), false, 'not homed after Safety loss and re-enable');
+pulse(role(`${K}:home`)); run(1200);
+assert.equal(sim.readBit(role(`${K}:homed`)), true, 'homed again after Home');
 
 // Jog + in Manual: 5 mm/s default → about 5 mm in 1 s; not without Manual.
 sim.write(role(`${K}:jogpos`), true); run(500); sim.write(role(`${K}:jogpos`), false); run(50);
@@ -99,6 +109,11 @@ assert.equal(sim.readBit('Y004'), true, 're-enabled');
 // Move refused until homed again.
 sim.write(role(`${K}:target`), 40); pulse(role(`${K}:move`)); run(500);
 assert.equal(sim.readWord(role(`${K}:pos`)), 20, 'no move until homed again');
+// Homed again (a second Home), then a second Move: each request ends on its instruction's new Complete.
+pulse(role(`${K}:home`)); run(1200);
+assert.equal(sim.readBit(role(`${K}:homed`)), true, 'homed by a second Home');
+sim.write(role(`${K}:target`), 15); pulse(role(`${K}:move`)); run(2500);
+assert.equal(sim.readWord(role(`${K}:pos`)), 15, 'a second Move runs');
 
 // Encoder: 1000 counts/rev, 10 mm/rev = 100 counts/mm; zero; speed from 100 ms.
 const enc = m.counters[0];
