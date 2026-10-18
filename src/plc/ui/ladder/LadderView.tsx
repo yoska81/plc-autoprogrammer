@@ -5,7 +5,8 @@
  * power rails, parallel branches joined by vertical wires, outputs stacked on
  * the right. Read-only unless `onChange` is given.
  */
-import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useCallback, useMemo, useState } from 'react';
+import { useProgressiveCount } from '../../../lib/useProgressive';
 import {
   ArrowDownIcon, ArrowUpIcon, ChatBubbleBottomCenterTextIcon, DocumentDuplicateIcon,
   ExclamationCircleIcon, ExclamationTriangleIcon, PlusIcon, TrashIcon,
@@ -49,20 +50,6 @@ export interface LadderViewProps {
 }
 
 const NO_ISSUES: ValidationIssue[] = [];
-
-/** How many rungs to draw: `first` at once, then 30 more each time the browser is idle, up to `total`. */
-function useProgressiveCount(total: number, first: number): number {
-  const [drawn, setDrawn] = useState(0);
-  const shown = Math.min(total, Math.max(first, drawn));
-  useEffect(() => {
-    if (shown >= total) return;
-    const next = () => setDrawn((d) => Math.max(d, first) + 30);
-    if (typeof requestIdleCallback === 'function') { const h = requestIdleCallback(next, { timeout: 300 }); return () => cancelIdleCallback(h); }
-    const h = setTimeout(next, 16);
-    return () => clearTimeout(h);
-  }, [shown, total, first]);
-  return shown;
-}
 
 type EditPath =
   | { rungId: string; kind: 'element'; branch: number; index: number; anchor: Anchor }

@@ -119,6 +119,14 @@ function printProfile(name, p) {
     await page.waitForTimeout(800);
     for (let i = 0; i < 15; i++) { await page.mouse.wheel(0, 2000); await page.waitForTimeout(50); }
   }, 1500);
+  await step('simulate: running (3 s)', async () => {
+    await nav('Simulat').catch(() => page.goto(APP + '/simulate'));
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => { window.__lt = []; });
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
+    await page.waitForTimeout(3000);
+    await page.getByRole('button', { name: /Pause/ }).click().catch(() => {});
+  }, 300);
   await step('io: type in the filter', async () => {
     await nav('I/O').catch(() => page.goto(APP + '/io'));
     await page.waitForTimeout(800);
