@@ -12,6 +12,7 @@ import {
   type MotorModel, type PanelLayout, type XfmrBranch, type PsBranch, type Terminal, type TerminalStrip,
 } from '../derive';
 import { enclosureFaceDrilling } from '../enclosureFaces';
+import type { CatalogCategory } from '../types';
 import { getHmi, hmiMaker } from '../../hmi/hmiCatalog';
 import { lineNo } from './geometry';
 import { powerText } from '../../standards/regions';
@@ -64,7 +65,43 @@ export type SheetSpec =
   | { kind: 'jb'; jb: JunctionBoxPlan; terminals: JbTerminal[]; trunk?: Cable; page: number; pages: number }
   | { kind: 'drill'; drill: DrillingPlan; rows: DrillRow[]; drawing: boolean; page: number; pages: number }
   | { kind: 'analog'; from: number; page: number; pages: number }
-  | { kind: 'drive'; index: number };
+  | { kind: 'drive'; index: number }
+  | { kind: 'asbuilt'; nets: AsBuiltNet[]; single: { wire: string; at: string }[]; page: number; pages: number };
+
+/** A wire traced from cabinet photos, drawn as a bus with a drop to every terminal it was read at. */
+export interface AsBuiltNet { wire: string; cls: 'ac' | 'pe' | 'dc' | 'branch'; ends: { tag: string; terminal: string; what: string }[] }
+export const ASBUILT_NETS = 9;
+
+/** Supply class of a wire by its number: L1/N (AC), PE, 24+/0V (DC), anything else a branch circuit. */
+export function wireClass(wire: string): AsBuiltNet['cls'] {
+  const w = wire.trim().toUpperCase().replace(/\s+/g, '');
+  if (/^(PE|GND|GNYE)$/.test(w)) return 'pe';
+  if (/^(L\d|N|L\d?-?\d{0,3}V?AC)$/.test(w)) return 'ac';
+  if (/^(\+?24\+?|\+?24V(DC)?\+?|24\+S?|0V|0VDC|M|\+V|-V|\d+V(DC)?[+-]?)$/.test(w)) return 'dc';
+  return 'branch';
+}
+
+/**
+ * The as-built power distribution from the photos: every traced wire except the PLC's I/O (those are
+ * on the I/O sheets), supply wires first (L1…, N, 24+, 0V, PE), then the branch circuits.
+ */
+export function asBuiltNets(ctx: DrawingContext, model: { rc: { tag: string; category: CatalogCategory; partNumber: string }[] }): AsBuiltNet[] {
+  const byTag = new Map(model.rc.map((c) => [c.tag, c]));
+  const plcIo = (tag: string, terminal: string) => {
+    const c = byTag.get(tag);
+    return Boolean(c && (c.category === 'plc' || c.category === 'plcModule') && /^%?(IX|QX|DI|DO|[XYIQ])\s*\d+(\.\d+)?$|^\d{1,2}$/i.test(terminal.trim()));
+  };
+  const order: AsBuiltNet['cls'][] = ['ac', 'dc', 'pe', 'branch'];
+  return (ctx.design.asBuilt?.wires ?? [])
+    .map((w) => ({ wire: w.wire, cls: wireClass(w.wire), ends: w.ends.map((e) => {
+      const i = e.lastIndexOf(':');
+      const tag = i < 0 ? e : e.slice(0, i), terminal = i < 0 ? '' : e.slice(i + 1);
+      const c = byTag.get(tag);
+      return { tag, terminal, what: c ? `${c.category.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()} ${c.partNumber}`.trim() : /^(TB|X)\d/i.test(tag) ? 'terminal strip' : '' };
+    }) }))
+    .filter((n) => !n.ends.some((e) => plcIo(e.tag, e.terminal)))
+    .sort((a, b) => order.indexOf(a.cls) - order.indexOf(b.cls) || a.wire.localeCompare(b.wire, undefined, { numeric: true }));
+}
 
 export type DrillRow = { id: string; tag: string; x: number; y: number; size: string; verified: boolean };
 export const DRILL_ROWS_FIRST = 44;
@@ -310,6 +347,13 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   for (const b of model.auxBranches) { branches.push({ type: 'aux', b, idx }); idx += 4; }
   const contIdx = model.motors.length ? idx : idx - 1;
   specs.push({ title: 'POWER DISTRIBUTION', spec: { kind: 'power', branches, contIdx, groundIdx: Math.max(contIdx + 3, 20) } });
+  // As-built from cabinet photos: the wires traced by their numbers, as photographed.
+  if (ctx.design.asBuilt?.wires?.length || ctx.design.asBuilt?.single?.length) {
+    const nets = asBuiltNets(ctx, model);
+    const single = (ctx.design.asBuilt.single ?? []).filter((s) => !nets.some((n) => n.wire === s.wire));
+    const pages = Math.max(1, Math.ceil(nets.length / ASBUILT_NETS));
+    for (let i = 0; i < pages; i++) specs.push({ title: `AS-BUILT POWER DISTRIBUTION (FROM PHOTOS)${pages > 1 ? ` (${i + 1} OF ${pages})` : ''}`, spec: { kind: 'asbuilt', nets: nets.slice(i * ASBUILT_NETS, (i + 1) * ASBUILT_NETS), single: i === pages - 1 ? single : [], page: i + 1, pages } });
+  }
 
   // motors
   if (model.motors.length) {

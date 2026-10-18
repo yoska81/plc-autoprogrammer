@@ -16,6 +16,7 @@ import type { SyncItem } from '../components/questions/useQuestionStore';
 import { retag, type ConvertTarget, type Conversion } from './convert';
 import { toRelayLogic } from './relayLogic';
 import type { ExistingMachine } from './types';
+import { wiringText } from './photos/wiringText';
 
 export const MACHINE_KEY = 'convert.machine';
 export const TARGET_KEY = 'convert.target';
@@ -44,7 +45,8 @@ export function keepMachine(m: ExistingMachine, target: ConvertTarget) {
 export function convertedSpec(m: ExistingMachine, conv: Conversion): SpecSections {
   const spec = { ...m.spec } as SpecSections;
   const std = conv.target.region === 'US' ? 'NFPA 79, UL 508A and the NEC' : conv.target.region === 'Canada' ? 'CSA C22.2 No. 14 and the CEC' : 'IEC 60204-1';
-  spec.utilities = [m.spec.utilities, `Conversion: ${conv.supplyNote} The panel is redesigned to ${std}.`].filter(Boolean).join('\n');
+  // wiringText: the terminal strips and wires read from cabinet photos (structured in the reading)
+  spec.utilities = [m.spec.utilities, wiringText(m), `Conversion: ${conv.supplyNote} The panel is redesigned to ${std}.`].filter(Boolean).join('\n');
   // nothing is certified by a conversion: the safety functions are kept, then re-validated
   // the safety circuit as drawn, word for word with the new tags: it is kept (hardwired) and re-validated
   const drawn = m.safety.description && !m.spec.safety.includes(m.safety.description)

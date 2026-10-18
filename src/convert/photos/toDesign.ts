@@ -8,7 +8,8 @@ import type { DrawnComponent, DrawnRatings, ExistingMachine } from '../types';
 import { normalizeMachine } from '../derive';
 import { CATALOG } from '../../electrical/catalog';
 import type { IOCategory, IOPoint } from '../../types/io';
-import { traceIO, traceQuestions, traceWires, type TracedIO } from './trace';
+import { traceAll, type TracedIO } from './trace';
+import type { DrawnCircuit } from '../types';
 
 /**
  * The REVIEW step and its result. Every recognised device and terminal strip is an item the user
@@ -60,6 +61,8 @@ export interface AsBuiltResult {
   design: ElectricalDesign;
   /** The I/O list the traceable wires show (PLC address as read), and every traced wire. */
   io: TracedIO[];
+  /** Relay circuits the wire numbers show (coils not driven by a PLC output). */
+  circuits: DrawnCircuit[];
   /** For the Machine description page: what the photos could not show. */
   questions: string[];
   /** Confirmed devices whose part number is not in the catalog (kept as read, marked "verify"). */
@@ -112,11 +115,10 @@ export function asBuiltDesign(items: ReviewItem[], reading: PhotoReading, base: 
   const railNos = [...new Set(placed.map((p) => p.rail))].sort((a, b) => a - b);
   const rails = railNos.map((r) => placed.filter((p) => p.rail === r).sort((a, b) => a.order - b.order).map((p) => p.tag));
   const pending = items.filter((it) => it.status === 'pending');
-  const wires = traceWires(confirmed, tagOf);
-  const io = traceIO(confirmed, wires, tagOf, getPart);
+  const { wires, single, io, circuits, questions: traceQs } = traceAll(confirmed, tagOf, getPart);
   const questions = [
     ...reading.unseen.map((u) => `Cabinet photos: ${u}`),
-    ...traceQuestions(io),
+    ...traceQs,
     ...pending.map((it) => `Cabinet photos: ${it.kind === 'strip' ? 'terminal strip' : 'device'} ${itemTag(it) || '(no label)'}${itemPart(it) ? ` ${itemPart(it)}` : ''} on rail ${it.device?.rail ?? it.strip?.rail ?? '?'} could not be confirmed from the photos — what is it?`),
   ];
   const notes = [
@@ -127,9 +129,10 @@ export function asBuiltDesign(items: ReviewItem[], reading: PhotoReading, base: 
     design: {
       inputs: base, components, notes, askUser: questions, generatedAt: now,
       ioWiring: io.map((p) => ({ address: p.address, deviceTag: p.deviceTag || p.via || `W${p.wire}`, deviceType: p.deviceType, description: p.description, location: p.deviceTag ? 'Cabinet' : 'Field (not in the photos)' })),
-      asBuilt: { source: 'photos', rails, wires: wires.map((w) => ({ wire: w.wire, ends: w.ends.map((e) => `${e.tag}:${e.terminal}`) })) },
+      asBuilt: { source: 'photos', rails, wires: wires.map((w) => ({ wire: w.wire, ends: w.ends.map((e) => `${e.tag}:${e.terminal}`) })), single },
     },
     io,
+    circuits,
     questions,
     notInCatalog,
   };
@@ -165,8 +168,7 @@ export function nameplateRatings(text: string): DrawnRatings {
 export function photosToMachine(items: ReviewItem[], reading: PhotoReading, note = '', getPart: (pn: string) => CatalogPart | undefined = () => undefined): ExistingMachine {
   const kept = items.filter((it) => it.status !== 'rejected');
   const tagOf = tagger(items);
-  const wires = traceWires(kept, tagOf);
-  const io = traceIO(kept, wires, tagOf, getPart);
+  const { nets, io, circuits, questions } = traceAll(kept, tagOf, getPart);
   const where = (s: { seen: Sighting[]; rail: number; order: number }) => `photo ${(closest(s.seen)?.photo ?? 0) + 1}${s.rail ? `, rail ${s.rail}, position ${s.order}` : ', door / wall'}`;
   const components: DrawnComponent[] = kept.filter((it) => it.kind === 'device').map((it) => {
     const d = it.device!;
@@ -190,8 +192,11 @@ export function photosToMachine(items: ReviewItem[], reading: PhotoReading, note
     io: io.map((p) => ({ address: p.address, description: p.description, type: p.type, category: ioCategory(p), deviceTag: p.deviceTag || null, deviceType: p.deviceType, confidence: p.confidence, source: `wire ${p.wire}${p.via ? ` via ${p.via}` : ''} (photos)` })),
     spec: { utilities: note.trim() } as ExistingMachine['spec'],
     terminals,
-    wiring: wires.map((w) => ({ wire: w.wire, ends: w.ends.map((e) => `${e.tag}:${e.terminal}`) })),
-    questions: [...reading.unseen, ...traceQuestions(io).map((q) => q.replace(/^Cabinet photos: /, ''))].map((text) => ({ text, section: 'other' as const, assumption: null })),
+    // every conductor, one-ended ones too (an open end: the other end is in the field or not in the photos)
+    wiring: nets.map((w) => ({ wire: w.wire, ends: w.ends.map((e) => `${e.tag}:${e.terminal}`) })),
+    controller: plcDev ? 'plc' : circuits.length ? 'relays' : 'other',
+    circuits,
+    questions: [...reading.unseen, ...questions.map((q) => q.replace(/^Cabinet photos: /, ''))].map((text) => ({ text, section: 'other' as const, assumption: null })),
     uncertainties: ['As-built from photos: wiring behind ducts and covered nameplates could not be read — verify on the cabinet.'],
   });
 }
