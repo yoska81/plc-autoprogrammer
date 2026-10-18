@@ -85,7 +85,26 @@ function audit() {
       for (const f of await page.evaluate(audit)) found.push(`[${names[i]}] ${f}`);
       await page.screenshot({ path: path.join(OUT, `${r.replace(/\W+/g, '_')}_${names[i].replace(/\W+/g, '_')}.png`) });
     }
-    if (names.length) log(`${r}: phone panes ${names.join(' / ')}`);
+    if (names.length) {
+      log(`${r}: phone panes ${names.join(' / ')}`);
+      // Each tab names the pane it shows, the shown pane is a tab panel, and the arrow keys move between tabs.
+      const wiring = await page.evaluate(() => [...document.querySelectorAll('[data-phone-tabs] [role="tab"]')].map((t) => {
+        const p = document.getElementById(t.getAttribute('aria-controls') || '');
+        return { name: t.textContent.trim(), selected: t.getAttribute('aria-selected') === 'true', panel: !!p && p.getAttribute('role') === 'tabpanel' && p.getAttribute('aria-labelledby') === t.id };
+      }));
+      const shown = wiring.find((w) => w.selected);
+      check(shown && shown.panel, `${r}: the “${shown?.name}” tab does not point at its tab panel`);
+      await tabs.first().click();
+      await page.keyboard.press('ArrowRight');
+      const after = await page.evaluate(() => ({ sel: document.querySelector('[data-phone-tabs] [aria-selected="true"]')?.textContent.trim(), focus: document.activeElement?.textContent.trim() }));
+      check(after.sel === names[1] && after.focus === names[1], `${r}: ArrowRight did not move to “${names[1]}” (${JSON.stringify(after)})`);
+      if (r === '/program') {
+        await tabs.filter({ hasText: 'Cross-ref' }).click();
+        const xb = page.getByRole('button', { name: /Cross reference/ });
+        const on = await xb.evaluate((b) => b.getAttribute('aria-pressed') === 'true' && /\bbg-brand-600\b/.test(b.className));
+        check(on, '/program: on the Cross-ref tab the Cross reference button is not shown pressed');
+      }
+    }
     if (found.length) bad++;
     check(found.length === 0, `${r}: ${[...new Set(found)].slice(0, 4).join('; ')}`);
     await page.screenshot({ path: path.join(OUT, `${r.replace(/\W+/g, '_') || 'root'}.png`) });
