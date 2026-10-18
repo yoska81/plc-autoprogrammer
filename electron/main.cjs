@@ -238,8 +238,8 @@ ipcMain.on('isa:version', (e) => { e.returnValue = app.getVersion(); });
 // ── Connect to PLC: Modbus TCP (electron/modbus.cjs) ──
 registerModbusIpc(ipcMain);
 registerOdaIpc(ipcMain);
-// ── DWG import through the user's ODA Drawings SDK reader, set up in Settings (electron/dwgReader.cjs) ──
-registerDwgReaderIpc(ipcMain, app, dialog);
+// ── DWG import: GNU LibreDWG's dwg2dxf shipped with the installer, or another reader (electron/dwgReader.cjs) ──
+registerDwgReaderIpc(ipcMain, app, dialog, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
 
 // ── Microphone for voice input: a native question the first time (electron/micPermission.cjs) ──
 let micState = { always: false, session: false };

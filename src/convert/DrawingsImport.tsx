@@ -8,26 +8,21 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useDraft } from '../store/useDraftStore';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 import { regionSpec, SUPPLY_INFO } from '../standards/regions';
-import { deriveFromUpload, MAX_UPLOAD_FILES, UPLOAD_ACCEPT } from './derive';
+import { deriveFromUpload, DWG_IN_BROWSER, DWG_NOT_AVAILABLE, MAX_UPLOAD_FILES, UPLOAD_ACCEPT } from './derive';
 import { desktopBridge, type DwgReaderStatus } from '../desktop/bridge';
 import { hasDwgReader } from './dxf';
 import { READ_KEY, setReading, type Reading } from './reading';
 import { Step } from './ReviewAndConvert';
 import { NO_FILES, useUploadFiles } from './thumbs';
 
-/** How DWG files are read here: the DWG reader set up in Settings (Windows app), else save as DXF. */
+/** How DWG files are read here: by the Windows app (its DWG converter, shipped with it); in the browser, use DXF or PDF. */
 function DwgStatus() {
   const dwg = desktopBridge()?.dwg;
   const [st, setSt] = useState<DwgReaderStatus | null>(null);
   useEffect(() => { if (dwg) void dwg.status().then(setSt).catch(() => setSt({ configured: false, ok: false })); }, [dwg]);
-  if (hasDwgReader() || st?.ok) return <p className="text-xs text-emerald-700" data-testid="dwg-status">DWG files are read with the DWG reader set up in Settings.</p>;
+  if (hasDwgReader() || st?.ok) return null;
   if (dwg && !st) return null;
-  return (
-    <p className="text-xs text-steel-600" data-testid="dwg-status">
-      {st?.configured && st.error ? <>The DWG reader set up in Settings can't be used ({st.error}). </> : null}
-      DWG reader not installed yet — save the drawings as DXF in AutoCAD (File → Save As → DXF), or {dwg ? <Link to="/settings" className="underline">set up the DWG reader in Settings</Link> : 'set up the DWG reader in Settings of the Windows app'}. PDF and DXF are read as they are.
-    </p>
-  );
+  return <p className="text-xs text-steel-600" data-testid="dwg-status">{dwg ? (st?.configured && st.error ? `The DWG reader chosen in Settings can't be used (${st.error}). ` : '') + DWG_NOT_AVAILABLE : DWG_IN_BROWSER}</p>;
 }
 
 /**
@@ -89,6 +84,7 @@ export default function DrawingsImport() {
           <span className="text-xs text-steel-500">Target: {regionSpec(info.region).label} · {SUPPLY_INFO[supply]?.label ?? supply} (change on <Link to="/project" className="underline">Project data</Link>)</span>
         </div>
         {(fileError || error) && <div role="alert" className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800">{fileError ?? error}</div>}
+        {read?.notes?.length ? <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900" data-testid="read-notes"><b>Not read from the files:</b><ul className="list-disc pl-5">{read.notes.map((n) => <li key={n}>{n}</li>)}</ul></div> : null}
         {read && <p className="text-xs text-steel-500">Read {read.files.length} file{read.files.length === 1 ? '' : 's'} on {read.at.slice(0, 16).replace('T', ' ')}: {read.files.join(', ')}</p>}
       </Step>
     </div>

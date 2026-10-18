@@ -135,13 +135,16 @@ async function closeApp(app, win) {
   check(mb.afterDisconnect === 'Not connected' && mb.statuses.some((s) => s.connected) && !mb.statuses.at(-1).connected, 'modbus: status events');
   await plc.close();
 
-  // DWG import: the ODA Drawings SDK reader is not set up on a fresh install; Settings says so and offers to choose it
-  const dwg = await win.evaluate(async () => ({ status: await window.isaDesktop.dwg.status(), read: await window.isaDesktop.dwg.read([{ name: 'a.dwg', bytes: new Uint8Array([1]) }]) }));
-  check(dwg.status.configured === false && dwg.read.ok === false && dwg.read.notConfigured === true, `dwg reader not set up yet: ${JSON.stringify(dwg)}`);
+  // DWG import: GNU LibreDWG's dwg2dxf.exe comes with the Windows installer; this run is the unpackaged app on
+  // Linux, where the Windows converter can't run: the bridge and Settings say so plainly
+  const dwg = await win.evaluate(async () => ({ status: await window.isaDesktop.dwg.status(), read: await window.isaDesktop.dwg.read([{ name: 'a.dwg', bytes: new TextEncoder().encode('AC1032..') }]) }));
+  const winBuild = process.platform === 'win32';
+  check(winBuild ? dwg.status.ok && dwg.status.builtIn : dwg.status.ok === false && dwg.read.notConfigured === true, `dwg converter status: ${JSON.stringify(dwg)}`);
   await win.evaluate(() => { window.history.pushState({}, '', '/settings'); window.dispatchEvent(new PopStateEvent('popstate')); });
   const dwgCard = win.getByTestId('dwg-reader-settings');
   await dwgCard.waitFor({ timeout: 10000 });
-  check(/DWG reader not installed yet/.test(await dwgCard.innerText()) && await dwgCard.getByRole('button', { name: 'Choose the DWG reader…' }).isVisible(), 'Settings → DWG reader: not installed yet, choose it');
+  const cardText = await dwgCard.innerText();
+  check((winBuild ? /Ready: DWG files are converted by GNU LibreDWG/ : /Not available in this installation/).test(cardText) && /Advanced: use another DWG reader/.test(cardText) && !/ODA/.test(cardText), 'Settings → DWG drawings: built-in converter, other reader only under Advanced');
 
   const printers = await win.evaluate(async () => window.isaDesktop.listPrinters());
   log('Printers seen by Windows/CUPS:', printers.length ? printers.map((p) => p.name).join(', ') : 'none (no printers on this machine)');

@@ -245,6 +245,31 @@ await test('CAD sheets: own numbers (2, 3, 5, 6 of 8), bilingual title labels sk
   assert.deepEqual(sheetNumber([{ type: 'TEXT', layer: '', x: 0, y: 10, text: '页 Sheet' }, { type: 'TEXT', layer: '', x: 2, y: 4, text: '7' }, { type: 'TEXT', layer: '', x: 50, y: 4, text: 'see Sheet 3' }]), { n: 7, of: null });
 });
 
+await test('DXF written by LibreDWG (dwg2dxf): blocks placed by INSERT, old POLYLINE, DIMENSION text, MTEXT codes', () => {
+  // e2e/fixtures/convert/dwg-sample.dwg → LibreDWG 0.14 dwg2dxf (our own drawing; make-dwg-sample.py)
+  const ents = parseDxfEntities(readFileSync(new URL('../../e2e/fixtures/convert/dwg-sample.libredwg.dxf', import.meta.url), 'utf8'));
+  const texts = ents.filter((e): e is Extract<CadEntity, { text: string }> => 'text' in e);
+  const at = (text: string) => texts.filter((t) => t.text === text).map((t) => [Math.round(t.x), Math.round(t.y)]);
+  // the coil block placed three times: as drawn, scaled ×2, rotated 90°; its tag attribute where the INSERT put it
+  assert.deepEqual(at('A1'), [[54, 204], [108, 208], [176, 194]]);
+  assert.deepEqual(texts.filter((t) => t.attr === 'TAG').map((t) => t.text), ['KA1', 'KA2', 'KT1']);
+  // a block definition by itself is not drawing text (no "A1" at the block's own origin, no attribute placeholders)
+  assert.ok(!texts.some((t) => t.text === 'A1' && Math.abs(t.x) < 10), 'block definitions are not read as drawing content');
+  assert.equal(texts.filter((t) => t.attr).length, 5, 'each attribute once (LibreDWG repeats "stale" ones)');
+  // the title block (a block too) with its attributes
+  assert.ok(texts.some((t) => t.text === '图名 Sheet title' && Math.round(t.x) === 240));
+  assert.ok(texts.some((t) => t.attr === 'NAME' && t.text === '继电器控制 Relay control'));
+  // the wire drawn as an old-style POLYLINE with VERTEX entities
+  assert.ok(ents.some((e) => e.type === 'LWPOLYLINE' && JSON.stringify(e.points) === '[[40,150],[100,150],[100,120]]'));
+  // dimension text, overridden ("Cut length <> mm") and measured
+  assert.ok(texts.some((t) => /^Cut length \d+ mm$/.test(t.text)));
+  assert.ok(texts.filter((t) => /^\d+$/.test(t.text)).length >= 1);
+  // MTEXT codes stripped
+  assert.ok(texts.some((t) => t.text === '急停 E-stop SB0 2NC Ø20'));
+  // and without blocks or sections at all (a bare entity list) it still reads
+  assert.deepEqual(parseDxfTexts(['0', 'TEXT', '8', 'L', '10', '1', '20', '2', '1', 'QF1'].join('\n')).map((t) => t.text), ['QF1']);
+});
+
 await test('DWG: a plugged-in reader is used; without one there is none', async () => {
   assert.equal(hasDwgReader(), false);
   assert.equal(await dwgToEntities(new ArrayBuffer(4)), null);

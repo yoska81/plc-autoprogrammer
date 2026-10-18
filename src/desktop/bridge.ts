@@ -87,17 +87,18 @@ export interface OdaBridge {
   convert(files: { name: string; text: string }[]): Promise<{ ok: true; files: { name: string; bytes: Uint8Array }[] } | { ok: false; error: string }>;
 }
 
-/** Whether the DWG reader (the user's ODA Drawings SDK build) is set up and usable. */
-export interface DwgReaderStatus { configured: boolean; ok: boolean; path?: string; error?: string }
+/** The DWG reader in use: the bundled GNU LibreDWG converter (builtIn), or another one chosen in Settings (configured). */
+export interface DwgReaderStatus { configured: boolean; ok: boolean; builtIn?: boolean; path?: string; error?: string }
 
-/** DWG import through the ODA Drawings SDK reader the user set up in Settings (electron/dwgReader.cjs). */
+/** DWG import (electron/dwgReader.cjs): LibreDWG's dwg2dxf shipped with the installer, or another reader. */
 export interface DwgReaderBridge {
   status(): Promise<DwgReaderStatus>;
-  /** Choose the reader file (.node module or program) in a native dialog. */
+  /** Advanced: choose another reader (a program or a .node module) in a native dialog. */
   configure(): Promise<DwgReaderStatus>;
+  /** Back to the bundled converter. */
   clear(): Promise<DwgReaderStatus>;
-  /** DWG in, DXF text out (same order). */
-  read(files: { name: string; bytes: Uint8Array }[]): Promise<{ ok: true; files: { name: string; text: string }[] } | { ok: false; notConfigured?: boolean; error: string }>;
+  /** DWG in, DXF text out (same order), with the DWG version and warnings about what was not read. */
+  read(files: { name: string; bytes: Uint8Array }[]): Promise<{ ok: true; files: { name: string; text: string; version?: string | null; warnings?: string[] }[] } | { ok: false; notConfigured?: boolean; error: string }>;
 }
 
 export interface IsaDesktop {

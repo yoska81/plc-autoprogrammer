@@ -16,31 +16,41 @@ import type { DrawnRatings, ExistingMachine, PathContact, PathEl } from './types
 export const MAX_UPLOAD_FILES = 20;
 
 /** What to do when no DWG reader is set up (the Windows app with its ODA Drawings SDK reader reads DWG). */
-export const DWG_NOT_SET_UP = 'DWG reader not installed yet — save the drawings as DXF in AutoCAD (File → Save As → DXF), or set up the DWG reader in Settings.';
+/** DWG in the browser (and the claude.ai preview): the Windows app opens it. */
+export const DWG_IN_BROWSER = 'DWG opens in the Windows app; here use DXF or PDF (in AutoCAD: File → Save As → DXF, or print to PDF).';
+/** The Windows app without its DWG converter (e.g. removed from the installation). */
+export const DWG_NOT_AVAILABLE = 'DWG reading is not available in this installation: save the drawings as DXF in AutoCAD (File → Save As → DXF), or install the app again.';
 
-/** A DWG as text: the DWG reader set up in the Windows app (ODA Drawings SDK); else a plugged-in reader; else what to do. */
-async function dwgText(f: File): Promise<string> {
+/**
+ * A DWG as text: the Windows app converts it to DXF (GNU LibreDWG, shipped with the installer); else a
+ * plugged-in reader; else what to do. What the converter could not read goes to `notes` (and to the AI).
+ */
+async function dwgText(f: File, notes: string[]): Promise<string> {
   const dwg = desktopBridge()?.dwg;
   if (dwg) {
     const r = await dwg.read([{ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }]);
-    if (r.ok) return dxfToText(r.files[0].text, f.name);
+    if (r.ok) {
+      const w = r.files[0].warnings ?? [];
+      notes.push(...w);
+      return `${dxfToText(r.files[0].text, f.name)}${w.length ? `\n(Note from the DWG converter: ${w.join(' ')})` : ''}`;
+    }
     if (!r.notConfigured) throw new Error(`${f.name}: ${r.error}`);
   }
   const entities = await dwgToEntities(await f.arrayBuffer());
   if (entities) return cadToText(entities, f.name);
-  throw new Error(`${f.name}: ${DWG_NOT_SET_UP}`);
+  throw new Error(`${f.name}: ${dwg ? DWG_NOT_AVAILABLE : DWG_IN_BROWSER}`);
 }
 
 /** File types the upload takes (the file picker's accept list). */
 export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,application/pdf,image/*';
 
 /** One upload as content blocks for the AI: PDFs and images as they are, DXF as its text. */
-export async function readUpload(files: File[]): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
+export async function readUpload(files: File[], notes: string[] = []): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
   if (files.length > MAX_UPLOAD_FILES) throw new Error(`At most ${MAX_UPLOAD_FILES} files at once.`);
   const out: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
   for (const f of files) {
     const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f) }); else if (ext === 'dxf') out.push({ type: 'text', text: dxfToText(await f.text(), f.name) });
+    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f, notes) }); else if (ext === 'dxf') out.push({ type: 'text', text: dxfToText(await f.text(), f.name) });
     else out.push(await fileToBlock(f));
   }
   return out;
@@ -157,8 +167,9 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
  * Read the upload and build the existing machine (one AI request). `extra`: more content for the same
  * request, e.g. a PLC program's symbol table or rung listing from the program reader (src/plc/import/).
  */
-export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = []): Promise<{ machine: ExistingMachine; reasoning: string | null }> {
-  const blocks = [...(await readUpload(files)), ...extra];
+export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = []): Promise<{ machine: ExistingMachine; reasoning: string | null; notes: string[] }> {
+  const notes: string[] = [];
+  const blocks = [...(await readUpload(files, notes)), ...extra];
   const names = files.map((f, i) => `${i + 1}. ${f.name}`).join('\n') || '(none: program data only)';
   const { text, reasoning } = await callClaude({
     apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'import',
@@ -166,7 +177,7 @@ export async function deriveFromUpload(opts: DeriveOptions, files: File[], note 
     messages: [{ role: 'user', content: [...blocks, { type: 'text', text: `Files (in the order attached):\n${names}\n\n${note ? `Notes from the engineer:\n${note}\n\n` : ''}Read this machine from its drawings and write its description.` }] }],
   });
   try {
-    return { machine: normalizeMachine(JSON.parse(text) as Partial<ExistingMachine>), reasoning };
+    return { machine: normalizeMachine(JSON.parse(text) as Partial<ExistingMachine>), reasoning, notes };
   } catch (err) {
     throw new Error('The AI returned a result the app could not read. Please try again.', { cause: err });
   }
