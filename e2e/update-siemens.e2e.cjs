@@ -167,6 +167,16 @@ async function extras(browser) {
   }, IO);
   console.log('  ·', msg.slice(0, 200));
   check(/^equipment done: Mitsubishi PLC isn't supported yet — using AutomationDirect CLICK \(/.test(msg), 'Mitsubishi: the step says it is not supported yet and which PLC is used');
+  // A maker mentioned without saying it is the PLC: said, never a silent CLICK.
+  const msg2 = await page.evaluate(async () => {
+    (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: 'Bottle capper. The Siemens motor is started by the PLC.' });
+    const { runUpdateAll } = await import('/src/spec/updateAll.ts');
+    const out = [];
+    await runUpdateAll(['equipment'], (r) => out.push(`${r.step} ${r.status}: ${r.message}`));
+    return out.join(' | ');
+  });
+  console.log('  ·', msg2.slice(0, 220));
+  check(/The description mentions Siemens but doesn't say the PLC is Siemens — using AutomationDirect CLICK/.test(msg2), 'Siemens mentioned, not as the PLC: the step says so');
 
   // A Logix project; the user changes only the sensors' brand on the Equipment page.
   await page.evaluate(async () => {
@@ -185,6 +195,14 @@ async function extras(browser) {
   console.log('  ·', JSON.stringify(after));
   check(after.vendors && !('plc' in after.vendors) && Object.values(after.vendors).some((v) => v.includes('ifm')), 'only the sensors brand is saved, no PLC preference');
   check(after.plcId === 'logix' && !/asks for/.test(after.reason), 'the Logix project is not flagged as another brand');
+  // AutomationDirect picked on purpose for the PLC: a request (the Logix project is now another brand).
+  const plcSelect = page.locator('select[aria-label^="Brand for"]').first();
+  await plcSelect.selectOption('automationdirect');
+  const picked = await page.evaluate(async () => {
+    const p = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState();
+    return { chosen: p.info.plcChosen, reason: (await import('/src/spec/useStages.ts')).stagesNow().equipment.reason ?? '' };
+  });
+  check(picked.chosen === true && /Brand preference asks for AutomationDirect CLICK/.test(picked.reason), `an AutomationDirect pick is honoured (${picked.reason.slice(0, 80)})`);
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await page.context().close();
 }

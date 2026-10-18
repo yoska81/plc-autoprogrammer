@@ -9,19 +9,30 @@ import { platformOf } from '../plc/core/fit';
 import { useProjectStore } from '../store/useProjectStore';
 
 /** Catalog vendor of a PLC profile (CLICK has no multi-vendor platform: AutomationDirect). */
-const vendorOf = (p: PlcProfile) => platformOf(p.cpuModels[0]?.id ?? '')?.vendor ?? (p.id === 'click' ? 'automationdirect' : '');
+export const vendorOf = (p: PlcProfile) => platformOf(p.cpuModels[0]?.id ?? '')?.vendor ?? (p.id === 'click' ? 'automationdirect' : '');
 
 /**
- * A maker's name counts only right next to a PLC word: "Siemens PLC", "Allen-Bradley controllers", "PLC: Siemens",
- * "the PLC is a Siemens". A Siemens motor started by the PLC, or a Siemens drive next to an Allen-Bradley PLC, is
- * not a Siemens PLC.
+ * A maker's name counts when it names the PLC: "Siemens PLC", "Rockwell Automation PLC", "Siemens 1214C PLC",
+ * "Allen-Bradley's PLC", "Siemens-PLC" (up to two words between, none of them a device), or "PLC: Siemens",
+ * "PLC (Siemens)", "PLC hardware: Allen-Bradley", "the PLC shall be Siemens", "SPS: Siemens". A Siemens motor started
+ * by the PLC, or a Siemens drive next to an Allen-Bradley PLC, is not a Siemens PLC.
  */
-const PLC_WORD = '(?:plcs?|controllers?|cpus?|processors?)';
-const plcNear = (maker: string) => new RegExp(`\\b(?:${maker})\\s+${PLC_WORD}\\b|\\b${PLC_WORD}\\s*(?:[:=\\-–]|\\bis\\b|\\bwill be\\b|\\bmust be\\b)?\\s*(?:an?\\s+)?(?:${maker})\\b`, 'i');
+const PLC_WORD = '(?:plcs?|controllers?|cpus?|processors?|sps|steuerung(?:en)?|automates?|aut[oó]matas?)';
+const DEVICE = '(?:motors?|drives?|vfds?|inverters?|servos?|sensors?|valves?|hmis?|panels?|screens?|photo-?eyes?|switch(?:es)?|starters?|contactors?|relays?|encoders?|cylinders?|robots?|and|or|with|for)';
+const LINK = String.raw`(?:\s*(?:\(|[:=–-]|\b(?:hardware|brand|make|maker|vendor|type|model|platform)\b|\b(?:shall|must|will|should|to)\s+be\b|\bis\b|\bby\b|\bfrom\b))`;
+const plcNear = (maker: string) => new RegExp(
+  String.raw`\b(?:${maker})(?:['’]s)?(?:[\s-]+(?!${DEVICE}\b)[\w./]+(?:-[\w./]+)*){0,2}?[\s-]+${PLC_WORD}\b`
+  + String.raw`|\b${PLC_WORD}\b${LINK}{0,3}\s*(?:an?\s+|the\s+)?(?:${maker})\b`, 'i');
+
+/** Makers with a PLC here, as their names appear in a description (for the "mentions but does not say" note). */
+const SUPPORTED_MAKERS: [RegExp, string][] = [
+  [/\bsiemens\b/i, 'Siemens'], [/\ballen[-\s]?bradley\b|\brockwell\b/i, 'Allen-Bradley'], [/\bautomation ?direct\b/i, 'AutomationDirect'],
+];
+const HAS_PLC_WORD = new RegExp(String.raw`\b${PLC_WORD}\b`, 'i');
 
 /** Brand or family names in a machine description, by PLC profile. Family names (S7-1200, CompactLogix) are PLCs. */
 const NAMED: [RegExp, string[]][] = [
-  [/\bs7[-\s]?1[25]00\b|\b(simatic|siemens) s7\b|\btia portal\b/i, ['siemens-s7']],
+  [/\bs7[-\s]?(1[25]|[34])00\b|\b(simatic|siemens) s7\b|\btia portal\b/i, ['siemens-s7']],
   [plcNear('siemens'), ['siemens-s7']],
   [plcNear('allen[-\\s]?bradley|rockwell'), ['logix', 'micro800']],
   [/\b(compact|control)logix\b|\bstudio 5000\b/i, ['logix']],
@@ -33,6 +44,7 @@ const NAMED: [RegExp, string[]][] = [
 
 /** PLC brands and families this tool cannot program yet: named, they are said, never silently replaced. */
 const UNSUPPORTED: [RegExp, string][] = [
+  [/\bproductivity ?(1000|2000|3000|suite)\b|\bbrx\b|\bdo-more\b/i, 'AutomationDirect Productivity / BRX / Do-more'],
   [/\bmelsec\b|\bfx5u?c?\b|\bfx3[gu]\b|\biq-[rf]\b|\bgx works\b/i, 'Mitsubishi'],
   [plcNear('mitsubishi(?: electric)?'), 'Mitsubishi'],
   [/\bsysmac\b|\bcp[12]e\b|\bnx1p2?\b|\bnj50\d\b|\bcx-programmer\b/i, 'Omron'],
@@ -54,11 +66,25 @@ export function unsupportedBrands(specText: string): string[] {
   return [...new Set(UNSUPPORTED.filter(([re]) => re.test(specText)).map(([, b]) => b))];
 }
 
-/** Plain step message for an unsupported brand: "Mitsubishi PLC isn't supported yet — using CLICK." (null when none). */
-export function unsupportedNote(specText: string, usingName: string): string | null {
+/**
+ * Plain step message about the PLC brand, so the PLC used is never a silent fallback (null when there is nothing
+ * to say):
+ * - a PLC brand this tool cannot program: "Mitsubishi PLC isn't supported yet — using AutomationDirect CLICK (C0-…).";
+ * - a maker with a PLC here mentioned next to a PLC word without naming the PLC: "The description mentions Siemens
+ *   but doesn't say the PLC is Siemens — using …. Set the PLC brand in Brand preference if that's wrong.";
+ * - an S7-300 / S7-400 named: the program is written for the S7-1200 / S7-1500 (TIA Portal).
+ */
+export function brandNote(specText: string, usingName: string): string | null {
+  const named = requestedProfiles(specText, []).length > 0;
+  const out: string[] = [];
   const b = unsupportedBrands(specText);
-  if (!b.length || requestedProfiles(specText, []).length) return null;
-  return `${b.join(' / ')} PLC${b.length > 1 ? "s aren't" : " isn't"} supported yet — using ${usingName}.`;
+  if (b.length && !named) out.push(`${b.join(' / ')} PLC${b.length > 1 ? "s aren't" : " isn't"} supported yet — using ${usingName}.`);
+  else if (!named && HAS_PLC_WORD.test(specText)) {
+    const makers = SUPPORTED_MAKERS.filter(([re]) => re.test(specText)).map(([, m]) => m);
+    if (makers.length) out.push(`The description mentions ${makers.join(' and ')} but doesn't say the PLC is ${makers.join(' or ')} — using ${usingName}. Set the PLC brand in Brand preference if that's wrong.`);
+  }
+  if (/\bs7[-\s]?[34]00\b/i.test(specText)) out.push('The S7-300 / S7-400 named in the description is programmed here as an S7-1200 / S7-1500 (TIA Portal).');
+  return out.length ? out.join(' ') : null;
 }
 
 /**
@@ -80,11 +106,14 @@ export function choosableProfiles(specText: string, preferredPlcVendors: string[
 
 /**
  * The project's own PLC vendor preference: empty when it was never set, and when it is the untouched default
- * (AutomationDirect alone, which older projects saved on any edit of the Brand preference card). The default is
- * not a request: it never moves a Siemens or Logix project back to CLICK.
+ * (AutomationDirect alone, which older projects saved on any edit of the Brand preference card) unless the user
+ * picked it (`plcChosen`). The default is not a request: it never moves a Siemens or Logix project back to CLICK.
  */
-export const plcPreferenceOf = (plc: string[] | undefined): string[] => (!plc || (plc.length === 1 && plc[0] === 'automationdirect') ? [] : plc);
-export const plcPreference = (): string[] => plcPreferenceOf(useProjectStore.getState().info.vendors?.plc);
+export const plcPreferenceOf = (plc: string[] | undefined, chosen = false): string[] => (!plc || (!chosen && plc.length === 1 && plc[0] === 'automationdirect') ? [] : plc);
+export const plcPreference = (): string[] => { const i = useProjectStore.getState().info; return plcPreferenceOf(i.vendors?.plc, i.plcChosen); };
+
+/** A catalog vendor whose PLCs this tool can program (Siemens, Allen-Bradley, Unitronics, AutomationDirect). */
+export const hasPlcProfile = (vendorId: string) => PLC_PROFILES.some((p) => p.available && p.language === 'ladder' && vendorOf(p) === vendorId);
 
 /** Why the project's PLC is not the brand asked for ("The description asks for Siemens S7; …"), or null. */
 export function brandMismatch(specText: string, preferredPlcVendors: string[], plcId: string): string | null {

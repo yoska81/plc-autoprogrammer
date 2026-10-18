@@ -15,7 +15,7 @@ import { fingerprint, specToText, changedSections } from './types';
 import { ioFingerprint, hmiFingerprint } from './useStages';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge } from '../lib/ai/ioAI';
 import { equipmentChoices, recommendEquipment } from '../lib/ai/equipmentAI';
-import { plcPreference, requestedProfiles, unsupportedNote } from './brand';
+import { brandNote as brandStepNote, plcPreference, requestedProfiles } from './brand';
 import { applyEquipment, recommendedChoice } from './equipment';
 import { analogRangesOf, cpuFit, findCpu, hmiFit, modulesToFit, type Need } from '../plc/core/fit';
 import type { AnalogRange } from '../types/io';
@@ -136,10 +136,11 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       // that brand; otherwise the equipment is chosen again, from that brand.
       const asked = requestedProfiles(specToText(spec), plcPreference());
       const otherBrand = (plcId: string) => asked.length > 0 && !asked.some((p) => p.id === plcId);
-      // A brand this tool cannot program yet (Mitsubishi, Omron…): said first in the step message, never silently replaced.
+      // The PLC used is never a silent fallback: a brand this tool cannot program yet (Mitsubishi, Omron…), or a maker
+      // mentioned without naming the PLC, is said first in the step message.
       const brandNote = (cpuId: string) => {
         const prof = PLC_PROFILES.find((p) => p.cpuModels.some((c) => c.id === cpuId));
-        const n = unsupportedNote(specToText(spec), prof ? `${prof.vendor} ${prof.name} (${cpuId})` : cpuId);
+        const n = brandStepNote(specToText(spec), prof ? `${prof.vendor} ${prof.name} (${cpuId})` : cpuId);
         return n ? `${n} ` : '';
       };
       if (stageMode('equipment') === 'quick') {

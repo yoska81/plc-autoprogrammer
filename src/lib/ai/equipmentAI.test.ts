@@ -1,7 +1,7 @@
 // npx tsx src/lib/ai/equipmentAI.test.ts — the Equipment AI chooses from the brand the customer named or prefers.
 import assert from 'node:assert/strict';
 import { equipmentChoices, equipmentSystemPrompt } from './equipmentAI';
-import { brandMismatch, choosableProfiles, plcPreferenceOf, requestedProfiles, unsupportedBrands, unsupportedNote } from '../../spec/brand';
+import { brandMismatch, choosableProfiles, plcPreferenceOf, requestedProfiles, unsupportedBrands, brandNote } from '../../spec/brand';
 
 const ids = (spec: string, pref: string[] = ['automationdirect']) => choosableProfiles(spec, pref).map((p) => p.id);
 
@@ -67,15 +67,46 @@ assert.deepEqual(unsupportedBrands('Schneider Modicon M221'), ['Schneider Electr
 assert.deepEqual(unsupportedBrands('Beckhoff CX9020 with TwinCAT 3'), ['Beckhoff']);
 assert.deepEqual(unsupportedBrands('A Siemens LOGO! 8 runs it'), ['Siemens LOGO!']);
 assert.deepEqual(unsupportedBrands('Omron photo-eyes and a Mitsubishi servo'), [], 'sensors and drives of a maker are not a PLC');
-assert.equal(unsupportedNote('Mitsubishi PLC', 'AutomationDirect CLICK (C0-12DD1E-D)'), "Mitsubishi PLC isn't supported yet — using AutomationDirect CLICK (C0-12DD1E-D).");
-assert.equal(unsupportedNote('Mitsubishi servo, Siemens S7-1200 PLC', 'Siemens'), null, 'a supported PLC is named: nothing to say');
-assert.equal(unsupportedNote('Pick and place', 'CLICK'), null);
+assert.equal(brandNote('Mitsubishi PLC', 'AutomationDirect CLICK (C0-12DD1E-D)'), "Mitsubishi PLC isn't supported yet — using AutomationDirect CLICK (C0-12DD1E-D).");
+assert.equal(brandNote('Mitsubishi servo, Siemens S7-1200 PLC', 'Siemens'), null, 'a supported PLC is named: nothing to say');
+assert.equal(brandNote('Pick and place', 'CLICK'), null);
+assert.deepEqual(unsupportedBrands('Productivity 2000 PLC'), ['AutomationDirect Productivity / BRX / Do-more']);
+assert.deepEqual(unsupportedBrands('BRX controller'), ['AutomationDirect Productivity / BRX / Do-more']);
+
+// The side manager's probe table: how the PLC is named in real descriptions.
+const PROBES: [string, string[]][] = [
+  ['Rockwell Automation PLC', ['logix', 'micro800']],
+  ['Siemens 1214C PLC', ['siemens-s7']],
+  ['Siemens based PLC', ['siemens-s7']],
+  ['PLC hardware: Allen-Bradley', ['logix', 'micro800']],
+  ['The PLC shall be Siemens', ['siemens-s7']],
+  ['PLC (Siemens)', ['siemens-s7']],
+  ['Siemens-PLC', ['siemens-s7']],
+  ["Allen-Bradley's PLC", ['logix', 'micro800']],
+  ['SPS: Siemens', ['siemens-s7']],
+  ['Automate Siemens', ['siemens-s7']],
+  ['Steuerung: Siemens S7', ['siemens-s7']],
+  ['Siemens S7-1200 controller', ['siemens-s7']],
+  ['Siemens drive and Allen-Bradley PLC', ['logix', 'micro800']],
+  ['The Siemens motor is started by the PLC.', ['click']],
+  ['Siemens motor started by the PLC', ['click']],
+  ['Omron photo-eyes and a Mitsubishi servo', ['click']],
+];
+for (const [text, want] of PROBES) assert.deepEqual(ids(text), want, text);
+assert.deepEqual(unsupportedBrands('Omron photo-eyes and a Mitsubishi servo'), [], 'no unsupported warning for sensors and servos');
+// Safety net: a maker with a PLC here, mentioned next to a PLC word without naming the PLC, is said.
+assert.equal(brandNote('Siemens motor started by the PLC', 'AutomationDirect CLICK (C0-12DD1E-D)'),
+  "The description mentions Siemens but doesn't say the PLC is Siemens — using AutomationDirect CLICK (C0-12DD1E-D). Set the PLC brand in Brand preference if that's wrong.");
+assert.equal(brandNote('Siemens motors on a conveyor', 'CLICK'), null, 'no PLC word: nothing to say');
+assert.match(brandNote('Replace the S7-300 with a new PLC', 'Siemens S7-1200 / S7-1500 (6ES7…)') ?? '', /S7-300 \/ S7-400 .* S7-1200 \/ S7-1500/);
+assert.deepEqual(ids('Replace the S7-300'), ['siemens-s7'], 'an S7-300 maps to the S7 profile');
 assert.match(equipmentSystemPrompt('Controller: Omron CP2E.'), /Omron PLC isn't supported yet/);
 
 // The untouched default preference (saved by older projects on any card edit) is not a request.
 assert.deepEqual(plcPreferenceOf(['automationdirect']), []);
 assert.deepEqual(plcPreferenceOf(undefined), []);
 assert.deepEqual(plcPreferenceOf(['siemens']), ['siemens']);
+assert.deepEqual(plcPreferenceOf(['automationdirect'], true), ['automationdirect'], 'picked on the card: a request');
 assert.equal(brandMismatch('Pick and place', plcPreferenceOf(['automationdirect']), 'logix'), null, 'a Logix project is not flagged by the default');
 
 console.log('equipment AI tests passed');

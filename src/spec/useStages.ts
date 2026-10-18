@@ -170,7 +170,8 @@ export function useStages(): Record<StageId, StageInfo> {
   const hardwareShort = useMemo(() => hardwareShortfall(cpuId, modules, io), [cpuId, modules, io]);
   const plcId = useProjectStore((s) => s.plcId);
   const plcPref = useProjectStore((s) => s.info.vendors?.plc);
-  const otherBrand = useMemo(() => brandMismatch(specToText(fp.spec), plcPreferenceOf(plcPref), plcId), [fp.spec, plcPref, plcId]);
+  const plcChosen = useProjectStore((s) => s.info.plcChosen);
+  const otherBrand = useMemo(() => brandMismatch(specToText(fp.spec), plcPreferenceOf(plcPref, plcChosen), plcId), [fp.spec, plcPref, plcChosen, plcId]);
   return useMemo(() => computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi, hardwareShort, otherBrand }),
     [fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi, hardwareShort, otherBrand]);
 }
