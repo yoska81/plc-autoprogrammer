@@ -10,6 +10,7 @@ import { callClaude } from '../lib/ai/anthropic';
 import { CATEGORIES, DEVICE_TYPES, IO_CATEGORIES, fileToBlock } from '../lib/ai/importAI';
 import { SPEC_SECTIONS, type SpecSectionId } from '../spec/types';
 import { cadToText, dwgToEntities, dxfToText } from './dxf';
+import { dxfText } from '../lib/parseWorker';
 import { desktopBridge } from '../desktop/bridge';
 import type { DrawnRatings, ExistingMachine, PathContact, PathEl } from './types';
 
@@ -37,12 +38,14 @@ async function dwgText(f: File): Promise<string> {
 export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,application/pdf,image/*';
 
 /** One upload as content blocks for the AI: PDFs and images as they are, DXF as its text. */
-export async function readUpload(files: File[]): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
+/** `onFile`: called before each file is read (progress: "Reading 3 of 8: …"). */
+export async function readUpload(files: File[], onFile?: (i: number, name: string) => void): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
   if (files.length > MAX_UPLOAD_FILES) throw new Error(`At most ${MAX_UPLOAD_FILES} files at once.`);
   const out: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
-  for (const f of files) {
+  for (const [i, f] of files.entries()) {
+    onFile?.(i, f.name);
     const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f) }); else if (ext === 'dxf') out.push({ type: 'text', text: dxfToText(await f.text(), f.name) });
+    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f) }); else if (ext === 'dxf') out.push({ type: 'text', text: await dxfText(f) });
     else out.push(await fileToBlock(f));
   }
   return out;
@@ -161,8 +164,9 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
  * Read the upload and build the existing machine (one AI request). `extra`: more content for the same
  * request, e.g. a PLC program's symbol table or rung listing from the program reader (src/plc/import/).
  */
-export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = []): Promise<{ machine: ExistingMachine; reasoning: string | null }> {
-  const blocks = [...(await readUpload(files)), ...extra];
+export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = [], onStage?: (text: string) => void): Promise<{ machine: ExistingMachine; reasoning: string | null }> {
+  const blocks = [...(await readUpload(files, (i, name) => onStage?.(`Reading the files (${i + 1}/${files.length}): ${name}`))), ...extra];
+  onStage?.('Reading the drawings (AI)');
   const names = files.map((f, i) => `${i + 1}. ${f.name}`).join('\n') || '(none: program data only)';
   const { text, reasoning } = await callClaude({
     apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'import',
