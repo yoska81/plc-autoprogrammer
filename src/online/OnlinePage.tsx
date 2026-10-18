@@ -128,7 +128,7 @@ export default function OnlinePage() {
   const model = hmi ? getHmi(hmi.hmiPartNumber) : undefined;
   const screen = hmi?.screens.find((s) => s.id === screenId) ?? hmi?.screens[0];
   const tabBtn = (t: Tab, label: string) => (
-    <button key={t} onClick={() => setTab(t)} className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 ${tab === t ? 'border-brand-600 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>{label}</button>
+    <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === t ? 'border-brand-600 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>{label}</button>
   );
 
   return (
@@ -139,8 +139,7 @@ export default function OnlinePage() {
           <LoadIntoPlc />
         </div>
         <p className="text-xs text-steel-500 mt-0.5">Live values from the real {profile.name} {cpu.id} over Ethernet (Modbus TCP). Read-only unless you switch on writes. Use it at the machine during commissioning: watch the ladder, the HMI and every I/O point, and tick the I/O check-out.</p>
-        {/* On a phone the tabs scroll sideways inside their row instead of widening the page. */}
-        <div className="mt-2 flex min-w-0 max-w-full overflow-x-auto">{tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}{tabBtn('troubleshoot', 'Fault finding')}</div>
+        <div className="flex mt-2">{tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}{tabBtn('troubleshoot', 'Fault finding')}</div>
       </header>
 
       {/* Connection bar */}
