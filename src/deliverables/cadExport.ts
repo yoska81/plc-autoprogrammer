@@ -12,14 +12,13 @@ export function programSymbols(p: ProjectSnapshot): Map<string, string> {
   return new Map(p.ladder.tags.filter((t) => t.nickname).map((t) => [t.address, t.nickname]));
 }
 
-/** AutoCAD package: dxf/ (and dwg/ when converted) + README. */
-export async function autocadZip(p: ProjectSnapshot, sheets: SheetDxf[] = drawingSetDxf(p.drawingCtx!), dwg: { name: string; bytes: Uint8Array }[] = []): Promise<Blob> {
+/** AutoCAD package: the whole set as one DXF, dxf/ (one file per sheet) + README. */
+export async function autocadZip(p: ProjectSnapshot, sheets: SheetDxf[] = drawingSetDxf(p.drawingCtx!)): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   zip.file(`${p.fileBase}_drawings.dxf`, drawingSetOneDxf(p.drawingCtx!).dxf);
   for (const s of sheets) zip.file(`dxf/${s.fileName}`, s.dxf);
-  for (const f of dwg) zip.file(`dwg/${f.name}`, f.bytes);
-  zip.file('README.txt', AUTOCAD_README(p.projectName, sheets, dwg.length > 0));
+  zip.file('README.txt', AUTOCAD_README(p.projectName, sheets));
   return zip.generateAsync({ type: 'blob' });
 }
 

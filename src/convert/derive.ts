@@ -15,34 +15,41 @@ import type { DrawnRatings, ExistingMachine, PathContact, PathEl } from './types
 
 export const MAX_UPLOAD_FILES = 20;
 
-/** Where the free ODA File Converter is downloaded (Open Design Alliance). */
-export const ODA_DOWNLOAD = 'https://www.opendesign.com/guestfiles/oda_file_converter';
+/** DWG in the browser (and the claude.ai preview): the Windows app opens it. */
+export const DWG_IN_BROWSER = 'DWG opens in the Windows app; here use DXF or PDF (in AutoCAD: File → Save As → DXF, or print to PDF).';
+/** The Windows app without its DWG converter (e.g. removed from the installation). */
+export const DWG_NOT_AVAILABLE = 'DWG reading is not available in this installation: save the drawings as DXF in AutoCAD (File → Save As → DXF), or install the app again.';
 
-/** A DWG as text: the Windows app converts it with the ODA File Converter; else a plugged-in reader; else how to export it. */
-async function dwgText(f: File): Promise<string> {
-  const oda = desktopBridge()?.oda;
-  if (oda?.toDxf) {
-    const r = await oda.toDxf([{ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }]);
-    if (r.ok) return dxfToText(r.files[0].text, f.name);
-    if (!('notInstalled' in r && r.notInstalled)) throw new Error(`${f.name}: ${r.error}`);
+/**
+ * A DWG as text: the Windows app converts it to DXF (GNU LibreDWG, shipped with the installer); else a
+ * plugged-in reader; else what to do. What the converter could not read goes to `notes` (and to the AI).
+ */
+async function dwgText(f: File, notes: string[]): Promise<string> {
+  const dwg = desktopBridge()?.dwg;
+  if (dwg) {
+    const r = await dwg.read([{ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }]);
+    if (r.ok) {
+      const w = r.files[0].warnings ?? [];
+      notes.push(...w);
+      return `${dxfToText(r.files[0].text, f.name)}${w.length ? `\n(Note from the DWG converter: ${w.join(' ')})` : ''}`;
+    }
+    if (!r.notConfigured) throw new Error(`${f.name}: ${r.error}`);
   }
   const entities = await dwgToEntities(await f.arrayBuffer());
   if (entities) return cadToText(entities, f.name);
-  throw new Error(oda
-    ? `${f.name}: reading DWG needs the free ODA File Converter (${ODA_DOWNLOAD}). Install it and read again, or export the drawings to DXF or PDF in the CAD program.`
-    : `${f.name}: DWG files can't be read in the browser. In the CAD program, export the drawings to DXF (File → Save As → DXF) or print them to PDF, or use the Windows app with the free ODA File Converter.`);
+  throw new Error(`${f.name}: ${dwg ? DWG_NOT_AVAILABLE : DWG_IN_BROWSER}`);
 }
 
 /** File types the upload takes (the file picker's accept list). */
 export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,application/pdf,image/*';
 
 /** One upload as content blocks for the AI: PDFs and images as they are, DXF as its text. */
-export async function readUpload(files: File[]): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
+export async function readUpload(files: File[], notes: string[] = []): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
   if (files.length > MAX_UPLOAD_FILES) throw new Error(`At most ${MAX_UPLOAD_FILES} files at once.`);
   const out: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
   for (const f of files) {
     const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f) }); else if (ext === 'dxf') out.push({ type: 'text', text: dxfToText(await f.text(), f.name) });
+    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f, notes) }); else if (ext === 'dxf') out.push({ type: 'text', text: dxfToText(await f.text(), f.name) });
     else out.push(await fileToBlock(f));
   }
   return out;
@@ -65,7 +72,7 @@ const PATH_EL = obj({
   paths: { type: 'array', items: { type: 'array', items: CONTACT } },
 });
 
-export const EXISTING_SCHEMA = obj({
+const EXISTING_PROPS = {
   summary: str,
   drawingStandard: en(['IEC', 'GB', 'JIS', 'NFPA', 'other']),
   language: str,
@@ -95,7 +102,9 @@ export const EXISTING_SCHEMA = obj({
   spec: obj(Object.fromEntries(SECTION_IDS.map((id) => [id, str]))),
   questions: { type: 'array', items: obj({ text: str, section: en(SECTION_IDS), assumption: nstr }) },
   uncertainties: { type: 'array', items: str },
-});
+};
+/** The whole reading in one answer. */
+export const EXISTING_SCHEMA = obj(EXISTING_PROPS);
 
 export const DERIVE_SYSTEM = `You are a senior controls and electrical engineer taking over an existing machine from its electrical drawings. The drawings may follow IEC or Chinese GB conventions (device letters QF, QS, KM, KA, FR, SB, SA, SQ, SP, HL, YV, FU, TC, XT, M), use Chinese text, metric wire sizes (mm²) and a 380 V / 400 V 50 Hz supply. You read PDF pages, scans, photos and the text of DXF exports. Build an exact picture of the machine so it can be redesigned for another standard while it keeps doing exactly the same thing.
 
@@ -115,7 +124,57 @@ Read and report only what the drawings show. Never invent a part number, address
 - questions: what a designer must still know that the drawings cannot tell (e.g. "What is the conveyor speed?", "Is the product detected before the pusher or after?"), each with the spec section it belongs to and your assumption if you have one. Do not ask what the drawings already show.
 - summary: two sentences on the machine and its control system.`;
 
-export interface DeriveOptions { apiKey: string; model: string; effort: Effort; signal?: AbortSignal }
+/**
+ * The reading split into three answers that can run at the same time on the same files (sent once as a
+ * cached prefix): what the machine is built from, its logic, its safety and description. Each part fills
+ * its own fields; all of them may list uncertainties.
+ */
+export const DERIVE_PARTS = [
+  { id: 'hardware', fields: ['drawingStandard', 'language', 'plc', 'modules', 'supplyDrawn', 'components', 'motors', 'axes'],
+    instruction: 'PART 1 of 3 — HARDWARE. Fill only: drawingStandard, language, plc, modules, supplyDrawn, components (every device with its ratings), motors and axes, plus uncertainties; leave every other field empty ([], "" or null). Another reader does the I/O, circuits and description at the same time: use every device tag exactly as printed.' },
+  { id: 'logic', fields: ['io', 'circuits', 'interlocks', 'controller'],
+    instruction: 'PART 2 of 3 — LOGIC. Fill only: io (every I/O point, or on a machine without a PLC every field device as the I/O it would be), circuits (every control circuit with its structured path), interlocks and controller, plus uncertainties; leave every other field empty ([], "" or null). Another reader does the parts list and the description at the same time: use every device tag exactly as printed.' },
+  { id: 'safety', fields: ['safety', 'spec', 'questions', 'summary'],
+    instruction: 'PART 3 of 3 — SAFETY AND DESCRIPTION. Fill only: safety (E-stops, guards, safety relay, category, kind, and how every drive stops, STO), spec (the machine description, section by section), questions and summary, plus uncertainties; leave every other field empty ([], "" or null). Another reader does the parts list and the I/O at the same time: use every device tag exactly as printed.' },
+] as const;
+
+/**
+ * A part's answer: the whole reading's schema, the same for all three (the output format is part of what the
+ * prompt cache keys on, so a schema per part would stop parts 2 and 3 reading part 1's cache). The part's
+ * instruction says which fields to fill; mergeParts takes only those.
+ */
+export const partSchema = (): Record<string, unknown> => EXISTING_SCHEMA;
+
+/**
+ * The three answers as one reading: each part's own fields, uncertainties from all (once each), and what the
+ * parts don't agree on as more uncertainties: a tag in the circuits or the safety circuit that neither the
+ * parts list nor the I/O has, a tag listed twice in the parts, a PLC but "no PLC" logic (or the reverse).
+ */
+export function mergeParts(answers: Partial<ExistingMachine>[]): Partial<ExistingMachine> {
+  const out: Record<string, unknown> = {};
+  answers.forEach((a, i) => { for (const k of DERIVE_PARTS[i].fields) if ((a as Record<string, unknown>)[k] !== undefined) out[k] = (a as Record<string, unknown>)[k]; });
+  const m = out as Partial<ExistingMachine>;
+  const checks: string[] = [];
+  const parts = (m.components ?? []).map((c) => c.tag);
+  // a tag is the first word, cut at a terminal ("X1:3" → X1); PLC addresses and wiring points (Y0, X1:3) are known through the I/O
+  const tagOf = (t: string) => t.trim().split(/[\s:]+/)[0];
+  const known = new Set([...parts, ...(m.io ?? []).flatMap((p) => [p.deviceTag ?? '', ...p.address.split(/[\s/,]+/).map(tagOf)]).filter(Boolean), ...(m.motors ?? []).map((x) => x.tag)]);
+  const used = new Map<string, string>();
+  for (const c of m.circuits ?? []) for (const t of [tagOf(c.output), ...c.devices.map(tagOf)]) if (t && !used.has(t)) used.set(t, `circuit ${c.output}`);
+  const sf = m.safety;
+  for (const t of [...(sf?.estops ?? []), ...(sf?.guards ?? []), ...(sf?.safetyRelay ? [tagOf(sf.safetyRelay)] : []), ...(sf?.drives ?? []).map((d) => d.tag)]) if (t && !used.has(tagOf(t))) used.set(tagOf(t), 'the safety circuit');
+  // terminal strips and PLC addresses (X1, XT2, TB1, Y0) are wiring points, not devices of the parts list
+  const unknown = [...used].filter(([t]) => /^[A-Z][A-Z0-9-]*\d/.test(t) && !/^(X|XT|Y|TB)\d/.test(t) && !known.has(t));
+  if (unknown.length) checks.push(`Not in the parts list or the I/O read from the drawings: ${unknown.map(([t, where]) => `${t} (${where})`).join(', ')}. Check these tags on the drawings.`);
+  const twice = [...new Set(parts.filter((t, i) => parts.indexOf(t) !== i))];
+  if (twice.length) checks.push(`Listed twice in the parts: ${twice.join(', ')}. Check whether these are two devices.`);
+  if (m.plc && m.controller && m.controller !== 'plc') checks.push(`A PLC (${m.plc.vendor} ${m.plc.model}) was read, but the logic was read as run by ${m.controller}. Check which one runs the machine.`);
+  if (m.plc === null && m.controller === 'plc') checks.push('The logic was read as run by a PLC, but no PLC was found on the drawings. Check the controller.');
+  return { ...m, uncertainties: [...new Set([...answers.flatMap((a) => a.uncertainties ?? []), ...checks])] };
+}
+
+/** split: the three parts (hardware first; the other two once its answer starts, on the cached files); default one request. */
+export interface DeriveOptions { apiKey: string; model: string; effort: Effort; signal?: AbortSignal; split?: boolean }
 
 const NO_RATINGS: DrawnRatings = { amps: null, poles: null, coilVoltage: null, kA: null, curve: null, minAmps: null, maxAmps: null, kw: null, outputVolts: null, outputAmps: null };
 
@@ -158,20 +217,46 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
 }
 
 /**
- * Read the upload and build the existing machine (one AI request). `extra`: more content for the same
- * request, e.g. a PLC program's symbol table or rung listing from the program reader (src/plc/import/).
+ * Read the upload and build the existing machine: one AI request, or with `split` three parts (DERIVE_PARTS)
+ * on the same files: the first writes them to the prompt cache, the other two start as its answer begins. `extra`:
+ * more content for the same request, e.g. a PLC program's symbol table or rung listing from the program
+ * reader (src/plc/import/).
  */
-export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = []): Promise<{ machine: ExistingMachine; reasoning: string | null }> {
-  const blocks = [...(await readUpload(files)), ...extra];
+export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = []): Promise<{ machine: ExistingMachine; reasoning: string | null; notes: string[] }> {
+  const notes: string[] = [];
+  const blocks = [...(await readUpload(files, notes)), ...extra];
   const names = files.map((f, i) => `${i + 1}. ${f.name}`).join('\n') || '(none: program data only)';
-  const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'import',
-    system: DERIVE_SYSTEM, schema: EXISTING_SCHEMA,
-    messages: [{ role: 'user', content: [...blocks, { type: 'text', text: `Files (in the order attached):\n${names}\n\n${note ? `Notes from the engineer:\n${note}\n\n` : ''}Read this machine from its drawings and write its description.` }] }],
-  });
-  try {
-    return { machine: normalizeMachine(JSON.parse(text) as Partial<ExistingMachine>), reasoning };
-  } catch (err) {
-    throw new Error('The AI returned a result the app could not read. Please try again.', { cause: err });
+  const ask = `Files (in the order attached):\n${names}\n\n${note ? `Notes from the engineer:\n${note}\n\n` : ''}Read this machine from its drawings and write its description.`;
+  const base = { apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'import' as const, system: DERIVE_SYSTEM };
+  const read = (text: string) => {
+    try { return JSON.parse(text) as Partial<ExistingMachine>; } catch (err) { throw new Error('The AI returned a result the app could not read. Please try again.', { cause: err }); }
+  };
+  if (!opts.split) {
+    const { text, reasoning } = await callClaude({ ...base, schema: EXISTING_SCHEMA, messages: [{ role: 'user', content: [...blocks, { type: 'text', text: ask }] }] });
+    return { machine: normalizeMachine(read(text)), reasoning, notes };
   }
+  // the same prefix for every part (the files, cached at the last block), then the part's own instruction and schema
+  const prefix = blocks.map((b, i) => (i === blocks.length - 1 && b.type !== 'tool_use' && b.type !== 'tool_result' ? { ...b, cache_control: { type: 'ephemeral' as const } } : b)) as Anthropic.Beta.Messages.BetaContentBlockParam[];
+  // one part failing stops the others (and Cancel stops all)
+  const ctl = new AbortController();
+  const stop = () => ctl.abort();
+  if (opts.signal?.aborted) stop(); else opts.signal?.addEventListener('abort', stop, { once: true });
+  let started = () => {};
+  const firstStarted = new Promise<void>((resolve) => { started = resolve; });
+  const ask1 = (i: number) => callClaude({
+    ...base, signal: ctl.signal, schema: partSchema(), ...(i === 0 ? { onStarted: () => started() } : {}),
+    messages: [{ role: 'user', content: [...prefix, { type: 'text', text: `${ask}\n\n${DERIVE_PARTS[i].instruction}` }] }],
+  }).catch((err) => { stop(); throw err; });
+  let answers: Awaited<ReturnType<typeof callClaude>>[];
+  try {
+    // the first part writes the files to the prompt cache; the others start once its answer begins and read it
+    const first = ask1(0);
+    await Promise.race([firstStarted, first.then(() => undefined, () => undefined)]);
+    if (ctl.signal.aborted) await first;
+    answers = await Promise.all([first, ...DERIVE_PARTS.slice(1).map((_, k) => ask1(k + 1))]);
+  } finally {
+    opts.signal?.removeEventListener('abort', stop);
+  }
+  const reasoning = answers.map((a) => a.reasoning).filter(Boolean).join('\n\n') || null;
+  return { machine: normalizeMachine(mergeParts(answers.map((a) => read(a.text)))), reasoning, notes };
 }

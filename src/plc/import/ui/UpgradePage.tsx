@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useDraftStore } from '../../../store/useDraftStore';
 import { useProgramStore } from '../../../store/useProgramStore';
 import { usePlc } from '../../core/usePlc';
@@ -17,11 +17,11 @@ import { upgradeOriginal } from './applyUpgrade';
 import ProgramImport from './ProgramImport';
 
 /**
- * /upgrade — "Upgrade existing program": read the machine's program, then compare the program now
- * with the original and export it again (same PLC, original names; or the PLC chosen on the PLC page).
+ * "Upgrade existing program" (Import → Program; /upgrade leads there): read the machine's program, then compare
+ * the program now with the original and export it again (same PLC, original names; or the PLC chosen on the PLC
+ * page). `embedded`: inside the Import page, without its own header.
  */
-export default function UpgradePage() {
-  const navigate = useNavigate();
+export default function UpgradePage({ embedded = false }: { embedded?: boolean }) {
   const original = useDraftStore((s) => upgradeOriginal(s.drafts));
   const clearDraft = useDraftStore((s) => s.clearDraft);
   const ladder = useProgramStore((s) => s.ladder);
@@ -60,16 +60,10 @@ export default function UpgradePage() {
     setPrepared(null);
   };
 
-  return (
-    <>
-      <header className="px-4 py-2.5 bg-white border-b border-gray-200">
-        <h2 className="text-base font-semibold text-gray-800">Upgrade an existing program</h2>
-        <p className="text-xs text-gray-400 mt-0.5">Bring in the program of a machine that already runs. The app builds the I/O list and a machine description from it; you fix and improve it here and load it back into the PLC.</p>
-      </header>
-      <div className="flex-1 overflow-auto bg-gray-50 p-6">
+  const body = (
         <div className="max-w-5xl space-y-5">
           {!original || !diff ? (
-            <ProgramImport onApplied={() => navigate('/upgrade')} />
+            <ProgramImport />
           ) : (
             <>
               <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3" data-testid="upgrade-original">
@@ -135,7 +129,15 @@ export default function UpgradePage() {
             </>
           )}
         </div>
-      </div>
+  );
+  if (embedded) return body;
+  return (
+    <>
+      <header className="px-4 py-2.5 bg-white border-b border-gray-200">
+        <h2 className="text-base font-semibold text-gray-800">Upgrade an existing program</h2>
+        <p className="text-xs text-gray-400 mt-0.5">Bring in the program of a machine that already runs. The app builds the I/O list and a machine description from it; you fix and improve it here and load it back into the PLC.</p>
+      </header>
+      <div className="flex-1 overflow-auto bg-gray-50 p-6">{body}</div>
     </>
   );
 }

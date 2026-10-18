@@ -98,7 +98,8 @@ export async function withRetries<T>(
         const tries = i + 1;
         throw new AiRequestError(`${o.explain(err, info)}${info.transient && tries > 1 ? ` (tried ${tries} times)` : ''}`, info, err);
       }
-      const waitMs = Math.max(delays[i], info.retryAfterMs ?? 0);
+      // ±20 % jitter, so requests that failed together (parallel parts, an overloaded service) don't retry in step
+      const waitMs = Math.max(Math.round(delays[i] * (0.8 + Math.random() * 0.4)), info.retryAfterMs ?? 0);
       o.onRetry?.({ attempt: i + 1, max: delays.length, kind: info.kind, waitMs });
       await sleep(waitMs, o.signal).catch((e) => { throw new AiRequestError('Stopped.', { kind: 'cancelled', transient: false }, e); });
     }

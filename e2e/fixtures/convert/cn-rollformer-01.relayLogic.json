@@ -7,7 +7,7 @@
    "path": [
     {
      "t": "contact",
-     "tag": "SR1",
+     "tag": "MSR1",
      "nc": false,
      "terms": "13-14",
      "kind": "safety"
@@ -42,7 +42,7 @@
     },
     {
      "t": "contact",
-     "tag": "OL1",
+     "tag": "OL2",
      "nc": true,
      "terms": "95-96",
      "kind": "ol"
@@ -94,14 +94,14 @@
     },
     {
      "t": "contact",
-     "tag": "CR11",
+     "tag": "TR1",
      "nc": true,
      "terms": "15-16",
      "kind": "timer"
     },
     {
      "t": "contact",
-     "tag": "H7CX",
+     "tag": "CTR1",
      "nc": true,
      "terms": "OUT",
      "kind": "other"
@@ -251,7 +251,7 @@
    "path": [
     {
      "t": "contact",
-     "tag": "PX1",
+     "tag": "PRS1",
      "nc": false,
      "kind": "limit"
     },
@@ -268,7 +268,7 @@
    "path": [
     {
      "t": "contact",
-     "tag": "U2",
+     "tag": "SD1",
      "nc": false,
      "terms": "DO1",
      "kind": "other"
@@ -286,7 +286,7 @@
    "path": [
     {
      "t": "contact",
-     "tag": "U2",
+     "tag": "SD1",
      "nc": false,
      "terms": "DO5",
      "kind": "other"
@@ -340,7 +340,7 @@
     },
     {
      "t": "coil",
-     "tag": "SOL1",
+     "tag": "SOL1A",
      "kind": "solenoid"
     }
    ]
@@ -387,7 +387,7 @@
     },
     {
      "t": "coil",
-     "tag": "CR11",
+     "tag": "TR1",
      "kind": "timer-on",
      "preset": "2 s"
     }
@@ -445,7 +445,7 @@
     },
     {
      "t": "coil",
-     "tag": "SOL2",
+     "tag": "SOL1B",
      "kind": "solenoid"
     }
    ]
@@ -463,7 +463,7 @@
     },
     {
      "t": "coil",
-     "tag": "H7CX",
+     "tag": "CTR1",
      "kind": "counter",
      "preset": "batch quantity",
      "terms": "CP1"
@@ -476,7 +476,7 @@
    "path": [
     {
      "t": "coil",
-     "tag": "PL1",
+     "tag": "LT1",
      "kind": "light"
     }
    ]
@@ -494,7 +494,7 @@
     },
     {
      "t": "coil",
-     "tag": "PL2",
+     "tag": "LT2",
      "kind": "light"
     }
    ]
@@ -539,14 +539,14 @@
     },
     {
      "t": "contact",
-     "tag": "CR11",
+     "tag": "TR1",
      "nc": true,
      "terms": "15-16",
      "kind": "timer"
     },
     {
      "t": "contact",
-     "tag": "H7CX",
+     "tag": "CTR1",
      "nc": true,
      "terms": "OUT",
      "kind": "other"
@@ -589,7 +589,7 @@
     },
     {
      "t": "coil",
-     "tag": "PL3",
+     "tag": "LT3",
      "kind": "light"
     }
    ]
@@ -623,7 +623,7 @@
     },
     {
      "t": "coil",
-     "tag": "PL4",
+     "tag": "LT4",
      "kind": "light"
     }
    ]
@@ -634,14 +634,14 @@
    "path": [
     {
      "t": "contact",
-     "tag": "H7CX",
+     "tag": "CTR1",
      "nc": false,
      "terms": "OUT NO",
      "kind": "other"
     },
     {
      "t": "coil",
-     "tag": "PL5",
+     "tag": "LT5",
      "kind": "light"
     }
    ]
@@ -746,7 +746,7 @@
    "manufacturer": "DURApulse"
   },
   {
-   "tag": "U2",
+   "tag": "SD1",
    "oldTag": "U2",
    "category": "other",
    "description": "Servo drive 1.5 kW, E-CAM flying shear",
@@ -762,7 +762,7 @@
    "manufacturer": "Fuji Electric"
   },
   {
-   "tag": "OL1",
+   "tag": "OL2",
    "oldTag": "FR1",
    "category": "overload",
    "description": "Pump overload 4–6 A, set 5 A",
@@ -770,12 +770,12 @@
    "manufacturer": null
   },
   {
-   "tag": "SR1",
+   "tag": "MSR1",
    "oldTag": "KA0",
    "category": "safetyRelay",
    "description": "Safety relay",
-   "partNumber": "LG5925-48-61-24",
-   "manufacturer": "Dold"
+   "partNumber": null,
+   "manufacturer": null
   },
   {
    "tag": "CR1",
@@ -858,7 +858,7 @@
    "manufacturer": "Klemsan"
   },
   {
-   "tag": "CR11",
+   "tag": "TR1",
    "oldTag": "KT1",
    "category": "relay",
    "description": "Cut watchdog timer 2 s",
@@ -866,7 +866,7 @@
    "manufacturer": "Klemsan"
   },
   {
-   "tag": "H7CX",
+   "tag": "CTR1",
    "oldTag": "H7CX",
    "category": "other",
    "description": "Batch counter",
@@ -874,7 +874,7 @@
    "manufacturer": null
   },
   {
-   "tag": "SOL1",
+   "tag": "SOL1A",
    "oldTag": "YV1",
    "category": "solenoidValve",
    "description": "Shear down valve",
@@ -882,7 +882,7 @@
    "manufacturer": null
   },
   {
-   "tag": "SOL2",
+   "tag": "SOL1B",
    "oldTag": "YV2",
    "category": "solenoidValve",
    "description": "Shear up valve",
@@ -978,7 +978,7 @@
    "manufacturer": null
   },
   {
-   "tag": "PX1",
+   "tag": "PRS1",
    "oldTag": "SQ4",
    "category": "sensor",
    "description": "Entry inductive sensor, NPN (有料检测)",
@@ -986,7 +986,7 @@
    "manufacturer": null
   },
   {
-   "tag": "PL1",
+   "tag": "LT1",
    "oldTag": "HL1",
    "category": "pilotLight",
    "description": "Power on lamp",
@@ -994,7 +994,7 @@
    "manufacturer": null
   },
   {
-   "tag": "PL2",
+   "tag": "LT2",
    "oldTag": "HL2",
    "category": "pilotLight",
    "description": "Pump running lamp",
@@ -1002,7 +1002,7 @@
    "manufacturer": null
   },
   {
-   "tag": "PL3",
+   "tag": "LT3",
    "oldTag": "HL3",
    "category": "pilotLight",
    "description": "Line running lamp",
@@ -1010,7 +1010,7 @@
    "manufacturer": null
   },
   {
-   "tag": "PL4",
+   "tag": "LT4",
    "oldTag": "HL4",
    "category": "pilotLight",
    "description": "Fault lamp",
@@ -1018,7 +1018,7 @@
    "manufacturer": null
   },
   {
-   "tag": "PL5",
+   "tag": "LT5",
    "oldTag": "HL5",
    "category": "pilotLight",
    "description": "Batch complete lamp",

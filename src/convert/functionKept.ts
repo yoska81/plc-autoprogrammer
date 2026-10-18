@@ -48,9 +48,16 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
   const used = new Set<string>();
   const ioKept = new Map<ImportedIO, KeptItem>();
   // relay logic kept: no PLC, the field devices stay on their circuits (checked with the circuits below)
-  for (const o of conv.logic === 'keep-relays' ? [] : conv.io) {
-    let best: { id: string; description: string; score: number } | null = null;
-    for (const n of p.io) {
+  const originals = conv.logic === 'keep-relays' ? [] : conv.io;
+  // the same function word for word first, so a lost "Shear down valve" isn't matched to "Shear up valve" before that one is
+  const exact = new Map<ImportedIO, (typeof p.io)[number]>();
+  for (const o of originals) {
+    const n = p.io.find((x) => x.type === o.type && !used.has(x.id) && x.description.trim().toLowerCase() === o.description.trim().toLowerCase());
+    if (n) { exact.set(o, n); used.add(n.id); }
+  }
+  for (const o of originals) {
+    let best: { id: string; description: string; score: number } | null = exact.has(o) ? { id: exact.get(o)!.id, description: exact.get(o)!.description, score: 1 } : null;
+    if (!best) for (const n of p.io) {
       if (n.type !== o.type || used.has(n.id)) continue;
       // terminals named in the function (U1 MI2, U2 DO3) must match exactly: "jog" alone doesn't make MI3 the reverse input
       if (codes(o.description).some((x) => !codes(n.description).includes(x))) continue;
@@ -120,6 +127,7 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
   }
   // control circuits: each function is in the new design where the conversion put it (PLC program, relays, the drive)
   const devices = [...m.components, ...ioOnlyDevices(m)];
+  const isDriveTag = (t: string) => m.components.some((c) => c.tag === t && c.category === 'vfd') || m.axes.some((a) => a.driveTag === t);
   for (const c of conv.circuits) {
     const inSpec = spec.includes(c.text.toLowerCase().slice(0, 40));
     const parts = c.circuit.devices.map((d) => conv.parts.find((x) => x.oldTag === d)).filter((x) => x !== undefined);
@@ -127,7 +135,10 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
     const notes: string[] = [];
     if (c.becomes === 'program') {
       // its field devices are I/O of the new PLC; its relays and timers are program logic
-      const lost = conv.io.filter((x) => x.deviceTag && c.circuit.devices.includes(x.deviceTag) && ioKept.get(x)?.status === 'missing').map((x) => x.deviceTag!);
+      // a drive's points count only when the circuit uses that terminal (losing U1 MI2 doesn't touch the other U1 circuits)
+      const named = `${c.circuit.conditions.join(' ')} ${(c.circuit.path ?? []).flatMap((e) => (e.t === 'branch' ? e.paths.flat() : [e])).map((e) => e.terms ?? '').join(' ')}`;
+      const uses = (x: ImportedIO) => !isDriveTag(x.deviceTag!) || codes(x.address).some((t) => named.includes(t));
+      const lost = conv.io.filter((x) => x.deviceTag && c.circuit.devices.includes(x.deviceTag) && uses(x) && ioKept.get(x)?.status === 'missing').map((x) => `${x.deviceTag}${isDriveTag(x.deviceTag!) ? ` ${x.address.split(/\s/).slice(1).join(' ')}` : ''}`);
       if (lost.length) { status = 'missing'; notes.push(`${[...new Set(lost)].join(', ')}: no I/O in the new design.`); }
       // what it switched must have a PLC output: its coil (contactor, valve, lamp) and the drive inputs its relay contacts drove
       const coil = c.circuit.output.split(/\s/)[0];

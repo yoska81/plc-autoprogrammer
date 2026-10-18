@@ -60,6 +60,12 @@ export type ClaudeOptions = {
   task?: AiTask;
   /** May be answered from the answer cache (Update all). Without it the request is always made (a page's Generate); the answer is stored either way. */
   cache?: boolean;
+  /**
+   * Called once when the answer starts to arrive (the first stream event): by then the prompt, and the cache
+   * entry of its cache_control blocks, exist, so requests on the same prefix can start and read the cache.
+   * Not called for an answer from the answer cache or the claude.ai preview (no prompt cache there).
+   */
+  onStarted?: () => void;
 };
 
 /**
@@ -164,6 +170,7 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
         ...(tools ? { tools } : {}),
       }, { signal });
       stream.on('streamEvent', progress);
+      if (opts.onStarted) { const started = opts.onStarted; stream.once('streamEvent', () => started()); }
       stream.on('text', (_delta, snapshot) => reportAiProgress(opts.signal, snapshot.length));
       return stream.finalMessage();
     }, { signal: opts.signal, totalMs, reportsProgress: true });

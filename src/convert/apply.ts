@@ -14,6 +14,7 @@ import { applyRegion } from '../standards/applyRegion';
 import type { SpecSections } from '../spec/types';
 import type { SyncItem } from '../components/questions/useQuestionStore';
 import { retag, type ConvertTarget, type Conversion } from './convert';
+import { toRelayLogic } from './relayLogic';
 import type { ExistingMachine } from './types';
 
 export const MACHINE_KEY = 'convert.machine';
@@ -46,7 +47,8 @@ export function convertedSpec(m: ExistingMachine, conv: Conversion): SpecSection
   spec.utilities = [m.spec.utilities, `Conversion: ${conv.supplyNote} The panel is redesigned to ${std}.`].filter(Boolean).join('\n');
   // nothing is certified by a conversion: the safety functions are kept, then re-validated
   // the safety circuit as drawn, word for word with the new tags: it is kept (hardwired) and re-validated
-  const drawn = m.safety.description && !m.spec.safety.includes(m.safety.description) ? `Safety circuit as drawn (kept, new tags): ${retag(m.safety.description, conv.tags)}` : '';
+  const drawn = m.safety.description && !m.spec.safety.includes(m.safety.description)
+    ? `Safety circuit as drawn (kept, new tags): ${retag(m.safety.description, conv.tags)}${conv.logic === 'plc' ? ' In the PLC design its outputs switch the safe 24 V (24+S) to the PLC outputs and the valves.' : ''}` : '';
   spec.safety = [m.spec.safety, drawn, 'Converted design: every safety function above is kept, and must be re-validated after the conversion (risk assessment, then verification per ISO 13849-2 / NFPA 79 9.2.5.4). The panel needs its own UL 508A listing or field evaluation; the part equivalents carry only their makers\' listings.'].filter(Boolean).join('\n');
   for (const r of conv.recommendations) spec[r.section] = [spec[r.section], `Conversion: ${r.text}`].filter(Boolean).join('\n');
   // the interlocks the wiring enforced, word for word, so the new program and the function-kept check keep them
@@ -89,6 +91,8 @@ export function applyExistingMachine(m: ExistingMachine, conv: Conversion, revie
   const io = conv.logic === 'keep-relays' ? [] : conv.io;
   useIOStore.getState().importPoints(io.map((p) => ({ description: p.description, type: p.type, category: p.category, deviceType: p.deviceType })), true);
   const el = useElectricalStore.getState();
-  el.setInputs({ ...el.inputs, supply: conv.supply, motors: conv.motors, notes: [el.inputs.notes, 'Converted from existing drawings: keep every original function, interlock and safety function.'].filter(Boolean).join('\n') });
+  // relay logic kept: its rungs (new tags) for the ladder sheets; a machine whose logic goes into a PLC has none
+  const { logic: relayLogic } = toRelayLogic(m, conv);
+  el.setInputs({ ...el.inputs, relayLogic: relayLogic ?? undefined, supply: conv.supply, motors: conv.motors, notes: [el.inputs.notes, 'Converted from existing drawings: keep every original function, interlock and safety function.'].filter(Boolean).join('\n') });
   keepMachine(m, conv.target);
 }

@@ -138,7 +138,7 @@ export default function ElectricalPage() {
       setPdfBusy(null);
     }
   };
-  // CAD exports of the drawing set: AutoCAD (DXF; DWG in the desktop app with the ODA File Converter) and the EPLAN import package.
+  // CAD exports of the drawing set: AutoCAD (DXF) and the EPLAN import package.
   const cadExport = async (kind: 'autocad' | 'eplan') => {
     setPdfBusy(kind);
     try {

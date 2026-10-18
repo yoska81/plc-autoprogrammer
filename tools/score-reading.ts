@@ -1,11 +1,11 @@
 // Score a reading of the cn-rollformer-01 drawing set against its known facts.
-//   npx tsx tools/score-reading.ts <project.isap | reading.json>
+//   npx tsx tools/score-reading.ts <project.isap | reading.json> [fixtures/import/<name>/expected.json]
 // Read the fixture's files on the Import page (Drawings tab), save the project (.isap), then score it here.
 // A .json file may hold the reading ({ machine }) or the machine itself (ExistingMachine).
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import JSZip from 'jszip';
 import { normalizeMachine } from '../src/convert/derive';
-import { scoreReading, scoreText } from '../src/convert/score';
+import { factsFromExpected, scoreReading, scoreText, type ExpectedJson } from '../src/convert/score';
 import { CN_ROLLFORMER_01 } from '../src/convert/__fixtures__/cnRollformer01.facts';
 import type { ExistingMachine } from '../src/convert/types';
 
@@ -28,5 +28,8 @@ const buf = readFileSync(file);
 const data = file.endsWith('.isap') ? JSON.parse(await (await JSZip.loadAsync(buf)).file('project.json')!.async('string')) : JSON.parse(buf.toString('utf8'));
 const m = findMachine(data);
 if (!m) { console.error(`${file}: no reading found (read the drawings on the Import page first, then save).`); process.exit(1); }
-console.log(`${CN_ROLLFORMER_01.name}: ${file}`);
-console.log(scoreText(scoreReading(normalizeMachine(m), CN_ROLLFORMER_01)));
+// the facts: the fixture's own expected.json when it is in the repo, else the facts written from it
+const expectedFile = process.argv[3] ?? 'fixtures/import/cn-rollformer-01/expected.json';
+const facts = existsSync(expectedFile) ? factsFromExpected(JSON.parse(readFileSync(expectedFile, 'utf8')) as ExpectedJson) : CN_ROLLFORMER_01;
+console.log(`${facts.name}: ${file}${existsSync(expectedFile) ? ` (facts: ${expectedFile})` : ''}`);
+console.log(scoreText(scoreReading(normalizeMachine(m), facts)));

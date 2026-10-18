@@ -27,10 +27,12 @@ contextBridge.exposeInMainWorld('isaDesktop', {
     ipcRenderer.on('isa:open-file', h);
     return () => { ipcRenderer.removeListener('isa:open-file', h); };
   },
-  oda: {
-    detect: () => ipcRenderer.invoke('isa:oda-detect'),
-    convert: (files) => ipcRenderer.invoke('isa:oda-convert', files),
-    toDxf: (files) => ipcRenderer.invoke('isa:oda-to-dxf', files),
+  // DWG import: GNU LibreDWG's dwg2dxf shipped with the installer, or another reader (electron/dwgReader.cjs)
+  dwg: {
+    status: () => ipcRenderer.invoke('isa:dwg-status'),
+    configure: () => ipcRenderer.invoke('isa:dwg-configure'),
+    clear: () => ipcRenderer.invoke('isa:dwg-clear'),
+    read: (files) => ipcRenderer.invoke('isa:dwg-read', files),
   },
   modbus: {
     connect: async (o) => { const r = await ipcRenderer.invoke('isa:modbus', 'connect', [o]); return r.ok ? r.value : { ok: false, error: r.error }; },

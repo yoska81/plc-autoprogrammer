@@ -64,11 +64,11 @@ export function drawingSetDxf(ctx: DrawingContext): SheetDxf[] {
   });
 }
 
-export const AUTOCAD_README = (project: string, sheets: SheetDxf[], dwg: boolean) => `${project} — electrical drawings for AutoCAD
+export const AUTOCAD_README = (project: string, sheets: SheetDxf[]) => `${project} — electrical drawings for AutoCAD
 ${'='.repeat(project.length + 34)}
 
 ${sheets.length} sheets, one file per sheet, drawn 1:1 in millimetres on the sheet's paper
-(the title block and border included). ${dwg ? 'DWG files (AutoCAD 2018 format, converted with the ODA File Converter) and the source DXF files.' : 'DXF files (AutoCAD DXF, R2007 / AC1021 format; opens directly in AutoCAD 2007 and later, AutoCAD LT and AutoCAD Electrical).'}
+(the title block and border included). DXF files (AutoCAD DXF, R2007 / AC1021 format; opens directly in AutoCAD 2007 and later, AutoCAD LT and AutoCAD Electrical).
 
 Layers
   BORDER    sheet frame, zones, title block
