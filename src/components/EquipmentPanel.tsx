@@ -265,7 +265,9 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                   {cap && <CapacityBar label="Digital inputs" need={need.digitalInputs} have={cap.inputs} />}
                   {cap && <CapacityBar label="Digital outputs" need={need.digitalOutputs} have={cap.outputs} />}
                   {fit && !fit.ok && <p className="text-red-700 text-xs">{fit.reason}</p>}
-                  {applied ? (
+                  {applied && fit && !fit.ok ? (
+                    <p className="text-xs bg-red-50 border border-red-200 text-red-800 px-2 py-1.5">This is the project's PLC, but it cannot hold the I/O list. Choose a larger CPU or add modules.</p>
+                  ) : applied ? (
                     <p className="text-xs bg-green-50 border border-green-200 text-green-800 px-2 py-1.5">Applied to the project.</p>
                   ) : (
                     <button onClick={apply} disabled={!fit?.ok} className="w-full px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-40">Use this selection</button>

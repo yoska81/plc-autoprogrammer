@@ -10,6 +10,7 @@ import { noTouchPanelNow, useNoTouchPanel } from '../hmi/projectPanel';
 import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
+import { hardwareShortfall } from '../plc/core/fit';
 import { changedSections, fingerprint, type SpecSections } from './types';
 import type { IOPoint } from '../types/io';
 import type { HmiDesign } from '../hmi/types';
@@ -89,10 +90,12 @@ export interface StageInputs {
   hasProgram: boolean;
   /** The equipment was chosen without a touch panel (pushbuttons and lamps only): the HMI stage is not used. */
   noHmi?: boolean;
+  /** Why the chosen CPU and modules cannot hold the I/O list (hardwareShortfall), or null. */
+  hardwareShort?: string | null;
 }
 
 /** Pure stage status (used by the hook below and by the design review). */
-export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi = false }: StageInputs): Record<StageId, StageInfo> {
+export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi = false, hardwareShort = null }: StageInputs): Record<StageId, StageInfo> {
   const specEmpty = !Object.values(fp.spec).some((t) => t.trim());
   const hasEquipment = Boolean(sources.equipment);
   const info = (id: StageId, has: boolean, deps: { spec?: boolean; io?: boolean; hmi?: boolean; region?: boolean }): StageInfo => {
@@ -115,7 +118,10 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
   };
   return {
     spec: { id: 'spec', status: specEmpty ? 'empty' : 'ready', reason: null },
-    equipment: info('equipment', hasEquipment, { spec: true }),
+    // A PLC that cannot hold the I/O is never "done", however it was chosen (Equipment or PLC page).
+    equipment: hardwareShort
+      ? { id: 'equipment', status: 'stale', reason: `The PLC cannot hold the I/O list: ${hardwareShort} Choose a larger CPU or add modules on the Equipment page.` }
+      : info('equipment', hasEquipment, { spec: true }),
     io: info('io', ioCount > 0, { spec: true }),
     electrical: info('electrical', hasDesign, { spec: true, io: true, region: true }),
     hmi: noHmi && !hasHmi ? { id: 'hmi', status: 'ready', reason: null } : info('hmi', hasHmi, { spec: true, io: true }),
@@ -138,6 +144,7 @@ export function stagesNow(): Record<StageId, StageInfo> {
     hasDesign: Boolean(useElectricalStore.getState().design),
     hasHmi: Boolean(hmi),
     hasProgram: prog.ladder.rungs.length > 0 || Boolean(prog.generatedCode),
+    hardwareShort: (() => { const p = useProjectStore.getState(); return hardwareShortfall(p.cpuId, p.modules, io); })(),
     noHmi,
   });
 }
@@ -151,6 +158,10 @@ export function useStages(): Record<StageId, StageInfo> {
   const noHmi = useNoTouchPanel();
   const hasHmi = useHmiStore((s) => Boolean(s.design)) && !noHmi;
   const hasProgram = useProgramStore((s) => s.ladder.rungs.length > 0 || Boolean(s.generatedCode));
-  return useMemo(() => computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi }),
-    [fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi]);
+  const io = useIOStore((s) => s.projectIO);
+  const cpuId = useProjectStore((s) => s.cpuId);
+  const modules = useProjectStore((s) => s.modules);
+  const hardwareShort = useMemo(() => hardwareShortfall(cpuId, modules, io), [cpuId, modules, io]);
+  return useMemo(() => computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi, hardwareShort }),
+    [fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi, hardwareShort]);
 }
