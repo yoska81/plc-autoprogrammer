@@ -75,7 +75,7 @@ const capper = importProgramText('capper.L5X', readFileSync(join(here, '__fixtur
     { address: 'C2', nickname: 'Conveyor_Infeed_Running_Rev', comment: '' },
     { address: 'C3', nickname: 'Start_PB', comment: 'x' },
   ]);
-  assert.deepEqual(t.map((x) => x.nickname), ['Capper_Torque_SP', 'Conveyor_Infeed_Running_', 'Conveyor_Infeed_Runnin_2', 'Start_PB']);
+  assert.deepEqual(t.map((x) => x.nickname), ['Capper_Torque_SP', 'Conveyor_Infeed_Running', 'Conveyor_Infeed_Runnin_2', 'Start_PB']);
   assert.equal(t[0].comment, 'Original: Capper.Torque_SP — REAL');
   assert.equal(t[3].comment, 'x', 'unchanged names keep their comment');
   // Address-like names (a Mitsubishi device left as the name) are misleading on a CLICK: from the description, else Orig_….
@@ -84,7 +84,8 @@ const capper = importProgramText('capper.L5X', readFileSync(join(here, '__fixtur
     { address: 'T1', nickname: 'T5', comment: '' },
     { address: 'C3', nickname: 'M100', comment: 'Step 0: wait for a bottle' },
   ]);
-  assert.deepEqual(a.map((x) => x.nickname), ['Good_bottles', 'Orig_T5', 'Step_0_wait_for']);
+  assert.deepEqual(a.map((x) => x.nickname), ['Good_bottles', 'Orig_T5', 'Step_0_wait_for_a_bottle']);
+  assert.ok(clickNicknames([{ address: 'C9', nickname: 'D7', comment: 'Rejected bottles preset for the batch' }])[0].nickname === 'Rejected_bottles_preset', 'whole words, no trailing _');
   assert.equal(a[1].comment, 'Original: T5');
   assert.equal(planUpgrade(capper, 'click').program.tags.find((x) => x.nickname === 'Capper.Torque_SP')?.address.startsWith('DF'), true, 'Logix target: original names');
 }

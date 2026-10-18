@@ -23,7 +23,7 @@ const isInput = (a: string) => /^X\d+$/i.test(a);
 const isOutput = (a: string) => /^Y\d+$/i.test(a);
 
 /** Words that say nothing about where on the machine a device is. */
-const GENERIC = new Set(['the', 'and', 'for', 'with', 'from', 'onto', 'into', 'when', 'until', 'while', 'not', 'one', 'all', 'pe', 'ls', 'px', 'sv', 'sol', 'prox', 'sensor', 'switch', 'photo', 'eye', 'limit', 'valve', 'motor', 'contactor', 'relay', 'lamp', 'light', 'run', 'running', 'runs', 'on', 'off', 'ok', 'in', 'out', 'at', 'of', 'to', 'is', 'up', 'down', 'fwd', 'rev', 'open', 'close', 'closed', 'extend', 'extended', 'retract', 'retracted', 'present', 'place', 'position', 'pos', 'detect', 'detected', 'nc', 'no', 'pb', 'push', 'button', 'pushbutton', 'auto', 'manual', 'mode', 'cycle', 'step', 'done', 'tmr', 'timer', 'raw', 'low', 'high', 'full', 'empty', 'top', 'bottom', 'left', 'right', 'front', 'back', 'new', 'old']);
+const GENERIC = new Set(['the', 'and', 'for', 'with', 'without', 'only', 'from', 'onto', 'into', 'when', 'until', 'while', 'not', 'one', 'all', 'has', 'have', 'there', 'this', 'that', 'pe', 'ls', 'px', 'sv', 'sol', 'prox', 'sensor', 'switch', 'photo', 'eye', 'limit', 'valve', 'motor', 'contactor', 'relay', 'lamp', 'light', 'run', 'running', 'runs', 'on', 'off', 'ok', 'in', 'out', 'at', 'of', 'to', 'is', 'up', 'down', 'fwd', 'rev', 'open', 'close', 'closed', 'extend', 'extended', 'retract', 'retracted', 'present', 'place', 'position', 'pos', 'detect', 'detected', 'nc', 'no', 'pb', 'push', 'button', 'pushbutton', 'auto', 'manual', 'mode', 'cycle', 'step', 'done', 'tmr', 'timer', 'raw', 'low', 'high', 'full', 'empty', 'top', 'bottom', 'left', 'right', 'front', 'back', 'new', 'old']);
 
 /** Location words of a text: "Infeed_Case_PE" → infe, case (4-letter stems: pusher ≈ push, layers ≈ layer). */
 function zone(text: string): Set<string> {
@@ -32,7 +32,20 @@ function zone(text: string): Set<string> {
 }
 
 const START = /\bstart\b|start_?pb|\bstrt\b/i;
-const NOT_A_STATION_SENSOR = /start|stop|reset|e-?stop|emergency|safety|guard|curtain|selector|auto|manual|jog|pb\b|push ?button/i;
+/**
+ * Inputs that are permissives, not station sensors: guards and lids, safety, overloads, process conditions.
+ * They are interlocks on purpose; a finding never questions (or suggests removing) them.
+ */
+const PERMISSIVE = /start|stop|reset|e-?stop|emergency|safety|safe\b|guard|curtain|\blid\b|lid_|door|hatch|manway|gate|interlock|permissive|thermostat|overload|\bol\b|_ol_|ol_ok|motor ?protect|breaker|pressure|press_|\bair\b|air_|flow|level|temp|feedback|running|aux|selector|auto|manual|jog|\bpb\b|_pb\b|push ?button|healthy|_ok\b|\bok\b/i;
+
+/** Kind of a position sensor: only a sensor of the same kind is offered instead. */
+function kindOf(text: string): 'photo' | 'prox' | 'limit' | 'reed' | null {
+  if (/(^|_|\b)PE(\b|_|$)|photo|eye|beam|retro|diffuse/i.test(text)) return 'photo';
+  if (/(^|_|\b)PX(\b|_|$)|prox|inductive|capacitive/i.test(text)) return 'prox';
+  if (/(^|_|\b)LS(\b|_|$)|limit/i.test(text)) return 'limit';
+  if (/reed|extended|retracted|cyl.*(in|out)\b/i.test(text)) return 'reed';
+  return null;
+}
 
 export function programFindings(program: LadderProgram, labels: Map<string, string> = new Map()): ProgramFinding[] {
   const nick = new Map(program.tags.map((t) => [t.address.toUpperCase(), t]));
@@ -64,23 +77,29 @@ export function programFindings(program: LadderProgram, labels: Map<string, stri
 
   // ── Interlock on another station's sensor ──
   const sensorsUsed = new Set(program.rungs.flatMap((r) => r.branches.flat()).flatMap((e) => ('address' in e && isInput(e.address) ? [e.address.toUpperCase()] : [])));
-  const allSensors = [...new Set([...program.tags.map((t) => t.address.toUpperCase()).filter(isInput), ...sensorsUsed])].filter((a) => !NOT_A_STATION_SENSOR.test(text(a)));
+  const allSensors = [...new Set([...program.tags.map((t) => t.address.toUpperCase()).filter(isInput), ...sensorsUsed])].filter((a) => !PERMISSIVE.test(text(a)) && kindOf(text(a)));
   for (const r of program.rungs) {
     for (const o of r.outputs) {
       if ((o.type !== 'OUT' && o.type !== 'SET') || !isOutput(o.address)) continue;
       const actuator = o.address.toUpperCase();
-      const own = zone(`${text(actuator)} ${r.comment} ${blockName(r)}`);
-      if (!own.size) continue;
-      const checked = [...new Set(r.branches.flat().flatMap((e) => ('address' in e && isInput(e.address) && (e.type === 'NO' || e.type === 'NC') ? [e.address.toUpperCase()] : [])))]
-        .filter((a) => !NOT_A_STATION_SENSOR.test(text(a)));
+      const checked = [...new Set(r.branches.flat().flatMap((e) => ('address' in e && isInput(e.address) && (e.type === 'NO' || e.type === 'NC') ? [e.address.toUpperCase()] : [])))];
       for (const s of checked) {
+        if (PERMISSIVE.test(text(s))) continue;
+        const kind = kindOf(text(s));
+        if (!kind) continue;
+        // Where this actuator works: its own name and description, its part of the program, and the rung
+        // comment without the words other checked sensors already account for ("case stop up" → Case_Stop_Up_PX).
+        const explained = new Set(checked.filter((x) => x !== s).flatMap((x) => [...zone(text(x))]));
+        const own = new Set([...zone(text(actuator)), ...zone(blockName(r)), ...[...zone(r.comment)].filter((w) => !explained.has(w))]);
         const z = zone(text(s));
-        if (!z.size || [...z].some((w) => own.has(w))) continue;
-        const better = allSensors.filter((x) => x !== s && !checked.includes(x) && [...zone(text(x))].some((w) => own.has(w)));
+        if (!own.size || !z.size || [...z].some((w) => own.has(w))) continue;
+        // A sensor of the same kind that belongs where the actuator works, not checked in this rung.
+        const better = allSensors.filter((x) => x !== s && !checked.includes(x) && kindOf(text(x)) === kind && [...zone(text(x))].some((w) => own.has(w)));
         if (!better.length) continue;
+        const desc = text(s).replace(name(s), '').trim().replace(/^[—:-]\s*/, '');
         out.push({
           rungId: r.id, kind: 'interlock', address: actuator,
-          message: `${name(actuator)} is interlocked by ${name(s)}${text(s) !== name(s) ? ` (${text(s).replace(name(s), '').trim().replace(/^[—:-]\s*/, '')})` : ''}, which is at another place on the machine than this ${r.comment ? `rung ("${r.comment}")` : 'output'}. Should it check ${better.map(name).join(' or ')} instead?`,
+          message: `${name(actuator)} waits for ${name(s)}${desc ? ` (${desc})` : ''}, a sensor at another place on the machine than ${r.comment ? `this rung describes ("${r.comment}")` : 'this output'}. Should it check ${better.map(name).join(' or ')}? (Other interlocks in the rung stay as they are.)`,
         });
       }
     }

@@ -171,15 +171,17 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     if (!paths.length) return null;
     if (paths.length === 1) return paths[0].join('');
     // Conditions every path shares go in front of / behind the branch: [XIC(Start),XIC(Run)]XIC(Stop)…
+    const pure = (t: string) => /^XI[CO]\([^()]*\)$/.test(t);
     const n = Math.min(...paths.map((x) => x.length));
     let pre = 0, post = 0;
-    while (pre < n && paths.every((x) => x[pre] === paths[0][pre])) pre++;
-    while (post < n - pre && paths.every((x) => x[x.length - 1 - post] === paths[0][paths[0].length - 1 - post])) post++;
-    const legs = paths.map((x) => x.slice(pre, x.length - post).join(''));
+    while (pre < n && pure(paths[0][pre]) && paths.every((x) => x[pre] === paths[0][pre])) pre++;
+    while (post < n - pre && pure(paths[0][paths[0].length - 1 - post]) && paths.every((x) => x[x.length - 1 - post] === paths[0][paths[0].length - 1 - post])) post++;
+    const legParts = paths.map((x) => x.slice(pre, x.length - post));
     const head = paths[0].slice(0, pre).join(''), tail = paths[0].slice(paths[0].length - post).join('');
-    // A leg left empty is always true: the branch is too.
-    if (legs.some((l) => !l)) return head + tail;
-    return `${head}[${[...new Set(legs)].join(',')}]${tail}`;
+    if (legParts.some((l) => !l.length)) return head + tail;
+    const legs = legParts.map((l) => l.join(''));
+    const allPure = legParts.every((l) => l.every(pure));
+    return `${head}[${(allPure ? [...new Set(legs)] : legs).join(',')}]${tail}`;
   }
 
   /** Instructions of other PLCs in the current rung: written into its comment. */

@@ -251,7 +251,13 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
 }
 
 /** CLICK nickname for an original tag name: letters, digits and _, at most 24 characters (only for a CLICK target). */
-export const nickOf = (name: string): string => name.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24);
+export const nickOf = (name: string): string => {
+  const s = name.replace(/[^A-Za-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+  if (s.length <= 24) return s;
+  // Cut at a word ("_") so the nickname doesn't end mid-word, else at 24.
+  const cut = s.slice(0, 25).lastIndexOf('_');
+  return (cut >= 8 ? s.slice(0, cut) : s.slice(0, 24)).replace(/_+$/, '');
+};
 
 /** "Conv1_Start_PB" → "Conv1 Start PB". */
 export function pretty(name: string): string {
@@ -324,7 +330,9 @@ export function linkCounterResets(rungs: Rung[], tags: TagDefinition[], newBit: 
     if (single) cnt.resetAddress = single;
     else {
       const bit = newBit();
-      const nick = tags.find((t) => t.address.toUpperCase() === a)?.nickname ?? a;
+      const tag = tags.find((t) => t.address.toUpperCase() === a);
+      // Named after the counter, or its description when its name is only a device (C0).
+      const nick = tag?.nickname && !/^[A-Z]{1,3}\d+$/i.test(tag.nickname) ? tag.nickname : (tag?.comment.match(/[A-Za-z0-9]+/g) ?? []).slice(0, 3).join('_') || 'Counter';
       tags.push({ address: bit, nickname: `${nick}_Reset`, comment: `Reset of ${nick} (from the original reset rung${rst.length > 1 ? 's' : ''})` });
       const always = rst.some((r) => !r.branches.length);
       const at = rungs.indexOf(rst[0]);

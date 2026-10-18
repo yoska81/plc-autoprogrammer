@@ -145,4 +145,16 @@ const msgs = validateProgram(bad, logixProfile, new Set()).map((i) => i.message)
 assert.match(msgs, /SC19: Logix has no equivalent/);
 assert.match(msgs, /no built-in I\/O/);
 
+// --- branch factoring only moves plain contacts: an OSR / JSR in every leg stays in every leg
+{
+  const raw = (text: string) => ({ type: 'RAW' as const, vendor: 'logix', text });
+  const p2: LadderProgram = { tags: [], rungs: [
+    { id: 'f1', comment: '', branches: [[{ type: 'NO', address: 'C1' }, raw('OSR(a,b)'), { type: 'NO', address: 'C3' }], [{ type: 'NO', address: 'C2' }, raw('OSR(a,b)'), { type: 'NO', address: 'C3' }]], outputs: [{ type: 'OUT', address: 'C20' }] },
+    { id: 'f2', comment: '', branches: [[raw('JSR(Sub,0)')], [raw('JSR(Sub,0)')]], outputs: [{ type: 'OUT', address: 'C21' }] },
+  ] };
+  const texts = toLogix(p2, ctx, logixIoTag).routines.flatMap((r) => r.rungs.map((g) => g.text));
+  assert.ok(texts.includes('[XIC(C1)OSR(a,b),XIC(C2)OSR(a,b)]XIC(C3)OTE(C20);'), texts.join('\n'));
+  assert.ok(texts.includes('[JSR(Sub,0),JSR(Sub,0)]OTE(C21);'), texts.join('\n'));
+}
+
 console.log('logix tests passed');

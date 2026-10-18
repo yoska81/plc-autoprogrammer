@@ -40,7 +40,42 @@ assert.deepEqual(findingsOf(pallet.replace('N: [XIC(Start_PB) ,XIC(Auto_Run) ]XI
   const { f } = findingsOf(pallet.replace('XIC(Auto_Run)XIC(Layer_Full_PE)XIC(Elev_Top_LS)', 'XIC(Auto_Run)XIC(Box_PE)XIC(Elev_Top_LS)'));
   assert.equal(f.length, 1);
   assert.equal(f[0].kind, 'interlock');
-  assert.match(f[0].message, /^Pusher_SV is interlocked by Box_PE .*Should it check Layer_Full_PE/);
+  assert.match(f[0].message, /^Pusher_SV waits for Box_PE .*Should it check Layer_Full_PE\? \(Other interlocks/);
+  assert.ok(!/Elev_/.test(f[0].message), 'only a sensor of the same kind (photo eye) is offered');
+}
+
+/** A small L5X: alias tags on module points (with their descriptions) and one routine. */
+const l5x = (tags: [string, string, string][], routine: string, rungs: [string, string][]) => `<?xml version="1.0"?><RSLogix5000Content><Controller Name="T" ProcessorType="1769-L33ER"><Tags>${tags.map(([n, a, d]) => `<Tag Name="${n}" TagType="Alias" AliasFor="${a}"><Description><![CDATA[${d}]]></Description></Tag>`).join('')}</Tags><Programs><Program Name="MainProgram" MainRoutineName="${routine}"><Routines><Routine Name="${routine}" Type="RLL"><RLLContent>${rungs.map(([c, t], i) => `<Rung Number="${i}" Type="N">${c ? `<Comment><![CDATA[${c}]]></Comment>` : ''}<Text><![CDATA[${t}]]></Text></Rung>`).join('')}</RLLContent></Routine></Routines></Program></Programs></Controller></RSLogix5000Content>`;
+const PALLET_IO: [string, string, string][] = [
+  ['Infeed_Case_PE', 'Local:1:I.Data.0', 'Case at infeed (PE-101)'],
+  ['Case_Stop_Up_PX', 'Local:1:I.Data.1', 'Case stop up (PX-102)'],
+  ['Pallet_Present_PE', 'Local:1:I.Data.2', 'Pallet on the elevator (PE-103)'],
+  ['Auto_Mode_SS', 'Local:1:I.Data.3', 'Auto selector'],
+  ['Pusher_Extend_Sol', 'Local:2:O.Data.0', 'Layer pusher extend solenoid'],
+];
+const real = (sensor: string) => programFindings(planUpgrade(importProgramText('p.L5X', l5x(PALLET_IO, 'LayerForm', [
+  ['', 'XIC(Infeed_Case_PE)XIC(Auto_Mode_SS)OTE(Case_Stop_Down);'],
+  ['', 'XIC(Pallet_Present_PE)OTE(Layer_Ready);'],
+  ['Push the layer: only with case stop up and a pallet on the elevator', `XIC(Auto_Mode_SS)XIC(Case_Stop_Up_PX)XIC(${sensor})OTE(Pusher_Extend_Sol);`],
+])), 'logix').program);
+
+// AB-2 as in the real palletizer (LayerForm rung 4): "case" in the comment is the case stop's, not the infeed's.
+{
+  const f = real('Infeed_Case_PE');
+  assert.equal(f.length, 1, JSON.stringify(f));
+  assert.match(f[0].message, /^Pusher_Extend_Sol waits for Infeed_Case_PE .*Should it check Pallet_Present_PE\?/);
+  assert.deepEqual(real('Pallet_Present_PE'), [], 'fixed: nothing to say');
+}
+
+// A guard on purpose is never questioned (real mixer: the agitator waits for the lid).
+{
+  const f = programFindings(planUpgrade(importProgramText('m.L5X', l5x([
+    ['Lid_Closed', 'Local:1:I.Data.0', 'Mixer lid closed'],
+    ['Agitator_Running', 'Local:1:I.Data.1', 'Agitator contactor feedback'],
+    ['Level_Low_PE', 'Local:1:I.Data.2', 'Mixer level low'],
+    ['Agitator_Run', 'Local:2:O.Data.0', 'Agitator motor'],
+  ], 'Agitator', [['Agitator: runs with the lid closed', 'XIC(Mix_Step)XIC(Lid_Closed)XIO(Level_Low_PE)OTE(Agitator_Run);'], ['', 'XIC(Agitator_Running)OTE(Agit_Fb);']])), 'logix').program);
+  assert.deepEqual(f, []);
 }
 
 // ── Property: the Logix export's branch factoring keeps every rung's logic ──

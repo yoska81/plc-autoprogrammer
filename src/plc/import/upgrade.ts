@@ -126,7 +126,10 @@ const ADDRESS_LIKE = /^(X|Y|C|T|CT|SC|SD|DS|DD|DH|DF|TD|CTD|TXT|XD|YD|M|D|SM|ST|
 /** CLICK nickname: the original name, or from the description when the name is address-like or missing. */
 function clickName(t: TagDefinition): string {
   if (t.nickname && !ADDRESS_LIKE.test(nickOf(t.nickname))) return nickOf(t.nickname);
-  const words = (t.comment.replace(/^Original:[^—]*—\s*/, '').match(/[A-Za-z0-9]+/g) ?? []).slice(0, 4).join('_');
+  // Whole words that fit in 24 characters.
+  const all = t.comment.replace(/^Original:[^—]*—\s*/, '').match(/[A-Za-z0-9]+/g) ?? [];
+  let words = '';
+  for (const w of all) { const next = words ? `${words}_${w}` : w; if (next.length > 24) break; words = next; }
   return nickOf(words && !ADDRESS_LIKE.test(words) ? words : `Orig_${t.nickname || t.address}`);
 }
 
