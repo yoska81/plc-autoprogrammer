@@ -13,6 +13,7 @@ import { SPEC_SECTIONS, type SpecSectionId } from '../spec/types';
 import { cadToText, dwgToEntities, dxfToText } from './dxf';
 import { dxfText } from '../lib/parseWorker';
 import { desktopBridge } from '../desktop/bridge';
+import { checkUploadFiles } from './uploadCheck';
 import type { DrawnRatings, ExistingMachine, PathContact, PathEl } from './types';
 
 export const MAX_UPLOAD_FILES = 20;
@@ -49,6 +50,9 @@ export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,applicat
 /** `notes`: warnings collected while reading (DWG); `onFile`: called before each file is read (progress: "Reading 3 of 8: …"). */
 export async function readUpload(files: File[], notes: string[] = [], onFile?: (i: number, name: string) => void): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
   if (files.length > MAX_UPLOAD_FILES) throw new Error(`At most ${MAX_UPLOAD_FILES} files at once.`);
+  // an empty or damaged file never goes to the AI
+  const bad = await checkUploadFiles(files);
+  if (bad.length) throw new Error(bad.join(' '));
   const out: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
   for (const [i, f] of files.entries()) {
     onFile?.(i, f.name);

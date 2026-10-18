@@ -27,6 +27,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   // 6. Import: a file added in the example is not shown in another project.
   await page.goto(BASE + '/import');
   await page.getByTestId('convert-files').setInputFiles(PICTURE);
+  await page.getByRole('button', { name: 'Remove icon.png' }).waitFor({ timeout: 5000 }).catch(() => {}); // files are checked before they are listed
   check(await page.getByRole('button', { name: 'Remove icon.png' }).count() === 1, 'import: file listed in the example');
   await page.evaluate(async () => (await import('/src/store/useProjectsStore.ts')).useProjectsStore.getState().createProject('Other project'));
   await page.goto(BASE + '/import');

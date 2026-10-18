@@ -8,6 +8,7 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useDraft } from '../store/useDraftStore';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 import { regionSpec, SUPPLY_INFO } from '../standards/regions';
+import { checkUploadFiles } from './uploadCheck';
 import { deriveFromUpload, DWG_IN_BROWSER, DWG_NOT_AVAILABLE, MAX_UPLOAD_FILES, UPLOAD_ACCEPT } from './derive';
 import { desktopBridge, type DwgReaderStatus } from '../desktop/bridge';
 import { hasDwgReader } from './dxf';
@@ -48,7 +49,12 @@ export default function DrawingsImport() {
     setFileError(null);
     const add = [...(list ?? [])];
     if (files.length + add.length > MAX_UPLOAD_FILES) { setFileError(`At most ${MAX_UPLOAD_FILES} files.`); return; }
-    setFiles([...files, ...add]);
+    // empty or damaged files are left out, with what is wrong with them
+    void checkUploadFiles(add).then((bad) => {
+      const ok = add.filter((f) => !bad.some((b) => b.startsWith(`${f.name} `)));
+      if (bad.length) setFileError(bad.join(' '));
+      if (ok.length) setFiles([...(useUploadFiles.getState().byProject[projectId] ?? []), ...ok]);
+    });
   };
   const readDrawings = () => {
     if (!apiKey || !files.length) return;

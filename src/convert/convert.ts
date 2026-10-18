@@ -310,10 +310,19 @@ export function safetyOutputsNeeded(m: ExistingMachine, stoDrives: string[]): { 
   return { need, drawn: [...drawn], why };
 }
 
-/** Parts of a safety function: never matched to a part whose ratings are not verified. */
+/** Categories that are always part of a safety function. */
 const SAFETY_PARTS = new Set<CatalogCategory>(['safetyRelay', 'estop']);
+const SAFETY_WORDS = /\bSTO\b|safe torque|light curtain|light grid|safety (?:switch|interlock|mat|laser|scanner|edge|gate|door|limit)|interlock switch|guard (?:switch|locking)|安全|光幕|急停/i;
+/**
+ * A safety-rated part: a safety relay or E-stop, or a part with a performance level / SIL or a safety
+ * function in its data (drives with Safe Torque Off, light curtains, safety switches).
+ */
+export const isSafetyRated = (p: CatalogPart): boolean => SAFETY_PARTS.has(p.category) || p.ratings.PL !== undefined || p.ratings.SIL !== undefined
+  || SAFETY_WORDS.test(`${p.description} ${p.ratings.application ?? ''} ${p.ratings.safety ?? ''}`);
+/** A drawn device that is part of a safety function: by its category or description, or marked so by the conversion (a drive stopped through STO, a guard switch). */
+const inSafetyFunction = (c: DrawnComponent, safetyFn: boolean) => safetyFn || SAFETY_PARTS.has(c.category) || SAFETY_WORDS.test(c.description);
 
-export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTarget, hp?: number, safety?: { need: number; why: string }): PartMatch {
+export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTarget, hp?: number, safety?: { need: number; why: string }, safetyFn = false): PartMatch {
   const r = ratingsOf(c);
   const from = { partNumber: c.partNumber, manufacturer: c.manufacturer, description: c.description, category: c.category, ratings: r };
   // operator devices drawn as 'other' (speed pots, pendants) are chosen by the design too
@@ -345,8 +354,9 @@ export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTar
     list.splice(0, list.length, ...sized.list);
     extra.push(sized.note);
   }
-  // a safety function never gets a part whose ratings are not verified: offered, the user picks
-  if (SAFETY_PARTS.has(c.category) && list[0].verified !== true) {
+  // a safety function never gets a part whose ratings are not verified, nor does a safety-rated part replace
+  // anything unverified (the candidates come verified first, so none is): offered, the user picks
+  if ((inSafetyFunction(c, safetyFn) || isSafetyRated(list[0])) && list[0].verified !== true) {
     return { oldTag: c.tag, newTag, from, to: null, alternatives: list.slice(0, 5), differences: [...extra, `${list[0].manufacturer} ${list[0].partNumber}: ratings not verified${list[0].verify ? ` (${list[0].verify})` : ''}`, REVALIDATE], status: 'to-select',
       reason: `The closest, ${list[0].manufacturer} ${list[0].partNumber}, has ratings that are not verified, and a safety function needs a verified part. Check it against the maker's datasheet, or pick another.` };
   }
@@ -619,6 +629,8 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   const stoOpen = new Set(driveStops(m).filter((d) => d.sto !== 'wired').map((d) => d.tag));
   // the safety relay's outputs: as drawn, plus two per drive whose STO the conversion wires to it
   const srOutputs = (() => { const x = safetyOutputsNeeded(m, [...stoOpen].map((t) => tags.get(t) ?? t)); return { need: x.need, why: x.why }; })();
+  // the devices of the safety function: E-stops, guards and every drive that stops through its STO
+  const safetyTags = new Set([...m.safety.estops, ...m.safety.guards, ...driveStops(m).filter((d) => d.sto !== 'none' || stoOpen.has(d.tag)).map((d) => d.tag)]);
   const parts = m.components.map((c) => {
     // a servo axis is chosen as a whole by the motion design (drive, motor, encoder, braking resistor)
     if (axisTags.has(c.tag)) {
@@ -626,7 +638,7 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
       return { oldTag: c.tag, newTag: tags.get(c.tag) ?? c.tag, from: { partNumber: c.partNumber, manufacturer: c.manufacturer, description: c.description, category: c.category, ratings: ratingsOf(c) }, to: null, alternatives: [],
         differences: isDrive ? [...(stoOpen.has(c.tag) ? ['STO wired to the safety relay'] : []), REVALIDATE] : [], status: 'engine' as const, reason: 'Servo axis: drive, motor, encoder and braking resistor are chosen together by the motion design.' };
     }
-    const m2 = crossMatch(c, tags.get(c.tag) ?? c.tag, target, c.category === 'vfd' && c.ratings.kw === null && vfdHp ? vfdHp : undefined, c.category === 'safetyRelay' ? srOutputs : undefined);
+    const m2 = crossMatch(c, tags.get(c.tag) ?? c.tag, target, c.category === 'vfd' && c.ratings.kw === null && vfdHp ? vfdHp : undefined, c.category === 'safetyRelay' ? srOutputs : undefined, safetyTags.has(c.tag));
     // a drive whose STO isn't wired now stops through it
     return c.category === 'vfd' && stoOpen.has(c.tag) ? { ...m2, differences: [...m2.differences, 'STO wired to the safety relay', REVALIDATE] } : m2;
   });
