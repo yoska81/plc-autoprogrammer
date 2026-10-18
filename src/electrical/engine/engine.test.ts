@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
 import { CATALOG, getPart } from '../catalog';
-import { bomCsv, buildModel, chooseEnclosure, designWarnings, doorDrilling, enclosureFitProblem, enclosureSize, enclosuresFor, layoutFits, panelLayout, plcRack, spareSpace, SPARE_RULE, vendorTerminal, withEnclosure, type DrawingContext } from '../derive';
+import { bomCsv, buildModel, cableSchedule, chooseEnclosure, designWarnings, doorDrilling, enclosureFitProblem, enclosureSize, enclosuresFor, layoutFits, panelLayout, plcRack, spareSpace, SPARE_RULE, vendorTerminal, withEnclosure, type DrawingContext } from '../derive';
 import { cabinetHeat } from '../thermal';
 import { fanAirflowM3h } from '../cooling';
 import { engineerChecks } from '../../engineer/checks';
@@ -486,6 +486,30 @@ for (const s of SCENARIOS) {
   const weak = { ...ctx, design: { ...ctx.design, components: ctx.design.components.map((c) => (c.partNumber === fan.partNumber ? { ...c, partNumber: small.partNumber } : c)) } };
   assert.ok(designWarnings(weak).some((w) => /^Cabinet cooling too small/.test(w)), 'undersized fan flagged');
   assert.ok(engineerChecks({ ctx: weak, io: IO0 }).some((f) => f.id === 'eng:heat' && /too small/.test(f.title)), 'review: undersized fan');
+}
+
+// Field wiring from the wiring-path engine's findings (Sealing Head): each two-hand button has its own tag, terminal
+// and cable core; no field-device terminal carries two signal wire numbers; a trunk core and the device cable it
+// continues into carry the same number (a coil behind a safety contact: Y001A on both).
+{
+  const { ctx } = run(SCENARIOS.find((x) => x.name === 'sealing-head')!);
+  const m = buildModel(ctx);
+  const th = m.io.filter((p) => /two-hand/i.test(p.description));
+  assert.equal(new Set(th.map((p) => p.deviceTag)).size, th.length, `two-hand buttons: ${th.map((p) => p.deviceTag).join(', ')}`);
+  const strips = /^(TB|JB|PLC|IO|GB|PS|SR|CB|K|CR|SSR|VFD|FU)/;
+  const onPin = new Map<string, Set<string>>();
+  for (const w of m.wires) for (const e of [w.from, w.to]) {
+    if (!/:/.test(e) || strips.test(e) || ['24+', '24+S', '0V', 'PE'].includes(w.wire)) continue;
+    onPin.set(e, new Set([...(onPin.get(e) ?? []), w.wire]));
+  }
+  for (const [pin, ws] of onPin) assert.ok(ws.size <= 1, `${pin}: wires ${[...ws].join(', ')} on one terminal`);
+  const cables = cableSchedule(ctx);
+  for (const p of th) assert.ok(cables.some((c) => c.kind === 'device' && c.cores.some((k) => k.wire === p.address)), `${p.address}: a device cable core`);
+  const trunkAt = new Map(cables.filter((c) => c.kind === 'trunk').flatMap((c) => c.cores.map((k) => [k.to, k.wire] as const)));
+  for (const c of cables.filter((x) => x.kind === 'device')) for (const k of c.cores) {
+    const t = trunkAt.get(k.from);
+    if (t && !['PE'].includes(k.wire)) assert.equal(t, k.wire, `${c.tag} core ${k.core} (${k.from}): trunk ${t}, device cable ${k.wire}`);
+  }
 }
 
 // Acceptance (pump skid): two 10 HP pumps on GS20 drives at 480 V heat a NEMA 12 cabinet far above 15 °C; the engine

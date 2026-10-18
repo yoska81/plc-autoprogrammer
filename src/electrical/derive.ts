@@ -1532,16 +1532,20 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
       for (const d of ds) {
         const roles = new Map<string, string>();
         for (const p of d.points) {
-          roles.set(`sig:${p.address}`, addT({ wire: p.wire, incoming: '', outgoing: '', device: d.tag, kind: 'feed' }));
-          trunk.push({ core: String(trunk.length + 1), color: 'BU', wire: p.wire, from: p.signalTerminal ?? '?', to: roles.get(`sig:${p.address}`)! });
+          // the number on the strip terminal (a coil behind a safety contact carries the chain's number, e.g. Y001A)
+          const w = p.type === 'output' && p.signalTerminal ? stripWire.get(p.signalTerminal) ?? p.wire : p.wire;
+          roles.set(`sig:${p.address}`, addT({ wire: w, incoming: '', outgoing: '', device: d.tag, kind: 'feed' }));
+          trunk.push({ core: String(trunk.length + 1), color: 'BU', wire: w, from: p.signalTerminal ?? '?', to: roles.get(`sig:${p.address}`)! });
           terms[terms.length - 1].incoming = `${trunkTag}/${trunk.length}`;
         }
         const p0 = d.points[0];
-        const commons: [string, 'sup' | 'ret'][] = p0.type === 'input' ? [['24+', 'sup'], ...(isSensor3(d.deviceType) ? [['0V', 'ret'] as [string, 'ret']] : [])] : [[retWire(p0), 'ret']];
-        for (const [w, role] of commons) {
+        // outputs: one JB terminal per return wire (the coils of a double solenoid may return on different wires)
+        const commons: [string, 'sup' | 'ret', IoPoint][] = p0.type === 'input' ? [['24+', 'sup', p0], ...(isSensor3(d.deviceType) ? [['0V', 'ret', p0] as [string, 'ret', IoPoint]] : [])]
+          : [...new Map(d.points.map((p) => [retWire(p), p] as const)).entries()].map(([w, p]) => [w, 'ret', p] as [string, 'ret', IoPoint]);
+        for (const [w, role, pc] of commons) {
           const lab = addT({ wire: w, incoming: '', outgoing: '', device: d.tag, kind: 'feed' });
-          roles.set(role, lab);
-          const cabTerm = role === 'sup' ? p0.supplyTerminal : p0.returnTerminal;
+          roles.set(role === 'ret' && p0.type === 'output' ? `ret:${w}` : role, lab);
+          const cabTerm = role === 'sup' ? pc.supplyTerminal : pc.returnTerminal;
           if (!firstOf.has(w)) {
             firstOf.set(w, lab);
             trunk.push({ core: String(trunk.length + 1), color: w === '0V' ? 'WH/BU' : 'BU', wire: w, from: cabTerm ?? `TB1 ${w}`, to: lab });
@@ -1549,7 +1553,7 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
             landed.set(w, lab);
           } else terms[terms.length - 1].incoming = `JUMPER ${firstOf.get(w)}`;
         }
-        const c = deviceCable(d, jb.tag, (p, role) => (role === 'sig' ? roles.get(`sig:${p.address}`) : roles.get(role)) ?? '?');
+        const c = deviceCable(d, jb.tag, (p, role) => (role === 'sig' ? roles.get(`sig:${p.address}`) : role === 'ret' && p.type === 'output' ? roles.get(`ret:${retWire(p)}`) : roles.get(role)) ?? '?');
         d.cable = c.tag;
         for (const core of c.cores) { const t = terms.find((x) => x.label === core.from); if (t) t.outgoing = `${c.tag}/${core.color === 'GN/YE' ? 'PE' : core.core}`; }
         devCables.push(c);
