@@ -3,7 +3,7 @@
  * the tests, written from the facts in cnRollformer01.facts.ts. Relay logic C1–C11 as circuits, no PLC,
  * a PNOZ s3 safety relay but no STO on either drive.
  */
-import type { DrawnRatings, ExistingMachine } from '../types';
+import type { DrawnRatings, ExistingMachine, PathEl } from '../types';
 
 const r = (x: Partial<DrawnRatings> = {}): DrawnRatings => ({ amps: null, poles: null, coilVoltage: null, kA: null, curve: null, minAmps: null, maxAmps: null, kw: null, outputVolts: null, outputAmps: null, ...x });
 type Comp = ExistingMachine['components'][number];
@@ -17,6 +17,33 @@ const O = (deviceTag: string, address: string, description: string, deviceType: 
 type Circuit = ExistingMachine['circuits'][number];
 const K = (output: string, fn: string, kind: Circuit['kind'], conditions: string[], devices: string[], source: string, more: Partial<Circuit> = {}): Circuit =>
   ({ output, function: fn, kind, conditions, devices, setting: null, logicIn: 'relays', confidence: 'high', source, ...more });
+
+type Contact = Extract<PathEl, { t: 'contact' }>;
+const no = (tag: string, terms: string | null, kind: Contact['kind'] = 'relay'): Contact => ({ t: 'contact', tag, nc: false, terms, kind });
+const nc = (tag: string, terms: string | null, kind: Contact['kind'] = 'relay'): Contact => ({ t: 'contact', tag, nc: true, terms, kind });
+const br = (...paths: Contact[][]): PathEl => ({ t: 'branch', paths });
+const coil = (tag: string, kind: Extract<PathEl, { t: 'coil' }>['kind'], preset: string | null = null, terms: string | null = null): PathEl => ({ t: 'coil', tag, kind, preset, terms });
+/** The C1–C11 coil paths as drawn. */
+const PATHS: Record<string, PathEl[]> = {
+  KM1: [no('KA0', '13-14', 'safety'), nc('SB2', null, 'pb'), br([no('SB1', null, 'pb')], [no('KM1', '13-14')]), nc('FR1', '95-96', 'ol'), coil('KM1', 'contactor')],
+  KA1: [nc('SB4', null, 'pb'), no('KM1', '53-54'), no('KA5', '11-14'), nc('KA6', '11-12'), no('U1', 'RB-RC', 'other'), nc('KT1', '15-16', 'timer'), nc('H7CX', 'OUT', 'other'), nc('KA9', '11-12'), no('KA10', '11-14'),
+    br([no('SB3', null, 'pb')], [no('KA1', '11-14')]), coil('KA1', 'relay')],
+  KA2: [nc('KA1', '41-42'), no('SB5', null, 'pb'), nc('KA3', '11-12'), coil('KA2', 'relay')],
+  KA3: [nc('KA1', '41-42'), no('SB6', null, 'pb'), nc('KA2', '11-12'), coil('KA3', 'relay')],
+  KA4: [no('SA1', null, 'selector'), coil('KA4', 'relay')],
+  KA9: [no('SQ3', null, 'limit'), coil('KA9', 'relay')],
+  KA10: [no('SQ4', null, 'limit'), coil('KA10', 'relay')],
+  KA5: [no('U2', 'DO1', 'other'), coil('KA5', 'relay')],
+  KA6: [no('U2', 'DO5', 'other'), coil('KA6', 'relay')],
+  YV1: [br([no('KA7', '11-14')], [no('SB7', null, 'pb')]), nc('KA8', '11-12'), coil('YV1', 'solenoid')],
+  KT1: [br([no('KA7', '11-14')], [no('SB7', null, 'pb')]), nc('KA8', '11-12'), coil('KT1', 'timer-on', '2 s')],
+  KA8: [br([no('SQ1', null, 'limit')], [no('KA8', '21-24')]), nc('SQ2', null, 'limit'), coil('KA8', 'relay')],
+  YV2: [no('KA8', '31-34'), coil('YV2', 'solenoid')],
+  H7CX: [no('KA8', '41-44'), coil('H7CX', 'counter', 'batch quantity', 'CP1')],
+  HL4: [br([no('KA6', '21-24')], [no('U1', 'RA-RC', 'other')]), coil('HL4', 'light')],
+  'U1 MI1': [br([no('KA1', '21-24')], [no('KA2', '21-24')]), coil('U1', 'drive-input', null, 'MI1')],
+};
+const withPaths = (cs: Circuit[]): Circuit[] => cs.map((c) => (PATHS[c.output] ? { ...c, path: PATHS[c.output] } : c));
 
 export const CN_ROLLFORMER_01_READING: ExistingMachine = {
   summary: 'Roll-forming line HC-YX840-E01: a 5.5 kW forming motor on a Delta VFD, a 2.2 kW hydraulic pump, and a 1.5 kW Delta servo flying shear (E-CAM) following a measuring-wheel encoder. No PLC: relay logic KA1–KA10, a cut watchdog timer and a batch counter, with a Pilz PNOZ s3 safety relay.',
@@ -85,7 +112,7 @@ export const CN_ROLLFORMER_01_READING: ExistingMachine = {
     { tag: 'M2', description: 'Hydraulic pump, DOL on KM1', kw: 2.2, hp: null, starter: 'contactor-overload', reversing: false, kind: 'induction', confidence: 'high', source: 'sheet 3' },
     { tag: 'M3', description: 'Flying shear servo motor ECMA-E21315RS', kw: 1.5, hp: null, starter: null, reversing: true, kind: 'servo', confidence: 'high', source: 'sheet 3' },
   ],
-  circuits: [
+  circuits: withPaths([
     K('KM1', 'Hydraulic pump: start SB1, stop SB2, held by KM1 13-14, only with the safety relay KA0 closed and the overload FR1 healthy', 'start-stop', ['KA0 13-14 (NO)', 'SB2 stop (NC)', 'SB1 start (NO) ∥ KM1 13-14 self-hold', 'FR1 95-96 (NC)'], ['KA0', 'SB2', 'SB1', 'KM1', 'FR1'], 'sheet 3 (C1)', { sealIn: 'KM1 13-14' }),
     K('KA1', 'Line run: start SB3, stop SB4, held by KA1 11-14; needs pump running, servo ready, no servo alarm, VFD healthy, cut watchdog OK, batch not complete, no overrun, material present', 'start-stop',
       ['SB4 stop (NC)', 'KM1 53-54 pump running (NO)', 'KA5 11-14 servo ready (NO)', 'KA6 11-12 no servo alarm (NC)', 'U1 RB-RC VFD healthy', 'KT1 15-16 cut watchdog (NC)', 'H7CX OUT batch not complete (NC)', 'KA9 11-12 no overrun (NC)', 'KA10 11-14 material present (NO)', 'SB3 start (NO) ∥ KA1 11-14 self-hold'],
@@ -106,7 +133,7 @@ export const CN_ROLLFORMER_01_READING: ExistingMachine = {
     K('HL4', 'Fault lamp: servo alarm or VFD fault', 'other', ['KA6 21-24 ∥ U1 RA-RC'], ['KA6', 'U1', 'HL4'], 'sheet 4 (C10)'),
     K('U1 MI1', 'VFD forward from line run or jog forward; MI2 reverse from jog reverse; MI3 jog speed from either jog', 'drive-logic', ['KA1 21-24 ∥ KA2 21-24 → MI1', 'KA3 21-24 → MI2', 'KA2 31-34 ∥ KA3 31-34 → MI3'], ['KA1', 'KA2', 'KA3', 'U1'], 'sheet 4 (C11)'),
     K('U2', 'Flying shear: E-CAM follows the measuring wheel B1 and cuts at the set length (300–6000 mm)', 'length', ['KA4 → DI1 SON', 'SB9 23-24 → DI5 ARST', 'KA1 31-34 → DI7 CAM engage', 'B1 → CN5'], ['KA4', 'SB9', 'KA1', 'B1', 'U2'], 'sheet 6', { logicIn: 'drive', setting: 'cut length 300–6000 mm in the drive' }),
-  ],
+  ]),
   axes: [
     { tag: 'A1', description: 'Flying shear carriage (E-CAM): ball screw 20 mm lead, 500 mm stroke', driveTag: 'U2', drivePart: 'Delta ASD-A2-1521-L', motorTag: 'M3', motorKw: 1.5, encoder: 'measuring-wheel encoder B1 (200 mm wheel, 1000 ppr) on CN5', brakingResistor: null, signals: ['DI1 SON', 'DI5 ARST', 'DI7 CAM', 'DO1 SRDY', 'DO3 cut', 'DO5 ALRM'], confidence: 'high', source: 'sheet 6' },
   ],

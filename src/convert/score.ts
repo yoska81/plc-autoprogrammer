@@ -39,7 +39,8 @@ export function scoreReading(m: ExistingMachine, f: ExpectedFacts): Score {
   const logic: [string, boolean][] = [];
   for (const e of f.relayLogic) {
     const c = m.circuits.find((x) => word(e.coil).test(x.output));
-    const have = c ? new Set([...c.devices, ...c.conditions.flatMap((t) => t.match(/[A-Z][A-Z0-9]*\d+|H7CX/g) ?? [])]) : new Set<string>();
+    const pathTags = (c?.path ?? []).flatMap((e) => (e.t === 'branch' ? e.paths.flat().map((x) => x.tag) : [e.tag]));
+    const have = c ? new Set([...c.devices, ...pathTags, ...c.conditions.flatMap((t) => t.match(/[A-Z][A-Z0-9]*\d+|H7CX/g) ?? [])]) : new Set<string>();
     const missing = e.contacts.filter((d) => !have.has(d));
     logic.push([`${e.id} ${e.coil}${missing.length ? ` (missing ${missing.join(', ')})` : ''}`, Boolean(c) && missing.length <= e.contacts.length / 4]);
     if (e.sealIn) logic.push([`${e.id} ${e.coil} seal-in`, Boolean(c && (c.sealIn || c.kind === 'start-stop' || c.conditions.some((t) => /seal|self-hold|自锁|hold/i.test(t))))]);

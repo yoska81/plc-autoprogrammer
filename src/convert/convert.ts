@@ -92,6 +92,23 @@ export function naTags(components: DrawnComponent[]): Map<string, string> {
   return out;
 }
 
+const IO_CATEGORY: Partial<Record<ImportedIO['deviceType'], DrawnComponent['category']>> = {
+  'pushbutton-no': 'pushbutton', 'pushbutton-nc': 'pushbutton', selector: 'selector', 'estop-contact': 'estop', 'sensor-pnp': 'sensor', 'sensor-npn': 'sensor',
+  'limit-switch': 'sensor', 'pressure-switch': 'sensor', 'contactor-coil': 'contactor', 'relay-coil': 'relay', solenoid: 'solenoidValve', 'pilot-light': 'pilotLight', 'stack-light': 'stackLight',
+};
+
+/** Field devices the drawings show only in the I/O list (buttons, switches, lamps without a parts-list row), so they are renamed too. */
+export function ioOnlyDevices(m: ExistingMachine): DrawnComponent[] {
+  const known = new Set(m.components.map((c) => c.tag));
+  const out = new Map<string, DrawnComponent>();
+  for (const p of m.io) {
+    const category = IO_CATEGORY[p.deviceType];
+    if (!p.deviceTag || known.has(p.deviceTag) || out.has(p.deviceTag) || !category || !/^[A-Z]{1,3}\d+$/.test(p.deviceTag)) continue;
+    out.set(p.deviceTag, { tag: p.deviceTag, partNumber: null, manufacturer: null, description: p.description, category, ratings: { amps: null, poles: null, coilVoltage: null, kA: null, curve: null, minAmps: null, maxAmps: null, kw: null, outputVolts: null, outputAmps: null }, confidence: p.confidence, source: p.source });
+  }
+  return [...out.values()];
+}
+
 /** Safety parts: kept by function, never certified by the conversion. */
 export const REVALIDATE = 'Safety function: re-validate after the conversion';
 
@@ -225,6 +242,8 @@ export interface Conversion {
 }
 
 export interface ConvertedCircuit {
+  /** C1, C2… in the order read: the key of the circuit's rung on the new drawings. */
+  id: string;
   circuit: DrawnCircuit;
   /** relays: kept as a hardwired circuit; program: becomes PLC logic; drive: stays in the drive's / controller's own logic. */
   becomes: 'relays' | 'program' | 'drive';
@@ -245,8 +264,8 @@ export function retag(text: string, tags: Map<string, string>): string {
 
 /** Where each circuit's function goes. A drive's or controller's built-in logic stays there (a servo keeps positioning); relay logic follows the choice. */
 export function convertCircuits(m: ExistingMachine, tags: Map<string, string>, logic: LogicChoice | null): ConvertedCircuit[] {
-  return m.circuits.map((c) => {
-    const becomes = c.logicIn === 'drive' ? 'drive' as const : logic === 'keep-relays' ? 'relays' as const : 'program' as const;    return { circuit: c, becomes, text: retag(`${c.output}: ${c.function}${c.conditions.length ? ` (${c.conditions.join(', ')})` : ''}${c.setting && !c.function.includes(c.setting) ? `; setting: ${c.setting}` : ''}`, tags) };
+  return m.circuits.map((c, i) => {
+    const becomes = c.logicIn === 'drive' ? 'drive' as const : logic === 'keep-relays' ? 'relays' as const : 'program' as const;    return { id: `C${i + 1}`, circuit: c, becomes, text: retag(`${c.output}: ${c.function}${c.conditions.length ? ` (${c.conditions.join(', ')})` : ''}${c.setting && !c.function.includes(c.setting) ? `; setting: ${c.setting}` : ''}`, tags) };
   });
 }
 
@@ -354,7 +373,7 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   }
   // North America renames the devices (QF1 → CB1…); an IEC target keeps the drawing's own tags
   const na = target.region === 'US' || target.region === 'Canada';
-  const tags = na ? naTags(m.components) : new Map(m.components.map((c) => [c.tag, c.tag]));
+  const tags = na ? naTags([...m.components, ...ioOnlyDevices(m)]) : new Map(m.components.map((c) => [c.tag, c.tag]));
   // a drive is sized by the motor it runs: the largest VFD-driven motor when the drive's own power isn't drawn
   const vfdHp = Math.max(0, ...motors.filter((x) => x.starter === 'vfd').map((x) => x.hp));
   // the axis' own devices, by tag: drive, motor, braking resistor, encoder ("line-length encoder PG1 on CN1-11/13")

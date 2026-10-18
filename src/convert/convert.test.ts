@@ -9,6 +9,7 @@ import { RELAY_CONVEYOR } from './__fixtures__/relayConveyor';
 import { ioId } from './types';
 import { scoreReading, scoreText } from './score';
 import { columnCrop, dxfSheetSvg, parseSource } from './thumbs';
+import { toRelayLogic, type RelayEl } from './relayLogic';
 import { CN_ROLLFORMER_01 } from './__fixtures__/cnRollformer01.facts';
 import { CN_ROLLFORMER_01_READING } from './__fixtures__/cnRollformer01.reading';
 import { normalizeMachine } from './derive';
@@ -416,6 +417,33 @@ await test('thumbnails: the sheet and column a source names, a DXF sheet drawn f
   assert.match(svg, /^<svg[^>]+viewBox/);
   assert.match(svg, /CN1-19/, 'sheet 3 text is drawn');
   assert.ok(!/主电路 Main circuit/.test(svg), 'sheet 1 text is not');
+});
+
+await test('relay logic kept: C1–C11 as ladder rungs with the new tags, every device with its part', () => {
+  const m = normalizeMachine(CN_ROLLFORMER_01_READING);
+  assert.equal(toRelayLogic(m, convertMachine(m)).logic, null, 'moved into a PLC: no rungs');
+  const c = convertMachine(m, { ...NA_TARGET, logic: 'keep-relays' });
+  const { logic, notDrawn } = toRelayLogic(m, c);
+  assert.deepEqual(notDrawn, []);
+  assert.equal(logic!.supply, '24VDC');
+  assert.equal(logic!.rungs.length, 16, 'every relay circuit (the cut command and the E-CAM stay in the servo drive)');
+  const rung = (coil: string) => logic!.rungs.find((r) => r.path.some((e) => e.t === 'coil' && e.tag === coil))!;
+  // C1: safety relay contact, stop, start ∥ seal-in, overload, contactor coil
+  assert.deepEqual(rung('K1').path, [
+    { t: 'contact', tag: 'SR1', nc: false, terms: '13-14', kind: 'safety' }, { t: 'contact', tag: 'PB2', nc: true, kind: 'pb' },
+    { t: 'branch', paths: [[{ t: 'contact', tag: 'PB1', nc: false, kind: 'pb' }], [{ t: 'contact', tag: 'K1', nc: false, terms: '13-14', kind: 'relay' }]] },
+    { t: 'contact', tag: 'OL1', nc: true, terms: '95-96', kind: 'ol' }, { t: 'coil', tag: 'K1', kind: 'contactor' }]);
+  assert.equal(rung('K1').id, 'C1');
+  assert.equal(rung('K1').description, 'HYDRAULIC PUMP');
+  assert.deepEqual(rung('CR11').path.at(-1), { t: 'coil', tag: 'CR11', kind: 'timer-on', preset: '2 s' }, 'the cut watchdog keeps its preset');
+  assert.deepEqual(rung('VFD1').path.at(-1), { t: 'coil', tag: 'VFD1', kind: 'drive-input', terms: 'MI1' });
+  assert.ok(rung('H7CX').path.some((e) => e.t === 'coil' && e.kind === 'counter'));
+  // every tag in the rungs is a device with its new tag (buttons and switches read only from the I/O list included)
+  const tags = new Set(logic!.devices.map((d) => d.tag));
+  for (const r of logic!.rungs) for (const e of r.path.flatMap((x) => (x.t === 'branch' ? x.paths.flat() : [x])) as Exclude<RelayEl, { t: 'branch' }>[]) assert.ok(tags.has(e.tag), `${r.id}: ${e.tag} has no device`);
+  assert.equal(logic!.devices.find((d) => d.tag === 'K1')!.oldTag, 'KM1');
+  assert.ok(logic!.devices.find((d) => d.tag === 'K1')!.partNumber, 'the contactor carries its North-America equivalent');
+  assert.equal(c.circuits.find((x) => x.id === 'C1')!.circuit.output, 'KM1');
 });
 
 await test('retag: whole tags only', () => {

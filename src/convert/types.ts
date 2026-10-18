@@ -75,6 +75,14 @@ export interface DrawnAxis {
  * that make it (start/stop with seal-in, interlocks, timers, counters, length controllers), or a function
  * a drive or controller does with its built-in logic (e.g. a servo drive's flying shear).
  */
+/** One element of a coil's path from the left rail to the right rail, as drawn (old tags). */
+export interface PathContact { t: 'contact'; tag: string; nc: boolean; terms: string | null; kind: 'pb' | 'relay' | 'timer' | 'limit' | 'ol' | 'selector' | 'safety' | 'other' }
+export type PathEl =
+  | PathContact
+  | { t: 'coil'; tag: string; kind: 'relay' | 'contactor' | 'timer-on' | 'timer-off' | 'counter' | 'solenoid' | 'light' | 'drive-input'; preset: string | null; terms: string | null }
+  /** Parallel paths (one level: contacts only), e.g. the start button with the seal-in across it. */
+  | { t: 'branch'; paths: PathContact[][] };
+
 export interface DrawnCircuit {
   /** What it drives: the coil, valve, lamp or drive input, e.g. "KM2". */
   output: string;
@@ -83,6 +91,8 @@ export interface DrawnCircuit {
   kind: 'start-stop' | 'interlock' | 'timer' | 'counter' | 'length' | 'sequence' | 'drive-logic' | 'other';
   /** The contacts in the order drawn, in plain words, e.g. ["SA4 cutting on (NO)", "KM1 aux (NO)", "KM2 seal-in (NO)"]. */
   conditions: string[];
+  /** The coil's path, left rail to right rail, contacts in series, branches in parallel; ends with the coil (or a drive input). */
+  path?: PathEl[];
   /** The self-hold (seal-in) contact across the start, e.g. "KA1 11-14"; null when the coil has none. */
   sealIn?: string | null;
   /** Every device tag in the circuit, the output included. */
