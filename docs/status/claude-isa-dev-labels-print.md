@@ -129,6 +129,20 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Test: src/electrical/cooling.test.ts. There is no 4X air conditioner in the catalog; 4X cabinets get the Stratus TE…-4X heat exchangers.
 - Test change: the `amps` plausibility floor is now 0.01 A, since small fans draw 0.06 A.
 
+## Servo systems: AutomationDirect SureServo2
+- 213 parts:
+  - 16 SV2A drives (230 V and 460 V, 400 W to 15 kW), with footprints from the AD spec sheet;
+  - 52 SV2L/M/H motors;
+  - 128 SV2C power, encoder and brake cables;
+  - 17 accessories.
+- Prices and stock come from each product page (2026-10-18).
+- New categories: `servoDrive` (backplate), `servoMotor` (field) and `encoder` (field). Cables are `other` with kind 'servo cable' or 'encoder cable', plus `lengthM`, `forMotor` and `forDrive`.
+- Drive keys: ratedWatts, inputVolts, inputPhases, outputAmps, peakAmps, controlModes, pulseInputMaxKHz (line driver 4000; the open-collector 200 kHz is in pulseInputNote), network, sto and stoRating, brakeOutput, regenResistor, pairsWith.
+- Motor keys: ratedWatts, ratedTorqueNm, peakTorqueNm, ratedRpm, maxRpm, ratedAmps, flangeMm, shaftMm, encoder, brake and brakeVolts, inertiaKgm2, pairsWith, plus the powerCable and encoderCable families (`xx` = length code 03/05/10/20 m).
+- Accessories that plug into the drive (comm modules, battery box, connectors, STO plug, SV2-TOR1 toroid) take no back-panel space. They are `mount: 'field'` with `mountsOn`.
+- AutomationDirect lists no braking resistor, line reactor or EMC filter for SureServo2.
+- Source typo kept as published: the SV2H-455B inertia equals the SV2H-445B figure (see inertiaNote).
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.
