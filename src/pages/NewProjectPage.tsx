@@ -101,10 +101,10 @@ export default function NewProjectPage() {
       const el = useElectricalStore.getState();
       el.setInputs({ ...el.inputs, supply, enclosureRating: enclosure });
       if (start === 'drawings') {
-        // The drawings write the description, I/O and motors: continue on the Convert page.
+        // The drawings / program write the description, I/O and motors: continue on the Import page.
         const ui = useUiStore.getState();
         ui.clearUi('_global', Object.keys(ui.byProject._global ?? {}).filter((k) => k.startsWith('wizard.')));
-        navigate('/convert');
+        navigate('/import');
         return;
       }
     }
@@ -163,7 +163,7 @@ export default function NewProjectPage() {
                   <h3 className="text-sm font-semibold text-steel-800">How do you want to start?</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <Choice selected={start === 'describe'} onClick={() => setStart('describe')} title="Describe a new machine" hint="Write (or say) what the machine does; the app designs everything from it." />
-                    <Choice selected={start === 'drawings'} onClick={() => setStart('drawings')} title="From existing drawings" hint="Upload the electrical drawings of an existing machine (PDF, scans, DXF); the app reads them, writes the description and converts the design to the standard chosen below." />
+                    <Choice selected={start === 'drawings'} onClick={() => setStart('drawings')} title="From existing drawings / program" hint="Upload an existing machine's electrical drawings (PDF, scans, DXF) or program printouts; the app reads them, you check the readings, it writes the description and converts the design to the standard chosen below." />
                   </div>
                 </section>
                 <section className="bg-white border border-steel-200 rounded-md p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -276,7 +276,7 @@ export default function NewProjectPage() {
           {equipmentBlocked && <span className="text-xs text-amber-800">{pendingEquipment.label} does not fit the I/O: change the selection before going on.</span>}
           <button onClick={next} disabled={!canNext}
             className="px-5 py-2 text-sm font-medium bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-40">
-            {step === STEPS.length - 1 ? 'Open project →' : step === 0 && start === 'drawings' ? 'Continue to the drawings →' : 'Next →'}
+            {step === STEPS.length - 1 ? 'Open project →' : step === 0 && start === 'drawings' ? 'Continue to the import →' : 'Next →'}
           </button>
         </div>
       </footer>

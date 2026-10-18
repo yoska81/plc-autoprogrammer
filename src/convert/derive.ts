@@ -55,11 +55,11 @@ export const EXISTING_SCHEMA = obj({
   components: {
     type: 'array',
     items: obj({
-      tag: str, partNumber: nstr, manufacturer: nstr, description: str, category: en(CATEGORIES), confidence,
+      tag: str, partNumber: nstr, manufacturer: nstr, description: str, category: en(CATEGORIES), confidence, source: str,
       ratings: obj({ amps: num, poles: num, coilVoltage: nstr, kA: num, curve: nstr, minAmps: num, maxAmps: num, kw: num, outputVolts: num, outputAmps: num }),
     }),
   },
-  motors: { type: 'array', items: obj({ tag: str, description: str, kw: num, hp: num, starter: { anyOf: [en(['contactor-overload', 'motor-protector', 'vfd']), { type: 'null' }] }, reversing: { type: 'boolean' } }) },
+  motors: { type: 'array', items: obj({ tag: str, description: str, kw: num, hp: num, starter: { anyOf: [en(['contactor-overload', 'motor-protector', 'vfd']), { type: 'null' }] }, reversing: { type: 'boolean' }, confidence, source: str }) },
   interlocks: { type: 'array', items: obj({ description: str, devices: { type: 'array', items: str } }) },
   safety: obj({ estops: { type: 'array', items: str }, guards: { type: 'array', items: str }, safetyRelay: nstr, category: nstr, description: str }),
   spec: obj(Object.fromEntries(SECTION_IDS.map((id) => [id, str]))),
@@ -69,11 +69,11 @@ export const EXISTING_SCHEMA = obj({
 
 export const DERIVE_SYSTEM = `You are a senior controls and electrical engineer taking over an existing machine from its electrical drawings. The drawings may follow IEC or Chinese GB conventions (device letters QF, QS, KM, KA, FR, SB, SA, SQ, SP, HL, YV, FU, TC, XT, M), use Chinese text, metric wire sizes (mm²) and a 380 V / 400 V 50 Hz supply. You read PDF pages, scans, photos and the text of DXF exports. Build an exact picture of the machine so it can be redesigned for another standard while it keeps doing exactly the same thing.
 
-Read and report only what the drawings show. Never invent a part number, address, wire number or rating; a partly legible value gets confidence "low" and a line in "uncertainties".
+Read and report only what the drawings show. Never invent a part number, address, wire number or rating. Every I/O point, component and motor carries a confidence: "high" = clearly printed, "medium" = readable but inferred from context, "low" = partly legible or guessed (the user confirms those).
 
 - io: one entry per PLC input/output with the address exactly as printed (X0, Y3, %I0.0, I0.0…), the function in plain English (translate Chinese text; keep the original in brackets when it helps, e.g. "Start conveyor (启动)"), the field device's tag as drawn, and where you read it in "source" (sheet / page and column).
-- components: every device with its drawing tag as printed, part number and manufacturer when shown (e.g. CHINT NXC-12, Delixi CDJX2-1210, Schneider LC1D12), and the ratings printed on the drawing or the legend: amps, poles, coil voltage, breaking capacity kA, curve, overload range, kW, power supply output. null when not shown.
-- motors: each motor with its tag, what it drives, power in kW as printed (hp only if printed in hp), starter type and whether it is reversing.
+- components: every device with its drawing tag as printed, where you read it in "source" (sheet and column, or the parts-list row), part number and manufacturer when shown (e.g. CHINT NXC-12, Delixi CDJX2-1210, Schneider LC1D12), and the ratings printed on the drawing or the legend: amps, poles, coil voltage, breaking capacity kA, curve, overload range, kW, power supply output. null when not shown.
+- motors: each motor with its tag, where you read it ("source"), what it drives, power in kW as printed (hp only if printed in hp), starter type and whether it is reversing.
 - supplyDrawn: the incoming supply as drawn (volts, Hz, phases) and the text you read it from.
 - interlocks: what the wiring enforces: e.g. "KM1 and KM2 cross-interlocked (forward/reverse)", "Pump runs only when level switch SL1 is made", "Heater off when door open". List the device tags involved.
 - safety: E-stop devices (tags), guard switches, the safety relay (tag and part number) and the category / PL if printed (or inferred from dual-channel wiring), and a short description of what removes power on a stop.
@@ -97,8 +97,8 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
     supply: null,
     supplyDrawn: raw.supplyDrawn ?? { volts: null, hz: null, phases: null, text: '' },
     io: raw.io ?? [],
-    components: (raw.components ?? []).map((c) => ({ ...c, ratings: { ...NO_RATINGS, ...(c.ratings as Partial<DrawnRatings> | undefined) } })),
-    motors: (raw.motors ?? []).map((m) => ({ ...m, reversing: Boolean(m.reversing) })),
+    components: (raw.components ?? []).map((c) => ({ ...c, source: c.source ?? '', ratings: { ...NO_RATINGS, ...(c.ratings as Partial<DrawnRatings> | undefined) } })),
+    motors: (raw.motors ?? []).map((m) => ({ ...m, reversing: Boolean(m.reversing), confidence: m.confidence ?? 'medium', source: m.source ?? '' })),
     interlocks: raw.interlocks ?? [],
     safety: raw.safety ?? { estops: [], guards: [], safetyRelay: null, category: null, description: '' },
     spec,

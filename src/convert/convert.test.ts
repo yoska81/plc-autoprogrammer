@@ -6,6 +6,7 @@ import { convertMachine, kwToHp, mm2ToAwg, naTags, targetSupply } from './conver
 import { normalizeMachine } from './derive';
 import { applyExistingMachine, storedMachine } from './apply';
 import { functionKept, functionKeptFindings, similarity } from './functionKept';
+import { EMPTY_REVIEW, itemKey, reviewItems, reviewedMachine, unconfirmed } from './review';
 import { CHINESE_CONVEYOR } from './__fixtures__/chineseConveyor';
 import { seedSampleProject } from '../preview/sampleProject';
 import { collectProject } from '../deliverables/collect';
@@ -106,8 +107,34 @@ test('the Chinese conveyor converted to North America: supply, motors, every par
   assert.ok(c.questions.some((q) => /single-channel/.test(q.text) && q.section === 'safety'));
 });
 
+test('review: left-out items drop, unconfirmed low-confidence readings become questions', () => {
+  const m = { ...CHINESE_CONVEYOR, io: CHINESE_CONVEYOR.io.map((p) => (p.address === 'X7' ? { ...p, confidence: 'low' as const } : p)) };
+  // FR2 is medium, X7 now low: only low-confidence readings are asked
+  let r = reviewedMachine(m, EMPTY_REVIEW);
+  assert.deepEqual(r.questions.map((q) => q.text.slice(0, 50)), ['Please check on the machine: X7 Conveyor overload ']);
+  assert.match(r.questions[0].text, /sheet 4, column 7/);
+  assert.equal(unconfirmed(m, EMPTY_REVIEW).length, 1);
+  // confirmed: no question; left out: gone from the machine
+  r = reviewedMachine(m, { confirmed: [itemKey('io', 'X7')], excluded: [itemKey('part', 'KA1'), itemKey('motor', 'M2')] });
+  assert.equal(r.questions.length, 0);
+  assert.ok(!r.machine.components.some((c) => c.tag === 'KA1'));
+  assert.deepEqual(r.machine.motors.map((x) => x.tag), ['M1']);
+  assert.equal(reviewItems(m).length, m.io.length + m.components.length + m.motors.length);
+});
+
+test('IEC target: tags and supply stay, safety parts are marked re-validate', () => {
+  const c = convertMachine(CHINESE_CONVEYOR, { region: 'EU', supply: '400VAC-3PH', controlVolts: '24VDC' });
+  assert.equal(c.supply, '400VAC-3PH');
+  assert.equal(c.tags.get('QF1'), 'QF1');
+  assert.equal(c.parts.find((p) => p.oldTag === 'KM1')!.newTag, 'KM1');
+  assert.ok(!c.questions.some((q) => /50 Hz/.test(q.text)));
+  const na = convertMachine(CHINESE_CONVEYOR);
+  assert.ok(na.parts.find((p) => p.oldTag === 'SB1')!.differences.some((d) => /re-validate/.test(d)));
+  assert.ok(na.parts.filter((p) => p.status === 'matched').every((p) => /maker's listing|listing: see/.test(p.reason)), 'never claims a listing of its own');
+});
+
 test('a partial AI answer is filled to the full shape', () => {
-  const m = normalizeMachine({ summary: 'x', components: [{ tag: 'KM1', partNumber: null, manufacturer: null, description: '', category: 'contactor', confidence: 'low', ratings: { amps: 9 } as never }] });
+  const m = normalizeMachine({ summary: 'x', components: [{ tag: 'KM1', partNumber: null, manufacturer: null, description: '', category: 'contactor', confidence: 'low', source: '', ratings: { amps: 9 } as never }] });
   assert.equal(m.components[0].ratings.amps, 9);
   assert.equal(m.components[0].ratings.poles, null);
   assert.equal(m.spec.overview, '');
@@ -123,6 +150,8 @@ test('applied to a project: description, questions, I/O and motors; every functi
   assert.match(spec.overview, /Sorting conveyor/);
   assert.match(spec.utilities, /480 VAC 3-phase 60 Hz/);
   assert.match(spec.sequence, /cross-interlocked/);
+  assert.match(spec.safety, /re-validated/);
+  assert.match(spec.safety, /own UL 508A listing/);
   assert.match(spec.motion, /M1 1\.1 kW → 1\.5 HP/);
   const qs = useQuestionStore.getState().byProject[useProjectsStore.getState().activeId ?? 'default'] ?? [];
   assert.ok(qs.some((q) => q.source === 'drawings' && /pusher take to extend/.test(q.text)));
@@ -142,6 +171,7 @@ test('applied to a project: description, questions, I/O and motors; every functi
   assert.match(m1.note, /one contactor/);
   assert.equal(kept.filter((x) => x.kind === 'interlock').length, 3);
   assert.equal(kept.find((x) => /cross-interlocked/.test(x.original))!.status, 'kept');
+  assert.ok(kept.filter((x) => x.kind === 'safety').every((x) => x.revalidate), 'safety functions marked re-validate');
   // a redesign that lost a motor and an I/O point is flagged, and the review shows it
   useIOStore.getState().deletePoint(useIOStore.getState().projectIO.find((p) => /Pusher valve/.test(p.description))!.id);
   el.setDesign({ ...useElectricalStore.getState().design!, inputs: { ...el.inputs, motors: el.inputs.motors.slice(0, 1) } }, 'generated', null);

@@ -20,6 +20,8 @@ export interface KeptItem {
   now: string;
   status: KeptStatus;
   note: string;
+  /** Safety functions: kept by the redesign, but to be re-validated (never certified by the conversion). */
+  revalidate?: boolean;
 }
 
 const words = (s: string) => new Set(s.toLowerCase().replace(/\(.*?\)/g, ' ').split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !['the', 'and', 'for', 'with', 'contactor', 'lamp'].includes(w)));
@@ -94,7 +96,7 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
     const io = p.io.find((x) => x.deviceType === 'estop-contact' || x.deviceType === 'safety-relay-output');
     const inChain = safety ? safety.estops.length > 0 : Boolean(io);
     out.push({
-      kind: 'safety', original: `E-stop ${e}${m.safety.safetyRelay ? ` on ${m.safety.safetyRelay}` : ' (single channel)'}`,
+      kind: 'safety', revalidate: true, original: `E-stop ${e}${m.safety.safetyRelay ? ` on ${m.safety.safetyRelay}` : ' (single channel)'}`,
       now: inChain ? `${safety?.estops.join(', ') || newTag}${safety?.relay ? ` on safety relay ${safety.relay.tag}` : ''}` : '—',
       status: !inChain ? 'missing' : safety?.relay || !p.drawingCtx ? 'kept' : 'check',
       note: !inChain ? 'No E-stop in the new design.' : safety?.relay ? '' : p.drawingCtx ? 'E-stop without a monitored safety relay.' : 'Build the electrical design to confirm the safety circuit.',
@@ -102,7 +104,7 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
   }
   for (const g of m.safety.guards) {
     const inChain = Boolean(safety?.guards.length) || p.io.some((x) => x.category === 'Safety' && /guard|door|gate|curtain/i.test(x.description));
-    out.push({ kind: 'safety', original: `Guard ${g}`, now: inChain ? (safety?.guards.join(', ') || 'Safety input') : '—', status: inChain ? 'kept' : 'missing', note: inChain ? '' : 'The guard does not stop the machine in the new design.' });
+    out.push({ kind: 'safety', revalidate: true, original: `Guard ${g}`, now: inChain ? (safety?.guards.join(', ') || 'Safety input') : '—', status: inChain ? 'kept' : 'missing', note: inChain ? '' : 'The guard does not stop the machine in the new design.' });
   }
   return out;
 }

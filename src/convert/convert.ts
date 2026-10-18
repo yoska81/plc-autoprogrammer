@@ -85,6 +85,9 @@ export function naTags(components: DrawnComponent[]): Map<string, string> {
   return out;
 }
 
+/** Safety parts: kept by function, never certified by the conversion. */
+export const REVALIDATE = 'Safety function: re-validate after the conversion';
+
 /** Parts the engine chooses itself (from the I/O, the equipment choice and the motors). */
 const ENGINE_PICKS = new Set<CatalogCategory>(['pushbutton', 'estop', 'pilotLight', 'selector', 'stackLight', 'plc', 'plcModule', 'hmi', 'terminal', 'terminalAccessory', 'sensor', 'solenoidValve', 'enclosure', 'dinRail', 'wireDuct', 'groundBar']);
 
@@ -173,7 +176,7 @@ export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTar
   const r = ratingsOf(c);
   const from = { partNumber: c.partNumber, manufacturer: c.manufacturer, description: c.description, category: c.category, ratings: r };
   if (ENGINE_PICKS.has(c.category)) {
-    return { oldTag: c.tag, newTag, from, to: null, alternatives: [], differences: [], status: 'engine', reason: 'Chosen by the design from the I/O list and the equipment choice.' };
+    return { oldTag: c.tag, newTag, from, to: null, alternatives: [], differences: c.category === 'estop' ? [REVALIDATE] : [], status: 'engine', reason: 'Chosen by the design from the I/O list and the equipment choice.' };
   }
   // an overload is set to the motor's current, which changes with the voltage: the design sizes it for the new motor
   if ((c.category === 'overload' || c.category === 'motorProtector') && (target.region === 'US' || target.region === 'Canada')) {
@@ -187,7 +190,8 @@ export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTar
       reason: `No catalog part matches${r.amps !== null || r.kw !== null || r.minAmps !== null ? '' : `: ${missing} is not on the drawing`}. Pick one, or let the design size it from the motors.` };
   }
   const [to, ...alternatives] = list;
-  return { oldTag: c.tag, newTag, from, to, alternatives: alternatives.slice(0, 4), differences: differences(c, r, to, target), status: 'matched', reason: `${to.manufacturer} ${to.partNumber}: same function and ratings for ${target.region === 'US' ? 'North America (UL)' : target.region}.` };
+  const listing = to.ratings.ul ? `maker's listing: UL ${String(to.ratings.ul).replace(/^UL\s*/i, '')}` : 'listing: see the maker\'s data';
+  return { oldTag: c.tag, newTag, from, to, alternatives: alternatives.slice(0, 4), differences: [...differences(c, r, to, target), ...(c.category === 'safetyRelay' ? [REVALIDATE] : [])], status: 'matched', reason: `${to.manufacturer} ${to.partNumber}: same function and ratings (${listing}).` };
 }
 
 export interface Conversion {
@@ -226,7 +230,9 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   for (const [i, mm] of m.motors.entries()) {
     if (!motorKw[i].hp) questions.push({ text: `What is the power of ${mm.tag} (${mm.description})? It is not on the drawings.`, section: 'motion', assumption: '1 HP' });
   }
-  const tags = naTags(m.components);
+  // North America renames the devices (QF1 → CB1…); an IEC target keeps the drawing's own tags
+  const na = target.region === 'US' || target.region === 'Canada';
+  const tags = na ? naTags(m.components) : new Map(m.components.map((c) => [c.tag, c.tag]));
   // a drive is sized by the motor it runs: the largest VFD-driven motor when the drive's own power isn't drawn
   const vfdHp = Math.max(0, ...motors.filter((x) => x.starter === 'vfd').map((x) => x.hp));
   const parts = m.components.map((c) => crossMatch(c, tags.get(c.tag) ?? c.tag, target, c.category === 'vfd' && c.ratings.kw === null && vfdHp ? vfdHp : undefined));

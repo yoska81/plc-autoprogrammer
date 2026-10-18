@@ -36,13 +36,12 @@ export const OnlinePage = page(() => import('../online/OnlinePage.tsx'));
 export const EquipmentPage = page(() => import('../pages/EquipmentPage.tsx'));
 export const NewProjectPage = page(() => import('../pages/NewProjectPage.tsx'));
 export const SourcingPage = page(() => import('../pages/SourcingPage.tsx'));
-export const ConvertPage = page(() => import('../pages/ConvertPage.tsx'));
 export const EngineerPage = page(() => import('../pages/EngineerPage.tsx'));
 export const CommissioningPage = page(() => import('../commissioning/CommissioningPage.tsx'));
 export const RedlinesPage = page(() => import('../redlines/RedlinesPage.tsx'));
 
 /** The page of a route path ('/io', '/electrical?tab=cabinet', '#/hmi'). */
-const BY_PATH: Record<string, Page> = { '': SpecPage, 'io': IOPage, 'program': ProgramPage, 'export': ExportPage, 'settings': SettingsPage, 'project': ProjectDataPage, 'plc': PlcSetupPage, 'print': PrintPage, 'import': ImportPage, 'electrical': ElectricalPage, 'print-electrical': PrintElectricalPage, 'spec': SpecPage, 'hmi': HmiPage, 'review': ReviewPage, 'simulate': SimulatePage, 'online': OnlinePage, 'equipment': EquipmentPage, 'new': NewProjectPage, 'sourcing': SourcingPage, 'convert': ConvertPage, 'engineer': EngineerPage, 'commissioning': CommissioningPage, 'redlines': RedlinesPage };
+const BY_PATH: Record<string, Page> = { '': SpecPage, 'io': IOPage, 'program': ProgramPage, 'export': ExportPage, 'settings': SettingsPage, 'project': ProjectDataPage, 'plc': PlcSetupPage, 'print': PrintPage, 'import': ImportPage, 'electrical': ElectricalPage, 'print-electrical': PrintElectricalPage, 'spec': SpecPage, 'hmi': HmiPage, 'review': ReviewPage, 'simulate': SimulatePage, 'online': OnlinePage, 'equipment': EquipmentPage, 'new': NewProjectPage, 'sourcing': SourcingPage, 'engineer': EngineerPage, 'commissioning': CommissioningPage, 'redlines': RedlinesPage };
 export const preloadRoute = (path: string): Promise<unknown> => BY_PATH[path.replace(/^#?\/?/, '').split(/[/?#]/)[0]]?.preload() ?? Promise.resolve();
 
 /**

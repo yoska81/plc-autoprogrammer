@@ -36,6 +36,8 @@ export interface DrawnComponent {
   category: ImportResult['components'][number]['category'];
   ratings: DrawnRatings;
   confidence: 'high' | 'medium' | 'low';
+  /** Where it was read, e.g. "sheet 1, column 3" or "parts list, row 5". */
+  source: string;
 }
 
 export interface DrawnMotor {
@@ -45,6 +47,8 @@ export interface DrawnMotor {
   hp: number | null;
   starter: StarterType | null;
   reversing: boolean;
+  confidence: 'high' | 'medium' | 'low';
+  source: string;
 }
 
 export interface ExistingMachine extends Omit<ImportResult, 'components' | 'motors'> {

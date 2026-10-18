@@ -1,4 +1,4 @@
-// Convert existing drawings: New project → "From existing drawings" → upload a Chinese-style drawing set
+// Convert existing drawings: New project → "From existing drawings / program" → Import (Drawings tab) → upload a Chinese-style drawing set
 // (PDF + DXF, e2e/fixtures/convert/) → the AI (mocked) reads it → description, conversion table to North
 // America, rebuild with the engine → function kept. Checks what is sent to the AI (the PDF as a document,
 // the DXF as text with its Chinese labels), the old → new table, the questions on the Machine description
@@ -61,6 +61,8 @@ function sse(model, text) {
   await page.goto(BASE);
   // The mocked AI answers with what a good AI reads from this set (src/convert/__fixtures__/chineseConveyor.ts).
   MACHINE = await page.evaluate(async () => (await import('/src/convert/__fixtures__/chineseConveyor.ts')).CHINESE_CONVEYOR);
+  // one reading the AI is unsure of: it must become a question unless the user confirms it
+  MACHINE.io = MACHINE.io.map((p) => (p.address === 'X7' ? { ...p, confidence: 'low' } : p));
   await page.evaluate(() => {
     localStorage.clear();
     localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'high', openaiApiKey: '', openaiModel: 'gpt-4o' }, version: 4 }));
@@ -69,11 +71,13 @@ function sse(model, text) {
 
   // New project → From existing drawings
   await page.getByRole('button', { name: 'New project' }).first().click();
-  await page.getByTestId('start-option').getByRole('button', { name: /^From existing drawings/ }).click();
+  await page.getByTestId('start-option').getByRole('button', { name: /^From existing drawings \/ program/ }).click();
   await page.getByPlaceholder('e.g. Line 3 case packer').fill('Sorting Conveyor Retrofit');
-  await page.getByRole('button', { name: 'Continue to the drawings →' }).click();
-  await page.waitForURL(/\/convert$/);
-  log('Start option: "From existing drawings" → /convert');
+  await page.getByRole('button', { name: 'Continue to the import →' }).click();
+  await page.waitForURL(/\/import$/);
+  const limits = await page.getByTestId('import-limits').innerText();
+  check(/DWG/.test(limits) && /\.ACD/.test(limits) && /\.gx3/.test(limits) && /\.ckp/.test(limits), 'upload says plainly what can\'t be read');
+  log('Start option: "From existing drawings / program" → /import (Drawings | Program)');
 
   // Upload and read
   await page.getByTestId('convert-files').setInputFiles([FIX + 'sorting_conveyor_drawings.pdf', FIX + 'E-03_PLC_IO.dxf']);
@@ -87,6 +91,18 @@ function sse(model, text) {
   log('Sent to the AI:', content.map((b) => b.type).join(', '), '| DXF text:', dxfText.split('\n')[2]);
   const rec = await page.getByTestId('convert-recognised').innerText();
   check(/15 I\/O · 23 parts · 2 motors/.test(rec) && /3~380V 50Hz/.test(rec) && /FX3U/.test(rec), 'what the drawings show: counts, supply, PLC');
+  // Review: every reading with its source and confidence; correct one, leave the low-confidence X7 unconfirmed
+  const ioRows = page.getByTestId('review-io').locator('tbody tr');
+  check(await ioRows.count() === 15 && /sheet 4, column 2/.test(await ioRows.first().innerText()) && /high/.test(await ioRows.first().innerText()), 'review: each I/O with its source and confidence');
+  check(/sheet 1, column 2/.test(await page.getByTestId('review-parts').innerText()), 'review: each part with its source');
+  check(/1 low-confidence reading not confirmed/.test(await page.getByTestId('review-status').innerText()), 'review: the low-confidence reading is counted');
+  const x1 = page.getByLabel('Function of X1', { exact: true });
+  await x1.fill('Start pushbutton (启动)');
+  await x1.blur();
+  await page.waitForTimeout(200);
+  check(/✓/.test(await ioRows.nth(1).innerText()), 'review: a correction confirms the reading');
+  check(/re-validate/.test(rec), 'review: safety marked re-validate');
+  await page.getByTestId('convert-recognised').screenshot({ path: OUT + '00_review.png' });
 
   // Description written from the drawings
   const desc = await page.getByTestId('convert-description').innerText();
@@ -133,6 +149,7 @@ function sse(model, text) {
   log('Function kept:', keptText.split('\n')[1]);
   check(!/✗ Missing/.test(keptText), `nothing missing in the new design:\n${keptText.split('\n').filter((l) => /Missing/.test(l)).join('\n')}`);
   check((keptText.match(/✓ Kept/g) ?? []).length >= 15 + 2, 'I/O and motors kept');
+  check(/re-validate/.test(keptText), 'safety functions marked re-validate');
   await kept.screenshot({ path: OUT + '02_function_kept.png' });
 
   // Questions on the Machine description page; the review shows no lost function
@@ -141,6 +158,8 @@ function sse(model, text) {
   const spec = await page.locator('body').innerText();
   fs.writeFileSync(OUT + 'spec_page.txt', spec);
   check(/pusher take to extend/i.test(spec) && /50 Hz/.test(spec) && /single-channel/.test(spec), 'questions on the Machine description page (drawings + conversion)');
+  check(/Please check on the machine: X7 Conveyor overload/.test(spec), 'the unconfirmed low-confidence reading is a question');
+  check(/Start pushbutton \(启动\)/.test(await page.evaluate(async () => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.map((p) => p.description).join('|'))), 'the correction is in the I/O list');
   const review = await page.evaluate(async () => (await import('/src/review/actions.ts')).refreshChecks().filter((f) => f.id.startsWith('convert:kept:')).map((f) => f.title));
   check(review.length === 0, `no "function lost" review findings: ${review.join('; ')}`);
 
