@@ -9,7 +9,7 @@ import App from './App.tsx'
 import { installQaSync } from './components/questions/qa'
 import Notice from './components/Notice.tsx'
 import {
-  IOPage, ProgramPage, ExportPage, SettingsPage, ProjectDataPage, PlcSetupPage, PrintPage, ImportPage, ElectricalPage, PrintElectricalPage, SpecPage, HmiPage, ReviewPage, SimulatePage, OnlinePage, EquipmentPage, NewProjectPage, SourcingPage, EngineerPage, CommissioningPage, RedlinesPage, UpgradePage,
+  IOPage, ProgramPage, ExportPage, SettingsPage, ProjectDataPage, PlcSetupPage, PrintPage, ImportPage, ElectricalPage, PrintElectricalPage, SpecPage, HmiPage, ReviewPage, SimulatePage, OnlinePage, EquipmentPage, NewProjectPage, SourcingPage, EngineerPage, CommissioningPage, RedlinesPage,
 } from './pages/lazyPages'
 import { preloadPagesWhenIdle, preloadRoute } from './pages/lazyPages'
 
@@ -50,7 +50,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="online" element={<OnlinePage />} />
             <Route path="plc" element={<PlcSetupPage />} />
             <Route path="import" element={<ImportPage />} />
-            <Route path="upgrade" element={<UpgradePage />} />
+            <Route path="upgrade" element={<Navigate to="/import?tab=program" replace />} />
             <Route path="electrical" element={<ElectricalPage />} />
             <Route path="io" element={<IOPage />} />
             <Route path="program" element={<ProgramPage />} />

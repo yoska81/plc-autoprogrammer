@@ -427,6 +427,22 @@ export function newIo(m: ExistingMachine, logic: LogicChoice | null): ImportedIO
   return [...io, ...extra, ...outputs];
 }
 
+/**
+ * The PLC's Safety OK input: the converted machine stops through a monitored safety relay (kept, or added
+ * for an E-stop that was not a safety circuit), and the program gates every motion output with its
+ * output contact. Added when the drawings have none (an E-stop wired only to a PLC input is not one).
+ */
+export function withSafetyOk(m: ExistingMachine, io: ImportedIO[], tags: Map<string, string>): ImportedIO[] {
+  if (!m.safety.estops.length && !m.safety.safetyRelay) return io;
+  if (!io.some((p) => p.type === 'output') || io.some((p) => p.type === 'input' && p.deviceType === 'safety-relay-output')) return io;
+  const old = m.safety.safetyRelay?.match(/[A-Z]{1,3}\d+/)?.[0] ?? m.components.find((c) => c.category === 'safetyRelay')?.tag;
+  const tag = old ? tags.get(old) ?? old : 'MSR1';
+  return [...io, {
+    address: `${tag} (Safety OK)`, description: `Safety OK (safety relay ${tag} output)`, type: 'input', category: 'Safety', deviceTag: tag, deviceType: 'safety-relay-output',
+    confidence: 'high', source: old ? `safety relay ${old} on the drawings: its monitoring contact into the PLC` : 'added by the conversion: the E-stop stops through a monitored safety relay',
+  }];
+}
+
 const TERMINAL = /^(?:[A-Z]{1,4}\d*(?:-[A-Z0-9]+)?|CN\d+-\d+)$/;
 
 /**
@@ -563,5 +579,5 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   if (hardwired.length) {
     recommendations.push({ section: 'safety', text: `The safety relay's contacts stay hardwired, not through the PLC (NFPA 79 9.4.1; a standard PLC never carries a safety function): ${hardwired.map((c) => `${c.hardwired.join(', ')} in the ${tags.get(c.circuit.output) ?? c.circuit.output} coil circuit`).join('; ')}. Its other safety outputs keep removing power as drawn${m.safety.description ? ` (${retag(m.safety.description, tags)})` : ''}; with the relay logic in the PLC, they switch the safe 24 V (24+S) to the PLC outputs and the valves, not to relays. Re-validate after the conversion.` });
   }
-  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits, io: newIo(m, logic) };
+  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits, io: withSafetyOk(m, newIo(m, logic), tags) };
 }

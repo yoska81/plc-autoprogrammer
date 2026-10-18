@@ -174,7 +174,9 @@ await test('applied to a project: description, questions, I/O and motors; every 
   const qs = useQuestionStore.getState().byProject[useProjectsStore.getState().activeId ?? 'default'] ?? [];
   assert.ok(qs.some((q) => q.source === 'drawings' && /pusher take to extend/.test(q.text)));
   assert.ok(qs.some((q) => q.source === 'drawings' && /50 Hz/.test(q.text)));
-  assert.equal(useIOStore.getState().projectIO.length, CHINESE_CONVEYOR.io.length);
+  // the original I/O, and the Safety OK input of the monitored safety relay that replaces the single-channel E-stop (gates every output)
+  assert.equal(useIOStore.getState().projectIO.length, CHINESE_CONVEYOR.io.length + 1);
+  assert.ok(useIOStore.getState().projectIO.some((p) => p.type === 'input' && p.deviceType === 'safety-relay-output' && /^Safety OK/.test(p.description)));
   assert.deepEqual(useElectricalStore.getState().inputs.motors.map((m) => m.tag), ['M1', 'M2']);
   assert.ok(storedMachine());
   // the regenerated design (stand-in: the design with the new motors) keeps every I/O and motor
@@ -389,7 +391,8 @@ await test('roll former: relay circuits move to the PLC, the drive logic stays i
   const by = (t: string) => c.circuits.find((x) => x.circuit.output === t)!.becomes;
   assert.deepEqual(['KM1', 'KM2', 'VF1', 'SD1', 'KA1'].map(by), ['program', 'program', 'drive', 'drive', 'drive']);
   assert.ok(!c.io.some((p) => p.deviceTag === 'KM1' && p.type === 'output'), 'the main contactor goes to the safety circuit, not to an output');
-  assert.equal(c.io.length, ROLL_FORMER.io.length, 'its field devices are already in the drawings\' I/O list');
+  assert.equal(c.io.filter((p) => p.deviceType !== 'safety-relay-output').length, ROLL_FORMER.io.length, 'its field devices are already in the drawings\' I/O list');
+  assert.equal(c.io.filter((p) => p.deviceType === 'safety-relay-output').length, 1, 'and the Safety OK input of the safety relay the conversion adds');
 });
 
 await test('STO: a safety relay is not enough when a drive stops only through a single run contact', () => {

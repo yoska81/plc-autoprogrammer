@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router-dom';
 import DrawingsImport from '../convert/DrawingsImport';
 import ReviewAndConvert from '../convert/ReviewAndConvert';
 import PhotosImport from '../convert/photos/PhotosImport';
+import UpgradePage from '../plc/import/ui/UpgradePage';
 
 type Tab = 'drawings' | 'program' | 'photos';
 const TABS: { id: Tab; label: string }[] = [{ id: 'drawings', label: 'Drawings' }, { id: 'program', label: 'Program' }, { id: 'photos', label: 'Cabinet photos' }];
@@ -35,12 +36,8 @@ export default function ImportPage() {
       </nav>
       <div className="flex-1 space-y-4 overflow-y-auto bg-steel-50 p-4">
         {tab === 'drawings' && <DrawingsImport />}
-        {/* Program tab: the program reader (src/plc/import/) plugs in here. */}
-        {tab === 'program' && (
-          <div className="max-w-3xl rounded-sm border border-steel-200 bg-white p-4 text-sm text-steel-700" data-testid="import-program">
-            Reading PLC program files is being added. Until then, print the program and its I/O list (symbol table) to PDF and upload them on the <button type="button" className="text-brand-700 underline" onClick={() => setParams({ tab: 'drawings' }, { replace: true })}>Drawings</button> tab with the electrical drawings.
-          </div>
-        )}
+        {/* Program tab: an exported PLC program read (src/plc/import/), then the original vs now and the download. */}
+        {tab === 'program' && <div data-testid="import-program"><UpgradePage embedded /></div>}
         {/* Cabinet photos → as-built record, then the shared review / conversion below (src/convert/photos/). */}
         {tab === 'photos' && <PhotosImport />}
         {/* Every tab hands its reading to the same review, conversion and rebuild. */}
