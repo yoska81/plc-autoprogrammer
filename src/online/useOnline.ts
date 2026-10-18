@@ -103,7 +103,10 @@ export async function connectPlc(addresses: string[], bridge: ModbusBridge | nul
       useOnlineStore.setState((s) => ({ bits: res.bits, words: res.words, failed: res.failed, lastUpdate: Date.now(), polls: s.polls + 1, error: null }));
     } catch (e) {
       if (my !== session) break;
-      useOnlineStore.setState({ status: 'error', error: `Connection lost: ${e instanceof Error ? e.message : String(e)}`, allowWrites: false });
+      const m = e instanceof Error ? e.message : String(e);
+      // Between two polls the socket closed: say what that means at the machine.
+      const why = /^Not connected$/.test(m) ? 'the PLC closed the connection (PLC switched off or restarted, cable unplugged, or its connection limit reached)' : m;
+      useOnlineStore.setState({ status: 'error', error: `Connection lost: ${why}. Connect again.`, allowWrites: false });
       await bridge.disconnect().catch(() => {});
       session++;
       break;

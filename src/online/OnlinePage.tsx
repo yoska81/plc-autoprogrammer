@@ -10,9 +10,11 @@ import { programBlocks, rungAllAddresses } from '../plc/sim/blocks';
 import { collectProject } from '../deliverables/collect';
 import { saveBlob } from '../deliverables/files';
 import { Spinner } from '../components/common';
+import LoadIntoPlc from '../plc/ui/LoadIntoPlc';
 import { clickModbus, isWritable, modbus984 } from './clickModbus';
 import { rungPowerFromValues } from './power';
 import { connectPlc, disconnectPlc, modbusBridge, refsFor, useOnlineStore, writePlc } from './useOnline';
+import { programCheck, testConnection, type CheckLine } from './programCheck';
 import { useCheckoutStore, type CheckoutEntry } from './useCheckoutStore';
 import { buildCheckoutPdf, checkoutRows, checkoutSummary } from './checkoutPdf';
 import { useProjectsStore } from '../store/useProjectsStore';
@@ -41,6 +43,8 @@ export default function OnlinePage() {
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [dsDraft, setDsDraft] = useDraft<Record<string, string>>('online.writeValues', {});
   const desktop = Boolean(modbusBridge());
+  const [checks, setChecks] = useState<{ title: string; lines: CheckLine[] } | null>(null);
+  const [checking, setChecking] = useState<string | null>(null);
   const isClick = profile.id === 'click';
 
   // Every address the project uses: I/O, program, HMI.
@@ -87,6 +91,20 @@ export default function OnlinePage() {
     st.setAllowWrites(on);
   };
 
+  const runTest = async () => {
+    setChecking('test'); setChecks(null);
+    try { setChecks({ title: 'Test connection', lines: await testConnection(modbusBridge(), st.settings, st.status === 'connected', cpu.id) }); } finally { setChecking(null); }
+  };
+  const runProgramCheck = async () => {
+    const bridge = modbusBridge();
+    if (!bridge || st.status !== 'connected') return;
+    setChecking('program'); setChecks(null);
+    try {
+      const r = await programCheck(bridge, all, ladder, st.settings.swapWords);
+      setChecks({ title: 'Program check', lines: r.lines });
+    } catch (e) { setChecks({ title: 'Program check', lines: [{ ok: false, text: e instanceof Error ? e.message : String(e) }] }); } finally { setChecking(null); }
+  };
+
   const shown = all.filter((a) => !filter.trim() || `${a} ${names.get(a) ?? ''}`.toLowerCase().includes(filter.toLowerCase()));
   const rows = checkoutRows(collectProject(), checkout);
   const sum = checkoutSummary(rows);
@@ -99,7 +117,10 @@ export default function OnlinePage() {
   return (
     <>
       <header className="px-6 pt-4 bg-white border-b border-steel-200">
-        <h2 className="text-base font-semibold text-steel-800">Online — connect to the PLC</h2>
+        <div className="flex items-start gap-3">
+          <h2 className="flex-1 text-base font-semibold text-steel-800">Online — connect to the PLC</h2>
+          <LoadIntoPlc />
+        </div>
         <p className="text-xs text-steel-500 mt-0.5">Live values from the real {profile.name} {cpu.id} over Ethernet (Modbus TCP). Read-only unless you switch on writes. Use it at the machine during commissioning: watch the ladder, the HMI and every I/O point, and tick the I/O check-out.</p>
         <div className="flex mt-2">{tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}</div>
       </header>
@@ -115,6 +136,10 @@ export default function OnlinePage() {
         {connected || st.status === 'connecting'
           ? <button className={btn} onClick={() => void disconnectPlc()}>Disconnect</button>
           : <button className="px-4 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700 disabled:opacity-40" disabled={!desktop || !isClick} onClick={() => void connectPlc(all)}>Connect</button>}
+        <button className={btn} disabled={!desktop || !isClick || Boolean(checking) || st.status === 'connecting'} onClick={() => void runTest()}
+          title="Does the PLC answer on Modbus TCP, is it in RUN, any PLC error?">{checking === 'test' ? 'Testing…' : 'Test connection'}</button>
+        <button className={btn} disabled={!connected || Boolean(checking)} onClick={() => void runProgramCheck()}
+          title="Read every address of the project and the first-scan setpoints: is the program you typed in running?">{checking === 'program' ? 'Checking…' : 'Program check'}</button>
         <span className="flex items-center gap-2 text-xs" role="status">
           <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-600' : st.status === 'connecting' ? 'bg-amber-500' : st.status === 'error' ? 'bg-red-600' : 'bg-steel-300'}`} />
           {st.status === 'connecting' ? <><Spinner /> Connecting…</> : connected ? `Connected · ${st.polls} reads · ${st.lastUpdate ? new Date(st.lastUpdate).toLocaleTimeString() : ''}` : st.status === 'error' ? 'Not connected' : 'Offline'}
@@ -136,6 +161,14 @@ export default function OnlinePage() {
       )}
       {!isClick && <div className="mx-6 mt-3 bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900">Online monitoring is available for AutomationDirect CLICK PLCs.</div>}
       {st.error && <div role="alert" className="mx-6 mt-3 bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{st.error}</div>}
+      {checks && (
+        <div className="mx-6 mt-3 rounded border border-steel-200 bg-white p-3 text-sm" data-testid="online-checks">
+          <div className="mb-1 flex items-center"><b className="flex-1 text-steel-800">{checks.title}</b><button className="text-xs text-steel-500 hover:underline" onClick={() => setChecks(null)}>Close</button></div>
+          <ul className="space-y-0.5">{checks.lines.map((l, k) => (
+            <li key={k} className={l.ok === true ? 'text-green-800' : l.ok === false ? 'text-red-800' : 'text-steel-600'}>{l.ok === true ? '✓' : l.ok === false ? '✗' : '•'} {l.text}</li>
+          ))}</ul>
+        </div>
+      )}
       {msg && <div role={msg.error ? 'alert' : 'status'} className={`mx-6 mt-3 rounded p-2 text-sm ${msg.error ? 'bg-red-50 border border-red-200 text-red-800' : 'bg-green-50 border border-green-200 text-green-900'}`}>{msg.text}</div>}
 
       <div className="flex-1 overflow-auto bg-steel-50 p-4">

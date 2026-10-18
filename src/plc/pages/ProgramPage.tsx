@@ -8,6 +8,7 @@ import { useHmiStore } from '../../store/useHmiStore';
 import type { AIConfig } from '../ai/ladderAI';
 import LadderWorkspace from '../ui/program/LadderWorkspace';
 import StProgramView from '../ui/program/StProgramView';
+import LoadIntoPlc from '../ui/LoadIntoPlc';
 
 export default function ProgramPage() {
   const { projectName, lastGeneratedAt } = useProgramStore();
@@ -36,6 +37,7 @@ export default function ProgramPage() {
             {lastGeneratedAt && <span>Last generated: {new Date(lastGeneratedAt).toLocaleString()}</span>}
           </div>
         </div>
+        <LoadIntoPlc />
         <Link to="/plc" className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700" title="Change PLC">
           {profile.vendor} {profile.name} · {cpu.id}
         </Link>

@@ -1,5 +1,6 @@
 import type { LadderElement, LadderOutput, LadderProgram } from './ladder';
 import type { IOPoint } from '../../types/io';
+import { clickEntryText } from './clickEntrySheet';
 
 /**
  * CLICK Programming Software cannot import ladder logic, only Address Picker
@@ -80,25 +81,13 @@ export function describeOutput(o: LadderOutput, label: (a: string) => string): s
   }
 }
 
-/** Plain-text, rung-by-rung entry sheet for CLICK Programming Software. */
+/**
+ * Plain-text, rung-by-rung entry sheet for CLICK Programming Software: block by block, row / column of
+ * every instruction and every dialog field (clickEntrySheet.ts; the printable HTML sheet has the same content).
+ */
 export function clickRungListing(program: LadderProgram, labels: Map<string, string>, header: string): string {
-  const label = (a: string) => (labels.get(a) ? ` (${labels.get(a)})` : '');
-  const lines: string[] = [header, ''];
-  program.rungs.forEach((r, i) => {
-    lines.push(`Rung ${i + 1}${r.comment ? ` — ${r.comment}` : ''}`);
-    if (!r.branches.length) lines.push('  Inputs: none (wire straight to outputs)');
-    r.branches.forEach((b, j) => {
-      const prefix = r.branches.length > 1 ? `  Branch ${j + 1} (parallel): ` : '  Inputs in series: ';
-      lines.push(prefix + (b.length ? b.map((el) => describeElement(el, label)).join('  →  ') : 'wire'));
-    });
-    r.outputs.forEach((o) => lines.push(`  Output: ${describeOutput(o, label)}`));
-    lines.push('');
-  });
-  lines.push(`Rung ${program.rungs.length + 1} — END (unconditional; required by CLICK at the end of the main program)`);
+  const text = clickEntryText(program, labels, header);
   const registers = program.tags.filter((t) => !BIT_ADDRESS.test(t.address));
-  if (registers.length) {
-    lines.push('', 'Registers used (enter nicknames in Address Picker by hand):');
-    registers.forEach((t) => lines.push(`  ${t.address}  ${t.nickname}  ${t.comment}`));
-  }
-  return lines.join('\r\n') + '\r\n';
+  if (!registers.length) return text;
+  return `${text}\r\nRegisters used (their nicknames come with the nickname CSV):\r\n${registers.map((t) => `  ${t.address}  ${t.nickname}  ${t.comment}`).join('\r\n')}\r\n`;
 }

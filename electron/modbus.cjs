@@ -15,9 +15,9 @@ function connectError(err, host, port, timeoutMs) {
   const where = `${host}:${port}`;
   switch (err && err.code) {
     case 'ECONNREFUSED': return `Nothing answered at ${where} (connection refused). Check the PLC's IP address and that its Modbus TCP server is enabled (CLICK: port 502).`;
-    case 'EHOSTUNREACH': case 'ENETUNREACH': return `Can't reach ${host}. Check the Ethernet cable and that this PC is on the same network as the PLC.`;
+    case 'EHOSTUNREACH': case 'ENETUNREACH': return `Can't reach ${host}. Check the Ethernet cable and that this PC has an address in the PLC's subnet (CLICK default 192.168.0.10, mask 255.255.0.0).`;
     case 'ENOTFOUND': case 'EAI_AGAIN': return `"${host}" is not a known address. Enter the PLC's IP address, e.g. 192.168.0.10.`;
-    case 'ETIMEDOUT': return `No answer from ${where} within ${timeoutMs} ms. Check the IP address and the network.`;
+    case 'ETIMEDOUT': return `No answer from ${where} within ${timeoutMs} ms. Check the PLC's IP address, that this PC is in the same subnet, and that a firewall on this PC does not block TCP port ${port} (allow ISA Auto Programmer in Windows Defender Firewall).`;
     case 'ECONNRESET': return `The PLC at ${where} closed the connection.`;
     default: return `Could not connect to ${where}: ${err && err.message ? err.message : String(err)}`;
   }

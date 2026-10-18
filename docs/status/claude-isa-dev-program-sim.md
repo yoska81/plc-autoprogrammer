@@ -2,6 +2,12 @@
 
 Current: **Unitronics as a PLC brand, end to end** (manager request) — draft PR → `claude/optimistic-maxwell-6nfcs6`. Sealing head (#64, #67) merged. No blockers (real-AI scores still wait for an API key in the environment settings).
 
+## Load into PLC + Online check (manager: URGENT, user connects a CLICK C0-11DD2E-D tomorrow)
+- [x] "Load into PLC" button (PLC program page and Online): step-by-step guide per brand with a download button for each step's files. CLICK: free software → CPU + modules in slot order (Setup > System Configuration) → File > Import > Nickname → rung entry sheet → PC on the PLC's subnet (default fixed 192.168.0.10 / 255.255.0.0, APIPA when DHCP finds no server) → PLC > Connect, Write Project into PLC, RUN → Online: Test connection, Program check, I/O check-out. Facts from the CLICK help (topics 057, 090, 109, 211) and the C0-PGMSW page. Logix / CCW / TIA / Unitronics: their import path and files.
+- [x] CLICK rung entry sheet (printable HTML + the rungs .txt): block by block, real rung numbers, row / column of every instruction, every dialog field (Timer, Counter + reset line, Compare, Copy, Math, edge contacts), a tick box per rung, END rung.
+- [x] Online: Test connection (answers on Modbus TCP; SC11 RUN / STOP, SC10 switch, SC19 error; CPU model not readable over Modbus, compared with the label), Program check (every project address readable on this CPU, first-scan setpoints in range = the program has run), plainer errors (firewall / subnet on timeout, "PLC closed the connection" between polls).
+- [x] `src/online/clickOnline.test.ts`: end to end against a Modbus server holding a CLICK's memory map, through the desktop app's own Modbus client and the Online store; `src/plc/deploy/loadGuide.test.ts`.
+
 ## Program page full screen (manager / user request)
 - [x] "Full screen" button (icon + text) on the program toolbar, Ctrl+Shift+F, Esc (an open instruction editor closes first): the ladder workspace (block list, ladder, instruction editor, step table / checker bar — both collapsible, Save version, Clear) covers the window; Fullscreen API on the document (Chromium / Electron) plus a fixed overlay, which is also the fallback.
 - [x] New on the toolbar (also outside full screen): zoom out / 100% / zoom in / Fit (diagram only; the instruction editor is not scaled), undo / redo of hand edits (buttons, Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y; a program set from elsewhere starts a new history). There was no ladder context menu or undo before; none of the other branches has one.
