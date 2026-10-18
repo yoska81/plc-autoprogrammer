@@ -208,6 +208,18 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - The slot modules have no footprint of their own because they sit inside the CPU.
   - The -2 CPU width (80.5 mm) comes from the manual drawing. Both are on the unverified list with the reason.
 
+## Troubleshooter: device fault knowledge (src/troubleshoot)
+- The API is in deviceFaults.ts: DeviceFaultProfile holds normal terminal readings per state, LED/display meanings, and faults (code, symptom, causes, confirm, fix, source). Lookups: faultProfilesFor(part) (most specific first), faultCode(part, code) and faultsMatching(part, words).
+- The test checks that every source is an https URL, every match selects a real catalog or imported part, codes are unique per profile, and each fault has symptom, confirm and fix.
+- Drives and servo (faults/drives.ts): 5 profiles, 408 faults, all from the maker manuals with chapter and page.
+  - GS20 (75), GS10 (60), GS30 (85): every keypad code (ocA, ovd, GFF, oH1, cF2, CE10 …). Confirm steps use fault records P06.17-22 and the values at malfunction (P06.34 DC bus, P06.35 current, P06.40 DI status). Normal readings include the supply range, the DC bus band between Lv and ov, +24V-DCM, DI levels for source and sink, and STO1/STO2 to SCM.
+  - Inovance MD290/MD500 (37; codes E002.0… with the Err02 panel text in the symptom).
+  - SureServo2 (151 alarms AL001-AL809; P0.001 and P4.000-004 history; STO state table).
+- Gaps:
+  - Delta VFD-E/MS300/C2000: manuals are behind a captcha.
+  - No drive manual gives a DC bus nominal value, so only the trip band is used.
+  - In the GS20 short-circuit check, one terminal is a symbol that did not extract. The text says so instead of guessing the terminal.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.
