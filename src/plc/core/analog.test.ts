@@ -76,14 +76,13 @@ test('a voltage / current signal never lands on a thermocouple-only channel (C0-
   const both = analogMap(click, cpu, moduleSlots(['C0-04THM', 'C0-04AD-1']), [tc, v]);
   assert.equal(both.byPoint.get('I002')?.partNumber, 'C0-04AD-1');
   assert.equal(analogMap(click, cpu, moduleSlots(['C0-04AD-1']), [tc]).byPoint.get('I001'), undefined, 'thermocouple: not on a current input');
-  // the family also comes from the description: a "thermocouple" left at the 4-20 mA default goes to the THM; a
-  // "thermocouple transmitter" is a 4-20 mA loop and never does
-  const bare = pt('I003', 'input', 'Seal bar temperature (thermocouple)', { range: '4-20mA', min: 0, max: 300, units: '°C' });
-  const tx = pt('I004', 'input', 'Seal heater temperature (thermocouple transmitter)', { range: '4-20mA', min: 0, max: 300, units: '°C' });
-  const mixed = analogMap(click, getCpu(click, 'C0-12DD1E-D'), moduleSlots(['C0-04THM']), [bare, tx]);
-  assert.equal(mixed.byPoint.get('I003')?.partNumber, 'C0-04THM');
-  assert.equal(mixed.byPoint.get('I004')?.label, 'CPU AD1');
-  assert.equal(analogMap(click, cpu, moduleSlots(['C0-04THM']), [tx]).byPoint.get('I004'), undefined, 'transmitter: not on the THM');
+  // only an explicit 'thermocouple' range uses the THM: 4-20 mA inputs never do, whatever their description says
+  const mA = (id: string, d: string) => pt(id, 'input', d, { range: '4-20mA', min: 0, max: 100, units: '%' });
+  const three = [mA('I003', 'Hopper level'), mA('I004', 'Coil diameter ultrasonic'), mA('I005', 'Oven temperature'), mA('I006', 'Seal bar temperature (thermocouple)')];
+  const onThm = analogMap(click, cpu, moduleSlots(['C0-08ND3', 'C0-04THM']), three);
+  for (const q of three) assert.equal(onThm.byPoint.get(q.id), undefined, `${q.description} (4-20 mA): not on the C0-04THM`);
+  const withAd = analogMap(click, cpu, moduleSlots(['C0-04THM', 'C0-04AD-1']), three);
+  for (const q of three) assert.equal(withAd.byPoint.get(q.id)?.partNumber, 'C0-04AD-1', `${q.description}: on the current module`);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

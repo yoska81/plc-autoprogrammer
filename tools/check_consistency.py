@@ -194,17 +194,16 @@ def check(vdir: Path):
         elif nick and a not in nick_txt:
             report('FAIL', v, f'I/O address {a} not in the nickname CSV')
 
-    # an analog channel takes only its own signal family: no voltage / current signal (a transmitter, mA, V) on a
-    # thermocouple-only module, no bare thermocouple on a voltage / current input
+    # an analog channel takes only its own signal family: a thermocouple module only 'thermocouple' ranges, a voltage /
+    # current input never a thermocouple
     if ana_txt:
         for r in csv.DictReader(io.StringIO(ana_txt)):
-            pn, desc = r.get('Part number', ''), r.get('Description', '')
-            electrical = re.search(r'\d\s*-\s*\d+\s*(m?A|V)\b|\bmA\b|transmitter|transducer', desc, re.I)
+            pn, rng = r.get('Part number', ''), r.get('Signal range', '')
             thm = re.search(r'THM', pn)
-            if thm and electrical:
-                report('FAIL', v, f'analog {r.get("Data register")} "{desc}": a voltage / current signal on thermocouple module {pn}')
-            elif pn and not thm and not electrical and re.search(r'thermocouple|\bT/C\b', desc, re.I):
-                report('FAIL', v, f'analog {r.get("Data register")} "{desc}": a thermocouple on {pn}, not a thermocouple input')
+            if thm and rng != 'thermocouple':
+                report('FAIL', v, f'analog {r.get("Data register")} "{r.get("Description")}": {rng} on thermocouple module {pn}')
+            elif pn and not thm and rng == 'thermocouple':
+                report('FAIL', v, f'analog {r.get("Data register")} "{r.get("Description")}": a thermocouple on {pn}, not a thermocouple input')
 
     # ---- Alarms
     hmi_al = [r for r in sheet_rows(wb, 'HMI Alarms')] if 'HMI Alarms' in wb.sheetnames else []
