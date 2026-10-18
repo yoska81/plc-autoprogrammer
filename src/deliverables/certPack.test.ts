@@ -86,6 +86,17 @@ await test('no electrical design: one clear to-confirm item, PDF still builds', 
   assert.equal(buildEstimate(p), null);
 });
 
+await test('a part the catalog does not know is listed to confirm', () => {
+  seedSampleProject();
+  const el = useElectricalStore.getState();
+  const d = structuredClone(el.design!);
+  d.components = d.components.map((x) => (x.tag === 'PLC' ? { ...x, partNumber: 'C0-11DD2E-D' } : x));
+  useElectricalStore.setState({ design: d });
+  const c = certPack(collectProject());
+  assert.ok(c.toConfirm.some((t) => t.startsWith('Not in the parts catalog') && t.includes('C0-11DD2E-D')), c.toConfirm.join(' | '));
+  assert.equal(c.components.find((x) => x.partNumber === 'C0-11DD2E-D')?.manufacturer, TO_CONFIRM);
+});
+
 console.log('shop build time');
 
 await test('wire sizes map to the right termination rate', () => {

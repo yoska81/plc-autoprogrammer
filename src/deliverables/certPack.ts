@@ -247,6 +247,9 @@ export function certPack(p: ProjectSnapshot): CertPack {
   if (sc.exemptCheck.length) toConfirm.push(`Short-circuit rating: check the UL 508A SB4 exemption for ${sc.exemptCheck.join(', ')}`);
   if (safety.length) toConfirm.push(`Safety functions: required PL (PLr) and achieved PL of ${safety.map((s) => s.id).join(', ')} — risk assessment and ISO 13849-1 calculation`);
   else toConfirm.push('Safety functions: none found in the design or the specification');
+  // Parts the catalog does not know: no maker, ratings or listing to read (e.g. a CPU chosen on the PLC page only).
+  const unknownParts = m.rc.filter((c) => c.partNumber && !c.part).map((c) => `${c.tag} ${c.partNumber}`);
+  if (unknownParts.length) toConfirm.push(`Not in the parts catalog: ${unknownParts.join(', ')} — maker, ratings and listings must come from the datasheet`);
   const unlisted = components.filter((c) => c.confirm && c.where !== 'field');
   if (unlisted.length) toConfirm.push(`Component listings: no ${iec ? 'CE / ' : ''}UL / CSA listing in the catalog for ${unlisted.map((c) => c.tag).join(', ')} — check the datasheets`);
   for (const s of statements) if (s.status !== 'OK') toConfirm.push(`${s.topic}: ${s.status === 'Check' ? 'check' : 'confirm'} at build`);

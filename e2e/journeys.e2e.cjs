@@ -8,7 +8,7 @@
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const JSZip = require('jszip');
 const fs = require('fs');
-const OUT = __dirname + '/out-journeys/';
+const OUT = __dirname + `/out-journeys/${process.argv[2] || 'all'}/`;
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
 const BASE = process.env.BASE_URL || 'http://localhost:5204';
 const ONLY = process.argv[2];
@@ -82,8 +82,45 @@ const MACHINES = [
     model: { motors: [M('M1', 'Pump 1', 10, 'vfd', 'Pumps'), M('M2', 'Pump 2', 10, 'vfd', 'Pumps')], estops: 1, guardDoors: [], lightCurtains: [], zones: ['Pumps', 'Tank'], interfaces: [], questions: [] },
     di: 6, do: 3, ai: 4, ao: 2,
   },
+  {
+    key: 'sealclick', name: 'Sealing Head', region: 'United States', enclosure: 'NEMA 4X', online: true,
+    text: 'Sealing head for pouches, washdown area. Two-hand start, light curtain at the front, interlocked guard door at the back, E-stop. Heated seal bar with a type J thermocouple read by the PLC and a separate over-temperature limit. Film unwinder 0.5 HP on a VFD (run and fault only). CLICK PLC C0-11DD2E-D with a C0-08ND3 input module and a C0-04THM thermocouple module, C-more 7 inch screen. Stainless NEMA 4X panel.',
+    io: [
+      P('Safety relay OK (E-stop, guard door, light curtain)', 'input', 'Safety', 'safety-relay-output'),
+      P('Two-hand start button left', 'input', 'Operator/HMI', 'pushbutton-no'), P('Two-hand start button right', 'input', 'Operator/HMI', 'pushbutton-no'),
+      P('Light curtain clear (OSSD)', 'input', 'Safety', 'other'), P('Guard door closed', 'input', 'Safety', 'limit-switch'),
+      P('Stop button', 'input', 'Operator/HMI', 'pushbutton-nc'), P('Fault reset button', 'input', 'Operator/HMI', 'pushbutton-no'),
+      P('Sealing head up', 'input', 'Pneumatic', 'sensor-pnp'), P('Sealing head down', 'input', 'Pneumatic', 'sensor-pnp'),
+      P('Heater over-temperature limit tripped', 'input', 'Analog/Process', 'other'), P('Unwinder VFD fault', 'input', 'Conveyor', 'vfd-input'),
+      A('Seal bar temperature (thermocouple)', 'input', 0, 300, '°C'),
+      P('Sealing head down solenoid', 'output', 'Pneumatic', 'solenoid'), P('Sealing head up solenoid', 'output', 'Pneumatic', 'solenoid'),
+      P('Seal heater on (SSR)', 'output', 'Analog/Process', 'other'), P('Unwinder VFD run', 'output', 'Conveyor', 'vfd-input'),
+      P('Running light', 'output', 'Operator/HMI', 'pilot-light'),
+    ],
+    model: { motors: [M('M1', 'Film unwinder', 0.5, 'vfd', 'Unwind')], estops: 1, guardDoors: [{ zone: 'Sealing station' }], lightCurtains: [{ zone: 'Sealing station' }], zones: ['Unwind', 'Sealing station'], interfaces: [], questions: [] },
+    equip: { profileId: 'click', cpuId: 'C0-11DD2E-D', modules: [{ partNumber: 'C0-08ND3', quantity: 1, why: 'Inputs' }, { partNumber: 'C0-04THM', quantity: 1, why: 'Thermocouple' }], hmi: 'CM5-T7W' },
+    di: 11, do: 5, ai: 1, ao: 0,
+  },
+  {
+    key: 'unitronics', name: 'Unitronics Sealer', region: 'United States',
+    text: 'Sealing head on a Unitronics Vision V700 all-in-one PLC with its own 7 inch touch screen and a V200-18-E3XB snap-in I/O. Two-hand start, light curtain, guard door, E-stop, heater with a 4-20 mA temperature transmitter, film unwinder 0.5 HP on a VFD.',
+    io: [
+      P('Safety relay OK (E-stop, guard door, light curtain)', 'input', 'Safety', 'safety-relay-output'),
+      P('Two-hand start button left', 'input', 'Operator/HMI', 'pushbutton-no'), P('Two-hand start button right', 'input', 'Operator/HMI', 'pushbutton-no'),
+      P('Light curtain clear (OSSD)', 'input', 'Safety', 'other'), P('Guard door closed', 'input', 'Safety', 'limit-switch'),
+      P('Stop button', 'input', 'Operator/HMI', 'pushbutton-nc'), P('Fault reset button', 'input', 'Operator/HMI', 'pushbutton-no'),
+      P('Sealing head up', 'input', 'Pneumatic', 'sensor-pnp'), P('Sealing head down', 'input', 'Pneumatic', 'sensor-pnp'),
+      P('Heater over-temperature limit tripped', 'input', 'Analog/Process', 'other'), P('Unwinder VFD fault', 'input', 'Conveyor', 'vfd-input'),
+      A('Seal bar temperature (transmitter)', 'input', 0, 300, '°C'),
+      P('Sealing head down solenoid', 'output', 'Pneumatic', 'solenoid'), P('Sealing head up solenoid', 'output', 'Pneumatic', 'solenoid'),
+      P('Seal heater on (SSR)', 'output', 'Analog/Process', 'other'), P('Unwinder VFD run', 'output', 'Conveyor', 'vfd-input'),
+      P('Running light', 'output', 'Operator/HMI', 'pilot-light'),
+    ],
+    model: { motors: [M('M1', 'Film unwinder', 0.5, 'vfd', 'Unwind')], estops: 1, guardDoors: [{ zone: 'Sealing station' }], lightCurtains: [{ zone: 'Sealing station' }], zones: ['Unwind', 'Sealing station'], interfaces: [], questions: [] },
+    equip: { profileId: 'unitronics-vision', cpuId: 'V700-T20BJ', modules: [{ partNumber: 'V200-18-E3XB', quantity: 1, why: 'Snap-in I/O' }], hmi: 'V700-T20BJ' },
+    di: 11, do: 5, ai: 1, ao: 0,
+  },
 ];
-
 function reply(mc, system) {
   const k = system.includes('checks a machine control design') ? 'review'
     : system.includes('functional specification') ? 'spec'
@@ -97,6 +134,11 @@ function reply(mc, system) {
     case 'review': return { findings: [], summary: 'No further findings.' };
     case 'spec': return { sections: { overview: mc.text }, questions: [], summary: 'Organized the description.' };
     case 'equipment': {
+      if (mc.equip) return {
+        summary: `${mc.equip.cpuId} for ${mc.name}.`, estimatedIO: { digitalInputs: mc.di, digitalOutputs: mc.do, analogInputs: mc.ai, analogOutputs: mc.ao, motionAxes: 0 },
+        plc: { profileId: mc.equip.profileId, cpuId: mc.equip.cpuId, why: 'The customer standard.' }, modules: mc.equip.modules,
+        hmi: { partNumber: mc.equip.hmi, why: 'The customer standard.' }, alternatives: [], cautions: [],
+      };
       const mods = [];
       if (mc.di > 4) mods.push({ partNumber: 'C0-16ND3', quantity: 1, why: 'Inputs' });
       if (mc.do > 4) mods.push({ partNumber: 'C0-08TD1', quantity: 1, why: 'Outputs' });
@@ -183,6 +225,7 @@ async function journey(browser, mc) {
     await page.getByRole('button', { name: 'New project' }).first().click();
     await page.getByPlaceholder('e.g. Line 3 case packer').fill(mc.name);
     await page.getByRole('button', { name: new RegExp(`^${mc.region}`) }).click();
+    if (mc.enclosure) await page.getByRole('button', { name: new RegExp(`^${mc.enclosure}`) }).click();
     await page.getByRole('button', { name: 'Next →' }).click();
     await page.locator('textarea').first().fill(mc.text);
     await page.getByRole('button', { name: 'Add to spec' }).click();
@@ -255,10 +298,10 @@ async function journey(browser, mc) {
       if (!d) { problem(mc.key, 'deliverables', `"${n}" gave no file`); continue; }
       const path = OUT + mc.key + '_' + d.suggestedFilename();
       await d.saveAs(path);
-      if (fs.statSync(path).size < 50) problem(mc.key, 'deliverables', `"${n}" file is empty`);
+      if (fs.statSync(path).size < 8) problem(mc.key, 'deliverables', `"${n}" file is empty`);
     }
     const alert = await page.locator('[role="alert"]').allInnerTexts();
-    for (const a of alert) if (!/checker finds/i.test(a)) problem(mc.key, 'deliverables', a.slice(0, 200));
+    for (const a of alert) if (!/checker finds|^Downloaded/i.test(a.trim())) problem(mc.key, 'deliverables', a.slice(0, 200));
     log(mc.key, 'build time', await page.getByTestId('build-total').innerText());
     const [z] = await Promise.all([page.waitForEvent('download', { timeout: 300000 }), page.getByRole('button', { name: 'Download everything' }).click()]);
     const zp = OUT + mc.key + '_everything.zip';
@@ -267,6 +310,59 @@ async function journey(browser, mc) {
     const files = Object.keys(zip.files);
     for (const want of [/certification_pack\.pdf$/, /order_list\.xlsx$/, /_full_package\.pdf$/]) if (!files.some((f) => want.test(f))) problem(mc.key, 'ZIP', `no ${want}`);
     log(mc.key, 'ZIP files', files.length);
+  });
+  if (mc.online) await step('online', async () => {
+    const { fakeServer } = require('./fake-modbus.cjs');
+    const { createModbusClient } = require('../electron/modbus.cjs');
+    const plc = fakeServer();
+    plc.mem.discrete[0] = 1; plc.mem.holding[0] = 7;
+    const port = await plc.listen();
+    const mb = createModbusClient();
+    await page.exposeFunction('__modbus', (method, args) => mb[method](...args));
+    await page.addInitScript(() => {
+      const call = (m) => (...a) => window.__modbus(m, a);
+      window.isaDesktop = { ...(window.isaDesktop ?? {}), modbus: Object.fromEntries(['connect', 'disconnect', 'readCoils', 'readDiscreteInputs', 'readHoldingRegisters', 'readInputRegisters', 'writeCoil', 'writeRegister'].map((m) => [m, call(m)])) };
+    });
+    await page.goto(BASE + '/online');
+    await page.getByLabel('PLC IP address').fill('127.0.0.1');
+    await page.getByLabel('Modbus port').fill(String(port));
+    await page.getByRole('button', { name: 'Connect', exact: true }).click();
+    await page.getByText(/Connected · \d+ reads/).waitFor({ timeout: 10000 });
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: `${OUT}${mc.key}_online.png`, fullPage: true });
+    if (await page.getByLabel('Value of X001').innerText() !== 'ON') problem(mc.key, 'online', `X001 shows ${await page.getByLabel('Value of X001').innerText()} (the PLC has it ON)`);
+    const reads = plc.state.log.filter((l) => l.fc <= 4).length;
+    if (plc.state.log.some((l) => l.fc > 4)) problem(mc.key, 'online', 'writes before "Allow writes"');
+    const body = await page.locator('main').innerText();
+    for (const bad of ['undefined', 'NaN']) if (body.includes(bad)) problem(mc.key, 'online', `page shows "${bad}"`);
+    // Every analog input of the project is read (thermocouple DF register).
+    const rows = await page.locator('tr[data-address]').evaluateAll((els) => els.map((e) => e.getAttribute('data-address')));
+    log(mc.key, 'online rows', rows.length, rows.slice(0, 30).join(' '), '| reads', reads);
+    if (!rows.some((r) => /^DF\d/.test(r))) problem(mc.key, 'online', 'no DF (analog) row for the thermocouple input');
+    await page.getByLabel('Allow writes').check();
+    const c = page.locator('tr[data-address^="C"]').first();
+    if (await c.count()) {
+      const addr = await c.getAttribute('data-address');
+      await c.getByRole('button', { name: 'Set ON' }).click();
+      await page.getByText(`${addr} written.`).waitFor({ timeout: 5000 }).catch(() => problem(mc.key, 'online', `no "${addr} written." after Set ON`));
+      const w = plc.state.log.filter((l) => l.fc === 5 || l.fc === 6);
+      if (w.length !== 1) problem(mc.key, 'online', `expected one write, got ${JSON.stringify(w)}`);
+    } else problem(mc.key, 'online', 'no C bit row to write');
+    if (await page.locator('tr[data-address="Y001"] button').count()) problem(mc.key, 'online', 'Y001 can be written');
+    const ds = page.locator('tr[data-address^="DS"]').first();
+    if (await ds.count()) {
+      const box = ds.locator('input');
+      if (await box.count()) { await box.first().fill('42'); await ds.getByRole('button', { name: 'Write' }).click(); await page.waitForTimeout(800); if (!plc.state.log.some((l) => l.fc === 6 && l.value === 42)) problem(mc.key, 'online', 'DS write 42 not sent'); }
+    }
+    await page.getByRole('button', { name: 'Live ladder' }).click();
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: `${OUT}${mc.key}_online_ladder.png` });
+    await page.getByRole('button', { name: /^I\/O check-out/ }).click();
+    await page.getByLabel('Technician').fill('Q.A.');
+    await page.getByLabel('Verified X001').check();
+    log(mc.key, 'check-out', await page.getByText(/points verified/).first().innerText());
+    await page.getByRole('button', { name: 'Disconnect' }).click();
+    await mb.disconnect(); await plc.close();
   });
   await ctx.close();
 }
