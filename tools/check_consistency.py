@@ -251,6 +251,23 @@ def check(vdir: Path):
         fan = co.get('fan') or {}
         if fan.get('dc') and fan.get('thermostat') and fan['tag'] not in {w['wire'] for w in data['wires']}:
             report('FAIL', v, f'24 VDC fan {fan["tag"]}: no wire {fan["tag"]} from thermostat {fan["thermostat"]} in the wire list')
+    # ---- Input commons: every input can turn ON. A 0V common (sinking inputs) needs +24V from the device (PNP
+    # sensor, contact fed 24+); a +24V common (NPN sensors) needs 0V (NPN sensor, contact fed 0V). PNP and NPN on one
+    # common, or a dry contact fed the common's own potential, can never switch.
+    for g in data.get('inputCommons', []):
+        npn = g['commonTo'] == '24+'
+        for q in g['points']:
+            t = q['deviceType']
+            if t in ('sensor-pnp', 'sensor-npn'):
+                if (t == 'sensor-npn') != npn:
+                    report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is {t} on a common to {g["commonTo"]} — it can never turn ON')
+                continue
+            if not q['feed']:
+                continue  # no separate feed wire (drive / relay internal contacts are checked on their own sheets)
+            want = '0V' if npn else '24+'
+            bad = [w for w in q['feed'] if w in ('0V', '24+') and w != want]
+            if bad:
+                report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is fed {bad[0]} on a common to {g["commonTo"]} — it can never turn ON')
     # ---- Drive branches: the drive's listed Class T fuses (its SCCR condition), or the review says why not
     iec = str(data.get('region', '')) not in ('US', 'Canada', '')
     for dr in data.get('drives', []):

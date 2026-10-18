@@ -273,7 +273,7 @@ const STRESS_EXTRA: [string, 'input' | 'output', IOCategory, string][] = Array.f
 
 async function setupRules(v: string) {
   setupVariant(v === 'rules-big' || v === 'rules-floor' ? 'big' : 'us480');
-  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress' || v === 'rules-sealing-4x' || v === 'rules-sealing-thm') {
+  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress' || v === 'rules-sealing-4x' || v === 'rules-sealing-thm' || v === 'rules-sealing-npn') {
     // Only the sealing head's own description: the example's other sections (its conveyor) must not leak in.
     const sections = useSpecStore.getState().sections;
     useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC });
@@ -294,6 +294,9 @@ async function setupRules(v: string) {
     useProjectStore.setState({ plcId: 'click', cpuId: 'C0-10DD1E-D', modules });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, enclosureRating: 'NEMA 4X', motors: [], requiredParts: [{ partNumber: 'C0-10DD2E-D', quantity: 1 }, ...modules.map((partNumber) => ({ partNumber, quantity: 1 }))] });
   }
+  // "rules-sealing-npn": the sealing head with NPN sensors — their input commons go to +24V, so the buttons, limit /
+  // pressure switches and relay contacts on the same modules must switch 0V (check_consistency: every input can turn ON).
+  if (v === 'rules-sealing-npn') useIOStore.setState({ projectIO: useIOStore.getState().projectIO.map((p) => (p.deviceType === 'sensor-pnp' ? { ...p, deviceType: 'sensor-npn' } : p)) });
   // "rules-sealing-thm": the user's Sealing Head as built — C0-11DD2E-D + C0-08ND3 + C0-04THM, NEMA 4X, the seal bar's
   // type J thermocouple read straight by the THM (no transmitter, no analog output). The point comes in through the
   // store's import at the list's 4-20 mA default: the import must make it a 'thermocouple' range, or it gets no channel.
@@ -320,7 +323,7 @@ async function setupRules(v: string) {
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [uni.cpu, ...uni.modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
   }
   const el = useElectricalStore.getState();
-  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || v === 'rules-sealing-thm' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
+  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || v === 'rules-sealing-thm' || v === 'rules-sealing-npn' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
@@ -427,6 +430,15 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
         parts: m.rc.filter((c) => ['filter fan', 'exhaust filter', 'thermostat', 'heat exchanger', 'air conditioner'].includes(String(c.part?.ratings.kind ?? ''))).map((c) => ({ tag: c.tag, partNumber: c.partNumber, kind: c.part?.ratings.kind })),
         fan: m.fan ?? null, cover: h.ventilation ? coolingCover(ctx.design.components, getPart, h.ventilation, ALLOWED_RISE_C) : null };
     })(),
+    // input commons (check_consistency: every input can turn ON — on a +24V common (NPN) a dry contact is fed 0V)
+    inputCommons: m.groups.filter((g) => g.type === 'input').map((g) => ({
+      group: g.label, commonTo: g.commonTo,
+      points: g.points.map((q) => {
+        const pin = q.deviceType === 'safety-relay-output' ? '23' : 'C';
+        const feed = m.wires.filter((w) => w.to.startsWith(`${q.deviceTag}:`) && (q.supplyTerminal ? w.from === q.supplyTerminal : w.from.startsWith('TB1 ') && w.to === `${q.deviceTag}:${pin}`)).map((w) => w.wire);
+        return { address: q.address, tag: q.deviceTag, deviceType: q.deviceType, feed: [...new Set(feed)] };
+      }),
+    })),
     drives: m.motors.filter((x) => x.vfd).map((x) => ({ motor: x.motor.tag, tag: x.vfd!.tag, partNumber: x.vfd!.partNumber, fuseClass: x.vfd!.part?.ratings.fuseClass ?? null, fusePart: x.vfd!.part?.ratings.fusePart ?? null,
       protection: x.protection ? { tag: x.protection.tag, partNumber: x.protection.partNumber, category: x.protection.category, fuseClass: x.protection.fuse?.ratings.fuseClass ?? null, fuse: x.protection.fuse?.partNumber ?? null } : null })),
     nameplate: panelNameplate(ctx),
