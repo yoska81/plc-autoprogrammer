@@ -66,6 +66,7 @@ export type SheetSpec =
   | { kind: 'drill'; drill: DrillingPlan; rows: DrillRow[]; drawing: boolean; page: number; pages: number }
   | { kind: 'analog'; from: number; page: number; pages: number }
   | { kind: 'drive'; index: number }
+  | { kind: 'servo'; index: number }
   | { kind: 'asbuilt'; nets: AsBuiltNet[]; single: { wire: string; at: string }[]; page: number; pages: number };
 
 /** A wire traced from cabinet photos, drawn as a bus with a drop to every terminal it was read at. */
@@ -408,6 +409,8 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
 
   // VFD control wiring + parameters (electrical/vfd.ts): one sheet per drive.
   model.drives.forEach((c, i) => specs.push({ title: `${c.drive.tag} — DRIVE CONTROL & PARAMETERS`, spec: { kind: 'drive', index: i } }));
+  // Servo axes (electrical/servoWiring.ts): one sheet per axis.
+  model.servos.forEach((a, i) => specs.push({ title: `${a.drive.tag} — SERVO AXIS ${a.axis}`, spec: { kind: 'servo', index: i } }));
 
   specs.push({ title: 'PANEL LAYOUT — BACKPLATE', spec: { kind: 'panel' } });
   if (layout.door.items.length) specs.push({ title: 'DOOR LAYOUT — OPERATOR DEVICES', spec: { kind: 'door' } });
