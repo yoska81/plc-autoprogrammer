@@ -21,7 +21,7 @@ export const ROLL_FORMER: ExistingMachine = {
   io: [
     { address: 'VFD DI3', description: 'Emergency stop (急停)', type: 'input', category: 'Safety', deviceTag: 'SB3', deviceType: 'estop-contact', confidence: 'high', source: 'sheet 6, operator panel' },
     { address: 'KM1 coil', description: 'Main power start (启动)', type: 'input', category: 'Operator/HMI', deviceTag: 'SB2', deviceType: 'pushbutton-no', confidence: 'high', source: 'sheet 1, column 4' },
-    { address: 'KM1 coil ', description: 'Main power stop (停止)', type: 'input', category: 'Operator/HMI', deviceTag: 'SB1', deviceType: 'pushbutton-nc', confidence: 'high', source: 'sheet 1, column 4' },
+    { address: 'KM1 coil', description: 'Main power stop (停止)', type: 'input', category: 'Operator/HMI', deviceTag: 'SB1', deviceType: 'pushbutton-nc', confidence: 'high', source: 'sheet 1, column 4' },
     { address: 'VFD DI1', description: 'Forming forward (SA1 正转)', type: 'input', category: 'Operator/HMI', deviceTag: 'SA1', deviceType: 'selector', confidence: 'high', source: 'sheet 6, SA1' },
     { address: 'VFD DI2', description: 'Forming reverse (SA1 反转)', type: 'input', category: 'Operator/HMI', deviceTag: 'SA1', deviceType: 'selector', confidence: 'high', source: 'sheet 6, SA1' },
     { address: 'Servo CN1-19', description: 'Servo enable (使能) switch', type: 'input', category: 'Servo/Axis', deviceTag: 'SA2', deviceType: 'selector', confidence: 'high', source: 'sheet 3, CN1-19' },
@@ -68,6 +68,14 @@ export const ROLL_FORMER: ExistingMachine = {
     { tag: 'A1', description: 'Flying shear (追剪): chases the strip and cuts to length', driveTag: 'SD1', drivePart: null, motorTag: 'M3', motorKw: 1.5, encoder: 'line-length encoder PG1 on CN1-11/13 (A/B)', brakingResistor: 'R1 on P/C', signals: ['CN1-19 enable', 'CN1-21 origin', 'CN1-17 cutter down', 'CN1-1 cutter up', 'CN1-6 alarm'], confidence: 'high', source: 'sheet 3' },
   ],
   controller: 'servo-drive',
+  circuits: [
+    { output: 'KM1', function: 'Main contactor: start with SB2, stop with SB1, held in by its own seal-in contact', kind: 'start-stop', conditions: ['SB1 stop (NC)', 'SB2 start (NO)', 'KM1 seal-in (NO) across SB2'], devices: ['SB1', 'SB2', 'KM1'], setting: null, logicIn: 'relays', confidence: 'high', source: 'sheet 1, column 4' },
+    { output: 'KM2', function: 'Oil pump runs while cutting is on (SA4) and the main contactor is in', kind: 'interlock', conditions: ['SA4 cutting on (NO)', 'KM1 aux (NO)', 'KM2 seal-in (NO)'], devices: ['SA4', 'KM1', 'KM2'], setting: null, logicIn: 'relays', confidence: 'high', source: 'sheet 2, column 5' },
+    { output: 'VF1', function: 'Forming forward / reverse from SA1, speed from the pot RP1 (VFD terminal control)', kind: 'drive-logic', conditions: ['SA1 forward to DI1', 'SA1 reverse to DI2', 'SB3 E-stop to DI3', 'RP1 to AI1'], devices: ['SA1', 'SB3', 'RP1', 'VF1'], setting: null, logicIn: 'drive', confidence: 'high', source: 'sheets 2 and 6' },
+    { output: 'SD1', function: 'Flying shear: follows the strip from the line-length encoder and cuts at the set length (cut length and quantity from the touch panel)', kind: 'length', conditions: ['SA2 servo enable to CN1-19', 'origin to CN1-21', 'encoder PG1 to CN1-11/13'], devices: ['SA2', 'PG1', 'SD1', 'HMI'], setting: 'cut length and quantity from the touch panel', logicIn: 'drive', confidence: 'high', source: 'sheet 3' },
+    { output: 'KA1', function: 'Cutter down: the servo drive output CN1-17 pulls in KA1, which switches valve YV1', kind: 'drive-logic', conditions: ['SD1 CN1-17 cutter down'], devices: ['SD1', 'KA1', 'YV1'], setting: null, logicIn: 'drive', confidence: 'high', source: 'sheets 3 and 4' },
+    { output: 'KA2', function: 'Cutter up: the servo drive output CN1-1 pulls in KA2, which switches valve YV2', kind: 'drive-logic', conditions: ['SD1 CN1-1 cutter up'], devices: ['SD1', 'KA2', 'YV2'], setting: null, logicIn: 'drive', confidence: 'high', source: 'sheets 3 and 4' },
+  ],
   interlocks: [
     { description: 'The oil pump KM2 runs only with the cutting switch SA4 on and the main contactor KM1 in', devices: ['KM2', 'SA4', 'KM1'] },
     { description: 'Cutter down and cutter up valves are driven only by the servo drive outputs, through relays KA1 and KA2', devices: ['KA1', 'KA2', 'YV1', 'YV2'] },
@@ -78,6 +86,10 @@ export const ROLL_FORMER: ExistingMachine = {
     safetyRelay: null,
     category: null,
     kind: 'control-only',
+    drives: [
+      { tag: 'VF1', sto: 'unknown', stopsBy: 'E-stop SB3 on DI3 (a stop command)' },
+      { tag: 'SD1', sto: 'not-wired', stopsBy: 'servo enable SA2 on CN1-19' },
+    ],
     description: 'The E-stop SB3 only goes into VFD input DI3: it stops the forming motor through the VFD program. It does not remove power from the servo, the oil pump or the cutter valves.',
   },
   spec: {

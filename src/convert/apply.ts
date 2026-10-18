@@ -20,9 +20,16 @@ import { wiringText } from './photos/wiringText';
 export const MACHINE_KEY = 'convert.machine';
 export const TARGET_KEY = 'convert.target';
 export const QUESTIONS_KEY = 'convert.questions';
+/** No PLC on the machine: keep its relay logic or move it into a new PLC (ConvertTarget.logic). */
+export const LOGIC_KEY = 'convert.logic';
 
 /** The machine read from the drawings for the open project, if any. */
-export const storedMachine = (): ExistingMachine | null => (useDraftStore.getState().drafts[MACHINE_KEY] as ExistingMachine | undefined) ?? null;
+export const storedMachine = (): ExistingMachine | null => withCircuits(useDraftStore.getState().drafts[MACHINE_KEY] as ExistingMachine | undefined);
+
+/** A machine kept by an earlier version has no circuits list. */
+export function withCircuits(m: ExistingMachine | null | undefined): ExistingMachine | null {
+  return m ? (m.circuits ? m : { ...m, circuits: [] }) : null;
+}
 
 /** The conversion target chosen for the open project. */
 export const storedTarget = (): ConvertTarget | null => (useDraftStore.getState().drafts[TARGET_KEY] as ConvertTarget | undefined) ?? null;
@@ -44,6 +51,14 @@ export function convertedSpec(m: ExistingMachine, conv: Conversion): SpecSection
   for (const r of conv.recommendations) spec[r.section] = [spec[r.section], `Conversion: ${r.text}`].filter(Boolean).join('\n');
   // the interlocks the wiring enforced, word for word, so the new program and the function-kept check keep them
   if (m.interlocks.length) spec.sequence = [spec.sequence, `Interlocks to keep (from the existing wiring):\n${m.interlocks.map((i) => `- ${i.description}`).join('\n')}`].filter(Boolean).join('\n');
+  // each control circuit, with the new tags, where its function now lives (PLC program, relays, or the drive)
+  const group = (b: 'program' | 'relays' | 'drive', title: string) => {
+    const list = conv.circuits.filter((c) => c.becomes === b);
+    if (list.length) spec.sequence = [spec.sequence, `${title}\n${list.map((c) => `- ${c.text}`).join('\n')}`].filter(Boolean).join('\n');
+  };
+  group('program', 'Program logic from the relay circuits (the PLC keeps each function exactly):');
+  group('relays', 'Relay circuits kept as hardwired logic (new tags, parts for the new standard):');
+  group('drive', 'Kept in the drive\'s own logic (set its parameters as before):');
   if (conv.motors.length) {
     spec.motion = [spec.motion, `For the new supply: ${conv.motors.map((x, i) => `${x.tag} ${conv.motorKw[i]?.kw ? `${conv.motorKw[i].kw} kW → ` : ''}${x.hp} HP`).join(', ')}.`].filter(Boolean).join('\n');
   }
@@ -68,8 +83,11 @@ export function applyExistingMachine(m: ExistingMachine, conv: Conversion, revie
   useDraftStore.getState().setDraft(QUESTIONS_KEY, questions);
   useQuestionStore.getState().sync(projectId, 'drawings', questions);
   if (opts.descriptionOnly) { keepMachine(m, conv.target); return; }
-  // The original I/O, by function: addresses are assigned again for the new PLC.
-  useIOStore.getState().importPoints(m.io.map((p) => ({ description: p.description, type: p.type, category: p.category, deviceType: p.deviceType })), true);
+  // The original I/O (with the relay logic moved into a PLC, also the field devices of its circuits),
+  // by function: addresses are assigned again for the new PLC.
+  // Relay logic kept: no PLC, so no I/O list (the field devices stay on their relay circuits).
+  const io = conv.logic === 'keep-relays' ? [] : conv.io;
+  useIOStore.getState().importPoints(io.map((p) => ({ description: p.description, type: p.type, category: p.category, deviceType: p.deviceType })), true);
   const el = useElectricalStore.getState();
   el.setInputs({ ...el.inputs, supply: conv.supply, motors: conv.motors, notes: [el.inputs.notes, 'Converted from existing drawings: keep every original function, interlock and safety function.'].filter(Boolean).join('\n') });
   keepMachine(m, conv.target);

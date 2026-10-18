@@ -16,8 +16,9 @@ export type CadEntity =
 export type DxfText = Extract<CadEntity, { text: string }>;
 
 /**
- * Reader for DWG files (a WASM LibreDWG build, for instance), plugged in when it is licensed for the app.
- * Without one a DWG upload explains how to export DXF or PDF.
+ * Reader for DWG files in the browser (none is bundled). In the Windows app a DWG is converted to DXF by the
+ * installed ODA File Converter instead (src/convert/derive.ts); otherwise the upload explains how to export
+ * DXF or PDF.
  */
 export type DwgReader = (dwg: ArrayBuffer) => Promise<CadEntity[]>;
 let dwgReader: DwgReader | null = null;
@@ -132,18 +133,53 @@ function textRows(texts: DxfText[], rowH: number): string[] {
   return rows;
 }
 
-/** A sheet's name from its title block: the text after 图名 / 工程名称 / Title, and "第 x 页" / "Sheet x of y". */
+// Title-block labels, alone or bilingual ("图名 Sheet title", "Drawing title / 图名"): never a sheet's name.
+const NAME_LABEL = /^(?:(?:图\s*名|图纸名称|(?:sheet|drawing)\s*title|title)\s*[/|:：]?\s*)+/i;
+const PROJECT_LABEL = /^(?:(?:工程名称|项目名称|project(?:\s*name)?)\s*[/|:：]?\s*)+/i;
+const PAGE_LABEL = /^(?:(?:页|页次|页码|张次|sheet(?:\s*no\.?)?)[\s/|:：]*)+$/i;
+
+/** A sheet's name from its title block: the text after 图名 / Title (else 工程名称 / Project), skipping the labels themselves. */
 function sheetTitle(texts: DxfText[]): string {
-  const all = [...texts].sort((a, b) => b.y - a.y || a.x - b.x).map((t) => t.text);
+  const sorted = [...texts].sort((a, b) => b.y - a.y || a.x - b.x);
+  const isValue = (t: string) => Boolean(t.replace(NAME_LABEL, '').replace(PROJECT_LABEL, '').trim()) && !PAGE_LABEL.test(t) && !/^\d{1,3}$|第\s*\d+\s*页|共\s*\d+\s*页/.test(t);
   const after = (re: RegExp) => {
-    const i = all.findIndex((t) => re.test(t));
-    if (i < 0) return '';
-    const own = all[i].replace(re, '').replace(/^[\s:：]+/, '').trim();
-    return own || (all[i + 1] ?? '');
+    const label = sorted.find((t) => re.test(t.text.trim()));
+    if (!label) return '';
+    const own = label.text.trim().replace(re, '').trim();
+    if (own) return own;
+    // the value is its own text: right of the label on its row, else just below it
+    const dist = (t: DxfText) => Math.hypot(t.x - label.x, t.y - label.y);
+    const values = sorted.filter((t) => t !== label && isValue(t.text.trim()));
+    const right = values.filter((t) => Math.abs(t.y - label.y) < 1 && t.x > label.x).sort((a, b) => dist(a) - dist(b))[0];
+    const below = values.filter((t) => t.y < label.y && label.y - t.y <= 15 && Math.abs(t.x - label.x) < 60).sort((a, b) => dist(a) - dist(b))[0];
+    return (right ?? below)?.text.trim() ?? '';
   };
-  const name = after(/^(图\s*名|图纸名称|Title)/i) || after(/^(工程名称|项目名称|Project)/i);
-  const page = all.find((t) => /第\s*\d+\s*页|共\s*\d+\s*页|Sheet\s*\d+/i.test(t)) ?? '';
+  const name = after(NAME_LABEL) || after(PROJECT_LABEL);
+  const page = sorted.map((t) => t.text).find((t) => /第\s*\d+\s*页/.test(t)) ?? '';
   return [name, page].filter(Boolean).join(' · ');
+}
+
+/**
+ * A sheet's own number and the set's sheet count, from its title block: "第3页 共8页", "SHEET 3", "3 / 8",
+ * "Sheet 3 of 8" (the whole text, so a note mentioning a sheet is not taken), or the value next to a
+ * 页 / Sheet label. Null when the sheet doesn't show it.
+ */
+export function sheetNumber(texts: DxfText[]): { n: number; of: number | null } | null {
+  const sorted = [...texts].sort((a, b) => b.y - a.y || a.x - b.x);
+  const all = sorted.map((t) => t.text.trim());
+  const total = (() => { const m = all.join(' ').match(/共\s*(\d+)\s*页/); return m ? Number(m[1]) : null; })();
+  for (const t of all) {
+    const m = t.match(/第\s*(\d+)\s*页/) ?? t.match(/^(?:sheet|图号|页)?\s*(\d+)\s*(?:\/|of)\s*(\d+)$/i) ?? t.match(/^sheet\s*(\d+)$/i);
+    if (m) return { n: Number(m[1]), of: m[2] ? Number(m[2]) : total };
+  }
+  // a 页 / Sheet label with its value as its own text (to its right or just below)
+  for (const [i, t] of sorted.entries()) {
+    if (!PAGE_LABEL.test(t.text.trim())) continue;
+    const next = sorted.filter((o, j) => j !== i && /^\d{1,3}$/.test(o.text.trim()) && o.y <= t.y + 1 && o.y >= t.y - 15 && o.x >= t.x - 1)
+      .sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0];
+    if (next) return { n: Number(next.text.trim()), of: total };
+  }
+  return null;
 }
 
 /** One text listing for the AI: per sheet (split by the border frames), rows in reading order. */
@@ -159,7 +195,10 @@ export function cadToText(entities: CadEntity[], name = 'drawing'): string {
     const mine = texts.filter((t) => !used.has(t) && inside(f, t.x, t.y));
     mine.forEach((t) => used.add(t));
     const title = sheetTitle(mine);
-    return `--- Sheet ${i + 1} of ${frames.length}${title ? `: ${title}` : ''} ---\n${textRows(mine, rowH).join('\n')}`;
+    // the sheet's own number (sheets 2, 3, 5, 6 of an 8-sheet set), else its place in the file
+    const no = sheetNumber(mine);
+    const label = no ? `Sheet ${no.n} of ${no.of ?? '?'}${no.of !== frames.length ? ` (frame ${i + 1} of ${frames.length} in this file)` : ''}` : `Sheet ${i + 1} of ${frames.length}`;
+    return `--- ${label}${title ? `: ${title}` : ''} ---\n${textRows(mine, rowH).join('\n')}`;
   });
   const rest = texts.filter((t) => !used.has(t));
   return `${name} (CAD drawing, ${frames.length} sheets side by side, split by their border frames; ${texts.length} text items; [layer]):\n${sheets.join('\n')}${rest.length ? `\n--- Outside the sheet frames ---\n${textRows(rest, rowH).join('\n')}` : ''}`;

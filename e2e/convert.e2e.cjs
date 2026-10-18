@@ -102,6 +102,10 @@ function sse(model, text) {
   await page.waitForTimeout(200);
   check(/✓/.test(await ioRows.nth(1).innerText()), 'review: a correction confirms the reading');
   check(/re-validate/.test(rec), 'review: safety marked re-validate');
+  // the PDF page each reading came from (rendered with pdf.js), next to the I/O
+  const thumb = page.getByTestId('review-io').getByTestId('source-thumb').first();
+  await thumb.waitFor({ timeout: 20000 }).catch(() => {});
+  check(await thumb.isVisible() && /^data:image\/png/.test(await thumb.locator('img').getAttribute('src') ?? ''), 'review: PDF page thumbnail next to the I/O');
   await page.getByTestId('convert-recognised').screenshot({ path: OUT + '00_review.png' });
 
   // Description written from the drawings
