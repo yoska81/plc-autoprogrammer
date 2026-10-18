@@ -559,7 +559,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm gap-2">
               <p>No program yet.</p>
-              <p>Click Generate Program on the left (it uses the machine description, I/O list and HMI), or start an empty program and draw it by hand.</p>
+              <p>Click Build program from my project on the left (it uses the machine description, I/O list and HMI), or start an empty program and draw it by hand.</p>
               <button
                 onClick={() => store.editLadder({ rungs: [{ id: 'r_first', comment: '', branches: [[{ type: 'NO', address: '' }]], outputs: [{ type: 'OUT', address: '' }] }], tags: [] })}
                 className="mt-2 px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-700"

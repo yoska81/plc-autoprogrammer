@@ -145,8 +145,10 @@ function reply(system) {
   await go('/program');
   await shot('program_before');
   await page.getByRole('button', { name: 'Build', exact: true }).click().catch(() => {});
-  await click(/Generate (New )?Program/);
-  await page.waitForTimeout(2500);
+  await click('Build program from my project');
+  // the build is done when its busy label is gone
+  await page.getByText('Building the program…').first().waitFor({ state: 'detached', timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(500);
   await shot('program');
 
   await go('/simulate');
