@@ -6,6 +6,7 @@
 import type { HmiDesign, HmiTag, PlcChange } from '../types';
 import { rungWrites, type LadderProgram } from '../../plc/core/ladder';
 import { rungReads } from '../../plc/sim/blocks';
+import type { HmiContent } from './content';
 
 /** The imported program's addresses for HMI roles. */
 export interface UpgradeRoles {
@@ -21,11 +22,45 @@ export interface UpgradeRoles {
   missing?: string[];
 }
 
-/** Puts the program's own alarm bits on the design's alarm list (each once, with a read tag). */
+/**
+ * The HMI's alarms the program already has: an alarm bit of the program whose rung reads the same input as
+ * the HMI's safety / fault / alarm-input alarm takes that role, so the HMI shows the program's bit instead of
+ * asking for a second one.
+ */
+export function programAlarmRoles(roles: UpgradeRoles, ladder: LadderProgram, c: HmiContent): HmiTag[] {
+  const readsOf = new Map<string, Set<string>>();
+  for (const r of ladder.rungs) {
+    const contacts = r.branches.flat().flatMap((e) => ('address' in e ? [e.address.trim().toUpperCase()] : []));
+    for (const o of r.outputs) {
+      if ((o.type === 'OUT' || o.type === 'SET') && 'address' in o) {
+        const a = o.address.trim().toUpperCase();
+        readsOf.set(a, new Set([...(readsOf.get(a) ?? []), ...contacts]));
+      }
+    }
+  }
+  const wanted: [string, string][] = [
+    ...(c.safetyOk ? [['alarm:safety', c.safetyOk.address] as [string, string]] : []),
+    ...c.actuators.flatMap((a) => (a.fault ? [[`alarm:fault:${a.fault.address}`, a.fault.address] as [string, string]] : [])),
+    ...(c.alarmInputs ?? []).map((ai) => [`alarm:input:${ai.point.address}`, ai.point.address] as [string, string]),
+  ];
+  const out: HmiTag[] = [];
+  const taken = new Set<string>();
+  for (const [role, input] of wanted) {
+    const al = (roles.alarms ?? []).find((x) => !taken.has(x.address.toUpperCase()) && readsOf.get(x.address.toUpperCase())?.has(input.toUpperCase()));
+    if (!al) continue;
+    taken.add(al.address.toUpperCase());
+    out.push({ role, address: al.address.toUpperCase(), name: al.nickname.replace(/[^A-Za-z0-9]+/g, '_'), dataType: 'BIT', access: 'read', description: `From the upgraded program: ${al.why}.` });
+  }
+  return out;
+}
+
+/** Puts the program's own alarm bits on the design's alarm list (each once, with its text and a read tag). */
 export function addProgramAlarms(design: HmiDesign, roles: UpgradeRoles): void {
   for (const al of roles.alarms ?? []) {
     const a = al.address.trim().toUpperCase();
-    if (design.alarms.some((x) => x.address.trim().toUpperCase() === a)) continue;
+    const bound = design.alarms.find((x) => x.address.trim().toUpperCase() === a);
+    // An HMI alarm bound to the program's bit says what the program says.
+    if (bound) { bound.message = al.text; continue; }
     design.alarms.push({ address: a, message: al.text, severity: 'alarm' });
     if (!design.tags.some((t) => t.address.trim().toUpperCase() === a)) {
       design.tags.push({ name: al.nickname.replace(/[^A-Za-z0-9]+/g, '_'), address: a, dataType: 'BIT', access: 'read', description: `From the upgraded program: ${al.why}.`, role: `alarm:program:${a}` });
@@ -45,6 +80,10 @@ export function programUse(ladder: LadderProgram) {
       if (o.type === 'RST') resets.add(o.address.trim().toUpperCase());
     }
   }
+  // An imported word's bits ("Alm[0].3" of "Alm[0]"): a MOV / COPY / math into the word clears them all.
+  const nick = new Map(ladder.tags.map((t) => [t.address.trim().toUpperCase(), t.nickname] as const));
+  const cleared = ladder.rungs.flatMap((r) => r.outputs).flatMap((o) => (o.type === 'COPY' || o.type === 'MATH' ? [nick.get(o.dest.trim().toUpperCase())] : [])).filter((n): n is string => !!n);
+  if (cleared.length) for (const t of ladder.tags) if (cleared.some((w) => t.nickname.startsWith(`${w}.`))) resets.add(t.address.trim().toUpperCase());
   const reads = new Set(ladder.rungs.flatMap((r) => rungReads(r).map((x) => x.address.trim().toUpperCase())));
   return { writes, reads, sets, resets };
 }
@@ -57,6 +96,17 @@ export function implemented(t: Pick<HmiTag, 'address' | 'access'>, use: ReturnTy
 }
 
 /**
+ * The HMI Stop is wired in only when its bit is a normally-closed contact in the run latch (the rung that
+ * writes the running bit; any coil rung when that is not known): a plain read of it stops nothing.
+ */
+function stopWired(address: string, ladder: LadderProgram, running?: string): boolean {
+  const a = address.trim().toUpperCase(), run = running?.trim().toUpperCase();
+  return ladder.rungs.some((r) => r.outputs.some((o) => (o.type === 'OUT' || o.type === 'SET') && (!run || o.address.trim().toUpperCase() === run))
+    && r.branches.some((b) => b.some((e) => e.type === 'NC' && e.address.trim().toUpperCase() === a)));
+}
+const runningOf = (design: HmiDesign) => design.tags.find((t) => t.role === 'sts:running')?.address;
+
+/**
  * The changes the imported program needs so every tag and alarm of the design works. `filled`: registers no
  * rung writes because the hardware does (analog inputs, filled by the module's analog setup).
  */
@@ -67,7 +117,8 @@ export function plcChangesFor(design: HmiDesign, ladder: LadderProgram, roles: U
   const out = new Map<string, PlcChange>();
   for (const t of design.tags) {
     const a = t.address.trim().toUpperCase();
-    if (out.has(a) || filled.has(a) || implemented(t, use)) continue;
+    if (out.has(a) || filled.has(a)) continue;
+    if (t.role === 'cmd:stop' ? stopWired(a, ladder, runningOf(design)) : implemented(t, use)) continue;
     const p = t.role ? parallel.get(t.role) : undefined;
     const alarm = alarms.get(a);
     const constPreset = t.role === 'sp:batch' ? roles.constPresets?.[0] : undefined;
@@ -95,8 +146,28 @@ export function openPlcChanges(design: HmiDesign, ladder: LadderProgram): PlcCha
   const alarm = new Set(design.alarms.map((a) => a.address.trim().toUpperCase()));
   return design.plcChanges.filter((c) => {
     const t = byAddr.get(c.address);
+    if (t?.role === 'cmd:stop') return !stopWired(c.address, ladder, runningOf(design));
     if (alarm.has(c.address)) return !use.writes.has(c.address);
     return t ? !implemented(t, use) : !use.writes.has(c.address) && !use.reads.has(c.address);
   });
 }
 
+
+const ADDR = '(?:X|Y|C|DS|DD|DF|DH|CTD|CT|TD|T)\\d+';
+const PAIR_OR_BARE = new RegExp(`([A-Za-z_][\\w.]*) \\((${ADDR})\\)|\\b(${ADDR})\\b`, 'g');
+
+/**
+ * A change text in the PLC's own tag names, so it can be typed straight into the programming software:
+ * "HMI_Start (C1001) in parallel with Start_PB (X102)" reads "HMI_Start in parallel with Start_PB" on Logix,
+ * '"Machine_DB".HMI_Start … Start_PB (%I0.0)' on TIA; CLICK addresses are already its own.
+ */
+export function inPlcNames(text: string, nameOf: (address: string) => { name: string; io?: string }): string {
+  return text.replace(PAIR_OR_BARE, (all, word: string | undefined, pairAddr: string | undefined, bare: string | undefined) => {
+    const n = nameOf((pairAddr ?? bare)!);
+    if (bare) return n.name || n.io || bare;
+    if (n.io && n.name && !n.name.endsWith(word!)) return `${word} (${n.io})`;
+    if (n.io && /^%/.test(n.io)) return `${word} (${n.io})`;
+    if (n.name) return n.name.endsWith(word!) ? n.name : `${word} (${n.name})`;
+    return n.io ? `${word} (${n.io})` : all;
+  });
+}

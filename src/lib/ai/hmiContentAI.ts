@@ -3,7 +3,7 @@ import type { ElectricalDesign } from '../../electrical/types';
 import type { HmiDesign, HmiState, HmiStyle } from '../../hmi/types';
 import { buildHmi, defaultHmiContent, type HmiContent } from '../../hmi/engine';
 import { inferRoles } from '../../hmi/engine/roles';
-import { addProgramAlarms, plcChangesFor, type UpgradeRoles } from '../../hmi/engine/upgradeHmi';
+import { addProgramAlarms, plcChangesFor, programAlarmRoles, type UpgradeRoles } from '../../hmi/engine/upgradeHmi';
 import { rungAddresses, rungWrites, type LadderProgram } from '../../plc/core/ladder';
 import { callClaude } from './anthropic';
 import type { AiOptions } from './machineModelAI';
@@ -104,8 +104,12 @@ export async function generateRuleBasedHmi(opts: Partial<AiOptions> & HmiProject
   const inferred = opts.existingHmi ? inferRoles(opts.existingHmi.tags, { content: base, screens: opts.existingHmi.screens, alarms: opts.existingHmi.alarms }).tags : [];
   // An upgraded program: the HMI uses the program's own addresses for the functions it already has.
   const roles = opts.upgradeRoles;
-  const own = new Set((roles?.tags ?? []).map((t) => t.role));
-  const keepTags = [...(roles?.tags ?? []), ...inferred.filter((t) => !own.has(t.role))];
+  // The program's own count is shown even when no part sensor is recognised; its own alarms are not doubled.
+  const count = roles?.tags.find((t) => t.role === 'word:count');
+  if (count) content = { ...content, programCount: { name: count.name } };
+  const roleTags = roles ? [...roles.tags, ...(opts.program ? programAlarmRoles(roles, opts.program, content) : [])] : [];
+  const own = new Set(roleTags.map((t) => t.role));
+  const keepTags = [...roleTags, ...inferred.filter((t) => !own.has(t.role))];
   const usedAddresses = (opts.program?.rungs ?? []).flatMap((r) => [...rungAddresses(r), ...rungWrites(r)]).filter((a) => /^[A-Z]+\d+$/i.test(a));
   const design = buildHmi(content, { ...opts.panel, plcText: opts.plcText, now: opts.now, keepTags, usedAddresses });
   if (roles && opts.program) {

@@ -70,6 +70,8 @@ export interface HmiContent {
   safetyOk?: HmiPoint;
   /** Input that counts parts (part-at-end photo-eye, product sensor). */
   partSensor?: HmiPoint;
+  /** An upgraded program's own production counter: the HMI shows it even when no part sensor is recognised. */
+  programCount?: { name: string };
   analogs: HmiAnalog[];
   /** Servo / stepper axes (Motion screen). */
   axes?: HmiAxis[];
@@ -240,6 +242,8 @@ export function defaultHmiContent(opts: {
     if (t === 'pushbutton-no' || t === 'pushbutton-nc' || t === 'selector' || t === 'estop-contact') continue;
     const name = d.replace(/\s*\((?:[^)]*)\)\s*$/, '').trim();
     if (/\blight\s*curtain\b/i.test(d) && /\b(clear|ok|ossd)\b/i.test(d)) alarmInputs.push({ point: point(x), text: 'Light curtain interrupted', activeWhen: false, severity: 'warning' });
+    // "Heater safety thermostat TSH102 OK (opens on over-temperature)": ON means healthy, so OFF is the alarm.
+    else if (ALARM_WORDS.test(d) && /\b(ok|healthy)\s*$/i.test(name)) alarmInputs.push({ point: point(x), text: `${name.replace(/\s*\b(ok|healthy)\s*$/i, '')} tripped`, activeWhen: false, severity: 'alarm' });
     else if (ALARM_WORDS.test(d)) alarmInputs.push({ point: point(x), text: name.replace(/\btripped\b/i, 'tripped'), activeWhen: true, severity: 'alarm' });
     else if (/\b(pressure|air|vacuum|level|flow)\b/i.test(d) && /\b(ok|healthy|present)\b/i.test(d)) alarmInputs.push({ point: point(x), text: `${name.replace(/\b(ok|healthy|present)\b/i, '').trim()} low`, activeWhen: false, severity: 'alarm' });
     else if (/\b(low|empty|out|missing)\b/i.test(d) && /\b(film|roll|level|material|label|supply|reel|web|tank|hopper|pressure|air)\b/i.test(d)) {

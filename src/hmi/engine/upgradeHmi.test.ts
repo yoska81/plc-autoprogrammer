@@ -12,7 +12,8 @@ import { checksFor } from '../../review/actions';
 import { useProgramStore } from '../../store/useProgramStore';
 import { useHmiStore } from '../../store/useHmiStore';
 import { generateRuleBasedHmi } from '../../lib/ai/hmiContentAI';
-import { openPlcChanges, plcChangesFor, type UpgradeRoles } from './upgradeHmi';
+import { inPlcNames, openPlcChanges, plcChangesFor, programUse, type UpgradeRoles } from './upgradeHmi';
+import { defaultHmiContent } from './content';
 import type { LadderProgram, Rung } from '../../plc/core/ladder';
 
 const warn = console.warn;
@@ -99,5 +100,39 @@ const batch = await generateRuleBasedHmi({ io: p0.io, addresses: p0.addresses, m
 const withCount = { ...batch.design, tags: [...batch.design.tags, { role: 'sp:batch', address: 'DS1199', name: 'SP_Batch', dataType: 'INT' as const, access: 'read-write' as const, description: 'Batch size.' }] };
 const constChange = plcChangesFor(withCount, imported, { tags: [], constPresets: [{ address: 'CT1', nickname: 'Bottle_Count', preset: '500' }] }).find((c) => c.address === 'DS1199');
 assert.match(constChange!.change, /preset of Bottle_Count \(CT1\) instead of the fixed 500/);
+
+// The HMI Stop counts as wired in only as a normally-closed contact in the run latch, not on any read.
+const stopTag = byRole('cmd:stop')!;
+const readOnly: LadderProgram = structuredClone(done);
+readOnly.rungs.push(rung('lamp', [[{ type: 'NO', address: stopTag.address }]], [{ type: 'OUT', address: 'C40' }]));
+assert.ok(openPlcChanges(d, readOnly).some((c) => c.address === stopTag.address), 'a plain read of the HMI Stop is not the change');
+const wired: LadderProgram = structuredClone(done);
+for (const b of wired.rungs[0].branches) b.push({ type: 'NC', address: stopTag.address });
+assert.ok(!openPlcChanges(d, wired).some((c) => c.address === stopTag.address), 'NC in the run latch is the change');
+
+// The program's own alarm on the same input is used, not a second HMI alarm: its rung reads the safety input.
+assert.equal(byRole('alarm:safety')?.address, 'C20');
+assert.equal(d.alarms.filter((a) => /Safety circuit open/.test(a.message)).length, 0, 'no second safety alarm');
+assert.equal(d.alarms.find((a) => a.address === 'C20')?.message, 'Safety fault', "the program's text");
+
+// A word cleared with MOV / COPY clears its bits: "Alm[0].3" of "Alm[0]".
+const words: LadderProgram = { tags: [{ address: 'DS4', nickname: 'Alm[0]', comment: '' }, { address: 'C8', nickname: 'Alm[0].0', comment: '' }, { address: 'C9', nickname: 'Other', comment: '' }],
+  rungs: [rung('clr', [[{ type: 'NO', address: 'X1' }]], [{ type: 'COPY', source: '0', dest: 'DS4' }])] };
+const use = programUse(words);
+assert.ok(use.resets.has('C8') && !use.resets.has('C9'));
+
+// Change texts in the PLC's own names: Logix tags, TIA DB members and %I inputs; unknown stays as it is.
+const logix = (a: string) => ({ C1001: { name: 'HMI_Start' }, X102: { name: 'Start_PB', io: 'Local:1:I.Pt01.Data' }, C1003: { name: 'HMI_Manual_Select' } } as Record<string, { name: string; io?: string }>)[a] ?? { name: '' };
+assert.equal(inPlcNames('Add HMI_Start (C1001) in parallel with Start_PB (X102); needs C1003 ON.', logix), 'Add HMI_Start in parallel with Start_PB; needs HMI_Manual_Select ON.');
+const tia = (a: string) => ({ C1001: { name: '"Machine_DB".HMI_Start' }, X001: { name: '"Machine_DB".Start_PB', io: '%I0.0' } } as Record<string, { name: string; io?: string }>)[a] ?? { name: '' };
+assert.equal(inPlcNames('Add HMI_Start (C1001) in parallel with Start_PB (X001), Y9 (Y009).', tia), 'Add "Machine_DB".HMI_Start in parallel with Start_PB (%I0.0), Y9 (Y009).');
+
+// An "… OK" input whose note names an over-temperature: ON is healthy, so the alarm is OFF and says "tripped".
+const ok = defaultHmiContent({
+  io: [{ id: 'e', description: 'Emergency stop OK (safety relay)', type: 'input', category: 'Safety' }, { id: 'a', description: 'Heater safety thermostat TSH102 OK (opens on over-temperature)', type: 'input', category: 'Analog/Process' }],
+  addresses: new Map([['e', 'X001'], ['a', 'X010']]), machineName: 'M',
+});
+const okAlarm = ok.alarmInputs?.find((a) => a.point.address === 'X010');
+assert.deepEqual([okAlarm?.text, okAlarm?.activeWhen], ['Heater safety thermostat TSH102 tripped', false]);
 
 console.log(`upgrade HMI: ${changes.length} PLC changes listed once; roles bound to C1 / C20 / C21; Start/Stop beside the wired buttons`);

@@ -19,7 +19,8 @@ import { isIssueNote } from '../components/questions/classify';
 import type { Finding, ReviewArea, ReviewPage, Severity } from './types';
 import { isAnalog } from '../types/io';
 import { analogMap, analogNeed } from '../plc/core/analog';
-import { openPlcChanges, programUse } from '../hmi/engine/upgradeHmi';
+import { inPlcNames, openPlcChanges, programUse } from '../hmi/engine/upgradeHmi';
+import { plcTagNameOf } from '../deliverables/plcTagNames';
 
 export interface ReviewInput {
   p: ProjectSnapshot;
@@ -156,7 +157,9 @@ function hmiChecks({ p }: ReviewInput): Finding[] {
   const changes = p.hmi.plcChanges ? new Set(p.hmi.plcChanges.map((c) => c.address)) : new Set<string>();
   const open = openPlcChanges(p.hmi, p.ladder);
   if (open.length) {
-    const list = open.slice(0, 15).map((c) => `• ${c.change}`).join('\n') + (open.length > 15 ? `\n• … and ${open.length - 15} more` : '');
+    // In the PLC's own tag names (CLICK's are its addresses), so each change can be typed in as it reads.
+    const nameOf = p.profile.id === 'click' ? (a: string) => ({ name: a }) : plcTagNameOf(p);
+    const list = open.slice(0, 15).map((c) => `• ${inPlcNames(c.change, nameOf)}`).join('\n') + (open.length > 15 ? `\n• … and ${open.length - 15} more` : '');
     out.push(finding('hmi-plc-changes', 'major', 'hmi', 'program', '', `The HMI needs ${open.length} change(s) in the upgraded PLC program`,
       `The HMI uses the imported program's own addresses where it has them. These HMI functions have nothing in the program yet:\n${list}`,
       'Make these changes in the PLC program, or take the elements off the HMI screens.'));

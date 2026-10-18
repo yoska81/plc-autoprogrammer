@@ -70,5 +70,13 @@ export function projectUpgradeRoles(drafts: Record<string, unknown>, ladder: Lad
   const panel = panelTags(roles);
   // The exact panel Start / Stop changes are in the HMI's PLC change list; the rest is said as the importer found it.
   const missing = roles.missing.filter((m) => !(panel.parallelTo.length && /in parallel/i.test(m)));
-  return { ...panel, alarms: roles.alarms, missing };
+  return { ...panel, alarms: roles.alarms.map((a) => ({ ...a, text: alarmText(a, ladder) })), missing };
+}
+
+/** An alarm known only by its tag ("Alm[0].3") is named by the comment of the rung that sets it ("Alarm 3: Pallet jam"). */
+function alarmText(a: { address: string; nickname: string; text: string }, ladder: LadderProgram): string {
+  if (a.text !== a.nickname && /\s/.test(a.text)) return a.text;
+  const setter = ladder.rungs.find((r) => r.comment.trim() && r.outputs.some((o) => (o.type === 'OUT' || o.type === 'SET') && o.address.toUpperCase() === a.address.toUpperCase()));
+  const said = setter?.comment.replace(/^original:\s*\S+\s*[—-]\s*/i, '').replace(/^alarm\s*\d*\s*:\s*/i, '').split(/[.\n]/)[0].trim();
+  return said ? said[0].toUpperCase() + said.slice(1) : a.text;
 }
