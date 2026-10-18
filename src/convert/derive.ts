@@ -15,22 +15,20 @@ import type { DrawnRatings, ExistingMachine, PathContact, PathEl } from './types
 
 export const MAX_UPLOAD_FILES = 20;
 
-/** Where the free ODA File Converter is downloaded (Open Design Alliance). */
-export const ODA_DOWNLOAD = 'https://www.opendesign.com/guestfiles/oda_file_converter';
+/** What to do when no DWG reader is set up (the Windows app with its ODA Drawings SDK reader reads DWG). */
+export const DWG_NOT_SET_UP = 'DWG reader not installed yet — save the drawings as DXF in AutoCAD (File → Save As → DXF), or set up the DWG reader in Settings.';
 
-/** A DWG as text: the Windows app converts it with the ODA File Converter; else a plugged-in reader; else how to export it. */
+/** A DWG as text: the DWG reader set up in the Windows app (ODA Drawings SDK); else a plugged-in reader; else what to do. */
 async function dwgText(f: File): Promise<string> {
-  const oda = desktopBridge()?.oda;
-  if (oda?.toDxf) {
-    const r = await oda.toDxf([{ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }]);
+  const dwg = desktopBridge()?.dwg;
+  if (dwg) {
+    const r = await dwg.read([{ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }]);
     if (r.ok) return dxfToText(r.files[0].text, f.name);
-    if (!('notInstalled' in r && r.notInstalled)) throw new Error(`${f.name}: ${r.error}`);
+    if (!r.notConfigured) throw new Error(`${f.name}: ${r.error}`);
   }
   const entities = await dwgToEntities(await f.arrayBuffer());
   if (entities) return cadToText(entities, f.name);
-  throw new Error(oda
-    ? `${f.name}: reading DWG needs the free ODA File Converter (${ODA_DOWNLOAD}). Install it and read again, or export the drawings to DXF or PDF in the CAD program.`
-    : `${f.name}: DWG files can't be read in the browser. In the CAD program, export the drawings to DXF (File → Save As → DXF) or print them to PDF, or use the Windows app with the free ODA File Converter.`);
+  throw new Error(`${f.name}: ${DWG_NOT_SET_UP}`);
 }
 
 /** File types the upload takes (the file picker's accept list). */

@@ -8,28 +8,26 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useDraft } from '../store/useDraftStore';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 import { regionSpec, SUPPLY_INFO } from '../standards/regions';
-import { deriveFromUpload, MAX_UPLOAD_FILES, ODA_DOWNLOAD, UPLOAD_ACCEPT } from './derive';
-import { desktopBridge } from '../desktop/bridge';
+import { deriveFromUpload, MAX_UPLOAD_FILES, UPLOAD_ACCEPT } from './derive';
+import { desktopBridge, type DwgReaderStatus } from '../desktop/bridge';
 import { hasDwgReader } from './dxf';
 import { READ_KEY, setReading, type Reading } from './reading';
 import { Step } from './ReviewAndConvert';
 import { NO_FILES, useUploadFiles } from './thumbs';
 
-/** How DWG files are read here: the ODA File Converter in the Windows app (found or how to install it), else export. */
+/** How DWG files are read here: the DWG reader set up in Settings (Windows app), else save as DXF. */
 function DwgStatus() {
-  const oda = desktopBridge()?.oda;
-  const [found, setFound] = useState<boolean | null>(null);
-  useEffect(() => { if (oda?.toDxf) void oda.detect().then((r) => setFound(r.found)).catch(() => setFound(false)); }, [oda]);
-  if (hasDwgReader()) return <p className="text-xs text-steel-500" data-testid="dwg-status">DWG files are read directly.</p>;
-  if (!oda?.toDxf) return <p className="text-xs text-steel-500" data-testid="dwg-status">DWG: export the drawings to DXF or PDF in the CAD program, or use the Windows app, which reads DWG with the free ODA File Converter.</p>;
-  if (found === null) return null;
-  return found
-    ? <p className="text-xs text-emerald-700" data-testid="dwg-status">DWG files are read with the ODA File Converter installed on this PC.</p>
-    : (
-      <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900" data-testid="dwg-status">
-        <b>To read DWG files, install the free ODA File Converter</b> (Open Design Alliance): <a href={ODA_DOWNLOAD} target="_blank" rel="noreferrer" className="underline">download it here</a>, choose the Windows installer, install it, then come back and read the drawings. Without it: export the drawings to DXF or PDF in the CAD program.
-      </div>
-    );
+  const dwg = desktopBridge()?.dwg;
+  const [st, setSt] = useState<DwgReaderStatus | null>(null);
+  useEffect(() => { if (dwg) void dwg.status().then(setSt).catch(() => setSt({ configured: false, ok: false })); }, [dwg]);
+  if (hasDwgReader() || st?.ok) return <p className="text-xs text-emerald-700" data-testid="dwg-status">DWG files are read with the DWG reader set up in Settings.</p>;
+  if (dwg && !st) return null;
+  return (
+    <p className="text-xs text-steel-600" data-testid="dwg-status">
+      {st?.configured && st.error ? <>The DWG reader set up in Settings can't be used ({st.error}). </> : null}
+      DWG reader not installed yet — save the drawings as DXF in AutoCAD (File → Save As → DXF), or {dwg ? <Link to="/settings" className="underline">set up the DWG reader in Settings</Link> : 'set up the DWG reader in Settings of the Windows app'}. PDF and DXF are read as they are.
+    </p>
+  );
 }
 
 /**

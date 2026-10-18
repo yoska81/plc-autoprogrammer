@@ -83,9 +83,11 @@ npx tsx src/convert/convert.test.ts                        # DXF text, foreign p
 
 The acceptance case `roll-former.dxf` mirrors a real drawing a user sent (a DWG): a roll-forming machine with a 5.5 kW
 VFD and a 1.5 kW servo flying shear, six A3 sheets side by side in model space, MTEXT with SimSun codes. A DWG is read
-in the Windows app through the installed (free) ODA File Converter (`electron/oda.cjs` `toDxf`: DWG → DXF → `dxf.ts`), or
-through a plugged-in in-browser reader (`setDwgReader` in `src/convert/dxf.ts`; none is bundled). Otherwise the upload
-links the ODA download and asks for DXF or PDF. The mocked AI answer is `src/convert/__fixtures__/rollFormer.ts`.
+in the Windows app by the user's ODA Drawings SDK reader, chosen in Settings → DWG reader (`electron/dwgReader.cjs`: a
+`.node` module with `dwgToDxf(input, output)` or a program `reader input.dwg output.dxf`; nothing of the SDK is in the
+repository), or by a plugged-in in-browser reader (`setDwgReader` in `src/convert/dxf.ts`; none is bundled). Otherwise the
+upload says to save the drawings as DXF or set up the reader. `npx tsx src/convert/dwgReader.test.ts` tests the
+main-process side with a stand-in reader program.
 
 Machines without a PLC: every control circuit is read as a function (coil, contacts, timer setting, or a drive's
 built-in logic). The conversion either moves the relay logic into a new PLC (default: field devices become I/O, relays

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { testAnthropicConnection } from '../lib/ai/anthropic';
 import { clearAiCache } from '../lib/ai/cache';
 import VoiceSettingsCard from '../voice/VoiceSettingsCard';
+import DwgReaderCard from '../convert/DwgReaderCard';
 import { IS_PREVIEW, PREVIEW_ACCOUNT_KEY } from '../preview/mode';
 import {
   useSettingsStore,
@@ -288,6 +289,8 @@ export default function SettingsPage() {
 
           {/* Voice settings apply as they are changed (no API keys in them). */}
           <VoiceSettingsCard />
+          {/* Reading DWG drawings on Import → Drawings (the Windows app's ODA Drawings SDK reader). */}
+          <DwgReaderCard />
         </div>
       </div>
     </>

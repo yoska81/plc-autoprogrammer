@@ -72,6 +72,8 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Continue to the import →' }).click();
   await page.waitForURL(/\/import$/);
 
+  // DWG in the browser: no reader, so save as DXF (the Windows app reads DWG once its reader is set up)
+  check(/DWG reader not installed yet — save the drawings as DXF in AutoCAD/.test(await page.getByTestId('dwg-status').innerText()), 'DWG: plain "not installed yet" line');
   // The one CAD file
   await page.getByTestId('convert-files').setInputFiles([FIX + 'roll-former.dxf']);
   await page.getByRole('button', { name: 'Read the drawings' }).click();

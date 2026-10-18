@@ -9,6 +9,7 @@ const { pathToFileURL } = require('node:url');
 const { registerModbusIpc } = require('./modbus.cjs');
 const mic = require('./micPermission.cjs');
 const { registerOdaIpc } = require('./oda.cjs');
+const { registerDwgReaderIpc } = require('./dwgReader.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;
@@ -237,6 +238,8 @@ ipcMain.on('isa:version', (e) => { e.returnValue = app.getVersion(); });
 // ── Connect to PLC: Modbus TCP (electron/modbus.cjs) ──
 registerModbusIpc(ipcMain);
 registerOdaIpc(ipcMain);
+// ── DWG import through the user's ODA Drawings SDK reader, set up in Settings (electron/dwgReader.cjs) ──
+registerDwgReaderIpc(ipcMain, app, dialog);
 
 // ── Microphone for voice input: a native question the first time (electron/micPermission.cjs) ──
 let micState = { always: false, session: false };

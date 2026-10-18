@@ -135,6 +135,14 @@ async function closeApp(app, win) {
   check(mb.afterDisconnect === 'Not connected' && mb.statuses.some((s) => s.connected) && !mb.statuses.at(-1).connected, 'modbus: status events');
   await plc.close();
 
+  // DWG import: the ODA Drawings SDK reader is not set up on a fresh install; Settings says so and offers to choose it
+  const dwg = await win.evaluate(async () => ({ status: await window.isaDesktop.dwg.status(), read: await window.isaDesktop.dwg.read([{ name: 'a.dwg', bytes: new Uint8Array([1]) }]) }));
+  check(dwg.status.configured === false && dwg.read.ok === false && dwg.read.notConfigured === true, `dwg reader not set up yet: ${JSON.stringify(dwg)}`);
+  await win.evaluate(() => { window.history.pushState({}, '', '/settings'); window.dispatchEvent(new PopStateEvent('popstate')); });
+  const dwgCard = win.getByTestId('dwg-reader-settings');
+  await dwgCard.waitFor({ timeout: 10000 });
+  check(/DWG reader not installed yet/.test(await dwgCard.innerText()) && await dwgCard.getByRole('button', { name: 'Choose the DWG reader…' }).isVisible(), 'Settings → DWG reader: not installed yet, choose it');
+
   const printers = await win.evaluate(async () => window.isaDesktop.listPrinters());
   log('Printers seen by Windows/CUPS:', printers.length ? printers.map((p) => p.name).join(', ') : 'none (no printers on this machine)');
   await win.screenshot({ path: path.join(OUT, '02_deliverables.png') });

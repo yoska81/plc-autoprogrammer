@@ -85,8 +85,19 @@ export interface OdaBridge {
   detect(): Promise<{ found: boolean; path?: string }>;
   /** DXF text in, AutoCAD 2018 DWG out (same order, names with .dwg). */
   convert(files: { name: string; text: string }[]): Promise<{ ok: true; files: { name: string; bytes: Uint8Array }[] } | { ok: false; error: string }>;
-  /** DWG in, DXF text out (the drawing import). Older app builds don't have it. */
-  toDxf?(files: { name: string; bytes: Uint8Array }[]): Promise<{ ok: true; files: { name: string; text: string }[] } | { ok: false; notInstalled?: boolean; error: string }>;
+}
+
+/** Whether the DWG reader (the user's ODA Drawings SDK build) is set up and usable. */
+export interface DwgReaderStatus { configured: boolean; ok: boolean; path?: string; error?: string }
+
+/** DWG import through the ODA Drawings SDK reader the user set up in Settings (electron/dwgReader.cjs). */
+export interface DwgReaderBridge {
+  status(): Promise<DwgReaderStatus>;
+  /** Choose the reader file (.node module or program) in a native dialog. */
+  configure(): Promise<DwgReaderStatus>;
+  clear(): Promise<DwgReaderStatus>;
+  /** DWG in, DXF text out (same order). */
+  read(files: { name: string; bytes: Uint8Array }[]): Promise<{ ok: true; files: { name: string; text: string }[] } | { ok: false; notConfigured?: boolean; error: string }>;
 }
 
 export interface IsaDesktop {
@@ -109,6 +120,8 @@ export interface IsaDesktop {
   modbus?: ModbusBridge;
   /** DWG conversion (desktop app only). */
   oda?: OdaBridge;
+  /** DWG import (desktop app only; older builds don't have it). */
+  dwg?: DwgReaderBridge;
 }
 
 export type MicPermission = 'always' | 'session' | 'ask';
