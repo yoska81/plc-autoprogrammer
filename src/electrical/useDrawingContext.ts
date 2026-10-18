@@ -1,9 +1,9 @@
+import { useProjectPanelPart } from '../hmi/projectPanel';
 import { useMemo } from 'react';
 import { usePlc } from '../plc/core/usePlc';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { useProjectStore } from '../store/useProjectStore';
-import { useHmiStore } from '../store/useHmiStore';
 import { getPart } from './catalog';
 import type { DrawingContext } from './derive';
 import { docInfo } from '../deliverables/docInfo';
@@ -21,7 +21,7 @@ export function useDrawingContext(opts: { raw?: boolean } = {}): DrawingContext 
   const projectName = useProgramStore((s) => s.projectName);
   const { profile, cpu, io, addresses, analog } = usePlc();
   const info = useProjectStore((s) => s.info);
-  const hmiPartNumber = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
+  const hmiPartNumber = useProjectPanelPart();
   const [layout] = useMachineLayout();
   const machineLayout = useMemo(() => layoutForDesign(layout), [layout]);
 

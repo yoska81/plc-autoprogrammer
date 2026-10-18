@@ -4,6 +4,7 @@
  * checks every generated design must pass. Run with:  npx tsx src/electrical/engine/engine.test.ts
  * Regenerate the goldens after an intended change:  UPDATE=1 npx tsx src/electrical/engine/engine.test.ts
  */
+import { missingOperatorIo } from '../../spec/operatorIo';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -558,6 +559,22 @@ for (const s of SCENARIOS) {
   assert.equal(m.motors.length, 2);
   assert.ok(Math.abs(m.motors[0].hp - 10.06) < 0.1, 'kW converted to HP');
   assert.ok(m.assumptions.some((a) => /Pump.*assumed 1 HP/.test(a)));
+}
+
+// No touch panel: the operator devices the I/O list gets (src/spec/operatorIo.ts) are on the door — Start, Stop,
+// Reset, the Auto/Manual selector, the lamps and the E-stop — with no HMI on the door, in the BOM or on the network.
+{
+  const points: P[] = [pt('Part at end photo-eye', 'input', { deviceType: 'sensor-pnp' }), pt('Conveyor motor contactor', 'output', { deviceType: 'contactor-coil' }),
+    ...missingOperatorIo([]).map((g) => pt(g.description, g.type, { deviceType: g.deviceType, category: g.category }))];
+  const { r, ctx } = run({ name: 'no-panel', supply: '120VAC-1PH', hmi: null, points, motors: [motor('M1', 'Conveyor motor', 0.5, '120VAC-1PH')] });
+  const L = panelLayout(ctx);
+  assert.deepEqual(L.door.items.map((d) => `${d.kind} ${d.tag}`), ['pilot PL1', 'pilot PL2', 'selector SS1', 'pushbutton PB1', 'pushbutton PB2', 'pushbutton PB3', 'pushbutton PB4', 'estop ES1'], 'no-panel: the operator devices on the door, no HMI');
+  const look = (tag: string) => { const c = r.design.components.find((x) => x.tag === tag); return `${c?.function} | ${getPart(c?.partNumber ?? '')?.description}`; };
+  for (const [tag, re] of [['PB1', /^Start \| .*green.*N\.O\./], ['PB2', /^Stop \(NC\) \| .*red.*N\.C\./], ['PB3', /^Reset \| .*black.*N\.O\./], ['SS1', /^Auto\/Manual \(ON = Manual\) \| .*2-position/],
+    ['PL1', /^Running \(green\) \| .*green, 24/], ['PL2', /^Fault \(red\) \| .*red, 24/], ['PB4', /^Safety reset .*blue/]] as const) assert.match(look(tag), re, `no-panel: ${tag}`);
+  assert.equal(r.design.components.filter((c) => getPart(c.partNumber)?.category === 'hmi').length, 0, 'no-panel: no HMI in the BOM');
+  assert.equal(buildModel(ctx).hmi, undefined, 'no-panel: no HMI feed / link');
+  assert.deepEqual(r.design.ioWiring.filter((w) => /^(PB|SS|PL)/.test(w.deviceTag)).map((w) => `${w.address} ${w.deviceTag}`), ['X003 PB1', 'X004 PB2', 'X005 PB3', 'X006 SS1', 'Y002 PL1', 'Y003 PL2'], 'no-panel: wired to the PLC');
 }
 
 if (failures) { console.error(`${failures} scenario(s) failed`); process.exit(1); }

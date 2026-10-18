@@ -135,7 +135,9 @@ function noPanelChecks({ p }: ReviewInput): Finding[] {
   if (p.hmi || !p.noHmi || p.profile.language !== 'ladder' || !p.ladder.rungs.length) return [];
   const writes = new Set(p.ladder.rungs.flatMap((r) => rungWrites(r).map((w) => w.trim().toUpperCase())));
   const reads = [...new Set(p.ladder.rungs.flatMap((r) => rungReads(r).map((x) => x.address.trim().toUpperCase())))];
-  return reads.filter((a) => HMI_WRITTEN.test(a) && !writes.has(a)).map((a) => {
+  // A bit the checker already reports as the reason a coil can never turn on (validateProgram noPanel) is not repeated here.
+  const covered = new Set(p.issues.filter((i) => /can never turn on/.test(i.message)).flatMap((i) => i.message.match(/\b(C|DS|DF)\d+\b/g) ?? []));
+  return reads.filter((a) => HMI_WRITTEN.test(a) && !writes.has(a) && !covered.has(a)).map((a) => {
     const name = p.labels.get(a) ? ` ${p.labels.get(a)}` : '';
     const bit = a.startsWith('C');
     return finding(`nohmi-input:${a}`, 'major', 'hmi', 'program', a, `No touch panel, but the program waits for ${bit ? 'panel command' : 'panel setpoint'} ${a}${name}`,

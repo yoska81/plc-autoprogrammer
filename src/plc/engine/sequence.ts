@@ -202,8 +202,9 @@ export function programWithCycle(input: ProgramInput & { spec: string; sequence?
   const role = (r: string) => base.roles.get(r);
   const sequence = input.sequence ?? defaultSequence(input.content, input.spec);
   const { program, cycleCounter } = compileSequence(sequence, base, {
-    // Cycle count reset: the HMI's count reset, else Service done (maintenance counters), else the Reset bit.
-    alarm: role('alarm:step'), countReset: role('cmd:countreset') ?? role('cmd:servicedone') ?? base.internal.reset, stateWord: role('word:state'), states: input.content.states,
+    // Cycle count reset: the HMI's count reset, else Service done (maintenance counters), else the Reset bit
+    // (always the Reset bit with no touch panel: nothing writes the panel's bits).
+    alarm: role('alarm:step'), countReset: input.panel === false ? base.internal.reset : role('cmd:countreset') ?? role('cmd:servicedone') ?? base.internal.reset, stateWord: role('word:state'), states: input.content.states,
   });
   const notes = base.notes.filter((n) => !/automatic sequence .* not written yet/i.test(n) || !sequence.steps.length);
   return { program, sequence: program.sequence ?? sequence, cycleCounter, stepRegister: program.sequence?.register ?? STEP_REGISTER, notes: [...notes, ...sequence.questions], base };
