@@ -267,6 +267,8 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
     id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++o).padStart(3, '0')}`,
     description: p.description, type: p.type, category: 'Spare',
     ...(p.analog ? { signal: 'analog' as const, analog: { range: '4-20mA' as const, min: 0, max: full, units: 'raw counts' } } : {}),
+    // A CLICK program going back on a CLICK keeps its terminals (X001 stays X001, gaps included).
+    ...(profile.id === 'click' && /^[XY]\d{3}$/i.test(p.original) && profile.parseAddress(p.original.toUpperCase()) ? { plcAddress: p.original.toUpperCase() } : {}),
   }));
   const addr = resolveAddresses(profile, cpu, points, modules);
   const ph = new Map<string, string>();

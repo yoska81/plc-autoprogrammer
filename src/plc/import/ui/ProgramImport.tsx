@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FORMAT_LABEL, fileText as decodeFile, importProgramFiles, type ImportedProgram } from '../index';
 import { programSummary } from '../upgrade';
 import { applyUpgrade } from './applyUpgrade';
+import PrintoutReader from './PrintoutReader';
 import type { UpgradePlan } from '../upgrade';
 
 const ACCEPT = '.l5x,.L5X,.l5k,.L5K,.xml,.st,.scl,.csv,.txt,.acd,.ACD,.rss,.ckp,.ap13,.ap14,.ap15,.ap16,.ap17,.ap18,.ap19,.ap20,.s7p,.gx3,.gxw,.isp,.vlp,.ulpr,.ccwsln,.project';
@@ -56,6 +57,8 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
         </label>
         {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
       </div>
+
+      {!imp && <PrintoutReader onRead={(p) => { setImp(p); setFileText(null); setError(null); }} />}
 
       {imp && r && (
         <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-4" data-testid="program-found">

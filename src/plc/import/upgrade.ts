@@ -55,11 +55,22 @@ const SAME_FAMILY: Partial<Record<SourceFormat, string>> = { l5x: 'logix', l5k: 
 
 /** PLC the program goes on: the original's family, else the current PLC when it draws ladder, else CLICK. */
 export function targetPlc(format: SourceFormat, currentPlcId: string, vendor = ''): PlcProfile {
-  const same = format === 'plcopen' && /siemens/i.test(vendor) ? 'siemens-s7' : SAME_FAMILY[format];
+  const same = format === 'plcopen' && /siemens/i.test(vendor) ? 'siemens-s7' : format === 'printout' ? printoutFamily(vendor) : SAME_FAMILY[format];
   const p = same ? PLC_PROFILES.find((x) => x.id === same && x.available) : undefined;
   if (p) return p;
   const cur = getProfile(currentPlcId);
   return cur.available && cur.language === 'ladder' ? cur : getProfile('click');
+}
+
+/** PLC family of a printout from its maker / model as printed. */
+function printoutFamily(text: string): string | undefined {
+  if (/click|automationdirect/i.test(text)) return 'click';
+  if (/micro8[0-9]0|micro800/i.test(text)) return 'micro800';
+  if (/rockwell|allen|logix|compactlogix|controllogix|1756|1769|5069/i.test(text)) return 'logix';
+  if (/siemens|s7-|simatic|tia/i.test(text)) return 'siemens-s7';
+  if (/unistream/i.test(text)) return 'unitronics-unistream';
+  if (/unitronics|vision/i.test(text)) return 'unitronics-vision';
+  return undefined;
 }
 
 export function needOf(imp: ImportedProgram): Need {
@@ -77,7 +88,7 @@ export function chooseCpu(profile: PlcProfile, need: Need): { cpuId: string; mod
 }
 
 export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = new Date()): UpgradePlan {
-  const profile = targetPlc(imp.source.format, currentPlcId, imp.source.vendor);
+  const profile = targetPlc(imp.source.format, currentPlcId, `${imp.source.vendor} ${imp.source.controller}`);
   const { cpuId, modules } = chooseCpu(profile, needOf(imp));
   const cpu = profile.cpuModels.find((c) => c.id === cpuId) ?? profile.cpuModels[0];
   const m = materialize(imp, profile, cpu, moduleSlots(modules));
@@ -95,7 +106,7 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
   return {
     plcId: profile.id, cpuId: cpu.id, modules,
     program,
-    io: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type, category: p.category, ...(p.signal ? { signal: p.signal, analog: p.analog } : {}) })),
+    io: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type, category: p.category, ...(p.signal ? { signal: p.signal, analog: p.analog } : {}), ...(p.plcAddress ? { plcAddress: p.plcAddress } : {}) })),
     spec: describeProgram(imp),
     questions: questionsFor(imp),
     original: {
@@ -181,6 +192,7 @@ export function questionsFor(imp: ImportedProgram): string[] {
       : `The original program has "${n.text}" (${n.where}) that could not be brought in. What does it do on the machine?`);
   }
   for (const d of imp.report.notes.filter((x) => /^Double coil:/.test(x))) q.push(`${d} Which rung should control it (or should both, through an OR)?`);
+  for (const d of imp.report.notes.filter((x) => /^Hard to read:/.test(x))) q.push(`${d.replace(/\.$/, '')}. Please check it against the printout: is it right as read?`);
   q.push('What problems does the machine have today, and what should the upgrade fix?');
   return q;
 }
