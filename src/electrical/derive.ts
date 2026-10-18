@@ -512,7 +512,7 @@ export function buildModel(ctx: DrawingContext): ElectricalModel {
 export function resolveComponents(ctx: DrawingContext): ResolvedComponent[] {
   const list = ctx.design.components.map((comp) => {
     const part = comp.partNumber ? ctx.getPart(comp.partNumber) : undefined;
-    const category = part?.category ?? guessCategory(comp.tag);
+    const category = part?.category ?? comp.category ?? guessCategory(comp.tag);
     return { comp, tag: comp.tag, partNumber: comp.partNumber, part, category, mount: part?.mount ?? defaultMount(category) } as ResolvedComponent;
   });
   // link fuse cartridges to their holders (same motor, tag/function reference, or a single obvious pair)
@@ -1924,6 +1924,8 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   const innerW = backplate.w - 2 * (MARGIN + DUCT + CLEAR);
   /** Width the rails pack into: the full width, or less when tall parts have their own column. */
   let areaW = innerW;
+  /** As-built rows: each row is one photographed rail (never shared with the next one). */
+  let keepRows = false;
   type Band = { items: PlacedItem[]; h: number; terminals?: boolean };
   const gapOf = (b: PlacedItem[], it: PlacedItem) => (b.length ? it.gapLeft ?? gapBefore(b[b.length - 1], it) : 0);
   const bandW = (b: PlacedItem[]) => b.reduce((a, it, k) => a + it.w + (k ? it.gapLeft ?? gapBefore(b[k - 1], it) : 0), 0);
@@ -1961,10 +1963,10 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     }
     rowsIn.forEach((row, ri) => {
       if (!row.length) return;
-      const terminals = ri === 3;
+      const terminals = keepRows ? row.every((it) => it.category === 'terminal') : ri === 3;
       const last = bands[bands.length - 1];
       // A whole group that fits on the end of the previous rail shares it (never for terminal strips).
-      if (!terminals && last && !last.terminals && rowW(last.items) + 3 * GAP + rowW(row) <= areaW) {
+      if (!keepRows && !terminals && last && !last.terminals && rowW(last.items) + 3 * GAP + rowW(row) <= areaW) {
         row[0].gapLeft = 3 * GAP;
         last.items.push(...row);
         return;
@@ -2080,8 +2082,24 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   const copy = (it: PlacedItem): PlacedItem => ({ ...it, sub: it.sub?.map((x) => ({ ...x })) });
   // Least part area left off the panel wins (a terminal strip weighs more than a small relay).
   const lost = (p: { notFit: PanelLayout['notFit'] }) => p.notFit.reduce((a, n) => a + n.w * n.h, 0);
-  let placed = place(rows.map((r) => r.map(copy)), groundBars.map(copy), -1);
-  if (placed.notFit.length) {
+  // As-built from photos: the photographed rails top to bottom, each device where it was seen (left to
+  // right); parts not seen on a rail follow on rails of their own. Falls back to the normal packing
+  // only when the photographed arrangement doesn't fit the enclosure.
+  const asBuilt = ctx.design.asBuilt?.rails.filter((r) => r.length);
+  let asBuiltPlaced: ReturnType<typeof place> | null = null;
+  if (asBuilt?.length) {
+    const pool = rows.flat().map(copy);
+    const take = (tag: string) => { const i = pool.findIndex((it) => it.tag === tag || it.sub?.some((s) => s.tag === tag)); return i < 0 ? [] : pool.splice(i, 1); };
+    const photoRows = asBuilt.map((r) => r.flatMap(take)).filter((r) => r.length);
+    const rest = rows.map((r) => pool.filter((it) => r.some((x) => x.tag === it.tag && x.label === it.label))).filter((r) => r.length);
+    keepRows = true;
+    const ab = place([...photoRows, ...rest], groundBars.map(copy), -1);
+    keepRows = false;
+    if (!ab.notFit.length) { asBuiltPlaced = ab; warnings.push('As-built from photos: rails and device order as photographed — verify on the cabinet.'); }
+    else warnings.push('The photographed rail arrangement does not fit this enclosure size: the layout below is packed normally.');
+  }
+  let placed = asBuiltPlaced ?? place(rows.map((r) => r.map(copy)), groundBars.map(copy), -1);
+  if (!asBuiltPlaced && placed.notFit.length) {
     for (let k = 0; k <= rows[3].length; k++) {
       const tight = place(rows.map((r) => r.map(copy)), groundBars.map(copy), k);
       if (lost(tight) < lost(placed)) placed = tight;
@@ -2089,7 +2107,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   }
   // Still overflowing: tall parts (disconnect, large drives) in their own column so they don't make
   // a whole rail tall; the other parts pack on the rails beside it (normal and compact packing).
-  if (placed.notFit.length) {
+  if (!asBuiltPlaced && placed.notFit.length) {
     const isTall = (it: PlacedItem) => it.h >= TALL_MM && it.category !== 'terminal';
     if (rows.slice(0, 3).some((r) => r.some(isTall))) {
       for (let k = -1; k <= rows[3].length; k++) {

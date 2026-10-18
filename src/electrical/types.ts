@@ -99,6 +99,8 @@ export interface DesignComponent {
   function: string;
   /** Motor it belongs to, for motor circuit sheets. */
   motorTag?: string | null;
+  /** Kind of device when the part is not in the catalog (as-built from photos); otherwise the catalog's. */
+  category?: CatalogCategory;
 }
 
 export type FieldDeviceType =
@@ -162,5 +164,7 @@ export interface ElectricalDesign {
   machine?: MachineWiring;
   /** How the enclosure was chosen (absent on older designs). */
   enclosureChoice?: EnclosureChoice;
+  /** Documented from an existing cabinet (src/convert/photos): the DIN rails top to bottom, each the device tags left to right. */
+  asBuilt?: { source: 'photos'; rails: string[][] };
   generatedAt: string;
 }

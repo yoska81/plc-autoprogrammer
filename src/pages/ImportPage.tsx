@@ -1,8 +1,9 @@
 import { useSearchParams } from 'react-router-dom';
 import DrawingsImport from '../convert/DrawingsImport';
+import PhotosTab from '../convert/photos/PhotosTab';
 
-type Tab = 'drawings' | 'program';
-const TABS: { id: Tab; label: string }[] = [{ id: 'drawings', label: 'Drawings' }, { id: 'program', label: 'Program' }];
+type Tab = 'drawings' | 'program' | 'photos';
+const TABS: { id: Tab; label: string }[] = [{ id: 'drawings', label: 'Drawings' }, { id: 'program', label: 'Program' }, { id: 'photos', label: 'Cabinet photos' }];
 
 /**
  * Import an existing machine: the one entry point for an existing machine's drawings (read, reviewed,
@@ -11,7 +12,7 @@ const TABS: { id: Tab; label: string }[] = [{ id: 'drawings', label: 'Drawings' 
  */
 export default function ImportPage() {
   const [params, setParams] = useSearchParams();
-  const tab: Tab = params.get('tab') === 'program' ? 'program' : 'drawings';
+  const tab: Tab = params.get('tab') === 'program' ? 'program' : params.get('tab') === 'photos' ? 'photos' : 'drawings';
   return (
     <>
       <header className="border-b border-steel-200 bg-white px-4 py-2.5">
@@ -33,6 +34,8 @@ export default function ImportPage() {
       </nav>
       <div className="flex-1 overflow-y-auto bg-steel-50 p-4">
         {tab === 'drawings' && <DrawingsImport />}
+        {/* Cabinet photos → as-built drawings (src/convert/photos/). */}
+        {tab === 'photos' && <PhotosTab />}
         {/* Program tab: the program reader (src/plc/import/) plugs in here. */}
         {tab === 'program' && (
           <div className="max-w-3xl rounded-sm border border-steel-200 bg-white p-4 text-sm text-steel-700" data-testid="import-program">
