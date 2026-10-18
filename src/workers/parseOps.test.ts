@@ -6,11 +6,11 @@
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { runParse } from './parseOps';
+import { NOT_PARSED, runParse } from './parseOps';
 import { dxfToText, parseDxfEntities, sheetFrames } from '../convert/dxf';
 import { dxfSheetSvg } from '../convert/dxfPicture';
 import { importProgramFiles } from '../plc/import';
-import { parseOffThread } from '../lib/parseWorker';
+import { dxfSheet, dxfText, parseOffThread } from '../lib/parseWorker';
 
 let passed = 0;
 const failures: string[] = [];
@@ -35,8 +35,23 @@ await test('DXF sheet picture: the sheet a title block numbers; none for a sheet
   assert.equal(runParse({ op: 'dxf-sheet', key: 'rf', text: dxf, sheet: 99 }), null);
 });
 
-await test('a cached DXF is not parsed again (the text is not even read)', () => {
-  assert.match(runParse({ op: 'dxf-sheet', key: 'rf', text: '', sheet: 3 }) ?? '', /CN1-19/);
+await test('a cached DXF is not parsed again: asked by key only; an unknown key asks for the text', () => {
+  assert.match(runParse({ op: 'dxf-sheet', key: 'rf', sheet: 3 }) ?? '', /CN1-19/);
+  assert.throws(() => runParse({ op: 'dxf-sheet', key: 'other', sheet: 3 }), new RegExp(NOT_PARSED));
+});
+
+await test('dxfText / dxfSheet: the file text is read once; the key holds a hash of the bytes', async () => {
+  let reads = 0;
+  class Counted extends File { text() { reads++; return super.text(); } }
+  const f = new Counted([dxf], 'roll-former.dxf', { lastModified: 1 });
+  assert.equal(await dxfText(f), dxfToText(dxf, 'roll-former.dxf'));
+  assert.match(await dxfSheet(f, 3) ?? '', /CN1-19/);
+  assert.match(await dxfSheet(f, 4) ?? '', /<svg/);
+  assert.equal(reads, 1, 'the sheet pictures are asked by key');
+  // same name, size and date, other bytes: a different drawing
+  const edited = new Counted([dxf.replace('CN1-19', 'CN1-91')], 'roll-former.dxf', { lastModified: 1 });
+  assert.equal(edited.size, f.size);
+  assert.match(await dxfSheet(edited, 3) ?? '', /CN1-91/);
 });
 
 await test('program import is the same as on the page; without a Worker (Node) it runs here', async () => {

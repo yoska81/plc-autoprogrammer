@@ -222,20 +222,32 @@ export function sheetFrames(entities: CadEntity[]): Box[] {
   return frames.sort((a, b) => (Math.abs(b.y2 - a.y2) > h / 2 ? b.y2 - a.y2 : a.x1 - b.x1));
 }
 
-/** Rows of text in reading order: "text [layer]" joined left to right, rows top to bottom. */
-function textRows(texts: DxfText[], rowH: number): string[] {
-  const sorted = [...texts].sort((a, b) => (Math.abs(b.y - a.y) > rowH ? b.y - a.y : a.x - b.x));
-  const rows: string[] = [];
-  let lastY = Infinity;
-  let row: string[] = [];
-  for (const t of sorted) {
-    if (Math.abs(lastY - t.y) > rowH && row.length) { rows.push(row.join('   ')); row = []; }
-    row.push(`${t.attr ? `${t.attr}=` : ''}${t.text}${t.layer && t.layer !== '0' ? ` [${t.layer}]` : ''}`);
-    lastY = t.y;
+interface TextRow { text: string; x: number; y: number; layers: string[] }
+
+/**
+ * Rows of text in reading order: "text [layer]" joined left to right, rows top to bottom. Texts are grouped
+ * into rows by height first (top to bottom, a text within rowH of its row's top text joins it), then each row
+ * is sorted left to right: one fixed order whatever order the texts come in.
+ */
+function textRowsAt(texts: DxfText[], rowH: number): TextRow[] {
+  const byY = [...texts].sort((a, b) => b.y - a.y || a.x - b.x);
+  const groups: DxfText[][] = [];
+  for (const t of byY) {
+    const g = groups.at(-1);
+    if (g && g[0].y - t.y <= rowH) g.push(t); else groups.push([t]);
   }
-  if (row.length) rows.push(row.join('   '));
-  return rows;
+  return groups.map((g) => {
+    const row = g.sort((a, b) => a.x - b.x || b.y - a.y);
+    return {
+      text: row.map((t) => `${t.attr ? `${t.attr}=` : ''}${t.text}${t.layer && t.layer !== '0' ? ` [${t.layer}]` : ''}`).join('   '),
+      x: row[0].x, y: row[0].y, layers: row.map((t) => t.layer),
+    };
+  });
 }
+const textRows = (texts: DxfText[], rowH: number) => textRowsAt(texts, rowH).map((r) => r.text);
+
+// Layers a title block or border is drawn on (AutoCAD, EPLAN and Chinese CAD conventions).
+const TITLE_LAYER = /title|^tb[-_]|[-_]tb$|^tb$|frame|border|sheet|图框|标题|图签|边框/i;
 
 // Title-block labels, alone or bilingual ("图名 Sheet title", "Drawing title / 图名"): never a sheet's name.
 const NAME_LABEL = /^(?:(?:图\s*名|图纸名称|(?:sheet|drawing)\s*title|title)\s*[/|:：]?\s*)+/i;
@@ -315,15 +327,19 @@ export function cadToText(entities: CadEntity[], name = 'drawing'): string {
     // the sheet's own number (sheets 2, 3, 5, 6 of an 8-sheet set), else its place in the file
     const no = sheetNumber(mine);
     const label = no ? `Sheet ${no.n}${no.of ? ` of ${no.of}` : ''}${no.of !== frames.length ? ` (frame ${i + 1} of ${frames.length} in this file)` : ''}` : `Sheet ${i + 1} of ${frames.length}`;
-    return { head: `--- ${label}${title ? `: ${title}` : ''} ---`, rows: textRows(mine, rowH) };
+    return { head: `--- ${label}${title ? `: ${title}` : ''} ---`, rows: textRowsAt(mine, rowH), frame: f };
   });
-  // Rows repeated word for word on 3+ sheets (the title block's company, drawn-by, project…) are given once,
-  // on the first sheet: a big set otherwise repeats them on every sheet (the sheet numbers and titles differ, so they stay).
+  // Title-block rows repeated word for word on 3+ sheets (company, drawn-by, project…) are given once, on the
+  // first sheet: a big set otherwise repeats them on every sheet (the sheet numbers and titles differ, so they
+  // stay). Only rows on a title-block / frame layer, or in the title-block band of the frame (its bottom or
+  // right quarter): a row the circuit repeats on every sheet ("L1 L2 L3 PE" on the bus) is kept on each.
+  const inTitleBlock = (r: TextRow, f: Box) => r.layers.every((l) => TITLE_LAYER.test(l))
+    || (r.y - f.y1) / (f.y2 - f.y1) <= 0.25 || (r.x - f.x1) / (f.x2 - f.x1) >= 0.75;
   const onSheets = new Map<string, number>();
-  for (const sh of perSheet) for (const r of new Set(sh.rows)) onSheets.set(r, (onSheets.get(r) ?? 0) + 1);
+  for (const sh of perSheet) for (const r of new Set(sh.rows.filter((r) => inTitleBlock(r, sh.frame)).map((r) => r.text))) onSheets.set(r, (onSheets.get(r) ?? 0) + 1);
   const repeated = new Set([...onSheets].filter(([, n]) => n >= 3).map(([r]) => r));
   const seen = new Set<string>();
-  const sheets = perSheet.map((sh) => [sh.head, ...sh.rows.filter((r) => !repeated.has(r) || (!seen.has(r) && seen.add(r)))].join('\n'));
+  const sheets = perSheet.map((sh) => [sh.head, ...sh.rows.filter((r) => !repeated.has(r.text) || !inTitleBlock(r, sh.frame) || (!seen.has(r.text) && seen.add(r.text))).map((r) => r.text)].join('\n'));
   const rest = texts.filter((t) => !used.has(t));
   return `${name} (CAD drawing, ${frames.length} sheets side by side, split by their border frames; ${texts.length} text items; [layer]${repeated.size ? `; ${repeated.size} rows repeated on every sheet (title block) are given on the first sheet only` : ''}):\n${sheets.join('\n')}${rest.length ? `\n--- Outside the sheet frames ---\n${textRows(rest, rowH).join('\n')}` : ''}`;
 }

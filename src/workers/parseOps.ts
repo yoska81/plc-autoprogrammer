@@ -5,22 +5,26 @@ import { importProgramFiles } from '../plc/import';
 /**
  * The heavy parsing of uploaded files (DXF drawings, PLC programs) as plain functions: run by the parse
  * worker (src/workers/parse.worker.ts) and, where no worker can run (the claude.ai preview, Node tests),
- * on the page by src/lib/parseWorker.ts. A DXF is parsed once per file and kept for its sheet pictures.
+ * on the page by src/lib/parseWorker.ts. A DXF is parsed once per file and kept for its sheet pictures
+ * (later requests send only its key).
  */
 export type ParseRequest =
-  | { op: 'dxf-text'; key: string; text: string; name: string }
-  | { op: 'dxf-sheet'; key: string; text: string; sheet: number }
+  | { op: 'dxf-text'; key: string; text?: string; name: string }
+  | { op: 'dxf-sheet'; key: string; text?: string; sheet: number }
   | { op: 'program'; files: { name: string; text: string }[] };
 
 export type ParseResult<R extends ParseRequest> =
   R extends { op: 'dxf-text' } ? string : R extends { op: 'dxf-sheet' } ? string | null : ReturnType<typeof importProgramFiles>;
 
 const MAX_DXF = 4;
+/** The answer to a DXF request sent by key only (no text) whose file is not (or no longer) kept: send the text. */
+export const NOT_PARSED = 'not parsed';
 const parsed = new Map<string, CadEntity[]>();
 
-function entities(key: string, text: string): CadEntity[] {
+function entities(key: string, text: string | undefined): CadEntity[] {
   let e = parsed.get(key);
   if (!e) {
+    if (text === undefined) throw new Error(NOT_PARSED);
     e = parseDxfEntities(text);
     parsed.set(key, e);
     if (parsed.size > MAX_DXF) parsed.delete(parsed.keys().next().value as string);
