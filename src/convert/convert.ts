@@ -263,19 +263,19 @@ export const expands = (exp: CatalogPart, base: CatalogPart): boolean => {
  * The safety relay for the outputs needed: a single unit that has them all first (the smallest such), else
  * the base with the most outputs and an expansion module its maker lists for it (forUse), else a note.
  */
-export function sizeSafetyRelay(list: CatalogPart[], safety: { need: number; why: string }, pool: CatalogPart[] = ALL_PARTS): { list: CatalogPart[]; note: string } {
+export function sizeSafetyRelay(list: CatalogPart[], safety: { need: number; why: string }, pool: CatalogPart[] = ALL_PARTS): { list: CatalogPart[]; note: string; ok: boolean } {
   const n = safetyOutputCount;
   const enough = (p: CatalogPart) => n(p) >= safety.need;
   const base = list.filter((p) => !isExpansion(p)).sort((a, b) => Number(enough(b)) - Number(enough(a)) || (enough(a) ? n(a) - n(b) : n(b) - n(a)));
   const sorted = [...base, ...list.filter(isExpansion)];
   const have = n(sorted[0]);
-  if (have >= safety.need) return { list: sorted, note: `${have} safety outputs for the ${safety.need} needed (${safety.why})` };
+  if (have >= safety.need) return { list: sorted, note: `${have} safety outputs for the ${safety.need} needed (${safety.why})`, ok: true };
   // the bases that take an expansion, most outputs first; the first that reaches the count with the smallest module
   for (const b of base.filter((p) => n(p) === have).concat(base.filter((p) => n(p) !== have))) {
     const exp = pool.filter((p) => p.category === 'safetyRelay' && isExpansion(p) && n(p) > 0 && expands(p, b) && n(b) + n(p) >= safety.need).sort((x, y) => n(x) - n(y))[0];
-    if (exp) return { list: [b, ...sorted.filter((p) => p !== b)], note: `Needs ${safety.need} safety outputs (${safety.why}): ${n(b)} here + expansion ${exp.manufacturer} ${exp.partNumber} (${n(exp)})` };
+    if (exp) return { list: [b, ...sorted.filter((p) => p !== b)], note: `Needs ${safety.need} safety outputs (${safety.why}): ${n(b)} here + expansion ${exp.manufacturer} ${exp.partNumber} (${n(exp)})`, ok: true };
   }
-  return { list: sorted, note: `Needs ${safety.need} safety outputs (${safety.why}); this one has ${have}: add a contact expansion module its maker lists for it (to select)` };
+  return { list: sorted, note: `Needs ${safety.need} safety outputs (${safety.why}); the closest has ${have}, and the catalog has no expansion its maker lists for it`, ok: false };
 }
 
 /**
@@ -318,6 +318,11 @@ export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTar
   const extra: string[] = [];
   if (c.category === 'safetyRelay' && safety?.need) {
     const sized = sizeSafetyRelay(list, safety);
+    // too few outputs, and no listed expansion: not an equivalent, the user picks (the closest ones offered)
+    if (!sized.ok) {
+      return { oldTag: c.tag, newTag, from, to: null, alternatives: sized.list.slice(0, 5), differences: [sized.note, REVALIDATE], status: 'to-select',
+        reason: `No catalog safety relay has the ${safety.need} safety outputs needed (${safety.why}), alone or with an expansion module its maker lists for it. Pick one with ${safety.need} outputs, or a base unit and its expansion.` };
+    }
     list.splice(0, list.length, ...sized.list);
     extra.push(sized.note);
   }
@@ -427,17 +432,24 @@ export function newIo(m: ExistingMachine, logic: LogicChoice | null): ImportedIO
   return [...io, ...extra, ...outputs];
 }
 
+/** An E-stop, guard or light-curtain contact: in the safety relay's input circuit, not a PLC input. */
+const isSafetyContact = (p: ImportedIO) => p.type === 'input' && p.deviceType !== 'safety-relay-output' && !/\breset\b|复位/i.test(p.description)
+  && (p.deviceType === 'estop-contact' || (p.category === 'Safety' && /e-?stop|emergency|急停|guard|door|gate|light curtain|ossd|interlock|防护|安全门|光幕/i.test(p.description)));
+
 /**
- * The PLC's Safety OK input: the converted machine stops through a monitored safety relay (kept, or added
- * for an E-stop that was not a safety circuit), and the program gates every motion output with its
- * output contact. Added when the drawings have none (an E-stop wired only to a PLC input is not one).
+ * The PLC side of the safety circuit: the converted machine stops through a monitored safety relay (kept, or
+ * added for an E-stop that was not a safety circuit). Its E-stop and guard contacts go to the relay's inputs, not
+ * to the PLC, and the PLC gets one Safety OK input from the relay's output contact, which gates every motion
+ * output. The relay's reset button stays (it also resets faults).
  */
 export function withSafetyOk(m: ExistingMachine, io: ImportedIO[], tags: Map<string, string>): ImportedIO[] {
   if (!m.safety.estops.length && !m.safety.safetyRelay) return io;
-  if (!io.some((p) => p.type === 'output') || io.some((p) => p.type === 'input' && p.deviceType === 'safety-relay-output')) return io;
+  if (!io.some((p) => p.type === 'output')) return io;
+  const kept = io.filter((p) => !isSafetyContact(p));
+  if (kept.some((p) => p.type === 'input' && p.deviceType === 'safety-relay-output')) return kept;
   const old = m.safety.safetyRelay?.match(/[A-Z]{1,3}\d+/)?.[0] ?? m.components.find((c) => c.category === 'safetyRelay')?.tag;
   const tag = old ? tags.get(old) ?? old : 'MSR1';
-  return [...io, {
+  return [...kept, {
     address: `${tag} (Safety OK)`, description: `Safety OK (safety relay ${tag} output)`, type: 'input', category: 'Safety', deviceTag: tag, deviceType: 'safety-relay-output',
     confidence: 'high', source: old ? `safety relay ${old} on the drawings: its monitoring contact into the PLC` : 'added by the conversion: the E-stop stops through a monitored safety relay',
   }];
@@ -574,6 +586,10 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
     // a drive whose STO isn't wired now stops through it
     return c.category === 'vfd' && stoOpen.has(c.tag) ? { ...m2, differences: [...m2.differences, 'STO wired to the safety relay', REVALIDATE] } : m2;
   });
+  const srPick = parts.find((x) => x.from.category === 'safetyRelay' && x.status === 'to-select');
+  if (srPick && srOutputs.need) {
+    questions.push({ text: `The safety relay ${srPick.newTag} needs ${srOutputs.need} safety outputs (${srOutputs.why}), and no catalog relay has that many, alone or with an expansion module its maker lists for it. Which safety relay (or base unit + expansion) should the new design use?`, section: 'safety', assumption: `A safety relay with ${srOutputs.need} safety outputs, or a base unit with a listed contact expansion` });
+  }
   const circuits = convertCircuits(m, tags, logic);
   const hardwired = circuits.filter((c) => c.hardwired.length);
   if (hardwired.length) {

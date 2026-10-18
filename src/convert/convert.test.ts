@@ -174,9 +174,12 @@ await test('applied to a project: description, questions, I/O and motors; every 
   const qs = useQuestionStore.getState().byProject[useProjectsStore.getState().activeId ?? 'default'] ?? [];
   assert.ok(qs.some((q) => q.source === 'drawings' && /pusher take to extend/.test(q.text)));
   assert.ok(qs.some((q) => q.source === 'drawings' && /50 Hz/.test(q.text)));
-  // the original I/O, and the Safety OK input of the monitored safety relay that replaces the single-channel E-stop (gates every output)
-  assert.equal(useIOStore.getState().projectIO.length, CHINESE_CONVEYOR.io.length + 1);
-  assert.ok(useIOStore.getState().projectIO.some((p) => p.type === 'input' && p.deviceType === 'safety-relay-output' && /^Safety OK/.test(p.description)));
+  // the original I/O, with the E-stop X0 on the monitored safety relay that replaces the single-channel E-stop:
+  // the PLC gets only its Safety OK output (gates every motion output)
+  const io = useIOStore.getState().projectIO;
+  assert.equal(io.length, CHINESE_CONVEYOR.io.length);
+  assert.ok(io.some((p) => p.type === 'input' && p.deviceType === 'safety-relay-output' && /^Safety OK/.test(p.description)));
+  assert.ok(!io.some((p) => p.deviceType === 'estop-contact'), 'the E-stop is not a PLC input');
   assert.deepEqual(useElectricalStore.getState().inputs.motors.map((m) => m.tag), ['M1', 'M2']);
   assert.ok(storedMachine());
   // the regenerated design (stand-in: the design with the new motors) keeps every I/O and motor
@@ -391,8 +394,10 @@ await test('roll former: relay circuits move to the PLC, the drive logic stays i
   const by = (t: string) => c.circuits.find((x) => x.circuit.output === t)!.becomes;
   assert.deepEqual(['KM1', 'KM2', 'VF1', 'SD1', 'KA1'].map(by), ['program', 'program', 'drive', 'drive', 'drive']);
   assert.ok(!c.io.some((p) => p.deviceTag === 'KM1' && p.type === 'output'), 'the main contactor goes to the safety circuit, not to an output');
-  assert.equal(c.io.filter((p) => p.deviceType !== 'safety-relay-output').length, ROLL_FORMER.io.length, 'its field devices are already in the drawings\' I/O list');
-  assert.equal(c.io.filter((p) => p.deviceType === 'safety-relay-output').length, 1, 'and the Safety OK input of the safety relay the conversion adds');
+  const contacts = ROLL_FORMER.io.filter((p) => p.deviceType === 'estop-contact').length;
+  assert.ok(contacts > 0);
+  assert.equal(c.io.filter((p) => p.deviceType !== 'safety-relay-output').length, ROLL_FORMER.io.length - contacts, 'its field devices are already in the drawings\' I/O list; the E-stop goes to the safety relay');
+  assert.equal(c.io.filter((p) => p.deviceType === 'safety-relay-output').length, 1, 'and the PLC gets the Safety OK input of the safety relay the conversion adds');
 });
 
 await test('STO: a safety relay is not enough when a drive stops only through a single run contact', () => {
@@ -671,16 +676,21 @@ await test('cn-rollformer-01: the safety relay is sized for its outputs (as draw
   const m = normalizeMachine(CN_ROLLFORMER_01_READING);
   assert.deepEqual(safetyOutputsNeeded(m, ['VFD1', 'SD1']), { need: 6, drawn: ['13-14', '23-24'], why: '2 as drawn (13-14, 23-24) + 2 for the STO of each of VFD1, SD1' });
   const sr = () => convertMachine(m).parts.find((p) => p.oldTag === 'KA0')!;
+  // too few outputs and no expansion listed for it in this catalog: not an equivalent, the user picks (closest offered) and is asked
   const now = sr();
-  assert.equal(now.status, 'matched');
-  assert.ok(safetyOutputCount(now.to!) >= 2);
+  assert.equal(now.status, 'to-select');
+  assert.equal(now.to, null);
+  const closest = now.alternatives[0];
+  assert.ok(safetyOutputCount(closest) >= 2 && safetyOutputCount(closest) < 6);
   assert.ok(now.differences.some((d) => /^Needs 6 safety outputs \(2 as drawn \(13-14, 23-24\) \+ 2 for the STO of each of VFD1, SD1\)/.test(d)), now.differences.join(' | '));
+  assert.ok(convertMachine(m).questions.some((q) => q.section === 'safety' && /MSR1 needs 6 safety outputs/.test(q.text)));
   // with an expansion module its maker lists for that base (forUse) in the catalog, the conversion names it
-  const stem = now.to!.partNumber.split(/[-\s.]/)[0];
-  const exp = { ...now.to!, partNumber: 'EXP-TEST', family: undefined, description: 'Contact expansion module, 4 N.O. safety outputs', ratings: { safetyOutputs: '(4) N.O.', safetyOutputCount: 4, forUse: `Contact expansion for ${stem} base units` } };
+  const stem = closest.partNumber.split(/[-\s.]/)[0];
+  const exp = { ...closest, partNumber: 'EXP-TEST', family: undefined, description: 'Contact expansion module, 4 N.O. safety outputs', ratings: { safetyOutputs: '(4) N.O.', safetyOutputCount: 4, forUse: `Contact expansion for ${stem} base units` } };
   ALL_PARTS.push(exp);
   try {
     const withExp = sr();
+    assert.equal(withExp.status, 'matched');
     assert.ok(withExp.differences.some((d) => /here \+ expansion .* EXP-TEST \(4\)/.test(d)), withExp.differences.join(' | '));
     assert.ok(withExp.to!.partNumber.startsWith(stem), 'the base it expands is the choice');
   } finally {
@@ -708,7 +718,9 @@ await test('safety relay sizing: one unit with enough outputs first, else a base
   assert.match(sizeSafetyRelay([s3], need, [s7]).note, /2 here \+ expansion Pilz 750107 \(4\)/);
   // LG5925 (3) + LG5929 (5) is listed; UG6929 (for UG6970) is not, even with the same maker and enough outputs
   assert.match(sizeSafetyRelay([lg5925], need, [ug6929, lg5929]).note, /3 here \+ expansion Dold LG5929-60-100-61 \(5\)/);
-  assert.match(sizeSafetyRelay([lg5925], need, [ug6929]).note, /this one has 3: add a contact expansion module its maker lists for it/);
+  const none = sizeSafetyRelay([lg5925], need, [ug6929]);
+  assert.equal(none.ok, false);
+  assert.match(none.note, /the closest has 3, and the catalog has no expansion its maker lists for it/);
   // a single unit with all the outputs is preferred over a pair
   const one = sizeSafetyRelay([s3, lg5925, scr73], need, [s7, lg5929]);
   assert.equal(one.list[0].partNumber, 'SCR73-280005');

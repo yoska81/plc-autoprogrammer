@@ -161,7 +161,7 @@ function sse(model, text) {
   });
   log('New design:', JSON.stringify(after));
   check(after.region === 'US' && after.supply === '480VAC-3PH', 'new design on 480 V for the US');
-  check(after.io === 16, 'every original I/O point in the new I/O list, and the Safety OK input of the new safety relay');
+  check(after.io === 15, 'every original I/O point in the new I/O list (the E-stop on the safety relay, its Safety OK into the PLC)');
 
   // Function kept
   const kept = page.getByTestId('convert-kept');

@@ -774,8 +774,8 @@
    "oldTag": "KA0",
    "category": "safetyRelay",
    "description": "Safety relay",
-   "partNumber": "LG5925-48-61-24",
-   "manufacturer": "Dold"
+   "partNumber": null,
+   "manufacturer": null
   },
   {
    "tag": "CR1",
