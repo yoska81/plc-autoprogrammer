@@ -31,8 +31,10 @@ e2e/out-improve/
 e2e/out-sealing-head/
 e2e/out-ai-jobs/
 e2e/out-field/
+e2e/out-photos/
 e2e/out-journeys/
 e2e/out-enclosure-fit/
+e2e/out-convert/
 e2e/out-cad-export/
 tools/out/
 tools/.venv/
@@ -46,6 +48,8 @@ e2e/out-desktop/
 tools/ai-quality/out/
 e2e/out-hmi-editor/
 e2e/out-hmi-looks/
+e2e/out-hmi-no-panel/
+e2e/out-hmi-motion/
 installer/
 e2e/out-walkthrough/
 .claude/worktrees/

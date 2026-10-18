@@ -161,6 +161,8 @@ export function amlDocument(ctx: DrawingContext, opts: EplanOptions = {}, model:
     if (!mm) { mm = { tag, partNumber, groups: [], analog: [] }; modules.push(mm); }
     return mm;
   };
+  // the CPU always (it holds the tag table), also when its I/O sits on other devices (e.g. a Unitronics snap-in I/O)
+  moduleOf(plcTag, ctx.plc.cpuPartNumber);
   for (const g of model.groups) moduleOf(g.devTag, g.partNumber).groups.push(g);
   for (const a of ctx.analog ?? []) moduleOf(analogCard(ctx, a, plcTag), a.partNumber || undefined).analog.push(a);
   modules.sort((a, b) => (a.tag === plcTag ? -1 : b.tag === plcTag ? 1 : 0));

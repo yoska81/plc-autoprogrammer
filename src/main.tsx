@@ -56,6 +56,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="program" element={<ProgramPage />} />
             <Route path="review" element={<ReviewPage />} />
             <Route path="sourcing" element={<SourcingPage />} />
+            <Route path="convert" element={<Navigate to="/import?tab=drawings" replace />} />
             <Route path="engineer" element={<EngineerPage />} />
             <Route path="export" element={<ExportPage />} />
             <Route path="settings" element={<SettingsPage />} />

@@ -188,7 +188,7 @@ export function lotoTable(p: ProjectSnapshot): DocTable {
 export function residualRisks(p: ProjectSnapshot): string[] {
   const out = [
     'The line side of the main disconnect remains energized when the handle is OFF; only qualified persons may open the panel.',
-    'The PLC and HMI are not safety-rated. They must never be relied on to perform a safety function; all safety functions are hardwired through the safety circuit.',
+    `The PLC${p.hmi ? ' and HMI are' : ' is'} not safety-rated. ${p.hmi ? 'They' : 'It'} must never be relied on to perform a safety function; all safety functions are hardwired through the safety circuit.`,
     'Guarding of moving parts, pinch points and pneumatic actuators is outside the electrical scope and must be provided and verified by the machine builder.',
     'The required performance levels (PLr) and the achieved PL of each safety function have not been calculated. They must be determined from the risk assessment and verified (ISO 13849-1 / -2) before the machine is put into service.',
   ];

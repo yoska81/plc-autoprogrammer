@@ -7,7 +7,7 @@ import { LockBadge, MachineGraphic } from './symbols';
 import { NavBand, PanelElement } from './panelLook';
 import { lockInset } from './layout';
 import { Label } from './viewParts';
-import { showNum, PANEL_KINDS, stateFor, type AlarmRow, type Ctx } from './viewCtx';
+import { barLimits, showNum, PANEL_KINDS, stateFor, type AlarmRow, type Ctx } from './viewCtx';
 
 /**
  * Draws one HMI screen as SVG in the panel's native pixels (scales to fit its
@@ -331,12 +331,14 @@ function ElementShape({ el, value, ctx }: { el: HmiElement; value: boolean | num
       const frac = Math.max(0, Math.min(1, (v - min) / (max - min || 1)));
       const trackH = Math.max(4, Math.min(8, el.h * 0.18));
       const ty = el.y + el.h - trackH - 6;
+      const lim = barLimits(el, ctx, v);
       return (
         <g>
           <text x={el.x} y={el.y + (el.h - trackH) / 2} fill={t.dim} fontSize={Math.max(10, Math.min(13, el.h * 0.24))} fontFamily={t.font} fontWeight={500} letterSpacing={t.ls(1.5)} dominantBaseline="central">{fitText(t.caps(el.label), el.w * 0.6, Math.max(10, Math.min(13, el.h * 0.24)), 1.5)}</text>
           <text x={el.x + el.w} y={el.y + (el.h - trackH) / 2} fill={t.text} fontSize={Math.max(12, Math.min(20, el.h * 0.32))} fontFamily={t.font} fontWeight={t.thin} textAnchor="end" dominantBaseline="central">{`${showNum(v)}${el.units ? ` ${el.units}` : ''}`}</text>
           <rect x={el.x} y={ty} width={el.w} height={trackH} rx={trackH / 2} fill={t.surfaceUp} />
-          <rect x={el.x} y={ty} width={el.w * frac} height={trackH} rx={trackH / 2} fill={styleColor(el.style, t)} />
+          <rect x={el.x} y={ty} width={el.w * frac} height={trackH} rx={trackH / 2} fill={lim.beyond ? t.warning : styleColor(el.style, t)} />
+          {lim.marks.map((f, i) => <rect key={`lim${i}`} data-limit="" x={el.x + el.w * f - 1} y={ty - 3} width={2} height={trackH + 6} fill={t.warningText} />)}
         </g>
       );
     }

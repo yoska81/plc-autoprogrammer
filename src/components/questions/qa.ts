@@ -1,4 +1,5 @@
 import { useSpecStore } from '../../store/useSpecStore';
+import { activeHmiDesign } from '../../hmi/projectPanel';
 import { runDerived, useProjectsStore } from '../../store/useProjectsStore';
 import { SOURCE_LABEL, setExternalKnowledge, type SyncItem, useQuestionStore, type Question, type QuestionSource } from './useQuestionStore';
 import { useReviewStore } from '../../review/useReviewStore';
@@ -103,13 +104,15 @@ function stageQuestions(): Record<Exclude<QuestionSource, 'review'>, Item[] | nu
   const ladder = useProgramStore.getState().ladder;
   const plan = useDraftStore.getState().drafts['io.plan'] as { questions?: string[] } | null | undefined;
   const el = useElectricalStore.getState().design;
-  const hmi = useHmiStore.getState().design;
+  const hmi = activeHmiDesign();
   return {
     spec: specQuestionItems(useSpecStore.getState().sections, useSpecStore.getState().questions),
     io: plan?.questions ? plan.questions.map((text) => ({ text, topic: foundWhile('io') })) : null,
     electrical: el ? userNotes(el).map((n) => ({ text: n, assumption: n, topic: foundWhile('electrical') })) : null,
     hmi: hmi ? userNotes(hmi).map((n) => ({ text: n, assumption: n, section: 'operator' as const, topic: foundWhile('hmi') })) : null,
     program: ladder.rungs.length ? (ladder.sequence?.questions ?? []).map((text) => ({ text, section: 'sequence' as const, topic: foundWhile('program') })) : null,
+    // Convert existing drawings: what the drawings don't tell (src/convert/apply.ts keeps them with the project)
+    drawings: (useDraftStore.getState().drafts['convert.questions'] as Item[] | undefined) ?? null,
   };
 }
 

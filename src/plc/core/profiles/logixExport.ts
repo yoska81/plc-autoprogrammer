@@ -95,7 +95,7 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     const tag: LogixTag = {
       base,
       name: logixName(n?.nickname || label || GENERATED[base] || base, used, base),
-      dataType, description: [label, n?.comment].filter((x, i, all): x is string => !!x && all.indexOf(x) === i).join(' — ') || base,
+      dataType, description: [label, n?.comment].filter(Boolean).join(' — ') || base,
       ...(alias ? { aliasFor: alias } : {}),
     };
     if (alias && !label && !n) warnings.push(`${base}: I/O point without a description; tag named ${tag.name}.`);
@@ -171,6 +171,8 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     if (!paths.length) return null;
     if (paths.length === 1) return paths[0].join('');
     // Conditions every path shares go in front of / behind the branch: [XIC(Start),XIC(Run)]XIC(Stop)…
+    // Only plain contacts move or merge: a one-shot, JSR or kept instruction runs once per leg, so
+    // factoring it out (or dropping a repeated leg) would change what the rung does.
     const pure = (t: string) => /^XI[CO]\([^()]*\)$/.test(t);
     const n = Math.min(...paths.map((x) => x.length));
     let pre = 0, post = 0;
@@ -178,6 +180,7 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     while (post < n - pre && pure(paths[0][paths[0].length - 1 - post]) && paths.every((x) => x[x.length - 1 - post] === paths[0][paths[0].length - 1 - post])) post++;
     const legParts = paths.map((x) => x.slice(pre, x.length - post));
     const head = paths[0].slice(0, pre).join(''), tail = paths[0].slice(paths[0].length - post).join('');
+    // A leg left empty is always true: the branch is too.
     if (legParts.some((l) => !l.length)) return head + tail;
     const legs = legParts.map((l) => l.join(''));
     const allPure = legParts.every((l) => l.every(pure));

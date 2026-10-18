@@ -3,7 +3,9 @@
  * Conducting contacts and wires are green, closed-but-unpowered contacts have
  * a green outline, energized outputs are filled.
  */
+import { memo } from 'react';
 import type { LadderElement, LadderOutput, LadderProgram, Rung } from '../core/ladder';
+import { useProgressiveCount } from '../../lib/useProgressive';
 import type { CounterState, RungPower, TimerState } from './engine';
 import { normAddress, unitMs } from './engine';
 
@@ -27,7 +29,24 @@ interface Props {
 type RungProps = Omit<Props, 'program' | 'power' | 'rungBypass' | 'skipped' | 'onBypassRung' | 'groups'> & {
   rung: Rung; index: number; p: RungPower | undefined;
   bypassed: boolean; skippedByBlock: boolean; onBypass?: (on: boolean) => void;
+  /** Everything this rung shows from the last scan, as one string: the rung redraws only when it changes. */
+  sig: string;
 };
+
+/** What a rung shows from the last scan: its power flow and the values of the addresses it displays. */
+function rungSignature(rung: Rung, p: RungPower | undefined, s: Pick<Props, 'bits' | 'words' | 'timers' | 'counters'>, bypassed: boolean, skipped: boolean): string {
+  const v: (string | number | boolean | undefined)[] = [bypassed, skipped, p?.rungTrue, p ? JSON.stringify([p.branches, p.closed]) : ''];
+  for (const br of rung.branches) for (const el of br) {
+    if (el.type === 'CMP') v.push(s.words.get(normAddress(el.left)), s.words.get(normAddress(el.right)));
+  }
+  for (const o of rung.outputs) {
+    if (o.type === 'OUT' || o.type === 'SET' || o.type === 'RST') v.push(s.bits.get(normAddress(o.address)));
+    else if (o.type === 'TMR') { const t = s.timers.get(normAddress(o.address)); v.push(t?.accMs, t?.done, t?.presetMs); }
+    else if (o.type === 'CNT') { const c = s.counters.get(normAddress(o.address)); v.push(c?.value, c?.done, c?.preset); }
+    else if (o.type === 'COPY' || o.type === 'MATH') v.push(s.words.get(normAddress(o.dest)));
+  }
+  return v.join('|');
+}
 
 const ROW = 52; // px per branch / output row
 const MID = ROW / 2;
@@ -233,17 +252,26 @@ function LiveRung({ rung, index, p, bypassed, skippedByBlock, onBypass, ...rest 
   );
 }
 
+// Redrawn only when what the rung shows changed (a scan every few ms would otherwise redraw every rung).
+const LiveRungMemo = memo(LiveRung, (a, b) => a.sig === b.sig && a.rung === b.rung && a.index === b.index && a.labelOf === b.labelOf && !a.onBypass === !b.onBypass);
+
 export default function LiveLadder({ program, power, rungBypass, skipped, onBypassRung, groups, ...rest }: Props) {
+  // long programs: the first rungs at once, the rest while the browser is idle
+  const shown = useProgressiveCount(program.rungs.length, 30);
   if (!program.rungs.length) {
     return <p className="p-6 text-center text-sm text-steel-500">No rungs to simulate yet.</p>;
   }
   const index = new Map(program.rungs.map((r, i) => [r.id, i]));
-  const one = (r: Rung) => (
-    <LiveRung key={r.id} rung={r} index={index.get(r.id)!} p={power.get(r.id)} {...rest}
-      bypassed={rungBypass?.has(r.id) ?? false} skippedByBlock={skipped?.has(r.id) ?? false}
-      onBypass={onBypassRung ? (on) => onBypassRung(r.id, on) : undefined} />
-  );
-  if (!groups) return <div className="space-y-2">{program.rungs.map(one)}</div>;
+  const one = (r: Rung) => {
+    const bypassed = rungBypass?.has(r.id) ?? false, skippedByBlock = skipped?.has(r.id) ?? false, p = power.get(r.id);
+    return (
+      <LiveRungMemo key={r.id} rung={r} index={index.get(r.id)!} p={p} {...rest}
+        bypassed={bypassed} skippedByBlock={skippedByBlock} sig={rungSignature(r, p, rest, bypassed, skippedByBlock)}
+        onBypass={onBypassRung ? (on) => onBypassRung(r.id, on) : undefined} />
+    );
+  };
+  const drawn = new Set(program.rungs.slice(0, shown).map((r) => r.id));
+  if (!groups) return <div className="space-y-2">{program.rungs.slice(0, shown).map(one)}</div>;
   const byId = new Map(program.rungs.map((r) => [r.id, r]));
   return (
     <div className="space-y-3">
@@ -253,7 +281,7 @@ export default function LiveLadder({ program, power, rungBypass, skipped, onBypa
             {g.name}
             <span className="text-[11px] font-normal text-steel-400">{g.rungIds.length} rung{g.rungIds.length === 1 ? '' : 's'}{g.description ? ` · ${g.description}` : ''}</span>
           </h3>
-          {g.rungIds.map((id) => byId.get(id)).filter((r): r is Rung => !!r).map(one)}
+          {g.rungIds.map((id) => byId.get(id)).filter((r): r is Rung => !!r && drawn.has(r.id)).map(one)}
         </section>
       ))}
     </div>

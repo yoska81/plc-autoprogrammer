@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useNoTouchPanel, useProjectPanelPart } from './hmi/projectPanel';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   DocumentPlusIcon, ArrowUpTrayIcon, PlayIcon, ArrowDownTrayIcon, Cog6ToothIcon,
@@ -10,7 +11,6 @@ import { ReviewStatus, ReviewTreeBadge } from './review/ReviewBadge';
 import { useStages, type StageStatus } from './spec/useStages';
 import { useProjectsStore } from './store/useProjectsStore';
 import { currentRevision, useProjectStore } from './store/useProjectStore';
-import { useHmiStore } from './store/useHmiStore';
 import type { StageId } from './store/useStageStore';
 import UpdateAll from './components/UpdateAll';
 import ResizablePane from './components/ResizablePane';
@@ -103,7 +103,8 @@ export default function App() {
   const navigate = useNavigate();
   const { projects, activeId, openProject, ensureActive } = useProjectsStore();
   const { cpuId, modules } = useProjectStore();
-  const hmiPart = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber);
+  const hmiPart = useProjectPanelPart();
+  const noHmi = useNoTouchPanel();
   const rev = currentRevision(useProjectStore((s) => s.info));
   useEffect(() => { ensureActive(); }, [ensureActive]);
   const projectFile = useProjectFile();
@@ -181,7 +182,7 @@ export default function App() {
           <MenuItem onClick={projectFile.save}>Save<span className="float-right pl-6 text-steel-400">Ctrl+S</span></MenuItem>
           <MenuItem onClick={projectFile.saveAs}>Save as…<span className="float-right pl-6 text-steel-400">Ctrl+Shift+S</span></MenuItem>
           <div className="border-t border-steel-200 my-1" />
-          <MenuItem onClick={() => navigate('/import')}>Import existing system…</MenuItem>
+          <MenuItem onClick={() => navigate('/import')}>Import existing machine (drawings / program)…</MenuItem>
           <MenuItem onClick={() => navigate('/project')}>Project data and revisions…</MenuItem>
           <div className="border-t border-steel-200 my-1" />
           <MenuItem onClick={() => navigate('/review')}>Design review…</MenuItem>
@@ -206,7 +207,7 @@ export default function App() {
         <ToolButton title={dirty ? 'Save (Ctrl+S) — unsaved changes' : 'Save (Ctrl+S)'} onClick={projectFile.save}>
           <span className="relative"><ArrowDownOnSquareIcon className="w-5 h-5" />{dirty && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500" />}</span>
         </ToolButton>
-        <ToolButton title="Import existing system" onClick={() => navigate('/import')}><ArrowUpTrayIcon className="w-5 h-5" /></ToolButton>
+        <ToolButton title="Import existing machine (drawings / program)" onClick={() => navigate('/import')}><ArrowUpTrayIcon className="w-5 h-5" /></ToolButton>
         {projectFile.input}
         <span className="w-px h-6 bg-steel-200 mx-1" />
         <ToolButton title="Simulation" onClick={() => navigate('/simulate')}><PlayIcon className="w-5 h-5" /></ToolButton>
@@ -255,7 +256,7 @@ export default function App() {
         <span data-testid="save-state">{dirty ? 'Unsaved changes' : fileInfo?.savedAt ? `Saved ${new Date(fileInfo.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Ready'}</span>
         <AiJobsIndicator />
         <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
-        <span>HMI: {hmiPart || '—'}</span>
+        <span>HMI: {hmiPart || (noHmi ? 'none (pushbuttons and lamps)' : '—')}</span>
         <span>Rev {rev.rev} · {rev.description}</span>
         <ReviewStatus />
         <span className="ml-auto" />
