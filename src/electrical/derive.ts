@@ -37,7 +37,7 @@ import { CABINET, type LayoutForDesign } from './layout/types';
 import { iecColor, iecMotorCurrent, isIec, mm2For, mm2FromAwg, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
 import { ALL_PARTS } from './catalogs';
 import { coolingCover, dcFanAmps } from './cooling';
-import { relayLadder } from './relayLogic';
+import { coilMatchesRail, relayLadder } from './relayLogic';
 import { ALLOWED_RISE_C, cabinetHeat } from './thermal';
 import { withIecStrips } from '../standards/designations';
 import { issuedForConstruction } from '../standards/issue';
@@ -2947,13 +2947,22 @@ export function designWarnings(ctx: DrawingContext): string[] {
     if (dry.length) w.push(`${g.label}: input common on +24V for its NPN sensors — ${dry.map((p) => `${p.deviceTag || p.address} (${p.address})`).join(', ')} switch 0V into their inputs (sourcing inputs); do not feed them +24V. A device that sources +24V (PNP sensor, OSSD) cannot share this common.`);
   }
   for (const p of m.io) if (!p.deviceTag && p.wiring) w.push(`${p.address}: wiring has no device tag.`);
-  // relay logic: every device of a rung is a part of the design (the converter maps each original tag to one)
+  // relay logic: every device of a rung is a part of the design (the converter maps each original tag to one), each
+  // coil is rated for the rung's rail, and what the reading could not give is asked (relayLogic.ts questions)
   const logic = ctx.design.inputs.relayLogic;
   if (logic) {
-    const tags = new Set(ctx.design.components.map((c) => c.tag));
-    const missing = [...new Set(logic.rungs.flatMap((r) => r.path.flatMap((e) => (e.t === 'branch' ? e.paths.flat() : [e])).map((e) => e.tag)))].filter((t) => !tags.has(t));
+    const byTag = new Map(ctx.design.components.map((c) => [c.tag, c]));
+    const all = logic.rungs.flatMap((r) => r.path.flatMap((e) => (e.t === 'branch' ? e.paths.flat() : [e])));
+    const missing = [...new Set(all.map((e) => e.tag))].filter((t) => t !== '?' && !byTag.has(t));
     if (missing.length) w.push(`Relay logic: ${missing.join(', ')} drawn on the ladder but not in the design's parts — add the part or correct the tag.`);
+    for (const c of new Set(all.filter((e) => e.t === 'coil' && e.kind !== 'drive-input').map((e) => e.tag))) {
+      const part = byTag.get(c) ? ctx.getPart(byTag.get(c)!.partNumber) : undefined;
+      const rating = String(part?.ratings.coilVoltage ?? part?.ratings.volts ?? '');
+      if (part && rating && !coilMatchesRail(logic.supply, rating)) w.push(`Relay logic: ${c} ${part.partNumber} is rated ${rating}, but its rung is on the ${logic.supply === '120VAC' ? '120 VAC' : '24 VDC'} rail — choose the ${logic.supply === '120VAC' ? '120 VAC' : '24 VDC'} coil version.`);
+    }
+    for (const q of relayLadder(logic).questions) w.push(`Relay logic: ${q}`);
   }
+
   w.push(...panelLayout(ctx).warnings);
   // cooling: heat the walls cannot shed needs a filter fan, a heat exchanger or an air conditioner in the design
   {

@@ -591,8 +591,11 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
         const l = lineNo(sh.n, idx);
         xref.set(`rung:${r.rung.id}`, l);
         for (const c of r.cols) for (const e of c.kind === 'el' ? [c.e] : c.paths.flat()) {
-          if (e.el.t === 'coil' && e.el.kind !== 'drive-input') xref.set(`coil:${e.el.tag}`, l);
-          else if (e.el.t === 'contact' && e.el.kind && ['relay', 'timer', 'ol', 'safety'].includes(e.el.kind)) addContact({ tag: e.el.tag, term: e.pins.join('-'), nc: e.el.nc, line: l });
+          const el = lineNo(sh.n, idx + e.row);
+          // the line a net is first drawn on: a later rung that starts at that node names it
+          if (e.wOut && !xref.has(`net:${e.wOut}`)) xref.set(`net:${e.wOut}`, `${e.wOut} /${el}`);
+          if (e.el.t === 'coil' && e.el.kind !== 'drive-input') xref.set(`coil:${e.el.tag}`, el);
+          else if (e.el.t === 'contact' && e.el.kind && ['relay', 'timer', 'ol', 'safety'].includes(e.el.kind) && !e.pins.includes('?')) addContact({ tag: e.el.tag, term: e.pins.join('-'), nc: e.el.nc, line: el });
         }
       }
     } else if (sp.kind === 'io') {
@@ -628,7 +631,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
         for (const r of sp.rungs) for (const e of r.els) mark(e.tag, n);
         break;
       case 'ladder':
-        for (const { r } of sp.rungs) for (const c of r.cols) for (const e of c.kind === 'el' ? [c.e] : c.paths.flat()) mark(e.el.tag, n);
+        for (const { r } of sp.rungs) for (const c of r.cols) for (const e of c.kind === 'el' ? [c.e] : c.paths.flat()) if (e.el.tag !== '?') mark(e.el.tag, n);
         break;
       case 'io':
         mark(sp.group.devTag, n);

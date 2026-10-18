@@ -32,6 +32,7 @@ import { alarmRows, programInfo } from '../../src/deliverables/docs/program';
 import { getHmi } from '../../src/hmi/hmiCatalog';
 import { ALLOWED_RISE_C, cabinetHeat } from '../../src/electrical/thermal';
 import { coolingCover } from '../../src/electrical/cooling';
+import { coilMatchesRail, relayLadder } from '../../src/electrical/relayLogic';
 import { runCodeRules } from '../../src/review/codeRules';
 import { sccrTable } from '../../src/deliverables/docs/electrical';
 import type { DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, MotorSpec, RelayLogic } from '../../src/electrical/types';
@@ -251,18 +252,6 @@ const text = (s: string) => btoa(unescape(encodeURIComponent(s)));
  * its design replaced by the engine's (no AI: the same path as Generate without an API key).
  */
 /** The user's "Sealing Head": two-hand start, light curtain, heater with thermocouple, unwinder on a VFD. */
-const RELAY_LOGIC: RelayLogic = {
-  supply: '24VDC',
-  rungs: [
-    { id: 'C1', description: 'Hydraulic pump start / stop (seal-in)', path: [
-      { t: 'contact', tag: 'PB11', nc: true, terms: '11-12', kind: 'pb' },
-      { t: 'branch', paths: [[{ t: 'contact', tag: 'PB12', nc: false, terms: '13-14', kind: 'pb' }], [{ t: 'contact', tag: 'CR1', nc: false, terms: '9-5', kind: 'relay' }]] },
-      { t: 'coil', tag: 'CR1', kind: 'relay' },
-    ] },
-    { id: 'C2', description: 'Hydraulic pump running light', path: [{ t: 'contact', tag: 'CR1', nc: false, terms: '10-6', kind: 'relay' }, { t: 'coil', tag: 'PL11', kind: 'light' }] },
-    { id: 'C3', description: 'Pump ready', path: [{ t: 'contact', tag: 'CR1', nc: false, terms: '11-7', kind: 'relay' }, { t: 'coil', tag: 'CR2', kind: 'relay' }] },
-  ],
-};
 const SEALING_SPEC = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, holds for the dwell time at the set temperature, then opens. Two-hand start, light curtain, heater with thermocouple. The film comes off an unwinder driven by a 0.5 HP motor on a VFD. CLICK PLC with a C-more 7" touch panel; the operator sets the seal temperature and the dwell time on the HMI. 480 V 3-phase supply.';
 const SEALING_IO: [string, 'input' | 'output', IOCategory, string, AnalogSpec?][] = [
   ['Safety relay OK (E-stop and light curtain)', 'input', 'Safety', 'safety-relay-output'], ['Two-hand start button left', 'input', 'Operator/HMI', 'pushbutton-no'],
@@ -371,6 +360,13 @@ async function setupRules(v: string) {
   }
   const el = useElectricalStore.getState();
   let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || v === 'rules-sealing-thm' || v === 'rules-sealing-npn' || v === 'rules-servo' || uni || noPanel ? el.inputs : el.design?.inputs ?? el.inputs;
+  // "rules-relay": the example plus the relay logic the converter kept from a Chinese roll former (22 circuits, the
+  // converter's fixture): the engine adds its devices as parts and draws the NFPA 79 ladder sheets.
+  if (v === 'rules-relay') {
+    const res = await fetch('/e2e/fixtures/convert/cn-rollformer-01.relayLogic.json');
+    if (!res.ok) throw new Error('rules-relay: e2e/fixtures/convert/cn-rollformer-01.relayLogic.json not served');
+    inputs = { ...inputs, relayLogic: (await res.json()) as RelayLogic };
+  }
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
@@ -390,19 +386,6 @@ async function setupRules(v: string) {
     const sub = enc && getPart(enc.partNumber)?.ratings.subpanel;
     design = { ...design, components: design.components.map((x) => (x.tag === 'ENC1' ? { ...x, partNumber: 'SCE-72EL7218LPPL', function: 'Main enclosure 72x72x18 NEMA 12, floor-standing, two doors' }
       : sub && x.partNumber === sub ? { ...x, partNumber: 'SCE-72P72', function: 'Subpanel for ENC1' } : x)) };
-  }
-  // "rules-relay": the example plus relay logic kept from a converted machine (DesignInputs.relayLogic): a hydraulic
-  // pump on a stop / start seal-in, its run light and a second relay — drawn as an NFPA 79 ladder sheet.
-  if (v === 'rules-relay') {
-    design = {
-      ...design,
-      inputs: { ...design.inputs, relayLogic: RELAY_LOGIC },
-      components: [...design.components,
-        c('CR1', '784-4C-24D', 1, 'Hydraulic pump run relay (relay logic)'), c('CR1S', '784-4C-SKT-1', 1, 'Socket for CR1'),
-        c('CR2', '784-4C-24D', 1, 'Pump ready relay (relay logic)'), c('CR2S', '784-4C-SKT-1', 1, 'Socket for CR2'),
-        c('PB11', 'GCX1101', 1, 'Hydraulic pump stop'), c('PB12', 'GCX1102', 1, 'Hydraulic pump start'), c('PL11', 'GCX1232-24L', 1, 'Hydraulic pump running')],
-    };
-    el.setInputs(design.inputs);
   }
   el.setDesign(design, 'generated', r.explanation);
   if (uni) {
@@ -495,6 +478,16 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
         parts: m.rc.filter((c) => ['filter fan', 'exhaust filter', 'thermostat', 'heat exchanger', 'air conditioner'].includes(String(c.part?.ratings.kind ?? ''))).map((c) => ({ tag: c.tag, partNumber: c.partNumber, kind: c.part?.ratings.kind })),
         fan: m.fan ?? null, cover: h.ventilation ? coolingCover(ctx.design.components, getPart, h.ventilation, ALLOWED_RISE_C) : null };
     })(),
+    // relay logic (check_consistency: one terminal = one wire number; every coil rated for its rung's rail)
+    relay: ctx.design.inputs.relayLogic ? (() => {
+      const logic = ctx.design.inputs.relayLogic!;
+      const lad = relayLadder(logic);
+      const coils = [...new Set(lad.rungs.flatMap((r) => r.cols).flatMap((c) => (c.kind === 'el' ? [c.e] : c.paths.flat())).filter((e) => e.el.t === 'coil' && e.el.kind !== 'drive-input').map((e) => e.el.tag))];
+      return {
+        supply: logic.supply, wires: lad.wires, questions: lad.questions,
+        coils: coils.map((tag) => { const c = ctx.design.components.find((x) => x.tag === tag); const pt = c ? getPart(c.partNumber) : undefined; return { tag, partNumber: c?.partNumber ?? null, rating: String(pt?.ratings.coilVoltage ?? pt?.ratings.volts ?? ''), ok: pt ? coilMatchesRail(logic.supply, String(pt.ratings.coilVoltage ?? pt.ratings.volts ?? '')) : null }; }),
+      };
+    })() : null,
     // input commons (check_consistency: every input can turn ON — on a +24V common (NPN) a dry contact is fed 0V)
     inputCommons: m.groups.filter((g) => g.type === 'input').map((g) => ({
       group: g.label, commonTo: g.commonTo,

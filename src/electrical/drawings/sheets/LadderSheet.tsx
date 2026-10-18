@@ -1,110 +1,137 @@
 /**
  * Relay control ladder (NFPA 79) for relay logic kept from a converted machine: left / right rails (24+ / 0V,
  * or X1 / X2), one rung per circuit with its rung number and description, a parallel branch (a seal-in around
- * the start button) drawn below its rung, a wire number on every node, the coil's contact mirror and a
- * "/line" cross-reference under each relay / timer / overload / safety contact. Layout and numbers come from
- * relayLogic.ts, the same source as the wire list.
+ * the start button) drawn below its rung, a wire number on every net, and a "/line" cross-reference under each
+ * relay / timer / overload / safety contact (the coil's contacts are listed in the description column). A rung
+ * that starts at an earlier rung's node (shared contacts) or at a drive's input common starts at a labelled node;
+ * a rung too long for one line continues on the next one (arrow + wire number). Layout, nets and wire numbers
+ * come from relayLogic.ts, the same source as the wire list and the cross-references.
  */
 import type { ReactElement } from 'react';
 import { AREA, AREA_R, LW_THIN } from '../geometry';
 import { CONTROL_PITCH, CONTROL_RUNGS, type DrawingPlan, type PlannedSheet, type SheetSpec } from '../plan';
-import { Coil, Contact, Dot, Lamp, Line, Pushbutton, Txt, WireNo, XrefArrow } from '../symbols';
-import { ContactMirror, LineNumbers } from './SchematicSheets';
-import type { LadderEl, LadderRung } from '../../relayLogic';
+import { Coil, Contact, Dot, Lamp, Line, Pushbutton, TermPt, Txt, WireNo, XrefArrow } from '../symbols';
+import { LineNumbers } from './SchematicSheets';
+import { LADDER, type LadderCol, type LadderEl, type LadderRung } from '../../relayLogic';
 
 const Y0 = AREA.y + 8;
 const RAIL_L = 34;
 const RAIL_R = 288;
 const LOAD_X = 262;
-/** Room left of a branch's vertical joins for the wire number coming in / going out. */
-const LEAD = 9;
+const X0 = RAIL_L + 6;
 
 const halfW = (e: LadderEl) => (e.el.t === 'contact' ? (e.el.kind === 'pb' ? 5 : 4) : e.el.kind === 'drive-input' ? 9 : 5);
 const XREF_KINDS = new Set(['relay', 'timer', 'ol', 'safety']);
+const colW = (c: LadderCol) => (c.kind === 'el' ? LADDER.unit : Math.max(...c.paths.map((p) => p.length)) * LADDER.unit + LADDER.lead);
 
 export function LadderSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
   const sp = sheet.spec as Extract<SheetSpec, { kind: 'ladder' }>;
   const y = (i: number) => Y0 + i * CONTROL_PITCH;
-  const lastRow = Math.max(1, ...sp.rungs.map(({ r, idx }) => idx + r.rows - 1));
-  const lastR = Math.max(1, ...sp.rungs.filter(({ r }) => !r.driveEnd).map(({ idx }) => idx));
-  const [l, r] = sp.rails;
+  // the rails run only as far as the rungs that use them (a drive-input rung has no right rail; a shared start no left)
+  const leftRows = sp.rungs.filter(({ r }) => r.start.kind === 'rail').flatMap(({ r, idx }) => r.lines.slice(0, 1).map((l) => idx + l.row + l.rows - 1));
+  const rightRows = sp.rungs.filter(({ r }) => !r.driveEnd).map(({ r, idx }) => idx + r.lines[r.lines.length - 1].row);
+  const [l, rr] = sp.rails;
   return (
     <g>
       <LineNumbers sheet={sheet.n} count={CONTROL_RUNGS + 1} pitch={CONTROL_PITCH} />
       <Txt x={RAIL_L - 3} y={y(0) - 1.5} size={2.8} mono bold>{l}</Txt>
-      <Txt x={RAIL_R + 3} y={y(0) - 1.5} size={2.8} mono bold anchor="end">{r}</Txt>
       <Txt x={RAIL_L + 6} y={y(0) - 1.5} size={2.3}>{l === 'X1' ? 'X1 FROM THE CONTROL TRANSFORMER (120VAC)' : '+24VDC CONTROL SUPPLY'}</Txt>
-      <Line x1={RAIL_L} y1={y(0)} x2={RAIL_L} y2={y(lastRow)} w={0.5} />
-      <Line x1={RAIL_R} y1={y(0)} x2={RAIL_R} y2={y(lastR)} w={0.5} />
+      {leftRows.length > 0 && <Line x1={RAIL_L} y1={y(0)} x2={RAIL_L} y2={y(Math.max(...leftRows))} w={0.5} />}
+      {rightRows.length > 0 && (
+        <g>
+          <Txt x={RAIL_R + 3} y={y(0) - 1.5} size={2.8} mono bold anchor="end">{rr}</Txt>
+          <Line x1={RAIL_R} y1={y(0)} x2={RAIL_R} y2={y(Math.max(...rightRows))} w={0.5} />
+        </g>
+      )}
       <Line x1={RAIL_R + 6} y1={AREA.y} x2={RAIL_R + 6} y2={y(CONTROL_RUNGS) + 6} w={LW_THIN} />
       <Txt x={RAIL_R + 9} y={y(0) - 1.5} size={2.5} bold>RUNG / DESCRIPTION / CROSS-REFERENCE</Txt>
-      {sp.rungs.map(({ r: rung, idx }) => <LadderRungView key={rung.n} plan={plan} r={rung} yy={y(idx)} pitch={CONTROL_PITCH} />)}
+      {sp.rungs.map(({ r: rung, idx }) => <LadderRungView key={rung.n} plan={plan} r={rung} yy={y(idx)} />)}
     </g>
   );
 }
 
-function LadderRungView({ plan, r, yy, pitch }: { plan: DrawingPlan; r: LadderRung; yy: number; pitch: number }) {
-  // columns before the load share the room up to the load; the load (coil, lamp, drive input) sits at LOAD_X
-  const load = r.cols[r.cols.length - 1];
-  const loadEl = load?.kind === 'el' && load.e.el.t === 'coil' ? load.e : undefined;
-  const series = loadEl ? r.cols.slice(0, -1) : r.cols;
-  const units = series.map((c) => (c.kind === 'el' ? 1 : Math.max(...c.paths.map((p) => p.length)) + 0.6));
-  const total = units.reduce((a, b) => a + b, 0) || 1;
-  const x0 = RAIL_L + 6;
-  const xEnd = loadEl ? LOAD_X - halfW(loadEl) - 8 : RAIL_R - 6;
-  const slot = Math.min(34, (xEnd - x0) / total);
+function LadderRungView({ plan, r, yy }: { plan: DrawingPlan; r: LadderRung; yy: number }) {
+  const pitch = CONTROL_PITCH;
   const parts: ReactElement[] = [];
-  let xa = x0;
-  let wireStart = RAIL_L;
+  let keyN = 0;
+  const k = () => `k${keyN++}`;
   const seg = (a: number, b: number, w: string, yv: number, label = true) => {
-    parts.push(<Line key={`s${parts.length}`} x1={a} y1={yv} x2={b} y2={yv} />);
-    if (label && b - a > 6) parts.push(<WireNo key={`w${parts.length}`} x={(a + b) / 2} y={yv} n={w} maxW={b - a - 1} />);
+    parts.push(<Line key={k()} x1={a} y1={yv} x2={b} y2={yv} />);
+    if (label && b - a > 6) parts.push(<WireNo key={k()} x={(a + b) / 2} y={yv} n={w} maxW={b - a - 1} />);
   };
-  const el = (e: LadderEl, x: number, yv: number) => parts.push(<LadderElement key={`e${parts.length}`} plan={plan} e={e} x={x} y={yv} />);
-  series.forEach((c, i) => {
-    const xb = xa + units[i] * slot;
-    if (c.kind === 'el') {
-      const x = (xa + xb) / 2;
-      seg(wireStart, x - halfW(c.e), c.e.wIn, yy);
-      el(c.e, x, yy);
-      wireStart = x + halfW(c.e);
-    } else {
-      // branch: joins at bx0 / bx1, each path on its own row, elements spread evenly between the joins
-      const bx0 = xa + LEAD / 2, bx1 = xb - LEAD / 2;
-      seg(wireStart, bx0, c.wIn, yy);
-      const lastY = yy + (c.paths.length - 1) * pitch;
-      parts.push(<Line key={`v${parts.length}`} x1={bx0} y1={yy} x2={bx0} y2={lastY} />, <Line key={`v${parts.length + 1}`} x1={bx1} y1={yy} x2={bx1} y2={lastY} />);
-      c.paths.forEach((p, k) => {
-        const yv = yy + k * pitch;
-        if (k > 0) parts.push(<Dot key={`d${parts.length}`} x={bx0} y={yy} />, <Dot key={`d${parts.length + 1}`} x={bx1} y={yy} />);
-        const step = (bx1 - bx0) / Math.max(1, p.length);
-        let from = bx0;
-        p.forEach((e, q) => {
-          const x = bx0 + (q + 0.5) * step;
-          // the first segment carries the branch's incoming number, already labelled on the main row
-          seg(from, x - halfW(e), e.wIn, yv, q > 0);
-          el(e, x, yv);
-          from = x + halfW(e);
-        });
-        seg(from, bx1, c.wOut, yv, false);
-      });
-      wireStart = bx1;
+  const el = (e: LadderEl, x: number, yv: number) => parts.push(<LadderElement key={k()} plan={plan} e={e} x={x} y={yv} />);
+  const last = r.lines.length - 1;
+  r.lines.forEach((line, li) => {
+    const ly = yy + line.row * pitch;
+    const load = li === last ? line.cols[line.cols.length - 1] : undefined;
+    const loadEl = load?.kind === 'el' && load.e.el.t === 'coil' ? load.e : undefined;
+    const series = loadEl ? line.cols.slice(0, -1) : line.cols;
+    // start of the line: the rail, an earlier rung's node / a drive common (first line), or a continuation arrow
+    let wireStart = RAIL_L;
+    let inWire = series[0] ? (series[0].kind === 'el' ? series[0].e.wIn : series[0].wIn) : loadEl?.wIn ?? '';
+    if (li === 0 && r.start.kind === 'rail') parts.push(<Dot key={k()} x={RAIL_L} y={ly} />);
+    else {
+      wireStart = X0 - 2;
+      const label = li === 0 && r.start.kind === 'node' ? r.start.label : '';
+      parts.push(<TermPt key={k()} x={wireStart} y={ly} />);
+      // the start node is named below it, right of the rail: a drive's input common ("VFD1 DCM"), or the line of the
+      // earlier rung whose node it is ("FROM /7.06"); a continuation line starts at an arrow
+      if (li > 0) parts.push(<XrefArrow key={k()} x={wireStart - 3} y={ly} />);
+      const ref = li === 0 && r.start.kind === 'node' && !label ? plan.xref.get(`net:${r.start.wire}`)?.split(' ')[1] : undefined;
+      const under = label || (ref ? `FROM ${ref}` : '');
+      if (under) parts.push(<Txt key={k()} x={wireStart - 0.8} y={ly + 4.4} size={2.1} mono bold={Boolean(label)}>{under}</Txt>);
+      if (li === 0 && r.start.kind === 'node') inWire = r.start.wire;
     }
-    xa = xb;
-  });
-  if (loadEl) {
-    seg(wireStart, LOAD_X - halfW(loadEl), loadEl.wIn, yy);
-    el(loadEl, LOAD_X, yy);
-    if (!r.driveEnd) seg(LOAD_X + halfW(loadEl), RAIL_R, loadEl.wOut, yy);
-  } else {
+    let xa = X0;
+    series.forEach((c, i) => {
+      const xb = xa + colW(c);
+      if (c.kind === 'el') {
+        const x = (xa + xb) / 2;
+        seg(wireStart, x - halfW(c.e), i === 0 ? inWire : c.e.wIn, ly);
+        el(c.e, x, ly);
+        wireStart = x + halfW(c.e);
+      } else {
+        const bx0 = xa + LADDER.lead / 2, bx1 = xb - LADDER.lead / 2;
+        seg(wireStart, bx0, c.wIn, ly);
+        const lastY = ly + (c.paths.length - 1) * pitch;
+        parts.push(<Line key={k()} x1={bx0} y1={ly} x2={bx0} y2={lastY} />, <Line key={k()} x1={bx1} y1={ly} x2={bx1} y2={lastY} />);
+        c.paths.forEach((p, q) => {
+          const yv = ly + q * pitch;
+          if (q > 0) parts.push(<Dot key={k()} x={bx0} y={ly} />, <Dot key={k()} x={bx1} y={ly} />);
+          const step = (bx1 - bx0) / Math.max(1, p.length);
+          let from = bx0;
+          p.forEach((e, n) => {
+            const x = bx0 + (n + 0.5) * step;
+            seg(from, x - halfW(e), e.wIn, yv, n > 0);
+            el(e, x, yv);
+            from = x + halfW(e);
+          });
+          seg(from, bx1, c.wOut, yv, false);
+        });
+        wireStart = bx1;
+      }
+      xa = xb;
+    });
     const lastCol = series[series.length - 1];
-    seg(wireStart, RAIL_R, lastCol ? (lastCol.kind === 'el' ? lastCol.e.wOut : lastCol.wOut) : '', yy);
-  }
-  const desc = [`${r.n}. ${(r.rung.description ?? '').toUpperCase()}`.trim(), ...(loadEl && loadEl.el.t === 'coil' && plan.xref.get(`c:${loadEl.el.tag}`) ? [`CONTACTS: ${plan.xref.get(`c:${loadEl.el.tag}`)}`] : [])];
+    const outWire = lastCol ? (lastCol.kind === 'el' ? lastCol.e.wOut : lastCol.wOut) : inWire;
+    if (loadEl) {
+      seg(wireStart, LOAD_X - halfW(loadEl), loadEl.wIn, ly);
+      el(loadEl, LOAD_X, ly);
+      if (!r.driveEnd) { seg(LOAD_X + halfW(loadEl), RAIL_R, loadEl.wOut, ly); parts.push(<Dot key={k()} x={RAIL_R} y={ly} />); }
+    } else if (li < last) {
+      // continued on the next line
+      seg(wireStart, RAIL_R - 14, outWire, ly);
+      parts.push(<XrefArrow key={k()} x={RAIL_R - 14} y={ly} />);
+    } else {
+      seg(wireStart, RAIL_R, outWire, ly);
+      parts.push(<Dot key={k()} x={RAIL_R} y={ly} />);
+    }
+  });
+  const coil = r.cols[r.cols.length - 1];
+  const coilTag = coil?.kind === 'el' && coil.e.el.t === 'coil' && coil.e.el.kind !== 'drive-input' ? coil.e.el.tag : '';
+  const desc = [`${r.n}. ${(r.rung.description ?? '').toUpperCase()}`.trim(), ...(coilTag && plan.xref.get(`c:${coilTag}`) ? [`CONTACTS: ${plan.xref.get(`c:${coilTag}`)}`] : [])];
   return (
     <g>
-      <Dot x={RAIL_L} y={yy} />
-      {!r.driveEnd && <Dot x={RAIL_R} y={yy} />}
       {parts}
       {desc.map((d, i) => <Txt key={i} x={RAIL_R + 9} y={yy - 0.6 + i * 3.4} size={i === 0 ? 2.5 : 2.2} bold={i === 0} maxW={AREA_R - RAIL_R - 11}>{d}</Txt>)}
     </g>
@@ -113,23 +140,15 @@ function LadderRungView({ plan, r, yy, pitch }: { plan: DrawingPlan; r: LadderRu
 
 function LadderElement({ plan, e, x, y }: { plan: DrawingPlan; e: LadderEl; x: number; y: number }) {
   const v = e.el;
+  const terms = e.pins.filter(Boolean).join('-');
   if (v.t === 'contact') {
     const ref = v.kind && XREF_KINDS.has(v.kind) ? plan.xref.get(`coil:${v.tag}`) : undefined;
+    // tag above-left, terminals above-right (a pushbutton's actuator stands in the middle): fits one LADDER.unit
     return (
       <g>
         {v.kind === 'pb' ? <Pushbutton x={x} y={y} nc={v.nc} /> : <Contact x={x} y={y} nc={v.nc} />}
-        {v.kind === 'pb' ? (
-          // a pushbutton's actuator stands above it: tag and terminals to its right (as on the control sheet)
-          <>
-            <Txt x={x + 4} y={y - 3.4} size={2.6} mono bold>{v.tag}</Txt>
-            <Txt x={x + 4.6 + v.tag.length * 1.56} y={y - 3.4} size={2.2} mono>{e.pins.join('-')}</Txt>
-          </>
-        ) : (
-          <>
-            <Txt x={x - 1} y={y - 4.0} size={2.6} mono bold anchor="end">{v.tag}</Txt>
-            <Txt x={x + 0.5} y={y - 4.0} size={2.2} mono>{e.pins.join('-')}</Txt>
-          </>
-        )}
+        <Txt x={x - (v.kind === 'pb' ? 3 : 1)} y={y - 4.0} size={2.6} mono bold anchor="end">{v.tag}</Txt>
+        <Txt x={x + (v.kind === 'pb' ? 3 : 0.5)} y={y - 4.0} size={2.2} mono maxW={LADDER.unit / 2 - 3}>{terms}</Txt>
         {ref && <Txt x={x} y={y + 5.2} size={1.9} mono anchor="middle">{`/${ref}`}</Txt>}
       </g>
     );
@@ -149,7 +168,7 @@ function LadderElement({ plan, e, x, y }: { plan: DrawingPlan; e: LadderEl; x: n
         <Line x1={x - 9} y1={y} x2={x - 3} y2={y} />
         <XrefArrow x={x - 3} y={y} />
         <Txt x={x} y={y + 0.9} size={2.5} mono bold>{v.tag}</Txt>
-        <Txt x={x} y={y + 4.4} size={2.2} mono>{`INPUT ${v.terms ?? ''}`.trim()}</Txt>
+        <Txt x={x} y={y + 4.4} size={2.2} mono>{`INPUT ${e.pins[0]}`}</Txt>
       </g>
     );
   }
@@ -158,10 +177,10 @@ function LadderElement({ plan, e, x, y }: { plan: DrawingPlan; e: LadderEl; x: n
     <g>
       <Coil x={x} y={y} />
       <Txt x={x} y={y - 4.2} size={2.6} mono bold anchor="middle">{v.tag}</Txt>
-      <Txt x={x - 3.6} y={y + 3.6} size={2.0} mono anchor="end">A1</Txt>
-      <Txt x={x + 3.6} y={y + 3.6} size={2.0} mono>A2</Txt>
-      {(what || v.preset) && <Txt x={x + 6} y={y - 4.2} size={2.0} mono>{[what, v.preset].filter(Boolean).join(' ')}</Txt>}
-      <ContactMirror plan={plan} tag={v.tag} x={x} y={y + 0.4} />
+      <Txt x={x - 3.6} y={y + 3.6} size={2.0} mono anchor="end">{e.pins[0]}</Txt>
+      <Txt x={x + 3.6} y={y + 3.6} size={2.0} mono>{e.pins[1]}</Txt>
+      {/* type and preset below the coil, kept left of the right rail (never into the description column) */}
+      {(what || v.preset) && <Txt x={x} y={y + 7.0} size={1.9} mono anchor="middle" maxW={2 * (RAIL_R - x) - 2}>{[what, v.preset].filter(Boolean).join(' ')}</Txt>}
     </g>
   );
 }

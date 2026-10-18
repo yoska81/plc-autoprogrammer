@@ -268,6 +268,24 @@ def check(vdir: Path):
             bad = [w for w in q['feed'] if w in ('0V', '24+') and w != want]
             if bad:
                 report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is fed {bad[0]} on a common to {g["commonTo"]} — it can never turn ON')
+    # ---- Relay logic (ladder sheets): one device terminal = one net = one wire number; every coil is rated for the
+    # voltage of its rung's rail (a 120 VAC contactor on the 24 VDC ladder never pulls in)
+    rel = data.get('relay')
+    if rel:
+        nets = {}
+        for w in rel['wires']:
+            for e in (w['from'], w['to']):
+                if '?' in e or e.startswith('TB1 '):
+                    continue
+                nets.setdefault(e, set()).add(w['wire'])
+        for t, ws in nets.items():
+            if len(ws) > 1:
+                report('FAIL', v, f'relay logic: terminal {t} carries wire numbers {", ".join(sorted(ws))} — one terminal is one net')
+        for c in rel['coils']:
+            if c['ok'] is False:
+                report('FAIL', v, f'relay logic: coil {c["tag"]} {c["partNumber"]} rated {c["rating"]} on the {rel["supply"]} rail')
+            if c['partNumber'] and not any(w.startswith(f'Relay logic: {c["tag"]} ') for w in data['warnings']) and c['ok'] is None:
+                report('WARN', v, f'relay logic: coil {c["tag"]} has no rating to check against the {rel["supply"]} rail')
     # ---- Drive branches: the drive's listed Class T fuses (its SCCR condition), or the review says why not
     iec = str(data.get('region', '')) not in ('US', 'Canada', '')
     for dr in data.get('drives', []):
