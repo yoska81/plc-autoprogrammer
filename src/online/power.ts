@@ -27,6 +27,7 @@ export function rungPowerFromValues(program: LadderProgram, bits: Map<string, bo
         default: return false;
       }
     }
+    if (el.type === 'RAW') return false;
     return el.type === 'NC' ? !bit(el.address) : bit(el.address);
   };
   const out = new Map<string, RungPower>();

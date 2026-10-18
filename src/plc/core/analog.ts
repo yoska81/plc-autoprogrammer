@@ -4,9 +4,13 @@ import type { AnalogChannel, CpuModel, ModuleSlot, PlcProfile } from './profile'
 
 /**
  * Analog points → channels, in list order: each takes the first free channel of its kind that
- * accepts its range (else the first free one of its kind; none left = unassigned).
+ * accepts its range (else the first free one of its kind and signal family — thermocouple vs voltage /
+ * current; none left = unassigned, the engineer adds a module).
  * A manual address override pins the point to the channel with that register.
  */
+const TC_RE = /thermocouple|\bT\/C\b|\btype [JKTENRSB]\b/i;
+const ELECTRICAL_RE = /\d\s*-\s*\d+\s*(m?A|V)\b|\bmA\b|\btransmitter\b|\btransducer\b/i;
+
 export function assignAnalog(io: IOPoint[], channels: AnalogChannel[]): Map<string, AnalogChannel> {
   const out = new Map<string, AnalogChannel>();
   const used = new Set<string>();
@@ -18,7 +22,17 @@ export function assignAnalog(io: IOPoint[], channels: AnalogChannel[]): Map<stri
   for (const p of io.filter(isAnalog)) {
     if (out.has(p.id)) continue;
     const free = channels.filter((c) => c.kind === p.type && !used.has(c.address));
-    const ch = free.find((c) => !p.analog || c.ranges.includes(p.analog.range)) ?? free[0];
+    // The signal family: a voltage / current signal by a voltage range or a description naming mA / V / a
+    // transmitter ("thermocouple transmitter" is 4-20 mA); else a thermocouple by its range or its description
+    // (the range may still be the list's 4-20 mA default).
+    const range = p.analog?.range ?? '4-20mA';
+    const electrical = range !== 'thermocouple' && (/V$/.test(range) || ELECTRICAL_RE.test(p.description));
+    const tc = range === 'thermocouple' || (!electrical && TC_RE.test(p.description));
+    const tcOnly = (c: AnalogChannel) => c.ranges.length > 0 && c.ranges.every((r) => r === 'thermocouple');
+    // fallback: never a thermocouple-only channel (C0-04THM) for a voltage / current signal, nor a voltage / current
+    // channel for a thermocouple
+    const fits = (c: AnalogChannel) => (tc ? !c.ranges.length || c.ranges.includes('thermocouple') : !(electrical && tcOnly(c)));
+    const ch = free.find((c) => (tc ? c.ranges.includes('thermocouple') : !p.analog || c.ranges.includes(range))) ?? free.find(fits);
     if (ch) { out.set(p.id, ch); used.add(ch.address); }
   }
   return out;

@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
+import { useActiveHmiDesign } from '../../hmi/projectPanel';
 import { useProgramStore } from '../../store/useProgramStore';
 import { useProjectsStore } from '../../store/useProjectsStore';
 import { useSettingsStore, activeCredentials } from '../../store/useSettingsStore';
 import { usePlc } from '../core/usePlc';
 import { useElectricalStore } from '../../store/useElectricalStore';
-import { useHmiStore } from '../../store/useHmiStore';
 import type { AIConfig } from '../ai/ladderAI';
 import LadderWorkspace from '../ui/program/LadderWorkspace';
 import StProgramView from '../ui/program/StProgramView';
@@ -16,7 +16,7 @@ export default function ProgramPage() {
   const settings = useSettingsStore();
   const { profile, cpu, io, addresses, ioAddressSet, labels, analog } = usePlc();
   const ioWiring = useElectricalStore((s) => s.design?.ioWiring);
-  const hmiDesign = useHmiStore((s) => s.design);
+  const hmiDesign = useActiveHmiDesign();
   const wiring = new Map((ioWiring ?? []).map((w) => [w.address, { deviceTag: w.deviceTag, deviceType: w.deviceType }]));
 
   const { apiKey, model } = activeCredentials(settings);

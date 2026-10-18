@@ -45,7 +45,7 @@ function QuestionCard({ q, n, showSource }: { q: Question; n: number; showSource
         <SpeakButton text={() => (q.status === 'open' ? q.text : `${q.text}\n${answerText(q)}`)} label="Read the question aloud" size="xs" />
         <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold ${st.cls}`}>{st.text}</span>
       </div>
-      {showSource && <p className="px-3 pl-8 text-[11px] text-steel-400">{q.source === 'spec' ? 'Asked for the machine description' : `Found while designing: ${SOURCE_LABEL[q.source]}`}</p>}
+      {showSource && <p className="px-3 pl-8 text-[11px] text-steel-400">{q.source === 'spec' ? 'Asked for the machine description' : q.source === 'drawings' ? 'Not on the existing drawings' : `Found while designing: ${SOURCE_LABEL[q.source]}`}</p>}
       {q.assumption && q.assumption !== q.text && q.status === 'open' && <p className="px-3 pl-8 text-xs text-steel-500">AI's assumption: {q.assumption}</p>}
       <div className="px-3 pb-3 pt-2 pl-8 space-y-2">
         {editing ? (

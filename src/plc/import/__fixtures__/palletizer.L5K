@@ -1,0 +1,133 @@
+(*********************************************
+
+  Import-Export
+  Version   := RSLogix 5000 v30.01
+  Owner     := Plant Engineering, Acme Foods
+  Exported  := Wed Nov 08 14:22:05 2023
+
+  Note:  File encoded in UTF-8.  Only edit file in a program
+         which supports UTF-8 (like Notepad, not Wordpad).
+
+**********************************************)
+IE_VER := 2.23;
+
+CONTROLLER Palletizer_PZ1 (ProcessorType := "1769-L30ER",
+                           Major := 30,
+                           TimeSlice := 20,
+                           ShareUnusedTimeSlice := 1,
+                           RedundancyEnabled := 0,
+                           KeepTestEditsOnSwitchOver := 0,
+                           DataTablePadPercentage := 50,
+                           SecurityCode := 0,
+                           ChangesToDetect := 16#ffff_ffff_ffff_ffff,
+                           SFCExecutionControl := "CurrentActive",
+                           SFCRestartPosition := "MostRecent",
+                           SFCLastScan := "DontScan",
+                           SerialNumber := 16#0000_0000,
+                           MatchProjectToController := No,
+                           CanUseRPIFromProducer := No,
+                           InhibitAutomaticFirmwareUpdate := 0,
+                           PassThroughConfiguration := EnabledWithAppend,
+                           DownloadProjectDocumentationAndExtendedProperties := Yes,
+                           DownloadProjectCustomProperties := Yes,
+                           ReportMinorOverflow := 0)
+	MODULE Local (Parent := "Local",
+	              ParentModPortId := 1,
+	              CatalogNumber := "1769-L30ER",
+	              Vendor := 1,
+	              ProductType := 14,
+	              ProductCode := 106,
+	              Major := 30,
+	              Minor := 11,
+	              PortLabel := "RxBACKPLANE",
+	              Slot := 0,
+	              Mode := 2#0000_0000_0000_0001,
+	              CompatibleModule := 0,
+	              KeyMask := 2#0000_0000_0001_1111)
+	END_MODULE
+
+	MODULE DI_1 (Parent := "Local",
+	             ParentModPortId := 1,
+	             CatalogNumber := "1769-IQ16",
+	             Slot := 1)
+			Local:1:I : AB:1769_DI16:I:0 (COMMENT.DATA.0 := "Box at stacker (PE-01)",
+			                              COMMENT.DATA.1 := "Layer full (PE-02)",
+			                              COMMENT.DATA.2 := "Elevator at top (LS-03)",
+			                              COMMENT.DATA.3 := "Elevator at bottom (LS-04)",
+			                              COMMENT.DATA.4 := "Pallet in place (PE-05)",
+			                              COMMENT.DATA.5 := "Start PB",
+			                              COMMENT.DATA.6 := "Stop PB (NC)",
+			                              COMMENT.DATA.7 := "Safety OK (light curtain + E-stop)") := [0,0];
+	END_MODULE
+
+	MODULE DO_2 (Parent := "Local",
+	             ParentModPortId := 1,
+	             CatalogNumber := "1769-OB16",
+	             Slot := 2)
+			Local:2:O : AB:1769_DO16:O:0 (COMMENT.DATA.0 := "Infeed conveyor",
+			                              COMMENT.DATA.1 := "Pusher extend SV-11",
+			                              COMMENT.DATA.2 := "Elevator up",
+			                              COMMENT.DATA.3 := "Elevator down",
+			                              COMMENT.DATA.4 := "Pallet full light") := [0,0];
+	END_MODULE
+
+	TAG
+		Box_PE OF Local:1:I.Data.0 (RADIX := Decimal);
+		Layer_Full_PE OF Local:1:I.Data.1 (RADIX := Decimal);
+		Elev_Top_LS OF Local:1:I.Data.2 (RADIX := Decimal);
+		Elev_Bot_LS OF Local:1:I.Data.3 (RADIX := Decimal);
+		Pallet_PE OF Local:1:I.Data.4 (RADIX := Decimal);
+		Start_PB OF Local:1:I.Data.5 (RADIX := Decimal);
+		Stop_PB OF Local:1:I.Data.6 (RADIX := Decimal);
+		Safety_OK OF Local:1:I.Data.7 (Description := "Safety relay output: light curtain clear and E-stop released",
+		                               RADIX := Decimal);
+		Infeed_Conv OF Local:2:O.Data.0 (RADIX := Decimal);
+		Pusher_SV OF Local:2:O.Data.1 (RADIX := Decimal);
+		Elev_Up OF Local:2:O.Data.2 (RADIX := Decimal);
+		Elev_Down OF Local:2:O.Data.3 (RADIX := Decimal);
+		Pallet_Full_Lt OF Local:2:O.Data.4 (RADIX := Decimal);
+		Auto_Run : BOOL (Description := "Automatic cycle running",
+		                 RADIX := Decimal) := 0;
+		Layers : COUNTER (Description := "Layers on the pallet") := [0,6,0];
+		Push_Tmr : TIMER  := [0,2000,0];
+		Layers_Per_Pallet : DINT (Description := "Recipe: layers per pallet (HMI)",
+		                          RADIX := Decimal) := 6;
+	END_TAG
+
+	PROGRAM MainProgram (MAIN := "MainRoutine",
+	                     MODE := 0,
+	                     DisableFlag := 0,
+	                     UseAsFolder := 0)
+		TAG
+			Push_Done : BOOL (RADIX := Decimal) := 0;
+		END_TAG
+
+		ROUTINE MainRoutine
+				RC: "Start / stop of the automatic cycle";
+				N: [XIC(Start_PB) ,XIC(Auto_Run) ]XIC(Stop_PB)XIC(Safety_OK)OTE(Auto_Run);
+				RC: "Infeed runs until a box is at the stacker";
+				N: XIC(Auto_Run)XIO(Box_PE)XIO(Pusher_SV)OTE(Infeed_Conv);
+				RC: "Push a full layer onto the elevator";
+				N: XIC(Auto_Run)XIC(Layer_Full_PE)XIC(Elev_Top_LS)XIO(Push_Done)[OTE(Pusher_SV) ,TON(Push_Tmr,?,?) ];
+				N: XIC(Push_Tmr.DN)[OTL(Push_Done) ,CTU(Layers,?,?) ];
+				RC: "Lower the elevator one layer, raise it when the layer has left";
+				N: XIC(Push_Done)XIO(Elev_Bot_LS)OTE(Elev_Down);
+				N: XIC(Push_Done)XIC(Elev_Bot_LS)OTU(Push_Done);
+				N: XIO(Push_Done)XIO(Elev_Top_LS)XIO(Layers.DN)OTE(Elev_Up);
+				RC: "Pallet full: light on, new pallet resets the layer count";
+				N: MOV(Layers_Per_Pallet,Layers.PRE)XIC(Layers.DN)OTE(Pallet_Full_Lt);
+				N: XIC(Layers.DN)XIO(Pallet_PE)RES(Layers);
+		END_ROUTINE
+
+	END_PROGRAM
+
+	TASK MainTask (Type := CONTINUOUS,
+	               Rate := 10,
+	               Priority := 10,
+	               Watchdog := 500,
+	               DisableUpdateOutputs := No,
+	               InhibitTask := No)
+			MainProgram;
+	END_TASK
+
+END_CONTROLLER

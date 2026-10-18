@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useActiveHmiDesign } from '../hmi/projectPanel';
 import { collectProject } from '../deliverables/collect';
 import { saveBlob } from '../deliverables/files';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { useIOStore } from '../store/useIOStore';
 import { useElectricalStore } from '../store/useElectricalStore';
-import { useHmiStore } from '../store/useHmiStore';
 import { useUi } from '../store/useUiStore';
 import { useDraft } from '../store/useDraftStore';
 import { notify } from '../store/useNoticeStore';
@@ -24,7 +24,7 @@ function useItems(): CommItem[] {
   const io = useIOStore((s) => s.projectIO);
   const ladder = useProgramStore((s) => s.ladder);
   const design = useElectricalStore((s) => s.design);
-  const hmi = useHmiStore((s) => s.design);
+  const hmi = useActiveHmiDesign();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- collectProject reads these stores
   return useMemo(() => commissioningItems(collectProject()), [io, ladder, design, hmi]);
 }

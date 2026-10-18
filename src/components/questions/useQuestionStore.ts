@@ -13,15 +13,16 @@ import { useProjectsStore, runDerived } from '../../store/useProjectsStore';
  * switches; an answer is merged into the spec once ("merged").
  */
 
-export type QuestionSource = 'spec' | 'io' | 'electrical' | 'hmi' | 'program' | 'review';
+/** drawings: what the existing machine's drawings don't tell (Convert existing drawings), asked with the description. */
+export type QuestionSource = 'spec' | 'io' | 'electrical' | 'hmi' | 'program' | 'review' | 'drawings';
 
 export const SOURCE_LABEL: Record<QuestionSource, string> = {
-  spec: 'Machine description', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI', program: 'PLC program', review: 'Design review',
+  spec: 'Machine description', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI', program: 'PLC program', review: 'Design review', drawings: 'Existing drawings',
 };
 
 /** Page where each source's questions are asked (for "answered in …" links). */
 export const SOURCE_ROUTE: Record<QuestionSource, string> = {
-  spec: '/spec', io: '/io', electrical: '/electrical?tab=design', hmi: '/hmi', program: '/program', review: '/review',
+  spec: '/spec', io: '/io', electrical: '/electrical?tab=design', hmi: '/hmi', program: '/program', review: '/review', drawings: '/convert',
 };
 
 /** `dismissed`: "Not applicable — don't ask again" (questions that ask the same thing are dismissed too). */
@@ -192,7 +193,7 @@ export function useActiveProjectId(): string | null {
 /** Open questions per source, for badges. */
 export function useOpenCounts(): Record<QuestionSource, number> {
   const list = useQuestions();
-  const out: Record<QuestionSource, number> = { spec: 0, io: 0, electrical: 0, hmi: 0, program: 0, review: 0 };
+  const out: Record<QuestionSource, number> = { spec: 0, io: 0, electrical: 0, hmi: 0, program: 0, review: 0, drawings: 0 };
   for (const q of list) if (q.status === 'open') out[q.source]++;
   return out;
 }

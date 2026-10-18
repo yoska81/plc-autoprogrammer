@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNoTouchPanel } from '../hmi/projectPanel';
 import { collectProject } from './collect';
 import { machineSpecText } from './machineSpec';
 import { saveBlob } from './files';
@@ -9,6 +10,7 @@ import SpeakButton from '../voice/SpeakButton';
 
 /** The whole machine specification as one text: show it, rewrite it, read it aloud, copy it, or save it. */
 export default function MachineSpecCard() {
+  const noHmi = useNoTouchPanel();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const p = useMemo(() => collectProject(), []);
@@ -30,7 +32,7 @@ export default function MachineSpecCard() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-64">
           <h3 className="text-sm font-semibold text-steel-800 flex items-center gap-2">Full machine specification {edit && <EditedMark label="edited by hand" onReset={() => resetText(MACHINE_SPEC_KEY)} />}</h3>
-          <p className="text-xs text-steel-500">One document with everything: machine description, questions and answers, control equipment, power and motors, I/O list, electrical components, HMI screens and alarms, and the PLC program structure. Copy it into an e-mail, Word or a quote. Open it to rewrite any part: your version is kept with the project and used for Copy, Save and the ZIP.</p>
+          <p className="text-xs text-steel-500">One document with everything: machine description, questions and answers, control equipment, power and motors, I/O list, electrical components, {noHmi ? 'the operator station' : 'HMI screens and alarms'}, and the PLC program structure. Copy it into an e-mail, Word or a quote. Open it to rewrite any part: your version is kept with the project and used for Copy, Save and the ZIP.</p>
         </div>
         <SpeakButton text={text} label="Read the specification aloud" />
         <button onClick={() => void copy()} className="px-4 py-2 text-sm font-medium rounded bg-brand-600 text-white hover:bg-brand-700">{copied ? 'Copied ✓' : 'Copy'}</button>

@@ -124,6 +124,28 @@ function programChecks({ p }: ReviewInput): Finding[] {
   return out;
 }
 
+/** The neutral memory the touch panel writes: command bits C1001–C1300, setpoints DS1001–DS1200 and DF101–DF200 (as in the program checker). */
+const HMI_WRITTEN = /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/;
+
+/**
+ * Machine without a touch panel: a command bit or setpoint only a panel would write stays OFF / 0,
+ * so the program would wait for it forever (a Start that can never be pressed, a setpoint of 0).
+ */
+function noPanelChecks({ p }: ReviewInput): Finding[] {
+  if (p.hmi || !p.noHmi || p.profile.language !== 'ladder' || !p.ladder.rungs.length) return [];
+  const writes = new Set(p.ladder.rungs.flatMap((r) => rungWrites(r).map((w) => w.trim().toUpperCase())));
+  const reads = [...new Set(p.ladder.rungs.flatMap((r) => rungReads(r).map((x) => x.address.trim().toUpperCase())))];
+  return reads.filter((a) => HMI_WRITTEN.test(a) && !writes.has(a)).map((a) => {
+    const name = p.labels.get(a) ? ` ${p.labels.get(a)}` : '';
+    const bit = a.startsWith('C');
+    return finding(`nohmi-input:${a}`, 'major', 'hmi', 'program', a, `No touch panel, but the program waits for ${bit ? 'panel command' : 'panel setpoint'} ${a}${name}`,
+      bit ? `${a}${name} is a touch-panel command bit. This machine has no touch panel, so nothing turns it on and what it starts or enables never happens.`
+        : `${a}${name} is a value the operator would enter on a touch panel. This machine has no touch panel, so it stays 0.`,
+      bit ? 'Use the operator-station pushbutton or selector input for this command (or remove it), then update the PLC program.'
+        : 'Give the value a fixed setting in the program, or add a selector / thumbwheel input for it.');
+  });
+}
+
 function hmiChecks({ p }: ReviewInput): Finding[] {
   const out: Finding[] = [];
   if (!p.hmi || p.profile.language !== 'ladder' || !p.ladder.rungs.length) return out;
@@ -188,9 +210,17 @@ function equipmentChecks({ p, modules }: ReviewInput): Finding[] {
         'Less than 10% spare points leaves no room for changes during commissioning.', 'Consider an extra module or a larger CPU (about 20% spare is usual).'));
     }
   }
-  const { channels } = analogMap(p.profile, p.cpu, moduleSlots(modules), p.io);
+  const { channels, byPoint } = analogMap(p.profile, p.cpu, moduleSlots(modules), p.io);
   const a = analogNeed(p.io, channels);
   for (const kind of ['input', 'output'] as const) {
+    // enough channels by count, but none of them takes the signal (a 0-10 V input with only a thermocouple module)
+    const misfit = a.need[kind] <= a.have[kind] ? p.io.filter((q) => isAnalog(q) && q.type === kind && !byPoint.has(q.id)) : [];
+    if (misfit.length) {
+      const tc = misfit.some((q) => q.analog?.range === 'thermocouple');
+      out.push(finding(`fit:analog-${kind}s`, 'critical', 'equipment', 'equipment', '', `No analog channel takes ${misfit.map((q) => `"${q.description}" (${q.analog?.range ?? '4-20mA'})`).join(', ')}`,
+        `The free analog ${kind} channels of the CPU ${p.cpu.id}${modules.length ? ' and its modules' : ''} do not take ${misfit.length === 1 ? 'this signal' : 'these signals'} (a thermocouple module takes no voltage / current signal, a voltage / current module no thermocouple).`,
+        `Add ${tc ? 'a thermocouple module (e.g. C0-04THM)' : `a voltage / current analog ${kind} module (e.g. ${kind === 'input' ? 'C0-04AD-1 for 4-20 mA; a 0-10 V signal needs a voltage input module such as C0-04AD-2, not in the parts catalog yet' : 'C0-04DA-1 / C0-04DA-2'})`} on the Equipment page.`));
+    }
     if (a.need[kind] > a.have[kind]) {
       out.push(finding(`cap:analog-${kind}s`, 'critical', 'equipment', 'equipment', '', `Not enough analog ${kind}s: ${a.need[kind]} needed, ${a.have[kind]} available`,
         `The I/O list has ${a.need[kind]} analog ${kind}${a.need[kind] === 1 ? '' : 's'}, the CPU ${p.cpu.id}${modules.length ? ' and its modules' : ''} provide ${a.have[kind]}.`,
@@ -444,7 +474,7 @@ function specCoverage({ p, cautions = [] }: ReviewInput): Finding[] {
 export function runChecks(input: ReviewInput): Finding[] {
   const all = [
     ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input), ...driveChecks(input),
-    ...programChecks(input), ...hmiChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
+    ...programChecks(input), ...hmiChecks(input), ...noPanelChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
   ];
   // The Engineer review's rule checks (SCCR weak link, heat, voltage drop…) count here too: one set of findings everywhere.
   const eng = engineerChecksFor(input.p);

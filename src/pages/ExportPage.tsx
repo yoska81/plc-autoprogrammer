@@ -114,6 +114,9 @@ export default function ExportPage() {
   const hasHmi = Boolean(p.hmi);
   const progFiles = programFiles(p);
   const progErrors = p.issues.filter((i) => i.severity === 'error');
+  // Instructions of an imported program kept as written (not converted, not simulated).
+  const raws = p.ladder.rungs.flatMap((r) => [...r.branches.flat(), ...r.outputs]).filter((x) => x.type === 'RAW');
+  const rawOther = raws.filter((x) => x.type === 'RAW' && x.vendor !== p.profile.id).length;
   const STAGE_NAME = { equipment: 'Equipment', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI screens', program: 'PLC program' } as const;
   const stale = (['equipment', 'io', 'electrical', 'hmi', 'program'] as const).filter((s) => stages[s].status === 'stale').map((s) => STAGE_NAME[s]);
 
@@ -137,6 +140,12 @@ export default function ExportPage() {
               The PLC program has {progErrors.length} checker error{progErrors.length !== 1 && 's'} for the {p.profile.name} (see PLC program below): rebuild it before sending the program to anyone.
             </div>
           )}
+          {raws.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900" data-testid="export-raw-count">
+              The program has {raws.length} instruction{raws.length !== 1 && 's'} kept as written from the original program (not converted, not tested in the simulator).
+              {rawOther > 0 ? ` ${rawOther} of them come from another PLC and cannot run on the ${p.profile.name}: they are written as TODO comments.` : ' They go back into the PLC as they were.'}
+            </div>
+          )}
           {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
 
           <ReviewCard />
@@ -146,7 +155,7 @@ export default function ExportPage() {
           <div className="bg-white rounded-sm border-2 border-brand-200 p-5 flex flex-wrap items-center gap-4">
             <div className="flex-1 min-w-64">
               <h3 className="text-sm font-semibold text-steel-800">Everything in one ZIP</h3>
-              <p className="text-xs text-steel-500">Excel report, full package PDF, engineering package, electrical drawings PDF with BOM / wire list / terminal plan, machining DXFs, cabinet STEP model, HMI screens (PDF + PNG), PLC program files, label files, purchasing files (with the shop build time), the certification pack, I/O list and the spec.</p>
+              <p className="text-xs text-steel-500">Excel report, full package PDF, engineering package, electrical drawings PDF with BOM / wire list / terminal plan, machining DXFs, cabinet STEP model, {p.noHmi ? '' : 'HMI screens (PDF + PNG), '}PLC program files, label files, purchasing files (with the shop build time), the certification pack, I/O list and the spec.</p>
             </div>
             <B busy={busy} label="Download everything" primary onClick={run('Download everything', async () => {
               saveBlob(`${p.fileBase}_deliverables.zip`, await buildEverythingZip(collectProject(), (s) => setBusy(`Building ${s.toLowerCase()}`)));
@@ -154,7 +163,7 @@ export default function ExportPage() {
           </div>
 
           <Card title="Full package (one PDF to print)" info={stages.spec}>
-            <p className="text-xs text-steel-500">The whole project in one PDF: cover, contents with page numbers, engineering package, electrical drawings, HMI screens, PLC program listing, I/O list, bill of materials and label list. Bookmarks for every part and a package page number on every page.</p>
+            <p className="text-xs text-steel-500">The whole project in one PDF: cover, contents with page numbers, engineering package, electrical drawings, {p.noHmi ? '' : 'HMI screens, '}PLC program listing, I/O list, bill of materials and label list. Bookmarks for every part and a package page number on every page.</p>
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => void fullPackage(false)} disabled={Boolean(busy)} className="px-4 py-2 text-sm rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 flex items-center gap-2">
                 {busy === 'Download full package PDF' && <Spinner />}Download full package PDF
@@ -175,7 +184,7 @@ export default function ExportPage() {
           <OrderListCard p={p} fileBase={p.fileBase} />
 
           <Card title="Spare parts" info={stages.electrical} to="/electrical?tab=improve">
-            <p className="text-xs text-steel-500">The parts to keep on the shelf (fuses, relays, contactors, power supply, PLC and I/O, touch panel, drives), how many, and why: how critical each one is and how often that kind of part fails.</p>
+            <p className="text-xs text-steel-500">The parts to keep on the shelf (fuses, relays, contactors, power supply, PLC and I/O, {p.noHmi ? '' : 'touch panel, '}drives), how many, and why: how critical each one is and how often that kind of part fails.</p>
             <div className="flex flex-wrap gap-2">
               <B busy={busy} label="Spare parts (Excel)" disabled={!hasElec} onClick={run('Spare parts (Excel)', async () => {
                 const [{ sparePartsXlsx }, { spareParts }] = await Promise.all([import('../deliverables/sparePartsFiles'), import('../electrical/improve/spares')]);
@@ -224,7 +233,7 @@ export default function ExportPage() {
           </Card>
 
           <Card title="Project report (Excel)" info={stages.spec}>
-            <p className="text-xs text-steel-500">One workbook: summary, specification, I/O list, BOM, wire list, terminal plan, design review items, HMI tags/alarms/screens, PLC program and tags, program check.</p>
+            <p className="text-xs text-steel-500">One workbook: summary, specification, I/O list, BOM, wire list, terminal plan, design review items, {p.noHmi ? 'operator station' : 'HMI tags/alarms/screens'}, PLC program and tags, program check.</p>
             <B busy={busy} label="Excel report" onClick={run('Excel report', async () => saveBlob(`${p.fileBase}_report.xlsx`, await buildExcelReport(collectProject())))} />
           </Card>
 
@@ -251,7 +260,7 @@ export default function ExportPage() {
           </Card>
 
           <Card title="Cabinet machining (for the machine shop)" info={stages.electrical} to="/electrical?tab=cabinet">
-            <p className="text-xs text-steel-500">1:1 DXF files in inches for laser / CNC / punch: every drilling and tapping hole of the back panel, and every cutout of the door (22 mm operators, HMI, disconnect handle), and the enclosure walls (cable glands / cord grips for every field cable and the supply, filter fan and outlet filter when the heat calculation needs them, stack light). Each has a PDF drawing to print beside it: dimensions from the datum, hole table, title block and sheet scale.</p>
+            <p className="text-xs text-steel-500">1:1 DXF files in inches for laser / CNC / punch: every drilling and tapping hole of the back panel, and every cutout of the door (22 mm operators, {p.noHmi ? '' : 'HMI, '}disconnect handle), and the enclosure walls (cable glands / cord grips for every field cable and the supply, filter fan and outlet filter when the heat calculation needs them, stack light). Each has a PDF drawing to print beside it: dimensions from the datum, hole table, title block and sheet scale.</p>
             <div className="flex flex-wrap gap-2">
               <B busy={busy} label="Back panel DXF" disabled={!hasElec} onClick={run('Back panel DXF', () => saveBlob(`${p.fileBase}_back_panel_drilling_1to1_in.dxf`, new Blob([backPanelDxf(p.drawingCtx!)], { type: 'application/dxf' })))} />
               <B busy={busy} label="Door cutouts DXF" disabled={!hasElec} onClick={run('Door cutouts DXF', () => saveBlob(`${p.fileBase}_door_cutouts_1to1_in.dxf`, new Blob([doorDxf(p.drawingCtx!)], { type: 'application/dxf' })))} />
@@ -275,6 +284,11 @@ export default function ExportPage() {
             <B busy={busy} label="Cabinet STEP" disabled={!hasElec} onClick={run('Cabinet STEP', () => saveBlob(`${p.fileBase}_cabinet.step`, new Blob([cabinetStep(p.drawingCtx!)], { type: 'application/step' })))} />
           </Card>
 
+          {p.noHmi && !hasHmi ? (
+            <Card title="Operator station" info={stages.hmi} to="/hmi">
+              <p className="text-xs text-steel-500" data-testid="export-no-hmi">This machine has no touch panel, so there are no HMI files. The operator station (pushbuttons, selector switches and lamps) is described in the engineering package and the operator manual, and listed in the Excel report.</p>
+            </Card>
+          ) : (
           <Card title="HMI screens" info={stages.hmi} to="/hmi">
             <div className="flex flex-wrap gap-2">
               <B busy={busy} label="HMI screens PDF" disabled={!hasHmi} onClick={run('HMI screens PDF', async () => {
@@ -295,6 +309,7 @@ export default function ExportPage() {
             </div>
             {needsHmiTagList(p) && <p className="mt-2 text-xs text-steel-500">{hmiReadme(p).split('\r\n')[2]} The ZIP adds the tag list and a short how-to; no project file of that software is made.</p>}
           </Card>
+          )}
 
           <Card title="PLC program" info={stages.program} to="/program">
             {progFiles.length ? (

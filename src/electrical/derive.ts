@@ -529,7 +529,7 @@ export function buildModel(ctx: DrawingContext): ElectricalModel {
 export function resolveComponents(ctx: DrawingContext): ResolvedComponent[] {
   const list = ctx.design.components.map((comp) => {
     const part = comp.partNumber ? ctx.getPart(comp.partNumber) : undefined;
-    const category = part?.category ?? guessCategory(comp.tag);
+    const category = part?.category ?? comp.category ?? guessCategory(comp.tag);
     return { comp, tag: comp.tag, partNumber: comp.partNumber, part, category, mount: part?.mount ?? defaultMount(category) } as ResolvedComponent;
   });
   // link fuse cartridges to their holders (same motor, tag/function reference, or a single obvious pair)
@@ -1553,9 +1553,10 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
       else type = '3-core 18 AWG sensor cable (BN/BU/BK)';
     } else if (p0.type === 'input') {
       cores.push({ core: '1', color: 'BU', wire: '24+', from: term(p0, 'sup'), to: `${d.tag}:C` });
-      cores.push({ core: '2', color: 'BU', wire: p0.wire, from: term(p0, 'sig'), to: `${d.tag}:NO` });
+      // one signal core per input of the device (the terminal name matches the wire list)
+      d.points.forEach((p, k) => cores.push({ core: String(k + 2), color: 'BU', wire: p.wire, from: term(p, 'sig'), to: `${d.tag}:NO` }));
       cores.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: from !== 'CABINET' ? `${from}:PE` : 'PE', to: `${d.tag}:PE` });
-      type = '3-core 18 AWG control cable (2 + PE)';
+      type = `${cores.length}-core 18 AWG control cable (${cores.length - 1} + PE)`;
     } else {
       const stack = t === 'stack-light';
       // the wire number on the device's terminal (a coil behind a safety contact carries the chain's number)
@@ -1590,16 +1591,20 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
       for (const d of ds) {
         const roles = new Map<string, string>();
         for (const p of d.points) {
-          roles.set(`sig:${p.address}`, addT({ wire: p.wire, incoming: '', outgoing: '', device: d.tag, kind: 'feed' }));
-          trunk.push({ core: String(trunk.length + 1), color: 'BU', wire: p.wire, from: p.signalTerminal ?? '?', to: roles.get(`sig:${p.address}`)! });
+          // the number on the strip terminal (a coil behind a safety contact carries the chain's number, e.g. Y001A)
+          const w = p.type === 'output' && p.signalTerminal ? stripWire.get(p.signalTerminal) ?? p.wire : p.wire;
+          roles.set(`sig:${p.address}`, addT({ wire: w, incoming: '', outgoing: '', device: d.tag, kind: 'feed' }));
+          trunk.push({ core: String(trunk.length + 1), color: 'BU', wire: w, from: p.signalTerminal ?? '?', to: roles.get(`sig:${p.address}`)! });
           terms[terms.length - 1].incoming = `${trunkTag}/${trunk.length}`;
         }
         const p0 = d.points[0];
-        const commons: [string, 'sup' | 'ret'][] = p0.type === 'input' ? [['24+', 'sup'], ...(isSensor3(d.deviceType) ? [['0V', 'ret'] as [string, 'ret']] : [])] : [[retWire(p0), 'ret']];
-        for (const [w, role] of commons) {
+        // outputs: one JB terminal per return wire (the coils of a double solenoid may return on different wires)
+        const commons: [string, 'sup' | 'ret', IoPoint][] = p0.type === 'input' ? [['24+', 'sup', p0], ...(isSensor3(d.deviceType) ? [['0V', 'ret', p0] as [string, 'ret', IoPoint]] : [])]
+          : [...new Map(d.points.map((p) => [retWire(p), p] as const)).entries()].map(([w, p]) => [w, 'ret', p] as [string, 'ret', IoPoint]);
+        for (const [w, role, pc] of commons) {
           const lab = addT({ wire: w, incoming: '', outgoing: '', device: d.tag, kind: 'feed' });
-          roles.set(role, lab);
-          const cabTerm = role === 'sup' ? p0.supplyTerminal : p0.returnTerminal;
+          roles.set(role === 'ret' && p0.type === 'output' ? `ret:${w}` : role, lab);
+          const cabTerm = role === 'sup' ? pc.supplyTerminal : pc.returnTerminal;
           if (!firstOf.has(w)) {
             firstOf.set(w, lab);
             trunk.push({ core: String(trunk.length + 1), color: w === '0V' ? 'WH/BU' : 'BU', wire: w, from: cabTerm ?? `TB1 ${w}`, to: lab });
@@ -1607,7 +1612,7 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
             landed.set(w, lab);
           } else terms[terms.length - 1].incoming = `JUMPER ${firstOf.get(w)}`;
         }
-        const c = deviceCable(d, jb.tag, (p, role) => (role === 'sig' ? roles.get(`sig:${p.address}`) : roles.get(role)) ?? '?');
+        const c = deviceCable(d, jb.tag, (p, role) => (role === 'sig' ? roles.get(`sig:${p.address}`) : role === 'ret' && p.type === 'output' ? roles.get(`ret:${retWire(p)}`) : roles.get(role)) ?? '?');
         d.cable = c.tag;
         for (const core of c.cores) { const t = terms.find((x) => x.label === core.from); if (t) t.outgoing = `${c.tag}/${core.color === 'GN/YE' ? 'PE' : core.core}`; }
         devCables.push(c);
@@ -1764,7 +1769,8 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
     if (l) { l.qty += c.comp.quantity; l.tags.push(c.tag); continue; }
     lines.set(key, {
       item: 0, qty: c.comp.quantity, partNumber: c.partNumber, manufacturer: c.part?.manufacturer ?? '',
-      description: c.part?.description ?? `${c.comp.function} (part not found in catalog — verify)`, tags: [c.tag], category: c.category,
+      // Read from a photo of an existing cabinet: say so right by the part number.
+      description: `${c.part?.description ?? `${c.comp.function} (part not found in catalog — verify)`}${c.part && /as-built from photos/i.test(c.comp.function) ? ' — from photo, verify' : ''}`, tags: [c.tag], category: c.category,
     });
   }
   // Accepted machine-layout suggestions: parts still to be selected (never an invented part number).
@@ -2030,6 +2036,8 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   const innerW = backplate.w - 2 * (MARGIN + DUCT + CLEAR);
   /** Width the rails pack into: the full width, or less when tall parts have their own column. */
   let areaW = innerW;
+  /** As-built rows: each row is one photographed rail (never shared with the next one). */
+  let keepRows = false;
   type Band = { items: PlacedItem[]; h: number; terminals?: boolean };
   const gapOf = (b: PlacedItem[], it: PlacedItem) => (b.length ? it.gapLeft ?? gapBefore(b[b.length - 1], it) : 0);
   const bandW = (b: PlacedItem[]) => b.reduce((a, it, k) => a + it.w + (k ? it.gapLeft ?? gapBefore(b[k - 1], it) : 0), 0);
@@ -2067,11 +2075,11 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     }
     rowsIn.forEach((row, ri) => {
       if (!row.length) return;
-      const terminals = ri === 3;
+      const terminals = keepRows ? row.every((it) => it.category === 'terminal') : ri === 3;
       const last = bands[bands.length - 1];
       // A whole group that fits on the end of the previous rail shares it (never for terminal strips).
       // bandW: the rail may already hold merged groups with their wider gaps (gapLeft), which rowW does not count.
-      if (!terminals && last && !last.terminals && bandW(last.items) + 3 * GAP + rowW(row) <= areaW) {
+      if (!keepRows && !terminals && last && !last.terminals && bandW(last.items) + 3 * GAP + rowW(row) <= areaW) {
         row[0].gapLeft = 3 * GAP;
         last.items.push(...row);
         return;
@@ -2187,8 +2195,24 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   const copy = (it: PlacedItem): PlacedItem => ({ ...it, sub: it.sub?.map((x) => ({ ...x })) });
   // Least part area left off the panel wins (a terminal strip weighs more than a small relay).
   const lost = (p: { notFit: PanelLayout['notFit'] }) => p.notFit.reduce((a, n) => a + n.w * n.h, 0);
-  let placed = place(rows.map((r) => r.map(copy)), groundBars.map(copy), -1);
-  if (placed.notFit.length) {
+  // As-built from photos: the photographed rails top to bottom, each device where it was seen (left to
+  // right); parts not seen on a rail follow on rails of their own. Falls back to the normal packing
+  // only when the photographed arrangement doesn't fit the enclosure.
+  const asBuilt = ctx.design.asBuilt?.rails.filter((r) => r.length);
+  let asBuiltPlaced: ReturnType<typeof place> | null = null;
+  if (asBuilt?.length) {
+    const pool = rows.flat().map(copy);
+    const take = (tag: string) => { const i = pool.findIndex((it) => it.tag === tag || it.sub?.some((s) => s.tag === tag)); return i < 0 ? [] : pool.splice(i, 1); };
+    const photoRows = asBuilt.map((r) => r.flatMap(take)).filter((r) => r.length);
+    const rest = rows.map((r) => pool.filter((it) => r.some((x) => x.tag === it.tag && x.label === it.label))).filter((r) => r.length);
+    keepRows = true;
+    const ab = place([...photoRows, ...rest], groundBars.map(copy), -1);
+    keepRows = false;
+    if (!ab.notFit.length) { asBuiltPlaced = ab; warnings.push('As-built from photos: rails and device order as photographed — verify on the cabinet.'); }
+    else warnings.push('The photographed rail arrangement does not fit this enclosure size: the layout below is packed normally.');
+  }
+  let placed = asBuiltPlaced ?? place(rows.map((r) => r.map(copy)), groundBars.map(copy), -1);
+  if (!asBuiltPlaced && placed.notFit.length) {
     for (let k = 0; k <= rows[3].length; k++) {
       const tight = place(rows.map((r) => r.map(copy)), groundBars.map(copy), k);
       if (lost(tight) < lost(placed)) placed = tight;
@@ -2196,7 +2220,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   }
   // Still overflowing: tall parts (disconnect, large drives) in their own column so they don't make
   // a whole rail tall; the other parts pack on the rails beside it (normal and compact packing).
-  if (placed.notFit.length) {
+  if (!asBuiltPlaced && placed.notFit.length) {
     const isTall = (it: PlacedItem) => it.h >= TALL_MM && it.category !== 'terminal';
     if (rows.slice(0, 3).some((r) => r.some(isTall))) {
       for (let k = -1; k <= rows[3].length; k++) {

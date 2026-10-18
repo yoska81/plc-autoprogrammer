@@ -4,7 +4,7 @@
  * differences (I/O variables, how a variable is referenced, first-scan bit, timer / counter block
  * types and parameter names, TIME ↔ ms conversion) come from the dialect.
  */
-import type { CompareElement, LadderElement, LadderOutput, LadderProgram } from '../ladder';
+import { rawTextNames, rawTodo, type CompareElement, type LadderElement, type LadderOutput, type LadderProgram } from '../ladder';
 import type { ExportContext } from '../profile';
 import { logixName } from './logixExport';
 
@@ -16,6 +16,8 @@ type BlockType = 'TON' | 'TOF' | 'RTO' | 'CTU' | 'CTD' | 'R_TRIG' | 'F_TRIG' | '
 export interface StDialect {
   /** Second header line. */
   title: string;
+  /** PLC profile id: RAW instructions imported from this PLC are written as they are. */
+  vendor?: string;
   /** Vendor I/O variable / tag for a physical neutral address (name = the variable's name); null = not known (TODO line). */
   ioVar(base: string, name: string): string | null;
   ioTodo(base: string, name: string, isInput: boolean): string;
@@ -102,10 +104,26 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
   }
   const CMP: Record<CompareElement['op'], string> = { '==': '=', '<>': '<>', '>': '>', '>=': '>=', '<': '<', '<=': '<=' };
 
+  // A kept instruction of this PLC names the program's tags by their original names: written as this export's variables.
+  const byNick = new Map(program.tags.map((t) => [t.nickname.toLowerCase(), t.address]));
+  const rawRefs = (text: string) => {
+    let out = text;
+    for (const { name, index } of rawTextNames(text).reverse()) {
+      const a = byNick.get(name.toLowerCase());
+      if (a) out = out.slice(0, index) + op(a, true) + out.slice(index + name.length);
+    }
+    return out;
+  };
+
   function rungSt(r: { comment: string; branches: LadderElement[][]; outputs: LadderOutput[] }): string[] {
     const pre: string[] = [];
     const el = (e: LadderElement): string => {
       if (e.type === 'CMP') return `(${op(e.left, true)} ${CMP[e.op]} ${op(e.right, true)})`;
+      if (e.type === 'RAW') {
+        if (e.vendor === d.vendor) return `(${rawRefs(e.text)})`;
+        pre.push(`(* ${rawTodo(e).replace(/\*\)/g, '* )')} *)`);
+        return 'FALSE';
+      }
       const a = op(e.address);
       if (e.type === 'NO') return a;
       if (e.type === 'NC') return `NOT ${a}`;
@@ -157,6 +175,11 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
         }
         case 'COPY': out.push(when(`${op(o.dest)} := ${op(o.source, true)};`)); break;
         case 'MATH': out.push(when(`${op(o.dest)} := ${o.expression.replace(OPERAND_RE, (t) => op(t, true))};`)); break;
+        case 'RAW': {
+          const t = rawRefs(o.text.trim());
+          out.push(o.vendor === d.vendor ? when(/;\s*$/.test(t) ? t : `${t};`) : `(* ${rawTodo(o).replace(/\*\)/g, '* )')} *)`);
+          break;
+        }
       }
     }
     return [...(r.comment ? [`(* ${r.comment.replace(/\*\)/g, '* )')} *)`] : []), ...pre, ...out];
