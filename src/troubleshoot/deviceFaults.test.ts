@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { CATALOG } from '../electrical/catalog';
 import { FOREIGN_RAW } from '../electrical/catalogs/foreignPartsData';
 import { DEVICE_FAULT_DATA } from './deviceFaultData';
-import { faultCode, faultProfilesFor, faultsMatching, profileMatches, type DeviceFaultProfile } from './deviceFaults';
+import { faultCode, faultProfilesFor, faultsMatching, faultsOfKind, profileMatches, symptomKindOf, type DeviceFaultProfile, type FaultEntry } from './deviceFaults';
 
 const isUrl = (s: string) => { try { return /^https:$/.test(new URL(s.split(/\s/)[0]).protocol); } catch { return false; } };
 // Imported parts (Inovance drives …) are matched too: the drawing converter and the troubleshooter see them.
@@ -48,4 +48,13 @@ assert.deepEqual(faultProfilesFor(part, [generic, specific]).map((d) => d.id), [
 assert.equal(faultCode(part, 'OC', [generic, specific])?.fault.title, 'Overcurrent');
 assert.equal(faultsMatching(part, 'trips acceleration', [generic, specific]).length, 1);
 assert.equal(faultCode(part, 'nope', [generic, specific]), undefined);
+// Symptom kinds: set in the data wins; else a code means a displayed code; else from the wording.
+const fe = (title: string, symptom: string, extra: Partial<FaultEntry> = {}): FaultEntry => ({ title, symptom, causes: [], confirm: ['x'], fix: ['y'], source: 'https://example.com', ...extra });
+assert.equal(symptomKindOf(fe('Input signal on but input LED off', 'Sensor detecting but the X LED stays off')), 'no-input');
+assert.equal(symptomKindOf(fe('Output LED on but load not energized', 'Y LED is on but the field device does not operate.')), 'output-no-motion');
+assert.equal(symptomKindOf(fe('Welded contacts', 'Motor keeps running after coil de-energized')), 'stuck-on');
+assert.equal(symptomKindOf(fe('Short-circuit trip', 'Trips instantly')), 'trips');
+assert.equal(symptomKindOf(fe('Overcurrent', 'trips', { code: 'oc' })), 'display-code');
+assert.equal(symptomKindOf(fe('Odd', 'anything', { symptomKind: 'stuck-on' })), 'stuck-on');
+assert.deepEqual(faultsOfKind(part, 'display-code', [generic, specific]).map((x) => x.profile.id), ['t-gs20', 't-vfd']);
 console.log(`device fault tests passed (${DEVICE_FAULT_DATA.length} profiles, ${DEVICE_FAULT_DATA.reduce((n, d) => n + d.faults.length, 0)} faults)`);

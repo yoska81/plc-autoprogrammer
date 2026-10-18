@@ -53,8 +53,13 @@ export interface InternalPair {
   note?: string;
 }
 
+/** Kind of blocker a fault explains, for pre-filtering: no input seen, output on but nothing moves, stuck on, trips, a displayed code. */
+export type SymptomKind = 'no-input' | 'output-no-motion' | 'stuck-on' | 'trips' | 'display-code';
+
 /** One common fault: how it shows, how to confirm it, the fix. */
 export interface FaultEntry {
+  /** Set when the data states it; otherwise symptomKindOf() derives it from the code and wording. */
+  symptomKind?: SymptomKind;
   /** Device fault / alarm code exactly as displayed, when the device has one: 'oc', 'ov', 'GFF', 'AL.009'. */
   code?: string;
   /** Short name: 'Overcurrent during acceleration'. */
@@ -138,3 +143,23 @@ export function faultsMatching(p: CatalogPart, words: string, data: DeviceFaultP
     .map((fault) => ({ profile, fault })));
 }
 
+
+/** A fault's kind: as set in the data, else from its code (a displayed code) and its wording. */
+export function symptomKindOf(f: FaultEntry): SymptomKind | undefined {
+  if (f.symptomKind) return f.symptomKind;
+  if (f.code) return 'display-code';
+  const s = `${f.title} ${f.symptom}`.toLowerCase();
+  if (/\btrip|\bblown|nuisance|opens? (on|at|when)/.test(s)) return 'trips';
+  if (/stuck|welded|stays? (on|closed|energi)|won'?t (turn|switch) off|does not (turn|switch) off|leakage/.test(s)) return 'stuck-on';
+  const neg = /\b(no|not|never|off|doesn'?t|does not|won'?t|cannot|fails?)\b/.test(s);
+  // Output side first: an output, load, coil, valve or actuator that should act but doesn't.
+  if (neg && /\boutput\b|\by led\b|\bload\b|\bcoil\b|\bvalve\b|actuator|pull(s)? in|\bshift/.test(s)) return 'output-no-motion';
+  // Input side: a sensor, contact or encoder whose signal the PLC doesn't see.
+  if (neg && /\binput\b|\bx led\b|detect|sensor|pulses?|\bcount|\bsignal/.test(s)) return 'no-input';
+  return undefined;
+}
+
+/** A part's faults of one kind, most specific profile first. */
+export function faultsOfKind(p: CatalogPart, kind: SymptomKind, data: DeviceFaultProfile[] = DEVICE_FAULT_DATA): { profile: DeviceFaultProfile; fault: FaultEntry }[] {
+  return faultProfilesFor(p, data).flatMap((profile) => profile.faults.filter((f) => symptomKindOf(f) === kind).map((fault) => ({ profile, fault })));
+}
