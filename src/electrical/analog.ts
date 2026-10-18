@@ -34,7 +34,7 @@ export interface AnalogCircuit {
   deviceTag: string;
   /** PLC / module device tag the channel belongs to. */
   moduleTag: string;
-  loop: 'two-wire' | 'voltage' | 'output';
+  loop: 'two-wire' | 'voltage' | 'output' | 'thermocouple';
   zone: string;
   cable: string;
   /** TBA terminals for + / − / shield. */
@@ -114,7 +114,7 @@ export function analogWiring(rows: AnalogSetupRow[], o: AnalogOptions): AnalogWi
     const deviceTag = w?.deviceTag || `${prefix}${n}`;
     const slot = slotOf(row.channel);
     const moduleTag = slot === 0 ? o.plcTag : o.moduleTag(slot, row.partNumber);
-    const loop: AnalogCircuit['loop'] = row.kind === 'output' ? 'output' : row.range.endsWith('mA') ? 'two-wire' : 'voltage';
+    const loop: AnalogCircuit['loop'] = row.kind === 'output' ? 'output' : row.range === 'thermocouple' ? 'thermocouple' : row.range.endsWith('mA') ? 'two-wire' : 'voltage';
     const zone = w?.location || 'Field';
     const cableTag = `W${String(cable++).padStart(3, '0')}`;
     const plus = `TBA-${++tn}`, minus = `TBA-${++tn}`, shield = `TBA-${++tn}`;
@@ -124,7 +124,14 @@ export function analogWiring(rows: AnalogSetupRow[], o: AnalogOptions): AnalogWi
     const fn = `${row.description} (${row.range}, ${row.scaleMin}…${row.scaleMax} ${row.units})`;
     const t = (num: string, wire: string, internal: string, external: string, kind: AnalogTerminal['kind'] = 'feed'): AnalogTerminal =>
       ({ strip: 'TBA', number: Number(num.split('-')[1]), label: num, wire, internal, external, kind, group: row.address });
-    if (loop === 'two-wire') {
+    if (loop === 'thermocouple') {
+      // Thermocouple straight to the module's CHn+ / CHn− (no loop supply), in thermocouple extension wire of the
+      // sensor's type; cold-junction compensation is in the module.
+      const chMinus = `${moduleTag}:${row.terminal.replace(/\+$/, '-')}`;
+      wires.push({ wire: wp, from: plus, to: ch, color: 'TC+', size: 'TC ext.', function: `Thermocouple + ${fn}` });
+      wires.push({ wire: wm, from: minus, to: chMinus, color: 'TC-', size: 'TC ext.', function: `Thermocouple - ${fn}` });
+      terminals.push(t(plus, wp, ch, `${deviceTag}:+`), t(minus, wm, chMinus, `${deviceTag}:-`));
+    } else if (loop === 'two-wire') {
       // +24 V → transmitter + ; transmitter − → channel (loop current) ; 0V is the loop return inside the module
       wires.push({ wire: wp, from: '24+', to: plus, color: 'BU', size: '18 AWG', function: `Loop supply ${fn}` });
       wires.push({ wire: wm, from: minus, to: ch, color: 'WH/BU', size: '18 AWG', function: `Loop signal ${fn}` });
@@ -142,7 +149,7 @@ export function analogWiring(rows: AnalogSetupRow[], o: AnalogOptions): AnalogWi
     terminals.push(t(shield, `${row.address}SH`, o.groundBar, `${cableTag} shield (cut back at ${deviceTag})`, 'ground'));
     cables.push({
       tag: cableTag, kind: 'device', zone, from: `${plus}..${shield.split('-')[1]}`, to: deviceTag,
-      type: 'Shielded twisted pair with drain, 1 pair (instrumentation)', size: '18 AWG', length: 'BY SITE', spareCores: 0,
+      type: loop === 'thermocouple' ? 'Thermocouple extension wire, shielded (same type as the thermocouple, e.g. J)' : 'Shielded twisted pair with drain, 1 pair (instrumentation)', size: loop === 'thermocouple' ? '20 AWG' : '18 AWG', length: 'BY SITE', spareCores: 0,
       cores: [
         { core: '1', color: 'WH', wire: wp, from: plus, to: `${deviceTag}:+` },
         { core: '2', color: 'BK', wire: wm, from: minus, to: `${deviceTag}:-` },

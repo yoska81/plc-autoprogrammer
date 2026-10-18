@@ -63,7 +63,9 @@ export function analogSetup(profile: PlcProfile, cpu: CpuModel, modules: ModuleS
   const { byPoint } = analogMap(profile, cpu, modules, io);
   return io.filter(isAnalog).map((p) => {
     const ch = byPoint.get(p.id);
-    const range: AnalogRange = p.analog?.range ?? '4-20mA';
+    // A channel that takes only one kind of signal decides it (a thermocouple module is never a 4-20 mA loop).
+    const asked: AnalogRange = p.analog?.range ?? '4-20mA';
+    const range: AnalogRange = ch && ch.ranges.length && !ch.ranges.includes(asked) && ch.ranges.every((r) => r === 'thermocouple') ? 'thermocouple' : asked;
     return {
       pointId: p.id, description: p.description, kind: p.type,
       channel: ch?.label ?? '(no free channel)', partNumber: ch?.partNumber ?? '', terminal: ch ? channelTerminal(ch, range) : '',

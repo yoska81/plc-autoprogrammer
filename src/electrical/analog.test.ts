@@ -53,3 +53,22 @@ assert.equal(new Set(w.wires.map((x) => x.wire)).size, w.wires.length);
 assert.ok(!/[−→≤Ω]/.test(JSON.stringify(w)), 'ASCII-safe text');
 
 console.log('analog wiring tests passed');
+
+// A thermocouple on a thermocouple input module (CLICK C0-04THM): straight to CHn+ / CHn− in thermocouple
+// extension wire — never a 24 V loop supply (that would put 24 V on the thermocouple input).
+{
+  const { analogSetup } = await import('../plc/core/analog');
+  const { getCpu, getProfile } = await import('../plc/core/profiles');
+  const { moduleSlots } = await import('../plc/core/modules');
+  const profile = getProfile('click');
+  const io = [{ id: 'I009', description: 'Seal bar temperature (thermocouple)', type: 'input', category: 'Analog/Process', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } }] as Parameters<typeof analogSetup>[3];
+  const rows = analogSetup(profile, getCpu(profile, 'C0-11DD2E-D'), moduleSlots(['C0-08ND3', 'C0-04THM']), io);
+  assert.equal(rows[0].range, 'thermocouple', 'a C0-04THM channel is a thermocouple input');
+  assert.equal(rows[0].terminal, 'CH1+');
+  const tc = analogWiring(rows, opts);
+  assert.deepEqual(tc.circuits.map((c) => c.loop), ['thermocouple']);
+  assert.ok(!tc.wires.some((x) => x.from === '24+' || x.to === '24+'), 'no loop supply on a thermocouple');
+  assert.ok(tc.wires.some((x) => x.to.endsWith(':CH1+')) && tc.wires.some((x) => x.to.endsWith(':CH1-')), 'wired to CH1+ and CH1-');
+  assert.match(tc.cables[0].type, /thermocouple extension/i);
+  console.log('ok - thermocouple straight to the C0-04THM, no loop supply');
+}

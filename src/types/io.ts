@@ -31,8 +31,9 @@ export interface IOPoint {
   analog?: AnalogSpec;
 }
 
-export type AnalogRange = '4-20mA' | '0-20mA' | '0-5V' | '0-10V';
-export const ANALOG_RANGES: AnalogRange[] = ['4-20mA', '0-20mA', '0-5V', '0-10V'];
+/** Signal of an analog point; 'thermocouple' = a thermocouple wired straight to a thermocouple input module (no loop supply). */
+export type AnalogRange = '4-20mA' | '0-20mA' | '0-5V' | '0-10V' | 'thermocouple';
+export const ANALOG_RANGES: AnalogRange[] = ['4-20mA', '0-20mA', '0-5V', '0-10V', 'thermocouple'];
 
 /** Physical range and the engineering units it is scaled to (configured in the PLC's analog setup). */
 export interface AnalogSpec {

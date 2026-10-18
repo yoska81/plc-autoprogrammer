@@ -56,8 +56,8 @@ function Loop({ c, y }: { c: AnalogCircuit; y: number }) {
   const r = c.row;
   const yP = y, yM = y + 7, yS = y + 14;
   const pTerm = c.loop === 'two-wire' ? '24+' : r.terminal;
-  const mTerm = c.loop === 'two-wire' ? r.terminal : '0V';
-  const kind = c.loop === 'two-wire' ? '2-WIRE 4–20 mA TRANSMITTER (LOOP POWERED)' : c.loop === 'voltage' ? `${r.range} SIGNAL (DEVICE POWERED SEPARATELY)` : `${r.range} OUTPUT (SOURCING, LOAD 600 OHM MAX)`;
+  const mTerm = c.loop === 'two-wire' ? r.terminal : c.loop === 'thermocouple' ? r.terminal.replace(/\+$/, '-') : '0V';
+  const kind = c.loop === 'thermocouple' ? 'THERMOCOUPLE — DIRECT TO THE MODULE (NO LOOP SUPPLY), TC EXTENSION WIRE' : c.loop === 'two-wire' ? '2-WIRE 4–20 mA TRANSMITTER (LOOP POWERED)' : c.loop === 'voltage' ? `${r.range} SIGNAL (DEVICE POWERED SEPARATELY)` : `${r.range} OUTPUT (SOURCING, LOAD 600 OHM MAX)`;
   return (
     <g>
       {/* PLC / module column */}

@@ -1,3 +1,4 @@
+/// <reference path="./pdfjsWorker.d.ts" />
 /**
  * pdf.js with its worker. In the browser and the Windows app the worker is its own file (a real Worker).
  * The claude.ai preview is a single page that cannot load a worker file, so there the worker code is

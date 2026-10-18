@@ -128,7 +128,8 @@ export function engineerChecks({ ctx, io, requiredPL }: EngineerInput): Engineer
 export function engineerChecksFor(p: ProjectSnapshot): EngineerFinding[] {
   if (!p.drawingCtx) return [];
   const cap = ioCapacity(p.cpu, moduleSlots(p.modules));
-  const used = (t: 'input' | 'output') => p.io.filter((pt) => pt.type === t && p.addresses.get(pt.id)).length;
+  // Discrete points only: analog channels have their own capacity (they don't use the discrete outputs).
+  const used = (t: 'input' | 'output') => p.io.filter((pt) => pt.type === t && pt.signal !== 'analog' && p.addresses.get(pt.id)).length;
   const pl = `${p.spec.safety ?? ''} ${p.spec.guarding ?? ''}`.match(/\bPL\s*([a-e])\b/i)?.[1] ?? null;
   return engineerChecks({ ctx: p.drawingCtx, io: { inputs: used('input'), outputs: used('output'), capInputs: cap.inputs, capOutputs: cap.outputs }, requiredPL: pl });
 }

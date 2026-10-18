@@ -24,6 +24,8 @@ import type { AnalogChannel, CpuModel, ModuleSlot } from '../profile';
 
 function rangesOf(signal: unknown, range: unknown, kind: 'input' | 'output'): AnalogRange[] {
   const r = String(range ?? '').replace(/\s/g, '');
+  // Thermocouple modules (C0-04THM) read the thermocouple directly, in degrees.
+  if (/thermocouple/i.test(String(signal))) return ['thermocouple'];
   if (String(signal) === 'current') return kind === 'input' && r === '0-20mA' ? ['4-20mA', '0-20mA'] : ['4-20mA'];
   if (String(signal) === 'voltage') return r.includes('10') ? ['0-10V', '0-5V'] : ['0-5V'];
   return ['4-20mA'];
@@ -46,7 +48,7 @@ export function clickAnalogChannels(cpu: CpuModel, modules: ModuleSlot[]): Analo
     for (const kind of ['input', 'output'] as const) {
       const n = kind === 'input' ? m.analogInputs ?? 0 : m.analogOutputs ?? 0;
       for (let c = 1; c <= n; c++) {
-        out.push({ kind, slot: i + 1, channel: c, partNumber: m.partNumber, label: `Slot ${i + 1} CH${c}`, ranges: rangesOf(pr.signal, pr.range, kind), terminals: [`CH${c}`, '0V'], address: `DF${df++}` });
+        out.push({ kind, slot: i + 1, channel: c, partNumber: m.partNumber, label: `Slot ${i + 1} CH${c}`, ranges: rangesOf(pr.signal, pr.range, kind), terminals: /thermocouple/i.test(String(pr.signal)) ? [`CH${c}+`, `CH${c}-`] : [`CH${c}`, '0V'], address: `DF${df++}` });
       }
     }
   });
