@@ -40,6 +40,11 @@ assert.deepEqual(r.sequence.steps.map((s) => s.name), ['Wait for the cut signal 
 const ioSet = new Set(addresses.values());
 assert.deepEqual(validateProgram(r.program, getProfile('click'), ioSet, undefined, { noPanel: true }).filter((i) => i.severity === 'error').map((i) => i.message), [], 'checker: no errors');
 const RUN = r.base.internal.run, FAULT = r.base.internal.fault;
+// Every output has its rule (MI3 jog speed, SON, CAM included); the jog buttons and the manual cut are seen.
+assert.deepEqual(r.notes.filter((n) => /no rule drives it|has no jog buttons|counts per counts/.test(n)), [], 'no false notes');
+// The counter-reset pushbutton resets the counts (Reset only resets faults).
+const counts = r.program.rungs.flatMap((g) => g.outputs.filter((o) => o.type === 'CNT').map((o) => (o.type === 'CNT' ? o.resetAddress : null)));
+assert.ok(counts.length > 0 && counts.every((a) => a === A(/Counter reset/)), `counts reset by Counter reset (${counts.join(', ')})`);
 
 const sim = createSimulator(r.program);
 const set = (re: RegExp, v: boolean) => sim.setInput(A(re), v);
