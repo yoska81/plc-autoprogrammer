@@ -6,7 +6,6 @@ import { useHmiStore } from '../store/useHmiStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useStageStore } from '../store/useStageStore';
-import { refreshChecks } from './actions';
 
 const DEBOUNCE_MS = 400;
 
@@ -22,7 +21,8 @@ export function useAutoReview() {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
-        try { refreshChecks(); } catch (e) { console.warn('Design review checks failed', e); }
+        // the checks load after the first paint, not with the shell
+        import('./actions').then((m) => m.refreshChecks()).catch((e: unknown) => console.warn('Design review checks failed', e));
       }, DEBOUNCE_MS);
     };
     run();

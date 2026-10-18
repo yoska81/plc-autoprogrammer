@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { reportAiProgress } from './progress';
 import { useSettingsStore, type Effort } from '../../store/useSettingsStore';
 import { IS_PREVIEW } from '../../preview/mode';
@@ -9,6 +9,13 @@ import { reportRetry } from './jobs';
 import { effectiveEffort, effectiveModel, type AiTask } from './tasks';
 import { cachedAnswer } from './cache';
 import { aiNow, logAiCall } from './timing';
+
+// The SDK is a large part of the app's code: loaded with the first request, not at startup.
+let sdk: typeof Anthropic | null = null;
+async function loadSdk(): Promise<typeof Anthropic> {
+  sdk ??= (await import('@anthropic-ai/sdk')).default;
+  return sdk;
+}
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
@@ -93,7 +100,7 @@ async function previewSlot<T>(fn: () => Promise<T>): Promise<T> {
 
 /** Final message for a failed request (after any retries). */
 function explainFailure(err: unknown, info: AiErrorInfo, model: string): string {
-  if (err instanceof Anthropic.APIError || err instanceof Anthropic.APIConnectionError) return explainApiError(err, model);
+  if (sdk && (err instanceof sdk.APIError || err instanceof sdk.APIConnectionError)) return explainApiError(err, model);
   const msg = err instanceof Error ? err.message : String(err);
   if (err instanceof Error && err.name === 'WatchdogTimeout') return `${msg} Try again; if it keeps happening, check the connection or lower the thinking effort in Settings.`;
   if (info.kind === 'network' || info.kind === 'timeout') return `${KIND_TEXT[info.kind]} before the answer was complete. Check the internet connection and try again.`;
@@ -112,7 +119,7 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   }
   // Keys live in the user's own browser; there is no backend to proxy through.
   // Retries are done by callClaude (also for streams that drop half-way), not by the SDK.
-  const client = new Anthropic({ apiKey: opts.apiKey, dangerouslyAllowBrowser: true, maxRetries: 0 });
+  const client = new (await loadSdk())({ apiKey: opts.apiKey, dangerouslyAllowBrowser: true, maxRetries: 0 });
 
   // Streamed so long, deep-thinking generations don't hit HTTP timeouts.
   // `fallbacks: 'default'` lets the API retry on another model if a safety
@@ -154,6 +161,8 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
 
 /** Plain-English text for an Anthropic API failure (shared by generation and the connection test). */
 function explainApiError(err: unknown, model: string): string {
+  const Anthropic = sdk;
+  if (!Anthropic) return err instanceof Error ? err.message : String(err);
   if (err instanceof Anthropic.AuthenticationError) return 'Anthropic rejected the key (401). It is wrong, was revoked, or was copied incompletely. Copy it again from console.anthropic.com → API keys and paste it in Settings.';
   if (err instanceof Anthropic.PermissionDeniedError) return `The key is valid but not allowed to use ${model} (403). Check the key's workspace permissions in the console, or pick another model in Settings.`;
   if (err instanceof Anthropic.NotFoundError) return `The model ${model} is not available to this account (404). Pick another model in Settings.`;
@@ -185,7 +194,7 @@ export async function testAnthropicConnection(apiKey: string, model: string): Pr
   if (!key.startsWith('sk-ant-')) {
     return { ok: false, message: 'This does not look like an Anthropic API key (they start with "sk-ant-"). A Claude.ai subscription login is not an API key: create a key at console.anthropic.com → API keys.' };
   }
-  const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 0 });
+  const client = new (await loadSdk())({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 0 });
   try {
     await client.messages.create({ model, max_tokens: 16, messages: [{ role: 'user', content: 'Reply with OK.' }] });
     return { ok: true, message: `Connected: ${model} answered. The key works.` };

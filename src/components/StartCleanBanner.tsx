@@ -11,7 +11,7 @@ import { useProjectsStore } from '../store/useProjectsStore';
 import { useQuestionStore } from './questions/useQuestionStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { exampleLeftovers, startClean } from '../spec/startClean';
-import type { StepResult, UpdateStep } from '../spec/updateAll';
+import type { StepResult, UpdateStep } from '../spec/updateSteps';
 import { useAiJobRunning } from '../lib/ai/jobs';
 import { useIOStore } from '../store/useIOStore';
 import { useUi } from '../store/useUiStore';

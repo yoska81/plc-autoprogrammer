@@ -31,23 +31,9 @@ import { stagesNow } from './useStages';
 import { aiNow } from '../lib/ai/timing';
 import type { AIConfig, PlcContext } from '../plc/ai/ladderAI';
 
-export type UpdateStep = 'equipment' | 'io' | 'electrical' | 'hmi' | 'program';
-export interface StepResult {
-  step: UpdateStep;
-  status: 'skipped' | 'done' | 'proposal' | 'failed';
-  message: string;
-  /** How long the stage took (ms). */
-  ms?: number;
-  /** A first result (the rules' version): the AI's version follows. */
-  provisional?: boolean;
-}
+export { UPDATE_GROUPS, type StepResult, type UpdateStep } from './updateSteps';
+import type { StepResult, UpdateStep } from './updateSteps';
 
-/**
- * Stages that run at the same time (the Update dialog's spinners): the I/O list does not depend on the
- * CPU, so it is asked while the equipment is chosen; electrical and HMI both need only the I/O list;
- * the PLC program needs the electrical wiring and the HMI tags.
- */
-export const UPDATE_GROUPS: UpdateStep[][] = [['equipment', 'io'], ['electrical', 'hmi'], ['program']];
 const ORDER: UpdateStep[] = ['equipment', 'io', 'electrical', 'hmi', 'program'];
 /** What each stage waits for (when it is part of the run). The I/O step waits for the equipment only before it is applied. */
 const DEPS: Record<UpdateStep, UpdateStep[]> = { equipment: [], io: [], electrical: ['equipment', 'io'], hmi: ['equipment', 'io'], program: ['equipment', 'io', 'electrical', 'hmi'] };
