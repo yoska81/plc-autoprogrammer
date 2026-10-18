@@ -6,6 +6,7 @@
 import type { HmiDesign, HmiTag, PlcChange } from '../types';
 import { rungWrites, type LadderProgram } from '../../plc/core/ladder';
 import { rungReads } from '../../plc/sim/blocks';
+import type { ProgramRoles, Role } from '../../plc/import/hmiRoles';
 
 /** The imported program's addresses for HMI roles. */
 export interface UpgradeRoles {
@@ -40,15 +41,18 @@ export function implemented(t: Pick<HmiTag, 'address' | 'access'>, use: ReturnTy
   return t.access === 'read' ? use.writes.has(a) : use.reads.has(a);
 }
 
-/** The changes the imported program needs so every tag and alarm of the design works. */
-export function plcChangesFor(design: HmiDesign, ladder: LadderProgram, roles: UpgradeRoles): PlcChange[] {
+/**
+ * The changes the imported program needs so every tag and alarm of the design works. `filled`: registers no
+ * rung writes because the hardware does (analog inputs, filled by the module's analog setup).
+ */
+export function plcChangesFor(design: HmiDesign, ladder: LadderProgram, roles: UpgradeRoles, filled: Set<string> = new Set()): PlcChange[] {
   const use = programUse(ladder);
   const parallel = new Map((roles.parallelTo ?? []).map((p) => [p.role, p] as const));
   const alarms = new Map(design.alarms.map((a) => [a.address.trim().toUpperCase(), a] as const));
   const out = new Map<string, PlcChange>();
   for (const t of design.tags) {
     const a = t.address.trim().toUpperCase();
-    if (out.has(a) || implemented(t, use)) continue;
+    if (out.has(a) || filled.has(a) || implemented(t, use)) continue;
     const p = t.role ? parallel.get(t.role) : undefined;
     const alarm = alarms.get(a);
     const change = p
@@ -76,4 +80,38 @@ export function openPlcChanges(design: HmiDesign, ladder: LadderProgram): PlcCha
     if (alarm.has(c.address)) return !use.writes.has(c.address);
     return t ? !implemented(t, use) : !use.writes.has(c.address) && !use.reads.has(c.address);
   });
+}
+
+/**
+ * The HMI roles of an imported program (src/plc/import/hmiRoles.ts) as the tags the HMI build reuses:
+ * panel bits the program reads become the panel's own commands, wired buttons get an HMI bit beside them,
+ * the sealed running coil, fault inputs, the safety fault, the first counter and its preset register.
+ */
+export function upgradeRolesFrom(pr: ProgramRoles): UpgradeRoles {
+  const tags: HmiTag[] = [];
+  const parallelTo: NonNullable<UpgradeRoles['parallelTo']> = [];
+  const tag = (role: string, r: Role, dataType: HmiTag['dataType'], access: HmiTag['access'], address = r.address) =>
+    tags.push({ role, address, name: r.nickname.replace(/[^A-Za-z0-9]+/g, '_'), dataType, access, description: `From the upgraded program: ${r.why}.` });
+  const cmd = (role: string, rs: Role[]) => {
+    const bit = rs.find((r) => !/^X\d/i.test(r.address));
+    if (bit) tag(role, bit, 'BIT', 'write');
+    else if (rs[0]) parallelTo.push({ role, address: rs[0].address, nickname: rs[0].nickname });
+  };
+  cmd('cmd:start', pr.start);
+  cmd('cmd:stop', pr.stop);
+  cmd('cmd:reset', pr.reset);
+  if (pr.running[0]) tag('sts:running', pr.running[0], 'BIT', 'read');
+  for (const f of pr.faults) {
+    if (/^X\d/i.test(f.address)) tag(`alarm:fault:${f.address}`, f, 'BIT', 'read');
+    else if (/safety|e-?stop|guard/i.test(f.nickname) && !tags.some((t) => t.role === 'alarm:safety')) tag('alarm:safety', f, 'BIT', 'read');
+  }
+  const ct = pr.counters[0];
+  if (ct) {
+    const n = /^CT(\d+)$/i.exec(ct.address)?.[1];
+    if (n) tag('word:count', ct, 'INT2', 'read', `CTD${n}`);
+    if (ct.preset && /^(DS|DD)\d+$/i.test(ct.preset)) tag('sp:batch', { ...ct, nickname: `${ct.nickname}_Preset`, why: `the preset of ${ct.nickname}` }, 'INT', 'read-write', ct.preset.toUpperCase());
+  }
+  // The exact panel Start / Stop changes are in the PLC change list; the rest is said as the importer found it.
+  const missing = pr.missing.filter((m) => !(parallelTo.length && /in parallel with/i.test(m)));
+  return { tags, parallelTo, missing };
 }

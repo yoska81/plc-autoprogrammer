@@ -1,4 +1,4 @@
-import type { IOPoint } from '../../types/io';
+import { isAnalog, type IOPoint } from '../../types/io';
 import type { ElectricalDesign } from '../../electrical/types';
 import type { HmiDesign, HmiState, HmiStyle } from '../../hmi/types';
 import { buildHmi, defaultHmiContent, type HmiContent } from '../../hmi/engine';
@@ -109,7 +109,8 @@ export async function generateRuleBasedHmi(opts: Partial<AiOptions> & HmiProject
   const usedAddresses = (opts.program?.rungs ?? []).flatMap((r) => [...rungAddresses(r), ...rungWrites(r)]).filter((a) => /^[A-Z]+\d+$/i.test(a));
   const design = buildHmi(content, { ...opts.panel, plcText: opts.plcText, now: opts.now, keepTags, usedAddresses });
   if (roles && opts.program) {
-    design.plcChanges = plcChangesFor(design, opts.program, roles);
+    const analogIn = new Set(opts.io.filter((p) => p.type === 'input' && isAnalog(p)).map((p) => (opts.addresses.get(p.id) ?? '').toUpperCase()).filter(Boolean));
+    design.plcChanges = plcChangesFor(design, opts.program, roles, analogIn);
     const n = design.plcChanges.length;
     if (n) design.notes.push(`The HMI uses the upgraded program's own addresses where it has them; ${n} HMI function(s) need a change in the PLC program (listed on the review page).`);
     for (const m of roles.missing ?? []) design.notes.push(m);

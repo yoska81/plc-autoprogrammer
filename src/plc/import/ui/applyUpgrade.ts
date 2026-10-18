@@ -10,6 +10,9 @@ import { canPatch } from '../exportUpgrade';
 import { notify } from '../../../store/useNoticeStore';
 import type { ImportedProgram } from '../types';
 import type { SpecSectionId } from '../../../spec/types';
+import type { LadderProgram } from '../../core/ladder';
+import { programRoles } from '../hmiRoles';
+import { upgradeRolesFrom, type UpgradeRoles } from '../../../hmi/engine/upgradeHmi';
 
 /**
  * Make the imported program the open project: PLC and modules, the I/O list (replaced), the program
@@ -58,3 +61,10 @@ async function keepFile(text: string, importedAt: string): Promise<void> {
 }
 
 export const upgradeOriginal = (drafts: Record<string, unknown>) => (drafts[UPGRADE_KEY] as UpgradeOriginal | undefined) ?? null;
+
+/** The upgraded program's own addresses for the HMI's functions, or null when the project is not an upgrade. */
+export function projectUpgradeRoles(drafts: Record<string, unknown>, ladder: LadderProgram): UpgradeRoles | null {
+  const orig = upgradeOriginal(drafts);
+  if (!orig) return null;
+  return upgradeRolesFrom(programRoles(ladder, new Map(Object.entries(orig.names).map(([a, n]) => [a.toUpperCase(), n]))));
+}

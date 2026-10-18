@@ -23,6 +23,8 @@ import { analogSetup } from '../plc/core/analog';
 import { getPart } from '../electrical/catalog';
 import { vendorPreference } from '../store/useProjectStore';
 import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
+import { useDraftStore } from '../store/useDraftStore';
+import { projectUpgradeRoles } from '../plc/import/ui/applyUpgrade';
 import { mergeRegenerated } from '../hmi/engine/regenerate';
 import { reviseLadder } from '../plc/ai/ladderAI';
 import { generateRuleBasedProgram } from '../plc/ai/cycleAI';
@@ -239,6 +241,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         io, addresses: resolveAddresses(profile, cpu, io, slots), spec: specToText(spec), machineName: useProgramStore.getState().projectName,
         electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
         existingHmi: existing, program: useProgramStore.getState().ladder,
+        upgradeRoles: projectUpgradeRoles(useDraftStore.getState().drafts, useProgramStore.getState().ladder),
       };
       const before = hmiFingerprint(existing);
       const apply = (r: Awaited<ReturnType<typeof generateRuleBasedHmi>>) => {

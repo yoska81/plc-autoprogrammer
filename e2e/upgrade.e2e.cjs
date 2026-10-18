@@ -121,6 +121,25 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByTestId('upgrade-original').waitFor({ timeout: 5000 });
   check((await page.getByTestId('upgrade-diff-summary').innerText()) === '1 changed', 'the original is kept with the project');
 
+  // The HMI for the upgraded program binds to the program's own addresses; what the program lacks for it is
+  // one list of PLC changes on the review page, not a major finding per HMI tag.
+  await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().setHmiPartNumber('CM5-T7W'));
+  await page.goto(BASE + '/hmi');
+  await page.getByRole('button', { name: /Design the HMI screens|Redesign screens/ }).first().click();
+  await page.getByText(/^Rule-based HMI for/).first().waitFor({ timeout: 20000 });
+  const hmi = await page.evaluate(async () => {
+    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+    const f = (await import('/src/review/actions.ts')).refreshChecks().filter((x) => x.area === 'hmi' && x.severity === 'major');
+    const tag = (role) => d.tags.find((t) => t.role === role);
+    return { running: tag('sts:running')?.name, start: tag('cmd:start')?.address, changes: d.plcChanges?.length ?? 0, majors: f.map((x) => x.id), list: f.find((x) => x.id === 'hmi-plc-changes')?.detail ?? '' };
+  });
+  log(`Upgrade HMI: running = ${hmi.running}; ${hmi.changes} PLC changes; HMI majors: ${hmi.majors.join(', ')}`);
+  check(hmi.running === 'Machine_Running', 'the HMI shows the program\'s own running coil');
+  check(hmi.majors.length === 1 && hmi.majors[0] === 'hmi-plc-changes', `one HMI finding with the PLC changes (${hmi.majors.length} HMI majors)`);
+  check(/in parallel with Start_PB/.test(hmi.list), 'the panel Start goes in parallel with the wired Start_PB');
+  await page.goto(BASE + '/upgrade');
+  await page.getByTestId('upgrade-original').waitFor({ timeout: 5000 });
+
   log('Mitsubishi GX Works3: program + device comments (UTF-16)');
   await page.getByRole('button', { name: 'Read another program' }).click();
   const fx = (n) => path.join(__dirname, '..', 'src', 'plc', 'import', '__fixtures__', n);
