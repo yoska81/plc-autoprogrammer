@@ -1,6 +1,9 @@
 // Builds the sample drawing set of a Chinese-style sorting conveyor (used by e2e/convert.e2e.cjs):
 //   sorting_conveyor_drawings.pdf  4 sheets: power circuit, control circuit, PLC I/O, parts list (GB tags, 380 V 50 Hz)
 //   E-03_PLC_IO.dxf                the PLC I/O sheet as a CAD export, Chinese text stored as \U+ escapes
+//   roll-former.dxf                the acceptance case: a roll-forming machine with a servo flying shear, six
+//                                  A3 sheets side by side in model space (frames + 8x6 grid), MTEXT with
+//                                  {\fSimSun|...;} codes and \P breaks, Chinese title blocks, wire sizes as "10平方"
 //   node e2e/fixtures/convert/make-fixtures.cjs
 const fs = require('fs');
 const path = require('path');
@@ -108,4 +111,49 @@ function dxf() {
   fs.writeFileSync(path.join(DIR, 'E-03_PLC_IO.dxf'), out.join('\r\n'));
 }
 
-(async () => { await pdf(); dxf(); console.log('fixtures written to', DIR); })();
+function rollFormer() {
+  // Mirrors a real drawing: 6 sheets side by side in model space, each an A3 frame with an 8 x 6 grid,
+  // MTEXT in SimSun with inline codes, Chinese title blocks. No PLC: servo drive + touch panel.
+  const ents = [];
+  const W = 420, H = 297, GAP = 30;
+  const mt = (x, y, s, layer = 'TEXT') => ents.push('0', 'MTEXT', '8', layer, '10', String(x), '20', String(y), '40', '3', '1', `{\\fSimSun|b0|i0|c134|p2;${s}}`);
+  const frame = (x0) => {
+    ents.push('0', 'LWPOLYLINE', '8', 'FRAME', '90', '4', '70', '1', '10', String(x0), '20', '0', '10', String(x0 + W), '20', '0', '10', String(x0 + W), '20', String(H), '10', String(x0), '20', String(H));
+    // inner border and the 8 x 6 reference grid
+    ents.push('0', 'LWPOLYLINE', '8', 'FRAME', '90', '4', '70', '1', '10', String(x0 + 10), '20', '10', '10', String(x0 + W - 10), '20', '10', '10', String(x0 + W - 10), '20', String(H - 10), '10', String(x0 + 10), '20', String(H - 10));
+    for (let i = 1; i < 8; i++) ents.push('0', 'LINE', '8', 'GRID', '10', String(x0 + 10 + i * 50), '20', String(H - 10), '11', String(x0 + 10 + i * 50), '21', String(H - 4));
+    for (let j = 1; j < 6; j++) ents.push('0', 'LINE', '8', 'GRID', '10', String(x0 + 4), '20', String(10 + j * 46), '11', String(x0 + 10), '21', String(10 + j * 46));
+  };
+  const titleBlock = (x0, name, n) => {
+    mt(x0 + 250, 40, '工程名称'); mt(x0 + 290, 40, '5.5成型机1.5追剪切断');
+    mt(x0 + 250, 30, '图名'); mt(x0 + 290, 30, name);
+    mt(x0 + 250, 20, '设计'); mt(x0 + 290, 20, '审核');
+    mt(x0 + 350, 20, `第${n}页 共6页`);
+  };
+  const sheets = [
+    ['主电路 Main circuit', [
+      '三相四线 3~ + N', 'QF1 4P 10平方', 'L11 L12 L13 N1', 'SB1 停止\\P SB2 启动\\P KM1 自锁', 'KM1 线圈 L11-N1 230V', 'KM1 → L21 L22 L23']],
+    ['变频器 VFD / 油泵', [
+      '变频器 VF1 5.5kW', 'L1 L2 L3 ← L21 L22 L23 6平方', 'U1 V1 W1 → M1 成型主电机 5.5kW', 'AI1 +10V GND 调速电位器 RP1', 'DI1 正转 DI2 反转 DI3 急停',
+      'KM2 线圈 230V: SA4 + KM2 自锁', 'U2 V2 W2 → M2 切断油泵 2.5平方']],
+    ['伺服切断 Servo shear', [
+      '伺服驱动器 SD1', 'L1 L2 L3 ← L21 L22 L23 2.5平方', 'P / C 制动电阻 R1', 'U V W → M3 伺服电机 1.5kW 伺服切断',
+      'CN1-31 DI公共端  CN1-19 使能  CN1-21 原点信号', 'CN1-16 DO公共端  CN1-17 刀下  CN1-1 刀上  CN1-6 报警输出', 'CN1-8 脉冲公共端  CN1-11 A相  CN1-13 B相 编码器 PG1']],
+    ['控制回路 220V', [
+      '24V 100W 开关电源 PS1 ← L21 N1', 'KA1 24V ← CN1-17\\P KA1 触点 L11 → 100 刀下电磁阀 YV1', 'KA2 24V ← CN1-1\\P KA2 触点 L11 → 101 刀上电磁阀 YV2']],
+    ['遥控盒 Pendant', [
+      '遥控线 黑 L21  棕 N1  橙 0V', '黄 正转 (变频器 DI1)  绿 反转 (变频器 DI2)']],
+    ['操作面板 Panel', [
+      '触摸屏 24V', '调速 RP1', 'SA1 正转/停/反转', 'SA2 使能', 'SA3 电源 L11→KM1', 'SA4 剪切 L21→KM2', 'SB3 急停 → 变频器 DI3']],
+  ];
+  sheets.forEach(([name, lines], i) => {
+    const x0 = i * (W + GAP);
+    frame(x0);
+    titleBlock(x0, name, i + 1);
+    lines.forEach((l, k) => mt(x0 + 30, H - 40 - k * 25, l, k === 0 ? 'TITLE' : 'TEXT'));
+  });
+  const out = ['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1032', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES', ...ents, '0', 'ENDSEC', '0', 'EOF'];
+  fs.writeFileSync(path.join(DIR, 'roll-former.dxf'), out.join('\r\n'));
+}
+
+(async () => { await pdf(); dxf(); rollFormer(); console.log('fixtures written to', DIR); })();

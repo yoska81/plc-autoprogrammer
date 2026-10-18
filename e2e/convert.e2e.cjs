@@ -86,7 +86,7 @@ function sse(model, text) {
   const derive = requests.find((r) => sysText(r.system).includes('taking over an existing machine'));
   const content = derive?.messages[0].content ?? [];
   check(content.some((b) => b.type === 'document' && b.source?.media_type === 'application/pdf'), 'the PDF goes to the AI as a document');
-  const dxfText = content.find((b) => b.type === 'text' && b.text.includes('E-03_PLC_IO.dxf (DXF export'))?.text ?? '';
+  const dxfText = content.find((b) => b.type === 'text' && b.text.includes('E-03_PLC_IO.dxf (CAD drawing'))?.text ?? '';
   check(/启动/.test(dxfText) && /TAG1=KM1/.test(dxfText) && /急停为单回路/.test(dxfText), 'the DXF goes as text with its Chinese labels and attributes');
   log('Sent to the AI:', content.map((b) => b.type).join(', '), '| DXF text:', dxfText.split('\n')[2]);
   const rec = await page.getByTestId('convert-recognised').innerText();
@@ -102,6 +102,10 @@ function sse(model, text) {
   await page.waitForTimeout(200);
   check(/✓/.test(await ioRows.nth(1).innerText()), 'review: a correction confirms the reading');
   check(/re-validate/.test(rec), 'review: safety marked re-validate');
+  // the PDF page each reading came from (rendered with pdf.js), next to the I/O
+  const thumb = page.getByTestId('review-io').getByTestId('source-thumb').first();
+  await thumb.waitFor({ timeout: 20000 }).catch(() => {});
+  check(await thumb.isVisible() && /^data:image\/png/.test(await thumb.locator('img').getAttribute('src') ?? ''), 'review: PDF page thumbnail next to the I/O');
   await page.getByTestId('convert-recognised').screenshot({ path: OUT + '00_review.png' });
 
   // Description written from the drawings

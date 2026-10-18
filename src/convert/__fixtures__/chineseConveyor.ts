@@ -61,6 +61,9 @@ export const CHINESE_CONVEYOR: ExistingMachine = {
     { tag: 'M1', description: 'Conveyor belt (输送电机), forward and reverse', kw: 1.1, hp: null, starter: 'contactor-overload', reversing: true, confidence: 'high', source: 'sheet 1, column 2' },
     { tag: 'M2', description: 'Coolant pump (冷却水泵)', kw: 0.75, hp: null, starter: 'contactor-overload', reversing: false, confidence: 'high', source: 'sheet 1, column 4' },
   ],
+  axes: [],
+  controller: 'plc',
+  circuits: [],
   interlocks: [
     { description: 'KM1 and KM2 are cross-interlocked: forward and reverse can never be on together', devices: ['KM1', 'KM2'] },
     { description: 'The pusher valve YV1 fires only with air pressure OK (SP1)', devices: ['YV1', 'SP1'] },
@@ -71,6 +74,8 @@ export const CHINESE_CONVEYOR: ExistingMachine = {
     guards: [],
     safetyRelay: null,
     category: null,
+    kind: 'hardwired',
+    drives: [],
     description: 'Single-channel E-stop SB1 drops relay KA1, which removes the 220 VAC control supply from KM1, KM2, KM3 and YV1; PLC input X0 sees the E-stop.',
   },
   spec: {

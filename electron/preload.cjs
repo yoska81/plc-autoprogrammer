@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('isaDesktop', {
   oda: {
     detect: () => ipcRenderer.invoke('isa:oda-detect'),
     convert: (files) => ipcRenderer.invoke('isa:oda-convert', files),
+    toDxf: (files) => ipcRenderer.invoke('isa:oda-to-dxf', files),
   },
   modbus: {
     connect: async (o) => { const r = await ipcRenderer.invoke('isa:modbus', 'connect', [o]); return r.ok ? r.value : { ok: false, error: r.error }; },
