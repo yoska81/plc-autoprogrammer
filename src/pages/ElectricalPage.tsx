@@ -40,6 +40,9 @@ import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
 import type { CatalogCategory, DesignInputs, EnclosureRating, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
 import { Spinner, ReasoningPanel } from '../components/common';
 import StageBanner from '../components/StageBanner';
+import HeaderMore from '../components/HeaderMore';
+import { useNarrow } from '../components/useNarrow';
+import { useCollapseOnScroll } from '../components/useCollapseOnScroll';
 import { useFingerprints, useStages } from '../spec/useStages';
 import { useStageStore } from '../store/useStageStore';
 import { specToText } from '../spec/types';
@@ -80,6 +83,7 @@ function motorContext(d: ElectricalDesign, tag: string | null | undefined, iec: 
 }
 
 export default function ElectricalPage() {
+  const [folded, setFolded] = useCollapseOnScroll(useNarrow());
   const el = useElectricalStore();
   const settings = useSettingsStore();
   const showExperimental = !!settings.showExperimental;
@@ -197,13 +201,14 @@ export default function ElectricalPage() {
 
   return (
     <>
-      <header className="px-4 sm:px-6 py-3 bg-white border-b border-steel-200">
-        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <header className={`px-4 sm:px-6 ${folded ? 'py-1.5' : 'py-3'} bg-white border-b border-steel-200`} data-folded={folded || undefined}>
+        <div className={`flex ${folded ? 'flex-nowrap items-center' : 'flex-wrap items-start'} justify-between gap-x-4 gap-y-2`}>
           <div className="min-w-0 flex-[1_1_16rem]">
-            <h2 className="text-base font-semibold text-steel-800">4 · Electrical Design{tab !== 'design' && <span className="font-normal text-steel-500"> — {TAB_TITLE[tab]}</span>}</h2>
-            <p className="text-xs text-steel-400 mt-0.5">Control panel design and drawings · AutomationDirect parts · {profile.name} {cpu.id}</p>
+            <h2 className={`text-base font-semibold text-steel-800${folded ? ' truncate' : ''}`}>4 · Electrical Design{tab !== 'design' && <span className="font-normal text-steel-500"> — {TAB_TITLE[tab]}</span>}</h2>
+            {!folded && <p className="text-xs text-steel-400 mt-0.5">Control panel design and drawings · AutomationDirect parts · {profile.name} {cpu.id}</p>}
           </div>
-          {el.design && (
+          {folded && <HeaderMore onClick={() => setFolded(false)} />}
+          {el.design && !folded && (
             <div className="flex flex-wrap gap-2">
               <button onClick={() => void drawingsPdf('print')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm bg-steel-800 text-white rounded hover:bg-steel-900 disabled:opacity-60" title={IS_PREVIEW ? 'The browser preview cannot reach a printer: this saves the drawings PDF to print from your PDF reader. In the Windows app, Print opens the Windows print dialog.' : 'Print the drawings'}>{pdfBusy === 'print' ? 'Preparing…' : IS_PREVIEW ? 'Print (save PDF)' : 'Print'}</button>
               <button onClick={() => void drawingsPdf('save')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-60">{pdfBusy === 'save' ? 'Preparing…' : 'Drawings PDF'}</button>
@@ -218,12 +223,14 @@ export default function ElectricalPage() {
         </div>
       </header>
 
-      <StageBanner info={stages.electrical} action={
-        <button onClick={() => generate()} disabled={el.isGenerating} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
-          {el.isGenerating ? 'Updating…' : 'Update design'}
-        </button>} />
-      {ctx && el.design && <EnclosureControl ctx={ctx} />}
-      {ctx && el.design && <EnclosureFitBanner ctx={ctx} />}
+      {!folded && <>
+        <StageBanner info={stages.electrical} action={
+          <button onClick={() => generate()} disabled={el.isGenerating} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
+            {el.isGenerating ? 'Updating…' : 'Update design'}
+          </button>} />
+        {ctx && el.design && <EnclosureControl ctx={ctx} />}
+        {ctx && el.design && <EnclosureFitBanner ctx={ctx} />}
+      </>}
       {tab === 'improve' ? (
         <ImprovePanel fileBase={base} />
       ) : tab === 'lists' ? (
