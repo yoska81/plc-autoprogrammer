@@ -55,9 +55,9 @@ function LadderRungView({ plan, r, yy }: { plan: DrawingPlan; r: LadderRung; yy:
   const parts: ReactElement[] = [];
   let keyN = 0;
   const k = () => `k${keyN++}`;
-  const seg = (a: number, b: number, w: string, yv: number, label = true) => {
+  const seg = (a: number, b: number, w: string, yv: number, label = true, below = false) => {
     parts.push(<Line key={k()} x1={a} y1={yv} x2={b} y2={yv} />);
-    if (label && b - a > 6) parts.push(<WireNo key={k()} x={(a + b) / 2} y={yv} n={w} maxW={b - a - 1} />);
+    if (label && b - a > 6) parts.push(below ? <Txt key={k()} x={(a + b) / 2} y={yv + 3.4} mono size={2.5} anchor="middle" maxW={b - a - 1}>{w}</Txt> : <WireNo key={k()} x={(a + b) / 2} y={yv} n={w} maxW={b - a - 1} />);
   };
   const el = (e: LadderEl, x: number, yv: number) => parts.push(<LadderElement key={k()} plan={plan} e={e} x={x} y={yv} />);
   const last = r.lines.length - 1;
@@ -68,6 +68,7 @@ function LadderRungView({ plan, r, yy }: { plan: DrawingPlan; r: LadderRung; yy:
     const series = loadEl ? line.cols.slice(0, -1) : line.cols;
     // start of the line: the rail, an earlier rung's node / a drive common (first line), or a continuation arrow
     let wireStart = RAIL_L;
+    let nameAbove = false;
     let inWire = series[0] ? (series[0].kind === 'el' ? series[0].e.wIn : series[0].wIn) : loadEl?.wIn ?? '';
     if (li === 0 && r.start.kind === 'rail') parts.push(<Dot key={k()} x={RAIL_L} y={ly} />);
     else {
@@ -79,7 +80,10 @@ function LadderRungView({ plan, r, yy }: { plan: DrawingPlan; r: LadderRung; yy:
       if (li > 0) parts.push(<XrefArrow key={k()} x={wireStart - 3} y={ly} />);
       const ref = li === 0 && r.start.kind === 'node' && !label ? plan.xref.get(`net:${r.start.wire}`)?.split(' ')[1] : undefined;
       const under = label || (ref ? `FROM ${ref}` : '');
-      if (under) parts.push(<Txt key={k()} x={wireStart - 0.8} y={ly + 4.4} size={2.1} mono bold={Boolean(label)}>{under}</Txt>);
+      // a branch first on the line drops its left vertical right of the node: the name goes above the wire there
+      // (and the wire number of the short lead to the branch goes below it)
+      nameAbove = Boolean(under) && series[0]?.kind === 'branch' && series[0].paths.length > 1;
+      if (under) parts.push(<Txt key={k()} x={wireStart - 0.8} y={nameAbove ? ly - 1.6 : ly + 4.4} size={2.1} mono bold={Boolean(label)}>{under}</Txt>);
       if (li === 0 && r.start.kind === 'node') inWire = r.start.wire;
     }
     let xa = X0;
@@ -92,7 +96,7 @@ function LadderRungView({ plan, r, yy }: { plan: DrawingPlan; r: LadderRung; yy:
         wireStart = x + halfW(c.e);
       } else {
         const bx0 = xa + LADDER.lead / 2, bx1 = xb - LADDER.lead / 2;
-        seg(wireStart, bx0, c.wIn, ly);
+        seg(wireStart, bx0, c.wIn, ly, true, i === 0 && nameAbove);
         const lastY = ly + (c.paths.length - 1) * pitch;
         parts.push(<Line key={k()} x1={bx0} y1={ly} x2={bx0} y2={lastY} />, <Line key={k()} x1={bx1} y1={ly} x2={bx1} y2={lastY} />);
         c.paths.forEach((p, q) => {
