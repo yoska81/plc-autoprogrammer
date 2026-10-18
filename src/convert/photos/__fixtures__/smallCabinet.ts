@@ -24,8 +24,8 @@ export const SMALL_CABINET: PhotoReading = {
     { tag: 'CB1', category: 'breaker', manufacturer: 'Gladiator', partNumber: 'GMCBU-1C-5', ratings: 'C5, 1-pole', rail: 1, order: 1, confidence: 'high', seen: [{ photo: 1, x: 0.05, y: 0.3, w: 0.15, h: 0.4 }], wires: [{ terminal: '1', wire: 'L1' }, { terminal: '2', wire: '101' }] },
     { tag: 'CB2', category: 'breaker', manufacturer: 'Gladiator', partNumber: 'GMCBU-1C-2', ratings: 'C2, 1-pole', rail: 1, order: 2, confidence: 'high', seen: [{ photo: 1, x: 0.22, y: 0.3, w: 0.15, h: 0.4 }], wires: [{ terminal: '2', wire: '102' }] },
     // Photo 2 (PLC rail + terminals): the PLC again, its module, the starter's nameplates.
-    { tag: 'PLC1', category: 'plc', manufacturer: 'AutomationDirect', partNumber: 'C0-10DD1E-D', ratings: '', rail: 2, order: 1, confidence: 'high', seen: [{ photo: 2, x: 0.04, y: 0.12, w: 0.18, h: 0.35 }], wires: [{ terminal: 'X1', wire: '1001' }] },
-    { tag: '', category: 'plcModule', manufacturer: 'AutomationDirect', partNumber: 'C0-08ND3', ratings: '8 inputs 24 VDC', rail: 2, order: 2, confidence: 'high', seen: [{ photo: 2, x: 0.23, y: 0.12, w: 0.08, h: 0.35 }], wires: [] },
+    { tag: 'PLC1', category: 'plc', manufacturer: 'AutomationDirect', partNumber: 'C0-10DD1E-D', ratings: '', rail: 2, order: 1, confidence: 'high', seen: [{ photo: 2, x: 0.04, y: 0.12, w: 0.18, h: 0.35 }], wires: [{ terminal: 'X1', wire: '1001' }, { terminal: 'Y1', wire: '2001' }, { terminal: 'X2', wire: '1002' }] },
+    { tag: '', category: 'plcModule', manufacturer: 'AutomationDirect', partNumber: 'C0-08ND3', ratings: '8 inputs 24 VDC', rail: 2, order: 2, confidence: 'high', seen: [{ photo: 2, x: 0.23, y: 0.12, w: 0.08, h: 0.35 }], wires: [{ terminal: '1', wire: '1101' }] },
     { tag: 'K1', category: 'contactor', manufacturer: 'Fuji Electric', partNumber: 'SC-E02PG-24VDC', ratings: '24 VDC coil', rail: 2, order: 3, confidence: 'high', seen: [{ photo: 2, x: 0.5, y: 0.1, w: 0.12, h: 0.3 }], wires: [{ terminal: 'A1', wire: '2001' }] },
     { tag: 'OL1', category: 'overload', manufacturer: 'Fuji Electric', partNumber: 'TK-E02-72', ratings: '5-8 A', rail: 2, order: 4, confidence: 'medium', seen: [{ photo: 2, x: 0.5, y: 0.4, w: 0.12, h: 0.12 }], wires: [] },
     // A relay half hidden behind the duct: label and nameplate unreadable.
@@ -33,7 +33,7 @@ export const SMALL_CABINET: PhotoReading = {
   ],
   strips: [
     { tag: 'TB1', rail: 3, order: 1, confidence: 'medium', seen: [{ photo: 0, x: 0.12, y: 0.68, w: 0.6, h: 0.08 }], terminals: [{ terminal: '1', wire: '24+' }] },
-    { tag: 'TB1', rail: 3, order: 1, confidence: 'high', seen: [{ photo: 2, x: 0.05, y: 0.7, w: 0.9, h: 0.15 }], terminals: [{ terminal: '1', wire: '24+' }, { terminal: '2', wire: '0V' }, { terminal: '3', wire: '1001' }] },
+    { tag: 'TB1', rail: 3, order: 1, confidence: 'high', seen: [{ photo: 2, x: 0.05, y: 0.7, w: 0.9, h: 0.15 }], terminals: [{ terminal: '1', wire: '24+' }, { terminal: '2', wire: '0V' }, { terminal: '3', wire: '1001' }, { terminal: '4', wire: '1101' }] },
   ],
-  unseen: ['Where does wire 2001 from K1 coil go? It runs behind the duct.', 'What feeds the main breaker CB1 (supply voltage and source)?'],
+  unseen: ['Wires 101 and 102 from CB1 and CB2 run behind the left duct: what do they feed?', 'What feeds the main breaker CB1 (supply voltage and source)?'],
 };

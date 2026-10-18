@@ -82,6 +82,10 @@ async function png(page, shade) {
   // Correct a reading: the PS1 nameplate (keep the part, change the tag the panel uses).
   await rows.filter({ has: page.locator('input[value="PS1"]') }).getByLabel(/^Tag of/).fill('PS24');
   check(/8 confirmed · 1 to check/.test(await page.getByTestId('photos-counts').innerText()), 'confirming updates the count');
+  // Wiring from wire numbers (slice 2): a number read at two places is one wire; the PLC's wires are the I/O.
+  const traced = await page.getByTestId('photos-traced').innerText();
+  check(/2001: PLC1:Y1 – K1:A1/.test(traced) && /1001: PLC1:X1 – TB1:3/.test(traced), 'wires traced by their numbers');
+  check(/Y001 K1 contactor coil/.test(traced) && /X001 Field device on TB1-3/.test(traced), 'I/O from the PLC terminals');
   await page.screenshot({ path: OUT + 'review.png', fullPage: true });
 
   // 3. As-built design.
@@ -92,6 +96,9 @@ async function png(page, shade) {
   check(JSON.stringify(d.rails) === JSON.stringify([['CB1', 'CB2', 'PS24'], ['PLC1', 'IO1', 'K1', 'OL1'], ['TB1']]), 'rails in the photographed order with the corrected tag');
   check(!d.tags.some((t) => /^CR/.test(t)), 'the unconfirmed hidden relay is left out');
   check(/As-built from photos — verify/.test(d.notes?.[0] ?? ''), 'marked "as-built from photos — verify"');
+  check(/4 I\/O traced · 4 wires/.test(await page.getByTestId('photos-applied').innerText()), 'apply reports the traced I/O and wires');
+  const io = await page.evaluate(async () => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.map((p) => `${p.plcAddress}:${p.type}`));
+  check(JSON.stringify(io) === JSON.stringify(['X001:input', 'X002:input', 'X101:input', 'Y001:output']), `I/O list at the addresses read (${io.join(', ')})`);
 
   // Or convert: the photographed devices go to the shared review below the tab (same path as drawings).
   await page.getByTestId('photos-convert').click();
@@ -99,12 +106,15 @@ async function png(page, shade) {
   await shared.waitFor({ timeout: 10000 });
   const partsText = await shared.innerText();
   check(['GMCBU-1C-5', 'SC-E02PG-24VDC', 'C0-08ND3'].every((pn) => partsText.includes(pn)) && /photo 1, rail 2, position 3/.test(partsText), 'the shared review lists the photographed parts with where they were seen');
+  const sharedIO = await page.getByTestId('review-io').innerText().catch(() => '');
+  check(/Y001/.test(sharedIO) && /K1/.test(sharedIO), 'the shared review lists the traced I/O');
 
   // What the photos can't show: on the Machine description page only.
   await page.goto(BASE + '/spec');
   await page.waitForTimeout(800);
   const qa = await page.locator('#questions-and-answers').innerText();
-  check(/Cabinet photos: Where does wire 2001/.test(qa) && /could not be confirmed from the photos/.test(qa), 'hidden wiring and the unconfirmed relay are asked on the Machine description page');
+  check(/behind the left duct/.test(qa) && /could not be confirmed from the photos/.test(qa), 'hidden wiring and the unconfirmed relay are asked on the Machine description page');
+  check(/which field device is wired to TB1-3 \(wire 1001, PLC input X001\)/.test(qa), 'the field device behind each traced terminal is asked');
 
   // Drawings: the panel layout sheet and the BOM.
   await page.goto(BASE + '/electrical?tab=cabinet');

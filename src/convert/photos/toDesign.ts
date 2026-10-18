@@ -1,7 +1,12 @@
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign } from '../../electrical/types';
-import type { PhotoDevice, PhotoReading, TerminalStrip } from './recognise';
+import type { PhotoReading } from './recognise';
+import { itemCategory, itemPart, itemTag, type ReviewItem } from './items';
+
+export { itemCategory, itemPart, itemTag, type ReviewItem, type ReviewStatus } from './items';
 import type { DrawnComponent, DrawnRatings, ExistingMachine } from '../types';
 import { normalizeMachine } from '../derive';
+import type { IOCategory, IOPoint } from '../../types/io';
+import { traceIO, traceQuestions, traceWires, type TracedIO } from './trace';
 
 /**
  * The REVIEW step and its result. Every recognised device and terminal strip is an item the user
@@ -11,20 +16,6 @@ import { normalizeMachine } from '../derive';
  * questions for the Machine description page.
  */
 
-export type ReviewStatus = 'pending' | 'confirmed' | 'rejected';
-
-export interface ReviewItem {
-  key: string;
-  kind: 'device' | 'strip';
-  device?: PhotoDevice;
-  strip?: TerminalStrip;
-  status: ReviewStatus;
-  /** The user's corrections. */
-  tag?: string;
-  partNumber?: string;
-  category?: CatalogCategory;
-}
-
 /** Review items for a (merged) reading: high-confidence items start confirmed, the rest wait for the user. */
 export function reviewItems(r: PhotoReading): ReviewItem[] {
   return [
@@ -32,10 +23,6 @@ export function reviewItems(r: PhotoReading): ReviewItem[] {
     ...r.strips.map((s, i): ReviewItem => ({ key: `s${i}`, kind: 'strip', strip: s, status: s.confidence === 'high' ? 'confirmed' : 'pending' })),
   ];
 }
-
-export const itemTag = (it: ReviewItem) => (it.tag ?? it.device?.tag ?? it.strip?.tag ?? '').trim();
-export const itemPart = (it: ReviewItem) => (it.partNumber ?? it.device?.partNumber ?? '').trim();
-export const itemCategory = (it: ReviewItem): CatalogCategory => it.category ?? it.device?.category ?? 'terminal';
 
 const PREFIX: Partial<Record<CatalogCategory, string>> = {
   disconnect: 'DS', breaker: 'CB', fuse: 'FU', powerSupply: 'PS', contactor: 'K', overload: 'OL', motorProtector: 'MP',
@@ -49,8 +36,21 @@ export function matchPart(pn: string, getPart: (pn: string) => CatalogPart | und
   return getPart(pn) ?? getPart(pn.toUpperCase()) ?? getPart(pn.replace(/[\s.]+/g, '')) ?? getPart(pn.toUpperCase().replace(/[\s.]+/g, ''));
 }
 
+/** I/O list category of a traced point (by what it is wired to). */
+function ioCategory(p: TracedIO): IOCategory {
+  if (p.deviceType === 'safety-relay-output' || p.deviceType === 'estop-contact') return 'Safety';
+  if (/pushbutton|selector|pilot|stack/.test(p.deviceType)) return 'Operator/HMI';
+  return 'Station 1';
+}
+
+/** Traced I/O as I/O list points with their PLC address as read. */
+export const tracedPoints = (io: TracedIO[]): Omit<IOPoint, 'id'>[] =>
+  io.map((p) => ({ description: p.description, type: p.type, category: ioCategory(p), plcAddress: p.address, deviceType: p.deviceType }));
+
 export interface AsBuiltResult {
   design: ElectricalDesign;
+  /** The I/O list the traceable wires show (PLC address as read), and every traced wire. */
+  io: TracedIO[];
   /** For the Machine description page: what the photos could not show. */
   questions: string[];
   /** Confirmed devices whose part number is not in the catalog (kept as read, marked "verify"). */
@@ -60,13 +60,17 @@ export interface AsBuiltResult {
 /** A tag of its kind for each item without a label (CB3, K2 …), never one the photos already show. */
 function tagger(items: ReviewItem[]) {
   const used = new Set(items.map(itemTag).filter(Boolean).map((t) => t.toUpperCase()));
+  const given = new Map<string, string>();
   return (it: ReviewItem) => {
     const own = itemTag(it);
     if (own) return own;
+    const had = given.get(it.key);
+    if (had) return had;
     const p = PREFIX[itemCategory(it)] ?? 'D';
     let n = 1;
     while (used.has(`${p}${n}`)) n++;
     used.add(`${p}${n}`);
+    given.set(it.key, `${p}${n}`);
     return `${p}${n}`;
   };
 }
@@ -96,8 +100,11 @@ export function asBuiltDesign(items: ReviewItem[], reading: PhotoReading, base: 
   const railNos = [...new Set(placed.map((p) => p.rail))].sort((a, b) => a - b);
   const rails = railNos.map((r) => placed.filter((p) => p.rail === r).sort((a, b) => a.order - b.order).map((p) => p.tag));
   const pending = items.filter((it) => it.status === 'pending');
+  const wires = traceWires(confirmed, tagOf);
+  const io = traceIO(confirmed, wires, tagOf, getPart);
   const questions = [
     ...reading.unseen.map((u) => `Cabinet photos: ${u}`),
+    ...traceQuestions(io),
     ...pending.map((it) => `Cabinet photos: ${it.kind === 'strip' ? 'terminal strip' : 'device'} ${itemTag(it) || '(no label)'}${itemPart(it) ? ` ${itemPart(it)}` : ''} on rail ${it.device?.rail ?? it.strip?.rail ?? '?'} could not be confirmed from the photos — what is it?`),
   ];
   const notes = [
@@ -106,8 +113,11 @@ export function asBuiltDesign(items: ReviewItem[], reading: PhotoReading, base: 
   ];
   return {
     design: {
-      inputs: base, components, ioWiring: [], notes, askUser: questions, asBuilt: { source: 'photos', rails }, generatedAt: now,
+      inputs: base, components, notes, askUser: questions, generatedAt: now,
+      ioWiring: io.map((p) => ({ address: p.address, deviceTag: p.deviceTag || p.via || `W${p.wire}`, deviceType: p.deviceType, description: p.description, location: p.deviceTag ? 'Cabinet' : 'Field (not in the photos)' })),
+      asBuilt: { source: 'photos', rails, wires: wires.map((w) => ({ wire: w.wire, ends: w.ends.map((e) => `${e.tag}:${e.terminal}`) })) },
     },
+    io,
     questions,
     notInCatalog,
   };
@@ -140,9 +150,11 @@ export function nameplateRatings(text: string): DrawnRatings {
  * Rejected items are left out; unconfirmed ones go in with their own confidence (the shared review
  * asks the user about low-confidence readings).
  */
-export function photosToMachine(items: ReviewItem[], reading: PhotoReading, note = ''): ExistingMachine {
+export function photosToMachine(items: ReviewItem[], reading: PhotoReading, note = '', getPart: (pn: string) => CatalogPart | undefined = () => undefined): ExistingMachine {
   const kept = items.filter((it) => it.status !== 'rejected');
   const tagOf = tagger(kept);
+  const wires = traceWires(kept, tagOf);
+  const io = traceIO(kept, wires, tagOf, getPart);
   const where = (s: { seen: { photo: number }[]; rail: number; order: number }) => `photo ${(s.seen[0]?.photo ?? 0) + 1}${s.rail ? `, rail ${s.rail}, position ${s.order}` : ', door / wall'}`;
   const components: DrawnComponent[] = kept.filter((it) => it.kind === 'device').map((it) => {
     const d = it.device!;
@@ -162,8 +174,9 @@ export function photosToMachine(items: ReviewItem[], reading: PhotoReading, note
     plc: plcDev ? { vendor: plcDev.device!.manufacturer, model: itemPart(plcDev), cpuPartNumber: itemPart(plcDev) || null } : null,
     modules: kept.filter((it) => itemCategory(it) === 'plcModule').map((it, i) => ({ slot: i + 1, partNumber: itemPart(it), description: it.device!.ratings })),
     components,
-    spec: { utilities: [note.trim(), strips.length ? `Terminal strips as photographed:\n${strips.join('\n')}` : ''].filter(Boolean).join('\n') } as ExistingMachine['spec'],
-    questions: reading.unseen.map((text) => ({ text, section: 'other' as const, assumption: null })),
+    io: io.map((p) => ({ address: p.address, description: p.description, type: p.type, category: ioCategory(p), deviceTag: p.deviceTag || null, deviceType: p.deviceType, confidence: p.confidence, source: `wire ${p.wire}${p.via ? ` via ${p.via}` : ''} (photos)` })),
+    spec: { utilities: [note.trim(), strips.length ? `Terminal strips as photographed:\n${strips.join('\n')}` : '', wires.length ? `Wires traced by their numbers:\n${wires.map((w) => `${w.wire}: ${w.ends.map((e) => `${e.tag}:${e.terminal}`).join(' – ')}`).join('\n')}` : ''].filter(Boolean).join('\n') } as ExistingMachine['spec'],
+    questions: [...reading.unseen, ...traceQuestions(io).map((q) => q.replace(/^Cabinet photos: /, ''))].map((text) => ({ text, section: 'other' as const, assumption: null })),
     uncertainties: ['As-built from photos: wiring behind ducts and covered nameplates could not be read — verify on the cabinet.'],
   });
 }

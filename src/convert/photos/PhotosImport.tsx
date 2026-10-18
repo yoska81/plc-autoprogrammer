@@ -5,13 +5,14 @@ import { Spinner } from '../../components/common';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useProjectsStore } from '../../store/useProjectsStore';
 import { useElectricalStore } from '../../store/useElectricalStore';
+import { useIOStore } from '../../store/useIOStore';
 import { useDraft } from '../../store/useDraftStore';
 import { getPart } from '../../electrical/catalog';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../../lib/ai/jobs';
 import type { CatalogCategory } from '../../electrical/types';
 import { recogniseCabinet, type PhotoReading, type Sighting } from './recognise';
 import { mergeReading } from './merge';
-import { asBuiltDesign, itemCategory, itemPart, itemTag, matchPart, photosToMachine, reviewItems, type ReviewItem, type ReviewStatus } from './toDesign';
+import { asBuiltDesign, itemCategory, itemPart, itemTag, matchPart, photosToMachine, reviewItems, tracedPoints, type ReviewItem, type ReviewStatus } from './toDesign';
 import { setReading } from '../reading';
 
 /** Photos chosen, per project and in memory only (like the drawings upload): never carried into another project. */
@@ -49,6 +50,27 @@ function Crop({ file, s }: { file: File | undefined; s: Sighting }) {
   }, [file, s]);
   if (!file) return <div className="flex h-[60px] w-[84px] items-center justify-center rounded-sm bg-steel-100 text-center text-[10px] text-steel-500">photo {s.photo + 1}</div>;
   return <canvas ref={ref} className="rounded-sm border border-steel-200 bg-steel-50" aria-label={`Crop of photo ${s.photo + 1}`} />;
+}
+
+/** The wires and I/O the wire numbers trace (confirmed items only), so the user sees what will be drawn. */
+function TracedWires({ items, reading }: { items: ReviewItem[]; reading: PhotoReading }) {
+  const r = useMemo(() => asBuiltDesign(items, reading, useElectricalStore.getState().inputs, getPart), [items, reading]);
+  const wires = r.design.asBuilt?.wires ?? [];
+  if (!wires.length && !r.io.length) return <p className="text-xs text-steel-500">No wire number was read at two places yet: confirm the PLC and the terminal strips to trace the wiring.</p>;
+  return (
+    <div className="grid gap-3 text-xs md:grid-cols-2" data-testid="photos-traced">
+      <div>
+        <div className="font-semibold text-steel-700">Wires traced by their numbers ({wires.length})</div>
+        <ul className="mt-1 space-y-0.5 text-steel-700">{wires.map((w) => <li key={w.wire}><span className="font-mono">{w.wire}</span>: {w.ends.join(' – ')}</li>)}</ul>
+      </div>
+      <div>
+        <div className="font-semibold text-steel-700">I/O from the PLC terminals ({r.io.length})</div>
+        <ul className="mt-1 space-y-0.5 text-steel-700">{r.io.map((p) => (
+          <li key={p.address}><span className="font-mono">{p.address}</span> {p.description} <span className={`rounded px-1 text-[10px] font-semibold ${CONF[p.confidence]}`}>{p.confidence}</span></li>
+        ))}</ul>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -89,10 +111,13 @@ export default function PhotosImport() {
   const apply = () => {
     if (!read) return;
     const el = useElectricalStore.getState();
-    if (el.design && !confirm('Replace the current electrical design with the as-built one from the photos?')) return;
+    const io = useIOStore.getState();
+    if ((el.design || io.projectIO.length) && !confirm('Replace the current electrical design and I/O list with the as-built ones from the photos?')) return;
     const r = asBuiltDesign(items, read.reading, el.inputs, getPart);
+    // The I/O the wire numbers trace, at the addresses read (the electrical design's I/O wiring uses them).
+    if (r.io.length) io.importPoints(tracedPoints(r.io), true);
     el.setDesign(r.design, 'imported', `As-built from ${read.photos.length} cabinet photo${read.photos.length === 1 ? '' : 's'}: ${r.design.components.length} devices on ${r.design.asBuilt?.rails.length ?? 0} rails. Verify on the cabinet.`);
-    setDone(`${r.design.components.length} devices${r.questions.length ? ` · ${r.questions.length} question${r.questions.length === 1 ? '' : 's'} on the Machine description page` : ''}${r.notInCatalog.length ? ` · ${r.notInCatalog.length} not in the catalog` : ''}`);
+    setDone(`${r.design.components.length} devices · ${r.io.length} I/O traced · ${r.design.asBuilt?.wires?.length ?? 0} wires${r.questions.length ? ` · ${r.questions.length} question${r.questions.length === 1 ? '' : 's'} on the Machine description page` : ''}${r.notInCatalog.length ? ` · ${r.notInCatalog.length} not in the catalog` : ''}`);
   };
 
   return (
@@ -162,6 +187,7 @@ export default function PhotosImport() {
               </tbody>
             </table>
           </div>
+          <TracedWires items={items} reading={read.reading} />
           {read.reading.unseen.length > 0 && (
             <div className="text-xs text-steel-600"><span className="font-semibold">Not visible in the photos (asked on the Machine description page):</span>
               <ul className="list-disc pl-5">{read.reading.unseen.map((u) => <li key={u}>{u}</li>)}</ul>
@@ -182,7 +208,7 @@ export default function PhotosImport() {
           </div>
           <p className="text-xs text-steel-600">Or convert this cabinet to the project's standard and supply (Project data): the photographed devices go to the review below, where the same conversion and rebuild as for drawings run.</p>
           <button type="button" data-testid="photos-convert" disabled={!counts.confirmed && !counts.pending}
-            onClick={() => setReading({ machine: photosToMachine(items, read.reading, note), reasoning: null, files: read.photos, from: 'photos' })}
+            onClick={() => setReading({ machine: photosToMachine(items, read.reading, note, getPart), reasoning: null, files: read.photos, from: 'photos' })}
             className="rounded border border-brand-600 px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-40">Convert to the project's standard ↓</button>
         </section>
       )}

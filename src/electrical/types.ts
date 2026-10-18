@@ -165,6 +165,6 @@ export interface ElectricalDesign {
   /** How the enclosure was chosen (absent on older designs). */
   enclosureChoice?: EnclosureChoice;
   /** Documented from an existing cabinet (src/convert/photos): the DIN rails top to bottom, each the device tags left to right. */
-  asBuilt?: { source: 'photos'; rails: string[][] };
+  asBuilt?: { source: 'photos'; rails: string[][]; /** Wires traced by their numbers: each wire's ends ("K1:A1", "TB1:3"). */ wires?: { wire: string; ends: string[] }[] };
   generatedAt: string;
 }
