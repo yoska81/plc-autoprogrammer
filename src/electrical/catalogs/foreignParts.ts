@@ -54,7 +54,7 @@ export function drawnRatings(p: CatalogPart): ForeignDrawnRatings {
     curve: typeof r.curve === 'string' ? r.curve : undefined,
     minAmps: num(r.minAmps),
     maxAmps: num(r.maxAmps),
-    kw: num(r.kw),
+    kw: num(r.kw) ?? (num(r.ratedWatts) !== undefined ? num(r.ratedWatts)! / 1000 : undefined),
     outputVolts: num(r.outputVolts),
     outputAmps: num(r.outputAmps),
   };

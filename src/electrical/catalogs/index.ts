@@ -1,10 +1,13 @@
 import type { CatalogCategory, CatalogPart, VendorId } from '../types';
 import { AUTOMATIONDIRECT } from './automationdirect';
+import { AUTOMATIONDIRECT_SENSORS } from './automationdirectSensors';
 import { ALLEN_BRADLEY } from './allenBradley';
 import { SIEMENS } from './siemens';
 import { SCHNEIDER } from './schneider';
 import { YASKAWA } from './yaskawa';
 import { IFM } from './ifm';
+import { PEPPERL } from './pepperl';
+import { BANNER } from './banner';
 import { PHOENIX } from './phoenix';
 import { ABB } from './abb';
 import { EATON } from './eaton';
@@ -71,7 +74,7 @@ const tag = (vendor: VendorId, parts: CatalogPart[]) => parts.map((p) => ({ ...p
 
 export const VENDORS: Vendor[] = [
   {
-    id: 'automationdirect', name: 'AutomationDirect', supplier: 'AutomationDirect', parts: tag('automationdirect', AUTOMATIONDIRECT),
+    id: 'automationdirect', name: 'AutomationDirect', supplier: 'AutomationDirect', parts: tag('automationdirect', [...AUTOMATIONDIRECT, ...AUTOMATIONDIRECT_SENSORS]),
     notes: 'An enclosure needs its matching subpanel (enclosure category, ratings kind=subpanel). The rotary disconnect needs its switch, a handle and a shaft. A reversing starter is two contactors plus SZ-RM, SZ-ERW1A and SZ-ERW1B. For a dual-channel E-stop into a safety relay, add an ECX1030-2 contact block to the E-stop, and the yellow "EMERGENCY STOP" legend plate ECX1651 under every E-stop operator. Order terminal end covers/brackets and markers with the terminal blocks.',
   },
   {
@@ -93,6 +96,14 @@ export const VENDORS: Vendor[] = [
   {
     id: 'ifm', name: 'ifm', supplier: 'ifm (distributor)', parts: tag('ifm', IFM), otherGroup: 'field',
     notes: 'Inductive sensors have 3-pin M12 connectors (cable EVC042 is a 3-pin patch cord); photoelectric sensors are 4-pin M12 (cables EVC001 / EVC002 / EVC004). IO-Link masters: AL1120 / AL1122 / AL1320 / AL1920 are EtherNet/IP, AL1100 / AL1102 are PROFINET; AL1920 is the IP20 master for inside the cabinet, the others mount in the field. Only the O5D100 has IO-Link; the others are plain PNP switching sensors.',
+  },
+  {
+    id: 'pepperl', name: 'Pepperl+Fuchs', supplier: 'Pepperl+Fuchs (distributor)', parts: tag('pepperl', PEPPERL), otherGroup: 'field',
+    notes: 'UB ultrasonic sensors (per part datasheet): -E4 = NPN, -E5 = PNP, -I = 4-20 mA, -U = 0-10 V output; -V1 = M12 4-pin, -V15 = M12 5-pin connector (cable ordered separately). Targets closer than rangeMinMm (blind zone) are not detected.',
+  },
+  {
+    id: 'banner', name: 'Banner Engineering', supplier: 'Banner Engineering (distributor)', parts: tag('banner', BANNER), otherGroup: 'field',
+    notes: 'Ultrasonic sensors (per part datasheet): T30UX D = discrete PNP, U = 0-10 V, I = 4-20 mA; QS18U N = NPN, P = PNP; S18U U = 0-10 V, I = 4-20 mA. Models ending Q8 / Q have an M12 quick-disconnect, the others a 2 m cable. Targets closer than rangeMinMm are not detected.',
   },
   {
     id: 'eaton', name: 'Eaton', supplier: 'Eaton (distributor)', parts: tag('eaton', EATON),

@@ -42,5 +42,14 @@ const unmatched = Object.entries(FOREIGN_PART_DATA)
   .filter(([, f]) => /chint|delixi/i.test(f.maker) && ['contactor', 'overload', 'motorProtector'].includes(f.category))
   .filter(([pn]) => !foreignEquivalents(pn).length).map(([pn]) => pn);
 assert.deepEqual(unmatched, []);
+
+// Automation: an FX3U-32MR CPU → at least 16 in / 16 relay out; a PNP prox → PNP of the same type.
+const plc = foreignEquivalents('FX3U-32MR/ES');
+assert.ok(plc.length && plc.every((e) => Number(e.part.ratings.discreteInputs) >= 16 && /relay/i.test(String(e.part.ratings.outputType))));
+const pnpProx = Object.entries(FOREIGN_PART_DATA).find(([, f]) => f.category === 'sensor' && f.part.ratings.output === 'PNP' && f.part.ratings.type === 'inductive')!;
+assert.ok(foreignEquivalents(pnpProx[0]).every((e) => e.part.ratings.output === 'PNP' && e.part.ratings.type === 'inductive'), pnpProx[0]);
+// A 1.5 kW imported servo motor → catalog servo motors of 1.5-2.25 kW, smallest first.
+const sm = foreignEquivalents('MS1H2-15C30CB-A331Z');
+assert.ok(sm.length && sm.every((e) => Number(e.part.ratings.ratedWatts) >= 1500 && Number(e.part.ratings.ratedWatts) <= 2250), sm.map((e) => e.part.partNumber).join());
 assert.deepEqual(foreignEquivalents('NOT-A-PART'), []);
 console.log('foreign part matching tests passed');

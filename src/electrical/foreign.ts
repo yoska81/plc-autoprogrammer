@@ -14,6 +14,13 @@ import type { CatalogPart } from './types';
  * - 22 / 30 mm operators and pilot lights: same size and colour, same contacts first;
  * - overloads / motor protectors: a setting range that contains the drawn range's middle;
  * - power supplies: same output voltage, at least the drawn current;
+ * - drives: the cross-reference key (same HP class and input voltage class);
+ * - PLC CPUs: at least the built-in inputs and outputs, same output type (relay / sinking / sourcing), smallest first;
+ * - prox / photo sensors: same type and output (PNP / NPN), same barrel size first;
+ * - encoders: same pulses per revolution and output type;
+ * - servo motors: rated power from the drawn one up to 1.5x, closest first (same rated speed first);
+ *   servo drives: rated power at least the drawn one, smallest first. A servo swap is always motor + drive +
+ *   cables of one maker: the motor's pairsWith names the drive;
  * - everything else: the cross-reference function key (crossref.ts).
  * Each match lists what changes (coil voltage, footprint, UL status …). No match = nothing returned, never a guess.
  */
@@ -78,6 +85,35 @@ function candidates(f: CatalogPart, pool: CatalogPart[]): CatalogPart[] {
       if (!c) return [];
       return same.filter((p) => contactsOf(p.ratings.contacts) === c && p.ratings.switching === undefined)
         .sort((x, y) => Number(coilMatches(r.coilVoltage, y.ratings.coilVoltage ?? y.ratings.coil)) - Number(coilMatches(r.coilVoltage, x.ratings.coilVoltage ?? x.ratings.coil)));
+    }
+    case 'plc': {
+      const di = n(r.discreteInputs), dout = n(r.discreteOutputs), type = String(r.outputType ?? '').toLowerCase();
+      if (di === undefined || dout === undefined) return [];
+      const size = (p: CatalogPart) => (n(p.ratings.discreteInputs) ?? 0) + (n(p.ratings.discreteOutputs) ?? 0);
+      return same.filter((p) => (n(p.ratings.discreteInputs) ?? -1) >= di && (n(p.ratings.discreteOutputs) ?? -1) >= dout
+        && (!type || String(p.ratings.outputType ?? '').toLowerCase().includes(type)))
+        .sort((x, y) => size(x) - size(y));
+    }
+    case 'sensor': {
+      const type = String(r.type ?? '').toLowerCase(), out = String(r.output ?? '').toUpperCase(), d = n(r.diameterMm);
+      if (!type || !out) return [];
+      return same.filter((p) => String(p.ratings.type ?? '').toLowerCase() === type && String(p.ratings.output ?? '').toUpperCase() === out)
+        .sort((x, y) => Number(n(y.ratings.diameterMm) === d) - Number(n(x.ratings.diameterMm) === d));
+    }
+    case 'encoder': {
+      const ppr = n(r.ppr), type = String(r.outputType ?? '').toLowerCase();
+      if (!ppr) return [];
+      const kind = (s: string) => (/line/.test(s) ? 'line driver' : /totem|push/.test(s) ? 'push-pull' : /collector/.test(s) ? 'open collector' : s);
+      return same.filter((p) => n(p.ratings.ppr) === ppr && (!type || kind(String(p.ratings.outputType ?? '').toLowerCase()) === kind(type)));
+    }
+    case 'servoMotor':
+    case 'servoDrive': {
+      const w = n(r.ratedWatts) ?? (n(r.kw) !== undefined ? n(r.kw)! * 1000 : undefined), rpm = n(r.ratedRpm);
+      if (!w) return [];
+      const watts = (p: CatalogPart) => n(p.ratings.ratedWatts) ?? (n(p.ratings.kw) ?? 0) * 1000;
+      const max = f.category === 'servoMotor' ? w * 1.5 : Infinity;
+      return same.filter((p) => watts(p) >= w && watts(p) <= max)
+        .sort((x, y) => watts(x) - watts(y) || Number(n(y.ratings.ratedRpm) === rpm) - Number(n(x.ratings.ratedRpm) === rpm));
     }
     case 'pushbutton':
     case 'pilotLight':
