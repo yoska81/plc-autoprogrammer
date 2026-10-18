@@ -24,8 +24,8 @@ export interface TracedWire {
   /** Terminals where two wire numbers meet (one conductor there), e.g. "XT2:6". */
   joinedAt: string[];
 }
-/** Two wire numbers that differ only by a likely misreading (O / 0, I / 1, a space or a stray mark). */
-export interface NearMatch { a: string; b: string; aAt: string[]; bAt: string[] }
+/** Wire numbers on different conductors that differ only by a likely misreading (O / 0, I / 1, a space or a stray mark), each with where it was read. */
+export interface NearMatch { numbers: { wire: string; at: string[] }[] }
 
 export interface TracedIO {
   /** PLC address as read on the terminal (X1, %I0.3, Q0.1); for a module's numbered terminal, guessed from its slot. */
@@ -98,12 +98,13 @@ export function traceNets(items: ReviewItem[], tagOf: (it: ReviewItem) => string
   }
   const out = [...nets.values()].map((n) => { n.numbers.sort(byNumber); n.wire = n.numbers.join(' / '); return n; }).sort((a, b) => byNumber(a.wire, b.wire));
   // look-alike numbers on different conductors: asked, never merged
-  const near: NearMatch[] = [];
-  const keys = [...spelling.keys()];
+  // one group per number: every spelling of it read on a conductor of its own
   const at = (k: string) => [...new Set(rs.filter((r) => r.key === k).map((r) => endText(r.end)))];
-  keys.forEach((a, i) => keys.slice(i + 1).forEach((b) => {
-    if (looseWire(a) && looseWire(a) === looseWire(b) && find(a) !== find(b)) near.push({ a: spelling.get(a)!, b: spelling.get(b)!, aAt: at(a), bAt: at(b) });
-  }));
+  const groups = new Map<string, string[]>();
+  for (const k of spelling.keys()) { const l = looseWire(k); if (l) groups.set(l, [...(groups.get(l) ?? []), k]); }
+  const near: NearMatch[] = [...groups.values()]
+    .filter((ks) => new Set(ks.map(find)).size > 1)
+    .map((ks) => ({ numbers: ks.map((k) => ({ wire: spelling.get(k)!, at: at(k) })) }));
   return { nets: out, near };
 }
 
@@ -181,7 +182,7 @@ export function traceIO(items: ReviewItem[], nets: TracedWire[], tagOf: (it: Rev
     const devTags = [...new Set(devs.map((e) => e.tag))];
     const strip = others.find((e) => e.category === 'strip');
     const via = strip ? `${strip.tag}-${strip.terminal}` : '';
-    const conflict = otherIo.length ? `wire ${wire} is read at both ${p.address} and ${otherIo.join(' and ')}`
+    const conflict = otherIo.length ? `wire ${wire} is read at both ${[p.address, ...otherIo].sort(byNumber).join(' and ')}`
       : devTags.length > 1 ? `wire ${wire} from ${p.address} is read at ${devTags.join(' and ')}` : null;
     const dev = !conflict && devTags.length === 1 ? devs[0] : undefined;
     const slot = p.guessed ? ' — address guessed from the module\'s slot' : '';
@@ -396,8 +397,9 @@ export function traceAll(items: ReviewItem[], tagOf: (it: ReviewItem) => string,
   const { nets, near } = traceNets(items, tagOf);
   const io = traceIO(items, nets, tagOf, getPart);
   const { circuits, questions: circuitQs } = traceCircuits(items, nets, tagOf);
-  const q: string[] = near.map((m) => `Cabinet photos: wire "${m.a}" (at ${m.aAt.join(', ')}) and wire "${m.b}" (at ${m.bAt.join(', ')}) look alike — one wire misread, or two different wires?`);
-  q.push(...io.filter((p) => p.conflict).map((p) => `Cabinet photos: ${p.conflict} — which is right?`));
+  const q: string[] = near.map((m) => `Cabinet photos: wire numbers ${m.numbers.map((n) => `"${n.wire}" (at ${n.at.join(', ')})`).join(', ').replace(/, ([^,]*)$/, ' and $1')} look alike — one wire misread, or different wires?`);
+  // a conflict between two PLC points is one question, not one per point
+  q.push(...new Set(io.filter((p) => p.conflict).map((p) => `Cabinet photos: ${p.conflict} — which is right?`)));
   // per terminal strip: what is wired to its terminals outside the cabinet (supply rails left out)
   const ioOn = (n: TracedWire) => io.find((p) => n.ends.some((e) => e.tag === p.plcTag) && p.wire === n.wire);
   const strips = [...new Set(nets.flatMap((n) => n.ends.filter((e) => e.category === 'strip').map((e) => e.tag)))];

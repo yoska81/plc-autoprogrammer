@@ -190,10 +190,13 @@ const asItems = (devices: PhotoDevice[], strips: [string, [string, string][]][] 
 const tagOfIt = (it: ReviewItem) => it.device?.tag ?? it.strip!.tag;
 const nearItems = asItems([dev('PLC1', 'plc', [['Y1', '2001'], ['Y2', '-2002'], ['Y3', '20 03']]), dev('KA1', 'relay', [['A1', '2OO1']]), dev('KA2', 'relay', [['A1', '2002']]), dev('KA3', 'relay', [['A1', '2003']])]);
 const nn = traceNets(nearItems, tagOfIt);
-assert.deepEqual(nn.near.map((m) => `${m.a}~${m.b}`), ['2001~2OO1', '-2002~2002', '20 03~2003'], 'look-alike numbers flagged');
+assert.deepEqual(nn.near.map((m) => m.numbers.map((n) => n.wire).join('~')), ['2001~2OO1', '-2002~2002', '20 03~2003'], 'look-alike numbers flagged');
 assert.ok(nn.nets.every((n) => n.ends.length === 1), '…and never merged');
 const nq = traceAll(nearItems, tagOfIt, () => undefined).questions;
-assert.ok(nq.includes('Cabinet photos: wire "2001" (at PLC1:Y1) and wire "2OO1" (at KA1:A1) look alike — one wire misread, or two different wires?'));
+assert.ok(nq.includes('Cabinet photos: wire numbers "2001" (at PLC1:Y1) and "2OO1" (at KA1:A1) look alike — one wire misread, or different wires?'));
+// three spellings of one number: one question, not one per pair
+const three = traceAll(asItems([dev('KA1', 'relay', [['A1', '2001']]), dev('KA2', 'relay', [['A1', '2OO1']]), dev('KA3', 'relay', [['A1', '20 01']])]), tagOfIt, () => undefined).questions.filter((q) => /look alike/.test(q));
+assert.deepEqual(three, ['Cabinet photos: wire numbers "2001" (at KA1:A1), "2OO1" (at KA2:A1) and "20 01" (at KA3:A1) look alike — one wire misread, or different wires?']);
 // two numbers on one terminal are one conductor: a coil with two wires, a strip's feed-through
 const joined = traceNets(asItems([dev('PLC1', 'plc', [['Y1', '2001'], ['Y2', '2002']]), dev('KA1', 'relay', [['A1', '2001'], ['A1', '2002']]), dev('KA4', 'relay', [['13', '1004']])], [['XT2', [['6', '1004'], ['6', 'F1004']]]]), tagOfIt);
 const j2001 = joined.nets.find((n) => n.numbers.includes('2001'))!;
@@ -207,7 +210,7 @@ assert.deepEqual([cio('X3').confidence, cio('X3').deviceTag, cio('X4').confidenc
 assert.equal(cio('X5').deviceTag, '', 'SB1 or SQ1: not picked');
 assert.equal(cio('X5').confidence, 'low');
 assert.match(cio('X5').description, /SB1 or SQ1 \(wire 1005\): check on the cabinet/);
-assert.ok(conf.questions.includes('Cabinet photos: wire 1003 is read at both X3 and X4 — which is right?'));
+assert.equal(conf.questions.filter((q) => /wire 1003/.test(q)).join(), 'Cabinet photos: wire 1003 is read at both X3 and X4 — which is right?', 'asked once, not once per point');
 assert.ok(conf.questions.includes('Cabinet photos: wire 1005 from X5 is read at SB1 and SQ1 — which is right?'));
 // a long strip: one question with the terminal ranges
 const long = traceAll(asItems([], [['XT2', Array.from({ length: 12 }, (_, i): [string, string] => [String(i + 1), `F${i + 1}`])]]), tagOfIt, () => undefined);
