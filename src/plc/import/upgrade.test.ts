@@ -144,6 +144,9 @@ const capper = importProgramText('capper.L5X', readFileSync(join(here, '__fixtur
   }
   // A module the app does not have: said plainly.
   const odd = planUpgrade(importProgramText('capper.L5X', text.replace('1769-IF4/B', '1769-IF4XOF2/A')), 'click');
+  // Review: the modules the app does have stay (IQ16, OB16); only the analog input is added for the unknown one.
+  assert.deepEqual(odd.modules.slice(0, 2), ['1769-IQ16', '1769-OB16'], odd.modules.join(' '));
+  assert.ok(odd.modules.length === 3 && /^1769-IF/.test(odd.modules[2]), odd.modules.join(' '));
   assert.match(odd.original.cpuNote ?? '', /Your machine's I\/O modules are 1769-IQ16, 1769-OB16, 1769-IF4XOF2 \(slots 1–3\)\. The app does not have 1769-IF4XOF2, so this project uses .*Check them against the machine/);
   // Embedded I/O (L1 / L2): the slot numbers to check, on the PLC page (CPU notes) and as a question.
   const l2 = planUpgrade({ ...capper, source: { ...capper.source, controller: '1769-L24ER-QBFC1B', modules: [] } }, 'click');

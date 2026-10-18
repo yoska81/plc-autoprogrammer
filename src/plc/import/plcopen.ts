@@ -280,7 +280,8 @@ export function readPlcopen(src: string): ForeignProgram {
   }
   return {
     format: 'plcopen', vendor: [header?.attrs.companyName, header?.attrs.productName].filter(Boolean).join(' ') || 'IEC 61131-3',
-    controller: hardwareOf(src, project) || (header?.attrs.productName ?? ''), projectName: content?.attrs.name ?? header?.attrs.contentDescription ?? 'Imported project',
+    // The product name (TIA Portal) is the vendor's tool, not a controller: never repeated as one.
+    controller: hardwareOf(src, project), projectName: content?.attrs.name ?? header?.attrs.contentDescription ?? 'Imported project',
     tags, routines, notes,
   };
 }

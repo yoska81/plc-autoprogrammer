@@ -145,6 +145,19 @@ export function modulesToFit(cpuId: string, modules: string[], need: Need): stri
   if (cpuFit(cpu, modules, need).ok) return modules;
   const platform = platformOf(cpuId);
   if (platform) {
+    // Modules already chosen (an upgraded machine's own rack) stay: the suggestion and the signal modules are added
+    // after them, then every added module the I/O does not need is dropped again.
+    if (modules.length) {
+      const grown = addForSignals(cpu, [...modules, ...suggestModules(platform, cpuId, need)], need, platform.modules, 32);
+      if (grown && cpuFit(cpu, grown, need).ok) {
+        let mods: string[] = grown;
+        for (let i = mods.length - 1; i >= modules.length; i--) {
+          const fewer: string[] = mods.filter((_, k) => k !== i);
+          if (cpuFit(cpu, fewer, need).ok) mods = fewer;
+        }
+        return mods;
+      }
+    }
     const mods = addForSignals(cpu, suggestModules(platform, cpuId, need), need, platform.modules, 32);
     return mods && cpuFit(cpu, mods, need).ok ? mods : null;
   }

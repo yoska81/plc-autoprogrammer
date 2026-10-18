@@ -81,7 +81,13 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
               <p className="font-medium">Not converted — you'll be asked what each one does:</p>
               <ul className="list-disc ml-5 mt-1 text-xs space-y-0.5">
                 {r.notConverted.map((n, i) => (
-                  <li key={i}><code>{n.text}</code> — {n.where}{n.kept ? ' (kept as it was: it goes back into the PLC, the simulator skips it)' : ' (left out)'}</li>
+                  <li key={i}>
+                    {/* A block kept whole is its whole source: its first line here, the rest on a click. */}
+                    {n.text.includes('\n')
+                      ? <details className="inline"><summary className="inline cursor-pointer"><code>{n.text.split('\n')[0]}</code> … ({n.text.split('\n').length} lines)</summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-white/70 p-1 text-[11px]">{n.text}</pre></details>
+                      : <code>{n.text}</code>}
+                    {' '}— {n.where}{n.kept ? ' (kept as it was: it goes back into the PLC, the simulator skips it)' : ' (left out)'}
+                  </li>
                 ))}
               </ul>
             </div>

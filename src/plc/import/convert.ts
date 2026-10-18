@@ -11,7 +11,7 @@ import type { CpuModel, ModuleSlot, PlcProfile } from '../core/profile';
 import { resolveAddresses } from '../core/profile';
 import { siemensAddress, siemensAnalogChannels } from '../core/profiles/siemens';
 import { logixAnalogChannels, logixIoTag } from '../core/profiles/logix';
-import type { AnalogRange } from '../../types/io';
+import type { AnalogRange, IOCategory } from '../../types/io';
 import type { IOPoint } from '../../types/io';
 import type { ForeignProgram, ForeignTag, ImportedIoPoint, ImportedProgram, ImportReport } from './types';
 import { slug } from './l5x';
@@ -272,6 +272,27 @@ export function pretty(name: string): string {
  * analog channel register) and every "@IN:n" / "@OUT:n" in the program is replaced.
  */
 /**
+ * I/O list category of an imported point from its name and description (Start_PB → Operator/HMI, Box_PE → Product
+ * Detection). A point the words do not place is Station 1, never Spare (Spare means an unused terminal).
+ */
+export function importedCategory(text: string, analog: boolean): IOCategory {
+  const t = text.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_.:[\]]+/g, ' ');
+  const rules: [RegExp, IOCategory][] = [
+    [/e[-\s]?stop|emergency|safety|light curtain|guard|\bdoor\b|interlock|safe torque|\bsto\b/i, 'Safety'],
+    [/\bstart\b|\bstop\b|reset|push ?button|\bpb\b|selector|\bmode\b|\bauto\b|\bmanual\b|\bjog\b|lamp|\blight\b|horn|buzzer|beacon|stack|\bhmi\b|panel/i, 'Operator/HMI'],
+    [/vacuum|suction/i, 'Vacuum'],
+    [/servo|\baxis\b|encoder|\bvfd\b|\bdrive\b|inverter/i, 'Servo/Axis'],
+    [/conveyor|\bbelt\b|\bconv\b/i, 'Conveyor'],
+    [/valve|\bsv\b|solenoid|cylinder|pusher|clamp|\bgate\b|\bair\b|pneumatic|extend|retract/i, 'Pneumatic'],
+    [/photo|\bpe\b|\beye\b|present|detect|\bcount\b|prox|\bpx\b|sensor|\bls\b|limit/i, 'Product Detection'],
+    [/upstream|downstream|external|handshake|interface|from line|to line|\bready\b/i, 'External Machine'],
+    [/level|pressure|temp|flow|transmitter|torque|weight|speed ref/i, 'Analog/Process'],
+  ];
+  if (analog) return 'Analog/Process';
+  return rules.find(([re]) => re.test(t))?.[1] ?? 'Station 1';
+}
+
+/**
  * Signal range of an imported analog point: as its description or tag comment says ("0-10 V", "4…20 mA", "0-20 mA",
  * a thermocouple); an S7-1200 onboard input word (%IW64 / %IW66) is 0–10 V (the CPU's inputs take nothing else).
  * Otherwise 4–20 mA, the usual transmitter signal, `assumed` (asked, and shown "to check" in the I/O list).
@@ -335,7 +356,7 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   const full = /logix|allen-bradley|rockwell/i.test(`${imp.source.vendor} ${imp.source.format}`) || /^l5[xk]$/.test(imp.source.format) ? 32767 : 27648;
   const points: IOPoint[] = imp.io.map((p) => ({
     id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++o).padStart(3, '0')}`,
-    description: p.description, type: p.type, category: 'Spare',
+    description: p.description, type: p.type, category: importedCategory(`${p.name} ${p.description}`, p.analog),
     ...(p.analog ? (() => { const r = importedRange(p.original, p.description); return { signal: 'analog' as const, analog: { range: r.range, min: 0, max: full, units: 'raw counts', ...(r.assumed ? { assumed: true } : {}) } }; })() : {}),
     // A CLICK program going back on a CLICK keeps its terminals (X001 stays X001, gaps included); an S7
     // program keeps its %I / %Q bits (%Q0.2 stays %Q0.2).

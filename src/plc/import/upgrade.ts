@@ -99,11 +99,6 @@ export function chooseCpu(profile: PlcProfile, need: Need): { cpuId: string; mod
 /** "%IX1.0" / "%I1.0" / "I1.0" → byte and bit of an S7 digital address, or null. */
 const s7Bit = (a: string) => { const m = /^%?([IQ])X?(\d+)\.([0-7])$/i.exec(a.trim()); return m ? { area: m[1].toUpperCase(), index: Number(m[2]) * 8 + Number(m[3]) } : null; };
 
-/**
- * The original program's own CPU, when it goes back on the same family: the CPU the file names ("CPU 1214C",
- * "1769-L33ER", an order number), else (S7) the smallest CPU whose onboard I/O holds every original %I / %Q bit, so
- * the addresses stay as they were. null = no such CPU in the app's list (the general choice applies).
- */
 /** The I/O modules of the original rack as catalog numbers, in slot order ("1769-IQ16/A" → "1769-IQ16"). */
 const fileModules = (imp: ImportedProgram) => (imp.source.modules ?? []).map((m) => m.catalog.replace(/\/[A-Z]$/i, '').toUpperCase());
 
@@ -111,12 +106,16 @@ const fileModules = (imp: ImportedProgram) => (imp.source.modules ?? []).map((m)
 const cpuKey = (controller: string) => /\b(6ES7[\w-]+|\d{4}-[A-Z]\w*(?:-[A-Z0-9]+)*|1[25]\d\d[A-Z]*)\b/i.exec(controller)?.[1] ?? '';
 const matchesCpu = (c: PlcProfile['cpuModels'][number], key: string) => c.id.toUpperCase() === key.toUpperCase() || new RegExp(`(^|[^\\w])${key}([^\\w]|$)`, 'i').test(c.label);
 
+/**
+ * The original program's own CPU, when it goes back on the same family: the CPU the file names ("CPU 1214C",
+ * "1769-L33ER", an order number), else (S7) the smallest CPU whose onboard I/O holds every original %I / %Q bit, so
+ * the addresses stay as they were. null = no such CPU in the app's list (the general choice applies).
+ */
 export function originalCpu(profile: PlcProfile, imp: ImportedProgram): { cpuId: string; modules: string[] } | null {
   // Order numbers the file states (CPU and modules): the CPU among them, and its modules to start from.
   // Catalog numbers in full, multi-part ones included (1769-L24ER-QBFC1B, 6ES7214-1AG40-0XB0).
   const orders = [...imp.source.controller.matchAll(/\b6ES7[\w-]+|\b\d{4}-[A-Z]\w*(?:-[A-Z0-9]+)*/gi)].map((m) => m[0].toUpperCase());
   const named = profile.cpuModels.find((c) => orders.includes(c.id.toUpperCase()));
-  // The file's own modules; never 1769 Compact I/O after a 1769-L1 (it expands with 1734 POINT I/O).
   // The file's own modules (the L5X rack by slot, else order numbers it names); never 1769 Compact I/O after a
   // 1769-L1 (it expands with 1734 POINT I/O).
   const fromFile = fileModules(imp);

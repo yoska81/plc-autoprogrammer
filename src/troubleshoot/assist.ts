@@ -8,7 +8,7 @@
  *   (field cable, series contacts, fuses, the kind of device; the maker's causes from Dev 1's deviceFaults when the
  *   device's part is known) and by what the project's fault log found there before.
  * - With a key, the AI may only choose among the rule answers (a point and symptom from the list, an order of the
- *   same causes) or reword a step; a rewording that loses a reading, terminal, wire number or warning is dropped.
+ *   same causes). It never rewords a step: the steps are shown and spoken as the rules wrote them.
  * Types are the parts of Debug 4's WiringPath / Step / FaultLogEntry this reads (structurally the same).
  */
 
