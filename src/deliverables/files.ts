@@ -22,6 +22,7 @@ import { driveParamsCsv } from '../electrical/vfd';
 import { analogSetup, analogSetupCsv } from '../plc/core/analog';
 import { moduleSlots } from '../plc/core/modules';
 import { clickNicknameCsv, clickRungListing } from '../plc/core/clickExport';
+import { clickEntrySheetHtml } from '../plc/core/clickEntrySheet';
 import { buildExcelReport } from './excelReport';
 import { buildEngineeringPdf } from './engineering';
 import { cabinetPng } from '../electrical/render/renderToPng';
@@ -156,6 +157,7 @@ export function programFiles(p: ProjectSnapshot): { name: string; content: strin
     ];
   }
   return [
+    { name: `${p.fileBase}_CLICK_entry_sheet.html`, content: clickEntrySheetHtml(p.ladder, new Map([...p.ladder.tags.map((t) => [t.address.toUpperCase(), t.nickname.replace(/_/g, ' ')] as const), ...p.labels]), header, [`CPU ${p.cpu.id}`, ...p.modules.map((m, k) => `slot ${k + 1}: ${m}`)]) },
     { name: `${p.fileBase}_rungs.txt`, content: clickRungListing(p.ladder, p.labels, header) },
     { name: `${p.fileBase}_nicknames.csv`, content: clickNicknameCsv(p.ladder, p.io, p.addresses, hmiTags) },
     { name: `${p.fileBase}_program.json`, content: JSON.stringify(p.ladder, null, 2) },
