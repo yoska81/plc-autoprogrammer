@@ -271,7 +271,7 @@ function reply(system) {
   check(await page.getByLabel('Description of I001').inputValue() === 'Own proximity sensor', 'own project back after switching');
   await page.goto(BASE + '/#/project');
   const recover = page.locator('section', { hasText: 'Recover saved work' });
-  const backupRow = recover.locator('tr', { hasText: 'Before the example project was updated' }).filter({ hasText: 'My Own Cell' }).first();
+  const backupRow = recover.locator('[data-saved-work]', { hasText: 'Before the example project was updated' }).filter({ hasText: 'My Own Cell' }).first();
   await backupRow.waitFor();
   log('Backup listed:', (await backupRow.innerText()).replace(/\s+/g, ' ').slice(0, 120));
   await backupRow.getByRole('button', { name: 'Open as new project' }).click();
