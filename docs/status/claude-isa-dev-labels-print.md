@@ -345,4 +345,4 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
 - **Gaps left:**
   - Only the TLP motors without a shaft seal (option A) are in the catalog; the S variants are not.
   - Measuring wheels and cables have no IP rating, because their makers give none.
-- **Swap picker:** compareStrength now refuses a power supply with a different input class. A 90-264 VAC supply is no longer "Equivalent" to a 480 V 3-phase one. A 200-500 V L-L supply (ABL8RPS) may stand in for a 1-phase or 3-phase one, but not the reverse. The cross-reference key carries the same input class (crossref.ts / strength.ts supplyInputClass).
+- **Swap picker:** compareStrength now refuses a power supply with a different input class, and a candidate whose AC input range does not hold `StrengthContext.feedVolts` (Dev 4 passes the PS feed from the picker). A 90-264 VAC supply is no longer "Equivalent" to a 480 V 3-phase one. A 200-500 V L-L supply (ABL8RPS) may stand in for a 1-phase or 3-phase one, but not the reverse. The cross-reference key carries the same input class (crossref.ts / strength.ts supplyInputClass).
