@@ -1,7 +1,8 @@
 /**
  * The user's roll former (cn-rollformer-01) as converted from its relay drawings: Debug 1's
- * convertMachine(normalizeMachine(CN_ROLLFORMER_01_READING)).io at claude/isa-debug-app 8250d4f + ad141d3 (E-stops and guard on
- * the safety relay, Safety OK into the PLC, the KT1 cut watchdog as "(watchdog 2 s)"; the measuring-wheel encoder on the servo's CN5 is not a PLC point). Addresses are the drawn ones;
+ * convertMachine(normalizeMachine(CN_ROLLFORMER_01_READING)).io at claude/isa-debug-app ad141d3 (E-stops and guard on
+ * the safety relay, Safety OK into the PLC, the KT1 cut watchdog as "(watchdog 2 s)", the U2 CN5 encoder left with the
+ * drive). src/convert/rollformerProgram.test.ts keeps it equal to the converter's output. Addresses are the drawn ones;
  * the app reassigns PLC addresses on import, so only description / type / category / deviceType are used.
  */
 import type { IOCategory } from '../../../types/io';
