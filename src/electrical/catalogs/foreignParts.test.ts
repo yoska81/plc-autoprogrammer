@@ -32,7 +32,7 @@ for (const [pn, p] of Object.entries(FOREIGN_PART_DATA)) {
   if (!p.ul.trim()) bad.push(`${pn}: UL status missing (use the maker's wording or 'CCC/CE only (no UL)')`);
   const d = p.drawn;
   for (const [k, v] of Object.entries(d)) if (typeof v === 'number' && !(Number.isFinite(v) && v > 0)) bad.push(`${pn}: ${k} = ${v}`);
-  if (d.coilVoltage !== undefined && !/^\d+(-\d+)?V(AC|DC|AC\/DC)$/.test(d.coilVoltage)) bad.push(`${pn}: coilVoltage '${d.coilVoltage}' (write like '220VAC')`);
+  if (d.coilVoltage !== undefined && !/^\d+([-/]\d+)?V(AC|DC|AC\/DC)$/.test(d.coilVoltage)) bad.push(`${pn}: coilVoltage '${d.coilVoltage}' (write like '220VAC')`);
   if (d.curve !== undefined && !/^[BCDKZ]$/.test(d.curve)) bad.push(`${pn}: curve '${d.curve}'`);
   if (d.minAmps !== undefined && d.maxAmps !== undefined && d.minAmps >= d.maxAmps) bad.push(`${pn}: range ${d.minAmps}-${d.maxAmps} A`);
   if (p.category === 'contactor' && !(d.amps && d.poles)) bad.push(`${pn}: contactor needs amps and poles`);
