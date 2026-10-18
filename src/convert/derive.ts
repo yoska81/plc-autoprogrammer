@@ -10,9 +10,28 @@ import { callClaude } from '../lib/ai/anthropic';
 import { CATEGORIES, DEVICE_TYPES, IO_CATEGORIES, fileToBlock } from '../lib/ai/importAI';
 import { SPEC_SECTIONS, type SpecSectionId } from '../spec/types';
 import { cadToText, dwgToEntities, dxfToText } from './dxf';
+import { desktopBridge } from '../desktop/bridge';
 import type { DrawnRatings, ExistingMachine } from './types';
 
 export const MAX_UPLOAD_FILES = 20;
+
+/** Where the free ODA File Converter is downloaded (Open Design Alliance). */
+export const ODA_DOWNLOAD = 'https://www.opendesign.com/guestfiles/oda_file_converter';
+
+/** A DWG as text: the Windows app converts it with the ODA File Converter; else a plugged-in reader; else how to export it. */
+async function dwgText(f: File): Promise<string> {
+  const oda = desktopBridge()?.oda;
+  if (oda?.toDxf) {
+    const r = await oda.toDxf([{ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }]);
+    if (r.ok) return dxfToText(r.files[0].text, f.name);
+    if (!('notInstalled' in r && r.notInstalled)) throw new Error(`${f.name}: ${r.error}`);
+  }
+  const entities = await dwgToEntities(await f.arrayBuffer());
+  if (entities) return cadToText(entities, f.name);
+  throw new Error(oda
+    ? `${f.name}: reading DWG needs the free ODA File Converter (${ODA_DOWNLOAD}). Install it and read again, or export the drawings to DXF or PDF in the CAD program.`
+    : `${f.name}: DWG files can't be read in the browser. In the CAD program, export the drawings to DXF (File → Save As → DXF) or print them to PDF, or use the Windows app with the free ODA File Converter.`);
+}
 
 /** File types the upload takes (the file picker's accept list). */
 export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,application/pdf,image/*';
@@ -23,12 +42,7 @@ export async function readUpload(files: File[]): Promise<Anthropic.Beta.Messages
   const out: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
   for (const f of files) {
     const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-    if (ext === 'dwg') {
-      // read by a plugged-in DWG reader when there is one (src/convert/dxf.ts setDwgReader)
-      const entities = await dwgToEntities(await f.arrayBuffer());
-      if (!entities) throw new Error(`${f.name}: DWG files can't be read here. In the CAD program, export the drawings to DXF (File → Save As → DXF) or print them to PDF, and upload that.`);
-      out.push({ type: 'text', text: cadToText(entities, f.name) });
-    } else if (ext === 'dxf') out.push({ type: 'text', text: dxfToText(await f.text(), f.name) });
+    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f) }); else if (ext === 'dxf') out.push({ type: 'text', text: dxfToText(await f.text(), f.name) });
     else out.push(await fileToBlock(f));
   }
   return out;

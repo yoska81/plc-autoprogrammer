@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { Link } from 'react-router-dom';
 import { Spinner } from '../components/common';
@@ -9,7 +9,9 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useDraft } from '../store/useDraftStore';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 import { regionSpec, SUPPLY_INFO } from '../standards/regions';
-import { deriveFromUpload, MAX_UPLOAD_FILES, UPLOAD_ACCEPT } from './derive';
+import { deriveFromUpload, MAX_UPLOAD_FILES, ODA_DOWNLOAD, UPLOAD_ACCEPT } from './derive';
+import { desktopBridge } from '../desktop/bridge';
+import { hasDwgReader } from './dxf';
 import { READ_KEY, setReading, type Reading } from './reading';
 import { Step } from './ReviewAndConvert';
 
@@ -19,6 +21,23 @@ const useUploadFiles = create<{ byProject: Record<string, File[]>; set: (project
   set: (projectId, files) => set((s) => ({ byProject: { ...s.byProject, [projectId]: files } })),
 }));
 const NO_FILES: File[] = [];
+
+/** How DWG files are read here: the ODA File Converter in the Windows app (found or how to install it), else export. */
+function DwgStatus() {
+  const oda = desktopBridge()?.oda;
+  const [found, setFound] = useState<boolean | null>(null);
+  useEffect(() => { if (oda?.toDxf) void oda.detect().then((r) => setFound(r.found)).catch(() => setFound(false)); }, [oda]);
+  if (hasDwgReader()) return <p className="text-xs text-steel-500" data-testid="dwg-status">DWG files are read directly.</p>;
+  if (!oda?.toDxf) return <p className="text-xs text-steel-500" data-testid="dwg-status">DWG: export the drawings to DXF or PDF in the CAD program, or use the Windows app, which reads DWG with the free ODA File Converter.</p>;
+  if (found === null) return null;
+  return found
+    ? <p className="text-xs text-emerald-700" data-testid="dwg-status">DWG files are read with the ODA File Converter installed on this PC.</p>
+    : (
+      <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900" data-testid="dwg-status">
+        <b>To read DWG files, install the free ODA File Converter</b> (Open Design Alliance): <a href={ODA_DOWNLOAD} target="_blank" rel="noreferrer" className="underline">download it here</a>, choose the Windows installer, install it, then come back and read the drawings. Without it: export the drawings to DXF or PDF in the CAD program.
+      </div>
+    );
+}
 
 /**
  * Import → Drawings: upload an existing machine's electrical drawings (PDF, scans, images, DXF; DWG through
@@ -57,7 +76,8 @@ export default function DrawingsImport() {
   return (
     <div className="max-w-6xl">
       <Step n={1} title="Upload the drawings" testid="convert-upload">
-        <p className="text-xs text-steel-500">PDF (also scans), photos or images of the sheets, and DXF exports from the CAD program. Chinese, IEC and GB drawings are fine.</p>
+        <p className="text-xs text-steel-500">PDF (also scans), photos or images of the sheets, and DXF / DWG files from the CAD program. Chinese, IEC and GB drawings are fine.</p>
+        <DwgStatus />
         <div className="flex flex-wrap items-center gap-3">
           <label className="cursor-pointer rounded border border-steel-300 bg-white px-3 py-1.5 text-sm hover:bg-steel-50">
             Add files…

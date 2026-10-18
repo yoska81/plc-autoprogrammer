@@ -21,7 +21,7 @@ export default function ImportPage() {
           The app reads the existing machine, writes its description, converts it to the project's standard and rebuilds the design, keeping everything the machine does. You check every reading before anything is built.
         </p>
         <p className="mt-1 text-xs text-steel-600" data-testid="import-limits">
-          <b>Can be read:</b> PDF drawings and printouts (also scans), photos of the sheets, DXF exports. <b>Can't be read:</b> DWG files (export them to DXF or PDF) and locked native PLC projects — Siemens .ap*, Mitsubishi .gx3 / .gxw, Delta binary projects, CLICK .ckp, Allen-Bradley .ACD. Export those (e.g. L5X, symbol table CSV) or print them to PDF.
+          <b>Can be read:</b> PDF drawings and printouts (also scans), photos of the sheets, DXF exports, and DWG files in the Windows app with the free ODA File Converter. <b>Can't be read:</b> DWG in the browser (export to DXF or PDF) and locked native PLC projects — Siemens .ap*, Mitsubishi .gx3 / .gxw, Delta binary projects, CLICK .ckp, Allen-Bradley .ACD. Export those (e.g. L5X, symbol table CSV) or print them to PDF.
         </p>
       </header>
       <nav className="flex gap-1 border-b border-steel-200 bg-white px-4" aria-label="Import from">

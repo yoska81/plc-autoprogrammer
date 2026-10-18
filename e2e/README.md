@@ -83,8 +83,9 @@ npx tsx src/convert/convert.test.ts                        # DXF text, foreign p
 
 The acceptance case `roll-former.dxf` mirrors a real drawing a user sent (a DWG): a roll-forming machine with a 5.5 kW
 VFD and a 1.5 kW servo flying shear, six A3 sheets side by side in model space, MTEXT with SimSun codes. A DWG is read
-only through a plugged-in reader (`setDwgReader` in `src/convert/dxf.ts`; none is bundled), otherwise the upload asks
-for DXF or PDF. The mocked AI answer is `src/convert/__fixtures__/rollFormer.ts`.
+in the Windows app through the installed (free) ODA File Converter (`electron/oda.cjs` `toDxf`: DWG → DXF → `dxf.ts`), or
+through a plugged-in in-browser reader (`setDwgReader` in `src/convert/dxf.ts`; none is bundled). Otherwise the upload
+links the ODA download and asks for DXF or PDF. The mocked AI answer is `src/convert/__fixtures__/rollFormer.ts`.
 
 The sample set is a Chinese-style sorting conveyor (Mitsubishi FX3U, CHINT / Delixi parts, 380 V 50 Hz, 220 VAC
 coils, single-channel E-stop). The mocked AI answers with `src/convert/__fixtures__/chineseConveyor.ts`, which
