@@ -125,8 +125,9 @@ function reply(text) {
     useSpecStore.getState().setSections({ ...EMPTY_SECTIONS, overview: spec });
   }, { spec: SPEC });
   await page.goto(BASE + '/#/spec');
-  await page.waitForTimeout(1000);
   const banner = page.getByTestId('start-clean');
+  // Wait for the banner itself (a fixed wait failed under load). Needs the PREVIEW build (see the header).
+  await banner.waitFor({ timeout: 20000 });
   log('Banner:', (await banner.innerText()).replace(/\s+/g, ' ').slice(0, 200));
   await banner.getByRole('button', { name: 'Start clean from my description' }).click();
   await banner.getByLabel('Make it again from the description').check();

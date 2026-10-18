@@ -526,8 +526,9 @@ async function journey(browser, mc) {
     if (await ds.count()) {
       const box = ds.locator('input');
       if (await box.count()) {
-        await box.first().fill('42'); await ds.getByRole('button', { name: 'Write' }).click(); await page.waitForTimeout(800);
-        if (!plc.state.log.some((l) => l.fc === 6 && l.value === 42)) problem(mc.key, 'online', 'DS write 42 not sent');
+        // A value inside the project's range for it (setpoints carry the program's first-scan limits, e.g. 1–30).
+        await box.first().fill('5'); await ds.getByRole('button', { name: 'Write' }).click(); await page.waitForTimeout(800);
+        if (!plc.state.log.some((l) => l.fc === 6 && l.value === 5)) problem(mc.key, 'online', `DS write 5 not sent (${(await page.locator('[role="alert"], .text-red-700').allInnerTexts()).join(' | ').slice(0, 160)})`);
         // A value the register cannot hold is refused with a plain message and never sent clamped.
         const sent = plc.state.log.filter((l) => l.fc === 6).length;
         await box.first().fill('70000'); await ds.getByRole('button', { name: 'Write' }).click(); await page.waitForTimeout(500);
