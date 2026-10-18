@@ -48,9 +48,13 @@ export function convertedSpec(m: ExistingMachine, conv: Conversion): SpecSection
   return spec;
 }
 
-/** Write the machine into the open project (replaces its description, I/O list and motors). */
-export function applyExistingMachine(m: ExistingMachine, conv: Conversion, reviewQuestions: SyncItem[] = []) {
-  applyRegion(conv.target.region);
+/**
+ * Write the machine into the open project (replaces its description, I/O list and motors).
+ * descriptionOnly: write only the description and the questions, for a flow that already wrote the I/O,
+ * PLC and program itself (the program import, src/plc/import/).
+ */
+export function applyExistingMachine(m: ExistingMachine, conv: Conversion, reviewQuestions: SyncItem[] = [], opts: { descriptionOnly?: boolean } = {}) {
+  if (!opts.descriptionOnly) applyRegion(conv.target.region);
   useSpecStore.getState().setSections(convertedSpec(m, conv));
   const projectId = useProjectsStore.getState().activeId;
   // their own source (the description page's checklist re-syncs 'spec'), kept with the project for the global registration
@@ -61,6 +65,7 @@ export function applyExistingMachine(m: ExistingMachine, conv: Conversion, revie
   ];
   useDraftStore.getState().setDraft(QUESTIONS_KEY, questions);
   useQuestionStore.getState().sync(projectId, 'drawings', questions);
+  if (opts.descriptionOnly) { keepMachine(m, conv.target); return; }
   // The original I/O, by function: addresses are assigned again for the new PLC.
   useIOStore.getState().importPoints(m.io.map((p) => ({ description: p.description, type: p.type, category: p.category, deviceType: p.deviceType })), true);
   const el = useElectricalStore.getState();

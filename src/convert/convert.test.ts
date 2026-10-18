@@ -252,6 +252,16 @@ await test('roll former applied: recommendations in the description, axis and E-
   assert.equal(kept.find((k) => /Cutter down and cutter up/.test(k.original))!.status, 'kept');
 });
 
+await test('description only (the program import wrote the I/O): the I/O list and motors are left alone', () => {
+  seedSampleProject();
+  const ioBefore = useIOStore.getState().projectIO.map((p) => p.description);
+  const motorsBefore = useElectricalStore.getState().inputs.motors;
+  applyExistingMachine(CHINESE_CONVEYOR, convertMachine(CHINESE_CONVEYOR), [], { descriptionOnly: true });
+  assert.deepEqual(useIOStore.getState().projectIO.map((p) => p.description), ioBefore);
+  assert.deepEqual(useElectricalStore.getState().inputs.motors, motorsBefore);
+  assert.match(useSpecStore.getState().sections.overview, /Sorting conveyor/);
+});
+
 await test('I/O descriptions match by function words', () => {
   assert.ok(similarity('Start (启动)', 'Start pushbutton') >= 0.5);
   assert.ok(similarity('Pusher extended limit (推出到位)', 'Pusher retracted limit') < 1);
