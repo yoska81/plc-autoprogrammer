@@ -33,7 +33,7 @@ export interface ServoAxisModel {
 }
 
 const ROLE_LABEL: Record<ServoRole, string> = {
-  pulse: '/PULSE (pulse)', direction: '/SIGN (direction)', enable: 'DI1 SON (servo on)', reset: 'DI5 ARST (alarm reset)',
+  pulse: '/PULSE (pulse)', direction: '/SIGN (direction)', enable: 'DI1 SON (servo on)', reset: 'DI5 ARST (alarm reset)', cam: 'DI (E-CAM engage: assign the DI function in the drive)',
   ready: 'DO1 SRDY (servo ready)', alarm: 'DO5 ALRM (servo alarm)', inPosition: 'DO4 TPOS (in position)', homed: 'DO3 HOME (homing done)', zeroSpeed: 'DO2 ZSPD (zero speed)',
 };
 

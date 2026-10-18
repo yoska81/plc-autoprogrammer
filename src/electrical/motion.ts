@@ -41,7 +41,7 @@ const kind = (p: CatalogPart) => String(p.ratings.kind ?? '');
 // ---------------------------------------------------------------------------------------------------------
 // Which I/O points are motion points
 
-export type ServoRole = 'pulse' | 'direction' | 'enable' | 'reset' | 'ready' | 'alarm' | 'inPosition' | 'homed' | 'zeroSpeed';
+export type ServoRole = 'pulse' | 'direction' | 'enable' | 'reset' | 'cam' | 'ready' | 'alarm' | 'inPosition' | 'homed' | 'zeroSpeed';
 
 const SERVO_RE = /\bservo\b|\baxis\s*\d+\b/i;
 /** Axis limit / home sensors are field sensors (the device rules wire them), not drive signals. */
@@ -56,6 +56,8 @@ export function servoRole(p: Pick<IOPoint, 'type' | 'description'>): ServoRole |
     if (/\b(direction|dir|sign)\b/i.test(d)) return 'direction';
     if (/\b(reset|arst)\b/i.test(d)) return 'reset';
     if (/\b(servo on|enable|son)\b/i.test(d)) return 'enable';
+    // Electronic cam / gear engage ("U2 DI7 CAM engage"): the drive follows its master encoder while it is on.
+    if (/\b(e-?cam|cam|gear\w*|sync\w*)\b/i.test(d)) return 'cam';
     return null;
   }
   if (/\b(alarm|fault|alrm)\b/i.test(d)) return 'alarm';
