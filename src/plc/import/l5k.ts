@@ -55,7 +55,9 @@ function readTags(section: string, comments: Map<string, string>): ForeignTag[] 
   return out;
 }
 
-export function readL5k(src: string): ForeignProgram {
+export function readL5k(input: string): ForeignProgram {
+  // Windows exports are CRLF: read as LF lines.
+  const src = input.replace(/\r\n?/g, '\n');
   const text = src.replace(/\r\n?/g, '\n');
   const ctrl = /CONTROLLER\s+([A-Za-z_]\w*)\s*\(([\s\S]*?)\)\s*\n/.exec(text);
   if (!ctrl) throw new Error('This is not a Studio 5000 .L5K file (no CONTROLLER).');

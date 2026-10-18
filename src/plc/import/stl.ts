@@ -166,7 +166,9 @@ export function convertStlNetwork(lines: string[]): Driven[] | null {
 const value = (v: string) => v.replace(/^[+]/, '').replace(/^L#/, '');
 
 /** STL source → program (blocks → routines, networks → rungs). */
-export function readStlSource(src: string): ForeignProgram {
+export function readStlSource(input: string): ForeignProgram {
+  // Windows exports are CRLF: read as LF lines.
+  const src = input.replace(/\r\n?/g, '\n');
   const text = src.replace(/\r\n?/g, '\n');
   const tags: ForeignTag[] = stVariables(text);
   const routines: ForeignRoutine[] = [];

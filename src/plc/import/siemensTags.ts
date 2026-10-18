@@ -11,7 +11,9 @@ export interface SiemensTag { name: string; address: string; type: string; comme
 
 const isAddress = (s: string) => /^%?[IQM][XBWD]?\d+(\.\d)?$/i.test(s.replace(/\s+/g, ''));
 
-export function readSiemensTags(text: string): SiemensTag[] {
+export function readSiemensTags(input: string): SiemensTag[] {
+  // Windows exports are CRLF: read as LF lines.
+  const text = input.replace(/\r\n?/g, '\n');
   const t = text.replace(/^\uFEFF/, '');
   const rows = t.includes(';') && !t.split(/\r?\n/)[0].includes(',') ? gxRows(t.replace(/;/g, ',')) : gxRows(t);
   const head = rows.findIndex((r) => r.some((c) => /^Name$/i.test(c)) && r.some((c) => /Address/i.test(c)));

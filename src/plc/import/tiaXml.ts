@@ -148,7 +148,9 @@ function memberType(dt: string): ForeignType {
   return 'OTHER';
 }
 
-export function readTiaXml(src: string): ForeignProgram {
+export function readTiaXml(input: string): ForeignProgram {
+  // Windows exports are CRLF: read as LF lines.
+  const src = input.replace(/\r\n?/g, '\n');
   const doc = parseXml(src);
   const tags: ForeignTag[] = [];
   const routines: ForeignRoutine[] = [];

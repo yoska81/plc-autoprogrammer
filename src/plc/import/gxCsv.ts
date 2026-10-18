@@ -49,7 +49,8 @@ export const isGxProgram = (text: string) => /Step No\.?/i.test(text.slice(0, 20
 export const isGxComments = (text: string) => /Device Name/i.test(text.slice(0, 1000)) && /Comment/i.test(text.slice(0, 1000)) && !isGxProgram(text);
 
 /** "X0" → { tag: "Start_PB", comment: "Start pushbutton (NO)" } from "Start_PB: Start pushbutton (NO)". */
-export function gxComments(text: string): Map<string, { tag: string; comment: string }> {
+export function gxComments(input: string): Map<string, { tag: string; comment: string }> {
+  const text = input.replace(/\r\n?/g, '\n');
   const out = new Map<string, { tag: string; comment: string }>();
   const rows = gxRows(text);
   const head = rows.findIndex((r) => r.some((c) => /^Device Name$/i.test(c)));
@@ -102,7 +103,8 @@ function value(a: string): string {
   return a;
 }
 
-export function readGxCsv(programText: string, commentText = ''): ForeignProgram {
+export function readGxCsv(programInput: string, commentText = ''): ForeignProgram {
+  const programText = programInput.replace(/\r\n?/g, '\n');
   return runIl(instructions(gxRows(programText)), commentText ? gxComments(commentText) : null, {
     format: 'mitsubishi-csv', vendor: 'Mitsubishi', raw: VENDOR,
     noComments: 'No device comment file: add the device comment CSV (GX Works: Device Comment › Export to CSV) so the I/O gets its names and descriptions.',
@@ -321,7 +323,8 @@ export function ilInstructions(text: string): { name: string; module: string; li
 }
 
 /** Device comments as a list: "X0  Start_PB: Start pushbutton" (tab, comma or spaces); a header row is skipped. */
-export function ilComments(text: string): Map<string, { tag: string; comment: string }> {
+export function ilComments(input: string): Map<string, { tag: string; comment: string }> {
+  const text = input.replace(/\r\n?/g, '\n');
   const out = new Map<string, { tag: string; comment: string }>();
   for (const r of gxRows(text.replace(/^([A-Z]+\d+)[ ]{2,}/gm, '$1\t'))) {
     const dev = (r[0] ?? '').toUpperCase();
@@ -338,7 +341,8 @@ export function ilComments(text: string): Map<string, { tag: string; comment: st
 
 export const isIlComments = (text: string) => !isIlText(text) && ilComments(text).size >= 2;
 
-export function readIlText(programText: string, commentText = ''): ForeignProgram {
+export function readIlText(programInput: string, commentText = ''): ForeignProgram {
+  const programText = programInput.replace(/\r\n?/g, '\n');
   const brand = ilBrand(programText);
   const prog = ilInstructions(programText);
   const header = /(?:PLC|CPU|Model)\s*[:=]\s*(\S+)/i.exec(programText.slice(0, 2000));

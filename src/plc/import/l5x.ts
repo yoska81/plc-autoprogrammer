@@ -116,7 +116,9 @@ export function wholeRung(text: string, comment: string, id: string): Rung {
   return { id, comment, branches: [], outputs: [{ type: 'RAW', vendor: 'logix', text: text.replace(/;\s*$/, '') }] };
 }
 
-export function readL5x(src: string): ForeignProgram {
+export function readL5x(input: string): ForeignProgram {
+  // Windows exports are CRLF: read as LF lines.
+  const src = input.replace(/\r\n?/g, '\n');
   const doc = parseXml(src);
   const content = kid(doc, 'RSLogix5000Content');
   if (!content) throw new Error('This is not a Studio 5000 .L5X file (no RSLogix5000Content).');
