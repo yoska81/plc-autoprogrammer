@@ -756,6 +756,16 @@ await test('safety-rated parts: a safety function never gets an unverified part 
   assert.ok(!isSafetyRated({ ...p0, category: 'relay', description: 'Control relay 2 C/O', ratings: { coilVoltage: '24VDC' } }));
 });
 
+await test('cn-rollformer-01: the measuring-wheel encoder on the servo\'s CN5 stays with the drive (not a PLC input or counter)', () => {
+  const m = normalizeMachine(CN_ROLLFORMER_01_READING);
+  const io = convertMachine(m).io;
+  assert.ok(!io.some((p) => p.deviceTag === 'B1' || /encoder/i.test(p.description)), 'B1 is the E-CAM\'s master, wired to U2 CN5');
+  assert.ok(['U2 ready (DO1)', 'U2 cut (DO3)', 'U2 alarm (DO5)'].every((d) => io.some((p) => p.type === 'input' && p.description === d)), 'the drive\'s own outputs stay PLC inputs');
+  // an encoder wired to the PLC itself (a high-speed input) stays a PLC point
+  const plcEnc = { ...m, io: [...m.io, { address: 'X0', description: 'Length encoder A (high-speed counter)', type: 'input' as const, category: 'Product Detection' as const, deviceTag: 'B9', deviceType: 'other' as const, confidence: 'high' as const, source: 'test' }] };
+  assert.ok(convertMachine(plcEnc).io.some((p) => p.deviceTag === 'B9'));
+});
+
 await test('safety relay sizing: one unit with enough outputs first, else a base + an expansion its maker lists (forUse)', () => {
   const part = (manufacturer: string, partNumber: string, description: string, ratings: Record<string, string | number>, family?: string): CatalogPart =>
     ({ id: partNumber, category: 'safetyRelay', manufacturer, partNumber, description, family, ratings, verified: true } as unknown as CatalogPart);
