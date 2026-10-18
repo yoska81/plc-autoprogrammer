@@ -168,8 +168,9 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   return (
     <div className="flex-1 flex overflow-hidden bg-steel-50">
       {/* Setup */}
-      <ResizablePane id="labels.setup" defaultSize={330} min={260} max={520} className="bg-white border-r border-steel-200 overflow-y-auto">
-        <div className="p-4 space-y-5">
+      {/* The pane's content scrolls inside it, so the resize handle stays put and never adds a sideways scroll. */}
+      <ResizablePane id="labels.setup" defaultSize={330} min={260} max={520} className="bg-white border-r border-steel-200 flex flex-col">
+        <div className="flex-1 min-h-0 overflow-y-auto"><div className="p-4 space-y-5">
           <Section title="1. Which labels">
             {LABEL_KINDS.map((k) => (
               <label key={k.kind} className="flex items-start gap-2 text-sm cursor-pointer" title={k.hint}>
@@ -324,7 +325,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
             {msg && <div role={msg.error ? 'alert' : 'status'} className={`text-xs rounded p-2 ${msg.error ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-brand-50 text-steel-800 border border-brand-200'}`}>{msg.text}</div>}
             <p className="text-xs text-steel-400">The label-printer PDF has one page per label and each page is exactly the label size, so Brady, Brother, Weidmüller and Phoenix Contact printer drivers print it 1:1. CSV / Excel import into Brady Workstation, P-touch Editor, M-Print PRO and PROJECT complete.</p>
           </Section>
-        </div>
+        </div></div>
       </ResizablePane>
 
       {/* Label list */}

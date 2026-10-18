@@ -138,8 +138,8 @@ export default function NewProjectPage() {
       </header>
 
       {/* Step indicator */}
-      <nav aria-label="Wizard steps" className="bg-white border-b border-steel-200 px-6">
-        <ol className="flex">
+      <nav aria-label="Wizard steps" className="bg-white border-b border-steel-200 px-4 sm:px-6 overflow-x-auto">
+        <ol className="flex min-w-max sm:min-w-0">
           {STEPS.map((label, i) => (
             <li key={label} className="flex-1">
               <button type="button" disabled={i > Math.max(step, reached) || (i > 0 && !created)} onClick={() => setStep(i)}

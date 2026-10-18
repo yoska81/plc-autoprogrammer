@@ -217,9 +217,9 @@ export default function App() {
       {/* Title bar */}
       <div className="h-9 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-3 gap-2" data-testid="title-bar">
         <span className="h-5 px-1 flex items-center bg-brand-600 text-white text-[10px] font-bold tracking-wider rounded-[3px]" aria-hidden>ISA</span>
-        <span className="font-semibold tracking-[0.14em] text-steel-900 text-sm" aria-label="ISA AUTO PROGRAMMER">AUTO PROGRAMMER</span>
+        <span className="font-semibold tracking-[0.14em] text-steel-900 text-sm whitespace-nowrap" aria-label="ISA AUTO PROGRAMMER">AUTO PROGRAMMER</span>
         <span className="mx-1 text-steel-300">|</span>
-        <span className="truncate text-steel-600 text-xs" data-testid="window-title">{projectName}{dirty ? ' *' : ''}</span>
+        <span className="min-w-0 truncate text-steel-600 text-xs" data-testid="window-title">{projectName}{dirty ? ' *' : ''}</span>
         {fileInfo?.name && <span className="truncate text-steel-400 text-xs">— {fileInfo.name}</span>}
       </div>
 

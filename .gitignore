@@ -51,6 +51,7 @@ e2e/out-hmi-looks/
 e2e/out-hmi-no-panel/
 e2e/out-hmi-motion/
 e2e/out-recover-list/
+e2e/out-phone/
 installer/
 e2e/out-walkthrough/
 .claude/worktrees/
