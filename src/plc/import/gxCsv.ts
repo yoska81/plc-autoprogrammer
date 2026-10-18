@@ -74,7 +74,7 @@ export function isTagName(s: string): boolean {
   return /^[A-Za-z_]\w{1,39}$/.test(s);
 }
 
-interface Instr { step: string; comment: string; op: string; args: string[] }
+export interface Instr { step: string; comment: string; op: string; args: string[] }
 
 function instructions(rows: string[][]): { name: string; module: string; list: Instr[] } {
   const head = rows.findIndex((r) => r.some((c) => /^Step No\.?$/i.test(c)));
@@ -103,8 +103,28 @@ function value(a: string): string {
 }
 
 export function readGxCsv(programText: string, commentText = ''): ForeignProgram {
-  const { name, module, list } = instructions(gxRows(programText));
-  const comments = commentText ? gxComments(commentText) : new Map<string, { tag: string; comment: string }>();
+  return runIl(instructions(gxRows(programText)), commentText ? gxComments(commentText) : null, {
+    format: 'mitsubishi-csv', vendor: 'Mitsubishi', raw: VENDOR,
+    noComments: 'No device comment file: add the device comment CSV (GX Works: Device Comment › Export to CSV) so the I/O gets its names and descriptions.',
+  });
+}
+
+export interface IlBrand {
+  format: ForeignProgram['format'];
+  vendor: string;
+  /** Vendor id of instructions kept as written (RAW). */
+  raw: string;
+  /** Note when there is no device comment file. */
+  noComments: string;
+}
+
+/**
+ * Instruction list (Mitsubishi / Delta / Inovance / Xinje, the same LD / AND / OR / ANB / ORB / MPS family)
+ * → rungs. `comments`: device → tag name and comment.
+ */
+export function runIl(prog: { name: string; module: string; list: Instr[] }, commentsIn: Map<string, { tag: string; comment: string }> | null, brand: IlBrand): ForeignProgram {
+  const { name, module, list } = prog;
+  const comments = commentsIn ?? new Map<string, { tag: string; comment: string }>();
   const notes: string[] = [];
   // Device → name in the program (the tag from the comment when it is unique, else the device itself).
   const tagCount = new Map<string, number>();
@@ -205,6 +225,13 @@ export function readGxCsv(programText: string, commentText = ''): ForeignProgram
         }
         continue;
       }
+      case 'TMR': case 'TMRH': { // Delta: TMR T0 K50 (100 ms timers; TMRH 10 ms)
+        const dev = args[0].toUpperCase();
+        const p = op === 'TMRH' && /^K\d+$/i.test(args[1] ?? '') ? { preset: String(Number(args[1].slice(1)) * 10), unit: 'ms' as const } : timerPreset(dev, args[1] ?? 'K0');
+        out({ type: 'TMR', address: n(dev), mode: 'ON_DELAY', preset: p.preset, unit: p.unit, accumulate: false, resetAddress: null });
+        continue;
+      }
+      case 'CNT': out({ type: 'CNT', address: n(args[0]), direction: 'UP', preset: operand(args[1] ?? 'K0'), resetAddress: null }); continue;
       case 'SET': out({ type: 'SET', address: n(args[0]) }); continue;
       case 'RST': out({ type: 'RST', address: n(args[0]) }); continue;
       case 'PLS': onRise({ type: 'OUT', address: n(args[0]) }); continue;
@@ -228,7 +255,7 @@ export function readGxCsv(programText: string, commentText = ''): ForeignProgram
       }
       default:
         // An instruction the ladder model has no form for: kept as written, in place.
-        out({ type: 'RAW', vendor: VENDOR, text: [op, ...args].join(' ') });
+        out({ type: 'RAW', vendor: brand.raw, text: [op, ...args].join(' ') });
     }
   }
   flush();
@@ -248,7 +275,72 @@ export function readGxCsv(programText: string, commentText = ''): ForeignProgram
     if (!used.has(d) && pre !== 'X' && pre !== 'Y') continue;
     tags.push({ name: used.get(d) ?? nameOf(d), dataType, comment: c?.comment ?? '', address: d, ...(pre === 'X' ? { io: 'input' as const } : pre === 'Y' ? { io: 'output' as const } : {}) });
   }
-  if (!commentText) notes.push('No device comment file: add the device comment CSV (GX Works: Device Comment › Export to CSV) so the I/O gets its names and descriptions.');
-  return { format: 'mitsubishi-csv', vendor: 'Mitsubishi', controller: module, projectName: name, tags, routines: [routine], notes };
+  if (!commentsIn) notes.push(brand.noComments);
+  return { format: brand.format, vendor: brand.vendor, controller: module, projectName: name, tags, routines: [routine], notes };
 }
 
+
+// ── Instruction list as text (Delta ISPSoft / WPLSoft, Inovance AutoShop, Xinje XDPPro, GX Developer) ──
+
+const IL_OP = /^(LD|LDI|LDP|LDF|AND|ANI|ANDP|ANDF|OR|ORI|ORP|ORF|ANB|ORB|MPS|MRD|MPP|INV|OUT|SET|RST|PLS|PLF|TMR|CNT|MOV|END|NOP|LD[=<>]+|AND[=<>]+|OR[=<>]+)\b/i;
+
+/** A plain-text instruction list: most lines are "[step] INSTRUCTION operands". */
+export function isIlText(text: string): boolean {
+  const lines = text.split(/\r?\n/).map((l) => l.replace(/^\s*\d+\s+/, '').trim()).filter((l) => l && !/^(;|\/\/|\*|\(\*)/.test(l));
+  if (lines.length < 3) return false;
+  return lines.filter((l) => IL_OP.test(l)).length / lines.length >= 0.7 && lines.some((l) => /^(OUT|SET|TMR)\b/i.test(l));
+}
+
+/** Brand of an instruction-list text from its header / instructions. */
+export function ilBrand(text: string): IlBrand {
+  const head = text.slice(0, 3000);
+  const note = (where: string) => `No device comment file: add the device comments (${where}) so the I/O gets its names and descriptions.`;
+  if (/ISPSoft|WPLSoft|DIADesigner|\bDVP|\bAS\d{3}|Delta/i.test(head) || /^\s*(\d+\s+)?TMR\b/im.test(text)) return { format: 'il-text', vendor: 'Delta', raw: 'delta', noComments: note('ISPSoft: Device Comment › Export') };
+  if (/AutoShop|Inovance|\bH[1-5]U\b|\bEasy\d/i.test(head)) return { format: 'il-text', vendor: 'Inovance', raw: 'inovance', noComments: note('AutoShop: Comment › Export') };
+  if (/Xinje|XDPPro|XCPPro|\bX[CDL]\d\b/i.test(head)) return { format: 'il-text', vendor: 'Xinje', raw: 'xinje', noComments: note('XDPPro: Comment › Export') };
+  return { format: 'il-text', vendor: 'Mitsubishi-style PLC', raw: VENDOR, noComments: note('the device comment list') };
+}
+
+/** Lines "[step] INSTR op op ; comment"; "; text" / "// text" / "* text" lines are the next rung's comment. */
+export function ilInstructions(text: string): { name: string; module: string; list: Instr[] } {
+  const list: Instr[] = [];
+  let pending = '', step = 0;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const c = /^(?:;|\/\/|\*|\(\*)\s*(.*?)\s*(?:\*\))?$/.exec(line);
+    if (c) { pending = c[1]; continue; }
+    const m = /^(?:(\d+)\s+)?([A-Z][A-Z0-9]*(?:[=<>]+[A-Z]?)?|[+\-*/])\s*(.*?)\s*(?:(?:;|\/\/)\s*(.*))?$/i.exec(line);
+    if (!m || (!IL_OP.test(m[2]) && !/^[A-Z][A-Z0-9]*$/i.test(m[2]) && !/^[+\-*/]$/.test(m[2]))) continue;
+    const st = m[1] ?? String(step);
+    step = Number(st) + 1;
+    list.push({ step: st, comment: pending, op: m[2].toUpperCase(), args: m[3] ? m[3].split(/[\s,]+/).filter(Boolean) : [] });
+    pending = '';
+  }
+  return { name: 'MAIN', module: '', list };
+}
+
+/** Device comments as a list: "X0  Start_PB: Start pushbutton" (tab, comma or spaces); a header row is skipped. */
+export function ilComments(text: string): Map<string, { tag: string; comment: string }> {
+  const out = new Map<string, { tag: string; comment: string }>();
+  for (const r of gxRows(text.replace(/^([A-Z]+\d+)[ ]{2,}/gm, '$1\t'))) {
+    const dev = (r[0] ?? '').toUpperCase();
+    if (!/^[A-Z]{1,3}\d+$/.test(dev)) continue;
+    const rest = r.slice(1).filter(Boolean);
+    if (!rest.length) continue;
+    // "Tag", "Comment" in two columns, or "Tag: comment" in one.
+    if (rest.length >= 2 && isTagName(rest[0])) { out.set(dev, { tag: rest[0], comment: rest.slice(1).join(' ') }); continue; }
+    const m = /^([A-Za-z_]\w*)\s*:\s*(.*)$/.exec(rest[0]);
+    out.set(dev, m && isTagName(m[1]) ? { tag: m[1], comment: m[2] } : { tag: '', comment: rest.join(' ') });
+  }
+  return out;
+}
+
+export const isIlComments = (text: string) => !isIlText(text) && ilComments(text).size >= 2;
+
+export function readIlText(programText: string, commentText = ''): ForeignProgram {
+  const brand = ilBrand(programText);
+  const prog = ilInstructions(programText);
+  const header = /(?:PLC|CPU|Model)\s*[:=]\s*(\S+)/i.exec(programText.slice(0, 2000));
+  return runIl({ ...prog, module: header?.[1] ?? '' }, commentText ? ilComments(commentText) : null, brand);
+}

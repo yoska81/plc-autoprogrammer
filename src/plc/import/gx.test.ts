@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fileText, importProgramFiles } from './index';
-import { decodeCsv, gxComments, gxRows, readGxCsv } from './gxCsv';
+import { decodeCsv, gxComments, gxRows, ilBrand, isIlText, readGxCsv, readIlText } from './gxCsv';
 import { toBranches } from './cond';
 import { planUpgrade, questionsFor } from './upgrade';
 import { validateProgram } from '../core/validate';
@@ -108,6 +108,29 @@ const rungsOf = (text: string) => readGxCsv(text).routines[0].rungs;
   assert.equal(program.io[0].description, 'Mixer lid closed (safety switch)');
   assert.ok(!program.report.notes.some((n) => /add the PLC tag table/.test(n)));
   assert.throws(() => importProgramFiles([file('PLC_Tags_Mixer.csv')]), /PLC tag table: add the program/);
+}
+
+// ── Delta / Inovance / Xinje: instruction list as text, with the device comment list ──
+{
+  const { program } = importProgramFiles([file('delta_conveyor_il.txt'), file('delta_conveyor_comments.csv')]);
+  assert.equal(program.source.format, 'il-text');
+  assert.equal(program.source.vendor, 'Delta');
+  assert.equal(program.source.controller, 'DVP-14SS2');
+  assert.deepEqual(program.io.map((p) => `${p.name}:${p.type}`), ['Start_PB:input', 'Stop_PB:input', 'Case_PE:input', 'Reset_PB:input', 'Conveyor:output', 'Seal_Head:output', 'Batch_Lamp:output']);
+  assert.equal(program.report.converted, program.report.rungs);
+  const nick = new Map(program.program.tags.map((t) => [t.nickname, t.address]));
+  const outs = program.program.rungs.flatMap((r) => r.outputs);
+  assert.ok(outs.some((o) => o.type === 'TMR' && o.address === nick.get('Seal_Delay') && o.preset === '1500' && o.unit === 'ms'), 'TMR T0 K15 = 1.5 s');
+  assert.ok(outs.some((o) => o.type === 'CNT' && o.address === nick.get('Case_Count') && o.preset === '200' && o.resetAddress), 'CNT with its reset rung linked');
+  assert.equal(program.program.rungs[0].comment, 'Network 1: run latch');
+  // Brands and detection.
+  assert.equal(ilBrand('; AutoShop V4 H3U\nLD X0\nOUT Y0').vendor, 'Inovance');
+  assert.equal(ilBrand('; XDPPro XD5-32T\nLD X0\nOUT Y0').vendor, 'Xinje');
+  assert.ok(isIlText(file('delta_conveyor_il.txt').text));
+  assert.ok(!isIlText(file('Mixer.scl').text) && !isIlText(file('CAPPER_DeviceComment.csv').text));
+  const inv = readIlText('; AutoShop H5U\nLD X0\nANI X1\nOUT T5 K30\nLD T5\nDSZR D0 Y0\nEND');
+  assert.deepEqual(inv.routines[0].rungs.flatMap((r) => r.outputs).map((o) => o.type), ['TMR', 'RAW']);
+  assert.ok(inv.routines[0].rungs.flatMap((r) => r.outputs).some((o) => o.type === 'RAW' && o.vendor === 'inovance'));
 }
 
 // A device comment file alone is explained.
