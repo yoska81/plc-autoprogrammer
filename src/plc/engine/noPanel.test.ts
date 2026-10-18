@@ -173,6 +173,7 @@ assert.equal(sim.readBit(RUN_LAMP), true, 'after Reset: Start runs');
   const CONV: Omit<IOPoint, 'id'>[] = ([
     ['E-stop', 'input', 'Safety', 'estop-contact'], ['Start', 'input', 'Operator/HMI', 'pushbutton-no'], ['Stop', 'input', 'Operator/HMI', 'pushbutton-nc'],
     ['Auto/Manual selector', 'input', 'Operator/HMI', 'selector'], ['Box at sorter photo-eye', 'input', 'Product Detection', 'sensor-pnp'],
+    ['Air pressure OK', 'input', 'Pneumatic', 'pressure-switch'],
     ['Conveyor motor contactor', 'output', 'Conveyor', 'contactor-coil'], ['Sorter pusher valve', 'output', 'Pneumatic', 'solenoid'],
   ] as const).map(([description, type, category, deviceType]) => ({ description, type, category, deviceType }));
   const cio = CONV.map((p, i) => ({ ...p, id: `v${i}` })) as IOPoint[];
@@ -187,11 +188,32 @@ assert.equal(sim.readBit(RUN_LAMP), true, 'after Reset: Start runs');
   assert.ok(cr.notes.some((n) => /The PLC is not a safety device/.test(n)));
   assert.deepEqual(panelOnlyReads(cr.program), [], 'converted, no panel: no panel bit read');
   const cs = createSimulator(cr.program);
-  cs.setInput(C(/E-stop/), true); cs.setInput(C(/^Stop/), true); cs.run(300);
-  cs.setInput(C(/^Start/), true); cs.run(100); cs.setInput(C(/^Start/), false); cs.run(300);
+  const RUNc = cr.base.internal.run, FAULTc = cr.base.internal.fault;
+  const start = () => { cs.setInput(C(/^Start/), true); cs.run(100); cs.setInput(C(/^Start/), false); cs.run(300); };
+  cs.setInput(C(/E-stop/), true); cs.setInput(C(/^Stop/), true); cs.setInput(C(/Air pressure/), true); cs.run(300);
+  start();
   assert.equal(cs.readBit(C(/Conveyor motor/)), true, 'Start runs the conveyor');
+  // E-stop: the cycle itself drops (not only the outputs); releasing it restarts nothing; a fresh Start is needed.
   cs.setInput(C(/E-stop/), false); cs.run(100);
   assert.equal(cs.readBit(C(/Conveyor motor/)), false, 'E-stop pressed: the conveyor stops');
+  assert.equal(cs.readBit(RUNc), false, 'E-stop pressed: the cycle drops');
+  cs.setInput(C(/E-stop/), true); cs.run(1000);
+  assert.equal(cs.readBit(RUNc), false, 'E-stop released: nothing restarts');
+  assert.equal(cs.readBit(C(/Conveyor motor/)), false);
+  start();
+  assert.equal(cs.readBit(RUNc), true, 'a fresh Start runs again');
+  // A fault (air pressure lost): latched, the cycle stops. With no Reset pushbutton, Start resets — and that press
+  // only resets: the machine starts on the next press.
+  cs.setInput(C(/Air pressure/), false); cs.run(200);
+  assert.equal(cs.readBit(FAULTc), true, 'air pressure lost: fault latched');
+  assert.equal(cs.readBit(RUNc), false, 'the fault stops the cycle');
+  cs.setInput(C(/Air pressure/), true); cs.run(200);
+  assert.equal(cs.readBit(FAULTc), true, 'still latched once the pressure is back');
+  start();
+  assert.equal(cs.readBit(FAULTc), false, 'Start resets the fault');
+  assert.equal(cs.readBit(RUNc), false, 'the press that resets does not also start');
+  start();
+  assert.equal(cs.readBit(RUNc), true, 'the next Start runs the machine');
 }
 
 console.log('noPanel.test: all assertions passed');

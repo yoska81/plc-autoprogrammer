@@ -89,9 +89,13 @@ export function buildMotion(c: HmiContent, api: MotionApi): ProgramMotion | unde
     const target = a('target') ?? api.freeDf();
 
     // Enable, enabled, fault latch.
-    R(id, `${n}: drive enable — ${enableCmd ? 'the enable command' : 'always'} while Safety OK and no fault`, [[...(enableCmd ? [NO(enableCmd)] : []), NO(SAFE), NC(fault)]], [OUT(E)]);
+    // Enable from the station's servo enable selector when there is one, else the HMI command, else always.
+    const sel = ax.enableSelector;
+    R(id, `${n}: drive enable (servo on) — ${sel ? sel.description : enableCmd ? 'the enable command' : 'always'} while Safety OK and no fault`, [[...(sel ? [NO(sel.address)] : enableCmd ? [NO(enableCmd)] : []), NO(SAFE), NC(fault)]], [OUT(E)]);
     R(id, `${n} enabled${ax.ready ? `: enable on and the drive reports ready (${ax.ready.description})` : ''}`, [[NO(E), ...(ax.ready ? [NO(ax.ready.address)] : [])]], [OUT(enabled)]);
     nick(E, `${n}_Enable_Out`, `${n} drive enable`);
+    // The drive's own motion (E-CAM / gearing) follows the line only while the line runs.
+    if (ax.engage) R(id, `${n}: ${ax.engage.description} — only while the line runs, the drive is enabled, Safety OK and no fault`, [[NO(RUN), NO(enabled), NO(SAFE), NC(fault)]], [OUT(ax.engage.address)]);
     const instr = pulse ? { home: bits(api, `${n}_Home`), vel: bits(api, `${n}_Jog`), pos: bits(api, `${n}_Move`) } : null;
     const faults: LadderElement[][] = [...(ax.fault ? [[NO(ax.fault.address)]] : []), ...(instr ? [[NO(instr.home.error)], [NO(instr.vel.error)], [NO(instr.pos.error)]] : [])];
     if (faults.length) {
