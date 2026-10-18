@@ -359,7 +359,7 @@ export const PROFACE: CatalogPart[] = [
     family: 'GP4100',
     url: 'https://www.proface.com/en/product/hmi/gp4100/spec/PFXGP4115T2D',
     mount: 'door',
-    ratings: { series: 'GP4100', displayIn: 4.3, sizeIn: 4.3, resolutionPx: '480x272', touch: 'resistive', ethernetPorts: 0, serialPorts: 1, usbPorts: 2, protocols: 'Serial (GP-Pro EX drivers)', plcDrivers: 'click,ab-micro850,siemens-s7-1200,siemens-s7-1200-g2,siemens-s7-1500,schneider-m221,schneider-m241,omron-cp2e,omron-nx1p2,mitsubishi-fx5u,mitsubishi-fx5uc', driversSource: 'https://www.proface.com/data/manual/gpproex/new/device/index.htm', supplyVolts: '12-24 VDC', supplyRange: '10.8-28.8 VDC', cutoutWidthMm: 112.5, cutoutHeightMm: 77.5, software: 'GP-Pro EX / BLUE', datasheet: 'https://www.proface.com/en/product/hmi/gp4100/spec/PFXGP4115T2D', lifecycle: 'active' },
+    ratings: { series: 'GP4100', displayIn: 4.3, sizeIn: 4.3, resolutionPx: '480x272', touch: 'resistive', ethernetPorts: 0, serialPorts: 1, usbPorts: 2, protocols: 'Serial (GP-Pro EX drivers)', plcDrivers: 'schneider-m221,omron-cp2e,mitsubishi-fx5u,mitsubishi-fx5uc', serialRouteNote: 'RS-232C only: M221 serial line 1 (MOD_SIOM_34 p.3), CP2E built-in RS-232C (OMR_FINS_35 p.6), FX5U/FX5UC via FX5-232-BD/FX5-232ADP (MIT_QMC_41 p.6). https://www.proface.com/data/manual/gpproex/new/device/', driversSource: 'https://www.proface.com/data/manual/gpproex/new/device/index.htm', supplyVolts: '12-24 VDC', supplyRange: '10.8-28.8 VDC', cutoutWidthMm: 112.5, cutoutHeightMm: 77.5, software: 'GP-Pro EX / BLUE', datasheet: 'https://www.proface.com/en/product/hmi/gp4100/spec/PFXGP4115T2D', lifecycle: 'active' },
     verified: true,
   },
   {
@@ -370,7 +370,7 @@ export const PROFACE: CatalogPart[] = [
     family: 'GP4100',
     url: 'https://www.proface.com/en/product/hmi/gp4100/spec/PFXGP4115T3D',
     mount: 'door',
-    ratings: { series: 'GP4100', displayIn: 4.3, sizeIn: 4.3, resolutionPx: '480x272', touch: 'resistive', ethernetPorts: 0, serialPorts: 1, usbPorts: 2, protocols: 'Serial (GP-Pro EX drivers)', plcDrivers: 'click,ab-micro850,siemens-s7-1200,siemens-s7-1200-g2,siemens-s7-1500,schneider-m221,schneider-m241,omron-cp2e,omron-nx1p2,mitsubishi-fx5u,mitsubishi-fx5uc', driversSource: 'https://www.proface.com/data/manual/gpproex/new/device/index.htm', supplyVolts: '12-24 VDC', supplyRange: '10.8-28.8 VDC', cutoutWidthMm: 112.5, cutoutHeightMm: 77.5, software: 'GP-Pro EX / BLUE', datasheet: 'https://www.proface.com/en/product/hmi/gp4100/spec/PFXGP4115T3D', lifecycle: 'active' },
+    ratings: { series: 'GP4100', displayIn: 4.3, sizeIn: 4.3, resolutionPx: '480x272', touch: 'resistive', ethernetPorts: 0, serialPorts: 1, usbPorts: 2, protocols: 'Serial (GP-Pro EX drivers)', plcDrivers: 'schneider-m221,omron-cp2e,mitsubishi-fx5u,mitsubishi-fx5uc', serialRouteNote: 'RS-232C only: M221 serial line 1 (MOD_SIOM_34 p.3), CP2E built-in RS-232C (OMR_FINS_35 p.6), FX5U/FX5UC via FX5-232-BD/FX5-232ADP (MIT_QMC_41 p.6). https://www.proface.com/data/manual/gpproex/new/device/', driversSource: 'https://www.proface.com/data/manual/gpproex/new/device/index.htm', supplyVolts: '12-24 VDC', supplyRange: '10.8-28.8 VDC', cutoutWidthMm: 112.5, cutoutHeightMm: 77.5, software: 'GP-Pro EX / BLUE', datasheet: 'https://www.proface.com/en/product/hmi/gp4100/spec/PFXGP4115T3D', lifecycle: 'active' },
     verified: true,
   },
   {
@@ -381,7 +381,7 @@ export const PROFACE: CatalogPart[] = [
     family: 'GP4100',
     url: 'https://www.proface.com/en/product/hmi/gp4100/spec/PFXGP4116T2D',
     mount: 'door',
-    ratings: { series: 'GP4100', displayIn: 4.3, sizeIn: 4.3, resolutionPx: '480x272', touch: 'resistive', ethernetPorts: 0, serialPorts: 1, usbPorts: 2, protocols: 'Serial (GP-Pro EX drivers)', plcDrivers: 'click,ab-micro850,siemens-s7-1200,siemens-s7-1200-g2,siemens-s7-1500,schneider-m221,schneider-m241,omron-cp2e,omron-nx1p2,mitsubishi-fx5u,mitsubishi-fx5uc', driversSource: 'https://www.proface.com/data/manual/gpproex/new/device/index.htm', supplyVolts: '12-24 VDC', supplyRange: '10.8-28.8 VDC', cutoutWidthMm: 112.5, cutoutHeightMm: 77.5, software: 'GP-Pro EX / BLUE', datasheet: 'https://www.proface.com/en/product/hmi/gp4100/spec/PFXGP4116T2D', lifecycle: 'active' },
+    ratings: { series: 'GP4100', displayIn: 4.3, sizeIn: 4.3, resolutionPx: '480x272', touch: 'resistive', ethernetPorts: 0, serialPorts: 1, usbPorts: 2, protocols: 'Serial (GP-Pro EX drivers)', plcDrivers: 'siemens-s7-1200,schneider-m221,omron-cp2e,mitsubishi-fx5u,mitsubishi-fx5uc', serialRouteNote: 'RS-422/485: S7-1200 needs a CM 1243-5 DP master (SIE_MPID_39 p.3; not firmware 4.5.1), M221 RS-485 (MOD_SIOM_34), CP2E RS-485 (OMR_FINS_35 p.6), FX5U/FX5UC built-in RS-485 (MIT_QMC_41 p.6). https://www.proface.com/data/manual/gpproex/new/device/', driversSource: 'https://www.proface.com/data/manual/gpproex/new/device/index.htm', supplyVolts: '12-24 VDC', supplyRange: '10.8-28.8 VDC', cutoutWidthMm: 112.5, cutoutHeightMm: 77.5, software: 'GP-Pro EX / BLUE', datasheet: 'https://www.proface.com/en/product/hmi/gp4100/spec/PFXGP4116T2D', lifecycle: 'active' },
     verified: true,
   },
   {

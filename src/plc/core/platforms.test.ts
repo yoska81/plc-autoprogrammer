@@ -127,6 +127,23 @@ assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000
   // PanelView 5310 / 5510 need Logix firmware V27 or later (Rockwell 2713P-TD001K / 2715P-TD001G).
   for (const p of ALL_HMIS().filter((x) => /^271[35]P-/.test(x.partNumber))) assert.equal(p.ratings.logixFirmwareMin, 27, `${p.partNumber}: firmware V27+`);
 }
+// A panel with no Ethernet port keeps a PLC family only where its maker's serial / fieldbus driver names it
+// (generic Modbus does not count). The route, module and source are in ratings.serialRouteNote.
+{
+  const ETHERNET_ONLY = new Map<string, string>([
+    ['siemens-s7-1200-g2', 'Pro-face lists S7-1200 G2 under Ethernet only'],
+    ['ab-micro850', 'Pro-face lists Micro850 only under EtherNet/IP (roc.htm); its DF1 table has no Micro800'],
+    ['schneider-m241', 'not in the Pro-face Schneider serial driver list'],
+    ['click', 'not named by Pro-face, Delta or Omron serial drivers (generic Modbus not counted)'],
+  ]);
+  for (const p of ALL_HMIS().filter((x) => x.ratings.ethernetPorts === 0 && x.ratings.plcDrivers !== undefined && !String(x.ratings.plcDrivers).startsWith('unitronics'))) {
+    assert.ok(p.ratings.serialRouteNote, `${p.partNumber}: serial-only panel needs serialRouteNote (maker driver per family)`);
+    for (const id of driversOf(p)) assert.ok(!ETHERNET_ONLY.has(id), `${p.partNumber}: ${id} on a serial-only panel (${ETHERNET_ONLY.get(id)})`);
+  }
+  assert.ok(!ok('siemens-s7-1200', 'NB5Q-TW00B') && !ok('siemens-s7-1200', 'GT2104-PMBDS'), 'NB and GT21 reach S7-1200 only over Ethernet (V108 2-1-2, SH-081199 16.1)');
+  assert.ok(ok('siemens-s7-1200', 'PFXGP4116T2D') && !ok('siemens-s7-1200', 'PFXGP4115T2D'), 'S7-1200 via CM 1243-5 needs RS-485 (SIE_MPID_39)');
+  assert.ok(ok('omron-nx1p2', 'NB7W-TW00B') && !ok('omron-nx1p2', 'GT2105-QTBDS'), 'NX1P2: NB with NX1W-CIF board yes, GOT serial no');
+}
 // Driver ids are platform ids (agreed list; every platform that exists must be on it).
 const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz']);
 for (const pl of PLATFORMS) assert.ok(DRIVER_IDS.has(pl.id), `platform ${pl.id} is on the driver id list`);

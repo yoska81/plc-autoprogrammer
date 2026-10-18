@@ -360,3 +360,10 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Size, resolution, power, cutout, dimensions and weight come from 2711P-TD008J / TD009M. Lifecycle is Active on each product page.
   - CompactLogix 5370 is named in the TDs. 5380 appears only in the portfolio comparison 2711P-SP011L (Nov 2025).
   - Standard catalog numbers end in D8S (series D needs firmware 13.x or later). "-B" means no brand label, not a series.
+- **Panels with no Ethernet port:** a panel keeps a PLC family only where the panel maker's own serial or fieldbus driver names it. Generic Modbus does not count; unclear cases are removed. The route, any module needed and the source are in `serialRouteNote`.
+  - Pro-face GP4115T2D / T3D (RS-232) keep M221, CP2E and FX5U/UC (via FX5-232 boards). GP4116T2D (RS-485) also keeps S7-1200 via a CM 1243-5.
+  - Omron NB loses S7-1200 (Ethernet only). It keeps NX1P2, which needs an NX1W-CIF option board.
+  - Mitsubishi GT21 loses S7-1200, S7-1500 and NX1P2.
+  - Delta DOP-100 serial models keep only DVP and AS300.
+  - KTP Basic DP needs a CM 1243-5 on an S7-1200, and a DP CPU or CM 1542-5 on an S7-1500.
+  - Tested in platforms.test.ts.
