@@ -98,6 +98,9 @@ const ENCLOSURE_IN: [number, number] = [2, 100];
 const UNVERIFIED_OK: Record<string, string> = {
   'XCSPA993': 'contacts (2 NC + 1 NO slow break), 1/2in NPT entry and AC-15 rating from the Schneider XCS catalog; terminal numbers still to be checked on the product data sheet (se.com not reachable).',
   '3SE5112-0QV10': 'Siemens data sheet server refused the download (403): terminal numbers and AC-15 / DC-13 ratings still to be checked; contacts (1 NO + 2 NC), M20 entry and actuator from distributor listings.',
+  'VFD2A8MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
+  'VFD4A8MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
+  'VFD7A5MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
 };
 
 /** A maker's document (PDF catalog / datasheet or documentation portal) covering many parts. */

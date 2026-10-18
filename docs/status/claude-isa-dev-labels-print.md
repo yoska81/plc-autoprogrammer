@@ -160,6 +160,16 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - relays: 1CO = SPDT, 2CO = DPDT, same coil first;
   - 22 mm operators: same colour.
 - Every CHINT and Delixi contactor, overload and motor protector has at least one UL equivalent (tested).
+- Automation parts:
+  - 131 imported parts added: Inovance H3U/H5U/Easy PLCs, GL20 modules and MD290/MD500 drives; Xinje XD3/XD5, VH1/VH5 and TG HMIs; Mitsubishi FX3U/FX3G and FR-D700 -CHT; Autonics PR/PRD/BJ sensors, E40/E50 encoders and TCN/TK controllers; Omron E2E/E3Z/E5CC/E6B2.
+  - The 7 Inovance MD200 drives were left out: their part numbers were assembled from a brochure pattern, not printed.
+  - Records whose maker documents state no UL get `ul: 'not stated in the maker documents read'`.
+  - Delta (UL listed, sold in North America) went into the catalog instead (delta.ts, 39 parts): DVP-ES2/EX2/SS2 and AS200/AS300 CPUs, DVP modules, VFD-E, and MS300 1-phase 230 V. The 3 MS300 drives without the EMC filter are unverified (their output current comes from the same-kW filtered model).
+  - New matching rules:
+    - PLC: inputs and outputs at least the drawn ones, same output type.
+    - Sensors: same type and PNP/NPN.
+    - Encoders: same PPR and output type (encoder catalog parts are still to come).
+    - Drives use the cross-reference HP/voltage key.
 - Gaps:
   - Delixi MCBs and CHINT DZ47: the maker pages are captcha- or 403-blocked.
   - Fuji: already in the catalog under AD part numbers.

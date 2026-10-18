@@ -19,6 +19,10 @@ const MAKER_HOSTS: [RegExp, RegExp][] = [
   [/mean ?well/i, /(^|\.)(meanwell\.com|meanwell-web\.com)$/],
   [/idec/i, /(^|\.)idec\.com$/],
   [/omron/i, /(^|\.)(omron\.com|omron\.eu)$/],
+  [/inovance/i, /(^|\.)(inovance\.com|inovance\.eu)$/],
+  [/xinje/i, /(^|\.)(xinje\.com|xinje\.co)$/],
+  [/mitsubishi/i, /(^|\.)(mitsubishielectric\.com|mitsubishielectric\.co\.jp)$/],
+  [/autonics/i, /(^|\.)autonics\.com$/],
 ];
 
 const bad: string[] = [];
