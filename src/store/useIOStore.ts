@@ -21,6 +21,18 @@ interface IOStore {
   applyIOUpdate: (kept: Pick<IOPoint, 'id' | 'category' | 'deviceType' | 'signal' | 'analog'>[], added: Omit<IOPoint, 'id'>[], removedIds: string[]) => void;
 }
 
+/**
+ * Told after an edit that can move PLC addresses (delete, an I/O update, a manual address, analog on / off, an
+ * import added to the list): src/plc/core/ioChange.ts remaps the program and the HMI through it. Replacing the
+ * whole list, loading a project and Undo do not notify: their program / HMI come with them.
+ */
+export type IoChangeListener = (prev: IOPoint[], next: IOPoint[]) => void;
+const ioListeners = new Set<IoChangeListener>();
+export function onIoChange(f: IoChangeListener): () => void {
+  ioListeners.add(f);
+  return () => { ioListeners.delete(f); };
+}
+
 function nextInputId(existing: IOPoint[]): string {
   const usedNums = existing
     .filter((p) => p.type === 'input')
@@ -43,7 +55,15 @@ function nextOutputId(existing: IOPoint[]): string {
 
 export const useIOStore = create<IOStore>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+    // The actions below that can move addresses tell the listeners, with the list before and after.
+    const changed = (f: () => void) => {
+      const prev = get().projectIO;
+      f();
+      const next = get().projectIO;
+      if (next !== prev) for (const l of ioListeners) l(prev, next);
+    };
+    return {
       projectIO: [],
 
       addBlankInput: () => {
@@ -97,25 +117,25 @@ export const useIOStore = create<IOStore>()(
         }));
       },
 
-      setAnalog: (id, analog) => set((s) => ({
+      setAnalog: (id, analog) => changed(() => set((s) => ({
         projectIO: s.projectIO.map((p) => {
           if (p.id !== id) return p;
           if (!analog) { const { analog: _a, signal: _s, ...rest } = p; void _a; void _s; return rest; }
           return { ...p, signal: 'analog' as const, analog, plcAddress: p.plcAddress?.toUpperCase().startsWith('DF') ? p.plcAddress : undefined };
         }),
-      })),
+      }))),
 
       setPlcAddress: (id: string, address: string) => {
         const plcAddress = address.trim().toUpperCase();
-        set((s) => ({
+        changed(() => set((s) => ({
           projectIO: s.projectIO.map((p) => (p.id === id ? { ...p, plcAddress } : p)),
-        }));
+        })));
       },
 
       importPoints: (points, replace) => {
         // A new list: description edits of the old points no longer apply.
         if (replace) useEditsStore.getState().clearTexts('io:');
-        set((s) => {
+        const add = () => set((s) => {
           let current = replace ? [] : [...s.projectIO];
           for (const p of points) {
             const id = p.type === 'input' ? nextInputId(current) : nextOutputId(current);
@@ -123,12 +143,14 @@ export const useIOStore = create<IOStore>()(
           }
           return { projectIO: current };
         });
+        // A new list re-uses the point ids (I001 …): nothing to remap, its program is generated from it.
+        if (replace) add(); else changed(add);
       },
 
       applyIOUpdate: (kept, added, removedIds) => {
         // Kept points keep their (hand-edited) descriptions; dropped points drop their edits.
         for (const id of removedIds) useEditsStore.getState().resetText(`io:${id}`);
-        set((s) => {
+        changed(() => set((s) => {
           const keptById = new Map(kept.map((k) => [k.id, k]));
           const removed = new Set(removedIds);
           let current = s.projectIO
@@ -139,14 +161,15 @@ export const useIOStore = create<IOStore>()(
             current = [...current, { ...p, id }];
           }
           return { projectIO: current };
-        });
+        }));
       },
 
       deletePoint: (id: string) => {
         useEditsStore.getState().resetText(`io:${id}`);
-        set((s) => ({ projectIO: s.projectIO.filter((p) => p.id !== id) }));
+        changed(() => set((s) => ({ projectIO: s.projectIO.filter((p) => p.id !== id) })));
       },
-    }),
+    };
+    },
     { name: 'plc-io-store' }
   )
 );

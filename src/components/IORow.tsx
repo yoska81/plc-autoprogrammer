@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { TrashIcon } from '@heroicons/react/24/outline';
 import type { IOPoint, IOCategory } from '../types/io';
 import { useIOStore } from '../store/useIOStore';
@@ -6,6 +7,8 @@ import { useEditsStore } from '../edits/useEditsStore';
 import { EditedMark } from '../edits/EditedMark';
 import MicButton from '../voice/MicButton';
 import { FIELD_DEVICE_LABEL, type FieldDeviceType } from '../electrical/types';
+import { deletePointWithUndo, ioUsesOf, undoIoDelete } from '../plc/core/ioChange';
+import { notify } from '../store/useNoticeStore';
 
 const ALL_CATEGORIES: IOCategory[] = [
   'Safety', 'Operator/HMI', 'External Machine', 'Product Detection',
@@ -28,7 +31,14 @@ interface IORowProps {
 }
 
 export function IORow({ point, address, duplicate, device }: IORowProps) {
-  const { updateDescription, updateCategory, deletePoint, setPlcAddress } = useIOStore();
+  const { updateDescription, updateCategory, setPlcAddress } = useIOStore();
+  // Delete asks first, listing what in the program and the HMI uses the point; then it can be undone.
+  const [confirmUses, setConfirmUses] = useState<string[] | null>(null);
+  const remove = () => {
+    const changes = deletePointWithUndo(point.id);
+    setConfirmUses(null);
+    notify(`Deleted ${point.id}${point.description ? ` ${point.description}` : ''}.${changes.length ? ` ${changes.join(' ')}` : ''}`, { label: 'Undo', run: () => { undoIoDelete(); } });
+  };
   const isManual = Boolean(point.plcAddress);
   // A generated description the user rewrote: marked, with a way back (kept by I/O id).
   const key = `io:${point.id}`;
@@ -89,11 +99,27 @@ export function IORow({ point, address, duplicate, device }: IORowProps) {
       <td className={`${td} text-xs text-steel-500 whitespace-nowrap`}>
         <div className="flex items-center gap-2">{point.signal !== 'analog' && <span>{device ?? (point.deviceType ? FIELD_DEVICE_LABEL[point.deviceType as FieldDeviceType] ?? point.deviceType : '—')}</span>}<AnalogCell point={point} address={address} /></div>
       </td>
-      <td className={td}>
-        <button onClick={() => deletePoint(point.id)} title="Delete" aria-label={`Delete ${point.id}`}
-          className="text-steel-300 opacity-0 group-hover:opacity-100 hover:text-red-600">
+      <td className={`${td} relative`}>
+        <button onClick={() => setConfirmUses(ioUsesOf(point.id))} title="Delete" aria-label={`Delete ${point.id}`}
+          className={`text-steel-300 group-hover:opacity-100 hover:text-red-600 ${confirmUses ? 'opacity-100 text-red-600' : 'opacity-0'}`}>
           <TrashIcon className="w-4 h-4" />
         </button>
+        {confirmUses && (
+          <div role="dialog" aria-label={`Delete ${point.id}?`} className="absolute right-0 top-full z-30 w-80 bg-white border border-steel-300 shadow-lg rounded-sm p-3 text-xs text-steel-800 space-y-2">
+            <div className="font-semibold">Delete {point.id}{point.description ? ` ${point.description}` : ''}?</div>
+            {confirmUses.length ? (
+              <>
+                <div>It is used by:</div>
+                <ul className="list-disc pl-4 max-h-32 overflow-auto">{confirmUses.map((u, i) => <li key={i}>{u}</li>)}</ul>
+                <div className="text-steel-600">The points after it get new addresses and the program follows them. What used this point is marked for you to fix.</div>
+              </>
+            ) : <div className="text-steel-600">Nothing in the program or the HMI uses it.</div>}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmUses(null)} className="px-2 py-1 border border-steel-300 rounded-sm hover:bg-steel-50">Cancel</button>
+              <button onClick={remove} className="px-2 py-1 bg-red-600 text-white rounded-sm hover:bg-red-700">Delete</button>
+            </div>
+          </div>
+        )}
       </td>
     </tr>
   );

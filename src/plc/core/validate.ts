@@ -1,5 +1,6 @@
 import { elementAddresses, motionWrites, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
+import { deletedAddress, isDeletedOperand } from './remapProgram';
 
 export interface ValidationIssue {
   rungId: string | null;
@@ -29,13 +30,15 @@ export function validateProgram(
       issues.push({ rungId: rung.id, severity, message });
     const a = address.trim();
     if (!a) return add('error', `${role} has no address.`);
+    if (isDeletedOperand(a)) return add('error', `${role} used ${deletedAddress(a)}, whose I/O point was deleted — pick its new input / output (or delete the rung).`);
     const info = profile.parseAddress(a);
     if (!info) return add('error', `${role} "${a}" is not a valid ${profile.name} address.`);
     if (info.kind === 'constant' && !opts.valueOk) return add('error', `${role} cannot be a constant (${a}).`);
     if (opts.bit && !info.isBit) add('error', `${role} "${a}" is not a bit address.`);
     if (opts.write && (info.kind === 'input' || info.kind === 'system')) add('error', `${role} writes to read-only ${info.kind} "${a}".`);
     if ((info.kind === 'input' || info.kind === 'output') && !ioAddresses.has(a)) {
-      add('warning', `${a} is not assigned to any point in the I/O list.`);
+      // An error: an I/O address with no point behind it reads / drives whatever gets that address next.
+      add('error', `${a} is not assigned to any point in the I/O list.`);
     }
   };
 
