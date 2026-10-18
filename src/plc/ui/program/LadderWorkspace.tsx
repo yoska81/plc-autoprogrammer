@@ -1,6 +1,5 @@
-import { noTouchPanelNow } from '../../../spec/panelNow';
 import { useSettingsStore } from '../../../store/useSettingsStore';
-import { useActiveHmiDesign } from '../../../hmi/projectPanel';
+import { noTouchPanelNow, useActiveHmiDesign } from '../../../hmi/projectPanel';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';
 import { useIOStore } from '../../../store/useIOStore';

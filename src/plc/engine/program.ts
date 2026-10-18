@@ -122,10 +122,10 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   // No panel and no Start pushbutton: the two-hand buttons both start the machine and each cycle (a press).
   const twoHandStarts = !panel && !startPb && (c.twoHand?.length ?? 0) >= 2;
   const hmiStart = panel || (!startPb && !twoHandStarts), hmiStop = panel || !stopPb, hmiReset = panel || !resetPb, hmiManual = panel || !modeSel;
+  if (modeSel && !/\bon\s*=/i.test(modeSel.description)) notes.push(`${modeSel.address} ${modeSel.description}: ON = ${selOnManual ? 'Manual (setup)' : 'Auto (run)'} assumed — check the selector's contact and change the program if it is the other way.`);
   if (!panel) {
     const missing = [!startPb && !twoHandStarts && 'Start', !stopPb && 'Stop', !resetPb && 'Reset'].filter(Boolean);
     if (missing.length) notes.push(`No touch panel, and the I/O list has no ${missing.join(' / ')} pushbutton: the program keeps the command bit (set it from Online) — add the pushbutton to the I/O list and regenerate.`);
-    if (modeSel && !/\bon\s*=/i.test(modeSel.description)) notes.push(`${modeSel.address} ${modeSel.description}: ON = ${selOnManual ? 'Manual (setup)' : 'Auto (run)'} assumed — check the selector's contact and change the program if it is the other way.`);
     if (!modeSel) notes.push('No touch panel, and the I/O list has no Auto/Manual selector: Manual mode is a command bit only — add the selector to the I/O list and regenerate.');
   }
   const start = must('cmd:start'), stop = must('cmd:stop'), reset = must('cmd:reset'), manualSel = must('cmd:manual');
@@ -344,9 +344,9 @@ export function buildProgram(input: ProgramInput): ProgramResult {
 
   // ---- HMI & status
   blocks.push(panel ? { id: 'status', name: 'HMI & status', description: 'Heartbeat, machine state word, counters, run hours, service and rate.' } : { id: 'status', name: 'Status', description: 'Machine state word, counters, run hours and rate (read them from Online).' });
-  R('status', 'One-scan pulse on each rising edge of the 1 s system clock SC7', [[RISE('SC7')]], [OUT(PULSE)]);
+  if (panel) R('status', 'One-scan pulse on each rising edge of the 1 s system clock SC7', [[RISE('SC7')]], [OUT(PULSE)]);
   if (panel) R('status', 'PLC heartbeat for the HMI: changes state every second', [[NO(PULSE), NC(heartbeat)], [NC(PULSE), NO(heartbeat)]], [OUT(heartbeat)]);
-  nick(PULSE, 'Pulse_1s', 'One scan every second');
+  if (panel) nick(PULSE, 'Pulse_1s', 'One scan every second');
   // State word: lowest priority first, so the highest applicable state wins.
   const cond = (text: string): LadderElement[] | null => {
     const t = text.toLowerCase();
@@ -367,8 +367,9 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   if (stepStates.length) notes.push(`Machine states ${stepStates.join(', ')} are cycle steps: the cycle block writes them to ${state}.`);
   const count = tag('word:count');
   if (count && c.partSensor) {
-    const resetC = panel ? must('cmd:countreset') : null;
-    R('status', `Part counter: each part at ${c.partSensor.description}, ${resetC ? 'reset from the HMI' : 'no reset (no touch panel: clear it from Online)'}`, [[NO(c.partSensor.address)]], [{ type: 'CNT', address: `CT${count.slice(3)}`, direction: 'UP', preset: '9999', resetAddress: resetC }]);
+    // No touch panel: Reset (the door pushbutton) clears the count, so a completed batch can start again.
+    const resetC = panel ? must('cmd:countreset') : RESET;
+    R('status', `Part counter: each part at ${c.partSensor.description}, ${panel ? 'reset from the HMI' : 'reset by the Reset pushbutton (a new batch)'}`, [[NO(c.partSensor.address)]], [{ type: 'CNT', address: `CT${count.slice(3)}`, direction: 'UP', preset: '9999', resetAddress: resetC }]);
     const batch = tag('sp:batch');
     if (batch) { R('status', 'Batch complete: a batch target is set and the part count reached it', [[CMP(batch, '>', '0'), CMP(count, '>=', batch)]], [OUT(BATCH)]); nick(BATCH, 'Batch_Done', 'Batch target reached'); }
     const rate = tag('word:rate');
@@ -391,6 +392,13 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     R('status', 'Add the hour to the run hours and the hours since service', [[NO(HOUR)]], [MATH(hours, `${hours} + 1`), MATH(since, `${since} + 1`)]);
     nick(th, 'Tmr_Run_Hour', 'Run-hour timer'); nick(HOUR, 'Run_Hour_Pulse', 'One run hour reached');
     if (done && panel) R('status', 'HMI Service Done clears the hours since service', [[NO(done)]], [COPY('0', since)]);
+    if (!panel) {
+      // No touch panel: Reset held for 3 s is "Service done".
+      const tl = timer();
+      R('status', 'Reset held for 3 s: service done', [[NO(RESET)]], [TMR(tl, '3')]);
+      R('status', 'Service done (Reset held 3 s) clears the hours since service', [[NO(tl)]], [COPY('0', since)]);
+      nick(tl, 'Tmr_Service_Done', 'Reset held 3 s = service done');
+    }
     if (due && interval) R('alarms', 'Service due warning: hours since service reached the service interval', [[CMP(since, '>=', interval), CMP(interval, '>', '0')]], [OUT(due)]);
   }
 

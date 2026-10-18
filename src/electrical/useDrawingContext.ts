@@ -1,4 +1,4 @@
-import { useProjectPanelPart } from '../spec/panelNow';
+import { useProjectPanelPart } from '../hmi/projectPanel';
 import { useMemo } from 'react';
 import { usePlc } from '../plc/core/usePlc';
 import { useElectricalStore } from '../store/useElectricalStore';

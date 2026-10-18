@@ -66,5 +66,11 @@ export function missingOperatorIo(io: Point[]): GeneratedPoint[] {
   return OPERATOR.filter((o) => !io.some(o.has)).map((o) => ({ ...o.point, reason: o.why }));
 }
 
+/** The door devices "No touch panel" added (the default descriptions), E-stop aside: offered for removal when a panel is chosen again. */
+export function addedOperatorPoints<T extends Point>(io: T[]): T[] {
+  const defaults = new Map(OPERATOR.filter((o) => o.role !== 'estop').map((o) => [o.point.description, o.point] as const));
+  return io.filter((p) => { const d = defaults.get(p.description); return !!d && d.type === p.type && (!p.deviceType || p.deviceType === d.deviceType); });
+}
+
 /** For the I/O prompt: the machine has no touch panel, so the operator functions are physical I/O. */
 export const NO_PANEL_RULE = '- This machine has NO touch panel (HMI): every operator function is physical I/O on the cabinet door — Start pushbutton, Stop pushbutton (NC), Reset pushbutton, an Auto/Manual selector (ON = Manual), the E-stop safety relay OK input, a Running lamp (green) and a Fault lamp (red); add jog / manual pushbuttons only if the spec asks for them.';

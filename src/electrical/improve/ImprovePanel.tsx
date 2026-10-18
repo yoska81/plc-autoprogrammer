@@ -1,4 +1,4 @@
-import { useProjectPanelPart } from '../../spec/panelNow';
+import { useProjectPanelPart } from '../../hmi/projectPanel';
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useElectricalStore } from '../../store/useElectricalStore';

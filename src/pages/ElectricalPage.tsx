@@ -1,4 +1,4 @@
-import { useProjectPanelPart } from '../spec/panelNow';
+import { useProjectPanelPart } from '../hmi/projectPanel';
 import { useMemo, useState } from 'react';
 import { IS_PREVIEW } from '../preview/mode';
 import { looksLeftOver } from '../spec/leftovers';

@@ -1,4 +1,3 @@
-import { noTouchPanelNow, projectPanelPartNow } from './panelNow';
 import { bindProgress, finishProgress } from '../lib/ai/progress';
 import { useSpecStore } from '../store/useSpecStore';
 import { useIOStore } from '../store/useIOStore';
@@ -32,7 +31,7 @@ import { stagesNow } from './useStages';
 import { missingOperatorIo } from './operatorIo';
 import { aiNow } from '../lib/ai/timing';
 import type { AIConfig, PlcContext } from '../plc/ai/ladderAI';
-import { activeHmiDesign, noTouchPanelNow } from '../hmi/projectPanel';
+import { activeHmiDesign, noTouchPanelNow, projectPanelPartNow } from '../hmi/projectPanel';
 
 
 export { UPDATE_GROUPS, type StepResult, type UpdateStep } from './updateSteps';

@@ -1,4 +1,4 @@
-import { noTouchPanelNow } from '../spec/panelNow';
+import { noTouchPanelNow } from '../hmi/projectPanel';
 import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useIOStore } from '../store/useIOStore';

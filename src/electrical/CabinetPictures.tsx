@@ -1,4 +1,4 @@
-import { useProjectPanelPart } from '../spec/panelNow';
+import { useProjectPanelPart } from '../hmi/projectPanel';
 import type { DrawingContext } from './derive';
 import CabinetRender from './render/CabinetRender';
 import { useUi } from '../store/useUiStore';

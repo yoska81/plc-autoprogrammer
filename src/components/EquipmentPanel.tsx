@@ -1,3 +1,4 @@
+import { addedOperatorPoints } from '../spec/operatorIo';
 import { isAnalog } from '../types/io';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
@@ -145,6 +146,11 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const set = (patch: Partial<EquipmentChoice>) => setChoice((c) => ({ cpuId: c?.cpuId ?? cpus[0].id, modules: c?.modules ?? [], hmiPartNumber: c?.hmiPartNumber ?? null, ...patch }));
   const apply = () => {
     if (!choice || !fit?.ok) return;
+    // Back from "No touch panel" to a panel: offer to remove the door pushbuttons, selector and lamps it added.
+    const doorPoints = choice.hmiPartNumber && !appliedHmi && project.cpuId ? addedOperatorPoints(useIOStore.getState().projectIO) : [];
+    if (doorPoints.length && confirm(`The touch panel takes over Start, Stop, Reset and Auto/Manual. Remove the door devices added for "No touch panel"?\n\n${doorPoints.map((p) => `• ${p.description}`).join('\n')}\n\n(Cancel keeps them: the program then uses both.)`)) {
+      useIOStore.getState().applyIOUpdate([], [], doorPoints.map((p) => p.id));
+    }
     applyEquipment(choice, rec);
     onApplied?.();
   };

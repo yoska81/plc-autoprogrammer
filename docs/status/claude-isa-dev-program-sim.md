@@ -2,6 +2,21 @@
 
 Current: **Unitronics as a PLC brand, end to end** (manager request) — draft PR → `claude/optimistic-maxwell-6nfcs6`. Sealing head (#64, #67) merged. No blockers (real-AI scores still wait for an API key in the environment settings).
 
+## Troubleshooter slice 2 (coordinator: new top priority, with Debug 4; review by the old main)
+
+- `src/troubleshoot/whyStuck.ts`: `whyStuck(program, values, { output } | { step }, { io, tags })` walks back from a stuck output, or a step that does not advance, through the contacts that are not made, to ranked blockers. Kinds:
+  - input
+  - output-no-motion (Y ON, feedback never comes)
+  - setting (a preset / setpoint register: 0, more than 10× its first-scan default, or not reached)
+  - logic (nothing writes it, a touch-panel command)
+  - reset-needed (latched, cause gone)
+  - waiting (still timing)
+  Each blocker carries the PLC point, the rung and `next` (wiring / setting / logic / operator / none) for Debug 4's wiring path.
+- `src/troubleshoot/simFaults.ts`: open wire, stuck sensor, blown fuse and wrong preset, between the plant model and the PLC (`runWithFaults`).
+- `src/troubleshoot/actions.ts`: live setting change (C / DS, confirmation, Online's write log), CLICK edit steps, `nextAction`.
+- Tests: `whyStuck.test.ts` on the sample conveyor (fixture program + the rules' program with steps) with injected faults, plus small ladders.
+- Next: the guided step engine `src/troubleshoot/guide.ts` on Debug 4's WiringPath (types sent to Debug 4), using Dev 1's deviceFaults at the device.
+
 ## No touch panel (coordinator; Dev 5 owns the HMI stage / review / deliverables wording)
 
 - **I/O:** `src/spec/operatorIo.ts` `missingOperatorIo(io)` lists the door devices a no-panel machine still lacks: E-stop safety relay OK, Start PB, Stop PB (NC), Reset PB, Auto/Manual selector (ON = Manual), Running lamp (green), Fault lamp (red). Existing devices are recognised by their words, the same ones the program engine reads. `noTouchPanelNow()` in `src/spec/useStages.ts` means equipment was chosen with no HMI.
@@ -12,7 +27,7 @@ Current: **Unitronics as a PLC brand, end to end** (manager request) — draft P
   - The Auto/Manual selector (with or without a panel) puts the machine in Manual and stops the cycle.
   - New lamp rules: horn / buzzer while faulted, Ready / Power / white = Safety OK with no fault and stopped, Reset / blue lamp = fault latched.
 - **Electrical:** the door already took the devices from the I/O list. Fixed the pushbutton colour regex: "...button" matched `on\b`, so Reset and Fault reset were green; now black (sealing-head and unitronics-v700 goldens updated). engine.test checks the no-panel door, parts, wiring, and that there's no HMI in the BOM or network.
-- **Panel rule:** `src/spec/panelNow.ts` has `noTouchPanelNow()`, `projectPanelPartNow()` and `useProjectPanelPart()`. The project's panel is the equipment choice only, so a leftover HMI design no longer puts the old panel on the door. Used by the drawing context, cabinet pictures, Improve panel, Electrical page and the Update all electrical step. Same names and rule as Dev 5's `src/hmi/projectPanel.ts`: switch the imports to it once both branches are in integration.
+- **Panel rule:** Dev 5's `src/hmi/projectPanel.ts` (merged in from claude/isa-dev-hmi-looks). The project's panel is the equipment choice only, so a leftover HMI design no longer puts the old panel on the door. Used by the drawing context, cabinet pictures, Improve panel, Electrical page and Update all. collect.ts passes `{ noPanel }` to validateProgram. The review's panel-bit finding skips bits the "can never turn on" error already names.
 - **Debug 4's journey `nohmi` (PR #87, bench press) is the acceptance case, and it passes (0 problems, 0 critical / major review findings):**
   - With no panel and no Start PB, both two-hand buttons start the machine and each cycle.
   - "Run / setup", "Auto / hand" and "Auto / manual" selectors are recognised (ON = Manual unless the text says ON = Auto / Run, with a note to check).
