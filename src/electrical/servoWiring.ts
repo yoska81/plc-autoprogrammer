@@ -33,7 +33,7 @@ export interface ServoAxisModel {
 }
 
 const ROLE_LABEL: Record<ServoRole, string> = {
-  pulse: '/PULSE (pulse)', direction: '/SIGN (direction)', enable: 'DI1 SON (servo on)', reset: 'DI5 ARST (alarm reset)', cam: 'DI (E-CAM engage: assign the DI function in the drive)',
+  pulse: '/PULSE (pulse)', direction: '/SIGN (direction)', enable: 'DI1 SON (servo on)', reset: 'DI5 ARST (alarm reset)', cam: 'DI (E-CAM engage: assign the DI function in the drive)', driveOutput: 'DO (programmable output: assign its function in the drive)',
   ready: 'DO1 SRDY (servo ready)', alarm: 'DO5 ALRM (servo alarm)', inPosition: 'DO4 TPOS (in position)', homed: 'DO3 HOME (homing done)', zeroSpeed: 'DO2 ZSPD (zero speed)',
 };
 
@@ -82,7 +82,7 @@ export function servoControls(
       let terminal = '';
       // A relay contact cannot make a pulse train: pulse / direction from relay outputs are not wired.
       if (outStyle === 'relay' && (role === 'pulse' || role === 'direction')) {
-        notes.push(`${t}: ${p.address} is a relay output — it cannot drive the ${role === 'pulse' ? 'pulse' : 'direction'} input; use transistor pulse outputs (CLICK PLUS: a C2-14D1 / C2-14D2 option-slot module, pulses on its Y1 / Y3 / Y5 — Y101 / Y103 / Y105 in slot 1). Not wired.`);
+        notes.push(`${t}: ${p.address} is a relay output — it cannot drive the ${role === 'pulse' ? 'pulse' : 'direction'} input; use transistor pulse outputs (CLICK PLUS: a C2-14D1 / C2-14D2 option-slot module, pulses on its Y1 / Y3 / Y5 — Y001 / Y003 / Y005, the option slot is slot 0). Not wired.`);
         terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal: 'NOT WIRED', label: ROLE_LABEL[role] });
         continue;
       }
@@ -92,8 +92,15 @@ export function servoControls(
         else if (P.di[role]) terminal = P.di[role]!;
         else if (P.do[role]) terminal = inCommon === '0V' ? P.do[role]![1] : P.do[role]![0];
       }
-      terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal: terminal || role.toUpperCase(), label: ROLE_LABEL[role] });
-      terms.set(p.address, { tag: t, terminal: terminal || role.toUpperCase() });
+      // No default pin for the function: the DI / DO the drawing names ("U2 DI7 CAM engage" → DI7); without one, not wired.
+      if (!terminal) terminal = /\b(DI|DO)\d\b/i.exec(p.description)?.[0].toUpperCase() ?? '';
+      if (!terminal) {
+        notes.push(`${t}: ${p.address} ${p.description} — no default terminal for this function; assign it to a free programmable ${p.type === 'output' ? 'DI' : 'DO'} of the drive and wire it there. Not wired.`);
+        terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal: 'NOT WIRED', label: ROLE_LABEL[role] });
+        continue;
+      }
+      terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal, label: ROLE_LABEL[role] });
+      terms.set(p.address, { tag: t, terminal });
     }
     if (!P) { notes.push(`${t}: terminal names of ${a.drive.partNumber} are not in the app — wire from the drive manual.`); return { ...a, sto, stoMissing: sto ? undefined : stoWhy, terminals, notes }; }
 

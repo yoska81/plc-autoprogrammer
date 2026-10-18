@@ -41,7 +41,7 @@ const kind = (p: CatalogPart) => String(p.ratings.kind ?? '');
 // ---------------------------------------------------------------------------------------------------------
 // Which I/O points are motion points
 
-export type ServoRole = 'pulse' | 'direction' | 'enable' | 'reset' | 'cam' | 'ready' | 'alarm' | 'inPosition' | 'homed' | 'zeroSpeed';
+export type ServoRole = 'pulse' | 'direction' | 'enable' | 'reset' | 'cam' | 'ready' | 'alarm' | 'inPosition' | 'homed' | 'zeroSpeed' | 'driveOutput';
 
 const SERVO_RE = /\bservo\b|\baxis\s*\d+\b/i;
 /** Axis limit / home sensors are field sensors (the device rules wire them), not drive signals. */
@@ -65,17 +65,26 @@ export function servoRole(p: Pick<IOPoint, 'type' | 'description'>): ServoRole |
   if (/\b(in[ -]?position|tpos|target position)\b/i.test(d)) return 'inPosition';
   if (/\b(home|homing) (complete|completed|done)\b/i.test(d)) return 'homed';
   if (/\bzero speed\b/i.test(d)) return 'zeroSpeed';
+  // Any other programmable output of the drive into the PLC ("U2 cut (DO3)"): wired to that DO.
+  if (/\bDO\d\b/i.test(d)) return 'driveOutput';
   return null;
 }
 
-/** Axis key of a servo point: "Axis 2 …" → "2", else the servo's own name, else "1". */
+/** The drive's own tag when the description starts with it ("U2 DI1 SON", "U2 ready (DO1)"): one drive, not a new axis. */
+export const driveTagLead = (description: string) => /^(U|SD|SV|SVD|A)\d+\b/i.exec(description.trim())?.[0].toUpperCase() ?? null;
+
+/** Axis key of a servo point: the drive tag it starts with ("U2 …" → "U2"), "Axis 2 …" → "2", else the servo's own name, else "1". */
 export function axisKey(description: string): string {
+  const lead = driveTagLead(description);
+  if (lead) return lead;
   const m = /\baxis\s*(\d+)\b/i.exec(description) ?? /\bservo\s*(\d+)\b/i.exec(description);
   return m ? m[1] : '1';
 }
 
-export const isServoPoint = (p: IOPoint) => p.signal !== 'analog' && (p.category === 'Servo/Axis' || SERVO_RE.test(p.description))
-  && !AXIS_SENSOR_RE.test(p.description) && servoRole(p) !== null;
+// Operator devices (a Reset that also resets the servo alarm, the servo enable selector) are field devices, not drive signals.
+const OPERATOR_RE = /^(pushbutton|selector|estop|e-stop)/;
+export const isServoPoint = (p: IOPoint) => p.signal !== 'analog' && (p.category === 'Servo/Axis' || SERVO_RE.test(p.description) || driveTagLead(p.description) !== null && /\b(DI|DO)\d\b/i.test(p.description))
+  && !AXIS_SENSOR_RE.test(p.description) && !OPERATOR_RE.test(p.deviceType ?? '') && servoRole(p) !== null;
 export const isEncoderPoint = (p: IOPoint) => p.type === 'input' && p.signal !== 'analog' && ENCODER_RE.test(p.description);
 export const isUltrasonicPoint = (p: IOPoint) => p.type === 'input' && ULTRASONIC_RE.test(p.description);
 
@@ -269,7 +278,8 @@ export function motionDesign(input: MotionInput): MotionResult {
       out.notes.push(`Axis ${key}: no servo drive in the catalog for ${watts} W at ${info.label} — select a servo drive and motor (pulse/direction input, STO).`);
     } else {
       const series = String(drive.ratings.series ?? drive.family ?? '');
-      const dt = input.nextTag('SVD');
+      // A drive already named in the drawings ("U2") keeps its tag.
+      const dt = /^\d+$/.test(key) ? input.nextTag('SVD') : key;
       axis.drive = dt;
       const motorTag = `AX${key}`;
       // Branch protection: the maker's recommended breaker, else 1.25 x the drive's input current.
@@ -323,7 +333,7 @@ export function motionDesign(input: MotionInput): MotionResult {
       out.ioWiring.push({ address: a, deviceTag: axis.drive || `SVD?${key}`, deviceType: 'servo-drive', description: p.description, location: 'Cabinet' });
     }
     const has = (r: ServoRole) => axis.signals.some((s) => s.role === r);
-    if (!has('pulse') || !has('direction')) out.notes.push(`Axis ${key}: no ${!has('pulse') ? 'pulse' : 'direction'} output in the I/O list — position control needs pulse and direction outputs (CLICK PLUS: a C2-14D1 option-slot module, pulses on its Y1 / Y3 / Y5 — Y101 / Y103 / Y105 in slot 1).`);
+    if (!has('pulse') || !has('direction')) out.notes.push(`Axis ${key}: no ${!has('pulse') ? 'pulse' : 'direction'} output in the I/O list — position control needs pulse and direction outputs (CLICK PLUS: a C2-14D1 option-slot module, pulses on its Y1 / Y3 / Y5 — Y001 / Y003 / Y005, the option slot is slot 0).`);
     out.axes.push(axis);
   }
 
@@ -393,7 +403,7 @@ export interface SlotPart { slot: number; part?: CatalogPart }
  * High-speed inputs and pulse outputs of a CPU, from its catalog ratings (hscInputs / hscMaxKHz, ptoAxes /
  * ptoOutputs, ptoNote; source in hscSource). CLICK PLUS has none of its own: they are on the option-slot module
  * (C2-14D1 / C2-08D1-…: pulses on its Y1 / Y3 / Y5, high-speed inputs X1-X8), so they are read from that
- * module at the slot the app addresses it in (Y101 / Y103 / Y105 in slot 1). Without such a module there are
+ * module at the slot the app addresses it in (Y001 / Y003 / Y005, the option slot is slot 0). Without such a module there are
  * no pulse outputs. Null when the catalog says nothing about high-speed I/O for this CPU (not checked).
  */
 export function plcMotion(cpu: CatalogPart | undefined, slots: SlotPart[] = []): PlcMotion | null {
