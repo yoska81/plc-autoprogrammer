@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
-import { defaultMachineModel } from './machineModel';
+import { defaultMachineModel, drivesFromIo, type MachineModel } from './machineModel';
 import { CATALOG, getPart } from '../catalog';
 import { bomCsv, buildModel, cableSchedule, chooseEnclosure, designWarnings, doorDrilling, enclosureFitProblem, enclosureSize, enclosuresFor, layoutFits, panelLayout, plcRack, spareSpace, SPARE_RULE, vendorTerminal, withEnclosure, type DrawingContext } from '../derive';
 import { cabinetHeat } from '../thermal';
@@ -648,6 +648,24 @@ for (const s of SCENARIOS) {
   assert.equal(r.design.components.filter((c) => getPart(c.partNumber)?.category === 'hmi').length, 0, 'no-panel: no HMI in the BOM');
   assert.equal(buildModel(ctx).hmi, undefined, 'no-panel: no HMI feed / link');
   assert.deepEqual(r.design.ioWiring.filter((w) => /^(PB|SS|PL)/.test(w.deviceTag)).map((w) => `${w.address} ${w.deviceTag}`), ['X003 PB1', 'X004 PB2', 'X005 PB3', 'X006 SS1', 'Y002 PL1', 'Y003 PL2'], 'no-panel: wired to the PLC');
+}
+
+// The converted roll former: outputs that switch the servo drive U2's inputs (DI1 SON, DI7 CAM) and the VFD's MI1 are
+// signals to drives already on the machine — never a 1 HP motor on a drive of their own.
+{
+  const io = [
+    { ...pt('U2 DI1 SON servo enable', 'output'), deviceType: 'vfd-input' },
+    { ...pt('U2 DI7 CAM engage servo drive', 'output'), deviceType: 'vfd-input' },
+    { ...pt('VFD1 MI1 forward run drive', 'output'), deviceType: 'vfd-input' },
+    pt('Servo ready (U2 DO1 SRDY)', 'input'),
+  ].map((p, i) => ({ category: 'Process', ...p, id: `r${i}` })) as IOPoint[];
+  const base = { motors: [{ tag: 'M1', description: 'Main forming motor', hp: 7.5, start: 'vfd' as const }], safety: { estops: 0, guardDoors: [], lightCurtains: [] }, zones: ['Machine'], interfaces: [], assumptions: [] };
+  const m = drivesFromIo(base as MachineModel, io);
+  assert.deepEqual(m.motors.map((x) => x.tag), ['M1'], `drive inputs are not motors: ${m.motors.map((x) => x.description).join(', ')}`);
+  assert.ok(!m.assumptions.some((a) => /no motor in the motor list/.test(a)));
+  // a real drive run output with no matching motor still gets its motor
+  const run = drivesFromIo(base as MachineModel, [...([pt('Coiler VFD run', 'output'), pt('Unwinder VFD run', 'output')].map((p, i) => ({ category: 'Process', ...p, id: `c${i}` })) as IOPoint[]), ...io]);
+  assert.deepEqual(run.motors.map((x) => x.description), ['Main forming motor', 'Coiler motor', 'Unwinder motor'], 'drive run outputs still add their motors');
 }
 
 if (failures) { console.error(`${failures} scenario(s) failed`); process.exit(1); }
