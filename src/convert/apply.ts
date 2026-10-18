@@ -39,10 +39,11 @@ export function convertedSpec(m: ExistingMachine, conv: Conversion): SpecSection
   spec.utilities = [m.spec.utilities, `Conversion: ${conv.supplyNote} The panel is redesigned to ${std}.`].filter(Boolean).join('\n');
   // nothing is certified by a conversion: the safety functions are kept, then re-validated
   spec.safety = [m.spec.safety, 'Converted design: every safety function above is kept, and must be re-validated after the conversion (risk assessment, then verification per ISO 13849-2 / NFPA 79 9.2.5.4). The panel needs its own UL 508A listing or field evaluation; the part equivalents carry only their makers\' listings.'].filter(Boolean).join('\n');
+  for (const r of conv.recommendations) spec[r.section] = [spec[r.section], `Conversion: ${r.text}`].filter(Boolean).join('\n');
   // the interlocks the wiring enforced, word for word, so the new program and the function-kept check keep them
-  if (m.interlocks.length) spec.sequence = [m.spec.sequence, `Interlocks to keep (from the existing wiring):\n${m.interlocks.map((i) => `- ${i.description}`).join('\n')}`].filter(Boolean).join('\n');
+  if (m.interlocks.length) spec.sequence = [spec.sequence, `Interlocks to keep (from the existing wiring):\n${m.interlocks.map((i) => `- ${i.description}`).join('\n')}`].filter(Boolean).join('\n');
   if (conv.motors.length) {
-    spec.motion = [m.spec.motion, `For the new supply: ${conv.motors.map((x, i) => `${x.tag} ${conv.motorKw[i]?.kw ? `${conv.motorKw[i].kw} kW → ` : ''}${x.hp} HP`).join(', ')}.`].filter(Boolean).join('\n');
+    spec.motion = [spec.motion, `For the new supply: ${conv.motors.map((x, i) => `${x.tag} ${conv.motorKw[i]?.kw ? `${conv.motorKw[i].kw} kW → ` : ''}${x.hp} HP`).join(', ')}.`].filter(Boolean).join('\n');
   }
   return spec;
 }

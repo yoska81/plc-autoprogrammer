@@ -47,6 +47,25 @@ export interface DrawnMotor {
   hp: number | null;
   starter: StarterType | null;
   reversing: boolean;
+  /** A servo motor belongs to an axis (see axes), not to the panel's motor starters. */
+  kind?: 'induction' | 'servo';
+  confidence: 'high' | 'medium' | 'low';
+  source: string;
+}
+
+/** A servo axis: drive, motor, position feedback and what runs its logic. */
+export interface DrawnAxis {
+  tag: string;
+  description: string;
+  driveTag: string;
+  drivePart: string | null;
+  motorTag: string;
+  motorKw: number | null;
+  /** Extra position feedback, e.g. "line-length encoder on CN1-11/13". */
+  encoder: string | null;
+  brakingResistor: string | null;
+  /** Drive I/O used, e.g. ["CN1-19 enable", "CN1-17 cutter down"]. */
+  signals: string[];
   confidence: 'high' | 'medium' | 'low';
   source: string;
 }
@@ -62,12 +81,19 @@ export interface ExistingMachine extends Omit<ImportResult, 'components' | 'moto
   motors: DrawnMotor[];
   /** Interlocks read from the wiring: contacts in series with coils, cross-interlocks, permissives. */
   interlocks: { description: string; devices: string[] }[];
+  /** Servo axes (none: []). */
+  axes: DrawnAxis[];
+  /** What runs the machine's logic: a PLC, a servo drive's built-in controller, relays… */
+  controller: 'plc' | 'servo-drive' | 'relays' | 'other';
   safety: {
     estops: string[];
     guards: string[];
     safetyRelay: string | null;
     /** Category / PL as drawn or inferred, e.g. "Cat 3", "PL d"; null when not shown. */
     category: string | null;
+    /** safety-relay: a monitored safety relay; hardwired: the E-stop opens the power or control circuit itself;
+     * control-only: the E-stop is just an input of a controller or drive (not a safety circuit). */
+    kind: 'safety-relay' | 'hardwired' | 'control-only';
     description: string;
   };
   /** The machine description written from the drawings, one text per spec section ("" when nothing is known). */

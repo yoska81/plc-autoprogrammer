@@ -116,7 +116,7 @@ export default function DrawingsImport() {
   const counts = conv ? { matched: conv.parts.filter((p) => p.status === 'matched').length, engine: conv.parts.filter((p) => p.status === 'engine').length, select: conv.parts.filter((p) => p.status === 'to-select').length } : null;
   const keptBad = kept.filter((k) => k.status !== 'kept').length;
   const toConfirm = raw ? unconfirmed(raw, review).length : 0;
-  const allKeys = raw ? [...raw.io.map((p) => itemKey('io', p.address)), ...raw.components.map((c) => itemKey('part', c.tag)), ...raw.motors.map((m) => itemKey('motor', m.tag))] : [];
+  const allKeys = raw ? [...raw.io.map((p) => itemKey('io', p.address)), ...raw.components.map((c) => itemKey('part', c.tag)), ...raw.motors.map((m) => itemKey('motor', m.tag)), ...raw.axes.map((a) => itemKey('axis', a.tag))] : [];
 
   const Mark = ({ k, confidence }: { k: string; confidence: 'high' | 'medium' | 'low' }) => {
     const out = review.excluded.includes(k);
@@ -166,7 +166,7 @@ export default function DrawingsImport() {
               <div><dt className="text-xs text-steel-500">Drawings</dt><dd>{raw.drawingStandard} · {raw.language || '—'}</dd></div>
               <div><dt className="text-xs text-steel-500">Supply as drawn</dt><dd>{raw.supplyDrawn.text || '—'}</dd></div>
               <div><dt className="text-xs text-steel-500">PLC</dt><dd>{raw.plc ? `${raw.plc.vendor} ${raw.plc.model}` : '—'}</dd></div>
-              <div><dt className="text-xs text-steel-500">Found</dt><dd>{raw.io.length} I/O · {raw.components.length} parts · {raw.motors.length} motors</dd></div>
+              <div><dt className="text-xs text-steel-500">Found</dt><dd>{raw.io.length} I/O · {raw.components.length} parts · {raw.motors.length} motors{raw.axes.length ? ` · ${raw.axes.length} servo axis` : ''}</dd></div>
             </dl>
             <div className="flex flex-wrap items-center gap-3 rounded border border-steel-200 bg-steel-50 p-2 text-xs text-steel-700" data-testid="review-status">
               <span>Check each reading against the drawing (sheet and place shown), correct it in the table or leave it out. {toConfirm ? <b className="text-red-700">{toConfirm} low-confidence reading{toConfirm === 1 ? '' : 's'} not confirmed: they become questions on the Machine description page.</b> : 'Every low-confidence reading is confirmed or left out.'}</span>
@@ -236,8 +236,30 @@ export default function DrawingsImport() {
                 </tbody>
               </table>
             )}
+            {raw.axes.length > 0 && (
+              <table className="w-full text-xs" data-testid="review-axes">
+                <thead><tr>{['Axis', 'What it does', 'Drive', 'Servo motor', 'Feedback / braking', 'Read from', 'Reading'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+                <tbody className="divide-y divide-steel-100">
+                  {raw.axes.map((a) => {
+                    const k = itemKey('axis', a.tag);
+                    return (
+                      <tr key={k} className={review.excluded.includes(k) ? 'opacity-40' : ''}>
+                        <td className="w-14 py-0.5 pr-2 font-mono">{a.tag}</td>
+                        <td className="pr-2">{a.description}<div className="text-steel-500">{a.signals.join(' · ')}</div></td>
+                        <td className="pr-2">{a.driveTag}{a.drivePart ? ` ${a.drivePart}` : ''}</td>
+                        <td className="pr-2">{a.motorTag} {a.motorKw ? `${a.motorKw} kW` : ''}</td>
+                        <td className="pr-2">{[a.encoder, a.brakingResistor && `braking resistor ${a.brakingResistor}`].filter(Boolean).join(', ') || '—'}</td>
+                        <td className="pr-2 text-steel-500">{a.source}</td>
+                        <td><Mark k={k} confidence={a.confidence} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            {raw.controller !== 'plc' && <p className="text-sm"><b>Control:</b> no PLC — {raw.controller === 'servo-drive' ? 'the servo drive\'s built-in controller (with the touch panel) runs the machine' : raw.controller === 'relays' ? 'relay logic' : 'its own controller'}.</p>}
             {raw.interlocks.length > 0 && <div className="text-sm"><b>Interlocks:</b><ul className="list-disc pl-5">{raw.interlocks.map((i) => <li key={i.description}>{i.description}</li>)}</ul></div>}
-            <p className="text-sm"><b>Safety:</b> {raw.safety.description || '—'} <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-900">re-validate after the conversion</span></p>
+            <p className="text-sm"><b>Safety:</b> {raw.safety.description || '—'} {raw.safety.kind === 'control-only' && <span className="rounded bg-red-100 px-1.5 text-xs text-red-800" data-testid="not-safety-circuit">not a safety circuit</span>} <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-900">re-validate after the conversion</span></p>
             {raw.uncertainties.length > 0 && <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"><b>Check on the machine:</b><ul className="list-disc pl-5">{raw.uncertainties.map((u) => <li key={u}>{u}</li>)}</ul></div>}
           </Step>
 
@@ -252,6 +274,9 @@ export default function DrawingsImport() {
           <Step n={4} title={`Conversion to ${regionSpec(conv.target.region).label}`} testid="convert-table">
             <p className="text-sm text-steel-700">{conv.supplyNote}</p>
             {conv.motors.length > 0 && <p className="text-sm">{conv.motors.map((m, i) => `${m.tag}: ${conv.motorKw[i].kw ? `${conv.motorKw[i].kw} kW → ` : ''}${m.hp} HP ${m.voltage.replace('VAC-3PH', ' V')}`).join(' · ')}</p>}
+            {conv.recommendations.length > 0 && (
+              <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900" data-testid="convert-recommendations"><b>The new design adds:</b><ul className="list-disc pl-5">{conv.recommendations.map((r) => <li key={r.text}>{r.text}</li>)}</ul></div>
+            )}
             {counts && <p className="text-xs text-steel-500">{counts.matched} parts with an equivalent, {counts.engine} chosen by the design (operator devices, sensors, PLC, overloads set for the new motor current){counts.select ? `, ${counts.select} to select` : ''}.</p>}
             <p className="text-xs text-steel-500">Equivalents carry only their makers' own listings. The converted panel is not certified by this: it needs its own UL 508A listing (or a field evaluation), and every safety function is re-validated.</p>
             <div className="overflow-x-auto">
@@ -291,7 +316,7 @@ export default function DrawingsImport() {
             <tbody className="divide-y divide-steel-100">
               {kept.map((k, i) => (
                 <tr key={i} className="align-top">
-                  <td className="py-1 pr-3 text-steel-500">{k.kind === 'io' ? 'I/O' : k.kind}</td>
+                  <td className="py-1 pr-3 text-steel-500">{k.kind === 'io' ? 'I/O' : k.kind === 'axis' ? 'servo axis' : k.kind}</td>
                   <td className="pr-3">{k.original}</td>
                   <td className="pr-3">{k.now}{k.note && <div className="text-steel-500">{k.note}</div>}</td>
                   <td className="whitespace-nowrap"><span className={KEPT[k.status]}>{KEPT_LABEL[k.status]}</span>{k.revalidate && <span className="ml-2 rounded bg-amber-100 px-1.5 text-amber-900">re-validate</span>}</td>
