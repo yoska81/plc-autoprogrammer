@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { convertStlNetwork, stlOperand } from './stl';
-import { toBranches } from './cond';
+import { el, not, toBranches } from './cond';
 import { fileText, importProgramFiles, detectFormat } from './index';
 import { programFindings } from './findings';
 import { planUpgrade } from './upgrade';
@@ -46,6 +46,37 @@ assert.deepEqual(net('A x\nL S5T#3M\nSF T 1')![0].out, { type: 'TMR', address: '
 assert.deepEqual(paths('L MW 4\nL 100\n>=I\n= q'), ['MW4>=100']);
 assert.deepEqual(net('L MW 4\nT MW 6')![0].out, { type: 'COPY', source: 'MW4', dest: 'MW6' });
 assert.deepEqual(net('L MW 4\nL 10\n+I\nT MW 8')![0].out, { type: 'MATH', dest: 'MW8', expression: 'MW4 + 10' });
+// The accumulators (review #1): L MW10 / L MW12 / +I / L 2 / *I / T MW14 is MW14 := (MW10 + MW12) * 2.
+{
+  const out = net('L MW 10\nL MW 12\n+I\nL 2\n*I\nT MW 14')![0].out;
+  assert.equal(out.type, 'MATH');
+  const expr = out.type === 'MATH' ? out.expression : '';
+  for (const [a, b] of [[0, 0], [1, 2], [7, -3], [100, 5]]) {
+    const got = Function(`return ${expr.replace(/MW10/g, String(a)).replace(/MW12/g, String(b))}`)() as number;
+    assert.equal(got, (a + b) * 2, `${expr} with MW10=${a} MW12=${b}`);
+  }
+  // A compare of a computed value ((MW10 + 5) > MW20) has no ladder form: kept whole, never the last two loads.
+  assert.equal(net('L MW 10\nL 5\n+I\nL MW 20\n>I\n= q'), null);
+  // ACCU2 after an arithmetic instruction is not relied on.
+  assert.equal(net('L MW 10\nL MW 12\n+I\n+I\nT MW 14'), null);
+  // L T 1 / L C 1 load the time / count value.
+  assert.deepEqual(net('L C 1\nT MW 6')![0].out, { type: 'COPY', source: 'C1.ACC', dest: 'MW6' });
+}
+// A counter as a contact (review #2): A C1 is "count is not 0", AN C1 is "count is 0".
+assert.deepEqual(paths('A C 1\n= q'), ['C1.ACC<>0']);
+assert.deepEqual(net('AN C 1\n= q')![0].cond, not(el({ type: 'CMP', left: 'C1.ACC', op: '<>', right: '0' })));
+// SET / CLR end the logic operation: the next A starts a new one.
+{
+  const d = net('A x\n= q1\nSET\nO a\nA b\n= q2')!;
+  assert.deepEqual(toBranches(d[1].cond), [[{ type: 'NO', address: 'a' }, { type: 'NO', address: 'b' }]], 'O a after SET is a first check, not TRUE + a');
+}
+// FP with its edge memory: the edge is kept, and a note says the memory bit is no longer written.
+{
+  const notes: string[] = [];
+  const d = convertStlNetwork(['A start', 'FP M 0.0', '= pulse'], notes)!;
+  assert.deepEqual(toBranches(d[0].cond), [[{ type: 'RISE', address: 'start' }]]);
+  assert.match(notes[0], /FP M0\.0: the edge of start is kept, but its edge memory bit is no longer written/);
+}
 // Kept whole: jumps, calls, counter loads
 assert.equal(net('AN a\nJC SKIP\nCALL "FB1", "DB1"\nSKIP: NOP 0'), null);
 assert.equal(net('A b\nL C#50\nS C 1'), null);

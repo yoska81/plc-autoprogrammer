@@ -49,16 +49,20 @@ function s5t(v: string): { preset: string; unit: 'ms' | 'sec' | 'min' } | null {
 }
 
 interface Level { orTerms: Cond[]; chain: Cond | null; op: string }
+/** An accumulator: a value as loaded, or the expression an arithmetic instruction left in it. */
+interface Acc { v: string; expr: boolean }
 
 /** One network → outputs with their conditions; null = kept whole (something the ladder can't hold). */
-export function convertStlNetwork(lines: string[]): Driven[] | null {
+export function convertStlNetwork(lines: string[], notes?: string[]): Driven[] | null {
   const driven: Driven[] = [];
   const stack: Level[] = [];
   let lv: Level = { orTerms: [], chain: null, op: '' };
   let first = true; // the next logic instruction starts a new AND chain
   let fresh = true; // …and a new logic operation (start of the network, or after an assignment)
-  const loads: string[] = [];
-  let pendingMath: string | null = null;
+  // The two accumulators: L pushes ACCU1 into ACCU2; arithmetic leaves its result in ACCU1. After an
+  // arithmetic instruction ACCU2 is not relied on (it differs between CPUs): using it keeps the network whole.
+  let accu1: Acc | null = null;
+  let accu2: Acc | null = null;
   const rlo = (): Cond => (lv.orTerms.length ? or(...lv.orTerms, ...(lv.chain ? [lv.chain] : [])) : lv.chain ?? TRUE);
   const logic = (op: string, x: Cond) => {
     const v = op === 'AN' || op === 'ON' || op === 'XN' ? not(x) : x;
@@ -97,18 +101,21 @@ export function convertStlNetwork(lines: string[]): Driven[] | null {
     }
     if (/^(A|AN|O|ON|X|XN)$/.test(op)) {
       if (op === 'O' && !arg) { if (lv.chain) lv.orTerms.push(lv.chain); lv.chain = null; first = true; continue; }
-      const t = /^T\s*\d+$/i.test(arg) || /^C\s*\d+$/i.test(arg) ? arg.replace(/\s+/g, '').toUpperCase() : stlOperand(arg);
-      logic(op, el({ type: 'NO', address: t }));
+      const t = /^[TC]\s*\d+$/i.test(arg) ? arg.replace(/\s+/g, '').toUpperCase() : stlOperand(arg);
+      // A counter as a contact is "count is not 0" (not a done bit).
+      logic(op, /^C\d+$/.test(t) ? el({ type: 'CMP', left: `${t}.ACC`, op: '<>', right: '0' }) : el({ type: 'NO', address: t }));
       continue;
     }
     switch (op) {
       case 'NOT': lv = { orTerms: [], chain: not(rlo()), op: lv.op }; continue;
-      case 'SET': lv = { orTerms: [], chain: TRUE, op: lv.op }; first = false; fresh = false; continue;
-      case 'CLR': lv = { orTerms: [], chain: FALSE, op: lv.op }; first = false; fresh = false; continue;
+      // SET / CLR end the logic operation: the next A starts a new one.
+      case 'SET': lv = { orTerms: [], chain: TRUE, op: lv.op }; first = true; fresh = true; continue;
+      case 'CLR': lv = { orTerms: [], chain: FALSE, op: lv.op }; first = true; fresh = true; continue;
       case 'FP': case 'FN': {
         // Edge of the RLO so far: kept exact only when it is one contact.
         const c = rlo();
         if (c.k !== 'el' || c.el.type !== 'NO') return null;
+        if (arg) notes?.push(`${op} ${arg.replace(/\s+/g, '')}: the edge of ${c.el.address} is kept, but its edge memory bit is no longer written by this network.`);
         lv = { orTerms: [], chain: el({ type: op === 'FP' ? 'RISE' : 'FALL', address: c.el.address }), op: lv.op };
         continue;
       }
@@ -124,7 +131,7 @@ export function convertStlNetwork(lines: string[]): Driven[] | null {
         continue;
       }
       case 'SD': case 'SF': case 'SS': {
-        const p = s5t(loads[loads.length - 1] ?? '');
+        const p = accu1 && !accu1.expr ? s5t(accu1.v) : null;
         if (!p) return null;
         driven.push({ cond: rlo(), out: { type: 'TMR', address: arg.replace(/\s+/g, '').toUpperCase(), mode: op === 'SF' ? 'OFF_DELAY' : 'ON_DELAY', preset: p.preset, unit: p.unit, accumulate: op === 'SS', resetAddress: null } });
         first = true; fresh = true;
@@ -138,24 +145,36 @@ export function convertStlNetwork(lines: string[]): Driven[] | null {
         first = true; fresh = true;
         continue;
       }
-      case 'L': loads.push(/^(S5T|C)#|^[-\d.]/i.test(arg) ? arg : stlOperand(arg)); continue;
+      case 'L': {
+        // L T 1 / L C 1 loads the time / count value.
+        const tc = /^[TC]\s*\d+$/i.test(arg) ? `${arg.replace(/\s+/g, '').toUpperCase()}.ACC` : null;
+        accu2 = accu1;
+        accu1 = { v: tc ?? value(/^(S5T|C)#|^[-+\d.]|^L#/i.test(arg) ? arg : stlOperand(arg)), expr: false };
+        continue;
+      }
       case 'T': {
-        // L … T …: unconditional copy (math when an arithmetic instruction came in between).
+        // L … T …: unconditional copy (math when ACCU1 holds a result).
+        if (!accu1) return null;
         const dest = stlOperand(arg);
-        const src = pendingMath ?? (loads.length ? value(loads[loads.length - 1]) : null);
-        if (!src) return null;
-        driven.push({ cond: TRUE, out: pendingMath ? { type: 'MATH', dest, expression: pendingMath } : { type: 'COPY', source: src, dest } });
-        pendingMath = null;
+        driven.push({ cond: TRUE, out: accu1.expr ? { type: 'MATH', dest, expression: accu1.v } : { type: 'COPY', source: accu1.v, dest } });
         continue;
       }
       default: {
         const cmp = /^(==|<>|>=|<=|>|<)([IDR])$/.exec(op);
-        if (cmp && loads.length >= 2) {
-          logic('A', el({ type: 'CMP', left: value(loads[loads.length - 2]), op: CMP[cmp[1]], right: value(loads[loads.length - 1]) }));
+        if (cmp) {
+          // ACCU2 <op> ACCU1; a compare of a computed value is kept whole.
+          if (!accu1 || !accu2 || accu1.expr || accu2.expr) return null;
+          logic('A', el({ type: 'CMP', left: accu2.v, op: CMP[cmp[1]], right: accu1.v }));
           continue;
         }
         const ar = /^([+\-*/])([IDR])$/.exec(op);
-        if (ar && loads.length >= 2) { pendingMath = `${value(loads[loads.length - 2])} ${ar[1]} ${value(loads[loads.length - 1])}`; continue; }
+        if (ar) {
+          if (!accu1 || !accu2) return null;
+          const wrap = (a: Acc) => (a.expr ? `(${a.v})` : a.v);
+          accu1 = { v: `${wrap(accu2)} ${ar[1]} ${wrap(accu1)}`, expr: true };
+          accu2 = null;
+          continue;
+        }
         return null; // jumps, calls, accumulator tricks…: the whole network is kept
       }
     }
@@ -168,8 +187,7 @@ const value = (v: string) => v.replace(/^[+]/, '').replace(/^L#/, '');
 /** STL source → program (blocks → routines, networks → rungs). */
 export function readStlSource(input: string): ForeignProgram {
   // Windows exports are CRLF: read as LF lines.
-  const src = input.replace(/\r\n?/g, '\n');
-  const text = src.replace(/\r\n?/g, '\n');
+  const text = input.replace(/\r\n?/g, '\n');
   const tags: ForeignTag[] = stVariables(text);
   const routines: ForeignRoutine[] = [];
   const notes: string[] = [];
@@ -186,14 +204,16 @@ export function readStlSource(input: string): ForeignProgram {
       const lines = net.split('\n').filter((l) => !/^\s*(TITLE\s*=|\/\/)/i.test(l));
       const code = lines.map((l) => l.trim()).filter(Boolean);
       if (!code.length) return;
-      const driven = convertStlNetwork(code);
+      const netNotes: string[] = [];
+      const driven = convertStlNetwork(code, netNotes);
       const id = `${slug(name)}_${i + 1}`;
       let rungs: Rung[] = [];
       if (driven) {
         const r = toRungs(driven, title, id);
         rungs = r.failed.length ? [] : r.rungs;
       }
-      if (!rungs.length) rungs = [{ id, comment: title, branches: [], outputs: [{ type: 'RAW', vendor: VENDOR, text: code.join('\n') }] }];
+      if (rungs.length) notes.push(...netNotes.map((n) => `${name} network ${i + 1}: ${n}`));
+      else rungs = [{ id, comment: title, branches: [], outputs: [{ type: 'RAW', vendor: VENDOR, text: code.join('\n') }] }];
       for (const g of rungs) { routine.rungs.push(g); routine.rungNumbers![g.id] = String(i + 1); }
       for (const g of rungs) for (const x of [...g.branches.flat(), ...g.outputs]) {
         if ('address' in x) operands.add(x.address);

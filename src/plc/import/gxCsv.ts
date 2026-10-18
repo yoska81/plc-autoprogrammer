@@ -148,14 +148,34 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
   let mps: Cond[] = [];
   let afterOutput = false;
   let pulse = 0;
+  // The rung's instructions as written; any one the reader doesn't know keeps the whole rung as written.
+  let lines: string[] = [];
+  let opaque = false;
 
   const flush = () => {
-    if (driven.length) {
+    if (opaque && lines.length) {
+      const id = `${slug(name)}_${rungStep || routine.rungs.length}`;
+      routine.rungs.push({ id, comment: rungComment, branches: [], outputs: [{ type: 'RAW', vendor: brand.raw, text: lines.join('\n') }] });
+    } else if (driven.length) {
       const { rungs, failed } = toRungs(driven, rungComment, `${slug(name)}_${rungStep || routine.rungs.length}`);
       routine.rungs.push(...rungs);
       for (const f of failed) routine.untranslated.push(`Step ${rungStep}: ${f.out.type} — condition too complex for a ladder rung`);
     }
-    driven = []; cur = null; blocks = []; mps = []; afterOutput = false; rungComment = '';
+    driven = []; cur = null; blocks = []; mps = []; afterOutput = false; rungComment = ''; lines = []; opaque = false;
+  };
+  /**
+   * An LD after an output starts a new rung unless the instructions up to the next output combine it with
+   * the condition before it (MPP … LD X2 OR X3 ANB … OUT: the ANB needs the condition MPP restored).
+   */
+  const continues = (from: number) => {
+    let depth = 0;
+    for (let j = from; j < list.length; j++) {
+      const o = list[j].op;
+      if (/^(LD|LDI|LDP|LDF)$/.test(o) || /^D?LD[DE]?(<>|<=|>=|=|<|>)(D|E)?$/.test(o)) depth++;
+      else if (o === 'ANB' || o === 'ORB') { if (--depth <= 0) return true; }
+      else if (!/^(AND|ANI|ANDP|ANDF|OR|ORI|ORP|ORF|MPS|MRD|MPP|INV)$/.test(o) && !/^D?(AND|OR)[DE]?(<>|<=|>=|=|<|>)(D|E)?$/.test(o)) return false;
+    }
+    return false;
   };
   const contact = (op: string, a: string): Cond => {
     const d = a.toUpperCase();
@@ -167,6 +187,19 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
     if (/^(LDF|ANDF|ORF)$/.test(op)) return el({ type: 'FALL', address: addr });
     return el({ type: /^(LDI|ANI|ORI)$/.test(op) ? 'NC' : 'NO', address: addr });
   };
+  /** Timer time base and retention by brand and timer number. */
+  const timerBases: string[] = [];
+  const timerBase = (dev: string): { ms: number; retentive: boolean } => {
+    const k = Number(dev.replace(/\D/g, ''));
+    const st = /^ST/i.test(dev);
+    const v = brand.vendor;
+    let r = { ms: 100, retentive: st };
+    if (v === 'Xinje') r = k < 100 ? { ms: 100, retentive: false } : k < 200 ? { ms: 100, retentive: true } : k < 300 ? { ms: 10, retentive: false } : k < 400 ? { ms: 10, retentive: true } : k < 500 ? { ms: 1, retentive: false } : { ms: 1, retentive: true };
+    else if (v === 'Delta') r = k < 200 ? { ms: 100, retentive: false } : k < 240 ? { ms: 10, retentive: false } : k < 246 ? { ms: 10, retentive: true } : { ms: 1, retentive: true };
+    else if (v === 'Inovance' || (v.startsWith('Mitsubishi') && /FX[123]|FX3/i.test(module))) r = st ? r : k < 200 ? { ms: 100, retentive: false } : k < 246 ? { ms: 10, retentive: false } : k < 250 ? { ms: 1, retentive: true } : { ms: 100, retentive: true };
+    if (r.ms !== 100 || r.retentive) timerBases.push(`${dev} ${r.ms} ms${r.retentive ? ', retentive' : ''}`);
+    return r;
+  };
   /** A value: constants as numbers; a timer / counter as its current value. */
   const operand = (a: string) => (/^[KHE]-?[\dA-F.]+$/i.test(a) ? value(a) : /^(T|ST|C)\d+$/i.test(a) ? `${n(a)}.ACC` : n(a));
   const out = (o: LadderOutput) => { driven.push({ cond: cur ?? TRUE, out: o }); afterOutput = true; };
@@ -176,22 +209,25 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
     out({ type: 'OUT', address: helper });
     driven.push({ cond: el({ type: 'RISE', address: helper }), out: o });
   };
-  const timerPreset = (dev: string, k: string) => {
-    // FX5 / Q: T = 100 ms base (OUTH 10 ms); a constant K is in those units.
-    const base = 100;
+  const timerPreset = (dev: string, k: string, base: number) => {
+    // A constant K counts in the timer's base (100 / 10 / 1 ms).
     if (/^K\d+$/i.test(k)) { const ms = Number(k.slice(1)) * base; return ms % 1000 === 0 ? { preset: String(ms / 1000), unit: 'sec' as const } : { preset: String(ms), unit: 'ms' as const }; }
-    notes.push(`${dev}: the preset comes from ${k} in 0.1 s units; the app reads it as seconds. Check the value.`);
-    return { preset: n(k), unit: 'sec' as const };
+    notes.push(`${dev}: the preset comes from ${k} in ${base} ms units; the app reads it as ${base === 1 ? 'ms' : 'seconds'}. Check the value.`);
+    return { preset: n(k), unit: base === 1 ? 'ms' as const : 'sec' as const };
   };
 
-  for (const ins of list) {
+  for (const [idx, ins] of list.entries()) {
     const { op, args } = ins;
-    if (ins.comment && ins.step) { if (driven.length || cur) flush(); rungComment = ins.comment; rungStep = ins.step; }
+    if (ins.comment && ins.step) { if (driven.length || cur || lines.length) flush(); rungComment = ins.comment; rungStep = ins.step; }
     if (op === 'END' || op === 'FEND') break;
     if (op === 'NOP') continue;
-    const cmp = /^(LD|AND|OR)(<>|<=|>=|=|<|>)(D|E)?$/.exec(op);
+    // 16 / 32-bit and float compares: LD= / LDD= / DLD= / LD=D / LDE=.
+    const cmp = /^D?(LD|AND|OR)[DE]?(<>|<=|>=|=|<|>)(D|E)?$/.exec(op);
     if (/^(LD|LDI|LDP|LDF)$/.test(op) || (cmp && cmp[1] === 'LD')) {
-      if (afterOutput && !mps.length) flush();
+      if (afterOutput && !mps.length && !continues(idx)) flush();
+    }
+    lines.push([op, ...args].join(' '));
+    if (/^(LD|LDI|LDP|LDF)$/.test(op) || (cmp && cmp[1] === 'LD')) {
       if (!rungStep || (!driven.length && !cur)) rungStep = ins.step || rungStep;
       if (cur) blocks.push(cur);
       cur = cmp ? el({ type: 'CMP', left: operand(args[0]), op: CMP[cmp[2]], right: operand(args[1]) }) : contact(op, args[0]);
@@ -218,8 +254,9 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
       case 'OUT': case 'OUTH': {
         const dev = args[0].toUpperCase();
         if (/^(T|ST)\d+$/.test(dev) && args[1]) {
-          const p = op === 'OUTH' && /^K\d+$/i.test(args[1]) ? { preset: String(Number(args[1].slice(1)) * 10), unit: 'ms' as const } : timerPreset(dev, args[1]);
-          out({ type: 'TMR', address: n(dev), mode: 'ON_DELAY', preset: p.preset, unit: p.unit, accumulate: dev.startsWith('ST'), resetAddress: null });
+          const b = op === 'OUTH' ? { ms: 10, retentive: false } : timerBase(dev);
+          const p = timerPreset(dev, args[1], b.ms);
+          out({ type: 'TMR', address: n(dev), mode: 'ON_DELAY', preset: p.preset, unit: p.unit, accumulate: b.retentive, resetAddress: null });
         } else if (/^C\d+$/.test(dev) && args[1]) out({ type: 'CNT', address: n(dev), direction: 'UP', preset: operand(args[1]), resetAddress: null });
         else {
           coilSteps.set(dev, [...(coilSteps.get(dev) ?? []), rungStep]);
@@ -229,8 +266,9 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
       }
       case 'TMR': case 'TMRH': { // Delta: TMR T0 K50 (100 ms timers; TMRH 10 ms)
         const dev = args[0].toUpperCase();
-        const p = op === 'TMRH' && /^K\d+$/i.test(args[1] ?? '') ? { preset: String(Number(args[1].slice(1)) * 10), unit: 'ms' as const } : timerPreset(dev, args[1] ?? 'K0');
-        out({ type: 'TMR', address: n(dev), mode: 'ON_DELAY', preset: p.preset, unit: p.unit, accumulate: false, resetAddress: null });
+        const b = op === 'TMRH' ? { ms: 10, retentive: false } : timerBase(dev);
+        const p = timerPreset(dev, args[1] ?? 'K0', b.ms);
+        out({ type: 'TMR', address: n(dev), mode: 'ON_DELAY', preset: p.preset, unit: p.unit, accumulate: b.retentive, resetAddress: null });
         continue;
       }
       case 'CNT': out({ type: 'CNT', address: n(args[0]), direction: 'UP', preset: operand(args[1] ?? 'K0'), resetAddress: null }); continue;
@@ -256,11 +294,13 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
         continue;
       }
       default:
-        // An instruction the ladder model has no form for: kept as written, in place.
-        out({ type: 'RAW', vendor: brand.raw, text: [op, ...args].join(' ') });
+        // An instruction the reader doesn't know: the whole rung is kept as written (nothing dropped or changed).
+        opaque = true;
+        afterOutput = true;
     }
   }
   flush();
+  if (timerBases.length) notes.push(`Timer time bases (${brand.vendor}${module ? ` ${module}` : ''}): ${timerBases.join('; ')}. Presets were converted with them; check them against the PLC.`);
 
   for (const [dev, steps] of coilSteps) {
     if (steps.length < 2) continue;
@@ -275,6 +315,12 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
     const pre = m[1];
     const dataType = pre === 'T' || pre === 'ST' ? 'TIMER' : pre === 'C' ? 'COUNTER' : pre === 'D' || pre === 'W' || pre === 'R' ? 'INT' : 'BOOL';
     if (!used.has(d) && pre !== 'X' && pre !== 'Y') continue;
+    // X / Y are octal on these PLCs: X8, X19 are not terminals (a typo in the export or the program).
+    if ((pre === 'X' || pre === 'Y') && /[89]/.test(m[2])) {
+      notes.push(`${d} is not a valid ${pre === 'X' ? 'input' : 'output'} address (X / Y are numbered in octal: …7, 10, 11…); it is treated as an internal bit. Check the program.`);
+      tags.push({ name: used.get(d) ?? nameOf(d), dataType, comment: c?.comment ?? '', address: d });
+      continue;
+    }
     tags.push({ name: used.get(d) ?? nameOf(d), dataType, comment: c?.comment ?? '', address: d, ...(pre === 'X' ? { io: 'input' as const } : pre === 'Y' ? { io: 'output' as const } : {}) });
   }
   if (!commentsIn) notes.push(brand.noComments);
@@ -313,7 +359,13 @@ export function ilInstructions(text: string): { name: string; module: string; li
     const c = /^(?:;|\/\/|\*|\(\*)\s*(.*?)\s*(?:\*\))?$/.exec(line);
     if (c) { pending = c[1]; continue; }
     const m = /^(?:(\d+)\s+)?([A-Z][A-Z0-9]*(?:[=<>]+[A-Z]?)?|[+\-*/])\s*(.*?)\s*(?:(?:;|\/\/)\s*(.*))?$/i.exec(line);
-    if (!m || (!IL_OP.test(m[2]) && !/^[A-Z][A-Z0-9]*$/i.test(m[2]) && !/^[+\-*/]$/.test(m[2]))) continue;
+    if (!m) {
+      // Not an instruction the pattern knows (LD&, LD|…): kept, so the rung it is in stays as written.
+      const t = line.replace(/^\d+\s+/, '').split(/\s+/);
+      list.push({ step: String(step++), comment: pending, op: t[0].toUpperCase(), args: t.slice(1) });
+      pending = '';
+      continue;
+    }
     const st = m[1] ?? String(step);
     step = Number(st) + 1;
     list.push({ step: st, comment: pending, op: m[2].toUpperCase(), args: m[3] ? m[3].split(/[\s,]+/).filter(Boolean) : [] });

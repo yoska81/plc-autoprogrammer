@@ -65,7 +65,59 @@ const rungsOf = (text: string) => readGxCsv(text).routines[0].rungs;
 {
   // Unknown instruction: kept as written.
   const r = rungsOf(csv([['0', '', 'LD', 'X0'], ['1', '', 'DSZR', 'D0'], ['', '', '', 'Y0'], ['5', '', 'END', '']]));
-  assert.deepEqual(r[0].outputs, [{ type: 'RAW', vendor: 'mitsubishi-fx', text: 'DSZR D0 Y0' }]);
+  assert.deepEqual(r[0].outputs, [{ type: 'RAW', vendor: 'mitsubishi-fx', text: 'LD X0\nDSZR D0 Y0' }], 'the whole rung is kept as written');
+  assert.deepEqual(r[0].branches, []);
+}
+
+// ── Side manager's counter-examples: truth tables ──
+{
+  /** Value of each output of the rungs for every combination of X0…X3. */
+  const table = (rows: string[][]) => {
+    const rungs = rungsOf(csv(rows));
+    const outs = new Map<string, boolean[]>();
+    for (let m = 0; m < 16; m++) {
+      const v = (a: string) => (/^X(\d)$/.test(a) ? Boolean(m & (1 << Number(a.slice(1)))) : false);
+      for (const r of rungs) for (const o of r.outputs) {
+        if (o.type !== 'OUT') continue;
+        const on = r.branches.length === 0 || r.branches.some((b) => b.every((e) => ('address' in e ? (e.type === 'NC' ? !v(e.address) : v(e.address)) : false)));
+        outs.set(o.address, [...(outs.get(o.address) ?? []), on]);
+      }
+    }
+    return outs;
+  };
+  const expect = (f: (x: boolean[]) => boolean) => Array.from({ length: 16 }, (_, m) => f([0, 1, 2, 3].map((i) => Boolean(m & (1 << i)))));
+  // #6: MPP then LD … ANB: Y1 = X0 · (X2 + X3), not X2 + X3.
+  const t6 = table([['0', '', 'LD', 'X0'], ['1', '', 'MPS', ''], ['2', '', 'AND', 'X1'], ['3', '', 'OUT', 'Y0'], ['4', '', 'MPP', ''], ['5', '', 'LD', 'X2'], ['6', '', 'OR', 'X3'], ['7', '', 'ANB', ''], ['8', '', 'OUT', 'Y1'], ['9', '', 'END', '']]);
+  assert.deepEqual(t6.get('Y0'), expect(([a, b]) => a && b));
+  assert.deepEqual(t6.get('Y1'), expect(([a, , c, d]) => a && (c || d)), 'MPP … LD … ANB keeps the stacked condition');
+  // #7: an instruction the reader doesn't know: never Y0 = X0; the rung is kept whole.
+  for (const unknown of [['DAND>', 'D0'], ['LD&', 'D0'], ['LD|', 'D0'], ['DLD>', 'D0']]) {
+    const r = rungsOf(csv([['0', '', 'LD', 'X0'], ['1', '', unknown[0], unknown[1]], ['', '', '', 'K5'], ['4', '', 'OUT', 'Y0'], ['5', '', 'END', '']]));
+    const kept = r.every((g) => g.outputs.every((o) => o.type === 'RAW'));
+    const compared = r.some((g) => g.branches.flat().some((e) => e.type === 'CMP'));
+    assert.ok(kept || compared, `${unknown[0]}: kept as written or read as a compare, never dropped (${JSON.stringify(r)})`);
+  }
+  assert.ok(rungsOf(csv([['0', '', 'LD', 'X0'], ['1', '', 'LD&', 'D0'], ['', '', '', 'K5'], ['4', '', 'ANB', ''], ['5', '', 'OUT', 'Y0'], ['6', '', 'END', '']]))[0].outputs[0].type === 'RAW');
+  // A 32-bit compare is read: DAND> D0 K5.
+  const dand = rungsOf(csv([['0', '', 'LD', 'X0'], ['1', '', 'DAND>', 'D0'], ['', '', '', 'K5'], ['4', '', 'OUT', 'Y0'], ['5', '', 'END', '']]));
+  assert.deepEqual(dand[0].branches, [[{ type: 'NO', address: 'X0' }, { type: 'CMP', left: 'D0', op: '>', right: '5' }]]);
+}
+
+// ── #8: timer bases per brand and number ──
+{
+  const tmr = (text: string) => readIlText(text).routines[0].rungs.flatMap((r) => r.outputs).filter((o) => o.type === 'TMR');
+  assert.deepEqual(tmr('; ISPSoft DVP\nLD X0\nTMR T200 K50\nLD X1\nTMR T0 K50\nEND').map((o) => o.type === 'TMR' ? `${o.preset} ${o.unit}` : ''), ['500 ms', '5 sec'], 'Delta T200 = 10 ms');
+  const xin = tmr('; XDPPro XD5\nLD X0\nOUT T200 K50\nLD X1\nOUT T150 K50\nEND');
+  assert.deepEqual(xin.map((o) => o.type === 'TMR' ? `${o.preset} ${o.unit} ${o.accumulate}` : ''), ['500 ms false', '5 sec true'], 'Xinje: T200 10 ms, T100–T199 retentive');
+  assert.deepEqual(tmr('; AutoShop H3U\nLD X0\nOUT T246 K50\nEND').map((o) => o.type === 'TMR' ? `${o.preset} ${o.unit}` : ''), ['50 ms'], 'Inovance T246 = 1 ms');
+  assert.match(readIlText('; ISPSoft DVP\nLD X0\nTMR T200 K50\nEND').notes.join(' '), /T200 10 ms/);
+}
+
+// ── Octal I/O: X8 is not a terminal ──
+{
+  const p = readIlText('; ISPSoft DVP\nLD X8\nOUT Y0\nEND');
+  assert.ok(!p.tags.find((t) => t.address === 'X8')?.io);
+  assert.ok(p.notes.some((n) => /X8 is not a valid input address/.test(n)));
 }
 
 // ── The capper (GX Works3: UTF-16 LE, tabs, quotes) with its device comments ──

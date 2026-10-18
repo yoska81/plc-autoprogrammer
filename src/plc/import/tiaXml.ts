@@ -6,7 +6,7 @@
  *   Contact (Negated), PContact / NContact and P_TRIG-style edges, Coil, SCoil, RCoil, TON / TOF / TP /
  *   TONR (instance), CTU / CTD, Eq / Ne / Gt / Ge / Lt / Le compare boxes, Move.
  * A network with any other instruction is kept as a pointer to the original network (RAW 'siemens-lad');
- * SCL / STL / FBD networks are listed as not converted.
+ * SCL / STL / FBD networks, FB / FC calls and box pins wired to tags or to logic are kept the same way.
  * The block interface (Sections › Member) gives the block's own variables; the PLC tag table gives the I/O.
  */
 import { all, kid, kids, local, parseXml, textOf, type XNode } from './xml';
@@ -22,6 +22,13 @@ export const isTiaXml = (text: string) => /<Document>[\s\S]*<SW\.Blocks\.(FB|FC|
 
 const CMP: Record<string, CompareOp> = { Eq: '==', Ne: '<>', Gt: '>', Ge: '>=', Lt: '<', Le: '<=' };
 
+const WIDTH: Record<string, string> = {
+  BOOL: 'X', BYTE: 'B', CHAR: 'B', SINT: 'B', USINT: 'B',
+  WORD: 'W', INT: 'W', UINT: 'W', S5TIME: 'W', DATE: 'W',
+  DWORD: 'D', DINT: 'D', UDINT: 'D', REAL: 'D', TIME: 'D', TOD: 'D', TIME_OF_DAY: 'D',
+  LWORD: 'L', LINT: 'L', ULINT: 'L', LREAL: 'L',
+};
+
 /** An Access part → operand text: "Motor".Run → Motor.Run, #Local → Local, constants as values. */
 function accessText(a: XNode): string {
   const scope = a.attrs.Scope ?? '';
@@ -31,10 +38,14 @@ function accessText(a: XNode): string {
     return ms !== null ? String(ms) : v;
   }
   if (/Address/i.test(scope)) {
+    // Absolute address: the area, the width of its type and the byte (and bit), in the tag table's form
+    // (%IX0.0, %MX10.1, %MD20). A type of unknown width keeps the network whole.
     const ad = kid(a, 'Address');
-    const area = (ad?.attrs.Area ?? '').toUpperCase();
-    const pre = area === 'INPUT' ? '%I' : area === 'OUTPUT' ? '%Q' : area === 'MEMORY' ? '%M' : '%';
-    return ad?.attrs.Type === 'Bool' ? `${pre}X${Math.floor(Number(ad.attrs.BitOffset) / 8)}.${Number(ad.attrs.BitOffset) % 8}` : `${pre}W${Math.floor(Number(ad?.attrs.BitOffset ?? 0) / 8)}`;
+    const pre = { INPUT: '%I', OUTPUT: '%Q', MEMORY: '%M' }[(ad?.attrs.Area ?? '').toUpperCase()];
+    const width = WIDTH[(ad?.attrs.Type ?? '').toUpperCase()];
+    const off = Number(ad?.attrs.BitOffset);
+    if (!pre || !width || !Number.isInteger(off)) return '';
+    return width === 'X' ? `${pre}X${Math.floor(off / 8)}.${off % 8}` : `${pre}${width}${Math.floor(off / 8)}`;
   }
   const sym = kid(a, 'Symbol');
   return kids(sym, 'Component').map((c) => c.attrs.Name).join('.');
@@ -42,15 +53,18 @@ function accessText(a: XNode): string {
 
 /** What drives an input pin: the power rail, an operand (Access), or output pins of other parts (OR'ed). */
 type Feed = { kind: 'rail' } | { kind: 'operand'; uid: string } | { kind: 'pins'; from: { uid: string; pin: string }[] };
+const OUT_PINS = /^(out\d*|Q|QU|QD|eno|ENO|ET|CV)$/;
 interface Net { parts: Map<string, XNode>; access: Map<string, string>; feeds: Map<string, Feed> }
 
 /** Wires → for each input pin (uid:pin), what drives it; operand pins → the operand text. */
 function netOf(flg: XNode): Net {
   const parts = new Map<string, XNode>(), access = new Map<string, string>();
-  for (const p of kids(kid(flg, 'Parts'), 'Access')) access.set(p.attrs.UId, accessText(p));
-  for (const p of kids(kid(flg, 'Parts'), 'Part')) parts.set(p.attrs.UId, p);
+  for (const p of kid(flg, 'Parts')?.children ?? []) {
+    if (!p.name) continue;
+    if (local(p) === 'Access') access.set(p.attrs.UId, accessText(p));
+    else parts.set(p.attrs.UId, p); // Part, Call (FB / FC), anything else
+  }
   const feeds = new Map<string, Feed>();
-  const OUT_PINS = /^(out|Q|eno|ET|CV|out1|ENO)$/;
   for (const w of kids(kid(flg, 'Wires'), 'Wire')) {
     const cons = w.children.filter((c) => c.name);
     const rail = cons.some((c) => local(c) === 'Powerrail');
@@ -68,9 +82,15 @@ export function ladNetwork(flg: XNode): { driven: Driven[]; unknown: string[] } 
   const net = netOf(flg);
   const driven: Driven[] = [];
   const unknown: string[] = [];
-  const operand = (uid: string, pin: string): string => {
+  const partName = (p: XNode) => (local(p) === 'Part' ? p.attrs.Name : local(p) === 'Call' ? `call ${kid(p, 'CallInfo')?.attrs.Name ?? ''}`.trim() : local(p));
+  // The tag on a pin. A pin driven by logic, or an address it can't read, keeps the network whole;
+  // an optional pin (a counter's reset) may be left open.
+  const operand = (uid: string, pin: string, optional = false): string => {
     const f = net.feeds.get(`${uid}:${pin}`);
-    return f?.kind === 'operand' ? net.access.get(f.uid) ?? '?' : '?';
+    const t = f?.kind === 'operand' ? net.access.get(f.uid) : undefined;
+    if (t) return t;
+    if (f || !optional) unknown.push(`${partName(net.parts.get(uid)!)} ${pin} ${f && f.kind !== 'operand' ? 'from logic' : 'not read'}`);
+    return '?';
   };
   const instance = (p: XNode) => {
     const ci = kid(p, 'Instance');
@@ -91,7 +111,7 @@ export function ladNetwork(flg: XNode): { driven: Driven[]; unknown: string[] } 
     const p = net.parts.get(uid);
     let c: Cond = FALSE;
     if (p) {
-      const name = p.attrs.Name;
+      const name = partName(p);
       const neg = kids(p, 'Negated').some((n) => n.attrs.Name === 'operand');
       if (name === 'Contact') c = and(pinCond(uid, 'in', depth), el({ type: neg ? 'NC' : 'NO', address: operand(uid, 'operand') }));
       else if (name === 'PContact' || name === 'NContact') c = and(pinCond(uid, 'in', depth), el({ type: name === 'PContact' ? 'RISE' : 'FALL', address: operand(uid, 'operand') }));
@@ -105,8 +125,15 @@ export function ladNetwork(flg: XNode): { driven: Driven[]; unknown: string[] } 
     memo.set(key, c);
     return c;
   };
+  // An output pin wired to a tag (TON ET, CTU CV, Move out2, a box's Q…) writes that tag: no ladder form
+  // here except Move out1.
+  for (const [key, f] of net.feeds) {
+    const [uid, pin] = key.split(':');
+    const p = net.parts.get(uid);
+    if (p && f.kind === 'operand' && OUT_PINS.test(pin) && !(partName(p) === 'Move' && pin === 'out1')) unknown.push(`${partName(p)} ${pin} to a tag`);
+  }
   for (const [uid, p] of net.parts) {
-    const name = p.attrs.Name;
+    const name = partName(p);
     const neg = kids(p, 'Negated').some((n) => n.attrs.Name === 'operand');
     switch (name) {
       case 'Contact': case 'PContact': case 'NContact': break;
@@ -117,11 +144,11 @@ export function ladNetwork(flg: XNode): { driven: Driven[]; unknown: string[] } 
         if (name === 'TP') { unknown.push('TP (pulse timer)'); break; }
         const pt = operand(uid, 'PT');
         const p2 = /^\d+$/.test(pt) ? msPreset(pt) : { preset: pt, unit: 'ms' as const };
-        driven.push({ cond: pinCond(uid, 'IN'), out: { type: 'TMR', address: instance(p), mode: name === 'TOF' ? 'OFF_DELAY' : 'ON_DELAY', preset: p2.preset, unit: p2.unit, accumulate: name === 'TONR', resetAddress: name === 'TONR' ? operand(uid, 'R') : null } });
+        driven.push({ cond: pinCond(uid, 'IN'), out: { type: 'TMR', address: instance(p), mode: name === 'TOF' ? 'OFF_DELAY' : 'ON_DELAY', preset: p2.preset, unit: p2.unit, accumulate: name === 'TONR', resetAddress: name === 'TONR' ? operand(uid, 'R', true) : null } });
         break;
       }
       case 'CTU': case 'CTD': {
-        const r = operand(uid, name === 'CTU' ? 'R' : 'LD');
+        const r = operand(uid, name === 'CTU' ? 'R' : 'LD', true);
         driven.push({ cond: pinCond(uid, name === 'CTU' ? 'CU' : 'CD'), out: { type: 'CNT', address: instance(p), direction: name === 'CTD' ? 'DOWN' : 'UP', preset: operand(uid, 'PV'), resetAddress: r !== '?' ? r : null } });
         break;
       }
@@ -172,7 +199,9 @@ export function readTiaXml(input: string): ForeignProgram {
       const id = `${slug(name)}_${i + 1}`;
       const flg = all(kid(al, 'NetworkSource'), 'FlgNet')[0];
       if (lang !== 'LAD' || !flg) {
-        routine.untranslated.push(`Network ${i + 1}${title ? ` (${title})` : ''}: ${lang || 'unknown'} network not converted (LAD networks are read)`);
+        // SCL / STL / FBD network: kept in the program as a pointer to the original network.
+        routine.rungs.push({ id, comment: title, branches: [], outputs: [{ type: 'RAW', vendor: 'siemens-lad', text: `${name} network ${i + 1} (${lang || 'unknown'} network): edit it in TIA Portal` }] });
+        routine.rungNumbers![id] = String(i + 1);
         return;
       }
       const { driven, unknown } = ladNetwork(flg);
