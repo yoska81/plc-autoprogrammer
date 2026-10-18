@@ -13,6 +13,8 @@ export interface StageSource {
   /** Installation region at generation time (codes, supply, colours: the electrical design depends on it). */
   region?: string;
   hmiFp?: string;
+  /** Touch panel the HMI screens were laid out for (another panel only scales them). */
+  panel?: string;
   /** Spec text at generation time, so updates can tell the AI exactly what changed. */
   spec: SpecSections;
   at: string;

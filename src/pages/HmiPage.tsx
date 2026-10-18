@@ -23,6 +23,7 @@ import { withTagNames } from '../hmi/tagLabels';
 import { specToText } from '../spec/types';
 import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
+import ProgramOutOfStep from '../components/ProgramOutOfStep';
 import ResizablePane from '../components/ResizablePane';
 import { Spinner, ReasoningPanel } from '../components/common';
 import { type AccessLevel, type HmiAlarm, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
@@ -106,7 +107,7 @@ function ElementEditor({ el, screens, onChange, onDelete, tagName }: { el: HmiEl
       </label>
       {READS.has(el.kind) && (
         <label className={fieldLabel}>{el.kind === 'header' ? 'Mode bit / register' : 'PLC address'}
-          <input value={el.address ?? ''} onChange={(e) => onChange({ ...el, address: e.target.value.toUpperCase().trim() || null })} className={`${input} w-full font-mono`} placeholder="e.g. C1001, DS1001" list="hmi-address-options" aria-label="PLC address" />
+          <input value={el.address ?? ''} onChange={(e) => onChange({ ...el, address: e.target.value.toUpperCase().trim() || null, lostIo: undefined })} className={`${input} w-full font-mono`} placeholder="e.g. C1001, DS1001" list="hmi-address-options" aria-label="PLC address" />
           {el.address && tagName?.(el.address) && <span className="block mt-0.5 text-[11px] font-mono text-gray-600 normal-case" data-testid="plc-tag">PLC tag: {tagName(el.address)}</span>}
         </label>
       )}
@@ -316,7 +317,10 @@ export default function HmiPage() {
   const hmiQuestions = useMemo(() => hmiQuestionsRaw.map((q) => ({ ...q, text: withTagNames(q.text, tagName) })), [hmiQuestionsRaw, tagName]);
   const screen = design?.screens.find((s) => s.id === screenId) ?? design?.screens[0] ?? null;
   const selectedEl = screen?.elements.find((e) => e.id === selected) ?? null;
-  const issues = useMemo(() => (design && model ? checkDesign(design, model.widthPx, model.heightPx, { text: true }) : []), [design, model]);
+  const issues = useMemo(() => {
+    const ioSet = new Set(io.map((p) => (addresses.get(p.id) ?? '').toUpperCase()).filter(Boolean));
+    return design && model ? checkDesign(design, model.widthPx, model.heightPx, { text: true, io: ioSet }) : [];
+  }, [design, model, io, addresses]);
   const usedOn = useMemo(() => {
     const m = new Map<string, string[]>();
     for (const s of design?.screens ?? []) for (const e of s.elements) {
@@ -544,7 +548,7 @@ export default function HmiPage() {
         if (prev) setHist((x) => ({ ...x, past: [...x.past, prev].slice(-100), future: [] }));
         useHmiStore.getState().setDesign(look ? { ...merged, look } : merged, r.explanation);
         if (notes.length) notify(notes.join(' '));
-        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(merged) });
+        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(merged), panel: merged.hmiPartNumber });
       },
     });
   };
@@ -622,6 +626,7 @@ export default function HmiPage() {
         )}
       </header>
       <StageBanner info={stages.hmi} action={noPanel ? undefined : genButton('Update screens')} />
+      {!noPanel && <ProgramOutOfStep where="hmi" />}
 
       <div className="flex-1 overflow-auto bg-gray-50 p-5 space-y-4">
         {noPanel && !choosing && (

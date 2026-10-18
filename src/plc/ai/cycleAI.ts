@@ -100,7 +100,7 @@ export function renameActions(seq: CycleSequence, asked: ProgramResult['autoBits
 export interface RuleProgramResult { program: LadderProgram; explanation: string; reasoning: null; source: 'ai' | 'rules'; notes: string[]; aiError?: string; sequence: CycleSequence }
 
 /** The program for the project: the standard blocks plus the cycle (the AI's steps when a key is set, else the default steps). Never fails because of the AI. */
-export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcContext; spec: string; electrical?: ElectricalDesign | null; hmi?: HmiDesign | null; /** The equipment has no touch panel (door pushbuttons, selector and lamps only). */ noPanel?: boolean }): Promise<RuleProgramResult> {
+export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcContext; spec: string; electrical?: ElectricalDesign | null; hmi?: HmiDesign | null; /** The equipment has no touch panel (door pushbuttons, selector and lamps only). */ noPanel?: boolean; /** Rebuild the standard blocks around this cycle (the current program's), no AI. */ keepSequence?: CycleSequence }): Promise<RuleProgramResult> {
   const content = projectHmiContent({ io: o.ctx.io, addresses: o.ctx.addresses, machineName: o.hmi?.machineName ?? 'Machine', spec: o.spec, electrical: o.electrical, panel: { partNumber: '', widthPx: 800, heightPx: 480 } });
   // The HMI's own machine states (it may have the cycle's steps from the AI).
   const stateTag = o.hmi ? inferRoles(o.hmi.tags, { content, screens: o.hmi.screens, alarms: o.hmi.alarms }).tags.find((t) => t.role === 'word:state')?.address : undefined;
@@ -110,8 +110,8 @@ export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcConte
   const ioSet = new Set([...o.ctx.addresses.values()].filter(Boolean).map((a) => a.toUpperCase()));
   const inputs = content.io.filter((p) => p.type === 'input');
   let source: RuleProgramResult['source'] = 'rules', aiError: string | undefined, explanation = '';
-  let result = programWithCycle(input);
-  if (o.ai?.apiKey && result.base.autoBits.length) {
+  let result = o.keepSequence ? programWithCycle({ ...input, sequence: o.keepSequence }) : programWithCycle(input);
+  if (!o.keepSequence && o.ai?.apiKey && result.base.autoBits.length) {
     try {
       // The request from the I/O list alone (see renameActions); the answer renamed to this program's actuators.
       const asked = o.electrical ? programWithCycle({ ...input, content: projectHmiContent({ io: o.ctx.io, addresses: o.ctx.addresses, machineName: content.machineName, spec: o.spec, panel: { partNumber: '', widthPx: 800, heightPx: 480 } }) }).base : result.base;

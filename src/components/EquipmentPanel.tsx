@@ -12,7 +12,8 @@ import { getPart, partsIn } from '../electrical/catalog';
 import { getHmi } from '../hmi/hmiCatalog';
 import { normalizePreference } from '../electrical/catalogs';
 import { moduleSlots, ioCapacity } from '../plc/core/modules';
-import { cpuFit, findCpu, platformOf, type Need } from '../plc/core/fit';
+import { cpuFit, findCpu, hmiFit, platformOf, type Need } from '../plc/core/fit';
+import { nearestPanel } from '../hmi/nearestPanel';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, usePendingEquipment, type EquipmentChoice } from '../spec/equipment';
 import HmiChooser from './HmiChooser';
@@ -71,6 +72,8 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const busy = useAiJobRunning('equipment');
   const error = useAiJobError('equipment');
   const [reasoning, setReasoning] = useState<string | null>(null);
+  /** Why the touch panel changed with the PLC (it could not stay), shown under the panel chooser. */
+  const [panelNote, setPanelNote] = useState<string | null>(null);
   // A new AI suggestion stays with the project until applied; dropped if the applied one changes.
   const recBasis = JSON.stringify(project.recommendation);
   const [pendingRec, setPendingRec] = useDraft<{ basis: string; rec: EquipmentRecommendation | null } | null>('equipment.rec', null);
@@ -140,10 +143,21 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const applied = choice?.cpuId === project.cpuId
     && JSON.stringify(choice?.modules) === JSON.stringify(project.modules) && (choice?.hmiPartNumber ?? '') === (appliedHmi ?? '');
 
-  // An all-in-one PLC brings its own screen: choosing it selects that screen; leaving it drops the screen.
+  // An all-in-one PLC brings its own screen: choosing it selects that screen. Leaving it, or moving to a PLC the
+  // chosen panel cannot talk to, selects the closest panel that can (screens scale least) and says so.
   const withCpu = (cpuId: string): Partial<EquipmentChoice> => {
+    setPanelNote(null);
     if (hasBuiltInPanel(getPart(cpuId))) return { cpuId, hmiPartNumber: cpuId };
-    return { cpuId, ...(choice?.hmiPartNumber && hasBuiltInPanel(getPart(choice.hmiPartNumber)) ? { hmiPartNumber: null } : {}) };
+    const old = choice?.hmiPartNumber;
+    const was = old ? getHmi(old) : undefined;
+    const builtIn = Boolean(old && hasBuiltInPanel(getPart(old)));
+    if (!old || (!builtIn && was && hmiFit(was, need, cpuId).ok)) return { cpuId };
+    const next = nearestPanel(cpuId, need, was ? { w: was.widthPx, h: was.heightPx } : null, hmiMakers);
+    const why = builtIn ? `The ${old} screen is built into that PLC, so it goes with it.` : `The ${old} cannot talk to the ${cpuId}.`;
+    setPanelNote(next
+      ? `${why} ${next.partNumber} (${next.sizeIn}", ${next.widthPx}×${next.heightPx}) is selected instead: the closest touch panel that can. Designed screens are kept and scaled to it; pick another below if you prefer.`
+      : `${why} Choose a touch panel for the ${cpuId} below; designed screens are kept and scaled to it.`);
+    return { cpuId, hmiPartNumber: next?.partNumber ?? null };
   };
   const set = (patch: Partial<EquipmentChoice>) => setChoice((c) => ({ cpuId: c?.cpuId ?? cpus[0].id, modules: c?.modules ?? [], hmiPartNumber: c?.hmiPartNumber ?? null, ...patch }));
   const apply = () => {
@@ -249,8 +263,9 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
           </Section>
 
           <Section title="Operator panel (HMI)">
+            {panelNote && <p role="status" data-testid="panel-note" className="mb-2 text-sm rounded border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2">{panelNote}</p>}
             <HmiChooser need={need} cpuId={choice?.cpuId} selected={choice?.hmiPartNumber ?? null} suggested={rec?.hmi?.partNumber}
-              makers={hmiMakers} onPick={(pn) => set({ hmiPartNumber: pn })} />
+              makers={hmiMakers} onPick={(pn) => { setPanelNote(null); set({ hmiPartNumber: pn }); }} />
           </Section>
         </div>
 
