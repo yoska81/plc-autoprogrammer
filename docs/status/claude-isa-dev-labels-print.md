@@ -346,3 +346,9 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Only the TLP motors without a shaft seal (option A) are in the catalog; the S variants are not.
   - Measuring wheels and cables have no IP rating, because their makers give none.
 - **Swap picker:** compareStrength now refuses a power supply with a different input class, and a candidate whose AC input range does not hold `StrengthContext.feedVolts` (Dev 4 passes the PS feed from the picker). A 90-264 VAC supply is no longer "Equivalent" to a 480 V 3-phase one. A 200-500 V L-L supply (ABL8RPS) may stand in for a 1-phase or 3-phase one, but not the reverse. The cross-reference key carries the same input class (crossref.ts / strength.ts supplyInputClass).
+- **Touch panels for CompactLogix 5370** (both `ab-compactlogix-5370` and `-l1`). Before this, no panel listed 5370, so an L5X upgrade that keeps its 1769-L33ER could not get an HMI. Each entry gives its source in `drivers5370Source`.
+  - Rockwell names 5370 for the PanelView 800 (VIEW-SG002D p.12; product page: "5370 L1, L2, L3"), the PanelView 5310 (2713P-TD001K p.3, firmware V27+) and the PanelView 5510 (2715P-TD001G p.1).
+  - Pro-face's driver manual ROC_ETIP_27 names the 1769-L1x/L2x/L3x CPUs, in its L5K import lists.
+  - Weintek, Maple and Red Lion only say "CompactLogix", without naming a series. That is the same basis on which they already list 5380.
+  - C-more (Dev 5's HMI list) also says only "CompactLogix" (ea9drivers.pdf). Neither the PanelView Plus 7 nor the C-more is in the catalog's driver lists.
+  - Test: a 1769-L33ER has at least 10 compatible panels, including Allen-Bradley ones (platforms.test.ts).

@@ -8,6 +8,7 @@ import { getPart } from '../../electrical/catalog';
 import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf } from './platforms';
 import { cpuFit, hmiFit, modulesToFit, platformOf, type Need } from './fit';
 import { PLC_PROFILES } from './profiles';
+import { LOGIX_CPUS } from './profiles/logix';
 import { HMI_MODELS } from '../../hmi/hmiCatalog';
 import { CATALOG } from '../../electrical/catalog';
 
@@ -104,6 +105,14 @@ assert.ok(driversOf(getPart('cMT2078X')!).includes('ab-micro850'), 'Weintek driv
 assert.ok(ok('ab-micro850', 'cMT2078X') && ok('siemens-s7-1200', 'cMT2078X') && ok('omron-nx1p2', 'cMT2078X'), 'Weintek cMT X talks to AB, Siemens, Omron NX1P2');
 assert.ok(!ok('siemens-s7-1200-g2', 'MT8072iP'), 'Weintek iP: no S7-1200 G2 driver');
 assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000'), 'Red Lion: Logix yes, NX1P2 not listed');
+// CompactLogix 5370 (an L5X upgrade that keeps its 1769-L33ER): the makers' driver lists name it, so a panel can be chosen.
+{
+  const l33 = platformById(LOGIX_CPUS.find((c) => c.id === '1769-L33ER')!.platformId!)!;
+  const fits = ALL_HMIS().filter((p) => hmiCompatible(l33, p).ok);
+  assert.ok(fits.some((p) => p.vendor === 'allen-bradley') && fits.length >= 10, `1769-L33ER panels: ${fits.length}`);
+  assert.ok(ok('ab-compactlogix-5370', '2713P-T7WD1') && ok('ab-compactlogix-5370-l1', '2711R-T7T'), 'PanelView 5310 with an L33ER, PanelView 800 with an L1');
+  for (const p of fits.filter((x) => driversOf(x).includes('ab-compactlogix-5370'))) assert.ok(p.ratings.drivers5370Source, `${p.partNumber}: 5370 driver source`);
+}
 // Driver ids are platform ids (agreed list; every platform that exists must be on it).
 const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz']);
 for (const pl of PLATFORMS) assert.ok(DRIVER_IDS.has(pl.id), `platform ${pl.id} is on the driver id list`);
