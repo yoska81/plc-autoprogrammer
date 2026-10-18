@@ -12,6 +12,9 @@ export function remapHmiDesign(design: HmiDesign, r: IoRemap, describe: (ioId: s
   const gone = (a?: string | null) => (a ? r.gone.get(a.trim().toUpperCase()) : undefined);
   const lost = (a: string, id: string) => `${a.trim().toUpperCase()}${describe(id) ? ` ${describe(id)}` : ''}`;
   const move = (a: string) => remapAddress(a, r);
+  // Descriptions name the I/O they act on ("PLC runs Y001 while …"): the roles are read from them, so they move too
+  // (one pass: every address in the text looked up once).
+  const moveInText = (text: string) => text.replace(/\b[XY]\d+\b/gi, (a) => move(a));
   const el = (e: HmiElement): HmiElement => {
     const g = gone(e.address);
     const next: HmiElement = { ...e };
@@ -27,7 +30,7 @@ export function remapHmiDesign(design: HmiDesign, r: IoRemap, describe: (ioId: s
     const g = gone(t.address);
     if (g) notes.push(`Removed the HMI tag ${t.name} (${lost(t.address, g)}): its I/O point was deleted.`);
     return !g;
-  }).map((t) => ({ ...t, address: move(t.address) }));
+  }).map((t) => ({ ...t, address: move(t.address), description: moveInText(t.description) }));
   const alarms = design.alarms.filter((a) => !gone(a.address)).map((a) => ({ ...a, address: move(a.address) }));
   const screens = design.screens.map((s) => ({ ...s, elements: s.elements.map(el) }));
   const unbound = screens.flatMap((s) => s.elements.filter((e) => e.lostIo && !design.screens.find((o) => o.id === s.id)?.elements.find((o) => o.id === e.id)?.lostIo).map((e) => `“${e.label || e.id}” on ${s.name}`));

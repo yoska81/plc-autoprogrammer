@@ -44,6 +44,13 @@ assert.ok(!checkDesign(d, 800, 480, { io }).some((i) => /not in the I\/O list/.t
 
 // Nothing changed: the same design back.
 assert.equal(remapHmiDesign(design, ioRemap(new Map([['a', 'X001']]), new Map([['a', 'X001']]))).design, design);
+// A PLC change renumbers every point (CLICK X001 → CompactLogix X101): descriptions that name the I/O move too,
+// so the program templates still find each tag's role ("PLC runs Y001 while …" → Y201).
+const plc = ioRemap(new Map([['conv', 'Y001'], ['pe', 'X003']]), new Map([['conv', 'Y201'], ['pe', 'X103']]));
+const jog = { name: 'HMI_Jog', address: 'C1006', dataType: 'BIT' as const, access: 'write' as const, description: 'Hold-to-run: PLC runs Y001 while ON and X003 is OFF; not Y0012.' };
+const moved = remapHmiDesign({ ...design, tags: [jog] }, plc).design.tags[0];
+assert.equal(moved.description, 'Hold-to-run: PLC runs Y201 while ON and X103 is OFF; not Y0012.');
+
 // What uses a point, for the delete confirmation.
 assert.deepEqual(hmiUsesOf(design, 'x003'), ["Screen Main: lamp 'Part present'", "Screen Main: button 'Jog' (its permissive)"]);
 assert.deepEqual(hmiUsesOf(null, 'X001'), []);
