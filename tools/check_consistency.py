@@ -223,6 +223,20 @@ def check(vdir: Path):
             report('FAIL', v, f'{mo["tag"]} {mo["hp"]} HP {mo["voltage"]}: FLA {mo["fla"]} A, NEC/CEC table says {ref} A')
         if f'{mo["fla"]} A' not in eng_flat:
             report('WARN', v, f'{mo["tag"]} FLA {mo["fla"]} A not printed in the engineering package')
+    # ---- Cabinet cooling: heat the walls cannot shed (rise above the limit) needs a filter fan, a heat exchanger or an
+    # air conditioner in the design, or the design review saying so; a filter fan comes with its exhaust filter and
+    # thermostat, and a 24 VDC fan is wired (its wire on the drawings and in the wire list)
+    co = data.get('cooling') or {}
+    kinds = {c['kind'] for c in co.get('parts', [])}
+    if co.get('ventilation') and not kinds & {'filter fan', 'heat exchanger', 'air conditioner'} and not any('Cabinet cooling missing' in w for w in data['warnings']):
+        report('FAIL', v, f'cabinet needs {co["ventilation"]["airflowM3h"]:.0f} m³/h of cooling ({co["rise"]:.0f} °C rise) but has no fan / heat exchanger / air conditioner and the review does not say so')
+    if 'filter fan' in kinds:
+        for need in ('exhaust filter', 'thermostat'):
+            if need not in kinds:
+                report('WARN', v, f'filter fan without a {need}')
+        fan = co.get('fan') or {}
+        if fan.get('dc') and fan.get('thermostat') and fan['tag'] not in {w['wire'] for w in data['wires']}:
+            report('FAIL', v, f'24 VDC fan {fan["tag"]}: no wire {fan["tag"]} from thermostat {fan["thermostat"]} in the wire list')
     # ---- Drive branches: the drive's listed Class T fuses (its SCCR condition), or the review says why not
     iec = str(data.get('region', '')) not in ('US', 'Canada', '')
     for dr in data.get('drives', []):

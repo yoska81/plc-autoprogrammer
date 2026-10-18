@@ -150,20 +150,39 @@ export function enclosureFaceDrilling(ctx: DrawingContext): DrillingPlan[] {
   // 2. Ventilation: filter fan low on the left, outlet filter high on the right (air flows across the cabinet).
   const hmi = ctx.hmiPartNumber ? getHmi(ctx.hmiPartNumber) : undefined;
   const heat = cabinetHeat(ctx.design.components, ctx.getPart, hmi ? { partNumber: hmi.partNumber, sizeIn: hmi.sizeIn } : undefined);
+  const fanRc = m.rc.find((c) => c.category === 'fan' && c.part?.ratings.kind === 'filter fan');
+  const exRc = m.rc.find((c) => c.category === 'fan' && c.part?.ratings.kind === 'exhaust filter');
   const fanTags = m.rc.filter((c) => c.category === 'fan').map((c) => c.tag);
-  if (heat.ventilation || fanTags.length) {
+  const closedLoop = m.rc.filter((c) => ['heat exchanger', 'air conditioner'].includes(String(c.part?.ratings.kind ?? '')));
+  // the catalog part's own cutout (fans and exhaust filters publish it); else a typical size for the air flow
+  const cutoutOf = (rcx: typeof fanRc) => {
+    const w = Number(rcx?.part?.ratings.cutoutWidthMm), h = Number(rcx?.part?.ratings.cutoutHeightMm);
+    return w > 0 && h > 0 ? { w, h } : null;
+  };
+  if ((heat.ventilation && !closedLoop.length) || fanTags.length) {
     const flow = heat.ventilation?.airflowM3h ?? 0;
     const cls = fanClass(flow) ?? { cutout: 292, upTo: 900 };
+    const fc = cutoutOf(fanRc), ec = cutoutOf(exRc) ?? fc;
     const s = Math.min(cls.cutout, D - FRONT_CLEAR - BACK_CLEAR);
     const xMid = BACK_CLEAR + (D - FRONT_CLEAR - BACK_CLEAR) / 2;
-    const assumed = `${dualSize(cls.cutout, cls.cutout)} TYPICAL CUTOUT OF A ${cls.upTo} m³/h FILTER FAN (ASSUMED) — CUT PER THE CHOSEN FAN'S DATASHEET`;
-    faces.left.cutouts.push({ id: '', tag: fanTags[0] ?? 'FAN1', kind: 'rect', x: r1(xMid), y: r1(80 + s / 2), w: s, h: s, code: 'J', verified: false, template: 'FILTER FAN (INLET)' });
-    faces.right.cutouts.push({ id: '', tag: fanTags[1] ?? 'FLT1', kind: 'rect', x: r1(D - xMid), y: r1(H - 80 - s / 2), w: s, h: s, code: 'J', verified: false, template: 'OUTLET FILTER' });
+    const assumed = fc ? `${dualSize(fc.w, fc.h)} CUTOUT OF ${fanRc!.partNumber}${exRc ? ` / ${exRc.partNumber}` : ''} (CATALOG)` : `${dualSize(cls.cutout, cls.cutout)} TYPICAL CUTOUT OF A ${cls.upTo} m³/h FILTER FAN (ASSUMED) — CUT PER THE CHOSEN FAN'S DATASHEET`;
+    const fw = fc?.w ?? s, fh = fc?.h ?? s, ew = ec?.w ?? s, eh = ec?.h ?? s;
+    faces.left.cutouts.push(fc
+      ? { id: '', tag: fanRc!.tag, kind: 'rect', x: r1(xMid), y: r1(80 + fh / 2), w: fw, h: fh, code: 'J', verified: true }
+      : { id: '', tag: fanTags[0] ?? 'FAN1', kind: 'rect', x: r1(xMid), y: r1(80 + s / 2), w: s, h: s, code: 'J', verified: false, template: 'FILTER FAN (INLET)' });
+    faces.right.cutouts.push(ec
+      ? { id: '', tag: exRc?.tag ?? fanTags[1] ?? 'FLT1', kind: 'rect', x: r1(D - xMid), y: r1(H - 80 - eh / 2), w: ew, h: eh, code: 'J', verified: !!cutoutOf(exRc) }
+      : { id: '', tag: fanTags[1] ?? 'FLT1', kind: 'rect', x: r1(D - xMid), y: r1(H - 80 - s / 2), w: s, h: s, code: 'J', verified: false, template: 'OUTLET FILTER' });
     const why = heat.ventilation ? `HEAT ${heat.watts.toFixed(0)} W, ${heat.rise!.toFixed(0)} °C RISE WITHOUT FAN (LIMIT 15 °C): FAN ≥ ${Math.ceil(flow)} m³/h (${Math.ceil(flow / 1.699)} CFM)` : `FAN ${fanTags.join(', ')} IN THE DESIGN`;
     faces.left.specs.J = faces.right.specs.J = `FILTER FAN / OUTLET FILTER: ${assumed}`;
     faces.left.notes.push(`VENTILATION: ${why}. FILTER FAN LOW ON THE LEFT, OUTLET FILTER (SAME SIZE CLASS) HIGH ON THE RIGHT.`);
     faces.right.notes.push(`VENTILATION: ${why}. OUTLET FILTER HIGH ON THE RIGHT, FILTER FAN LOW ON THE LEFT.`);
-    if (cls.cutout > s) faces.left.notes.push(`THE ${cls.cutout} mm FAN CLASS IS DEEPER THAN THE WALL ALLOWS: USE A DOOR-MOUNTED FAN OR A DEEPER ENCLOSURE.`);
+    if ((fc ? fc.w : cls.cutout) > D - FRONT_CLEAR - BACK_CLEAR) faces.left.notes.push(`THE ${fc ? `${fanRc!.partNumber} ${Math.round(fc.w)} mm CUTOUT` : `${cls.cutout} mm FAN CLASS`} IS DEEPER THAN THE WALL ALLOWS: USE A DOOR-MOUNTED FAN OR A DEEPER ENCLOSURE.`);
+  }
+  // closed-loop cooling (heat exchanger / air conditioner): mounted and cut per the maker's drawing
+  for (const c of closedLoop) {
+    const w = Number(c.part?.ratings.cutoutWidthMm), h = Number(c.part?.ratings.cutoutHeightMm);
+    faces.right.notes.push(`${c.tag} ${c.partNumber} (${String(c.part?.ratings.kind).toUpperCase()}): ${w > 0 && h > 0 ? `CUTOUT ${dualSize(w, h)} PER THE MAKER'S DRAWING` : `CUTOUT${c.part?.ratings.cutoutCount ? 'S' : ''} PER THE MAKER'S DRAWING (${String(c.part?.ratings.cutoutNote ?? 'see datasheet')})`} — SIDE WALL OR DOOR; SEAL PER THE MAKER TO KEEP THE ENCLOSURE RATING.`);
   }
 
   // 3. Stack light on the top (direct base mount), drilled per the manufacturer's template.

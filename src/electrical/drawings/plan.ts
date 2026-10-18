@@ -239,6 +239,13 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
     const color = (String(l.part?.ratings.color ?? l.part?.description.match(/red|green|amber|yellow|blue|white/i)?.[0] ?? '')).toUpperCase();
     out.push({ start: rail, end: rail, els: [{ t: 'lamp', tag: l.tag, color }], wires: ['24+', '0V'], desc: [`${l.comp.function.toUpperCase()} (${l.tag})`, color ? `${color} PILOT LIGHT` : ''] });
   }
+  // Enclosure filter fan (24 VDC): its thermostat's N.O. contact (closes on rise) in series.
+  const f = model.fan;
+  if (f?.dc) {
+    out.push(f.thermostat
+      ? { start: rail, end: rail, els: [{ t: 'contact', nc: false, tag: f.thermostat, term: '1-2', dev: 'relay' }, { t: 'box', tag: f.tag, left: '+', right: '-' }], wires: ['24+', f.tag, '0V'], desc: [`ENCLOSURE FILTER FAN ${f.tag}`, `THERMOSTAT ${f.thermostat} CLOSES ON RISE (SET ~35 °C)`], key: `rung:${f.tag}` }
+      : { start: rail, end: rail, els: [{ t: 'box', tag: f.tag, left: '+', right: '-' }], wires: ['24+', '0V'], desc: [`ENCLOSURE FILTER FAN ${f.tag}`, 'RUNS WITH THE CONTROL POWER'], key: `rung:${f.tag}` });
+  }
   const coils = model.io.filter((p) => p.coilChain);
   if (coils.length && out.length) out.push({ start: { kind: 'node', label: '' }, end: { kind: 'node', label: '' }, els: [], wires: [], desc: [] });
   for (const p of coils) {
