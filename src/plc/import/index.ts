@@ -9,6 +9,7 @@ import { readPlcopen } from './plcopen';
 import { readStSource } from './stSource';
 import { readClickCsv } from './clickCsv';
 import { convertForeign } from './convert';
+import { decodeCsv, isGxComments, isGxProgram, readGxCsv } from './gxCsv';
 import type { ForeignProgram, ImportedProgram, SourceFormat } from './types';
 
 export { materialize } from './convert';
@@ -34,6 +35,7 @@ export function detectFormat(fileName: string, text: string): SourceFormat | nul
   if (/plcopen\.org\/xml\/tc6|<project\b[\s\S]*<types>/i.test(head) || (/<project\b/i.test(head) && /\.xml$/i.test(fileName) && /<pou\b/i.test(text))) return 'plcopen';
   if (/<Document>[\s\S]*SW\.Blocks/i.test(head)) return 'siemens-xml';
   if (/^\s*(IE_VER\s*:=|CONTROLLER\s+\w+\s*\()/m.test(head) || /\.l5k$/i.test(fileName)) return 'l5k';
+  if (isGxProgram(head)) return 'mitsubishi-csv';
   const first = head.split(/\r?\n/)[0] ?? '';
   if (/address/i.test(first) && /nickname/i.test(first)) return 'click-csv';
   if (/\b(ORGANIZATION_BLOCK|DATA_BLOCK)\b/.test(head) || /FUNCTION_BLOCK\s+"/.test(head) || (/\bBEGIN\b/.test(text) && /\bEND_FUNCTION_BLOCK\b|\bEND_ORGANIZATION_BLOCK\b/.test(text)) || /\.scl$/i.test(fileName)) return 'siemens-scl';
@@ -59,6 +61,7 @@ function read(format: SourceFormat, text: string): ForeignProgram {
     case 'st': return readStSource(text, false);
     case 'siemens-scl': return readStSource(text, true);
     case 'click-csv': return readClickCsv(text);
+    case 'mitsubishi-csv': return readGxCsv(text);
     default: throw new Error('This file type is not read yet.');
   }
 }
@@ -68,6 +71,32 @@ export function importProgramText(fileName: string, text: string): ImportedProgr
   const why = unreadableReason(fileName, text);
   if (why) throw new Error(why);
   const format = detectFormat(fileName, text);
-  if (!format) throw new Error('This file was not recognised as a PLC program export. Supported: Studio 5000 .L5X / .L5K, PLCopen XML, Structured Text / SCL source, CLICK address list (CSV). Or upload a PDF printout of the ladder.');
+  if (!format) throw new Error(NOT_RECOGNISED);
   return convertForeign(read(format, text), fileName);
+}
+
+const NOT_RECOGNISED = 'This file was not recognised as a PLC program export. Supported: Studio 5000 .L5X / .L5K, PLCopen XML, Structured Text / SCL source, Mitsubishi GX Works CSV (program + device comments), CLICK address list (CSV). Or upload a PDF printout of the ladder.';
+
+/** File bytes as text: UTF-16 exports (GX Works) are decoded by their byte order mark. */
+export function fileText(name: string, bytes: Uint8Array): string {
+  return /\.csv$|\.txt$/i.test(name) || (bytes[0] === 0xff && bytes[1] === 0xfe) ? decodeCsv(bytes) : new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '');
+}
+
+/**
+ * Read the files of one program: the program file plus companions (GX Works device comments).
+ * Returns the program and the name of the main file.
+ */
+export function importProgramFiles(files: { name: string; text: string }[]): { program: ImportedProgram; main: { name: string; text: string } } {
+  for (const f of files) { const why = unreadableReason(f.name, f.text); if (why) throw new Error(`${f.name}: ${why}`); }
+  const gx = files.find((f) => isGxProgram(f.text));
+  if (gx) {
+    const comments = files.find((f) => f !== gx && isGxComments(f.text));
+    return { program: convertForeign(readGxCsv(gx.text, comments?.text ?? ''), gx.name), main: gx };
+  }
+  if (files.length === 1 || files.every((f) => isGxComments(f.text))) {
+    if (files.every((f) => isGxComments(f.text))) throw new Error('This is a GX Works device comment file: add the program CSV (Project › Export to CSV) with it.');
+  }
+  const main = files.find((f) => detectFormat(f.name, f.text) && detectFormat(f.name, f.text) !== 'click-csv') ?? files.find((f) => detectFormat(f.name, f.text));
+  if (!main) throw new Error(NOT_RECOGNISED);
+  return { program: importProgramText(main.name, main.text), main };
 }

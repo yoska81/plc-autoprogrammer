@@ -180,6 +180,7 @@ export function questionsFor(imp: ImportedProgram): string[] {
       ? `The original program has "${n.text}" (${n.where}). It is kept as it was and goes back into the PLC, but the simulator can't run it. What does it do on the machine?`
       : `The original program has "${n.text}" (${n.where}) that could not be brought in. What does it do on the machine?`);
   }
+  for (const d of imp.report.notes.filter((x) => /^Double coil:/.test(x))) q.push(`${d} Which rung should control it (or should both, through an OR)?`);
   q.push('What problems does the machine have today, and what should the upgrade fix?');
   return q;
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { detectFormat, FORMAT_LABEL, importProgramText, unreadableReason, type ImportedProgram } from '../index';
+import { FORMAT_LABEL, fileText as decodeFile, importProgramFiles, type ImportedProgram } from '../index';
 import { programSummary } from '../upgrade';
 import { applyUpgrade } from './applyUpgrade';
 import type { UpgradePlan } from '../upgrade';
@@ -23,18 +23,17 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const read = async (file: File | undefined) => {
-    if (!file) return;
+  const read = async (list: FileList | null) => {
+    const files = [...(list ?? [])];
+    if (!files.length) return;
     setError(null); setImp(null); setBusy(true);
     try {
-      const text = await file.text();
-      const why = unreadableReason(file.name, text);
-      if (why) { setError(why); return; }
-      if (!detectFormat(file.name, text)) { setError(`${file.name} is not a PLC program export the app knows. Export the program as L5X/L5K (Rockwell), PLCopen XML, SCL or Structured Text, or a CLICK nickname CSV.`); return; }
-      setImp(importProgramText(file.name, text));
-      setFileText(text);
+      const texts = await Promise.all(files.map(async (f) => ({ name: f.name, text: decodeFile(f.name, new Uint8Array(await f.arrayBuffer())) })));
+      const { program, main } = importProgramFiles(texts);
+      setImp(program);
+      setFileText(main.text);
     } catch (e) {
-      setError(`Could not read ${file.name}: ${e instanceof Error ? e.message : String(e)}`);
+      setError(e instanceof Error ? e.message : String(e));
     } finally { setBusy(false); }
   };
 
@@ -49,11 +48,11 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
     <div className="space-y-4">
       <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
         <h3 className="text-sm font-semibold text-gray-800">The machine's PLC program</h3>
-        <p className="text-xs text-gray-500">Export the program from the PLC software and choose the file here. Rockwell: File › Save As › .L5X (or .L5K). CODESYS and others: PLCopen XML. Siemens: SCL source. CLICK: the nickname list (.csv).</p>
+        <p className="text-xs text-gray-500">Export the program from the PLC software and choose the file here. Rockwell: File › Save As › .L5X (or .L5K). CODESYS and others: PLCopen XML. Siemens: SCL source. Mitsubishi GX Works: Export to CSV for the program and the device comments (choose both). CLICK: the nickname list (.csv).</p>
         <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg py-6 cursor-pointer border-gray-300 hover:border-blue-400">
-          <span className="text-sm font-medium text-gray-700">{busy ? 'Reading…' : 'Choose the program file'}</span>
-          <span className="text-xs text-gray-400 mt-1">.L5X · .L5K · PLCopen .xml · .scl · .st · CLICK .csv</span>
-          <input data-testid="program-file" type="file" accept={ACCEPT} className="hidden" onChange={(e) => { void read(e.target.files?.[0]); e.target.value = ''; }} />
+          <span className="text-sm font-medium text-gray-700">{busy ? 'Reading…' : 'Choose the program file (and its comment file)'}</span>
+          <span className="text-xs text-gray-400 mt-1">.L5X · .L5K · PLCopen .xml · .scl · .st · Mitsubishi GX Works .csv (program + device comments) · CLICK .csv</span>
+          <input data-testid="program-file" type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { void read(e.target.files); e.target.value = ''; }} />
         </label>
         {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
       </div>

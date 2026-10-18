@@ -115,6 +115,16 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByTestId('upgrade-original').waitFor({ timeout: 5000 });
   check((await page.getByTestId('upgrade-diff-summary').innerText()) === '1 changed', 'the original is kept with the project');
 
+  log('Mitsubishi GX Works3: program + device comments (UTF-16)');
+  await page.getByRole('button', { name: 'Read another program' }).click();
+  const fx = (n) => path.join(__dirname, '..', 'src', 'plc', 'import', '__fixtures__', n);
+  await page.getByTestId('program-file').setInputFiles([fx('CAPPER_MAIN.csv'), fx('CAPPER_DeviceComment.csv')]);
+  await page.getByTestId('program-found').waitFor({ timeout: 10000 });
+  const gx = await page.getByTestId('program-found').innerText();
+  check(/FX5UCPU/.test(gx) && /33\s*of 33 rungs converted/.test(gx), 'GX program read');
+  check(/Double coil: Spindle \(Y4\)/.test(gx), 'the double coil is shown');
+  check(/Stop_PB/.test(gx) && /Stop pushbutton/.test(gx), 'device comments give the names');
+
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await browser.close();
   console.log(fails.length ? `\n${fails.length} FAILED` : '\nupgrade e2e: all passed');
