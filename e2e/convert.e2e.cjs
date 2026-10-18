@@ -134,7 +134,7 @@ function sse(model, text) {
   }
   const run = await page.evaluate(async () => (await import('/src/spec/updateRun.ts')).useUpdateRun.getState().results.map((r) => `${r.step}:${r.status}${r.status === 'done' ? '' : ` (${r.message})`}`));
   log('Build:', run.join(' | '));
-  check(run.length === 4 && run.every((r) => /:done$/.test(r) || /^hmi:skipped \(No HMI chosen/.test(r)), 'equipment, electrical and program built (no HMI: the old machine has none)');
+  check(run.length === 4 && run.every((r) => /:done$/.test(r) || /^hmi:skipped \((No HMI chosen|No touch panel)/.test(r)), 'equipment, electrical and program built (no HMI: the old machine has none)');
   await page.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
   const after = await page.evaluate(async () => {
     const el = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState();

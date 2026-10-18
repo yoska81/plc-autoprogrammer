@@ -530,7 +530,7 @@ await test('relay logic kept: C1–C11 as ladder rungs with the new tags, every 
   const m = normalizeMachine(CN_ROLLFORMER_01_READING);
   assert.equal(toRelayLogic(m, convertMachine(m)).logic, null, 'moved into a PLC: no rungs');
   const c = convertMachine(m, { ...NA_TARGET, logic: 'keep-relays' });
-  const { logic, notDrawn } = toRelayLogic(m, c);
+  const { logic, devices, notDrawn } = toRelayLogic(m, c);
   assert.deepEqual(notDrawn, []);
   assert.equal(logic!.supply, '24VDC');
   assert.equal(logic!.rungs.length, 22, 'every relay circuit (the cut command and the E-CAM stay in the servo drive)');
@@ -546,13 +546,19 @@ await test('relay logic kept: C1–C11 as ladder rungs with the new tags, every 
   assert.deepEqual(rung('VFD1').path.at(-1), { t: 'coil', tag: 'VFD1', kind: 'drive-input', terms: 'MI1' });
   assert.ok(rung('CTR1').path.some((e) => e.t === 'coil' && e.kind === 'counter'), 'the batch counter H7CX → CTR1');
   // every tag in the rungs is a device with its new tag (buttons and switches read only from the I/O list included)
-  const tags = new Set(logic!.devices.map((d) => d.tag));
+  const tags = new Set(devices.map((d) => d.tag));
   for (const r of logic!.rungs) for (const e of r.path.flatMap((x) => (x.t === 'branch' ? x.paths.flat() : [x])) as Exclude<RelayEl, { t: 'branch' }>[]) assert.ok(tags.has(e.tag), `${r.id}: ${e.tag} has no device`);
-  assert.equal(logic!.devices.find((d) => d.tag === 'K1')!.oldTag, 'KM1');
-  assert.ok(logic!.devices.find((d) => d.tag === 'K1')!.partNumber, 'the contactor carries its North-America equivalent');
+  assert.equal(devices.find((d) => d.tag === 'K1')!.oldTag, 'KM1');
+  assert.ok(devices.find((d) => d.tag === 'K1')!.partNumber, 'the contactor carries its North-America equivalent');
+  // applied: the rungs go to the electrical design inputs for the ladder sheets
+  seedSampleProject();
+  applyExistingMachine(m, c);
+  assert.deepEqual(useElectricalStore.getState().inputs.relayLogic, logic);
+  applyExistingMachine(m, convertMachine(m));
+  assert.equal(useElectricalStore.getState().inputs.relayLogic, undefined, 'moved into a PLC: no relay logic');
   assert.equal(c.circuits.find((x) => x.id === 'C1')!.circuit.output, 'KM1');
   // the shared fixture for the ladder-sheet drawings stays what the converter produces
-  assert.deepEqual(JSON.parse(readFileSync(new URL('../../e2e/fixtures/convert/cn-rollformer-01.relayLogic.json', import.meta.url), 'utf8')), JSON.parse(JSON.stringify(logic)),
+  assert.deepEqual(JSON.parse(readFileSync(new URL('../../e2e/fixtures/convert/cn-rollformer-01.relayLogic.json', import.meta.url), 'utf8')), JSON.parse(JSON.stringify({ ...logic, devices })),
     'e2e/fixtures/convert/cn-rollformer-01.relayLogic.json is stale: regenerate it from toRelayLogic');
 });
 
