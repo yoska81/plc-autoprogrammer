@@ -2,6 +2,24 @@
 
 Current: **Unitronics as a PLC brand, end to end** (manager request) — draft PR → `claude/optimistic-maxwell-6nfcs6`. Sealing head (#64, #67) merged. No blockers (real-AI scores still wait for an API key in the environment settings).
 
+## Motion slice: one CLICK PLUS axis + encoder (coordinator, after #88)
+
+Verified facts:
+- **C2-08D2-4VC spec sheet:** X1–X4 high-speed inputs at 100 kHz (2 quadrature A-B counters, 1 with Z); Y1 / Y3 high-speed outputs at 100 kHz, 2 pulse trains.
+- **CLICK help 292 / 296:** PTO only on CLICK PLUS with a C2-14x (3 axes) or C2-08x (2 axes) in slot 0. Pulse pins are fixed (Y001 / Y003 / Y005); direction can be any Y; Pulse + Direction mode only.
+  - Instructions: Home (6 modes), Velocity Move, Position Move (1 axis, or up to 3 interpolated on one vector).
+  - Current position / velocity are in DD registers. SC150–SC152 = axis ready. A limit switch faults the move (error 103).
+- **CLICK C0:** high-speed counters on X1–X4 / X1–X8 but no PTO. The catalog ratings (Dev 1) carry these limits.
+
+Done:
+- `src/plc/core/motionFit.ts`: `motionNeed(io, spec)` and `motionFit(io, cpuPart, spec)`. It counts pulse axes, encoders and Z channels, the rate from PPR × rpm or kHz, and linear vs nonlinear coordination. It reports what does not fit and what would: CLICK PLUS + slot-0 module, Productivity / BRX, or a drive with its own indexer. Tests: `motionFit.test.ts`.
+
+Next:
+- motionFit in the review and Equipment fit;
+- program blocks by Dev 5's roles (axis:K:* / enc:K:*): enable, fault latch / reset, homed, permits, and request bits that drive the three CLICK PTO instructions (listed with their parameters in the CLICK entry sheet / Load guide);
+- encoder scaling (count DD → DF position with an offset for Zero; speed every 100 ms);
+- a simulation model of the axis and the encoder.
+
 ## Troubleshooter slice 2 (coordinator: new top priority, with Debug 4; review by the old main)
 
 - `src/troubleshoot/whyStuck.ts`: `whyStuck(program, values, { output } | { step }, { io, tags })` walks back from a stuck output, or a step that does not advance, through the contacts that are not made, to ranked blockers. Kinds:
