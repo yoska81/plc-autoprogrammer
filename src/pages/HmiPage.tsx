@@ -872,8 +872,8 @@ function OperatorStationList() {
   return (
     <table className="text-xs" data-testid="operator-station">
       <tbody>
-        {devices.map((d) => (
-          <tr key={d.tag}>
+        {devices.map((d, i) => (
+          <tr key={`${d.tag}:${d.address}:${i}`}>
             <td className="pr-3 font-mono font-medium">{d.tag}</td>
             <td className="pr-3 text-steel-600">{d.kind}</td>
             <td className="pr-3">{d.description}</td>
