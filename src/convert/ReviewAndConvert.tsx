@@ -10,12 +10,12 @@ import { collectProject } from '../deliverables/collect';
 import { runStages } from '../spec/updateRun';
 import { SPEC_SECTIONS } from '../spec/types';
 import { regionSpec } from '../standards/regions';
-import { convertMachine, type ConvertTarget, type PartMatch } from './convert';
-import { applyExistingMachine, MACHINE_KEY } from './apply';
+import { convertMachine, stoFinding, type ConvertTarget, type LogicChoice, type PartMatch } from './convert';
+import { applyExistingMachine, LOGIC_KEY, MACHINE_KEY, withCircuits } from './apply';
 import { functionKept, type KeptStatus } from './functionKept';
-import { EMPTY_REVIEW, itemKey, reviewedMachine, unconfirmed, type ReviewKind, type ReviewState } from './review';
+import { EMPTY_REVIEW, itemKey, reviewItems, reviewedMachine, unconfirmed, type ReviewKind, type ReviewState } from './review';
 import { READ_KEY, REVIEW_KEY, type Reading } from './reading';
-import type { ExistingMachine } from './types';
+import { ioId, type ExistingMachine } from './types';
 
 const th = 'text-left py-1.5 pr-3 font-medium text-steel-500';
 const card = 'rounded-sm border border-steel-200 bg-white p-4 space-y-3';
@@ -49,13 +49,15 @@ export default function ReviewAndConvert() {
   const openQuestions = useQuestions('drawings').filter((q) => q.status === 'open');
   const [read, setRead] = useDraft<Reading | null>(READ_KEY, null);
   const [review, setReview] = useDraft<ReviewState>(REVIEW_KEY, EMPTY_REVIEW);
-  const [applied] = useDraft<ExistingMachine | null>(MACHINE_KEY, null);
+  const [storedApplied] = useDraft<ExistingMachine | null>(MACHINE_KEY, null);
+  const [logic, setLogic] = useDraft<LogicChoice>(LOGIC_KEY, 'plc');
+  const applied = withCircuits(storedApplied);
 
-  const target: ConvertTarget = { region: info.region, supply, controlVolts: '24VDC' };
-  const raw = read?.machine ?? applied;
+  const target: ConvertTarget = { region: info.region, supply, controlVolts: '24VDC', logic };
+  const raw = withCircuits(read?.machine ?? applied);
   const reviewed = useMemo(() => (raw ? reviewedMachine(raw, review) : null), [raw, review]);
   const machine = reviewed?.machine ?? null;
-  const conv = useMemo(() => (machine ? convertMachine(machine, target) : null), [machine, target.region, target.supply]); // eslint-disable-line react-hooks/exhaustive-deps
+  const conv = useMemo(() => (machine ? convertMachine(machine, target) : null), [machine, target.region, target.supply, logic]); // eslint-disable-line react-hooks/exhaustive-deps
   // Recomputed when the design, the I/O or the description change.
   const kept = useMemo(() => (applied && conv ? functionKept(applied, convertMachine(applied, target), collectProject()) : []), [applied, conv, design, io, sections]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -63,13 +65,17 @@ export default function ReviewAndConvert() {
   const confirm = (key: string) => setReview((r) => (r.confirmed.includes(key) ? r : { ...r, confirmed: [...r.confirmed, key] }));
   /** A correction: change the reading and mark it confirmed. */
   const correct = (kind: ReviewKind, id: string, patch: (m: ExistingMachine) => ExistingMachine, key = itemKey(kind, id)) => {
-    if (!read) return;
-    setRead({ ...read, machine: patch(read.machine) });
+    if (!raw) return;
+    // only the applied machine is left (e.g. an older project): the correction starts a reading from it
+    setRead(read ? { ...read, machine: patch(read.machine) } : { machine: patch(raw), reasoning: null, files: [], at: new Date().toISOString() });
     confirm(key);
   };
   const build = () => {
     if (!raw || !reviewed) return;
-    applyExistingMachine(reviewed.machine, convertMachine(reviewed.machine, target), reviewed.questions);
+    const c = convertMachine(reviewed.machine, target);
+    applyExistingMachine(reviewed.machine, c, reviewed.questions);
+    // Relay logic kept: the design engine draws PLC control, so nothing is built; the description, the parts and the circuits are written.
+    if (c.logic === 'keep-relays') return;
     // The original I/O stays as read: the engine builds equipment, panel, HMI and program around it.
     void runStages(['equipment', 'electrical', 'hmi', 'program'], 'Building the converted design');
   };
@@ -78,7 +84,8 @@ export default function ReviewAndConvert() {
   const counts = conv ? { matched: conv.parts.filter((p) => p.status === 'matched').length, engine: conv.parts.filter((p) => p.status === 'engine').length, select: conv.parts.filter((p) => p.status === 'to-select').length } : null;
   const keptBad = kept.filter((k) => k.status !== 'kept').length;
   const toConfirm = raw ? unconfirmed(raw, review).length : 0;
-  const allKeys = raw ? [...raw.io.map((p) => itemKey('io', p.address)), ...raw.components.map((c) => itemKey('part', c.tag)), ...raw.motors.map((m) => itemKey('motor', m.tag)), ...raw.axes.map((a) => itemKey('axis', a.tag))] : [];
+  // "Confirm all" leaves the low-confidence readings to be looked at one by one
+  const allKeys = raw ? reviewItems(raw).filter((i) => i.confidence !== 'low').map((i) => i.key) : [];
 
   const Mark = ({ k, confidence }: { k: string; confidence: 'high' | 'medium' | 'low' }) => {
     const out = review.excluded.includes(k);
@@ -103,7 +110,7 @@ export default function ReviewAndConvert() {
               <div><dt className="text-xs text-steel-500">Drawings</dt><dd>{raw.drawingStandard} · {raw.language || '—'}</dd></div>
               <div><dt className="text-xs text-steel-500">Supply as drawn</dt><dd>{raw.supplyDrawn.text || '—'}</dd></div>
               <div><dt className="text-xs text-steel-500">PLC</dt><dd>{raw.plc ? `${raw.plc.vendor} ${raw.plc.model}` : '—'}</dd></div>
-              <div><dt className="text-xs text-steel-500">Found</dt><dd>{raw.io.length} I/O · {raw.components.length} parts · {raw.motors.length} motors{raw.axes.length ? ` · ${raw.axes.length} servo axis` : ''}</dd></div>
+              <div><dt className="text-xs text-steel-500">Found</dt><dd>{raw.io.length} I/O · {raw.components.length} parts · {raw.motors.length} motors{raw.axes.length ? ` · ${raw.axes.length} servo axis` : ''}{raw.circuits.length ? ` · ${raw.circuits.length} control circuit${raw.circuits.length === 1 ? '' : 's'}` : ''}</dd></div>
             </dl>
             <div className="flex flex-wrap items-center gap-3 rounded border border-steel-200 bg-steel-50 p-2 text-xs text-steel-700" data-testid="review-status">
               <span>Check each reading against the drawing (sheet and place shown), correct it in the table or leave it out. {toConfirm ? <b className="text-red-700">{toConfirm} low-confidence reading{toConfirm === 1 ? '' : 's'} not confirmed: they become questions on the Machine description page.</b> : 'Every low-confidence reading is confirmed or left out.'}</span>
@@ -114,13 +121,14 @@ export default function ReviewAndConvert() {
               <table className="mt-2 w-full text-xs" data-testid="review-io">
                 <thead><tr>{['Address', 'Function', 'Device', 'Read from', 'Reading'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-steel-100">
-                  {raw.io.map((p) => {
-                    const k = itemKey('io', p.address);
+                  {raw.io.map((p, i) => {
+                    const id = ioId(p, i);
+                    const k = itemKey('io', id);
                     return (
                       <tr key={k} className={review.excluded.includes(k) ? 'opacity-40' : ''}>
                         <td className="w-20 py-0.5 pr-2 font-mono">{p.address}</td>
-                        <td className="pr-2"><input defaultValue={p.description} aria-label={`Function of ${p.address}`} className={cell}
-                          onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== p.description) correct('io', p.address, (m) => ({ ...m, io: m.io.map((x) => (x.address === p.address ? { ...x, description: v } : x)) })); }} /></td>
+                        <td className="pr-2"><input defaultValue={p.description} aria-label={`Function of ${p.address.trim()}${raw.io.filter((x) => x.address.trim() === p.address.trim()).length > 1 ? ` (${p.deviceTag ?? id})` : ''}`} className={cell}
+                          onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== p.description) correct('io', id, (m) => ({ ...m, io: m.io.map((x, j) => (ioId(x, j) === id ? { ...x, description: v } : x)) })); }} /></td>
                         <td className="whitespace-nowrap pr-2">{p.deviceTag ?? ''} {p.deviceType}</td>
                         <td className="pr-2 text-steel-500">{p.source}</td>
                         <td><Mark k={k} confidence={p.confidence} /></td>
@@ -194,9 +202,30 @@ export default function ReviewAndConvert() {
                 </tbody>
               </table>
             )}
+            {raw.circuits.length > 0 && (
+              <table className="w-full text-xs" data-testid="review-circuits">
+                <thead><tr>{['Drives', 'Function', 'Contacts (as drawn)', 'Logic in', 'Read from', 'Reading'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+                <tbody className="divide-y divide-steel-100">
+                  {raw.circuits.map((c, i) => {
+                    const k = itemKey('circuit', String(i));
+                    return (
+                      <tr key={k} className={`align-top ${review.excluded.includes(k) ? 'opacity-40' : ''}`}>
+                        <td className="w-14 py-0.5 pr-2 font-mono">{c.output}</td>
+                        <td className="pr-2">{c.function}{c.setting && <div className="text-steel-500">Setting: {c.setting}</div>}</td>
+                        <td className="pr-2">{c.conditions.join(' · ') || '—'}</td>
+                        <td className="whitespace-nowrap pr-2">{c.logicIn === 'relays' ? 'relays' : c.logicIn === 'drive' ? 'the drive' : 'controller'} · {c.kind}</td>
+                        <td className="pr-2 text-steel-500">{c.source}</td>
+                        <td><Mark k={k} confidence={c.confidence} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
             {raw.controller !== 'plc' && <p className="text-sm"><b>Control:</b> no PLC — {raw.controller === 'servo-drive' ? 'the servo drive\'s built-in controller (with the touch panel) runs the machine' : raw.controller === 'relays' ? 'relay logic' : 'its own controller'}.</p>}
             {raw.interlocks.length > 0 && <div className="text-sm"><b>Interlocks:</b><ul className="list-disc pl-5">{raw.interlocks.map((i) => <li key={i.description}>{i.description}</li>)}</ul></div>}
             <p className="text-sm"><b>Safety:</b> {raw.safety.description || '—'} {raw.safety.kind === 'control-only' && <span className="rounded bg-red-100 px-1.5 text-xs text-red-800" data-testid="not-safety-circuit">not a safety circuit</span>} <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-900">re-validate after the conversion</span></p>
+            {stoFinding(raw) && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800" data-testid="sto-finding"><b>Stop of the drives:</b> {stoFinding(raw)}</p>}
             {raw.uncertainties.length > 0 && <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"><b>Check on the machine:</b><ul className="list-disc pl-5">{raw.uncertainties.map((u) => <li key={u}>{u}</li>)}</ul></div>}
           </Step>
 
@@ -213,6 +242,20 @@ export default function ReviewAndConvert() {
             {conv.motors.length > 0 && <p className="text-sm">{conv.motors.map((m, i) => `${m.tag}: ${conv.motorKw[i].kw ? `${conv.motorKw[i].kw} kW → ` : ''}${m.hp} HP ${m.voltage.replace('VAC-3PH', ' V')}`).join(' · ')}</p>}
             {conv.recommendations.length > 0 && (
               <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900" data-testid="convert-recommendations"><b>The new design adds:</b><ul className="list-disc pl-5">{conv.recommendations.map((r) => <li key={r.text}>{r.text}</li>)}</ul></div>
+            )}
+            {conv.logic && (
+              <fieldset className="space-y-1 rounded border border-steel-200 p-2 text-sm" data-testid="convert-logic">
+                <legend className="px-1 text-xs font-semibold text-steel-600">No PLC on this machine: its logic</legend>
+                <label className="flex items-start gap-2"><input type="radio" name="convert-logic" checked={logic === 'plc'} onChange={() => setLogic('plc')} className="mt-1" />
+                  <span><b>Move it into a new PLC</b> (recommended): the field devices become I/O, the relay and timer circuits become program logic; the drives keep their own functions.</span></label>
+                <label className="flex items-start gap-2"><input type="radio" name="convert-logic" checked={logic === 'keep-relays'} onChange={() => setLogic('keep-relays')} className="mt-1" />
+                  <span><b>Keep the relay logic</b> with parts for {regionSpec(conv.target.region).label}: the circuits stay hardwired with the new tags. The app writes the description, the parts and the circuit list; it draws PLC control only, so the relay circuits are drawn from that list.</span></label>
+              </fieldset>
+            )}
+            {conv.circuits.length > 0 && (
+              <div className="text-sm" data-testid="convert-circuits"><b>Control circuits:</b>
+                <ul className="list-disc pl-5">{conv.circuits.map((c) => <li key={c.circuit.output}><span className="rounded bg-steel-100 px-1.5 text-xs text-steel-700">{c.becomes === 'program' ? 'PLC program' : c.becomes === 'relays' ? 'relays' : 'in the drive'}</span> {c.text}</li>)}</ul>
+              </div>
             )}
             {counts && <p className="text-xs text-steel-500">{counts.matched} parts with an equivalent, {counts.engine} chosen by the design (operator devices, sensors, PLC, overloads set for the new motor current){counts.select ? `, ${counts.select} to select` : ''}.</p>}
             <p className="text-xs text-steel-500">Equivalents carry only their makers' own listings. The converted panel is not certified by this: it needs its own UL 508A listing (or a field evaluation), and every safety function is re-validated.</p>
@@ -235,9 +278,11 @@ export default function ReviewAndConvert() {
             </div>
             <div className="flex flex-wrap items-center gap-3 border-t border-steel-100 pt-3">
               <button onClick={build} className="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700" data-testid="convert-build">
-                {applied ? 'Apply again and rebuild the design' : 'Use this and build the new design'}
+                {conv.logic === 'keep-relays' ? (applied ? 'Apply again' : 'Use this') : applied ? 'Apply again and rebuild the design' : 'Use this and build the new design'}
               </button>
-              <span className="text-xs text-steel-500">Replaces this project's description, I/O list and motors with the reviewed reading, then builds equipment, electrical design, HMI and PLC program for {regionSpec(conv.target.region).label}.</span>
+              <span className="text-xs text-steel-500">{conv.logic === 'keep-relays'
+                ? `Replaces this project's description and motors with the reviewed reading and keeps the relay circuits for ${regionSpec(conv.target.region).label} (no PLC, so no I/O list or program).`
+                : `Replaces this project's description, I/O list and motors with the reviewed reading, then builds equipment, electrical design, HMI and PLC program for ${regionSpec(conv.target.region).label}.`}</span>
             </div>
           </Step>
         </>
@@ -253,7 +298,7 @@ export default function ReviewAndConvert() {
             <tbody className="divide-y divide-steel-100">
               {kept.map((k, i) => (
                 <tr key={i} className="align-top">
-                  <td className="py-1 pr-3 text-steel-500">{k.kind === 'io' ? 'I/O' : k.kind === 'axis' ? 'servo axis' : k.kind}</td>
+                  <td className="py-1 pr-3 text-steel-500">{k.kind === 'io' ? 'I/O' : k.kind === 'axis' ? 'servo axis' : k.kind === 'circuit' ? 'control circuit' : k.kind}</td>
                   <td className="pr-3">{k.original}</td>
                   <td className="pr-3">{k.now}{k.note && <div className="text-steel-500">{k.note}</div>}</td>
                   <td className="whitespace-nowrap"><span className={KEPT[k.status]}>{KEPT_LABEL[k.status]}</span>{k.revalidate && <span className="ml-2 rounded bg-amber-100 px-1.5 text-amber-900">re-validate</span>}</td>

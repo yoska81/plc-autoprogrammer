@@ -8,12 +8,13 @@ import type { ProjectSnapshot } from '../deliverables/collect';
 import { buildModel } from '../electrical/derive';
 import type { Finding } from '../review/types';
 import type { Conversion } from './convert';
+import type { ImportedIO } from '../lib/ai/importAI';
 import type { ExistingMachine } from './types';
 
 export type KeptStatus = 'kept' | 'missing' | 'check';
 
 export interface KeptItem {
-  kind: 'io' | 'motor' | 'axis' | 'interlock' | 'safety';
+  kind: 'io' | 'motor' | 'axis' | 'interlock' | 'circuit' | 'safety';
   /** What the old machine had, e.g. "X1 Start (启动)". */
   original: string;
   /** Where it is in the new design, e.g. "X002 Start (启动)". */
@@ -39,7 +40,9 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
   const out: KeptItem[] = [];
   // I/O points: same direction and function
   const used = new Set<string>();
-  for (const o of m.io) {
+  const ioKept = new Map<ImportedIO, KeptItem>();
+  // relay logic kept: no PLC, the field devices stay on their circuits (checked with the circuits below)
+  for (const o of conv.logic === 'keep-relays' ? [] : conv.io) {
     let best: { id: string; description: string; score: number } | null = null;
     for (const n of p.io) {
       if (n.type !== o.type || used.has(n.id)) continue;
@@ -48,11 +51,13 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
     }
     if (best) used.add(best.id);
     const addr = best ? p.addresses.get(best.id) ?? '' : '';
-    out.push({
+    const item: KeptItem = {
       kind: 'io', original: `${o.address} ${o.description}`, now: best ? `${addr || '(no address)'} ${best.description}` : '—',
       status: !best ? 'missing' : addr ? 'kept' : 'check',
       note: !best ? `No ${o.type} for this function in the new I/O list.` : addr ? '' : 'In the I/O list but without an address on the new PLC (not enough I/O?).',
-    });
+    };
+    ioKept.set(o, item);
+    out.push(item);
   }
   // motors: same tag, at least the converted power, reversing and drive kept
   const model = p.drawingCtx ? buildModel(p.drawingCtx) : null;
@@ -105,6 +110,30 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
       note: missing.length ? `${missing.join(', ')} not in the new design.` : reversing || inSpec ? '' : 'The devices are there; add the interlock to the description so the program keeps it.',
     });
   }
+  // control circuits: each function is in the new design where the conversion put it (PLC program, relays, the drive)
+  for (const c of conv.circuits) {
+    const inSpec = spec.includes(c.text.toLowerCase().slice(0, 40));
+    const parts = c.circuit.devices.map((d) => conv.parts.find((x) => x.oldTag === d)).filter((x) => x !== undefined);
+    let now: string, status: KeptStatus = 'kept';
+    const notes: string[] = [];
+    if (c.becomes === 'program') {
+      // its field devices are I/O of the new PLC; its relays and timers are program logic
+      const lost = conv.io.filter((x) => x.deviceTag && c.circuit.devices.includes(x.deviceTag) && ioKept.get(x)?.status === 'missing').map((x) => x.deviceTag!);
+      if (lost.length) { status = 'missing'; notes.push(`${[...new Set(lost)].join(', ')}: no I/O in the new design.`); }
+      now = `PLC program${inSpec ? ' (in the description for the program)' : ''}`;
+    } else if (c.becomes === 'relays') {
+      const toSelect = parts.filter((x) => x.status === 'to-select').map((x) => x.newTag);
+      if (toSelect.length) { status = 'check'; notes.push(`Pick a part for ${toSelect.join(', ')}.`); }
+      now = `Relay circuit ${parts.map((x) => x.newTag).join(', ')}`;
+    } else {
+      const drive = parts.find((x) => x.from.category === 'vfd' || m.axes.some((a) => a.driveTag === x.oldTag));
+      if (!drive) { status = 'missing'; notes.push('The drive is not in the new design.'); }
+      now = drive ? `In ${drive.newTag}'s own logic` : '—';
+      if (drive) notes.push('Set the new drive\'s parameters as the old one (terminal functions, speeds, positions).');
+    }
+    if (status === 'kept' && !inSpec) { status = 'check'; notes.push('Write the circuit into the description so the new design keeps it.'); }
+    out.push({ kind: 'circuit', original: `${c.circuit.output}: ${c.circuit.function}${c.circuit.setting && !c.circuit.function.includes(c.circuit.setting) ? ` (${c.circuit.setting})` : ''}`, now, status, note: notes.join(' ') });
+  }
   // safety: every E-stop and guard still stops the machine, through a monitored safety relay
   const safety = model?.safety;
   for (const e of m.safety.estops) {
@@ -131,11 +160,11 @@ export function functionKeptFindings(items: KeptItem[]): Finding[] {
     id: `convert:kept:${i.kind}:${i.original.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50)}`,
     source: 'check' as const,
     severity: i.kind === 'safety' ? 'critical' as const : 'major' as const,
-    area: i.kind === 'safety' ? 'safety' as const : i.kind === 'io' ? 'io' as const : i.kind === 'axis' ? 'equipment' as const : 'electrical' as const,
+    area: i.kind === 'safety' ? 'safety' as const : i.kind === 'io' ? 'io' as const : i.kind === 'axis' ? 'equipment' as const : i.kind === 'circuit' ? 'program' as const : 'electrical' as const,
     title: `Converted machine: ${i.kind === 'io' ? 'I/O' : i.kind} "${i.original.slice(0, 60)}" is not in the new design`,
     detail: `${i.note} The existing machine has it (read from its drawings); the redesign must keep every function.`,
-    fix: i.kind === 'io' ? 'Add the point back to the I/O list.' : i.kind === 'motor' ? 'Correct the motor in the electrical design inputs.' : i.kind === 'interlock' ? 'Add the devices and write the interlock into the description.' : 'Wire the device into the safety relay channel.',
-    page: i.kind === 'io' ? 'io' as const : i.kind === 'interlock' ? 'spec' as const : 'electrical' as const,
+    fix: i.kind === 'io' ? 'Add the point back to the I/O list.' : i.kind === 'motor' ? 'Correct the motor in the electrical design inputs.' : i.kind === 'interlock' ? 'Add the devices and write the interlock into the description.' : i.kind === 'circuit' ? 'Add the circuit\'s devices back and keep the circuit in the description.' : 'Wire the device into the safety relay channel.',
+    page: i.kind === 'io' ? 'io' as const : i.kind === 'interlock' || i.kind === 'circuit' ? 'spec' as const : 'electrical' as const,
     item: '',
   }));
 }

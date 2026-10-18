@@ -12,14 +12,19 @@ import type { SyncItem } from '../components/questions/useQuestionStore';
 import type { SpecSectionId } from '../spec/types';
 import { foreignRatings } from './foreignParts';
 import { similarity } from './functionKept';
-import type { DrawnComponent, DrawnRatings, ExistingMachine } from './types';
+import type { ImportedIO } from '../lib/ai/importAI';
+import type { DriveStop, DrawnCircuit, DrawnComponent, DrawnRatings, ExistingMachine } from './types';
 
 export interface ConvertTarget {
   region: Region;
   supply: SupplyVoltage;
   /** Control voltage of the new panel (coils, operator devices). */
   controlVolts: '24VDC' | '120VAC';
+  /** A machine without a PLC: keep its relay logic (with parts for the target) or move it into a new PLC (default). */
+  logic?: LogicChoice;
 }
+
+export type LogicChoice = 'keep-relays' | 'plc';
 
 export const NA_TARGET: ConvertTarget = { region: 'US', supply: '480VAC-3PH', controlVolts: '24VDC' };
 
@@ -211,6 +216,91 @@ export interface Conversion {
   questions: SyncItem[];
   /** What the new design must add to be right for the target standard (safety relay + STO…). */
   recommendations: { text: string; section: SpecSectionId }[];
+  /** No PLC on the old machine: the chosen way to keep its logic (null: it had a PLC). */
+  logic: LogicChoice | null;
+  /** Each control circuit, where its function goes and how it reads with the new tags. */
+  circuits: ConvertedCircuit[];
+  /** The I/O list for the new design: the original points plus the field devices of the relay circuits moved into the PLC. */
+  io: ImportedIO[];
+}
+
+export interface ConvertedCircuit {
+  circuit: DrawnCircuit;
+  /** relays: kept as a hardwired circuit; program: becomes PLC logic; drive: stays in the drive's / controller's own logic. */
+  becomes: 'relays' | 'program' | 'drive';
+  /** The circuit with the new tags, e.g. "K2: SS4 cutting on (NO), K1 aux (NO), K2 seal-in (NO)". */
+  text: string;
+}
+
+/** The way a machine's logic is kept: its own PLC, or (no PLC) the user's choice, by default a new PLC. */
+export const logicChoice = (m: ExistingMachine, target: ConvertTarget): LogicChoice | null => (m.controller === 'plc' ? null : target.logic ?? 'plc');
+
+/** Replace the old device tags in a text with the new ones (whole tags only: KM1 never touches KM10). */
+export function retag(text: string, tags: Map<string, string>): string {
+  const olds = [...tags.keys()].filter((t) => t && tags.get(t) !== t).sort((a, b) => b.length - a.length);
+  if (!olds.length) return text;
+  const re = new RegExp(`(?<![A-Za-z0-9])(${olds.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?![A-Za-z0-9])`, 'g');
+  return text.replace(re, (t) => tags.get(t) ?? t);
+}
+
+/** Where each circuit's function goes. A drive's or controller's built-in logic stays there (a servo keeps positioning); relay logic follows the choice. */
+export function convertCircuits(m: ExistingMachine, tags: Map<string, string>, logic: LogicChoice | null): ConvertedCircuit[] {
+  return m.circuits.map((c) => {
+    const becomes = c.logicIn === 'drive' ? 'drive' as const : logic === 'keep-relays' ? 'relays' as const : 'program' as const;    return { circuit: c, becomes, text: retag(`${c.output}: ${c.function}${c.conditions.length ? ` (${c.conditions.join(', ')})` : ''}${c.setting && !c.function.includes(c.setting) ? `; setting: ${c.setting}` : ''}`, tags) };
+  });
+}
+
+const INPUT_DEVICE: Partial<Record<DrawnComponent['category'], ImportedIO['deviceType']>> = { pushbutton: 'pushbutton-no', selector: 'selector', sensor: 'sensor-pnp' };
+const OUTPUT_DEVICE: Partial<Record<DrawnComponent['category'], ImportedIO['deviceType']>> = { solenoidValve: 'solenoid', pilotLight: 'pilot-light', stackLight: 'stack-light', contactor: 'contactor-coil' };
+
+/**
+ * The I/O list for the new design. With the relay logic moved into a PLC, every field device of a relay
+ * circuit becomes I/O (buttons, switches, sensors in; motor contactors, valves, lamps out) unless the
+ * drawings' I/O list already has it; relays and timers become program logic, not I/O. A main contactor
+ * goes to the safety circuit, not to an output.
+ */
+export function newIo(m: ExistingMachine, logic: LogicChoice | null): ImportedIO[] {
+  if (logic !== 'plc') return m.io;
+  const named = new Set(m.io.map((p) => p.deviceTag).filter(Boolean));
+  const extra: ImportedIO[] = [];
+  for (const c of m.circuits.filter((x) => x.logicIn !== 'drive')) {
+    for (const tag of c.devices) {
+      const comp = m.components.find((x) => x.tag === tag);
+      if (!comp || named.has(tag)) continue;
+      const input = INPUT_DEVICE[comp.category];
+      const output = OUTPUT_DEVICE[comp.category];
+      if (!input && !output) continue;
+      // a contactor is an output only when it is the circuit's own coil, and not the main contactor
+      if (comp.category === 'contactor' && (c.output !== tag || /main|总|主接触/i.test(comp.description))) continue;
+      named.add(tag);
+      extra.push({
+        address: `${tag} (was relay logic)`, description: comp.description, type: input ? 'input' : 'output',
+        category: comp.category === 'sensor' ? 'Product Detection' : comp.category === 'contactor' ? 'Conveyor' : comp.category === 'solenoidValve' ? 'Pneumatic' : 'Operator/HMI',
+        deviceTag: tag, deviceType: (input ?? output)!, confidence: comp.confidence, source: `${comp.source} (circuit of ${c.output})`,
+      });
+    }
+  }
+  return [...m.io, ...extra];
+}
+
+/** How every drive (VFD, servo drive) stops now; a drive the drawings don't describe is "unknown". */
+export function driveStops(m: ExistingMachine): DriveStop[] {
+  const tags = [...new Set([...m.components.filter((c) => c.category === 'vfd').map((c) => c.tag), ...m.axes.map((a) => a.driveTag)])];
+  return tags.map((tag) => m.safety.drives?.find((d) => d.tag === tag) ?? { tag, sto: 'unknown' as const, stopsBy: '' });
+}
+
+/**
+ * A safety relay is not enough when a drive's Safe Torque Off isn't wired to it: the drive then stops only
+ * through a single run contact, which is one channel, whatever category the drawings claim. Null when every
+ * drive's STO is wired (or there is no safety relay: that case is the "add a safety relay" recommendation).
+ */
+export function stoFinding(m: ExistingMachine): string | null {
+  if (m.safety.kind !== 'safety-relay') return null;
+  const open = driveStops(m).filter((d) => d.sto !== 'wired');
+  if (!open.length) return null;
+  const how = open.map((d) => `${d.tag} (${d.sto === 'none' ? 'no STO' : d.sto === 'not-wired' ? 'STO not wired' : 'STO not shown'}${d.stopsBy ? `; stops only by ${d.stopsBy}` : ''})`).join(', ');
+  const claimed = m.safety.category?.replace(/\s*\(claimed\)/i, '') || null;
+  return `${claimed ? `The drawings claim ${claimed}, but ` : ''}the safety relay ${m.safety.safetyRelay ?? ''} does not remove torque from ${how}: a single channel, so ${claimed ? `the claimed ${claimed} is not met` : 'the stop is not two-channel'}. Wire the Safe Torque Off inputs to the safety relay (STO-capable drives), or stop each drive through two monitored contactors (NFPA 79 9.2.5.4, ISO 13849-1). Re-validate after the conversion.`.replace('relay  does', 'relay does');
 }
 
 /** The whole conversion of an existing machine to the target standard. */
@@ -237,11 +327,20 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   } else if (m.safety.estops.length && !m.safety.safetyRelay) {
     questions.push({ text: `The existing E-stop (${m.safety.estops.join(', ')}) is single-channel, without a safety relay. The new design uses a monitored safety relay. What safety category / performance level does the risk assessment require?`, section: 'safety', assumption: 'Category 3, PL d' });
   }
-  if (m.controller !== 'plc') {
+  const logic = logicChoice(m, target);
+  if (logic) {
     const by = m.controller === 'servo-drive' ? 'the servo drive\'s built-in controller' : m.controller === 'relays' ? 'relay logic' : 'its own controller';
-    questions.push({ text: `The machine has no PLC: ${by} runs it. Should the new design keep that, or put the logic in a PLC (the drives keep their motion functions)?`, section: 'sequence', assumption: 'A PLC runs the logic; the servo drive keeps positioning' });
+    questions.push(logic === 'plc'
+      ? { text: `The machine has no PLC: ${by} runs it. The conversion moves the relay logic into a new PLC (the drives keep their built-in functions). Is that right, or should the relay logic be kept?`, section: 'sequence', assumption: 'A PLC runs the logic; the drives keep their built-in functions' }
+      : { text: `The machine has no PLC: ${by} runs it, and the conversion keeps the relay logic with parts for the new standard. Is that right, or should the logic move into a PLC?`, section: 'sequence', assumption: 'Keep the relay logic' });
   }
   const recommendations: Conversion['recommendations'] = [];
+  const sto = stoFinding(m);
+  if (sto) {
+    recommendations.push({ section: 'safety', text: sto });
+    const unknown = driveStops(m).filter((d) => d.sto === 'unknown').map((d) => d.tag);
+    if (unknown.length) questions.push({ text: `The drawings don't show whether the Safe Torque Off of ${unknown.join(', ')} is wired to the safety relay. Is it?`, section: 'safety', assumption: 'Not wired: the new design wires it' });
+  }
   if (m.safety.kind !== 'safety-relay' && (m.safety.estops.length || drives.length)) {
     recommendations.push({ section: 'safety', text: `${m.safety.kind === 'control-only' ? `The E-stop (${m.safety.estops.join(', ') || '—'}) only signals ${drives.length ? drives.join(', ') : 'the controller'}: that is not a safety circuit. ` : ''}Add a monitored safety relay (category / PL from the risk assessment)${drives.length ? ` and wire the Safe Torque Off (STO) inputs of ${drives.join(', ')} to it` : ''}, so an E-stop removes power or torque (NFPA 79 9.2.2, 9.2.5.4). Re-validate after the conversion.` });
   }
@@ -258,17 +357,20 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   const tags = na ? naTags(m.components) : new Map(m.components.map((c) => [c.tag, c.tag]));
   // a drive is sized by the motor it runs: the largest VFD-driven motor when the drive's own power isn't drawn
   const vfdHp = Math.max(0, ...motors.filter((x) => x.starter === 'vfd').map((x) => x.hp));
-  const axisTags = new Set(m.axes.flatMap((a) => [a.driveTag, a.motorTag, ...(a.brakingResistor ? [a.brakingResistor.split(/\s/)[0]] : [])]));
+  // the axis' own devices, by tag: drive, motor, braking resistor, encoder ("line-length encoder PG1 on CN1-11/13")
+  const tagIn = (t: string | null) => (t ?? '').match(/\b[A-Z]{1,3}\d+\b/g)?.filter((x) => m.components.some((c) => c.tag === x)) ?? [];
+  const axisTags = new Set(m.axes.flatMap((a) => [a.driveTag, a.motorTag, ...tagIn(a.brakingResistor), ...tagIn(a.encoder)]));
+  const stoOpen = new Set(driveStops(m).filter((d) => d.sto !== 'wired').map((d) => d.tag));
   const parts = m.components.map((c) => {
     // a servo axis is chosen as a whole by the motion design (drive, motor, encoder, braking resistor)
-    if (axisTags.has(c.tag) || /servo|伺服|braking resistor|制动电阻|encoder|编码器/i.test(c.description)) {
-      const isDrive = m.axes.some((a) => a.driveTag === c.tag) || /servo drive|伺服驱动/i.test(c.description);
+    if (axisTags.has(c.tag)) {
+      const isDrive = m.axes.some((a) => a.driveTag === c.tag);
       return { oldTag: c.tag, newTag: tags.get(c.tag) ?? c.tag, from: { partNumber: c.partNumber, manufacturer: c.manufacturer, description: c.description, category: c.category, ratings: ratingsOf(c) }, to: null, alternatives: [],
-        differences: isDrive ? ['STO wired to the safety relay', REVALIDATE] : [], status: 'engine' as const, reason: 'Servo axis: drive, motor, encoder and braking resistor are chosen together by the motion design.' };
+        differences: isDrive ? [...(stoOpen.has(c.tag) ? ['STO wired to the safety relay'] : []), REVALIDATE] : [], status: 'engine' as const, reason: 'Servo axis: drive, motor, encoder and braking resistor are chosen together by the motion design.' };
     }
     const m2 = crossMatch(c, tags.get(c.tag) ?? c.tag, target, c.category === 'vfd' && c.ratings.kw === null && vfdHp ? vfdHp : undefined);
-    // a drive's E-stop now removes torque through STO
-    return c.category === 'vfd' && m.safety.kind !== 'safety-relay' ? { ...m2, differences: [...m2.differences, 'STO wired to the safety relay', REVALIDATE] } : m2;
+    // a drive whose STO isn't wired now stops through it
+    return c.category === 'vfd' && stoOpen.has(c.tag) ? { ...m2, differences: [...m2.differences, 'STO wired to the safety relay', REVALIDATE] } : m2;
   });
-  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations };
+  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits: convertCircuits(m, tags, logic), io: newIo(m, logic) };
 }

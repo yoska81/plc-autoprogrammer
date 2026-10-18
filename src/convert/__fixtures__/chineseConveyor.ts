@@ -63,6 +63,7 @@ export const CHINESE_CONVEYOR: ExistingMachine = {
   ],
   axes: [],
   controller: 'plc',
+  circuits: [],
   interlocks: [
     { description: 'KM1 and KM2 are cross-interlocked: forward and reverse can never be on together', devices: ['KM1', 'KM2'] },
     { description: 'The pusher valve YV1 fires only with air pressure OK (SP1)', devices: ['YV1', 'SP1'] },
@@ -74,6 +75,7 @@ export const CHINESE_CONVEYOR: ExistingMachine = {
     safetyRelay: null,
     category: null,
     kind: 'hardwired',
+    drives: [],
     description: 'Single-channel E-stop SB1 drops relay KA1, which removes the 220 VAC control supply from KM1, KM2, KM3 and YV1; PLC input X0 sees the E-stop.',
   },
   spec: {

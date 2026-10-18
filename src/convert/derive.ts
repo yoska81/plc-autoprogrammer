@@ -80,8 +80,9 @@ export const EXISTING_SCHEMA = obj({
   motors: { type: 'array', items: obj({ tag: str, description: str, kw: num, hp: num, starter: { anyOf: [en(['contactor-overload', 'motor-protector', 'vfd']), { type: 'null' }] }, reversing: { type: 'boolean' }, kind: en(['induction', 'servo']), confidence, source: str }) },
   axes: { type: 'array', items: obj({ tag: str, description: str, driveTag: str, drivePart: nstr, motorTag: str, motorKw: num, encoder: nstr, brakingResistor: nstr, signals: { type: 'array', items: str }, confidence, source: str }) },
   controller: en(['plc', 'servo-drive', 'relays', 'other']),
+  circuits: { type: 'array', items: obj({ output: str, function: str, kind: en(['start-stop', 'interlock', 'timer', 'counter', 'length', 'sequence', 'drive-logic', 'other']), conditions: { type: 'array', items: str }, sealIn: nstr, devices: { type: 'array', items: str }, setting: nstr, logicIn: en(['relays', 'drive', 'controller']), confidence, source: str }) },
   interlocks: { type: 'array', items: obj({ description: str, devices: { type: 'array', items: str } }) },
-  safety: obj({ estops: { type: 'array', items: str }, guards: { type: 'array', items: str }, safetyRelay: nstr, category: nstr, kind: en(['safety-relay', 'hardwired', 'control-only']), description: str }),
+  safety: obj({ estops: { type: 'array', items: str }, guards: { type: 'array', items: str }, safetyRelay: nstr, category: nstr, kind: en(['safety-relay', 'hardwired', 'control-only']), description: str, drives: { type: 'array', items: obj({ tag: str, sto: en(['wired', 'not-wired', 'none', 'unknown']), stopsBy: str }) } }),
   spec: obj(Object.fromEntries(SECTION_IDS.map((id) => [id, str]))),
   questions: { type: 'array', items: obj({ text: str, section: en(SECTION_IDS), assumption: nstr }) },
   uncertainties: { type: 'array', items: str },
@@ -97,8 +98,10 @@ Read and report only what the drawings show. Never invent a part number, address
 - supplyDrawn: the incoming supply as drawn (volts, Hz, phases) and the text you read it from.
 - interlocks: what the wiring enforces: e.g. "KM1 and KM2 cross-interlocked (forward/reverse)", "Pump runs only when level switch SL1 is made", "Heater off when door open". List the device tags involved.
 - axes: each servo axis (drive tag and model, servo motor tag and kW, extra encoder such as a line-length encoder, braking resistor, the drive I/O used). A servo motor is listed in motors too, with kind "servo".
+- circuits: every control circuit as a function: what it drives (the coil, valve, lamp or drive input), the function in plain words, the kind (start-stop with a seal-in, interlock, timer, counter, length controller, sequence, or drive-logic for what a drive or controller does with its own built-in logic, e.g. a servo drive's flying shear or a VFD's preset speeds), the contacts in the coil's path in the order drawn, in plain words with terminals and NO/NC, parallel branches joined with ∥ (e.g. "SB1 stop (NC)", "SB2 start (NO) ∥ KM1 13-14 self-hold", "FR1 95-96 overload (NC)"), the seal-in (self-hold) contact if any, every device tag involved, the timer / counter / length setting as printed, where the logic is (relays, drive, controller), confidence and source. On a machine without a PLC this is its whole logic: list every relay and contactor coil.
+- io: on a machine without a PLC, list every field device as the I/O it would be (inputs: buttons, switches, sensors; outputs: motor contactor coils, valves, lamps, drive run inputs), with "address" saying where it connects now (e.g. "KM1 coil", "VFD DI1", "Servo CN1-17").
 - controller: what runs the logic: "plc", "servo-drive" (a servo drive's built-in controller, often with a touch panel), "relays", or "other". plc is null when there is no PLC.
-- safety: E-stop devices (tags), guard switches, the safety relay (tag and part number) and the category / PL if printed (or inferred from dual-channel wiring), the kind ("safety-relay": a monitored safety relay; "hardwired": the E-stop itself opens the power or control circuit; "control-only": the E-stop is only an input of a PLC, drive or controller, which is not a safety circuit), and a short description of what removes power on a stop.
+- safety: E-stop devices (tags), guard switches, the safety relay (tag and part number) and the category / PL if printed (or inferred from dual-channel wiring), the kind ("safety-relay": a monitored safety relay; "hardwired": the E-stop itself opens the power or control circuit; "control-only": the E-stop is only an input of a PLC, drive or controller, which is not a safety circuit), a short description of what removes power on a stop, and for every drive (VFD and servo drive) how it stops: "wired" when its Safe Torque Off (STO) inputs are wired to the safety circuit, "not-wired" when the drive has STO but it is bridged or unused, "none" when the drive has no STO, "unknown" when the drawings don't show it, and what stops it now (e.g. "single KA1 contact on the run input"). A drive stopped only by a run command or a single relay contact is not a two-channel stop.
 - spec: write the machine description yourself, section by section, in plain English for someone who has never seen the machine: what it does, the automatic cycle as far as the I/O and interlocks show it, safety, guarding, start-up, modes (from selector switches), each motor, pneumatics (from valves YV), sensors, the operator station (buttons, lights), alarms (from fault inputs and lamps), and power. Write "" for a section the drawings say nothing about.
 - questions: what a designer must still know that the drawings cannot tell (e.g. "What is the conveyor speed?", "Is the product detected before the pusher or after?"), each with the spec section it belongs to and your assumption if you have one. Do not ask what the drawings already show.
 - summary: two sentences on the machine and its control system.`;
@@ -118,13 +121,14 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
     modules: raw.modules ?? [],
     supply: null,
     supplyDrawn: raw.supplyDrawn ?? { volts: null, hz: null, phases: null, text: '' },
-    io: raw.io ?? [],
+    io: (raw.io ?? []).map((p, i) => ({ ...p, id: p.id ?? `io${i + 1}` })),
     components: (raw.components ?? []).map((c) => ({ ...c, source: c.source ?? '', ratings: { ...NO_RATINGS, ...(c.ratings as Partial<DrawnRatings> | undefined) } })),
     motors: (raw.motors ?? []).map((m) => ({ ...m, reversing: Boolean(m.reversing), kind: m.kind ?? 'induction', confidence: m.confidence ?? 'medium', source: m.source ?? '' })),
     axes: raw.axes ?? [],
     controller: raw.controller ?? (raw.plc ? 'plc' : 'other'),
     interlocks: raw.interlocks ?? [],
-    safety: { estops: [], guards: [], safetyRelay: null, category: null, description: '', ...raw.safety, kind: raw.safety?.kind ?? (raw.safety?.safetyRelay ? 'safety-relay' : 'hardwired') },
+    circuits: (raw.circuits ?? []).map((c) => ({ ...c, conditions: c.conditions ?? [], sealIn: c.sealIn ?? null, devices: c.devices ?? [], setting: c.setting ?? null, logicIn: c.logicIn ?? 'relays', confidence: c.confidence ?? 'medium', source: c.source ?? '' })),
+    safety: { estops: [], guards: [], safetyRelay: null, category: null, description: '', ...raw.safety, drives: raw.safety?.drives ?? [], kind: raw.safety?.kind ?? (raw.safety?.safetyRelay ? 'safety-relay' : 'hardwired') },
     spec,
     questions: (raw.questions ?? []).filter((q) => q.text?.trim()),
     uncertainties: raw.uncertainties ?? [],

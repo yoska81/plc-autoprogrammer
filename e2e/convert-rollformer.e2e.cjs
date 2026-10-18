@@ -89,6 +89,8 @@ function sse(model, text) {
   check(/no PLC/.test(rec) && /servo drive's built-in controller/.test(rec), 'no PLC: the servo drive runs the machine');
   const axes = await page.getByTestId('review-axes').innerText();
   check(/A1/.test(axes) && /SD1/.test(axes) && /1\.5 kW/.test(axes) && /encoder/.test(axes) && /braking resistor/.test(axes), 'review: servo axis with drive, motor, encoder and braking resistor');
+  const circuits = await page.getByTestId('review-circuits').innerText();
+  check(/KM1[\s\S]*seal-in/.test(circuits) && /SD1[\s\S]*cuts at the set length/.test(circuits) && /the drive/.test(circuits), 'review: control circuits read as functions (seal-in, the flying shear in the drive)');
   check(await page.getByTestId('not-safety-circuit').isVisible(), 'review: the E-stop is flagged "not a safety circuit"');
   check(/1 low-confidence reading not confirmed/.test(await page.getByTestId('review-status').innerText()), 'review: the unsure pendant reading is counted');
   await page.getByTestId('convert-recognised').screenshot({ path: OUT + '01_review.png' });
@@ -98,6 +100,9 @@ function sse(model, text) {
   log('Recommendations:', recs.replace(/\s+/g, ' ').slice(0, 260));
   check(/not a safety circuit/.test(recs) && /safety relay/.test(recs) && /Safe Torque Off \(STO\) inputs of VF1, SD1/.test(recs), 'conversion recommends a safety relay + STO on the VFD and the servo drive');
   check(/Servo axis A1/.test(recs), 'conversion keeps the servo axis whole');
+  check(await page.getByTestId('convert-logic').getByRole('radio', { name: /Move it into a new PLC/ }).isChecked(), 'no PLC: moving the logic into a new PLC is the default choice');
+  const conCircuits = await page.getByTestId('convert-circuits').innerText();
+  check(/PLC program K1: Main contactor/.test(conCircuits) && /in the drive SD1: Flying shear/.test(conCircuits), 'circuits: relay logic → PLC program (new tags), drive logic stays in the drive');
   const table = await page.getByTestId('convert-table').innerText();
   check(/M1: 5\.5 kW → 7\.5 HP 480 V/.test(table), 'forming motor 5.5 kW → 7.5 HP at 480 V');
   check(/VF1[\s\S]*STO wired to the safety relay/.test(table) && /SD1[\s\S]*Servo axis/.test(table), 'VFD and servo drive rows: STO, chosen with the axis');
@@ -120,6 +125,7 @@ function sse(model, text) {
   log('Function kept:', keptText.split('\n')[1]);
   check(!/✗ Missing/.test(keptText), `nothing missing:\n${keptText.split('\n').filter((l) => /Missing/.test(l)).join('\n')}`);
   check(/servo axis[\s\S]*A1 Flying shear/.test(keptText), 'the servo axis is in function kept');
+  check((keptText.match(/control circuit/g) ?? []).length === 6 && /KM2: Oil pump runs[\s\S]*PLC program/.test(keptText) && /In VFD1's own logic/.test(keptText), 'function kept checks each control circuit');
   check(/E-stop SB3 \(only a drive input: not a safety circuit\)[\s\S]*on safety relay/.test(keptText), 'the E-stop now goes through a safety relay');
   check(/re-validate/.test(keptText), 'safety marked re-validate');
   await kept.screenshot({ path: OUT + '03_function_kept.png' });
