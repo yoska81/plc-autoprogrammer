@@ -578,7 +578,11 @@ await test('relay logic kept: C1–C11 as ladder rungs with the new tags, every 
 await test('the reading as three parts at once: every field in exactly one part; merged = one request (same score)', async () => {
   const all = Object.keys((EXISTING_SCHEMA as { properties: Record<string, unknown> }).properties).filter((k) => k !== 'uncertainties').sort();
   assert.deepEqual(DERIVE_PARTS.flatMap((p) => [...p.fields]).sort(), all, 'each field is read by one part');
-  for (const p of DERIVE_PARTS) assert.deepEqual(Object.keys((partSchema(p) as { properties: Record<string, unknown> }).properties).sort(), [...p.fields, 'uncertainties'].sort());
+  // one schema for every part (a format per part would break the shared prompt cache); the instruction names the fields
+  for (const p of DERIVE_PARTS) {
+    assert.equal(partSchema(), EXISTING_SCHEMA);
+    for (const f of p.fields) assert.ok(p.instruction.includes(f), `${p.id}: instruction names ${f}`);
+  }
   // three answers built from the one-request reading give back the same machine
   const full = { ...CN_ROLLFORMER_01_READING, uncertainties: ['Sheet 7 partly legible'] };
   const answers = DERIVE_PARTS.map((p, i) => ({ ...Object.fromEntries(p.fields.map((k) => [k, full[k as keyof typeof full]])), uncertainties: i === 1 ? ['Sheet 7 partly legible', 'KA9 contact unclear'] : ['Sheet 7 partly legible'] }));
@@ -603,7 +607,7 @@ await test('the reading as three parts at once: every field in exactly one part;
     const prefixes = seen.map((o) => JSON.stringify((o.messages[0].content as unknown[]).slice(0, -1)));
     assert.ok(prefixes.every((x) => x === prefixes[0]), 'the same file prefix for every part');
     assert.deepEqual((seen[0].messages[0].content as { cache_control?: unknown }[]).slice(-2, -1)[0].cache_control, { type: 'ephemeral' }, 'the prefix is cached at its last block');
-    assert.deepEqual(seen.map((o) => Object.keys((o.schema as { properties: object }).properties).length), DERIVE_PARTS.map((p) => p.fields.length + 1));
+    assert.ok(seen.every((o) => JSON.stringify(o.schema) === JSON.stringify(EXISTING_SCHEMA)), 'the same output format for every part (the prompt cache keys on it)');
     seen.length = 0;
     const one = await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low' }, [file], 'note');
     assert.equal(seen.length, 1, 'one request unless split is asked for');
@@ -612,7 +616,7 @@ await test('the reading as three parts at once: every field in exactly one part;
     // warm-up: the other two parts start when the first one's answer begins (its prompt, files included, is cached by then)
     const order: string[] = [];
     setClaudeInterceptor(async (o) => {
-      const i = DERIVE_PARTS.findIndex((p) => JSON.stringify(o.messages).includes(p.instruction));
+      const i = DERIVE_PARTS.findIndex((p) => (o.messages[0].content as { text?: string }[]).some((b) => b.text?.includes(p.instruction)));
       order.push(`start ${i}`);
       if (i === 0) { await new Promise((r) => setTimeout(r, 20)); order.push('answer 0 begins'); o.onStarted?.(); await new Promise((r) => setTimeout(r, 30)); }
       order.push(`end ${i}`);
@@ -625,7 +629,7 @@ await test('the reading as three parts at once: every field in exactly one part;
     // one part failing stops the others and the reading fails
     const signals: AbortSignal[] = [];
     setClaudeInterceptor(async (o) => {
-      const i = DERIVE_PARTS.findIndex((p) => JSON.stringify(o.messages).includes(p.instruction));
+      const i = DERIVE_PARTS.findIndex((p) => (o.messages[0].content as { text?: string }[]).some((b) => b.text?.includes(p.instruction)));
       signals[i] = o.signal!;
       if (i === 0) { o.onStarted?.(); await new Promise((r) => setTimeout(r, 50)); return { reasoning: null, text: '{}' }; }
       if (i === 1) throw new Error('bad request');
@@ -649,6 +653,10 @@ await test('merging the parts cross-checks them: unknown tags, a tag listed twic
   assert.ok(u.some((x) => /Not in the parts list or the I\/O.*KA99 \(circuit KA99\).*XS7 \(circuit KA99\).*SB11 \(the safety circuit\)/.test(x)), u.join(' | '));
   assert.ok(u.some((x) => /Listed twice in the parts: KA1\./.test(x)));
   assert.ok(u.some((x) => /A PLC \(Mitsubishi FX3U\) was read, but the logic was read as run by relays/.test(x)));
+  // PLC addresses and terminals are not tags to check (Y0, X1:3 in a circuit; an address read from the I/O)
+  const plc = mergeParts([{ components: [] }, { io: [{ address: 'Y0', description: 'Pump', type: 'output', category: 'Conveyor', deviceTag: 'KM1', deviceType: 'contactor-coil', confidence: 'high', source: '' }],
+    circuits: [{ output: 'KM1', function: 'Pump', kind: 'other', conditions: [], devices: ['Y0', 'X1:3', 'KM1'], setting: null, logicIn: 'relays', confidence: 'high', source: '' }] }, {}] as Partial<ExistingMachine>[]);
+  assert.ok(!plc.uncertainties!.some((x) => /Y0|X1/.test(x)), plc.uncertainties!.join(' | '));
   // the reading of cn-rollformer-01 split into its parts raises none of these
   const clean = mergeParts(DERIVE_PARTS.map((p) => Object.fromEntries(p.fields.map((k) => [k, (CN_ROLLFORMER_01_READING as unknown as Record<string, unknown>)[k]]))) as Partial<ExistingMachine>[]);
   assert.deepEqual(clean.uncertainties, []);

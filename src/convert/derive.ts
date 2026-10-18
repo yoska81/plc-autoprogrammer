@@ -131,16 +131,19 @@ Read and report only what the drawings show. Never invent a part number, address
  */
 export const DERIVE_PARTS = [
   { id: 'hardware', fields: ['drawingStandard', 'language', 'plc', 'modules', 'supplyDrawn', 'components', 'motors', 'axes'],
-    instruction: 'PART 1 of 3 — HARDWARE. Fill only: drawingStandard, language, plc, modules, supplyDrawn, components (every device with its ratings), motors and axes, plus uncertainties. Another reader does the I/O, circuits and description at the same time: use every device tag exactly as printed.' },
+    instruction: 'PART 1 of 3 — HARDWARE. Fill only: drawingStandard, language, plc, modules, supplyDrawn, components (every device with its ratings), motors and axes, plus uncertainties; leave every other field empty ([], "" or null). Another reader does the I/O, circuits and description at the same time: use every device tag exactly as printed.' },
   { id: 'logic', fields: ['io', 'circuits', 'interlocks', 'controller'],
-    instruction: 'PART 2 of 3 — LOGIC. Fill only: io (every I/O point, or on a machine without a PLC every field device as the I/O it would be), circuits (every control circuit with its structured path), interlocks and controller, plus uncertainties. Another reader does the parts list and the description at the same time: use every device tag exactly as printed.' },
+    instruction: 'PART 2 of 3 — LOGIC. Fill only: io (every I/O point, or on a machine without a PLC every field device as the I/O it would be), circuits (every control circuit with its structured path), interlocks and controller, plus uncertainties; leave every other field empty ([], "" or null). Another reader does the parts list and the description at the same time: use every device tag exactly as printed.' },
   { id: 'safety', fields: ['safety', 'spec', 'questions', 'summary'],
-    instruction: 'PART 3 of 3 — SAFETY AND DESCRIPTION. Fill only: safety (E-stops, guards, safety relay, category, kind, and how every drive stops, STO), spec (the machine description, section by section), questions and summary, plus uncertainties. Another reader does the parts list and the I/O at the same time: use every device tag exactly as printed.' },
+    instruction: 'PART 3 of 3 — SAFETY AND DESCRIPTION. Fill only: safety (E-stops, guards, safety relay, category, kind, and how every drive stops, STO), spec (the machine description, section by section), questions and summary, plus uncertainties; leave every other field empty ([], "" or null). Another reader does the parts list and the I/O at the same time: use every device tag exactly as printed.' },
 ] as const;
 
-const pick = (keys: readonly string[]) => Object.fromEntries(keys.map((k) => [k, (EXISTING_PROPS as Record<string, unknown>)[k]]));
-/** A part's answer: its own fields and its uncertainties. */
-export const partSchema = (part: (typeof DERIVE_PARTS)[number]) => obj({ ...pick(part.fields), uncertainties: EXISTING_PROPS.uncertainties });
+/**
+ * A part's answer: the whole reading's schema, the same for all three (the output format is part of what the
+ * prompt cache keys on, so a schema per part would stop parts 2 and 3 reading part 1's cache). The part's
+ * instruction says which fields to fill; mergeParts takes only those.
+ */
+export const partSchema = (): Record<string, unknown> => EXISTING_SCHEMA;
 
 /**
  * The three answers as one reading: each part's own fields, uncertainties from all (once each), and what the
@@ -153,13 +156,15 @@ export function mergeParts(answers: Partial<ExistingMachine>[]): Partial<Existin
   const m = out as Partial<ExistingMachine>;
   const checks: string[] = [];
   const parts = (m.components ?? []).map((c) => c.tag);
-  const known = new Set([...parts, ...(m.io ?? []).map((p) => p.deviceTag).filter((t): t is string => Boolean(t)), ...(m.motors ?? []).map((x) => x.tag)]);
-  const tagOf = (t: string) => t.trim().split(/\s+/)[0];
+  // a tag is the first word, cut at a terminal ("X1:3" → X1); PLC addresses and wiring points (Y0, X1:3) are known through the I/O
+  const tagOf = (t: string) => t.trim().split(/[\s:]+/)[0];
+  const known = new Set([...parts, ...(m.io ?? []).flatMap((p) => [p.deviceTag ?? '', ...p.address.split(/[\s/,]+/).map(tagOf)]).filter(Boolean), ...(m.motors ?? []).map((x) => x.tag)]);
   const used = new Map<string, string>();
   for (const c of m.circuits ?? []) for (const t of [tagOf(c.output), ...c.devices.map(tagOf)]) if (t && !used.has(t)) used.set(t, `circuit ${c.output}`);
   const sf = m.safety;
   for (const t of [...(sf?.estops ?? []), ...(sf?.guards ?? []), ...(sf?.safetyRelay ? [tagOf(sf.safetyRelay)] : []), ...(sf?.drives ?? []).map((d) => d.tag)]) if (t && !used.has(tagOf(t))) used.set(tagOf(t), 'the safety circuit');
-  const unknown = [...used].filter(([t]) => /^[A-Z][A-Z0-9-]*\d/.test(t) && !known.has(t));
+  // terminal strips and PLC addresses (X1, XT2, TB1, Y0) are wiring points, not devices of the parts list
+  const unknown = [...used].filter(([t]) => /^[A-Z][A-Z0-9-]*\d/.test(t) && !/^(X|XT|Y|TB)\d/.test(t) && !known.has(t));
   if (unknown.length) checks.push(`Not in the parts list or the I/O read from the drawings: ${unknown.map(([t, where]) => `${t} (${where})`).join(', ')}. Check these tags on the drawings.`);
   const twice = [...new Set(parts.filter((t, i) => parts.indexOf(t) !== i))];
   if (twice.length) checks.push(`Listed twice in the parts: ${twice.join(', ')}. Check whether these are two devices.`);
@@ -239,7 +244,7 @@ export async function deriveFromUpload(opts: DeriveOptions, files: File[], note 
   let started = () => {};
   const firstStarted = new Promise<void>((resolve) => { started = resolve; });
   const ask1 = (i: number) => callClaude({
-    ...base, signal: ctl.signal, schema: partSchema(DERIVE_PARTS[i]), ...(i === 0 ? { onStarted: () => started() } : {}),
+    ...base, signal: ctl.signal, schema: partSchema(), ...(i === 0 ? { onStarted: () => started() } : {}),
     messages: [{ role: 'user', content: [...prefix, { type: 'text', text: `${ask}\n\n${DERIVE_PARTS[i].instruction}` }] }],
   }).catch((err) => { stop(); throw err; });
   let answers: Awaited<ReturnType<typeof callClaude>>[];
