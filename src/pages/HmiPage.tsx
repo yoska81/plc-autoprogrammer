@@ -28,7 +28,7 @@ import { Spinner, ReasoningPanel } from '../components/common';
 import { type AccessLevel, type HmiAlarm, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
 import ScreenEditor from '../hmi/ScreenEditor';
 import HmiEditorBar from '../hmi/HmiEditorBar';
-import { addNavEntry, alignElements, createElement, createImageElement, deleteElements, distributeElements, duplicateElements, renameScreen, restack, setScreenLevel as setLevelOf, syncHandTags, type Align } from '../hmi/editor';
+import { addNavEntry, alignElements, createElement, freeSpot, createImageElement, deleteElements, distributeElements, duplicateElements, renameScreen, restack, setScreenLevel as setLevelOf, syncHandTags, type Align } from '../hmi/editor';
 import { backgroundAt, croppedBackground, loadPicture, panelImage, pictureRect, pictureSize } from '../hmi/background';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
@@ -372,7 +372,8 @@ export default function HmiPage() {
   };
   const addElement = (kind: HmiElementKind) => {
     if (!screen) return;
-    const el = createElement(kind, idMaker()(), W / 2, H / 2, bounds, snapOn ? 8 : 1);
+    const at = freeSpot(kind, screen.elements, bounds, snapOn ? 8 : 1);
+    const el = createElement(kind, idMaker()(), at.cx, at.cy, bounds, snapOn ? 8 : 1);
     updateScreen({ ...screen, elements: [...screen.elements, el] });
     setSel([el.id]);
   };
