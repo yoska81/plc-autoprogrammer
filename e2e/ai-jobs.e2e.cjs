@@ -112,7 +112,10 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.setState({ explanation: 'before cancel' }));
   script.electrical.push({ delay: 20000 });
   await page.goto(BASE + '/electrical?tab=design'); // a finished generation switches to the Cabinet tab
+  // cancel once the request is on its way (cancelled earlier, nothing is sent and the scripted reply would go to the next request)
+  const sent = page.waitForRequest((r) => r.url().startsWith('https://api.anthropic.com/'));
   await page.getByRole('button', { name: 'AI full design (experimental)' }).click();
+  await sent;
   await bar.getByRole('button', { name: 'Cancel Electrical design' }).click();
   await page.waitForFunction(() => !document.querySelector('[data-job="electrical"]'), null, { timeout: 5000 });
   check(await explanation() === 'before cancel', 'cancelled job applied nothing');

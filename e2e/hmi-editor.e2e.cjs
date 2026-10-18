@@ -19,6 +19,10 @@ let failPage = null;
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true });
   const page = await ctx.newPage();
+
+  // Pages load as their own chunks: after a navigation, wait until the app and the page have rendered.
+  const gotoRaw = page.goto.bind(page);
+  page.goto = async (...a) => { const r = await gotoRaw(...a); await page.waitForFunction(() => document.getElementById('root')?.childElementCount && !document.querySelector('[data-page-loading]')); return r; };
   failPage = page;
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));

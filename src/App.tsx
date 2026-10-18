@@ -239,7 +239,7 @@ export default function App() {
             </div>
           )}
           {/* a page opened for the first time loads its chunk: the shell stays */}
-          <Suspense fallback={<div className="flex-1 bg-gray-50" />}><Outlet /></Suspense>
+          <Suspense fallback={<div className="flex-1 bg-gray-50" data-page-loading />}><Outlet /></Suspense>
         </main>
       </div>
 
