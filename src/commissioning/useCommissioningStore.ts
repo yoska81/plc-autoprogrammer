@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { cleanRecord, type CommRecord, type CommResult, type CommSignoff } from './checklist';
+import { cleanRecord, signRefused, type CommRecord, type CommResult, type CommSignoff } from './checklist';
 import { notify } from '../store/useNoticeStore';
 
 /**
@@ -16,12 +16,18 @@ interface CommissioningStore {
   setTech: (name: string) => void;
   setResult: (projectId: string | null, itemId: string, patch: Partial<CommResult>) => void;
   /**
-   * Signs, or removes the signature (null). Signing is refused while any result is a failure; a
-   * signature removed or replaced by a new one is kept on the record. True when stored.
+   * Signs. Refused while any result is a failure, or an item that failed and was dismissed while removed
+   * is back in the checklist (currentIds) without a new result. A valid signature it replaces is kept on
+   * the record. True when stored.
    */
-  sign: (projectId: string | null, signoff: CommSignoff | null) => boolean;
-  /** Dismisses the result of an item no longer in the checklist, on the record. */
-  dismiss: (projectId: string | null, itemId: string) => void;
+  sign: (projectId: string | null, signoff: CommSignoff, currentIds: string[]) => boolean;
+  /** Removes the signature, on the record (who removed it: required). True when removed. */
+  unsign: (projectId: string | null, by: string) => boolean;
+  /**
+   * Dismisses the failed result of an item no longer in the checklist, on the record (who: required).
+   * Refused for an item still in the checklist (currentIds), a result that is not a failure, or no name.
+   */
+  dismiss: (projectId: string | null, itemId: string, currentIds: string[], by: string) => boolean;
   clear: (projectId: string | null) => void;
 }
 
@@ -61,23 +67,29 @@ export const useCommissioningStore = create<CommissioningStore>()(
           });
           if (voids) notify(`The sign-off by ${was.name} (${was.date}) is void: a failure was recorded after it. Fix the item, test it again and sign again.`);
         },
-        sign: (projectId, signoff) => {
+        sign: (projectId, signoff, currentIds) => {
           const rec = recOf(projectId);
-          // removing a signature is always allowed; signing is not while any result is a failure
-          if (signoff && Object.values(rec.results).some((r) => r.status === 'fail')) return false;
-          // the signature it removes or replaces stays on the record
+          if (!signoff.name.trim() || signRefused(currentIds, rec)) return false;
+          // a valid signature it replaces stays on the record
           const was = rec.signoff;
-          const voided = was ? [...(rec.voided ?? []), { signoff: was, reason: signoff ? 'replaced' as const : 'removed' as const, voidedAt: nowStamp(), voidedBy: signoff?.name ?? get().tech }] : rec.voided;
+          const voided = was ? [...(rec.voided ?? []), { signoff: was, reason: 'replaced' as const, voidedAt: nowStamp(), voidedBy: signoff.name }] : rec.voided;
           put(projectId, { ...rec, signoff, ...(voided ? { voided } : {}) });
           return true;
         },
-        dismiss: (projectId, itemId) => {
+        unsign: (projectId, by) => {
+          const rec = recOf(projectId);
+          if (!rec.signoff || !by.trim()) return false;
+          put(projectId, { ...rec, signoff: null, voided: [...(rec.voided ?? []), { signoff: rec.signoff, reason: 'removed', voidedAt: nowStamp(), voidedBy: by.trim() }] });
+          return true;
+        },
+        dismiss: (projectId, itemId, currentIds, by) => {
           const rec = recOf(projectId);
           const result = rec.results[itemId];
-          if (!result) return;
+          if (!by.trim() || currentIds.includes(itemId) || result?.status !== 'fail') return false;
           const results = { ...rec.results };
           delete results[itemId];
-          put(projectId, { ...rec, results, dismissed: [...(rec.dismissed ?? []), { itemId, result, at: nowStamp(), by: get().tech }] });
+          put(projectId, { ...rec, results, dismissed: [...(rec.dismissed ?? []), { itemId, result, at: nowStamp(), by: by.trim() }] });
+          return true;
         },
         clear: (projectId) => put(projectId, EMPTY),
       };

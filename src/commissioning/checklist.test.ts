@@ -21,6 +21,7 @@ seedSampleProject();
 const p = collectProject();
 const items = commissioningItems(p);
 const by = (section: string) => items.filter((i) => i.section === section);
+const ids = items.map((i) => i.id);
 
 // Every I/O point, inputs and outputs, with the field device and what the program does with it.
 assert.equal(by('inputs').length, p.io.filter((x) => x.type === 'input').length);
@@ -57,7 +58,7 @@ assert.equal(rows.find((r) => r.cells[0] === by('outputs')[0].title)?.cells[4], 
 // fixed and tested again: it passes, the sign-off is allowed; a later failure voids the signature
 st.setResult('proj', by('outputs')[0].id, { status: 'pass' });
 assert.equal(signBlock(items, rec().results), null);
-st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:00' });
+st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:00' }, ids);
 assert.equal(rec().signoff?.name, 'J. Tech');
 st.setResult('proj', by('inputs')[0].id, { note: 'retightened' });
 assert.ok(rec().signoff, 'a note keeps the signature');
@@ -72,43 +73,61 @@ assert.match(v[0].voidedAt, /^\d{4}-\d\d-\d\d \d\d:\d\d$/);
 assert.equal(voidedText(v[0], items), `J. Tech (ISA) signed 2026-10-17 10:00; voided ${v[0].voidedAt} by A. Lead: ${by('inputs')[0].title} failed.`);
 assert.match(useNoticeStore.getState().message ?? '', /sign-off by J\. Tech \(2026-10-17 10:00\) is void/);
 // the store itself refuses a sign-off while an item has failed (not only the button)
-assert.equal(st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:20' }), false);
+assert.equal(st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:20' }, ids), false);
 assert.equal(rec().signoff, null);
 st.setResult('proj', by('inputs')[0].id, { status: 'fail' });
 assert.equal(rec().voided!.length, 1, 'a second failure with nothing signed voids nothing');
 st.setTech('J. Tech');
 st.setResult('proj', by('inputs')[0].id, { status: 'pass' });
-assert.equal(st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:30' }), true);
+assert.equal(st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:30' }, ids), true);
 assert.equal(rec().voided!.length, 1, 'signing again keeps the record of the voided one');
 // removing a signature, or signing again over a valid one, is on the record too
-assert.equal(st.sign('proj', null), true, 'removing a signature is always allowed');
+assert.equal(st.unsign('proj', ' '), false, 'no removal without a name');
+assert.equal(st.unsign('proj', 'J. Tech'), true, 'removing a signature is allowed while items have failed, with a name');
 assert.equal(rec().voided!.length, 2);
 assert.deepEqual([rec().voided![1].reason, rec().voided![1].signoff.date, rec().voided![1].voidedBy], ['removed', '2026-10-17 10:30', 'J. Tech']);
 assert.match(voidedText(rec().voided![1], items), /^J\. Tech \(ISA\) signed 2026-10-17 10:30; signature removed \d{4}-\d\d-\d\d \d\d:\d\d by J\. Tech\.$/);
-st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:40' });
+st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:40' }, ids);
 assert.equal(rec().voided!.length, 2, 'signing with nothing signed replaces nothing');
-st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 10:50' });
+st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 10:50' }, ids);
 assert.deepEqual([rec().voided!.length, rec().voided![2].reason, rec().voided![2].signoff.name, rec().voided![2].voidedBy], [3, 'replaced', 'J. Tech', 'B. Owner']);
 assert.match(voidedText(rec().voided![2], items), /; replaced by a new sign-off .+ by B\. Owner\.$/);
 // a failed result of an item no longer in the checklist (its I/O point deleted) blocks until dismissed — never for good
 st.setResult('proj', 'io:gone', { status: 'fail', note: 'wired to nothing' });
 assert.equal(rec().signoff, null, 'it voids the sign-off like any failure');
 assert.deepEqual(orphanFails(items, rec().results), ['io:gone']);
-assert.match(signBlock(items, rec().results) ?? '', /^1 failed result of item no longer in the checklist: dismiss it below\.$/);
-assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:00' }), false);
-st.dismiss('proj', 'io:gone');
+assert.match(signBlock(items, rec().results, rec().dismissed) ?? '', /^1 failed result of item no longer in the checklist: dismiss it below\.$/);
+assert.equal(st.dismiss('proj', by('inputs')[1].id, ids, 'J. Tech'), false, 'an item still in the checklist is not dismissed');
+assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:00' }, ids), false);
+assert.equal(st.dismiss('proj', 'io:gone', ids, ''), false, 'no dismissal without a name');
+assert.equal(st.dismiss('proj', 'io:gone', ids, 'J. Tech'), true);
 assert.deepEqual(orphanFails(items, rec().results), []);
 assert.equal(rec().results['io:gone'], undefined);
 assert.equal(rec().dismissed!.length, 1);
-assert.match(dismissedText(rec().dismissed![0]), /^Failed result of io:gone \(no longer in the checklist; note: wired to nothing\) dismissed \d{4}-.+ by J\. Tech\.$/);
+assert.match(dismissedText(rec().dismissed![0]), /^Failed result of io:gone, failed by J\. Tech \d{4}-\d\d-\d\d \d\d:\d\d, note: wired to nothing: no longer in the checklist, dismissed \d{4}-.+ by J\. Tech\.$/);
 assert.equal(signBlock(items, rec().results), null);
-assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:00' }), true);
+assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:00' }, ids), true);
 // the notice is sent after the state is saved (not from inside the store update)
 useNoticeStore.getState().clear();
 st.setResult('proj', by('alarms')[0].id, { status: 'fail' });
 assert.ok(useNoticeStore.getState().message && rec().signoff === null && rec().voided!.at(-1)!.itemId === by('alarms')[0].id);
 st.setResult('proj', by('alarms')[0].id, { status: 'pass' });
-st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:10' });
+st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:10' }, ids);
+// an item that failed, was dismissed while it was removed, and is back: its failure stands until it is tested again
+const back = by('inputs')[1];
+const without = ids.filter((id) => id !== back.id);
+st.setResult('proj', back.id, { status: 'fail', note: 'no signal', title: back.title });
+assert.equal(st.dismiss('proj', back.id, ids, 'J. Tech'), false, 'not while it is in the checklist');
+assert.equal(st.dismiss('proj', back.id, without, 'J. Tech'), true, 'dismissed while it is removed');
+assert.match(dismissedText(rec().dismissed!.at(-1)!), new RegExp(`^Failed result of ${back.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(${back.id}\\), failed by J\\. Tech .+, note: no signal: no longer in the checklist`), 'the record names the item, who failed it and when');
+assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:20' }, without), true, 'signed while it is removed');
+assert.equal(st.unsign('proj', 'B. Owner'), true);
+assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:30' }, ids), false, 'back in the checklist without a new result: refused');
+assert.match(signBlock(items, rec().results, rec().dismissed) ?? '', new RegExp(`^1 item failed before and was dismissed while removed \\(.+\\): test it again\\.$`));
+st.setResult('proj', back.id, { status: 'pass', title: back.title });
+assert.equal(signBlock(items, rec().results, rec().dismissed), null, 'tested again: it may be signed');
+assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:40' }, ids), true);
+assert.equal(st.sign('proj', { name: ' ', company: '', signature: 'x', date: '2026-10-17 11:50' }, ids), false, 'a sign-off needs a name in the store too');
 
 // Records from storage or a project file: malformed ones are cleaned, never crash; legacy voided entries read as 'failed'.
 assert.deepEqual(cleanRecord({ voided: {}, results: { x: null, y: { status: 'bogus', note: 3 }, z: { status: 'fail', note: 'n', by: 'b', date: 'd' } }, signoff: { company: 'no name' } }),
@@ -119,6 +138,10 @@ for (const bad of [null, 7, 'x', [], { results: [] }, { results: { a: 1 } }, { v
   const r = cleanRecord(bad);
   assert.doesNotThrow(() => { signBlock(items, r.results); progress(items, r.results); (r.voided ?? []).map((v) => voidedText(v, items)); exportRows(items, r.results); }, `malformed record ${JSON.stringify(bad)}`);
 }
+const proto = cleanRecord(JSON.parse('{"results":{"__proto__":{"status":"fail","note":"","by":"","date":""},"ok":{"status":"pass"}}}'));
+assert.deepEqual(Object.keys(proto.results), ['ok'], 'a "__proto__" key from a file is skipped');
+assert.equal(Object.getPrototypeOf(proto.results), Object.prototype);
+assert.equal(signBlock(items, proto.results), null);
 // browser storage written by an older or hand-edited version is cleaned when the store loads it
 const rehydrated = mergeStored({ tech: 'T', byProject: { a: { results: { x: null }, voided: {} } } }, useCommissioningStore.getState());
 assert.deepEqual(rehydrated.byProject.a, { results: {}, signoff: null });
@@ -137,6 +160,7 @@ ws.eachRow((r) => texts.push((r.values as unknown[]).map(String).join('|')));
 assert.ok(texts.some((t) => t.includes('Contactor coil open circuit') && t.includes('Pass')), 'the retested item: its note kept, now passed');
 assert.ok(texts.some((t) => t.includes('Signature|B. Owner')));
 assert.ok(texts.some((t) => t.includes('Voided|J. Tech (ISA) signed 2026-10-17 10:00; voided')), 'the voided sign-off is in the workbook');
+assert.ok(texts.some((t) => t.includes('Removed|J. Tech')) && texts.some((t) => t.includes('Replaced|J. Tech')), 'each row says why the sign-off no longer holds');
 // …and in the PDF (its text, uncompressed)
 const { inflateSync } = await import('node:zlib');
 const raw = Buffer.from(await pdf.arrayBuffer()).toString('latin1');

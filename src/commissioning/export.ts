@@ -64,7 +64,7 @@ export async function commissioningXlsx(projectName: string, items: CommItem[], 
   if (rec.voided?.length) {
     ws.addRow([]);
     ws.addRow(['Voided sign-offs']).font = { bold: true };
-    for (const v of rec.voided) ws.addRow(['Voided', voidedText(v, items)]);
+    for (const v of rec.voided) ws.addRow([v.reason === 'failed' ? 'Voided' : v.reason === 'removed' ? 'Removed' : 'Replaced', voidedText(v, items)]);
   }
   if (rec.dismissed?.length) {
     ws.addRow([]);

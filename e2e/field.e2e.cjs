@@ -65,9 +65,9 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     const opened = await pf.openProjectFile((await pf.buildProjectFile()).blob);
     const after = useCommissioningStore.getState().byProject[opened.id];
     useProjectsStore.getState().openProject(id);
-    return { same: JSON.stringify(before) === JSON.stringify(after), voided: after?.voided?.length ?? 0 };
+    return { before, after };
   });
-  check(isap.same && isap.voided === 1, `the voided sign-off survives save and open (${JSON.stringify(isap)})`);
+  check(require('node:util').isDeepStrictEqual(isap.before, isap.after) && isap.after?.voided?.length === 1, 'the voided sign-off survives save and open (the whole record, deep-equal)');
   // a failed result whose item was removed (its I/O point deleted) gets its own row: dismiss it, then sign again
   await page.evaluate(async () => {
     const { useCommissioningStore } = await import('/src/commissioning/useCommissioningStore.ts');
