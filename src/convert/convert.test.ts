@@ -529,7 +529,7 @@ await test('cn-rollformer-01 converted: claimed Cat 3 / PL d not met (no STO), r
   const after = functionKept(m, c, collectProject()).filter((k) => k.kind === 'circuit' && k.status === 'missing').map((k) => k.original.split(':')[0]);
   assert.deepEqual(after, ['U1 MI2']);
   // a lost shear-down valve is blamed on itself, not on the shear-up valve with the similar name
-  useIOStore.getState().deletePoint(useIOStore.getState().projectIO.find((p) => p.description === 'Shear down valve (剪切下)')!.id);
+  useIOStore.getState().deletePoint(useIOStore.getState().projectIO.find((p) => p.description.startsWith('Shear down valve (剪切下)'))!.id);
   const io = functionKept(m, c, collectProject()).filter((k) => k.kind === 'io' && k.status === 'missing').map((k) => k.original);
   assert.ok(io.some((x) => /Shear down valve/.test(x)) && !io.some((x) => /Shear up valve/.test(x)), io.join(' | '));
   assert.equal(m.interlocks.length, 9);
@@ -699,6 +699,16 @@ await test('cn-rollformer-01: the safety relay is sized for its outputs (as draw
   // all STO already wired: only the outputs as drawn
   const wired = { ...m, safety: { ...m.safety, drives: m.safety.drives.map((d) => ({ ...d, sto: 'wired' as const })) } };
   assert.ok(convertMachine(wired).parts.find((p) => p.oldTag === 'KA0')!.differences.some((d) => /safety outputs for the 2 needed \(2 as drawn/.test(d)));
+});
+
+await test('cn-rollformer-01: the cut watchdog KT1 keeps its 2 s (on the shear-down valve, for the program\'s timeout)', () => {
+  const io = convertMachine(normalizeMachine(CN_ROLLFORMER_01_READING)).io;
+  assert.equal(io.find((p) => p.deviceTag === 'YV1')!.description, 'Shear down valve (剪切下) (watchdog 2 s)');
+  assert.ok(!/watchdog/.test(io.find((p) => p.deviceTag === 'YV2')!.description), 'the shear-up valve has no watchdog');
+  // E-stops and the shear guard are on the safety relay, only its Safety OK goes to the PLC
+  assert.ok(!io.some((p) => p.deviceType === 'estop-contact' || /guard/i.test(p.description)));
+  assert.equal(io.filter((p) => p.deviceType === 'safety-relay-output').length, 1);
+  assert.ok(io.some((p) => /^Reset/.test(p.description)), 'the reset button stays (it also resets the servo alarm)');
 });
 
 await test('safety relay sizing: one unit with enough outputs first, else a base + an expansion its maker lists (forUse)', () => {

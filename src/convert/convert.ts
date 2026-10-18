@@ -432,6 +432,26 @@ export function newIo(m: ExistingMachine, logic: LogicChoice | null): ImportedIO
   return [...io, ...extra, ...outputs];
 }
 
+/**
+ * A watchdog timer on a valve (KT1 "shear down longer than 2 s opens the line run"): the same function in the
+ * PLC, at the drawn time. The timer's circuit has the valve's own conditions; the valve's output gets
+ * "(watchdog 2 s)", which the program uses as its timeout instead of the default.
+ */
+export function withWatchdogs(m: ExistingMachine, io: ImportedIO[]): ImportedIO[] {
+  const bare = (c: DrawnCircuit) => JSON.stringify((c.path ?? []).filter((e) => e.t !== 'coil'));
+  const watch = new Map<string, string>();
+  for (const t of m.circuits.filter((c) => c.kind === 'timer' && /watchdog|time-?out|超时|监视|longer than/i.test(`${c.function} ${c.setting ?? ''}`))) {
+    const s = `${t.setting ?? ''} ${t.function}`.match(/(\d+(?:\.\d+)?)\s*(ms|s|sec|秒)\b/i);
+    if (!s) continue;
+    const sec = /^ms$/i.test(s[2]) ? Number(s[1]) / 1000 : Number(s[1]);
+    const valve = m.circuits.find((c) => c !== t && m.components.find((x) => x.tag === c.output)?.category === 'solenoidValve'
+      && ((t.path?.length && bare(c) === bare(t)) || (t.conditions.length > 0 && c.conditions.join('|') === t.conditions.join('|'))));
+    if (valve) watch.set(valve.output, `${sec} s`);
+  }
+  if (!watch.size) return io;
+  return io.map((p) => (p.type === 'output' && p.deviceTag && watch.has(p.deviceTag) && !/watchdog|timeout/i.test(p.description) ? { ...p, description: `${p.description} (watchdog ${watch.get(p.deviceTag)})` } : p));
+}
+
 /** An E-stop, guard or light-curtain contact: in the safety relay's input circuit, not a PLC input. */
 const isSafetyContact = (p: ImportedIO) => p.type === 'input' && p.deviceType !== 'safety-relay-output' && !/\breset\b|复位/i.test(p.description)
   && (p.deviceType === 'estop-contact' || (p.category === 'Safety' && /e-?stop|emergency|急停|guard|door|gate|light curtain|ossd|interlock|防护|安全门|光幕/i.test(p.description)));
@@ -595,5 +615,5 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   if (hardwired.length) {
     recommendations.push({ section: 'safety', text: `The safety relay's contacts stay hardwired, not through the PLC (NFPA 79 9.4.1; a standard PLC never carries a safety function): ${hardwired.map((c) => `${c.hardwired.join(', ')} in the ${tags.get(c.circuit.output) ?? c.circuit.output} coil circuit`).join('; ')}. Its other safety outputs keep removing power as drawn${m.safety.description ? ` (${retag(m.safety.description, tags)})` : ''}; with the relay logic in the PLC, they switch the safe 24 V (24+S) to the PLC outputs and the valves, not to relays. Re-validate after the conversion.` });
   }
-  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits, io: withSafetyOk(m, newIo(m, logic), tags) };
+  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits, io: withWatchdogs(m, withSafetyOk(m, newIo(m, logic), tags)) };
 }
