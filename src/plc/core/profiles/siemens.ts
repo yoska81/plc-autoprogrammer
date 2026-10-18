@@ -96,6 +96,14 @@ export function siemensAddress(base: string, c: CpuModel, modules: ModuleSlot[])
 
 export interface SiemensTag { name: string; address: string; type: 'Bool' | 'Int'; comment: string; inferred: boolean }
 
+/** SCL instruction and type names (also used to write changes into an original SCL source, import/stPatch.ts). */
+export const SCL_BLOCKS: Pick<StDialect, 'types' | 'params' | 'msToTime' | 'timeToMs'> = {
+  types: { TON: 'TON_TIME', TOF: 'TOF_TIME', RTO: 'TONR_TIME', CTU: 'CTU_DINT', CTD: 'CTD_DINT', R_TRIG: 'R_TRIG', F_TRIG: 'F_TRIG', BOOL: 'Bool', DINT: 'DInt', REAL: 'Real' },
+  params: { rtoReset: 'R', ctuReset: 'R', ctdLoad: 'LD' },
+  msToTime: (e) => (/^\d+$/.test(e) ? `T#${e}ms` : `DINT_TO_TIME(${e})`),
+  timeToMs: (e) => `TIME_TO_DINT(${e})`,
+};
+
 /** SCL dialect: FB statics referenced as #Name, PLC tags "Name", analog raw words scaled with NORM_X / SCALE_X. */
 function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDialect {
   const modules = ctx.modules ?? [];
@@ -114,10 +122,7 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
     rawWord: (base, ref) => (analog.has(base) ? `"${ref.replace(/^#/, '')}_raw"` : null),
     ref: (n) => `#${n}`,
     firstScan: '#FirstScan',
-    types: { TON: 'TON_TIME', TOF: 'TOF_TIME', RTO: 'TONR_TIME', CTU: 'CTU_DINT', CTD: 'CTD_DINT', R_TRIG: 'R_TRIG', F_TRIG: 'F_TRIG', BOOL: 'Bool', DINT: 'DInt', REAL: 'Real' },
-    params: { rtoReset: 'R', ctuReset: 'R', ctdLoad: 'LD' },
-    msToTime: (e) => (/^\d+$/.test(e) ? `T#${e}ms` : `DINT_TO_TIME(${e})`),
-    timeToMs: (e) => `TIME_TO_DINT(${e})`,
+    ...SCL_BLOCKS,
     prologue: ['(* First scan after every start (non-retentive statics restart at FALSE) *)', '#FirstScan := NOT #Initialized;', '#Initialized := TRUE;'],
     ioExtra: (vars: Map<string, StVariable>) => {
       const inputs: string[] = [], outputs: string[] = [];

@@ -48,6 +48,8 @@ export interface StDialect {
   counterPv?(expr: string): string;
   /** Extra I/O statements once every variable is known (e.g. analog scaling); inputs go first, outputs last. */
   ioExtra?(vars: Map<string, StVariable>): { inputs: string[]; outputs: string[] };
+  /** Only the rungs' statements (the code of an existing block is replaced): no header, I/O copy or clock. */
+  rungsOnly?: boolean;
 }
 
 const UNIT_MS: Record<string, number> = { ms: 1, sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 };
@@ -203,6 +205,7 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     if (!rungs.length) continue;
     sections.push(`(* ===== ${b.name} ===== *)`, ...rungs.flatMap(rungSt), '');
   }
+  if (d.rungsOnly) return { body: sections.filter((l) => !/^\(\* ===== .* ===== \*\)$/.test(l)).join('\n').trim(), variables: [...vars.values()], warnings };
   // HMI tags the ladder doesn't use are still declared, so the HMI can bind to them.
   for (const t of ctx.extraTags) op(t.address);
   // I/O copy at the start / end of the scan: named variables ↔ the PLC's I/O.

@@ -225,7 +225,7 @@ export function readPlcopen(src: string): ForeignProgram {
     const type = pou.attrs.pouType ?? 'program';
     const body = kid(pou, 'body');
     const lang = body?.children[0];
-    const routine: ForeignRoutine = { name, language: 'other', rungs: [], untranslated: [] };
+    const routine: ForeignRoutine = { name, language: 'other', rungs: [], untranslated: [], origin: { program: '', routine: name } };
     if (type === 'function') notes.push(`Function ${name}: kept as written (the ladder has no functions); its calls are kept in place.`);
     if (!lang) { routines.push({ ...routine, untranslated: ['Empty body'] }); continue; }
     switch (local(lang)) {

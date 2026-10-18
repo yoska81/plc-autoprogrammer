@@ -114,7 +114,7 @@ export default function UpgradePage() {
                 {prepared && (
                   <div className="border border-gray-200 rounded p-3 space-y-2 text-sm" data-testid="upgrade-prepared">
                     {prepared.mode === 'patch' ? (
-                      <p data-testid="upgrade-mode-patch">Your changes go into a copy of your original file, <b>{prepared.files[0].name}</b>. {prepared.changed.length ? <>Rewritten: {prepared.changed.join(', ')}.</> : 'Nothing changed: it is your original file.'}{prepared.added.length ? <> New routines: {prepared.added.join(', ')}.</> : null}{prepared.newTags.length ? <> New tags: {prepared.newTags.join(', ')}.</> : null} Everything else (modules, add-on instructions, other routines, tasks) is exactly as it was. In Studio 5000: File › Open the .L5X, then download to the controller.</p>
+                      <p data-testid="upgrade-mode-patch">Your changes go into a copy of your original file, <b>{prepared.files[0].name}</b>. {prepared.changed.length ? <>Rewritten: {prepared.changed.join(', ')}.</> : 'Nothing changed: it is your original file.'}{prepared.added.length ? <> New routines: {prepared.added.join(', ')}.</> : null}{prepared.newTags.length ? <> New tags: {prepared.newTags.join(', ')}.</> : null} {prepared.howTo}</p>
                     ) : (
                       <p>A new set of files for {profile.vendor} {profile.name}: {prepared.files.map((f) => f.name).join(', ')}.</p>
                     )}
