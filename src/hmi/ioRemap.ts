@@ -34,3 +34,23 @@ export function remapHmiDesign(design: HmiDesign, r: IoRemap, describe: (ioId: s
   if (unbound.length) notes.push(`Unbound ${unbound.length} element(s) whose I/O point was deleted: ${unbound.slice(0, 5).join(', ')}${unbound.length > 5 ? '…' : ''}. Bind them again or delete them.`);
   return { design: { ...design, screens, tags, alarms }, notes };
 }
+
+const KIND: Partial<Record<HmiElement['kind'], string>> = { indicator: 'lamp', button: 'button', 'numeric-display': 'value', 'numeric-entry': 'entry', nav: 'navigation button', machine: 'machine picture' };
+
+/** What on the HMI uses an address, in short words ("Screen Main: lamp 'Running'"), for "delete this I/O point?". */
+export function hmiUsesOf(design: HmiDesign | null | undefined, address: string): string[] {
+  if (!design) return [];
+  const a = address.trim().toUpperCase();
+  const is = (x?: string | null) => Boolean(x) && x!.trim().toUpperCase() === a;
+  const out: string[] = [];
+  for (const s of design.screens) {
+    for (const e of s.elements) {
+      const what = KIND[e.kind] ?? e.kind;
+      if (is(e.address)) out.push(`Screen ${s.name}: ${what} '${e.label || e.id}'`);
+      else if (is(e.interlock)) out.push(`Screen ${s.name}: ${what} '${e.label || e.id}' (its permissive)`);
+      for (const sym of e.symbols ?? []) if (is(sym.address)) out.push(`Screen ${s.name}: machine symbol '${sym.label || sym.kind}'`);
+    }
+  }
+  for (const al of design.alarms) if (is(al.address)) out.push(`Alarm: '${al.message}'`);
+  return out;
+}

@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { ioRemap } from '../plc/core/ioRemap';
-import { remapHmiDesign } from './ioRemap';
+import { hmiUsesOf, remapHmiDesign } from './ioRemap';
 import { checkDesign } from './layout';
 import { createElement } from './editor';
 import type { HmiDesign } from './types';
@@ -44,4 +44,7 @@ assert.ok(!checkDesign(d, 800, 480, { io }).some((i) => /not in the I\/O list/.t
 
 // Nothing changed: the same design back.
 assert.equal(remapHmiDesign(design, ioRemap(new Map([['a', 'X001']]), new Map([['a', 'X001']]))).design, design);
+// What uses a point, for the delete confirmation.
+assert.deepEqual(hmiUsesOf(design, 'x003'), ["Screen Main: lamp 'Part present'", "Screen Main: button 'Jog' (its permissive)"]);
+assert.deepEqual(hmiUsesOf(null, 'X001'), []);
 console.log('HMI ioRemap tests passed');
