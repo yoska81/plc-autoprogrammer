@@ -548,4 +548,4 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
 - **Integration findings on the 15 variants:**
   - The rules-unitronics AML had 0 of 21 tags: the CPU was not a module there (its I/O sits on other devices), so the tag table was never placed. Fix: the AML always has the CPU.
   - The symbols sheet's example wire numbers (X001) are excluded from the wire-list check.
-- **Removed** the unused ODA File Converter bridge (`electron/oda.cjs`, preload, bridge type): Save as AutoCAD is DXF only.
+- **ODA File Converter bridge kept** (`electron/oda.cjs`, preload, bridge type): removed briefly as unused, restored unchanged because Debug 1 reads the user's DWG drawings through it in the Windows app. Save as AutoCAD itself writes DXF.

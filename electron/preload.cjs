@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('isaDesktop', {
     ipcRenderer.on('isa:open-file', h);
     return () => { ipcRenderer.removeListener('isa:open-file', h); };
   },
+  oda: {
+    detect: () => ipcRenderer.invoke('isa:oda-detect'),
+    convert: (files) => ipcRenderer.invoke('isa:oda-convert', files),
+  },
   modbus: {
     connect: async (o) => { const r = await ipcRenderer.invoke('isa:modbus', 'connect', [o]); return r.ok ? r.value : { ok: false, error: r.error }; },
     disconnect: () => mb('disconnect'),
