@@ -62,9 +62,10 @@ function read(format: SourceFormat, text: string): ForeignProgram {
   switch (format) {
     case 'l5x': return readL5x(text);
     case 'l5k': return readL5k(text);
-    case 'plcopen': return readPlcopen(text);
-    case 'st': return readStSource(text, false);
-    case 'siemens-scl': return readStSource(text, true);
+    // Windows exports use CRLF: the statement readers work on plain LF lines.
+    case 'plcopen': return readPlcopen(text.replace(/\r\n?/g, '\n'));
+    case 'st': return readStSource(text.replace(/\r\n?/g, '\n'), false);
+    case 'siemens-scl': return readStSource(text.replace(/\r\n?/g, '\n'), true);
     case 'click-csv': return readClickCsv(text);
     case 'mitsubishi-csv': return readGxCsv(text);
     case 'il-text': return readIlText(text);
