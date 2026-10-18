@@ -49,8 +49,15 @@ const partsInGroup = (id: VendorId, g: VendorGroup) => (VENDORS.find((x) => x.id
 export default function VendorPreferenceCard() {
   const pref = useVendorPreference();
   const setInfo = useProjectStore((s) => s.setInfo);
-  const setGroup = (g: VendorGroup, ids: VendorId[]) => setInfo({ vendors: { ...pref, [g]: ids.length ? ids : ['automationdirect'] } });
-  const setAll = (id: VendorId) => setInfo({ vendors: Object.fromEntries(GROUPS.map((g) => [g, groupsOf(id).includes(g) ? [id] : ['automationdirect']])) as Record<VendorGroup, VendorId[]> });
+  // Only the groups the user chose are saved: a group left alone stays unset (the default), so editing the sensors
+  // never writes a PLC preference (which would move a Siemens or Logix project back to CLICK).
+  const saved = useProjectStore((s) => s.info.vendors);
+  const setGroup = (g: VendorGroup, ids: VendorId[]) => {
+    const next: Partial<Record<VendorGroup, VendorId[]>> = { ...saved };
+    if (ids.length) next[g] = ids; else delete next[g];
+    setInfo({ vendors: next });
+  };
+  const setAll = (id: VendorId) => setInfo({ vendors: Object.fromEntries(GROUPS.filter((g) => groupsOf(id).includes(g)).map((g) => [g, [id]])) as Partial<Record<VendorGroup, VendorId[]>> });
   const fallback = fallbackCategories(pref);
   return (
     <section className="rounded-lg border border-steel-200 bg-white p-4 space-y-2" aria-label="Preferred brands">

@@ -144,10 +144,56 @@ async function scenario(browser, quick) {
   await page.context().close();
 }
 
+// A PLC brand the tool cannot program (Mitsubishi): Update all says so in the equipment step, never silently CLICK.
+// Editing only the sensors' brand never saves a PLC preference (it moved Logix projects back to CLICK).
+async function extras(browser) {
+  console.log('• === unsupported brand, and the Brand preference card');
+  const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
+  await page.goto(BASE + '/spec');
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(BASE + '/spec');
+  const msg = await page.evaluate(async (io) => {
+    (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: 'Bottle capper. The PLC is a Mitsubishi FX5U programmed in GX Works3.' });
+    (await import('/src/store/useSettingsStore.ts')).useSettingsStore.getState().setStageMode('equipment', 'quick');
+    const { useIOStore } = await import('/src/store/useIOStore.ts');
+    useIOStore.getState().importPoints(io.map((p) => ({ description: p.description, type: p.type, category: p.category })), true);
+    const { runUpdateAll } = await import('/src/spec/updateAll.ts');
+    const out = [];
+    await runUpdateAll(['equipment'], (r) => out.push(`${r.step} ${r.status}: ${r.message}`));
+    return out.join(' | ');
+  }, IO);
+  console.log('  ·', msg.slice(0, 200));
+  check(/^equipment done: Mitsubishi PLC isn't supported yet — using AutomationDirect CLICK \(/.test(msg), 'Mitsubishi: the step says it is not supported yet and which PLC is used');
+
+  // A Logix project; the user changes only the sensors' brand on the Equipment page.
+  await page.evaluate(async () => {
+    (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: 'Pick and place cell with two conveyors.' });
+    const { applyEquipment } = await import('/src/spec/equipment.ts');
+    applyEquipment({ cpuId: '5069-L310ER', modules: ['5069-IB16', '5069-OB16'], hmiPartNumber: null }, null);
+  });
+  await page.goto(BASE + '/equipment');
+  const sensors = page.locator('select[aria-label^="Brand for"]').filter({ has: page.locator('option[value="ifm"]') }).first();
+  await sensors.selectOption('ifm');
+  const after = await page.evaluate(async () => {
+    const p = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState();
+    const st = (await import('/src/spec/useStages.ts')).stagesNow().equipment;
+    return { vendors: p.info.vendors, plcId: p.plcId, reason: st.reason ?? '' };
+  });
+  console.log('  ·', JSON.stringify(after));
+  check(after.vendors && !('plc' in after.vendors) && Object.values(after.vendors).some((v) => v.includes('ifm')), 'only the sensors brand is saved, no PLC preference');
+  check(after.plcId === 'logix' && !/asks for/.test(after.reason), 'the Logix project is not flagged as another brand');
+  check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
+  await page.context().close();
+}
+
 (async () => {
   const browser = await chromium.launch();
   await scenario(browser, false);
   await scenario(browser, true);
+  await extras(browser);
   await browser.close();
   console.log(fails.length ? `update-siemens e2e: ${fails.length} failed` : 'update-siemens e2e: all passed');
   process.exit(fails.length ? 1 : 0);

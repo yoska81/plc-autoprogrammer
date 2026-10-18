@@ -7,7 +7,7 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useHmiStore } from '../store/useHmiStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { useProjectStore } from '../store/useProjectStore';
-import { getCpu, getProfile } from '../plc/core/profiles';
+import { getCpu, getProfile, PLC_PROFILES } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
 import { validateProgram } from '../plc/core/validate';
@@ -15,7 +15,7 @@ import { fingerprint, specToText, changedSections } from './types';
 import { ioFingerprint, hmiFingerprint } from './useStages';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge } from '../lib/ai/ioAI';
 import { equipmentChoices, recommendEquipment } from '../lib/ai/equipmentAI';
-import { plcPreference, requestedProfiles } from './brand';
+import { plcPreference, requestedProfiles, unsupportedNote } from './brand';
 import { applyEquipment, recommendedChoice } from './equipment';
 import { analogRangesOf, cpuFit, findCpu, hmiFit, modulesToFit, type Need } from '../plc/core/fit';
 import type { AnalogRange } from '../types/io';
@@ -136,6 +136,12 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       // that brand; otherwise the equipment is chosen again, from that brand.
       const asked = requestedProfiles(specToText(spec), plcPreference());
       const otherBrand = (plcId: string) => asked.length > 0 && !asked.some((p) => p.id === plcId);
+      // A brand this tool cannot program yet (Mitsubishi, Omron…): said first in the step message, never silently replaced.
+      const brandNote = (cpuId: string) => {
+        const prof = PLC_PROFILES.find((p) => p.cpuModels.some((c) => c.id === cpuId));
+        const n = unsupportedNote(specToText(spec), prof ? `${prof.vendor} ${prof.name} (${cpuId})` : cpuId);
+        return n ? `${n} ` : '';
+      };
       if (stageMode('equipment') === 'quick') {
         // Rules from the I/O counts: needs the I/O list of this run.
         if (!(await ctx.after('io'))) return false;
@@ -154,7 +160,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         if (!choice) { onStep({ step, status: 'failed', message: `No ${getProfile(cur.plcId).name} CPU covers the ${ioNow().length} I/O points even with modules: choose a bigger PLC on the Equipment page.` }); return false; }
         const warn = applyEquipment(choice, cur.recommendation ?? null);
         if (equipmentNow() !== before) ctx.changed.add('equipment');
-        onStep({ step, status: 'done', message: `${choice.kept ? `Kept your ${choice.cpuId}` : choice.cpuId}${choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}: covers the I/O list with about 20 % spare (rules).${swap ? ` The ${hmiNow} panel cannot talk to this PLC: ${swap.partNumber} (${swap.sizeIn}") instead; change it on the Equipment page.` : swap === null ? ` The ${hmiNow} panel cannot talk to this PLC and no listed panel can: choose one on the Equipment page.` : ''}${warn ? ` ${warn}` : ''}` });
+        onStep({ step, status: 'done', message: `${brandNote(choice.cpuId)}${choice.kept ? `Kept your ${choice.cpuId}` : choice.cpuId}${choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}: covers the I/O list with about 20 % spare (rules).${swap ? ` The ${hmiNow} panel cannot talk to this PLC: ${swap.partNumber} (${swap.sizeIn}") instead; change it on the Equipment page.` : swap === null ? ` The ${hmiNow} panel cannot talk to this PLC and no listed panel can: choose one on the Equipment page.` : ''}${warn ? ` ${warn}` : ''}` });
         return true;
       }
       const { rec } = await recommendEquipment({ ...ai, spec });
@@ -165,7 +171,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       // Keep the engineer's own choice while it still covers the machine; otherwise take the recommendation.
       if (curCpu && cur.recommendation && !otherBrand(cur.plcId) && cpuFit(curCpu, cur.modules, need).ok) {
         const warn = applyEquipment({ cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi }, rec);
-        onStep({ step, status: 'done', message: `Kept your ${cur.cpuId}${cur.modules.length ? ` + ${cur.modules.length} module(s)` : ''}: it still covers the I/O.${warn ? ` ${warn}` : ''}` });
+        onStep({ step, status: 'done', message: `${brandNote(cur.cpuId)}Kept your ${cur.cpuId}${cur.modules.length ? ` + ${cur.modules.length} module(s)` : ''}: it still covers the I/O.${warn ? ` ${warn}` : ''}` });
       } else {
         const choice = recommendedChoice(rec);
         // The AI's CPU + modules must cover its own I/O estimate: add the modules it is short of, or stop.
@@ -173,7 +179,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         if (!mods) { onStep({ step, status: 'failed', message: `${choice.cpuId} cannot cover ${need.digitalInputs} inputs / ${need.digitalOutputs} outputs even with modules: choose a bigger CPU on the Equipment page.` }); return false; }
         const warn = applyEquipment({ ...choice, modules: mods }, rec);
         const added = mods.length - choice.modules.length;
-        onStep({ step, status: 'done', message: `${rec.plc.cpuId}${cur.cpuId && cur.cpuId !== rec.plc.cpuId ? ` (was ${cur.cpuId}, no longer enough)` : ''}, ${mods.length} module(s)${added ? ` (${added} added to cover the I/O)` : ''}${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.${warn ? ` ${warn}` : ''}` });
+        onStep({ step, status: 'done', message: `${brandNote(rec.plc.cpuId)}${rec.plc.cpuId}${cur.cpuId && cur.cpuId !== rec.plc.cpuId ? ` (was ${cur.cpuId}, no longer enough)` : ''}, ${mods.length} module(s)${added ? ` (${added} added to cover the I/O)` : ''}${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.${warn ? ` ${warn}` : ''}` });
       }
       if (equipmentNow() !== before) ctx.changed.add('equipment');
       return true;

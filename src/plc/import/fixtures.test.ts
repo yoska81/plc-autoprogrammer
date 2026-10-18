@@ -108,9 +108,14 @@ function scoreIo(dir: string, io: { name: string; type: string }[]) {
     const { program } = importProgramFiles(FILES[dir].map((n) => file(dir, n)));
     const want = new Map(Object.entries(byCategory).flatMap(([c, names]) => names.map((n) => [n, c] as const)));
     assert.equal(want.size, program.io.length, `${dir}: every point has an expected category`);
-    for (const p of program.io) assert.equal(importedCategory(`${p.name} ${p.description}`, p.analog), want.get(p.name), `${dir}: ${p.name}`);
+    for (const p of program.io) assert.equal(importedCategory(`${p.name} ${p.description}`, p.analog, p.name), want.get(p.name), `${dir}: ${p.name}`);
     console.log(`  ${dir}: categories ${program.io.length}/${program.io.length}`);
   }
 }
+
+// A tag that is only a command word is the operator's button, whatever its comment says; a stop gate is not.
+for (const n of ['Start', 'Stop', 'Reset', 'Fault_Reset', 'Cycle_Start', 'CycleStart', 'STOP']) assert.equal(importedCategory(`${n} `, false, n), 'Operator/HMI', n);
+assert.equal(importedCategory('Stop_Gate_Sol Bottle stop gate solenoid', false, 'Stop_Gate_Sol'), 'Pneumatic');
+assert.equal(importedCategory('Start Line start from upstream', false, 'Start'), 'Operator/HMI');
 
 console.log('fixtures.test: all passed');

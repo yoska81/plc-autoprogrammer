@@ -5,7 +5,7 @@ import { hmiFit, platformOf, type Need } from '../../plc/core/fit';
 import { allPanelRows } from '../../hmi/panelRows';
 import type { HmiModel } from '../../hmi/hmiCatalog';
 import { specToText, type SpecSections } from '../../spec/types';
-import { choosableProfiles, plcPreference } from '../../spec/brand';
+import { choosableProfiles, plcPreference, unsupportedBrands } from '../../spec/brand';
 import { callClaude } from './anthropic';
 
 export interface EquipmentRecommendation {
@@ -72,10 +72,16 @@ function schema(spec: SpecSections) {
   });
 }
 
+/** The equipment prompt for a specification (exported for tests). */
+export function equipmentSystemPrompt(spec: SpecSections | string): string {
+  return system(typeof spec === 'string' ? ({ overview: spec } as SpecSections) : spec);
+}
+
 function system(spec: SpecSections): string {
   const { profiles, cpus, modules, hmis } = choices(spec);
   const click = profiles.some((p) => p.id === 'click');
   const brands = [...new Set(profiles.map((p) => p.vendor))].join(' / ');
+  const notHere = unsupportedBrands(specToText(spec));
   return `You are a senior controls engineer choosing the control equipment for a machine. The customer is not an equipment expert: explain choices in plain words.
 
 Available PLCs (${brands}; only these can be programmed by this tool${profiles.length < PLC_PROFILES.filter((p) => p.available).length ? ', and the customer asked for this brand or prefers it' : ' today'}):
@@ -95,7 +101,8 @@ How to choose:
 5. Recommend an HMI when the spec mentions screens, setpoints, recipes, alarms display, or manual jog; choose the size from the number of screens and how much the operator must see. Use null if the machine only needs pushbuttons and lights, or when the chosen PLC has its own touch screen.
 6. Give 1–2 alternatives (e.g. a cheaper option and one with more room for growth) with the trade-off.
 7. "cautions": anything the chosen PLC cannot do well or that needs other equipment (servo motion, safety PLC / safety-rated logic, high-speed counting beyond the CPU, more modules than the CPU takes, special networks). Say what the customer would need instead. Also note information missing from the spec that changes the choice.
-8. "modules" are in slot order (slot 1 first). quantity ≥ 1.`;
+8. "modules" are in slot order (slot 1 first). quantity ≥ 1.${notHere.length ? `
+9. The specification names a ${notHere.join(' / ')} PLC, which this tool cannot program yet. Choose from the list above, and make the first caution say so in plain words: "${notHere.join(' / ')} PLC isn't supported yet — using <the CPU you chose>."` : ''}`;
 }
 
 export async function recommendEquipment(opts: { apiKey: string; model: string; effort: Effort; signal?: AbortSignal; cache?: boolean; spec: SpecSections }): Promise<{ rec: EquipmentRecommendation; reasoning: string | null }> {

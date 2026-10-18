@@ -12,7 +12,7 @@ import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
 import { hardwareShortfall } from './equipmentRules';
 import { changedSections, fingerprint, specToText, type SpecSections } from './types';
-import { brandMismatch, plcPreference } from './brand';
+import { brandMismatch, plcPreference, plcPreferenceOf } from './brand';
 import type { IOPoint } from '../types/io';
 import type { HmiDesign } from '../hmi/types';
 import { SOURCE_LABEL, type QuestionSource } from '../components/questions/useQuestionStore';
@@ -170,7 +170,7 @@ export function useStages(): Record<StageId, StageInfo> {
   const hardwareShort = useMemo(() => hardwareShortfall(cpuId, modules, io), [cpuId, modules, io]);
   const plcId = useProjectStore((s) => s.plcId);
   const plcPref = useProjectStore((s) => s.info.vendors?.plc);
-  const otherBrand = useMemo(() => brandMismatch(specToText(fp.spec), plcPref ?? [], plcId), [fp.spec, plcPref, plcId]);
+  const otherBrand = useMemo(() => brandMismatch(specToText(fp.spec), plcPreferenceOf(plcPref), plcId), [fp.spec, plcPref, plcId]);
   return useMemo(() => computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi, hardwareShort, otherBrand }),
     [fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi, hardwareShort, otherBrand]);
 }

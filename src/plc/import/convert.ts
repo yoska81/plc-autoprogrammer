@@ -275,8 +275,10 @@ export function pretty(name: string): string {
  * I/O list category of an imported point from its name and description (Start_PB → Operator/HMI, Box_PE → Product
  * Detection). A point the words do not place is Station 1, never Spare (Spare means an unused terminal).
  */
-export function importedCategory(text: string, analog: boolean): IOCategory {
+export function importedCategory(text: string, analog: boolean, name = ''): IOCategory {
   const t = text.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_.:[\]]+/g, ' ');
+  // A tag that is only a command word (Start, Stop, Fault_Reset, Cycle_Start) is the operator's button.
+  if (!analog && /^((cycle|fault|alarm)[ _-]?)?(start|stop|reset)$/i.test(name.trim())) return 'Operator/HMI';
   // Whole words only: "Case stop" is not an E-stop and a clamp is not a lamp. A stop or start is an operator's
   // only as a button (Stop_PB); a stop blade or a stop gate is a machine part.
   const rules: [RegExp, IOCategory][] = [
@@ -360,7 +362,7 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   const full = /logix|allen-bradley|rockwell/i.test(`${imp.source.vendor} ${imp.source.format}`) || /^l5[xk]$/.test(imp.source.format) ? 32767 : 27648;
   const points: IOPoint[] = imp.io.map((p) => ({
     id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++o).padStart(3, '0')}`,
-    description: p.description, type: p.type, category: importedCategory(`${p.name} ${p.description}`, p.analog),
+    description: p.description, type: p.type, category: importedCategory(`${p.name} ${p.description}`, p.analog, p.name),
     ...(p.analog ? (() => { const r = importedRange(p.original, p.description); return { signal: 'analog' as const, analog: { range: r.range, min: 0, max: full, units: 'raw counts', ...(r.assumed ? { assumed: true } : {}) } }; })() : {}),
     // A CLICK program going back on a CLICK keeps its terminals (X001 stays X001, gaps included); an S7
     // program keeps its %I / %Q bits (%Q0.2 stays %Q0.2).
