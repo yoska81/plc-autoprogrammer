@@ -92,7 +92,7 @@ export function whyStuck(program: LadderProgram, values: Values, target: StuckTa
   // Operator devices (pushbuttons, selectors): not pressed is normal, so they rank after real faults.
   const ioType = new Map((ctx.io ?? []).map((p) => [up(p.address), p.deviceType ?? ''] as const));
   const isOperator = (a: string) => /^(pushbutton|selector)/.test(ioType.get(up(a)) ?? '')
-    || (!ioType.get(up(a)) && /\b(start|stop|reset|button|pb|push ?button|selector|jog)\b/i.test(desc.get(up(a)) ?? '') && !/\b(sensor|eye|prox|switch)\b/i.test(desc.get(up(a)) ?? ''));
+    || (!ioType.get(up(a)) && /\b(start|stop|reset|button|pb|push ?button|selector|jog)\b/i.test(desc.get(up(a)) ?? '') && !/\b(sensor|eye|prox|switch|e-?stop|emergency|safety|relay)\b/i.test(desc.get(up(a)) ?? ''));
   // A register the program never writes except on the first scan (a default) is a setting the operator / HMI owns.
   const isSetting = (a: string) => !isNum(a) && !ioType.has(up(a)) && /^(DS|DD|DF|DH)\d+$/.test(up(a)) && (wordWriters.get(up(a)) ?? []).every((r) => r.branches.some((b) => b.some((e) => e.type === 'NO' && up(e.address) === 'SC2')));
 
