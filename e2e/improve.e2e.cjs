@@ -126,8 +126,12 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
 
   // 5. New project from the saved panel (prompt accepted with its default name).
   await page.goto(BASE + '/electrical?tab=improve');
+  const projects = () => page.evaluate(() => JSON.parse(localStorage.getItem('plc-projects') || '{}').state ?? {});
+  const before = await projects();
   await page.getByRole('region', { name: 'Panel library' }).getByRole('button', { name: 'Start a new project from it' }).click();
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('plc-projects') || '{}').state?.projects?.length === 2);
+  // One more project than before, and it is the open one (the list may or may not hold the example by now).
+  await page.waitForFunction(([n, id]) => { const s = JSON.parse(localStorage.getItem('plc-projects') || '{}').state ?? {}; return (s.projects?.length ?? 0) === n + 1 && s.activeId !== id; }, [(before.projects ?? []).length, before.activeId]);
+  check((await projects()).projects.at(-1).name === 'Conveyor standard copy', 'new project named from the library item');
   const n = await store(`E.getState().design.components.length`);
   log('New project parts:', n);
   check(n > 20, 'new project has the saved design');
