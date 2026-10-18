@@ -77,6 +77,11 @@ export interface WiringPath {
   parallel: PathHop[];
   /** True when the PLC terminal has no wire in the design (only the PLC hop is given). */
   noWire?: boolean;
+  /**
+   * Relays on the path (the input device itself, a contact in series): their coil / power across A1–A2 and
+   * the chains that feed A1 and return A2, read before a relay or its contact is blamed.
+   */
+  coils?: Record<string, { across: PathHop; feed: PathHop[]; ret: PathHop[] }>;
 }
 
 /** A design prepared once for many path lookups (live UI, why-stuck analysis). */
@@ -613,8 +618,10 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
   // Place by place from the circuit: every terminal, junction-box terminal, jumper and contact, with the
   // conductor that joins each one to the previous, so a reading that changes names one exact conductor.
   const cc = plcEnd ? circuitChains(c, point, plcEnd.raw, deviceEnd, dTag, signal) : null;
+  let coilsOf: WiringPath['coils'];
   if (cc) {
     if (cc.signal) signal.splice(0, signal.length, ...cc.signal);
+    coilsOf = cc.coils;
     supply.splice(0, supply.length, ...cc.supply);
     ret.splice(0, ret.length, ...cc.ret);
   }
@@ -629,7 +636,7 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
   if (io?.line) for (const h of [...signal, ...parallel, ...supply.slice(0, 2), ...ret.slice(0, 2)]) if (h.where && h.where.sheet === io.sheet && !h.where.line) h.where = { ...h.where, line: io.line };
   const dev = signal.find((h) => h.kind === 'device');
   const summary = `${point.address} ${point.description}: ${signal.filter((h) => h.kind !== 'cable').map((h) => h.terminal && h.kind !== 'device' ? `${h.tag}${h.kind === 'terminal' ? '-' : ':'}${h.terminal}` : h.tag).join(' → ')}${supply.length ? `; supply ${supply.map((h) => h.tag).filter((t, i, a) => a.indexOf(t) === i).join(' ← ')}` : ''}`;
-  return { address: point.address, description: point.description, type: point.type, analog: false, device: dev?.tag ?? device, signal, supply, ret, reference: c.zeroRef, summary, parallel };
+  return { address: point.address, description: point.description, type: point.type, analog: false, device: dev?.tag ?? device, signal, supply, ret, reference: c.zeroRef, summary, parallel, ...(coilsOf && Object.keys(coilsOf).length ? { coils: coilsOf } : {}) };
 }
 
 /** A hop at a circuit place (wire-list end, junction-box terminal, cable-core end, fused side). */
@@ -657,7 +664,7 @@ function hopAt(c: Ctx, node: string, wire: string, p: IoPoint): PathHop {
  * Null when the circuit does not reach the device (imported wire lists without cable data): the wire-list
  * chains stay.
  */
-function circuitChains(c: Ctx, point: IoPoint, plcNode: string, deviceEnd: End | undefined, dTag: string, oldSignal: PathHop[]): { signal?: PathHop[]; supply: PathHop[]; ret: PathHop[] } | null {
+function circuitChains(c: Ctx, point: IoPoint, plcNode: string, deviceEnd: End | undefined, dTag: string, oldSignal: PathHop[]): { signal?: PathHop[]; supply: PathHop[]; ret: PathHop[]; coils: NonNullable<WiringPath['coils']> } | null {
   const cir = c.circuit;
   if (!cir.at.has(plcNode) || !dTag) return null;
   const isZero = (n: string) => n === c.zero || /^(N|X2)$/.test(n);
@@ -777,7 +784,22 @@ function circuitChains(c: Ctx, point: IoPoint, plcNode: string, deviceEnd: End |
     if (r[0] && partners.includes(pin(backNode)) && point.type === 'input') r[0].measure = { ...r[0].measure!, otherwise: 'about 0 V: the 0 V feed of the contact is open' };
     ret.push(...r);
   }
-  return { signal, supply, ret };
+  // Relays on the path: the device itself and every contact in series, with their coil supply.
+  const coils: NonNullable<WiringPath['coils']> = {};
+  const relayTags = new Set([dTag, ...[...(signal ?? []), ...supply, ...ret].map((h) => (h.link?.kind === 'contact' ? h.link.tag : undefined)).filter(Boolean) as string[]]);
+  for (const tag of relayTags) {
+    const a1 = `${tag}:A1`, a2 = `${tag}:A2`;
+    if (!cir.at.has(a1) || !cir.at.has(a2)) continue;
+    const own = new Set([...[...cir.at.keys()].filter((n) => n.startsWith(`${tag}:`)), ...plcNodes]);
+    const feed = chain(a1, '+', own), back = chain(a2, '-', own);
+    if (!feed.length || !back.length) continue;
+    const across: PathHop = {
+      ...hopAt(c, a1, netOf(a1), point), kind: 'device', label: `${endLabel(c, { raw: tag, tag, pin: '' })}, coil / supply A1–A2`,
+      measure: { between: [a1, a2], kind: 'VDC', expect: '24 VDC', when: '', otherwise: `about 0 V: ${tag} has no supply`, nodes: [a1, a2] },
+    };
+    coils[tag] = { across, feed, ret: back };
+  }
+  return { signal, supply, ret, coils };
 }
 
 function analogPath(c: Ctx, a: ElectricalModel['analog']['circuits'][number]): WiringPath {

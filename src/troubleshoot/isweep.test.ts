@@ -291,6 +291,16 @@ function casesFor(c: Model, p: WiringPath): { cases: Case[]; dutNode?: string; d
     out.push({ label: 'load open', symptom: 'output-dead', state: { loadOpen: dut }, expect: { kind: 'device', tag: dut } });
     out.push({ label: 'PLC point dead', symptom: 'output-dead', state: { commanded: new Set() }, expect: { kind: 'plc' } });
   }
+  // Relays on the path (the input device itself, contacts in series): opens on their coil feed A1 and return A2.
+  const sym: Symptom = p.type === 'input' ? 'never-on' : 'output-dead';
+  const pinOf = (tag: string, pin: string) => [...c.nodes].find((n) => rawOf(n) === `${tag}:${pin}`);
+  const relays = new Set([...(c.coilTags.has(dut) ? [dut] : []), ...sig.contacts.map((k) => k.tag).filter((t) => c.coilTags.has(t))]);
+  for (const tag of relays) {
+    const a1 = pinOf(tag, 'A1'), a2 = pinOf(tag, 'A2');
+    const toSup = (from: string) => bfs(c, from, (n) => n === c.plus || n === c.minus, tag, new Set());
+    if (a1) opens(toSup(a1), sym, `coil feed ${tag}`);
+    if (a2) opens(toSup(a2), sym, `coil 0 V ${tag}`);
+  }
   out.push({ label: 'PSU dead', symptom: p.type === 'input' ? 'never-on' : 'output-dead', state: { psuDead: true }, expect: { kind: 'psu', tag: rawOf(c.plus).split(':')[0] } });
   // Shorts: to 0 V when the input's common sits on 24 V (NPN group).
   const npn = (() => { const io = c.inputs.get(p.address); if (!io) return false; const sol = solveCircuit(c, { dut, dutOn: false, commanded: new Set() }); return sol.v(io[1]) > 18; })();

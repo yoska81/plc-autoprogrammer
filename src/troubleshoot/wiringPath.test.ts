@@ -634,6 +634,24 @@ test('practice faults in the simulator: one broken conductor only affects the po
   assert.deepEqual(sol.map((e) => `${e.address}:${e.type}`), ['Y002:output']);
 });
 
+test('relays: a contact is not blamed before the relay\'s own coil / supply is read (SR3 on the down solenoid, SR1 on X001)', () => {
+  const w = shPaths.find((x) => x.type === 'output' && /down solenoid/i.test(x.description))!;
+  assert.ok(w.coils?.SR3, 'SR3 coil chains on the path');
+  // Hand-worked: Y001 ON, 24 V at SR3:13, none at SR3:14; nothing across SR3 A1–A2; A1 dead, TB1 24+ live.
+  const good = new Set(['PLC:Y001', 'SR3:13', 'TB1 24+', 'PS1:+V']);
+  const { s, asked } = playBy(w, 'output-dead', (st) => (st.part === 'coil' ? 'no' : good.has(st.hop?.node ?? '') ? 'yes' : 'no'));
+  assert.ok(asked.includes('coil:SR3:A1'), asked.join(' '));
+  assert.match(s.verdict!.text, /coil supply is good at Terminal strip TB1, 24\+ terminals but missing at SR3.*Open connection on wire 24\+ between/);
+  // Coil supplied: then the contact itself is the fault.
+  const fed = playBy(w, 'output-dead', (st) => (st.part === 'coil' ? 'yes' : good.has(st.hop?.node ?? '') ? 'yes' : 'no')).s.verdict!;
+  assert.match(fed.text, /contact SR3 13-14 does not close/);
+  // A relay-driven input: SR1 for X001 is read across its supply before "gives no signal".
+  const x1 = wiringPath(ex, 'X001')!;
+  const r = playBy(x1, 'never-on', (st) => (st.part === 'signal' ? 'no' : st.part === 'coil' ? 'yes' : 'yes'));
+  assert.ok(r.asked.some((a) => a.startsWith('coil:SR1')), r.asked.join(' '));
+  assert.match(r.s.verdict!.text, /SR1 has its supply and its contact is fed, but it gives no signal/);
+});
+
 // Strict fault sweep: every discrete point × every conductor its steps walk past (each wire end, cable core,
 // jumper, contact and fuse), plus a short on every signal place, answered with the voltages the circuit solver
 // works out. Correct only when the verdict names the exact conductor (its wire and one of its ends).
