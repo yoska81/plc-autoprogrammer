@@ -2976,7 +2976,12 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (ilk.length) w.push(`${ilk.flatMap((mm) => mm.contactors.map((c) => c.tag)).join(', ')}: the reversing interlock uses a second N.C. contact (71-72) — the first N.C. is in the safety relay feedback (EDM) loop; fit a 2 N.O. + 2 N.C. auxiliary block (e.g. Fuji SZ-A22T, not in the parts catalog yet) in place of the 1 N.O. + 1 N.C. block.`);
   const auxMissing = [...m.auxNc].filter(([, a]) => a.missing);
   if (auxMissing.length) w.push(`${auxMissing.map(([t, a]) => `${t} (${a.family})`).join(', ')}: no built-in auxiliary contact — an SZ-A11T front block (1 N.O. + 1 N.C.) is added to the BOM; the feedback / interlock uses its N.C. 61-62. Add it to the design or choose another block.`);
-  if (m.motors.some((x) => x.vfd)) w.push('VFD: enter the drive parameters marked NAMEPLATE / SET ON SITE on the drive sheets at commissioning; Safe Torque Off is not used (factory jumper) unless the risk assessment calls for it.');
+  if (m.motors.some((x) => x.vfd)) {
+    // STO as designed, per drive: never "not used (factory jumper)" next to a drive whose STO is wired
+    const sto = m.drives.filter((d) => d.safetyStop === 'sto').map((d) => d.drive.tag);
+    const jumpered = m.drives.filter((d) => d.safetyStop !== 'sto' && d.series === 'GS20').map((d) => d.drive.tag);
+    w.push(`VFD: enter the drive parameters marked NAMEPLATE / SET ON SITE on the drive sheets at commissioning${sto.length ? `; ${sto.join(', ')}: Safe Torque Off wired from the safety relay (factory jumper removed)` : ''}${jumpered.length ? `; ${jumpered.join(', ')}: Safe Torque Off not used (factory jumper) unless the risk assessment calls for it` : ''}.`);
+  }
   const noWiring = m.io.filter((p) => !p.wiring);
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
   const curtains = (m.safety.extraRelays ?? []).filter((x) => x.kind === 'light-curtain').map((x) => x.relay.tag);
@@ -2991,8 +2996,14 @@ export function designWarnings(ctx: DrawingContext): string[] {
   // Analog points (DF) are in ctx.io but not in the discrete m.io.
   const extra = ctx.design.ioWiring.filter((x) => !m.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase()) && !(/^DF\d+$/i.test(x.address) && ctx.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase())));
   if (extra.length) w.push(`ioWiring entries not in the project I/O list: ${extra.map((x) => x.address).join(', ')}.`);
-  const unaddressed = ctx.io.filter((p) => !p.address).length;
-  if (unaddressed) w.push(`${unaddressed} project I/O point(s) have no PLC address and are not drawn.`);
+  // name every point with no address; an analog point says why (no free channel of its kind and range)
+  const anFree = (ctx.analog ?? []).filter((r) => !r.address);
+  const why = (d: string) => {
+    const r = anFree.find((x) => x.description === d);
+    return r ? ` (analog ${r.kind} ${r.range}: no free ${r.kind === 'output' ? 'analog output' : r.range === 'thermocouple' ? 'thermocouple' : 'analog input'} channel for this range on the PLC or its modules — add a module that has one)` : '';
+  };
+  const unaddressed = [...ctx.io.filter((p) => !p.address).map((p) => p.description), ...anFree.map((r) => r.description).filter((d) => !ctx.io.some((p) => !p.address && p.description === d))];
+  if (unaddressed.length) w.push(`${unaddressed.length} project I/O point(s) have no PLC address and are not drawn: ${unaddressed.map((d) => `"${d}"${why(d)}`).join('; ')}.`);
   // capacity
   let inCap = 0, outCap = 0, capKnown = false;
   // Module lines can carry a quantity (e.g. 2 x 16-point input modules).

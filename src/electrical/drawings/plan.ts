@@ -429,7 +429,10 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   // Analog loops (electrical/analog.ts): six per sheet.
   const nAnalog = model.analog.circuits.length;
   for (let i = 0, pages = Math.ceil(nAnalog / 6); i < nAnalog; i += 6) {
-    specs.push({ title: `ANALOG I/O — 4–20 mA / 0–10 V LOOPS${pages > 1 ? ` (${i / 6 + 1} OF ${pages})` : ''}`, spec: { kind: 'analog', from: i, page: i / 6 + 1, pages } });
+    // the title names the signals on this page (a thermocouple page is not "4–20 mA / 0–10 V")
+    const on = model.analog.circuits.slice(i, i + 6);
+    const kinds = [...new Set(on.map((c) => (c.loop === 'thermocouple' ? 'THERMOCOUPLE' : c.row.range.replace('-', '–').replace(/(mA|V)$/, ' $1'))))].join(' / ');
+    specs.push({ title: `ANALOG I/O — ${kinds} ${on.some((c) => c.loop !== 'thermocouple') ? 'LOOPS' : 'INPUTS'}${pages > 1 ? ` (${i / 6 + 1} OF ${pages})` : ''}`, spec: { kind: 'analog', from: i, page: i / 6 + 1, pages } });
   }
 
   // VFD control wiring + parameters (electrical/vfd.ts): one sheet per drive.
