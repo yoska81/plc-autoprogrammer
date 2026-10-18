@@ -72,6 +72,18 @@ BASE_URL=http://localhost:5203 node e2e/sourcing.e2e.cjs   # BOM sourcing, alter
 npx tsx src/sourcing/sourcing.test.ts                      # sourcing data, equivalents, swap impact (mounting), optimise, live-check source verification
 ```
 
+## Convert existing drawings
+
+```bash
+node e2e/fixtures/convert/make-fixtures.cjs                # (re)builds the sample set: 4-sheet GB-style PDF + DXF export with Chinese text
+BASE_URL=http://localhost:5203 node e2e/convert.e2e.cjs    # New project → From existing drawings → upload → read (AI mocked) → description, questions, old → new table → rebuild → function kept
+npx tsx src/convert/convert.test.ts                        # DXF text, foreign part numbers, kW → HP, mm² → AWG, 380 V 50 Hz → 480 V 60 Hz, GB → NFPA tags, cross-match, function kept
+```
+
+The sample set is a Chinese-style sorting conveyor (Mitsubishi FX3U, CHINT / Delixi parts, 380 V 50 Hz, 220 VAC
+coils, single-channel E-stop). The mocked AI answers with `src/convert/__fixtures__/chineseConveyor.ts`, which
+the unit tests use too.
+
 ## HMI screens made by hand
 
 ```bash

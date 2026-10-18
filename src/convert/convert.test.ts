@@ -125,8 +125,8 @@ test('applied to a project: description, questions, I/O and motors; every functi
   assert.match(spec.sequence, /cross-interlocked/);
   assert.match(spec.motion, /M1 1\.1 kW → 1\.5 HP/);
   const qs = useQuestionStore.getState().byProject[useProjectsStore.getState().activeId ?? 'default'] ?? [];
-  assert.ok(qs.some((q) => q.source === 'spec' && /pusher take to extend/.test(q.text)));
-  assert.ok(qs.some((q) => q.source === 'spec' && /50 Hz/.test(q.text)));
+  assert.ok(qs.some((q) => q.source === 'drawings' && /pusher take to extend/.test(q.text)));
+  assert.ok(qs.some((q) => q.source === 'drawings' && /50 Hz/.test(q.text)));
   assert.equal(useIOStore.getState().projectIO.length, CHINESE_CONVEYOR.io.length);
   assert.deepEqual(useElectricalStore.getState().inputs.motors.map((m) => m.tag), ['M1', 'M2']);
   assert.ok(storedMachine());

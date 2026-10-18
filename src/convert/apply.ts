@@ -17,6 +17,7 @@ import type { ExistingMachine } from './types';
 
 export const MACHINE_KEY = 'convert.machine';
 export const TARGET_KEY = 'convert.target';
+export const QUESTIONS_KEY = 'convert.questions';
 
 /** The machine read from the drawings for the open project, if any. */
 export const storedMachine = (): ExistingMachine | null => (useDraftStore.getState().drafts[MACHINE_KEY] as ExistingMachine | undefined) ?? null;
@@ -48,10 +49,13 @@ export function applyExistingMachine(m: ExistingMachine, conv: Conversion) {
   applyRegion(conv.target.region);
   useSpecStore.getState().setSections(convertedSpec(m, conv));
   const projectId = useProjectsStore.getState().activeId;
-  useQuestionStore.getState().sync(projectId, 'spec', [
+  // their own source (the description page's checklist re-syncs 'spec'), kept with the project for the global registration
+  const questions = [
     ...m.questions.map((q) => ({ text: q.text, section: q.section, ...(q.assumption ? { assumption: q.assumption } : {}), topic: 'From the drawings' })),
     ...conv.questions.map((q) => ({ ...q, topic: 'Converting to the new standard' })),
-  ]);
+  ];
+  useDraftStore.getState().setDraft(QUESTIONS_KEY, questions);
+  useQuestionStore.getState().sync(projectId, 'drawings', questions);
   // The original I/O, by function: addresses are assigned again for the new PLC.
   useIOStore.getState().importPoints(m.io.map((p) => ({ description: p.description, type: p.type, category: p.category, deviceType: p.deviceType })), true);
   const el = useElectricalStore.getState();

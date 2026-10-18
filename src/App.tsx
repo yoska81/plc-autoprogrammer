@@ -181,6 +181,7 @@ export default function App() {
           <MenuItem onClick={projectFile.save}>Save<span className="float-right pl-6 text-steel-400">Ctrl+S</span></MenuItem>
           <MenuItem onClick={projectFile.saveAs}>Save as…<span className="float-right pl-6 text-steel-400">Ctrl+Shift+S</span></MenuItem>
           <div className="border-t border-steel-200 my-1" />
+          <MenuItem onClick={() => navigate('/convert')}>Convert existing drawings…</MenuItem>
           <MenuItem onClick={() => navigate('/import')}>Import existing system…</MenuItem>
           <MenuItem onClick={() => navigate('/project')}>Project data and revisions…</MenuItem>
           <div className="border-t border-steel-200 my-1" />
