@@ -265,6 +265,15 @@ await test('DXF written by LibreDWG (dwg2dxf): blocks placed by INSERT, old POLY
   assert.ok(texts.filter((t) => /^\d+$/.test(t.text)).length >= 1);
   // MTEXT codes stripped
   assert.ok(texts.some((t) => t.text === '急停 E-stop SB0 2NC Ø20'));
+  // MTEXT paragraph codes and non-breaking spaces
+  assert.equal(cleanDxfText('\\pxi-3,l3;KA1\\~11-14'), 'KA1 11-14');
+  // MINSERT: a 3 × 2 grid of the coil block; a polyface mesh is a surface, not a path
+  const grid = ['0', 'SECTION', '2', 'BLOCKS', '0', 'BLOCK', '2', 'T', '10', '0', '20', '0', '0', 'TEXT', '8', '0', '10', '0', '20', '0', '1', 'X', '0', 'ENDBLK', '0', 'ENDSEC',
+    '0', 'SECTION', '2', 'ENTITIES', '0', 'INSERT', '8', 'L', '2', 'T', '10', '100', '20', '50', '70', '3', '71', '2', '44', '10', '45', '20',
+    '0', 'POLYLINE', '8', 'M', '70', '64', '0', 'VERTEX', '10', '1', '20', '1', '0', 'VERTEX', '10', '2', '20', '2', '0', 'SEQEND', '0', 'ENDSEC', '0', 'EOF'].join('\n');
+  const g = parseDxfEntities(grid);
+  assert.deepEqual(g.filter((e) => 'text' in e).map((e) => 'text' in e ? [e.x, e.y] : []), [[100, 50], [110, 50], [120, 50], [100, 70], [110, 70], [120, 70]]);
+  assert.ok(!g.some((e) => e.type === 'LWPOLYLINE'), 'a mesh is not drawn as a wire');
   // and without blocks or sections at all (a bare entity list) it still reads
   assert.deepEqual(parseDxfTexts(['0', 'TEXT', '8', 'L', '10', '1', '20', '2', '1', 'QF1'].join('\n')).map((t) => t.text), ['QF1']);
 });
@@ -429,6 +438,9 @@ await test('cn-rollformer-01: a correct reading scores 100 % on the facts; a wro
     ? { ...c, devices: c.devices.filter((d) => d !== 'KA3'), conditions: c.conditions.filter((t) => !/KA3/.test(t)), path: c.path?.filter((e) => !(e.t === 'contact' && e.tag === 'KA3')) } : c)) }), CN_ROLLFORMER_01);
   assert.equal(one.percent, 99, scoreText(one));
   assert.match(scoreText(one), /Relay logic 79\/80 \(98 %\) — missing: C3a KA2 ← KA3/);
+  // the tags count in the overall score, not only in the cap
+  const withTags = scoreReading(normalizeMachine(CN_ROLLFORMER_01_READING), { ...CN_ROLLFORMER_01, tags: [['KM1', 'M2'], ['QF1', 'CB1']] });
+  assert.equal(withTags.percent, Math.floor((6 + 0.5) / 7 * 100), scoreText(withTags));
   // the older self-written mock is far from the real set
   assert.ok(scoreReading(normalizeMachine(ROLL_FORMER), CN_ROLLFORMER_01).percent < 40);
 });

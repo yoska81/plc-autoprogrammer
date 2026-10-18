@@ -16,9 +16,9 @@ export type CadEntity =
 export type DxfText = Extract<CadEntity, { text: string }>;
 
 /**
- * Reader for DWG files in the browser (none is bundled). In the Windows app a DWG is converted to DXF by the
- * installed ODA File Converter instead (src/convert/derive.ts); otherwise the upload explains how to export
- * DXF or PDF.
+ * Reader for DWG files in the browser (none is bundled). In the Windows app a DWG is converted to DXF by GNU
+ * LibreDWG's dwg2dxf, shipped with the installer (electron/dwgReader.cjs); in the browser the upload says to
+ * use DXF or PDF.
  */
 export type DwgReader = (dwg: ArrayBuffer) => Promise<CadEntity[]>;
 let dwgReader: DwgReader | null = null;
@@ -34,6 +34,8 @@ export function cleanDxfText(s: string): string {
   return s
     .replace(/\\U\+([0-9A-Fa-f]{4})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
     .replace(/\\P/g, ' ')
+    .replace(/\\~/g, ' ')
+    .replace(/\\p[^;\\]*;/g, '')
     .replace(/\\[ACFHQTW][^;\\]*;/gi, '')
     .replace(/\\[LlOoKk]/g, '')
     .replace(/\\S([^;^/#]*)[\^/#]([^;]*);/g, '$1/$2')
@@ -138,10 +140,13 @@ export function parseDxfEntities(dxf: string): CadEntity[] {
         const ys = e.codes.filter(([c]) => c === '20').map(([, v]) => Number(v) || 0);
         if (xs.length) push({ type: 'LWPOLYLINE', layer, points: xs.map((x, k) => apply(t, x, ys[k] ?? 0)), closed: (num(e, '70') & 1) === 1 });
       } else if (e.type === 'POLYLINE') {
-        // the old form: its VERTEX entities follow, up to SEQEND
+        // the old form: its VERTEX entities follow, up to SEQEND. A 3D polyline (flag 8) is drawn flat; a
+        // polygon or polyface mesh (flags 16 / 64) is a surface, not a path: its vertices are skipped.
+        const mesh = (num(e, '70') & (16 | 64)) !== 0;
         const pts: [number, number][] = [];
         let j = i + 1;
         for (; j < list.length && list[j].type === 'VERTEX'; j++) {
+          if (mesh) continue;
           const p = apply(t, num(list[j], '10'), num(list[j], '20'));
           if (!pts.length || pts[pts.length - 1][0] !== p[0] || pts[pts.length - 1][1] !== p[1]) pts.push(p);
         }
@@ -162,9 +167,18 @@ export function parseDxfEntities(dxf: string): CadEntity[] {
           continue;
         }
         if (!b) continue;
-        const f: Xf = { x: num(e, '10'), y: num(e, '20'), sx: num(e, '41', 1) || 1, sy: num(e, '42', 1) || 1, rot: num(e, '50'), bx: b.base[0], by: b.base[1] };
-        // entities on layer 0 inside a block take the INSERT's layer
-        walk(b.ents, [f, ...t], depth + 1, (l) => (l === '0' || !l ? layer : l));
+        // MINSERT: a grid of columns × rows at the given spacing (in the block's rotated frame)
+        const cols = Math.max(1, num(e, '70', 1)), rows = Math.max(1, num(e, '71', 1));
+        const dx = num(e, '44'), dy = num(e, '45'), rot = num(e, '50');
+        const c = Math.cos(rot * Math.PI / 180), sn = Math.sin(rot * Math.PI / 180);
+        for (let r = 0; r < Math.min(rows, 100); r++) {
+          for (let k = 0; k < Math.min(cols, 100); k++) {
+            const ox = k * dx * c - r * dy * sn, oy = k * dx * sn + r * dy * c;
+            const f: Xf = { x: num(e, '10') + ox, y: num(e, '20') + oy, sx: num(e, '41', 1) || 1, sy: num(e, '42', 1) || 1, rot, bx: b.base[0], by: b.base[1] };
+            // entities on layer 0 inside a block take the INSERT's layer
+            walk(b.ents, [f, ...t], depth + 1, (l) => (l === '0' || !l ? layer : l));
+          }
+        }
       }
       // ATTDEF (a block's placeholder), SEQEND, VERTEX on their own and everything else: not drawing text
     }

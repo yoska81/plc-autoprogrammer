@@ -27,11 +27,7 @@ contextBridge.exposeInMainWorld('isaDesktop', {
     ipcRenderer.on('isa:open-file', h);
     return () => { ipcRenderer.removeListener('isa:open-file', h); };
   },
-  oda: {
-    detect: () => ipcRenderer.invoke('isa:oda-detect'),
-    convert: (files) => ipcRenderer.invoke('isa:oda-convert', files),
-  },
-  // DWG import: the ODA Drawings SDK reader the user set up (electron/dwgReader.cjs)
+  // DWG import: GNU LibreDWG's dwg2dxf shipped with the installer, or another reader (electron/dwgReader.cjs)
   dwg: {
     status: () => ipcRenderer.invoke('isa:dwg-status'),
     configure: () => ipcRenderer.invoke('isa:dwg-configure'),

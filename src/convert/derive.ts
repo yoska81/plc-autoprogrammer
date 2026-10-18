@@ -15,7 +15,6 @@ import type { DrawnRatings, ExistingMachine, PathContact, PathEl } from './types
 
 export const MAX_UPLOAD_FILES = 20;
 
-/** What to do when no DWG reader is set up (the Windows app with its ODA Drawings SDK reader reads DWG). */
 /** DWG in the browser (and the claude.ai preview): the Windows app opens it. */
 export const DWG_IN_BROWSER = 'DWG opens in the Windows app; here use DXF or PDF (in AutoCAD: File → Save As → DXF, or print to PDF).';
 /** The Windows app without its DWG converter (e.g. removed from the installation). */

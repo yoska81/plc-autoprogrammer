@@ -289,7 +289,7 @@ export default function SettingsPage() {
 
           {/* Voice settings apply as they are changed (no API keys in them). */}
           <VoiceSettingsCard />
-          {/* Reading DWG drawings on Import → Drawings (the Windows app's ODA Drawings SDK reader). */}
+          {/* DWG drawings on Import → Drawings (the Windows app's built-in LibreDWG converter). */}
           <DwgReaderCard />
         </div>
       </div>
