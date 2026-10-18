@@ -93,8 +93,36 @@ const LONG = 'Make the pusher wait for the part to settle on the conveyor for at
     await page.locator('#recover').screenshot({ path: path.join(OUT, `recover_${width}.png`) });
   }
 
+  // Phone navigation drawer: the toggle says whether it is open, focus moves in and back, Esc / the
+  // backdrop / going to a page close it, and a saved wide desktop width does not apply (85vw, at most 320 px).
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.evaluate(() => localStorage.setItem('pane-width:app.nav', '520'));
+  await page.goto(BASE + '/project');
+  const toggle = page.getByRole('button', { name: 'Project navigation' });
+  check(await toggle.getAttribute('aria-expanded') === 'false' && await toggle.getAttribute('aria-controls') === 'app-nav-drawer', 'drawer toggle: aria-expanded false, aria-controls');
+  check(await page.locator('#app-nav-drawer').count() === 0, 'drawer closed at first on a phone');
+  await toggle.click();
+  const drawer = page.locator('#app-nav-drawer');
+  const dw = (await drawer.boundingBox()).width;
+  check(dw <= 320 && dw <= 390 * 0.85 + 1, `drawer width ${Math.round(dw)} ≤ min(85vw, 320)`);
+  check(await page.evaluate(() => document.activeElement?.id) === 'app-nav-drawer', 'focus moves into the drawer');
+  check(await page.getByRole('button', { name: 'Hide project navigation' }).getAttribute('aria-expanded') === 'true', 'toggle: aria-expanded true');
+  await page.keyboard.press('Escape');
+  check(await drawer.count() === 0, 'Esc closes the drawer');
+  check(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')) === 'Project navigation', 'focus back on the toggle');
+  await toggle.click();
+  await page.getByTestId('nav-backdrop').click({ position: { x: 370, y: 400 } });
+  check(await drawer.count() === 0, 'a click outside (backdrop) closes the drawer');
+  await toggle.click();
+  await drawer.getByRole('link').filter({ hasText: /I\/O list/ }).first().click();
+  await page.waitForTimeout(300);
+  check(await drawer.count() === 0 && /\/io/.test(page.url()), 'going to a page closes the drawer');
+  await page.evaluate(() => localStorage.removeItem('pane-width:app.nav'));
+
   // The full text is one click away; the folded versions open.
   await page.setViewportSize({ width: 1366, height: 900 });
+  await page.goto(BASE + '/project');
+  await page.locator('#recover').waitFor();
   const first = page.locator('[data-piece] button[aria-expanded]').filter({ hasText: /request\(s\) to the AI/ }).first();
   await first.click();
   check(/half a second/.test(await page.locator('#recover pre').first().innerText()), 'click shows the full text');

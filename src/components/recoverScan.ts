@@ -94,7 +94,8 @@ export function groupPieces(pieces: Piece[]): { where: string; latest: string | 
   const time = (pc: Piece) => (pc.when ? Date.parse(pc.when) || 0 : 0);
   return [...by].map(([where, list]) => {
     const history = list.filter((pc) => pc.id.includes(':v:')).sort((a, b) => time(b) - time(a));
-    const rest = list.filter((pc) => !pc.id.includes(':v:'));
+    // The current state (no date: the program, notes, description) first, then the dated pieces newest first.
+    const rest = list.filter((pc) => !pc.id.includes(':v:')).map((pc, i) => ({ pc, i })).sort((a, b) => (b.pc.when ? time(b.pc) : Infinity) - (a.pc.when ? time(a.pc) : Infinity) || a.i - b.i).map((x) => x.pc);
     const latest = list.reduce<string | null>((m, pc) => (pc.when && (!m || Date.parse(pc.when) > Date.parse(m)) ? pc.when : m), null);
     return { where, latest, shown: [...rest, ...history.slice(0, KEEP_VERSIONS)], older: history.slice(KEEP_VERSIONS) };
   }).sort((a, b) => (b.latest ? Date.parse(b.latest) : 0) - (a.latest ? Date.parse(a.latest) : 0));

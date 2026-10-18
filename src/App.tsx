@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { useNoTouchPanel, useProjectPanelPart } from './hmi/projectPanel';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -71,9 +71,11 @@ function useNarrow(): boolean {
   return narrow;
 }
 
-function ToolButton({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
+function ToolButton({ title, onClick, children, ...aria }: {
+  title: string; onClick: () => void; children: ReactNode; ref?: Ref<HTMLButtonElement>; 'aria-expanded'?: boolean; 'aria-controls'?: string;
+}) {
   return (
-    <button title={title} aria-label={title} onClick={onClick}
+    <button title={title} aria-label={title} onClick={onClick} {...aria}
       className="w-8 h-8 flex items-center justify-center rounded-sm text-steel-700 hover:bg-brand-50 hover:text-brand-800 border border-transparent hover:border-brand-200">
       {children}
     </button>
@@ -127,8 +129,19 @@ export default function App() {
   const location = useLocation();
   const here = `${location.pathname}${location.search}`;
   const [navOpenOn, setNavOpenOn] = useState<string | null>(null);
-  const navOpen = navOpenOn === here;
-  const setNavOpen = (f: (v: boolean) => boolean) => setNavOpenOn(f(navOpen) ? here : null);
+  const navOpen = narrow && navOpenOn === here;
+  const navToggle = useRef<HTMLButtonElement>(null);
+  const navDrawer = useRef<HTMLDivElement>(null);
+  /** Close the drawer and give the focus back to its toggle. */
+  const closeNav = () => { setNavOpenOn(null); navToggle.current?.focus(); };
+  // Open: focus into the drawer; Esc closes it.
+  useEffect(() => {
+    if (!navOpen) return;
+    navDrawer.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setNavOpenOn(null); navToggle.current?.focus(); } };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [navOpen]);
   const projectFile = useProjectFile();
   useAutoReview();
 
@@ -185,6 +198,20 @@ export default function App() {
     ],
   };
 
+  const navBody = (
+    <>
+      <div className="h-7 flex items-center px-2 bg-[#e9edef] border-b border-steel-300 text-xs font-semibold text-steel-700">Project navigation</div>
+      <nav className="flex-1 overflow-y-auto py-1">
+        <ul><TreeItem node={tree} depth={0} stages={stages} /></ul>
+      </nav>
+      <div className="border-t border-steel-200 px-2 py-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-steel-500">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-600" /> done</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> out of date</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-steel-300" /> to do</span>
+        <span className="flex items-center gap-1" title="Questions the AI asked; answer them on the page or in Design review"><span className="rounded-full bg-amber-100 px-1 text-[10px] font-semibold text-amber-900">2?</span> questions</span>
+      </div>
+    </>
+  );
   return (
     <div className="flex flex-col h-screen bg-[#f0f2f3] font-sans text-steel-900 text-[13px]">
       {/* Title bar */}
@@ -224,7 +251,10 @@ export default function App() {
 
       {/* Toolbar */}
       <div className="h-10 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-2 gap-1 min-w-0">
-        {narrow && <ToolButton title={navOpen ? 'Hide project navigation' : 'Project navigation'} onClick={() => setNavOpen((v) => !v)}><Bars3Icon className="w-5 h-5" /></ToolButton>}
+        {narrow && (
+          <ToolButton ref={navToggle} title={navOpen ? 'Hide project navigation' : 'Project navigation'} aria-expanded={navOpen} aria-controls="app-nav-drawer"
+            onClick={() => (navOpen ? closeNav() : setNavOpenOn(here))}><Bars3Icon className="w-5 h-5" /></ToolButton>
+        )}
         <ToolButton title="New project" onClick={() => navigate('/new')}><DocumentPlusIcon className="w-5 h-5" /></ToolButton>
         <ToolButton title="Open project file (Ctrl+O)" onClick={projectFile.open}><FolderOpenIcon className="w-5 h-5" /></ToolButton>
         <ToolButton title={dirty ? 'Save (Ctrl+S) — unsaved changes' : 'Save (Ctrl+S)'} onClick={projectFile.save}>
@@ -248,20 +278,16 @@ export default function App() {
       </div>
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Project navigation (on phones: over the page, opened from the toolbar) */}
-        {(!narrow || navOpen) && (
-        <ResizablePane id="app.nav" defaultSize={256} min={180} max={520} className={`bg-white border-r border-steel-300 flex flex-col${narrow ? ' absolute inset-y-0 left-0 z-40 shadow-lg' : ''}`}>
-          <div className="h-7 flex items-center px-2 bg-[#e9edef] border-b border-steel-300 text-xs font-semibold text-steel-700">Project navigation</div>
-          <nav className="flex-1 overflow-y-auto py-1">
-            <ul><TreeItem node={tree} depth={0} stages={stages} /></ul>
-          </nav>
-          <div className="border-t border-steel-200 px-2 py-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-steel-500">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-600" /> done</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> out of date</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-steel-300" /> to do</span>
-            <span className="flex items-center gap-1" title="Questions the AI asked; answer them on the page or in Design review"><span className="rounded-full bg-amber-100 px-1 text-[10px] font-semibold text-amber-900">2?</span> questions</span>
-          </div>
-        </ResizablePane>
+        {/* Project navigation: a resizable pane; on phones a drawer over the page, opened from the toolbar */}
+        {!narrow && (
+          <ResizablePane id="app.nav" defaultSize={256} min={180} max={520} className="bg-white border-r border-steel-300 flex flex-col">{navBody}</ResizablePane>
+        )}
+        {navOpen && (
+          <>
+            <div className="absolute inset-0 z-30 bg-black/30" onClick={closeNav} data-testid="nav-backdrop" aria-hidden="true" />
+            <div id="app-nav-drawer" ref={navDrawer} role="dialog" aria-modal="true" aria-label="Project navigation" tabIndex={-1}
+              className="absolute inset-y-0 left-0 z-40 w-[min(85vw,320px)] bg-white border-r border-steel-300 shadow-lg flex flex-col outline-none">{navBody}</div>
+          </>
         )}
 
         <main className="flex-1 flex flex-col overflow-hidden">
