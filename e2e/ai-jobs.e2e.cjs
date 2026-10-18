@@ -37,6 +37,11 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('dialog', (d) => d.accept());
+  // Poll an async check in the page (waitForFunction takes the Promise an async function returns as true at once).
+  const waitInPage = async (fn, arg, timeout) => {
+    for (const end = Date.now() + timeout; Date.now() < end; await page.waitForTimeout(100)) if (await page.evaluate(fn, arg)) return;
+    throw new Error(`waitInPage: timed out after ${timeout} ms`);
+  };
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
 
   // Scripted AI: per stage, a queue of behaviours ({ delay, status, body }); default = answer at once.
@@ -82,7 +87,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
     check(await bar.locator('[data-job="electrical"]').count() === 1 || (await explanation()) === ELECTRICAL.explanation, `job still shown on ${path}`);
   }
   await page.locator('nav, aside').getByText('Electrical design', { exact: true }).first().click();
-  await page.waitForFunction(async (exp) => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation === exp, ELECTRICAL.explanation, { timeout: 15000 });
+  await waitInPage(async (exp) => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation === exp, ELECTRICAL.explanation, 15000);
   await page.waitForFunction(() => !document.querySelector('[data-job="electrical"][data-status="running"]'));
   check(calls.electrical === 1, 'one request, not restarted by navigation');
   log('After navigating across 3 pages: design applied:', await explanation());
@@ -132,7 +137,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   check(/no credit/i.test(await failed.innerText()), 'plain-English failure');
   check(await page.getByRole('alert').filter({ hasText: /no credit/i }).count() >= 1, 'failure shown on the page too');
   await bar.getByRole('button', { name: 'Retry Electrical design' }).click();
-  await page.waitForFunction(async (exp) => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation === exp, ELECTRICAL.explanation, { timeout: 10000 });
+  await waitInPage(async (exp) => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation === exp, ELECTRICAL.explanation, 10000);
   log('Retry succeeded');
 
   // 6. A request that never answers (the preview hang) is stopped by the watchdog, retried, and the retry succeeds.
@@ -150,7 +155,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   script.machine.push({ status: 400, type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' });
   await page.goto(BASE + '/electrical?tab=design');
   await page.getByRole('button', { name: 'Generate New Design' }).click();
-  await page.waitForFunction(async () => /^Rule-based design/.test((await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation ?? ''), null, { timeout: 15000 });
+  await waitInPage(async () => /^Rule-based design/.test((await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation ?? ''), null, 15000);
   const fallbackNote = await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design.notes[0]);
   log('AI failed, rules designed the panel:', fallbackNote.slice(0, 120));
   check(/AI could not read the specification/.test(fallbackNote), 'fallback note on the design');
