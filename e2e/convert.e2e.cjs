@@ -86,7 +86,7 @@ function sse(model, text) {
   const derive = requests.find((r) => sysText(r.system).includes('taking over an existing machine'));
   const content = derive?.messages[0].content ?? [];
   check(content.some((b) => b.type === 'document' && b.source?.media_type === 'application/pdf'), 'the PDF goes to the AI as a document');
-  const dxfText = content.find((b) => b.type === 'text' && b.text.includes('E-03_PLC_IO.dxf (DXF export'))?.text ?? '';
+  const dxfText = content.find((b) => b.type === 'text' && b.text.includes('E-03_PLC_IO.dxf (CAD drawing'))?.text ?? '';
   check(/启动/.test(dxfText) && /TAG1=KM1/.test(dxfText) && /急停为单回路/.test(dxfText), 'the DXF goes as text with its Chinese labels and attributes');
   log('Sent to the AI:', content.map((b) => b.type).join(', '), '| DXF text:', dxfText.split('\n')[2]);
   const rec = await page.getByTestId('convert-recognised').innerText();

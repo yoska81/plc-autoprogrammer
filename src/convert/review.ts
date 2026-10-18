@@ -17,7 +17,7 @@ export interface ReviewState {
 
 export const EMPTY_REVIEW: ReviewState = { excluded: [], confirmed: [] };
 
-export type ReviewKind = 'io' | 'part' | 'motor';
+export type ReviewKind = 'io' | 'part' | 'motor' | 'axis';
 /** Stable key of one item: "io:X0", "part:KM1", "motor:M1". */
 export const itemKey = (kind: ReviewKind, id: string) => `${kind}:${id}`;
 
@@ -29,6 +29,7 @@ export function reviewItems(m: ExistingMachine): { key: string; kind: ReviewKind
     ...m.io.map((p) => ({ key: itemKey('io', p.address), kind: 'io' as const, label: `${p.address} ${p.description}`, source: p.source, confidence: p.confidence, section: ioSection(p.category) })),
     ...m.components.map((c) => ({ key: itemKey('part', c.tag), kind: 'part' as const, label: `${c.tag} ${[c.manufacturer, c.partNumber].filter(Boolean).join(' ') || c.description}`, source: c.source, confidence: c.confidence, section: 'utilities' as const })),
     ...m.motors.map((x) => ({ key: itemKey('motor', x.tag), kind: 'motor' as const, label: `${x.tag} ${x.description}${x.kw ? ` ${x.kw} kW` : ''}`, source: x.source, confidence: x.confidence, section: 'motion' as const })),
+    ...m.axes.map((a) => ({ key: itemKey('axis', a.tag), kind: 'axis' as const, label: `${a.tag} ${a.description} (drive ${a.driveTag})`, source: a.source, confidence: a.confidence, section: 'motion' as const })),
   ];
 }
 
@@ -45,6 +46,7 @@ export function reviewedMachine(m: ExistingMachine, r: ReviewState): { machine: 
     io: m.io.filter((p) => !out('io', p.address)),
     components: m.components.filter((c) => !out('part', c.tag)),
     motors: m.motors.filter((x) => !out('motor', x.tag)),
+    axes: m.axes.filter((a) => !out('axis', a.tag)),
   };
   const questions = unconfirmed(machine, r).map((i) => ({
     text: `Please check on the machine: ${i.label} — read with low confidence${i.source ? ` from ${i.source}` : ''}. Is it right?`,

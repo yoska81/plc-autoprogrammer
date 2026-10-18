@@ -77,8 +77,15 @@ npx tsx src/sourcing/sourcing.test.ts                      # sourcing data, equi
 ```bash
 node e2e/fixtures/convert/make-fixtures.cjs                # (re)builds the sample set: 4-sheet GB-style PDF + DXF export with Chinese text
 BASE_URL=http://localhost:5203 node e2e/convert.e2e.cjs    # New project → From existing drawings → upload → read (AI mocked) → description, questions, old → new table → rebuild → function kept
+BASE_URL=http://localhost:5203 node e2e/convert-rollformer.e2e.cjs  # acceptance case: one CAD file, 6 sheets in model space, servo flying shear, no PLC, E-stop only into a VFD → safety relay + STO
 npx tsx src/convert/convert.test.ts                        # DXF text, foreign part numbers, kW → HP, mm² → AWG, 380 V 50 Hz → 480 V 60 Hz, GB → NFPA tags, cross-match, function kept
 ```
+
+The acceptance case `roll-former.dxf` mirrors a real drawing a user sent (a DWG): a roll-forming machine with a 5.5 kW
+VFD and a 1.5 kW servo flying shear, six A3 sheets side by side in model space, MTEXT with SimSun codes. A DWG is read
+in the Windows app through the installed (free) ODA File Converter (`electron/oda.cjs` `toDxf`: DWG → DXF → `dxf.ts`), or
+through a plugged-in in-browser reader (`setDwgReader` in `src/convert/dxf.ts`; none is bundled). Otherwise the upload
+links the ODA download and asks for DXF or PDF. The mocked AI answer is `src/convert/__fixtures__/rollFormer.ts`.
 
 The sample set is a Chinese-style sorting conveyor (Mitsubishi FX3U, CHINT / Delixi parts, 380 V 50 Hz, 220 VAC
 coils, single-channel E-stop). The mocked AI answers with `src/convert/__fixtures__/chineseConveyor.ts`, which

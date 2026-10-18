@@ -9,7 +9,9 @@ import { ALL_PARTS } from '../electrical/catalogs';
 import type { CatalogCategory, CatalogPart, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
 import type { Region } from '../standards/regions';
 import type { SyncItem } from '../components/questions/useQuestionStore';
+import type { SpecSectionId } from '../spec/types';
 import { foreignRatings } from './foreignParts';
+import { similarity } from './functionKept';
 import type { DrawnComponent, DrawnRatings, ExistingMachine } from './types';
 
 export interface ConvertTarget {
@@ -175,7 +177,8 @@ function differences(c: DrawnComponent, r: DrawnRatings, to: CatalogPart, target
 export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTarget, hp?: number): PartMatch {
   const r = ratingsOf(c);
   const from = { partNumber: c.partNumber, manufacturer: c.manufacturer, description: c.description, category: c.category, ratings: r };
-  if (ENGINE_PICKS.has(c.category)) {
+  // operator devices drawn as 'other' (speed pots, pendants) are chosen by the design too
+  if (ENGINE_PICKS.has(c.category) || (c.category === 'other' && /potentiometer|\bpot\b|调速|电位器|pendant|遥控/i.test(c.description))) {
     return { oldTag: c.tag, newTag, from, to: null, alternatives: [], differences: c.category === 'estop' ? [REVALIDATE] : [], status: 'engine', reason: 'Chosen by the design from the I/O list and the equipment choice.' };
   }
   // an overload is set to the motor's current, which changes with the voltage: the design sizes it for the new motor
@@ -185,9 +188,9 @@ export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTar
   }
   const list = candidates(c, r, target, hp);
   if (!list.length) {
-    const missing = c.category === 'overload' || c.category === 'motorProtector' ? 'the setting range' : c.category === 'vfd' ? 'the motor power' : 'the ratings';
+    const missing = c.category === 'overload' || c.category === 'motorProtector' ? 'the setting range is' : c.category === 'vfd' ? 'the motor power is' : 'the rating is';
     return { oldTag: c.tag, newTag, from, to: null, alternatives: [], differences: [], status: 'to-select',
-      reason: `No catalog part matches${r.amps !== null || r.kw !== null || r.minAmps !== null ? '' : `: ${missing} is not on the drawing`}. Pick one, or let the design size it from the motors.` };
+      reason: `No catalog part matches${r.amps !== null || r.kw !== null || r.minAmps !== null ? '' : `: ${missing} not on the drawing`}. Pick one, or let the design size it from the motors.` };
   }
   const [to, ...alternatives] = list;
   const listing = to.ratings.ul ? `maker's listing: UL ${String(to.ratings.ul).replace(/^UL\s*/i, '')}` : 'listing: see the maker\'s data';
@@ -206,14 +209,18 @@ export interface Conversion {
   parts: PartMatch[];
   /** Questions for the Machine description page (what the conversion can't decide). */
   questions: SyncItem[];
+  /** What the new design must add to be right for the target standard (safety relay + STO…). */
+  recommendations: { text: string; section: SpecSectionId }[];
 }
 
 /** The whole conversion of an existing machine to the target standard. */
 export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TARGET): Conversion {
   const sup = targetSupply(m.supplyDrawn, target);
   const questions: SyncItem[] = sup.question ? [sup.question] : [];
-  const motorKw = m.motors.map((mm) => ({ tag: mm.tag, kw: mm.kw, hp: mm.hp ?? (mm.kw !== null ? kwToHp(mm.kw) : 0) }));
-  const motors: MotorSpec[] = m.motors.map((mm, i) => ({
+  // servo motors belong to their axis (the motion design), not to the panel's starters
+  const panelMotors = m.motors.filter((mm) => mm.kind !== 'servo');
+  const motorKw = panelMotors.map((mm) => ({ tag: mm.tag, kw: mm.kw, hp: mm.hp ?? (mm.kw !== null ? kwToHp(mm.kw) : 0) }));
+  const motors: MotorSpec[] = panelMotors.map((mm, i) => ({
     tag: mm.tag.replace(/^[^A-Z]*/i, '').match(/^M\d+/i)?.[0].toUpperCase() ?? `M${i + 1}`,
     description: mm.description,
     hp: motorKw[i].hp || 1,
@@ -224,17 +231,44 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   if (m.supplyDrawn.hz === 50 && (target.region === 'US' || target.region === 'Canada') && m.motors.length) {
     questions.push({ text: 'The motors were 50 Hz and turn about 20 % faster on 60 Hz. Must every speed stay as it was (new gearing or drive settings), or is the faster speed acceptable?', section: 'motion', assumption: 'Keep the original speeds' });
   }
-  if (m.safety.estops.length && !m.safety.safetyRelay) {
+  const drives = [...m.components.filter((c) => c.category === 'vfd').map((c) => c.tag), ...m.axes.map((a) => a.driveTag)];
+  if (m.safety.estops.length && m.safety.kind === 'control-only') {
+    questions.push({ text: `The existing E-stop (${m.safety.estops.join(', ')}) is only an input of a drive or controller: it is not a safety circuit. The new design stops through a monitored safety relay${drives.length ? ' and the drives\' Safe Torque Off' : ''}. What safety category / performance level does the risk assessment require?`, section: 'safety', assumption: 'Category 3, PL d' });
+  } else if (m.safety.estops.length && !m.safety.safetyRelay) {
     questions.push({ text: `The existing E-stop (${m.safety.estops.join(', ')}) is single-channel, without a safety relay. The new design uses a monitored safety relay. What safety category / performance level does the risk assessment require?`, section: 'safety', assumption: 'Category 3, PL d' });
   }
-  for (const [i, mm] of m.motors.entries()) {
-    if (!motorKw[i].hp) questions.push({ text: `What is the power of ${mm.tag} (${mm.description})? It is not on the drawings.`, section: 'motion', assumption: '1 HP' });
+  if (m.controller !== 'plc') {
+    const by = m.controller === 'servo-drive' ? 'the servo drive\'s built-in controller' : m.controller === 'relays' ? 'relay logic' : 'its own controller';
+    questions.push({ text: `The machine has no PLC: ${by} runs it. Should the new design keep that, or put the logic in a PLC (the drives keep their motion functions)?`, section: 'sequence', assumption: 'A PLC runs the logic; the servo drive keeps positioning' });
+  }
+  const recommendations: Conversion['recommendations'] = [];
+  if (m.safety.kind !== 'safety-relay' && (m.safety.estops.length || drives.length)) {
+    recommendations.push({ section: 'safety', text: `${m.safety.kind === 'control-only' ? `The E-stop (${m.safety.estops.join(', ') || '—'}) only signals ${drives.length ? drives.join(', ') : 'the controller'}: that is not a safety circuit. ` : ''}Add a monitored safety relay (category / PL from the risk assessment)${drives.length ? ` and wire the Safe Torque Off (STO) inputs of ${drives.join(', ')} to it` : ''}, so an E-stop removes power or torque (NFPA 79 9.2.2, 9.2.5.4). Re-validate after the conversion.` });
+  }
+  for (const a of m.axes) {
+    recommendations.push({ section: 'motion', text: `Servo axis ${a.tag} (${a.description}): drive ${a.driveTag}${a.drivePart ? ` ${a.drivePart}` : ''}, ${a.motorKw ?? '?'} kW servo motor${a.encoder ? `, ${a.encoder}` : ''}${a.brakingResistor ? `, braking resistor ${a.brakingResistor}` : ''}: kept as one axis; the drive, motor, cables and braking resistor are chosen together by the motion design for ${target.supply.replace('VAC-3PH', ' V')}.` });
+  }
+  for (const [i, mm] of panelMotors.entries()) {
+    // the drawings' own questions may already ask it
+    const asked = m.questions.some((q) => /power|kw/i.test(q.text) && similarity(q.text, mm.description) >= 0.3);
+    if (!motorKw[i].hp && !asked) questions.push({ text: `What is the power of ${mm.tag} (${mm.description})? It is not on the drawings.`, section: 'motion', assumption: '1 HP' });
   }
   // North America renames the devices (QF1 → CB1…); an IEC target keeps the drawing's own tags
   const na = target.region === 'US' || target.region === 'Canada';
   const tags = na ? naTags(m.components) : new Map(m.components.map((c) => [c.tag, c.tag]));
   // a drive is sized by the motor it runs: the largest VFD-driven motor when the drive's own power isn't drawn
   const vfdHp = Math.max(0, ...motors.filter((x) => x.starter === 'vfd').map((x) => x.hp));
-  const parts = m.components.map((c) => crossMatch(c, tags.get(c.tag) ?? c.tag, target, c.category === 'vfd' && c.ratings.kw === null && vfdHp ? vfdHp : undefined));
-  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions };
+  const axisTags = new Set(m.axes.flatMap((a) => [a.driveTag, a.motorTag, ...(a.brakingResistor ? [a.brakingResistor.split(/\s/)[0]] : [])]));
+  const parts = m.components.map((c) => {
+    // a servo axis is chosen as a whole by the motion design (drive, motor, encoder, braking resistor)
+    if (axisTags.has(c.tag) || /servo|伺服|braking resistor|制动电阻|encoder|编码器/i.test(c.description)) {
+      const isDrive = m.axes.some((a) => a.driveTag === c.tag) || /servo drive|伺服驱动/i.test(c.description);
+      return { oldTag: c.tag, newTag: tags.get(c.tag) ?? c.tag, from: { partNumber: c.partNumber, manufacturer: c.manufacturer, description: c.description, category: c.category, ratings: ratingsOf(c) }, to: null, alternatives: [],
+        differences: isDrive ? ['STO wired to the safety relay', REVALIDATE] : [], status: 'engine' as const, reason: 'Servo axis: drive, motor, encoder and braking resistor are chosen together by the motion design.' };
+    }
+    const m2 = crossMatch(c, tags.get(c.tag) ?? c.tag, target, c.category === 'vfd' && c.ratings.kw === null && vfdHp ? vfdHp : undefined);
+    // a drive's E-stop now removes torque through STO
+    return c.category === 'vfd' && m.safety.kind !== 'safety-relay' ? { ...m2, differences: [...m2.differences, 'STO wired to the safety relay', REVALIDATE] } : m2;
+  });
+  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations };
 }

@@ -39,17 +39,22 @@ export function convertedSpec(m: ExistingMachine, conv: Conversion): SpecSection
   spec.utilities = [m.spec.utilities, `Conversion: ${conv.supplyNote} The panel is redesigned to ${std}.`].filter(Boolean).join('\n');
   // nothing is certified by a conversion: the safety functions are kept, then re-validated
   spec.safety = [m.spec.safety, 'Converted design: every safety function above is kept, and must be re-validated after the conversion (risk assessment, then verification per ISO 13849-2 / NFPA 79 9.2.5.4). The panel needs its own UL 508A listing or field evaluation; the part equivalents carry only their makers\' listings.'].filter(Boolean).join('\n');
+  for (const r of conv.recommendations) spec[r.section] = [spec[r.section], `Conversion: ${r.text}`].filter(Boolean).join('\n');
   // the interlocks the wiring enforced, word for word, so the new program and the function-kept check keep them
-  if (m.interlocks.length) spec.sequence = [m.spec.sequence, `Interlocks to keep (from the existing wiring):\n${m.interlocks.map((i) => `- ${i.description}`).join('\n')}`].filter(Boolean).join('\n');
+  if (m.interlocks.length) spec.sequence = [spec.sequence, `Interlocks to keep (from the existing wiring):\n${m.interlocks.map((i) => `- ${i.description}`).join('\n')}`].filter(Boolean).join('\n');
   if (conv.motors.length) {
-    spec.motion = [m.spec.motion, `For the new supply: ${conv.motors.map((x, i) => `${x.tag} ${conv.motorKw[i]?.kw ? `${conv.motorKw[i].kw} kW → ` : ''}${x.hp} HP`).join(', ')}.`].filter(Boolean).join('\n');
+    spec.motion = [spec.motion, `For the new supply: ${conv.motors.map((x, i) => `${x.tag} ${conv.motorKw[i]?.kw ? `${conv.motorKw[i].kw} kW → ` : ''}${x.hp} HP`).join(', ')}.`].filter(Boolean).join('\n');
   }
   return spec;
 }
 
-/** Write the machine into the open project (replaces its description, I/O list and motors). */
-export function applyExistingMachine(m: ExistingMachine, conv: Conversion, reviewQuestions: SyncItem[] = []) {
-  applyRegion(conv.target.region);
+/**
+ * Write the machine into the open project (replaces its description, I/O list and motors).
+ * descriptionOnly: write only the description and the questions, for a flow that already wrote the I/O,
+ * PLC and program itself (the program import, src/plc/import/).
+ */
+export function applyExistingMachine(m: ExistingMachine, conv: Conversion, reviewQuestions: SyncItem[] = [], opts: { descriptionOnly?: boolean } = {}) {
+  if (!opts.descriptionOnly) applyRegion(conv.target.region);
   useSpecStore.getState().setSections(convertedSpec(m, conv));
   const projectId = useProjectsStore.getState().activeId;
   // their own source (the description page's checklist re-syncs 'spec'), kept with the project for the global registration
@@ -60,6 +65,7 @@ export function applyExistingMachine(m: ExistingMachine, conv: Conversion, revie
   ];
   useDraftStore.getState().setDraft(QUESTIONS_KEY, questions);
   useQuestionStore.getState().sync(projectId, 'drawings', questions);
+  if (opts.descriptionOnly) { keepMachine(m, conv.target); return; }
   // The original I/O, by function: addresses are assigned again for the new PLC.
   useIOStore.getState().importPoints(m.io.map((p) => ({ description: p.description, type: p.type, category: p.category, deviceType: p.deviceType })), true);
   const el = useElectricalStore.getState();

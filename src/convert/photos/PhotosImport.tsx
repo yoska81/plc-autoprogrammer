@@ -11,7 +11,8 @@ import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../..
 import type { CatalogCategory } from '../../electrical/types';
 import { recogniseCabinet, type PhotoReading, type Sighting } from './recognise';
 import { mergeReading } from './merge';
-import { asBuiltDesign, itemCategory, itemPart, itemTag, matchPart, reviewItems, type ReviewItem, type ReviewStatus } from './toDesign';
+import { asBuiltDesign, itemCategory, itemPart, itemTag, matchPart, photosToMachine, reviewItems, type ReviewItem, type ReviewStatus } from './toDesign';
+import { setReading } from '../reading';
 
 /** Photos chosen, per project and in memory only (like the drawings upload): never carried into another project. */
 const usePhotoFiles = create<{ byProject: Record<string, File[]>; set: (projectId: string, files: File[]) => void }>((set) => ({
@@ -171,7 +172,7 @@ export default function PhotosImport() {
 
       {read && (
         <section className={card}>
-          <h3 className="text-sm font-semibold text-steel-800">3 · As-built drawings</h3>
+          <h3 className="text-sm font-semibold text-steel-800">3 · As-built record or conversion</h3>
           <p className="text-xs text-steel-600">The confirmed devices become the electrical design: the panel layout in the photographed rail order and the bill of materials, marked "as-built from photos — verify".</p>
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={apply} disabled={!counts.confirmed} className="rounded bg-green-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40">Make the as-built panel layout and BOM</button>
@@ -179,6 +180,10 @@ export default function PhotosImport() {
             {done && <Link to="/electrical?tab=cabinet" className="text-xs text-brand-700 underline">Open the drawings</Link>}
             {done && <Link to="/spec#questions-and-answers" className="text-xs text-brand-700 underline">Answer the questions</Link>}
           </div>
+          <p className="text-xs text-steel-600">Or convert this cabinet to the project's standard and supply (Project data): the photographed devices go to the review below, where the same conversion and rebuild as for drawings run.</p>
+          <button type="button" data-testid="photos-convert" disabled={!counts.confirmed && !counts.pending}
+            onClick={() => setReading({ machine: photosToMachine(items, read.reading, note), reasoning: null, files: read.photos, from: 'photos' })}
+            className="rounded border border-brand-600 px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-40">Convert to the project's standard ↓</button>
         </section>
       )}
     </div>

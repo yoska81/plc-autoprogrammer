@@ -9,10 +9,29 @@ import type { Effort } from '../store/useSettingsStore';
 import { callClaude } from '../lib/ai/anthropic';
 import { CATEGORIES, DEVICE_TYPES, IO_CATEGORIES, fileToBlock } from '../lib/ai/importAI';
 import { SPEC_SECTIONS, type SpecSectionId } from '../spec/types';
-import { dxfToText } from './dxf';
+import { cadToText, dwgToEntities, dxfToText } from './dxf';
+import { desktopBridge } from '../desktop/bridge';
 import type { DrawnRatings, ExistingMachine } from './types';
 
 export const MAX_UPLOAD_FILES = 20;
+
+/** Where the free ODA File Converter is downloaded (Open Design Alliance). */
+export const ODA_DOWNLOAD = 'https://www.opendesign.com/guestfiles/oda_file_converter';
+
+/** A DWG as text: the Windows app converts it with the ODA File Converter; else a plugged-in reader; else how to export it. */
+async function dwgText(f: File): Promise<string> {
+  const oda = desktopBridge()?.oda;
+  if (oda?.toDxf) {
+    const r = await oda.toDxf([{ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }]);
+    if (r.ok) return dxfToText(r.files[0].text, f.name);
+    if (!('notInstalled' in r && r.notInstalled)) throw new Error(`${f.name}: ${r.error}`);
+  }
+  const entities = await dwgToEntities(await f.arrayBuffer());
+  if (entities) return cadToText(entities, f.name);
+  throw new Error(oda
+    ? `${f.name}: reading DWG needs the free ODA File Converter (${ODA_DOWNLOAD}). Install it and read again, or export the drawings to DXF or PDF in the CAD program.`
+    : `${f.name}: DWG files can't be read in the browser. In the CAD program, export the drawings to DXF (File → Save As → DXF) or print them to PDF, or use the Windows app with the free ODA File Converter.`);
+}
 
 /** File types the upload takes (the file picker's accept list). */
 export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,application/pdf,image/*';
@@ -23,8 +42,7 @@ export async function readUpload(files: File[]): Promise<Anthropic.Beta.Messages
   const out: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
   for (const f of files) {
     const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-    if (ext === 'dwg') throw new Error(`${f.name}: DWG files can't be read here. In the CAD program, export the drawings to DXF (File → Save As → DXF) or print them to PDF, and upload that.`);
-    if (ext === 'dxf') out.push({ type: 'text', text: dxfToText(await f.text(), f.name) });
+    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f) }); else if (ext === 'dxf') out.push({ type: 'text', text: dxfToText(await f.text(), f.name) });
     else out.push(await fileToBlock(f));
   }
   return out;
@@ -59,9 +77,11 @@ export const EXISTING_SCHEMA = obj({
       ratings: obj({ amps: num, poles: num, coilVoltage: nstr, kA: num, curve: nstr, minAmps: num, maxAmps: num, kw: num, outputVolts: num, outputAmps: num }),
     }),
   },
-  motors: { type: 'array', items: obj({ tag: str, description: str, kw: num, hp: num, starter: { anyOf: [en(['contactor-overload', 'motor-protector', 'vfd']), { type: 'null' }] }, reversing: { type: 'boolean' }, confidence, source: str }) },
+  motors: { type: 'array', items: obj({ tag: str, description: str, kw: num, hp: num, starter: { anyOf: [en(['contactor-overload', 'motor-protector', 'vfd']), { type: 'null' }] }, reversing: { type: 'boolean' }, kind: en(['induction', 'servo']), confidence, source: str }) },
+  axes: { type: 'array', items: obj({ tag: str, description: str, driveTag: str, drivePart: nstr, motorTag: str, motorKw: num, encoder: nstr, brakingResistor: nstr, signals: { type: 'array', items: str }, confidence, source: str }) },
+  controller: en(['plc', 'servo-drive', 'relays', 'other']),
   interlocks: { type: 'array', items: obj({ description: str, devices: { type: 'array', items: str } }) },
-  safety: obj({ estops: { type: 'array', items: str }, guards: { type: 'array', items: str }, safetyRelay: nstr, category: nstr, description: str }),
+  safety: obj({ estops: { type: 'array', items: str }, guards: { type: 'array', items: str }, safetyRelay: nstr, category: nstr, kind: en(['safety-relay', 'hardwired', 'control-only']), description: str }),
   spec: obj(Object.fromEntries(SECTION_IDS.map((id) => [id, str]))),
   questions: { type: 'array', items: obj({ text: str, section: en(SECTION_IDS), assumption: nstr }) },
   uncertainties: { type: 'array', items: str },
@@ -76,7 +96,9 @@ Read and report only what the drawings show. Never invent a part number, address
 - motors: each motor with its tag, where you read it ("source"), what it drives, power in kW as printed (hp only if printed in hp), starter type and whether it is reversing.
 - supplyDrawn: the incoming supply as drawn (volts, Hz, phases) and the text you read it from.
 - interlocks: what the wiring enforces: e.g. "KM1 and KM2 cross-interlocked (forward/reverse)", "Pump runs only when level switch SL1 is made", "Heater off when door open". List the device tags involved.
-- safety: E-stop devices (tags), guard switches, the safety relay (tag and part number) and the category / PL if printed (or inferred from dual-channel wiring), and a short description of what removes power on a stop.
+- axes: each servo axis (drive tag and model, servo motor tag and kW, extra encoder such as a line-length encoder, braking resistor, the drive I/O used). A servo motor is listed in motors too, with kind "servo".
+- controller: what runs the logic: "plc", "servo-drive" (a servo drive's built-in controller, often with a touch panel), "relays", or "other". plc is null when there is no PLC.
+- safety: E-stop devices (tags), guard switches, the safety relay (tag and part number) and the category / PL if printed (or inferred from dual-channel wiring), the kind ("safety-relay": a monitored safety relay; "hardwired": the E-stop itself opens the power or control circuit; "control-only": the E-stop is only an input of a PLC, drive or controller, which is not a safety circuit), and a short description of what removes power on a stop.
 - spec: write the machine description yourself, section by section, in plain English for someone who has never seen the machine: what it does, the automatic cycle as far as the I/O and interlocks show it, safety, guarding, start-up, modes (from selector switches), each motor, pneumatics (from valves YV), sensors, the operator station (buttons, lights), alarms (from fault inputs and lamps), and power. Write "" for a section the drawings say nothing about.
 - questions: what a designer must still know that the drawings cannot tell (e.g. "What is the conveyor speed?", "Is the product detected before the pusher or after?"), each with the spec section it belongs to and your assumption if you have one. Do not ask what the drawings already show.
 - summary: two sentences on the machine and its control system.`;
@@ -98,9 +120,11 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
     supplyDrawn: raw.supplyDrawn ?? { volts: null, hz: null, phases: null, text: '' },
     io: raw.io ?? [],
     components: (raw.components ?? []).map((c) => ({ ...c, source: c.source ?? '', ratings: { ...NO_RATINGS, ...(c.ratings as Partial<DrawnRatings> | undefined) } })),
-    motors: (raw.motors ?? []).map((m) => ({ ...m, reversing: Boolean(m.reversing), confidence: m.confidence ?? 'medium', source: m.source ?? '' })),
+    motors: (raw.motors ?? []).map((m) => ({ ...m, reversing: Boolean(m.reversing), kind: m.kind ?? 'induction', confidence: m.confidence ?? 'medium', source: m.source ?? '' })),
+    axes: raw.axes ?? [],
+    controller: raw.controller ?? (raw.plc ? 'plc' : 'other'),
     interlocks: raw.interlocks ?? [],
-    safety: raw.safety ?? { estops: [], guards: [], safetyRelay: null, category: null, description: '' },
+    safety: { estops: [], guards: [], safetyRelay: null, category: null, description: '', ...raw.safety, kind: raw.safety?.kind ?? (raw.safety?.safetyRelay ? 'safety-relay' : 'hardwired') },
     spec,
     questions: (raw.questions ?? []).filter((q) => q.text?.trim()),
     uncertainties: raw.uncertainties ?? [],
