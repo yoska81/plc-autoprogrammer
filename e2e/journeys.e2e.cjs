@@ -342,7 +342,7 @@ async function journey(browser, mc) {
     await page.goto(BASE + '/hmi');
     // No panel chosen yet (a program that came without one): the user picks the first one offered.
     const choose = page.getByText('Which HMI are you using?');
-    if (await choose.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await choose.waitFor({ timeout: 5000 }).then(() => true, () => false)) {
       const first = page.locator('button', { has: page.locator('div.font-mono') }).first();
       log(mc.key, 'HMI chosen', (await first.innerText()).split('\n')[0]);
       await first.click();
