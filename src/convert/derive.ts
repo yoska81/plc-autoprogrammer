@@ -147,7 +147,7 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
     axes: raw.axes ?? [],
     controller: raw.controller ?? (raw.plc ? 'plc' : 'other'),
     interlocks: raw.interlocks ?? [],
-    circuits: (raw.circuits ?? []).map((c) => ({ ...c, conditions: c.conditions ?? [], sealIn: c.sealIn ?? null, path: cleanPath(c.path), devices: c.devices ?? [], setting: c.setting ?? null, logicIn: c.logicIn ?? 'relays', confidence: c.confidence ?? 'medium', source: c.source ?? '' })),
+    circuits: (raw.circuits ?? []).map((c, i) => ({ ...c, id: c.id ?? `C${i + 1}`, conditions: c.conditions ?? [], sealIn: c.sealIn ?? null, path: cleanPath(c.path), devices: c.devices ?? [], setting: c.setting ?? null, logicIn: c.logicIn ?? 'relays', confidence: c.confidence ?? 'medium', source: c.source ?? '' })),
     safety: { estops: [], guards: [], safetyRelay: null, category: null, description: '', ...raw.safety, drives: raw.safety?.drives ?? [], kind: raw.safety?.kind ?? (raw.safety?.safetyRelay ? 'safety-relay' : 'hardwired') },
     spec,
     questions: (raw.questions ?? []).filter((q) => q.text?.trim()),

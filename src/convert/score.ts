@@ -35,14 +35,14 @@ export function scoreReading(m: ExistingMachine, f: ExpectedFacts): Score {
 
   part('Signals', f.signals.map((s) => [s, word(s.split(/\s/)[0]).test(`${ioText}\n${circuitText}`)]));
   part('Relays', f.relays.map((r) => [r, tags.has(r) || word(r).test(circuitText)]));
-  // relay logic: the coil's circuit, with every contact in its path (half credit per coil for half the contacts)
+  // relay logic: the coil's circuit is read, and every contact in its path (each one counts)
   const logic: [string, boolean][] = [];
   for (const e of f.relayLogic) {
     const c = m.circuits.find((x) => word(e.coil).test(x.output));
-    const pathTags = (c?.path ?? []).flatMap((e) => (e.t === 'branch' ? e.paths.flat().map((x) => x.tag) : [e.tag]));
+    const pathTags = (c?.path ?? []).flatMap((x) => (x.t === 'branch' ? x.paths.flat().map((y) => y.tag) : [x.tag]));
     const have = c ? new Set([...c.devices, ...pathTags, ...c.conditions.flatMap((t) => t.match(/[A-Z][A-Z0-9]*\d+|H7CX/g) ?? [])]) : new Set<string>();
-    const missing = e.contacts.filter((d) => !have.has(d));
-    logic.push([`${e.id} ${e.coil}${missing.length ? ` (missing ${missing.join(', ')})` : ''}`, Boolean(c) && missing.length <= e.contacts.length / 4]);
+    logic.push([`${e.id} ${e.coil} circuit`, Boolean(c)]);
+    for (const d of e.contacts) logic.push([`${e.id} ${e.coil} ← ${d}`, have.has(d)]);
     if (e.sealIn) logic.push([`${e.id} ${e.coil} seal-in`, Boolean(c && (c.sealIn || c.kind === 'start-stop' || c.conditions.some((t) => /seal|self-hold|自锁|hold/i.test(t))))]);
   }
   part('Relay logic', logic);

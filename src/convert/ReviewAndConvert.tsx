@@ -208,7 +208,7 @@ export default function ReviewAndConvert() {
                 <thead><tr>{['Drives', 'Function', 'Contacts (as drawn)', 'Logic in', 'Read from', 'Reading'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-steel-100">
                   {raw.circuits.map((c, i) => {
-                    const k = itemKey('circuit', String(i));
+                    const k = itemKey('circuit', c.id ?? `C${i + 1}`);
                     return (
                       <tr key={k} className={`align-top ${review.excluded.includes(k) ? 'opacity-40' : ''}`}>
                         <td className="w-14 py-0.5 pr-2 font-mono">{c.output}</td>

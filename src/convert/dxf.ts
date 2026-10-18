@@ -137,21 +137,28 @@ function textRows(texts: DxfText[], rowH: number): string[] {
 const NAME_LABEL = /^(?:(?:图\s*名|图纸名称|(?:sheet|drawing)\s*title|title)\s*[/|:：]?\s*)+/i;
 const PROJECT_LABEL = /^(?:(?:工程名称|项目名称|project(?:\s*name)?)\s*[/|:：]?\s*)+/i;
 const PAGE_LABEL = /^(?:(?:页|页次|页码|张次|sheet(?:\s*no\.?)?)[\s/|:：]*)+$/i;
+// Any other title-block field label, Chinese, English or both ("版本 Rev.", "设计 Designed", "日期 Date", "图号 Dwg No.").
+const ZH_LABELS = '版本|版次|修改|设计|制图|绘图|审核|校对|批准|审定|工艺|标准化|日期|比例|图号|编号|材料|重量|数量|单位|公司|客户|共\\s*页|第\\s*页';
+const EN_LABELS = 'rev(?:ision)?\\.?|version|designed(?:\\s*by)?|design|drawn(?:\\s*by)?|checked(?:\\s*by)?|check|approved(?:\\s*by)?|approve|date|scale|dwg\\.?\\s*no\\.?|drawing\\s*no\\.?|no\\.|material|weight|qty|unit|company|customer|standard';
+const FIELD_LABEL = new RegExp(`^(?:(?:${ZH_LABELS}|${EN_LABELS})[\\s/|:：.]*)+$`, 'i');
+const isLabel = (t: string) => !t.replace(NAME_LABEL, '').replace(PROJECT_LABEL, '').trim() || PAGE_LABEL.test(t) || FIELD_LABEL.test(t);
 
 /** A sheet's name from its title block: the text after 图名 / Title (else 工程名称 / Project), skipping the labels themselves. */
 function sheetTitle(texts: DxfText[]): string {
   const sorted = [...texts].sort((a, b) => b.y - a.y || a.x - b.x);
-  const isValue = (t: string) => Boolean(t.replace(NAME_LABEL, '').replace(PROJECT_LABEL, '').trim()) && !PAGE_LABEL.test(t) && !/^\d{1,3}$|第\s*\d+\s*页|共\s*\d+\s*页/.test(t);
+  const isValue = (t: string) => !isLabel(t) && !/^\d{1,3}$|第\s*\d+\s*页|共\s*\d+\s*页/.test(t);
   const after = (re: RegExp) => {
     const label = sorted.find((t) => re.test(t.text.trim()));
     if (!label) return '';
     const own = label.text.trim().replace(re, '').trim();
     if (own) return own;
-    // the value is its own text: right of the label on its row, else just below it
+    // the value is its own text (never another label): right of the label on its row, else just below it (or below and right)
     const dist = (t: DxfText) => Math.hypot(t.x - label.x, t.y - label.y);
     const values = sorted.filter((t) => t !== label && isValue(t.text.trim()));
-    const right = values.filter((t) => Math.abs(t.y - label.y) < 1 && t.x > label.x).sort((a, b) => dist(a) - dist(b))[0];
-    const below = values.filter((t) => t.y < label.y && label.y - t.y <= 15 && Math.abs(t.x - label.x) < 60).sort((a, b) => dist(a) - dist(b))[0];
+    // a value on the row belongs to the nearest label on its left ("版本 Rev." B is the revision, not the name)
+    const ownLabel = (t: DxfText) => !sorted.some((o) => o !== label && Math.abs(o.y - t.y) <= 2 && o.x > label.x && o.x < t.x && isLabel(o.text.trim()));
+    const right = values.filter((t) => Math.abs(t.y - label.y) <= 2 && t.x > label.x && ownLabel(t)).sort((a, b) => dist(a) - dist(b))[0];
+    const below = values.filter((t) => t.y < label.y - 2 && label.y - t.y <= 15 && t.x > label.x - 20 && t.x < label.x + 150).sort((a, b) => dist(a) - dist(b))[0];
     return (right ?? below)?.text.trim() ?? '';
   };
   const name = after(NAME_LABEL) || after(PROJECT_LABEL);
@@ -197,7 +204,7 @@ export function cadToText(entities: CadEntity[], name = 'drawing'): string {
     const title = sheetTitle(mine);
     // the sheet's own number (sheets 2, 3, 5, 6 of an 8-sheet set), else its place in the file
     const no = sheetNumber(mine);
-    const label = no ? `Sheet ${no.n} of ${no.of ?? '?'}${no.of !== frames.length ? ` (frame ${i + 1} of ${frames.length} in this file)` : ''}` : `Sheet ${i + 1} of ${frames.length}`;
+    const label = no ? `Sheet ${no.n}${no.of ? ` of ${no.of}` : ''}${no.of !== frames.length ? ` (frame ${i + 1} of ${frames.length} in this file)` : ''}` : `Sheet ${i + 1} of ${frames.length}`;
     return `--- ${label}${title ? `: ${title}` : ''} ---\n${textRows(mine, rowH).join('\n')}`;
   });
   const rest = texts.filter((t) => !used.has(t));

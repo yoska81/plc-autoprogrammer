@@ -84,6 +84,8 @@ export type PathEl =
   | { t: 'branch'; paths: PathContact[][] };
 
 export interface DrawnCircuit {
+  /** Stable key (C1, C2… in the order read), for the review and the rungs of the new drawings. */
+  id?: string;
   /** What it drives: the coil, valve, lamp or drive input, e.g. "KM2". */
   output: string;
   /** The function in plain words, e.g. "Oil pump runs while cutting is on and the main contactor is in". */

@@ -35,14 +35,21 @@ const PATHS: Record<string, PathEl[]> = {
   KA10: [no('SQ4', null, 'limit'), coil('KA10', 'relay')],
   KA5: [no('U2', 'DO1', 'other'), coil('KA5', 'relay')],
   KA6: [no('U2', 'DO5', 'other'), coil('KA6', 'relay')],
-  YV1: [br([no('KA7', '11-14')], [no('SB7', null, 'pb')]), nc('KA8', '11-12'), coil('YV1', 'solenoid')],
-  KT1: [br([no('KA7', '11-14')], [no('SB7', null, 'pb')]), nc('KA8', '11-12'), coil('KT1', 'timer-on', '2 s')],
+  YV1: [br([no('KA7', '11-14')], [no('SB7', null, 'pb'), nc('KA1', '41-42')]), nc('KA8', '11-12'), coil('YV1', 'solenoid')],
+  KT1: [br([no('KA7', '11-14')], [no('SB7', null, 'pb'), nc('KA1', '41-42')]), nc('KA8', '11-12'), coil('KT1', 'timer-on', '2 s')],
   KA8: [br([no('SQ1', null, 'limit')], [no('KA8', '21-24')]), nc('SQ2', null, 'limit'), coil('KA8', 'relay')],
   YV2: [no('KA8', '31-34'), coil('YV2', 'solenoid')],
   H7CX: [no('KA8', '41-44'), coil('H7CX', 'counter', 'batch quantity', 'CP1')],
   HL4: [br([no('KA6', '21-24')], [no('U1', 'RA-RC', 'other')]), coil('HL4', 'light')],
   'U1 MI1': [br([no('KA1', '21-24')], [no('KA2', '21-24')]), coil('U1', 'drive-input', null, 'MI1')],
+  'U1 MI2': [no('KA3', '21-24'), coil('U1', 'drive-input', null, 'MI2')],
+  'U1 MI3': [br([no('KA2', '31-34')], [no('KA3', '31-34')]), coil('U1', 'drive-input', null, 'MI3')],
+  HL1: [coil('HL1', 'light')],
+  HL2: [no('KM1', '63-64'), coil('HL2', 'light')],
+  HL5: [no('H7CX', 'OUT NO', 'other'), coil('HL5', 'light')],
 };
+// HL3 hangs in parallel with the KA1 coil: same contacts
+PATHS.HL3 = [...PATHS.KA1.slice(0, -1), coil('HL3', 'light')];
 const withPaths = (cs: Circuit[]): Circuit[] => cs.map((c) => (PATHS[c.output] ? { ...c, path: PATHS[c.output] } : c));
 
 export const CN_ROLLFORMER_01_READING: ExistingMachine = {
@@ -125,13 +132,19 @@ export const CN_ROLLFORMER_01_READING: ExistingMachine = {
     K('KA5', 'Servo ready from U2 DO1 SRDY', 'other', ['U2 DO1 SRDY'], ['U2', 'KA5'], 'sheet 6 (C6)'),
     K('KA6', 'Servo alarm from U2 DO5 ALRM', 'other', ['U2 DO5 ALRM'], ['U2', 'KA6'], 'sheet 6 (C6)'),
     K('KA7', 'Cut command from U2 DO3 (E-CAM cut point)', 'drive-logic', ['U2 DO3'], ['U2', 'KA7'], 'sheet 6 (C6)', { logicIn: 'drive' }),
-    K('YV1', 'Shear down from the cut command or manual cut, until the cut return latch KA8', 'sequence', ['KA7 11-14 cut (NO) ∥ SB7 manual cut (wire 341)', 'KA8 11-12 (NC)'], ['KA7', 'SB7', 'KA8', 'YV1'], 'sheet 6 (C7)'),
-    K('KT1', 'Cut watchdog: shear down longer than 2 s opens the line run circuit', 'timer', ['KA7 11-14 ∥ SB7', 'KA8 11-12 (NC)'], ['KA7', 'SB7', 'KA8', 'KT1'], 'sheet 6 (C7)', { setting: 'KT1 on-delay 2 s, contact 15-16 NC in KA1' }),
+    K('YV1', 'Shear down from the cut command, or the manual cut while the line is stopped, until the cut return latch KA8', 'sequence', ['KA7 11-14 cut (NO) ∥ (SB7 manual cut, wire 341 + KA1 41-42 line stopped (NC))', 'KA8 11-12 (NC)'], ['KA7', 'SB7', 'KA1', 'KA8', 'YV1'], 'sheet 6 (C7)'),
+    K('KT1', 'Cut watchdog: shear down longer than 2 s opens the line run circuit', 'timer', ['KA7 11-14 ∥ (SB7 + KA1 41-42)', 'KA8 11-12 (NC)'], ['KA7', 'SB7', 'KA1', 'KA8', 'KT1'], 'sheet 6 (C7)', { setting: 'KT1 on-delay 2 s, contact 15-16 NC in KA1' }),
     K('KA8', 'Cut return latch: SQ1 at the bottom sets it, held by KA8 21-24 until SQ2 at the top', 'sequence', ['SQ1 shear down (NO) ∥ KA8 21-24 self-hold', 'SQ2 shear up (NC)'], ['SQ1', 'KA8', 'SQ2'], 'sheet 6 (C8)', { sealIn: 'KA8 21-24' }),
     K('YV2', 'Shear up while the return latch KA8 is set', 'sequence', ['KA8 31-34 (NO)'], ['KA8', 'YV2'], 'sheet 6 (C8)'),
     K('H7CX', 'Batch counter: counts cuts (KA8 41-44 to CP1), reset SB8; OUT NC stops the line, OUT NO lights HL5', 'counter', ['KA8 41-44 to CP1', 'SB8 to RST'], ['KA8', 'SB8', 'H7CX', 'HL5'], 'sheet 6 (C9)', { setting: 'batch quantity on the H7CX' }),
+    K('HL1', 'Power on lamp', 'other', ['control power on'], ['HL1'], 'sheet 4 (C10)'),
+    K('HL2', 'Pump running lamp', 'other', ['KM1 63-64 (NO)'], ['KM1', 'HL2'], 'sheet 4 (C10)'),
+    K('HL3', 'Line running lamp, in parallel with the KA1 coil', 'other', ['as KA1: SB4 … SB3 ∥ KA1 11-14'], ['SB4', 'SB3', 'KA1', 'HL3'], 'sheet 5 (C10)'),
     K('HL4', 'Fault lamp: servo alarm or VFD fault', 'other', ['KA6 21-24 ∥ U1 RA-RC'], ['KA6', 'U1', 'HL4'], 'sheet 4 (C10)'),
-    K('U1 MI1', 'VFD forward from line run or jog forward; MI2 reverse from jog reverse; MI3 jog speed from either jog', 'drive-logic', ['KA1 21-24 ∥ KA2 21-24 → MI1', 'KA3 21-24 → MI2', 'KA2 31-34 ∥ KA3 31-34 → MI3'], ['KA1', 'KA2', 'KA3', 'U1'], 'sheet 4 (C11)'),
+    K('HL5', 'Batch complete lamp', 'other', ['H7CX OUT NO'], ['H7CX', 'HL5'], 'sheet 6 (C10)'),
+    K('U1 MI1', 'VFD forward from line run or jog forward', 'drive-logic', ['KA1 21-24 ∥ KA2 21-24 → MI1 forward'], ['KA1', 'KA2', 'U1'], 'sheet 4 (C11)'),
+    K('U1 MI2', 'VFD reverse from jog reverse', 'drive-logic', ['KA3 21-24 → MI2 reverse'], ['KA3', 'U1'], 'sheet 4 (C11)'),
+    K('U1 MI3', 'VFD jog speed from either jog', 'drive-logic', ['KA2 31-34 ∥ KA3 31-34 → MI3 jog'], ['KA2', 'KA3', 'U1'], 'sheet 4 (C11)'),
     K('U2', 'Flying shear: E-CAM follows the measuring wheel B1 and cuts at the set length (300–6000 mm)', 'length', ['KA4 → DI1 SON', 'SB9 23-24 → DI5 ARST', 'KA1 31-34 → DI7 CAM engage', 'B1 → CN5'], ['KA4', 'SB9', 'KA1', 'B1', 'U2'], 'sheet 6', { logicIn: 'drive', setting: 'cut length 300–6000 mm in the drive' }),
   ]),
   axes: [

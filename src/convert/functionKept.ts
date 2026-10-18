@@ -7,7 +7,7 @@
 import type { ProjectSnapshot } from '../deliverables/collect';
 import { buildModel } from '../electrical/derive';
 import type { Finding } from '../review/types';
-import type { Conversion } from './convert';
+import { driveCommands, ioOnlyDevices, type Conversion } from './convert';
 import type { ImportedIO } from '../lib/ai/importAI';
 import type { ExistingMachine } from './types';
 
@@ -25,7 +25,13 @@ export interface KeptItem {
   revalidate?: boolean;
 }
 
+/** Devices a PLC output switches (a relay coil becomes program logic instead). */
+const FIELD_OUTPUTS = new Set(['contactor', 'solenoidValve', 'pilotLight', 'stackLight']);
+
 const words = (s: string) => new Set(s.toLowerCase().replace(/\(.*?\)/g, ' ').split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !['the', 'and', 'for', 'with', 'contactor', 'lamp'].includes(w)));
+/** Drive / controller terminals named in a text (MI2, DO3, DI1, RB-RC). */
+const codes = (s: string): string[] => s.match(/\b(?:MI|DI|DO|AI|AO|CN)\d+(?:-\d+)?\b|\b[RA][A-C]-R[A-C]\b/g) ?? [];
+
 /** How alike two I/O descriptions are (shared words over the smaller set). */
 export function similarity(a: string, b: string): number {
   const x = words(a), y = words(b);
@@ -46,6 +52,8 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
     let best: { id: string; description: string; score: number } | null = null;
     for (const n of p.io) {
       if (n.type !== o.type || used.has(n.id)) continue;
+      // terminals named in the function (U1 MI2, U2 DO3) must match exactly: "jog" alone doesn't make MI3 the reverse input
+      if (codes(o.description).some((x) => !codes(n.description).includes(x))) continue;
       const score = similarity(o.description, n.description);
       if (score >= 0.5 && (!best || score > best.score)) best = { id: n.id, description: n.description, score };
     }
@@ -111,6 +119,7 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
     });
   }
   // control circuits: each function is in the new design where the conversion put it (PLC program, relays, the drive)
+  const devices = [...m.components, ...ioOnlyDevices(m)];
   for (const c of conv.circuits) {
     const inSpec = spec.includes(c.text.toLowerCase().slice(0, 40));
     const parts = c.circuit.devices.map((d) => conv.parts.find((x) => x.oldTag === d)).filter((x) => x !== undefined);
@@ -120,19 +129,35 @@ export function functionKept(m: ExistingMachine, conv: Conversion, p: ProjectSna
       // its field devices are I/O of the new PLC; its relays and timers are program logic
       const lost = conv.io.filter((x) => x.deviceTag && c.circuit.devices.includes(x.deviceTag) && ioKept.get(x)?.status === 'missing').map((x) => x.deviceTag!);
       if (lost.length) { status = 'missing'; notes.push(`${[...new Set(lost)].join(', ')}: no I/O in the new design.`); }
+      // what it switched must have a PLC output: its coil (contactor, valve, lamp) and the drive inputs its relay contacts drove
+      const coil = c.circuit.output.split(/\s/)[0];
+      const coilDev = devices.find((d) => d.tag === coil);
+      const coilCat = coilDev && !/main|总|主接触/i.test(coilDev.description) ? coilDev.category : undefined; // a main contactor goes to the safety circuit
+      if (coilCat && FIELD_OUTPUTS.has(coilCat) && !conv.io.some((x) => x.type === 'output' && x.deviceTag === coil)) { status = 'missing'; notes.push(`No PLC output drives ${conv.tags.get(coil) ?? coil}.`); }
       now = `PLC program${inSpec ? ' (in the description for the program)' : ''}`;
     } else if (c.becomes === 'relays') {
       const toSelect = parts.filter((x) => x.status === 'to-select').map((x) => x.newTag);
       if (toSelect.length) { status = 'check'; notes.push(`Pick a part for ${toSelect.join(', ')}.`); }
       now = `Relay circuit ${parts.map((x) => x.newTag).join(', ')}`;
     } else {
-      const drive = parts.find((x) => x.from.category === 'vfd' || m.axes.some((a) => a.driveTag === x.oldTag));
+      const drive = parts.find((x) => x.from.category === 'vfd' || m.axes.some((a) => a.driveTag === x.oldTag) || (x.from.category === 'other' && /drive|驱动/i.test(x.from.description)));
       if (!drive) { status = 'missing'; notes.push('The drive is not in the new design.'); }
       now = drive ? `In ${drive.newTag}'s own logic` : '—';
       if (drive) notes.push('Set the new drive\'s parameters as the old one (terminal functions, speeds, positions).');
     }
+    // with the relays in a PLC, the drive inputs they switched are PLC outputs (forward / reverse / jog, servo ON, CAM)
+    if (conv.logic === 'plc') {
+      for (const d of driveCommands({ ...m, circuits: [c.circuit] })) {
+        const point = conv.io.find((x) => x.type === 'output' && x.address === d.address);
+        if (!point || ioKept.get(point)?.status === 'missing') { status = 'missing'; notes.push(`No PLC output for ${d.description}.`); }
+      }
+    }
+    if (c.hardwired.length) {
+      notes.push(`${c.hardwired.join(', ')} stays hardwired in the coil circuit (safety: re-validate).`);
+      if (status === 'kept' && !spec.includes('not through the plc')) { status = 'check'; notes.push('Write the hardwired safety contact into the description.'); }
+    }
     if (status === 'kept' && !inSpec) { status = 'check'; notes.push('Write the circuit into the description so the new design keeps it.'); }
-    out.push({ kind: 'circuit', original: `${c.circuit.output}: ${c.circuit.function}${c.circuit.setting && !c.circuit.function.includes(c.circuit.setting) ? ` (${c.circuit.setting})` : ''}`, now, status, note: notes.join(' ') });
+    out.push({ kind: 'circuit', ...(c.hardwired.length ? { revalidate: true } : {}), original: `${c.circuit.output}: ${c.circuit.function}${c.circuit.setting && !c.circuit.function.includes(c.circuit.setting) ? ` (${c.circuit.setting})` : ''}`, now, status, note: notes.join(' ') });
   }
   // safety: every E-stop and guard still stops the machine, through a monitored safety relay
   const safety = model?.safety;

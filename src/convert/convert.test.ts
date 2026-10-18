@@ -228,6 +228,15 @@ await test('CAD sheets: own numbers (2, 3, 5, 6 of 8), bilingual title labels sk
   assert.deepEqual(text.match(/^--- Sheet \d+ of \d+[^:]*/gm), ['--- Sheet 2 of 8 (frame 1 of 4 in this file)', '--- Sheet 3 of 8 (frame 2 of 4 in this file)', '--- Sheet 5 of 8 (frame 3 of 4 in this file)', '--- Sheet 6 of 8 (frame 4 of 4 in this file)']);
   assert.match(text, /--- Sheet 5 of 8 \(frame 3 of 4 in this file\): Relay control \(1\) 继电器控制 ---/);
   assert.ok(!/: Sheet title/.test(text), 'the bilingual label is not the name');
+  // the cn-rollformer-01 title block: "图名 Sheet title" with "版本 Rev." on its row (a label, not the value); the name sits below and right
+  const tb: CadEntity[] = [{ type: 'LWPOLYLINE', layer: 'FRAME', closed: true, points: [[0, 0], [420, 0], [420, 297], [0, 297]] },
+    T(300, 30, '图名 Sheet title'), T(360, 29, '版本 Rev.'), T(395, 29, 'B'), T(310, 24, '主电源分配 / Power distribution'), T(300, 18, '设计 Designed'), T(330, 18, 'Li'),
+    T(300, 12, '图号 Dwg No.'), T(330, 12, 'HC-YX840-E01'), T(380, 12, '页 Sheet'), T(400, 12, '2'), T(400, 6, '共8页'),
+    { type: 'LWPOLYLINE', layer: 'FRAME', closed: true, points: [[450, 0], [870, 0], [870, 297], [450, 297]] }, T(750, 30, '图名 Sheet title'), T(810, 29, '版本 Rev.'), T(760, 24, '电机主回路 / Motor power'), T(830, 12, '页 Sheet'), T(850, 12, '3')];
+  const tbText = cadToText(tb, 'HC-YX840-E01.dxf');
+  assert.match(tbText, /--- Sheet 2 of 8[^\n]*: 主电源分配 \/ Power distribution ---/);
+  assert.match(tbText, /--- Sheet 3 \(frame 2 of 2[^\n]*: 电机主回路 \/ Motor power ---/);
+  assert.ok(!/Rev\. ---|Designed ---/.test(tbText), 'a neighbouring label is never the name');
   // the 页 label with its value as a separate text, when there is no "SHEET n"
   assert.deepEqual(sheetNumber([{ type: 'TEXT', layer: '', x: 0, y: 10, text: '页 Sheet' }, { type: 'TEXT', layer: '', x: 2, y: 4, text: '7' }, { type: 'TEXT', layer: '', x: 50, y: 4, text: 'see Sheet 3' }]), { n: 7, of: null });
 });
@@ -373,12 +382,18 @@ await test('cn-rollformer-01: a correct reading scores 100 % on the facts; a wro
   assert.equal(good.percent, 100, scoreText(good));
   // the same reading without the safety relay's STO finding, the counter circuit and two signals
   const bad = scoreReading(normalizeMachine({ ...CN_ROLLFORMER_01_READING,
-    io: CN_ROLLFORMER_01_READING.io.filter((p) => p.deviceTag !== 'HL1' && p.deviceTag !== 'HL5'),
+    io: CN_ROLLFORMER_01_READING.io.filter((p) => p.deviceTag !== 'SB0' && p.deviceTag !== 'SQ5'),
     circuits: CN_ROLLFORMER_01_READING.circuits.filter((c) => c.output !== 'H7CX'),
     safety: { ...CN_ROLLFORMER_01_READING.safety, drives: CN_ROLLFORMER_01_READING.safety.drives.map((d) => ({ ...d, sto: 'wired' as const })) } }), CN_ROLLFORMER_01);
   const by = (l: string) => bad.parts.find((p) => p.label === l)!;
-  assert.deepEqual(by('Signals').misses, ['HL1', 'HL5']);
-  assert.ok(by('Relay logic').misses.some((x) => x.startsWith('C9 H7CX')));
+  assert.deepEqual(by('Signals').misses, ['SB0', 'SQ5']);
+  // a missing timer, or one contact missing from a coil path, is never rounded away
+  const noKt1 = (cs: typeof CN_ROLLFORMER_01_READING.circuits) => cs.filter((c) => c.output !== 'KT1').map((c) => ({ ...c, devices: c.devices.filter((d) => d !== 'KT1'), conditions: c.conditions.filter((t) => !/KT1/.test(t)),
+    path: c.path?.filter((e) => !(e.t === 'contact' && e.tag === 'KT1')) }));
+  const kt = scoreReading(normalizeMachine({ ...CN_ROLLFORMER_01_READING, circuits: noKt1(CN_ROLLFORMER_01_READING.circuits) }), CN_ROLLFORMER_01);
+  assert.ok(kt.percent < 100);
+  assert.deepEqual(kt.parts.find((p) => p.label === 'Relay logic')!.misses.filter((x) => /KT1/.test(x)), ['C2 KA1 ← KT1', 'C7t KT1 circuit', 'C7t KT1 ← KA7', 'C7t KT1 ← SB7', 'C7t KT1 ← KA1', 'C7t KT1 ← KA8']);
+  assert.ok(by('Relay logic').misses.includes('C9 H7CX circuit'));
   assert.ok(by('Safety').misses.includes('no-STO finding'));
   assert.ok(bad.percent < 100);
   // the older self-written mock is far from the real set
@@ -395,15 +410,36 @@ await test('cn-rollformer-01 converted: claimed Cat 3 / PL d not met (no STO), r
   assert.deepEqual(c.motors.map((x) => [x.tag, x.hp]), [['M1', 7.5], ['M2', 3]]);
   assert.equal(c.supply, '480VAC-3PH');
   assert.ok(c.parts.find((p) => p.oldTag === 'U1')!.differences.includes('STO wired to the safety relay'));
-  assert.equal(c.circuits.length, 18);
+  assert.equal(c.circuits.length, 24);
   assert.deepEqual(c.circuits.filter((x) => x.becomes === 'drive').map((x) => x.circuit.output), ['KA7', 'U2']);
   assert.match(c.circuits.find((x) => x.circuit.output === 'KT1')!.text, /on-delay 2 s/);
+  // the PLC drives the drives itself: VFD forward / reverse / jog, servo ON and CAM engage are outputs; the servo's DOs are separate inputs
+  const out = c.io.filter((p) => p.type === 'output').map((p) => p.address);
+  for (const a of ['U1 MI1', 'U1 MI2', 'U1 MI3', 'U2 DI1', 'U2 DI7']) assert.ok(out.includes(a), `output ${a}`);
+  assert.ok(!out.includes('U2 DI5'), 'the reset button stays wired to the drive');
+  const ins = c.io.filter((p) => p.type === 'input').map((p) => p.address);
+  for (const a of ['U2 DO1', 'U2 DO3', 'U2 DO5', 'U1 RB-RC', 'U1 RA-RC']) assert.ok(ins.includes(a), `input ${a}`);
+  assert.ok(!ins.includes('U2 DO1 / DO3 / DO5'));
+  assert.match(c.io.find((p) => p.address === 'U2 DO3')!.description, /cut/);
+  // the safety relay contact in the pump circuit stays hardwired; the safety circuit as drawn goes into the description
+  const pump = c.circuits.find((x) => x.circuit.output === 'KM1')!;
+  assert.deepEqual(pump.hardwired, ['SR1 13-14']);
+  assert.match(pump.text, /stays hardwired in the coil circuit, not through the PLC: SR1 13-14/);
+  assert.ok(c.recommendations.some((r) => r.section === 'safety' && /stay hardwired, not through the PLC/.test(r.text) && /SR1 23-24 removes 24VS/.test(r.text)));
   seedSampleProject();
   applyExistingMachine(m, c);
-  assert.match(useSpecStore.getState().sections.safety, /is not met/);
+  const safety = useSpecStore.getState().sections.safety;
+  assert.match(safety, /is not met/);
+  assert.match(safety, /Safety circuit as drawn \(kept, new tags\): ES1, ES2 and LS\d in both channels of SR1/);
   const kept = functionKept(m, c, collectProject()).filter((k) => k.kind === 'circuit');
-  assert.equal(kept.length, 18);
+  assert.equal(kept.length, 24);
   assert.ok(kept.every((k) => k.status !== 'missing'), kept.filter((k) => k.status === 'missing').map((k) => `${k.original}: ${k.note}`).join('\n'));
+  assert.ok(kept.find((k) => /^KM1/.test(k.original))!.revalidate);
+  // a PLC that can't drive the VFD: the circuits that need it fail
+  useIOStore.getState().deletePoint(useIOStore.getState().projectIO.find((p) => /U1 MI2/.test(p.description))!.id);
+  const lost = functionKept(m, c, collectProject()).find((k) => k.kind === 'circuit' && /^U1 MI2/.test(k.original))!;
+  assert.equal(lost.status, 'missing');
+  assert.match(lost.note, /No PLC output for U1 MI2/);
 });
 
 await test('thumbnails: the sheet and column a source names, a DXF sheet drawn from its frame', () => {
@@ -426,7 +462,7 @@ await test('relay logic kept: C1–C11 as ladder rungs with the new tags, every 
   const { logic, notDrawn } = toRelayLogic(m, c);
   assert.deepEqual(notDrawn, []);
   assert.equal(logic!.supply, '24VDC');
-  assert.equal(logic!.rungs.length, 16, 'every relay circuit (the cut command and the E-CAM stay in the servo drive)');
+  assert.equal(logic!.rungs.length, 22, 'every relay circuit (the cut command and the E-CAM stay in the servo drive)');
   const rung = (coil: string) => logic!.rungs.find((r) => r.path.some((e) => e.t === 'coil' && e.tag === coil))!;
   // C1: safety relay contact, stop, start ∥ seal-in, overload, contactor coil
   assert.deepEqual(rung('K1').path, [
