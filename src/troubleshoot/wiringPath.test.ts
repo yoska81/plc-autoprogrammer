@@ -18,6 +18,8 @@ import type { IOPoint } from '../types/io';
 import { partnerPins, wiringPath, wiringPaths, type PathHop, type WiringPath } from './wiringPath';
 import { withDrawingOptions } from '../standards/drawingOptions';
 import { faultEffects, faultableWires } from './faults';
+import { FlickerWatch, wiggleResult, wiggleSpots } from './watch';
+import { answer, currentStep, startSession, type Answer } from './steps';
 
 const warn = console.warn;
 console.warn = (...a: unknown[]) => { if (!String(a[0]).includes('zustand persist')) warn(...a); };
@@ -253,6 +255,91 @@ test('Sealing Head: an open thermocouple wire puts DF1 out of range', () => {
   const tc = shPaths.find((x) => x.analog)!;
   const e = faultEffects(shPaths, { wire: tc.signal[0].wire!, kind: 'open' });
   assert.ok(e.some((x) => x.address === tc.address && /out of range/.test(x.why)));
+});
+
+console.log('live watch');
+
+test('flicker watch counts changes only', () => {
+  const fw = new FlickerWatch();
+  for (const [t, v] of [[0, false], [100, false], [200, true], [300, false], [400, true], [500, true]] as const) fw.feed('X003', v, t);
+  assert.equal(fw.changesSince('X003', 0), 3);
+  assert.equal(fw.changesSince('X003', 350), 1);
+  assert.equal(fw.changesSince('X004', 0), 0);
+});
+
+test('wiggle at a terminal: loose with 2+ changes, steady otherwise', () => {
+  const w = wiringPath(ex, 'X004')!;
+  const spots = wiggleSpots(w);
+  assert.deepEqual(spots.map((h) => h.tag), ['TB2', 'W002', 'JB1', 'W003', 'PE1']);
+  const loose = wiggleResult(w, spots[0], 4);
+  assert.equal(loose.verdict, 'loose');
+  assert.match(loose.message, /X004 flickered 4 times while you wiggled TB2, terminal 1 → loose connection on wire X004/);
+  assert.equal(wiggleResult(w, spots[0], 1).verdict, 'steady');
+});
+
+console.log('guided steps');
+
+const play = (w: WiringPath, symptom: Parameters<typeof startSession>[1], answers: Answer[]) => {
+  let s = startSession(w, symptom);
+  const asked: string[] = [];
+  for (const a of answers) { const st = currentStep(s); if (!st) break; asked.push(st.hop ? `${st.part}:${st.hop.tag}` : st.part); s = answer(s, a); }
+  return { s, asked };
+};
+
+test('photo-eye never ON: good at the sensor, bad at TB2 → open between TB2-1 and PE1 on wire X004', () => {
+  const { s, asked } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'yes']);
+  assert.deepEqual(asked, ['prepare', 'signal:PLC', 'signal:TB2', 'signal:PE1']);
+  assert.match(s.verdict!.text, /Open connection on wire X004 between Terminal strip TB2, terminal 1 and PE1/);
+  assert.equal(s.verdict!.wire, 'X004');
+});
+
+test('photo-eye never ON: no signal anywhere, supply good at TB2-4 → the sensor is not switching', () => {
+  const { s, asked } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'no', 'yes']);
+  assert.equal(asked[4], 'supply:TB2');
+  assert.match(s.verdict!.text, /PE1 has its supply but gives no signal/);
+});
+
+test('photo-eye never ON: supply missing at TB2-4, good at PS1 → open on 24+ between them', () => {
+  const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'no', 'no', 'yes']);
+  assert.match(s.verdict!.text, /supply is good at PS1.*missing at Terminal strip TB2, terminal 4/);
+});
+
+test('24 V at the PLC terminal → the wiring is good, check the PLC side', () => {
+  const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'yes']);
+  assert.match(s.verdict!.text, /field wiring is good/);
+});
+
+test('solenoid Y002 dead: output good out to SOL1, 24+S good at TB3-2 → the valve itself', () => {
+  const { s, asked } = play(wiringPath(ex, 'Y002')!, 'output-dead', ['yes', 'yes', 'yes', 'yes', 'yes']);
+  assert.deepEqual(asked, ['prepare', 'signal:PLC', 'signal:TB3', 'signal:SOL1', 'supply:TB3']);
+  assert.match(s.verdict!.text, /SOL1 has power on both sides but does not work/);
+});
+
+test('solenoid Y002 dead: good at TB3-1, bad at the valve → open on Y002 between them', () => {
+  const { s } = play(wiringPath(ex, 'Y002')!, 'output-dead', ['yes', 'yes', 'yes', 'no']);
+  assert.match(s.verdict!.text, /Open connection on wire Y002 between Terminal strip TB3, terminal 1 and SOL1/);
+});
+
+test('Sealing Head: down solenoid dead behind the two-hand relay contact → the contact blocks it', () => {
+  const w = shPaths.find((x) => x.type === 'output' && /down solenoid/i.test(x.description))!;
+  const { s } = play(w, 'output-dead', ['yes', 'yes', 'yes', 'no']);
+  assert.match(s.verdict!.text, /SR\d blocks the signal/);
+});
+
+test('input ON all the time: 0 V at TB2-1 with the sensor OFF → a short to 24 V before TB2-1', () => {
+  const { s } = play(wiringPath(ex, 'X004')!, 'always-on', ['yes', 'no', 'yes']);
+  assert.match(s.verdict!.text, /short to 24 V between PLC terminal X004 and Terminal strip TB2, terminal 1/);
+});
+
+test('flickers: wiggle steps along the path, a flicker names the spot', () => {
+  const { s, asked } = play(wiringPath(ex, 'X004')!, 'flickers', ['yes', 'no', 'no', 'yes']);
+  assert.deepEqual(asked, ['prepare', 'wiggle:TB2', 'wiggle:W002', 'wiggle:JB1']);
+  assert.match(s.verdict!.text, /Loose connection at Junction box JB1/);
+});
+
+test('skipped steps are not evidence', () => {
+  const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'skip', 'yes']);
+  assert.match(s.verdict!.text, /between PLC terminal X004 and PE1/);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

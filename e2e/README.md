@@ -119,6 +119,6 @@ preview shows the mic as not available (it has no microphone) and makes no micro
 ## Troubleshooter practice (simulator wiring faults)
 
 ```bash
-BASE_URL=http://localhost:5204 node e2e/troubleshoot.e2e.cjs   # break a wire (X005 shorted to 24 V → X005 ON), repair, hidden fault + reveal
+BASE_URL=http://localhost:5204 node e2e/troubleshoot.e2e.cjs   # simulator: break a wire (X005 shorted to 24 V → X005 ON), repair, hidden fault; Online → Fault finding on a phone: X004 never ON → steps → verdict; fake Modbus PLC answers a wiggle test
 ```
-Unit tests: `npx tsx src/troubleshoot/wiringPath.test.ts` (wiring paths and fault effects).
+Unit tests: `npx tsx src/troubleshoot/wiringPath.test.ts` (wiring paths, fault effects, live watch, guided steps).
