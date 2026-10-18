@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="33.01" TargetName="Box_Line_3" TargetType="Controller" ContainsContext="false" ExportDate="Wed Jan 15 14:02:11 2025" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
+<Controller Use="Target" Name="Box_Line_3" ProcessorType="1769-L30ER" MajorRev="33" MinorRev="1" TimeSlice="20" ShareUnusedTimeSlice="1" ProjectCreationDate="Thu Apr 02 08:45:19 2020" LastModifiedDate="Wed Jan 15 13:58:40 2025" SFCExecutionControl="CurrentActive" SFCRestartPosition="MostRecent" SFCLastScan="DontScan" ProjectSN="16#0000_0000" MatchProjectToController="false" CanUseRPIFromProducer="false" InhibitAutomaticFirmwareUpdate="0" PassThroughConfiguration="EnabledWithAppend" DownloadProjectDocumentationAndExtendedProperties="true" DownloadProjectCustomProperties="true" ReportMinorOverflow="false">
+<Description>
+<![CDATA[Box line 3 - conveyor, diverter, box counter]]>
+</Description>
+<RedundancyInfo Enabled="false" KeepTestEditsOnSwitchOver="false" IOMemoryPadPercentage="90" DataTablePadPercentage="50"/>
+<Security Code="0" ChangesToDetect="16#ffff_ffff_ffff_ffff"/>
+<SafetyInfo/>
+<DataTypes/>
+<Modules>
+<Module Name="Local" CatalogNumber="1769-L30ER" Vendor="1" ProductType="14" ProductCode="148" Major="33" Minor="1" ParentModule="Local" ParentModPortId="1" Inhibited="false" MajorFault="true">
+<EKey State="Disabled"/>
+<Ports>
+<Port Id="1" Address="0" Type="Compact" Upstream="false"><Bus Size="3"/></Port>
+<Port Id="2" Type="Ethernet" Upstream="false"><Bus/></Port>
+</Ports>
+</Module>
+<Module Name="DI_Slot1" CatalogNumber="1769-IQ16/A" Vendor="1" ProductType="7" ProductCode="4" Major="1" Minor="1" ParentModule="Local" ParentModPortId="1" Inhibited="false" MajorFault="false">
+<EKey State="CompatibleModule"/>
+<Ports><Port Id="1" Address="1" Type="Compact" Upstream="true"/></Ports>
+<Communications>
+<Connections>
+<Connection Name="InputData" RPI="2000" Type="Input">
+<InputTag ExternalAccess="Read/Write">
+<Comments>
+<Comment Operand=".DATA.0"><![CDATA[Start pushbutton]]></Comment>
+<Comment Operand=".DATA.1"><![CDATA[Stop pushbutton (NC)]]></Comment>
+<Comment Operand=".DATA.2"><![CDATA[Box at diverter (PE-301)]]></Comment>
+<Comment Operand=".DATA.3"><![CDATA[Auto / manual selector, auto = on]]></Comment>
+</Comments>
+</InputTag>
+</Connection>
+</Connections>
+</Communications>
+</Module>
+<Module Name="DO_Slot2" CatalogNumber="1769-OB16/B" Vendor="1" ProductType="7" ProductCode="5" Major="2" Minor="1" ParentModule="Local" ParentModPortId="1" Inhibited="false" MajorFault="false">
+<EKey State="CompatibleModule"/>
+<Ports><Port Id="1" Address="2" Type="Compact" Upstream="true"/></Ports>
+<Communications>
+<Connections>
+<Connection Name="OutputData" RPI="2000" Type="Output">
+<OutputTag ExternalAccess="Read/Write">
+<Comments>
+<Comment Operand=".DATA.0"><![CDATA[Conveyor motor contactor M-301]]></Comment>
+<Comment Operand=".DATA.1"><![CDATA[Diverter valve SV-302]]></Comment>
+<Comment Operand=".DATA.2"><![CDATA[Jam light (amber)]]></Comment>
+</Comments>
+</OutputTag>
+</Connection>
+</Connections>
+</Communications>
+</Module>
+</Modules>
+<AddOnInstructionDefinitions>
+<AddOnInstructionDefinition Name="Motor_Start" Revision="1.2" ExecutePrescan="false" ExecutePostscan="false" ExecuteEnableInFalse="false" CreatedDate="2020-04-02T09:10:00.000Z" CreatedBy="ENG\jortiz" EditedDate="2021-11-08T15:22:41.000Z" EditedBy="ENG\jortiz" SoftwareRevision="v33.01">
+<Description>
+<![CDATA[3-wire motor start / stop with seal-in]]>
+</Description>
+<Parameters>
+<Parameter Name="EnableIn" TagType="Base" DataType="BOOL" Usage="Input" Radix="Decimal" Required="false" Visible="false" ExternalAccess="Read Only"/>
+<Parameter Name="EnableOut" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="false" Visible="false" ExternalAccess="Read Only"/>
+<Parameter Name="Start" TagType="Base" DataType="BOOL" Usage="Input" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="Stop" TagType="Base" DataType="BOOL" Usage="Input" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="Run" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="false" Visible="true" ExternalAccess="Read Only"/>
+</Parameters>
+<LocalTags/>
+<Routines>
+<Routine Name="Logic" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Text>
+<![CDATA[[XIC(Start) ,XIC(Run) ]XIC(Stop)OTE(Run);]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+</Routines>
+</AddOnInstructionDefinition>
+</AddOnInstructionDefinitions>
+<Tags>
+<Tag Name="Start_PB" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Data.0" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Start pushbutton]]>
+</Description>
+</Tag>
+<Tag Name="Stop_PB" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Data.1" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Stop pushbutton (NC)]]>
+</Description>
+</Tag>
+<Tag Name="Box_PE" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Data.2" ExternalAccess="Read/Write"/>
+<Tag Name="Auto_Sel" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Data.3" ExternalAccess="Read/Write"/>
+<Tag Name="Conv_Motor_Out" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Data.0" ExternalAccess="Read/Write"/>
+<Tag Name="Diverter" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Data.1" ExternalAccess="Read/Write"/>
+<Tag Name="Jam_Light" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Data.2" ExternalAccess="Read/Write"/>
+<Tag Name="Conv_Motor" TagType="Base" DataType="Motor_Start" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Conveyor motor M-301 start / stop]]>
+</Description>
+<Data Format="Decorated">
+<Structure DataType="Motor_Start">
+<DataValueMember Name="EnableIn" DataType="BOOL" Value="1"/>
+<DataValueMember Name="EnableOut" DataType="BOOL" Value="0"/>
+<DataValueMember Name="Start" DataType="BOOL" Value="0"/>
+<DataValueMember Name="Stop" DataType="BOOL" Value="0"/>
+<DataValueMember Name="Run" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Running" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Diverter sequence in auto]]>
+</Description>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Box_ONS" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Box_Count" TagType="Base" DataType="COUNTER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Boxes per pallet]]>
+</Description>
+<Data Format="Decorated">
+<Structure DataType="COUNTER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="500"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="CU" DataType="BOOL" Value="0"/>
+<DataValueMember Name="CD" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="OV" DataType="BOOL" Value="0"/>
+<DataValueMember Name="UN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Jam_Tmr" TagType="Base" DataType="TIMER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Box blocking the eye too long = jam]]>
+</Description>
+<Data Format="Decorated">
+<Structure DataType="TIMER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="3000"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="EN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="TT" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Line_Msg" TagType="Base" DataType="MESSAGE" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Pallet full to the line PLC]]>
+</Description>
+<Data Format="Message">
+<MessageParameters MessageType="CIP Data Table Write" RequestedLength="1" ConnectedFlag="1" ConnectionPath="1, 0" CommTypeCode="0" ServiceCode="16#004d" ObjectType="16#00ac" TargetObject="0" AttributeNumber="16#0000" LocalIndex="0" LocalElement="Box_Count.ACC" DestinationTag="Line3_Boxes" CacheConnections="TRUE" LargePacketUsage="FALSE"/>
+</Data>
+</Tag>
+<Tag Name="Line_Status" TagType="Produced" DataType="DINT" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<ProduceInfo ProduceCount="2" UnicastPermitted="true" MinimumRPI="0.200" MaximumRPI="536870.900" DefaultRPI="20.000"/>
+<Data Format="Decorated">
+<DataValue DataType="DINT" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+</Tags>
+<Programs>
+<Program Name="MainProgram" TestEdits="false" MainRoutineName="MainRoutine" Disabled="false" UseAsFolder="false">
+<Tags/>
+<Routines>
+<Routine Name="MainRoutine" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Text>
+<![CDATA[JSR(Conveyor,0);]]>
+</Text>
+</Rung>
+<Rung Number="1" Type="N">
+<Comment>
+<![CDATA[Diverter sequence only in auto]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Auto_Sel)JSR(Auto_Seq,0);]]>
+</Text>
+</Rung>
+<Rung Number="2" Type="N">
+<Text>
+<![CDATA[JSR(Speed_FBD,0);]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+<Routine Name="Conveyor" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Comment>
+<![CDATA[Conveyor motor: 3-wire start / stop (AOI)]]>
+</Comment>
+<Text>
+<![CDATA[Motor_Start(Conv_Motor,Start_PB,Stop_PB);]]>
+</Text>
+</Rung>
+<Rung Number="1" Type="N">
+<Text>
+<![CDATA[XIC(Conv_Motor.Run)OTE(Conv_Motor_Out);]]>
+</Text>
+</Rung>
+<Rung Number="2" Type="N">
+<Comment>
+<![CDATA[Count boxes]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Box_PE)ONS(Box_ONS)CTU(Box_Count,500,0);]]>
+</Text>
+</Rung>
+<Rung Number="3" Type="N">
+<Comment>
+<![CDATA[Jam: box on the eye for 3 s]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Box_PE)TON(Jam_Tmr,3000,0);]]>
+</Text>
+</Rung>
+<Rung Number="4" Type="N">
+<Text>
+<![CDATA[XIC(Jam_Tmr.DN)OTE(Jam_Light);]]>
+</Text>
+</Rung>
+<Rung Number="5" Type="N">
+<Comment>
+<![CDATA[Pallet full: tell the line PLC]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Box_Count.DN)MSG(Line_Msg);]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+<Routine Name="Auto_Seq" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Text>
+<![CDATA[XIC(Start_PB)[OTL(Running) ,RES(Box_Count) ];]]>
+</Text>
+</Rung>
+<Rung Number="1" Type="N">
+<Text>
+<![CDATA[XIO(Stop_PB)OTU(Running);]]>
+</Text>
+</Rung>
+<Rung Number="2" Type="N">
+<Comment>
+<![CDATA[Divert every box while running]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Running)XIC(Box_PE)OTE(Diverter);]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+<Routine Name="Speed_FBD" Type="FBD">
+<FBDContent SheetSize="Letter - 8.5 x 11 in" SheetOrientation="Landscape">
+<Sheet Number="1">
+<IRef ID="0" X="100" Y="160" Operand="Box_Count.ACC" HideDesc="false"/>
+<ORef ID="1" X="480" Y="160" Operand="Line_Status" HideDesc="false"/>
+<Wire FromID="0" ToID="1"/>
+</Sheet>
+</FBDContent>
+</Routine>
+</Routines>
+</Program>
+</Programs>
+<Tasks>
+<Task Name="MainTask" Type="CONTINUOUS" Priority="10" Watchdog="500" DisableUpdateOutputs="false" InhibitTask="false">
+<ScheduledPrograms>
+<ScheduledProgram Name="MainProgram"/>
+</ScheduledPrograms>
+</Task>
+</Tasks>
+</Controller>
+</RSLogix5000Content>

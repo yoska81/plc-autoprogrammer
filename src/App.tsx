@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useNoTouchPanel, useProjectPanelPart } from './hmi/projectPanel';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   DocumentPlusIcon, ArrowUpTrayIcon, PlayIcon, ArrowDownTrayIcon, Cog6ToothIcon,
@@ -10,7 +11,6 @@ import { ReviewStatus, ReviewTreeBadge } from './review/ReviewBadge';
 import { useStages, type StageStatus } from './spec/useStages';
 import { useProjectsStore } from './store/useProjectsStore';
 import { currentRevision, useProjectStore } from './store/useProjectStore';
-import { useHmiStore } from './store/useHmiStore';
 import type { StageId } from './store/useStageStore';
 import UpdateAll from './components/UpdateAll';
 import ResizablePane from './components/ResizablePane';
@@ -103,7 +103,8 @@ export default function App() {
   const navigate = useNavigate();
   const { projects, activeId, openProject, ensureActive } = useProjectsStore();
   const { cpuId, modules } = useProjectStore();
-  const hmiPart = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber);
+  const hmiPart = useProjectPanelPart();
+  const noHmi = useNoTouchPanel();
   const rev = currentRevision(useProjectStore((s) => s.info));
   useEffect(() => { ensureActive(); }, [ensureActive]);
   const projectFile = useProjectFile();
@@ -255,7 +256,7 @@ export default function App() {
         <span data-testid="save-state">{dirty ? 'Unsaved changes' : fileInfo?.savedAt ? `Saved ${new Date(fileInfo.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Ready'}</span>
         <AiJobsIndicator />
         <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
-        <span>HMI: {hmiPart || '—'}</span>
+        <span>HMI: {hmiPart || (noHmi ? 'none (pushbuttons and lamps)' : '—')}</span>
         <span>Rev {rev.rev} · {rev.description}</span>
         <ReviewStatus />
         <span className="ml-auto" />

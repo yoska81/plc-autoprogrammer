@@ -48,8 +48,8 @@ WD       T1-1530G-1         x2    Wire duct
 GB1      SCE-GB10           x1    Ground bar
 
 X001   SR1    safety-relay-output  Cabinet        Safety relay OK (E-stop and light curtain)
-X002   PB1    pushbutton-no        Machine        Two-hand start button left
-X003   PB1    pushbutton-no        Machine        Two-hand start button right
+X002   PB1L   pushbutton-no        Machine        Two-hand start button left
+X003   PB1R   pushbutton-no        Machine        Two-hand start button right
 X004   SR2    safety-relay-output  Cabinet        Light curtain clear (OSSD)
 X101   PB2    pushbutton-nc        Cabinet door   Stop button
 X102   PB3    pushbutton-no        Cabinet door   Fault reset button
@@ -69,7 +69,7 @@ Y202   PL2    pilot-light          Cabinet door   Fault light
 zones ["Machine"]
 junctionBoxes [{"tag":"JB1","location":"Machine","partNumber":"SCE-16EL1206LP"}]
 motorLocations {"M1":"Machine"}
-routing {"PB1":"JB1","LS1":"JB1","LS2":"JB1","PRS1":"JB1","LS3":"JB1","SOL1":"JB1"}
+routing {"PB1L":"JB1","PB1R":"JB1","LS1":"JB1","LS2":"JB1","PRS1":"JB1","LS3":"JB1","SOL1":"JB1"}
 
 note: Seal heater on (SSR): heater power not given — assumed 1.5 kW single-phase; confirm the heater's rating so its SSR, contactor and fuses can be checked.
 note: TAH1 (SCU-3100): order its SCU-PDM2 programming / display module (sold separately, not in this catalog) and a second thermocouple in the heater for the limit; set the trip point and the latch.

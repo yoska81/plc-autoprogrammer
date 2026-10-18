@@ -69,9 +69,9 @@ export function enclosureTable(p: ProjectSnapshot, calcs: CalcSection[] = calcul
     const door = m.rc.filter((c) => c.mount === 'door');
     rows.push(['Door devices', String(door.length + (p.hmi ? 1 : 0)), [...door.map((c) => c.tag), ...(p.hmi ? [`HMI ${p.hmi.hmiPartNumber}`] : [])].join(', ')]);
     const heat = calcs.find((s) => s.title === 'Cabinet temperature rise');
-    if (heat) rows.push(['Thermal check', heat.ok ? 'Natural convection adequate' : 'Cooling required', heat.result]);
-    const fan = m.rc.find((c) => c.category === 'fan');
-    rows.push(['Cooling', fan ? devText(fan) : 'None (sealed enclosure)', fan?.part?.description ?? '']);
+    if (heat) rows.push(['Thermal check', !heat.ok ? 'Cooling required' : /cooled by/.test(heat.result) ? 'Cooling fitted, adequate' : 'Natural convection adequate', heat.result]);
+    const cool = m.rc.filter((c) => (c.category === 'fan' && c.part?.ratings.kind !== 'exhaust filter') || ['heat exchanger', 'air conditioner'].includes(String(c.part?.ratings.kind ?? '')));
+    rows.push(['Cooling', cool.length ? cool.map(devText).join('; ') : 'None (sealed enclosure)', cool.map((c) => c.part?.description ?? '').filter(Boolean).join('; ')]);
   }
   return makeTable([['Item', 22], ['Selection', 40], ['Notes', 60]], rows);
 }

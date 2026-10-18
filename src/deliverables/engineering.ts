@@ -15,9 +15,10 @@ import { pmSchedule, sparePartsTable } from './docs/maintenance';
 import { assumptionsTable, bomTable, designReviewTable, operatorManual } from './docs/manual';
 import { aiReviewNote } from '../review/report';
 import { ACCENT, BRAND, INFO_FILL, INK, MUTED, RED, WARN_FILL, PdfWriter, pdfSafe } from './docs/pdfWriter';
-import { makeTable } from './docs/table';
+import { makeTable, specLines } from './docs/table';
 import { qaTable } from '../components/questions/qaTable';
 import { LOOK_LABEL, lookOf } from '../hmi/theme';
+import { operatorInterfaceShort, operatorInterfaceText, operatorStationRows } from './docs/operatorStation';
 
 /**
  * The controls engineering package a North American controls firm hands
@@ -88,7 +89,7 @@ function cover(w: PdfWriter, p: ProjectSnapshot, m: DocMeta) {
   w.y = 46;
   w.text('Controls Engineering Package', { size: 24, bold: true, color: BRAND, gap: 1 });
   w.text(p.projectName, { size: 16, bold: true, gap: 1 });
-  w.text('Functional design specification · electrical design basis · safety · PLC and HMI description · FAT / SAT · operator manual · maintenance', { size: 9, color: MUTED, gap: 4 });
+  w.text(`Functional design specification · electrical design basis · safety · PLC and ${p.noHmi ? 'operator station' : 'HMI'} description · FAT / SAT · operator manual · maintenance`, { size: 9, color: MUTED, gap: 4 });
 
   const d = p.electrical;
   w.keyValue([
@@ -98,7 +99,7 @@ function cover(w: PdfWriter, p: ProjectSnapshot, m: DocMeta) {
     ['Document number', m.docNo],
     ['Revision / date', `${m.rev.rev} — ${m.rev.date} — ${m.rev.description}`],
     ['Controller', `${p.profile.vendor} ${p.profile.name} ${p.cpu.id}`],
-    ['Operator interface', hmiText(m.hmiPart)],
+    ['Operator interface', operatorInterfaceShort(p, hmiText(m.hmiPart))],
     ['Supply', d ? `${supplyText(d.inputs.supply)}, ${d.inputs.enclosureRating} enclosure` : 'electrical design not generated'],
     ['Code basis', isIec(m.region) ? `${regionSpec(m.region).label} — ${m.codes.short}, ${m.codes.installation}` : `${m.region === 'Canada' ? 'Canada' : 'United States'} — ${m.codes.installation}, ${m.codes.panel}, NFPA 79`],
   ], 26);
@@ -243,7 +244,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
     'Supply feeder, upstream protection, available fault current study and arc-flash study.',
     'Field cable installation, cable tray / conduit and junction box mounting.',
     'Motors and field devices supplied with the machine unless listed in the BOM.',
-    'Network integration with plant systems beyond the PLC-HMI link.',
+    `Network integration with plant systems beyond the ${p.noHmi ? 'PLC programming port' : 'PLC-HMI link'}.`,
   ]);
   w.h2('1.3 Codes and standards');
   w.para(iec ? `The design follows IEC practice (IEC 60204-1, IEC 61439) for ${regionSpec(m.region).label}. ${regionSpec(m.region).marking}. Where editions are not stated, the edition adopted in the country of use applies.` : `The design follows North American practice for ${ca ? 'Canada' : 'the United States'}. Where editions are not stated, the edition adopted by the authority having jurisdiction at the site applies.`);
@@ -267,7 +268,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
       ['PLC CPU', `${p.profile.vendor} ${p.profile.name} ${equipment.cpu}`],
       ['Reason', equipment.why || 'Chosen manually.'],
       ['Expansion modules', equipment.modules.length ? equipment.modules.join(', ') : 'none'],
-      ['Operator panel', hmiText(equipment.hmi)],
+      ['Operator panel', operatorInterfaceShort(p, hmiText(equipment.hmi))],
     ], 22);
   }
   w.h2('2.2 Equipment list');
@@ -373,7 +374,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
   }
   w.h2(p.profile.language === 'ladder' && p.ladder.rungs.length ? '5.6 Communication' : '5.3 Communication');
   w.bullets([
-    p.hmi ? `HMI ${p.hmi.hmiPartNumber} <-> PLC ${p.cpu.id}: Ethernet (${(isCmore(getHmi(p.hmi.hmiPartNumber)) ? 'CLICK Ethernet driver / Modbus TCP' : `the panel maker's ${p.profile.vendor} driver`)}), ${p.hmi.tags.length} tags. HMI command bits use internal C memory; the PLC never relies on the HMI for safety.` : 'No HMI communication.',
+    p.noHmi ? 'No touch panel: no HMI link. The operator station (pushbuttons, selector, lamps) is hardwired to the PLC inputs and outputs.' : p.hmi ? `HMI ${p.hmi.hmiPartNumber} <-> PLC ${p.cpu.id}: Ethernet (${(isCmore(getHmi(p.hmi.hmiPartNumber)) ? 'CLICK Ethernet driver / Modbus TCP' : `the panel maker's ${p.profile.vendor} driver`)}), ${p.hmi.tags.length} tags. HMI command bits use internal C memory; the PLC never relies on the HMI for safety.` : 'No HMI communication.',
     'Programming port: Ethernet (or serial) from the engineering laptop.',
     'IP addresses, subnet and gateway: to be assigned by the site; record them on the drawings.',
     'No connection to plant networks is included; if one is added, use a managed switch / firewall and keep the safety circuit hardwired.',
@@ -411,12 +412,27 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
     ]);
   }
 
+  // 6. Operator station (machines without a touch panel): the whole operator interface.
+  if (!p.hmi && p.noHmi) {
+    w.h1('6. Operator station');
+    w.para(operatorInterfaceText(p));
+    const rows = operatorStationRows(p);
+    w.h2('6.1 Pushbuttons, selector switches and lamps');
+    if (rows.length) w.table(makeTable([['Tag', 14], ['Device', 24], ['Function', 56], ['Location', 26], ['PLC address', 18]], rows), { fontSize: 7.6 });
+    else w.para(`The operator devices are listed in the electrical design once it is generated. The specification asks for: ${specLines(p.spec.operator).join(' ') || 'start, stop and reset pushbuttons, an emergency stop and run / fault lamps.'}`);
+    w.h2('6.2 Alarm handling');
+    w.bullets([
+      'Faults latch in the PLC and turn on the fault lamp; the operator removes the cause and presses Reset.',
+      'There is no alarm text display: the alarm table (2.6) lists each fault and its cause for troubleshooting with the programming laptop.',
+    ]);
+  }
+
   // 7. FAT
-  const sec = (n: number) => (p.hmi ? n : n - 1);
+  const sec = (n: number) => (p.hmi || p.noHmi ? n : n - 1);
   w.h1(`${sec(7)}. Factory acceptance test (FAT) procedure`);
   const fat = fatProcedure(p, m, info, sf);
   w.para(`Perform the tests in order with the panel at the builder's shop. Record Pass (P) or Fail (F) and initials for each test; list every failure on the punch list. ${fat.length} tests.`);
-  w.keyValue([['Panel / serial no.', ''], ['Test date', ''], ['Test supply', ''], ['Program / HMI revision', '']], 26);
+  w.keyValue([['Panel / serial no.', ''], ['Test date', ''], ['Test supply', ''], [p.hmi ? 'Program / HMI revision' : 'Program revision', '']], 26);
   w.table(testTable(fat), { fontSize: 7 });
   w.h3('FAT result and sign-off');
   w.table(makeTable([['Role', 26], ['Name', 30], ['Company', 26], ['Signature', 28], ['Date', 14]], [['Tested by (panel builder)', '', '', '', ''], ['Witnessed by (customer)', '', '', '', ''], ['Accepted by (engineer)', '', '', '', '']], 10), { fontSize: 8, zebra: false });

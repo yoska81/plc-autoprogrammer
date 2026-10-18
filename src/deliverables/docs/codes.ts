@@ -78,7 +78,7 @@ const ABBREVIATIONS: [string, string, (p: ProjectSnapshot) => boolean][] = [
   ['FAT', 'Factory acceptance test', () => true],
   ['FDS', 'Functional design specification', () => true],
   ['FLA', 'Full-load amperes (motor)', () => true],
-  ['HMI', 'Human-machine interface (operator touch panel)', () => true],
+  ['HMI', 'Human-machine interface (operator touch panel)', (p) => !p.noHmi],
   ['I/O', 'Inputs and outputs', () => true],
   ['ISA', 'International Society of Automation', () => true],
   ['kA', 'Kiloampere (short-circuit current)', () => true],

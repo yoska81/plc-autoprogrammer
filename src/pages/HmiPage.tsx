@@ -14,6 +14,8 @@ import { generateRuleBasedHmi, projectHmiContent } from '../lib/ai/hmiContentAI'
 import { buildHmi } from '../hmi/engine';
 import { markEdited, mergeRegenerated, rebuildScreen } from '../hmi/engine/regenerate';
 import { useElectricalStore } from '../store/useElectricalStore';
+import { useNoTouchPanel } from '../hmi/projectPanel';
+import { operatorDevices } from '../deliverables/docs/operatorStation';
 import { useProgramStore } from '../store/useProgramStore';
 import { collectProject } from '../deliverables/collect';
 import { plcTagNameOf } from '../deliverables/plcTagNames';
@@ -287,14 +289,15 @@ export default function HmiPage() {
   const [tab, setTab] = useUi<Tab>('hmi.tab', 'tags');
   const [tagFilter, setTagFilter] = useUi('hmi.tagFilter', '');
 
-  const chosenPanel = getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
-  // Equipment chosen with "No touch panel": pushbuttons and lamps only.
-  const equipmentChosen = useStageStore((s) => Boolean(s.sources.equipment));
-  const noPanel = equipmentChosen && !hmi.hmiPartNumber && !hmi.design;
+  // Equipment chosen with "No touch panel": pushbuttons and lamps only. Screens left from an earlier
+  // panel are kept (choosing a panel again brings them back) but not shown, regenerated or exported.
+  const noPanel = useNoTouchPanel();
+  const leftover = noPanel ? hmi.design : null;
+  const chosenPanel = noPanel ? undefined : getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
   // A panel too small for touch screens (e.g. a 128×64 C-more Micro text display) is not designed for.
   const model = chosenPanel && designable(chosenPanel) ? chosenPanel : undefined;
   const apiKey = settings.anthropicApiKey;
-  const design = hmi.design;
+  const design = noPanel ? null : hmi.design;
   // "To confirm" items, answered under each one.
   const hmiQuestionsRaw = useQuestions('hmi');
   // Allen-Bradley / Siemens: the exported program's tag of each neutral address (null on CLICK, where they are the same).
@@ -604,7 +607,7 @@ export default function HmiPage() {
         <div>
           <h2 className="text-base font-semibold text-gray-800">5 · HMI design</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            {model ? `${model.partNumber} · ${model.sizeIn}" · ${model.widthPx}×${model.heightPx}` : 'Choose your HMI'} · every button and lamp is linked to a PLC address the program implements
+            {noPanel ? 'No touch panel · the operator station (pushbuttons, selector, lamps) is wired to the PLC' : <>{model ? `${model.partNumber} · ${model.sizeIn}" · ${model.widthPx}×${model.heightPx}` : 'Choose your HMI'} · every button and lamp is linked to a PLC address the program implements</>}
           </p>
         </div>
         {design && (
@@ -616,14 +619,22 @@ export default function HmiPage() {
           </div>
         )}
       </header>
-      <StageBanner info={stages.hmi} action={genButton('Update screens')} />
+      <StageBanner info={stages.hmi} action={noPanel ? undefined : genButton('Update screens')} />
 
       <div className="flex-1 overflow-auto bg-gray-50 p-5 space-y-4">
-        {noPanel && !design && !choosing && (
-          <div className="rounded border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-steel-800 space-y-1" data-testid="no-hmi">
+        {noPanel && !choosing && (
+          <div className="rounded border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-steel-800 space-y-2" data-testid="no-hmi">
             <p className="font-semibold">This machine has no touch panel.</p>
-            <p>The operator uses pushbuttons, switches and lamps; the PLC program starts, stops and resets from the panel buttons, and faults show on the fault lamp. Nothing to design here.</p>
-            <button onClick={() => setChoosing(true)} className="text-xs underline text-brand-700">Add a touch panel after all</button>
+            <p>The operator uses pushbuttons, switches and lamps; the PLC program starts, stops and resets from the panel buttons, and faults show on the fault lamp. Nothing to design here: the documents describe the operator station instead of HMI screens.</p>
+            <OperatorStationList />
+            {leftover && (
+              <p className="text-xs text-steel-700" data-testid="hmi-leftover">
+                {leftover.screens.length} screen{leftover.screens.length === 1 ? '' : 's'} made earlier for the {leftover.hmiPartNumber} are kept but not used or exported.{' '}
+                <button onClick={() => { if (confirm('Remove the screens made for the earlier touch panel? You can design new ones if you add a panel later.')) hmi.setDesign(null, null); }}
+                  className="underline text-brand-700">Remove them</button>
+              </p>
+            )}
+            <button onClick={() => setChoosing(true)} className="text-xs underline text-brand-700">Add a touch panel after all{leftover ? ' (brings the earlier screens back)' : ''}</button>
           </div>
         )}
         {chosenPanel && !model && (
@@ -848,5 +859,28 @@ export default function HmiPage() {
         )}
       </div>
     </>
+  );
+}
+
+/** The operator devices (pushbuttons, selectors, E-stops, lamps) of a machine without a touch panel. */
+function OperatorStationList() {
+  const electrical = useElectricalStore((s) => s.design);
+  // collectProject reads the stores; the list changes with the electrical design.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const devices = useMemo(() => operatorDevices(collectProject()), [electrical]);
+  if (!devices.length) return <p className="text-xs text-steel-700">The pushbuttons and lamps are listed here once the electrical design is made.</p>;
+  return (
+    <table className="text-xs" data-testid="operator-station">
+      <tbody>
+        {devices.map((d) => (
+          <tr key={d.tag}>
+            <td className="pr-3 font-mono font-medium">{d.tag}</td>
+            <td className="pr-3 text-steel-600">{d.kind}</td>
+            <td className="pr-3">{d.description}</td>
+            <td className="text-steel-600">{/door/i.test(d.location) ? '' : d.location}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

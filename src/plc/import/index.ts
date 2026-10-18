@@ -1,0 +1,102 @@
+/**
+ * "Upgrade existing program": read a PLC program file, recognise its format and convert it.
+ *   detectFormat(name, text) → which reader; importProgramText(name, text) → ImportedProgram;
+ *   materialize(imported, profile, cpu, modules) (convert.ts) → program + I/O list for the chosen PLC.
+ */
+import { readL5x } from './l5x';
+import { readL5k } from './l5k';
+import { readPlcopen } from './plcopen';
+import { readStSource } from './stSource';
+import { readClickCsv } from './clickCsv';
+import { convertForeign } from './convert';
+import { decodeCsv, isGxComments, isGxProgram, readGxCsv } from './gxCsv';
+import type { ForeignProgram, ImportedProgram, SourceFormat } from './types';
+
+export { materialize } from './convert';
+export * from './types';
+
+/** Native project files a browser cannot read, and what to export instead. */
+export const NATIVE_FILES: { ext: RegExp; product: string; howTo: string }[] = [
+  { ext: /\.acd$/i, product: 'Studio 5000 project (.ACD)', howTo: 'In Studio 5000: File › Save As… › type "Logix Designer XML File (*.L5X)", then upload the .L5X.' },
+  { ext: /\.rss$|\.rsp$/i, product: 'RSLogix 500 / 5 project', howTo: 'Print the program to PDF (File › Report Options › Print to PDF) and upload the PDF; the AI reads the rungs.' },
+  { ext: /\.ckp$/i, product: 'CLICK project (.ckp)', howTo: 'In CLICK Programming Software: Address Picker › Export (CSV) for the names, and File › Print › "Microsoft Print to PDF" for the ladder. Upload both.' },
+  { ext: /\.ap\d+$|\.zap\d+$/i, product: 'TIA Portal project', howTo: 'In TIA Portal: right-click the blocks › "Generate source from blocks" (SCL/STL source) and PLC tags › Export (tag table). Upload both. For ladder (LAD) blocks, print them to PDF.' },
+  { ext: /\.s7p$/i, product: 'STEP 7 Classic project', howTo: 'In SIMATIC Manager: open the blocks in LAD/STL/FBD, File › Generate Source, and Symbol Table › Export. Upload the .AWL and the symbol file.' },
+  { ext: /\.gx\w*$|\.gxw$/i, product: 'Mitsubishi GX Works project', howTo: 'In GX Works: Project › Export to File › CSV (instruction list) for the program and the device comments. Upload both.' },
+  { ext: /\.isp$|\.dvp$/i, product: 'Delta ISPSoft / WPLSoft project', howTo: 'In ISPSoft / WPLSoft: open the program in Instruction List view and export it as text (File › Export), plus the device comments. Upload them.' },
+  { ext: /\.vlp$|\.ulpr$|\.vlpx$/i, product: 'Unitronics project', howTo: 'Unitronics projects cannot be exported as text: print the ladder to PDF (File › Print) and upload the PDF.' },
+  { ext: /\.ccwsln$|\.ccwarc$/i, product: 'Connected Components Workbench project', howTo: 'In CCW: export the programs as PLCopen XML (right-click the program › Export) and upload the .xml.' },
+  { ext: /\.project$|\.projectarchive$/i, product: 'CODESYS project', howTo: 'In CODESYS: Project › Export PLCopenXML… and upload the .xml.' },
+];
+
+export function detectFormat(fileName: string, text: string): SourceFormat | null {
+  const head = text.slice(0, 4000);
+  if (/<RSLogix5000Content\b/.test(head)) return 'l5x';
+  if (/plcopen\.org\/xml\/tc6|<project\b[\s\S]*<types>/i.test(head) || (/<project\b/i.test(head) && /\.xml$/i.test(fileName) && /<pou\b/i.test(text))) return 'plcopen';
+  if (/<Document>[\s\S]*SW\.Blocks/i.test(head)) return 'siemens-xml';
+  if (/^\s*(IE_VER\s*:=|CONTROLLER\s+\w+\s*\()/m.test(head) || /\.l5k$/i.test(fileName)) return 'l5k';
+  if (isGxProgram(head)) return 'mitsubishi-csv';
+  const first = head.split(/\r?\n/)[0] ?? '';
+  if (/address/i.test(first) && /nickname/i.test(first)) return 'click-csv';
+  if (/\b(ORGANIZATION_BLOCK|DATA_BLOCK)\b/.test(head) || /FUNCTION_BLOCK\s+"/.test(head) || (/\bBEGIN\b/.test(text) && /\bEND_FUNCTION_BLOCK\b|\bEND_ORGANIZATION_BLOCK\b/.test(text)) || /\.scl$/i.test(fileName)) return 'siemens-scl';
+  if (/\b(PROGRAM|FUNCTION_BLOCK)\b[\s\S]*\bEND_(PROGRAM|FUNCTION_BLOCK)\b/.test(text) || /\.st$/i.test(fileName)) return 'st';
+  return null;
+}
+
+/** Plain-words reason a file cannot be read, with what to do instead; null when it can be read. */
+export function unreadableReason(fileName: string, text: string): string | null {
+  const native = NATIVE_FILES.find((n) => n.ext.test(fileName));
+  if (native) return `${native.product}: this file is in the maker's own format and cannot be read here. ${native.howTo}`;
+  // Binary content (zip, OLE, …).
+  // eslint-disable-next-line no-control-regex -- binary files contain control characters
+  if (/[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 2000))) return 'This file is not a text export. Export the program as text (L5X / L5K, PLCopen XML, SCL / ST source, CSV) or upload a PDF printout of the ladder.';
+  return null;
+}
+
+function read(format: SourceFormat, text: string): ForeignProgram {
+  switch (format) {
+    case 'l5x': return readL5x(text);
+    case 'l5k': return readL5k(text);
+    case 'plcopen': return readPlcopen(text);
+    case 'st': return readStSource(text, false);
+    case 'siemens-scl': return readStSource(text, true);
+    case 'click-csv': return readClickCsv(text);
+    case 'mitsubishi-csv': return readGxCsv(text);
+    default: throw new Error('This file type is not read yet.');
+  }
+}
+
+/** Read one text file into the app's program (I/O as placeholders until a PLC is chosen). */
+export function importProgramText(fileName: string, text: string): ImportedProgram {
+  const why = unreadableReason(fileName, text);
+  if (why) throw new Error(why);
+  const format = detectFormat(fileName, text);
+  if (!format) throw new Error(NOT_RECOGNISED);
+  return convertForeign(read(format, text), fileName);
+}
+
+const NOT_RECOGNISED = 'This file was not recognised as a PLC program export. Supported: Studio 5000 .L5X / .L5K, PLCopen XML, Structured Text / SCL source, Mitsubishi GX Works CSV (program + device comments), CLICK address list (CSV). Or upload a PDF printout of the ladder.';
+
+/** File bytes as text: UTF-16 exports (GX Works) are decoded by their byte order mark. */
+export function fileText(name: string, bytes: Uint8Array): string {
+  return /\.csv$|\.txt$/i.test(name) || (bytes[0] === 0xff && bytes[1] === 0xfe) ? decodeCsv(bytes) : new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '');
+}
+
+/**
+ * Read the files of one program: the program file plus companions (GX Works device comments).
+ * Returns the program and the name of the main file.
+ */
+export function importProgramFiles(files: { name: string; text: string }[]): { program: ImportedProgram; main: { name: string; text: string } } {
+  for (const f of files) { const why = unreadableReason(f.name, f.text); if (why) throw new Error(`${f.name}: ${why}`); }
+  const gx = files.find((f) => isGxProgram(f.text));
+  if (gx) {
+    const comments = files.find((f) => f !== gx && isGxComments(f.text));
+    return { program: convertForeign(readGxCsv(gx.text, comments?.text ?? ''), gx.name), main: gx };
+  }
+  if (files.length === 1 || files.every((f) => isGxComments(f.text))) {
+    if (files.every((f) => isGxComments(f.text))) throw new Error('This is a GX Works device comment file: add the program CSV (Project › Export to CSV) with it.');
+  }
+  const main = files.find((f) => detectFormat(f.name, f.text) && detectFormat(f.name, f.text) !== 'click-csv') ?? files.find((f) => detectFormat(f.name, f.text));
+  if (!main) throw new Error(NOT_RECOGNISED);
+  return { program: importProgramText(main.name, main.text), main };
+}

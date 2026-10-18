@@ -18,7 +18,7 @@ import type { RetryNotice } from './errors';
 
 export type AiJobKind =
   | 'spec' | 'equipment' | 'io' | 'electrical' | 'hmi' | 'hmi-recreate' | 'program' | 'program-revise'
-  | 'review' | 'import' | 'update-all' | 'sourcing' | 'engineer' | 'convert';
+  | 'review' | 'import' | 'update-all' | 'sourcing' | 'engineer' | 'convert' | 'photos';
 
 export type AiJobStatus = 'running' | 'done' | 'failed' | 'cancelled';
 

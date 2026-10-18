@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { effectiveEffort, effectiveModel, TASK_EFFORT } from './tasks';
-import { cachedAnswer, cacheKey, clearAiCache, setAiCacheEnabled } from './cache';
+import { cachedAnswer, cacheKey, clearAiCache, setAiCacheEnabled, setAiCacheSyncKeys } from './cache';
 import { aiBusyMs, type AiCall } from './timing';
 import { callClaude, setClaudeInterceptor } from './anthropic';
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -47,11 +47,19 @@ await test('cache: same request answered once; in-flight requests shared; fresh 
   await clearAiCache();
   const parts = { model: 'm', effort: 'low', system: 's', messages: [{ role: 'user', content: 'x' }], schema: { type: 'object' } };
   let n = 0;
-  const fn = async () => { n++; await new Promise((r) => setTimeout(r, 5)); return { text: `a${n}`, reasoning: null }; };
-  const [a, b] = await Promise.all([cachedAnswer(parts, fn), cachedAnswer(parts, fn)]);
-  assert.equal(n, 1);
+  // Deterministic: in-thread keys (no off-thread hashing), and the first request stays open until both
+  // asks have looked it up — no timers involved.
+  setAiCacheSyncKeys(true);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const fn = async () => { n++; await gate; return { text: `a${n}`, reasoning: null }; };
+  const both = Promise.all([cachedAnswer(parts, fn), cachedAnswer(parts, fn)]);
+  for (let i = 0; i < 10; i++) await Promise.resolve(); // both asks reach the lookup (microtasks only)
+  release();
+  const [a, b] = await both;
+  assert.equal(n, 1, 'one request made for two identical asks');
   assert.equal(a.answer.text, 'a1');
-  assert.equal(b.hit, 'shared');
+  assert.equal(b.hit, 'shared', 'the second ask joined the first');
   assert.equal((await cachedAnswer(parts, fn)).hit, 'memory');
   assert.equal(n, 1);
   assert.equal((await cachedAnswer(parts, fn, { fresh: true })).answer.text, 'a2');
@@ -59,6 +67,7 @@ await test('cache: same request answered once; in-flight requests shared; fresh 
   assert.notEqual(await cacheKey(parts), await cacheKey({ ...parts, effort: 'high' }));
   await assert.rejects(cachedAnswer({ ...parts, system: 'fail' }, async () => { throw new Error('boom'); }));
   assert.equal((await cachedAnswer({ ...parts, system: 'fail' }, fn)).hit, null, 'a failure is not stored');
+  setAiCacheSyncKeys(false);
 });
 
 await test('callClaude: Update (cache: true) answers a repeated request without asking; a page request asks again', async () => {

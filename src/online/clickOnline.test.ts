@@ -53,7 +53,8 @@ assert.equal(lines[1].ok, false);
 assert.match(lines[2].text, /reports an error \(SC19/);
 plc.set('SC11', true); plc.set('SC10', true); plc.set('SC19', false);
 const closed: number = await new Promise((r) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = (s.address() as net.AddressInfo).port; s.close(() => r(p)); }); });
-lines = await testConnection(bridge, { ...settings, port: closed }, false, 'C0-11DD2E-D');
+// Windows answers a closed localhost port only after ~2 s of SYN retries (Linux at once): give the refusal time to arrive.
+lines = await testConnection(bridge, { ...settings, port: closed, timeoutMs: 5000 }, false, 'C0-11DD2E-D');
 assert.equal(lines.length, 1); assert.match(lines[0].text, /connection refused/);
 srv.state.mode = 'silent';
 lines = await testConnection(bridge, settings, false, 'C0-11DD2E-D');

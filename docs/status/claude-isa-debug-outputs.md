@@ -509,3 +509,59 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - LC1 / LC1W are fixed by `tagRe`: the light curtain is now drawn with its tag.
   - -U1 / -U2 / -U3 are the enclosure and back panel under IEC tags. check_cad now excludes undrawn parts by BOM category, not by tag prefix.
 - **check_cad:** both former warnings are now FAIL (a drawn wire number not in the wire list; a BOM device whose tag is drawn nowhere). On the 7 affected variants: CAD 0 FAIL / 0 WARN, CONSISTENCY 0, LAYOUT 0.
+
+## Engine cooling; single-file DXF check; Unitronics AML (integration e5bfd12, merged 7138eef)
+- **Cooling** (Dev 1's catalog fe5dfcd and pickers 82a9a3e). After the enclosure is chosen, `cabinetHeat` gives the heat the walls cannot shed (15 °C rise limit).
+  - **NEMA 1/12:** the smallest 24 VDC filter fan that moves the air with filters fitted (`pickFilterFan`, preferred enclosure makers first). It falls back to an AC fan when the panel has a control voltage.
+    - Parts added: FAN1 + its exhaust filter FAN1F (`pairsWith`; accessory tag = holder + F) + thermostat TH1 (011160-00, N.O. closes on rise, 30 W DC).
+    - The engine notes when the 24 VDC supply has no margin left for the fan.
+  - **Sealed NEMA 4/4X, or no fan fits:**
+    - the next larger enclosure of the same material and mounting that sheds the heat itself, at most twice the panel area (not past a designer's pick);
+    - else a heat exchanger (W/K × 15 K, ambient up to ~40 °C);
+    - else an air conditioner;
+    - else a note.
+  - **derive:**
+    - The 24 VDC fan circuit is: TB1 24+ → TH1:1, TH1:2 → wire FAN1 → FAN1:+, FAN1:− → 0V. Its TB1 terminals are added.
+    - `model.fan` is new.
+    - The design review flags "Cabinet cooling missing" when a hot cabinet has no fan, heat exchanger or air conditioner, and flags an AC fan as "not drawn".
+  - **Drawings, calcs, walls:**
+    - Control sheet: a rung 24+ — TH1 1-2 — FAN1 — 0V (box labelled FAN).
+    - 24 VDC load calc: the fan's catalog current.
+    - Enclosure walls: the fan's and exhaust filter's catalog cutouts (verified). Heat-exchanger / air-conditioner cutouts are marked "per the maker's drawing" (no invented rectangle).
+  - **check_consistency:** a hot cabinet without cooling and without the review finding fails. A 24 VDC fan without its wire fails. A fan without its exhaust filter or thermostat warns.
+  - **engine.test:**
+    - big gets FAN1 / FAN1F / TH1, enough air flow, and is wired;
+    - the example gets nothing;
+    - big in NEMA 4X gets no fan and is cooled by a larger enclosure or closed-loop cooling;
+    - a hand-removed fan is flagged; an undersized fan is flagged ("Cabinet cooling too small") in the warnings and the review;
+    - **acceptance, pump skid** (2× 10 HP on GS20 drives, 480 V): NEMA 12 gets FAN1 018722-30 (156 m³/h ≥ 112 m³/h for 541 W) + FAN1F + TH1, and the review has no heat finding. In 4X it keeps the 30×24 in stainless enclosure with HX1 TE30-030-17-4X (44 W/K × 15 K ≥ 541 W). Before the cap, 4X jumped to a 90×72×24 in floor-standing enclosure.
+- **Fitted cooling counts everywhere** (`coolingCover`: fan air flow / needed air flow, heat exchanger W/K × 15 K and air-conditioner W / watts to remove, added up):
+  - engineer review (`checks.ts`): no "Cabinet runs N °C above ambient" once the cooling carries the heat; "Cabinet cooling too small" (major) when it does not;
+  - calcs "Cabinet temperature rise" and the electrical doc's thermal row: "cooled by FAN1 …", ok; the cooling row lists fans, heat exchangers and air conditioners;
+  - check_consistency: undersized cooling that the review does not flag fails.
+- **check_cad, single-file DXF** (`<project>_drawings.dxf`, "Save as AutoCAD"):
+  - reads and audits clean;
+  - ISA_SANS / ISA_SANS_BOLD / ISA_MONO present;
+  - one frame per sheet, five per row in sheet order, frames apart, nothing outside them;
+  - each cell's device tags and wire numbers equal that sheet's own DXF;
+  - text heights 0.3–20 mm (cap heights; the smallest sheet text is ~0.43 mm).
+- **Integration findings on the 15 variants:**
+  - The rules-unitronics AML had 0 of 21 tags: the CPU was not a module there (its I/O sits on other devices), so the tag table was never placed. Fix: the AML always has the CPU.
+  - The symbols sheet's example wire numbers (X001) are excluded from the wire-list check.
+- **ODA File Converter bridge kept** (`electron/oda.cjs`, preload, bridge type): removed briefly as unused, restored unchanged because Debug 1 reads the user's DWG drawings through it in the Windows app. Save as AutoCAD itself writes DXF.
+
+## Wiring-path engine findings (Debug 4, #87): three generator bugs
+- **Two-hand buttons** were both tagged PB1. The wire list put X002 and X003 on PB1:NO together, and the JB device cable to PB1 carried only X002.
+  - Each button is now the station's tag + L / R (PB1L / PB1R on station PB1; else A, B…).
+  - The input device cable has one signal core per input.
+  - The 24 VDC estimate counts a station's buttons as its part, not as uncatalogued sensors.
+- **Trunk core / JB terminal numbers** now match the strip terminal and the device cable (Y001A for a coil behind a safety contact, not Y001).
+  - A double solenoid whose coils return on different wires (Y001 to a sinking output, 24+S) gets one JB terminal per return; both returns used to share JB1:18.
+- **Analog channel fallback** (`assignAnalog`) used to take any free channel, so a 0-10 V input landed on a C0-04THM channel.
+  - It now keeps the signal family: thermocouple vs voltage / current. The family also comes from the description; a "thermocouple transmitter" is 4-20 mA.
+  - A point that no channel takes is a critical review finding (`fit:analog-inputs`) naming the module to add.
+  - check_consistency fails on a wrong-family channel in the analog setup CSV.
+- **Tests:**
+  - engine.test: unique two-hand tags; one signal wire per field-device terminal; trunk core = device-cable core on every JB terminal;
+  - analog.test: THM / current / transmitter cases;
+  - review.test: 0-10 V with only a THM.

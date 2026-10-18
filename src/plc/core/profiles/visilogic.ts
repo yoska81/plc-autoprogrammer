@@ -17,7 +17,7 @@
  * - analog inputs are linked to an MI in Hardware Configuration ("Configure an Analog Input").
  */
 import type { CpuModel, ExportContext, ModuleSlot, PlcProfile, ProgramExporter } from '../profile';
-import type { CompareElement, LadderElement, LadderOutput, LadderProgram } from '../ladder';
+import { elementAddresses, rawTodo, type CompareElement, type LadderElement, type LadderOutput, type LadderProgram } from '../ladder';
 import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses } from './click';
 import { VISION_CPUS, cpuPart, pointOf, npnOutputsLast, unitronicsAnalogChannels, unitronicsParse } from './unitronics';
 import { getPart } from '../../../electrical/catalog';
@@ -74,8 +74,9 @@ export function visiOperands(program: LadderProgram, ctx: ExportContext): VisiMa
   };
   const offDelayTimers = new Set<string>();
   for (const r of program.rungs) {
-    for (const e of r.branches.flat()) for (const a of e.type === 'CMP' ? [e.left, e.right] : [e.address]) add(a);
+    for (const e of r.branches.flat()) for (const a of elementAddresses(e)) add(a);
     for (const o of r.outputs) {
+      if (o.type === 'RAW') continue;
       if (o.type === 'COPY') { add(o.source); add(o.dest); continue; }
       if (o.type === 'MATH') { add(o.dest); for (const t of o.expression.match(OPERAND_RE) ?? []) add(t); continue; }
       add(o.address);
@@ -143,6 +144,7 @@ export function visiLogicListing(program: LadderProgram, ctx: ExportContext): st
   const CMP: Record<CompareElement['op'], string> = { '==': 'Equal', '<>': 'Not equal', '>': 'Greater than', '>=': 'Greater or equal', '<': 'Less than', '<=': 'Less or equal' };
   const el = (e: LadderElement) => {
     if (e.type === 'CMP') return `[${CMP[e.op]}: ${opd(e.left)} , ${opd(e.right)}]`;
+    if (e.type === 'RAW') return `[${e.vendor === 'unitronics-vision' ? e.text : rawTodo(e)}]`;
     const kind = e.type === 'NO' ? 'Direct contact' : e.type === 'NC' ? 'Inverted contact' : e.type === 'RISE' ? 'Positive transition contact' : 'Negative transition contact';
     return `[${kind} ${opd(e.address)}]`;
   };
@@ -207,6 +209,7 @@ export function visiLogicListing(program: LadderProgram, ctx: ExportContext): st
           }
           case 'COPY': outs.push(`Store: ${opd(o.dest)} ← ${opd(o.source)}`); break;
           case 'MATH': outs.push(`Math: ${opd(o.dest)} := ${o.expression.replace(OPERAND_RE, (t) => opd(t))} (build with Add / Sub / Mul / Div)`); break;
+          case 'RAW': outs.push(o.vendor === 'unitronics-vision' ? o.text : rawTodo(o)); break;
         }
       }
       const main = ++net;
@@ -284,7 +287,7 @@ export const visionProfile: PlcProfile = {
   promptKnowledge: KNOWLEDGE,
   checkRung: (rung) => {
     const issues: { severity: 'error' | 'warning'; message: string }[] = [];
-    for (const e of rung.branches.flat()) for (const a of e.type === 'CMP' ? [e.left, e.right] : [e.address]) {
+    for (const e of rung.branches.flat()) for (const a of elementAddresses(e)) {
       if (/^SC\d+$/i.test(a) && !['SC1', 'SC2', 'SC7'].includes(a.toUpperCase())) issues.push({ severity: 'error', message: `${a}: no VisiLogic system bit for it (use SC1, SC2 or SC7 only).` });
     }
     for (const o of rung.outputs) {

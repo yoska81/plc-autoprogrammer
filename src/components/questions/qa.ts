@@ -1,4 +1,5 @@
 import { useSpecStore } from '../../store/useSpecStore';
+import { activeHmiDesign } from '../../hmi/projectPanel';
 import { runDerived, useProjectsStore } from '../../store/useProjectsStore';
 import { SOURCE_LABEL, setExternalKnowledge, type SyncItem, useQuestionStore, type Question, type QuestionSource } from './useQuestionStore';
 import { useReviewStore } from '../../review/useReviewStore';
@@ -103,7 +104,7 @@ function stageQuestions(): Record<Exclude<QuestionSource, 'review'>, Item[] | nu
   const ladder = useProgramStore.getState().ladder;
   const plan = useDraftStore.getState().drafts['io.plan'] as { questions?: string[] } | null | undefined;
   const el = useElectricalStore.getState().design;
-  const hmi = useHmiStore.getState().design;
+  const hmi = activeHmiDesign();
   return {
     spec: specQuestionItems(useSpecStore.getState().sections, useSpecStore.getState().questions),
     io: plan?.questions ? plan.questions.map((text) => ({ text, topic: foundWhile('io') })) : null,

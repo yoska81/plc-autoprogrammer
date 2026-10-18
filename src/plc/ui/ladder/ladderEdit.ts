@@ -51,6 +51,8 @@ export function boxLines(o: LadderOutput): string[] {
       return [`Src  ${o.source || '?'}`, `Dest ${o.dest || '?'}`];
     case 'MATH':
       return [`${o.dest || '?'} =`, o.expression || '?'];
+    case 'RAW':
+      return rawLines(o.text);
     default:
       return [];
   }
@@ -74,6 +76,7 @@ export function outputAddress(o: LadderOutput): string {
   switch (o.type) {
     case 'COPY': return o.dest;
     case 'MATH': return o.dest;
+    case 'RAW': return '';
     default: return o.address;
   }
 }
@@ -83,7 +86,8 @@ export const normAddr = (s: string) => s.toUpperCase().trim();
 
 // ---------------------------------------------------------------- defaults
 export function defaultElement(type: ElementType, prev?: LadderElement): LadderElement {
-  const addr = prev ? (prev.type === 'CMP' ? prev.left : prev.address) : '';
+  const addr = !prev || prev.type === 'RAW' ? '' : prev.type === 'CMP' ? prev.left : prev.address;
+  if (type === 'RAW') return prev?.type === 'RAW' ? prev : { type, vendor: '', text: '' };
   if (type === 'CMP') return { type: 'CMP', left: addr, op: '>=', right: prev?.type === 'CMP' ? prev.right : '' };
   return { type, address: addr };
 }
@@ -101,7 +105,16 @@ export function defaultOutput(type: OutputType, prev?: LadderOutput): LadderOutp
       return { type, source: '', dest: addr };
     case 'MATH':
       return { type, dest: addr, expression: '' };
+    case 'RAW':
+      return prev?.type === 'RAW' ? prev : { type, vendor: '', text: '' };
   }
+}
+
+/** An imported instruction's text in box lines (at most 4). */
+export function rawLines(text: string, width = 22): string[] {
+  const lines: string[] = [];
+  for (let s = text.trim(); s && lines.length < 4; s = s.slice(width)) lines.push(s.length > width && lines.length === 3 ? `${s.slice(0, width - 1)}…` : s.slice(0, width));
+  return lines.length ? lines : ['?'];
 }
 
 // ---------------------------------------------------------------- program edits
