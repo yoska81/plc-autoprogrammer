@@ -11,7 +11,7 @@ import { CATEGORIES, DEVICE_TYPES, IO_CATEGORIES, fileToBlock } from '../lib/ai/
 import { SPEC_SECTIONS, type SpecSectionId } from '../spec/types';
 import { cadToText, dwgToEntities, dxfToText } from './dxf';
 import { desktopBridge } from '../desktop/bridge';
-import type { DrawnRatings, ExistingMachine } from './types';
+import type { DrawnRatings, ExistingMachine, PathContact, PathEl } from './types';
 
 export const MAX_UPLOAD_FILES = 20;
 
@@ -56,6 +56,15 @@ const obj = (properties: Record<string, unknown>) => ({ type: 'object', properti
 const confidence = en(['high', 'medium', 'low']);
 const SECTION_IDS = SPEC_SECTIONS.map((s) => s.id);
 
+const CONTACT_KINDS = ['pb', 'relay', 'timer', 'limit', 'ol', 'selector', 'safety', 'other'];
+const CONTACT = obj({ tag: str, nc: { type: 'boolean' }, terms: nstr, kind: en(CONTACT_KINDS) });
+/** A path element: a contact, the coil (or drive input) at the end, or a parallel branch of contact paths (flat: one schema for all three). */
+const PATH_EL = obj({
+  t: en(['contact', 'coil', 'branch']), tag: str, nc: { type: 'boolean' }, terms: nstr,
+  kind: en([...CONTACT_KINDS, 'contactor', 'timer-on', 'timer-off', 'counter', 'solenoid', 'light', 'drive-input']), preset: nstr,
+  paths: { type: 'array', items: { type: 'array', items: CONTACT } },
+});
+
 export const EXISTING_SCHEMA = obj({
   summary: str,
   drawingStandard: en(['IEC', 'GB', 'JIS', 'NFPA', 'other']),
@@ -80,7 +89,7 @@ export const EXISTING_SCHEMA = obj({
   motors: { type: 'array', items: obj({ tag: str, description: str, kw: num, hp: num, starter: { anyOf: [en(['contactor-overload', 'motor-protector', 'vfd']), { type: 'null' }] }, reversing: { type: 'boolean' }, kind: en(['induction', 'servo']), confidence, source: str }) },
   axes: { type: 'array', items: obj({ tag: str, description: str, driveTag: str, drivePart: nstr, motorTag: str, motorKw: num, encoder: nstr, brakingResistor: nstr, signals: { type: 'array', items: str }, confidence, source: str }) },
   controller: en(['plc', 'servo-drive', 'relays', 'other']),
-  circuits: { type: 'array', items: obj({ output: str, function: str, kind: en(['start-stop', 'interlock', 'timer', 'counter', 'length', 'sequence', 'drive-logic', 'other']), conditions: { type: 'array', items: str }, sealIn: nstr, devices: { type: 'array', items: str }, setting: nstr, logicIn: en(['relays', 'drive', 'controller']), confidence, source: str }) },
+  circuits: { type: 'array', items: obj({ output: str, function: str, kind: en(['start-stop', 'interlock', 'timer', 'counter', 'length', 'sequence', 'drive-logic', 'other']), conditions: { type: 'array', items: str }, sealIn: nstr, path: { type: 'array', items: PATH_EL }, devices: { type: 'array', items: str }, setting: nstr, logicIn: en(['relays', 'drive', 'controller']), confidence, source: str }) },
   interlocks: { type: 'array', items: obj({ description: str, devices: { type: 'array', items: str } }) },
   safety: obj({ estops: { type: 'array', items: str }, guards: { type: 'array', items: str }, safetyRelay: nstr, category: nstr, kind: en(['safety-relay', 'hardwired', 'control-only']), description: str, drives: { type: 'array', items: obj({ tag: str, sto: en(['wired', 'not-wired', 'none', 'unknown']), stopsBy: str }) } }),
   spec: obj(Object.fromEntries(SECTION_IDS.map((id) => [id, str]))),
@@ -98,7 +107,7 @@ Read and report only what the drawings show. Never invent a part number, address
 - supplyDrawn: the incoming supply as drawn (volts, Hz, phases) and the text you read it from.
 - interlocks: what the wiring enforces: e.g. "KM1 and KM2 cross-interlocked (forward/reverse)", "Pump runs only when level switch SL1 is made", "Heater off when door open". List the device tags involved.
 - axes: each servo axis (drive tag and model, servo motor tag and kW, extra encoder such as a line-length encoder, braking resistor, the drive I/O used). A servo motor is listed in motors too, with kind "servo".
-- circuits: every control circuit as a function: what it drives (the coil, valve, lamp or drive input), the function in plain words, the kind (start-stop with a seal-in, interlock, timer, counter, length controller, sequence, or drive-logic for what a drive or controller does with its own built-in logic, e.g. a servo drive's flying shear or a VFD's preset speeds), the contacts in the coil's path in the order drawn, in plain words with terminals and NO/NC, parallel branches joined with ∥ (e.g. "SB1 stop (NC)", "SB2 start (NO) ∥ KM1 13-14 self-hold", "FR1 95-96 overload (NC)"), the seal-in (self-hold) contact if any, every device tag involved, the timer / counter / length setting as printed, where the logic is (relays, drive, controller), confidence and source. On a machine without a PLC this is its whole logic: list every relay and contactor coil.
+- circuits: every control circuit as a function: what it drives (the coil, valve, lamp or drive input), the function in plain words, the kind (start-stop with a seal-in, interlock, timer, counter, length controller, sequence, or drive-logic for what a drive or controller does with its own built-in logic, e.g. a servo drive's flying shear or a VFD's preset speeds), the contacts in the coil's path in the order drawn, in plain words with terminals and NO/NC, parallel branches joined with ∥ (e.g. "SB1 stop (NC)", "SB2 start (NO) ∥ KM1 13-14 self-hold", "FR1 95-96 overload (NC)"), the seal-in (self-hold) contact if any, the same path structured ("path": contacts in series from the left rail, a "branch" holding the parallel contact paths such as the start button and its seal-in, ending with the coil: relay, contactor, timer-on/off with its preset, counter, solenoid, light, or a drive input with its terminal; tag, NO/NC and terminals as drawn; for a contact element leave preset null and paths [], for a coil nc false), every device tag involved, the timer / counter / length setting as printed, where the logic is (relays, drive, controller), confidence and source. On a machine without a PLC this is its whole logic: list every relay and contactor coil.
 - io: on a machine without a PLC, list every field device as the I/O it would be (inputs: buttons, switches, sensors; outputs: motor contactor coils, valves, lamps, drive run inputs), with "address" saying where it connects now (e.g. "KM1 coil", "VFD DI1", "Servo CN1-17").
 - controller: what runs the logic: "plc", "servo-drive" (a servo drive's built-in controller, often with a touch panel), "relays", or "other". plc is null when there is no PLC.
 - safety: E-stop devices (tags), guard switches, the safety relay (tag and part number) and the category / PL if printed (or inferred from dual-channel wiring), the kind ("safety-relay": a monitored safety relay; "hardwired": the E-stop itself opens the power or control circuit; "control-only": the E-stop is only an input of a PLC, drive or controller, which is not a safety circuit), a short description of what removes power on a stop, and for every drive (VFD and servo drive) how it stops: "wired" when its Safe Torque Off (STO) inputs are wired to the safety circuit, "not-wired" when the drive has STO but it is bridged or unused, "none" when the drive has no STO, "unknown" when the drawings don't show it, and what stops it now (e.g. "single KA1 contact on the run input"). A drive stopped only by a run command or a single relay contact is not a two-channel stop.
@@ -109,6 +118,17 @@ Read and report only what the drawings show. Never invent a part number, address
 export interface DeriveOptions { apiKey: string; model: string; effort: Effort; signal?: AbortSignal }
 
 const NO_RATINGS: DrawnRatings = { amps: null, poles: null, coilVoltage: null, kA: null, curve: null, minAmps: null, maxAmps: null, kw: null, outputVolts: null, outputAmps: null };
+
+/** A path as the schema returns it (flat elements) in the typed form; empty when the AI gave none. */
+function cleanPath(raw: unknown): PathEl[] {
+  if (!Array.isArray(raw)) return [];
+  type Flat = { t?: string; tag?: string; nc?: boolean; terms?: string | null; kind?: string; preset?: string | null; paths?: Flat[][] };
+  const contact = (e: Flat): PathContact => ({ t: 'contact', tag: e.tag ?? '', nc: Boolean(e.nc), terms: e.terms ?? null, kind: (e.kind ?? 'other') as PathContact['kind'] });
+  return (raw as Flat[]).filter((e) => e && (e.tag || e.t === 'branch')).map((e): PathEl => (e.t === 'branch'
+    ? { t: 'branch', paths: (e.paths ?? []).map((p) => p.filter((x) => x?.tag).map(contact)).filter((p) => p.length) }
+    : e.t === 'coil' ? { t: 'coil', tag: e.tag!, kind: (e.kind ?? 'relay') as Extract<PathEl, { t: 'coil' }>['kind'], preset: e.preset ?? null, terms: e.terms ?? null }
+      : contact(e)));
+}
 
 /** Fill what the AI may leave out, so the rest of the app can rely on the shape. */
 export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine {
@@ -127,7 +147,7 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
     axes: raw.axes ?? [],
     controller: raw.controller ?? (raw.plc ? 'plc' : 'other'),
     interlocks: raw.interlocks ?? [],
-    circuits: (raw.circuits ?? []).map((c) => ({ ...c, conditions: c.conditions ?? [], sealIn: c.sealIn ?? null, devices: c.devices ?? [], setting: c.setting ?? null, logicIn: c.logicIn ?? 'relays', confidence: c.confidence ?? 'medium', source: c.source ?? '' })),
+    circuits: (raw.circuits ?? []).map((c, i) => ({ ...c, id: c.id ?? `C${i + 1}`, conditions: c.conditions ?? [], sealIn: c.sealIn ?? null, path: cleanPath(c.path), devices: c.devices ?? [], setting: c.setting ?? null, logicIn: c.logicIn ?? 'relays', confidence: c.confidence ?? 'medium', source: c.source ?? '' })),
     safety: { estops: [], guards: [], safetyRelay: null, category: null, description: '', ...raw.safety, drives: raw.safety?.drives ?? [], kind: raw.safety?.kind ?? (raw.safety?.safetyRelay ? 'safety-relay' : 'hardwired') },
     spec,
     questions: (raw.questions ?? []).filter((q) => q.text?.trim()),

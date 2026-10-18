@@ -13,7 +13,7 @@ import { useQuestionStore } from '../components/questions/useQuestionStore';
 import { applyRegion } from '../standards/applyRegion';
 import type { SpecSections } from '../spec/types';
 import type { SyncItem } from '../components/questions/useQuestionStore';
-import type { ConvertTarget, Conversion } from './convert';
+import { retag, type ConvertTarget, type Conversion } from './convert';
 import type { ExistingMachine } from './types';
 import { wiringText } from './photos/wiringText';
 
@@ -47,7 +47,10 @@ export function convertedSpec(m: ExistingMachine, conv: Conversion): SpecSection
   // wiringText: the terminal strips and wires read from cabinet photos (structured in the reading)
   spec.utilities = [m.spec.utilities, wiringText(m), `Conversion: ${conv.supplyNote} The panel is redesigned to ${std}.`].filter(Boolean).join('\n');
   // nothing is certified by a conversion: the safety functions are kept, then re-validated
-  spec.safety = [m.spec.safety, 'Converted design: every safety function above is kept, and must be re-validated after the conversion (risk assessment, then verification per ISO 13849-2 / NFPA 79 9.2.5.4). The panel needs its own UL 508A listing or field evaluation; the part equivalents carry only their makers\' listings.'].filter(Boolean).join('\n');
+  // the safety circuit as drawn, word for word with the new tags: it is kept (hardwired) and re-validated
+  const drawn = m.safety.description && !m.spec.safety.includes(m.safety.description)
+    ? `Safety circuit as drawn (kept, new tags): ${retag(m.safety.description, conv.tags)}${conv.logic === 'plc' ? ' In the PLC design its outputs switch the safe 24 V (24+S) to the PLC outputs and the valves.' : ''}` : '';
+  spec.safety = [m.spec.safety, drawn, 'Converted design: every safety function above is kept, and must be re-validated after the conversion (risk assessment, then verification per ISO 13849-2 / NFPA 79 9.2.5.4). The panel needs its own UL 508A listing or field evaluation; the part equivalents carry only their makers\' listings.'].filter(Boolean).join('\n');
   for (const r of conv.recommendations) spec[r.section] = [spec[r.section], `Conversion: ${r.text}`].filter(Boolean).join('\n');
   // the interlocks the wiring enforced, word for word, so the new program and the function-kept check keep them
   if (m.interlocks.length) spec.sequence = [spec.sequence, `Interlocks to keep (from the existing wiring):\n${m.interlocks.map((i) => `- ${i.description}`).join('\n')}`].filter(Boolean).join('\n');

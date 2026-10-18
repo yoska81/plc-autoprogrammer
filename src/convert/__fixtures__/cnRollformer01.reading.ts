@@ -3,7 +3,7 @@
  * the tests, written from the facts in cnRollformer01.facts.ts. Relay logic C1–C11 as circuits, no PLC,
  * a PNOZ s3 safety relay but no STO on either drive.
  */
-import type { DrawnRatings, ExistingMachine } from '../types';
+import type { DrawnRatings, ExistingMachine, PathEl } from '../types';
 
 const r = (x: Partial<DrawnRatings> = {}): DrawnRatings => ({ amps: null, poles: null, coilVoltage: null, kA: null, curve: null, minAmps: null, maxAmps: null, kw: null, outputVolts: null, outputAmps: null, ...x });
 type Comp = ExistingMachine['components'][number];
@@ -17,6 +17,40 @@ const O = (deviceTag: string, address: string, description: string, deviceType: 
 type Circuit = ExistingMachine['circuits'][number];
 const K = (output: string, fn: string, kind: Circuit['kind'], conditions: string[], devices: string[], source: string, more: Partial<Circuit> = {}): Circuit =>
   ({ output, function: fn, kind, conditions, devices, setting: null, logicIn: 'relays', confidence: 'high', source, ...more });
+
+type Contact = Extract<PathEl, { t: 'contact' }>;
+const no = (tag: string, terms: string | null, kind: Contact['kind'] = 'relay'): Contact => ({ t: 'contact', tag, nc: false, terms, kind });
+const nc = (tag: string, terms: string | null, kind: Contact['kind'] = 'relay'): Contact => ({ t: 'contact', tag, nc: true, terms, kind });
+const br = (...paths: Contact[][]): PathEl => ({ t: 'branch', paths });
+const coil = (tag: string, kind: Extract<PathEl, { t: 'coil' }>['kind'], preset: string | null = null, terms: string | null = null): PathEl => ({ t: 'coil', tag, kind, preset, terms });
+/** The C1–C11 coil paths as drawn. */
+const PATHS: Record<string, PathEl[]> = {
+  KM1: [no('KA0', '13-14', 'safety'), nc('SB2', null, 'pb'), br([no('SB1', null, 'pb')], [no('KM1', '13-14')]), nc('FR1', '95-96', 'ol'), coil('KM1', 'contactor')],
+  KA1: [nc('SB4', null, 'pb'), no('KM1', '53-54'), no('KA5', '11-14'), nc('KA6', '11-12'), no('U1', 'RB-RC', 'other'), nc('KT1', '15-16', 'timer'), nc('H7CX', 'OUT', 'other'), nc('KA9', '11-12'), no('KA10', '11-14'),
+    br([no('SB3', null, 'pb')], [no('KA1', '11-14')]), coil('KA1', 'relay')],
+  KA2: [nc('KA1', '41-42'), no('SB5', null, 'pb'), nc('KA3', '11-12'), coil('KA2', 'relay')],
+  KA3: [nc('KA1', '41-42'), no('SB6', null, 'pb'), nc('KA2', '11-12'), coil('KA3', 'relay')],
+  KA4: [no('SA1', null, 'selector'), coil('KA4', 'relay')],
+  KA9: [no('SQ3', null, 'limit'), coil('KA9', 'relay')],
+  KA10: [no('SQ4', null, 'limit'), coil('KA10', 'relay')],
+  KA5: [no('U2', 'DO1', 'other'), coil('KA5', 'relay')],
+  KA6: [no('U2', 'DO5', 'other'), coil('KA6', 'relay')],
+  YV1: [br([no('KA7', '11-14')], [no('SB7', null, 'pb'), nc('KA1', '41-42')]), nc('KA8', '11-12'), coil('YV1', 'solenoid')],
+  KT1: [br([no('KA7', '11-14')], [no('SB7', null, 'pb'), nc('KA1', '41-42')]), nc('KA8', '11-12'), coil('KT1', 'timer-on', '2 s')],
+  KA8: [br([no('SQ1', null, 'limit')], [no('KA8', '21-24')]), nc('SQ2', null, 'limit'), coil('KA8', 'relay')],
+  YV2: [no('KA8', '31-34'), coil('YV2', 'solenoid')],
+  H7CX: [no('KA8', '41-44'), coil('H7CX', 'counter', 'batch quantity', 'CP1')],
+  HL4: [br([no('KA6', '21-24')], [no('U1', 'RA-RC', 'other')]), coil('HL4', 'light')],
+  'U1 MI1': [br([no('KA1', '21-24')], [no('KA2', '21-24')]), coil('U1', 'drive-input', null, 'MI1')],
+  'U1 MI2': [no('KA3', '21-24'), coil('U1', 'drive-input', null, 'MI2')],
+  'U1 MI3': [br([no('KA2', '31-34')], [no('KA3', '31-34')]), coil('U1', 'drive-input', null, 'MI3')],
+  HL1: [coil('HL1', 'light')],
+  HL2: [no('KM1', '63-64'), coil('HL2', 'light')],
+  HL5: [no('H7CX', 'OUT NO', 'other'), coil('HL5', 'light')],
+};
+// HL3 hangs in parallel with the KA1 coil: same contacts
+PATHS.HL3 = [...PATHS.KA1.slice(0, -1), coil('HL3', 'light')];
+const withPaths = (cs: Circuit[]): Circuit[] => cs.map((c) => (PATHS[c.output] ? { ...c, path: PATHS[c.output] } : c));
 
 export const CN_ROLLFORMER_01_READING: ExistingMachine = {
   summary: 'Roll-forming line HC-YX840-E01: a 5.5 kW forming motor on a Delta VFD, a 2.2 kW hydraulic pump, and a 1.5 kW Delta servo flying shear (E-CAM) following a measuring-wheel encoder. No PLC: relay logic KA1–KA10, a cut watchdog timer and a batch counter, with a Pilz PNOZ s3 safety relay.',
@@ -85,7 +119,7 @@ export const CN_ROLLFORMER_01_READING: ExistingMachine = {
     { tag: 'M2', description: 'Hydraulic pump, DOL on KM1', kw: 2.2, hp: null, starter: 'contactor-overload', reversing: false, kind: 'induction', confidence: 'high', source: 'sheet 3' },
     { tag: 'M3', description: 'Flying shear servo motor ECMA-E21315RS', kw: 1.5, hp: null, starter: null, reversing: true, kind: 'servo', confidence: 'high', source: 'sheet 3' },
   ],
-  circuits: [
+  circuits: withPaths([
     K('KM1', 'Hydraulic pump: start SB1, stop SB2, held by KM1 13-14, only with the safety relay KA0 closed and the overload FR1 healthy', 'start-stop', ['KA0 13-14 (NO)', 'SB2 stop (NC)', 'SB1 start (NO) ∥ KM1 13-14 self-hold', 'FR1 95-96 (NC)'], ['KA0', 'SB2', 'SB1', 'KM1', 'FR1'], 'sheet 3 (C1)', { sealIn: 'KM1 13-14' }),
     K('KA1', 'Line run: start SB3, stop SB4, held by KA1 11-14; needs pump running, servo ready, no servo alarm, VFD healthy, cut watchdog OK, batch not complete, no overrun, material present', 'start-stop',
       ['SB4 stop (NC)', 'KM1 53-54 pump running (NO)', 'KA5 11-14 servo ready (NO)', 'KA6 11-12 no servo alarm (NC)', 'U1 RB-RC VFD healthy', 'KT1 15-16 cut watchdog (NC)', 'H7CX OUT batch not complete (NC)', 'KA9 11-12 no overrun (NC)', 'KA10 11-14 material present (NO)', 'SB3 start (NO) ∥ KA1 11-14 self-hold'],
@@ -98,15 +132,21 @@ export const CN_ROLLFORMER_01_READING: ExistingMachine = {
     K('KA5', 'Servo ready from U2 DO1 SRDY', 'other', ['U2 DO1 SRDY'], ['U2', 'KA5'], 'sheet 6 (C6)'),
     K('KA6', 'Servo alarm from U2 DO5 ALRM', 'other', ['U2 DO5 ALRM'], ['U2', 'KA6'], 'sheet 6 (C6)'),
     K('KA7', 'Cut command from U2 DO3 (E-CAM cut point)', 'drive-logic', ['U2 DO3'], ['U2', 'KA7'], 'sheet 6 (C6)', { logicIn: 'drive' }),
-    K('YV1', 'Shear down from the cut command or manual cut, until the cut return latch KA8', 'sequence', ['KA7 11-14 cut (NO) ∥ SB7 manual cut (wire 341)', 'KA8 11-12 (NC)'], ['KA7', 'SB7', 'KA8', 'YV1'], 'sheet 6 (C7)'),
-    K('KT1', 'Cut watchdog: shear down longer than 2 s opens the line run circuit', 'timer', ['KA7 11-14 ∥ SB7', 'KA8 11-12 (NC)'], ['KA7', 'SB7', 'KA8', 'KT1'], 'sheet 6 (C7)', { setting: 'KT1 on-delay 2 s, contact 15-16 NC in KA1' }),
+    K('YV1', 'Shear down from the cut command, or the manual cut while the line is stopped, until the cut return latch KA8', 'sequence', ['KA7 11-14 cut (NO) ∥ (SB7 manual cut, wire 341 + KA1 41-42 line stopped (NC))', 'KA8 11-12 (NC)'], ['KA7', 'SB7', 'KA1', 'KA8', 'YV1'], 'sheet 6 (C7)'),
+    K('KT1', 'Cut watchdog: shear down longer than 2 s opens the line run circuit', 'timer', ['KA7 11-14 ∥ (SB7 + KA1 41-42)', 'KA8 11-12 (NC)'], ['KA7', 'SB7', 'KA1', 'KA8', 'KT1'], 'sheet 6 (C7)', { setting: 'KT1 on-delay 2 s, contact 15-16 NC in KA1' }),
     K('KA8', 'Cut return latch: SQ1 at the bottom sets it, held by KA8 21-24 until SQ2 at the top', 'sequence', ['SQ1 shear down (NO) ∥ KA8 21-24 self-hold', 'SQ2 shear up (NC)'], ['SQ1', 'KA8', 'SQ2'], 'sheet 6 (C8)', { sealIn: 'KA8 21-24' }),
     K('YV2', 'Shear up while the return latch KA8 is set', 'sequence', ['KA8 31-34 (NO)'], ['KA8', 'YV2'], 'sheet 6 (C8)'),
     K('H7CX', 'Batch counter: counts cuts (KA8 41-44 to CP1), reset SB8; OUT NC stops the line, OUT NO lights HL5', 'counter', ['KA8 41-44 to CP1', 'SB8 to RST'], ['KA8', 'SB8', 'H7CX', 'HL5'], 'sheet 6 (C9)', { setting: 'batch quantity on the H7CX' }),
+    K('HL1', 'Power on lamp', 'other', ['control power on'], ['HL1'], 'sheet 4 (C10)'),
+    K('HL2', 'Pump running lamp', 'other', ['KM1 63-64 (NO)'], ['KM1', 'HL2'], 'sheet 4 (C10)'),
+    K('HL3', 'Line running lamp, in parallel with the KA1 coil', 'other', ['as KA1: SB4 … SB3 ∥ KA1 11-14'], ['SB4', 'SB3', 'KA1', 'HL3'], 'sheet 5 (C10)'),
     K('HL4', 'Fault lamp: servo alarm or VFD fault', 'other', ['KA6 21-24 ∥ U1 RA-RC'], ['KA6', 'U1', 'HL4'], 'sheet 4 (C10)'),
-    K('U1 MI1', 'VFD forward from line run or jog forward; MI2 reverse from jog reverse; MI3 jog speed from either jog', 'drive-logic', ['KA1 21-24 ∥ KA2 21-24 → MI1', 'KA3 21-24 → MI2', 'KA2 31-34 ∥ KA3 31-34 → MI3'], ['KA1', 'KA2', 'KA3', 'U1'], 'sheet 4 (C11)'),
+    K('HL5', 'Batch complete lamp', 'other', ['H7CX OUT NO'], ['H7CX', 'HL5'], 'sheet 6 (C10)'),
+    K('U1 MI1', 'VFD forward from line run or jog forward', 'drive-logic', ['KA1 21-24 ∥ KA2 21-24 → MI1 forward'], ['KA1', 'KA2', 'U1'], 'sheet 4 (C11)'),
+    K('U1 MI2', 'VFD reverse from jog reverse', 'drive-logic', ['KA3 21-24 → MI2 reverse'], ['KA3', 'U1'], 'sheet 4 (C11)'),
+    K('U1 MI3', 'VFD jog speed from either jog', 'drive-logic', ['KA2 31-34 ∥ KA3 31-34 → MI3 jog'], ['KA2', 'KA3', 'U1'], 'sheet 4 (C11)'),
     K('U2', 'Flying shear: E-CAM follows the measuring wheel B1 and cuts at the set length (300–6000 mm)', 'length', ['KA4 → DI1 SON', 'SB9 23-24 → DI5 ARST', 'KA1 31-34 → DI7 CAM engage', 'B1 → CN5'], ['KA4', 'SB9', 'KA1', 'B1', 'U2'], 'sheet 6', { logicIn: 'drive', setting: 'cut length 300–6000 mm in the drive' }),
-  ],
+  ]),
   axes: [
     { tag: 'A1', description: 'Flying shear carriage (E-CAM): ball screw 20 mm lead, 500 mm stroke', driveTag: 'U2', drivePart: 'Delta ASD-A2-1521-L', motorTag: 'M3', motorKw: 1.5, encoder: 'measuring-wheel encoder B1 (200 mm wheel, 1000 ppr) on CN5', brakingResistor: null, signals: ['DI1 SON', 'DI5 ARST', 'DI7 CAM', 'DO1 SRDY', 'DO3 cut', 'DO5 ALRM'], confidence: 'high', source: 'sheet 6' },
   ],
@@ -114,6 +154,13 @@ export const CN_ROLLFORMER_01_READING: ExistingMachine = {
   interlocks: [
     { description: 'Jog forward and jog reverse are cross-interlocked and work only with the line stopped', devices: ['KA2', 'KA3', 'KA1'] },
     { description: 'Manual cut SB7 only with the line stopped', devices: ['SB7', 'KA1'] },
+    { description: 'The pump KM1 runs only with the safety relay KA0 closed and its overload FR1 healthy', devices: ['KM1', 'KA0', 'FR1'] },
+    { description: 'The line KA1 runs only with the pump running (KM1 53-54)', devices: ['KA1', 'KM1'] },
+    { description: 'The line KA1 runs only with the servo ready (KA5) and no servo alarm (KA6)', devices: ['KA1', 'KA5', 'KA6'] },
+    { description: 'The line KA1 stops on a VFD fault (U1 RB-RC open)', devices: ['KA1', 'U1'] },
+    { description: 'The cut watchdog KT1 stops the line when the shear stays down longer than 2 s', devices: ['KT1', 'KA1'] },
+    { description: 'The line stops at the batch quantity (H7CX OUT NC) and on run-out overrun (KA9); it needs material present (KA10)', devices: ['KA1', 'H7CX', 'KA9', 'KA10'] },
+    { description: 'Shear down YV1 and shear up YV2 never together: the return latch KA8 drops YV1 and drives YV2', devices: ['YV1', 'YV2', 'KA8'] },
   ],
   safety: {
     estops: ['SB0', 'SB10'], guards: ['SQ5'], safetyRelay: 'KA0 Pilz PNOZ s3', category: 'Cat 3 / PL d (claimed)', kind: 'safety-relay',

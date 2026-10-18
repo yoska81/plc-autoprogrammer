@@ -35,13 +35,14 @@ export function scoreReading(m: ExistingMachine, f: ExpectedFacts): Score {
 
   part('Signals', f.signals.map((s) => [s, word(s.split(/\s/)[0]).test(`${ioText}\n${circuitText}`)]));
   part('Relays', f.relays.map((r) => [r, tags.has(r) || word(r).test(circuitText)]));
-  // relay logic: the coil's circuit, with every contact in its path (half credit per coil for half the contacts)
+  // relay logic: the coil's circuit is read, and every contact in its path (each one counts)
   const logic: [string, boolean][] = [];
   for (const e of f.relayLogic) {
     const c = m.circuits.find((x) => word(e.coil).test(x.output));
-    const have = c ? new Set([...c.devices, ...c.conditions.flatMap((t) => t.match(/[A-Z][A-Z0-9]*\d+|H7CX/g) ?? [])]) : new Set<string>();
-    const missing = e.contacts.filter((d) => !have.has(d));
-    logic.push([`${e.id} ${e.coil}${missing.length ? ` (missing ${missing.join(', ')})` : ''}`, Boolean(c) && missing.length <= e.contacts.length / 4]);
+    const pathTags = (c?.path ?? []).flatMap((x) => (x.t === 'branch' ? x.paths.flat().map((y) => y.tag) : [x.tag]));
+    const have = c ? new Set([...c.devices, ...pathTags, ...c.conditions.flatMap((t) => t.match(/[A-Z][A-Z0-9]*\d+|H7CX/g) ?? [])]) : new Set<string>();
+    logic.push([`${e.id} ${e.coil} circuit`, Boolean(c)]);
+    for (const d of e.contacts) logic.push([`${e.id} ${e.coil} ← ${d}`, have.has(d)]);
     if (e.sealIn) logic.push([`${e.id} ${e.coil} seal-in`, Boolean(c && (c.sealIn || c.kind === 'start-stop' || c.conditions.some((t) => /seal|self-hold|自锁|hold/i.test(t))))]);
   }
   part('Relay logic', logic);
@@ -66,9 +67,11 @@ export function scoreReading(m: ExistingMachine, f: ExpectedFacts): Score {
     ['no PLC', (m.controller !== 'plc') === !f.hasPlc],
     ['supply', m.supplyDrawn.volts === f.supply.volts && m.supplyDrawn.hz === f.supply.hz],
   ]);
-  const percent = Math.round(parts.reduce((a, p) => a + (p.total ? p.found / p.total : 1), 0) / parts.length * 100);
+  // rounded down, and never 100 % while anything is missing
+  const raw = Math.floor(parts.reduce((a, p) => a + (p.total ? p.found / p.total : 1), 0) / parts.length * 100);
+  const percent = parts.some((p) => p.found < p.total) ? Math.min(raw, 99) : raw;
   return { parts, percent };
 }
 
 /** One line per part, e.g. "Signals 26/28 (93 %) — missing: SB9, H7CX". */
-export const scoreText = (s: Score) => [...s.parts.map((p) => `${p.label} ${p.found}/${p.total} (${Math.round(p.found / Math.max(1, p.total) * 100)} %)${p.misses.length ? ` — missing: ${p.misses.join('; ')}` : ''}`), `Overall ${s.percent} %`].join('\n');
+export const scoreText = (s: Score) => [...s.parts.map((p) => `${p.label} ${p.found}/${p.total} (${p.found < p.total ? Math.min(99, Math.floor(p.found / p.total * 100)) : 100} %)${p.misses.length ? ` — missing: ${p.misses.join('; ')}` : ''}`), `Overall ${s.percent} %`].join('\n');

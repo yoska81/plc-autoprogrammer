@@ -13,7 +13,7 @@ import type { SpecSectionId } from '../spec/types';
 import { foreignRatings } from './foreignParts';
 import { similarity } from './functionKept';
 import type { ImportedIO } from '../lib/ai/importAI';
-import type { DriveStop, DrawnCircuit, DrawnComponent, DrawnRatings, ExistingMachine } from './types';
+import type { DriveStop, DrawnCircuit, DrawnComponent, DrawnIO, DrawnRatings, ExistingMachine } from './types';
 
 export interface ConvertTarget {
   region: Region;
@@ -90,6 +90,23 @@ export function naTags(components: DrawnComponent[]): Map<string, string> {
     out.set(c.tag, prefix === 'PLC' || prefix === 'HMI' || prefix === 'ENC' ? (n === 1 ? prefix : `${prefix}${n}`) : `${prefix}${n}`);
   }
   return out;
+}
+
+const IO_CATEGORY: Partial<Record<ImportedIO['deviceType'], DrawnComponent['category']>> = {
+  'pushbutton-no': 'pushbutton', 'pushbutton-nc': 'pushbutton', selector: 'selector', 'estop-contact': 'estop', 'sensor-pnp': 'sensor', 'sensor-npn': 'sensor',
+  'limit-switch': 'sensor', 'pressure-switch': 'sensor', 'contactor-coil': 'contactor', 'relay-coil': 'relay', solenoid: 'solenoidValve', 'pilot-light': 'pilotLight', 'stack-light': 'stackLight',
+};
+
+/** Field devices the drawings show only in the I/O list (buttons, switches, lamps without a parts-list row), so they are renamed too. */
+export function ioOnlyDevices(m: ExistingMachine): DrawnComponent[] {
+  const known = new Set(m.components.map((c) => c.tag));
+  const out = new Map<string, DrawnComponent>();
+  for (const p of m.io) {
+    const category = IO_CATEGORY[p.deviceType];
+    if (!p.deviceTag || known.has(p.deviceTag) || out.has(p.deviceTag) || !category || !/^[A-Z]{1,3}\d+$/.test(p.deviceTag)) continue;
+    out.set(p.deviceTag, { tag: p.deviceTag, partNumber: null, manufacturer: null, description: p.description, category, ratings: { amps: null, poles: null, coilVoltage: null, kA: null, curve: null, minAmps: null, maxAmps: null, kw: null, outputVolts: null, outputAmps: null }, confidence: p.confidence, source: p.source });
+  }
+  return [...out.values()];
 }
 
 /** Safety parts: kept by function, never certified by the conversion. */
@@ -225,7 +242,11 @@ export interface Conversion {
 }
 
 export interface ConvertedCircuit {
+  /** C1, C2… in the order read: the key of the circuit's rung on the new drawings. */
+  id: string;
   circuit: DrawnCircuit;
+  /** Safety relay contacts that stay hardwired in the coil circuit when the rest becomes PLC logic, e.g. "SR1 13-14". */
+  hardwired: string[];
   /** relays: kept as a hardwired circuit; program: becomes PLC logic; drive: stays in the drive's / controller's own logic. */
   becomes: 'relays' | 'program' | 'drive';
   /** The circuit with the new tags, e.g. "K2: SS4 cutting on (NO), K1 aux (NO), K2 seal-in (NO)". */
@@ -245,9 +266,22 @@ export function retag(text: string, tags: Map<string, string>): string {
 
 /** Where each circuit's function goes. A drive's or controller's built-in logic stays there (a servo keeps positioning); relay logic follows the choice. */
 export function convertCircuits(m: ExistingMachine, tags: Map<string, string>, logic: LogicChoice | null): ConvertedCircuit[] {
-  return m.circuits.map((c) => {
-    const becomes = c.logicIn === 'drive' ? 'drive' as const : logic === 'keep-relays' ? 'relays' as const : 'program' as const;    return { circuit: c, becomes, text: retag(`${c.output}: ${c.function}${c.conditions.length ? ` (${c.conditions.join(', ')})` : ''}${c.setting && !c.function.includes(c.setting) ? `; setting: ${c.setting}` : ''}`, tags) };
+  const sr = m.safety.safetyRelay?.match(/[A-Z]{1,3}\d+/)?.[0] ?? m.components.find((c) => c.category === 'safetyRelay')?.tag ?? null;
+  return m.circuits.map((c, i) => {
+    const becomes = c.logicIn === 'drive' ? 'drive' as const : logic === 'keep-relays' ? 'relays' as const : 'program' as const;
+    // a safety relay's contact stays in the coil circuit, hardwired: the safety function never depends on the PLC (NFPA 79 9.4.1)
+    const hardwired = becomes === 'program' ? safetyContacts(c, sr).map((x) => retag(x, tags)) : [];
+    const text = `${c.output}: ${c.function}${c.conditions.length ? ` (${c.conditions.join(', ')})` : ''}${c.setting && !c.function.includes(c.setting) ? `; setting: ${c.setting}` : ''}`;
+    return { id: c.id ?? `C${i + 1}`, circuit: c, becomes, hardwired, text: `${retag(text, tags)}${hardwired.length ? `; stays hardwired in the coil circuit, not through the PLC: ${hardwired.join(', ')}` : ''}` };
   });
+}
+
+/** The safety relay contacts in a circuit's path ("KA0 13-14"), from its structured path or its contact list. */
+function safetyContacts(c: DrawnCircuit, sr: string | null): string[] {
+  const fromPath = (c.path ?? []).flatMap((e) => (e.t === 'branch' ? e.paths.flat() : e.t === 'contact' ? [e] : []))
+    .filter((e) => e.kind === 'safety' || e.tag === sr).map((e) => `${e.tag}${e.terms ? ` ${e.terms}` : ''}`);
+  if (fromPath.length) return [...new Set(fromPath)];
+  return sr ? c.conditions.filter((t) => new RegExp(`^${sr}\\b`).test(t)).map((t) => t.replace(/\s*\(N[OC]\)\s*$/, '')) : [];
 }
 
 const INPUT_DEVICE: Partial<Record<DrawnComponent['category'], ImportedIO['deviceType']>> = { pushbutton: 'pushbutton-no', selector: 'selector', sensor: 'sensor-pnp' };
@@ -261,7 +295,8 @@ const OUTPUT_DEVICE: Partial<Record<DrawnComponent['category'], ImportedIO['devi
  */
 export function newIo(m: ExistingMachine, logic: LogicChoice | null): ImportedIO[] {
   if (logic !== 'plc') return m.io;
-  const named = new Set(m.io.map((p) => p.deviceTag).filter(Boolean));
+  const io = m.io.flatMap(splitSignals);
+  const named = new Set(io.map((p) => p.deviceTag).filter(Boolean));
   const extra: ImportedIO[] = [];
   for (const c of m.circuits.filter((x) => x.logicIn !== 'drive')) {
     for (const tag of c.devices) {
@@ -280,7 +315,47 @@ export function newIo(m: ExistingMachine, logic: LogicChoice | null): ImportedIO
       });
     }
   }
-  return [...m.io, ...extra];
+  // the relays that switched drive inputs are gone: the PLC drives them itself (VFD forward / reverse / jog, servo ON, CAM)
+  const outputs = driveCommands(m).filter((d) => !io.some((p) => p.type === 'output' && p.address === d.address));
+  return [...io, ...extra, ...outputs];
+}
+
+const TERMINAL = /^(?:[A-Z]{1,4}\d*(?:-[A-Z0-9]+)?|CN\d+-\d+)$/;
+
+/**
+ * One point per signal: a reading that holds several ("U2 DO1 / DO3 / DO5" described as "ready (DO1), cut
+ * (DO3), alarm (DO5)") becomes "U2 DO1 ready", "U2 DO3 cut", "U2 DO5 alarm". Anything else stays as read.
+ */
+export function splitSignals(p: DrawnIO): DrawnIO[] {
+  const codes = [...p.description.matchAll(/([^,;:/()]+?)\s*\(([^()]+)\)/g)].filter((x) => TERMINAL.test(x[2]) && !/^N[OC]$/.test(x[2]));
+  if (codes.length < 2) return [p];
+  const tag = p.deviceTag ?? p.address.split(/\s/)[0];
+  return codes.map((x) => ({ ...p, ...(p.id ? { id: `${p.id}-${x[2]}` } : {}), address: `${tag} ${x[2]}`, description: `${tag} ${x[1].trim()} (${x[2]})` }));
+}
+
+/** The drive inputs a relay switched ("KA4 → DI1 SON", a path ending in drive input MI1): with the relays in a PLC, each is a PLC output. */
+export function driveCommands(m: ExistingMachine): ImportedIO[] {
+  const comp = (t: string) => m.components.find((c) => c.tag === t);
+  const isDrive = (t: string) => comp(t)?.category === 'vfd' || m.axes.some((a) => a.driveTag === t);
+  const out = new Map<string, ImportedIO>();
+  const add = (drive: string, terminal: string, what: string, source: string) => {
+    const address = `${drive} ${terminal}`;
+    if (out.has(address)) return;
+    const servo = m.axes.some((a) => a.driveTag === drive);
+    out.set(address, { address, description: `${drive} ${terminal} ${what}`.trim(), type: 'output', category: servo ? 'Servo/Axis' : 'Conveyor', deviceTag: drive, deviceType: 'vfd-input', confidence: 'high', source });
+  };
+  for (const c of m.circuits) {
+    const drive = [c.output.split(/\s/)[0], ...c.devices].find(isDrive);
+    if (!drive) continue;
+    // a relay circuit ending at a drive input
+    if (c.logicIn !== 'drive') for (const e of c.path ?? []) if (e.t === 'coil' && e.kind === 'drive-input' && e.terms) add(e.tag, e.terms, c.function.split(/[;,]/)[0].replace(new RegExp(`^${e.tag}\\s*`), ''), c.source);
+    // relay contacts into the drive's inputs, as written: "KA4 → DI1 SON", "KA1 21-24 ∥ KA2 21-24 → MI1 forward"
+    for (const t of c.conditions) {
+      const x = t.match(/^([A-Z]{1,3}\d+)[^→]*→\s*((?:[A-Z]{1,4}\d+|CN\d+-\d+))\s*([^,;∥]*)$/);
+      if (x && comp(x[1])?.category === 'relay' && !/^CN\d+$/.test(x[2])) add(drive, x[2], x[3].trim(), c.source);
+    }
+  }
+  return [...out.values()];
 }
 
 /** How every drive (VFD, servo drive) stops now; a drive the drawings don't describe is "unknown". */
@@ -294,13 +369,15 @@ export function driveStops(m: ExistingMachine): DriveStop[] {
  * through a single run contact, which is one channel, whatever category the drawings claim. Null when every
  * drive's STO is wired (or there is no safety relay: that case is the "add a safety relay" recommendation).
  */
-export function stoFinding(m: ExistingMachine): string | null {
+/** tags: the new tags to write it with (the review shows it with the drawing's own). */
+export function stoFinding(m: ExistingMachine, tags?: Map<string, string>): string | null {
   if (m.safety.kind !== 'safety-relay') return null;
   const open = driveStops(m).filter((d) => d.sto !== 'wired');
   if (!open.length) return null;
   const how = open.map((d) => `${d.tag} (${d.sto === 'none' ? 'no STO' : d.sto === 'not-wired' ? 'STO not wired' : 'STO not shown'}${d.stopsBy ? `; stops only by ${d.stopsBy}` : ''})`).join(', ');
   const claimed = m.safety.category?.replace(/\s*\(claimed\)/i, '') || null;
-  return `${claimed ? `The drawings claim ${claimed}, but ` : ''}the safety relay ${m.safety.safetyRelay ?? ''} does not remove torque from ${how}: a single channel, so ${claimed ? `the claimed ${claimed} is not met` : 'the stop is not two-channel'}. Wire the Safe Torque Off inputs to the safety relay (STO-capable drives), or stop each drive through two monitored contactors (NFPA 79 9.2.5.4, ISO 13849-1). Re-validate after the conversion.`.replace('relay  does', 'relay does');
+  const text = `${claimed ? `The drawings claim ${claimed}, but ` : ''}the safety relay ${m.safety.safetyRelay ?? ''} does not remove torque from ${how}: a single channel, so ${claimed ? `the claimed ${claimed} is not met` : 'the stop is not two-channel'}. Wire the Safe Torque Off inputs to the safety relay (STO-capable drives), or stop each drive through two monitored contactors (NFPA 79 9.2.5.4, ISO 13849-1). Re-validate after the conversion.`.replace('relay  does', 'relay does');
+  return tags ? retag(text, tags) : text;
 }
 
 /** The whole conversion of an existing machine to the target standard. */
@@ -335,7 +412,10 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
       : { text: `The machine has no PLC: ${by} runs it, and the conversion keeps the relay logic with parts for the new standard. Is that right, or should the logic move into a PLC?`, section: 'sequence', assumption: 'Keep the relay logic' });
   }
   const recommendations: Conversion['recommendations'] = [];
-  const sto = stoFinding(m);
+  // North America renames the devices (QF1 → CB1…); an IEC target keeps the drawing's own tags
+  const na = target.region === 'US' || target.region === 'Canada';
+  const tags = na ? naTags([...m.components, ...ioOnlyDevices(m)]) : new Map(m.components.map((c) => [c.tag, c.tag]));
+  const sto = stoFinding(m, tags);
   if (sto) {
     recommendations.push({ section: 'safety', text: sto });
     const unknown = driveStops(m).filter((d) => d.sto === 'unknown').map((d) => d.tag);
@@ -352,9 +432,6 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
     const asked = m.questions.some((q) => /power|kw/i.test(q.text) && similarity(q.text, mm.description) >= 0.3);
     if (!motorKw[i].hp && !asked) questions.push({ text: `What is the power of ${mm.tag} (${mm.description})? It is not on the drawings.`, section: 'motion', assumption: '1 HP' });
   }
-  // North America renames the devices (QF1 → CB1…); an IEC target keeps the drawing's own tags
-  const na = target.region === 'US' || target.region === 'Canada';
-  const tags = na ? naTags(m.components) : new Map(m.components.map((c) => [c.tag, c.tag]));
   // a drive is sized by the motor it runs: the largest VFD-driven motor when the drive's own power isn't drawn
   const vfdHp = Math.max(0, ...motors.filter((x) => x.starter === 'vfd').map((x) => x.hp));
   // the axis' own devices, by tag: drive, motor, braking resistor, encoder ("line-length encoder PG1 on CN1-11/13")
@@ -372,5 +449,10 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
     // a drive whose STO isn't wired now stops through it
     return c.category === 'vfd' && stoOpen.has(c.tag) ? { ...m2, differences: [...m2.differences, 'STO wired to the safety relay', REVALIDATE] } : m2;
   });
-  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits: convertCircuits(m, tags, logic), io: newIo(m, logic) };
+  const circuits = convertCircuits(m, tags, logic);
+  const hardwired = circuits.filter((c) => c.hardwired.length);
+  if (hardwired.length) {
+    recommendations.push({ section: 'safety', text: `The safety relay's contacts stay hardwired, not through the PLC (NFPA 79 9.4.1; a standard PLC never carries a safety function): ${hardwired.map((c) => `${c.hardwired.join(', ')} in the ${tags.get(c.circuit.output) ?? c.circuit.output} coil circuit`).join('; ')}. Its other safety outputs keep removing power as drawn${m.safety.description ? ` (${retag(m.safety.description, tags)})` : ''}; with the relay logic in the PLC, they switch the safe 24 V (24+S) to the PLC outputs and the valves, not to relays. Re-validate after the conversion.` });
+  }
+  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits, io: newIo(m, logic) };
 }
