@@ -35,7 +35,7 @@ export function remapHmiDesign(design: HmiDesign, r: IoRemap, describe: (ioId: s
   return { design: { ...design, screens, tags, alarms }, notes };
 }
 
-const KIND: Partial<Record<HmiElement['kind'], string>> = { indicator: 'lamp', button: 'button', 'numeric-display': 'value', 'numeric-entry': 'entry', nav: 'navigation button', machine: 'machine picture' };
+const KIND: Partial<Record<HmiElement['kind'], string>> = { indicator: 'lamp', button: 'button', numeric: 'value', 'numeric-entry': 'entry', nav: 'navigation button', multistate: 'state display', bar: 'bar graph', trend: 'trend', machine: 'machine picture' };
 
 /** What on the HMI uses an address, in short words ("Screen Main: lamp 'Running'"), for "delete this I/O point?". */
 export function hmiUsesOf(design: HmiDesign | null | undefined, address: string): string[] {
