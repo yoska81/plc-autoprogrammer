@@ -1494,9 +1494,10 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
       else type = '3-core 18 AWG sensor cable (BN/BU/BK)';
     } else if (p0.type === 'input') {
       cores.push({ core: '1', color: 'BU', wire: '24+', from: term(p0, 'sup'), to: `${d.tag}:C` });
-      cores.push({ core: '2', color: 'BU', wire: p0.wire, from: term(p0, 'sig'), to: `${d.tag}:NO` });
+      // one signal core per input of the device (the terminal name matches the wire list)
+      d.points.forEach((p, k) => cores.push({ core: String(k + 2), color: 'BU', wire: p.wire, from: term(p, 'sig'), to: `${d.tag}:NO` }));
       cores.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: from !== 'CABINET' ? `${from}:PE` : 'PE', to: `${d.tag}:PE` });
-      type = '3-core 18 AWG control cable (2 + PE)';
+      type = `${cores.length}-core 18 AWG control cable (${cores.length - 1} + PE)`;
     } else {
       const stack = t === 'stack-light';
       // the wire number on the device's terminal (a coil behind a safety contact carries the chain's number)
