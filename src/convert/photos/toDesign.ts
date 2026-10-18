@@ -57,22 +57,29 @@ export interface AsBuiltResult {
   notInCatalog: string[];
 }
 
-export function asBuiltDesign(items: ReviewItem[], reading: PhotoReading, base: DesignInputs, getPart: (pn: string) => CatalogPart | undefined, now = new Date().toISOString()): AsBuiltResult {
-  const confirmed = items.filter((it) => it.status === 'confirmed');
-  const used = new Set(confirmed.map(itemTag).filter(Boolean).map((t) => t.toUpperCase()));
-  const nextTag = (cat: CatalogCategory) => {
-    const p = PREFIX[cat] ?? 'D';
+/** A tag of its kind for each item without a label (CB3, K2 …), never one the photos already show. */
+function tagger(items: ReviewItem[]) {
+  const used = new Set(items.map(itemTag).filter(Boolean).map((t) => t.toUpperCase()));
+  return (it: ReviewItem) => {
+    const own = itemTag(it);
+    if (own) return own;
+    const p = PREFIX[itemCategory(it)] ?? 'D';
     let n = 1;
     while (used.has(`${p}${n}`)) n++;
     used.add(`${p}${n}`);
     return `${p}${n}`;
   };
+}
+
+export function asBuiltDesign(items: ReviewItem[], reading: PhotoReading, base: DesignInputs, getPart: (pn: string) => CatalogPart | undefined, now = new Date().toISOString()): AsBuiltResult {
+  const confirmed = items.filter((it) => it.status === 'confirmed');
+  const tagOf = tagger(confirmed);
   const components: DesignComponent[] = [];
   const notInCatalog: string[] = [];
   const placed: { rail: number; order: number; tag: string }[] = [];
   for (const it of confirmed) {
     const cat = itemCategory(it);
-    const tag = itemTag(it) || nextTag(cat);
+    const tag = tagOf(it);
     if (it.kind === 'strip') {
       const s = it.strip!;
       if (s.rail) placed.push({ rail: s.rail, order: s.order, tag });
@@ -135,11 +142,12 @@ export function nameplateRatings(text: string): DrawnRatings {
  */
 export function photosToMachine(items: ReviewItem[], reading: PhotoReading, note = ''): ExistingMachine {
   const kept = items.filter((it) => it.status !== 'rejected');
+  const tagOf = tagger(kept);
   const where = (s: { seen: { photo: number }[]; rail: number; order: number }) => `photo ${(s.seen[0]?.photo ?? 0) + 1}${s.rail ? `, rail ${s.rail}, position ${s.order}` : ', door / wall'}`;
   const components: DrawnComponent[] = kept.filter((it) => it.kind === 'device').map((it) => {
     const d = it.device!;
     return {
-      tag: itemTag(it), partNumber: itemPart(it) || null, manufacturer: d.manufacturer || null,
+      tag: tagOf(it), partNumber: itemPart(it) || null, manufacturer: d.manufacturer || null,
       description: [d.manufacturer, itemPart(it), d.ratings].filter(Boolean).join(' ') || itemCategory(it),
       category: itemCategory(it), ratings: nameplateRatings(d.ratings), source: where(d),
       confidence: it.status === 'confirmed' ? 'high' : d.confidence,

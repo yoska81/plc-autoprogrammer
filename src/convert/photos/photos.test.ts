@@ -84,6 +84,7 @@ assert.ok(!panelLayout({ ...ctx, design: { ...r.design, asBuilt: undefined } }).
 // ── The same reviewed photos as an existing machine, for the shared review → conversion path ──
 const machine = photosToMachine(items, merged, 'Line 3 starter panel');
 assert.equal(machine.components.length, 8, 'every device not rejected (the unconfirmed relay too: the shared review asks about it)');
+assert.equal(new Set(machine.components.map((c) => c.tag)).size, 8, 'every device has its own tag (unlabelled ones get one of their kind)');
 const mk1 = machine.components.find((c) => c.tag === 'K1')!;
 assert.equal(mk1.source, 'photo 1, rail 2, position 3');
 assert.equal(mk1.confidence, 'high', 'confirmed in the photo review');
