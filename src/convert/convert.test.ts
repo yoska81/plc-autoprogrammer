@@ -7,7 +7,7 @@ import { foreignRatings } from './foreignParts';
 import { convertMachine, kwToHp, mm2ToAwg, naTags, NA_TARGET, retag, targetSupply } from './convert';
 import { RELAY_CONVEYOR } from './__fixtures__/relayConveyor';
 import { ioId } from './types';
-import { scoreReading, scoreText } from './score';
+import { factsFromExpected, scoreReading, scoreText, type ExpectedJson } from './score';
 import { columnCrop, dxfSheetSvg, parseSource } from './thumbs';
 import { toRelayLogic, type RelayEl } from './relayLogic';
 import { CN_ROLLFORMER_01 } from './__fixtures__/cnRollformer01.facts';
@@ -407,6 +407,32 @@ await test('cn-rollformer-01: a correct reading scores 100 % on the facts; a wro
   assert.match(scoreText(one), /Relay logic 79\/80 \(98 %\) — missing: C3a KA2 ← KA3/);
   // the older self-written mock is far from the real set
   assert.ok(scoreReading(normalizeMachine(ROLL_FORMER), CN_ROLLFORMER_01).percent < 40);
+});
+
+await test('cn-rollformer-01 fixture (fixtures/import): facts from its expected.json, the real DXF sheets', () => {
+  const expected = JSON.parse(readFileSync(new URL('../../fixtures/import/cn-rollformer-01/expected.json', import.meta.url), 'utf8')) as ExpectedJson;
+  const facts = factsFromExpected(expected);
+  const path = (coil: string) => facts.relayLogic.find((l) => l.coil === coil);
+  assert.deepEqual(path('KM1'), { id: 'C1', coil: 'KM1', contacts: ['KA0', 'SB2', 'SB1', 'FR1', 'KM1'], sealIn: 'KM1' });
+  assert.deepEqual(path('KA1')!.contacts, ['SB4', 'KM1', 'KA5', 'KA6', 'U1', 'KT1', 'H7CX', 'KA9', 'KA10', 'SB3', 'KA1']);
+  assert.deepEqual(path('KA2')!.contacts, ['SB5', 'KA3', 'KA1'], 'the jog runs only with the line stopped (the heading)');
+  assert.deepEqual(path('YV1')!.contacts, ['KA7', 'SB7', 'KA1', 'KA8']);
+  assert.deepEqual(path('KT1')!.contacts, path('YV1')!.contacts, 'the watchdog in parallel with the valve has its contacts');
+  assert.deepEqual(path('KA8')!.contacts, ['SQ1', 'SQ2', 'KA8']);
+  assert.deepEqual(path('H7CX')!.contacts, ['KA8', 'SB8']);
+  assert.deepEqual(path('U1 MI3')!.contacts, ['KA2', 'KA3']);
+  assert.equal(facts.signals.length, 28);
+  assert.ok(facts.safety.stoFinding && facts.safety.claimed.test('Cat 3 / PL d'));
+  // the reading written from these facts scores 100 % on the fixture's own expected.json
+  const s = scoreReading(normalizeMachine(CN_ROLLFORMER_01_READING), facts);
+  assert.equal(s.percent, 100, scoreText(s));
+  // the real DXF (sheets 2, 3, 5, 6 of 8): numbered and named from the title blocks
+  const text = dxfToText(readFileSync(new URL('../../fixtures/import/cn-rollformer-01/drawings.dxf', import.meta.url), 'utf8'), 'drawings.dxf');
+  const heads = text.split('\n').filter((l) => /^--- Sheet/.test(l));
+  assert.deepEqual(heads.map((h) => h.match(/Sheet (\d+) of 8/)?.[1]), ['2', '3', '5', '6']);
+  for (const [h, t] of heads.map((h, i) => [h, expected.sheets.filter((x) => x.inDxf)[i]] as const)) {
+    assert.ok(h.includes(t.titleCn.split(/\s/)[0]) && h.includes(t.title.split(/\s/)[0]), `${h} ↔ ${t.titleCn} / ${t.title}`);
+  }
 });
 
 await test('cn-rollformer-01 converted: claimed Cat 3 / PL d not met (no STO), relay logic C1–C11 into the PLC, each circuit kept', () => {

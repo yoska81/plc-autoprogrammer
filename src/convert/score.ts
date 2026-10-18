@@ -75,3 +75,109 @@ export function scoreReading(m: ExistingMachine, f: ExpectedFacts): Score {
 
 /** One line per part, e.g. "Signals 26/28 (93 %) — missing: SB9, H7CX". */
 export const scoreText = (s: Score) => [...s.parts.map((p) => `${p.label} ${p.found}/${p.total} (${p.found < p.total ? Math.min(99, Math.floor(p.found / p.total * 100)) : 100} %)${p.misses.length ? ` — missing: ${p.misses.join('; ')}` : ''}`), `Overall ${s.percent} %`].join('\n');
+
+/** The fixture's expected.json (fixtures/import/<name>/expected.json), in the parts the score reads. */
+export interface ExpectedJson {
+  fixture: string;
+  sheets: { no: number; titleCn: string; title: string; inDxf?: boolean }[];
+  hasPlc: boolean;
+  supply: { voltage: number; frequencyHz: number; phases: number };
+  motors: { tag: string; kW: number; starter?: string; starterTags?: string[] }[];
+  signals: { tag: string; kind: string }[];
+  relays: { tag: string }[];
+  relayLogic: { id: string; coil: string; description: string }[];
+  motion: { drive: { tag: string }; masterEncoder: { tag: string }; flyingShearMode: string; cutLengthMm: [number, number] };
+  safety: { function: string; devices: string[]; category?: string; pl?: string }[];
+  naNotes?: { topic: string; current: string; change: string }[];
+}
+
+const DEVICE = /\b(?:SB|SA|SQ|KA|KM|KT|FR|HL|YV|QF|U|B|G)\d+\b|\bH7CX\b/g;
+
+/**
+ * The facts to score against, straight from a fixture's expected.json. Each relay-logic entry is split
+ * per coil ("SB5 -> KA3 11-12 -> KA2 coil; SB6 -> KA2 11-12 -> KA3 coil"): the devices before the coil are
+ * its contacts; an entry that names no coil keeps its own coil and every device it mentions.
+ */
+export function factsFromExpected(e: ExpectedJson): ExpectedFacts {
+  const logic: ExpectedFacts['relayLogic'] = [];
+  const COIL = '\\b(?:KA|KM|KT|YV|HL)\\d+\\b|\\bH7CX\\b';
+  for (const r of e.relayLogic) {
+    const colon = r.description.indexOf(':');
+    const head = colon > 0 ? r.description.slice(0, colon) : '';
+    const body = r.description.slice(colon + 1).replace(/\s+/g, ' ').trim();
+    // what the heading puts on every coil: "Jog (only while KA1 is off via KA1 41-42)", "Servo outputs (… U2 DO+ …)"
+    const common = head.match(DEVICE) ?? [];
+    // the coils of the entry: "KA2/KA3", "HL1-HL5", "YV1/KT1", "U1" (a drive: its inputs)
+    const coils = r.coil.split('/').flatMap((c) => {
+      const range = c.match(/^([A-Z]+)(\d+)-[A-Z]*(\d+)$/);
+      return range ? Array.from({ length: Number(range[3]) - Number(range[2]) + 1 }, (_, i) => `${range[1]}${Number(range[2]) + i}`) : [c];
+    });
+    // fragments at ";", ", " and ". ", never inside brackets
+    const frags: string[] = [];
+    let depth = 0, cur = '';
+    for (let i = 0; i < body.length; i++) {
+      const ch = body[i];
+      depth += ch === '(' ? 1 : ch === ')' ? -1 : 0;
+      if (depth === 0 && (ch === ';' || ((ch === ',' || ch === '.') && body[i + 1] === ' '))) { frags.push(cur.trim()); cur = ''; } else cur += ch;
+    }
+    frags.push(cur.trim());
+    const parallel = new Map<string, string>();
+    for (const f of frags) { const x = f.match(new RegExp(`(${COIL}) in parallel with (${COIL})`)); if (x) parallel.set(x[1], x[2]); }
+    const pathOf = (coil: string): string[] => {
+      const out = new Set<string>();
+      let targeted = false;
+      for (const f of frags) {
+        if (/in parallel with/.test(f) && new RegExp(`\\b${coil}\\b in parallel`).test(f)) continue;
+        // the coil is the target of the fragment: "… -> KA2 coil", "SQ3 … switches KA9 coil", "DO1 SRDY -> KA5", "SQ1 energises KA8", "HL2 pump running (KM1 63-64)"
+        // (a device followed by its terminals, "-> KA3 11-12", is a contact on the way, not the target)
+        const at = f.search(new RegExp(`(?:->|energises|switches|lights|drops)\\s*(?:\\w+\\s+)?${coil}\\b(?! \\d+-\\d+)|\\b${coil}\\b(?= coil)`));
+        if (at >= 0) { targeted = true; (f.slice(0, at).match(DEVICE) ?? []).forEach((d) => out.add(d)); }
+        if (new RegExp(`^${coil}\\b`).test(f)) targeted = true; // "HL1 power on", "HL4 fault (KA6 21-24 or U1 RA-RC)"
+        // a lamp or relay with its source in brackets: "HL4 fault (KA6 21-24 or U1 RA-RC)"
+        const own = f.match(new RegExp(`\\b${coil}\\b[^(]*\\(([^)]*)\\)`));
+        if (own && /^(HL|KA)/.test(coil)) (own[1].match(DEVICE) ?? []).forEach((d) => out.add(d));
+      }
+      // its own hold: "energises KA8, which holds through KA8 21-24 and SQ2 (up limit NC)"
+      const hold = body.match(new RegExp(`\\b${coil}, which holds through ([^;]*)`));
+      if (hold) (hold[1].split(/,\s(?![^(]*\))/)[0].match(DEVICE) ?? []).forEach((d) => out.add(d));
+      // no fragment drives it by name (a counter): the devices of its input fragments, not of what it switches
+      if (!targeted) for (const f of frags) if (new RegExp(`\\b${coil}\\b`).test(f) || !/opens|lights|drops|energises|->/.test(f)) if (!/opens|lights|drops|energises/.test(f)) (f.match(DEVICE) ?? []).forEach((d) => out.add(d));
+      common.forEach((d) => out.add(d));
+      out.delete(coil);
+      if (/self-hold|holds through/.test(body) && new RegExp(`${coil} \\d+-\\d+ \\(self-hold\\)|${coil}, which holds through`).test(body)) out.add(coil);
+      return [...out];
+    };
+    coils.filter((c) => !/^U\d/.test(c)).forEach((coil, i, all) => {
+      const contacts = parallel.has(coil) ? pathOf(parallel.get(coil)!) : pathOf(coil);
+      logic.push({ id: all.length > 1 ? `${r.id}${'abcdefgh'[i]}` : r.id, coil, contacts, sealIn: contacts.includes(coil) ? coil : null });
+    });
+    // a drive's inputs: "MI1 forward via KA1 21-24 or KA2 21-24"
+    if (coils.some((c) => /^U\d/.test(c))) {
+      for (const f of frags) {
+        const x = f.match(/\b((?:MI|DI)\d+)\b.*?\bvia (.*)$/);
+        if (x) logic.push({ id: `${r.id}-${x[1]}`, coil: `${coils[0]} ${x[1]}`, contacts: [...new Set(x[2].match(DEVICE) ?? [])], sealIn: null });
+      }
+    }
+    void COIL;
+  }
+  const safetyText = e.safety.map((x) => `${x.category ?? ''} ${x.pl ?? ''}`).join(' ');
+  const noSto = (e.naNotes ?? []).some((n) => /no STO/i.test(n.current));
+  return {
+    name: e.fixture,
+    hasPlc: e.hasPlc,
+    supply: { volts: e.supply.voltage, hz: e.supply.frequencyHz, phases: e.supply.phases },
+    motors: e.motors.map((m) => ({ tag: m.tag, kw: m.kW, driveTag: m.starterTags?.find((t) => /^U\d/.test(t)) ?? null, ...(/servo/i.test(m.starter ?? '') ? { servo: true } : {}) })),
+    signals: e.signals.map((x) => x.tag),
+    // the safety relay is scored under safety
+    relays: [...e.relays.map((r) => r.tag), ...(e.signals.some((x) => x.tag === 'H7CX') ? ['H7CX'] : [])],
+    relayLogic: logic,
+    motion: { axisDrive: e.motion.drive.tag, encoder: e.motion.masterEncoder.tag, mode: /cam|flying/i, cutLength: e.motion.cutLengthMm },
+    safety: {
+      estops: e.signals.filter((x) => /e-stop/i.test(x.kind)).map((x) => x.tag),
+      guards: e.signals.filter((x) => /guard/i.test(x.kind)).map((x) => x.tag),
+      safetyRelay: e.safety.flatMap((x) => x.devices).find((d) => /^KA0$/.test(d)) ?? 'KA0',
+      claimed: /3/.test(safetyText) && /d/i.test(safetyText) ? /cat\s*3|pl\s*d/i : /cat|pl/i,
+      stoFinding: noSto,
+    },
+  };
+}
