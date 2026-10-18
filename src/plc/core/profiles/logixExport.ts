@@ -160,16 +160,26 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
   /** Rung conditions; null = never true (AFI). */
   function conditions(branches: LadderElement[][]): string | null {
     if (!branches.length) return '';
-    const paths: string[] = [];
+    const paths: string[][] = [];
     for (const b of branches) {
       const parts = b.map(element);
       if (parts.some((x) => x === null)) continue;
-      const s = parts.join('');
-      if (!s) return ''; // one path always true
-      paths.push(s);
+      const kept = parts.filter((x): x is string => !!x);
+      if (!kept.length) return ''; // one path always true
+      paths.push(kept);
     }
     if (!paths.length) return null;
-    return paths.length === 1 ? paths[0] : `[${paths.join(',')}]`;
+    if (paths.length === 1) return paths[0].join('');
+    // Conditions every path shares go in front of / behind the branch: [XIC(Start),XIC(Run)]XIC(Stop)…
+    const n = Math.min(...paths.map((x) => x.length));
+    let pre = 0, post = 0;
+    while (pre < n && paths.every((x) => x[pre] === paths[0][pre])) pre++;
+    while (post < n - pre && paths.every((x) => x[x.length - 1 - post] === paths[0][paths[0].length - 1 - post])) post++;
+    const legs = paths.map((x) => x.slice(pre, x.length - post).join(''));
+    const head = paths[0].slice(0, pre).join(''), tail = paths[0].slice(paths[0].length - post).join('');
+    // A leg left empty is always true: the branch is too.
+    if (legs.some((l) => !l)) return head + tail;
+    return `${head}[${[...new Set(legs)].join(',')}]${tail}`;
   }
 
   /** Instructions of other PLCs in the current rung: written into its comment. */

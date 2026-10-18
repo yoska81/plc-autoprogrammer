@@ -82,6 +82,17 @@ function routineRange(xml: string, name: string): [number, number] {
   assert.equal(out, text.replace(seal.comment, 'Machine run (checked 2025)'), 'the original file with one comment changed, nothing else');
 }
 
+// ── A CRLF file stays CRLF ──
+{
+  const { text, plan, target } = setup('capper.L5X');
+  const crlf = text.replace(/\r?\n/g, '\r\n');
+  const seq = plan.program.blocks!.find((b) => b.name === 'Sequence')!.id;
+  const first = plan.program.rungs.find((r) => r.block === seq)!;
+  const now = editRung(plan.program, (r) => r.id === first.id, (r) => ({ ...r, outputs: [...r.outputs, { type: 'OUT', address: 'C77' }] }));
+  const out = exportUpgrade(plan.original, crlf, now, target()).files[0].content;
+  assert.ok(!/(?<!\r)\n/.test(out), 'no LF-only line ends in a CRLF file');
+}
+
 // ── Box line with an add-on instruction, JSRs, an FBD routine, a MESSAGE and a produced tag ──
 {
   const { text, imp, plan, target } = setup('conveyor_aoi.L5X');
@@ -146,6 +157,10 @@ function routineRange(xml: string, name: string): [number, number] {
   assert.deepEqual(ch.tags.added, ['Guard_Latch (C99)']);
   assert.ok(ch.tags.removed.some((t) => t.startsWith('Fault_Latch')));
   assert.deepEqual(ch.blocksAdded, ['Reject']);
+  // A deleted point whose id is reused by a new one: removed + added, not renamed.
+  const reused = upgradeChanges(p.original, io.map((x) => (x.id === 'I002' ? { ...x, description: 'Reject gate sensor' } : x)), p.program);
+  assert.equal(reused.io.renamed.length, 0);
+  assert.ok(reused.io.removed.some((x) => x.startsWith('I002')) && reused.io.added.some((x) => x === 'I002 Reject gate sensor'));
 }
 
 // ── TIA Portal PLCopen: an SCL function kept as written, its bug found, fixed, exported as SCL ──

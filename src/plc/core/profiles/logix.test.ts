@@ -84,7 +84,7 @@ const ctx: ExportContext = { io, addresses: addr, labels, header: 'Test cell —
 const lx = toLogix(program, ctx, logixIoTag);
 const all = lx.routines.flatMap((r) => r.rungs.map((g) => g.text));
 const has = (t: string) => assert.ok(all.includes(t), `missing rung ${t}\n${all.join('\n')}`);
-has('[XIC(Start_PB)XIO(Stop_PB),XIC(Run_Latch)XIO(Stop_PB)]OTE(Run_Latch);');
+has('[XIC(Start_PB),XIC(Run_Latch)]XIO(Stop_PB)OTE(Run_Latch);'); // shared conditions behind the branch
 has('XIC(Run_Latch)XIO(Jam_Timer.DN)OTE(Conveyor_run);');
 has('CPT(Jam_Timer.PRE,Jam_Time_SP*1000);');
 has('XIC(Run_Latch)XIC(Part_sensor)TON(Jam_Timer,0,0);');

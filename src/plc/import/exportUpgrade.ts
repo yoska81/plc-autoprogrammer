@@ -79,12 +79,19 @@ export function upgradeChanges(o: UpgradeOriginal, io: IOPoint[], current: Ladde
   const nowById = new Map(io.map((p) => [p.id, p]));
   const label = (p: { description: string; type: string }, id: string) => `${id} ${p.description || '(no description)'}`;
   const ioCh: UpgradeChanges['io'] = { added: [], removed: [], renamed: [] };
+  // The same id with a description that shares no word is another point (an id freed by a delete is reused).
+  const words = (s: string) => new Set(s.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []);
+  const same = (a: string, b: string) => { const w = words(a); return [...words(b)].some((x) => w.has(x)); };
+  const replaced = new Set<string>();
   for (const [id, p] of origById) {
     const now = nowById.get(id);
     if (!now || now.type !== p.type) ioCh.removed.push(label(p, id));
-    else if (now.description.trim() !== p.description.trim()) ioCh.renamed.push({ from: label(p, id), to: label(now, id) });
+    else if (now.description.trim() !== p.description.trim()) {
+      if (same(now.description, p.description)) ioCh.renamed.push({ from: label(p, id), to: label(now, id) });
+      else { ioCh.removed.push(label(p, id)); replaced.add(id); }
+    }
   }
-  for (const p of io) if (!origById.has(p.id) || origById.get(p.id)!.type !== p.type) ioCh.added.push(label(p, p.id));
+  for (const p of io) if (!origById.has(p.id) || origById.get(p.id)!.type !== p.type || replaced.has(p.id)) ioCh.added.push(label(p, p.id));
 
   const before = new Map(o.program.tags.map((t) => [t.address.toUpperCase(), t.nickname]));
   const after = new Map(current.tags.map((t) => [t.address.toUpperCase(), t.nickname]));

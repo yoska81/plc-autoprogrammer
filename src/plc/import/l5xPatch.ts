@@ -205,6 +205,8 @@ export function patchL5x(p: L5xPatchInput): L5xPatchResult {
     else if (selfClosing > controllerAt) xml = `${xml.slice(0, selfClosing)}<Tags>\n${tagsXml}\n</Tags>${xml.slice(selfClosing + '<Tags/>'.length)}`;
     else warnings.push(`Add these tags by hand: ${add.map((t) => `${t.name} (${t.dataType})`).join(', ')}.`);
   }
+  // Keep the file's own line ends: a CRLF file stays CRLF (the copied parts already are; the new ones get it).
+  if (p.originalXml.includes('\r\n') && !/(?<!\r)\n/.test(p.originalXml)) xml = xml.replace(/(?<!\r)\n/g, '\r\n');
   return { xml, changed, added, newTags: add.map((t) => t.name), warnings };
 }
 

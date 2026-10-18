@@ -179,7 +179,7 @@
           <RLLContent>
             <Rung Number="0" Type="N">
               <Comment><![CDATA[Start / stop seal-in]]></Comment>
-              <Text><![CDATA[[XIC(Start_PB)XIO(Stop_PB),XIC(Run_Latch)XIO(Stop_PB)]OTE(Run_Latch);]]></Text>
+              <Text><![CDATA[[XIC(Start_PB),XIC(Run_Latch)]XIO(Stop_PB)OTE(Run_Latch);]]></Text>
             </Rung>
             <Rung Number="1" Type="N">
               <Text><![CDATA[XIC(Run_Latch)XIO(Jam_Timer.DN)OTE(Conveyor_run);]]></Text>

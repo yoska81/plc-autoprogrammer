@@ -28,7 +28,9 @@ export default function UpgradePage() {
   const { profile, cpu, labels } = usePlc();
   const io = useIOStore((s) => s.projectIO);
   const [all, setAll] = useState(false);
-  const [prepared, setPrepared] = useState<UpgradeExport | null>(null);
+  // The download worked out for one version of the program: a later edit makes it stale (not shown).
+  const [preparedFor, setPrepared] = useState<{ ex: UpgradeExport; ladder: LadderProgram; plcId: string } | null>(null);
+  const prepared = preparedFor && preparedFor.ladder === ladder && preparedFor.plcId === profile.id ? preparedFor.ex : null;
   const [understood, setUnderstood] = useState(false);
   const [busy, setBusy] = useState(false);
   const changes = useMemo(() => (original ? upgradeChanges(original, io, ladder) : null), [original, io, ladder]);
@@ -48,7 +50,7 @@ export default function UpgradePage() {
     try {
       const file = original.fileGz ? await gunzipText(original.fileGz).catch(() => null) : null;
       const snap = collectProject();
-      setPrepared(exportUpgrade(original, file, ladder, { plcId: profile.id, ctx: exportContext(snap), fullFiles: () => programFiles(snap) }));
+      setPrepared({ ex: exportUpgrade(original, file, ladder, { plcId: profile.id, ctx: exportContext(snap), fullFiles: () => programFiles(snap) }), ladder, plcId: profile.id });
       setUnderstood(false);
     } finally { setBusy(false); }
   };
