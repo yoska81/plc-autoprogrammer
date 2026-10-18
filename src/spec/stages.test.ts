@@ -87,4 +87,11 @@ assert.equal(regionRun.program.status, 'ready');
   assert.notEqual(ok.equipment.status, 'stale');
 }
 
+// Another PLC brand than the one asked for: Equipment is out of date (Update all chooses it again), with the reason.
+{
+  const st = computeStages({ fp: fp(click), sources: sources(click), ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true, otherBrand: "The description asks for Siemens S7-1200 / S7-1500; the project's PLC is AutomationDirect CLICK." });
+  assert.equal(st.equipment.status, 'stale');
+  assert.match(st.equipment.reason ?? '', /asks for Siemens.*Equipment page/);
+}
+
 console.log('stage tests passed');

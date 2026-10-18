@@ -14,9 +14,10 @@ import { validateProgram } from '../plc/core/validate';
 import { fingerprint, specToText, changedSections } from './types';
 import { ioFingerprint, hmiFingerprint } from './useStages';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge } from '../lib/ai/ioAI';
-import { recommendEquipment } from '../lib/ai/equipmentAI';
+import { equipmentChoices, recommendEquipment } from '../lib/ai/equipmentAI';
+import { plcPreference, requestedProfiles } from './brand';
 import { applyEquipment, recommendedChoice } from './equipment';
-import { analogRangesOf, cpuFit, findCpu, modulesToFit, type Need } from '../plc/core/fit';
+import { analogRangesOf, cpuFit, findCpu, hmiFit, modulesToFit, type Need } from '../plc/core/fit';
 import type { AnalogRange } from '../types/io';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
 import { analogSetup } from '../plc/core/analog';
@@ -131,16 +132,29 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
   try {
     if (step === 'equipment') {
       const before = equipmentNow();
+      // A PLC brand the description names (or the Brand preference sets): the current PLC is kept only when it is
+      // that brand; otherwise the equipment is chosen again, from that brand.
+      const asked = requestedProfiles(specToText(spec), plcPreference());
+      const otherBrand = (plcId: string) => asked.length > 0 && !asked.some((p) => p.id === plcId);
       if (stageMode('equipment') === 'quick') {
         // Rules from the I/O counts: needs the I/O list of this run.
         if (!(await ctx.after('io'))) return false;
-        const cur = useProjectStore.getState();
-        const curHmi = useHmiStore.getState().hmiPartNumber || null;
-        const choice = rulesEquipment(ioNow(), { plcId: cur.plcId, cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi });
+        const state = useProjectStore.getState();
+        const cur = otherBrand(state.plcId) ? { plcId: asked[0].id, cpuId: '', modules: [] as string[], recommendation: state.recommendation } : state;
+        const hmiNow = useHmiStore.getState().hmiPartNumber || null;
+        const choice = rulesEquipment(ioNow(), { plcId: cur.plcId, cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: hmiNow });
+        // A panel that cannot talk to the new brand's PLC is swapped for the nearest-size panel that can (said in the
+        // step message). Never dropped: no panel would add the door pushbuttons and lamps to the I/O list.
+        const hmiModel = choice && hmiNow ? getHmi(hmiNow) : undefined;
+        const talks = (h: NonNullable<typeof hmiModel>, cpuId: string) => hmiFit(h, { digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null }, cpuId).ok;
+        const swap = choice && hmiModel && otherBrand(state.plcId) && !talks(hmiModel, choice.cpuId)
+          ? equipmentChoices(specToText(spec), plcPreference()).hmis.filter((h) => talks(h, choice.cpuId)).sort((a, b) => Math.abs(a.sizeIn - hmiModel.sizeIn) - Math.abs(b.sizeIn - hmiModel.sizeIn))[0] ?? null
+          : undefined;
+        if (choice && swap) choice.hmiPartNumber = swap.partNumber;
         if (!choice) { onStep({ step, status: 'failed', message: `No ${getProfile(cur.plcId).name} CPU covers the ${ioNow().length} I/O points even with modules: choose a bigger PLC on the Equipment page.` }); return false; }
         const warn = applyEquipment(choice, cur.recommendation ?? null);
         if (equipmentNow() !== before) ctx.changed.add('equipment');
-        onStep({ step, status: 'done', message: `${choice.kept ? `Kept your ${choice.cpuId}` : choice.cpuId}${choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}: covers the I/O list with about 20 % spare (rules).${warn ? ` ${warn}` : ''}` });
+        onStep({ step, status: 'done', message: `${choice.kept ? `Kept your ${choice.cpuId}` : choice.cpuId}${choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}: covers the I/O list with about 20 % spare (rules).${swap ? ` The ${hmiNow} panel cannot talk to this PLC: ${swap.partNumber} (${swap.sizeIn}") instead; change it on the Equipment page.` : swap === null ? ` The ${hmiNow} panel cannot talk to this PLC and no listed panel can: choose one on the Equipment page.` : ''}${warn ? ` ${warn}` : ''}` });
         return true;
       }
       const { rec } = await recommendEquipment({ ...ai, spec });
@@ -149,7 +163,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const curCpu = findCpu(cur.cpuId);
       const need = { ...rec.estimatedIO, ethernetHmi: Boolean(rec.hmi || curHmi), minHmiSizeIn: null };
       // Keep the engineer's own choice while it still covers the machine; otherwise take the recommendation.
-      if (curCpu && cur.recommendation && cpuFit(curCpu, cur.modules, need).ok) {
+      if (curCpu && cur.recommendation && !otherBrand(cur.plcId) && cpuFit(curCpu, cur.modules, need).ok) {
         const warn = applyEquipment({ cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi }, rec);
         onStep({ step, status: 'done', message: `Kept your ${cur.cpuId}${cur.modules.length ? ` + ${cur.modules.length} module(s)` : ''}: it still covers the I/O.${warn ? ` ${warn}` : ''}` });
       } else {
