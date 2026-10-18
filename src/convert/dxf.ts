@@ -159,7 +159,13 @@ function sheetTitle(texts: DxfText[]): string {
     const ownLabel = (t: DxfText) => !sorted.some((o) => o !== label && Math.abs(o.y - t.y) <= 2 && o.x > label.x && o.x < t.x && isLabel(o.text.trim()));
     const right = values.filter((t) => Math.abs(t.y - label.y) <= 2 && t.x > label.x && ownLabel(t)).sort((a, b) => dist(a) - dist(b))[0];
     const below = values.filter((t) => t.y < label.y - 2 && label.y - t.y <= 15 && t.x > label.x - 20 && t.x < label.x + 150).sort((a, b) => dist(a) - dist(b))[0];
-    return (right ?? below)?.text.trim() ?? '';
+    const value = right ?? below;
+    if (!value) return '';
+    // a bilingual title: the English line just under the Chinese one ("主电源分配" over "Power distribution")
+    const under = /[\u4e00-\u9fff]/.test(value.text) && !/[A-Za-z]{3}/.test(value.text)
+      ? values.find((t) => t !== value && t.y < value.y && value.y - t.y <= 8 && Math.abs(t.x - value.x) < 30 && /^[A-Za-z]/.test(t.text.trim()) && !/[\u4e00-\u9fff]/.test(t.text))
+      : undefined;
+    return under ? `${value.text.trim()} / ${under.text.trim()}` : value.text.trim();
   };
   const name = after(NAME_LABEL) || after(PROJECT_LABEL);
   const page = sorted.map((t) => t.text).find((t) => /第\s*\d+\s*页/.test(t)) ?? '';

@@ -369,13 +369,15 @@ export function driveStops(m: ExistingMachine): DriveStop[] {
  * through a single run contact, which is one channel, whatever category the drawings claim. Null when every
  * drive's STO is wired (or there is no safety relay: that case is the "add a safety relay" recommendation).
  */
-export function stoFinding(m: ExistingMachine): string | null {
+/** tags: the new tags to write it with (the review shows it with the drawing's own). */
+export function stoFinding(m: ExistingMachine, tags?: Map<string, string>): string | null {
   if (m.safety.kind !== 'safety-relay') return null;
   const open = driveStops(m).filter((d) => d.sto !== 'wired');
   if (!open.length) return null;
   const how = open.map((d) => `${d.tag} (${d.sto === 'none' ? 'no STO' : d.sto === 'not-wired' ? 'STO not wired' : 'STO not shown'}${d.stopsBy ? `; stops only by ${d.stopsBy}` : ''})`).join(', ');
   const claimed = m.safety.category?.replace(/\s*\(claimed\)/i, '') || null;
-  return `${claimed ? `The drawings claim ${claimed}, but ` : ''}the safety relay ${m.safety.safetyRelay ?? ''} does not remove torque from ${how}: a single channel, so ${claimed ? `the claimed ${claimed} is not met` : 'the stop is not two-channel'}. Wire the Safe Torque Off inputs to the safety relay (STO-capable drives), or stop each drive through two monitored contactors (NFPA 79 9.2.5.4, ISO 13849-1). Re-validate after the conversion.`.replace('relay  does', 'relay does');
+  const text = `${claimed ? `The drawings claim ${claimed}, but ` : ''}the safety relay ${m.safety.safetyRelay ?? ''} does not remove torque from ${how}: a single channel, so ${claimed ? `the claimed ${claimed} is not met` : 'the stop is not two-channel'}. Wire the Safe Torque Off inputs to the safety relay (STO-capable drives), or stop each drive through two monitored contactors (NFPA 79 9.2.5.4, ISO 13849-1). Re-validate after the conversion.`.replace('relay  does', 'relay does');
+  return tags ? retag(text, tags) : text;
 }
 
 /** The whole conversion of an existing machine to the target standard. */
@@ -410,7 +412,10 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
       : { text: `The machine has no PLC: ${by} runs it, and the conversion keeps the relay logic with parts for the new standard. Is that right, or should the logic move into a PLC?`, section: 'sequence', assumption: 'Keep the relay logic' });
   }
   const recommendations: Conversion['recommendations'] = [];
-  const sto = stoFinding(m);
+  // North America renames the devices (QF1 → CB1…); an IEC target keeps the drawing's own tags
+  const na = target.region === 'US' || target.region === 'Canada';
+  const tags = na ? naTags([...m.components, ...ioOnlyDevices(m)]) : new Map(m.components.map((c) => [c.tag, c.tag]));
+  const sto = stoFinding(m, tags);
   if (sto) {
     recommendations.push({ section: 'safety', text: sto });
     const unknown = driveStops(m).filter((d) => d.sto === 'unknown').map((d) => d.tag);
@@ -427,9 +432,6 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
     const asked = m.questions.some((q) => /power|kw/i.test(q.text) && similarity(q.text, mm.description) >= 0.3);
     if (!motorKw[i].hp && !asked) questions.push({ text: `What is the power of ${mm.tag} (${mm.description})? It is not on the drawings.`, section: 'motion', assumption: '1 HP' });
   }
-  // North America renames the devices (QF1 → CB1…); an IEC target keeps the drawing's own tags
-  const na = target.region === 'US' || target.region === 'Canada';
-  const tags = na ? naTags([...m.components, ...ioOnlyDevices(m)]) : new Map(m.components.map((c) => [c.tag, c.tag]));
   // a drive is sized by the motor it runs: the largest VFD-driven motor when the drive's own power isn't drawn
   const vfdHp = Math.max(0, ...motors.filter((x) => x.starter === 'vfd').map((x) => x.hp));
   // the axis' own devices, by tag: drive, motor, braking resistor, encoder ("line-length encoder PG1 on CN1-11/13")
@@ -450,7 +452,7 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   const circuits = convertCircuits(m, tags, logic);
   const hardwired = circuits.filter((c) => c.hardwired.length);
   if (hardwired.length) {
-    recommendations.push({ section: 'safety', text: `The safety relay's contacts stay hardwired, not through the PLC (NFPA 79 9.4.1; a standard PLC never carries a safety function): ${hardwired.map((c) => `${c.hardwired.join(', ')} in the ${tags.get(c.circuit.output) ?? c.circuit.output} coil circuit`).join('; ')}. Its other outputs keep removing power as drawn${m.safety.description ? ` (${retag(m.safety.description, tags)})` : ''}. Re-validate after the conversion.` });
+    recommendations.push({ section: 'safety', text: `The safety relay's contacts stay hardwired, not through the PLC (NFPA 79 9.4.1; a standard PLC never carries a safety function): ${hardwired.map((c) => `${c.hardwired.join(', ')} in the ${tags.get(c.circuit.output) ?? c.circuit.output} coil circuit`).join('; ')}. Its other safety outputs keep removing power as drawn${m.safety.description ? ` (${retag(m.safety.description, tags)})` : ''}; with the relay logic in the PLC, they switch the safe 24 V (24+S) to the PLC outputs and the valves, not to relays. Re-validate after the conversion.` });
   }
   return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits, io: newIo(m, logic) };
 }

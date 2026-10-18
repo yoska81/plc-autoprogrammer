@@ -67,9 +67,11 @@ export function scoreReading(m: ExistingMachine, f: ExpectedFacts): Score {
     ['no PLC', (m.controller !== 'plc') === !f.hasPlc],
     ['supply', m.supplyDrawn.volts === f.supply.volts && m.supplyDrawn.hz === f.supply.hz],
   ]);
-  const percent = Math.round(parts.reduce((a, p) => a + (p.total ? p.found / p.total : 1), 0) / parts.length * 100);
+  // rounded down, and never 100 % while anything is missing
+  const raw = Math.floor(parts.reduce((a, p) => a + (p.total ? p.found / p.total : 1), 0) / parts.length * 100);
+  const percent = parts.some((p) => p.found < p.total) ? Math.min(raw, 99) : raw;
   return { parts, percent };
 }
 
 /** One line per part, e.g. "Signals 26/28 (93 %) — missing: SB9, H7CX". */
-export const scoreText = (s: Score) => [...s.parts.map((p) => `${p.label} ${p.found}/${p.total} (${Math.round(p.found / Math.max(1, p.total) * 100)} %)${p.misses.length ? ` — missing: ${p.misses.join('; ')}` : ''}`), `Overall ${s.percent} %`].join('\n');
+export const scoreText = (s: Score) => [...s.parts.map((p) => `${p.label} ${p.found}/${p.total} (${p.found < p.total ? Math.min(99, Math.floor(p.found / p.total * 100)) : 100} %)${p.misses.length ? ` — missing: ${p.misses.join('; ')}` : ''}`), `Overall ${s.percent} %`].join('\n');

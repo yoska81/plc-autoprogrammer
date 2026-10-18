@@ -233,9 +233,13 @@ await test('CAD sheets: own numbers (2, 3, 5, 6 of 8), bilingual title labels sk
     T(300, 30, '图名 Sheet title'), T(360, 29, '版本 Rev.'), T(395, 29, 'B'), T(310, 24, '主电源分配 / Power distribution'), T(300, 18, '设计 Designed'), T(330, 18, 'Li'),
     T(300, 12, '图号 Dwg No.'), T(330, 12, 'HC-YX840-E01'), T(380, 12, '页 Sheet'), T(400, 12, '2'), T(400, 6, '共8页'),
     { type: 'LWPOLYLINE', layer: 'FRAME', closed: true, points: [[450, 0], [870, 0], [870, 297], [450, 297]] }, T(750, 30, '图名 Sheet title'), T(810, 29, '版本 Rev.'), T(760, 24, '电机主回路 / Motor power'), T(830, 12, '页 Sheet'), T(850, 12, '3')];
+  // the same with the English title as its own line under the Chinese one
+  tb.push({ type: 'LWPOLYLINE', layer: 'FRAME', closed: true, points: [[900, 0], [1320, 0], [1320, 297], [900, 297]] }, T(1200, 30, '图名 Sheet title'), T(1260, 29, '版本 Rev.'), T(1290, 29, 'B'),
+    T(1210, 24, '继电器控制(1)'), T(1210, 19, 'Relay control (1)'), T(1200, 12, '设计 Designed'), T(1280, 12, '页 Sheet'), T(1300, 12, '5'));
   const tbText = cadToText(tb, 'HC-YX840-E01.dxf');
+  assert.match(tbText, /--- Sheet 5 [^\n]*: 继电器控制\(1\) \/ Relay control \(1\) ---/);
   assert.match(tbText, /--- Sheet 2 of 8[^\n]*: 主电源分配 \/ Power distribution ---/);
-  assert.match(tbText, /--- Sheet 3 \(frame 2 of 2[^\n]*: 电机主回路 \/ Motor power ---/);
+  assert.match(tbText, /--- Sheet 3 \(frame 2 of 3[^\n]*: 电机主回路 \/ Motor power ---/);
   assert.ok(!/Rev\. ---|Designed ---/.test(tbText), 'a neighbouring label is never the name');
   // the 页 label with its value as a separate text, when there is no "SHEET n"
   assert.deepEqual(sheetNumber([{ type: 'TEXT', layer: '', x: 0, y: 10, text: '页 Sheet' }, { type: 'TEXT', layer: '', x: 2, y: 4, text: '7' }, { type: 'TEXT', layer: '', x: 50, y: 4, text: 'see Sheet 3' }]), { n: 7, of: null });
@@ -359,7 +363,7 @@ await test('STO: a safety relay is not enough when a drive stops only through a 
   const sto = c.recommendations.find((r) => /Safe Torque Off/.test(r.text))!.text;
   assert.match(sto, /claim Cat 3 \/ PL d/);
   assert.match(sto, /the claimed Cat 3 \/ PL d is not met/);
-  assert.match(sto, /VF1 \(no STO; stops only by single KA1 contact on MI1\)/);
+  assert.match(sto, /VFD1 \(no STO; stops only by single CR1 contact on MI1\)/, 'written with the new tags');
   assert.match(sto, /two monitored contactors/);
   assert.ok(c.parts.find((p) => p.oldTag === 'VF1')!.differences.includes('STO wired to the safety relay'));
   // every drive's STO wired: nothing to flag
@@ -396,6 +400,11 @@ await test('cn-rollformer-01: a correct reading scores 100 % on the facts; a wro
   assert.ok(by('Relay logic').misses.includes('C9 H7CX circuit'));
   assert.ok(by('Safety').misses.includes('no-STO finding'));
   assert.ok(bad.percent < 100);
+  // one contact short (79 of 80 in the relay logic) is never 100 %
+  const one = scoreReading(normalizeMachine({ ...CN_ROLLFORMER_01_READING, circuits: CN_ROLLFORMER_01_READING.circuits.map((c) => (c.output === 'KA2'
+    ? { ...c, devices: c.devices.filter((d) => d !== 'KA3'), conditions: c.conditions.filter((t) => !/KA3/.test(t)), path: c.path?.filter((e) => !(e.t === 'contact' && e.tag === 'KA3')) } : c)) }), CN_ROLLFORMER_01);
+  assert.equal(one.percent, 99, scoreText(one));
+  assert.match(scoreText(one), /Relay logic 79\/80 \(98 %\) — missing: C3a KA2 ← KA3/);
   // the older self-written mock is far from the real set
   assert.ok(scoreReading(normalizeMachine(ROLL_FORMER), CN_ROLLFORMER_01).percent < 40);
 });
@@ -404,8 +413,8 @@ await test('cn-rollformer-01 converted: claimed Cat 3 / PL d not met (no STO), r
   const m = normalizeMachine(CN_ROLLFORMER_01_READING);
   const c = convertMachine(m);
   const sto = c.recommendations.find((r) => /Safe Torque Off/.test(r.text))!.text;
-  assert.match(sto, /claim Cat 3 \/ PL d, but the safety relay KA0/);
-  assert.match(sto, /U1 \(no STO[^)]*KA1[^)]*\)\), U2 \(STO not wired/);
+  assert.match(sto, /claim Cat 3 \/ PL d, but the safety relay SR1 Pilz PNOZ s3/);
+  assert.match(sto, /VFD1 \(no STO[^)]*CR1[^)]*\)\), U2 \(STO not wired; stops only by single CR4 contact/);
   assert.match(sto, /the claimed Cat 3 \/ PL d is not met/);
   assert.deepEqual(c.motors.map((x) => [x.tag, x.hp]), [['M1', 7.5], ['M2', 3]]);
   assert.equal(c.supply, '480VAC-3PH');
@@ -440,6 +449,15 @@ await test('cn-rollformer-01 converted: claimed Cat 3 / PL d not met (no STO), r
   const lost = functionKept(m, c, collectProject()).find((k) => k.kind === 'circuit' && /^U1 MI2/.test(k.original))!;
   assert.equal(lost.status, 'missing');
   assert.match(lost.note, /No PLC output for U1 MI2/);
+  // only the circuit that uses MI2 fails, not every circuit of the VFD
+  const after = functionKept(m, c, collectProject()).filter((k) => k.kind === 'circuit' && k.status === 'missing').map((k) => k.original.split(':')[0]);
+  assert.deepEqual(after, ['U1 MI2']);
+  // a lost shear-down valve is blamed on itself, not on the shear-up valve with the similar name
+  useIOStore.getState().deletePoint(useIOStore.getState().projectIO.find((p) => p.description === 'Shear down valve (剪切下)')!.id);
+  const io = functionKept(m, c, collectProject()).filter((k) => k.kind === 'io' && k.status === 'missing').map((k) => k.original);
+  assert.ok(io.some((x) => /Shear down valve/.test(x)) && !io.some((x) => /Shear up valve/.test(x)), io.join(' | '));
+  assert.equal(m.interlocks.length, 9);
+  assert.ok(functionKept(m, c, collectProject()).filter((k) => k.kind === 'interlock').length === 9);
 });
 
 await test('thumbnails: the sheet and column a source names, a DXF sheet drawn from its frame', () => {
