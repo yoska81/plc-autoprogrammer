@@ -8,7 +8,11 @@ import type { LadderProgram } from '../../core/ladder';
 import LadderView from '../../ui/ladder/LadderView';
 import { collectProject } from '../../../deliverables/collect';
 import { programFiles, saveBlob } from '../../../deliverables/files';
+import { exportContext } from '../../../deliverables/exportContext';
+import { useIOStore } from '../../../store/useIOStore';
 import { UPGRADE_KEY } from '../upgrade';
+import { exportUpgrade, upgradeChanges, type UpgradeExport } from '../exportUpgrade';
+import { gunzipText } from '../gz';
 import { upgradeOriginal } from './applyUpgrade';
 import ProgramImport from './ProgramImport';
 
@@ -22,7 +26,12 @@ export default function UpgradePage() {
   const clearDraft = useDraftStore((s) => s.clearDraft);
   const ladder = useProgramStore((s) => s.ladder);
   const { profile, cpu, labels } = usePlc();
+  const io = useIOStore((s) => s.projectIO);
   const [all, setAll] = useState(false);
+  const [prepared, setPrepared] = useState<UpgradeExport | null>(null);
+  const [understood, setUnderstood] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const changes = useMemo(() => (original ? upgradeChanges(original, io, ladder) : null), [original, io, ladder]);
 
   const diff = useMemo(() => {
     if (!original) return null;
@@ -32,8 +41,21 @@ export default function UpgradePage() {
     return { entries, display, changes: new Map<string, RungChange>(entries.map((e) => [e.rung.id, e.change])), summary: summarizeDiff(entries) };
   }, [original, ladder, all]);
 
-  const exportFiles = () => {
-    for (const f of programFiles(collectProject())) saveBlob(f.name, new Blob([f.content], { type: 'text/plain' }));
+  /** Work out the download: written into the original file (same PLC), or new files with what they will not have. */
+  const prepare = async () => {
+    if (!original) return;
+    setBusy(true);
+    try {
+      const file = original.fileGz ? await gunzipText(original.fileGz).catch(() => null) : null;
+      const snap = collectProject();
+      setPrepared(exportUpgrade(original, file, ladder, { plcId: profile.id, ctx: exportContext(snap), fullFiles: () => programFiles(snap) }));
+      setUnderstood(false);
+    } finally { setBusy(false); }
+  };
+  const download = () => {
+    if (!prepared) return;
+    for (const f of prepared.files) saveBlob(f.name, new Blob([f.content], { type: 'text/plain' }));
+    setPrepared(null);
   };
 
   return (
@@ -73,9 +95,37 @@ export default function UpgradePage() {
                 <div className="flex items-center gap-3">
                   <h3 className="text-sm font-semibold text-gray-800 flex-1">Original vs now: <span data-testid="upgrade-diff-summary">{diff.summary}</span></h3>
                   <label className="text-xs text-gray-600 flex items-center gap-1"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Show unchanged rungs</label>
-                  <button data-testid="upgrade-export" onClick={exportFiles} disabled={!ladder.rungs.length} className="text-xs px-3 py-1.5 rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50">Download for {profile.vendor} {profile.name}</button>
+                  <button data-testid="upgrade-export" onClick={() => void prepare()} disabled={!ladder.rungs.length || busy} className="text-xs px-3 py-1.5 rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50">Download for {profile.vendor} {profile.name}…</button>
                 </div>
+                {prepared && (
+                  <div className="border border-gray-200 rounded p-3 space-y-2 text-sm" data-testid="upgrade-prepared">
+                    {prepared.mode === 'patch' ? (
+                      <p data-testid="upgrade-mode-patch">Your changes go into a copy of your original file, <b>{prepared.files[0].name}</b>. {prepared.changed.length ? <>Rewritten: {prepared.changed.join(', ')}.</> : 'Nothing changed: it is your original file.'}{prepared.added.length ? <> New routines: {prepared.added.join(', ')}.</> : null}{prepared.newTags.length ? <> New tags: {prepared.newTags.join(', ')}.</> : null} Everything else (modules, add-on instructions, other routines, tasks) is exactly as it was. In Studio 5000: File › Open the .L5X, then download to the controller.</p>
+                    ) : (
+                      <p>A new set of files for {profile.vendor} {profile.name}: {prepared.files.map((f) => f.name).join(', ')}.</p>
+                    )}
+                    {prepared.warnings.length > 0 && <ul className="text-xs text-gray-600 list-disc ml-5">{prepared.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+                    {prepared.missing.length > 0 && (
+                      <div className="bg-red-50 border border-red-200 rounded p-2 text-red-900" data-testid="upgrade-missing">
+                        <p className="font-medium text-sm">These {prepared.missing.length} items will not be in the files:</p>
+                        <ul className="list-disc ml-5 text-xs mt-1 space-y-0.5">{prepared.missing.map((m, i) => <li key={i}>{m}</li>)}</ul>
+                        <label className="flex items-center gap-2 text-xs mt-2"><input data-testid="upgrade-understood" type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} /> I understand these {prepared.missing.length} items will be missing</label>
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <button data-testid="upgrade-download" onClick={download} disabled={prepared.missing.length > 0 && !understood} className="text-xs px-3 py-1.5 rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50">Download</button>
+                      <button onClick={() => setPrepared(null)} className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50">Cancel</button>
+                    </div>
+                  </div>
+                )}
                 <p className="text-xs text-gray-500">Green: added · amber: changed · red: removed. The files keep the original tag names.</p>
+                {changes && (changes.io.added.length + changes.io.removed.length + changes.io.renamed.length + changes.tags.added.length + changes.tags.removed.length + changes.tags.renamed.length + changes.blocksAdded.length > 0) && (
+                  <div className="grid sm:grid-cols-3 gap-3 text-xs" data-testid="upgrade-other-changes">
+                    <ChangeList title="I/O points" added={changes.io.added} removed={changes.io.removed} renamed={changes.io.renamed} />
+                    <ChangeList title="Tags" added={changes.tags.added} removed={changes.tags.removed} renamed={changes.tags.renamed} />
+                    <ChangeList title="Program parts added" added={changes.blocksAdded} removed={[]} renamed={[]} />
+                  </div>
+                )}
                 {diff.display.rungs.length
                   ? <LadderView program={diff.display} labels={labels} changes={diff.changes} />
                   : <p className="text-sm text-gray-500">No changes yet. Open the program to change it, or ask the AI there.</p>}
@@ -85,5 +135,19 @@ export default function UpgradePage() {
         </div>
       </div>
     </>
+  );
+}
+
+function ChangeList({ title, added, removed, renamed }: { title: string; added: string[]; removed: string[]; renamed: { from: string; to: string }[] }) {
+  if (!added.length && !removed.length && !renamed.length) return null;
+  return (
+    <div className="border border-gray-200 rounded p-2">
+      <p className="font-medium text-gray-700 mb-1">{title}</p>
+      <ul className="space-y-0.5">
+        {added.map((a) => <li key={`a${a}`} className="text-green-800">+ {a}</li>)}
+        {removed.map((a) => <li key={`r${a}`} className="text-red-800">− {a}</li>)}
+        {renamed.map((r) => <li key={`n${r.from}`} className="text-amber-800">{r.from} → {r.to}</li>)}
+      </ul>
+    </div>
   );
 }

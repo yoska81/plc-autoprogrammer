@@ -8,6 +8,7 @@ import { convertLogixRung, msPreset } from './logixText';
 import { convertSt } from './st';
 import { toRungs } from './cond';
 import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType } from './types';
+import type { Rung } from '../core/ladder';
 
 export function logixType(raw: string): ForeignType {
   const t = raw.toUpperCase();
@@ -66,6 +67,11 @@ function moduleComments(root: XNode): Map<string, string> {
   return out;
 }
 
+/** A rung kept whole as its original text (RAW): it goes back into the PLC as it was. */
+export function wholeRung(text: string, comment: string, id: string): Rung {
+  return { id, comment, branches: [], outputs: [{ type: 'RAW', vendor: 'logix', text: text.replace(/;\s*$/, '') }] };
+}
+
 export function readL5x(src: string): ForeignProgram {
   const doc = parseXml(src);
   const content = kid(doc, 'RSLogix5000Content');
@@ -112,7 +118,7 @@ export function readL5x(src: string): ForeignProgram {
     for (const r of kids(kid(p, 'Routines'), 'Routine')) {
       const rname = programs.length > 1 ? `${pname} / ${r.attrs.Name}` : r.attrs.Name;
       const type = (r.attrs.Type ?? '').toUpperCase();
-      const routine: ForeignRoutine = { name: rname, language: type === 'RLL' ? 'ladder' : type === 'ST' ? 'st' : type === 'FBD' ? 'fbd' : type === 'SFC' ? 'sfc' : 'other', rungs: [], untranslated: [] };
+      const routine: ForeignRoutine = { name: rname, language: type === 'RLL' ? 'ladder' : type === 'ST' ? 'st' : type === 'FBD' ? 'fbd' : type === 'SFC' ? 'sfc' : 'other', rungs: [], untranslated: [], origin: { program: pname, routine: r.attrs.Name } };
       if (type === 'RLL') {
         kids(kid(r, 'RLLContent'), 'Rung').forEach((g, i) => {
           const text = textOf(kid(g, 'Text')).trim();
@@ -122,13 +128,13 @@ export function readL5x(src: string): ForeignProgram {
           if (/^JSR\(\s*[\w]+\s*(,[^)]*)?\)\s*;?$/i.test(text)) { calls.push(text); return; }
           try {
             const { driven, untranslated } = convertLogixRung(text);
-            for (const u of untranslated) routine.untranslated.push(`Rung ${i}: ${u}`);
             for (const d of driven) for (const op of opsOf(d)) if (logixIoKind(op)) ioRefs.add(op);
             const { rungs, failed } = toRungs(mapOps(driven), comment, `${slug(rname)}_${i}`);
-            routine.rungs.push(...rungs);
-            if (failed.length) routine.untranslated.push(`Rung ${i}: ${text}`);
-          } catch (e) {
-            routine.untranslated.push(`Rung ${i}: ${text}${e instanceof Error ? ` (${e.message})` : ''}`);
+            // A rung the ladder model can't hold is kept whole, as it was.
+            if (failed.length || untranslated.length) routine.rungs.push(wholeRung(text, comment, `${slug(rname)}_${i}`));
+            else routine.rungs.push(...rungs);
+          } catch {
+            routine.rungs.push(wholeRung(text, comment, `${slug(rname)}_${i}`));
           }
         });
       } else if (type === 'ST') {
@@ -150,7 +156,15 @@ export function readL5x(src: string): ForeignProgram {
     tags.push({ name: base, dataType: /\.\d+$/.test(base) ? 'BOOL' : 'INT', comment: comments.get(base.toUpperCase()) ?? '', address: base, io: logixIoKind(base)!, ...(/\.\d+$/.test(base) ? {} : { analog: true }) });
   }
   fillPresets(routines, tags);
+  const outside = [
+    ...kids(kid(ctrl, 'AddOnInstructionDefinitions'), 'AddOnInstructionDefinition').map((d) => `Add-on instruction ${d.attrs.Name}`),
+    ...routines.filter((r) => r.language === 'fbd' || r.language === 'sfc').map((r) => `${r.language.toUpperCase()} routine ${r.name}`),
+    ...[...kids(kid(ctrl, 'Tags'), 'Tag'), ...programs.flatMap((p) => kids(kid(p, 'Tags'), 'Tag'))]
+      .filter((t) => t.attrs.TagType === 'Produced' || t.attrs.TagType === 'Consumed' || /^(MESSAGE|AXIS_|MOTION_|PID)/i.test(t.attrs.DataType ?? ''))
+      .map((t) => `${t.attrs.TagType === 'Produced' || t.attrs.TagType === 'Consumed' ? `${t.attrs.TagType} tag` : `${t.attrs.DataType} tag`} ${t.attrs.Name}`),
+  ];
   return {
+    outside,
     format: 'l5x', vendor: 'Allen-Bradley', controller: ctrl.attrs.ProcessorType ?? '', projectName: ctrl.attrs.Name ?? content.attrs.TargetName ?? 'Imported project',
     tags, routines, notes,
   };

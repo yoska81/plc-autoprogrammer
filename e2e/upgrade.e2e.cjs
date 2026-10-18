@@ -77,22 +77,38 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check((await page.getByTestId('upgrade-diff-summary').innerText()) === '1 changed', 'Original vs now: 1 changed');
   await page.screenshot({ path: path.join(OUT, '2-diff.png'), fullPage: true });
 
-  log('download');
+  log('download: written into the original file');
   const files = [];
   page.on('download', (d) => files.push(d));
   await page.getByTestId('upgrade-export').click();
-  await page.waitForTimeout(1500);
-  const l5x = files.find((d) => /\.L5X$/.test(d.suggestedFilename()));
-  check(Boolean(files.find((d) => d.suggestedFilename() === 'Bottle_Capper_L2.L5X')), 'the file is named after the machine');
-  check(Boolean(l5x), `an L5X is downloaded (${files.map((d) => d.suggestedFilename()).join(', ')})`);
+  await page.getByTestId('upgrade-mode-patch').waitFor({ timeout: 5000 });
+  check(/MainProgram \/ Modes/.test(await page.getByTestId('upgrade-mode-patch').innerText()), 'says which routine is rewritten');
+  check(await page.getByTestId('upgrade-missing').count() === 0, 'nothing missing when written into the original');
+  await page.getByTestId('upgrade-download').click();
+  await page.waitForTimeout(1000);
+  const l5x = files.find((d) => d.suggestedFilename() === 'capper_upgraded.L5X');
+  check(Boolean(l5x), `the original file with the changes (${files.map((d) => d.suggestedFilename()).join(', ')})`);
   if (l5x) {
     const out = path.join(OUT, l5x.suggestedFilename());
     await l5x.saveAs(out);
     const x = fs.readFileSync(out, 'utf8');
-    for (const n of ['Start_PB', 'Machine_Running', 'Spin_Tmr']) check(x.includes(`Name="${n}"`), `${n} keeps its name in the L5X`);
+    const orig = fs.readFileSync(FIXTURE, 'utf8');
+    const cut = (t) => { const s0 = t.search(/<Routine\s[^>]*Name="Modes"/); return [t.slice(0, s0), t.slice(t.indexOf('</Routine>', s0))]; };
+    const [a, b] = cut(orig), [c, d] = cut(x);
+    check(a === c && b === d, 'everything outside the changed routine is byte-identical to the original');
     check(x.includes('Upgraded: start only with the guard closed'), 'the change is in the file');
-    check(x.includes('MSG(Line_Msg)'), 'the MSG the app cannot draw goes back as it was');
+    check(x.includes('MSG(Line_Msg)') && x.includes('<Module Name="DI_Slot1"'), 'the MSG and the module configuration are still there');
   }
+
+  log('download for another PLC: what is missing is confirmed first');
+  const cpuBefore = await page.evaluate(async () => { const s = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState(); const c = s.cpuId; s.setPlc('micro800', ''); return c; });
+  await page.getByTestId('upgrade-export').click();
+  await page.getByTestId('upgrade-missing').waitFor({ timeout: 5000 });
+  check(/MSG\(Line_Msg\)/.test(await page.getByTestId('upgrade-missing').innerText()), 'the MSG is listed as missing on another PLC');
+  check(await page.getByTestId('upgrade-download').isDisabled(), 'download waits for "I understand"');
+  await page.getByTestId('upgrade-understood').check();
+  check(!(await page.getByTestId('upgrade-download').isDisabled()), 'then it can be downloaded');
+  await page.evaluate(async (c) => (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().setPlc('logix', c), cpuBefore);
 
   log('reload');
   await page.reload();

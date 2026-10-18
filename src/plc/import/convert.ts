@@ -209,11 +209,13 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   const outRungs: Rung[] = [];
   const usedIds = new Set<string>();
   const notConverted: ImportReport['notConverted'] = [];
+  const blockOrigin: ImportedProgram['blockOrigin'] = {};
   for (const r of fp.routines) {
     for (const u of r.untranslated) notConverted.push({ where: r.name, text: u });
     if (!r.rungs.length) continue;
     let id = `b_${slug(r.name)}`;
     while (blocks.some((b) => b.id === id)) id += '_';
+    if (r.origin) blockOrigin[id] = r.origin;
     blocks.push({ id, name: r.name, description: `Imported from ${fp.vendor} ${r.language === 'ladder' ? 'ladder' : r.language.toUpperCase()} routine "${r.name}"` });
     for (const g of r.rungs) {
       // Rung ids end in the original rung number (readers: `<routine>_<n>`).
@@ -230,17 +232,17 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   const converted = outRungs.filter((r) => ![...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW')).length;
   return {
     source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName },
-    program, io, names,
-    report: { rungs: total, converted, notConverted, notes: [...new Set(notes)] },
+    program, io, names, blockOrigin,
+    report: { rungs: total, converted, notConverted, notes: [...new Set(notes)], outside: fp.outside ?? [] },
   };
 }
 
-/** "Conv1_Start_PB" → "Conv1 Start PB". */
 /** App nickname for an original tag name: letters, digits and _, at most 24 characters (the full name goes in the comment). */
 export const nickOf = (name: string): string => name.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24);
 /** Tag comment: the original name and type when the nickname had to change it, then its description. */
 const origComment = (name: string, type: string, comment: string) => [nickOf(name) !== name ? `Original: ${name}${type ? ` (${type})` : ''}` : '', comment].filter(Boolean).join(' — ');
 
+/** "Conv1_Start_PB" → "Conv1 Start PB". */
 export function pretty(name: string): string {
   return name.replace(/^.*[:.](?=[A-Za-z])/, '').replace(/[_]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
 }

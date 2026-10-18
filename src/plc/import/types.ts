@@ -58,6 +58,8 @@ export interface ForeignRoutine {
   rungs: ForeignRung[];
   /** Original text of what could not be turned into rungs (kept for the user and for re-export). */
   untranslated: string[];
+  /** Where the routine is in the original file (program and routine name), for writing changes back into it. */
+  origin?: { program: string; routine: string };
 }
 
 export interface ForeignProgram {
@@ -70,6 +72,8 @@ export interface ForeignProgram {
   routines: ForeignRoutine[];
   /** What the reader noticed (unsupported instructions, guesses). */
   notes: string[];
+  /** Parts of the file the app's program does not hold (add-on instructions, FBD / SFC routines, message tags…). */
+  outside?: string[];
 }
 
 /** One physical I/O point found in the program. */
@@ -92,6 +96,8 @@ export interface ImportReport {
   /** Instructions or statements not converted (with where they are). `kept`: in the program as the original text (RAW). */
   notConverted: { where: string; text: string; kept?: boolean }[];
   notes: string[];
+  /** Parts of the original file the app's program does not hold: kept only when the changes are written into that file. */
+  outside: string[];
 }
 
 export interface ImportedProgram {
@@ -102,4 +108,6 @@ export interface ImportedProgram {
   /** Neutral address (or @IN/@OUT placeholder) → original name in the program. */
   names: Record<string, string>;
   report: ImportReport;
+  /** Block id → its routine in the original file. */
+  blockOrigin: Record<string, { program: string; routine: string }>;
 }

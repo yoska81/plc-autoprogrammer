@@ -5,6 +5,8 @@ import { useSpecStore } from '../../../store/useSpecStore';
 import { useDraftStore } from '../../../store/useDraftStore';
 import { useProjectsStore } from '../../../store/useProjectsStore';
 import { planUpgrade, UPGRADE_KEY, type UpgradeOriginal, type UpgradePlan } from '../upgrade';
+import { gzipText } from '../gz';
+import { notify } from '../../../store/useNoticeStore';
 import type { ImportedProgram } from '../types';
 import type { SpecSectionId } from '../../../spec/types';
 
@@ -13,7 +15,7 @@ import type { SpecSectionId } from '../../../spec/types';
  * (the previous one is kept as a version), the machine description sections that are still empty,
  * the questions, and the original for "Original vs now".
  */
-export function applyUpgrade(imp: ImportedProgram): UpgradePlan {
+export function applyUpgrade(imp: ImportedProgram, fileText?: string): UpgradePlan {
   const plan = planUpgrade(imp, useProjectStore.getState().plcId);
   const project = useProjectStore.getState();
   project.setPlc(plan.plcId, plan.cpuId);
@@ -34,7 +36,24 @@ export function applyUpgrade(imp: ImportedProgram): UpgradePlan {
   const asked = new Set(spec.questions);
   spec.setQuestions([...spec.questions, ...plan.questions.filter((q) => !asked.has(q))]);
   useDraftStore.getState().setDraft(UPGRADE_KEY, plan.original);
+  // The original file goes with the project (compressed) so the download can write the changes into it.
+  if (fileText && imp.source.format === 'l5x') void keepFile(fileText, plan.original.importedAt);
   return plan;
+}
+
+/** Largest compressed original kept with the project (the project is saved in the browser's storage). */
+const MAX_KEPT = 3_000_000;
+
+async function keepFile(text: string, importedAt: string): Promise<void> {
+  try {
+    const fileGz = await gzipText(text);
+    const cur = upgradeOriginal(useDraftStore.getState().drafts);
+    if (!cur || cur.importedAt !== importedAt) return; // another program was read meanwhile
+    if (fileGz.length > MAX_KEPT) { notify('The original file is too large to keep with the project: the download will be a new project file, with a list of what it does not have.'); return; }
+    useDraftStore.getState().setDraft(UPGRADE_KEY, { ...cur, fileGz });
+  } catch {
+    notify('The original file could not be kept with the project: the download will be a new project file.');
+  }
 }
 
 export const upgradeOriginal = (drafts: Record<string, unknown>) => (drafts[UPGRADE_KEY] as UpgradeOriginal | undefined) ?? null;

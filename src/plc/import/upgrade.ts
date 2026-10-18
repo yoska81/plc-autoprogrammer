@@ -29,6 +29,13 @@ export interface UpgradeOriginal {
   /** Original program on the chosen PLC's addresses: the base of the diff. */
   program: LadderProgram;
   summary: string;
+  /** The I/O list as imported (descriptions, in order) for "Original vs now". */
+  ioList: { description: string; type: 'input' | 'output' }[];
+  /** App address → original tag name; block id → its routine in the original file. */
+  names: Record<string, string>;
+  blockOrigin: ImportedProgram['blockOrigin'];
+  /** The original file, gzip + base64 (src/plc/import/gz.ts): changes are written back into it. */
+  fileGz?: string;
 }
 
 export interface UpgradePlan {
@@ -89,7 +96,11 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
     io: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type, category: p.category, ...(p.signal ? { signal: p.signal, analog: p.analog } : {}) })),
     spec: describeProgram(imp),
     questions: questionsFor(imp),
-    original: { importedAt: now.toISOString(), source: imp.source, report: imp.report, io: imp.io, plcId: profile.id, cpuId: cpu.id, program, summary },
+    original: {
+      importedAt: now.toISOString(), source: imp.source, report: imp.report, io: imp.io, plcId: profile.id, cpuId: cpu.id, program, summary,
+      ioList: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type })),
+      names: m.names, blockOrigin: imp.blockOrigin,
+    },
   };
 }
 

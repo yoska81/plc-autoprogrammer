@@ -7,7 +7,7 @@
 import { convertLogixRung } from './logixText';
 import { convertSt } from './st';
 import { toRungs } from './cond';
-import { fillPresets, logixIoKind, logixType, opsOf, OPERAND_KEYS, slug } from './l5x';
+import { fillPresets, logixIoKind, logixType, opsOf, OPERAND_KEYS, slug, wholeRung } from './l5x';
 import type { ForeignProgram, ForeignRoutine, ForeignTag } from './types';
 
 /** Split text into statements ending with ";" outside quotes / brackets / parentheses. */
@@ -113,13 +113,13 @@ export function readL5k(src: string): ForeignProgram {
         if (/^JSR\(\s*\w+\s*(,[^)]*)?\)$/i.test(rung)) { calls.push(rung); comment = ''; continue; }
         try {
           const { driven, untranslated } = convertLogixRung(rung);
-          for (const u of untranslated) routine.untranslated.push(`Rung ${idx}: ${u}`);
           for (const d of driven) for (const op of opsOf(d)) if (logixIoKind(op)) ioRefs.add(op);
           const { rungs, failed } = toRungs(mapOps(driven), comment, `${slug(name)}_${idx}`);
-          routine.rungs.push(...rungs);
-          if (failed.length) routine.untranslated.push(`Rung ${idx}: ${rung}`);
-        } catch (e) {
-          routine.untranslated.push(`Rung ${idx}: ${rung}${e instanceof Error ? ` (${e.message})` : ''}`);
+          // A rung the ladder model can't hold is kept whole, as it was.
+          if (failed.length || untranslated.length) routine.rungs.push(wholeRung(rung, comment, `${slug(name)}_${idx}`));
+          else routine.rungs.push(...rungs);
+        } catch {
+          routine.rungs.push(wholeRung(rung, comment, `${slug(name)}_${idx}`));
         }
         comment = '';
       }

@@ -19,6 +19,7 @@ const CONF: Record<ImportedProgram['io'][number]['confidence'], { label: string;
  */
 export default function ProgramImport({ onApplied }: { onApplied?: (plan: UpgradePlan, summary: string) => void }) {
   const [imp, setImp] = useState<ImportedProgram | null>(null);
+  const [fileText, setFileText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -31,6 +32,7 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
       if (why) { setError(why); return; }
       if (!detectFormat(file.name, text)) { setError(`${file.name} is not a PLC program export the app knows. Export the program as L5X/L5K (Rockwell), PLCopen XML, SCL or Structured Text, or a CLICK nickname CSV.`); return; }
       setImp(importProgramText(file.name, text));
+      setFileText(text);
     } catch (e) {
       setError(`Could not read ${file.name}: ${e instanceof Error ? e.message : String(e)}`);
     } finally { setBusy(false); }
@@ -38,7 +40,7 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
 
   const apply = () => {
     if (!imp) return;
-    const plan = applyUpgrade(imp);
+    const plan = applyUpgrade(imp, fileText ?? undefined);
     onApplied?.(plan, programSummary(imp));
   };
 

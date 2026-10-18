@@ -25,8 +25,8 @@ import { toLogix, type LogixTag } from './logixExport';
 
 export const L5X_REVISION = { major: 33, minor: 11, software: '33.11' };
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const cdata = (s: string) => `<![CDATA[${s.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
+export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+export const cdata = (s: string) => `<![CDATA[${s.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
 
 /** "Mon May 19 08:26:42 2014" (manual p38). */
 export function l5xDate(d: Date): string {
@@ -36,7 +36,7 @@ export function l5xDate(d: Date): string {
   return `${day} ${mon} ${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} ${d.getUTCFullYear()}`;
 }
 
-function tagXml(t: LogixTag, ind: string): string {
+export function tagXml(t: LogixTag, ind: string): string {
   const text = t.aliasFor ? `${t.description} — module point ${t.aliasFor}` : t.description;
   const desc = text ? `\n${ind}  <Description>${cdata(text)}</Description>` : '';
   const member = (name: string, type: 'DINT' | 'BOOL', v = '0') => `${ind}      <DataValueMember Name="${name}" DataType="${type}"${type === 'DINT' ? ' Radix="Decimal"' : ''} Value="${v}"/>`;
