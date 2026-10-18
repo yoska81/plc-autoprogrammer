@@ -1,7 +1,7 @@
+import ProjectNameInput from '../../components/ProjectNameInput';
 import { Link } from 'react-router-dom';
 import { useActiveHmiDesign } from '../../hmi/projectPanel';
 import { useProgramStore } from '../../store/useProgramStore';
-import { useProjectsStore } from '../../store/useProjectsStore';
 import { useSettingsStore, activeCredentials } from '../../store/useSettingsStore';
 import { usePlc } from '../core/usePlc';
 import { useElectricalStore } from '../../store/useElectricalStore';
@@ -11,8 +11,7 @@ import StProgramView from '../ui/program/StProgramView';
 import LoadIntoPlc from '../ui/LoadIntoPlc';
 
 export default function ProgramPage() {
-  const { projectName, lastGeneratedAt } = useProgramStore();
-  const renameProject = useProjectsStore((s) => s.renameActive);
+  const { lastGeneratedAt } = useProgramStore();
   const settings = useSettingsStore();
   const { profile, cpu, io, addresses, ioAddressSet, labels, analog } = usePlc();
   const ioWiring = useElectricalStore((s) => s.design?.ioWiring);
@@ -27,12 +26,7 @@ export default function ProgramPage() {
     <>
       <header className="px-4 sm:px-6 py-3 bg-white border-b border-gray-200 flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="min-w-0 flex-[1_1_16rem]">
-          <input
-            value={projectName}
-            onChange={(e) => renameProject(e.target.value)}
-            aria-label="Project name"
-            className="w-full text-lg font-semibold text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-brand-500 focus:outline-none bg-transparent"
-          />
+          <ProjectNameInput className="w-full text-lg font-semibold text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-brand-500 focus:outline-none bg-transparent" />
           <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
             {lastGeneratedAt && <span>Last generated: {new Date(lastGeneratedAt).toLocaleString()}</span>}
           </div>

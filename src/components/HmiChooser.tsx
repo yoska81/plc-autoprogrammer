@@ -42,6 +42,8 @@ export default function HmiChooser({ need, cpuId, selected, suggested, makers, o
   const q = query.trim();
   const shown = rows.filter((r) => r.pn === selected
     || (q ? matches(r, q) : (allMakers || makers.includes(r.vendor)) && sizeTest(r.sizeIn)));
+  // the chosen panel stays listed, but only real matches count
+  const found = q ? shown.filter((r) => matches(r, q)).length : shown.length;
   // Maker → series, in first-seen order; current panels by size, legacy ones last.
   const groups = new Map<string, PanelRow[]>();
   for (const r of shown) groups.set(`${r.maker} — ${r.series}`, [...(groups.get(`${r.maker} — ${r.series}`) ?? []), r]);
@@ -58,7 +60,7 @@ export default function HmiChooser({ need, cpuId, selected, suggested, makers, o
           </select>
         </label>
         <label className="flex items-center gap-1.5"><input type="checkbox" checked={allMakers} disabled={Boolean(q)} onChange={(e) => setAllMakers(e.target.checked)} /> Every maker's panels</label>
-        <span className="ml-auto">{q ? `${shown.length} match${shown.length === 1 ? '' : 'es'} in every maker's panels` : `${shown.length} panel${shown.length === 1 ? '' : 's'}`}</span>
+        <span className="ml-auto">{q ? (found ? `${found} match${found === 1 ? '' : 'es'} in every maker's panels` : 'No panel matches') : `${shown.length} panel${shown.length === 1 ? '' : 's'}`}</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full">

@@ -135,6 +135,8 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const cpu = choice ? findCpu(choice.cpuId) : null;
   const fit = cpu && choice ? cpuFit(cpu, choice.modules, need) : null;
   const cap = cpu && choice ? ioCapacity(cpu, moduleSlots(choice.modules)) : null;
+  // something to apply: the user's own pick, or the AI's suggestion (not the default a fresh project starts from)
+  const chosen = Boolean(pending && pending.basis === basis) || Boolean(project.recommendation);
   const applied = choice?.cpuId === project.cpuId
     && JSON.stringify(choice?.modules) === JSON.stringify(project.modules) && (choice?.hmiPartNumber ?? '') === (appliedHmi ?? '');
 
@@ -156,7 +158,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     onApplied?.();
   };
   // Let the New project wizard apply a selection the user did not apply themselves.
-  const pendingLabel = choice && !applied ? `${choice.cpuId}${choice.hmiPartNumber ? ` + ${choice.hmiPartNumber}` : ''}` : null;
+  const pendingLabel = choice && !applied && chosen ? `${choice.cpuId}${choice.hmiPartNumber ? ` + ${choice.hmiPartNumber}` : ''}` : null;
   const canApply = Boolean(pendingLabel && fit?.ok);
   const applyRef = useRef(apply);
   useEffect(() => { applyRef.current = apply; });
@@ -182,7 +184,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
       </div>
       {error && <div role="alert" className="bg-red-50 border border-red-200 p-3 text-red-800">{error}</div>}
       {reasoning && <ReasoningPanel reasoning={reasoning} />}
-      {choice && !applied && (
+      {choice && !applied && chosen && (
         <div role="status" className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border border-amber-300 bg-amber-50 px-4 py-2 text-amber-900 shadow-sm">
           <span className="flex-1 min-w-48">Your equipment selection ({choice.cpuId}{choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}{choice.hmiPartNumber ? `, ${choice.hmiPartNumber}` : ''}) is not applied to the project yet.</span>
           <button onClick={apply} disabled={!fit?.ok} className="px-3 py-1 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-40">Use this selection</button>
