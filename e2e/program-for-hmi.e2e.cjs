@@ -3,6 +3,7 @@
 // cycle so every HMI tag is implemented: no checker errors, the banner is gone.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/program-for-hmi.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 const fails = [];
@@ -11,15 +12,16 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
-  const checker = () => page.evaluate(async () => (await import('/src/deliverables/collect.ts')).collectProject().issues.filter((i) => i.severity === 'error').map((i) => i.message));
+  const checker = () => page.evaluate(async () => (await appImport('/src/deliverables/collect.ts')).collectProject().issues.filter((i) => i.severity === 'error').map((i) => i.message));
   const banner = page.getByTestId('program-out-of-step');
 
   await page.goto(BASE + '/hmi');

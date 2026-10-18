@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const OUT = path.join(__dirname, 'out-recover-list');
 fs.mkdirSync(OUT, { recursive: true });
@@ -19,6 +20,7 @@ const LONG = 'Make the pusher wait for the part to settle on the conveyor for at
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 900 } });
   const page = await ctx.newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -27,7 +29,7 @@ const LONG = 'Make the pusher wait for the part to settle on the conveyor for at
   // The example project, plus a backup holding long AI requests, long program notes, a long machine
   // description and eight near-duplicate program versions.
   await page.evaluate(async (LONG) => {
-    const m = await import('/src/preview/sampleProject.ts');
+    const m = await appImport('/src/preview/sampleProject.ts');
     localStorage.clear();
     m.seedSampleProject?.();
     const ladder = JSON.parse(JSON.stringify(m.LADDER));

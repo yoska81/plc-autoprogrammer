@@ -3,6 +3,7 @@
 // terminals, the rung that was hard to read is asked on the Machine description page.
 //   npx vite --port 5205 &  ;  BASE_URL=http://localhost:5205 node e2e/printout.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const BASE = process.env.BASE_URL || 'http://localhost:5205';
@@ -42,6 +43,7 @@ function sse(model, text) {
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -81,9 +83,9 @@ function sse(model, text) {
   await page.getByTestId('program-apply').click();
   await page.getByTestId('upgrade-original').waitFor({ timeout: 5000 });
   const st = await page.evaluate(async () => {
-    const plc = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState();
-    const io = (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
-    const spec = (await import('/src/store/useSpecStore.ts')).useSpecStore.getState();
+    const plc = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState();
+    const io = (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
+    const spec = (await appImport('/src/store/useSpecStore.ts')).useSpecStore.getState();
     return { plcId: plc.plcId, addrs: io.map((p) => p.plcAddress), questions: spec.questions };
   });
   check(st.plcId === 'click', 'a CLICK printout stays on a CLICK');

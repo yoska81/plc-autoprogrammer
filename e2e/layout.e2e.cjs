@@ -4,6 +4,7 @@
 //
 //   npm run dev -- --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/layout.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const OUT = __dirname + '/out-layout/';
 fs.rmSync(OUT, { recursive: true, force: true });
@@ -15,6 +16,7 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true });
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -22,8 +24,8 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
 
   await page.goto(BASE + '/spec');
   await page.evaluate(async () => {
-    const m = await import('/src/preview/sampleProject.ts');
-    const ps = await import('/src/store/useProjectsStore.ts');
+    const m = await appImport('/src/preview/sampleProject.ts');
+    const ps = await appImport('/src/store/useProjectsStore.ts');
     localStorage.clear();
     m.seedSampleProject();
     ps.useProjectsStore.getState().openProject(m.EXAMPLE_ID);

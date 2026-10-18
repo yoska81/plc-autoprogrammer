@@ -3,6 +3,7 @@
 // clears them (backup first) keeping the description and the I/O list, and offers to build again.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/start-clean.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 const fails = [];
@@ -12,13 +13,14 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
@@ -29,13 +31,13 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
 
   // A copy of the example, then the user's own description and program notes copied along.
   await page.evaluate(async ({ own }) => {
-    const ps = await import('/src/store/useProjectsStore.ts');
+    const ps = await appImport('/src/store/useProjectsStore.ts');
     const { data } = ps.activeProjectData();
     ps.addProjectFromData('Sealing Head', data);
-    const { useSpecStore } = await import('/src/store/useSpecStore.ts');
-    const { EMPTY_SECTIONS } = await import('/src/spec/types.ts');
+    const { useSpecStore } = await appImport('/src/store/useSpecStore.ts');
+    const { EMPTY_SECTIONS } = await appImport('/src/spec/types.ts');
     useSpecStore.getState().setSections({ ...EMPTY_SECTIONS, overview: own });
-    (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().setUserPrompt('Conveyor pusher: keep the pusher retracted while the conveyor runs; batch counter on the photo-eye.');
+    (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().setUserPrompt('Conveyor pusher: keep the pusher retracted while the conveyor runs; batch counter on the photo-eye.');
   }, { own: OWN });
 
   // The leftover warnings (Electrical motors, Program notes).
@@ -52,8 +54,8 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
 
   // The Sealing Head case: the user rewrote the overview; the other sections are still the example's.
   await page.evaluate(async ({ own }) => {
-    const { useSpecStore } = await import('/src/store/useSpecStore.ts');
-    const { SPEC } = await import('/src/preview/sampleProject.ts');
+    const { useSpecStore } = await appImport('/src/store/useSpecStore.ts');
+    const { SPEC } = await appImport('/src/preview/sampleProject.ts');
     useSpecStore.getState().setSections({ ...SPEC, overview: own });
   }, { own: OWN });
 
@@ -66,7 +68,7 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   for (const part of ['description sections still the example', 'sequence of operation', "the example's I/O list (9 conveyor points)", 'document control', 'Example Foods Inc.', '24-117', 'drawing prefix CNV', 'revision history', 'equipment suggestion', 'electrical design', 'HMI screens', 'PLC program']) check(text.includes(part), `banner names ${part}`);
 
   const before = await page.evaluate(async () => ({
-    io: (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.length,
+    io: (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.length,
     backups: Object.keys(localStorage).filter((k) => k.startsWith('plc-backup:')).length,
   }));
   // Reload: the banner is still there while the leftovers remain.
@@ -80,13 +82,13 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   await page.waitForTimeout(500);
 
   const after = await page.evaluate(async () => {
-    const io = (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.length;
-    const el = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState();
-    const hmi = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState();
-    const prog = (await import('/src/store/useProgramStore.ts')).useProgramStore.getState();
-    const proj = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState();
-    const spec = (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().sections;
-    const stages = (await import('/src/spec/useStages.ts')).stagesNow();
+    const io = (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.length;
+    const el = (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState();
+    const hmi = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState();
+    const prog = (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState();
+    const proj = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState();
+    const spec = (await appImport('/src/store/useSpecStore.ts')).useSpecStore.getState().sections;
+    const stages = (await appImport('/src/spec/useStages.ts')).stagesNow();
     const info = proj.info;
     const filled = Object.entries(spec).filter(([k, v]) => k !== 'qa' && String(v).trim()).map(([k]) => k);
     return {
@@ -103,7 +105,7 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   check(after.overview === OWN, 'description kept');
   check(!after.design && !after.motors && !after.hmi && !after.rungs && !after.notes && !after.rec, "the example's outputs are cleared");
   check(!after.doc.customer && !after.doc.site && !after.doc.projectNumber && after.doc.prefix === 'SH' && after.doc.revisions === 0, `the example's document control is reset (prefix from the name, no revisions): ${JSON.stringify(after.doc)}`);
-  const cover = await page.evaluate(async () => { const { currentRevision } = await import('/src/store/useProjectStore.ts'); return currentRevision((await import('/src/store/useProjectStore.ts')).useProjectStore.getState().info).rev; });
+  const cover = await page.evaluate(async () => { const { currentRevision } = await appImport('/src/store/useProjectStore.ts'); return currentRevision((await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().info).rev; });
   check(cover === 'A', 'starts at Rev A');
   check(after.backups === before.backups + 1, 'a backup was taken first');
   check(after.stages.electrical === 'empty' && after.stages.hmi === 'empty' && after.stages.program === 'empty', 'electrical, HMI and program are to do');
@@ -152,31 +154,31 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   // The other ways a project becomes a copy of the example: the example edited in place (detached into
   // its own project by the next seeding) and the example saved as a .isap file and opened again.
   for (const how of ['edited example', '.isap reopened']) {
-    await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+    await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
     await page.goto(BASE + '/spec');
     await page.locator('select[aria-label="Open project"]').selectOption('p_example');
     await page.evaluate(async ({ how, own }) => {
-      const ps = await import('/src/store/useProjectsStore.ts');
-      const { useSpecStore } = await import('/src/store/useSpecStore.ts');
+      const ps = await appImport('/src/store/useProjectsStore.ts');
+      const { useSpecStore } = await appImport('/src/store/useSpecStore.ts');
       if (how === '.isap reopened') {
-        const pf = await import('/src/project/projectFile.ts');
+        const pf = await appImport('/src/project/projectFile.ts');
         await pf.openProjectFile((await pf.buildProjectFile()).blob);
       }
       ps.useProjectsStore.getState().renameActive('Sealing Head');
       useSpecStore.getState().setSections({ ...useSpecStore.getState().sections, overview: own });
-      if (how === 'edited example') (await import('/src/preview/sampleProject.ts')).seedSampleProject();
+      if (how === 'edited example') (await appImport('/src/preview/sampleProject.ts')).seedSampleProject();
     }, { how, own: OWN });
     await page.goto(BASE + '/spec');
     await page.waitForTimeout(800);
     const b = page.getByTestId('start-clean');
-    const active = await page.evaluate(async () => (await import('/src/store/useProjectsStore.ts')).useProjectsStore.getState().activeId);
+    const active = await page.evaluate(async () => (await appImport('/src/store/useProjectsStore.ts')).useProjectsStore.getState().activeId);
     check(active !== 'p_example', `${how}: a project of its own (${active})`);
     check(/document control/.test(await b.innerText().catch(() => '')), `${how}: banner lists the document control`);
     await b.getByRole('button', { name: 'Start clean from my description' }).click();
     await b.getByRole('button', { name: "Clear the example's parts" }).click();
     await page.reload();
     await page.waitForTimeout(800);
-    const doc = await page.evaluate(async () => { const i = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().info; return { c: i.customer, s: i.site, n: i.projectNumber, p: i.drawingPrefix, by: i.preparedBy, r: i.revisions.length }; });
+    const doc = await page.evaluate(async () => { const i = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().info; return { c: i.customer, s: i.site, n: i.projectNumber, p: i.drawingPrefix, by: i.preparedBy, r: i.revisions.length }; });
     log(`${how}: document control after Start clean and a reload: ${JSON.stringify(doc)}`);
     check(!doc.c && !doc.s && !doc.n && doc.p === 'SH' && !doc.by && doc.r === 0, `${how}: document control reset`);
   }
