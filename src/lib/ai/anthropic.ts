@@ -58,6 +58,8 @@ export type ClaudeOptions = {
   webSearch?: { maxUses?: number; allowedDomains?: string[] };
   /** What the request is for: sets its effort in Speed "fast" (src/lib/ai/tasks.ts) and names it in the timing log. */
   task?: AiTask;
+  /** Called once, when the answer starts arriving (the prompt is processed and cached by then); at once for an answer from the answer cache, in the preview and in tests. */
+  onStarted?: () => void;
   /** May be answered from the answer cache (Update all). Without it the request is always made (a page's Generate); the answer is stored either way. */
   cache?: boolean;
 };
@@ -85,11 +87,12 @@ export async function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   const log = (ok: boolean, outChars: number, cached: 'memory' | 'stored' | 'shared' | null) =>
     logAiCall({ task: o.task ?? 'other', model: o.model, effort: o.effort, startedAt, endedAt: aiNow(), promptChars, outChars, cached, ok });
   try {
-    const { answer, hit } = await cachedAnswer({ model: o.model, effort: o.effort, system: o.system, messages: o.messages, schema: o.schema }, () => trackAi(() => withRetries(() => (interceptor ? interceptor(o, requestClaude) : requestClaude(o)), {
+    const { answer, hit } = await cachedAnswer({ model: o.model, effort: o.effort, system: o.system, messages: o.messages, schema: o.schema }, () => trackAi(() => withRetries(() => (interceptor ? (o.onStarted?.(), interceptor(o, requestClaude)) : requestClaude(o)), {
       signal: o.signal,
       onRetry: (n) => reportRetry(o.signal, n),
       explain: (err, info) => explainFailure(err, info, o.model),
     })), { fresh: !o.cache, signal: o.signal });
+    if (hit) o.onStarted?.();
     log(true, answer.text.length, hit);
     return answer;
   } catch (err) {
@@ -128,6 +131,8 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   const totalMs = totalLimitFor(opts.effort);
   if (IS_PREVIEW && opts.webSearch) throw new Error('Web search needs your own Anthropic API key (Settings); the preview cannot search the web.');
   if (IS_PREVIEW) {
+    // no prompt cache to wait for here: parts that wait for this one may start now
+    opts.onStarted?.();
     // plain answers stream their text (progress); JSON answers arrive at once (total cap only)
     return previewSlot(() => withWatchdog((signal, progress) => callClaudeAccount({ ...(opts as Parameters<typeof callClaudeAccount>[0]), signal, onProgress: (chars) => { progress(); if (chars !== undefined) reportAiProgress(opts.signal, chars); } }),
       { signal: opts.signal, totalMs, reportsProgress: !opts.schema }));
@@ -163,7 +168,8 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
         messages,
         ...(tools ? { tools } : {}),
       }, { signal });
-      stream.on('streamEvent', progress);
+      let started = false;
+      stream.on('streamEvent', () => { if (!started) { started = true; opts.onStarted?.(); } progress(); });
       stream.on('text', (_delta, snapshot) => reportAiProgress(opts.signal, snapshot.length));
       return stream.finalMessage();
     }, { signal: opts.signal, totalMs, reportsProgress: true });

@@ -9,6 +9,7 @@ import { effectiveEffort, effectiveModel, TASK_EFFORT } from './tasks';
 import { cachedAnswer, cacheKey, clearAiCache, setAiCacheEnabled, setAiCacheSyncKeys } from './cache';
 import { aiBusyMs, type AiCall } from './timing';
 import { callClaude, setClaudeInterceptor } from './anthropic';
+import { parallelCached } from './parallelCached';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { renameActions } from '../../plc/ai/cycleAI';
 import { needFromIo, rulesEquipment } from '../../spec/equipmentRules';
@@ -107,6 +108,65 @@ await test('rules equipment: keeps a CPU that fits, adds modules or picks a bigg
   const big = rulesEquipment(io(15, 9), { plcId: 'click', cpuId: 'C0-11DD1E-D', modules: [], hmiPartNumber: 'EA3-T6CL' });
   assert.ok(big && big.modules.length >= 1, 'modules added for 15 inputs / 9 outputs');
   assert.equal(big?.cpuId, 'C0-11DD1E-D', 'the Ethernet CPU is kept');
+});
+
+await test('parallelCached: shared prefix cached on its last block, first part starts alone, each part its own request', async () => {
+  await clearAiCache();
+  setAiCacheEnabled(true);
+  setAiCacheSyncKeys(true); // in-thread keys: the order of events is fixed (microtasks only)
+  const calls: { task?: string; blocks: unknown[]; schema?: unknown }[] = [];
+  let releaseFirst!: () => void;
+  const firstGate = new Promise<void>((r) => { releaseFirst = r; });
+  setClaudeInterceptor(async (o) => {
+    calls.push({ task: o.task, blocks: (o.messages[0].content as unknown[]), schema: o.schema });
+    if (calls.length === 1) await firstGate; // the first part's answer is still coming when the others start
+    return { text: JSON.stringify({ part: (o.messages[0].content as { text?: string }[]).at(-1)?.text }), reasoning: null };
+  });
+  const prefix = [{ type: 'text' as const, text: 'file 1' }, { type: 'text' as const, text: 'file 2' }];
+  const base = { apiKey: 'k', model: 'm', effort: 'max' as const, system: 'S', prefix, task: 'import' as const, cache: true };
+  const parts = [{ instruction: 'A', schema: { title: 'a' } }, { instruction: 'B', schema: { title: 'b' } }, { instruction: 'C', task: 'spec' as const }];
+  const states: string[] = [];
+  const run = parallelCached(base, parts, (i, st) => states.push(`${i}:${st}`));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(calls.length, 3, 'B and C start once A has started, before A is done');
+  releaseFirst();
+  const out = await run;
+  assert.deepEqual(out.map((r) => JSON.parse(r.text).part), ['A', 'B', 'C'], 'answers in the order given');
+  for (const c of calls) {
+    const blocks = c.blocks as { text: string; cache_control?: unknown }[];
+    assert.equal(blocks[0].cache_control, undefined);
+    assert.deepEqual(blocks[1].cache_control, { type: 'ephemeral' }, 'cache breakpoint on the last shared block');
+    assert.equal(blocks.length, 3);
+  }
+  assert.deepEqual(calls.map((c) => c.schema), [{ title: 'a' }, { title: 'b' }, undefined]);
+  assert.deepEqual(calls.map((c) => c.task), ['import', 'import', 'spec']);
+  assert.ok(states.indexOf('0:started') < states.indexOf('1:waiting'), 'B waits for A to start');
+  // a re-read of the same files: every part from the answer cache
+  calls.length = 0;
+  await parallelCached(base, parts);
+  assert.equal(calls.length, 0, 'each part answered from its own cache entry');
+  setClaudeInterceptor(null);
+  setAiCacheSyncKeys(false);
+});
+
+await test('parallelCached: one part failing fails the whole and stops the others', async () => {
+  await clearAiCache();
+  let aborted = 0;
+  setClaudeInterceptor(async (o) => {
+    const part = (o.messages[0].content as { text?: string }[]).at(-1)?.text;
+    if (part === 'B') throw Object.assign(new Error('bad request'), { status: 400 });
+    await new Promise<void>((resolve, reject) => {
+      if (o.signal?.aborted) { aborted++; reject(Object.assign(new Error('Stopped.'), { name: 'AbortError' })); return; }
+      const t = setTimeout(resolve, 2000);
+      o.signal?.addEventListener('abort', () => { clearTimeout(t); aborted++; reject(Object.assign(new Error('Stopped.'), { name: 'AbortError' })); }, { once: true });
+    });
+    return { text: '{}', reasoning: null };
+  });
+  const base = { apiKey: 'k', model: 'm', effort: 'max' as const, system: 'S2', prefix: [{ type: 'text' as const, text: 'f' }] };
+  await assert.rejects(parallelCached(base, [{ instruction: 'A' }, { instruction: 'B' }, { instruction: 'C' }]), /bad request/);
+  for (let i = 0; i < 5 && aborted < 2; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(aborted, 2, 'A and C were stopped');
+  setClaudeInterceptor(null);
 });
 
 console.log(failures.length ? `\n${failures.length} failed` : `\n${passed} passed, 0 failed`);
