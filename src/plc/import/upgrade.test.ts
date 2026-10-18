@@ -92,4 +92,17 @@ const capper = importProgramText('capper.L5X', readFileSync(join(here, '__fixtur
   assert.equal(planUpgrade(capper, 'click').program.tags.find((x) => x.nickname === 'Capper.Torque_SP')?.address.startsWith('DF'), true, 'Logix target: original names');
 }
 
+// A controller of the same family the app does not have (1769-L33ER): never swapped silently.
+{
+  const { importProgramText } = await import('./index');
+  const { readFileSync } = await import('node:fs');
+  const { join, dirname } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const capper = importProgramText('capper.L5X', readFileSync(join(dirname(fileURLToPath(import.meta.url)), '__fixtures__', 'capper.L5X'), 'utf8'));
+  const plan = planUpgrade(capper, 'click');
+  assert.equal(plan.plcId, 'logix');
+  assert.match(plan.original.cpuNote ?? '', /^Your machine's controller is a 1769-L33ER\. The app does not have it yet, so this project shows a 5069-L\d+ER .*download into your original \.L5X keeps your controller/);
+  assert.equal(plan.questions[0], plan.original.cpuNote, 'also asked on the Machine description page');
+}
+
 console.log('upgrade.test: all passed');

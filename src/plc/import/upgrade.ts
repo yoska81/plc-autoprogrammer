@@ -40,6 +40,8 @@ export interface UpgradeOriginal {
   rungOrigin?: ImportedProgram['rungOrigin'];
   /** The original file, gzip + base64 (src/plc/import/gz.ts): changes are written back into it. */
   fileGz?: string;
+  /** The machine's own controller is not one the app has: what the project shows instead, in plain words. */
+  cpuNote?: string;
 }
 
 export interface UpgradePlan {
@@ -99,12 +101,15 @@ const s7Bit = (a: string) => { const m = /^%?([IQ])X?(\d+)\.([0-7])$/i.exec(a.tr
  * "1769-L33ER", an order number), else (S7) the smallest CPU whose onboard I/O holds every original %I / %Q bit, so
  * the addresses stay as they were. null = no such CPU in the app's list (the general choice applies).
  */
+/** The controller a file names, as a catalog-style key ("1769-L33ER", "1214C", "6ES7214-1AG40-0XB0"), or ''. */
+const cpuKey = (controller: string) => /\b(6ES7[\w-]+|\d{4}-\w+|1[25]\d\d[A-Z]*)\b/i.exec(controller)?.[1] ?? '';
+const matchesCpu = (c: PlcProfile['cpuModels'][number], key: string) => c.id.toUpperCase() === key.toUpperCase() || new RegExp(`(^|[^\\w])${key}([^\\w]|$)`, 'i').test(c.label);
+
 export function originalCpu(profile: PlcProfile, imp: ImportedProgram): { cpuId: string; modules: string[] } | null {
-  const named = imp.source.controller;
-  const key = /\b(\d{4}-\w+|1[25]\d\d[A-Z]*|6ES7[\w-]+)\b/i.exec(named)?.[1];
+  const key = cpuKey(imp.source.controller);
   const fit = (id: string) => { const mods = modulesToFit(id, [], needOf(imp)); return mods ? { cpuId: id, modules: mods } : null; };
   if (key) {
-    const cpu = profile.cpuModels.find((c) => c.id.toUpperCase() === key.toUpperCase() || new RegExp(`(^|[^\\w])${key}([^\\w]|$)`, 'i').test(c.label));
+    const cpu = profile.cpuModels.find((c) => matchesCpu(c, key));
     const r = cpu && fit(cpu.id);
     if (r) return r;
   }
@@ -144,6 +149,11 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
   const { cpuId, modules } = originalCpu(profile, imp) ?? chooseCpu(profile, needOf(imp));
   const cpu = profile.cpuModels.find((c) => c.id === cpuId) ?? profile.cpuModels[0];
   const m = materialize(imp, profile, cpu, moduleSlots(modules));
+  // The file names a controller of this family the app does not have (a 1769-L33ER): never swapped silently.
+  const named = cpuKey(imp.source.controller);
+  const cpuNote = named && SAME_FAMILY[imp.source.format] === profile.id && !matchesCpu(cpu, named)
+    ? `Your machine's controller is a ${named}. The app does not have it yet, so this project shows a ${cpu.label.split(' — ')[0]} (${cpu.label.split(' — ')[1] ?? profile.name}) on the parts list, drawings and status bar. Your program keeps its names and logic${imp.source.format === 'l5x' ? ', and the download into your original .L5X keeps your controller' : ''}; the parts list and drawings do not match your machine's controller.`
+    : undefined;
   // I/O keeps its name from the original program (Start_PB, not the description).
   const have = new Set(m.program.tags.map((t) => t.address.toUpperCase()));
   const ioTags: TagDefinition[] = [];
@@ -161,11 +171,12 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
     io: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type, category: p.category, ...(p.signal ? { signal: p.signal, analog: p.analog } : {}), ...(p.plcAddress ? { plcAddress: p.plcAddress } : {}) })),
     spec: describeProgram(imp),
     // Likely bugs (missing seal-in, interlock on another station's sensor) are asked before the general question.
-    questions: withFindings([...questionsFor(imp), ...movedS7(imp, profile, cpu, modules, m.io)], programFindings(program).map((f) => f.message)),
+    questions: withFindings([...(cpuNote ? [cpuNote] : []), ...questionsFor(imp), ...movedS7(imp, profile, cpu, modules, m.io)], programFindings(program).map((f) => f.message)),
     original: {
       importedAt: now.toISOString(), source: imp.source, report: imp.report, io: imp.io, plcId: profile.id, cpuId: cpu.id, program, summary,
       ioList: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type })),
       names: m.names, blockOrigin: imp.blockOrigin, rungOrigin: imp.rungOrigin,
+      ...(cpuNote ? { cpuNote } : {}),
     },
   };
 }

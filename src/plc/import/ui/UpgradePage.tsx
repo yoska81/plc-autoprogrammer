@@ -83,6 +83,7 @@ export default function UpgradePage() {
                     <h3 className="text-sm font-semibold text-gray-800">Original: {original.source.projectName}</h3>
                     <p className="text-xs text-gray-500">{original.source.fileName} · {[original.source.vendor, original.source.controller].filter(Boolean).join(' ')} · read {new Date(original.importedAt).toLocaleString()}</p>
                     <p className="text-xs text-gray-500">{original.report.converted} of {original.report.rungs} rungs converted · now on {profile.vendor} {profile.name} {cpu.id}</p>
+                    {original.cpuNote && <p className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1" data-testid="upgrade-cpu-note">{original.cpuNote}</p>}
                   </div>
                   <button
                     onClick={() => { if (window.confirm('Read another program? The comparison with this original is dropped; the project keeps its current program and I/O.')) clearDraft(UPGRADE_KEY); }}
