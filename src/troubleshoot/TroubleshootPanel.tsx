@@ -135,7 +135,8 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
   return (
     <div className={full ? 'fixed inset-0 z-40 overflow-auto bg-steel-50 p-3' : ''}>
     <div className="mx-auto max-w-xl space-y-3" aria-label="Fault finding">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <span className="mr-auto rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900" title="Fault finding is new: check each verdict with your own judgement before you replace a part.">Beta</span>
         <button type="button" className="rounded border border-steel-300 bg-white px-3 py-1.5 text-sm" onClick={() => setFull(!full)}>{full ? 'Back to the page' : 'Full screen'}</button>
       </div>
       {!session ? (
