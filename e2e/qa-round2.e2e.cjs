@@ -81,8 +81,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await effort.selectOption('low');
   // Leave through the app's own navigation (a reload would ask "leave the page?").
   await page.locator('a[href="/spec"]').first().click();
-  await page.waitForTimeout(300);
-  const kept = await page.evaluate(async () => (await import('/src/store/useSettingsStore.ts')).useSettingsStore.getState().effort);
+  await page.waitForURL(/\/spec/);
+  const effortNow = () => page.evaluate(async () => (await import('/src/store/useSettingsStore.ts')).useSettingsStore.getState().effort);
+  let kept = await effortNow();
+  for (let t = 0; t < 50 && kept !== 'low'; t++) { await page.waitForTimeout(100); kept = await effortNow(); } // saved as the page unmounts
   check(kept === 'low', `settings kept when leaving the page (${kept})`);
 
   // 9. One "issued for construction" rule: needs the checker and approver.
