@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { buildHmi, defaultHmiContent } from './index';
+import { motionContent } from './content';
 import { checkDesign, cutTexts } from '../layout';
 import { HMI_LOOKS } from '../theme';
 import { getCpu, getProfile } from '../../plc/core/profiles';
@@ -69,6 +70,17 @@ test('content: two servo axes and one encoder; their points are not alarms, actu
   assert.ok(!content.actuators.some((a) => [a.run, a.extend, ...a.feedback].some((x) => x && axisAddr.has(x.address))), 'servo points are no actuator');
   assert.ok(!content.partSensor || !axisAddr.has(content.partSensor.address));
   assert.ok(content.io.some((x) => axisAddr.has(x.address)), 'the points stay on Diagnostics');
+});
+
+test('content: a unit given as a ratio wins; a numbered encoder is "Encoder N"', () => {
+  const c = motionContent([
+    { address: 'X101', description: 'Axis 1 servo ready', type: 'input' }, { address: 'Y101', description: 'Axis 1 servo pulse (200 pulses/mm)', type: 'output' },
+    { address: 'X201', description: 'Axis 2 servo ready', type: 'input' }, { address: 'Y201', description: 'Axis 2 servo pulse (10 mm/rev)', type: 'output' },
+    { address: 'X301', description: 'Indexer servo ready (1000 pulses/deg)', type: 'input' },
+    { address: 'X401', description: 'Encoder 1 A', type: 'input' }, { address: 'X402', description: 'Encoder 1 B', type: 'input' },
+  ]);
+  assert.deepEqual(c.axes.map((a) => [a.name, a.units]), [['Axis 1', 'mm'], ['Axis 2', 'mm'], ['Indexer', 'deg']]);
+  assert.deepEqual(c.encoders.map((e) => [e.name, e.channels.length]), [['Encoder 1', 2]]);
 });
 
 test('tags: every axis command, status, setpoint, readout and the fault alarm; encoder readouts', () => {
