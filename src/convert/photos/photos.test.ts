@@ -11,7 +11,7 @@ import { DEFAULT_INPUTS } from '../../store/useElectricalStore';
 import { billOfMaterials, panelLayout, type DrawingContext } from '../../electrical/derive';
 import { clampReading, PHOTO_SCHEMA, recogniseCabinet } from './recognise';
 import { mergeDevices, mergeReading } from './merge';
-import { asBuiltDesign, matchPart, reviewItems, type ReviewItem } from './toDesign';
+import { asBuiltDesign, matchPart, nameplateRatings, photosToMachine, reviewItems, type ReviewItem } from './toDesign';
 import { SMALL_CABINET } from './__fixtures__/smallCabinet';
 import { setClaudeInterceptor } from '../../lib/ai/anthropic';
 
@@ -80,6 +80,22 @@ const bom = billOfMaterials(ctx).flatMap((g) => g.lines);
 for (const pn of ['GMCBU-1C-5', 'GMCBU-1C-2', 'PSL-24-030', 'C0-10DD1E-D', 'C0-08ND3', 'SC-E02PG-24VDC', 'TK-E02-72']) assert.ok(bom.some((l) => l.partNumber === pn), `BOM has ${pn}`);
 // Without as-built rails the normal packing runs (nothing changes for designed panels).
 assert.ok(!panelLayout({ ...ctx, design: { ...r.design, asBuilt: undefined } }).warnings.some((w) => /As-built/.test(w)));
+
+// ── The same reviewed photos as an existing machine, for the shared review → conversion path ──
+const machine = photosToMachine(items, merged, 'Line 3 starter panel');
+assert.equal(machine.components.length, 8, 'every device not rejected (the unconfirmed relay too: the shared review asks about it)');
+const mk1 = machine.components.find((c) => c.tag === 'K1')!;
+assert.equal(mk1.source, 'photo 1, rail 2, position 3');
+assert.equal(mk1.confidence, 'high', 'confirmed in the photo review');
+assert.equal(mk1.ratings.coilVoltage, '24VDC');
+assert.equal(machine.components.find((c) => c.tag === 'CB1')!.ratings.curve, 'C');
+assert.equal(machine.components.find((c) => c.tag === 'CB1')!.ratings.amps, 5);
+assert.deepEqual([machine.components.find((c) => c.tag === 'OL1')!.ratings.minAmps, machine.components.find((c) => c.tag === 'OL1')!.ratings.maxAmps], [5, 8]);
+assert.equal(machine.plc?.cpuPartNumber, 'C0-10DD1E-D');
+assert.deepEqual(machine.modules.map((m) => m.partNumber), ['C0-08ND3']);
+assert.match(machine.spec.utilities, /TB1: 1 = wire 24\+, 2 = wire 0V, 3 = wire 1001/);
+assert.ok(machine.questions.some((q) => /wire 2001/.test(q.text)));
+assert.equal(nameplateRatings('24 VDC 3 A').amps, 3);
 
 // ── Recogniser: one AI call with every photo labelled; boxes kept inside their photo ──
 assert.ok(JSON.stringify(PHOTO_SCHEMA).includes('"seen"'));

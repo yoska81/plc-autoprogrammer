@@ -57,7 +57,7 @@ function Crop({ file, s }: { file: File | undefined; s: Sighting }) {
  * layout and BOM, marked "as-built from photos, verify". What the photos can't show is asked on the
  * Machine description page.
  */
-export default function PhotosTab() {
+export default function PhotosImport() {
   const settings = useSettingsStore();
   const apiKey = settings.provider === 'anthropic' ? settings.anthropicApiKey : '';
   const projectId = useProjectsStore((s) => s.activeId) ?? 'default';

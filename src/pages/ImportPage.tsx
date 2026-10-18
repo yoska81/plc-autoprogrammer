@@ -1,6 +1,6 @@
 import { useSearchParams } from 'react-router-dom';
 import DrawingsImport from '../convert/DrawingsImport';
-import PhotosTab from '../convert/photos/PhotosTab';
+import PhotosImport from '../convert/photos/PhotosImport';
 
 type Tab = 'drawings' | 'program' | 'photos';
 const TABS: { id: Tab; label: string }[] = [{ id: 'drawings', label: 'Drawings' }, { id: 'program', label: 'Program' }, { id: 'photos', label: 'Cabinet photos' }];
@@ -35,7 +35,7 @@ export default function ImportPage() {
       <div className="flex-1 overflow-y-auto bg-steel-50 p-4">
         {tab === 'drawings' && <DrawingsImport />}
         {/* Cabinet photos → as-built drawings (src/convert/photos/). */}
-        {tab === 'photos' && <PhotosTab />}
+        {tab === 'photos' && <PhotosImport />}
         {/* Program tab: the program reader (src/plc/import/) plugs in here. */}
         {tab === 'program' && (
           <div className="max-w-3xl rounded-sm border border-steel-200 bg-white p-4 text-sm text-steel-700" data-testid="import-program">

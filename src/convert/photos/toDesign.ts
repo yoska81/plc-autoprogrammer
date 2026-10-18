@@ -1,5 +1,7 @@
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign } from '../../electrical/types';
 import type { PhotoDevice, PhotoReading, TerminalStrip } from './recognise';
+import type { DrawnComponent, DrawnRatings, ExistingMachine } from '../types';
+import { normalizeMachine } from '../derive';
 
 /**
  * The REVIEW step and its result. Every recognised device and terminal strip is an item the user
@@ -102,4 +104,58 @@ export function asBuiltDesign(items: ReviewItem[], reading: PhotoReading, base: 
     questions,
     notInCatalog,
   };
+}
+
+/** Ratings printed on a nameplate, in the drawings reader's shape (null when not printed). */
+export function nameplateRatings(text: string): DrawnRatings {
+  const n = (re: RegExp) => { const m = re.exec(text); return m ? Number(m[1]) : null; };
+  const range = /(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*A\b/i.exec(text);
+  const out = /(\d+(?:\.\d+)?)\s*V\s*DC\b[^\d]*(\d+(?:\.\d+)?)\s*A\b/i.exec(text);
+  const coil = /(\d+)\s*V\s*(AC|DC)\s*coil|coil\s*(\d+)\s*V\s*(AC|DC)/i.exec(text);
+  return {
+    amps: range ? null : n(/(\d+(?:\.\d+)?)\s*A\b/) ?? n(/\b[BCD](\d+)\b/),
+    poles: n(/(\d)\s*-?\s*pole/i),
+    coilVoltage: coil ? `${coil[1] ?? coil[3]}V${(coil[2] ?? coil[4]).toUpperCase()}` : null,
+    kA: n(/(\d+(?:\.\d+)?)\s*kA\b/i),
+    curve: /\b([BCD])\d+\b/.exec(text)?.[1] ?? null,
+    minAmps: range ? Number(range[1]) : null,
+    maxAmps: range ? Number(range[2]) : null,
+    kw: n(/(\d+(?:\.\d+)?)\s*kW\b/i),
+    outputVolts: out ? Number(out[1]) : null,
+    outputAmps: out ? Number(out[2]) : null,
+  };
+}
+
+/**
+ * The reviewed photos as an existing machine (src/convert/types.ts), for the shared review →
+ * conversion → rebuild path of the Import page: the devices with their nameplates and where they
+ * were seen, the terminal strips' wire numbers as text, and the questions the photos leave open.
+ * Rejected items are left out; unconfirmed ones go in with their own confidence (the shared review
+ * asks the user about low-confidence readings).
+ */
+export function photosToMachine(items: ReviewItem[], reading: PhotoReading, note = ''): ExistingMachine {
+  const kept = items.filter((it) => it.status !== 'rejected');
+  const where = (s: { seen: { photo: number }[]; rail: number; order: number }) => `photo ${(s.seen[0]?.photo ?? 0) + 1}${s.rail ? `, rail ${s.rail}, position ${s.order}` : ', door / wall'}`;
+  const components: DrawnComponent[] = kept.filter((it) => it.kind === 'device').map((it) => {
+    const d = it.device!;
+    return {
+      tag: itemTag(it), partNumber: itemPart(it) || null, manufacturer: d.manufacturer || null,
+      description: [d.manufacturer, itemPart(it), d.ratings].filter(Boolean).join(' ') || itemCategory(it),
+      category: itemCategory(it), ratings: nameplateRatings(d.ratings), source: where(d),
+      confidence: it.status === 'confirmed' ? 'high' : d.confidence,
+    };
+  });
+  const plcDev = kept.find((it) => itemCategory(it) === 'plc');
+  const strips = kept.filter((it) => it.kind === 'strip').map((it) => `${itemTag(it) || 'Terminal strip'}: ${it.strip!.terminals.map((t) => `${t.terminal} = wire ${t.wire}`).join(', ')}`);
+  return normalizeMachine({
+    summary: reading.summary,
+    drawingStandard: 'other',
+    language: 'English',
+    plc: plcDev ? { vendor: plcDev.device!.manufacturer, model: itemPart(plcDev), cpuPartNumber: itemPart(plcDev) || null } : null,
+    modules: kept.filter((it) => itemCategory(it) === 'plcModule').map((it, i) => ({ slot: i + 1, partNumber: itemPart(it), description: it.device!.ratings })),
+    components,
+    spec: { utilities: [note.trim(), strips.length ? `Terminal strips as photographed:\n${strips.join('\n')}` : ''].filter(Boolean).join('\n') } as ExistingMachine['spec'],
+    questions: reading.unseen.map((text) => ({ text, section: 'other' as const, assumption: null })),
+    uncertainties: ['As-built from photos: wiring behind ducts and covered nameplates could not be read — verify on the cabinet.'],
+  });
 }
