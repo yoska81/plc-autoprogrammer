@@ -6,7 +6,6 @@
 import type { HmiDesign, HmiTag, PlcChange } from '../types';
 import { rungWrites, type LadderProgram } from '../../plc/core/ladder';
 import { rungReads } from '../../plc/sim/blocks';
-import type { ProgramRoles, Role } from '../../plc/import/hmiRoles';
 
 /** The imported program's addresses for HMI roles. */
 export interface UpgradeRoles {
@@ -14,6 +13,8 @@ export interface UpgradeRoles {
   tags: HmiTag[];
   /** Commands the program takes from a wired input: the HMI gets its own bit, added beside that input. */
   parallelTo?: { role: string; address: string; nickname: string }[];
+  /** Counter presets written as constants in the rung: the HMI batch setpoint replaces the constant. */
+  constPresets?: { address: string; nickname: string; preset: string }[];
   /** What the program has no address for at all, in plain words. */
   missing?: string[];
 }
@@ -55,7 +56,10 @@ export function plcChangesFor(design: HmiDesign, ladder: LadderProgram, roles: U
     if (out.has(a) || filled.has(a) || implemented(t, use)) continue;
     const p = t.role ? parallel.get(t.role) : undefined;
     const alarm = alarms.get(a);
-    const change = p
+    const constPreset = t.role === 'sp:batch' ? roles.constPresets?.[0] : undefined;
+    const change = constPreset
+      ? `Use ${t.name} (${a}) as the preset of ${constPreset.nickname} (${constPreset.address}) instead of the fixed ${constPreset.preset}, so the operator sets the batch on the HMI.`
+      : p
       ? t.role === 'cmd:stop'
         ? `Add a normally-closed contact of ${t.name} (${a}) in series with ${p.nickname} (${p.address}), so the HMI Stop stops the machine like the Stop button.`
         : `Add ${t.name} (${a}) in parallel with ${p.nickname} (${p.address}), so the HMI button does what the wired button does.`
@@ -82,36 +86,3 @@ export function openPlcChanges(design: HmiDesign, ladder: LadderProgram): PlcCha
   });
 }
 
-/**
- * The HMI roles of an imported program (src/plc/import/hmiRoles.ts) as the tags the HMI build reuses:
- * panel bits the program reads become the panel's own commands, wired buttons get an HMI bit beside them,
- * the sealed running coil, fault inputs, the safety fault, the first counter and its preset register.
- */
-export function upgradeRolesFrom(pr: ProgramRoles): UpgradeRoles {
-  const tags: HmiTag[] = [];
-  const parallelTo: NonNullable<UpgradeRoles['parallelTo']> = [];
-  const tag = (role: string, r: Role, dataType: HmiTag['dataType'], access: HmiTag['access'], address = r.address) =>
-    tags.push({ role, address, name: r.nickname.replace(/[^A-Za-z0-9]+/g, '_'), dataType, access, description: `From the upgraded program: ${r.why}.` });
-  const cmd = (role: string, rs: Role[]) => {
-    const bit = rs.find((r) => !/^X\d/i.test(r.address));
-    if (bit) tag(role, bit, 'BIT', 'write');
-    else if (rs[0]) parallelTo.push({ role, address: rs[0].address, nickname: rs[0].nickname });
-  };
-  cmd('cmd:start', pr.start);
-  cmd('cmd:stop', pr.stop);
-  cmd('cmd:reset', pr.reset);
-  if (pr.running[0]) tag('sts:running', pr.running[0], 'BIT', 'read');
-  for (const f of pr.faults) {
-    if (/^X\d/i.test(f.address)) tag(`alarm:fault:${f.address}`, f, 'BIT', 'read');
-    else if (/safety|e-?stop|guard/i.test(f.nickname) && !tags.some((t) => t.role === 'alarm:safety')) tag('alarm:safety', f, 'BIT', 'read');
-  }
-  const ct = pr.counters[0];
-  if (ct) {
-    const n = /^CT(\d+)$/i.exec(ct.address)?.[1];
-    if (n) tag('word:count', ct, 'INT2', 'read', `CTD${n}`);
-    if (ct.preset && /^(DS|DD)\d+$/i.test(ct.preset)) tag('sp:batch', { ...ct, nickname: `${ct.nickname}_Preset`, why: `the preset of ${ct.nickname}` }, 'INT', 'read-write', ct.preset.toUpperCase());
-  }
-  // The exact panel Start / Stop changes are in the PLC change list; the rest is said as the importer found it.
-  const missing = pr.missing.filter((m) => !(parallelTo.length && /in parallel with/i.test(m)));
-  return { tags, parallelTo, missing };
-}

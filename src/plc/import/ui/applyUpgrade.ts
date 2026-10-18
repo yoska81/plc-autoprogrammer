@@ -11,8 +11,8 @@ import { notify } from '../../../store/useNoticeStore';
 import type { ImportedProgram } from '../types';
 import type { SpecSectionId } from '../../../spec/types';
 import type { LadderProgram } from '../../core/ladder';
-import { programRoles } from '../hmiRoles';
-import { upgradeRolesFrom, type UpgradeRoles } from '../../../hmi/engine/upgradeHmi';
+import { panelTags, programRoles } from '../hmiRoles';
+import type { UpgradeRoles } from '../../../hmi/engine/upgradeHmi';
 
 /**
  * Make the imported program the open project: PLC and modules, the I/O list (replaced), the program
@@ -66,5 +66,9 @@ export const upgradeOriginal = (drafts: Record<string, unknown>) => (drafts[UPGR
 export function projectUpgradeRoles(drafts: Record<string, unknown>, ladder: LadderProgram): UpgradeRoles | null {
   const orig = upgradeOriginal(drafts);
   if (!orig) return null;
-  return upgradeRolesFrom(programRoles(ladder, new Map(Object.entries(orig.names).map(([a, n]) => [a.toUpperCase(), n]))));
+  const roles = programRoles(ladder, new Map(Object.entries(orig.names).map(([a, n]) => [a.toUpperCase(), n])));
+  const panel = panelTags(roles);
+  // The exact panel Start / Stop changes are in the HMI's PLC change list; the rest is said as the importer found it.
+  const missing = roles.missing.filter((m) => !(panel.parallelTo.length && /in parallel/i.test(m)));
+  return { ...panel, missing };
 }

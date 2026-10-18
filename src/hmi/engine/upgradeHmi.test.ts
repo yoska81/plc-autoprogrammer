@@ -12,7 +12,7 @@ import { checksFor } from '../../review/actions';
 import { useProgramStore } from '../../store/useProgramStore';
 import { useHmiStore } from '../../store/useHmiStore';
 import { generateRuleBasedHmi } from '../../lib/ai/hmiContentAI';
-import { openPlcChanges, upgradeRolesFrom, type UpgradeRoles } from './upgradeHmi';
+import { openPlcChanges, plcChangesFor, type UpgradeRoles } from './upgradeHmi';
 import type { LadderProgram, Rung } from '../../plc/core/ladder';
 
 const warn = console.warn;
@@ -89,18 +89,10 @@ const plain = await generateRuleBasedHmi({ io: p0.io, addresses: p0.addresses, m
 assert.equal(plain.design.plcChanges, undefined);
 assert.equal(plain.design.tags.find((t) => t.role === 'sts:running')?.address.startsWith('C12'), true);
 
-// Dev 3's roles of an imported program as the tags the build reuses.
-const r0 = (address: string, nickname: string) => ({ address, nickname, why: 'test' });
-const adapted = upgradeRolesFrom({
-  start: [r0('X101', 'Start_PB')], stop: [r0('X102', 'Stop_PB')], reset: [r0('C5', 'Reset_PB_HMI')], estop: [r0('X103', 'EStop_OK')], mode: [],
-  running: [r0('C1', 'Machine_Running')], faults: [r0('X104', 'Motor_OL'), r0('C9', 'Safety_Fault_Latch')],
-  counters: [{ ...r0('CT2', 'Bottle_Count'), preset: 'DS7' }], timers: [], setpoints: [], outputs: [],
-  missing: ['Start and Stop on the panel: … needs its own PLC bit wired in parallel with it …', 'No fault or alarm bits were found.'],
-});
-const role = (k: string) => adapted.tags.find((t) => t.role === k);
-assert.deepEqual(adapted.parallelTo?.map((p) => [p.role, p.address]), [['cmd:start', 'X101'], ['cmd:stop', 'X102']]);
-assert.deepEqual([role('cmd:reset')?.address, role('cmd:reset')?.access, role('sts:running')?.address], ['C5', 'write', 'C1']);
-assert.deepEqual([role('alarm:fault:X104')?.address, role('alarm:safety')?.address, role('word:count')?.address, role('sp:batch')?.address], ['X104', 'C9', 'CTD2', 'DS7']);
-assert.deepEqual(adapted.missing, ['No fault or alarm bits were found.'], 'the Start / Stop change is in the change list, not said twice');
+// A counter preset fixed in the rung: the HMI batch setpoint replaces the constant.
+const batch = await generateRuleBasedHmi({ io: p0.io, addresses: p0.addresses, machineName: 'Capper', spec: '', panel: { partNumber: 'CM5-T7W', widthPx: 800, heightPx: 480 }, now: 'T', program: imported });
+const withCount = { ...batch.design, tags: [...batch.design.tags, { role: 'sp:batch', address: 'DS1199', name: 'SP_Batch', dataType: 'INT' as const, access: 'read-write' as const, description: 'Batch size.' }] };
+const constChange = plcChangesFor(withCount, imported, { tags: [], constPresets: [{ address: 'CT1', nickname: 'Bottle_Count', preset: '500' }] }).find((c) => c.address === 'DS1199');
+assert.match(constChange!.change, /preset of Bottle_Count \(CT1\) instead of the fixed 500/);
 
 console.log(`upgrade HMI: ${changes.length} PLC changes listed once; roles bound to C1 / C20 / C21; Start/Stop beside the wired buttons`);
