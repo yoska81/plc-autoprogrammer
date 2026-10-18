@@ -549,3 +549,19 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - The rules-unitronics AML had 0 of 21 tags: the CPU was not a module there (its I/O sits on other devices), so the tag table was never placed. Fix: the AML always has the CPU.
   - The symbols sheet's example wire numbers (X001) are excluded from the wire-list check.
 - **ODA File Converter bridge kept** (`electron/oda.cjs`, preload, bridge type): removed briefly as unused, restored unchanged because Debug 1 reads the user's DWG drawings through it in the Windows app. Save as AutoCAD itself writes DXF.
+
+## Wiring-path engine findings (Debug 4, #87): three generator bugs
+- **Two-hand buttons** were both tagged PB1. The wire list put X002 and X003 on PB1:NO together, and the JB device cable to PB1 carried only X002.
+  - Each button is now the station's tag + L / R (PB1L / PB1R on station PB1; else A, B…).
+  - The input device cable has one signal core per input.
+  - The 24 VDC estimate counts a station's buttons as its part, not as uncatalogued sensors.
+- **Trunk core / JB terminal numbers** now match the strip terminal and the device cable (Y001A for a coil behind a safety contact, not Y001).
+  - A double solenoid whose coils return on different wires (Y001 to a sinking output, 24+S) gets one JB terminal per return; both returns used to share JB1:18.
+- **Analog channel fallback** (`assignAnalog`) used to take any free channel, so a 0-10 V input landed on a C0-04THM channel.
+  - It now keeps the signal family: thermocouple vs voltage / current. The family also comes from the description; a "thermocouple transmitter" is 4-20 mA.
+  - A point that no channel takes is a critical review finding (`fit:analog-inputs`) naming the module to add.
+  - check_consistency fails on a wrong-family channel in the analog setup CSV.
+- **Tests:**
+  - engine.test: unique two-hand tags; one signal wire per field-device terminal; trunk core = device-cable core on every JB terminal;
+  - analog.test: THM / current / transmitter cases;
+  - review.test: 0-10 V with only a THM.
