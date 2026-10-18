@@ -1,5 +1,6 @@
 # Builds the Windows installer (Setup .exe) of ISA Auto Programmer.
-# Every push to the integration branch (and pull requests into it): the installer is attached to the run as an artifact.
+# Every push to the integration branch (pushed once a day) and pull requests into it once they are marked
+# ready for review (team drafts don't build): the installer is attached to the run as an artifact.
 # A tag v* (e.g. v0.7.0): also published as a GitHub Release with the Setup .exe.
 name: Windows installer
 
@@ -9,6 +10,7 @@ on:
     tags: ['v*']
   pull_request:
     branches: [claude/optimistic-maxwell-6nfcs6]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -18,6 +20,7 @@ jobs:
   # Vendor catalog data: every part needs a maker source, key ratings and a datasheet footprint.
   # Separate job: it stays red until the data is complete, without blocking the installer build.
   catalog-data:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -48,6 +51,7 @@ jobs:
           path: tools/bench/out/report.md
 
   build:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
