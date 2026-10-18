@@ -1,0 +1,5 @@
+{
+ "stage": "hmi",
+ "model": "hand-written",
+ "text": "{\"machineName\":\"Sealing Head\",\"actuators\":[],\"states\":[{\"value\":0,\"text\":\"Stopped\",\"style\":\"normal\"},{\"value\":1,\"text\":\"Running\",\"style\":\"ok\"},{\"value\":2,\"text\":\"Heating\",\"style\":\"ok\"},{\"value\":3,\"text\":\"Sealing\",\"style\":\"ok\"},{\"value\":4,\"text\":\"Opening\",\"style\":\"ok\"},{\"value\":5,\"text\":\"Faulted\",\"style\":\"alarm\"},{\"value\":6,\"text\":\"Manual\",\"style\":\"warning\"},{\"value\":7,\"text\":\"Safety Stop\",\"style\":\"alarm\"}],\"questions\":[]}"
+}

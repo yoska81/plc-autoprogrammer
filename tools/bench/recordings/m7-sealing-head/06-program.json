@@ -1,0 +1,5 @@
+{
+ "stage": "program",
+ "model": "hand-written",
+ "text": "{\"explanation\": \"Each cycle (started by the two-hand buttons): the head closes on the pouch, holds for the dwell time, opens, then the unwinder indexes the film.\", \"steps\": [{\"name\": \"Head down\", \"actions\": [{\"actuator\": \"Sealing Head\", \"what\": \"extend\"}], \"waitFor\": [{\"input\": \"X104\", \"on\": true, \"seconds\": null}], \"timeoutSec\": 3}, {\"name\": \"Seal dwell\", \"actions\": [{\"actuator\": \"Sealing Head\", \"what\": \"extend\"}], \"waitFor\": [{\"input\": null, \"on\": true, \"seconds\": 2}], \"timeoutSec\": null}, {\"name\": \"Head up\", \"actions\": [{\"actuator\": \"Sealing Head\", \"what\": \"retract\"}], \"waitFor\": [{\"input\": \"X103\", \"on\": true, \"seconds\": null}], \"timeoutSec\": 3}, {\"name\": \"Index film\", \"actions\": [{\"actuator\": \"Unwinder\", \"what\": \"run\"}], \"waitFor\": [{\"input\": null, \"on\": true, \"seconds\": 1.5}], \"timeoutSec\": null}], \"questions\": [\"Is the dwell time fixed or set per recipe?\"]}"
+}
