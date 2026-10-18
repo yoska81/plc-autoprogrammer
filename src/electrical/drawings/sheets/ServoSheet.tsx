@@ -24,8 +24,15 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
     ...(a.terminals.some((t) => t.role === 'direction') ? [[P.direction.pullHi, '24+', 'PULL HI_S — SIGN INPUT PULL-UP (OPEN COLLECTOR)']] : []),
     [P.com, '24+ / 0V', 'COM+ — DIGITAL INPUT COMMON'],
   ] : [];
-  const sto = P ? [[P.sto.aPlus, '24+S', 'STO_A+ — SAFE TORQUE OFF CH A (SAFETY RELAY OUTPUT)'], [P.sto.aMinus, '0V', '/STO_A'], [P.sto.bPlus, '24+S', 'STO_B+ — SAFE TORQUE OFF CH B (SAFETY RELAY OUTPUT)'], [P.sto.bMinus, '0V', '/STO_B']] : [];
-  const fixed = [...pullUps, ...sto];
+  // STO channels from their own safety-relay outputs; FDBK in the relay's S33-S34 feedback loop.
+  const relayTag = plan.model.safety.relay?.tag ?? 'SR';
+  const sto = P && a.sto ? [
+    [P.sto.aPlus, a.sto.a.wire, `STO_A+ — SAFE TORQUE OFF CH A (${a.sto.a.from.replace(/^TB1 /, '')})`], [P.sto.aMinus, '0V', '/STO_A'],
+    [P.sto.bPlus, a.sto.b.wire, `STO_B+ — SAFE TORQUE OFF CH B (${a.sto.b.from})`], [P.sto.bMinus, '0V', '/STO_B'],
+    [P.sto.fbPlus, 'S33…', `FDBK+ — STO FEEDBACK IN ${relayTag} S33-S34 LOOP (S33 SIDE)`], [P.sto.fbMinus, '…S34', `FDBK- — TOWARD ${relayTag} S34`],
+  ] : [];
+  const ctl = P && a.control === '24V' ? [['24V', '24+', 'CONTROL POWER 24 VDC (460 V DRIVE)'], ['0V', '0V', 'CONTROL POWER 0 V']] : [];
+  const fixed = [...pullUps, ...ctl, ...sto];
   const boxH = Math.max(40, (a.terminals.length + fixed.length) * pitch + 14);
   // Each device with its tag as its own text (the CAD export turns a text equal to a tag into a device reference).
   const chain = [a.protection && [a.protection.tag, a.protection.partNumber], a.filter && [a.filter.tag, `EMI FILTER ${a.filter.partNumber}`], [d.tag, d.partNumber], a.motor && [a.motor.tag, `MOTOR ${a.motor.partNumber}`]].filter(Boolean) as [string, string][];
@@ -63,7 +70,7 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
           </g>
         );
       })}
-      <Txt x={X.drv + 15} y={y0 + boxH + 4} size={2.0} anchor="middle" bold>SAFETY STOP: STO (BOTH CHANNELS)</Txt>
+      <Txt x={X.drv + 15} y={y0 + boxH + 4} size={2.0} anchor="middle" bold>{a.sto ? 'SAFETY STOP: STO, TWO CHANNELS + FEEDBACK' : 'STO NOT WIRED — NO SAFETY RELAY'}</Txt>
       {/* power path */}
       <Txt x={right} y={AREA.y + 20} size={2.6} bold>POWER</Txt>
       {chain.map(([ctag, ctext], i) => {
@@ -74,7 +81,7 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
             <Txt x={right + 2} y={y + 1.5} size={2.1} bold>{ctag}</Txt>
             <Txt x={right + 16} y={y + 1.5} size={2.1} maxW={AREA_R - right - 22}>{ctext}</Txt>
             {i < chain.length - 1 && <Line x1={right + 12} y1={y + 5} x2={right + 12} y2={y + 10} w={LW_THIN} />}
-            {i < chain.length - 1 && <Txt x={right + 15} y={y + 8.5} size={1.8}>{i === chain.length - 2 && a.motor ? `${P?.power.motor.join(' / ') ?? 'U / V / W'} + PE · SERVO POWER CABLE` : `${P ? P.power.line.join(' / ') : 'L1 / L2 / L3'}${P && i === chain.length - 2 ? ` + ${P.power.control.join(' / ')} (CONTROL)` : ''}`}</Txt>}
+            {i < chain.length - 1 && <Txt x={right + 15} y={y + 8.5} size={1.8}>{i === chain.length - 2 && a.motor ? `${P?.power.motor.join(' / ') ?? 'U / V / W'} + PE · SERVO POWER CABLE` : `${P ? P.power.line.join(' / ') : 'L1 / L2 / L3'}${P && i === chain.length - 2 && a.control === 'ac' ? ` + ${P.power.control.join(' / ')} (CONTROL)` : ''}`}</Txt>}
           </g>
         );
       })}

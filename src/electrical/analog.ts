@@ -34,8 +34,11 @@ export interface AnalogCircuit {
   deviceTag: string;
   /** PLC / module device tag the channel belongs to. */
   moduleTag: string;
-  loop: 'two-wire' | 'voltage' | 'output' | 'thermocouple';
+  /** powered: a 3/4-wire sensor fed from the panel's 24 V (ultrasonic …): supply, signal and 0 V cores. */
+  loop: 'two-wire' | 'voltage' | 'output' | 'thermocouple' | 'powered';
   zone: string;
+  /** Powered sensors: the TBA terminal and wire number of the 24 V supply. */
+  supply?: { terminal: string; wire: string };
   cable: string;
   /** TBA terminals for + / − / shield. */
   plus: string;
@@ -114,9 +117,12 @@ export function analogWiring(rows: AnalogSetupRow[], o: AnalogOptions): AnalogWi
     const deviceTag = w?.deviceTag || `${prefix}${n}`;
     const slot = slotOf(row.channel);
     const moduleTag = slot === 0 ? o.plcTag : o.moduleTag(slot, row.partNumber);
-    const loop: AnalogCircuit['loop'] = row.kind === 'output' ? 'output' : row.range === 'thermocouple' ? 'thermocouple' : row.range.endsWith('mA') ? 'two-wire' : 'voltage';
+    const loop: AnalogCircuit['loop'] = row.kind === 'output' ? 'output' : row.range === 'thermocouple' ? 'thermocouple'
+      // A sensor with its own electronics (ultrasonic) is not loop powered: 24 V, signal and 0 V.
+      : w?.deviceType === 'ultrasonic' ? 'powered' : row.range.endsWith('mA') ? 'two-wire' : 'voltage';
     const zone = w?.location || 'Field';
     const cableTag = `W${String(cable++).padStart(3, '0')}`;
+    const supply = loop === 'powered' ? `TBA-${++tn}` : '';
     const plus = `TBA-${++tn}`, minus = `TBA-${++tn}`, shield = `TBA-${++tn}`;
     const wp = `${row.address}+`, wm = `${row.address}-`;
     const ch = `${moduleTag}:${row.terminal}`;
@@ -136,6 +142,12 @@ export function analogWiring(rows: AnalogSetupRow[], o: AnalogOptions): AnalogWi
       wires.push({ wire: wp, from: '24+', to: plus, color: 'BU', size: '18 AWG', function: `Loop supply ${fn}` });
       wires.push({ wire: wm, from: minus, to: ch, color: 'WH/BU', size: '18 AWG', function: `Loop signal ${fn}` });
       terminals.push(t(plus, wp, '24+', `${deviceTag}:+`), t(minus, wm, ch, `${deviceTag}:-`));
+    } else if (loop === 'powered') {
+      // 24 V → sensor +V ; sensor output → channel ; sensor 0 V → module 0 V (the signal's reference).
+      wires.push({ wire: `${row.address}V`, from: '24+', to: supply, color: 'BU', size: '18 AWG', function: `Sensor supply 24 VDC ${fn}` });
+      wires.push({ wire: wp, from: plus, to: ch, color: 'WH/BU', size: '18 AWG', function: `Signal ${fn}` });
+      wires.push({ wire: wm, from: minus, to: zero, color: 'WH/BU', size: '18 AWG', function: `Signal 0 V ${fn}` });
+      terminals.push(t(supply, `${row.address}V`, '24+', `${deviceTag}:+V`), t(plus, wp, ch, `${deviceTag}:OUT`), t(minus, wm, zero, `${deviceTag}:0V`));
     } else if (loop === 'voltage') {
       wires.push({ wire: wp, from: plus, to: ch, color: 'WH/BU', size: '18 AWG', function: `Signal + ${fn}` });
       wires.push({ wire: wm, from: minus, to: zero, color: 'WH/BU', size: '18 AWG', function: `Signal - ${fn}` });
@@ -148,15 +160,16 @@ export function analogWiring(rows: AnalogSetupRow[], o: AnalogOptions): AnalogWi
     wires.push({ wire: `${row.address}SH`, from: shield, to: o.groundBar, color: 'GN/YE', size: '18 AWG', function: `Shield, grounded at the panel end only - ${row.description}` });
     terminals.push(t(shield, `${row.address}SH`, o.groundBar, `${cableTag} shield (cut back at ${deviceTag})`, 'ground'));
     cables.push({
-      tag: cableTag, kind: 'device', zone, from: `${plus}..${shield.split('-')[1]}`, to: deviceTag,
-      type: loop === 'thermocouple' ? 'Thermocouple extension wire, shielded (same type as the thermocouple, e.g. J)' : 'Shielded twisted pair with drain, 1 pair (instrumentation)', size: loop === 'thermocouple' ? '20 AWG' : '18 AWG', length: 'BY SITE', spareCores: 0,
+      tag: cableTag, kind: 'device', zone, from: `${supply || plus}..${shield.split('-')[1]}`, to: deviceTag,
+      type: loop === 'thermocouple' ? 'Thermocouple extension wire, shielded (same type as the thermocouple, e.g. J)' : loop === 'powered' ? 'Shielded cable, 3 conductors + drain (sensor supply, signal, 0 V)' : 'Shielded twisted pair with drain, 1 pair (instrumentation)', size: loop === 'thermocouple' ? '20 AWG' : '18 AWG', length: 'BY SITE', spareCores: 0,
       cores: [
+        ...(supply ? [{ core: '3', color: 'BN', wire: `${row.address}V`, from: supply, to: `${deviceTag}:+V` }] : []),
         { core: '1', color: 'WH', wire: wp, from: plus, to: `${deviceTag}:+` },
         { core: '2', color: 'BK', wire: wm, from: minus, to: `${deviceTag}:-` },
         { core: 'DRAIN', color: 'BARE', wire: `${row.address}SH`, from: shield, to: 'cut back, insulated' },
       ],
     });
-    circuits.push({ row, deviceTag, moduleTag, loop, zone, cable: cableTag, plus, minus, shield, wires: { plus: wp, minus: wm } });
+    circuits.push({ row, deviceTag, moduleTag, loop, zone, cable: cableTag, plus, minus, shield, wires: { plus: wp, minus: wm }, ...(supply ? { supply: { terminal: supply, wire: `${row.address}V` } } : {}) });
   }
   return { circuits, wires, strip: terminals.length ? { tag: 'TBA', title: 'ANALOG SIGNALS (SHIELDED)', terminals, endPlates: 1, endStops: 2 } : null, cables };
 }

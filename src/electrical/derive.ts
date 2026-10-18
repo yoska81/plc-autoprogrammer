@@ -24,8 +24,8 @@
 import type { AnalogSetupRow } from '../plc/core/analog';
 import { analogWiring, type AnalogWiring } from './analog';
 import { driveControls, type DriveControl, type DriveTerminal } from './vfd';
-import { encoderChannel, isServoDrive, isServoMotor, motionWarnings, servoCableKind } from './motion';
-import { servoAxes, servoControls, type ServoAxisModel } from './servoWiring';
+import { encoderChannel, isServoDrive, isServoMotor, motionWarnings, servoCableKind, servoPins } from './motion';
+import { servoAxes, servoControls, type ServoAxisModel, type StoFeed } from './servoWiring';
 import type {
   CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, EnclosureChoice, EnclosureRating, FieldDeviceType, IOWiring, JunctionBox,
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
@@ -690,7 +690,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     ?? pbs.find((c) => /reset/i.test(c.comp.function));
   const reset = resetRc?.tag ?? ioW.find((w) => /reset/i.test(w.description) && w.deviceType === 'pushbutton-no')?.deviceTag;
   const mcr = byCat(rc, 'relay').find((c) => /master|mcr|safety/i.test(`${c.comp.function} ${c.tag}`));
-  const edm = mcr ? [mcr.tag] : motors.flatMap((m) => m.contactors.map((c) => c.tag));
+  // Servo drives with STO: their FDBK output is in the S33-S34 feedback loop too (SureServo2 manual 3.11.3).
+  const stoDrives = rc.filter((c) => isServoDrive(c.part) && servoPins(c.part));
+  const edm = [...(mcr ? [mcr.tag] : motors.flatMap((m) => m.contactors.map((c) => c.tag))), ...(relay ? stoDrives.map((c) => c.tag) : [])];
   const hasSafety = !!relay || estopTags.length > 0;
   // N.C. auxiliary contacts for EDM feedback and reversing interlocks. Front block SZ-A11T: N.O. 53-54,
   // N.C. 61-62; side block SZ-AS1T: N.C. 71-72, N.O. 83-84 (Fuji SC-E spec); otherwise built-in 21-22.
@@ -710,6 +712,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     else if (family && NO_INTERNAL_AUX.test(family)) auxNc.set(tag, { terms: ['61', '62'], block: 'SZ-A11T', missing: true, family });
     else auxNc.set(tag, { terms: ['21', '22'], missing: false, family });
   }
+  for (const d of stoDrives) { const P = servoPins(d.part)!; auxNc.set(d.tag, { terms: [P.sto.fbPlus, P.sto.fbMinus], missing: false }); }
   function auxNcUsed(b: ResolvedComponent) { return [...auxNc.values()].filter((a) => a.block === b.partNumber && !a.missing).length >= Math.max(1, b.comp.quantity); }
   const ncOf = (tag: string): [string, string] => auxNc.get(tag)?.terms ?? ['21', '22'];
   const extraRelays: SafetyModel['extraRelays'] = srs.filter((c) => c !== relay && (isTwoHand(c) || isCurtain(c))).map((c) => {
@@ -1200,7 +1203,19 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   // Servo axes: power, STO and each PLC signal on its drive terminal (electrical/servoWiring.ts).
   const servoOut = groups.find((g) => g.type === 'output' && g.points.some((p) => p.deviceType === 'servo-drive'))?.outputStyle ?? 'sinking';
   const servoIn = groups.find((g) => g.type === 'input' && g.points.some((p) => p.deviceType === 'servo-drive'))?.commonTo === '24+' ? '24+' : '0V';
-  const servo = servoControls(servoBase, io, servoOut, servoIn, safety.outputSupply, pe, phases);
+  // STO channels: A from the safety-switched 24 V (relay 13-14), B from a second safety output of the relay.
+  let sto: StoFeed | null = null;
+  if (relay && servoBase.length) {
+    // The relay's N.O. safety outputs 13-14, 23-24, 33-34 …: 13-14 feeds 24+S, 23-24 the PLC status input when there is one.
+    const nOut = Number(/\((\d+)\)\s*N\.?O/i.exec(String(relay.part?.ratings.safetyOutputs ?? ''))?.[1] ?? 2);
+    const outputs = [['13', '14'], ['23', '24'], ['33', '34'], ['43', '44']].slice(0, nOut);
+    const free = outputs.slice(safety.statusInput ? 2 : 1)[0];
+    if (free) {
+      addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:${free[0]}`, color: 'BU', size: '18 AWG', function: 'STO channel B supply (second safety output)' });
+      sto = { a: { wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}` }, b: { wire: `SR${free[1]}`, from: `${relay.tag}:${free[1]}` } };
+    }
+  }
+  const servo = servoControls(servoBase, io, servoOut, servoIn, sto, pe, phases);
   for (const sw of servo.wires) addWire(sw);
 
   // IO wires
@@ -1209,6 +1224,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     const tag = p.deviceTag || '(device)';
     const g = groups.find((x) => x.key === p.group);
     const st = servo.terms.get(p.address);
+    if (!st && p.deviceType === 'servo-drive') continue; // not wired (e.g. a relay output for pulses): see the servo sheet
     if (st) {
       addWire(p.type === 'input'
         ? { wire: p.address, from: `${st.tag}:${st.terminal}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description }
@@ -1226,7 +1242,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       if (p.signalTerminal) {
         const s3 = isSensor3(p.deviceType);
         const sig = p.deviceType === 'encoder' ? encoderChannel(p.description) ?? 'A' : s3 ? 'BK' : pinOf(tag, 'NO');
-        addWire({ wire: p.address, from: `${tag}:${sig}`, to: p.signalTerminal, color: s3 ? `${p.deviceType === 'encoder' ? sig : 'BK'} (cable)` : 'BU', size: '18 AWG', function: p.description });
+        addWire({ wire: p.address, from: `${tag}:${sig}`, to: p.signalTerminal, color: s3 ? `${p.deviceType === 'encoder' ? sig : 'BK'} (cable)` : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
         if (p.supplyTerminal) addWire({ wire: '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '+V' : s3 ? 'BN' : pinOf(tag, 'C')}`, color: s3 ? 'BN (cable)' : 'BU', size: '18 AWG', function: `${tag} supply` });
         if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '0V' : 'BU'}`, color: p.deviceType === 'encoder' ? 'WH (cable)' : 'BU (cable)', size: '18 AWG', function: `${tag} 0V` });

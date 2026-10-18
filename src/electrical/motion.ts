@@ -202,6 +202,20 @@ export interface MotionResult {
   axes: ServoAxis[];
   /** Line current of the servo drives (A): a continuous load for the main disconnect. */
   loadA: number;
+  /** 24 VDC drawn by the drives' control circuits (460 V SureServo2), for the control power supply. */
+  dcA: number;
+}
+
+/**
+ * 24 VDC control input current of drives whose control circuit runs on 24 V: ratings.controlInputAmps, else
+ * AutomationDirect's SureServo2 460 V spec table ("Control Power Input Current", ss2drives.pdf).
+ */
+const SV2_460_CONTROL_A: Record<string, number> = {
+  'SV2A-4040': 1.17, 'SV2A-4075': 1.17, 'SV2A-4150': 1.17, 'SV2A-4200': 1.35, 'SV2A-4300': 1.63, 'SV2A-4550': 1.91, 'SV2A-4750': 1.91, 'SV2A-4F00': 4.26,
+};
+export function controlInputAmps(p: CatalogPart): number {
+  if (!/24\s*V?DC/i.test(String(p.ratings.controlCircuitVolts ?? ''))) return 0;
+  return num(p.ratings.controlInputAmps) ?? SV2_460_CONTROL_A[p.partNumber] ?? 0;
 }
 
 const comp = (tag: string, partNumber: string, quantity: number, fn: string, motorTag: string | null = null): DesignComponent => ({ tag, partNumber, quantity, function: fn, motorTag });
@@ -226,7 +240,7 @@ export function axisWatts(key: string, texts: string[]): number | null {
 
 export function motionDesign(input: MotionInput): MotionResult {
   const pref = input.pref ?? DEFAULT_PREFERENCE;
-  const out: MotionResult = { components: [], ioWiring: [], notes: [], askUser: [], claimed: new Set(), axes: [], loadA: 0 };
+  const out: MotionResult = { components: [], ioWiring: [], notes: [], askUser: [], claimed: new Set(), axes: [], loadA: 0, dcA: 0 };
   const addr = (p: IOPoint) => input.addresses.get(p.id) ?? '';
   // As the engine's Picker: the first (preferred) vendor that has a fitting part, its smallest.
   const pick = (ok: (p: CatalogPart) => boolean, size: (p: CatalogPart) => number = () => 0): CatalogPart | undefined => {
@@ -272,6 +286,10 @@ export function motionDesign(input: MotionInput): MotionResult {
       if (filt) { axis.filter = input.nextTag('FL'); out.components.push(comp(axis.filter, filt.partNumber, 1, `Axis ${key} EMI filter on the drive input (as in the drive manual's wiring diagrams)`, motorTag)); }
       else out.notes.push(`Axis ${key}: the ${series || 'servo'} manual shows an EMI filter on the drive input — add one if the site needs it (CE / sensitive equipment nearby).`);
       out.loadA += inA ?? watts / (info.volts * (info.phases === 3 ? 1.732 : 1) * 0.85);
+      out.dcA += controlInputAmps(drive);
+      if (/24\s*V?DC/i.test(String(drive.ratings.controlCircuitVolts ?? '')) && !controlInputAmps(drive)) out.notes.push(`Axis ${key} (${drive.partNumber}): the control circuit runs on 24 VDC — add its current (spec sheet) to the 24 V supply.`);
+      // Branch protection: the manual's table (ch. 2.5) gives the maximum breaker / Class CC or J fuse per drive.
+      out.notes.push(`Axis ${key} (${drive.partNumber}): check the branch breaker against the maximum in the drive manual's circuit breaker and fuse table (Class CC / J fuses are an alternative).`);
       out.components.push(comp(dt, drive.partNumber, 1, `Axis ${key} servo drive — ${num(drive.ratings.ratedWatts)} W >= ${watts} W${axis.assumed ? ' (assumed)' : ''}; pulse/direction from the PLC, STO from the safety relay`, motorTag));
       // The drive's own motors (pairsWith), the smallest that carries the axis; a holding brake on a vertical axis only.
       const pairs = listOf(drive.ratings.pairsWith);

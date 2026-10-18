@@ -82,17 +82,23 @@ assert.ok(has(/^TB1 24\+$/, new RegExp(`^${drive}:CN1-39$`)) && has(new RegExp(`
 assert.ok(has(new RegExp(`:${addr('Axis 1 direction')}$`), new RegExp(`^${drive}:CN1-37$`)));
 assert.ok(has(new RegExp(`:${addr('Axis 1 servo on')}$`), new RegExp(`^${drive}:CN1-9$`)), 'SON on DI1');
 assert.ok(has(new RegExp(`^${drive}:CN1-27$`), new RegExp(`:${addr('Axis 1 servo alarm')}$`)), 'ALRM DO5- to the PLC input');
-// STO: both channels from the safety-switched 24 V.
-assert.ok(has(/^TB1 24\+S$/, new RegExp(`^${drive}:CN10-3$`)) && has(/^TB1 24\+S$/, new RegExp(`^${drive}:CN10-5$`)), 'STO from the safety relay output');
+// STO: two channels from two safety-relay outputs (13-14 via 24+S, and 33-34: 23-24 is the PLC status input),
+// FDBK in the S33-S34 feedback loop with FDBK+ toward S33 (SureServo2 manual 3.11.3).
+assert.ok(has(/^TB1 24\+S$/, new RegExp(`^${drive}:CN10-3$`)), 'STO_A from 24+S (SR1 13-14)');
+assert.ok(has(/^TB1 24\+$/, /^SR1:33$/) && has(/^SR1:34$/, new RegExp(`^${drive}:CN10-5$`)), 'STO_B from its own safety output SR1 33-34');
+assert.ok(!has(/^TB1 24\+S$/, new RegExp(`^${drive}:CN10-5$`)), 'not both channels from one wire');
+assert.ok(wires.some((w) => w.to === `${drive}:CN10-7` && /S33|EDM/.test(`${w.wire} ${w.function}`)) && wires.some((w) => w.from === `${drive}:CN10-8`), 'FDBK+/- in the S33-S34 loop');
+assert.ok(model.safety.edm.includes(drive), 'drive feedback monitored by the safety relay');
 // Encoder: A/B on TB2 from the encoder, one supply pair and the shield.
 const tb2 = terminalPlan(ctx).find((s) => s.tag === 'TB2')!;
 const enc = tag(encPart!.partNumber)!;
 assert.ok(tb2.terminals.some((t) => t.external === `${enc}:A`) && tb2.terminals.some((t) => t.external === `${enc}:B`));
 assert.equal(tb2.terminals.filter((t) => t.external === `${enc}:+V`).length, 1, 'one supply per encoder');
 assert.ok(tb2.terminals.some((t) => /cable shield/.test(t.external)));
-// Ultrasonic on the analog card, tagged as in the BOM.
+// Ultrasonic on the analog card, tagged as in the BOM, wired 3-wire (24 V, signal, 0 V) — not as a loop-powered transmitter.
 const lt = tag(usPart!.partNumber)!;
-assert.ok(model.analog.circuits.some((c) => c.deviceTag === lt), `ultrasonic ${lt} on the analog sheet`);
+const us = model.analog.circuits.find((c) => c.deviceTag === lt);
+assert.ok(us && us.loop === 'powered' && us.supply, `ultrasonic ${lt}: 3-wire powered loop`);
 // BOM, wire numbers, cables.
 const bom = billOfMaterials(ctx).flatMap((g) => g.lines).map((l) => l.partNumber);
 for (const pn of ['SV2A-2040', 'SV2L-204N', 'SV2C-PA18-03NN', 'SV2C-E122-03NN', encPart!.partNumber, usPart!.partNumber]) assert.ok(bom.includes(pn), `${pn} in the BOM`);
@@ -113,6 +119,37 @@ assert.ok(!warns.some((w) => /encoder channel not on a high-speed input/.test(w)
 assert.ok(warns.some((w) => /has no pulse-train output — use a CLICK PLUS CPU with a C2-14D1/.test(w)), 'CLICK C0 has no pulse output: said so');
 const gaps = designWarnings(ctx).filter((w) => /no PLC output drives|not found in the catalog|without wiring|over capacity/i.test(w));
 assert.deepEqual(gaps, [], 'no design gaps');
+// 480 V machine: a 460 V drive takes 24 VDC control power (never the AC line on its control terminals), and its
+// control current counts for the 24 V supply.
+{
+  const inputs480: DesignInputs = { ...inputs, supply: '480VAC-3PH' };
+  const r4 = generateDefaultDesign({ io, addresses, spec: '', inputs: inputs480, plc, modules, region: 'US', getPart, hmiPartNumber: null, analog, now: '2026-01-01T00:00:00.000Z', projectName: 'servo480' });
+  const d4 = r4.design.components.find((c) => c.partNumber === 'SV2A-4040');
+  assert.ok(d4, `SV2A-4040 on 480 V (${r4.design.components.map((c) => c.partNumber).join(', ')})`);
+  const ctx4: DrawingContext = { ...ctx, design: r4.design };
+  const w4 = buildModel(ctx4).wires;
+  assert.ok(w4.some((w) => w.from === 'TB1 24+' && w.to === `${d4!.tag}:24V`) && w4.some((w) => w.from === `${d4!.tag}:0V`), '24 VDC control power');
+  assert.ok(!w4.some((w) => w.to === `${d4!.tag}:L1C` || w.to === `${d4!.tag}:L2C`), 'no AC on the control terminals of a 460 V drive');
+  assert.match(r4.design.components.find((c) => c.tag === 'PS1')!.function, /load (\d+\.\d) A/);
+  const load4 = Number(/load (\d+\.\d) A/.exec(r4.design.components.find((c) => c.tag === 'PS1')!.function)![1]);
+  const load2 = Number(/load (\d+\.\d) A/.exec(r.design.components.find((c) => c.tag === 'PS1')!.function)![1]);
+  assert.ok(load4 >= load2 + 1.1, `drive control current in the 24 V load (${load2} → ${load4} A)`);
+}
+
+// A relay-output CPU never gets a pulse train wired: not wired, said so.
+{
+  const relayCpu = getCpu(profile, 'C0-10DRE-D');
+  const addrR = resolveAddresses(profile, relayCpu, io, slots);
+  const plcR = { ...plc, cpuPartNumber: relayCpu.id, cpuLabel: relayCpu.label };
+  const rr = generateDefaultDesign({ io, addresses: addrR, spec: '', inputs, plc: plcR, modules, region: 'US', getPart, hmiPartNumber: null, analog, now: '2026-01-01T00:00:00.000Z', projectName: 'relay' });
+  const ctxR: DrawingContext = { ...ctx, design: rr.design, plc: plcR, io: io.map((p) => ({ address: addrR.get(p.id) ?? '', description: p.description, type: p.type })) };
+  const mR = buildModel(ctxR);
+  const pulse = addrR.get(io.find((p) => p.description === 'Axis 1 pulse')!.id)!;
+  assert.ok(!mR.wires.some((w) => w.wire === pulse), `relay output ${pulse} not wired as a pulse train`);
+  assert.ok(mR.servos[0].notes.some((n) => /relay output — it cannot drive the pulse input/.test(n)));
+  assert.ok(designWarnings(ctxR).some((w) => /no pulse-train output/.test(w)), 'warned');
+}
+
 // Drawings: one servo sheet that renders the drive's terminals; the encoder on an I/O sheet.
 // tsx compiles the sheet's JSX with the classic runtime: React in scope.
 (globalThis as { React?: unknown }).React = React;
@@ -120,7 +157,7 @@ const plan = planDrawings(ctx);
 const sheet = plan.sheets.find((x) => x.spec.kind === 'servo');
 assert.ok(sheet, 'servo axis sheet planned');
 const svg = renderToStaticMarkup(createElement('svg', null, createElement(ServoSheet, { plan, sheet: sheet! })));
-for (const t of ['CN1-41', 'CN1-37', 'CN1-9', 'CN10-3', 'CN10-5', 'STO_A+', 'SAFETY STOP: STO']) assert.ok(svg.includes(t), `servo sheet shows ${t}`);
+for (const t of ['CN1-41', 'CN1-37', 'CN1-9', 'CN10-3', 'CN10-5', 'CN10-7', 'STO_A+', 'STO_B+', 'FDBK+', 'SAFETY STOP: STO, TWO CHANNELS']) assert.ok(svg.includes(t), `servo sheet shows ${t}`);
 console.log(`motion tests passed (${r.design.components.length} parts, ${wires.length} wires; notes: ${r.design.notes.filter((n) => /Axis|SVD|SE\d|LT\d/.test(n)).length})`);
 if (process.env.SHOW) {
   console.log(designWarnings(ctx).join('\n'));

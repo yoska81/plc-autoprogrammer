@@ -165,7 +165,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   }
 
   const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(dev.components.find((c) => c.tag === w.deviceTag)?.partNumber ?? '')).length;
-  const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...motion.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
+  const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...motion.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs) + motion.dcA;
   const ctl = controlPower(pk, tags, supply, loadA);
   notes.push(...ctl.notes);
 

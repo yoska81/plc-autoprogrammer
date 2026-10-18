@@ -11,8 +11,14 @@ export interface ServoWire { wire: string; from: string; to: string; color: stri
 
 export interface ServoTerminal { role: ServoRole; address: string; type: 'input' | 'output'; description: string; terminal: string; label: string }
 
+/** Where each STO channel is fed from: its own safety-relay output (null: no safety relay, STO not wired). */
+export interface StoFeed { a: { wire: string; from: string }; b: { wire: string; from: string } }
+
 export interface ServoAxisModel {
   axis: string;
+  /** STO channel feeds (null: not wired), and the drive's control power ('24V': 24 VDC terminals). */
+  sto: StoFeed | null;
+  control: 'ac' | '24V';
   drive: Rc;
   motor?: Rc;
   protection?: Rc;
@@ -30,14 +36,18 @@ const ROLE_LABEL: Record<ServoRole, string> = {
 };
 
 /** Axes from the design: components grouped by their AX# tag (motion.ts sets it as motorTag). */
-export function servoAxes(rc: Rc[]): Omit<ServoAxisModel, 'terminals' | 'notes'>[] {
-  const out: Omit<ServoAxisModel, 'terminals' | 'notes'>[] = [];
+type AxisBase = Omit<ServoAxisModel, 'terminals' | 'notes' | 'sto'>;
+
+export function servoAxes(rc: Rc[]): AxisBase[] {
+  const out: AxisBase[] = [];
   for (const d of rc.filter((c) => isServoDrive(c.part))) {
     const ax = d.comp.motorTag ?? '';
     const own = ax ? rc.filter((c) => c.comp.motorTag === ax && c !== d) : [];
     const k = (x: Rc) => String(x.part?.ratings.kind ?? '');
     out.push({
       axis: ax.replace(/^AX/, '') || d.tag, drive: d, pins: servoPins(d.part),
+      // 460 V SureServo2: control circuit on 24 VDC terminals "24V" / "0V" (manual ch. 3); 230 V: L1C/L2C from the AC supply.
+      control: /24\s*V?DC/i.test(String(d.part?.ratings.controlCircuitVolts ?? '')) ? '24V' : 'ac',
       motor: own.find((c) => isServoMotor(c.part)), protection: own.find((c) => c.category === 'breaker' || c.category === 'fuse'),
       filter: own.find((c) => k(c) === 'emc-filter'), brakingResistor: own.find((c) => k(c) === 'braking-resistor'),
       cables: own.filter((c) => servoCableKind(c.part) !== null),
@@ -52,9 +62,9 @@ export function servoAxes(rc: Rc[]): Omit<ServoAxisModel, 'terminals' | 'notes'>
  * the drive output switches 24 V into them). `stoSupply`: the safety relay's switched 24 V.
  */
 export function servoControls(
-  axes: Omit<ServoAxisModel, 'terminals' | 'notes'>[],
+  axes: AxisBase[],
   io: { address: string; type: 'input' | 'output'; description: string; deviceTag: string; deviceType: string }[],
-  outStyle: 'sinking' | 'sourcing' | 'relay', inCommon: '0V' | '24+', stoSupply: string, peTag: string, phases: 1 | 3,
+  outStyle: 'sinking' | 'sourcing' | 'relay', inCommon: '0V' | '24+', sto: StoFeed | null, peTag: string, phases: 1 | 3,
 ): { axes: ServoAxisModel[]; wires: ServoWire[]; terms: Map<string, { tag: string; terminal: string }> } {
   const wires: ServoWire[] = [];
   const terms = new Map<string, { tag: string; terminal: string }>();
@@ -68,6 +78,12 @@ export function servoControls(
       const role = servoRole(p);
       if (!role) continue;
       let terminal = '';
+      // A relay contact cannot make a pulse train: pulse / direction from relay outputs are not wired.
+      if (outStyle === 'relay' && (role === 'pulse' || role === 'direction')) {
+        notes.push(`${t}: ${p.address} is a relay output — it cannot drive the ${role === 'pulse' ? 'pulse' : 'direction'} input; use transistor outputs (CLICK PLUS C2-14D1 / C2-14D2, pulse on Y001 / Y003 / Y005). Not wired.`);
+        terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal: 'NOT WIRED', label: ROLE_LABEL[role] });
+        continue;
+      }
       if (P) {
         if (role === 'pulse') terminal = outStyle === 'sinking' ? P.pulse.minus : P.pulse.plus;
         else if (role === 'direction') terminal = outStyle === 'sinking' ? P.direction.minus : P.direction.plus;
@@ -77,7 +93,7 @@ export function servoControls(
       terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal: terminal || role.toUpperCase(), label: ROLE_LABEL[role] });
       terms.set(p.address, { tag: t, terminal: terminal || role.toUpperCase() });
     }
-    if (!P) { notes.push(`${t}: terminal names of ${a.drive.partNumber} are not in the app — wire from the drive manual.`); return { ...a, terminals, notes }; }
+    if (!P) { notes.push(`${t}: terminal names of ${a.drive.partNumber} are not in the app — wire from the drive manual.`); return { ...a, sto, terminals, notes }; }
 
     // Power: protection (→ EMI filter) → R/S/T; control power L1c/L2c from the same protection (230 V drives).
     const src = a.protection?.tag;
@@ -89,7 +105,11 @@ export function servoControls(
         w(`${wire}F`, `${a.filter.tag}:LOAD${k + 1}`, `${t}:${L}`, `${t} main power ${L}`, 'BK', '14 AWG');
       } else w(wire, src ? `${src}:T${k + 1}` : `BUS L${k + 1}`, `${t}:${L}`, `${t} main power ${L}`, 'BK', '14 AWG');
     });
-    P.power.control.forEach((L, k) => w(`${t}-C${k + 1}`, `${t}:${line[k]}`, `${t}:${L}`, `${t} control power ${L} (jumpered from ${line[k]})`, 'BK', '14 AWG'));
+    if (a.control === '24V') {
+      // 460 V drives: the control circuit runs on 24 VDC (never on the AC line).
+      w('24+', 'TB1 24+', `${t}:24V`, `${t} control power 24 VDC`, 'BU', '18 AWG');
+      w('0V', `${t}:0V`, 'TB1 0V', `${t} control power 0 V`, 'WH/BU', '18 AWG');
+    } else P.power.control.forEach((L, k) => w(`${t}-C${k + 1}`, `${t}:${line[k]}`, `${t}:${L}`, `${t} control power ${L} (jumpered from ${line[k]})`, 'BK', '14 AWG'));
     w('PE', `${t}:PE`, peTag, `${t} protective earth`, 'GN/YE', '14 AWG');
     if (a.motor) {
       P.power.motor.forEach((U) => w(`${t}-${U}`, `${t}:${U}`, `${a.motor!.tag}:${U}`, `${a.motor!.tag} motor power ${U} (servo power cable)`, 'BK', '16 AWG'));
@@ -118,14 +138,17 @@ export function servoControls(
       if (inCommon === '0V') w('24+', 'TB1 24+', `${t}:${plus}`, `${t} ${x.label} supply`);
       else w('0V', `${t}:${minus}`, 'TB1 0V', `${t} ${x.label} return`, 'WH/BU');
     }
-    // Safe Torque Off from the safety relay output: both channels switched, returns to 0 V.
-    w(stoSupply, `TB1 ${stoSupply}`, `${t}:${P.sto.aPlus}`, `${t} STO_A+ Safe Torque Off channel A (safety relay output)`);
-    w('0V', `${t}:${P.sto.aMinus}`, 'TB1 0V', `${t} /STO_A`, 'WH/BU');
-    w(stoSupply, `TB1 ${stoSupply}`, `${t}:${P.sto.bPlus}`, `${t} STO_B+ Safe Torque Off channel B (safety relay output)`);
-    w('0V', `${t}:${P.sto.bMinus}`, 'TB1 0V', `${t} /STO_B`, 'WH/BU');
-    notes.push(`${t}: STO from the safety relay output (${P.sto.aPlus.replace('CN10-', 'CN10 pin ')} / ${P.sto.bPlus.replace('CN10-', 'pin ')}); remove the CN10 bypass plug. FDBK+/- (${P.sto.fbPlus}/${P.sto.fbMinus}) monitors the STO circuit: wire it into the safety relay feedback or a PLC input per the manual's STO section, as the risk assessment requires.`);
+    // Safe Torque Off: each channel from its own safety-relay output (manual 3.11.3), returns to 0 V; FDBK is in
+    // the relay's S33-S34 feedback loop (wired with the EDM loop).
+    if (sto) {
+      w(sto.a.wire, sto.a.from, `${t}:${P.sto.aPlus}`, `${t} STO_A+ Safe Torque Off channel A (safety relay output)`);
+      w('0V', `${t}:${P.sto.aMinus}`, 'TB1 0V', `${t} /STO_A`, 'WH/BU');
+      w(sto.b.wire, sto.b.from, `${t}:${P.sto.bPlus}`, `${t} STO_B+ Safe Torque Off channel B (second safety relay output)`);
+      w('0V', `${t}:${P.sto.bMinus}`, 'TB1 0V', `${t} /STO_B`, 'WH/BU');
+      notes.push(`${t}: STO_A from ${sto.a.from.replace(/^TB1 /, '')}, STO_B from ${sto.b.from} (two safety-relay outputs); FDBK+ ${P.sto.fbPlus} / FDBK- ${P.sto.fbMinus} in the safety relay's S33-S34 feedback loop, FDBK+ on the S33 side (manual 3.11.3: polarity matters). Remove the CN10 bypass plug.`);
+    } else notes.push(`${t}: no safety relay in the design — STO is not wired. Add a safety relay with two safety outputs for STO_A / STO_B; the drive must not run with the CN10 bypass plug.`);
     if (!a.motor) notes.push(`${t}: no servo motor chosen — U/V/W and the encoder (CN2) are not drawn.`);
-    return { ...a, terminals, notes };
+    return { ...a, sto, terminals, notes };
   });
   return { axes: models, wires, terms };
 }
