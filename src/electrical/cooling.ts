@@ -51,6 +51,32 @@ export function coolingWatts(p: CatalogPart): number | undefined {
   return btu !== undefined ? btu * BTUH_TO_W : undefined;
 }
 
+/**
+ * Cooling already in a design (filter fans, heat exchangers, air conditioners) against what the walls cannot shed:
+ * each part's share is its air flow / airflowM3h or its capacity (heat exchanger at riseK) / wattsToRemove; the
+ * shares add up. `fitted` is false when there is no cooling part at all.
+ */
+export function coolingCover(
+  components: { partNumber: string; quantity: number }[],
+  getPart: (pn: string) => CatalogPart | undefined,
+  need: { wattsToRemove: number; airflowM3h: number },
+  riseK: number,
+): { fitted: boolean; covers: boolean; share: number } {
+  let share = 0;
+  let fitted = false;
+  for (const c of components) {
+    const p = getPart(c.partNumber);
+    const kind = p?.ratings.kind;
+    if (!p || !['filter fan', 'heat exchanger', 'air conditioner'].includes(String(kind))) continue;
+    fitted = true;
+    const q = c.quantity || 1;
+    if (kind === 'filter fan') share += (q * (fanAirflowM3h(p) ?? 0)) / need.airflowM3h;
+    else if (kind === 'heat exchanger') share += (q * (num(p.ratings.wPerK) ?? 0) * riseK) / need.wattsToRemove;
+    else share += (q * (coolingWatts(p) ?? 0)) / need.wattsToRemove;
+  }
+  return { fitted, covers: fitted && share >= 0.999, share };
+}
+
 export interface CoolingOptions {
   /** Preferred makers, in order; the first maker with a fitting part wins. Default: any. */
   vendors?: VendorId[];

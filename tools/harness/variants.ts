@@ -29,7 +29,8 @@ import { cabinetStepSummary } from '../../src/electrical/step/cabinetStep';
 import { calculations } from '../../src/deliverables/docs/calcs';
 import { alarmRows, programInfo } from '../../src/deliverables/docs/program';
 import { getHmi } from '../../src/hmi/hmiCatalog';
-import { cabinetHeat } from '../../src/electrical/thermal';
+import { ALLOWED_RISE_C, cabinetHeat } from '../../src/electrical/thermal';
+import { coolingCover } from '../../src/electrical/cooling';
 import { runCodeRules } from '../../src/review/codeRules';
 import { sccrTable } from '../../src/deliverables/docs/electrical';
 import type { DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, MotorSpec } from '../../src/electrical/types';
@@ -413,7 +414,7 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
       const h = cabinetHeat(ctx.design.components, getPart, hm && getPart(hm.partNumber)?.category !== 'plc' ? { partNumber: hm.partNumber, sizeIn: hm.sizeIn } : undefined);
       return { watts: h.watts, rise: h.rise, ventilation: h.ventilation,
         parts: m.rc.filter((c) => ['filter fan', 'exhaust filter', 'thermostat', 'heat exchanger', 'air conditioner'].includes(String(c.part?.ratings.kind ?? ''))).map((c) => ({ tag: c.tag, partNumber: c.partNumber, kind: c.part?.ratings.kind })),
-        fan: m.fan ?? null };
+        fan: m.fan ?? null, cover: h.ventilation ? coolingCover(ctx.design.components, getPart, h.ventilation, ALLOWED_RISE_C) : null };
     })(),
     drives: m.motors.filter((x) => x.vfd).map((x) => ({ motor: x.motor.tag, tag: x.vfd!.tag, partNumber: x.vfd!.partNumber, fuseClass: x.vfd!.part?.ratings.fuseClass ?? null, fusePart: x.vfd!.part?.ratings.fusePart ?? null,
       protection: x.protection ? { tag: x.protection.tag, partNumber: x.protection.partNumber, category: x.protection.category, fuseClass: x.protection.fuse?.ratings.fuseClass ?? null, fuse: x.protection.fuse?.partNumber ?? null } : null })),

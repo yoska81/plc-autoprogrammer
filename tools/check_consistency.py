@@ -225,11 +225,14 @@ def check(vdir: Path):
             report('WARN', v, f'{mo["tag"]} FLA {mo["fla"]} A not printed in the engineering package')
     # ---- Cabinet cooling: heat the walls cannot shed (rise above the limit) needs a filter fan, a heat exchanger or an
     # air conditioner in the design, or the design review saying so; a filter fan comes with its exhaust filter and
-    # thermostat, and a 24 VDC fan is wired (its wire on the drawings and in the wire list)
+    # thermostat, the fitted cooling carries the heat (or the review says it is too small), and a 24 VDC fan is wired (its wire on the drawings and in the wire list)
     co = data.get('cooling') or {}
     kinds = {c['kind'] for c in co.get('parts', [])}
     if co.get('ventilation') and not kinds & {'filter fan', 'heat exchanger', 'air conditioner'} and not any('Cabinet cooling missing' in w for w in data['warnings']):
         report('FAIL', v, f'cabinet needs {co["ventilation"]["airflowM3h"]:.0f} m³/h of cooling ({co["rise"]:.0f} °C rise) but has no fan / heat exchanger / air conditioner and the review does not say so')
+    cover = co.get('cover') or {}
+    if cover.get('fitted') and not cover.get('covers') and not any('Cabinet cooling too small' in w for w in data['warnings']):
+        report('FAIL', v, f'the fitted cooling carries {cover["share"] * 100:.0f} % of the heat the walls cannot shed and the review does not say so')
     if 'filter fan' in kinds:
         for need in ('exhaust filter', 'thermostat'):
             if need not in kinds:

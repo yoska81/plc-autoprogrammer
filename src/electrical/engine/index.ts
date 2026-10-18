@@ -306,8 +306,13 @@ export function generateDesign(input: EngineInput): EngineResult {
         if (psA !== undefined && psA + 0.05 < need) notes.push(`${ps!.tag} ${ps!.partNumber} (${psA} A): with FAN1 the 24 VDC load is ${(loadA + dcFanAmps(fan.fan)!).toFixed(1)} A + 25% = ${need.toFixed(1)} A — select the next larger supply.`);
       }
     } else {
-      // a bigger enclosure of the same material that sheds the heat through its walls (not past the designer's pick)
-      const bigger = choice.preferred ? undefined : candidates.filter((e) => enclosurePanelArea(e) > enclosurePanelArea(best.enc)).map(tryEnclosure).find((t) => t.fits && !heatOf(t).ventilation);
+      // a bigger enclosure of the same material and mounting that sheds the heat through its walls (not past the
+      // designer's pick); at most twice the panel area — beyond that a heat exchanger / air conditioner is the sane choice
+      const area0 = enclosurePanelArea(best.enc);
+      const floor0 = best.enc.ratings.mounting === 'floor';
+      const bigger = choice.preferred ? undefined : candidates
+        .filter((e) => enclosurePanelArea(e) > area0 && enclosurePanelArea(e) <= 2 * area0 && (e.ratings.mounting === 'floor') === floor0)
+        .map(tryEnclosure).find((t) => t.fits && !heatOf(t).ventilation);
       if (bigger) {
         notes.push(`Enclosure ${bigger.enc.partNumber} instead of ${best.enc.partNumber}: ${heat.watts.toFixed(0)} W would raise the ${best.enc.partNumber} ${heat.rise!.toFixed(0)} °C (limit ${ALLOWED_RISE_C} °C)${sealed ? ` and a ${inputs.enclosureRating} enclosure takes no filter fan` : ' and no catalog filter fan fits'}; the larger enclosure sheds it through its walls.`);
         best = bigger;

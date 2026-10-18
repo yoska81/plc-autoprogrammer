@@ -10,10 +10,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
 import { defaultMachineModel } from './machineModel';
-import { getPart } from '../catalog';
+import { CATALOG, getPart } from '../catalog';
 import { bomCsv, buildModel, chooseEnclosure, designWarnings, doorDrilling, enclosureFitProblem, enclosureSize, enclosuresFor, layoutFits, panelLayout, plcRack, spareSpace, SPARE_RULE, vendorTerminal, withEnclosure, type DrawingContext } from '../derive';
 import { cabinetHeat } from '../thermal';
 import { fanAirflowM3h } from '../cooling';
+import { engineerChecks } from '../../engineer/checks';
+
+const IO0 = { inputs: 0, outputs: 0, capInputs: 0, capOutputs: 0 };
 import { panelSccr } from '../sccr';
 import { getCpu, getProfile } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
@@ -475,6 +478,31 @@ for (const s of SCENARIOS) {
   // a review finding when a hot design has no cooling (e.g. the fan removed by hand)
   const bare = { ...ctx, design: { ...ctx.design, components: ctx.design.components.filter((c) => !['filter fan', 'exhaust filter', 'thermostat'].includes(kindOf(c.partNumber))) } };
   assert.ok(designWarnings(bare).some((w) => /^Cabinet cooling missing/.test(w)), 'missing cooling flagged');
+  assert.ok(engineerChecks({ ctx: bare, io: IO0 }).some((f) => f.id === 'eng:heat' && /above ambient/.test(f.title)), 'review: hot cabinet without cooling');
+  assert.ok(!engineerChecks({ ctx, io: IO0 }).some((f) => f.id === 'eng:heat'), 'review: no heat finding once the fan carries the heat');
+  // a fan too small for the heat: flagged, not taken as cooled
+  const small = CATALOG.filter((p) => p.ratings.kind === 'filter fan' && (fanAirflowM3h(p) ?? 0) > 0).sort((a, b) => fanAirflowM3h(a)! - fanAirflowM3h(b)!)[0];
+  assert.ok(fanAirflowM3h(small)! < heatOf(ctx).ventilation!.airflowM3h);
+  const weak = { ...ctx, design: { ...ctx.design, components: ctx.design.components.map((c) => (c.partNumber === fan.partNumber ? { ...c, partNumber: small.partNumber } : c)) } };
+  assert.ok(designWarnings(weak).some((w) => /^Cabinet cooling too small/.test(w)), 'undersized fan flagged');
+  assert.ok(engineerChecks({ ctx: weak, io: IO0 }).some((f) => f.id === 'eng:heat' && /too small/.test(f.title)), 'review: undersized fan');
+}
+
+// Acceptance (pump skid): two 10 HP pumps on GS20 drives at 480 V heat a NEMA 12 cabinet far above 15 °C; the engine
+// fits a filter fan, its exhaust filter and a thermostat, and the review comes out without a heat finding.
+{
+  const pump: Scenario = {
+    name: 'pump-skid', supply: '480VAC-3PH', spec: 'Pump skid: two 10 HP pumps on GS20 VFDs, 480 V 3-phase.',
+    points: [pt('E-stop OK', 'input'), pt('Start PB', 'input'), pt('Stop PB', 'input'), pt('Pump 1 VFD fault', 'input'), pt('Pump 2 VFD fault', 'input'),
+      pt('Low level switch', 'input'), pt('Pump 1 VFD run', 'output'), pt('Pump 2 VFD run', 'output'), pt('Running light', 'output'), pt('Fault light', 'output')],
+    motors: [motor('M1', 'Pump 1', 10, '480VAC-3PH', 'vfd'), motor('M2', 'Pump 2', 10, '480VAC-3PH', 'vfd')],
+  };
+  const { r, ctx } = run(pump);
+  const kinds = r.design.components.map((c) => String(getPart(c.partNumber)?.ratings.kind ?? ''));
+  assert.ok(cabinetHeat(ctx.design.components, getPart).ventilation, 'pump skid: needs cooling');
+  for (const k of ['filter fan', 'exhaust filter', 'thermostat']) assert.ok(kinds.includes(k), `pump skid: ${k}`);
+  assert.ok(!designWarnings(ctx).some((w) => /Cabinet cooling (missing|too small)/.test(w)), 'pump skid: cooling covers the heat');
+  assert.deepEqual(engineerChecks({ ctx, io: IO0 }).filter((f) => f.id === 'eng:heat').map((f) => f.title), [], 'pump skid: no heat finding in the review');
 }
 
 // Guard doors and pressure switches come from the catalog: the interlock (+ actuator) in series with the E-stops

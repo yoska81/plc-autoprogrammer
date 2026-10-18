@@ -34,7 +34,7 @@ import { lengthText, routedLength, withService } from './layout/geometry';
 import { CABINET, type LayoutForDesign } from './layout/types';
 import { iecColor, iecMotorCurrent, isIec, mm2For, mm2FromAwg, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
 import { ALL_PARTS } from './catalogs';
-import { dcFanAmps } from './cooling';
+import { coolingCover, dcFanAmps } from './cooling';
 import { ALLOWED_RISE_C, cabinetHeat } from './thermal';
 import { withIecStrips } from '../standards/designations';
 import { issuedForConstruction } from '../standards/issue';
@@ -2800,8 +2800,9 @@ export function designWarnings(ctx: DrawingContext): string[] {
   {
     const hmiH = ctx.hmiPartNumber ? getHmi(ctx.hmiPartNumber) : undefined;
     const heat = cabinetHeat(ctx.design.components, ctx.getPart, hmiH && ctx.getPart(ctx.hmiPartNumber!)?.category !== 'plc' ? { partNumber: hmiH.partNumber, sizeIn: hmiH.sizeIn } : undefined);
-    const cooled = m.rc.some((c) => (c.category === 'fan' && c.part?.ratings.kind === 'filter fan') || ['heat exchanger', 'air conditioner'].includes(String(c.part?.ratings.kind ?? '')));
-    if (heat.ventilation && !cooled) w.push(`Cabinet cooling missing: ${heat.watts.toFixed(0)} W raise the enclosure ${heat.rise!.toFixed(0)} °C (limit ${ALLOWED_RISE_C} °C) — add a filter fan of >= ${Math.ceil(heat.ventilation.airflowM3h)} m³/h with filters (NEMA 1/12), a heat exchanger or an air conditioner, or a larger enclosure.`);
+    const cover = heat.ventilation ? coolingCover(ctx.design.components, ctx.getPart, heat.ventilation, ALLOWED_RISE_C) : null;
+    if (cover?.fitted && !cover.covers) w.push(`Cabinet cooling too small: the fitted cooling carries ${Math.round(cover.share * 100)} % of the ${heat.ventilation!.wattsToRemove.toFixed(0)} W the walls cannot shed — fit a filter fan of >= ${Math.ceil(heat.ventilation!.airflowM3h)} m³/h, a larger heat exchanger / air conditioner, or a larger enclosure.`);
+    if (heat.ventilation && !cover?.fitted) w.push(`Cabinet cooling missing: ${heat.watts.toFixed(0)} W raise the enclosure ${heat.rise!.toFixed(0)} °C (limit ${ALLOWED_RISE_C} °C) — add a filter fan of >= ${Math.ceil(heat.ventilation.airflowM3h)} m³/h with filters (NEMA 1/12), a heat exchanger or an air conditioner, or a larger enclosure.`);
     if (m.fan && !m.fan.dc) w.push(`${m.fan.tag} ${m.fan.partNumber}: AC filter fan — wire it from the control voltage through ${m.fan.thermostat ?? 'a thermostat'} (not drawn).`);
   }
   // one CPU: a second one (e.g. a CPU left in the required parts after a CPU change) is drawn and ordered twice
