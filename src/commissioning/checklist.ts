@@ -113,7 +113,28 @@ export interface CommSignoff {
   date: string;
 }
 
-export interface CommRecord { results: Record<string, CommResult>; signoff: CommSignoff | null }
+/** A sign-off made void by a failure recorded after it: kept so the record shows it was signed, and why it no longer holds. */
+export interface VoidedSignoff {
+  signoff: CommSignoff;
+  /** When the failure was recorded (YYYY-MM-DD HH:MM) and by whom. */
+  voidedAt: string;
+  voidedBy: string;
+  /** The item that failed. */
+  itemId: string;
+}
+
+export interface CommRecord {
+  results: Record<string, CommResult>;
+  signoff: CommSignoff | null;
+  /** Sign-offs voided by a later failure, oldest first (absent on records made before it existed). */
+  voided?: VoidedSignoff[];
+}
+
+/** "J. Tech (ISA) signed 2026-10-17 10:00; voided 2026-10-17 11:20 by A. Lead: Y001 Conveyor motor failed." */
+export function voidedText(v: VoidedSignoff, items: CommItem[]): string {
+  const item = items.find((it) => it.id === v.itemId)?.title ?? v.itemId;
+  return `${v.signoff.name}${v.signoff.company ? ` (${v.signoff.company})` : ''} signed ${v.signoff.date}; voided ${v.voidedAt}${v.voidedBy ? ` by ${v.voidedBy}` : ''}: ${item} failed.`;
+}
 
 /** Done: passed or not applicable. A failed item is not done: it is fixed and tested again. */
 export function progress(items: CommItem[], results: Record<string, CommResult>): { done: number; pass: number; fail: number; total: number } {
@@ -129,7 +150,8 @@ export function progress(items: CommItem[], results: Record<string, CommResult>)
 
 /** Why the checklist can't be signed off yet (null: it can): a failed item blocks the sign-off until it passes. */
 export function signBlock(items: CommItem[], results: Record<string, CommResult>): string | null {
-  const failed = items.filter((it) => results[it.id]?.status === 'fail');
+  // every failed result, an item no longer in the checklist included (the store refuses the sign-off on the same rule)
+  const failed = Object.keys(results).filter((id) => results[id].status === 'fail').map((id) => ({ title: items.find((it) => it.id === id)?.title ?? `${id} (no longer in the checklist)` }));
   if (!failed.length) return null;
   const names = failed.slice(0, 3).map((it) => it.title).join('; ');
   return `${failed.length} failed item${failed.length === 1 ? '' : 's'} (${names}${failed.length > 3 ? '; …' : ''}): fix ${failed.length === 1 ? 'it' : 'them'} and test again before signing off.`;

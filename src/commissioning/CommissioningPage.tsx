@@ -9,7 +9,7 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useUi } from '../store/useUiStore';
 import { useDraft } from '../store/useDraftStore';
 import { notify } from '../store/useNoticeStore';
-import { commissioningItems, progress, SECTION_TITLE, signBlock, type CommItem, type CommResult, type CommSection } from './checklist';
+import { commissioningItems, progress, SECTION_TITLE, signBlock, voidedText, type CommItem, type CommResult, type CommSection } from './checklist';
 import { nowStamp, useCommissioningStore } from './useCommissioningStore';
 import { commissioningPdf, commissioningXlsx } from './export';
 
@@ -155,6 +155,7 @@ export default function CommissioningPage() {
             ))}
             <section aria-label="Sign-off" className="space-y-2 rounded border border-steel-200 bg-white p-3">
               <h3 className="text-sm font-semibold text-steel-800">Sign-off</h3>
+              {rec.voided?.map((v, i) => <p key={i} className="text-xs text-red-800" data-testid="comm-voided">Voided sign-off: {voidedText(v, items)}</p>)}
               {rec.signoff && <p className="text-xs text-green-800" data-testid="comm-signed">Signed by {rec.signoff.name}{rec.signoff.company ? ` (${rec.signoff.company})` : ''} on {rec.signoff.date}.</p>}
               <div className="grid gap-2 sm:grid-cols-3">
                 <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" aria-label="Sign-off name" className="rounded border border-steel-300 px-2 py-1 text-sm" />
@@ -164,7 +165,7 @@ export default function CommissioningPage() {
               <SignaturePad value={drawn} onChange={setDrawn} />
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" disabled={Boolean(blocked) || !name.trim() || !(signature.trim() || drawn)} title={blocked ?? undefined}
-                  onClick={() => sign(projectId, { name: name.trim(), company: company.trim(), signature: signature.trim(), drawn, date: nowStamp() })}
+                  onClick={() => { if (!sign(projectId, { name: name.trim(), company: company.trim(), signature: signature.trim(), drawn, date: nowStamp() })) notify('The checklist cannot be signed while an item has failed.'); }}
                   className="rounded bg-brand-600 px-3 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{rec.signoff ? 'Sign again' : 'Sign'}</button>
                 {rec.signoff && <button type="button" onClick={() => sign(projectId, null)} className="text-sm text-steel-500 underline">Remove signature</button>}
                 {s.done < s.total && <span className="text-xs text-amber-800">{s.total - s.done} item{s.total - s.done === 1 ? '' : 's'} not done yet.</span>}

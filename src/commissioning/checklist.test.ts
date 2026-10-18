@@ -9,7 +9,8 @@ import { seedSampleProject } from '../preview/sampleProject';
 import { collectProject } from '../deliverables/collect';
 import { safetyFunctions } from '../deliverables/docs/safety';
 import { alarmRows } from '../deliverables/docs/program';
-import { commissioningItems, exportRows, progress, signBlock } from './checklist';
+import { commissioningItems, exportRows, progress, signBlock, voidedText } from './checklist';
+import { useNoticeStore } from '../store/useNoticeStore';
 import { commissioningFor, useCommissioningStore } from './useCommissioningStore';
 import { commissioningPdf, commissioningXlsx } from './export';
 
@@ -60,10 +61,29 @@ st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '
 assert.equal(rec().signoff?.name, 'J. Tech');
 st.setResult('proj', by('inputs')[0].id, { note: 'retightened' });
 assert.ok(rec().signoff, 'a note keeps the signature');
+st.setTech('A. Lead');
 st.setResult('proj', by('inputs')[0].id, { status: 'fail' });
 assert.equal(rec().signoff, null, 'a failure after the sign-off voids it');
+// …not silently: the voided sign-off is kept (who signed, when, when voided and by whom, which item) and the user is told
+const v = rec().voided!;
+assert.equal(v.length, 1);
+assert.deepEqual([v[0].signoff.name, v[0].signoff.date, v[0].voidedBy, v[0].itemId], ['J. Tech', '2026-10-17 10:00', 'A. Lead', by('inputs')[0].id]);
+assert.match(v[0].voidedAt, /^\d{4}-\d\d-\d\d \d\d:\d\d$/);
+assert.equal(voidedText(v[0], items), `J. Tech (ISA) signed 2026-10-17 10:00; voided ${v[0].voidedAt} by A. Lead: ${by('inputs')[0].title} failed.`);
+assert.match(useNoticeStore.getState().message ?? '', /sign-off by J\. Tech \(2026-10-17 10:00\) is void/);
+// the store itself refuses a sign-off while an item has failed (not only the button)
+assert.equal(st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:20' }), false);
+assert.equal(rec().signoff, null);
+st.setResult('proj', by('inputs')[0].id, { status: 'fail' });
+assert.equal(rec().voided!.length, 1, 'a second failure with nothing signed voids nothing');
+st.setTech('J. Tech');
 st.setResult('proj', by('inputs')[0].id, { status: 'pass' });
+assert.equal(st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:30' }), true);
+assert.equal(rec().voided!.length, 1, 'signing again keeps the record of the voided one');
+assert.equal(st.sign('proj', null), true, 'removing a signature is always allowed');
 st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:30' });
+// a failure on an item no longer in the checklist still blocks (the store and the page agree)
+assert.match(signBlock(items, { ...rec().results, gone: { status: 'fail', note: '', by: '', date: '' } }) ?? '', /gone \(no longer in the checklist\)/);
 
 // Exports.
 const pdf = await commissioningPdf(p, items, rec());
@@ -78,4 +98,10 @@ const texts: string[] = [];
 ws.eachRow((r) => texts.push((r.values as unknown[]).map(String).join('|')));
 assert.ok(texts.some((t) => t.includes('Contactor coil open circuit') && t.includes('Pass')), 'the retested item: its note kept, now passed');
 assert.ok(texts.some((t) => t.includes('Signature|J. Tech')));
+assert.ok(texts.some((t) => t.includes('Voided|J. Tech (ISA) signed 2026-10-17 10:00; voided')), 'the voided sign-off is in the workbook');
+// …and in the PDF (its text, uncompressed)
+const { inflateSync } = await import('node:zlib');
+const raw = Buffer.from(await pdf.arrayBuffer()).toString('latin1');
+const streams = [...raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)].map((m) => { try { return inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1'); } catch { return m[1]; } }).join('');
+assert.ok(/Voided sign-offs/.test(streams), 'the PDF has the voided sign-offs');
 console.log(`commissioning tests passed (${items.length} items)`);

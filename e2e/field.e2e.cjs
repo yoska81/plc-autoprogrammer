@@ -48,6 +48,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByRole('button', { name: 'Sign', exact: true }).click();
   check(/2 of \d+ done/.test(await page.getByTestId('comm-progress').innerText()), 'progress counts the ticks');
   check(await page.getByTestId('comm-signed').count() === 1, 'signed');
+  // a failure after the sign-off voids it, on the record and with a notice
+  await items.nth(0).getByRole('button', { name: 'Fail' }).click();
+  check(await page.getByTestId('comm-signed').count() === 0 && /^Voided sign-off: J\. Tech signed .+; voided .+ failed\.$/.test(await page.getByTestId('comm-voided').innerText()), 'a later failure voids the sign-off and records it');
+  check(/is void: a failure was recorded after it/.test(await page.locator('body').innerText()), 'the user is told');
+  await items.nth(0).getByRole('button', { name: 'Pass' }).click();
+  await page.getByRole('button', { name: 'Sign', exact: true }).click();
+  check(await page.getByTestId('comm-signed').count() === 1 && await page.getByTestId('comm-voided').count() === 1, 'signed again; the voided one stays on the record');
   for (const [btn, ext] of [['PDF', 'pdf'], ['Excel', 'xlsx']]) {
     const [d] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: btn, exact: true }).click()]);
     const f = path.join(OUT, d.suggestedFilename());
