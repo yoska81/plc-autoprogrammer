@@ -142,6 +142,14 @@ export default function App() {
     label: projectName,
     children: [
       { label: 'Project data', to: '/project' },
+      {
+        label: 'Existing machine (import)', to: '/import?tab=drawings',
+        children: [
+          { label: 'Drawings: read / convert', to: '/import?tab=drawings' },
+          { label: 'PLC program: read / upgrade', to: '/import?tab=program' },
+          { label: 'Cabinet photos → drawing', to: '/import?tab=photos' },
+        ],
+      },
       { label: 'Machine description', to: '/spec', stage: 'spec', questions: Object.values(openQ).reduce((a, b) => a + b, 0) },
       {
         label: 'Equipment', to: '/equipment', stage: 'equipment',
@@ -177,6 +185,7 @@ export default function App() {
           { label: 'I/O addressing', to: '/plc' },
           { label: 'Simulation', to: '/simulate' },
           { label: 'Online (real PLC)', to: '/online' },
+          { label: 'Fault finding', to: '/online?tab=troubleshoot' },
           { label: 'Commissioning checklist', to: '/commissioning' },
         ],
       },

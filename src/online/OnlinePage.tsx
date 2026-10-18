@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useActiveHmiDesign } from '../hmi/projectPanel';
 import { useProgramStore } from '../store/useProgramStore';
 import { usePlc } from '../plc/core/usePlc';
@@ -39,6 +40,12 @@ export default function OnlinePage() {
   const checkout = useCheckoutStore((s) => s.byProject[projectId ?? 'default']) ?? NO_CHECKS;
   const { tech, setTech, set: setCheck } = useCheckoutStore();
   const [tab, setTab] = useUi<Tab>('online.tab', 'monitor');
+  // A link can open a tab directly (the navigation's "Fault finding" opens ?tab=troubleshoot).
+  const [params] = useSearchParams();
+  const linked = params.get('tab');
+  useEffect(() => {
+    if (linked === 'monitor' || linked === 'ladder' || linked === 'hmi' || linked === 'checkout' || linked === 'troubleshoot') setTab(linked);
+  }, [linked, setTab]);
   const [filter, setFilter] = useUi('online.filter', '');
   const [screenId, setScreenId] = useUi<string | null>('online.screen', null);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
