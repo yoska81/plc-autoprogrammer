@@ -90,6 +90,8 @@ export interface HmiElement {
   level?: AccessLevel;
   /** Permissive bit: the button is only enabled while this bit is ON (shown on the button). */
   interlock?: string | null;
+  /** Was bound to an I/O point that has been deleted (e.g. "X001 Start PB"): unbound, to bind again or delete. */
+  lostIo?: string;
   /** Symbols of a 'machine' element. */
   symbols?: MachineSymbol[];
   /** 'image' elements: the picture as a data URL. */
