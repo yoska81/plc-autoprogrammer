@@ -19,7 +19,7 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  page.on('dialog', (d) => d.accept());
+  page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? d.defaultValue() : undefined)); // a prompt keeps its suggested text
   const store = (expr) => page.evaluate(`(async () => { const { useElectricalStore: E } = await import('/src/store/useElectricalStore.ts'); return ${expr}; })()`);
   const download = async (click, name) => {
     const [dl] = await Promise.all([page.waitForEvent('download'), click()]);
