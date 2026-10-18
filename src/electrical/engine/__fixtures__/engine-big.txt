@@ -93,6 +93,9 @@ TBE      DN-EB35            x6    End brackets
 DIN      DN-R35S1           x4    DIN rail
 WD       T1-2240G-1         x4    Wire duct
 GB1      SCE-GB10           x2    Ground bar
+FAN1     018722-30          x1    Filter fan (inlet, low on the left wall) — 156 m³/h with filters >= 102 m³/h to carry 493 W (673 W in the cabinet, 56 °C rise without it, limit 15 °C), 24 VDC 0.50 A
+FLT1     118720-00          x1    Exhaust filter for FAN1 (outlet, high on the right wall)
+TH1      011160-00          x1    Thermostat for FAN1 — N.O. closes on rise; set to ~35 °C
 
 X001   SR1    safety-relay-output  Cabinet        E-Stop OK (safety relay)
 X002   PB1    pushbutton-no        Cabinet door   Start Button

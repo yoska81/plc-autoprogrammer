@@ -19,6 +19,21 @@ const num = (v: unknown): number | undefined => {
 const vendorOf = (p: CatalogPart): VendorId => p.vendor ?? 'automationdirect';
 const isDc = (p: CatalogPart) => /dc/i.test(String(p.ratings.volts ?? ''));
 
+/** Current a 24 VDC filter fan draws from the control supply (catalog amps, else watts / 24 V); null for AC fans and other parts. */
+export function dcFanAmps(p: CatalogPart | undefined): number | null {
+  if (!p || p.category !== 'fan' || p.ratings.kind !== 'filter fan' || !isDc(p)) return null;
+  const a = num(p.ratings.amps);
+  if (a !== undefined) return a;
+  const w = num(p.ratings.watts);
+  return w !== undefined ? w / 24 : null;
+}
+
+/** Thermostat to switch a filter fan: a N.O. (close on rise) adjustable contact, the AutomationDirect one first. */
+export function pickFanThermostat(pool: CatalogPart[] = CATALOG): CatalogPart | null {
+  const ts = pool.filter((p) => p.ratings.kind === 'thermostat' && /N\.O\.\s*\(close on rise\)/i.test(String(p.ratings.contact ?? '')) && !/dual/i.test(String(p.ratings.contact ?? '')));
+  return ts.sort((a, b) => Number(vendorOf(b) === 'automationdirect') - Number(vendorOf(a) === 'automationdirect') || Number(/deg C/i.test(String(b.ratings.contact))) - Number(/deg C/i.test(String(a.ratings.contact))))[0] ?? null;
+}
+
 /** Airflow of a filter fan in m³/h, with filters fitted where published. */
 export function fanAirflowM3h(p: CatalogPart): number | undefined {
   const r = p.ratings;
