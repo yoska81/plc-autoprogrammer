@@ -121,10 +121,13 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   const panel = input.panel !== false;
   // No panel and no Start pushbutton: the two-hand buttons both start the machine and each cycle (a press).
   const twoHandStarts = !panel && !startPb && (c.twoHand?.length ?? 0) >= 2;
-  const hmiStart = panel || (!startPb && !twoHandStarts), hmiStop = panel || !stopPb, hmiReset = panel || !resetPb, hmiManual = panel || !modeSel;
+  // No panel and no Reset pushbutton: the Start pushbutton also resets faults (once their cause is gone).
+  const startResets = !panel && !resetPb && !!startPb;
+  const hmiStart = panel || (!startPb && !twoHandStarts), hmiStop = panel || !stopPb, hmiReset = panel || (!resetPb && !startPb), hmiManual = panel || !modeSel;
   if (modeSel && !/\bon\s*=/i.test(modeSel.description)) notes.push(`${modeSel.address} ${modeSel.description}: ON = ${selOnManual ? 'Manual (setup)' : 'Auto (run)'} assumed — check the selector's contact and change the program if it is the other way.`);
   if (!panel) {
-    const missing = [!startPb && !twoHandStarts && 'Start', !stopPb && 'Stop', !resetPb && 'Reset'].filter(Boolean);
+    const missing = [!startPb && !twoHandStarts && 'Start', !stopPb && 'Stop', !resetPb && !startResets && 'Reset'].filter(Boolean);
+    if (startResets) notes.push(`No touch panel and no Reset pushbutton: ${startPb!.description} (${startPb!.address}) also resets faults once their cause is gone. Add a Reset pushbutton to the I/O list to keep them apart.`);
     if (missing.length) notes.push(`No touch panel, and the I/O list has no ${missing.join(' / ')} pushbutton: the program keeps the command bit (set it from Online) — add the pushbutton to the I/O list and regenerate.`);
     if (!modeSel) notes.push('No touch panel, and the I/O list has no Auto/Manual selector: Manual mode is a command bit only — add the selector to the I/O list and regenerate.');
   }
@@ -159,10 +162,17 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   sp('sp:batch', 0, 9999, 0, 'batch target');
   sp('sp:serviceinterval', 50, 2000, 500, 'service interval (h)');
   if (c.safetyOk) R('safety', `Safety OK from the safety relay (${c.safetyOk.description})`, [[NO(c.safetyOk.address)]], [OUT(SAFE)]);
+  else if (c.estops?.length) {
+    // No safety relay input: the E-stop contacts (NC, ON = released) gate every motion output. The PLC reading an
+    // E-stop is not a safety function — the stop itself must be hard-wired (safety relay / contactor), see the notes.
+    R('safety', `Safety OK from the E-stop contact${c.estops.length > 1 ? 's' : ''} read by the PLC (${c.estops.map((e) => e.description).join(', ')}; NC, ON = released)`, [c.estops.map((e) => NO(e.address))], [OUT(SAFE)]);
+    notes.push(`No "Safety OK" input from a safety relay: the program uses the E-stop contact${c.estops.length > 1 ? 's' : ''} ${c.estops.map((e) => e.address).join(', ')} as Safety OK, so every motion output stops on an E-stop. The PLC is not a safety device: the E-stop must also cut the outputs in hardware (safety relay / contactor).`);
+  }
   else { R('safety', 'Safety OK: no safety relay input in the I/O list — always ON until one is added (see notes)', [[NO('SC1')]], [OUT(SAFE)]); notes.push('No "Safety OK" input from the safety relay: the program treats safety as always OK. Add the input to the I/O list and regenerate.'); }
   nick(SAFE, 'Safety_OK', 'Safety relay healthy');
   const or = (...xs: (string | false | undefined)[]) => xs.filter(Boolean).join(' or ');
-  R('safety', `Reset command: ${or(hmiReset && 'HMI Reset', resetPb && (hmiReset ? `the ${resetPb.description}` : resetPb.description))}`, [...(hmiReset ? [[NO(reset)]] : []), ...(resetPb ? [[NO(resetPb.address)]] : [])], [OUT(RESET)]);
+  R('safety', `Reset command: ${or(hmiReset && 'HMI Reset', resetPb && (hmiReset ? `the ${resetPb.description}` : resetPb.description), startResets && `${startPb!.description} (no Reset pushbutton)`)}`,
+    [...(hmiReset ? [[NO(reset)]] : []), ...(resetPb ? [[NO(resetPb.address)]] : []), ...(startResets ? [[NO(startPb!.address)]] : [])], [OUT(RESET)]);
   nick(RESET, 'Cmd_Reset', panel ? 'Reset from the HMI or the panel' : 'Reset from the panel');
   if (hmiManual) R('safety', 'Manual mode request is refused while the cycle runs: the HMI toggle is reset', [[NO(RUN), NO(manualSel)]], [RST(manualSel)]);
   R('safety', `Manual mode active: ${[hmiManual && 'HMI Manual selected', modeSel && `${modeSel.description} in Manual`].filter(Boolean).join(' or ')} and the cycle stopped`,

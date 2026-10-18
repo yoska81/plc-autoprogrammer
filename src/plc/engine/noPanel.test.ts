@@ -168,4 +168,30 @@ assert.equal(sim.readBit(RUN_LAMP), true, 'after Reset: Start runs');
   assert.equal(ps.readBit(pr.base.roles.get('sts:manual')!), true, 'press: setup = Manual mode');
 }
 
+// ---- Converted machine (Debug 4's journey 8): an E-stop contact and no safety relay input → the E-stop gates every motion output.
+{
+  const CONV: Omit<IOPoint, 'id'>[] = ([
+    ['E-stop', 'input', 'Safety', 'estop-contact'], ['Start', 'input', 'Operator/HMI', 'pushbutton-no'], ['Stop', 'input', 'Operator/HMI', 'pushbutton-nc'],
+    ['Auto/Manual selector', 'input', 'Operator/HMI', 'selector'], ['Box at sorter photo-eye', 'input', 'Product Detection', 'sensor-pnp'],
+    ['Conveyor motor contactor', 'output', 'Conveyor', 'contactor-coil'], ['Sorter pusher valve', 'output', 'Pneumatic', 'solenoid'],
+  ] as const).map(([description, type, category, deviceType]) => ({ description, type, category, deviceType }));
+  const cio = CONV.map((p, i) => ({ ...p, id: `v${i}` })) as IOPoint[];
+  const cAddr = resolveAddresses(profile, getCpu(profile, 'C0-11DD1E-D'), cio, moduleSlots([]));
+  const C = (re: RegExp) => cAddr.get(cio.find((p) => re.test(p.description))!.id)!;
+  const cc = defaultHmiContent({ io: cio, addresses: cAddr, machineName: 'Sorter', spec: 'Sorting conveyor, converted, no touch panel.' });
+  assert.deepEqual(cc.estops?.map((e) => e.address), [C(/E-stop/)], 'the E-stop contact stands in for Safety OK');
+  const cr = programWithCycle({ content: cc, spec: 'Sorting conveyor.', panel: false });
+  const SAFEc = cr.base.internal.safe;
+  const safeRung = cr.program.rungs.find((g) => g.outputs.some((o) => o.type === 'OUT' && o.address === SAFEc))!;
+  assert.ok(safeRung.branches.some((b) => b.some((e) => 'address' in e && e.address === C(/E-stop/))) && !safeRung.branches.some((b) => b.some((e) => 'address' in e && e.address === 'SC1')), 'Safety OK from the E-stop, not "always on"');
+  assert.ok(cr.notes.some((n) => /The PLC is not a safety device/.test(n)));
+  assert.deepEqual(panelOnlyReads(cr.program), [], 'converted, no panel: no panel bit read');
+  const cs = createSimulator(cr.program);
+  cs.setInput(C(/E-stop/), true); cs.setInput(C(/^Stop/), true); cs.run(300);
+  cs.setInput(C(/^Start/), true); cs.run(100); cs.setInput(C(/^Start/), false); cs.run(300);
+  assert.equal(cs.readBit(C(/Conveyor motor/)), true, 'Start runs the conveyor');
+  cs.setInput(C(/E-stop/), false); cs.run(100);
+  assert.equal(cs.readBit(C(/Conveyor motor/)), false, 'E-stop pressed: the conveyor stops');
+}
+
 console.log('noPanel.test: all assertions passed');

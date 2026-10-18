@@ -68,6 +68,8 @@ export interface HmiContent {
   machineName: string;
   actuators: HmiActuator[];
   safetyOk?: HmiPoint;
+  /** No safety relay input: the E-stop contacts the PLC reads directly (NC, ON = not pressed) stand in for Safety OK. */
+  estops?: HmiPoint[];
   /** Input that counts parts (part-at-end photo-eye, product sensor). */
   partSensor?: HmiPoint;
   analogs: HmiAnalog[];
@@ -211,6 +213,8 @@ export function defaultHmiContent(opts: {
   for (const x of twoHand) used.add(x.address);
   const safety = inputs.find((x) => typeOf(x) === 'safety-relay-output' && !/\blight\s*curtain\b.*\b(clear|ossd)\b/i.test(x.p.description));
   if (safety) used.add(safety.address);
+  const estops = safety ? [] : inputs.filter((x) => typeOf(x) === 'estop-contact' || (/\b(e-?stop|emergency stop)\b/i.test(x.p.description) && !/\b(ok|relay|healthy|reset)\b/i.test(x.p.description) && typeOf(x) !== 'pushbutton-no'));
+  for (const x of estops) used.add(x.address);
   const part = inputs.find((x) => !used.has(x.address) && (typeOf(x) === 'sensor-pnp' || typeOf(x) === 'sensor-npn') && PART.test(x.p.description));
   if (!safety) questions.push('The I/O list has no "Safety OK" input from the safety relay: the HMI cannot show the safety state until one is added.');
 
@@ -269,6 +273,7 @@ export function defaultHmiContent(opts: {
     machineName: opts.machineName.trim() || 'Machine',
     actuators,
     ...(safety ? { safetyOk: point(safety) } : {}),
+    ...(estops.length ? { estops: estops.map(point) } : {}),
     ...(part ? { partSensor: point(part) } : {}),
     ...(twoHand.length ? { twoHand: twoHand.map(point) } : {}),
     ...(alarmInputs.length ? { alarmInputs } : {}),
