@@ -243,8 +243,8 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   const f = model.fan;
   if (f?.dc) {
     out.push(f.thermostat
-      ? { start: rail, end: rail, els: [{ t: 'contact', nc: false, tag: f.thermostat, term: '1-2', dev: 'relay' }, { t: 'box', tag: f.tag, left: '+', right: '-' }], wires: ['24+', f.tag, '0V'], desc: [`ENCLOSURE FILTER FAN ${f.tag}`, `THERMOSTAT ${f.thermostat} CLOSES ON RISE (SET ~35 °C)`], key: `rung:${f.tag}` }
-      : { start: rail, end: rail, els: [{ t: 'box', tag: f.tag, left: '+', right: '-' }], wires: ['24+', '0V'], desc: [`ENCLOSURE FILTER FAN ${f.tag}`, 'RUNS WITH THE CONTROL POWER'], key: `rung:${f.tag}` });
+      ? { start: rail, end: rail, els: [{ t: 'contact', nc: false, tag: f.thermostat, term: '1-2', dev: 'relay' }, { t: 'box', tag: f.tag, left: '+', right: '-', label: 'FAN' }], wires: ['24+', f.tag, '0V'], desc: [`ENCLOSURE FILTER FAN ${f.tag}`, `THERMOSTAT ${f.thermostat} CLOSES ON RISE (SET ~35 °C)`], key: `rung:${f.tag}` }
+      : { start: rail, end: rail, els: [{ t: 'box', tag: f.tag, left: '+', right: '-', label: 'FAN' }], wires: ['24+', '0V'], desc: [`ENCLOSURE FILTER FAN ${f.tag}`, 'RUNS WITH THE CONTROL POWER'], key: `rung:${f.tag}` });
   }
   const coils = model.io.filter((p) => p.coilChain);
   if (coils.length && out.length) out.push({ start: { kind: 'node', label: '' }, end: { kind: 'node', label: '' }, els: [], wires: [], desc: [] });

@@ -285,7 +285,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   const sealed = /^4X?$/.test(rating);
   const coolVendors = [...new Set([...(input.pref ?? DEFAULT_PREFERENCE).enclosure, 'automationdirect' as const])];
   const acVolts = supply === '120VAC-1PH' ? '115' : supply === '230VAC-1PH' ? '230' : best.components.some((c) => getPart(c.partNumber)?.ratings.kind === 'transformer') ? '115' : undefined;
-  let heat = heatOf(best);
+  const heat = heatOf(best);
   const cooling: DesignComponent[] = [];
   if (heat.ventilation) {
     const v = heat.ventilation;
@@ -295,7 +295,8 @@ export function generateDesign(input: EngineInput): EngineResult {
       const th = pickFanThermostat();
       const dc = dcFanAmps(fan.fan) !== null;
       cooling.push(comp('FAN1', fan.fan.partNumber, 1, `Filter fan (inlet, low on the left wall) — ${Math.round(fan.airflowM3h)} m³/h with filters >= ${Math.ceil(v.airflowM3h)} m³/h to carry ${Math.round(v.wattsToRemove)} W (${heat.watts.toFixed(0)} W in the cabinet, ${heat.rise!.toFixed(0)} °C rise without it, limit ${ALLOWED_RISE_C} °C)${dc ? `, 24 VDC ${dcFanAmps(fan.fan)!.toFixed(2)} A` : `, ${acVolts} VAC`}`));
-      if (fan.exhaust) cooling.push(comp('FLT1', fan.exhaust.partNumber, 1, `Exhaust filter for FAN1 (outlet, high on the right wall)`));
+      // the outlet filter is the fan's accessory: its tag + F (like fuse cartridges in a holder)
+      if (fan.exhaust) cooling.push(comp('FAN1F', fan.exhaust.partNumber, 1, `Exhaust filter for FAN1 (outlet, high on the right wall)`));
       else notes.push(`FAN1 ${fan.fan.partNumber}: no matching exhaust filter in the catalog — select the maker's outlet filter for it.`);
       if (th) cooling.push(comp('TH1', th.partNumber, 1, `Thermostat for FAN1 — N.O. closes on rise; set to ~35 °C`));
       if (dc) {
@@ -311,7 +312,6 @@ export function generateDesign(input: EngineInput): EngineResult {
         notes.push(`Enclosure ${bigger.enc.partNumber} instead of ${best.enc.partNumber}: ${heat.watts.toFixed(0)} W would raise the ${best.enc.partNumber} ${heat.rise!.toFixed(0)} °C (limit ${ALLOWED_RISE_C} °C)${sealed ? ` and a ${inputs.enclosureRating} enclosure takes no filter fan` : ' and no catalog filter fan fits'}; the larger enclosure sheds it through its walls.`);
         best = bigger;
         choice = { ...choice, used: bigger.enc.partNumber };
-        heat = heatOf(best);
       } else {
         const hx = pickHeatExchanger(v.wattsToRemove, ALLOWED_RISE_C, { nema: rating, vendors: coolVendors });
         const ac = hx ? null : pickAirConditioner(v.wattsToRemove, { nema: rating, vendors: coolVendors });
