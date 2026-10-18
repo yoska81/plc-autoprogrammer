@@ -3,7 +3,8 @@ import { PLC_PROFILES } from '../core/profiles';
 import { useProjectStore } from '../../store/useProjectStore';
 import { usePlc } from '../core/usePlc';
 import { useIOStore } from '../../store/useIOStore';
-import { hardwareShortfall, ioNeed, modulesToFit, platformOf } from '../core/fit';
+import { modulesToFit, platformOf } from '../core/fit';
+import { hardwareShortfall, needFromIo } from '../../spec/equipmentRules';
 
 export default function PlcSetupPage() {
   const setPlc = useProjectStore((s) => s.setPlc);
@@ -17,7 +18,7 @@ export default function PlcSetupPage() {
   // from an empty rack and takes its first CPU that holds the list. Nothing fits: the CPU is still set and
   // the shortfall is shown below (never applied silently).
   const choose = (plcId: string, cpuId: string) => {
-    const need = ioNeed(io);
+    const need = needFromIo(io, false, 0);
     const sameRack = plcId === profile.id && platformOf(cpuId)?.id === platformOf(cpu.id)?.id;
     const keep = sameRack ? modules : [];
     setPlc(plcId, cpuId);
@@ -25,7 +26,7 @@ export default function PlcSetupPage() {
   };
   const chooseBrand = (plcId: string, defaultCpuId: string) => {
     const p = PLC_PROFILES.find((x) => x.id === plcId);
-    const need = ioNeed(io);
+    const need = needFromIo(io, false, 0);
     const first = io.length ? [defaultCpuId, ...(p?.cpuModels.map((c) => c.id) ?? [])].find((id) => modulesToFit(id, [], need)) : undefined;
     choose(plcId, first ?? defaultCpuId);
   };

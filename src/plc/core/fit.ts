@@ -62,20 +62,6 @@ export function analogShortfall(cpu: CpuModel, modules: string[], need: Need): {
   return first ? { ...first, total } : null;
 }
 
-/** What an I/O list needs of the PLC: point counts by kind and the analog signal ranges. */
-export function ioNeed(io: { type: string; signal?: string; analog?: { range: AnalogRange } }[]): Need {
-  const n = (type: string, analog: boolean) => io.filter((p) => p.type === type && (p.signal === 'analog') === analog).length;
-  return { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: false, minHmiSizeIn: null, analogRanges: analogRangesOf(io) };
-}
-
-/** Why the CPU and modules cannot hold the I/O list ("6 inputs short…"), or null when they can (or nothing is known). */
-export function hardwareShortfall(cpuId: string, modules: string[], io: Parameters<typeof ioNeed>[0]): string | null {
-  const cpu = io.length ? findCpu(cpuId) : null;
-  if (!cpu) return null;
-  const f = cpuFit(cpu, modules, ioNeed(io));
-  return f.ok ? null : f.reason ?? 'The CPU and its modules cannot hold the I/O list.';
-}
-
 const shortfallText = (s: { kind: string; family: string; count: number }) => `No ${s.family} analog ${s.kind} for ${s.count} ${s.family} signal${s.count === 1 ? '' : 's'}.`;
 
 export interface Fit { ok: boolean; reason: string | null; spareIn: number; spareOut: number }

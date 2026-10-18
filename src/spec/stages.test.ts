@@ -1,7 +1,8 @@
 // npx tsx src/spec/stages.test.ts — stage staleness when the PLC (and so the I/O addresses) changes.
 import assert from 'node:assert/strict';
 import { addressFingerprint, computeStages, ioFingerprint } from './useStages';
-import { hardwareShortfall, ioNeed, modulesToFit } from '../plc/core/fit';
+import { modulesToFit } from '../plc/core/fit';
+import { hardwareShortfall, needFromIo } from './equipmentRules';
 import type { IOPoint } from '../types/io';
 import type { SpecSections } from './types';
 
@@ -77,7 +78,7 @@ assert.equal(regionRun.program.status, 'ready');
   assert.ok(short, 'no built-in I/O and no modules: short');
   assert.equal(hardwareShortfall('5069-L310ER', ['5069-IB16', '5069-OB16'], io), null, 'with modules it holds the list');
   assert.equal(hardwareShortfall('5069-L310ER', [], []), null, 'no I/O list yet: nothing to check');
-  const mods = modulesToFit('5069-L310ER', [], ioNeed(io));
+  const mods = modulesToFit('5069-L310ER', [], needFromIo(io, false, 0));
   assert.ok(mods?.length && hardwareShortfall('5069-L310ER', mods, io) === null, 'modules are found that fit');
   const st = computeStages({ fp: fp(click), sources: sources(click), ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true, hardwareShort: short });
   assert.equal(st.equipment.status, 'stale');

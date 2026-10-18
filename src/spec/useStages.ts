@@ -10,7 +10,7 @@ import { noTouchPanelNow, useNoTouchPanel } from '../hmi/projectPanel';
 import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
-import { hardwareShortfall } from '../plc/core/fit';
+import { hardwareShortfall } from './equipmentRules';
 import { changedSections, fingerprint, type SpecSections } from './types';
 import type { IOPoint } from '../types/io';
 import type { HmiDesign } from '../hmi/types';

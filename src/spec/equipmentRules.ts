@@ -15,6 +15,14 @@ export function needFromIo(io: { type: string; signal?: string; analog?: { range
   return { digitalInputs: up(n('input', false)), digitalOutputs: up(n('output', false)), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi, minHmiSizeIn: null, analogRanges: analogRangesOf(io) };
 }
 
+/** Why the CPU and modules cannot hold the I/O list (cpuFit's reason), or null when they can (or nothing is known). */
+export function hardwareShortfall(cpuId: string, modules: string[], io: Parameters<typeof needFromIo>[0]): string | null {
+  const cpu = io.length ? findCpu(cpuId) : null;
+  if (!cpu) return null;
+  const f = cpuFit(cpu, modules, needFromIo(io, false, 0));
+  return f.ok ? null : f.reason ?? 'The CPU and its modules cannot hold the I/O list.';
+}
+
 export function rulesEquipment(io: { type: string; signal?: string; analog?: { range: AnalogRange } }[], cur: { plcId: string; cpuId: string; modules: string[]; hmiPartNumber: string | null }): (EquipmentChoice & { kept: boolean }) | null {
   const need = needFromIo(io, Boolean(cur.hmiPartNumber));
   const curCpu = findCpu(cur.cpuId);
