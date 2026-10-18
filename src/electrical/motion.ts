@@ -202,8 +202,6 @@ export interface MotionResult {
   axes: ServoAxis[];
   /** Line current of the servo drives (A): a continuous load for the main disconnect. */
   loadA: number;
-  /** 24 VDC drawn by the drives' control circuits (460 V SureServo2), for the control power supply. */
-  dcA: number;
 }
 
 /**
@@ -240,7 +238,7 @@ export function axisWatts(key: string, texts: string[]): number | null {
 
 export function motionDesign(input: MotionInput): MotionResult {
   const pref = input.pref ?? DEFAULT_PREFERENCE;
-  const out: MotionResult = { components: [], ioWiring: [], notes: [], askUser: [], claimed: new Set(), axes: [], loadA: 0, dcA: 0 };
+  const out: MotionResult = { components: [], ioWiring: [], notes: [], askUser: [], claimed: new Set(), axes: [], loadA: 0 };
   const addr = (p: IOPoint) => input.addresses.get(p.id) ?? '';
   // As the engine's Picker: the first (preferred) vendor that has a fitting part, its smallest.
   const pick = (ok: (p: CatalogPart) => boolean, size: (p: CatalogPart) => number = () => 0): CatalogPart | undefined => {
@@ -286,7 +284,6 @@ export function motionDesign(input: MotionInput): MotionResult {
       if (filt) { axis.filter = input.nextTag('FL'); out.components.push(comp(axis.filter, filt.partNumber, 1, `Axis ${key} EMI filter on the drive input (as in the drive manual's wiring diagrams)`, motorTag)); }
       else out.notes.push(`Axis ${key}: the ${series || 'servo'} manual shows an EMI filter on the drive input — add one if the site needs it (CE / sensitive equipment nearby).`);
       out.loadA += inA ?? watts / (info.volts * (info.phases === 3 ? 1.732 : 1) * 0.85);
-      out.dcA += controlInputAmps(drive);
       if (/24\s*V?DC/i.test(String(drive.ratings.controlCircuitVolts ?? '')) && !controlInputAmps(drive)) out.notes.push(`Axis ${key} (${drive.partNumber}): the control circuit runs on 24 VDC — add its current (spec sheet) to the 24 V supply.`);
       // Branch protection: the manual's table (ch. 2.5) gives the maximum breaker / Class CC or J fuse per drive.
       out.notes.push(`Axis ${key} (${drive.partNumber}): check the branch breaker against the maximum in the drive manual's circuit breaker and fuse table (Class CC / J fuses are an alternative).`);
@@ -379,22 +376,37 @@ export function motionDeviceType(p: IOPoint): FieldDeviceType | null {
 
 export interface PlcMotion { hsInputs: string[]; hsKhz?: number; pulseOutputs: string[]; note?: string }
 
-/** "X001-X004" → X001, X002, X003, X004. */
-function addressRange(text: string): string[] {
+/** "X001-X004" → X001, X002, X003, X004; "X1-X8" on slot 1 → X101 … X108 (the app's CLICK addressing: slot digit + point). */
+function addressRange(text: string, slot = 0): string[] {
   const m = /([XY])0*(\d+)\s*-\s*[XY]?0*(\d+)/i.exec(text);
   if (!m) return [];
   const [, k, a, b] = m;
-  return Array.from({ length: Number(b) - Number(a) + 1 }, (_, i) => `${k.toUpperCase()}${String(Number(a) + i).padStart(3, '0')}`);
+  return Array.from({ length: Number(b) - Number(a) + 1 }, (_, i) => `${k.toUpperCase()}${slot}${String(Number(a) + i).padStart(2, '0')}`);
 }
+
+/** A module in a PLC slot, as the electrical model groups the I/O (slot 1 = first module after the CPU). */
+export interface SlotPart { slot: number; part?: CatalogPart }
 
 /**
  * High-speed inputs and pulse outputs of a CPU, from its catalog ratings (hscInputs / hscMaxKHz, ptoAxes /
- * ptoOutputs, ptoNote; source in hscSource). CLICK PLUS pulses are on Y001 / Y003 / Y005 of the option-slot
- * module. Null when the catalog says nothing about high-speed I/O for this CPU (not checked).
+ * ptoOutputs, ptoNote; source in hscSource). CLICK PLUS has none of its own: they are on the option-slot module
+ * (C2-14D1 / C2-08D1-…: pulses on its Y1 / Y3 / Y5, high-speed inputs X1-X8), so they are read from that
+ * module at the slot the app addresses it in (Y101 / Y103 / Y105 in slot 1). Without such a module there are
+ * no pulse outputs. Null when the catalog says nothing about high-speed I/O for this CPU (not checked).
  */
-export function plcMotion(cpu: CatalogPart | undefined): PlcMotion | null {
+export function plcMotion(cpu: CatalogPart | undefined, slots: SlotPart[] = []): PlcMotion | null {
   const r = cpu?.ratings ?? {};
   if (r.hscInputs === undefined && r.ptoAxes === undefined && r.ptoNote === undefined) return null;
+  if (/option slot/i.test(String(r.hscInputs ?? r.ptoOutputs ?? ''))) {
+    const opt = slots.find((x) => /option slot/i.test(String(x.part?.ratings.moduleType ?? '')));
+    const mr = opt?.part?.ratings ?? {};
+    const axes = num(mr.ptoAxes) ?? 0;
+    return {
+      hsInputs: opt ? addressRange(String(mr.hscInputs ?? ''), opt.slot) : [], hsKhz: num(mr.hscMaxKHz),
+      pulseOutputs: opt ? [1, 3, 5].slice(0, axes).map((n) => `Y${opt.slot}0${n}`) : [],
+      note: r.ptoNote ? String(r.ptoNote) : undefined,
+    };
+  }
   const axes = num(r.ptoAxes) ?? 0;
   return {
     hsInputs: addressRange(String(r.hscInputs ?? '')), hsKhz: num(r.hscMaxKHz),
@@ -403,8 +415,8 @@ export function plcMotion(cpu: CatalogPart | undefined): PlcMotion | null {
 }
 
 /** Warnings for encoder channels off the high-speed inputs and pulse/direction on a PLC without pulse outputs. */
-export function motionWarnings(cpu: CatalogPart | undefined, cpuPn: string, io: { address: string; deviceType: string; description: string; deviceTag: string }[]): string[] {
-  const cap = plcMotion(cpu);
+export function motionWarnings(cpu: CatalogPart | undefined, cpuPn: string, io: { address: string; deviceType: string; description: string; deviceTag: string }[], slots: SlotPart[] = []): string[] {
+  const cap = plcMotion(cpu, slots);
   if (!cap) return [];
   const w: string[] = [];
   const slow = io.filter((p) => p.deviceType === 'encoder' && !cap.hsInputs.includes(p.address.toUpperCase()));
@@ -417,8 +429,8 @@ export function motionWarnings(cpu: CatalogPart | undefined, cpuPn: string, io: 
   const off = pulses.filter((p) => !cap.pulseOutputs.includes(p.address.toUpperCase()));
   if (off.length) {
     w.push(cap.pulseOutputs.length
-      ? `${off.map((p) => `${p.deviceTag} ${p.address}`).join(', ')}: pulse output not on a pulse-train output of the ${cpuPn} (${cap.pulseOutputs.join(' / ')} on the option-slot module) — move it there.`
-      : `${off.map((p) => `${p.deviceTag} ${p.address}`).join(', ')}: the ${cpuPn} has no pulse-train output — use a CLICK PLUS CPU with a C2-14D1 / C2-14D2 / C2-08D1 option-slot module (pulse on Y001 / Y003 / Y005), or command the servo over Modbus.`);
+      ? `${off.map((p) => `${p.deviceTag} ${p.address}`).join(', ')}: pulse output not on a pulse-train output of the ${cpuPn} (${cap.pulseOutputs.join(' / ')}) — move it there.`
+      : `${off.map((p) => `${p.deviceTag} ${p.address}`).join(', ')}: the ${cpuPn} has no pulse-train output — use a C2-14D1 / C2-14D2 / C2-08D1 option-slot module on a CLICK PLUS CPU (pulses on its Y1 / Y3 / Y5), or command the servo over Modbus.`);
   }
   return w;
 }

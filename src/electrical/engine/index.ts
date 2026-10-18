@@ -20,7 +20,7 @@ import { comp, controlPower, mainDisconnect, motorBranches, Tags } from './power
 import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
 import { processLoads } from './process';
 import { num, Picker } from './select';
-import { motionDesign, motionDeviceType } from '../motion';
+import { controlInputAmps, motionDesign, motionDeviceType } from '../motion';
 
 export { defaultMachineModel, type MachineModel } from './machineModel';
 
@@ -69,6 +69,7 @@ export function dcLoad(components: DesignComponent[], getPart: EngineInput['getP
     if (!p) continue;
     if (p.category === 'solenoidValve') a += ((num(p.ratings.watts) ?? 2) / 24) * c.quantity;
     else if (p.category === 'contactor' && !/24/.test(String(p.ratings.coilVoltage ?? ''))) continue;
+    else if (p.category === 'servoDrive') a += controlInputAmps(p) * c.quantity; // 460 V drives: control circuit on 24 VDC
     else a += (DC_LOAD_A[p.category] ?? 0) * c.quantity;
   }
   const hmi = hmiPartNumber ? getHmi(hmiPartNumber) : undefined;
@@ -167,7 +168,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   // a button of a station (PB1L / PB1R on station PB1) is the station's part, not an uncatalogued sensor
   const compOf = (tag: string) => dev.components.find((c) => c.tag === tag) ?? dev.components.find((c) => tag.startsWith(c.tag) && /^[A-Z]$/.test(tag.slice(c.tag.length)));
   const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(compOf(w.deviceTag)?.partNumber ?? '')).length;
-  const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...motion.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs) + motion.dcA;
+  const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...motion.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
   const ctl = controlPower(pk, tags, supply, loadA);
   notes.push(...ctl.notes);
 

@@ -19,21 +19,25 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const y0 = AREA.y + 24;
   const pitch = 10;
   const tb = stripTag(plan.ctx.designations, 1);
-  const pullUps = P ? [
-    ...(a.terminals.some((t) => t.role === 'pulse') ? [[P.pulse.pullHi, '24+', 'PULL HI_P — PULSE INPUT PULL-UP (OPEN COLLECTOR)']] : []),
-    ...(a.terminals.some((t) => t.role === 'direction') ? [[P.direction.pullHi, '24+', 'PULL HI_S — SIGN INPUT PULL-UP (OPEN COLLECTOR)']] : []),
-    [P.com, '24+ / 0V', 'COM+ — DIGITAL INPUT COMMON'],
+  // Rows: drive terminal, wire number, function, and where the wire comes from (its real source).
+  const tbOf = (wire: string) => `${tb} ${wire}`;
+  const pullUps: string[][] = P ? [
+    ...(a.terminals.some((t) => t.role === 'pulse') ? [[P.pulse.pullHi, '24+', 'PULL HI_P — PULSE INPUT PULL-UP (OPEN COLLECTOR)', tbOf('24+')]] : []),
+    ...(a.terminals.some((t) => t.role === 'direction') ? [[P.direction.pullHi, '24+', 'PULL HI_S — SIGN INPUT PULL-UP (OPEN COLLECTOR)', tbOf('24+')]] : []),
+    [P.com, '24+ / 0V', 'COM+ — DIGITAL INPUT COMMON', tbOf('24+ / 0V')],
   ] : [];
   // STO channels from their own safety-relay outputs; FDBK in the relay's S33-S34 feedback loop.
   const relayTag = plan.model.safety.relay?.tag ?? 'SR';
-  const sto = P && a.sto ? [
-    [P.sto.aPlus, a.sto.a.wire, `STO_A+ — SAFE TORQUE OFF CH A (${a.sto.a.from.replace(/^TB1 /, '')})`], [P.sto.aMinus, '0V', '/STO_A'],
-    [P.sto.bPlus, a.sto.b.wire, `STO_B+ — SAFE TORQUE OFF CH B (${a.sto.b.from})`], [P.sto.bMinus, '0V', '/STO_B'],
-    // the feedback loop's own wire numbers on FDBK+ / FDBK- (wire list)
-    [P.sto.fbPlus, plan.model.wires.find((w) => w.to === `${d.tag}:${P.sto.fbPlus}`)?.wire ?? 'S33', `FDBK+ — STO FEEDBACK IN ${relayTag} S33-S34 LOOP (S33 SIDE)`],
-    [P.sto.fbMinus, plan.model.wires.find((w) => w.from === `${d.tag}:${P.sto.fbMinus}`)?.wire ?? 'S34', `FDBK- — TOWARD ${relayTag} S34`],
+  const fbIn = P && plan.model.wires.find((w) => w.to === `${d.tag}:${P.sto.fbPlus}`);
+  const fbOut = P && plan.model.wires.find((w) => w.from === `${d.tag}:${P.sto.fbMinus}`);
+  const sto: string[][] = P && a.sto ? [
+    [P.sto.aPlus, a.sto.a.wire, `STO_A+ — SAFE TORQUE OFF CH A (${a.sto.a.from.replace(/^TB1 /, '')})`, a.sto.a.from], [P.sto.aMinus, '0V', '/STO_A', tbOf('0V')],
+    [P.sto.bPlus, a.sto.b.wire, `STO_B+ — SAFE TORQUE OFF CH B (${a.sto.b.from})`, a.sto.b.from], [P.sto.bMinus, '0V', '/STO_B', tbOf('0V')],
+    // the feedback loop's own wire numbers on FDBK+ / FDBK- (wire list), and the devices they come from / go to
+    [P.sto.fbPlus, fbIn?.wire ?? 'S33', `FDBK+ — STO FEEDBACK IN ${relayTag} S33-S34 LOOP (S33 SIDE)`, fbIn?.from ?? `${relayTag}:S33`],
+    [P.sto.fbMinus, fbOut?.wire ?? 'S34', `FDBK- — TOWARD ${relayTag} S34`, fbOut?.to ?? `${relayTag}:S34`],
   ] : [];
-  const ctl = P && a.control === '24V' ? [['24V', '24+', 'CONTROL POWER 24 VDC (460 V DRIVE)'], ['0V', '0V', 'CONTROL POWER 0 V']] : [];
+  const ctl: string[][] = P && a.control === '24V' ? [['24V', '24+', 'CONTROL POWER 24 VDC (460 V DRIVE)', tbOf('24+')], ['0V', '0V', 'CONTROL POWER 0 V', tbOf('0V')]] : [];
   const fixed = [...pullUps, ...ctl, ...sto];
   const boxH = Math.max(40, (a.terminals.length + fixed.length) * pitch + 14);
   // Each device with its tag as its own text (the CAD export turns a text equal to a tag into a device reference).
@@ -60,11 +64,11 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
           </g>
         );
       })}
-      {fixed.map(([term, wire, fn], i) => {
+      {fixed.map(([term, wire, fn, from], i) => {
         const y = y0 + 8 + (a.terminals.length + i) * pitch;
         return (
           <g key={term}>
-            <Txt x={X.plc} y={y + 0.9} size={2.3} mono bold>{`${tb} ${wire}`}</Txt>
+            <Txt x={X.plc} y={y + 0.9} size={2.3} mono bold>{from}</Txt>
             <Line x1={X.plc + 20.7} y1={y} x2={X.drv} y2={y} />
             <WireNo x={(X.plc + X.drv) / 2 + 6} y={y} n={wire.split(' ')[0]} />
             <Txt x={X.drv + 2} y={y + 0.9} size={2.4} mono bold>{term}</Txt>
@@ -72,7 +76,7 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
           </g>
         );
       })}
-      <Txt x={X.drv + 15} y={y0 + boxH + 4} size={2.0} anchor="middle" bold>{a.sto ? 'SAFETY STOP: STO, TWO CHANNELS + FEEDBACK' : 'STO NOT WIRED — NO SAFETY RELAY'}</Txt>
+      <Txt x={X.drv + 15} y={y0 + boxH + 4} size={2.0} anchor="middle" bold>{a.sto ? 'SAFETY STOP: STO, TWO CHANNELS + FEEDBACK' : a.stoMissing === 'no-output' ? 'STO NOT WIRED — NO FREE SAFETY OUTPUT' : 'STO NOT WIRED — NO SAFETY RELAY'}</Txt>
       {/* power path */}
       <Txt x={right} y={AREA.y + 20} size={2.6} bold>POWER</Txt>
       {chain.map(([ctag, ctext], i) => {

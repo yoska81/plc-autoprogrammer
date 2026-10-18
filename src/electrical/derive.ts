@@ -587,10 +587,24 @@ function outputStyleOf(pn: string | undefined, part: CatalogPart | undefined): I
   const explicit = part?.ratings.outputStyle;
   if (explicit === 'sourcing' || explicit === 'sinking' || explicit === 'relay') return explicit;
   const r = str(part?.ratings, 'outputType', 'outputs', 'output');
+  // The catalog's output type wins over the description ("8 DC sinking/sourcing inputs … relay outputs").
+  if (/^\s*relay\b/i.test(r ?? '')) return 'relay';
+  if (/^\s*sinking\b/i.test(r ?? '')) return 'sinking';
+  if (/^\s*sourcing\b/i.test(r ?? '')) return 'sourcing';
   const s = `${r ?? ''} ${part?.description ?? ''} ${pn ?? ''}`.toLowerCase();
   if (/sinking|nPN|dd1|td1/i.test(s)) return 'sinking';
   if (/relay|dre|dr-|tr\b|-tr/i.test(s) && !/sourcing/.test(s)) return 'relay';
   return 'sourcing';
+}
+
+/** A safety relay's N.O. safety outputs, in the usual numbering. */
+const SAFETY_OUTPUTS = [['13', '14'], ['23', '24'], ['33', '34'], ['43', '44']];
+
+/** Number of N.O. safety outputs from the catalog rating: 3, "(3) N.O.", "3 N.O. relay", "3 NO (relay)" … (2 if unknown). */
+export function safetyOutputCount(v: string | number | undefined): number {
+  if (typeof v === 'number') return v;
+  const m = /(\d+)\s*\)?\s*(?:x\s*)?N\.?\s*O\b/i.exec(String(v ?? ''));
+  return m ? Number(m[1]) : 2;
 }
 
 function letter(i: number): string { return i === 0 ? '' : String.fromCharCode(64 + i); }
@@ -690,8 +704,12 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     ?? pbs.find((c) => /reset/i.test(c.comp.function));
   const reset = resetRc?.tag ?? ioW.find((w) => /reset/i.test(w.description) && w.deviceType === 'pushbutton-no')?.deviceTag;
   const mcr = byCat(rc, 'relay').find((c) => /master|mcr|safety/i.test(`${c.comp.function} ${c.tag}`));
-  // Servo drives with STO: their FDBK output is in the S33-S34 feedback loop too (SureServo2 manual 3.11.3).
-  const stoDrives = rc.filter((c) => isServoDrive(c.part) && servoPins(c.part));
+  // Servo STO: channel A from the relay's 13-14, channel B from the next N.O. safety output that is free
+  // (23-24 carries the PLC status input when there is one). With both wired, the drive's FDBK output is in
+  // the S33-S34 feedback loop too (SureServo2 manual 3.11.3); with no free output STO stays unwired (warning).
+  const relayOuts = relay ? safetyOutputCount(relay.part?.ratings.safetyOutputs) : 0;
+  const stoFree = relay ? SAFETY_OUTPUTS.slice(0, relayOuts)[ioW.some((w) => w.deviceType === 'safety-relay-output') ? 2 : 1] : undefined;
+  const stoDrives = stoFree ? rc.filter((c) => isServoDrive(c.part) && servoPins(c.part)) : [];
   const edm = [...(mcr ? [mcr.tag] : motors.flatMap((m) => m.contactors.map((c) => c.tag))), ...(relay ? stoDrives.map((c) => c.tag) : [])];
   const hasSafety = !!relay || estopTags.length > 0;
   // N.C. auxiliary contacts for EDM feedback and reversing interlocks. Front block SZ-A11T: N.O. 53-54,
@@ -1203,19 +1221,17 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   // Servo axes: power, STO and each PLC signal on its drive terminal (electrical/servoWiring.ts).
   const servoOut = groups.find((g) => g.type === 'output' && g.points.some((p) => p.deviceType === 'servo-drive'))?.outputStyle ?? 'sinking';
   const servoIn = groups.find((g) => g.type === 'input' && g.points.some((p) => p.deviceType === 'servo-drive'))?.commonTo === '24+' ? '24+' : '0V';
-  // STO channels: A from the safety-switched 24 V (relay 13-14), B from a second safety output of the relay.
+  // STO channels, each straight from a safety-relay output: A from 13-14 (the 24+S it feeds when there is no
+  // MCR; with an MCR, 24+S comes through a standard relay contact, so A taps SR14 at the relay), B from a free output.
   let sto: StoFeed | null = null;
-  if (relay && servoBase.length) {
-    // The relay's N.O. safety outputs 13-14, 23-24, 33-34 …: 13-14 feeds 24+S, 23-24 the PLC status input when there is one.
-    const nOut = Number(/\((\d+)\)\s*N\.?O/i.exec(String(relay.part?.ratings.safetyOutputs ?? ''))?.[1] ?? 2);
-    const outputs = [['13', '14'], ['23', '24'], ['33', '34'], ['43', '44']].slice(0, nOut);
-    const free = outputs.slice(safety.statusInput ? 2 : 1)[0];
-    if (free) {
-      addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:${free[0]}`, color: 'BU', size: '18 AWG', function: 'STO channel B supply (second safety output)' });
-      sto = { a: { wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}` }, b: { wire: `SR${free[1]}`, from: `${relay.tag}:${free[1]}` } };
-    }
+  if (relay && servoBase.length && stoFree) {
+    addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:${stoFree[0]}`, color: 'BU', size: '18 AWG', function: 'STO channel B supply (second safety output)' });
+    sto = {
+      a: mcr ? { wire: 'SR14', from: `${relay.tag}:14` } : { wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}` },
+      b: { wire: `SR${stoFree[1]}`, from: `${relay.tag}:${stoFree[1]}` },
+    };
   }
-  const servo = servoControls(servoBase, io, servoOut, servoIn, sto, pe, phases);
+  const servo = servoControls(servoBase, io, servoOut, servoIn, sto, relay ? 'no-output' : 'no-relay', pe, phases);
   for (const sw of servo.wires) addWire(sw);
 
   // IO wires
@@ -1244,8 +1260,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         const sig = p.deviceType === 'encoder' ? encoderChannel(p.description) ?? 'A' : s3 ? 'BK' : pinOf(tag, 'NO');
         addWire({ wire: p.address, from: `${tag}:${sig}`, to: p.signalTerminal, color: s3 ? `${p.deviceType === 'encoder' ? sig : 'BK'} (cable)` : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
-        if (p.supplyTerminal) addWire({ wire: '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '+V' : s3 ? 'BN' : pinOf(tag, 'C')}`, color: s3 ? 'BN (cable)' : 'BU', size: '18 AWG', function: `${tag} supply` });
-        if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '0V' : 'BU'}`, color: p.deviceType === 'encoder' ? 'WH (cable)' : 'BU (cable)', size: '18 AWG', function: `${tag} 0V` });
+        if (p.supplyTerminal) addWire({ wire: '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '+V' : s3 ? 'BN' : pinOf(tag, 'C')}`, color: s3 ? 'BN (cable)' : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: `${tag} supply` });
+        if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '0V' : 'BU'}`, color: p.deviceType === 'encoder' ? 'WH (cable)' : 'BU (cable)', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: `${tag} 0V` });
       } else {
         addWire({ wire: '24+', from: 'TB1 24+', to: `${tag}:C`, color: 'BU', size: '18 AWG', function: `${tag} supply` });
         addWire({ wire: p.address, from: `${tag}:${p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO'}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
@@ -2877,7 +2893,13 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (m.motors.some((x) => x.vfd)) w.push('VFD: enter the drive parameters marked NAMEPLATE / SET ON SITE on the drive sheets at commissioning; Safe Torque Off is not used (factory jumper) unless the risk assessment calls for it.');
   const noWiring = m.io.filter((p) => !p.wiring);
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
-  w.push(...motionWarnings(ctx.getPart(ctx.plc.cpuPartNumber), ctx.plc.cpuPartNumber, m.io));
+  for (const a of m.servos.filter((x) => !x.sto && x.stoMissing)) {
+    w.push(a.stoMissing === 'no-relay'
+      ? `${a.drive.tag}: Safe Torque Off (STO) is not wired because the design has no safety relay — the servo drive cannot run without it. Add a safety relay with at least two N.O. safety outputs.`
+      : `${a.drive.tag}: the safety relay ${m.safety.relay?.tag ?? ''} has no free N.O. safety output for the second STO channel — STO is not wired and the drive cannot run. Choose a safety relay with more safety outputs, or take the PLC status signal from its N.C. auxiliary contact.`);
+  }
+  const slots = m.groups.flatMap((g) => { const n = Number(/:(\d+)$/.exec(g.key)?.[1]); return n > 0 ? [{ slot: n, part: g.partNumber ? ctx.getPart(g.partNumber) : undefined }] : []; });
+  w.push(...motionWarnings(ctx.getPart(ctx.plc.cpuPartNumber), ctx.plc.cpuPartNumber, m.io, slots));
   // Analog points (DF) are in ctx.io but not in the discrete m.io.
   const extra = ctx.design.ioWiring.filter((x) => !m.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase()) && !(/^DF\d+$/i.test(x.address) && ctx.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase())));
   if (extra.length) w.push(`ioWiring entries not in the project I/O list: ${extra.map((x) => x.address).join(', ')}.`);

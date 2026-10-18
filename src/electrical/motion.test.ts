@@ -12,12 +12,14 @@ import { planDrawings } from './drawings/plan';
 import { ServoSheet } from './drawings/sheets/ServoSheet';
 import { generateDefaultDesign } from './engine';
 import { getPart as catalogPart } from './catalog';
-import { billOfMaterials, buildModel, cableSchedule, designWarnings, panelLayout, terminalPlan, wireNumbers, type DrawingContext } from './derive';
+import { billOfMaterials, buildModel, cableSchedule, designWarnings, panelLayout, safetyOutputCount, terminalPlan, wireNumbers, type DrawingContext } from './derive';
+import { calculations } from '../deliverables/docs/calcs';
+import type { ProjectSnapshot } from '../deliverables/collect';
 import { analogSetup } from '../plc/core/analog';
 import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
-import { axisKey, encoderChannel, motionDesign, servoRole } from './motion';
+import { axisKey, encoderChannel, motionDesign, plcMotion, servoRole } from './motion';
 import { SERVO_IO } from './motion.fixture';
 import { cabinetHeat } from './thermal';
 import type { IOPoint } from '../types/io';
@@ -116,7 +118,7 @@ assert.ok(wireNumbers(ctx).length > 0);
 assert.ok(cableSchedule(ctx).length > 0);
 const warns = designWarnings(ctx);
 assert.ok(!warns.some((w) => /encoder channel not on a high-speed input/.test(w)), 'encoder on X001/X002');
-assert.ok(warns.some((w) => /has no pulse-train output — use a CLICK PLUS CPU with a C2-14D1/.test(w)), 'CLICK C0 has no pulse output: said so');
+assert.ok(warns.some((w) => /has no pulse-train output — use a C2-14D1/.test(w)), 'CLICK C0 has no pulse output: said so');
 const gaps = designWarnings(ctx).filter((w) => /no PLC output drives|not found in the catalog|without wiring|over capacity/i.test(w));
 assert.deepEqual(gaps, [], 'no design gaps');
 // 480 V machine: a 460 V drive takes 24 VDC control power (never the AC line on its control terminals), and its
@@ -134,6 +136,63 @@ assert.deepEqual(gaps, [], 'no design gaps');
   const load4 = Number(/load (\d+\.\d) A/.exec(r4.design.components.find((c) => c.tag === 'PS1')!.function)![1]);
   const load2 = Number(/load (\d+\.\d) A/.exec(r.design.components.find((c) => c.tag === 'PS1')!.function)![1]);
   assert.ok(load4 >= load2 + 1.1, `drive control current in the 24 V load (${load2} → ${load4} A)`);
+  // The calculations document counts the same current.
+  const calc = calculations({ electrical: r4.design, info: { region: 'US' }, hmi: null } as unknown as ProjectSnapshot);
+  assert.ok(calc.flatMap((c) => c.lines).some((l) => l.item.startsWith(`${d4!.tag} SV2A-4040`) && /1\.17 A/.test(l.value)), 'drive 24 V control current in the calculations');
+}
+
+// Safety relay outputs in every catalog format; STO always straight from safety outputs.
+assert.equal(safetyOutputCount('(3) N.O.'), 3);
+assert.equal(safetyOutputCount('3 N.O. relay'), 3);
+assert.equal(safetyOutputCount('3 NO (relay)'), 3);
+assert.equal(safetyOutputCount('3 NO relay'), 3);
+assert.equal(safetyOutputCount(3), 3);
+assert.equal(safetyOutputCount('2 N.O. relay'), 2);
+{
+  const sr = r.design.components.find((c) => getPart(c.partNumber)?.category === 'safetyRelay' && /^SR/.test(c.tag))!;
+  const swap = (pn: string, extra: typeof r.design.components = []) => {
+    const c2: DrawingContext = { ...ctx, design: { ...r.design, components: [...r.design.components.map((c) => (c === sr ? { ...c, partNumber: pn } : c)), ...extra] } };
+    return { c2, mm: buildModel(c2) };
+  };
+  // AB 440R-S13R2 ("3 N.O. relay") with the PLC status on 23-24: STO_B on 33-34.
+  const ab = swap('440R-S13R2').mm;
+  assert.ok(ab.wires.some((w) => w.from === `${sr.tag}:34` && w.to === `${drive}:CN10-5`), 'STO_B from 33-34 on a "3 N.O. relay" relay');
+  // A 2-output relay with the status input on 23-24: nothing free for STO_B — not wired, FDBK out of the loop, warned.
+  const two = swap('440R-S12R2');
+  assert.ok(!two.mm.wires.some((w) => w.to === `${drive}:CN10-3` || w.to === `${drive}:CN10-5`), 'no STO wire without a free safety output');
+  assert.ok(!two.mm.safety.edm.includes(drive), 'FDBK not in the loop when STO is not wired');
+  assert.equal(two.mm.servos[0].stoMissing, 'no-output');
+  assert.ok(designWarnings(two.c2).some((w) => /no free N\.O\. safety output for the second STO channel/.test(w)), 'warned: no free safety output');
+  // With an MCR, 24+S comes through a standard relay contact: STO_A taps the safety output 13-14 itself.
+  const mcr = swap(sr.partNumber, [{ tag: 'CR9', partNumber: 'KPR-SCS-24VACDC-1', quantity: 1, function: 'Master control relay', motorTag: null }]).mm;
+  assert.ok(mcr.safety.mcr, 'MCR in the design');
+  assert.ok(mcr.wires.some((w) => w.from === `${sr.tag}:14` && w.to === `${drive}:CN10-3`), 'STO_A straight from the safety relay 13-14 with an MCR');
+  assert.ok(!mcr.wires.some((w) => w.wire === '24+S' && w.to === `${drive}:CN10-3`), 'never 24+S through the MCR');
+}
+// No safety relay: STO not wired and a design warning (the drive can never run).
+{
+  const noSr: DrawingContext = { ...ctx, design: { ...r.design, components: r.design.components.filter((c) => getPart(c.partNumber)?.category !== 'safetyRelay') } };
+  assert.ok(designWarnings(noSr).some((w) => /STO\) is not wired because the design has no safety relay/.test(w)), 'warned: no safety relay');
+}
+// CLICK PLUS: high-speed inputs and pulse outputs are on the option-slot module, addressed in its slot (Y101…).
+{
+  const c2 = getPart('C2-01CPU');
+  const pm = plcMotion(c2, [{ slot: 1, part: getPart('C2-14D1') }]);
+  assert.deepEqual(pm?.pulseOutputs, ['Y101', 'Y103', 'Y105']);
+  assert.equal(pm?.hsInputs[0], 'X101');
+  assert.deepEqual(plcMotion(c2, [{ slot: 1, part: getPart('C2-14DR') }])?.pulseOutputs, [], 'relay option module: no pulses');
+  assert.deepEqual(plcMotion(c2)?.pulseOutputs, [], 'no option module: no pulses');
+  assert.deepEqual(plcMotion(getPart('C0-10DD1E-D'))?.hsInputs.slice(0, 2), ['X001', 'X002']);
+  // The C2-14DR's outputs are relays (catalog outputType), whatever its description says about sinking inputs.
+  const cpuP = getCpu(profile, 'C2-01CPU');
+  const modsP = ['C2-14DR', 'C0-04AD-1', 'C0-16TD1'];
+  const slotsP = moduleSlots(modsP);
+  const addrP = resolveAddresses(profile, cpuP, io, slotsP);
+  const plcP = { ...plc, cpuPartNumber: cpuP.id, cpuLabel: cpuP.label };
+  const rp = generateDefaultDesign({ io, addresses: addrP, spec: '', inputs, plc: plcP, modules: modsP, region: 'US', getPart, hmiPartNumber: null, analog: analogSetup(profile, cpuP, slotsP, io), now: '2026-01-01T00:00:00.000Z', projectName: 'plus' });
+  const ctxP: DrawingContext = { ...ctx, design: rp.design, plc: plcP, io: io.map((p) => ({ address: addrP.get(p.id) ?? '', description: p.description, type: p.type })) };
+  const g14 = buildModel(ctxP).groups.find((g) => g.type === 'output' && g.partNumber === 'C2-14DR');
+  assert.equal(g14?.outputStyle, 'relay', 'C2-14DR outputs are relays');
 }
 
 // A relay-output CPU never gets a pulse train wired: not wired, said so.
