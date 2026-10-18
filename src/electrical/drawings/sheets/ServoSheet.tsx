@@ -29,7 +29,9 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const sto = P && a.sto ? [
     [P.sto.aPlus, a.sto.a.wire, `STO_A+ — SAFE TORQUE OFF CH A (${a.sto.a.from.replace(/^TB1 /, '')})`], [P.sto.aMinus, '0V', '/STO_A'],
     [P.sto.bPlus, a.sto.b.wire, `STO_B+ — SAFE TORQUE OFF CH B (${a.sto.b.from})`], [P.sto.bMinus, '0V', '/STO_B'],
-    [P.sto.fbPlus, 'S33…', `FDBK+ — STO FEEDBACK IN ${relayTag} S33-S34 LOOP (S33 SIDE)`], [P.sto.fbMinus, '…S34', `FDBK- — TOWARD ${relayTag} S34`],
+    // the feedback loop's own wire numbers on FDBK+ / FDBK- (wire list)
+    [P.sto.fbPlus, plan.model.wires.find((w) => w.to === `${d.tag}:${P.sto.fbPlus}`)?.wire ?? 'S33', `FDBK+ — STO FEEDBACK IN ${relayTag} S33-S34 LOOP (S33 SIDE)`],
+    [P.sto.fbMinus, plan.model.wires.find((w) => w.from === `${d.tag}:${P.sto.fbMinus}`)?.wire ?? 'S34', `FDBK- — TOWARD ${relayTag} S34`],
   ] : [];
   const ctl = P && a.control === '24V' ? [['24V', '24+', 'CONTROL POWER 24 VDC (460 V DRIVE)'], ['0V', '0V', 'CONTROL POWER 0 V']] : [];
   const fixed = [...pullUps, ...ctl, ...sto];
