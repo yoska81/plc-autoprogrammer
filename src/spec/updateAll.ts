@@ -294,9 +294,8 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         onStep({ step, status: 'done', message: `${r.program.rungs.length} rungs written.` });
         return true;
       }
-      if (mode === 'quick' || !aiCfg.apiKey) {
-        // Quick (or no AI key) on an existing program: the rules' program becomes a proposal (nothing written by hand
-        // is lost). Without a key the AI update cannot run, and the HMI may just have been rebuilt from the rules.
+      if (mode === 'quick') {
+        // Quick on an existing program: the rules' program becomes a proposal (nothing written by hand is lost).
         const q = await rulesProgram(false);
         prog.setProposal({ program: q.program, explanation: q.explanation, reasoning: null, specUpdate: true });
         onStep({ step, status: 'proposal', message: `A rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.` });
