@@ -4,6 +4,7 @@
 //   pick-and-place, pump skid with analogs.
 // On every page it clicks every safe button (no delete / clear / new project / leave) and records page errors,
 // error banners and failed downloads. Deliverables: every download button, the certification pack and the ZIP.
+// Sealing Head: a practice wiring fault in the simulator found with the meter steps, then the fault log entry.
 //   npm run dev -- --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/journeys.e2e.cjs [machine]
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const JSZip = require('jszip');
@@ -83,7 +84,7 @@ const MACHINES = [
     di: 6, do: 3, ai: 4, ao: 2,
   },
   {
-    key: 'sealclick', name: 'Sealing Head', region: 'United States', enclosure: 'NEMA 4X', online: true,
+    key: 'sealclick', name: 'Sealing Head', region: 'United States', enclosure: 'NEMA 4X', online: true, practice: 'Sealing head down',
     text: 'Sealing head for pouches, washdown area. Two-hand start, light curtain at the front, interlocked guard door at the back, E-stop. Heated seal bar with a type J thermocouple read by the PLC and a separate over-temperature limit. Film unwinder 0.5 HP on a VFD (run and fault only). CLICK PLC C0-11DD2E-D with a C0-08ND3 input module and a C0-04THM thermocouple module, C-more 7 inch screen. Stainless NEMA 4X panel.',
     io: [
       P('Safety relay OK (E-stop, guard door, light curtain)', 'input', 'Safety', 'safety-relay-output'),
@@ -298,6 +299,65 @@ async function journey(browser, mc) {
     fs.writeFileSync(`${OUT}${mc.key}_review.txt`, f.join('\n'));
     log(mc.key, 'critical/major review findings after the build', f.length);
     for (const x of f) console.log('    ', x);
+  });
+  // Troubleshooter: break a sensor wire in the simulator, find it with the guided meter steps, see it logged.
+  if (mc.practice) await step('troubleshoot practice', async () => {
+    const pt = await page.evaluate(async (desc) => {
+      const { collectProject } = await import('/src/deliverables/collect.ts');
+      const { wiringPaths } = await import('/src/troubleshoot/wiringPath.ts');
+      const w = wiringPaths(collectProject().drawingCtx).find((p) => p.type === 'input' && p.description === desc);
+      return w && { address: w.address, wire: w.signal.find((h) => h.kind === 'plc')?.wire };
+    }, mc.practice);
+    if (!pt?.wire) throw new Error(`no wiring path for "${mc.practice}"`);
+    await page.goto(BASE + '/simulate');
+    const bar = page.getByLabel('Practice wiring fault');
+    await bar.waitFor({ timeout: 15000 });
+    await bar.getByLabel('Wire to break').selectOption(pt.wire);
+    await bar.getByLabel('Fault').selectOption('open');
+    await bar.getByRole('button', { name: 'Break this wire' }).click();
+    await bar.getByRole('button', { name: 'Find it with the meter steps' }).click();
+    const panel = page.getByLabel('Fault finding');
+    if (await panel.getByLabel('Point to troubleshoot').inputValue() !== pt.address) problem(mc.key, 'troubleshoot', `the point is not preselected (${pt.address})`);
+    await panel.getByRole('button', { name: `${pt.address} never comes ON` }).click();
+    await panel.getByRole('button', { name: 'Ready' }).click();
+    const trail = [];
+    for (let i = 0; i < 20 && !(await panel.getByRole('status').count()); i++) {
+      const say = (await panel.locator('p[aria-live="polite"]').innerText()).trim();
+      await panel.getByRole('button', { name: 'Take the reading (practice meter)' }).click();
+      const shows = (await panel.getByLabel('Practice meter').innerText()).trim();
+      const yes = panel.getByRole('button', { name: /^Yes/ });
+      const good = (await yes.innerText()).replace(/^Yes,?\s*/, '') === shows;
+      trail.push(`${say.slice(0, 70)} → ${shows}`);
+      await (good ? yes : panel.getByRole('button', { name: 'No', exact: true })).click();
+    }
+    for (const t of trail) console.log('    ', t);
+    const verdict = (await panel.getByRole('status').innerText()).replace(/\s+/g, ' ');
+    log(mc.key, 'verdict', verdict.slice(0, 220));
+    if (!/Found it/.test(verdict)) problem(mc.key, 'troubleshoot', `the steps did not find wire ${pt.wire}: ${verdict.slice(0, 200)}`);
+    if (!verdict.includes(`wire ${pt.wire}`)) problem(mc.key, 'troubleshoot', `the verdict does not name wire ${pt.wire}`);
+    if (trail.length > 6) problem(mc.key, 'troubleshoot', `${trail.length} readings to find one open wire`);
+    await page.screenshot({ path: `${OUT}${mc.key}_troubleshoot_verdict.png`, fullPage: true });
+    const logBox = panel.getByLabel('Fault log');
+    await logBox.getByLabel('Technician name').fill('Q.A.');
+    const entry = (await logBox.locator('li[data-fault-log]').first().innerText()).replace(/\s+/g, ' ');
+    if (!entry.includes(pt.address) || !/practice/.test(entry) || !entry.includes(`wire ${pt.wire}`)) problem(mc.key, 'fault log', `entry: ${entry.slice(0, 200)}`);
+    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 10000 }), logBox.getByRole('button', { name: 'Download CSV' }).click()]);
+    const csv = OUT + mc.key + '_' + d.suggestedFilename();
+    await d.saveAs(csv);
+    if (!fs.readFileSync(csv, 'utf8').includes(pt.address)) problem(mc.key, 'fault log', 'CSV has no entry');
+    await bar.getByRole('button', { name: 'Repair the wire' }).click();
+    // The log belongs to the project: it is on the Online page too, and in the project file.
+    await page.goto(BASE + '/online');
+    await page.getByRole('button', { name: 'Fault finding' }).click();
+    if (!(await page.getByLabel('Fault log').innerText()).includes(pt.address)) problem(mc.key, 'fault log', 'not on the Online page');
+    await page.getByRole('button', { name: 'Monitor', exact: true }).click();
+    const saved = await page.evaluate(async () => {
+      const { buildProjectFile, readProjectFile } = await import('/src/project/projectFile.ts');
+      const { body } = await readProjectFile((await buildProjectFile()).blob);
+      return (body.perProject.faultLog ?? []).length;
+    });
+    if (saved !== 1) problem(mc.key, 'fault log', `${saved} entries in the project file`);
+    log(mc.key, 'fault log entry', entry.slice(0, 160));
   });
   // Every page: look and click.
   for (const route of ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/review', '/export']) {

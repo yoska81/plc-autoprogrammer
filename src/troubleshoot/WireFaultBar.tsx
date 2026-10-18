@@ -4,12 +4,15 @@ import { normAddress } from '../plc/sim/engine';
 import { collectProject } from '../deliverables/collect';
 import { wiringPaths } from './wiringPath';
 import { FAULT_LABEL, faultEffects, faultableWires, type WireFaultKind } from './faults';
+import TroubleshootPanel, { type Practice } from './TroubleshootPanel';
+import { useNarrow } from './useNarrow';
 
 const btn = 'rounded border px-2 py-0.5 text-[12px] font-semibold disabled:opacity-40';
 
 /**
  * Simulator practice mode: break a wire of the electrical design ("wire X004 open") and watch what the PLC
- * sees, or let the app pick a hidden fault to find with the meter steps. Needs an electrical design.
+ * sees, or let the app pick a hidden fault to find with the meter steps (practice meter readings from the
+ * fault that was set; what is found goes into the fault log). Needs an electrical design.
  */
 export default function WireFaultBar({ ctl, snap }: { ctl: SimController; snap: SimSnapshot }) {
   // The design's paths, read once when the simulator opens.
@@ -22,6 +25,10 @@ export default function WireFaultBar({ ctl, snap }: { ctl: SimController; snap: 
   const [kind, setKind] = useState<WireFaultKind>('open');
   const [hidden, setHidden] = useState(false);
   const [why, setWhy] = useState<string[]>([]);
+  const [practice, setPractice] = useState<Practice | null>(null);
+  const [finding, setFinding] = useState(false);
+  // Phones: the simulator page has no room, so the bar sits at the bottom of the screen and the steps take the whole screen.
+  const narrow = useNarrow();
   if (!wires.length) return null;
 
   const apply = (w: string, k: WireFaultKind, hide: boolean) => {
@@ -33,6 +40,9 @@ export default function WireFaultBar({ ctl, snap }: { ctl: SimController; snap: 
     });
     setWhy(effects.map((e) => e.why));
     setHidden(hide);
+    // A hidden fault leaves finding the misbehaving point to the learner.
+    setPractice({ fault: { wire: w, kind: k }, points: hide ? [] : effects.map((e) => e.address) });
+    setFinding(false);
   };
   const random = () => {
     const w = wires[Math.floor(Math.random() * wires.length)];
@@ -42,8 +52,11 @@ export default function WireFaultBar({ ctl, snap }: { ctl: SimController; snap: 
   };
   const active = snap.wireFault;
 
+  const repair = () => { ctl.setWireFault(null); setWhy([]); setHidden(false); setPractice(null); setFinding(false); };
+
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-violet-200 bg-violet-50 px-3 py-1.5 text-[12px]" aria-label="Practice wiring fault">
+    <>
+    <div className={`flex flex-wrap items-center gap-2 border-b border-violet-200 bg-violet-50 px-3 py-1.5 text-[12px] ${narrow ? 'fixed inset-x-0 bottom-0 z-30 border-t shadow-lg [&_select]:max-w-full [&_select]:min-w-0 [&_select]:flex-1 [&_label]:min-w-0 [&_label]:flex-1' : ''}`} aria-label="Practice wiring fault">
       <span className="font-bold text-violet-900">Practice fault finding</span>
       {!active ? (
         <>
@@ -64,10 +77,18 @@ export default function WireFaultBar({ ctl, snap }: { ctl: SimController; snap: 
         <>
           <span className="rounded bg-violet-600 px-1.5 py-px font-semibold text-white" role="status">{hidden ? 'A hidden wiring fault is active — find it with the meter steps' : `Fault: ${active.label}`}</span>
           {!hidden && why.length > 0 && <span className="text-violet-900">{why.slice(0, 3).join(' · ')}{why.length > 3 ? ` · +${why.length - 3} more` : ''}</span>}
+          {practice && <button type="button" className={`${btn} border-violet-600 bg-violet-600 text-white hover:bg-violet-700`} onClick={() => setFinding((v) => !v)}>{finding ? 'Hide the meter steps' : 'Find it with the meter steps'}</button>}
           {hidden && <button type="button" className={`${btn} border-violet-400 bg-white text-violet-900`} onClick={() => setHidden(false)}>Reveal</button>}
-          <button type="button" className={`${btn} ml-auto border-violet-400 bg-white text-violet-900 hover:bg-violet-100`} onClick={() => { ctl.setWireFault(null); setWhy([]); setHidden(false); }}>Repair the wire</button>
+          <button type="button" className={`${btn} ml-auto border-violet-400 bg-white text-violet-900 hover:bg-violet-100`} onClick={repair}>Repair the wire</button>
         </>
       )}
     </div>
+    {active && practice && finding && (
+      <div className={narrow ? 'fixed inset-0 z-40 overflow-auto bg-steel-50 p-3' : 'max-h-[70vh] overflow-auto border-b border-violet-200 bg-steel-50 p-3'}>
+        {narrow && <button type="button" className="mb-2 rounded border border-violet-400 bg-white px-3 py-1.5 text-sm text-violet-900" onClick={() => setFinding(false)}>Back to the simulator</button>}
+        <TroubleshootPanel key={`${practice.fault.wire}-${practice.fault.kind}`} practice={practice} />
+      </div>
+    )}
+    </>
   );
 }

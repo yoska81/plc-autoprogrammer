@@ -7,19 +7,13 @@
 import assert from 'node:assert/strict';
 import { seedSampleProject } from '../preview/sampleProject';
 import { collectProject } from '../deliverables/collect';
-import { generateDefaultDesign } from '../electrical/engine';
-import { getPart } from '../electrical/catalog';
-import { buildModel, type DrawingContext } from '../electrical/derive';
-import { getCpu, getProfile } from '../plc/core/profiles';
-import { resolveAddresses } from '../plc/core/profile';
-import { moduleSlots } from '../plc/core/modules';
-import { analogSetup } from '../plc/core/analog';
-import type { IOPoint } from '../types/io';
+import { buildModel } from '../electrical/derive';
 import { partnerPins, prepareWiring, wiringPath, wiringPaths, type PathHop, type WiringPath } from './wiringPath';
 import { withDrawingOptions } from '../standards/drawingOptions';
-import { faultEffects, faultableWires } from './faults';
+import { faultEffects, faultableWires, hopKey, practiceFound, practiceReading, type WireFault } from './faults';
+import { chains } from './steps';
 import { FlickerWatch, wiggleResult, wiggleSpots } from './watch';
-import { answer, currentStep, startSession, type Answer } from './steps';
+import { answer, back, currentStep, startSession, type Answer } from './steps';
 
 const warn = console.warn;
 console.warn = (...a: unknown[]) => { if (!String(a[0]).includes('zustand persist')) warn(...a); };
@@ -33,42 +27,7 @@ function test(name: string, fn: () => void) {
 const all = (w: WiringPath): PathHop[] => [...w.signal, ...w.supply, ...w.ret];
 const tags = (hs: PathHop[]) => hs.map((h) => h.tag);
 
-// --- the user's Sealing Head --------------------------------------------------------------------------
-const pt = (description: string, type: 'input' | 'output', deviceType: string, extra: Partial<IOPoint> = {}): Omit<IOPoint, 'id'> =>
-  ({ description, type, category: 'Operator/HMI', deviceType, reason: 'spec', ...extra }) as Omit<IOPoint, 'id'>;
-const SEAL = [
-  pt('Safety relay OK (E-stop, guard door, light curtain)', 'input', 'safety-relay-output'),
-  pt('Two-hand start button left', 'input', 'pushbutton-no'), pt('Two-hand start button right', 'input', 'pushbutton-no'),
-  pt('Light curtain clear (OSSD)', 'input', 'other'), pt('Guard door closed', 'input', 'limit-switch'),
-  pt('Stop button', 'input', 'pushbutton-nc'), pt('Fault reset button', 'input', 'pushbutton-no'),
-  pt('Sealing head up', 'input', 'sensor-pnp'), pt('Sealing head down', 'input', 'sensor-pnp'),
-  pt('Heater over-temperature limit tripped', 'input', 'other'), pt('Unwinder VFD fault', 'input', 'vfd-input'),
-  pt('Seal bar temperature (thermocouple)', 'input', 'other', { signal: 'analog', analog: { range: 'thermocouple', min: 0, max: 300, units: '°C' } } as Partial<IOPoint>),
-  pt('Sealing head down solenoid', 'output', 'solenoid'), pt('Sealing head up solenoid', 'output', 'solenoid'),
-  pt('Seal heater on (SSR)', 'output', 'other'), pt('Unwinder VFD run', 'output', 'vfd-input'), pt('Running light', 'output', 'pilot-light'),
-];
-/** The user's Sealing Head; `transmitter` swaps the thermocouple for a 2-wire 4-20 mA transmitter on a C0-04AD-1. */
-function sealingHead(transmitter = false): DrawingContext {
-  const points = transmitter
-    ? SEAL.map((p) => (/thermocouple/.test(p.description) ? { ...p, description: 'Seal bar temperature (4-20 mA transmitter)', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } } as Omit<IOPoint, 'id'> : p))
-    : SEAL;
-  const io = points.map((p, i) => ({ ...p, id: `s${i + 1}` })) as IOPoint[];
-  const profile = getProfile('click');
-  const cpu = getCpu(profile, 'C0-11DD2E-D');
-  const modules = transmitter ? ['C0-08ND3', 'C0-04AD-1'] : ['C0-08ND3', 'C0-04THM'];
-  const addresses = resolveAddresses(profile, cpu, io, moduleSlots(modules));
-  const plc = { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label };
-  const spec = 'Sealing head: two-hand start, light curtain, interlocked guard door, E-stop. Heated seal bar with a type J thermocouple read by the PLC and a separate over-temperature limit. Film unwinder 0.5 HP on a VFD. NEMA 4X stainless panel, 480 V 3-phase.';
-  const r = generateDefaultDesign({
-    io, addresses, spec, inputs: { supply: '480VAC-3PH', enclosureRating: 'NEMA 4X', notes: '', motors: [{ tag: 'M1', description: 'Film unwinder', hp: 0.5, voltage: '480VAC-3PH', starter: 'vfd', reversing: false }], requiredParts: [] },
-    plc, modules, region: 'US', getPart, hmiPartNumber: 'CM5-T7W', now: '2026-01-01T00:00:00.000Z', projectName: 'Sealing Head',
-  });
-  return {
-    projectName: 'Sealing Head', design: r.design, getPart, plc, region: 'US', hmiPartNumber: 'CM5-T7W',
-    io: io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type })),
-    analog: analogSetup(profile, cpu, moduleSlots(modules), io.map((p) => ({ ...p, address: addresses.get(p.id) }))),
-  } as DrawingContext;
-}
+import { sealingHead } from './testFixtures';
 
 console.log('wiring path');
 
@@ -109,10 +68,12 @@ test('example: photo-eye X004 through TB2, the trunk, JB1 and its cable, supplie
   assert.equal(w.supply[0].terminal, '4');
   assert.equal(w.supply[1].measure!.expect.startsWith('24 VDC'), true);
   assert.match(w.supply[2].measure!.expect, /480 VAC/);
-  assert.deepEqual(tags(w.ret), ['PLC', 'TB1', 'TB2', 'PS1']);
+  assert.deepEqual(tags(w.ret), ['PLC', 'TB1', 'PE1', 'TB2', 'PS1']);
   assert.equal(w.ret[0].terminal, 'COM', 'the input common first');
   assert.match(w.ret[0].note!, /common/);
-  assert.equal(w.ret[2].terminal, '5');
+  assert.equal(w.ret[2].terminal, 'BU', 'the sensor own 0 V pin');
+  assert.equal(w.ret[3].terminal, '5');
+  assert.deepEqual(w.ret[3].measure!.between, ['TB1 24+', 'TB2-5'], 'a 0 V return is checked from 24 V');
   assert.match(w.signal[0].where!.sheet, /-E-\d+$/);
   assert.equal(w.reference, 'TB1 0V');
 });
@@ -127,7 +88,8 @@ test('example: sinking output Y001 to the K1 coil, fed through the overload and 
   assert.deepEqual(tags(w.signal), ['PLC', 'K1']);
   assert.equal(w.signal[1].terminal, 'A2');
   assert.equal(w.signal[0].measure!.expect, 'about 0 V');
-  assert.match(w.signal[0].measure!.when, /sinking/);
+  assert.equal(w.signal[0].measure!.expect, 'about 0 V', 'a sinking output reads about 0 V when ON');
+  assert.doesNotMatch(w.signal[0].measure!.when, /sinking|pulls/, 'no jargon');
   assert.deepEqual(tags(w.supply).slice(0, 3), ['OL1', 'SR1', 'PS1']);
   assert.match(w.supply[0].measure!.expect, /24 VDC/, 'a reading at the overload contact');
   assert.ok(!w.supply.some((h) => /^M1-/.test(h.wire ?? '')), 'no motor power poles in the coil supply');
@@ -383,10 +345,64 @@ test('photo-eye never ON: good at the sensor, bad at TB2 → open between TB2-1 
   assert.equal(s.verdict!.wire, 'X004');
 });
 
-test('photo-eye never ON: no signal anywhere, supply good at TB2-4 → the sensor is not switching', () => {
-  const { s, asked } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'no', 'yes']);
-  assert.equal(asked[4], 'supply:TB2');
-  assert.match(s.verdict!.text, /PE1 has its supply but gives no signal/);
+test('photo-eye never ON: no signal anywhere, supply good at TB2-4, 0 V good at PE1 → the sensor is not switching', () => {
+  const { s, asked } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'no', 'yes', 'yes']);
+  assert.deepEqual(asked.slice(4), ['supply:TB2', 'return:PE1']);
+  assert.match(s.verdict!.text, /PE1 has 24 V and 0 V but gives no signal/);
+});
+
+test('photo-eye never ON: 0 V missing at PE1 BU, good at TB2-5 → open 0 V return between them', () => {
+  const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'no', 'yes', 'no', 'yes']);
+  assert.match(s.verdict!.text, /0 V return is good at Terminal strip TB2, terminal 5 but missing at PE1.*wire 0V/);
+});
+
+test('input common: 24 V at X004 but the common reads 0 V from 24+ → open common', () => {
+  const { s, asked } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'yes', 'no', 'yes']);
+  assert.deepEqual(asked, ['prepare', 'signal:PLC', 'common:PLC', 'common:TB1']);
+  assert.match(s.verdict!.text, /module common is good at Terminal strip TB1.* but missing at .*COM/);
+});
+
+test('sinking output Y001: the terminal does not pull down, common open → found on the common', () => {
+  const { s, asked } = play(wiringPath(ex, 'Y001')!, 'output-dead', ['yes', 'no', 'no', 'yes']);
+  assert.deepEqual(asked, ['prepare', 'signal:PLC', 'common:PLC', 'common:TB1']);
+  assert.match(s.verdict!.text, /module common/);
+});
+
+test('safety wording: outputs warn the machine will move, repairs start with lock-out, readings name the meter setting', () => {
+  const y = startSession(wiringPath(ex, 'Y002')!, 'output-dead');
+  assert.match(y.steps[0].say, /Keep everyone clear first — the machine will move/);
+  assert.match(y.steps[1].say, /^Go to .*Meter on DC volts\. Measure between PLC:Y002 and TB1 0V, with output Y002 ON/);
+  assert.doesNotMatch(y.steps.map((x) => x.say).join(' '), /sinking|pulls to/);
+  const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'yes']);
+  assert.match(s.verdict!.fix, /^Switch off and lock out first\./);
+});
+
+test('analog: 4-20 mA loop — volts across the transmitter first, the mA reading in SERIES in the main text', () => {
+  const t = wiringPaths(sealingHead(true)).find((w) => w.analog)!;
+  const s0 = startSession(t, 'analog-wrong');
+  assert.doesNotMatch(s0.steps.map((x) => x.say).join(' '), /press it|put the target/);
+  const { s, asked } = play(t, 'analog-wrong', ['yes', 'yes', 'no']);
+  assert.deepEqual(asked, ['prepare', 'analog:TT1', 'analog:IO2']);
+  assert.match(s.steps[2].say, /Break the loop at TBA-2 and put the meter in SERIES on its mA range — never across/);
+  assert.match(s.verdict!.text, /TT1 has its loop voltage but does not set the right current/);
+  const open = play(t, 'analog-wrong', ['yes', 'no', 'yes']).s;
+  assert.match(open.verdict!.text, /24 V reaches the loop at .* but not across TT1/);
+});
+
+test('analog: thermocouple — mV at the module, else ohms across the lifted thermocouple', () => {
+  const tc = shPaths.find((w) => w.analog)!;
+  const { s, asked } = play(tc, 'analog-wrong', ['yes', 'no', 'no']);
+  assert.deepEqual(asked, ['prepare', 'analog:IO2', 'analog:TT1']);
+  assert.match(s.verdict!.text, /thermocouple or a broken wire|extension cable is open/);
+});
+
+test('Back: one answer back replays the session without it', () => {
+  const w = wiringPath(ex, 'X004')!;
+  const { s } = play(w, 'never-on', ['yes', 'no', 'no']);
+  const b = back(s);
+  assert.equal(b.answers.length, 2);
+  assert.equal(currentStep(b)!.hop!.tag, 'TB2');
+  assert.equal(back(back(b)).at, 0);
 });
 
 test('photo-eye never ON: supply missing at TB2-4, good at PS1 → open on 24+ between them', () => {
@@ -395,7 +411,7 @@ test('photo-eye never ON: supply missing at TB2-4, good at PS1 → open on 24+ b
 });
 
 test('24 V at the PLC terminal → the wiring is good, check the PLC side', () => {
-  const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'yes']);
+  const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'yes', 'yes']);
   assert.match(s.verdict!.text, /field wiring is good/);
 });
 
@@ -430,6 +446,98 @@ test('flickers: wiggle steps along the path, a flicker names the spot', () => {
 test('skipped steps are not evidence', () => {
   const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'skip', 'yes']);
   assert.match(s.verdict!.text, /between PLC terminal X004 and PE1/);
+});
+
+test('always-on, 24 V out at the device: take the wire off — still ON → the wire is shorted, OFF → the device', () => {
+  const w = wiringPath(ex, 'X004')!;
+  const n = startSession(w, 'always-on').steps.length;
+  const toDevice: Answer[] = ['yes', ...Array(n - 1).fill('no')];
+  const wire = play(w, 'always-on', [...toDevice, 'yes']).s;
+  assert.match(wire.verdict!.text, /Wire X004 is shorted to 24 V between the PLC and PE1/);
+  assert.equal(wire.verdict!.wire, 'X004');
+  assert.match(play(w, 'always-on', [...toDevice, 'no']).s.verdict!.text, /PE1 gives 24 V while it should be OFF/);
+});
+
+// Practice: walk the steps answering with the simulated meter; the verdict must name the broken wire.
+const practise = (w: WiringPath, f: WireFault, symptom: Parameters<typeof startSession>[1]) => {
+  let s = startSession(w, symptom);
+  for (let i = 0; i < 40 && currentStep(s); i++) {
+    const st = currentStep(s)!;
+    s = answer(s, st.part === 'prepare' ? 'yes' : practiceReading(w, st, f, symptom).yes ? 'yes' : 'no');
+  }
+  return s;
+};
+test('practice: every open signal wire of an input is found by the steps (example and Sealing Head)', () => {
+  const miss: string[] = [];
+  for (const ps of [wiringPaths(ex), shPaths]) {
+    for (const w of ps.filter((p) => p.type === 'input' && !p.analog)) {
+      const wire = w.signal.find((h) => h.wire && h.kind === 'plc')?.wire;
+      if (!wire) continue;
+      const v = practise(w, { wire, kind: 'open' }, 'never-on').verdict!;
+      if (v.wire !== wire) miss.push(`${w.address} wire ${wire}: ${v.text}`);
+    }
+  }
+  assert.deepEqual(miss, []);
+});
+test('practice: an open signal wire of an output, and a signal shorted to 24 V', () => {
+  const y = wiringPath(ex, 'Y002')!;
+  const v = practise(y, { wire: 'Y002', kind: 'open' }, 'output-dead').verdict!;
+  assert.equal(v.wire, 'Y002', v.text);
+  const x = wiringPath(ex, 'X004')!;
+  const sh = practise(x, { wire: 'X004', kind: 'short-24V' }, 'always-on').verdict!;
+  assert.match(sh.text, /Wire X004 is shorted to 24 V/);
+});
+test('practice: a broken supply wire of a sensor is found on the supply side', () => {
+  const x = wiringPath(ex, 'X004')!;
+  const v = practise(x, { wire: '24+', kind: 'open' }, 'never-on').verdict!;
+  assert.match(v.text, /supply is good at PS1 .* missing at Terminal strip TB2, terminal 4: open connection on wire 24\+/);
+  assert.match(practise(x, { wire: 'PS1-L1', kind: 'open' }, 'never-on').verdict!.text, /No output from PS1/);
+});
+
+test('Sealing Head X103 (VFD1 fault relay R1O): fed from 24+ through the relay common R1', () => {
+  const w = shPaths.find((x) => x.address === 'X103')!;
+  assert.ok(w.supply.length > 0, 'a supply chain');
+  assert.equal(w.supply.find((h) => h.kind === 'source')?.tag, 'PS1');
+  assert.ok(partnerPins('R1O').includes('R1'));
+});
+
+test('Sealing Head X101 on IO1: the return names IO1:COM, the common of its own module; no 0 V terminal twice', () => {
+  const w = shPaths.find((x) => x.address === 'X101')!;
+  assert.equal(`${w.ret[0].tag}:${w.ret[0].terminal}`, 'IO1:COM');
+  for (const p of shPaths) {
+    const keys = p.ret.map((h) => `${h.tag}:${h.terminal ?? ''}`);
+    assert.equal(new Set(keys).size, keys.length, `${p.address}: ${keys.join(' ')}`);
+  }
+});
+
+// Fault sweep: every discrete point × every single fault on its path, answered truthfully by the practice
+// meter; the verdict must name the fault (the wire, at the right hop). Target ≥ 97 %.
+test('fault sweep: every point × every single wiring fault is found (example + Sealing Head)', () => {
+  let total = 0;
+  const miss: string[] = [];
+  const isMains = (w?: string) => !w || /^(L\d|\dL\d|PE)$/i.test(w);
+  for (const [name, ps] of [['example', wiringPaths(ex)], ['Sealing Head', shPaths]] as const) {
+    for (const w of ps.filter((p) => !p.analog && !p.noWire)) {
+      const ch = chains(w);
+      const faults: [WireFault, Parameters<typeof startSession>[1]][] = [];
+      const run: Parameters<typeof startSession>[1] = w.type === 'input' ? 'never-on' : 'output-dead';
+      for (const wire of new Set(w.signal.map((h) => h.wire).filter((x): x is string => !isMains(x)))) {
+        faults.push([{ wire, kind: 'open' }, run]);
+        if (w.type === 'input') faults.push([{ wire, kind: 'short-24V' }, 'always-on']);
+      }
+      for (const h of [...ch.feed, ...ch.ret, ...ch.common]) if (h.measure && !isMains(h.wire) && h.kind !== 'supply') faults.push([{ wire: h.wire!, kind: 'open', at: hopKey(h) }, run]);
+      for (const [f, sym] of faults) {
+        total++;
+        const v = practise(w, f, sym).verdict!;
+        if (!practiceFound(w, v, f)) miss.push(`${name} ${w.address} ${f.kind} ${f.wire}${f.at ? ` at ${f.at}` : ''}: ${v.text}`);
+      }
+    }
+  }
+  const pct = ((total - miss.length) / total) * 100;
+  console.log(`       ${total - miss.length}/${total} = ${pct.toFixed(1)} % found`);
+  for (const m of miss.slice(0, 40)) console.log(`       miss: ${m}`);
+  assert.ok(total > 150, `${total} faults swept`);
+  assert.ok(pct >= 97, `${pct.toFixed(1)} % found`);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

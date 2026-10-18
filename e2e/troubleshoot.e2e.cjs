@@ -49,6 +49,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   log('Revealed:', (await bar.innerText()).replace(/\s+/g, ' ').slice(0, 160));
   await bar.getByRole('button', { name: 'Repair the wire' }).click();
 
+  // Phone: the practice bar spans the screen, the meter steps take the whole screen.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(300);
+  const bb = await bar.boundingBox();
+  check(bb && bb.width >= 380, `practice bar usable on a phone (${bb && Math.round(bb.width)} px)`);
+  await page.setViewportSize({ width: 1500, height: 950 });
+
   // Guided fault finding on the Online page, phone-sized screen.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(BASE + '/online');
@@ -63,6 +70,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.waitForTimeout(500);
   check(await panel.locator('rect[data-ts-mark]').count() > 0, 'the wire is marked on the sheet thumbnail');
   await page.screenshot({ path: OUT + 'phone_step.png', fullPage: true });
+  const fit = await page.evaluate(() => { const o = document.querySelector('.fixed.inset-0'); return { o: o?.scrollWidth, page: getComputedStyle(document.documentElement).overflow }; });
+  check(fit.o <= 390 && fit.page === 'hidden', `full screen fits the phone and the page behind does not scroll (${JSON.stringify(fit)})`);
+  check(/Meter on DC volts/.test(await panel.innerText()), 'meter setting in the step');
+  // Back: a wrong answer is taken back.
+  await panel.getByRole('button', { name: /^Yes/ }).click();
+  await panel.getByRole('button', { name: 'Back', exact: true }).click();
+  check(/Go to PLC terminal X004/.test(await panel.innerText()), 'Back returns to the step');
   await panel.getByRole('button', { name: 'No', exact: true }).click();
   check(/Terminal strip TB2, terminal 1/.test(await panel.innerText()), 'next step at TB2-1');
   await panel.getByRole('button', { name: 'No', exact: true }).click();
@@ -94,6 +108,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await panel.getByRole('button', { name: 'Ready' }).click();
   check(await panel.getByLabel('Live value').count() === 1, 'live value shown while connected');
   await panel.getByRole('button', { name: /Watch X004 for 10 s/ }).click();
+  check(await panel.getByRole('button', { name: 'No, steady' }).isDisabled(), 'answers locked during the watch');
   // X004 = discrete input 4 (Modbus 100004 → offset 3): toggle it a few times during the watch.
   for (let i = 0; i < 6; i++) { plc.mem.discrete[3] = i % 2 ? 0 : 1; await page.waitForTimeout(900); }
   await page.waitForTimeout(5000);

@@ -45,6 +45,8 @@ export interface PathHop {
   location: 'cabinet' | 'door' | 'field';
   measure?: Measure;
   note?: string;
+  /** The PLC module's common (or output supply) and its strip terminal: shared by every point of the group. */
+  common?: boolean;
 }
 
 export interface WiringPath {
@@ -107,7 +109,9 @@ export function partnerPins(pin: string): string[] {
   if (p === 'C') return ['NO', 'NC'];
   if (/^(\+V|V\+|\+|-V|V-|DC\+|DC-)$/.test(p)) return ['L1', 'L', 'L2', 'L3', 'N', 'AC(L)', 'AC(N)'];
   if (p === 'BK' || p === 'WH') return ['BN'];
-  if (/^(R\dO|R\dA|MO\d)$/.test(p)) return [p.replace(/O$|A$/, 'C')];
+  // Drive relays: R1O / R1C share the common R1 (GS drives); RA → RC, MO1 → MC1-style commons.
+  if (/^R\d[OC]$/.test(p)) return [p.slice(0, 2), `${p.slice(0, 2)}C`].filter((x) => x !== p);
+  if (/^(R\dA|MO\d)$/.test(p)) return [p.replace(/O$|A$/, 'C')];
   if (/^CH\d\+$/.test(p)) return [p.replace('+', '-')];
   return [];
 }
@@ -141,6 +145,8 @@ interface Ctx {
   plcTags: Set<string>;
   zero: string;
   zeroRef: string;
+  /** The 24 V bus terminal ("TB1 24+"): the reference for checking a 0 V return. */
+  plusRef: string;
   acVolts: number;
   sheetOf: (n: number) => string;
   jbs: ReturnType<typeof junctionBoxPlans>;
@@ -172,10 +178,13 @@ function build(ctx: DrawingContext, opts: WiringPathOptions): Ctx {
   const zero = psPin(/^(-V|V-|DC-|-)$/)[0] ?? [...byNet.keys()].find((w) => DC_ZERO.test(w)) ?? '0V';
   // The 0 V bus terminal of the first strip that carries it ("TB1 0V").
   const zeroEnd = (byNet.get(zero) ?? []).flatMap((e) => [e.a, e.b]).find((x) => x.strip && !/^\d+$/.test(x.pin));
+  const plus = psPin(/^(\+V|V\+|DC\+|\+)$/)[0] ?? [...byNet.keys()].find((w) => /^24\+$/.test(w)) ?? '24+';
+  const plusEnd = (byNet.get(plus) ?? []).flatMap((e) => [e.a, e.b]).find((x) => x.strip && !/^\d+$/.test(x.pin));
   const sheetNo = new Map((plan?.sheets ?? []).map((s) => [s.n, s.drawingNo]));
   return {
     m, plan, edges, byNet, netsOf, pinsOf, rc: new Map(m.rc.map((c) => [c.tag, c])), plcTags, zero,
     zeroRef: zeroEnd?.raw ?? `${strips[strips.length - 1] ?? 'TB1'} ${zero}`,
+    plusRef: plusEnd?.raw ?? `${strips[strips.length - 1] ?? 'TB1'} 24+`,
     acVolts: SUPPLY_INFO[m.supply]?.volts ?? 480,
     sheetOf: (n) => sheetNo.get(n) ?? `sheet ${n}`,
     jbs: (() => { try { return junctionBoxPlans(ctx); } catch { return []; } })(),
@@ -241,7 +250,7 @@ function signalMeasure(c: Ctx, p: IoPoint, at: string, wire: string): Measure {
   const sink = p.coilChain?.sink || c.m.groups.find((g) => g.key === p.group)?.outputStyle === 'sinking';
   const name = wire === p.address ? `output ${p.address}` : `output ${p.address} (through the contacts before it)`;
   return sink
-    ? { between: [at, ref], kind: 'VDC', expect: 'about 0 V', when: `with ${name} ON (sinking output pulls to 0 V)`, otherwise: '24 VDC with the output OFF (through the load)' }
+    ? { between: [at, ref], kind: 'VDC', expect: 'about 0 V', when: `with ${name} ON (its LED lit)`, otherwise: '24 VDC with the output OFF' }
     : { between: [at, ref], kind: 'VDC', expect: '24 VDC', when: `with ${name} ON (its LED lit)`, otherwise: 'about 0 V with the output OFF' };
 }
 
@@ -501,7 +510,8 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
     if (!feed.length && point.type === 'input') {
       // No known partner pin (drive relay outputs, special devices): the common of the device, else its only DC supply.
       const dc = [...pins.entries()].filter(([, n]) => !seen.has(n) && !isZero(n) && !isPe(n) && (c.dcNets.has(n) || DC_SUPPLY.test(n) || /^24\+/.test(n)));
-      const common = dc.find(([pp]) => /^(C|COM|RC|R\dC|\+24V?|24V)$/i.test(pp));
+      const common = dc.find(([pp]) => /^(C|COM|RC|R\d|R\dC|\+24V?|24V)$/i.test(pp))
+        ?? dc.find(([, n]) => (c.byNet.get(n) ?? []).some((e) => (e.a.tag === dTag || e.b.tag === dTag) && /relay common|common/i.test(e.fn)));
       feed = common ? [common[1]] : dc.length === 1 ? [dc[0][1]] : [];
     }
   } else {
@@ -523,33 +533,49 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
     if (t) supply.push(hopOf(c, t.t, n, point, t.color));
     supply.push(...supplyChain(c, n, point, supplySeen));
   }
+  // A 0 V return is checked from 24 V: 24 VDC across means the 0 V side is connected (an open 0 V floats up).
+  const retMeasure = (at: string): Measure => ({ between: [c.plusRef, at], kind: 'VDC', expect: '24 VDC', when: `with ${dTag || 'the device'} powered`, otherwise: `about 0 V: the 0 V wire is open between here and the power supply` });
   for (const n of [...new Set(back)]) {
+    const pin = pins && [...pins.entries()].find(([, x]) => x === n)?.[0];
+    if (pin && deviceEnd && !deviceEnd.jbDevice) {
+      const e = (c.byNet.get(n) ?? []).find((x) => (x.a.tag === dTag && x.a.pin.toUpperCase() === pin) || (x.b.tag === dTag && x.b.pin.toUpperCase() === pin));
+      const end = e ? (e.a.tag === dTag ? e.a : e.b) : undefined;
+      if (end) ret.push({ ...hopOf(c, end, n, point, e!.color), kind: 'device', measure: retMeasure(`${dTag}:${end.pin}`) });
+    }
     const t = termOn(n);
-    if (t) ret.push({ ...hopOf(c, t.t, n, point, t.color), measure: { between: [t.t.raw, 'PE bar'], kind: 'VDC', expect: 'about 0 V', when: '' } });
+    if (t) ret.push({ ...hopOf(c, t.t, n, point, t.color), measure: retMeasure(t.t.raw) });
     ret.push(...supplyChain(c, n, point, new Set(supplySeen)).slice(0, 1));
   }
   // Sourcing outputs: the load is fed by the output itself; its supply is the module's output supply terminal.
   if (point.type === 'output' && !supply.length && plcEnd) {
-    const e = c.edges.find((x) => /output supply/i.test(x.fn) && (x.a.tag === plcEnd.tag || x.b.tag === plcEnd.tag));
+    const mod = c.m.groups.find((g) => g.key === point.group)?.devTag;
+    const e = c.edges.find((x) => /output supply/i.test(x.fn) && (x.a.tag === mod || x.b.tag === mod))
+      ?? c.edges.find((x) => /output supply/i.test(x.fn) && (x.a.tag === plcEnd.tag || x.b.tag === plcEnd.tag));
     if (e) {
-      const pe = e.a.tag === plcEnd.tag ? e.a : e.b;
-      supply.push({ ...hopOf(c, pe, e.wire, point, e.color), label: `${endLabel(c, pe)} — the supply of the outputs`, note: 'The outputs of this module switch this supply to their loads.' });
+      const pe = c.plcTags.has(e.a.tag) ? e.a : e.b;
+      supply.push({ ...hopOf(c, pe, e.wire, point, e.color), common: true, label: `${endLabel(c, pe)} — the supply of the outputs`, note: 'The outputs of this module switch this supply to their loads.' });
       const t = [e.a, e.b].find((x) => x.strip);
-      if (t) supply.push(hopOf(c, t, e.wire, point, e.color));
+      if (t) supply.push({ ...hopOf(c, t, e.wire, point, e.color), common: true });
       supply.push(...supplyChain(c, e.wire, point, new Set(supplySeen)));
     }
   }
   // The module common the current returns through (Input common / Output common): an open common is a classic fault.
   if (plcEnd) {
     const kind = point.type === 'input' ? /input common/i : /output common/i;
-    const e = c.edges.find((x) => kind.test(x.fn) && (x.a.tag === plcEnd.tag || x.b.tag === plcEnd.tag));
+    // The common of the point's own module / slot (IO1:COM for a point on IO1), not the first one on the PLC.
+    const mod = c.m.groups.find((g) => g.key === point.group)?.devTag;
+    const own = (x: Edge) => [x.a.tag, x.b.tag].some((t) => t === mod);
+    const e = c.edges.find((x) => kind.test(x.fn) && own(x)) ?? c.edges.find((x) => kind.test(x.fn) && (x.a.tag === plcEnd.tag || x.b.tag === plcEnd.tag));
     if (e) {
-      const pe = e.a.tag === plcEnd.tag ? e.a : e.b;
-      const t = e.a.tag === plcEnd.tag ? e.b : e.a;
-      const common = { ...hopOf(c, pe, e.wire, point, e.color), label: `${endLabel(c, pe)} — the common of ${point.address}`, note: `All the ${point.type}s of this group return through this common: if it is open, they all stay OFF.` };
-      common.measure = { between: [pe.raw, isZero(e.wire) ? 'PE bar' : c.zeroRef], kind: 'VDC', expect: isZero(e.wire) ? 'about 0 V' : '24 VDC', when: '', otherwise: isZero(e.wire) ? 'more than 1 V: the common wire is open' : 'about 0 V: the common wire is open' };
+      const pe = c.plcTags.has(e.a.tag) ? e.a : e.b;
+      const t = pe === e.a ? e.b : e.a;
+      const common: PathHop = { ...hopOf(c, pe, e.wire, point, e.color), common: true, label: `${endLabel(c, pe)} — the common of ${point.address}`, note: `All the ${point.type}s of this group return through this common: if it is open, they all stay OFF.` };
+      common.measure = isZero(e.wire)
+        ? { between: [c.plusRef, pe.raw], kind: 'VDC', expect: '24 VDC', when: '', otherwise: 'about 0 V: the common wire is open' }
+        : { between: [pe.raw, c.zeroRef], kind: 'VDC', expect: '24 VDC', when: '', otherwise: 'about 0 V: the common wire is open' };
       const target = isZero(e.wire) ? ret : supply;
-      target.unshift(common, ...(t.strip ? [hopOf(c, t, e.wire, point, e.color)] : []));
+      const strip = t.strip ? [{ ...hopOf(c, t, e.wire, point, e.color), common: true, ...(isZero(e.wire) ? { measure: { ...retMeasure(t.raw), when: '' } } : {}) }] : [];
+      target.unshift(common, ...strip);
     }
   }
   // Hops between the device and its 24 V source (overload contact, safety relay output…): 24 VDC to 0 V while
@@ -564,6 +590,10 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
       h.measure = { between: [`${h.tag}${h.terminal ? `:${h.terminal}` : ''}`, c.zeroRef], kind: 'VDC', expect: '24 VDC', when: contacts.length ? `while ${[...new Set(contacts)].join(' and ')} ${contacts.length > 1 ? 'are' : 'is'} closed / ON` : '', otherwise: `about 0 V: the break is between here and ${supply[src].tag}` };
     }
   }
+  // One hop per terminal (the module common and the device return can land on the same 0 V terminal).
+  const retKeys = new Set<string>();
+  const retOnce = ret.filter((h) => { const k = `${h.tag}:${h.terminal ?? ''}`; return !retKeys.has(k) && Boolean(retKeys.add(k)); });
+  ret.splice(0, ret.length, ...retOnce);
   // Hops drawn on the PLC point's own I/O sheet share its line.
   const io = signal[0]?.where;
   if (io?.line) for (const h of [...signal, ...parallel, ...supply.slice(0, 2), ...ret.slice(0, 2)]) if (h.where && h.where.sheet === io.sheet && !h.where.line) h.where = { ...h.where, line: io.line };

@@ -19,15 +19,24 @@ export default function SheetThumb({ plan, sheetNo, marks, className = '' }: { p
   useLayoutEffect(() => {
     const svg = ref.current?.querySelector('svg');
     if (!svg) return;
-    const want = new Set(marks.map((m) => m.trim().toUpperCase()).filter(Boolean));
-    const hits: SVGGraphicsElement[] = [];
-    for (const t of svg.querySelectorAll('text')) if (want.has((t.textContent ?? '').trim().toUpperCase())) hits.push(t);
-    const added: Element[] = [];
-    let box: { x1: number; y1: number; x2: number; y2: number } | null = null;
-    for (const t of hits) {
+    // Marks in order of importance (wire, terminal, tag): the zoom centres on the first mark found and keeps
+    // only the hits near it, so a terminal number printed all over the sheet does not zoom out to all of it.
+    const want = marks.map((m) => m.trim().toUpperCase()).filter(Boolean);
+    const [, , vw0] = (svg.getAttribute('viewBox') ?? '0 0 432 279').split(/\s+/).map(Number);
+    const found: { b: DOMRect; t: SVGGraphicsElement; rank: number }[] = [];
+    for (const t of svg.querySelectorAll('text')) {
+      const rank = want.indexOf((t.textContent ?? '').trim().toUpperCase());
+      if (rank < 0) continue;
       let b: DOMRect;
       try { b = t.getBBox(); } catch { continue; }
-      if (!b.width) continue;
+      if (b.width) found.push({ b, t, rank });
+    }
+    const anchor = [...found].sort((x, y) => x.rank - y.rank)[0];
+    const near = (b: DOMRect) => !anchor || Math.hypot(b.x - anchor.b.x, b.y - anchor.b.y) < vw0 / 4;
+    const added: Element[] = [];
+    let box: { x1: number; y1: number; x2: number; y2: number } | null = null;
+    for (const { b, t } of found) {
+      if (!near(b)) continue;
       const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
       const pad = Math.max(0.6, b.height * 0.2);
       r.setAttribute('x', String(b.x - pad)); r.setAttribute('y', String(b.y - pad));
