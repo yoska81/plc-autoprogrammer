@@ -18,6 +18,13 @@ import { missingOperatorIo, operatorRole } from '../../spec/operatorIo';
 import { generatedToPoint } from '../../lib/ai/ioAI';
 import type { IOPoint } from '../../types/io';
 import type { FieldDeviceType } from '../../electrical/types';
+import { rungAddresses, rungWrites, type LadderProgram } from '../core/ladder';
+
+/** Panel-range bits / registers (C1001–C1300, DS1001–DS1200, DF101–DF200) a program reads but no rung writes. */
+const panelOnlyReads = (p: LadderProgram) => {
+  const w = new Set(p.rungs.flatMap((r) => rungWrites(r).map((a) => a.toUpperCase())));
+  return [...new Set(p.rungs.flatMap((r) => rungAddresses(r).map((a) => a.toUpperCase())))].filter((a) => /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/.test(a) && !w.has(a));
+};
 
 const SPEC = 'Conveyor with a part-at-end photo-eye. No touch panel: pushbuttons and lights on the cabinet door.';
 const MACHINE: Omit<IOPoint, 'id'>[] = [
@@ -52,6 +59,7 @@ const roles = r.base.roles;
 const used = new Set(r.program.rungs.flatMap((g) => g.branches.flat().map((e) => ('address' in e ? e.address : ''))));
 for (const role of ['cmd:start', 'cmd:stop', 'cmd:reset', 'cmd:manual']) assert.ok(!used.has(roles.get(role)!), `no HMI command bit read: ${role} (${roles.get(role)})`);
 assert.ok(!r.program.rungs.some((g) => /HMI (Start|Stop|Reset|Manual)/.test(g.comment ?? '')), 'no rung comment names an HMI command');
+assert.deepEqual(panelOnlyReads(r.program), [], 'no panel bit / register read that nothing writes');
 assert.ok(!r.notes.some((n) => /list has no/.test(n)), 'no missing-device note: every device is in the I/O list');
 assert.ok(r.notes.some((n) => /no jog buttons/.test(n)), 'Manual without jog buttons is noted');
 assert.ok(!r.program.rungs.some((g) => /One-scan pulse/.test(g.comment ?? '')), 'no unused 1 s pulse without a panel');
@@ -134,6 +142,7 @@ assert.equal(sim.readBit(RUN_LAMP), true, 'after Reset: Start runs');
   const pUsed = new Set(pr.program.rungs.flatMap((g) => g.branches.flat().map((e) => ('address' in e ? e.address : ''))));
   for (const role of ['cmd:start', 'cmd:stop', 'cmd:reset', 'cmd:manual']) assert.ok(!pUsed.has(pr.base.roles.get(role)!), `press: no HMI command bit read: ${role}`);
   assert.ok(pUsed.has(B(/selector/)), 'press: the Run / setup selector is used');
+  assert.deepEqual(panelOnlyReads(pr.program), [], 'press: no panel bit / register read that nothing writes (cycle count reset = Reset)');
   assert.ok(pr.notes.some((n) => /Run \/ setup selector: ON = Manual \(setup\) assumed/.test(n)), 'press: the selector polarity is noted');
   assert.ok(!pr.program.rungs.some((g) => /heartbeat|HMI Service Done/i.test(g.comment ?? '')), 'press: no heartbeat / Service Done rungs');
   const pw = pio.map((p) => ({ address: pAddr.get(p.id)!, deviceTag: '', deviceType: p.deviceType as FieldDeviceType, description: p.description }));
