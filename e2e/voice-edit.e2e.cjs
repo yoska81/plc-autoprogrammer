@@ -76,12 +76,14 @@ const FAKE_SPEECH = () => {
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   const fails = [];
   const check = (ok, what) => { if (ok) log('ok', what); else { fails.push(what); log('FAIL', what); } };
+  // A text box's own wrapper with its mic / speaker buttons: the nearest one (the page nests other wrappers around it).
+  const boxOf = (field) => field.locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " relative ")][1]');
   const tree = async (name) => { await page.locator('nav a', { hasText: new RegExp(`^${name}(\\s*\\d+\\?)?$`) }).first().click(); await page.waitForTimeout(600); };
 
   // ── 1. Dictation into the machine description (browser recognition) ──
   await tree('Machine description');
   const add = page.getByPlaceholder(/Pick and place cell/);
-  const addMic = page.locator('div.relative', { has: add }).getByTestId('mic');
+  const addMic = boxOf(add).getByTestId('mic');
   await page.evaluate(() => { window.__speech.push('The robot holds the part when a door opens'); });
   await addMic.click();
   await page.getByTestId('dictation').waitFor();
@@ -109,7 +111,7 @@ const FAKE_SPEECH = () => {
   // Read aloud: a spec section and a question.
   const overview = page.locator('#spec-overview');
   if (await overview.count()) {
-    await page.locator('div.relative', { has: overview }).getByTestId('speak').click();
+    await boxOf(overview).getByTestId('speak').click();
     await page.waitForTimeout(200);
     const spoken = await page.evaluate(() => window.__spoken.join(' '));
     check(spoken.includes((await overview.inputValue()).split(/[.!?]/)[0].trim()), 'speaker reads the spec section');
@@ -164,7 +166,7 @@ const FAKE_SPEECH = () => {
   check(await openaiRadio.isEnabled(), 'OpenAI engine offered once a key is saved');
   await openaiRadio.check();
   const trial = page.getByLabel('Try the microphone');
-  await page.locator('div.relative', { has: trial }).getByTestId('mic').click();
+  await boxOf(trial).getByTestId('mic').click();
   await page.getByTestId('dictation').getByText(/Listening/).waitFor({ timeout: 10000 });
   check(await page.getByTestId('dictation').getByText(/OpenAI/).count() === 1, 'recording engine shown (OpenAI)');
   await page.waitForTimeout(1800);
@@ -176,7 +178,7 @@ const FAKE_SPEECH = () => {
   await voice.getByLabel('Speech language').selectOption('en-US');
   await voice.getByRole('radio', { name: /Speech model on this computer/ }).check();
   await trial.fill('');
-  await page.locator('div.relative', { has: trial }).getByTestId('mic').click();
+  await boxOf(trial).getByTestId('mic').click();
   await page.getByTestId('dictation').getByText(/Listening/).waitFor({ timeout: 10000 });
   await page.waitForTimeout(1200);
   await page.getByTestId('dictation').getByRole('button', { name: 'Done' }).click();
@@ -345,7 +347,8 @@ const FAKE_SPEECH = () => {
   const row = page.locator(`#order-list tr[data-part="${pn}"]`);
   check(await row.count() === 1 && await row.locator('input[aria-label^="Part number"]').inputValue() === 'MY-PN-001' && await row.locator('input[aria-label^="Unit price of"]').inputValue() === '123.45', 'order-list edits kept after the design was generated again');
   // Back to generated.
-  await row.locator('td').nth(5).getByTestId('reset-edit').click();
+  // The reset button of the price cell (found by its input, not by column number: the order list's columns change).
+  await row.locator('td', { has: page.locator('input[aria-label^="Unit price of"]') }).getByTestId('reset-edit').click();
   await page.waitForTimeout(200);
   check(await page.locator(`#order-list tr[data-part="${pn}"]`).locator('input[aria-label^="Unit price of"]').inputValue() === '', 'price back to generated');
 

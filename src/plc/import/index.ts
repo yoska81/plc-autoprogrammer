@@ -52,9 +52,11 @@ export function detectFormat(fileName: string, text: string): SourceFormat | nul
 export function unreadableReason(fileName: string, text: string): string | null {
   const native = NATIVE_FILES.find((n) => n.ext.test(fileName));
   if (native) return `${native.product}: this file is in the maker's own format and cannot be read here. ${native.howTo}`;
+  // A PDF is a printout: it is read by the printout reader on the same page, not here.
+  if (/\.pdf$/i.test(fileName) || text.startsWith('%PDF')) return 'This is a PDF. A printout of the ladder (PDF or pictures) is read under "Or a printout of the program" below; this box takes the program exported as text.';
   // Binary content (zip, OLE, …).
   // eslint-disable-next-line no-control-regex -- binary files contain control characters
-  if (/[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 2000))) return 'This file is not a text export. Export the program as text (L5X / L5K, PLCopen XML, SCL / ST source, CSV) or upload a PDF printout of the ladder.';
+  if (/[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 2000))) return 'This file is not a text export. Export the program as text (L5X / L5K, PLCopen XML, SCL / ST source, CSV). A printout of the ladder (PDF or pictures) goes under "Or a printout of the program" below.';
   return null;
 }
 
