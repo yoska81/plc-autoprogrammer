@@ -247,7 +247,29 @@ function differences(c: DrawnComponent, r: DrawnRatings, to: CatalogPart, target
 }
 
 /** One component: its new tag and catalog equivalent. */
-export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTarget, hp?: number): PartMatch {
+/** A safety relay's safety outputs from its ratings ("(3) N.O.", "2 N.O. relay", "3 NO (relay)"); 0 when not given. */
+export const safetyOutputCount = (p: CatalogPart): number => Number(String(p.ratings.safetyOutputs ?? '').match(/\d+/)?.[0] ?? 0);
+const isExpansion = (p: CatalogPart) => /expansion|extension|erweiterung|contact expan/i.test(`${p.description} ${p.ratings.application ?? ''}`);
+
+/**
+ * How many safety outputs the converted machine's safety relay needs: the ones the drawings use (its
+ * contacts in the circuits and in the safety description, e.g. 13-14 for the pump coil, 23-24 for 24VS) and
+ * two for every drive whose Safe Torque Off the conversion wires to it.
+ */
+export function safetyOutputsNeeded(m: ExistingMachine, stoDrives: string[]): { need: number; drawn: string[]; why: string } {
+  const sr = m.safety.safetyRelay?.match(/[A-Z]{1,3}\d+/)?.[0] ?? m.components.find((c) => c.category === 'safetyRelay')?.tag ?? null;
+  const drawn = new Set<string>();
+  if (sr) {
+    for (const c of m.circuits) for (const e of (c.path ?? []).flatMap((x) => (x.t === 'branch' ? x.paths.flat() : x.t === 'contact' ? [x] : [])))
+      if ((e.kind === 'safety' || e.tag === sr) && e.terms) drawn.add(e.terms);
+    for (const x of `${m.safety.description} ${m.circuits.flatMap((c) => c.conditions).join(' ')}`.matchAll(new RegExp(`\\b${sr}\\s+(\\d{2}-\\d{2})`, 'g'))) drawn.add(x[1]);
+  }
+  const need = drawn.size + 2 * stoDrives.length;
+  const why = [drawn.size ? `${drawn.size} as drawn (${[...drawn].join(', ')})` : '', stoDrives.length ? `2 for the STO of each of ${stoDrives.join(', ')}` : ''].filter(Boolean).join(' + ');
+  return { need, drawn: [...drawn], why };
+}
+
+export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTarget, hp?: number, safety?: { need: number; why: string }): PartMatch {
   const r = ratingsOf(c);
   const from = { partNumber: c.partNumber, manufacturer: c.manufacturer, description: c.description, category: c.category, ratings: r };
   // operator devices drawn as 'other' (speed pots, pendants) are chosen by the design too
@@ -265,9 +287,24 @@ export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTar
     return { oldTag: c.tag, newTag, from, to: null, alternatives: [], differences: [], status: 'to-select',
       reason: `No catalog part matches${r.amps !== null || r.kw !== null || r.minAmps !== null ? '' : `: ${missing} not on the drawing`}. Pick one, or let the design size it from the motors.` };
   }
+  // a safety relay with enough safety outputs (one that has them all first, then the most), or with an expansion module
+  const extra: string[] = [];
+  if (c.category === 'safetyRelay' && safety?.need) {
+    const base = list.filter((p) => !isExpansion(p));
+    base.sort((a, b) => Number(safetyOutputCount(b) >= safety.need) - Number(safetyOutputCount(a) >= safety.need) || (safetyOutputCount(a) >= safety.need ? safetyOutputCount(a) - safetyOutputCount(b) : safetyOutputCount(b) - safetyOutputCount(a)));
+    list.splice(0, list.length, ...base, ...list.filter(isExpansion));
+    const have = safetyOutputCount(list[0]);
+    if (have < safety.need) {
+      const exp = ALL_PARTS.filter((p) => p.category === 'safetyRelay' && isExpansion(p) && p.manufacturer === list[0].manufacturer && safetyOutputCount(p) > 0)
+        .sort((a, b) => Number(have + safetyOutputCount(b) >= safety.need) - Number(have + safetyOutputCount(a) >= safety.need) || safetyOutputCount(a) - safetyOutputCount(b))[0];
+      extra.push(exp && have + safetyOutputCount(exp) >= safety.need
+        ? `Needs ${safety.need} safety outputs (${safety.why}): ${have} here + expansion ${exp.manufacturer} ${exp.partNumber} (${safetyOutputCount(exp)})`
+        : `Needs ${safety.need} safety outputs (${safety.why}); this one has ${have}: add a contact expansion module (to select)`);
+    } else extra.push(`${have} safety outputs for the ${safety.need} needed (${safety.why})`);
+  }
   const [to, ...alternatives] = list;
   const listing = to.ratings.ul ? `maker's listing: UL ${String(to.ratings.ul).replace(/^UL\s*/i, '')}` : 'listing: see the maker\'s data';
-  return { oldTag: c.tag, newTag, from, to, alternatives: alternatives.slice(0, 4), differences: [...differences(c, r, to, target), ...(c.category === 'safetyRelay' ? [REVALIDATE] : [])], status: 'matched', reason: `${to.manufacturer} ${to.partNumber}: same function and ratings (${listing}).` };
+  return { oldTag: c.tag, newTag, from, to, alternatives: alternatives.slice(0, 4), differences: [...differences(c, r, to, target), ...extra, ...(c.category === 'safetyRelay' ? [REVALIDATE] : [])], status: 'matched', reason: `${to.manufacturer} ${to.partNumber}: same function and ratings (${listing}).` };
 }
 
 export interface Conversion {
@@ -489,6 +526,8 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   const tagIn = (t: string | null) => (t ?? '').match(/\b[A-Z]{1,3}\d+\b/g)?.filter((x) => m.components.some((c) => c.tag === x)) ?? [];
   const axisTags = new Set(m.axes.flatMap((a) => [a.driveTag, a.motorTag, ...tagIn(a.brakingResistor), ...tagIn(a.encoder)]));
   const stoOpen = new Set(driveStops(m).filter((d) => d.sto !== 'wired').map((d) => d.tag));
+  // the safety relay's outputs: as drawn, plus two per drive whose STO the conversion wires to it
+  const srOutputs = (() => { const x = safetyOutputsNeeded(m, [...stoOpen].map((t) => tags.get(t) ?? t)); return { need: x.need, why: x.why }; })();
   const parts = m.components.map((c) => {
     // a servo axis is chosen as a whole by the motion design (drive, motor, encoder, braking resistor)
     if (axisTags.has(c.tag)) {
@@ -496,7 +535,7 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
       return { oldTag: c.tag, newTag: tags.get(c.tag) ?? c.tag, from: { partNumber: c.partNumber, manufacturer: c.manufacturer, description: c.description, category: c.category, ratings: ratingsOf(c) }, to: null, alternatives: [],
         differences: isDrive ? [...(stoOpen.has(c.tag) ? ['STO wired to the safety relay'] : []), REVALIDATE] : [], status: 'engine' as const, reason: 'Servo axis: drive, motor, encoder and braking resistor are chosen together by the motion design.' };
     }
-    const m2 = crossMatch(c, tags.get(c.tag) ?? c.tag, target, c.category === 'vfd' && c.ratings.kw === null && vfdHp ? vfdHp : undefined);
+    const m2 = crossMatch(c, tags.get(c.tag) ?? c.tag, target, c.category === 'vfd' && c.ratings.kw === null && vfdHp ? vfdHp : undefined, c.category === 'safetyRelay' ? srOutputs : undefined);
     // a drive whose STO isn't wired now stops through it
     return c.category === 'vfd' && stoOpen.has(c.tag) ? { ...m2, differences: [...m2.differences, 'STO wired to the safety relay', REVALIDATE] } : m2;
   });

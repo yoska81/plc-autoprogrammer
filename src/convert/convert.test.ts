@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { cadToText, cleanDxfText, dwgToEntities, dxfToText, hasDwgReader, parseDxfEntities, parseDxfTexts, setDwgReader, sheetFrames, sheetNumber, type CadEntity } from './dxf';
 import { ROLL_FORMER } from './__fixtures__/rollFormer';
 import { foreignRatings } from './foreignParts';
-import { convertMachine, kwToHp, mm2ToAwg, naTags, NA_TARGET, retag, targetSupply } from './convert';
+import { convertMachine, kwToHp, mm2ToAwg, naTags, NA_TARGET, retag, safetyOutputCount, safetyOutputsNeeded, targetSupply } from './convert';
+import { ALL_PARTS } from '../electrical/catalogs';
 import { RELAY_CONVEYOR } from './__fixtures__/relayConveyor';
 import { ioId, type ExistingMachine } from './types';
 import { factsFromExpected, scoreReading, scoreText, type ExpectedJson } from './score';
@@ -660,6 +661,29 @@ await test('merging the parts cross-checks them: unknown tags, a tag listed twic
   // the reading of cn-rollformer-01 split into its parts raises none of these
   const clean = mergeParts(DERIVE_PARTS.map((p) => Object.fromEntries(p.fields.map((k) => [k, (CN_ROLLFORMER_01_READING as unknown as Record<string, unknown>)[k]]))) as Partial<ExistingMachine>[]);
   assert.deepEqual(clean.uncertainties, []);
+});
+
+await test('cn-rollformer-01: the safety relay is sized for its outputs (as drawn + 2 STO channels per drive)', () => {
+  const m = normalizeMachine(CN_ROLLFORMER_01_READING);
+  assert.deepEqual(safetyOutputsNeeded(m, ['VFD1', 'SD1']), { need: 6, drawn: ['13-14', '23-24'], why: '2 as drawn (13-14, 23-24) + 2 for the STO of each of VFD1, SD1' });
+  const sr = () => convertMachine(m).parts.find((p) => p.oldTag === 'KA0')!;
+  const now = sr();
+  assert.equal(now.status, 'matched');
+  assert.ok(safetyOutputCount(now.to!) >= 2);
+  assert.ok(now.differences.some((d) => /^Needs 6 safety outputs \(2 as drawn \(13-14, 23-24\) \+ 2 for the STO of each of VFD1, SD1\)/.test(d)), now.differences.join(' | '));
+  // with an expansion module of the same maker in the catalog, the conversion names it
+  const exp = { ...now.to!, partNumber: 'UG6929-TEST', description: 'Contact expansion module, 4 N.O. safety outputs', ratings: { ...now.to!.ratings, safetyOutputs: '(4) N.O.' } };
+  ALL_PARTS.push(exp);
+  try {
+    const withExp = sr();
+    assert.equal(withExp.to!.partNumber, now.to!.partNumber, 'the base relay stays the choice');
+    assert.ok(withExp.differences.some((d) => new RegExp(`${safetyOutputCount(now.to!)} here \\+ expansion ${exp.manufacturer} UG6929-TEST \\(4\\)`).test(d)), withExp.differences.join(' | '));
+  } finally {
+    ALL_PARTS.splice(ALL_PARTS.indexOf(exp), 1);
+  }
+  // all STO already wired: only the outputs as drawn
+  const wired = { ...m, safety: { ...m.safety, drives: m.safety.drives.map((d) => ({ ...d, sto: 'wired' as const })) } };
+  assert.ok(convertMachine(wired).parts.find((p) => p.oldTag === 'KA0')!.differences.some((d) => /safety outputs for the 2 needed \(2 as drawn/.test(d)));
 });
 
 await test('retag: whole tags only', () => {
