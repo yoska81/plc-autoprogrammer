@@ -129,6 +129,44 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Test: src/electrical/cooling.test.ts. There is no 4X air conditioner in the catalog; 4X cabinets get the Stratus TE…-4X heat exchangers.
 - Test change: the `amps` plausibility floor is now 0.01 A, since small fans draw 0.06 A.
 
+## Servo systems: AutomationDirect SureServo2
+- 213 parts:
+  - 16 SV2A drives (230 V and 460 V, 400 W to 15 kW), with footprints from the AD spec sheet;
+  - 52 SV2L/M/H motors;
+  - 128 SV2C power, encoder and brake cables;
+  - 17 accessories.
+- Prices and stock come from each product page (2026-10-18).
+- New categories: `servoDrive` (backplate), `servoMotor` (field) and `encoder` (field). Cables are `other` with kind 'servo cable' or 'encoder cable', plus `lengthM`, `forMotor` and `forDrive`.
+- Drive keys: ratedWatts, inputVolts, inputPhases, outputAmps, peakAmps, controlModes, pulseInputMaxKHz (line driver 4000; the open-collector 200 kHz is in pulseInputNote), network, sto and stoRating, brakeOutput, regenResistor, pairsWith.
+- Motor keys: ratedWatts, ratedTorqueNm, peakTorqueNm, ratedRpm, maxRpm, ratedAmps, flangeMm, shaftMm, encoder, brake and brakeVolts, inertiaKgm2, pairsWith, plus the powerCable and encoderCable families (`xx` = length code 03/05/10/20 m).
+- Accessories that plug into the drive (comm modules, battery box, connectors, STO plug, SV2-TOR1 toroid) take no back-panel space. They are `mount: 'field'` with `mountsOn`.
+- AutomationDirect lists no braking resistor, line reactor or EMC filter for SureServo2.
+- Source typo kept as published: the SV2H-455B inertia equals the SV2H-445B figure (see inertiaNote).
+
+## Imported (IEC / Chinese) parts → UL cross-reference ("Convert existing drawings")
+- 273 imported parts, each from the maker's own catalogue (src/electrical/catalogs/foreignPartsData.ts):
+  - CHINT (78): NXC contactors with one record per coil, NXR overloads, NS2 motor protectors, NXB-63 and NB1-63 MCBs, JXB terminals.
+  - Delixi (45): CJX2s, JRS1Dsp, CDP6.
+  - Schneider IEC-only (64): LC1D…M7C/F7C/Q7C, LRD, GV2ME, iC60N/iC65N/OSMC32N, XB2/XB4/XB5/ZB5.
+  - Siemens 5SY6 (17), ABB S200 (16), Mean Well DIN supplies (25), IDEC RJ/RU relays (14), Omron MY/LY/G3NA/H3CR (14).
+- Each record carries the maker's own UL wording. CHINT NXC/NXR/NXB, all Delixi parts and Schneider's Chinese-market parts state no UL listing. 5SY, S200 and NB1-63 are UL 1077 supplementary protectors.
+- These parts are kept OUT of the catalog, so a new design never picks one.
+- `FOREIGN_PART_DATA` (catalogs/foreignParts.ts) is keyed by the exact part number and uses Debug 1's DrawnRatings units (`drawn`). It also holds `part`, the full record. `foreignPart(pn)` ignores case and spacing.
+- `foreignEquivalents(pn)` (src/electrical/foreign.ts) returns UL catalog parts with their differences:
+  - contactors: same poles and at least the AC-3 current;
+  - MCBs: same poles and curve, current within 20 % (16 A → 15 A, listed as a change), UL 489 first; UL 1077 is flagged as not branch rated;
+  - overloads: a range that contains the middle of the drawn range;
+  - supplies: same voltage, at least the current;
+  - relays: 1CO = SPDT, 2CO = DPDT, same coil first;
+  - 22 mm operators: same colour.
+- Every CHINT and Delixi contactor, overload and motor protector has at least one UL equivalent (tested).
+- Gaps:
+  - Delixi MCBs and CHINT DZ47: the maker pages are captcha- or 403-blocked.
+  - Fuji: already in the catalog under AD part numbers.
+  - IDEC pilot lights and pushbuttons.
+  - The 12 V supplies and Omron timers/SSRs have no catalog equivalent yet.
+  - The CHINT JXB footprints are unverified.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.
