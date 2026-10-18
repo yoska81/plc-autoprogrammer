@@ -288,6 +288,9 @@ export default function HmiPage() {
   const [tagFilter, setTagFilter] = useUi('hmi.tagFilter', '');
 
   const chosenPanel = getHmi(hmi.design?.hmiPartNumber ?? hmi.hmiPartNumber);
+  // Equipment chosen with "No touch panel": pushbuttons and lamps only.
+  const equipmentChosen = useStageStore((s) => Boolean(s.sources.equipment));
+  const noPanel = equipmentChosen && !hmi.hmiPartNumber && !hmi.design;
   // A panel too small for touch screens (e.g. a 128×64 C-more Micro text display) is not designed for.
   const model = chosenPanel && designable(chosenPanel) ? chosenPanel : undefined;
   const apiKey = settings.anthropicApiKey;
@@ -616,20 +619,27 @@ export default function HmiPage() {
       <StageBanner info={stages.hmi} action={genButton('Update screens')} />
 
       <div className="flex-1 overflow-auto bg-gray-50 p-5 space-y-4">
+        {noPanel && !design && !choosing && (
+          <div className="rounded border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-steel-800 space-y-1" data-testid="no-hmi">
+            <p className="font-semibold">This machine has no touch panel.</p>
+            <p>The operator uses pushbuttons, switches and lamps; the PLC program starts, stops and resets from the panel buttons, and faults show on the fault lamp. Nothing to design here.</p>
+            <button onClick={() => setChoosing(true)} className="text-xs underline text-brand-700">Add a touch panel after all</button>
+          </div>
+        )}
         {chosenPanel && !model && (
           <p role="alert" className="text-sm rounded border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2" data-testid="hmi-too-small">
             The {chosenPanel.partNumber} ({chosenPanel.sizeIn}", {chosenPanel.widthPx}×{chosenPanel.heightPx}{chosenPanel.touch ? '' : ', no touch screen'}) is too small to lay out
             touch screens on; set it up in the maker's software (function keys and text screens). Choose a touch panel of at least {MIN_DESIGN_PX.w}×{MIN_DESIGN_PX.h} to design screens here.
           </p>
         )}
-        {(choosing || !model) && picker}
+        {(choosing || (!model && !noPanel)) && picker}
         {!design && model && !choosing && (
           <p className="text-sm text-gray-700">
             Operator panel: <span className="font-mono font-medium">{model.partNumber}</span> ({model.sizeIn}", {model.widthPx}×{model.heightPx}){' '}
             <button onClick={() => setChoosing(true)} className="ml-1 text-xs underline text-gray-600 hover:text-gray-900">Change</button>
           </p>
         )}
-        {!design && (
+        {!design && !(noPanel && !choosing) && (
           <div className="flex flex-wrap items-center gap-3">
             {genButton('Design the HMI screens')}
             {showExperimental && fullButton}

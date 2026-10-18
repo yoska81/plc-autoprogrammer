@@ -62,4 +62,12 @@ assert.equal(regionRun.program.status, 'ready');
   assert.ok(['equipment', 'io', 'electrical', 'hmi', 'program'].every((k) => st(spec2)[k as 'hmi'].status === 'stale'), 'a description answer stales every stage');
 }
 
+// A machine without a touch panel (equipment chosen with "No touch panel"): the HMI stage is done, not "to do".
+{
+  const noPanel = computeStages({ fp: fp(click), sources: sources(click), ioCount: 3, hasDesign: true, hasHmi: false, hasProgram: true, noHmi: true });
+  assert.equal(noPanel.hmi.status, 'ready', 'no HMI on this machine: nothing to design');
+  const notChosen = computeStages({ fp: fp(click), sources: sources(click), ioCount: 3, hasDesign: true, hasHmi: false, hasProgram: true });
+  assert.equal(notChosen.hmi.status, 'empty', 'an HMI not designed yet is still to do');
+}
+
 console.log('stage tests passed');

@@ -85,10 +85,12 @@ export interface StageInputs {
   hasDesign: boolean;
   hasHmi: boolean;
   hasProgram: boolean;
+  /** The equipment was chosen without a touch panel (pushbuttons and lamps only): the HMI stage is not used. */
+  noHmi?: boolean;
 }
 
 /** Pure stage status (used by the hook below and by the design review). */
-export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram }: StageInputs): Record<StageId, StageInfo> {
+export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi = false }: StageInputs): Record<StageId, StageInfo> {
   const specEmpty = !Object.values(fp.spec).some((t) => t.trim());
   const hasEquipment = Boolean(sources.equipment);
   const info = (id: StageId, has: boolean, deps: { spec?: boolean; io?: boolean; hmi?: boolean; region?: boolean }): StageInfo => {
@@ -114,7 +116,7 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
     equipment: info('equipment', hasEquipment, { spec: true }),
     io: info('io', ioCount > 0, { spec: true }),
     electrical: info('electrical', hasDesign, { spec: true, io: true, region: true }),
-    hmi: info('hmi', hasHmi, { spec: true, io: true }),
+    hmi: noHmi && !hasHmi ? { id: 'hmi', status: 'ready', reason: null } : info('hmi', hasHmi, { spec: true, io: true }),
     program: info('program', hasProgram, { spec: true, io: true, hmi: true }),
   };
 }
@@ -132,6 +134,7 @@ export function stagesNow(): Record<StageId, StageInfo> {
     hasDesign: Boolean(useElectricalStore.getState().design),
     hasHmi: Boolean(hmi),
     hasProgram: prog.ladder.rungs.length > 0 || Boolean(prog.generatedCode),
+    noHmi: Boolean(useStageStore.getState().sources.equipment) && !useHmiStore.getState().hmiPartNumber,
   });
 }
 
@@ -143,6 +146,8 @@ export function useStages(): Record<StageId, StageInfo> {
   const hasDesign = useElectricalStore((s) => Boolean(s.design));
   const hasHmi = useHmiStore((s) => Boolean(s.design));
   const hasProgram = useProgramStore((s) => s.ladder.rungs.length > 0 || Boolean(s.generatedCode));
-  return useMemo(() => computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram }),
-    [fp, sources, ioCount, hasDesign, hasHmi, hasProgram]);
+  const noPanel = useHmiStore((s) => !s.hmiPartNumber);
+  const noHmi = Boolean(sources.equipment) && noPanel;
+  return useMemo(() => computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi }),
+    [fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi]);
 }
