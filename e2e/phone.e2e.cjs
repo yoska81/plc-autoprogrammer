@@ -3,7 +3,8 @@
 // anything marked data-scroll-x: drawings, canvases, the simulator's columns) may scroll sideways; page
 // headers fit (nothing past their edge) and the page title gets a usable width (not squeezed into a
 // narrow column beside the buttons); no button or field is cut off at the right edge (outside a horizontal
-// scroller). Workspaces that show one pane at a time on a phone (Labels, PLC program) are checked pane by pane.
+// scroller). Workspaces that show one pane at a time on a phone (Labels, PLC program) are checked pane by pane,
+// and scrolling their main pane folds the page header to one line.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/phone.e2e.cjs
 const fs = require('fs');
 const path = require('path');
@@ -85,7 +86,48 @@ function audit() {
       for (const f of await page.evaluate(audit)) found.push(`[${names[i]}] ${f}`);
       await page.screenshot({ path: path.join(OUT, `${r.replace(/\W+/g, '_')}_${names[i].replace(/\W+/g, '_')}.png`) });
     }
-    if (names.length) log(`${r}: phone panes ${names.join(' / ')}`);
+    if (names.length) {
+      log(`${r}: phone panes ${names.join(' / ')}`);
+      // Each tab names the pane it shows, the shown pane is a tab panel, and the arrow keys move between tabs.
+      const wiring = await page.evaluate(() => [...document.querySelectorAll('[data-phone-tabs] [role="tab"]')].map((t) => {
+        const p = document.getElementById(t.getAttribute('aria-controls') || '');
+        return { name: t.textContent.trim(), selected: t.getAttribute('aria-selected') === 'true', panel: !!p && p.getAttribute('role') === 'tabpanel' && p.getAttribute('aria-labelledby') === t.id };
+      }));
+      const shown = wiring.find((w) => w.selected);
+      check(shown && shown.panel, `${r}: the “${shown?.name}” tab does not point at its tab panel`);
+      await tabs.first().click();
+      await page.keyboard.press('ArrowRight');
+      const after = await page.evaluate(() => ({ sel: document.querySelector('[data-phone-tabs] [aria-selected="true"]')?.textContent.trim(), focus: document.activeElement?.textContent.trim() }));
+      check(after.sel === names[1] && after.focus === names[1], `${r}: ArrowRight did not move to “${names[1]}” (${JSON.stringify(after)})`);
+      // Scrolling a pane down folds the page header to one line (the pane gets the height); More unfolds it.
+      const panel = { '/program': 'program-panel-ladder', '/electrical?tab=labels': 'labels-panel-list' }[r];
+      if (panel) {
+        await tabs.filter({ hasText: r === '/program' ? 'Program' : 'Labels' }).first().click();
+        await page.waitForTimeout(200);
+        const before = await page.evaluate((id) => document.getElementById(id).getBoundingClientRect().height, panel);
+        const scrolled = await page.evaluate((id) => {
+          const root = document.getElementById(id);
+          const s = [root, ...root.querySelectorAll('*')].find((el) => el.scrollHeight > el.clientHeight + 40 && /(auto|scroll)/.test(getComputedStyle(el).overflowY));
+          if (!s) return false;
+          s.scrollTop = 120;
+          return true;
+        }, panel);
+        check(scrolled, `${r}: nothing to scroll in the ${panel} pane`);
+        await page.waitForTimeout(300);
+        const fold = await page.evaluate((id) => ({ folded: !!document.querySelector('main header[data-folded]'), header: Math.round(document.querySelector('main header').getBoundingClientRect().height), pane: document.getElementById(id).getBoundingClientRect().height }), panel);
+        log(`${r}: pane ${Math.round(before)} → ${Math.round(fold.pane)} px tall with the header folded to ${fold.header} px`);
+        check(fold.folded && fold.header <= 56 && fold.pane > before + 80, `${r}: scrolling the pane did not fold the header (${JSON.stringify(fold)})`);
+        for (const f of await page.evaluate(audit)) check(false, `${r} [folded] ${f}`);
+        await page.locator('main header').getByRole('button', { name: 'More' }).click();
+        check(!(await page.locator('main header[data-folded]').count()), `${r}: More did not unfold the header`);
+      }
+      if (r === '/program') {
+        await tabs.filter({ hasText: 'Cross-ref' }).click();
+        const xb = page.getByRole('button', { name: /Cross reference/ });
+        const on = await xb.evaluate((b) => b.getAttribute('aria-pressed') === 'true' && /\bbg-brand-600\b/.test(b.className));
+        check(on, '/program: on the Cross-ref tab the Cross reference button is not shown pressed');
+      }
+    }
     if (found.length) bad++;
     check(found.length === 0, `${r}: ${[...new Set(found)].slice(0, 4).join('; ')}`);
     await page.screenshot({ path: path.join(OUT, `${r.replace(/\W+/g, '_') || 'root'}.png`) });
