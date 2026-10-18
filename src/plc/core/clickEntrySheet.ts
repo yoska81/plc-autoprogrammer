@@ -6,7 +6,7 @@
  * Edge, Compare; coils: Out / Set / Reset; Timer, Counter, Copy, Math; the END instruction ends the main
  * program).
  */
-import type { LadderElement, LadderOutput, LadderProgram, Rung } from './ladder';
+import { rawTodo, type LadderElement, type LadderOutput, type LadderProgram, type Rung } from './ladder';
 
 export interface EntryCell { column: number; instruction: string; fields: [string, string][] }
 export interface EntryOutput { instruction: string; fields: [string, string][]; note?: string }
@@ -18,6 +18,7 @@ const OP: Record<string, string> = { '==': '= (equal)', '<>': '<> (not equal)', 
 
 function cell(el: LadderElement, column: number, label: (a: string) => string): EntryCell {
   if (el.type === 'CMP') return { column, instruction: 'Compare contact', fields: [['Value A', `${el.left}${label(el.left)}`], ['Operator', OP[el.op]], ['Value B', `${el.right}${label(el.right)}`]] };
+  if (el.type === 'RAW') return { column, instruction: el.vendor === 'click' ? 'As in the original program' : 'Not converted', fields: [['Instruction', el.vendor === 'click' ? el.text : rawTodo(el)]] };
   if (el.type === 'RISE' || el.type === 'FALL') return { column, instruction: `Edge contact — ${el.type === 'RISE' ? 'Rising' : 'Falling'}`, fields: [['Address', `${el.address}${label(el.address)}`]] };
   return { column, instruction: el.type === 'NO' ? 'NO contact (normally open)' : 'NC contact (normally closed)', fields: [['Address', `${el.address}${label(el.address)}`]] };
 }
@@ -41,6 +42,7 @@ function output(o: LadderOutput, label: (a: string) => string): EntryOutput {
     };
     case 'COPY': return { instruction: 'Copy — Single copy', fields: [['Source', /^-?\d/.test(o.source) ? o.source : at(o.source)], ['Destination', at(o.dest)]] };
     case 'MATH': return { instruction: 'Math — Decimal', fields: [['Result', at(o.dest)], ['Formula', o.expression]] };
+    case 'RAW': return { instruction: o.vendor === 'click' ? 'As in the original program' : 'Not converted', fields: [['Instruction', o.vendor === 'click' ? o.text : rawTodo(o)]] };
   }
 }
 

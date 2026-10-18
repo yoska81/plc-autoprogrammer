@@ -100,7 +100,7 @@ function lookup(labels: Map<string, string> | undefined, addr: string): string |
 }
 
 function elementLabel(labels: Map<string, string> | undefined, el: LadderElement) {
-  return el.type === 'CMP' ? lookup(labels, el.left) : lookup(labels, el.address);
+  return el.type === 'CMP' ? lookup(labels, el.left) : el.type === 'RAW' ? undefined : lookup(labels, el.address);
 }
 
 interface DiagramProps {

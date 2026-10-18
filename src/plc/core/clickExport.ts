@@ -1,4 +1,4 @@
-import type { LadderElement, LadderOutput, LadderProgram } from './ladder';
+import { rawTodo, type LadderElement, type LadderOutput, type LadderProgram } from './ladder';
 import type { IOPoint } from '../../types/io';
 import { clickEntryText } from './clickEntrySheet';
 
@@ -63,6 +63,7 @@ const UNIT_TEXT: Record<string, string> = { ms: 'ms', sec: 'sec', min: 'min', ho
 
 export function describeElement(el: LadderElement, label: (a: string) => string): string {
   if (el.type === 'CMP') return `Compare ${el.left} ${el.op} ${el.right}`;
+  if (el.type === 'RAW') return el.vendor === 'click' ? el.text : rawTodo(el);
   return `${CONTACT_TEXT[el.type]} ${el.address}${label(el.address)}`;
 }
 
@@ -78,6 +79,7 @@ export function describeOutput(o: LadderOutput, label: (a: string) => string): s
       return `Counter ${o.address}: count ${o.direction === 'UP' ? 'Up' : 'Down'}, setpoint ${o.preset}, reset rung = ${o.resetAddress ?? '?'}`;
     case 'COPY': return `Copy (Single) ${o.source} → ${o.dest}`;
     case 'MATH': return `Math (Decimal): ${o.dest} = ${o.expression}`;
+    case 'RAW': return o.vendor === 'click' ? o.text : rawTodo(o);
   }
 }
 

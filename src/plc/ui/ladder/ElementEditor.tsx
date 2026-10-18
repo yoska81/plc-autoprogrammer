@@ -56,11 +56,21 @@ const OUTPUT_TYPES: { v: OutputType; l: string }[] = [
 ];
 const UNITS: TimeUnit[] = ['ms', 'sec', 'min', 'hour', 'day'];
 
+/** An imported instruction the app can't edit: shown as it was; choosing another instruction replaces it. */
+function RawNote({ text }: { text: string }) {
+  return (
+    <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded p-2">
+      From the original program, not converted: <code className="break-all">{text}</code>. It goes back into the PLC as it was; the simulator doesn't run it. Choose an instruction above to replace it.
+    </p>
+  );
+}
+
 function ElementFields({ value, onChange }: { value: LadderElement; onChange: (v: LadderElement) => void }) {
   return (
     <>
       <Field label="Instruction">
         <select className={inputCls} value={value.type} onChange={(e) => onChange(defaultElement(e.target.value as ElementType, value))}>
+          {value.type === 'RAW' && <option value="RAW">Not converted (original)</option>}
           {ELEMENT_TYPES.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
         </select>
       </Field>
@@ -74,6 +84,8 @@ function ElementFields({ value, onChange }: { value: LadderElement; onChange: (v
           </Field>
           <Field label="Right"><AddrInput value={value.right} onChange={(right) => onChange({ ...value, right })} placeholder="100" /></Field>
         </div>
+      ) : value.type === 'RAW' ? (
+        <RawNote text={value.text} />
       ) : (
         <Field label="Address"><AddrInput autoFocus value={value.address} onChange={(address) => onChange({ ...value, address })} placeholder="X001" /></Field>
       )}
@@ -85,11 +97,14 @@ function OutputFields({ value, onChange }: { value: LadderOutput; onChange: (v: 
   const typeSelect = (
     <Field label="Instruction">
       <select className={inputCls} value={value.type} onChange={(e) => onChange(defaultOutput(e.target.value as OutputType, value))}>
+        {value.type === 'RAW' && <option value="RAW">Not converted (original)</option>}
         {OUTPUT_TYPES.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
       </select>
     </Field>
   );
   switch (value.type) {
+    case 'RAW':
+      return <>{typeSelect}<RawNote text={value.text} /></>;
     case 'OUT': case 'SET': case 'RST':
       return (
         <>

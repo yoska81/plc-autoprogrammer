@@ -57,6 +57,14 @@ function ElementChip({ el, conducting, closed, words, labelOf }: {
       </div>
     );
   }
+  if (el.type === 'RAW') {
+    return (
+      <div className="flex h-[42px] w-[124px] shrink-0 flex-col justify-center rounded border border-dashed border-amber-400 bg-amber-50 px-1.5 text-amber-900" title={`Not simulated (taken as open): ${el.text}`}>
+        <div className="truncate font-mono text-[11px] font-bold">{el.text}</div>
+        <div className="truncate text-[10px] text-amber-700">not simulated</div>
+      </div>
+    );
+  }
   const sym = el.type === 'NO' ? '┤ ├' : el.type === 'NC' ? '┤/├' : el.type === 'RISE' ? '┤↑├' : '┤↓├';
   const label = labelOf(el.address);
   return (
@@ -77,6 +85,13 @@ function OutputChip({ o, rungOn, bits, words, timers, counters, labelOf }: {
   const box = (active: boolean) => `flex h-[42px] w-[172px] shrink-0 flex-col justify-center rounded border px-1.5 ${
     active ? 'border-emerald-500 bg-emerald-100 text-emerald-900' : rungOn ? 'border-emerald-400 bg-white' : 'border-steel-300 bg-white text-steel-700'}`;
   switch (o.type) {
+    case 'RAW':
+      return (
+        <div className="flex h-[42px] w-[172px] shrink-0 flex-col justify-center rounded border border-dashed border-amber-400 bg-amber-50 px-1.5 text-amber-900" title={`Not simulated: ${o.text}`}>
+          <div className="truncate font-mono text-[11px] font-bold">{o.text}</div>
+          <div className="truncate text-[10px] text-amber-700">not simulated</div>
+        </div>
+      );
     case 'OUT': case 'SET': case 'RST': {
       const on = bits.get(normAddress(o.address)) ?? false;
       const sym = o.type === 'OUT' ? '( )' : o.type === 'SET' ? '(S)' : '(R)';

@@ -260,6 +260,8 @@ export function createSimulator(program: LadderProgram, options: SimOptions = {}
 
   function evalElement(el: LadderElement, key: string): boolean {
     if (el.type === 'CMP') return compare(readWord(el.left), el.op, readWord(el.right));
+    // An imported instruction the simulator doesn't know: open, so nothing behind it switches on.
+    if (el.type === 'RAW') { addError(`Not simulated, taken as open: ${el.text}`); return false; }
     const v = readBit(el.address);
     switch (el.type) {
       case 'NO': return v;
@@ -362,6 +364,7 @@ export function createSimulator(program: LadderProgram, options: SimOptions = {}
           writeWord(o.dest, f(readWord));
           break;
         }
+        case 'RAW': if (on) addError(`Not simulated, does nothing: ${o.text}`); break;
       }
     });
   }

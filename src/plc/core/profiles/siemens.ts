@@ -21,7 +21,7 @@
  */
 import type { AnalogChannel, CpuModel, ExportContext, ModuleSlot, PlcProfile, ProgramExporter } from '../profile';
 import type { AnalogRange } from '../../../types/io';
-import type { LadderProgram } from '../ladder';
+import { elementAddresses, type LadderProgram } from '../ladder';
 import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress } from './click';
 import { toIecSt, type StDialect, type StProgram, type StVariable } from './iecSt';
 import { getPart } from '../../../electrical/catalog';
@@ -101,6 +101,7 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
   const modules = ctx.modules ?? [];
   const analog = new Map(ctx.io.filter((p) => p.signal === 'analog' && p.analog).map((p) => [ctx.addresses.get(p.id)?.toUpperCase() ?? '', p]));
   return {
+    vendor: 'siemens-s7',
     title: 'TIA Portal SCL external source: External source files › Add new external file, then "Generate blocks from source".',
     ioVar: (base, name) => {
       const s = siemensAddress(base, c, modules);
@@ -225,7 +226,7 @@ export const siemensProfile: PlcProfile = {
   promptKnowledge: KNOWLEDGE,
   checkRung: (rung) => {
     const issues: { severity: 'error' | 'warning'; message: string }[] = [];
-    for (const e of rung.branches.flat()) for (const a of e.type === 'CMP' ? [e.left, e.right] : [e.address]) {
+    for (const e of rung.branches.flat()) for (const a of elementAddresses(e)) {
       if (/^SC\d+$/i.test(a) && !['SC1', 'SC2', 'SC7'].includes(a.toUpperCase())) issues.push({ severity: 'error', message: `${a}: S7 has no equivalent system bit (use SC1, SC2 or SC7 only).` });
     }
     return issues;

@@ -4,7 +4,7 @@
  * differences (I/O variables, how a variable is referenced, first-scan bit, timer / counter block
  * types and parameter names, TIME ↔ ms conversion) come from the dialect.
  */
-import type { CompareElement, LadderElement, LadderOutput, LadderProgram } from '../ladder';
+import { rawTodo, type CompareElement, type LadderElement, type LadderOutput, type LadderProgram } from '../ladder';
 import type { ExportContext } from '../profile';
 import { logixName } from './logixExport';
 
@@ -16,6 +16,8 @@ type BlockType = 'TON' | 'TOF' | 'RTO' | 'CTU' | 'CTD' | 'R_TRIG' | 'F_TRIG' | '
 export interface StDialect {
   /** Second header line. */
   title: string;
+  /** PLC profile id: RAW instructions imported from this PLC are written as they are. */
+  vendor?: string;
   /** Vendor I/O variable / tag for a physical neutral address (name = the variable's name); null = not known (TODO line). */
   ioVar(base: string, name: string): string | null;
   ioTodo(base: string, name: string, isInput: boolean): string;
@@ -106,6 +108,11 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     const pre: string[] = [];
     const el = (e: LadderElement): string => {
       if (e.type === 'CMP') return `(${op(e.left, true)} ${CMP[e.op]} ${op(e.right, true)})`;
+      if (e.type === 'RAW') {
+        if (e.vendor === d.vendor) return `(${e.text})`;
+        pre.push(`(* ${rawTodo(e).replace(/\*\)/g, '* )')} *)`);
+        return 'FALSE';
+      }
       const a = op(e.address);
       if (e.type === 'NO') return a;
       if (e.type === 'NC') return `NOT ${a}`;
@@ -157,6 +164,7 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
         }
         case 'COPY': out.push(when(`${op(o.dest)} := ${op(o.source, true)};`)); break;
         case 'MATH': out.push(when(`${op(o.dest)} := ${o.expression.replace(OPERAND_RE, (t) => op(t, true))};`)); break;
+        case 'RAW': out.push(o.vendor === d.vendor ? when(/;\s*$/.test(o.text) ? o.text.trim() : `${o.text.trim()};`) : `(* ${rawTodo(o).replace(/\*\)/g, '* )')} *)`); break;
       }
     }
     return [...(r.comment ? [`(* ${r.comment.replace(/\*\)/g, '* )')} *)`] : []), ...pre, ...out];

@@ -1,4 +1,4 @@
-import { rungAddresses, rungWrites, type LadderProgram, type Rung } from './ladder';
+import { elementAddresses, rungAddresses, rungWrites, type LadderProgram, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
 
 export interface ValidationIssue {
@@ -46,6 +46,8 @@ export function validateProgram(
         if (el.type === 'CMP') {
           check(rung, el.left, 'Compare left side', { valueOk: true });
           check(rung, el.right, 'Compare right side', { valueOk: true });
+        } else if (el.type === 'RAW') {
+          issues.push({ rungId: rung.id, severity: 'warning', message: `Not understood: check by hand (${el.text}).` });
         } else {
           check(rung, el.address, 'Contact', { bit: true });
         }
@@ -54,6 +56,9 @@ export function validateProgram(
 
     for (const o of rung.outputs) {
       switch (o.type) {
+        case 'RAW':
+          issues.push({ rungId: rung.id, severity: 'warning', message: `Not understood: check by hand (${o.text}).` });
+          break;
         case 'OUT':
           check(rung, o.address, 'Coil', { bit: true, write: true });
           outCoils.set(o.address, (outCoils.get(o.address) ?? 0) + 1);
@@ -114,7 +119,7 @@ export function validateProgram(
     const reads = new Map<string, string>(), writes = new Map<string, string>();
     const note = (m: Map<string, string>, a: string, rung: string) => { const k = a.trim().toUpperCase(); if (k && !m.has(k)) m.set(k, rung); };
     for (const r of program.rungs) {
-      for (const b of r.branches) for (const e of b) for (const a of e.type === 'CMP' ? [e.left, e.right] : [e.address]) note(reads, a, r.id);
+      for (const b of r.branches) for (const e of b) for (const a of elementAddresses(e)) note(reads, a, r.id);
       for (const o of r.outputs) {
         if (o.type === 'COPY') note(reads, o.source, r.id);
         if (o.type === 'MATH') for (const a of o.expression.toUpperCase().match(/[A-Z]+\d+/g) ?? []) note(reads, a, r.id);

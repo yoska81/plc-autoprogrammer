@@ -1,7 +1,7 @@
 import type { ProjectSnapshot } from '../collect';
 import { getHmi, isCmore } from '../../hmi/hmiCatalog';
 import type { LadderElement, LadderOutput, Rung } from '../../plc/core/ladder';
-import { rungWrites } from '../../plc/core/ladder';
+import { elementAddresses, rungWrites } from '../../plc/core/ladder';
 import { describeOutput } from '../../plc/core/clickExport';
 import { buildModel, naturalCompare } from '../../electrical/derive';
 import { getPart } from '../../electrical/catalog';
@@ -69,7 +69,7 @@ export function programInfo(p: ProjectSnapshot): ProgramInfo {
   p.ladder.rungs.forEach((r, i) => {
     const n = i + 1;
     for (const b of r.branches) for (const el of b) {
-      if (el.type === 'CMP') { push(reads, el.left, n); push(reads, el.right, n); } else push(reads, el.address, n);
+      for (const a of elementAddresses(el)) push(reads, a, n);
     }
     for (const o of r.outputs) {
       if (o.type === 'TMR' || o.type === 'CNT') { push(reads, o.preset, n); if (o.resetAddress) push(reads, o.resetAddress, n); }
@@ -84,6 +84,7 @@ export function programInfo(p: ProjectSnapshot): ProgramInfo {
       const side = (s: string) => (kind(s) === 'constant' ? s : ref(s));
       return `${side(el.left)} ${el.op} ${side(el.right)}`;
     }
+    if (el.type === 'RAW') return `${el.text} (not converted; check by hand)`;
     const a = el.address;
     const k = kind(a);
     const r = ref(a);
@@ -104,7 +105,7 @@ export function programInfo(p: ProjectSnapshot): ProgramInfo {
       case 'FALL': return `${r} turns OFF (one-shot)`;
     }
   };
-  const key = (el: LadderElement) => (el.type === 'CMP' ? `CMP:${el.left}${el.op}${el.right}` : `${el.type}:${el.address.toUpperCase()}`);
+  const key = (el: LadderElement) => (el.type === 'CMP' ? `CMP:${el.left}${el.op}${el.right}` : el.type === 'RAW' ? `RAW:${el.text}` : `${el.type}:${el.address.toUpperCase()}`);
   const logic = (r: Rung, self?: string) => {
     if (!r.branches.length) return { permissives: ['always (no conditions)'], initiators: [] };
     if (r.branches.length === 1) {
@@ -202,7 +203,7 @@ export function alarmRows(p: ProjectSnapshot, info = programInfo(p)): AlarmRow[]
       causes.push(`Set when ${info.conditionText(r, addr)} (rung ${info.rungNo(r)}).`);
       // Expand timers / counters that trigger it.
       for (const b of r.branches) for (const el of b) {
-        if (el.type === 'CMP' || info.kind(el.address) !== 'timer') continue;
+        if (el.type === 'CMP' || el.type === 'RAW' || info.kind(el.address) !== 'timer') continue;
         for (const tr of p.ladder.rungs) for (const o of tr.outputs) {
           if (o.type === 'TMR' && o.address.toUpperCase() === el.address.toUpperCase()) causes.push(`${o.address} times ${o.preset} ${o.unit} while ${info.conditionText(tr)} (rung ${info.rungNo(tr)}).`);
         }
@@ -216,10 +217,10 @@ export function alarmRows(p: ProjectSnapshot, info = programInfo(p)): AlarmRow[]
     }
     if (best) causes.push(`Specification: ${best}`);
     const devices = new Set<string>();
-    for (const r of setRungs) for (const b of r.branches) for (const el of b) if (el.type !== 'CMP' && info.device(el.address)) devices.add(info.device(el.address));
+    for (const r of setRungs) for (const b of r.branches) for (const el of b) if (el.type !== 'CMP' && el.type !== 'RAW' && info.device(el.address)) devices.add(info.device(el.address));
     // Devices behind a timer's enabling rung, e.g. the sensor that never came on.
     for (const r of p.ladder.rungs) if (r.outputs.some((o) => o.type === 'TMR') && causes.some((c) => c.includes(`(rung ${info.rungNo(r)})`))) {
-      for (const b of r.branches) for (const el of b) if (el.type !== 'CMP' && info.device(el.address)) devices.add(info.device(el.address));
+      for (const b of r.branches) for (const el of b) if (el.type !== 'CMP' && el.type !== 'RAW' && info.device(el.address)) devices.add(info.device(el.address));
     }
     const actions: string[] = [];
     if (devices.size) actions.push(`Check ${[...devices].join(', ')} and the mechanism they monitor; remove the cause.`);

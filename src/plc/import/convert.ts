@@ -61,7 +61,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   const exprNames = (e: string) => (e.match(NAME_RE) ?? []).filter((n) => !RESERVED.has(n.toUpperCase()));
   for (const { rung } of rungs) {
     for (const b of rung.branches) for (const e of b) {
-      if (e.type === 'CMP') { for (const n of [...exprNames(e.left), ...exprNames(e.right)]) operand(n, 'word'); } else operand(e.address, 'contact');
+      if (e.type === 'CMP') { for (const n of [...exprNames(e.left), ...exprNames(e.right)]) operand(n, 'word'); } else if (e.type !== 'RAW') operand(e.address, 'contact');
     }
     for (const o of rung.outputs) {
       switch (o.type) {
@@ -185,7 +185,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   };
   const trExpr = (e: string) => (NUM.test(e.trim()) ? translate(e) : e.replace(NAME_RE, (n) => (RESERVED.has(n.toUpperCase()) ? n : translate(n))));
 
-  const trEl = (e: LadderElement): LadderElement => (e.type === 'CMP' ? { ...e, left: trExpr(e.left), right: trExpr(e.right) } : { ...e, address: translate(e.address) });
+  const trEl = (e: LadderElement): LadderElement => (e.type === 'CMP' ? { ...e, left: trExpr(e.left), right: trExpr(e.right) } : e.type === 'RAW' ? e : { ...e, address: translate(e.address) });
   const trOut = (o: LadderOutput): LadderOutput => {
     switch (o.type) {
       case 'OUT': case 'SET': case 'RST': return { ...o, address: translate(o.address) };
@@ -193,6 +193,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
       case 'CNT': return { ...o, address: translate(o.address), preset: trExpr(o.preset), resetAddress: o.resetAddress ? translate(o.resetAddress) : null };
       case 'COPY': return { ...o, source: trExpr(o.source), dest: translate(o.dest) };
       case 'MATH': return { ...o, dest: translate(o.dest), expression: trExpr(o.expression) };
+      case 'RAW': return o;
     }
   };
 

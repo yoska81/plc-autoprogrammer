@@ -9,7 +9,7 @@
  * (1756-RM084 / RM014D, ch. 1 and 9): RSLogix5000Content › Controller › Tags / Programs /
  * Routines / RLLContent / Rung › Text CDATA, Tasks › ScheduledPrograms.
  */
-import type { CompareElement, LadderElement, LadderOutput, LadderProgram, Rung } from '../ladder';
+import { rawTodo, type CompareElement, type LadderElement, type LadderOutput, type LadderProgram, type RawInstruction, type Rung } from '../ladder';
 import type { ExportContext, ModuleSlot } from '../profile';
 
 export type LogixType = 'BOOL' | 'DINT' | 'REAL' | 'TIMER' | 'COUNTER';
@@ -111,6 +111,7 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
       const l = operand(el.left, true), r = operand(el.right, true);
       return isExpr(l) || isExpr(r) ? `CMP(${l}${CMP_EXPR[el.op]}${r})` : `${CMP_INSTR[el.op]}(${l},${r})`;
     }
+    if (el.type === 'RAW') return raw(el) ?? null;
     const a = el.address.trim().toUpperCase();
     if (a === 'SC1') return el.type === 'NO' || el.type === 'RISE' ? '' : null; // always on
     const op = operand(a);
@@ -136,6 +137,16 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     }
     if (!paths.length) return null;
     return paths.length === 1 ? paths[0] : `[${paths.join(',')}]`;
+  }
+
+  /** Instructions of other PLCs in the current rung: written into its comment. */
+  const todos: string[] = [];
+  /** A RAW instruction from a Logix program as it was; from another PLC: undefined (the rung comment says what it was). */
+  function raw(r: RawInstruction): string | undefined {
+    if (r.vendor === 'logix') return r.text.trim().replace(/;$/, '');
+    todos.push(rawTodo(r));
+    warnings.push(rawTodo(r));
+    return undefined;
   }
 
   const pre: LogixRung[] = []; // rungs emitted before the current one (presets from registers)
@@ -173,15 +184,16 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
         return isExpr(src) ? `CPT(${dst},${src})` : `MOV(${src},${dst})`;
       }
       case 'MATH': return `CPT(${operand(o.dest)},${expr(o.expression)})`;
+      case 'RAW': return raw(o) ?? 'NOP()';
     }
   }
 
   function rungText(r: Rung): LogixRung[] {
-    pre.length = 0; post.length = 0;
+    pre.length = 0; post.length = 0; todos.length = 0;
     const cond = conditions(r.branches);
     const outs = r.outputs.map(output);
     const body = outs.length === 1 ? outs[0] : `[${outs.join(',')}]`;
-    const main: LogixRung = { comment: r.comment, text: `${cond === null ? 'AFI()' : cond}${body};` };
+    const main: LogixRung = { comment: [r.comment, ...todos].filter(Boolean).join('\n'), text: `${cond === null ? 'AFI()' : cond}${body};` };
     return [...pre, main, ...post];
   }
 

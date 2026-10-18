@@ -171,13 +171,14 @@ function normalize(program: LadderProgram): LadderProgram {
         ...(block && blockIds.has(block) ? { block } : {}),
         id,
         branches: r.branches.map((b) => b.map((el) =>
-          el.type === 'CMP' ? { ...el, left: up(el.left), right: up(el.right) } : { ...el, address: up(el.address) })),
+          el.type === 'CMP' ? { ...el, left: up(el.left), right: up(el.right) } : el.type === 'RAW' ? el : { ...el, address: up(el.address) })),
         outputs: r.outputs.map((o) => {
           switch (o.type) {
             case 'COPY': return { ...o, source: up(o.source), dest: up(o.dest) };
             case 'MATH': return { ...o, dest: up(o.dest) };
             case 'TMR': case 'CNT':
               return { ...o, address: up(o.address), preset: up(o.preset), resetAddress: o.resetAddress ? up(o.resetAddress) : null };
+            case 'RAW': return o;
             default: return { ...o, address: up(o.address) };
           }
         }),
