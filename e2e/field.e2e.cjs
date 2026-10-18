@@ -79,6 +79,8 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(/Will change: M1 power set to 3 HP/.test(await openList.innerText()), 'preview of the design edit');
   check(/edit the design by hand/.test(await openList.innerText()), 'not-editable change recorded only');
   await page.reload();
+  // pages load as their own chunks: wait for the redlines page before counting
+  await page.locator('[data-redline]').nth(1).waitFor({ timeout: 15000 }).catch(() => {});
   check(await page.locator('[data-redline]').count() === 2, 'redlines survive a reload');
   await page.getByLabel('Revised by').fill('JT');
   const applyBtn = page.getByRole('button', { name: /Apply and issue revision/ });
@@ -89,6 +91,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(motor === 3, `M1 is 3 HP in the design (${motor})`);
   await page.goto(BASE + '/project');
   const changes = page.getByLabel(`Changes in revision ${rev}`);
+  await changes.first().waitFor({ timeout: 15000 }).catch(() => {});
   check(await changes.count() === 1 && /M1 is 3 HP → M1 power set to 3 HP/.test(await changes.innerText()) && /second E-stop.*by hand/.test(await changes.innerText()), `revision ${rev} lists the changes`);
   await page.screenshot({ path: path.join(OUT, 'revision.png') });
 
