@@ -10,6 +10,6 @@ export function wiringText(m: Pick<ExistingMachine, 'terminals' | 'wiring'>): st
   for (const t of m.terminals ?? []) strips.set(t.strip, [...(strips.get(t.strip) ?? []), `${t.terminal} = wire ${t.wire}`]);
   return [
     strips.size ? `Terminal strips as photographed:\n${[...strips].map(([s, ts]) => `${s}: ${ts.join(', ')}`).join('\n')}` : '',
-    m.wiring?.length ? `Wires traced by their numbers:\n${m.wiring.map((w) => `${w.wire}: ${w.ends.join(' – ')}`).join('\n')}` : '',
+    m.wiring?.length ? `Wires traced by their numbers:\n${m.wiring.map((w) => `${w.wire}: ${w.ends.join(' – ')}${w.ends.length === 1 ? ' – (other end not in the photos)' : ''}`).join('\n')}` : '',
   ].filter(Boolean).join('\n');
 }

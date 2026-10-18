@@ -13,7 +13,11 @@ import { planDrawings, wireClass } from '../../electrical/drawings/plan';
 import { clampReading, PHOTO_EDGE, PHOTO_SCHEMA, photoBlocks, recogniseCabinet } from './recognise';
 import { mergeDevices, mergeReading } from './merge';
 import { asBuiltDesign, matchPart, nameplateRatings, photosToMachine, reviewItems, tracedPoints, type ReviewItem } from './toDesign';
-import { plcAddress } from './trace';
+import { plcAddress, traceAll, traceNets } from './trace';
+import { RELAY_CABINET } from './__fixtures__/relayCabinet';
+import { convertMachine, NA_TARGET } from '../convert';
+import { toRelayLogic } from '../relayLogic';
+import { tagger } from './toDesign';
 import { wiringText } from './wiringText';
 import { SMALL_CABINET } from './__fixtures__/smallCabinet';
 import type { PhotoDevice } from './recognise';
@@ -119,12 +123,16 @@ assert.equal(mk1.source, 'photo 3, rail 2, position 3', 'where the close-up show
 assert.equal(mk1.photos?.length, 2, 'every sighting handed over, not only the first');
 assert.deepEqual(mk1.wires, [{ terminal: 'A1', wire: '2001' }], 'the wire numbers at its terminals are kept');
 assert.deepEqual(machine.terminals?.map((t) => `${t.strip}-${t.terminal}:${t.wire}`), ['TB1-1:24+', 'TB1-2:0V', 'TB1-3:1001', 'TB1-4:1101'], 'terminal strips as data, not text');
-assert.deepEqual(machine.wiring?.map((w) => w.wire), ['0V', '24+', '101', '1001', '1101', '2001']);
+assert.deepEqual(machine.wiring?.map((w) => w.wire), ['0V', '24+', '101', '102', '1001', '1002', '1101', '2001', 'L1'], 'one-ended wires kept as open ends');
+assert.deepEqual(machine.wiring?.find((w) => w.wire === '102')?.ends, ['CB2:2']);
+assert.deepEqual(machine.circuits, [], 'the only coil (K1) is driven by the PLC: no relay circuit');
+assert.equal(machine.controller, 'plc');
 assert.equal(machine.spec.utilities, 'Line 3 starter panel');
 // …and shown on the machine description when the reading is applied (convertedSpec).
 const wt = wiringText(machine);
 assert.match(wt, /TB1: 1 = wire 24\+, 2 = wire 0V, 3 = wire 1001, 4 = wire 1101/);
 assert.match(wt, /2001: PLC1:Y1 – K1:A1/);
+assert.match(wt, /102: CB2:2 – \(other end not in the photos\)/);
 assert.equal(wiringText({ terminals: [], wiring: [] }), '');
 assert.ok(machine.components.some((c) => c.tag === 'IO1') && r.design.components.some((c) => c.tag === 'IO1'), 'the unlabelled module has the same tag in both outputs');
 assert.equal(mk1.confidence, 'high', 'confirmed in the photo review');
@@ -135,7 +143,7 @@ assert.deepEqual([machine.components.find((c) => c.tag === 'OL1')!.ratings.minAm
 assert.equal(machine.plc?.cpuPartNumber, 'C0-10DD1E-D');
 assert.deepEqual(machine.modules.map((m) => m.partNumber), ['C0-08ND3']);
 assert.ok(machine.questions.some((q) => /behind the left duct/.test(q.text)));
-assert.deepEqual(machine.io.map((p) => `${p.address}:${p.deviceTag ?? ''}`), ['X001:', 'X002:', 'X101:', 'Y001:K1'], 'the shared review gets the traced I/O');
+assert.deepEqual(machine.io.map((p) => `${p.address}:${p.deviceTag ?? ''}`), ['X1:', 'X2:', 'X101:', 'Y1:K1'], 'the shared review gets the traced I/O');
 assert.equal(nameplateRatings('24 VDC 3 A').amps, 3);
 
 // ── Wiring from wire numbers: a number read at two places is one wire; the PLC's wires are the I/O list ──
@@ -144,21 +152,98 @@ assert.deepEqual(wires.map((w) => `${w.wire}: ${w.ends.join(' – ')}`), [
   '0V: PS1:-V – TB1:2', '24+: PS1:+V – TB1:1', '101: CB1:2 – PS1:L', '1001: PLC1:X1 – TB1:3', '1101: IO1:1 – TB1:4', '2001: PLC1:Y1 – K1:A1',
 ], 'wires seen at two places (1002 is seen only at the PLC)');
 const ioOf = (a: string) => r.io.find((p) => p.address === a)!;
-assert.deepEqual(r.io.map((p) => p.address), ['X001', 'X002', 'X101', 'Y001'], 'CPU X1 → X001, slot 1 point 1 → X101 (CLICK), CPU Y1 → Y001');
-assert.equal(ioOf('Y001').deviceTag, 'K1');
-assert.equal(ioOf('Y001').deviceType, 'contactor-coil');
-assert.equal(ioOf('Y001').confidence, 'high');
-assert.equal(ioOf('X001').via, 'TB1-3', 'a field input: out through the terminal strip');
-assert.equal(ioOf('X001').confidence, 'medium');
-assert.equal(ioOf('X002').confidence, 'low', 'seen at one end only');
-assert.ok(r.questions.some((q) => /which field device is wired to TB1-3 \(wire 1001, PLC input X001\)/.test(q)), 'the field device behind each strip point is asked');
-assert.ok(r.questions.some((q) => /where does wire 1002 from PLC input X002 go/.test(q)));
-assert.deepEqual(r.design.ioWiring.find((w) => w.address === 'Y001'), { address: 'Y001', deviceTag: 'K1', deviceType: 'contactor-coil', description: 'K1 contactor coil (wire 2001)', location: 'Cabinet' });
-assert.deepEqual(tracedPoints(r.io).map((p) => [p.plcAddress, p.type]), [['X001', 'input'], ['X002', 'input'], ['X101', 'input'], ['Y001', 'output']]);
-assert.deepEqual(plcAddress('Y12', 'plc', 0, null), { address: 'Y012', type: 'output' });
-assert.deepEqual(plcAddress('3', 'plcModule', 2, 'output'), { address: 'Y203', type: 'output' });
+assert.deepEqual(r.io.map((p) => p.address), ['X1', 'X2', 'X101', 'Y1'], 'CPU addresses as read; slot 1 point 1 → X101 (guessed from the rail)');
+assert.equal(ioOf('Y1').deviceTag, 'K1');
+assert.equal(ioOf('Y1').deviceType, 'contactor-coil');
+assert.equal(ioOf('Y1').confidence, 'high');
+assert.equal(ioOf('X1').via, 'TB1-3', 'a field input: out through the terminal strip');
+assert.equal(ioOf('X1').confidence, 'medium');
+assert.equal(ioOf('X2').confidence, 'low', 'seen at one end only');
+assert.equal(ioOf('X101').guessed, true);
+assert.match(ioOf('X101').description, /address guessed from the module's slot/);
+assert.equal(ioOf('X1').guessed, false);
+assert.ok(r.questions.includes('Cabinet photos: TB1: what is wired to terminals 3 (wire 1001 → PLC input X1) and 4 (wire 1101 → PLC input X101) outside the cabinet?'), 'one question per strip, supply terminals left out');
+assert.ok(r.questions.includes('Cabinet photos: the other end of wire 1002 (PLC input X2) is not in the photos — where does it go?'));
+assert.ok(r.questions.includes('Cabinet photos: IO1 (C0-08ND3) is taken as I/O slot 1 from its place on the rail, so its points are numbered X101 — check the slot and the addresses in the PLC program.'));
+assert.deepEqual(r.design.ioWiring.find((w) => w.address === 'Y1'), { address: 'Y1', deviceTag: 'K1', deviceType: 'contactor-coil', description: 'K1 contactor coil (wire 2001)', location: 'Cabinet' });
+assert.deepEqual(tracedPoints(r.io).map((p) => [p.plcAddress, p.type]), [['X1', 'input'], ['X2', 'input'], ['X101', 'input'], ['Y1', 'output']]);
+assert.deepEqual(plcAddress('Y12', 'plc', 0, null), { address: 'Y12', type: 'output', guessed: false }, 'kept as read');
+assert.deepEqual(plcAddress('%I0.3', 'plc', 0, null), { address: '%I0.3', type: 'input', guessed: false }, 'Siemens / IEC addresses kept');
+assert.deepEqual(plcAddress('I0.3', 'plc', 0, null), { address: 'I0.3', type: 'input', guessed: false });
+assert.deepEqual(plcAddress('Q0.1', 'plc', 0, null), { address: 'Q0.1', type: 'output', guessed: false });
+assert.deepEqual(plcAddress('%IX1.0', 'plc', 0, null), { address: '%IX1.0', type: 'input', guessed: false });
+assert.deepEqual(plcAddress('I2.5', 'plcModule', 1, null), { address: 'I2.5', type: 'input', guessed: false }, 'a full address on a module is kept');
+assert.deepEqual(plcAddress('3', 'plcModule', 2, 'output'), { address: 'Y203', type: 'output', guessed: true });
+assert.deepEqual(plcAddress('X3', 'plcModule', 1, null), { address: 'X103', type: 'input', guessed: true }, 'a short X3 on a module would repeat the CPU\'s X3');
 assert.equal(plcAddress('C1', 'plc', 0, null), null, 'a common terminal is not an I/O point');
 assert.equal(plcAddress('1', 'plcModule', 1, null), null, 'module of unknown kind: no address guessed');
+
+// ── Wire numbers that look alike, two numbers on one terminal, a wire reaching two points ──
+const dev = (tag: string, category: PhotoDevice['category'], wires: [string, string][], partNumber = '', ratings = ''): PhotoDevice =>
+  ({ tag, category, manufacturer: '', partNumber, ratings, rail: 1, order: 1, confidence: 'high', seen: [], wires: wires.map(([terminal, wire]) => ({ terminal, wire })) });
+const asItems = (devices: PhotoDevice[], strips: [string, [string, string][]][] = []): ReviewItem[] => [
+  ...devices.map((d, i): ReviewItem => ({ key: `d${i}`, kind: 'device', device: d, status: 'confirmed' })),
+  ...strips.map(([tag, ts], i): ReviewItem => ({ key: `s${i}`, kind: 'strip', strip: { tag, rail: 3, order: 1, confidence: 'high', seen: [], terminals: ts.map(([terminal, wire]) => ({ terminal, wire })) }, status: 'confirmed' })),
+];
+const tagOfIt = (it: ReviewItem) => it.device?.tag ?? it.strip!.tag;
+const nearItems = asItems([dev('PLC1', 'plc', [['Y1', '2001'], ['Y2', '-2002'], ['Y3', '20 03']]), dev('KA1', 'relay', [['A1', '2OO1']]), dev('KA2', 'relay', [['A1', '2002']]), dev('KA3', 'relay', [['A1', '2003']])]);
+const nn = traceNets(nearItems, tagOfIt);
+assert.deepEqual(nn.near.map((m) => `${m.a}~${m.b}`), ['2001~2OO1', '-2002~2002', '20 03~2003'], 'look-alike numbers flagged');
+assert.ok(nn.nets.every((n) => n.ends.length === 1), '…and never merged');
+const nq = traceAll(nearItems, tagOfIt, () => undefined).questions;
+assert.ok(nq.includes('Cabinet photos: wire "2001" (at PLC1:Y1) and wire "2OO1" (at KA1:A1) look alike — one wire misread, or two different wires?'));
+// two numbers on one terminal are one conductor: a coil with two wires, a strip's feed-through
+const joined = traceNets(asItems([dev('PLC1', 'plc', [['Y1', '2001'], ['Y2', '2002']]), dev('KA1', 'relay', [['A1', '2001'], ['A1', '2002']]), dev('KA4', 'relay', [['13', '1004']])], [['XT2', [['6', '1004'], ['6', 'F1004']]]]), tagOfIt);
+const j2001 = joined.nets.find((n) => n.numbers.includes('2001'))!;
+assert.deepEqual([j2001.wire, j2001.ends.map((e) => `${e.tag}:${e.terminal}`), j2001.joinedAt], ['2001 / 2002', ['PLC1:Y1', 'PLC1:Y2', 'KA1:A1'], ['KA1:A1']]);
+const f1004 = joined.nets.find((n) => n.numbers.includes('F1004'))!;
+assert.deepEqual([f1004.wire, f1004.ends.map((e) => `${e.tag}:${e.terminal}`)], ['1004 / F1004', ['KA4:13', 'XT2:6']], 'feed-through: inside and outside numbers are one conductor');
+// conflicts: one wire at two PLC points, or at two devices → low confidence and asked, never picked
+const conf = traceAll(asItems([dev('PLC1', 'plc', [['X3', '1003'], ['X4', '1003'], ['X5', '1005']]), dev('SB1', 'pushbutton', [['14', '1005']]), dev('SQ1', 'sensor', [['4', '1005']])]), tagOfIt, () => undefined);
+const cio = (a: string) => conf.io.find((p) => p.address === a)!;
+assert.deepEqual([cio('X3').confidence, cio('X3').deviceTag, cio('X4').confidence], ['low', '', 'low']);
+assert.equal(cio('X5').deviceTag, '', 'SB1 or SQ1: not picked');
+assert.equal(cio('X5').confidence, 'low');
+assert.match(cio('X5').description, /SB1 or SQ1 \(wire 1005\): check on the cabinet/);
+assert.ok(conf.questions.includes('Cabinet photos: wire 1003 is read at both X3 and X4 — which is right?'));
+assert.ok(conf.questions.includes('Cabinet photos: wire 1005 from X5 is read at SB1 and SQ1 — which is right?'));
+// a long strip: one question with the terminal ranges
+const long = traceAll(asItems([], [['XT2', Array.from({ length: 12 }, (_, i): [string, string] => [String(i + 1), `F${i + 1}`])]]), tagOfIt, () => undefined);
+assert.deepEqual(long.questions, ['Cabinet photos: XT2: what is wired to terminals 1–12 outside the cabinet?']);
+
+// ── A relay cabinet without a PLC: the coils' circuits from the wire numbers, kept as ladder rungs ──
+const relayItems = reviewItems(RELAY_CABINET);
+const rt = traceAll(relayItems, tagger(relayItems), () => undefined);
+assert.deepEqual(rt.io, []);
+assert.deepEqual(rt.circuits.map((c) => `${c.id} ${c.output}: ${c.conditions.join(' → ')} [${c.kind}, ${c.confidence}]`), [
+  'C1 KM1: SB1 11-12 (NC) → SB2 13-14 (NO) ∥ KM1 13-14 (NO) → FR1 95-96 (NC) [start-stop, medium]',
+  'C2 KA2:  [other, low]',
+  'C3 KT1: KM1 23-24 (NO) [timer, medium]',
+  'C4 VFD1: KA2 23-24 (NO) [interlock, medium]',
+  'C5 HL1: KT1 15-18 (NO) [interlock, medium]',
+]);
+const c1 = rt.circuits[0];
+assert.deepEqual(c1.path, [
+  { t: 'contact', tag: 'SB1', nc: true, terms: '11-12', kind: 'pb' },
+  { t: 'branch', paths: [[{ t: 'contact', tag: 'SB2', nc: false, terms: '13-14', kind: 'pb' }], [{ t: 'contact', tag: 'KM1', nc: false, terms: '13-14', kind: 'relay' }]] },
+  { t: 'contact', tag: 'FR1', nc: true, terms: '95-96', kind: 'ol' },
+  { t: 'coil', tag: 'KM1', kind: 'contactor', preset: null, terms: null },
+], 'stop, start ∥ seal-in, overload, coil');
+assert.equal(c1.sealIn, 'KM1 13-14');
+assert.deepEqual(rt.circuits[2].path.at(-1), { t: 'coil', tag: 'KT1', kind: 'timer-on', preset: null, terms: null });
+assert.deepEqual(rt.circuits[3].path.at(-1), { t: 'coil', tag: 'VFD1', kind: 'drive-input', preset: null, terms: 'MI1' });
+assert.ok(rt.questions.includes('Cabinet photos: KA2 relay coil (C2): no contact feeding wire 9 was read, which leaves the cabinet on XT1-3 — what switches it?'));
+assert.ok(rt.questions.includes('Cabinet photos: XT1: what is wired to terminals 3 (wire 9 → KA2:A1), 4 (wire T1) and 5 (wire T2) outside the cabinet?'), 'field terminals asked per strip (24+ / 0V left out)');
+const relayMachine = photosToMachine(relayItems, RELAY_CABINET, '', () => undefined);
+assert.equal(relayMachine.controller, 'relays');
+assert.equal(relayMachine.circuits.length, 5);
+assert.ok(relayMachine.questions.some((q) => /^XT1: what is wired/.test(q.text)));
+const kept = toRelayLogic(relayMachine, convertMachine(relayMachine, { ...NA_TARGET, logic: 'keep-relays' }));
+assert.equal(kept.logic!.rungs.length, 5, 'every traced circuit becomes a ladder rung');
+assert.deepEqual(kept.notDrawn, []);
+const pumpRung = kept.logic!.rungs.find((x) => x.id === 'C1')!;
+assert.equal(pumpRung.path.filter((e) => e.t === 'branch').length, 1, 'the seal-in stays a parallel branch');
+assert.equal(pumpRung.description, 'KM1 CONTACTOR COIL');
 
 // ── Recogniser: one AI call with every photo labelled; boxes kept inside their photo ──
 assert.ok(JSON.stringify(PHOTO_SCHEMA).includes('"seen"'));

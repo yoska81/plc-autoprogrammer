@@ -120,7 +120,7 @@ function Crop({ file, s }: { file: File | undefined; s: Sighting }) {
 function TracedWires({ items, reading }: { items: ReviewItem[]; reading: PhotoReading }) {
   const r = useMemo(() => asBuiltDesign(items, reading, useElectricalStore.getState().inputs, getPart), [items, reading]);
   const wires = r.design.asBuilt?.wires ?? [];
-  if (!wires.length && !r.io.length) return <p className="text-xs text-steel-500">No wire number was read at two places yet: confirm the PLC and the terminal strips to trace the wiring.</p>;
+  if (!wires.length && !r.io.length && !r.circuits.length) return <p className="text-xs text-steel-500">No wire number was read at two places yet: confirm the PLC and the terminal strips to trace the wiring.</p>;
   return (
     <div className="grid gap-3 text-xs md:grid-cols-2" data-testid="photos-traced">
       <div>
@@ -130,9 +130,17 @@ function TracedWires({ items, reading }: { items: ReviewItem[]; reading: PhotoRe
       <div>
         <div className="font-semibold text-steel-700">I/O from the PLC terminals ({r.io.length})</div>
         <ul className="mt-1 space-y-0.5 text-steel-700">{r.io.map((p) => (
-          <li key={p.address}><span className="font-mono">{p.address}</span> {p.description} <span className={`rounded px-1 text-[10px] font-semibold ${CONF[p.confidence]}`}>{p.confidence}</span></li>
+          <li key={`${p.plcTag}:${p.address}`}><span className="font-mono">{p.address}</span> {p.description} <span className={`rounded px-1 text-[10px] font-semibold ${CONF[p.confidence]}`}>{p.confidence}</span></li>
         ))}</ul>
       </div>
+      {r.circuits.length > 0 && (
+        <div className="md:col-span-2" data-testid="photos-circuits">
+          <div className="font-semibold text-steel-700">Relay circuits from the coils ({r.circuits.length})</div>
+          <ul className="mt-1 space-y-0.5 text-steel-700">{r.circuits.map((c) => (
+            <li key={c.id}><span className="font-mono">{c.id} {c.output}</span>: {c.conditions.join(' → ') || 'no contact read'} <span className={`rounded px-1 text-[10px] font-semibold ${CONF[c.confidence]}`}>{c.confidence}</span></li>
+          ))}</ul>
+        </div>
+      )}
     </div>
   );
 }

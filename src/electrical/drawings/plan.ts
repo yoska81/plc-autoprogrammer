@@ -89,7 +89,7 @@ export function asBuiltNets(ctx: DrawingContext, model: { rc: { tag: string; cat
   const byTag = new Map(model.rc.map((c) => [c.tag, c]));
   const plcIo = (tag: string, terminal: string) => {
     const c = byTag.get(tag);
-    return Boolean(c && (c.category === 'plc' || c.category === 'plcModule') && /^%?[XYIQ]\s*\d+$|^\d{1,2}$/i.test(terminal.trim()));
+    return Boolean(c && (c.category === 'plc' || c.category === 'plcModule') && /^%?(IX|QX|DI|DO|[XYIQ])\s*\d+(\.\d+)?$|^\d{1,2}$/i.test(terminal.trim()));
   };
   const order: AsBuiltNet['cls'][] = ['ac', 'dc', 'pe', 'branch'];
   return (ctx.design.asBuilt?.wires ?? [])
