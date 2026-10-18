@@ -34,6 +34,8 @@ import { lengthText, routedLength, withService } from './layout/geometry';
 import { CABINET, type LayoutForDesign } from './layout/types';
 import { iecColor, iecMotorCurrent, isIec, mm2For, mm2FromAwg, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
 import { ALL_PARTS } from './catalogs';
+import { coolingCover, dcFanAmps } from './cooling';
+import { ALLOWED_RISE_C, cabinetHeat } from './thermal';
 import { withIecStrips } from '../standards/designations';
 import { issuedForConstruction } from '../standards/issue';
 
@@ -468,6 +470,17 @@ export interface ElectricalModel {
   auxNc: Map<string, AuxNc>;
   /** The door HMI: its 24 VDC feed and its link to the PLC. */
   hmi?: HmiLink;
+  /** Enclosure filter fan switched by its thermostat (24 VDC from TB1, or AC — not drawn). */
+  fan?: FanCircuit;
+}
+
+export interface FanCircuit {
+  tag: string;
+  partNumber: string;
+  /** Thermostat in series (N.O., closes on rise), when the design has one. */
+  thermostat?: string;
+  /** 24 VDC fan fed from TB1 (an AC fan is wired from the control voltage per the maker, not drawn). */
+  dc: boolean;
 }
 
 /** The door HMI's power (own fused terminal on TB1) and communication link to the PLC. */
@@ -860,6 +873,17 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     hmi = { tag: hmiTag, partNumber: hmiPn, fuse: '2 A', link: hmiLink, fuseTerminal: '' };
     hmi.fuseTerminal = add(tb1, { wire: '24+H', internal: 'TB1 24+ (jumper)', external: `${hmiTag}:+24V`, kind: 'feed', group: hmiTag, fuse: hmi.fuse });
   }
+  // Enclosure filter fan: 24+ through the thermostat's N.O. contact (closes on rise) to the fan, its return to 0V.
+  const fanRc = rc.find((c) => c.category === 'fan' && c.part?.ratings.kind === 'filter fan');
+  let fan: FanCircuit | undefined;
+  if (fanRc) {
+    const th = rc.find((c) => c.part?.ratings.kind === 'thermostat');
+    fan = { tag: fanRc.tag, partNumber: fanRc.partNumber, thermostat: th?.tag, dc: dcFanAmps(fanRc.part) !== null };
+    if (fan.dc) {
+      add(tb1, { wire: '24+', internal: `${psMain}:+V`, external: th ? `${th.tag}:1` : `${fan.tag}:+`, kind: 'feed', group: '24+' });
+      zero.push(`${fan.tag}:-`);
+    }
+  }
   for (const c of zero) add(tb1, { wire: '0V', internal: `${psMain}:-V`, external: c, kind: 'feed', group: '0V' });
   add(tb1, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${psMain}:PE`, kind: 'ground', group: 'PE' });
   addSpares(tb1, 2);
@@ -1102,6 +1126,11 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     addWire({ wire: '24+S', from: `${estopTags[estopTags.length - 1]}:12`, to: mcr ? `${mcr.tag}:A1` : 'TB1 24+S', color: 'BU', size: '16 AWG', function: 'E-stop switched +24V' });
   }
   // PLC power & commons
+  if (fan?.dc) {
+    addWire({ wire: '24+', from: 'TB1 24+', to: fan.thermostat ? `${fan.thermostat}:1` : `${fan.tag}:+`, color: 'BU', size: '18 AWG', function: `${fan.tag} filter fan supply${fan.thermostat ? ` (thermostat ${fan.thermostat})` : ''}` });
+    if (fan.thermostat) addWire({ wire: fan.tag, from: `${fan.thermostat}:2`, to: `${fan.tag}:+`, color: 'BU', size: '18 AWG', function: `${fan.tag} filter fan, switched by thermostat ${fan.thermostat}` });
+    addWire({ wire: '0V', from: `${fan.tag}:-`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${fan.tag} filter fan return` });
+  }
   addWire({ wire: '24+', from: 'TB1 24+', to: `${plcTag}:24V`, color: 'BU', size: '18 AWG', function: 'PLC power' });
   addWire({ wire: '0V', from: `${plcTag}:0V`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: 'PLC power' });
   if (hmi) {
@@ -1230,7 +1259,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   if (iec) toIec(wires, machine.cables);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, hmi,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, hmi, fan,
   };
 }
 
@@ -2768,6 +2797,15 @@ export function designWarnings(ctx: DrawingContext): string[] {
   }
   for (const p of m.io) if (!p.deviceTag && p.wiring) w.push(`${p.address}: wiring has no device tag.`);
   w.push(...panelLayout(ctx).warnings);
+  // cooling: heat the walls cannot shed needs a filter fan, a heat exchanger or an air conditioner in the design
+  {
+    const hmiH = ctx.hmiPartNumber ? getHmi(ctx.hmiPartNumber) : undefined;
+    const heat = cabinetHeat(ctx.design.components, ctx.getPart, hmiH && ctx.getPart(ctx.hmiPartNumber!)?.category !== 'plc' ? { partNumber: hmiH.partNumber, sizeIn: hmiH.sizeIn } : undefined);
+    const cover = heat.ventilation ? coolingCover(ctx.design.components, ctx.getPart, heat.ventilation, ALLOWED_RISE_C) : null;
+    if (cover?.fitted && !cover.covers) w.push(`Cabinet cooling too small: the fitted cooling carries ${Math.round(cover.share * 100)} % of the ${heat.ventilation!.wattsToRemove.toFixed(0)} W the walls cannot shed — fit a filter fan of >= ${Math.ceil(heat.ventilation!.airflowM3h)} m³/h, a larger heat exchanger / air conditioner, or a larger enclosure.`);
+    if (heat.ventilation && !cover?.fitted) w.push(`Cabinet cooling missing: ${heat.watts.toFixed(0)} W raise the enclosure ${heat.rise!.toFixed(0)} °C (limit ${ALLOWED_RISE_C} °C) — add a filter fan of >= ${Math.ceil(heat.ventilation.airflowM3h)} m³/h with filters (NEMA 1/12), a heat exchanger or an air conditioner, or a larger enclosure.`);
+    if (m.fan && !m.fan.dc) w.push(`${m.fan.tag} ${m.fan.partNumber}: AC filter fan — wire it from the control voltage through ${m.fan.thermostat ?? 'a thermostat'} (not drawn).`);
+  }
   // one CPU: a second one (e.g. a CPU left in the required parts after a CPU change) is drawn and ordered twice
   const cpus = m.rc.filter((c) => c.category === 'plc');
   if (cpus.length > 1) w.push(`${cpus.length} PLC CPUs in the design (${cpus.map((c) => `${c.tag} ${c.partNumber}`).join(', ')}): keep only the project's CPU ${ctx.plc.cpuPartNumber} — remove the others or update the design.`);

@@ -199,7 +199,7 @@ function reply(text) {
   }
   log('Stages:', JSON.stringify(state.stages));
   log('PLC:', JSON.stringify(state.plc), '| IO', state.io.length, '| components', state.electrical.design?.components?.length, '| HMI screens', state.hmi?.screens?.length);
-  check(['Equipment', 'I/O list', 'Electrical design', 'HMI screens', 'PLC program'].every((k) => stageLog.some((s) => s.startsWith(k))), `every stage done: ${stageLog.join(', ')}`);
+  check(['Equipment', 'I/O list', 'Electrical design', 'HMI screens', 'PLC program'].every((k) => stageLog.some((s) => s.split(' + ').some((x) => x.startsWith(k)))), `every stage done: ${stageLog.join(', ')}`);
   check(state.plc.cpuId === 'C0-12DD1E-D' && state.hmi?.screens?.length > 0, 'equipment and HMI applied');
   check(state.electrical.design?.components?.some((c) => c.tag === 'VFD1'), 'unwinder VFD in the design');
   for (const e of errors) fails.push(`page error: ${e.slice(0, 160)}`);
