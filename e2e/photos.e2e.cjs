@@ -125,6 +125,8 @@ async function png(page, shade) {
   check(sheets.some((t) => /PANEL LAYOUT/i.test(t)) && sheets.some((t) => /BILL OF MATERIALS/i.test(t)), 'panel layout and BOM sheets');
   // As-built power distribution from the traced wires (supply first, then branch circuits; PLC I/O wires on the I/O sheets).
   check(sheets.some((t) => /AS-BUILT POWER DISTRIBUTION \(FROM PHOTOS\)/.test(t)), 'as-built power distribution sheet');
+  // sheets are drawn progressively (the ones around the current sheet first): wait for this one
+  await page.getByTestId('asbuilt-sheet').waitFor({ state: 'attached', timeout: 30000 }).catch(() => {});
   const abWires = await page.locator('[data-asbuilt-wire]').evaluateAll((gs) => gs.map((g) => g.getAttribute('data-asbuilt-wire')));
   check(JSON.stringify(abWires) === JSON.stringify(['0V', '24+', '101']), `as-built sheet draws the supply and branch wires (${abWires.join(', ')})`);
   const abText = await page.locator('[data-cad-sheet="asbuilt"]').first().textContent();
