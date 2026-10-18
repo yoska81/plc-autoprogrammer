@@ -702,5 +702,19 @@ for (const s of SCENARIOS) {
   for (const t of ['U2:DI7', 'VFD1:DI3', 'VFD1:DI1']) assert.ok(m.wires.some((w) => w.to === t), `wired to ${t}`);
 }
 
+// Dev 4's probe: the converted roll former's own I/O and motors. The oil pump contactor output drives M2's contactor
+// (not the forming drive), the forming run output the drive, and no motor is invented.
+{
+  const { convertMachine } = await import('../../convert/convert');
+  const { ROLL_FORMER } = await import('../../convert/__fixtures__/rollFormer');
+  const conv = convertMachine(ROLL_FORMER);
+  const { r } = run({ name: 'roll-former-converted', supply: conv.supply, points: conv.io.map((p) => ({ description: p.description, type: p.type, category: p.category, deviceType: p.deviceType })) as P[], motors: conv.motors });
+  const dev = (re: RegExp) => r.design.ioWiring.find((w) => re.test(w.description))?.deviceTag;
+  const m2k = r.design.components.find((c) => c.motorTag === 'M2' && /contactor/i.test(getPart(c.partNumber)?.category ?? ''))?.tag;
+  assert.ok(m2k && dev(/Oil pump contactor/) === m2k, `oil pump output on M2's contactor ${m2k}, not ${dev(/Oil pump contactor/)}`);
+  assert.equal(dev(/Forming motor run/), 'VFD1');
+  assert.deepEqual(r.design.inputs.motors.map((x) => x.tag), conv.motors.map((x) => x.tag), 'no invented motor');
+}
+
 if (failures) { console.error(`${failures} scenario(s) failed`); process.exit(1); }
 console.log('engine tests passed');
