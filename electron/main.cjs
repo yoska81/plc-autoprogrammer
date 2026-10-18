@@ -8,7 +8,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { registerModbusIpc } = require('./modbus.cjs');
 const mic = require('./micPermission.cjs');
-const { registerOdaIpc } = require('./oda.cjs');
+const { registerDwgReaderIpc } = require('./dwgReader.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;
@@ -236,7 +236,8 @@ ipcMain.on('isa:version', (e) => { e.returnValue = app.getVersion(); });
 
 // ── Connect to PLC: Modbus TCP (electron/modbus.cjs) ──
 registerModbusIpc(ipcMain);
-registerOdaIpc(ipcMain);
+// ── DWG import: GNU LibreDWG's dwg2dxf shipped with the installer, or another reader (electron/dwgReader.cjs) ──
+registerDwgReaderIpc(ipcMain, app, dialog, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
 
 // ── Microphone for voice input: a native question the first time (electron/micPermission.cjs) ──
 let micState = { always: false, session: false };

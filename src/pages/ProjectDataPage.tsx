@@ -14,8 +14,8 @@ import { useDraft } from '../store/useDraftStore';
 import { issuedForConstruction } from '../standards/issue';
 
 const input = 'w-full border border-steel-300 rounded-sm px-2 py-1 bg-white focus:outline-none focus:border-brand-500';
-const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50';
-const td = 'px-3 py-1.5 border-b border-steel-100';
+const th = 'text-left font-medium text-steel-500 px-2 sm:px-3 py-1.5 border-b border-steel-200 bg-steel-50';
+const td = 'px-2 sm:px-3 py-1.5 border-b border-steel-100';
 
 const PURPOSES = [
   'Issued for review',

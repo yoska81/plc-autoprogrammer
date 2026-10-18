@@ -23,6 +23,7 @@ import type { MachineActions } from './MachinePanel';
 import LiveLadder from './LiveLadder';
 import IOPanel from './IOPanel';
 import { useUi } from '../../store/useUiStore';
+import WireFaultBar from '../../troubleshoot/WireFaultBar';
 
 export type { SimHandle } from './controller';
 
@@ -256,6 +257,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
           </button>
         </div>
       )}
+      <WireFaultBar ctl={ctl} snap={snap} />
       {snap.errors.length > 0 && (
         <div className="border-b border-red-200 bg-red-50 px-3 py-1 text-xs text-red-700">{snap.errors.join(' · ')}</div>
       )}

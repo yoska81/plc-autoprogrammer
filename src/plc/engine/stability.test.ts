@@ -126,7 +126,8 @@ assert.notEqual(r.stepRegister, 'DS1101'); assert.notEqual(r.cycleCounter, 'CT2'
     { id: 'b', comment: '', branches: [[{ type: 'NO', address: 'X002' }]], outputs: [{ type: 'OUT', address: 'C51' }, { type: 'TMR', address: 'T5', mode: 'ON_DELAY', preset: '3', unit: 'sec', accumulate: false, resetAddress: null }] },
     { id: 'c', comment: '', branches: [[{ type: 'NO', address: 'C1001' }]], outputs: [{ type: 'OUT', address: 'C1201' }, { type: 'CNT', address: 'CT4', direction: 'UP', preset: '10', resetAddress: 'X003' }] },
   ] }, profile, ioSet).map((i) => `${i.rungId}: ${i.message}`);
-  assert.deepEqual(dead, ['a: C50 is read but never written: it is always 0 / OFF.', 'b: C51 is written but never read: this logic does nothing.', 'b: T5 is written but never read: this logic does nothing.'],
+  assert.deepEqual(dead, ['a: C50 is read but never written: it is always 0 / OFF.', 'b: C51 is written but never read: this logic does nothing.', 'b: T5 is written but never read: this logic does nothing.',
+    'a: Y001 can never turn on: every way to switch it on needs C50, which nothing writes.'],
     'HMI ranges and counters are left out');
 }
 console.log('address stability tests passed');

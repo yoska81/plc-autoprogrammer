@@ -33,6 +33,7 @@ e2e/out-ai-jobs/
 e2e/out-field/
 e2e/out-photos/
 e2e/out-journeys/
+e2e/out-troubleshoot/
 e2e/out-enclosure-fit/
 e2e/out-convert/
 e2e/out-cad-export/
@@ -50,6 +51,8 @@ e2e/out-hmi-editor/
 e2e/out-hmi-looks/
 e2e/out-hmi-no-panel/
 e2e/out-hmi-motion/
+e2e/out-recover-list/
+e2e/out-phone/
 installer/
 e2e/out-walkthrough/
 .claude/worktrees/
@@ -57,3 +60,8 @@ tools/bench/out/
 e2e/out-voice-edit/
 e2e/out-desktop-mic/
 e2e/out-upgrade/
+e2e/out-printout/
+
+# GNU LibreDWG program and DLLs: downloaded by scripts/fetch-libredwg.cjs for the installer (COPYING and SOURCE.txt are kept)
+resources/libredwg/*.exe
+resources/libredwg/*.dll

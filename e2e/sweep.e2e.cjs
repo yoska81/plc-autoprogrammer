@@ -72,6 +72,11 @@ function audit() {
  * Analog points on the example project: an input and an output switched to analog with a range and units in
  * the I/O list, then the analog drawing sheet, the simulator slider and an HMI bar graph bound to the input.
  */
+/** The app has mounted and no lazily loaded page is still loading. */
+async function settled(page) {
+  await page.waitForFunction(() => document.getElementById('root')?.childElementCount && !document.querySelector('[data-page-loading]'), null, { timeout: 20000 }).catch(() => {});
+}
+
 async function analogPass(browser, problems) {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   const page = await ctx.newPage();
@@ -137,13 +142,16 @@ async function analogPass(browser, problems) {
   // Drawings: an analog loop sheet exists and renders.
   for (const tab of ['cabinet', 'machine']) {
     await page.goto(`${BASE}/electrical?tab=${tab}`);
-    await page.waitForTimeout(1200);
+    // the page loads lazily and the drawing set is built after it: wait for the sheet list, not a fixed time
+    await settled(page);
+    await page.locator('nav[aria-label="Drawing sheets"] button[title]').first().waitFor({ timeout: 20000 }).catch(() => {});
     const t = page.locator('nav[aria-label="Drawing sheets"] button[title*="ANALOG"]');
     if (await t.count()) {
       await t.first().click();
-      await page.waitForTimeout(800);
       // The sheet list and the stacked sheets are in the same order.
       const i = (await page.locator('nav[aria-label="Drawing sheets"] button[title]').evaluateAll((bs) => bs.map((b) => b.title))).findIndex((t) => t.includes('ANALOG'));
+      // sheets are drawn a few at a time (the clicked one at once): wait for its drawing
+      await page.locator('[data-sheet]').nth(i).locator('svg').first().waitFor({ timeout: 10000 }).catch(() => {});
       const svgText = (await page.locator('[data-sheet]').nth(i).textContent().catch(() => '')) ?? '';
       if (!svgText.includes('psi') && !svgText.includes(made[0]?.address ?? '§')) fail('analog sheet does not show the analog input');
       await check(`drawing_${tab}`);
@@ -277,8 +285,11 @@ async function copiedExamplePass(browser, problems) {
   });
   for (const [route, testid] of [['/spec', 'start-clean'], ['/project', 'start-clean'], ['/electrical?tab=design', 'leftover-motor'], ['/program', 'leftover-notes']]) {
     await page.goto(BASE + route);
-    await page.waitForTimeout(route.includes('electrical') ? 1500 : 800);
-    if (route === '/program') { const d = page.getByRole('button', { name: 'Build', exact: true }); if (await d.count()) { await d.first().click(); await page.waitForTimeout(300); } }
+    await settled(page);
+    // the warning shows once the page (and on Electrical, the design) is built: wait for it, then audit
+    if (route !== '/program') await page.getByTestId(testid).first().waitFor({ timeout: 15000 }).catch(() => {});
+    else await page.waitForTimeout(800);
+    if (route === '/program') { const d = page.getByRole('button', { name: 'Build', exact: true }); if (await d.count()) { await d.first().click(); await page.waitForTimeout(300); } await page.getByTestId(testid).first().waitFor({ timeout: 15000 }).catch(() => {}); }
     const name = `copied_${route.replace(/\W+/g, '_').replace(/^_|_$/g, '')}`;
     await page.screenshot({ path: `${OUT}${name}.png` });
     const found = await page.evaluate(audit);

@@ -15,7 +15,7 @@ Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/streng
 
 Update-all speed: `npx tsx tools/bench-update.ts` (see `tools/bench/README.md`).
 
-Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/review/codeRules/iec.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/electrical/layout/layout.test.ts`, `npx tsx src/electrical/catalog.test.ts`, `npx tsx src/electrical/vfdLine.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/hmi/theme.test.ts`, `npx tsx src/deliverables/noPanel.test.ts`, `npx tsx src/hmi/engine/motion.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/plc/core/profiles/logix.test.ts`, `npx tsx src/plc/core/profiles/micro800.test.ts`, `npx tsx src/plc/core/profiles/siemens.test.ts`, `npx tsx src/plc/core/tagNames.test.ts` `npx tsx src/electrical/vfd.test.ts` and `npx tsx src/deliverables/certPack.test.ts` (certification pack, shop build time).
+Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/review/codeRules/iec.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/electrical/layout/layout.test.ts`, `npx tsx src/electrical/catalog.test.ts`, `npx tsx src/electrical/vfdLine.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/hmi/theme.test.ts`, `npx tsx src/deliverables/noPanel.test.ts`, `npx tsx src/hmi/engine/motion.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/plc/core/profiles/logix.test.ts`, `npx tsx src/plc/core/profiles/micro800.test.ts`, `npx tsx src/plc/core/profiles/siemens.test.ts`, `npx tsx src/plc/core/tagNames.test.ts` `npx tsx src/electrical/vfd.test.ts` and `npx tsx src/deliverables/certPack.test.ts` (certification pack, shop build time), `npx tsx src/troubleshoot/wiringPath.test.ts` (troubleshooter wiring paths, guided steps, fault sweep), `npx tsx src/troubleshoot/isweep.test.ts` (independent strict sweep: its own circuit from the design, nodal solver, one fault per case).
 
 ## Preview build
 
@@ -61,6 +61,8 @@ BASE_URL=http://localhost:5203 node e2e/hmi-brands.e2e.cjs # Allen-Bradley + Sie
 BASE_URL=http://localhost:5203 node e2e/hmi-looks.e2e.cjs  # every HMI look: picker thumbnails, look follows the panel maker, no text past its element or on another, PNG/PDF exports in the look
 BASE_URL=http://localhost:5203 node e2e/hmi-no-panel.e2e.cjs # "No touch panel": HMI page shows the operator station (earlier screens kept, not used), no HMI in the simulator or the exports, operator station in the engineering package and Excel
 BASE_URL=http://localhost:5203 node e2e/hmi-motion.e2e.cjs  # servo axes, encoder, ultrasonic level/distance: Motion / Process / Setup screens on a 7" and a 4.3" panel in every look, no text past its element or on another
+BASE_URL=http://localhost:5203 node e2e/recover-list.e2e.cjs  # Project data, recover lists: no sideways scroll at 390 / 1366 px, texts clamped to 2 lines, buttons aligned, grouped by project, older versions folded
+BASE_URL=http://localhost:5203 node e2e/phone.e2e.cjs         # every page at 390 px: the page never scrolls sideways (only explicit overflow-x / data-scroll-x boxes may), headers fit, titles and buttons not squeezed
 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # projects saved by older versions (e2e/old-data/*.json) still open and export
 HASH=1 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # preview build: a new example version never replaces the open project
 ```
@@ -85,9 +87,14 @@ npx tsx src/convert/convert.test.ts                        # DXF text, foreign p
 
 The acceptance case `roll-former.dxf` mirrors a real drawing a user sent (a DWG): a roll-forming machine with a 5.5 kW
 VFD and a 1.5 kW servo flying shear, six A3 sheets side by side in model space, MTEXT with SimSun codes. A DWG is read
-in the Windows app through the installed (free) ODA File Converter (`electron/oda.cjs` `toDxf`: DWG → DXF → `dxf.ts`), or
-through a plugged-in in-browser reader (`setDwgReader` in `src/convert/dxf.ts`; none is bundled). Otherwise the upload
-links the ODA download and asks for DXF or PDF. The mocked AI answer is `src/convert/__fixtures__/rollFormer.ts`.
+in the Windows app by GNU LibreDWG's `dwg2dxf.exe` (0.14, official win64 build), shipped as a separate program in the
+installer (`resources/libredwg/`, fetched with its pinned SHA-256 by `scripts/fetch-libredwg.cjs`; only COPYING and
+SOURCE.txt are committed) and run by `electron/dwgReader.cjs`: DWG → DXF in a temp folder → the DXF reader; what it
+skips and DWG versions outside R13–R2018 are shown as notes. Settings → DWG drawings → Advanced takes another reader.
+In the browser: "DWG opens in the Windows app; here use DXF or PDF". `npx tsx src/convert/dwgReader.test.ts` runs the
+real converter when it is there (Windows, or wine) on `dwg-sample.dwg` (our own drawing, built by
+`make-dwg-sample.py`), else a stand-in; `dwg-sample.libredwg.dxf` is what LibreDWG writes for it and tests the DXF reader
+(INSERT with scale / rotation, block definitions, old POLYLINE / VERTEX, DIMENSION text, MTEXT codes).
 
 Machines without a PLC: every control circuit is read as a function (coil, contacts, timer setting, or a drive's
 built-in logic). The conversion either moves the relay logic into a new PLC (default: field devices become I/O, relays
@@ -141,6 +148,13 @@ The first press of a microphone asks with a native dialog (stubbed: Allow once /
 is explained in the mic popover (no address-bar advice); "Allow once" lasts until the app closes; camera
 requests are refused. Unit test: `npx tsx src/voice/micAccess.test.ts`. The preview e2e checks that the
 preview shows the mic as not available (it has no microphone) and makes no microphone request.
+
+## Troubleshooter practice (simulator wiring faults)
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/troubleshoot.e2e.cjs   # simulator: break or short one conductor (X005 at the PLC shorted to 24 V → X005 ON), repair, hidden fault; Online → Fault finding on a phone: X004 never ON → steps → verdict; fake Modbus PLC answers a wiggle test
+```
+Unit tests: `npx tsx src/troubleshoot/wiringPath.test.ts` (wiring paths, fault effects, live watch, guided steps, fault sweep) and `npx tsx src/troubleshoot/isweep.test.ts` (independent strict sweep). The Sealing Head journey (`node e2e/journeys.e2e.cjs sealclick`) also breaks a sensor wire in the simulator, finds it with the meter steps and checks the fault log.
 
 ## Cabinet photos → as-built drawing
 

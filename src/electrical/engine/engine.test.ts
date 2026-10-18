@@ -4,6 +4,7 @@
  * checks every generated design must pass. Run with:  npx tsx src/electrical/engine/engine.test.ts
  * Regenerate the goldens after an intended change:  UPDATE=1 npx tsx src/electrical/engine/engine.test.ts
  */
+import { missingOperatorIo } from '../../spec/operatorIo';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -512,6 +513,35 @@ for (const s of SCENARIOS) {
   }
 }
 
+// NPN sensors put their input group's common on +24V (sourcing inputs): a pushbutton, limit switch or relay contact
+// in the same group must switch 0V into its input, or it can never turn ON. An input turns ON when its device
+// pulls it away from the common: to +24V on a 0V common, to 0V on a +24V common.
+{
+  const npn: Scenario = {
+    name: 'npn-mixed', supply: '480VAC-3PH',
+    points: [pt('Safety relay OK', 'input', { deviceType: 'safety-relay-output' }), pt('Start PB', 'input', { deviceType: 'pushbutton-no' }), pt('Stop PB', 'input', { deviceType: 'pushbutton-nc' }),
+      pt('Part present NPN', 'input', { deviceType: 'sensor-npn' }), pt('Guard closed limit switch', 'input', { deviceType: 'limit-switch' }),
+      pt('Conveyor run', 'output', { deviceType: 'contactor-coil' })],
+    motors: [motor('M1', 'Conveyor', 1, '480VAC-3PH')],
+  };
+  const { ctx } = run(npn);
+  const m = buildModel(ctx);
+  const g = m.groups.find((x) => x.type === 'input' && x.points.some((p) => p.deviceType === 'sensor-npn'))!;
+  assert.equal(g.commonTo, '24+', 'NPN group: common to +24V');
+  for (const p of g.points) {
+    if (p.deviceType === 'sensor-npn') continue;
+    assert.equal(p.supplyWire, '0V', `${p.address} ${p.description}: switches 0V`);
+    // the wire into the contact that feeds the input: from its supply terminal, else from TB1 to C / 23 (relay status)
+    const tag = p.deviceTag;
+    const pin = p.deviceType === 'safety-relay-output' ? '23' : 'C';
+    const feed = m.wires.filter((w) => w.to.startsWith(`${tag}:`) && (p.supplyTerminal ? w.from === p.supplyTerminal : w.from.startsWith('TB1 ') && w.to === `${tag}:${pin}`));
+    assert.ok(feed.length && feed.every((w) => w.wire === '0V'), `${p.address} ${tag}: fed ${feed.map((w) => w.wire).join(', ') || 'nothing'} — must be 0V to turn ON`);
+  }
+  // a PNP-only design keeps 0V commons and +24V-fed contacts
+  const pnp = buildModel(run({ ...npn, name: 'pnp-mixed', points: npn.points.map((p) => (p.deviceType === 'sensor-npn' ? { ...p, deviceType: 'sensor-pnp' as const } : p)) }).ctx);
+  assert.ok(pnp.groups.filter((x) => x.type === 'input').every((x) => x.commonTo === '0V' && x.points.every((p) => p.supplyWire === '24+')));
+}
+
 // Acceptance (pump skid): two 10 HP pumps on GS20 drives at 480 V heat a NEMA 12 cabinet far above 15 °C; the engine
 // fits a filter fan, its exhaust filter and a thermostat, and the review comes out without a heat finding.
 {
@@ -558,6 +588,22 @@ for (const s of SCENARIOS) {
   assert.equal(m.motors.length, 2);
   assert.ok(Math.abs(m.motors[0].hp - 10.06) < 0.1, 'kW converted to HP');
   assert.ok(m.assumptions.some((a) => /Pump.*assumed 1 HP/.test(a)));
+}
+
+// No touch panel: the operator devices the I/O list gets (src/spec/operatorIo.ts) are on the door — Start, Stop,
+// Reset, the Auto/Manual selector, the lamps and the E-stop — with no HMI on the door, in the BOM or on the network.
+{
+  const points: P[] = [pt('Part at end photo-eye', 'input', { deviceType: 'sensor-pnp' }), pt('Conveyor motor contactor', 'output', { deviceType: 'contactor-coil' }),
+    ...missingOperatorIo([]).map((g) => pt(g.description, g.type, { deviceType: g.deviceType, category: g.category }))];
+  const { r, ctx } = run({ name: 'no-panel', supply: '120VAC-1PH', hmi: null, points, motors: [motor('M1', 'Conveyor motor', 0.5, '120VAC-1PH')] });
+  const L = panelLayout(ctx);
+  assert.deepEqual(L.door.items.map((d) => `${d.kind} ${d.tag}`), ['pilot PL1', 'pilot PL2', 'selector SS1', 'pushbutton PB1', 'pushbutton PB2', 'pushbutton PB3', 'pushbutton PB4', 'estop ES1'], 'no-panel: the operator devices on the door, no HMI');
+  const look = (tag: string) => { const c = r.design.components.find((x) => x.tag === tag); return `${c?.function} | ${getPart(c?.partNumber ?? '')?.description}`; };
+  for (const [tag, re] of [['PB1', /^Start \| .*green.*N\.O\./], ['PB2', /^Stop \(NC\) \| .*red.*N\.C\./], ['PB3', /^Reset \| .*black.*N\.O\./], ['SS1', /^Auto\/Manual \(ON = Manual\) \| .*2-position/],
+    ['PL1', /^Running \(green\) \| .*green, 24/], ['PL2', /^Fault \(red\) \| .*red, 24/], ['PB4', /^Safety reset .*blue/]] as const) assert.match(look(tag), re, `no-panel: ${tag}`);
+  assert.equal(r.design.components.filter((c) => getPart(c.partNumber)?.category === 'hmi').length, 0, 'no-panel: no HMI in the BOM');
+  assert.equal(buildModel(ctx).hmi, undefined, 'no-panel: no HMI feed / link');
+  assert.deepEqual(r.design.ioWiring.filter((w) => /^(PB|SS|PL)/.test(w.deviceTag)).map((w) => `${w.address} ${w.deviceTag}`), ['X003 PB1', 'X004 PB2', 'X005 PB3', 'X006 SS1', 'Y002 PL1', 'Y003 PL2'], 'no-panel: wired to the PLC');
 }
 
 if (failures) { console.error(`${failures} scenario(s) failed`); process.exit(1); }

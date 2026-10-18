@@ -22,7 +22,9 @@ export function csvCells(line: string): string[] {
 
 const TYPE: Record<string, ForeignType> = { BIT: 'BOOL', INT: 'INT', INT2: 'DINT', FLOAT: 'REAL', HEX: 'INT', TXT: 'STRING' };
 
-export function readClickCsv(src: string): ForeignProgram {
+export function readClickCsv(input: string): ForeignProgram {
+  // Windows exports are CRLF: read as LF lines.
+  const src = input.replace(/\r\n?/g, '\n');
   const lines = src.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim());
   const head = csvCells(lines[0] ?? '').map((h) => h.toLowerCase());
   const col = (n: string) => head.findIndex((h) => h.replace(/[^a-z]/g, '') === n);

@@ -117,7 +117,7 @@ export interface PlcProfile {
   /** PLC-specific knowledge the AI must follow, added to the system prompt. */
   promptKnowledge(cpu: CpuModel): string;
   /** PLC-specific rules beyond address checks. */
-  checkRung?(rung: Rung): { severity: 'error' | 'warning'; message: string }[];
+  checkRung?(rung: Rung, ctx?: { ioAddresses?: Set<string> }): { severity: 'error' | 'warning'; message: string }[];
   /** IEC data type of an address (null = not valid / constant). Foundation for vendor-neutral tags. */
   dataTypeOf?(address: string): IecDataType | null;
   /** Scan semantics for the simulator. */
@@ -133,7 +133,7 @@ export interface PlcProfile {
   /** Vendor instruction names for the app's elements (keys: NO, NC, RISE, FALL, OUT, SET, RST, TMR_ON_DELAY, TMR_OFF_DELAY, TMR_RTO, CNT_UP, CNT_DOWN, compare ops, COPY, MATH). */
   mnemonics?: Record<string, string>;
   /** Vendor I/O tag of a physical neutral address (Logix: Local:1:I.Pt00.Data), for display and export. */
-  ioTag?(address: string, modules: ModuleSlot[]): string | null;
+  ioTag?(address: string, modules: ModuleSlot[], cpuId?: string): string | null;
   /** How the engineer gets the exported files into the PLC software (shown with the downloads). */
   importSteps?: string[];
 }

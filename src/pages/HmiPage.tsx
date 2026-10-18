@@ -37,7 +37,8 @@ import { defaultLookFor, LEVEL_LABEL } from '../hmi/theme';
 import LookPicker from '../hmi/LookPicker';
 import AssumptionsUsed from '../components/questions/AssumptionsUsed';
 import { useQuestions } from '../components/questions/useQuestionStore';
-import { useDraft } from '../store/useDraftStore';
+import { useDraft, useDraftStore } from '../store/useDraftStore';
+import { projectUpgradeRoles } from '../plc/import/ui/applyUpgrade';
 import { useUi } from '../store/useUiStore';
 import { withAnalogScale } from '../hmi/analogScale';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
@@ -531,6 +532,7 @@ export default function HmiPage() {
             io, addresses, spec: specToText(fp.spec), machineName: useProgramStore.getState().projectName,
             electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
             existingHmi: useHmiStore.getState().design, program: useProgramStore.getState().ladder,
+            upgradeRoles: projectUpgradeRoles(useDraftStore.getState().drafts, useProgramStore.getState().ladder),
           });
         } finally { useHmiStore.getState().setIsGenerating(false); }
       },
@@ -596,22 +598,22 @@ export default function HmiPage() {
   const tags = (design?.tags ?? []).filter((t) => !tagFilter || `${t.address} ${t.name} ${t.description}`.toLowerCase().includes(tagFilter.toLowerCase()));
   const tabBtn = (t: Tab, label: string, count?: number) => (
     <button key={t} onClick={() => setTab(t)}
-      className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === t ? 'border-brand-600 text-gray-900 font-medium' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+      className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm border-b-2 -mb-px ${tab === t ? 'border-brand-600 text-gray-900 font-medium' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
       {label}{count !== undefined && <span className={`ml-1.5 text-[11px] px-1.5 rounded-full ${t === 'check' && count ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'}`}>{count}</span>}
     </button>
   );
 
   return (
     <>
-      <header className="px-4 py-2.5 bg-white border-b border-gray-200 flex items-center justify-between gap-4">
-        <div>
+      <header className="px-4 py-2.5 bg-white border-b border-gray-200 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-[1_1_16rem]">
           <h2 className="text-base font-semibold text-gray-800">5 · HMI design</h2>
           <p className="text-xs text-gray-400 mt-0.5">
             {noPanel ? 'No touch panel · the operator station (pushbuttons, selector, lamps) is wired to the PLC' : <>{model ? `${model.partNumber} · ${model.sizeIn}" · ${model.widthPx}×${model.heightPx}` : 'Choose your HMI'} · every button and lamp is linked to a PLC address the program implements</>}
           </p>
         </div>
         {design && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link to="/simulate" className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Try it live</Link>
             <button onClick={() => setChoosing((v) => !v)} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Change HMI</button>
             {genButton('Redesign screens')}
@@ -667,7 +669,8 @@ export default function HmiPage() {
         {design && model && screen && (
           <>
             {hmi.explanation && <p className="text-sm text-gray-700 max-w-4xl"><SpeakButton text={hmi.explanation} label="Read aloud" size="xs" className="mr-1 align-middle" />{tagged(hmi.explanation)}</p>}
-            <div className="flex gap-4 items-start">
+            {/* Screen list, screen and properties side by side; on a phone they wrap under each other. */}
+            <div className="flex flex-wrap gap-4 items-start">
               {/* Screen list */}
               <ResizablePane id="hmi.screens" defaultSize={200} min={140} max={420} handle="right">
               <nav aria-label="Screens" className="flex flex-col gap-2 pr-1">
@@ -698,7 +701,7 @@ export default function HmiPage() {
               </ResizablePane>
 
               {/* Screen */}
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-[18rem]">
                 <div className="flex items-baseline justify-between gap-3 mb-2">
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-gray-800">{screen.name}{screen.level ? <span className="ml-2 text-xs font-normal text-gray-500">· {LEVEL_LABEL[screen.level]} password</span> : null}</h3>
@@ -782,7 +785,7 @@ export default function HmiPage() {
             </div>
 
             <section className="bg-white rounded-lg border border-gray-200">
-              <div className="flex gap-1 px-3 border-b border-gray-200">
+              <div className="flex gap-1 px-3 border-b border-gray-200 overflow-x-auto">
                 {tabBtn('tags', 'Tags', design.tags.length)}
                 {tabBtn('alarms', 'Alarms', design.alarms.length)}
                 {tabBtn('check', 'Layout check', issues.length)}
@@ -872,8 +875,8 @@ function OperatorStationList() {
   return (
     <table className="text-xs" data-testid="operator-station">
       <tbody>
-        {devices.map((d) => (
-          <tr key={d.tag}>
+        {devices.map((d, i) => (
+          <tr key={`${d.tag}:${d.address}:${i}`}>
             <td className="pr-3 font-mono font-medium">{d.tag}</td>
             <td className="pr-3 text-steel-600">{d.kind}</td>
             <td className="pr-3">{d.description}</td>

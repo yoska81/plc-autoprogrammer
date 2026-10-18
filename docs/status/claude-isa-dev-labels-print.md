@@ -208,6 +208,106 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - The slot modules have no footprint of their own because they sit inside the CPU.
   - The -2 CPU width (80.5 mm) comes from the manual drawing. Both are on the unverified list with the reason.
 
+## Troubleshooter: device fault knowledge (src/troubleshoot)
+- The API is in deviceFaults.ts: DeviceFaultProfile holds normal terminal readings per state, LED/display meanings, and faults (code, symptom, causes, confirm, fix, source). Lookups: faultProfilesFor(part) (most specific first), faultCode(part, code) and faultsMatching(part, words).
+- The test checks that every source is an https URL, every match selects a real catalog or imported part, codes are unique per profile, and each fault has symptom, confirm and fix.
+- Drives and servo (faults/drives.ts): 5 profiles, 408 faults, all from the maker manuals with chapter and page.
+  - GS20 (75), GS10 (60), GS30 (85): every keypad code (ocA, ovd, GFF, oH1, cF2, CE10 …). Confirm steps use fault records P06.17-22 and the values at malfunction (P06.34 DC bus, P06.35 current, P06.40 DI status). Normal readings include the supply range, the DC bus band between Lv and ov, +24V-DCM, DI levels for source and sink, and STO1/STO2 to SCM.
+  - Inovance MD290/MD500 (37; codes E002.0… with the Err02 panel text in the symptom).
+  - SureServo2 (151 alarms AL001-AL809; P0.001 and P4.000-004 history; STO state table).
+- I/O and field devices (faults/ioField.ts): 28 profiles, 240 faults.
+  - CLICK C0 and CLICK PLUS CPUs, with every error code (101-108, 201-205, 301-384, 001, 109); DC inputs (sink/source, with the C1 wiring for PNP vs NPN); AC inputs; sinking, sourcing and relay outputs; analog, thermocouple and built-in analog; option-slot I/O.
+  - PNP/NPN inductive and photoelectric sensors; ultrasonic sensors (AD UK1/UK6, P+F UB, Banner T30UX/S18U/QS18U); TRD encoders by output type; GCX pushbuttons and E-stops; Mindman valves.
+  - To check: the C0 sourcing-output common extracted as "CO" and may be "C0" on the part.
+- Power and protection (faults/power.ts): 28 profiles, 87 faults.
+  - Rhino PSR/PSN/PSL, QUINT4, SITOP PSU6200 and S8VK-C supplies; Gladiator, S200U, 5SJ4, C60BP and 1489-M breakers; Class T, J and CC fuses; Fuji SC-E contactors and TK-E overloads; 78x, GQ and GRS-H relays; Dold, IDEM, 440R, 3SK1 and XPSUAF safety relays.
+  - The QUINT4 data sheet was read from a distributor's copy of Phoenix's own document, because Phoenix refused scripted access.
+  - No maker states a "~0 V across a healthy fuse" figure, so the fuse profiles use the Bussmann continuity test.
+- Extension (manager request):
+  - **VFDs (faults/vfd2.ts):** PowerFlex 525 (51), G120C (103), V20 (50), GA500 (184), ACS380 (191). Each drive's fault-history parameters are used in `confirm`, with relay pairs per state. For five V20 codes the manual gives no remedy, so their fix says exactly that instead of an invented remedy.
+  - **Servos and controllers (faults/servoCtrl.ts):** Kinetix 5100 (115), V90 PTI 400 V (105) and PN (86), Micro800 error codes (61) plus Micro820/850 and 2085 I/O, CompactLogix 5380 (201: major faults and #xxxx I/O codes), Compact 5000 I/O, and Unitronics UniStream/Vision/Jazz.
+  - **Pilz PNOZ s3 / X2.8P** (faults/pilz.ts and catalog vendor `pilz`).
+  - **Pins and internal pairs** backfilled into the 61 earlier profiles (194 of 237 readings; 105 pairs).
+  - `symptomKind` and `faultsOfKind()` added for Dev 2. faultCode() ignores spaces and dots, so 'E001' finds Kinetix 'E 001' and 'AL009' finds 'AL.009'.
+  - **Total:** 83 profiles, 1,933 faults.
+  - **Gaps:**
+    - V90 200 V PTI: the 2021 manual returned 403.
+    - Unitronics publishes no numeric system-error list in these guides.
+    - Micro800 plug-ins: 2080-UM004 not read.
+    - ACS355: not in the catalog.
+    - Delta drives: their manuals are behind a captcha.
+- Coverage of the families asked for:
+  - Every CLICK part, every encoder, fuse, safety relay and valve, the GS drives and SureServo2.
+  - Other brands' contactors, overloads, VFDs and servo motors have no profile yet.
+- Gaps:
+  - Delta VFD-E/MS300/C2000: manuals are behind a captcha.
+  - No drive manual gives a DC bus nominal value, so only the trip band is used.
+  - In the GS20 short-circuit check, one terminal is a symbol that did not extract. The text says so instead of guessing the terminal.
+
+## Roll former / servo flying shear (Debug 1's acceptance case)
+- **Machine symptom map** (machineSymptoms.ts + machineSymptomData.ts), roll-former-flying-shear, 6 symptoms:
+  - cut-length-wrong (7 causes; EPC TB-108 ranks wheel misalignment as the most common);
+  - shear-does-not-fire (5), material-slips (5), shear-cuts-crooked-or-burr (2), line-stops-servo-alarm (5), hydraulic-cutter-slow (5).
+  - Each cause has devices (fault profile ids or categories), checks, fix and a maker source.
+  - Ranking is the sources' own where they state one; otherwise it follows the documents' emphasis and the cause's `mechanism` says so.
+- **Device fault profiles** (faults/rollformer.ts), 10 profiles, 50 faults:
+  - Omron E6B2-C encoders, NPN and line driver.
+  - Omron H7CX counters, with E1/E2/E3 codes, CP1/CP2 NPN/PNP levels, the factory 30 Hz count-speed trap, and output contact pairs.
+  - Rexroth 4WE6 DC solenoid valves and HED 8 pressure switches.
+- **Imported-part data:**
+  - 15 Omron H7CX counters, discontinued in 2023 (the H7CC successor is named in each record).
+  - 16 Rexroth 4WE6/3WE6 valves (24 VDC K4).
+  - 8 HED 8 pressure switches, unverified: data sheet RE 50061 needs a Rexroth login.
+- **foreignPart() now ignores spaces**, so Rexroth's '4WE 6 E6X/EG24N9K4' finds its record.
+- **Gaps:**
+  - Delta ASDA-A2: deltaww.com is behind a captcha and Delta EMEA redirects there; no mirrors were used.
+  - "KT timers": KT is the Chinese drawing letter code for a time relay, not a brand.
+  - Huade 4WE6: no English data sheet on huade-hyd.com.
+  - Blade wear / burrs, and strip slip in the roll stands: no maker document covers them.
+
+## No-PLC roll-former → CLICK conversion: catalog coverage
+- **Already covered:** CLICK PLUS C2-0xCPU + C2-14D1/D2/TTL (3 PTO axes and 6 HSC at 100 kHz); GS20/GS23; SureServo2; TRD encoders; 17 safety relays.
+- **CLICK C0 modules (17):**
+  - Discrete: C0-08NE3, C0-16NE3, C0-08NA, C0-08ND3-1, C0-08TD2, C0-08TA, C0-08TR-3, C0-04TRS-10, C0-08CDR, C0-16CDD2.
+  - Analog: C0-04AD-2, C0-04DA-2, C0-4AD2DA-1/-2, C0-04RTD.
+  - Simulators: C0-08SIM, C0-04POT.
+  - C0-00AC is retired; C0-01AC is the current CLICK power supply.
+- **Encoder accessories (48):**
+  - Measuring wheels: Wachendorff MR200/MR500 (10 mm bore, fits TRD-GK); Lika AR01X 250 mm / 12.5 in with BR1 reducer bushings.
+  - Lika AR01 complete measuring-wheel kits (encoder + wheels + spring arm + bracket).
+  - 14 couplings and 13 brackets.
+  - Gap: AD sells no spring arm for the TRD encoders. The WDGMA arms fit Wachendorff WDG 58V/WDGI 36J only.
+- **Safety outputs:**
+  - Dold LG5929 (5 N.O.) and UG6929-60/61/62 (5/6/7 N.O.) expansions.
+  - IDEM SCR73 base relay with 7 N.O. Its spec sheet transposes N.O./N.C. and prints PFHd 7.20E-05; both are noted.
+  - Pilz PNOZ s7 (4 N.O. + 1 N.C.) and s7.1 (3 N.O., cascade) for the PNOZ s3.
+  - Combinations covering 2+2 STO channels + valves: PNOZ s3 + s7 = 6 N.O.; LG5925 + UG6929-62 = 10 N.O.; SCR73 = 7 N.O.
+- **Prices:** 71 AD prices and stock records. STP-MTRA-SC-3812 is end of life, successor SRBA-32C-9.525-12.7.
+
+## Fault knowledge: review fixes (old main) and copyright rewrite
+- **Safety:**
+  - Dold LG5925: the S33-S34 bridge advice is replaced (never bridge on an E-stop or guard relay).
+  - STO jumper / bypass / CN10 plug fixes (PowerFlex 525, GA500, Kinetix 5100, SureServo2 AL500, GS10 / GS20 / GS30 SrL / Sto short-circuit lines) are in `fixIfNoStoWiring`, behind `fixesFor(fault, { stoWired })`. Unknown STO wiring counts as wired. A test fails on any ungated STO jumper, short-circuit line/plug or bridge fix. Disabling DC-link monitoring (servo) or phase-loss detection (L8-05 = 0) is prefixed "Only after confirming the supply is correct; a qualified person must decide".
+  - CLICK output overrides and valve manual overrides carry "Keep everyone clear" (tested).
+  - LIVE_WORK_CAUTION + `readingsFor(profile)` / `needsLiveWorkCaution()`, decided by what the terminals connect to.
+- **Lazy loading:** `loadFaultKnowledge()` (knowledge.ts) keeps the knowledge out of the main and preview bundles.
+- **Copyright:** the 3,550 text fields over 150 characters were rewritten in our own short words (cause / check / fix). Only codes, parameters, terminals, values and the citation are kept. kbText.test.ts fails on any text field over 150 characters (URLs and citations not counted). The 156 remaining manual-style lists ("•" bullets, "1. … 2. …" steps) were also reworded; none are left.
+  - Dropped from the rewrite: list numbering, words such as "2nd" / "7-segment", the generic "H2-xx" (the specific H2-01 to H2-03 is kept), and a few long aux-code lists, which end in "(see source)".
+- **IDEM SCR73:** marked unverified, because the PFHd 7.20E-05 as printed is impossible for SIL 3.
+
+## Allen-Bradley CompactLogix 5370 (1769), for L5X upgrades
+- 34 parts in allenBradley.ts, from Rockwell product pages and 1769-TD005 / TD006 / TD008 / IN015:
+  - 13 CPUs: L30ER / L30ERM / L30ER-NSE / L33ER / L33ERM / L36ERM, L16 / L18 / L18ERM / L19ER-BB1B, L24ER-QB1B / L24ER-QBFC1B / L27ERM-QBFC1B.
+  - 15 Compact I/O modules, PA2 / PA4 / PB2 / PB4 supplies, and ECL / ECR end caps.
+- Lifecycle: the L1 CPUs are Active; everything else is Active Mature.
+- LOGIX_CPUS gains the 12 CPUs (id = catalog number), appended after the 5069 ones. builtInInputs / builtInOutputs are 16 / 16 on L1 / L2.
+- Platforms:
+  - ab-compactlogix-5370: L2 / L3 with 1769 modules.
+  - ab-compactlogix-5370-l1: expansion is 1734 POINT I/O, which is not in the catalog.
+- No HMI driver list names the 5370 yet, so panels show as unconfirmed for it.
+- 1769 I/O addressing (Local:n:I.Data bit-of-DINT) is Dev 3's. L19ER-BB1B (1 MB, 8 nodes, 8 POINT I/O; TD005O) is in the catalog only: LOGIX_CPUS and the L1 platform are Dev 3's to extend.
+- Checked against 1769-UM021K / TD005O: L1 embedded inputs are 24V DC sink only (L2 are sink/source); QBFC1B has 4 high-speed counters.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.

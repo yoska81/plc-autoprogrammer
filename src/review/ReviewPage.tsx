@@ -157,7 +157,7 @@ export default function ReviewPage() {
   return (
     <>
       <header className="flex flex-wrap items-center gap-3 border-b border-steel-200 bg-white px-4 py-2.5">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-[1_1_16rem]">
           <h2 className="text-base font-semibold text-steel-800">8 · Design review</h2>
           <p className="mt-0.5 text-xs text-steel-500">A checking engineer's pass over the whole project before anything is built: instant consistency checks plus an AI senior-engineer review. Resolve or justify every finding; the result goes into the engineering package.</p>
         </div>

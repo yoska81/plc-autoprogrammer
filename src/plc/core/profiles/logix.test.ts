@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { LadderProgram } from '../ladder';
+import type { LadderProgram, Rung } from '../ladder';
 import type { ExportContext, ModuleSlot } from '../profile';
 import { logixProfile, logixIoTag, logixAnalogChannels, LOGIX_CPUS } from './logix';
 import { toLogix, logixName } from './logixExport';
@@ -143,7 +143,7 @@ assert.ok(map.includes('REMARK,"MOV(Local:3:I.Ch00.Data,Tank_level);"'));
 const bad: LadderProgram = { tags: [], rungs: [{ id: 'x', comment: '', branches: [[{ type: 'NO', address: 'SC19' }, { type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'C1' }] }] };
 const msgs = validateProgram(bad, logixProfile, new Set()).map((i) => i.message).join(' | ');
 assert.match(msgs, /SC19: Logix has no equivalent/);
-assert.match(msgs, /no built-in I\/O/);
+assert.match(msgs, /no embedded I\/O/);
 
 // --- branch factoring: only plain contacts move out of a branch; a repeated one-shot or kept instruction stays in each leg
 {
@@ -155,6 +155,31 @@ assert.match(msgs, /no built-in I\/O/);
   const t = toLogix(p2, ctx, logixIoTag).routines.flatMap((r) => r.rungs.map((g) => g.text));
   assert.ok(t.some((x) => /^\[XIC\(C1\)OSR\(a,b\),XIC\(C2\)OSR\(a,b\)\]XIC\(C3\)OTE\(C20\);$/.test(x)), `one-shot must stay in each leg\n${t.join('\n')}`);
   assert.ok(t.some((x) => x === '[JSR(Sub,0),JSR(Sub,0)]OTE(C21);'), `repeated JSR legs must both stay\n${t.join('\n')}`);
+}
+
+// ── CompactLogix 5370 (1769): Local:<slot>:I.Data.<bit>, analog Ch<n>Data, embedded I/O on L1 / L2 ──
+{
+  const m1769 = [{ partNumber: '1769-IQ16', inputs: 16, outputs: 0 }, { partNumber: '1769-OB16', inputs: 0, outputs: 16 }, { partNumber: '1769-IF4', inputs: 0, outputs: 0, analogInputs: 4 }];
+  assert.equal(logixIoTag('X101', m1769, '1769-L33ER'), 'Local:1:I.Data.0');
+  assert.equal(logixIoTag('Y216', m1769, '1769-L33ER'), 'Local:2:O.Data.15');
+  assert.equal(logixIoTag('X001', m1769, '1769-L33ER'), null, 'an L3 has no embedded I/O');
+  const df = logixAnalogChannels(LOGIX_CPUS.find((c) => c.id === '1769-L33ER')!, m1769)[0].address;
+  assert.equal(logixIoTag(df, m1769, '1769-L33ER'), 'Local:3:I.Ch0Data');
+  // L2 with embedded discrete I/O and analog (QBFC1B): embedded in slots 1 / 2, modules after them.
+  assert.equal(logixIoTag('X003', [], '1769-L24ER-QBFC1B'), 'Local:1:I.Data.2');
+  assert.equal(logixIoTag('Y016', [], '1769-L24ER-QBFC1B'), 'Local:1:O.Data.15');
+  const l2 = LOGIX_CPUS.find((c) => c.id === '1769-L24ER-QBFC1B')!;
+  assert.equal(logixIoTag(logixAnalogChannels(l2, [])[0].address, [], l2.id), 'Local:2:I.Ch0Data');
+  assert.equal(logixIoTag('X101', [m1769[0]], l2.id), 'Local:4:I.Data.0');
+  // An L1 expands with 1734 POINT I/O: no 1769 module tags after it, only its embedded I/O.
+  assert.equal(logixIoTag('X003', [], '1769-L16ER-BB1B'), 'Local:1:I.Data.2');
+  assert.equal(logixIoTag('X101', [m1769[0]], '1769-L16ER-BB1B'), null);
+  // 5069 stays as it was.
+  assert.equal(logixIoTag('X101', modules), 'Local:1:I.Pt00.Data');
+  // Embedded I/O is allowed where the I/O list assigns it (an L2), an error where the CPU has none.
+  const rung: Rung = { id: 'r', comment: '', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'Y001' }] };
+  assert.equal(logixProfile.checkRung!(rung, { ioAddresses: new Set(['X001', 'Y001']) }).length, 0);
+  assert.match(logixProfile.checkRung!(rung, { ioAddresses: new Set() }).map((i) => i.message).join(), /X001: this CompactLogix has no embedded I\/O/);
 }
 
 console.log('logix tests passed');

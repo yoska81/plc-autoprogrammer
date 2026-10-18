@@ -1,0 +1,8 @@
+Name,Path,Data Type,Logical Address,Comment,Hmi Visible,Hmi Accessible,Hmi Writeable,Typeobject ID,Version ID
+Lid_Closed,Default tag table,Bool,%I0.2,Mixer lid closed (safety switch),True,True,True,,
+Tank_Low,Default tag table,Bool,%I0.3,Supply tank low level,True,True,True,,
+Level_High,Default tag table,Bool,%I0.4,Mixer level high,True,True,True,,
+Level_Low,Default tag table,Bool,%I0.5,Mixer level low (empty),True,True,True,,
+Fill_Valve,Default tag table,Bool,%Q0.0,Fill valve,True,True,True,,
+Agitator,Default tag table,Bool,%Q0.1,Agitator motor,True,True,True,,
+Drain_Valve,Default tag table,Bool,%Q0.2,Drain valve,True,True,True,,

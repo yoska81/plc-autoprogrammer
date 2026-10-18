@@ -19,6 +19,11 @@ import { isIssueNote } from '../components/questions/classify';
 import type { Finding, ReviewArea, ReviewPage, Severity } from './types';
 import { isAnalog } from '../types/io';
 import { analogMap, analogNeed } from '../plc/core/analog';
+import { motionFit } from '../plc/core/motionFit';
+import { getPart } from '../electrical/catalog';
+import { specToText } from '../spec/types';
+import { inPlcNames, openPlcChanges, programUse } from '../hmi/engine/upgradeHmi';
+import { plcTagNameOf } from '../deliverables/plcTagNames';
 
 export interface ReviewInput {
   p: ProjectSnapshot;
@@ -135,7 +140,9 @@ function noPanelChecks({ p }: ReviewInput): Finding[] {
   if (p.hmi || !p.noHmi || p.profile.language !== 'ladder' || !p.ladder.rungs.length) return [];
   const writes = new Set(p.ladder.rungs.flatMap((r) => rungWrites(r).map((w) => w.trim().toUpperCase())));
   const reads = [...new Set(p.ladder.rungs.flatMap((r) => rungReads(r).map((x) => x.address.trim().toUpperCase())))];
-  return reads.filter((a) => HMI_WRITTEN.test(a) && !writes.has(a)).map((a) => {
+  // A bit the checker already reports as the reason a coil can never turn on (validateProgram noPanel) is not repeated here.
+  const covered = new Set(p.issues.filter((i) => /can never turn on/.test(i.message)).flatMap((i) => i.message.match(/\b(C|DS|DF)\d+\b/g) ?? []));
+  return reads.filter((a) => HMI_WRITTEN.test(a) && !writes.has(a) && !covered.has(a)).map((a) => {
     const name = p.labels.get(a) ? ` ${p.labels.get(a)}` : '';
     const bit = a.startsWith('C');
     return finding(`nohmi-input:${a}`, 'major', 'hmi', 'program', a, `No touch panel, but the program waits for ${bit ? 'panel command' : 'panel setpoint'} ${a}${name}`,
@@ -149,24 +156,24 @@ function noPanelChecks({ p }: ReviewInput): Finding[] {
 function hmiChecks({ p }: ReviewInput): Finding[] {
   const out: Finding[] = [];
   if (!p.hmi || p.profile.language !== 'ladder' || !p.ladder.rungs.length) return out;
-  const writes = new Set<string>();
-  const sets = new Set<string>();
-  const resets = new Set<string>();
-  for (const r of p.ladder.rungs) {
-    for (const w of rungWrites(r)) writes.add(w.trim().toUpperCase());
-    for (const o of r.outputs) {
-      if (o.type === 'TMR') writes.add(`TD${o.address.trim().toUpperCase().slice(1)}`);
-      if (o.type === 'CNT') writes.add(`CTD${o.address.trim().toUpperCase().slice(2)}`);
-      if (o.type === 'SET') sets.add(o.address.trim().toUpperCase());
-      if (o.type === 'RST') resets.add(o.address.trim().toUpperCase());
-    }
-  }
+  const { writes, sets, resets } = programUse(p.ladder);
   const reads = new Set(p.ladder.rungs.flatMap((r) => rungReads(r).map((x) => x.address)));
+  // An upgraded program: what it still lacks for the HMI is one list of PLC changes, not a finding per tag.
+  const changes = p.hmi.plcChanges ? new Set(p.hmi.plcChanges.map((c) => c.address)) : new Set<string>();
+  const open = openPlcChanges(p.hmi, p.ladder);
+  if (open.length) {
+    // In the PLC's own tag names (CLICK's are its addresses), so each change can be typed in as it reads.
+    const nameOf = p.profile.id === 'click' ? (a: string) => ({ name: a }) : plcTagNameOf(p);
+    const list = open.slice(0, 15).map((c) => `• ${inPlcNames(c.change, nameOf)}`).join('\n') + (open.length > 15 ? `\n• … and ${open.length - 15} more` : '');
+    out.push(finding('hmi-plc-changes', 'major', 'hmi', 'program', '', `The HMI needs ${open.length} change(s) in the upgraded PLC program`,
+      `The HMI uses the imported program's own addresses where it has them. These HMI functions have nothing in the program yet:\n${list}`,
+      'Make these changes in the PLC program, or take the elements off the HMI screens.'));
+  }
   // analog input registers are filled by the module's analog setup, not by a rung
   const analogIn = new Set(p.io.filter((pt) => pt.type === 'input' && isAnalog(pt)).map((pt) => (p.addresses.get(pt.id) ?? '').toUpperCase()).filter(Boolean));
   for (const t of p.hmi.tags) {
     const a = t.address.trim().toUpperCase();
-    if (/^[XY]\d/.test(a) || analogIn.has(a)) continue;
+    if (/^[XY]\d/.test(a) || analogIn.has(a) || changes.has(a)) continue;
     if (t.access === 'read' && !writes.has(a)) {
       out.push(finding(`hmi-unwritten:${a}`, 'major', 'hmi', 'program', '', `HMI tag ${a} ${t.name} is never written by the PLC`,
         `The HMI shows ${t.name} (${t.description}) but no rung writes ${a}, so the screen would always show 0 / OFF.`, 'Implement the tag in the program as its description says.'));
@@ -177,6 +184,7 @@ function hmiChecks({ p }: ReviewInput): Finding[] {
   }
   for (const al of p.hmi.alarms) {
     const a = al.address.trim().toUpperCase();
+    if (changes.has(a)) continue;
     if (!writes.has(a)) {
       out.push(finding(`alm-unset:${a}`, 'major', 'hmi', 'program', '', `Alarm ${a} "${al.message}" is never set`,
         'The alarm is on the HMI alarm list but no rung turns the bit on, so the operator is never warned.', 'Set the alarm bit from its fault condition in the Alarms block.'));
@@ -187,7 +195,7 @@ function hmiChecks({ p }: ReviewInput): Finding[] {
   }
   for (const s of p.hmi.screens) for (const e of s.elements) {
     const il = e.interlock?.trim().toUpperCase();
-    if (il && !writes.has(il)) {
+    if (il && !writes.has(il) && !changes.has(il)) {
       out.push(finding(`hmi-interlock:${il}`, 'major', 'hmi', 'program', '', `Permissive ${il} for "${e.label}" is never written`,
         `The ${s.name} screen enables "${e.label}" only while ${il} is ON, but no rung writes it, so the button can never be used.`, 'Compute the permissive in the Manual block.'));
     }
@@ -338,6 +346,15 @@ function driveChecks({ p }: ReviewInput): Finding[] {
   return out;
 }
 
+/** Servo axes / encoders the chosen PLC cannot run (pulse axes, counters, rates, coordinated moves): said, never generated silently. */
+function motionChecks({ p }: ReviewInput): Finding[] {
+  const f = motionFit(p.io, getPart(p.cpu.id), specToText(p.spec));
+  const out: Finding[] = [];
+  if (!f.ok) out.push(finding('motion:fit', 'critical', 'equipment', 'equipment', p.cpu.id, `The motion does not fit ${p.cpu.id}`, f.problems.join(' '), f.recommend.join(' ')));
+  for (const [i, n] of f.notes.entries()) out.push(finding(`motion:note:${i}`, 'info', 'equipment', 'equipment', p.cpu.id, 'High-speed I/O set-up', n, 'Set it up in the PLC software (CLICK: High Speed I/O Setup) before writing the program.'));
+  return out;
+}
+
 function projectChecks({ p }: ReviewInput): Finding[] {
   const out: Finding[] = [];
   if (!p.info.revisions?.length) {
@@ -474,7 +491,7 @@ function specCoverage({ p, cautions = [] }: ReviewInput): Finding[] {
 export function runChecks(input: ReviewInput): Finding[] {
   const all = [
     ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input), ...driveChecks(input),
-    ...programChecks(input), ...hmiChecks(input), ...noPanelChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
+    ...programChecks(input), ...hmiChecks(input), ...noPanelChecks(input), ...motionChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
   ];
   // The Engineer review's rule checks (SCCR weak link, heat, voltage drop…) count here too: one set of findings everywhere.
   const eng = engineerChecksFor(input.p);

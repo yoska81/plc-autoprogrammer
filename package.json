@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "build:desktop": "tsc -b && vite build --outDir dist-desktop --emptyOutDir && node scripts/desktop-prepare.cjs",
     "desktop": "npm run build:desktop && electron .",
-    "dist:win": "npm run build:desktop && electron-builder --win nsis --x64 --publish never"
+    "dist:win": "npm run build:desktop && node scripts/fetch-libredwg.cjs && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
@@ -69,6 +69,19 @@
       "!node_modules/**/*"
     ],
     "asar": true,
+    "extraResources": [
+      {
+        "from": "resources/libredwg",
+        "to": "libredwg",
+        "filter": [
+          "dwg2dxf.exe",
+          "libredwg-0.dll",
+          "libiconv-2.dll",
+          "COPYING",
+          "SOURCE.txt"
+        ]
+      }
+    ],
     "win": {
       "target": [
         {

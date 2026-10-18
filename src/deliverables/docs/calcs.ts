@@ -17,6 +17,7 @@ export interface CalcSection { title: string; lines: CalcLine[]; result: string;
 
 // Typical values used when the catalog doesn't publish one (labelled as estimates).
 import { coolingCover, dcFanAmps } from '../../electrical/cooling';
+import { controlInputAmps } from '../../electrical/motion';
 
 export const DC_LOAD_A: Partial<Record<CatalogCategory, number>> = {
   plc: 0.3, plcModule: 0.05, safetyRelay: 0.1, relay: 0.03, pilotLight: 0.02, stackLight: 0.1, sensor: 0.03, contactor: 0.1,
@@ -48,6 +49,10 @@ export function calculations(p: ProjectSnapshot): CalcSection[] {
       basis = `${part.ratings.watts} W coil (catalog)`;
     } else if (part.category === 'contactor' && !String(part.ratings.coilVoltage ?? part.ratings.coil ?? '').includes('24')) {
       continue; // AC coil, not on the 24 VDC supply
+    } else if (part.category === 'servoDrive') {
+      if (!controlInputAmps(part)) continue; // 230 V drives: control power from L1C / L2C, not the 24 VDC supply
+      a = controlInputAmps(part) * c.quantity;
+      basis = `${controlInputAmps(part)} A 24 VDC control power (catalog / maker's spec table)`;
     } else if (dcFanAmps(part) !== null) {
       a = dcFanAmps(part)! * c.quantity;
       basis = `${dcFanAmps(part)!.toFixed(2)} A 24 VDC fan (catalog)`;

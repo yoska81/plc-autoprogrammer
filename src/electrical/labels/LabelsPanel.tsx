@@ -5,6 +5,8 @@ import { listLabels, type ListedLabel } from './list';
 import { saveBlob } from '../../deliverables/files';
 import { desktop, desktopPrinters, printLabelPdf, printMessage, type DesktopPrinter } from './print';
 import ResizablePane from '../../components/ResizablePane';
+import PhoneTabs from '../../components/PhoneTabs';
+import { useNarrow } from '../../components/useNarrow';
 import { Spinner } from '../../components/common';
 import { canvasMeasure, expandCopies, layoutLabel } from './layout';
 import { labelPrinterPdf, labelSheetPdf, labelsXlsx, PAPER, printable } from './labelOutput';
@@ -47,6 +49,10 @@ function MmInput({ mm, units, onChange, label, min = 3 }: { mm: number; units: L
 
 export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: DrawingContext | null; fileBase: string; projectName: string }) {
   const activeId = useProjectsStore((s) => s.activeId);
+  // Phones: one pane at a time (setup, the list, the preview), picked from a tab strip.
+  const narrow = useNarrow();
+  const [phonePane, setPhonePane] = useState<'setup' | 'list' | 'preview'>('list');
+  const paneHidden = (p: typeof phonePane) => (narrow && phonePane !== p ? ' hidden' : '');
   const setup = useLabelSetupStore((s) => (activeId && s.byProject[activeId]) || s.last);
   const setFor = useLabelSetupStore((s) => s.set);
   const set = (patch: Partial<LabelSetup>) => setFor(activeId, patch);
@@ -166,10 +172,12 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
   const allShownOn = shown.length > 0 && shown.every((l) => !off.has(l.id));
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-steel-50">
+    <div className={`flex-1 flex overflow-hidden bg-steel-50${narrow ? ' flex-col' : ''}`}>
+      {narrow && <PhoneTabs label="Labels panes" value={phonePane} onChange={setPhonePane} tabs={[{ id: 'setup', label: 'Setup' }, { id: 'list', label: 'Labels' }, { id: 'preview', label: 'Preview' }]} />}
       {/* Setup */}
-      <ResizablePane id="labels.setup" defaultSize={330} min={260} max={520} className="bg-white border-r border-steel-200 overflow-y-auto">
-        <div className="p-4 space-y-5">
+      {/* The pane's content scrolls inside it, so the resize handle stays put and never adds a sideways scroll. */}
+      <ResizablePane id="labels.setup" defaultSize={330} min={260} max={520} fill={narrow} className={`bg-white border-r border-steel-200 flex flex-col${narrow ? ' min-h-0' : ''}${paneHidden('setup')}`}>
+        <div className="flex-1 min-h-0 overflow-y-auto"><div className="p-4 space-y-5">
           <Section title="1. Which labels">
             {LABEL_KINDS.map((k) => (
               <label key={k.kind} className="flex items-start gap-2 text-sm cursor-pointer" title={k.hint}>
@@ -324,11 +332,11 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
             {msg && <div role={msg.error ? 'alert' : 'status'} className={`text-xs rounded p-2 ${msg.error ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-brand-50 text-steel-800 border border-brand-200'}`}>{msg.text}</div>}
             <p className="text-xs text-steel-400">The label-printer PDF has one page per label and each page is exactly the label size, so Brady, Brother, Weidmüller and Phoenix Contact printer drivers print it 1:1. CSV / Excel import into Brady Workstation, P-touch Editor, M-Print PRO and PROJECT complete.</p>
           </Section>
-        </div>
+        </div></div>
       </ResizablePane>
 
       {/* Label list */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className={`flex-1 min-w-0 min-h-0 flex flex-col${paneHidden('list')}`}>
         <div className="px-4 py-2 bg-white border-b border-steel-200 flex flex-wrap items-center gap-2 text-sm">
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter: number, text or group" aria-label="Filter labels" className={`${input} w-56`} />
           <button className={btn} onClick={() => toggle(shown.map((l) => l.id), true)}>Select all</button>
@@ -341,7 +349,8 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
           <button className={btn} onClick={selectRange}>Select only these</button>
           <span className="ml-auto text-xs text-steel-400">Shift-click to select a range</span>
         </div>
-        <div ref={listRef} className="flex-1 overflow-auto" onScroll={(e) => setScroll({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })}>
+        {/* The label table scrolls both ways (it is wider than a phone). */}
+        <div ref={listRef} className="flex-1 overflow-auto" data-scroll-x="" onScroll={(e) => setScroll({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })}>
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-steel-100 text-xs text-steel-500 uppercase z-10">
               <tr>
@@ -387,7 +396,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
       </div>
 
       {/* Preview */}
-      <ResizablePane id="labels.preview" handle="left" defaultSize={420} min={260} max={900} className="bg-steel-100 border-l border-steel-200 flex flex-col">
+      <ResizablePane id="labels.preview" handle="left" defaultSize={420} min={260} max={900} fill={narrow} className={`bg-steel-100 border-l border-steel-200 flex flex-col${narrow ? ' min-h-0' : ''}${paneHidden('preview')}`}>
         <div className="px-3 py-2 bg-white border-b border-steel-200 flex items-center gap-2 text-sm">
           <span className="font-semibold text-steel-700">Preview</span>
           <span className="text-xs text-steel-500">{sizeName}</span>

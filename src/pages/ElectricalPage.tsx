@@ -1,3 +1,4 @@
+import { useProjectPanelPart } from '../hmi/projectPanel';
 import { useMemo, useState } from 'react';
 import { IS_PREVIEW } from '../preview/mode';
 import { looksLeftOver } from '../spec/leftovers';
@@ -36,7 +37,6 @@ import { useDrawingContext } from '../electrical/useDrawingContext';
 import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
-import { useHmiStore } from '../store/useHmiStore';
 import type { CatalogCategory, DesignInputs, EnclosureRating, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
 import { Spinner, ReasoningPanel } from '../components/common';
 import StageBanner from '../components/StageBanner';
@@ -89,7 +89,7 @@ export default function ElectricalPage() {
   const specText = specToText(fp.spec);
   const { profile, cpu, io, addresses, analog } = usePlc();
   const modules = useProjectStore((s) => s.modules);
-  const hmiPartNumber = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
+  const hmiPartNumber = useProjectPanelPart();
   const ctx = useDrawingContext();
   // The layout editor stores device tags: it works with the design's own tags.
   const rawCtx = useDrawingContext({ raw: true });
@@ -138,7 +138,7 @@ export default function ElectricalPage() {
       setPdfBusy(null);
     }
   };
-  // CAD exports of the drawing set: AutoCAD (DXF; DWG in the desktop app with the ODA File Converter) and the EPLAN import package.
+  // CAD exports of the drawing set: AutoCAD (DXF) and the EPLAN import package.
   const cadExport = async (kind: 'autocad' | 'eplan') => {
     setPdfBusy(kind);
     try {
@@ -197,14 +197,14 @@ export default function ElectricalPage() {
 
   return (
     <>
-      <header className="px-6 py-3 bg-white border-b border-steel-200">
-        <div className="flex items-start justify-between">
-          <div>
+      <header className="px-4 sm:px-6 py-3 bg-white border-b border-steel-200">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0 flex-[1_1_16rem]">
             <h2 className="text-base font-semibold text-steel-800">4 · Electrical Design{tab !== 'design' && <span className="font-normal text-steel-500"> — {TAB_TITLE[tab]}</span>}</h2>
             <p className="text-xs text-steel-400 mt-0.5">Control panel design and drawings · AutomationDirect parts · {profile.name} {cpu.id}</p>
           </div>
           {el.design && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button onClick={() => void drawingsPdf('print')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm bg-steel-800 text-white rounded hover:bg-steel-900 disabled:opacity-60" title={IS_PREVIEW ? 'The browser preview cannot reach a printer: this saves the drawings PDF to print from your PDF reader. In the Windows app, Print opens the Windows print dialog.' : 'Print the drawings'}>{pdfBusy === 'print' ? 'Preparing…' : IS_PREVIEW ? 'Print (save PDF)' : 'Print'}</button>
               <button onClick={() => void drawingsPdf('save')} disabled={pdfBusy !== null} className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-60">{pdfBusy === 'save' ? 'Preparing…' : 'Drawings PDF'}</button>
               {ctx && <button onClick={() => void cadExport('autocad')} disabled={pdfBusy !== null} title="Drawing set as DXF (opens directly in AutoCAD 2007 and later, LT and AutoCAD Electrical): layers, text styles, device blocks with TAG1 / DESC1 / MFG / CAT and wire-number blocks" className="px-3 py-1.5 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-60">{pdfBusy === 'autocad' ? 'Preparing…' : 'Save as AutoCAD (DXF)'}</button>}
@@ -255,7 +255,7 @@ export default function ElectricalPage() {
           )}
         </div>
       ) : (
-        <div className="flex-1 overflow-auto bg-steel-50 p-6">
+        <div className="flex-1 overflow-auto bg-steel-50 p-4 sm:p-6">
           <div className="max-w-5xl space-y-5">
             {el.source === 'imported' && (
               <div className="bg-brand-50 border border-brand-200 rounded p-3 text-sm text-brand-800">

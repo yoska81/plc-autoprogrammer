@@ -1,6 +1,72 @@
 # Dev 2 — program & simulation (`claude/isa-dev-program-sim`)
 
-Current: **Unitronics as a PLC brand, end to end** (manager request) — draft PR → `claude/optimistic-maxwell-6nfcs6`. Sealing head (#64, #67) merged. No blockers (real-AI scores still wait for an API key in the environment settings).
+Current: **the user's roll former (cn-rollformer-01), full drawn sequence on the simulator** — draft PR #88 → `claude/optimistic-maxwell-6nfcs6`. Motion slice and troubleshooter slice 2 are on the same branch. No blockers (real-AI scores still wait for an API key in the environment settings).
+
+## Roll former: the user's machine (coordinator + side manager; Debug 1's converted I/O at 8250d4f)
+
+- Fixture `src/plc/engine/__fixtures__/cnRollformerIo.ts`: Debug 1's 35 converted points. The E-stops and the guard are on the safety relay; Safety OK goes into the PLC; the KT1 cut watchdog is written "(watchdog 2 s)".
+- Rules (program.ts / sequence.ts / content.ts):
+  - pump and line each have their own Start / Stop;
+  - line permissives: pump running, U2 ready (SON from the selector), no alarm, material present (entry sensor), U1 healthy, no run-out end;
+  - U1 is one drive: MI1 forward, MI2 reverse, MI3 jog speed. Jog forward / reverse are exclusive and work only with the line stopped;
+  - U2 is one axis: SON from the selector, CAM only while running;
+  - the cut follows Debug 1's cut rule. U2 DO3 while running starts it (Manual cut while stopped does the same): shear down holds until the down limit, then up until the up limit. The 2 s watchdog trips the line;
+  - the external batch counter stops the line;
+  - Reset is the general Reset;
+  - E-stop drops everything; releasing it plus Reset restarts nothing.
+- Test `rollformer.test.ts` runs closed loop in the side manager's order: pump → permissives → jog → manual cut → DO3 cut (YV1 → SQ1 → YV2 → SQ2) → line stop → KT1 trip / Reset → batch stop → E-stop / Reset / no restart / Start → U2 alarm / Reset.
+
+## Motion slice: one CLICK PLUS axis + encoder (coordinator, after #88)
+
+Verified facts:
+- **C2-08D2-4VC spec sheet:** X1–X4 high-speed inputs at 100 kHz (2 quadrature A-B counters, 1 with Z); Y1 / Y3 high-speed outputs at 100 kHz, 2 pulse trains.
+- **CLICK help 292 / 296:** PTO only on CLICK PLUS with a C2-14x (3 axes) or C2-08x (2 axes) in slot 0. Pulse pins are fixed (Y001 / Y003 / Y005); direction can be any Y; Pulse + Direction mode only.
+  - Instructions: Home (6 modes), Velocity Move, Position Move (1 axis, or up to 3 interpolated on one vector).
+  - Current position / velocity are in DD registers. SC150–SC152 = axis ready. A limit switch faults the move (error 103).
+- **CLICK C0:** high-speed counters on X1–X4 / X1–X8 but no PTO. The catalog ratings (Dev 1) carry these limits.
+
+Done:
+- `src/plc/core/motionFit.ts`: `motionNeed(io, spec)` and `motionFit(io, cpuPart, spec)`. It counts pulse axes, encoders and Z channels, the rate from PPR × rpm or kHz, and linear vs nonlinear coordination. It reports what does not fit and what would: CLICK PLUS + slot-0 module, Productivity / BRX, or a drive with its own indexer. Tests: `motionFit.test.ts`.
+
+Next:
+- motionFit in the review and Equipment fit;
+- program blocks by Dev 5's roles (axis:K:* / enc:K:*): enable, fault latch / reset, homed, permits, and request bits that drive the three CLICK PTO instructions (listed with their parameters in the CLICK entry sheet / Load guide);
+- encoder scaling (count DD → DF position with an offset for Zero; speed every 100 ms);
+- a simulation model of the axis and the encoder.
+
+## Troubleshooter slice 2 (coordinator: new top priority, with Debug 4; review by the old main)
+
+- `src/troubleshoot/whyStuck.ts`: `whyStuck(program, values, { output } | { step }, { io, tags })` walks back from a stuck output, or a step that does not advance, through the contacts that are not made, to ranked blockers. Kinds:
+  - input
+  - output-no-motion (Y ON, feedback never comes)
+  - setting (a preset / setpoint register: 0, more than 10× its first-scan default, or not reached)
+  - logic (nothing writes it, a touch-panel command)
+  - reset-needed (latched, cause gone)
+  - waiting (still timing)
+  Each blocker carries the PLC point, the rung and `next` (wiring / setting / logic / operator / none) for Debug 4's wiring path.
+- `src/troubleshoot/simFaults.ts`: open wire, stuck sensor, blown fuse and wrong preset, between the plant model and the PLC (`runWithFaults`).
+- `src/troubleshoot/actions.ts`: live setting change (C / DS, confirmation, Online's write log), CLICK edit steps, `nextAction`.
+- Tests: `whyStuck.test.ts` on the sample conveyor (fixture program + the rules' program with steps) with injected faults, plus small ladders.
+- Next: the guided step engine `src/troubleshoot/guide.ts` on Debug 4's WiringPath (types sent to Debug 4), using Dev 1's deviceFaults at the device.
+
+## No touch panel (coordinator; Dev 5 owns the HMI stage / review / deliverables wording)
+
+- **I/O:** `src/spec/operatorIo.ts` `missingOperatorIo(io)` lists the door devices a no-panel machine still lacks: E-stop safety relay OK, Start PB, Stop PB (NC), Reset PB, Auto/Manual selector (ON = Manual), Running lamp (green), Fault lamp (red). Existing devices are recognised by their words, the same ones the program engine reads. `noTouchPanelNow()` in `src/spec/useStages.ts` means equipment was chosen with no HMI.
+  - The I/O AI prompt swaps its "HMI functions are not I/O" rule for `NO_PANEL_RULE`.
+  - Update all and I/O from spec add whatever the AI left out before the merge, so kept points keep their wiring.
+  - Applying equipment with "No touch panel" adds the missing points to an existing I/O list.
+- **Program:** `ProgramInput.panel: false` (`generateRuleBasedProgram({ noPanel })` from Update all and the Program page). Each door device replaces its HMI command. An HMI command bit stays only when its device is missing, with a note saying what to add.
+  - The Auto/Manual selector (with or without a panel) puts the machine in Manual and stops the cycle.
+  - New lamp rules: horn / buzzer while faulted, Ready / Power / white = Safety OK with no fault and stopped, Reset / blue lamp = fault latched.
+- **Electrical:** the door already took the devices from the I/O list. Fixed the pushbutton colour regex: "...button" matched `on\b`, so Reset and Fault reset were green; now black (sealing-head and unitronics-v700 goldens updated). engine.test checks the no-panel door, parts, wiring, and that there's no HMI in the BOM or network.
+- **Panel rule:** Dev 5's `src/hmi/projectPanel.ts` (merged in from claude/isa-dev-hmi-looks). The project's panel is the equipment choice only, so a leftover HMI design no longer puts the old panel on the door. Used by the drawing context, cabinet pictures, Improve panel, Electrical page and Update all. collect.ts passes `{ noPanel }` to validateProgram. The review's panel-bit finding skips bits the "can never turn on" error already names.
+- **Debug 4's journey `nohmi` (PR #87, bench press) is the acceptance case, and it passes (0 problems, 0 critical / major review findings):**
+  - With no panel and no Start PB, both two-hand buttons start the machine and each cycle.
+  - "Run / setup", "Auto / hand" and "Auto / manual" selectors are recognised (ON = Manual unless the text says ON = Auto / Run, with a note to check).
+  - With no panel, the heartbeat, Service Done, HMI jog (Manual block) and count-reset rungs aren't generated.
+- **Checker:** `validateProgram(…, hmi, { noPanel })` adds "X can never turn on: every way to switch it on needs B, which nothing writes". It's an error when B is a panel bit on a no-panel machine, a warning otherwise. Update all and the cycle AI pass `noPanel`; collect.ts (the review) needs `{ noPanel: p.noHmi }` (Dev 5's file).
+- **Alarm list:** with no panel, the alarm bits the program writes get `ALM_…` names and comments, so the deliverables' alarm list isn't empty. `operatorRole(point)` in operatorIo.ts gives Dev 5's operator-station section the role of each door point.
+- **Tests:** `src/plc/engine/noPanel.test.ts` runs closed loop: Start and Stop from the door, the selector to Manual stops the cycle, E-stop turns the Fault lamp on, Reset, and no rung reads an HMI command bit. New harness variant `rules-nopanel` (sealing head, no HMI) is in gen-outputs and check_overlap.
 
 ## Load into PLC + Online check (manager: URGENT, user connects a CLICK C0-11DD2E-D tomorrow)
 - [x] "Load into PLC" button (PLC program page and Online): step-by-step guide per brand with a download button for each step's files. CLICK: free software → CPU + modules in slot order (Setup > System Configuration) → File > Import > Nickname → rung entry sheet → PC on the PLC's subnet (default fixed 192.168.0.10 / 255.255.0.0, APIPA when DHCP finds no server) → PLC > Connect, Write Project into PLC, RUN → Online: Test connection, Program check, I/O check-out. Facts from the CLICK help (topics 057, 090, 109, 211) and the C0-PGMSW page. Logix / CCW / TIA / Unitronics: their import path and files.

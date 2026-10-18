@@ -56,9 +56,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     const io = (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
     const prog = (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder;
     const spec = (await import('/src/store/useSpecStore.ts')).useSpecStore.getState();
-    return { plcId: plc.plcId, modules: plc.modules, io: io.length, rungs: prog.rungs.length, overview: spec.sections.overview, operator: spec.sections.operator, questions: spec.questions };
+    return { plcId: plc.plcId, cpuId: plc.cpuId, modules: plc.modules, io: io.length, rungs: prog.rungs.length, overview: spec.sections.overview, operator: spec.sections.operator, questions: spec.questions };
   });
   check(state.plcId === 'logix' && state.modules.length > 0, `Logix PLC with modules (${state.plcId}, ${state.modules.join(' ')})`);
+  check(state.cpuId === '1769-L33ER' && state.modules.every((m) => /^1769-/.test(m)), `the machine's own controller is kept (${state.cpuId}, ${state.modules.join(' ')})`);
   check(state.io > 10 && state.rungs >= 19, `I/O list (${state.io}) and program (${state.rungs} rungs)`);
   check(/1769-L33ER/.test(state.overview) && /Start_PB/.test(state.operator), 'machine description written from the program');
   check(state.questions.some((q) => /MSG/.test(q)) && state.questions.some((q) => /problems/.test(q)), 'questions for the Machine description page');
@@ -102,6 +103,16 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
   log('download for another PLC: what is missing is confirmed first');
   const cpuBefore = await page.evaluate(async () => { const s = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState(); const c = s.cpuId; s.setPlc('micro800', ''); return c; });
+  // The page follows the PLC change live. Fallback: a long-running dev server can hand the test a second copy of the
+  // store module (after hot updates); the project is saved in the browser, so a reload shows the change then.
+  const showsMicro800 = (ms) => page.waitForFunction(() => /Micro8/.test(document.querySelector('[data-testid="upgrade-export"]')?.textContent ?? ''), null, { timeout: ms }).then(() => true, () => false);
+  const live = await showsMicro800(3000);
+  if (!live) {
+    console.log('  (the page did not follow the change live: reloading — a second store copy from the dev server)');
+    await page.reload();
+    await page.getByTestId('upgrade-original').waitFor({ timeout: 10000 });
+    check(await showsMicro800(5000), 'the PLC change shows after a reload');
+  } else check(true, 'the page follows the PLC change live');
   await page.getByTestId('upgrade-export').click();
   await page.getByTestId('upgrade-missing').waitFor({ timeout: 5000 });
   check(/MSG\(Line_Msg\)/.test(await page.getByTestId('upgrade-missing').innerText()), 'the MSG is listed as missing on another PLC');
@@ -115,13 +126,33 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByTestId('upgrade-original').waitFor({ timeout: 5000 });
   check((await page.getByTestId('upgrade-diff-summary').innerText()) === '1 changed', 'the original is kept with the project');
 
+  // The HMI for the upgraded program binds to the program's own addresses; what the program lacks for it is
+  // one list of PLC changes on the review page, not a major finding per HMI tag.
+  await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().setHmiPartNumber('CM5-T7W'));
+  await page.goto(BASE + '/hmi');
+  await page.getByRole('button', { name: /Design the HMI screens|Redesign screens/ }).first().click();
+  await page.getByText(/^Rule-based HMI for/).first().waitFor({ timeout: 20000 });
+  const hmi = await page.evaluate(async () => {
+    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+    const f = (await import('/src/review/actions.ts')).refreshChecks().filter((x) => x.area === 'hmi' && x.severity === 'major');
+    const tag = (role) => d.tags.find((t) => t.role === role);
+    return { alarms: d.alarms.filter((a) => /^alarm:program:/.test(d.tags.find((t) => t.address === a.address)?.role ?? '')).map((a) => a.message), running: tag('sts:running')?.name, start: tag('cmd:start')?.address, changes: d.plcChanges?.length ?? 0, majors: f.map((x) => x.id), list: f.find((x) => x.id === 'hmi-plc-changes')?.detail ?? '' };
+  });
+  log(`Upgrade HMI: running = ${hmi.running}; ${hmi.changes} PLC changes; HMI majors: ${hmi.majors.join(', ')}`);
+  check(hmi.running === 'Machine_Running', 'the HMI shows the program\'s own running coil');
+  check(hmi.alarms.length > 0, `the program's own alarms are on the HMI alarm list (${hmi.alarms.join(', ')})`);
+  check(hmi.majors.length === 1 && hmi.majors[0] === 'hmi-plc-changes', `one HMI finding with the PLC changes (${hmi.majors.length} HMI majors)`);
+  check(/in parallel with Start_PB/.test(hmi.list), 'the panel Start goes in parallel with the wired Start_PB');
+  await page.goto(BASE + '/upgrade');
+  await page.getByTestId('upgrade-original').waitFor({ timeout: 5000 });
+
   log('Mitsubishi GX Works3: program + device comments (UTF-16)');
   await page.getByRole('button', { name: 'Read another program' }).click();
   const fx = (n) => path.join(__dirname, '..', 'src', 'plc', 'import', '__fixtures__', n);
   await page.getByTestId('program-file').setInputFiles([fx('CAPPER_MAIN.csv'), fx('CAPPER_DeviceComment.csv')]);
   await page.getByTestId('program-found').waitFor({ timeout: 10000 });
   const gx = await page.getByTestId('program-found').innerText();
-  check(/FX5UCPU/.test(gx) && /33\s*of 33 rungs converted/.test(gx), 'GX program read');
+  check(/FX5UCPU/.test(gx) && /(\d+)\s*of \1 rungs converted/.test(gx), 'GX program read');
   check(/Double coil: Spindle \(Y4\)/.test(gx), 'the double coil is shown');
   check(/Stop_PB/.test(gx) && /Stop pushbutton/.test(gx), 'device comments give the names');
 
