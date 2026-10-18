@@ -356,3 +356,7 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
     - The serial-only Pro-face GP4100 panels (PFXGP4115T2D / T3D, PFXGP4116T2D) no longer list any CompactLogix driver.
     - Tests: a Logix driver needs ethernetPorts > 0; the 5370 / 5370-l1 / 5380 ids stay in step; L1 works on Weintek and Red Lion panels.
     - PanelView 5310 / 5510 carry `logixFirmwareMin: 27` (controller firmware V27 or later). The upgrade plan should check the L5X's firmware against it.
+- **PanelView Plus 7:** Standard 2711P-T7/T10/T15C22D8S and Performance 2711P-T7/T10/T15C22D9P. 6.5 / 10.4 / 15 in, 4:3, 24 VDC, 2 x Ethernet (DLR), FactoryTalk View ME.
+  - Size, resolution, power, cutout, dimensions and weight come from 2711P-TD008J / TD009M. Lifecycle is Active on each product page.
+  - CompactLogix 5370 is named in the TDs. 5380 appears only in the portfolio comparison 2711P-SP011L (Nov 2025).
+  - Standard catalog numbers end in D8S (series D needs firmware 13.x or later). "-B" means no brand label, not a series.

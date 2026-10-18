@@ -122,6 +122,8 @@ assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000
     assert.ok(d.length === 0 || d.length === 3, `${p.partNumber}: Logix driver ids out of step (${d.join(', ')})`);
   }
   assert.ok(!ok('ab-compactlogix-5370', 'PFXGP4115T2D'), 'serial-only GP4100: no CompactLogix');
+  // PanelView Plus 7 (FactoryTalk View ME): CompactLogix 5370 per 2711P-TD008J / TD009M, 5380 per 2711P-SP011L.
+  for (const pn of ['2711P-T7C22D8S', '2711P-T10C22D9P']) assert.ok(ok('ab-compactlogix-5370', pn) && ok('ab-compactlogix-5380', pn) && !ok('ab-micro850', pn), `${pn}: Logix, not Micro800`);
   // PanelView 5310 / 5510 need Logix firmware V27 or later (Rockwell 2713P-TD001K / 2715P-TD001G).
   for (const p of ALL_HMIS().filter((x) => /^271[35]P-/.test(x.partNumber))) assert.equal(p.ratings.logixFirmwareMin, 27, `${p.partNumber}: firmware V27+`);
 }
