@@ -90,11 +90,11 @@ await test('a part the catalog does not know is listed to confirm', () => {
   seedSampleProject();
   const el = useElectricalStore.getState();
   const d = structuredClone(el.design!);
-  d.components = d.components.map((x) => (x.tag === 'PLC' ? { ...x, partNumber: 'C0-11DD2E-D' } : x));
+  d.components = d.components.map((x) => (x.tag === 'PLC' ? { ...x, partNumber: 'XYZ-NOT-IN-CATALOG-1' } : x));
   useElectricalStore.setState({ design: d });
   const c = certPack(collectProject());
-  assert.ok(c.toConfirm.some((t) => t.startsWith('Not in the parts catalog') && t.includes('C0-11DD2E-D')), c.toConfirm.join(' | '));
-  assert.equal(c.components.find((x) => x.partNumber === 'C0-11DD2E-D')?.manufacturer, TO_CONFIRM);
+  assert.ok(c.toConfirm.some((t) => t.startsWith('Not in the parts catalog') && t.includes('XYZ-NOT-IN-CATALOG-1')), c.toConfirm.join(' | '));
+  assert.equal(c.components.find((x) => x.partNumber === 'XYZ-NOT-IN-CATALOG-1')?.manufacturer, TO_CONFIRM);
 });
 
 console.log('shop build time');
