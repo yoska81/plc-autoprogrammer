@@ -531,11 +531,10 @@ for (const s of SCENARIOS) {
   for (const p of g.points) {
     if (p.deviceType === 'sensor-npn') continue;
     assert.equal(p.supplyWire, '0V', `${p.address} ${p.description}: switches 0V`);
-    // the wire into the contact that feeds the input: from its supply terminal, else from TB1 to C / 23 (relay status)
-    const tag = p.deviceTag;
-    const pin = p.deviceType === 'safety-relay-output' ? '23' : 'C';
-    const feed = m.wires.filter((w) => w.to.startsWith(`${tag}:`) && (p.supplyTerminal ? w.from === p.supplyTerminal : w.from.startsWith('TB1 ') && w.to === `${tag}:${pin}`));
-    assert.ok(feed.length && feed.every((w) => w.wire === '0V'), `${p.address} ${tag}: fed ${feed.map((w) => w.wire).join(', ') || 'nothing'} — must be 0V to turn ON`);
+    // the wire on the contact's feed terminal, as derive wired it (C, 23 on the safety relay, R1 on a drive)
+    assert.ok(p.feedTo, `${p.address} ${p.deviceTag}: has a feed terminal`);
+    const feed = m.wires.filter((w) => w.to === p.feedTo && w.wire !== p.address);
+    assert.ok(feed.length && feed.every((w) => w.wire === '0V' && w.color === 'WH/BU'), `${p.address} ${p.feedTo}: fed ${feed.map((w) => `${w.wire} ${w.color}`).join(', ') || 'nothing'} — must be 0V (WH/BU) to turn ON`);
   }
   // a PNP-only design keeps 0V commons and +24V-fed contacts
   const pnp = buildModel(run({ ...npn, name: 'pnp-mixed', points: npn.points.map((p) => (p.deviceType === 'sensor-npn' ? { ...p, deviceType: 'sensor-pnp' as const } : p)) }).ctx);

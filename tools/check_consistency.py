@@ -263,7 +263,9 @@ def check(vdir: Path):
                     report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is {t} on a common to {g["commonTo"]} — it can never turn ON')
                 continue
             if not q['feed']:
-                continue  # no separate feed wire (drive / relay internal contacts are checked on their own sheets)
+                if q.get('feedTo'):
+                    report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} has no wire on its feed terminal {q["feedTo"]} — it can never turn ON')
+                continue  # no feed terminal: the signal comes from the device itself (drive output, analog)
             want = '0V' if npn else '24+'
             bad = [w for w in q['feed'] if w in ('0V', '24+') and w != want]
             if bad:

@@ -366,6 +366,8 @@ export interface IoPoint {
   /** Inputs: the wire a dry contact (button, switch, relay contact) switches into the input — '24+', or '0V' in a
    *  group whose common goes to +24V for NPN sensors (sourcing inputs: the contact must pull the input to 0V). */
   supplyWire?: '24+' | '0V';
+  /** Inputs: the device terminal the supply wire lands on (the contact's feed side: C, 23, R1…), as wired. */
+  feedTo?: string;
   /** Load terminals the output switches ([feed, return]): A1/A2, B1/B2 for a second coil of the same device
    *  (double solenoid), X1/X2 for a pilot light. */
   pins: [string, string];
@@ -1168,6 +1170,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     if (safety.statusInput) {
       const sw = io.find((q) => q.address === safety.statusInput!.address)?.supplyWire ?? '24+';
       addWire({ wire: sw, from: `TB1 ${sw}`, to: `${relay.tag}:23`, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `Safety status contact${sw === '0V' ? ' (switches 0V: NPN input common)' : ''}` });
+      safety.statusInput.feedTo = `${relay.tag}:23`;
       addWire({ wire: safety.statusInput.address, from: `${relay.tag}:24`, to: `${plcTag}:${safety.statusInput.address}`, color: 'BU', size: '18 AWG', function: 'Safety relay status to PLC' });
     }
   } else if (estopTags.length) {
@@ -1219,7 +1222,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     }
     const fault = c.terminals.find((t) => t.role === 'fault');
     if (fault) {
-      const sw = io.find((q) => q.address === fault.address)?.supplyWire ?? '24+';
+      const fp = io.find((q) => q.address === fault.address);
+      const sw = fp?.supplyWire ?? '24+';
+      if (fp) fp.feedTo = `${tag}:R1`;
       addWire({ wire: sw, from: `TB1 ${sw}`, to: `${tag}:R1`, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `${tag} fault relay common` });
     }
     if (c.safetyStop === 'sto') {
@@ -1274,11 +1279,16 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         const sig = p.deviceType === 'encoder' ? encoderChannel(p.description) ?? 'A' : s3 ? 'BK' : pinOf(tag, 'NO');
         addWire({ wire: p.address, from: `${tag}:${sig}`, to: p.signalTerminal, color: s3 ? `${p.deviceType === 'encoder' ? sig : 'BK'} (cable)` : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
-        if (p.supplyTerminal) addWire({ wire: s3 ? '24+' : p.supplyWire ?? '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '+V' : s3 ? 'BN' : pinOf(tag, 'C')}`, color: s3 ? 'BN (cable)' : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: `${tag} supply` });
+        if (p.supplyTerminal) {
+          const sw = s3 ? '24+' : p.supplyWire ?? '24+';
+          p.feedTo = `${tag}:${p.deviceType === 'encoder' ? '+V' : s3 ? 'BN' : pinOf(tag, 'C')}`;
+          addWire({ wire: sw, from: p.supplyTerminal, to: p.feedTo, color: s3 ? 'BN (cable)' : sw === '0V' ? 'WH/BU' : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: `${tag} supply` });
+        }
         if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '0V' : 'BU'}`, color: p.deviceType === 'encoder' ? 'WH (cable)' : 'BU (cable)', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: `${tag} 0V` });
       } else {
         const sw = p.supplyWire ?? '24+';
-        addWire({ wire: sw, from: `TB1 ${sw}`, to: `${tag}:C`, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `${tag} supply` });
+        p.feedTo = `${tag}:C`;
+        addWire({ wire: sw, from: `TB1 ${sw}`, to: p.feedTo, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `${tag} supply` });
         addWire({ wire: p.address, from: `${tag}:${p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO'}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
       }
     } else {

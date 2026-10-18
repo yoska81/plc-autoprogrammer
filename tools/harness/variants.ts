@@ -492,9 +492,9 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     inputCommons: m.groups.filter((g) => g.type === 'input').map((g) => ({
       group: g.label, commonTo: g.commonTo,
       points: g.points.map((q) => {
-        const pin = q.deviceType === 'safety-relay-output' ? '23' : 'C';
-        const feed = m.wires.filter((w) => w.to.startsWith(`${q.deviceTag}:`) && (q.supplyTerminal ? w.from === q.supplyTerminal : w.from.startsWith('TB1 ') && w.to === `${q.deviceTag}:${pin}`)).map((w) => w.wire);
-        return { address: q.address, tag: q.deviceTag, deviceType: q.deviceType, feed: [...new Set(feed)] };
+        // the wire landing on the input's feed terminal as derive wired it (C, 23, R1, BN…): every input is checked
+        const feed = q.feedTo ? m.wires.filter((w) => w.to === q.feedTo && w.wire !== q.address).map((w) => w.wire) : [];
+        return { address: q.address, tag: q.deviceTag, deviceType: q.deviceType, feedTo: q.feedTo ?? null, feed: [...new Set(feed)] };
       }),
     })),
     drives: m.motors.filter((x) => x.vfd).map((x) => ({ motor: x.motor.tag, tag: x.vfd!.tag, partNumber: x.vfd!.partNumber, fuseClass: x.vfd!.part?.ratings.fuseClass ?? null, fusePart: x.vfd!.part?.ratings.fusePart ?? null,
