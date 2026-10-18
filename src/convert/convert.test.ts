@@ -485,6 +485,27 @@ await test('cn-rollformer-01 fixture (fixtures/import): facts from its expected.
   }
 });
 
+await test('CAD text: title-block rows repeated on 3+ sheets given once, circuit rows kept on each; rows in a fixed order', () => {
+  // three A3-like sheets side by side: the bus "L1 L2 L3 PE" at the top of each, the company in the title block (bottom right)
+  const ents: CadEntity[] = [];
+  for (let i = 0; i < 3; i++) {
+    const x = i * 500;
+    ents.push({ type: 'LWPOLYLINE', layer: 'FRAME', points: [[x, 0], [x + 420, 0], [x + 420, 297], [x, 297]], closed: true });
+    for (const [k, t] of ['L1', 'L2', 'L3', 'PE'].entries()) ents.push({ type: 'TEXT', layer: 'WIRENO', x: x + 20 + k * 10, y: 280, text: t });
+    ents.push({ type: 'TEXT', layer: 'TEXT', x: x + 100, y: 150, text: `K${i + 1}` });
+    ents.push({ type: 'TEXT', layer: 'TEXT', x: x + 330, y: 20, text: 'ACME Machines Ltd' });
+    ents.push({ type: 'TEXT', layer: 'TEXT', x: x + 330, y: 10, text: `第${i + 1}页 共3页` });
+  }
+  const text = cadToText(ents, 'set.dxf');
+  assert.equal(text.split('\n').filter((l) => l.startsWith('L1 [WIRENO]')).length, 3, 'the bus row on every sheet');
+  assert.equal(text.split('\n').filter((l) => l.includes('ACME Machines Ltd')).length, 1, 'the company once');
+  // texts within one row height, given in any order: the same rows (by height, then left to right)
+  const row = [{ x: 30, y: 100.4 }, { x: 10, y: 100 }, { x: 20, y: 99.7 }, { x: 40, y: 50 }].map((p, k) => ({ type: 'TEXT' as const, layer: '0', ...p, text: `T${k}` }));
+  const one = cadToText(row, 'r.dxf');
+  for (const order of [[3, 2, 1, 0], [2, 0, 3, 1], [1, 3, 0, 2]]) assert.equal(cadToText(order.map((k) => row[k]), 'r.dxf'), one);
+  assert.match(one, /T1 {3}T2 {3}T0\nT3/);
+});
+
 await test('cn-rollformer-01 converted: claimed Cat 3 / PL d not met (no STO), relay logic C1–C11 into the PLC, each circuit kept', () => {
   const m = normalizeMachine(CN_ROLLFORMER_01_READING);
   const c = convertMachine(m);

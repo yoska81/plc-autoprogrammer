@@ -7,9 +7,11 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { Effort } from '../store/useSettingsStore';
 import { callClaude } from '../lib/ai/anthropic';
+import { parallelCached } from '../lib/ai/parallelCached';
 import { CATEGORIES, DEVICE_TYPES, IO_CATEGORIES, fileToBlock } from '../lib/ai/importAI';
 import { SPEC_SECTIONS, type SpecSectionId } from '../spec/types';
 import { cadToText, dwgToEntities, dxfToText } from './dxf';
+import { dxfText } from '../lib/parseWorker';
 import { desktopBridge } from '../desktop/bridge';
 import type { DrawnRatings, ExistingMachine, PathContact, PathEl } from './types';
 
@@ -44,16 +46,23 @@ async function dwgText(f: File, notes: string[]): Promise<string> {
 export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,application/pdf,image/*';
 
 /** One upload as content blocks for the AI: PDFs and images as they are, DXF as its text. */
-export async function readUpload(files: File[], notes: string[] = []): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
+/** `notes`: warnings collected while reading (DWG); `onFile`: called before each file is read (progress: "Reading 3 of 8: …"). */
+export async function readUpload(files: File[], notes: string[] = [], onFile?: (i: number, name: string) => void): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
   if (files.length > MAX_UPLOAD_FILES) throw new Error(`At most ${MAX_UPLOAD_FILES} files at once.`);
   const out: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
-  for (const f of files) {
+  for (const [i, f] of files.entries()) {
+    onFile?.(i, f.name);
     const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f, notes) }); else if (ext === 'dxf') out.push({ type: 'text', text: dxfToText(await f.text(), f.name) });
+    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f, notes) }); else if (ext === 'dxf') out.push({ type: 'text', text: await dxfText(f) });
     else out.push(await fileToBlock(f));
   }
+  // Drawing text past this is more than one reading can take in (about 150 k tokens): say so instead of failing at the AI.
+  const chars = out.reduce((n, b) => n + (b.type === 'text' ? b.text.length : 0), 0);
+  if (chars > MAX_DRAWING_TEXT) throw new Error(`The CAD drawings hold ${Math.round(chars / 1000)} k characters of text, more than one reading can take (${MAX_DRAWING_TEXT / 1000} k). Read them in parts (fewer DXF/DWG files at a time), or upload the drawings as PDF.`);
   return out;
 }
+
+export const MAX_DRAWING_TEXT = 600_000;
 
 const str = { type: 'string' } as const;
 const num = { type: ['number', 'null'] } as const;
@@ -222,9 +231,10 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
  * more content for the same request, e.g. a PLC program's symbol table or rung listing from the program
  * reader (src/plc/import/).
  */
-export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = []): Promise<{ machine: ExistingMachine; reasoning: string | null; notes: string[] }> {
+export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = [], onStage?: (text: string) => void): Promise<{ machine: ExistingMachine; reasoning: string | null; notes: string[] }> {
   const notes: string[] = [];
-  const blocks = [...(await readUpload(files, notes)), ...extra];
+  const blocks = [...(await readUpload(files, notes, (i, name) => onStage?.(`Reading the files (${i + 1}/${files.length}): ${name}`))), ...extra];
+  onStage?.('Reading the drawings (AI)');
   const names = files.map((f, i) => `${i + 1}. ${f.name}`).join('\n') || '(none: program data only)';
   const ask = `Files (in the order attached):\n${names}\n\n${note ? `Notes from the engineer:\n${note}\n\n` : ''}Read this machine from its drawings and write its description.`;
   const base = { apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'import' as const, system: DERIVE_SYSTEM };
@@ -235,28 +245,11 @@ export async function deriveFromUpload(opts: DeriveOptions, files: File[], note 
     const { text, reasoning } = await callClaude({ ...base, schema: EXISTING_SCHEMA, messages: [{ role: 'user', content: [...blocks, { type: 'text', text: ask }] }] });
     return { machine: normalizeMachine(read(text)), reasoning, notes };
   }
-  // the same prefix for every part (the files, cached at the last block), then the part's own instruction and schema
-  const prefix = blocks.map((b, i) => (i === blocks.length - 1 && b.type !== 'tool_use' && b.type !== 'tool_result' ? { ...b, cache_control: { type: 'ephemeral' as const } } : b)) as Anthropic.Beta.Messages.BetaContentBlockParam[];
-  // one part failing stops the others (and Cancel stops all)
-  const ctl = new AbortController();
-  const stop = () => ctl.abort();
-  if (opts.signal?.aborted) stop(); else opts.signal?.addEventListener('abort', stop, { once: true });
-  let started = () => {};
-  const firstStarted = new Promise<void>((resolve) => { started = resolve; });
-  const ask1 = (i: number) => callClaude({
-    ...base, signal: ctl.signal, schema: partSchema(), ...(i === 0 ? { onStarted: () => started() } : {}),
-    messages: [{ role: 'user', content: [...prefix, { type: 'text', text: `${ask}\n\n${DERIVE_PARTS[i].instruction}` }] }],
-  }).catch((err) => { stop(); throw err; });
-  let answers: Awaited<ReturnType<typeof callClaude>>[];
-  try {
-    // the first part writes the files to the prompt cache; the others start once its answer begins and read it
-    const first = ask1(0);
-    await Promise.race([firstStarted, first.then(() => undefined, () => undefined)]);
-    if (ctl.signal.aborted) await first;
-    answers = await Promise.all([first, ...DERIVE_PARTS.slice(1).map((_, k) => ask1(k + 1))]);
-  } finally {
-    opts.signal?.removeEventListener('abort', stop);
-  }
+  // the files once as the prompt-cached prefix, then each part's own instruction (last); one schema for all
+  // (a different output format per part would miss the cache); hardware first, the other two once its answer
+  // starts (they read the cached files); one part failing stops the others
+  const answers = await parallelCached({ ...base, prefix: blocks },
+    DERIVE_PARTS.map((p) => ({ instruction: `${ask}\n\n${p.instruction}`, schema: partSchema() })));
   const reasoning = answers.map((a) => a.reasoning).filter(Boolean).join('\n\n') || null;
   return { machine: normalizeMachine(mergeParts(answers.map((a) => read(a.text)))), reasoning, notes };
 }

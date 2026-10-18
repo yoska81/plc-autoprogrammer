@@ -42,6 +42,8 @@ export interface WebSource { url: string; title: string; pageAge?: string | null
  * One Claude request. With `schema`, the reply is constrained to that JSON
  * schema (structured outputs) and `text` is the JSON string.
  */
+export interface PromptUsage { cacheRead: number; cacheWrite: number }
+
 export type ClaudeOptions = {
   apiKey: string;
   model: string;
@@ -58,14 +60,12 @@ export type ClaudeOptions = {
   webSearch?: { maxUses?: number; allowedDomains?: string[] };
   /** What the request is for: sets its effort in Speed "fast" (src/lib/ai/tasks.ts) and names it in the timing log. */
   task?: AiTask;
+  /** Called once, when the answer starts arriving (the prompt is processed and cached by then); at once for an answer from the answer cache and in the preview; a test interceptor calls it itself. */
+  onStarted?: () => void;
+  /** Filled by callClaude's request with the prompt-cache tokens the API reports (for the timing log). */
+  usage?: PromptUsage;
   /** May be answered from the answer cache (Update all). Without it the request is always made (a page's Generate); the answer is stored either way. */
   cache?: boolean;
-  /**
-   * Called once when the answer starts to arrive (the first stream event): by then the prompt, and the cache
-   * entry of its cache_control blocks, exist, so requests on the same prefix can start and read the cache.
-   * Not called for an answer from the answer cache or the claude.ai preview (no prompt cache there).
-   */
-  onStarted?: () => void;
 };
 
 /**
@@ -85,17 +85,23 @@ export function setClaudeInterceptor(fn: ClaudeInterceptor | null) { interceptor
 export async function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   // Speed "fast": the task's own effort level (and the small-task model when one is set).
   const { speed, smallTaskModel } = useSettingsStore.getState();
-  const o: ClaudeOptions = { ...opts, effort: effectiveEffort(opts.effort, opts.task, speed), model: effectiveModel(opts.model, opts.task, smallTaskModel) };
+  // onStarted once per call (not again on a retry or a paused turn)
+  let started = false;
+  const onStarted = opts.onStarted && (() => { if (!started) { started = true; opts.onStarted!(); } });
+  // prompt-cache tokens over every attempt and turn (the timing log shows whether the parts read the cache)
+  const usage: PromptUsage = { cacheRead: 0, cacheWrite: 0 };
+  const o: ClaudeOptions = { ...opts, onStarted, usage, effort: effectiveEffort(opts.effort, opts.task, speed), model: effectiveModel(opts.model, opts.task, smallTaskModel) };
   const startedAt = aiNow();
   const promptChars = o.system.length + JSON.stringify(o.messages).length + (o.schema ? JSON.stringify(o.schema).length : 0);
   const log = (ok: boolean, outChars: number, cached: 'memory' | 'stored' | 'shared' | null) =>
-    logAiCall({ task: o.task ?? 'other', model: o.model, effort: o.effort, startedAt, endedAt: aiNow(), promptChars, outChars, cached, ok });
+    logAiCall({ task: o.task ?? 'other', model: o.model, effort: o.effort, startedAt, endedAt: aiNow(), promptChars, outChars, cached, ok, ...(cached ? {} : usage) });
   try {
     const { answer, hit } = await cachedAnswer({ model: o.model, effort: o.effort, system: o.system, messages: o.messages, schema: o.schema }, () => trackAi(() => withRetries(() => (interceptor ? interceptor(o, requestClaude) : requestClaude(o)), {
       signal: o.signal,
       onRetry: (n) => reportRetry(o.signal, n),
       explain: (err, info) => explainFailure(err, info, o.model),
     })), { fresh: !o.cache, signal: o.signal });
+    if (hit) o.onStarted?.();
     log(true, answer.text.length, hit);
     return answer;
   } catch (err) {
@@ -134,6 +140,8 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   const totalMs = totalLimitFor(opts.effort);
   if (IS_PREVIEW && opts.webSearch) throw new Error('Web search needs your own Anthropic API key (Settings); the preview cannot search the web.');
   if (IS_PREVIEW) {
+    // no prompt cache to wait for here: parts that wait for this one may start now
+    opts.onStarted?.();
     // plain answers stream their text (progress); JSON answers arrive at once (total cap only)
     return previewSlot(() => withWatchdog((signal, progress) => callClaudeAccount({ ...(opts as Parameters<typeof callClaudeAccount>[0]), signal, onProgress: (chars) => { progress(); if (chars !== undefined) reportAiProgress(opts.signal, chars); } }),
       { signal: opts.signal, totalMs, reportsProgress: !opts.schema }));
@@ -169,12 +177,13 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
         messages,
         ...(tools ? { tools } : {}),
       }, { signal });
-      stream.on('streamEvent', progress);
-      if (opts.onStarted) { const started = opts.onStarted; stream.once('streamEvent', () => started()); }
+      let started = false;
+      stream.on('streamEvent', () => { if (!started) { started = true; opts.onStarted?.(); } progress(); });
       stream.on('text', (_delta, snapshot) => reportAiProgress(opts.signal, snapshot.length));
       return stream.finalMessage();
     }, { signal: opts.signal, totalMs, reportsProgress: true });
     content.push(...message.content);
+    if (opts.usage) { opts.usage.cacheRead += message.usage.cache_read_input_tokens ?? 0; opts.usage.cacheWrite += message.usage.cache_creation_input_tokens ?? 0; }
     if (message.stop_reason !== 'pause_turn' || turn >= 3) break;
     messages = [...messages, { role: 'assistant', content: message.content as Anthropic.Beta.Messages.BetaContentBlockParam[] }];
   }

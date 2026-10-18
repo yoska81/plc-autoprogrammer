@@ -51,8 +51,26 @@ export function bindProgress(signal: AbortSignal, key: string): void {
   useAiProgressStore.getState().set(key, { chars: 0, startedAt: Date.now(), done: false });
 }
 
+// parts of one answer written by parallel requests (src/lib/ai/parallelCached.ts): their characters add up
+const parts = new WeakMap<AbortSignal, { parent: AbortSignal; last: number }>();
+
+/** Requests made with `child` count towards `parent`'s progress (added to what the other children wrote). */
+export function linkProgress(child: AbortSignal, parent: AbortSignal | undefined): void {
+  if (parent) parts.set(child, { parent, last: 0 });
+}
+
 /** Called by the AI layer while an answer streams. */
 export function reportAiProgress(signal: AbortSignal | undefined, chars: number): void {
+  const part = signal ? parts.get(signal) : undefined;
+  if (part) {
+    const parentKey = keys.get(part.parent);
+    const cur = parentKey ? useAiProgressStore.getState().byKey[parentKey] : undefined;
+    if (parentKey && cur && chars > part.last) {
+      useAiProgressStore.getState().set(parentKey, { ...cur, chars: cur.chars + chars - part.last, textAt: cur.textAt ?? Date.now() });
+      part.last = chars;
+    }
+    return;
+  }
   const key = signal ? keys.get(signal) : undefined;
   if (!key) return;
   const cur = useAiProgressStore.getState().byKey[key];

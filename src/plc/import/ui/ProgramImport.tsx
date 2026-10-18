@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { FORMAT_LABEL, fileText as decodeFile, importProgramFiles, type ImportedProgram } from '../index';
+import { FORMAT_LABEL, fileText as decodeFile, type ImportedProgram } from '../index';
+import { parseOffThread } from '../../../lib/parseWorker';
 import { programSummary } from '../upgrade';
 import { applyUpgrade } from './applyUpgrade';
 import type { UpgradePlan } from '../upgrade';
@@ -21,15 +22,17 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
   const [imp, setImp] = useState<ImportedProgram | null>(null);
   const [fileText, setFileText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | false>(false);
 
   const read = async (list: FileList | null) => {
     const files = [...(list ?? [])];
     if (!files.length) return;
-    setError(null); setImp(null); setBusy(true);
+    setError(null); setImp(null);
+    setBusy(`Reading ${files.map((f) => f.name).join(', ')} (${(files.reduce((n, f) => n + f.size, 0) / 1e6).toFixed(1)} MB)…`);
     try {
       const texts = await Promise.all(files.map(async (f) => ({ name: f.name, text: decodeFile(f.name, new Uint8Array(await f.arrayBuffer())) })));
-      const { program, main } = importProgramFiles(texts);
+      // a long program takes seconds to read: off the main thread
+      const { program, main } = await parseOffThread({ op: 'program', files: texts });
       setImp(program);
       setFileText(main.text);
     } catch (e) {
@@ -50,7 +53,7 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
         <h3 className="text-sm font-semibold text-gray-800">The machine's PLC program</h3>
         <p className="text-xs text-gray-500">Export the program from the PLC software and choose the file here. Rockwell: File › Save As › .L5X (or .L5K). CODESYS and others: PLCopen XML. Siemens: SCL source. Mitsubishi GX Works: Export to CSV for the program and the device comments (choose both). CLICK: the nickname list (.csv).</p>
         <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg py-6 cursor-pointer border-gray-300 hover:border-blue-400">
-          <span className="text-sm font-medium text-gray-700">{busy ? 'Reading…' : 'Choose the program file (and its comment file)'}</span>
+          <span className="text-sm font-medium text-gray-700">{busy || 'Choose the program file (and its comment file)'}</span>
           <span className="text-xs text-gray-400 mt-1">.L5X · .L5K · PLCopen .xml · .scl · .st · Mitsubishi GX Works .csv (program + device comments) · CLICK .csv</span>
           <input data-testid="program-file" type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { void read(e.target.files); e.target.value = ''; }} />
         </label>
