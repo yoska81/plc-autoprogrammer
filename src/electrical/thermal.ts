@@ -53,6 +53,10 @@ export function cabinetHeat(
     let basis = '';
     if (part.category === 'powerSupply' && num(part.ratings.watts)) { w = num(part.ratings.watts)! * 0.12; basis = '~12% loss of rated output'; }
     else if (part.category === 'vfd') { const hp = num(part.ratings.hp480 ?? part.ratings.hp230 ?? part.ratings.hp) ?? 1; w = hp * 746 * 0.04; basis = '~4% of drive rating'; }
+    // Servo drives: the maker's loss figure when the catalog has one, else ~5% of the rated power (typical
+    // servo amplifier losses plus its internal regenerative resistor at light duty).
+    else if (part.category === 'servoDrive') { const lw = num(part.ratings.lossWatts); const rw = num(part.ratings.ratedWatts) ?? (num(part.ratings.kw) ?? 0.4) * 1000; w = lw ?? rw * 0.05; basis = lw !== undefined ? "maker's loss figure" : '~5% of drive rating'; }
+    else if (part.ratings.kind === 'braking-resistor' && part.mount === 'backplate') { w = num(part.ratings.watts) ?? 0; basis = 'braking resistor rating (worst case)'; }
     else if (part.ratings.kind === 'transformer' && num(part.ratings.va)) { w = num(part.ratings.va)! * 0.05; basis = '~5% of VA'; }
     else if (HEAT_W[part.category] !== undefined) { w = HEAT_W[part.category]!; basis = 'typical'; }
     if (w === null) continue;

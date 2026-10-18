@@ -1,22 +1,7 @@
 /**
- * Test fixture for motion: one servo axis, one encoder, one 4-20 mA ultrasonic level sensor on the example
- * conveyor. The servo and its cables are real catalog parts; the encoder and ultrasonic sensor are STAND-INS ("STUB-…")
- * until the catalog has one — never use it in a design. Ratings follow the keys in src/electrical/motion.ts.
+ * Test fixture for motion (src/electrical/motion.test.ts, tools/harness rules-servo): one servo axis, one line
+ * encoder and one 4-20 mA ultrasonic level sensor; the parts come from the catalog.
  */
-import type { CatalogPart } from './types';
-
-const stub = (partNumber: string, category: CatalogPart['category'], description: string, mount: CatalogPart['mount'], ratings: CatalogPart['ratings'], w?: number, h?: number): CatalogPart => ({
-  partNumber, category, description: `TEST STAND-IN — ${description}`, manufacturer: 'AutomationDirect', url: 'https://www.automationdirect.com/', mount,
-  widthMm: w, heightMm: h, ratings, verified: false, verify: 'test stand-in, not a real part', vendor: 'automationdirect',
-});
-
-export const MOTION_STUB_PARTS: CatalogPart[] = [
-  // No UL encoder or ultrasonic sensor in the catalog yet (same rating keys as the catalog's motion parts).
-  stub('STUB-ENC-1000-24', 'encoder', 'incremental shaft encoder 1000 P/R, A, B, Z, totem pole, 12-24 VDC', 'field', { ppr: 1000, outputs: 'A, B, Z', outputType: 'totem pole', supplyVolts: '12-24 VDC' }),
-  stub('STUB-UK30-4-20', 'sensor', 'ultrasonic sensor M30, 4-20 mA, 2 m range', 'field', { kind: 'ultrasonic', output: '4-20mA', rangeMaxMm: 2000, supplyVolts: '24' }),
-];
-
-export const stubPart = (pn: string) => MOTION_STUB_PARTS.find((p) => p.partNumber === pn);
 
 /** The servo machine: [description, type, category, signal?] */
 export const SERVO_IO: [string, 'input' | 'output', string, ('analog')?][] = [

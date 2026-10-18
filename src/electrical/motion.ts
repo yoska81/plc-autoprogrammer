@@ -17,7 +17,7 @@
  *   EMI filter   — kind 'emc-filter' with amps (a line filter; ferrite rings are not counted);
  *   braking resistor — kind 'braking-resistor': forDrive, ohms, watts
  *   encoder      — category 'encoder': ppr, outputs ('A, B, Z'), outputType ('totem pole' | 'open collector' | 'line driver'), supplyVolts
- *   ultrasonic   — category 'sensor', kind 'ultrasonic': output ('4-20mA' | '0-10V' | 'PNP' | 'NPN'), rangeMaxMm
+ *   ultrasonic   — category 'sensor', type 'ultrasonic': output ('4-20 mA' | '0-10 V' | 'PNP' | 'NPN' | '4-20 mA + PNP'), rangeMaxMm
  * (The older keys kind 'servo-drive' / 'servo-motor' / 'servo-power-cable' / 'servo-feedback-cable' are read too.)
  *
  * SureServo2 (SV2A) terminals: SureServo2 User Manual 2nd Ed. Rev C, ch. 3 (cdn.automationdirect.com/static/
@@ -76,6 +76,9 @@ export const isServoPoint = (p: IOPoint) => p.signal !== 'analog' && (p.category
   && !AXIS_SENSOR_RE.test(p.description) && servoRole(p) !== null;
 export const isEncoderPoint = (p: IOPoint) => p.type === 'input' && p.signal !== 'analog' && ENCODER_RE.test(p.description);
 export const isUltrasonicPoint = (p: IOPoint) => p.type === 'input' && ULTRASONIC_RE.test(p.description);
+
+/** A supply range ("10-30 VDC", "12-24 VDC", "24 VDC") that takes the panel's 24 V. */
+const covers24 = (t: string) => { const m = /(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/.exec(t); return m ? Number(m[1]) <= 24 && Number(m[2]) >= 24 : /\b24\b/.test(t); };
 
 /** Encoder channel of a point: "Encoder A" / "phase B" / "Z (index)". */
 export function encoderChannel(description: string): 'A' | 'B' | 'Z' | null {
@@ -318,7 +321,7 @@ export function motionDesign(input: MotionInput): MotionResult {
     const isEnc = (p: CatalogPart) => p.category === 'encoder' || (p.category === 'sensor' && kind(p) === 'encoder');
     const outType = (p: CatalogPart) => String(p.ratings.outputType ?? p.ratings.output ?? '');
     // 24 V push-pull / open-collector (a 5 V line driver needs a receiver before the PLC); 1000 PPR or the nearest.
-    const enc = pick((p) => isEnc(p) && !/line[- ]?driver/i.test(outType(p)) && /24/.test(String(p.ratings.supplyVolts ?? '24')), (p) => Math.abs((num(p.ratings.ppr) ?? 0) - 1000));
+    const enc = pick((p) => isEnc(p) && !/line[- ]?driver/i.test(outType(p)) && covers24(String(p.ratings.supplyVolts ?? '24')), (p) => Math.abs((num(p.ratings.ppr) ?? 0) - 1000) + (/push[- ]?pull|totem/i.test(outType(p)) ? 0 : 0.5));
     const tag = input.nextTag('SE'); // ISA-5.1 speed element (ENC1 is the enclosure)
     if (enc) out.components.push(comp(tag, enc.partNumber, 1, `Incremental encoder, ${enc.ratings.ppr ?? '?'} PPR, ${outType(enc)} — channels ${pts.map((p) => encoderChannel(p.description) ?? '?').join('/')} to PLC high-speed inputs, 24 VDC supply, shielded cable (shield to PE at the cabinet end only)`));
     else out.notes.push(`${tag}: no 24 V push-pull / open-collector encoder in the catalog — select one (a 5 V line-driver encoder needs a line receiver before the PLC inputs).`);
@@ -334,7 +337,7 @@ export function motionDesign(input: MotionInput): MotionResult {
     const analog = p.signal === 'analog';
     const range = p.analog?.range ?? '4-20mA';
     const want = analog ? range.replace(/\s/g, '').toLowerCase() : /npn/i.test(p.description) ? 'npn' : 'pnp';
-    const s = pick((q) => q.category === 'sensor' && kind(q) === 'ultrasonic' && String(q.ratings.output ?? '').replace(/\s/g, '').toLowerCase().includes(want), (q) => num(q.ratings.rangeMaxMm) ?? 0);
+    const s = pick((q) => q.category === 'sensor' && (String(q.ratings.type ?? '') === 'ultrasonic' || kind(q) === 'ultrasonic') && String(q.ratings.output ?? '').replace(/\s/g, '').toLowerCase().includes(want), (q) => num(q.ratings.rangeMaxMm) ?? 0);
     const tag = input.nextTag(analog ? (/\blevel\b/i.test(p.description) ? 'LT' : 'ZT') : 'US');
     if (s) out.components.push(comp(tag, s.partNumber, 1, `Ultrasonic sensor — ${s.ratings.output}${s.ratings.rangeMaxMm ? `, up to ${s.ratings.rangeMaxMm} mm` : ''}: ${p.description}`));
     else out.notes.push(`${tag} (${p.description}): no ${analog ? range : want.toUpperCase()} ultrasonic sensor in the catalog — select one.`);
@@ -356,29 +359,48 @@ export function motionDeviceType(p: IOPoint): FieldDeviceType | null {
 // ---------------------------------------------------------------------------------------------------------
 // PLC motion capability (high-speed inputs, pulse outputs), from the makers' sheets.
 
-export interface PlcMotion { hsInputs: string[]; hsKhz: number; pulseOutputs: string[]; source: string }
+export interface PlcMotion { hsInputs: string[]; hsKhz?: number; pulseOutputs: string[]; note?: string }
 
-const CLICK_HS = (n: number): PlcMotion => ({
-  hsInputs: Array.from({ length: n }, (_, i) => `X00${i + 1}`), hsKhz: 100, pulseOutputs: [],
-  source: 'AutomationDirect CLICK cut sheet (high-speed inputs, 100 kHz; quadrature A/B counters); CLICK CPUs have no pulse-train outputs',
-});
-/** Known CPUs; unknown ones are not checked (null). */
-export function plcMotion(cpu: string): PlcMotion | null {
-  if (/^C0-10D[DR]\dE-D$/.test(cpu)) return CLICK_HS(4);
-  if (/^C0-11D[DR]\dE-D$/.test(cpu)) return CLICK_HS(8);
-  return null;
+/** "X001-X004" → X001, X002, X003, X004. */
+function addressRange(text: string): string[] {
+  const m = /([XY])0*(\d+)\s*-\s*[XY]?0*(\d+)/i.exec(text);
+  if (!m) return [];
+  const [, k, a, b] = m;
+  return Array.from({ length: Number(b) - Number(a) + 1 }, (_, i) => `${k.toUpperCase()}${String(Number(a) + i).padStart(3, '0')}`);
+}
+
+/**
+ * High-speed inputs and pulse outputs of a CPU, from its catalog ratings (hscInputs / hscMaxKHz, ptoAxes /
+ * ptoOutputs, ptoNote; source in hscSource). CLICK PLUS pulses are on Y001 / Y003 / Y005 of the option-slot
+ * module. Null when the catalog says nothing about high-speed I/O for this CPU (not checked).
+ */
+export function plcMotion(cpu: CatalogPart | undefined): PlcMotion | null {
+  const r = cpu?.ratings ?? {};
+  if (r.hscInputs === undefined && r.ptoAxes === undefined && r.ptoNote === undefined) return null;
+  const axes = num(r.ptoAxes) ?? 0;
+  return {
+    hsInputs: addressRange(String(r.hscInputs ?? '')), hsKhz: num(r.hscMaxKHz),
+    pulseOutputs: ['Y001', 'Y003', 'Y005'].slice(0, axes), note: r.ptoNote ? String(r.ptoNote) : undefined,
+  };
 }
 
 /** Warnings for encoder channels off the high-speed inputs and pulse/direction on a PLC without pulse outputs. */
-export function motionWarnings(cpu: string, io: { address: string; deviceType: string; description: string; deviceTag: string }[]): string[] {
+export function motionWarnings(cpu: CatalogPart | undefined, cpuPn: string, io: { address: string; deviceType: string; description: string; deviceTag: string }[]): string[] {
   const cap = plcMotion(cpu);
   if (!cap) return [];
   const w: string[] = [];
   const slow = io.filter((p) => p.deviceType === 'encoder' && !cap.hsInputs.includes(p.address.toUpperCase()));
-  if (slow.length) w.push(`${slow.map((p) => `${p.deviceTag} ${p.address}`).join(', ')}: encoder channel not on a high-speed input of the ${cpu} (${cap.hsInputs[0]}–${cap.hsInputs[cap.hsInputs.length - 1]}, ${cap.hsKhz} kHz) — move it there.`);
+  if (slow.length) {
+    w.push(cap.hsInputs.length
+      ? `${slow.map((p) => `${p.deviceTag} ${p.address}`).join(', ')}: encoder channel not on a high-speed input of the ${cpuPn} (${cap.hsInputs[0]}–${cap.hsInputs[cap.hsInputs.length - 1]}${cap.hsKhz ? `, ${cap.hsKhz} kHz` : ''}) — move it there.`
+      : `${slow.map((p) => `${p.deviceTag} ${p.address}`).join(', ')}: the ${cpuPn} has no high-speed inputs for an encoder — choose a CPU with high-speed counters.`);
+  }
   const pulses = io.filter((p) => p.deviceType === 'servo-drive' && servoRole({ type: 'output', description: p.description }) === 'pulse');
-  if (pulses.length && !pulses.every((p) => cap.pulseOutputs.includes(p.address.toUpperCase()))) {
-    w.push(`${pulses.map((p) => `${p.deviceTag} ${p.address}`).join(', ')}: the ${cpu} has no pulse-train output — use a CLICK PLUS CPU with the C2-14D1 option module (pulse on Y001 / Y003 / Y005), or command the servo over Modbus.`);
+  const off = pulses.filter((p) => !cap.pulseOutputs.includes(p.address.toUpperCase()));
+  if (off.length) {
+    w.push(cap.pulseOutputs.length
+      ? `${off.map((p) => `${p.deviceTag} ${p.address}`).join(', ')}: pulse output not on a pulse-train output of the ${cpuPn} (${cap.pulseOutputs.join(' / ')} on the option-slot module) — move it there.`
+      : `${off.map((p) => `${p.deviceTag} ${p.address}`).join(', ')}: the ${cpuPn} has no pulse-train output — use a CLICK PLUS CPU with a C2-14D1 / C2-14D2 / C2-08D1 option-slot module (pulse on Y001 / Y003 / Y005), or command the servo over Modbus.`);
   }
   return w;
 }

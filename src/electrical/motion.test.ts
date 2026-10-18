@@ -18,7 +18,8 @@ import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
 import { axisKey, encoderChannel, motionDesign, servoRole } from './motion';
-import { MOTION_STUB_PARTS, SERVO_IO, stubPart } from './motion.fixture';
+import { SERVO_IO } from './motion.fixture';
+import { cabinetHeat } from './thermal';
 import type { IOPoint } from '../types/io';
 import type { DesignInputs } from './types';
 
@@ -32,7 +33,7 @@ assert.equal(axisKey('Axis 2 servo ready'), '2');
 assert.equal(encoderChannel('Line encoder B'), 'B');
 assert.equal(encoderChannel('Encoder Z index'), 'Z');
 
-const getPart = (pn: string) => stubPart(pn) ?? catalogPart(pn);
+const getPart = catalogPart;
 const io = SERVO_IO.map(([description, type, category, signal], i) => ({
   id: `p${i + 1}`, description, type, category, ...(signal ? { signal, analog: { range: '4-20mA', min: 0, max: 100, units: '%' } } : {}),
 })) as IOPoint[];
@@ -46,17 +47,20 @@ const plc = { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id,
 const inputs: DesignInputs = { supply: '240VAC-3PH', enclosureRating: 'NEMA 12', notes: '', motors: [], requiredParts: [] };
 
 // Motion alone: what it claims and picks.
-const m = motionDesign({ io, addresses, supply: '240VAC-3PH', nextTag: (() => { const n = new Map<string, number>(); return (p: string) => { n.set(p, (n.get(p) ?? 0) + 1); return `${p}${n.get(p)}`; }; })(), extraParts: MOTION_STUB_PARTS });
+const m = motionDesign({ io, addresses, supply: '240VAC-3PH', nextTag: (() => { const n = new Map<string, number>(); return (p: string) => { n.set(p, (n.get(p) ?? 0) + 1); return `${p}${n.get(p)}`; }; })() });
 assert.equal(m.axes.length, 1);
 const pns = m.components.map((c) => c.partNumber);
 // 400 W at 240 V: the SV2A-2040 drive, its 400 W motor without brake (horizontal axis), 3 m non-flex cables.
-for (const pn of ['SV2A-2040', 'SV2L-204N', 'SV2C-PA18-03NN', 'SV2C-E122-03NN', 'STUB-UK30-4-20']) assert.ok(pns.includes(pn), `${pn} picked (${pns.join(', ')})`);
-assert.ok(pns.includes('STUB-ENC-1000-24'), 'a 24 V totem-pole encoder');
+for (const pn of ['SV2A-2040', 'SV2L-204N', 'SV2C-PA18-03NN', 'SV2C-E122-03NN']) assert.ok(pns.includes(pn), `${pn} picked (${pns.join(', ')})`);
+const encPart = m.components.map((c) => catalogPart(c.partNumber)).find((p) => p?.category === 'encoder');
+assert.ok(encPart && /push-pull/.test(String(encPart.ratings.outputType)) && encPart.ratings.ppr === 1000, `a 1000 PPR 24 V push-pull encoder (${encPart?.partNumber})`);
+const usPart = m.components.map((c) => catalogPart(c.partNumber)).find((p) => p?.ratings.type === 'ultrasonic');
+assert.ok(usPart && /4-20 mA/.test(String(usPart.ratings.output)), `a 4-20 mA ultrasonic sensor (${usPart?.partNumber})`);
 assert.equal(m.claimed.size, 10, 'servo signals, encoder channels and the ultrasonic are claimed');
 assert.ok(m.askUser.some((q) => /Axis 1: servo sized for 400 W/.test(q)), 'assumed size is a question');
 
 // Through the engine and the drawings.
-const r = generateDefaultDesign({ io, addresses, spec: 'Filler: a servo indexes the cups (axis 1), a line encoder measures the conveyor, an ultrasonic sensor reads the hopper level.', inputs, plc, modules, region: 'US', getPart, hmiPartNumber: null, analog, now: '2026-01-01T00:00:00.000Z', projectName: 'servo', motionParts: MOTION_STUB_PARTS });
+const r = generateDefaultDesign({ io, addresses, spec: 'Filler: a servo indexes the cups (axis 1), a line encoder measures the conveyor, an ultrasonic sensor reads the hopper level.', inputs, plc, modules, region: 'US', getPart, hmiPartNumber: null, analog, now: '2026-01-01T00:00:00.000Z', projectName: 'servo' });
 const ctx: DrawingContext = { projectName: 'servo', design: r.design, getPart, plc, region: 'US', hmiPartNumber: null, analog, io: io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type })) };
 const tag = (pn: string) => r.design.components.find((c) => c.partNumber === pn)?.tag;
 const drive = tag('SV2A-2040')!;
@@ -82,21 +86,31 @@ assert.ok(has(new RegExp(`^${drive}:CN1-27$`), new RegExp(`:${addr('Axis 1 servo
 assert.ok(has(/^TB1 24\+S$/, new RegExp(`^${drive}:CN10-3$`)) && has(/^TB1 24\+S$/, new RegExp(`^${drive}:CN10-5$`)), 'STO from the safety relay output');
 // Encoder: A/B on TB2 from the encoder, one supply pair and the shield.
 const tb2 = terminalPlan(ctx).find((s) => s.tag === 'TB2')!;
-const enc = tag('STUB-ENC-1000-24')!;
+const enc = tag(encPart!.partNumber)!;
 assert.ok(tb2.terminals.some((t) => t.external === `${enc}:A`) && tb2.terminals.some((t) => t.external === `${enc}:B`));
 assert.equal(tb2.terminals.filter((t) => t.external === `${enc}:+V`).length, 1, 'one supply per encoder');
 assert.ok(tb2.terminals.some((t) => /cable shield/.test(t.external)));
 // Ultrasonic on the analog card, tagged as in the BOM.
-const lt = tag('STUB-UK30-4-20')!;
+const lt = tag(usPart!.partNumber)!;
 assert.ok(model.analog.circuits.some((c) => c.deviceTag === lt), `ultrasonic ${lt} on the analog sheet`);
 // BOM, wire numbers, cables.
 const bom = billOfMaterials(ctx).flatMap((g) => g.lines).map((l) => l.partNumber);
-for (const pn of ['SV2A-2040', 'SV2L-204N', 'SV2C-PA18-03NN', 'SV2C-E122-03NN', 'STUB-UK30-4-20']) assert.ok(bom.includes(pn), `${pn} in the BOM`);
+for (const pn of ['SV2A-2040', 'SV2L-204N', 'SV2C-PA18-03NN', 'SV2C-E122-03NN', encPart!.partNumber, usPart!.partNumber]) assert.ok(bom.includes(pn), `${pn} in the BOM`);
+// Heat: the servo drive counts for the cabinet temperature (cooling is sized from it).
+assert.ok(cabinetHeat(r.design.components, getPart).lines.some((l) => l.item.startsWith(`${drive} SV2A-2040`) && parseFloat(l.value) > 0), 'servo drive heat');
+// Layout: no two back-panel parts overlap (the servo drive once ran 1 mm into the right-justified disconnect).
+const L = panelLayout(ctx);
+const parts = L.items.filter((i) => !i.sub);
+for (const a of parts) for (const b of parts) {
+  if (a === b) continue;
+  const overlap = a.x < b.x + b.w - 0.01 && b.x < a.x + a.w - 0.01 && a.y < b.y + b.h - 0.01 && b.y < a.y + a.h - 0.01;
+  assert.ok(!overlap, `${a.label} overlaps ${b.label}`);
+}
 assert.ok(wireNumbers(ctx).length > 0);
 assert.ok(cableSchedule(ctx).length > 0);
 const warns = designWarnings(ctx);
 assert.ok(!warns.some((w) => /encoder channel not on a high-speed input/.test(w)), 'encoder on X001/X002');
-assert.ok(warns.some((w) => /has no pulse-train output — use a CLICK PLUS CPU with the C2-14D1/.test(w)), 'CLICK C0 has no pulse output: said so');
+assert.ok(warns.some((w) => /has no pulse-train output — use a CLICK PLUS CPU with a C2-14D1/.test(w)), 'CLICK C0 has no pulse output: said so');
 const gaps = designWarnings(ctx).filter((w) => /no PLC output drives|not found in the catalog|without wiring|over capacity/i.test(w));
 assert.deepEqual(gaps, [], 'no design gaps');
 // Drawings: one servo sheet that renders the drive's terminals; the encoder on an I/O sheet.
