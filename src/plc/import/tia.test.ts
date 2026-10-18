@@ -76,4 +76,16 @@ const kept = (rungs: Rung[]) => rungs.length === 1 && rungs[0].outputs.length ==
   assert.ok(kept(block(`${addr('DB', 'Int', 0)}<Part Name="Coil" UId="2" />`, `<Wire><Powerrail /><NameCon UId="2" Name="in" /></Wire><Wire><IdentCon UId="1" /><NameCon UId="2" Name="operand" /></Wire>`)), 'an address it cannot read keeps the network');
 }
 
+// Review: an absolute Real (%MD20) stays Real through the import (a DF register, exported as Real), never an Int.
+{
+  const xml = `<?xml version="1.0"?><Document><SW.Blocks.FC ID="0"><AttributeList><Name>FC_R</Name></AttributeList><ObjectList>
+  <SW.Blocks.CompileUnit ID="1"><AttributeList><NetworkSource><FlgNet><Parts>${sym(1, 'Src')}<Access Scope="Address" UId="3"><Address Area="Memory" Type="Real" BitOffset="160" /></Access><Access Scope="Address" UId="5"><Address Area="Memory" Type="DInt" BitOffset="320" /></Access><Part Name="Move" UId="2" /><Part Name="Move" UId="4" /></Parts>
+  <Wires><Wire><Powerrail /><NameCon UId="2" Name="en" /><NameCon UId="4" Name="en" /></Wire><Wire><IdentCon UId="1" /><NameCon UId="2" Name="in" /></Wire><Wire><NameCon UId="2" Name="out1" /><IdentCon UId="3" /></Wire><Wire><IdentCon UId="1" /><NameCon UId="4" Name="in" /></Wire><Wire><NameCon UId="4" Name="out1" /><IdentCon UId="5" /></Wire></Wires></FlgNet></NetworkSource><ProgrammingLanguage>LAD</ProgrammingLanguage></AttributeList></SW.Blocks.CompileUnit>
+</ObjectList></SW.Blocks.FC></Document>`;
+  const imp = importProgramText('FC_R.xml', xml);
+  const at = (n: string) => imp.program.tags.find((t) => t.nickname === n)?.address ?? '';
+  assert.match(at('%MD20'), /^DF\d+$/, `a Real is a DF register (${at('%MD20')})`);
+  assert.match(at('%MD40'), /^DD\d+$/, `a DInt is a DD register (${at('%MD40')})`);
+}
+
 console.log('tia.test: all passed');

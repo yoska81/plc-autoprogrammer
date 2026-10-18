@@ -188,4 +188,30 @@ const rungsOf = (text: string) => readGxCsv(text).routines[0].rungs;
 // A device comment file alone is explained.
 assert.throws(() => importProgramFiles([file('CAPPER_DeviceComment.csv')]), /add the program CSV/);
 
+// Review: a rung with more branches than a ladder rung holds (3·3·3 = 27 paths) is kept whole as written, never dropped.
+{
+  const text = 'LD X0\nOR X1\nOR X2\nLD X3\nOR X4\nOR X5\nANB\nLD X6\nOR X7\nOR X10\nANB\nOUT Y0';
+  const r = readIlText(`; ISPSoft DVP\n${text}\nLD X0\nOUT Y1\nEND`).routines[0];
+  assert.deepEqual(r.rungs[0].outputs, [{ type: 'RAW', vendor: 'delta', text }]);
+  assert.equal(r.rungs[1].outputs[0].type, 'OUT', 'the next rung converts');
+  assert.deepEqual(r.untranslated, []);
+}
+
+// Review: timer bases checked against the manuals' device tables.
+{
+  const tmr = (text: string) => readIlText(text).routines[0].rungs.flatMap((r) => r.outputs).filter((o) => o.type === 'TMR');
+  const t = (text: string) => tmr(text).map((o) => (o.type === 'TMR' ? `${o.preset} ${o.unit}${o.accumulate ? ' retentive' : ''}` : ''));
+  assert.deepEqual(t('; ISPSoft DVP\nLD X0\nTMR T250 K50\nLD X1\nTMR T247 K50\nEND'), ['5 sec retentive', '50 ms retentive'], 'Delta T250–255 100 ms retentive, T246–249 1 ms retentive');
+  assert.deepEqual(t('; AutoShop H3U\nLD X0\nOUT T256 K50\nLD X1\nOUT T250 K50\nEND'), ['50 ms', '5 sec retentive'], 'Inovance (FX3U-compatible) T256+ 1 ms, T250–255 100 ms retentive');
+  // GX Works CSV: FX5 bases come from the instruction, FX3 from the timer number.
+  const gx = (module: string, rows: string[][]) => readGxCsv(csv(rows).replace('Module Type:FX5UCPU', `Module Type:${module}`));
+  const gxT = (p: ReturnType<typeof readGxCsv>) => p.routines[0].rungs.flatMap((r) => r.outputs).map((o) => (o.type === 'TMR' ? `${o.preset} ${o.unit}` : '')).filter(Boolean);
+  const rows = [['0', '', 'LD', 'X0'], ['1', '', 'OUT', 'T200'], ['', '', '', 'K50'], ['4', '', 'LD', 'X1'], ['5', '', 'OUTHS', 'T1'], ['', '', '', 'K50']];
+  assert.deepEqual(gxT(gx('FX5UCPU', rows)), ['5 sec', '50 ms'], 'FX5: OUT T200 is 100 ms, OUTHS 1 ms');
+  assert.deepEqual(gxT(gx('FX3U', rows.slice(0, 3))), ['500 ms'], 'FX3: T200 is 10 ms');
+  // Unknown series: read as 100 ms, with a note to confirm each timer.
+  const unknown = readIlText('LD X0\nOUT T200 K50\nLD X1\nOUT T3 K10\nEND');
+  assert.ok(unknown.notes.some((n) => /does not say which .* series .*read as 100 ms timers: T200, T3\. Confirm each timer's time base/.test(n)), unknown.notes.join(' | '));
+}
+
 console.log('gx.test: all passed');

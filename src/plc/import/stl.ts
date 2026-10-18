@@ -193,6 +193,7 @@ export function readStlSource(input: string): ForeignProgram {
   const notes: string[] = [];
   const BLOCK = /(ORGANIZATION_BLOCK|FUNCTION_BLOCK|FUNCTION)\s+("?)([^"\s:]+)\2[^\n]*\n([\s\S]*?)\n\s*END_(ORGANIZATION_BLOCK|FUNCTION_BLOCK|FUNCTION)/gi;
   const operands = new Set<string>();
+  const mdTypes = new Map<string, boolean>();
   for (const b of text.matchAll(BLOCK)) {
     const name = b[3];
     const begin = /\bBEGIN\b/i.exec(b[4]);
@@ -204,6 +205,8 @@ export function readStlSource(input: string): ForeignProgram {
       const lines = net.split('\n').filter((l) => !/^\s*(TITLE\s*=|\/\/)/i.test(l));
       const code = lines.map((l) => l.trim()).filter(Boolean);
       if (!code.length) return;
+      const real = code.some((l) => /^\s*([+\-*/]|==|<>|>=|<=|>|<)R\b/i.test(l));
+      for (const l of code) for (const m of l.matchAll(/\bM\s*D\s*(\d+)\b/gi)) mdTypes.set(`MD${m[1]}`, (mdTypes.get(`MD${m[1]}`) ?? false) || real);
       const netNotes: string[] = [];
       const driven = convertStlNetwork(code, netNotes);
       const id = `${slug(name)}_${i + 1}`;
@@ -221,6 +224,13 @@ export function readStlSource(input: string): ForeignProgram {
       }
     });
     routines.push(routine);
+  }
+  // Memory words and doublewords have no type in the source: MB / MW are Int, MD is DInt, or Real when the
+  // network uses Real maths or compares (+R, >R…). Never narrowed to Int.
+  for (const [md, real] of mdTypes) {
+    if (tags.some((t) => t.name === md)) continue;
+    tags.push({ name: md, dataType: real ? 'REAL' : 'DINT', rawType: real ? 'Real' : 'DInt', comment: '', address: `%${md}` });
+    if (!real) notes.push(`${md}: the source does not say its type; read as a DInt (whole number). If it holds a Real, change it in the program.`);
   }
   // Operands with I / Q addresses are the I/O (the PLC tag table names them, when added).
   for (const o of operands) {

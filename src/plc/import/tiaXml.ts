@@ -217,9 +217,12 @@ export function readTiaXml(input: string): ForeignProgram {
     });
     routines.push(routine);
   }
-  // Operands with I / Q addresses are I/O.
-  const used = new Set(routines.flatMap((r) => r.rungs.flatMap((g) => [...g.branches.flat(), ...g.outputs])).flatMap((x) => ('address' in x ? [x.address] : [])));
-  for (const o of used) if (/^%[IQ]/.test(o) && !tags.some((t) => t.name === o)) tags.push({ name: o, dataType: /X/.test(o) ? 'BOOL' : 'INT', comment: '', address: o, ...iecIo(o) });
+  // Absolute addresses with the type they are declared with (a Real at %MD20 stays Real); I / Q are I/O.
+  for (const a of all(doc, 'Access')) {
+    if (!/Address/i.test(a.attrs.Scope ?? '')) continue;
+    const o = accessText(a), type = kid(a, 'Address')?.attrs.Type ?? '';
+    if (o && !tags.some((t) => t.name === o)) tags.push({ name: o, dataType: memberType(type), rawType: type, comment: '', address: o, ...iecIo(o) });
+  }
   if (!tags.some((t) => t.io)) notes.push('The block names PLC tags but not their addresses: add the PLC tag table (PLC tags › Export) to know which are inputs and outputs.');
   return { format: 'siemens-xml', vendor: 'Siemens', controller: '', projectName: routines[0]?.name ?? 'Imported block', tags, routines, notes };
 }

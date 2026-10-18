@@ -13,6 +13,11 @@ import { el, not, toBranches } from './cond';
 import { fileText, importProgramFiles, detectFormat } from './index';
 import { programFindings } from './findings';
 import { planUpgrade } from './upgrade';
+import { getCpu, getProfile } from '../core/profiles';
+import { resolveAddresses } from '../core/profile';
+import { moduleSlots } from '../core/modules';
+import { siemensAddress } from '../core/profiles/siemens';
+import type { IOPoint } from '../../types/io';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const file = (n: string) => ({ name: n, text: fileText(n, new Uint8Array(readFileSync(join(here, '__fixtures__', n)))) });
@@ -94,6 +99,30 @@ assert.equal(net('A b\nL C#50\nS C 1'), null);
   assert.equal(seal.comment, 'Run latch: start, stop (NC) and E-stop');
   assert.equal(seal.branches.length, 2, '(Start + Running) · Stop · E-stop');
   assert.deepEqual(programFindings(planUpgrade(program, 'click').program), [], 'the seal-in is there: nothing to say');
+}
+
+// Review: MD is never narrowed to Int: DInt, or Real when the network does Real maths.
+{
+  const src = (body: string) => `ORGANIZATION_BLOCK OB1\nBEGIN\nNETWORK\nTITLE =\n${body}\nEND_ORGANIZATION_BLOCK\n`;
+  const { program } = importProgramFiles([{ name: 'r.awl', text: src('L MD 20\nL 2.5\n*R\nT MD 24\nNETWORK\nTITLE =\nL MD 30\nT MD 34') }]);
+  const at = (n: string) => program.program.tags.find((t) => t.nickname === n)?.address ?? '';
+  assert.match(at('MD20'), /^DF\d+$/);
+  assert.match(at('MD24'), /^DF\d+$/);
+  assert.match(at('MD30'), /^DD\d+$/);
+  assert.ok(program.report.notes.some((n) => /MD30: the source does not say its type; read as a DInt/.test(n)));
+}
+
+// Review: an S7 program going back on an S7 keeps its I/O bits (%Q0.2 stays %Q0.2, not the first free %Q0.0).
+{
+  const { program: imp } = importProgramFiles([{ name: 'q.awl', text: 'ORGANIZATION_BLOCK OB1\nBEGIN\nNETWORK\nTITLE =\nA I 0.5\n= Q 0.2\nEND_ORGANIZATION_BLOCK\n' }]);
+  const plan = planUpgrade(imp, 'click');
+  assert.equal(plan.plcId, 'siemens-s7');
+  const profile = getProfile('siemens-s7');
+  const cpu = getCpu(profile, plan.cpuId);
+  let i = 0, q = 0;
+  const io: IOPoint[] = plan.io.map((p) => ({ ...p, id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++q).padStart(3, '0')}` }));
+  const addr = resolveAddresses(profile, cpu, io, moduleSlots(plan.modules));
+  assert.deepEqual(io.map((p) => siemensAddress(addr.get(p.id)!, cpu, moduleSlots(plan.modules))?.address), ['%I0.5', '%Q0.2']);
 }
 
 console.log('stl.test: all passed');

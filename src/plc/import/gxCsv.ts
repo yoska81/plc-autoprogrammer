@@ -153,13 +153,17 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
   let opaque = false;
 
   const flush = () => {
-    if (opaque && lines.length) {
-      const id = `${slug(name)}_${rungStep || routine.rungs.length}`;
-      routine.rungs.push({ id, comment: rungComment, branches: [], outputs: [{ type: 'RAW', vendor: brand.raw, text: lines.join('\n') }] });
-    } else if (driven.length) {
-      const { rungs, failed } = toRungs(driven, rungComment, `${slug(name)}_${rungStep || routine.rungs.length}`);
-      routine.rungs.push(...rungs);
-      for (const f of failed) routine.untranslated.push(`Step ${rungStep}: ${f.out.type} — condition too complex for a ladder rung`);
+    const id = `${slug(name)}_${rungStep || routine.rungs.length}`;
+    const whole = () => routine.rungs.push({ id, comment: rungComment, branches: [], outputs: [{ type: 'RAW', vendor: brand.raw, text: lines.join('\n') }] });
+    if (opaque && lines.length) whole();
+    else if (driven.length) {
+      // A condition with more branches than a ladder rung holds: the whole rung kept as written.
+      const { rungs, failed } = toRungs(driven, rungComment, id);
+      if (failed.length && lines.length) whole();
+      else {
+        routine.rungs.push(...rungs);
+        for (const f of failed) routine.untranslated.push(`Step ${rungStep}: ${f.out.type} — condition too complex for a ladder rung`);
+      }
     }
     driven = []; cur = null; blocks = []; mps = []; afterOutput = false; rungComment = ''; lines = []; opaque = false;
   };
@@ -187,16 +191,33 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
     if (/^(LDF|ANDF|ORF)$/.test(op)) return el({ type: 'FALL', address: addr });
     return el({ type: /^(LDI|ANI|ORI)$/.test(op) ? 'NC' : 'NO', address: addr });
   };
-  /** Timer time base and retention by brand and timer number. */
+  /**
+   * Timer time base and retention by brand, series and timer number (the manuals' device tables):
+   *   Delta DVP     T0–199 100 ms · T200–239 10 ms · T240–245 10 ms retentive · T246–249 1 ms retentive · T250–255 100 ms retentive
+   *   FX1 / FX2 / FX3 and Inovance H1U–H3U (FX3U-compatible)
+   *                 T0–199 100 ms · T200–245 10 ms · T246–249 1 ms retentive · T250–255 100 ms retentive · T256–511 1 ms
+   *   Xinje XC / XD T0–99 100 ms · T100–199 100 ms retentive · T200–299 10 ms · T300–399 10 ms retentive · T400–499 1 ms · T500+ 1 ms retentive
+   *   FX5 (iQ-F)    the instruction sets it: OUT 100 ms, OUTH 10 ms, OUTHS 1 ms; ST timers are retentive
+   * A series the file does not name: 100 ms, with a note on each timer to confirm it.
+   */
   const timerBases: string[] = [];
-  const timerBase = (dev: string): { ms: number; retentive: boolean } => {
+  const unsure: string[] = [];
+  const fx5 = /FX5|iQ-?F/i.test(module);
+  const fx3 = /FX[123]|FX3/i.test(module);
+  const timerBase = (dev: string, op = 'OUT'): { ms: number; retentive: boolean } => {
     const k = Number(dev.replace(/\D/g, ''));
     const st = /^ST/i.test(dev);
     const v = brand.vendor;
-    let r = { ms: 100, retentive: st };
-    if (v === 'Xinje') r = k < 100 ? { ms: 100, retentive: false } : k < 200 ? { ms: 100, retentive: true } : k < 300 ? { ms: 10, retentive: false } : k < 400 ? { ms: 10, retentive: true } : k < 500 ? { ms: 1, retentive: false } : { ms: 1, retentive: true };
-    else if (v === 'Delta') r = k < 200 ? { ms: 100, retentive: false } : k < 240 ? { ms: 10, retentive: false } : k < 246 ? { ms: 10, retentive: true } : { ms: 1, retentive: true };
-    else if (v === 'Inovance' || (v.startsWith('Mitsubishi') && /FX[123]|FX3/i.test(module))) r = st ? r : k < 200 ? { ms: 100, retentive: false } : k < 246 ? { ms: 10, retentive: false } : k < 250 ? { ms: 1, retentive: true } : { ms: 100, retentive: true };
+    const R = (ms: number, retentive = false) => ({ ms, retentive });
+    let r = R(100, st);
+    if (op === 'OUTH' || op === 'TMRH') r = R(10, st);
+    else if (op === 'OUTHS') r = R(1, st);
+    else if (v === 'Xinje') r = k < 100 ? R(100) : k < 200 ? R(100, true) : k < 300 ? R(10) : k < 400 ? R(10, true) : k < 500 ? R(1) : R(1, true);
+    else if (v === 'Delta') {
+      if (k >= 256) unsure.push(dev);
+      r = k < 200 ? R(100) : k < 240 ? R(10) : k < 246 ? R(10, true) : k < 250 ? R(1, true) : R(100, true);
+    } else if (v === 'Inovance' || (v === 'Mitsubishi' && fx3 && !fx5)) r = k < 200 ? R(100) : k < 246 ? R(10) : k < 250 ? R(1, true) : k < 256 ? R(100, true) : R(1);
+    else if (!(v === 'Mitsubishi' && fx5)) unsure.push(dev);
     if (r.ms !== 100 || r.retentive) timerBases.push(`${dev} ${r.ms} ms${r.retentive ? ', retentive' : ''}`);
     return r;
   };
@@ -251,10 +272,10 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
       case 'MRD': cur = mps[mps.length - 1] ?? cur; continue;
       case 'MPP': cur = mps.pop() ?? cur; continue;
       case 'INV': cur = not(cur ?? TRUE); continue;
-      case 'OUT': case 'OUTH': {
+      case 'OUT': case 'OUTH': case 'OUTHS': {
         const dev = args[0].toUpperCase();
         if (/^(T|ST)\d+$/.test(dev) && args[1]) {
-          const b = op === 'OUTH' ? { ms: 10, retentive: false } : timerBase(dev);
+          const b = timerBase(dev, op);
           const p = timerPreset(dev, args[1], b.ms);
           out({ type: 'TMR', address: n(dev), mode: 'ON_DELAY', preset: p.preset, unit: p.unit, accumulate: b.retentive, resetAddress: null });
         } else if (/^C\d+$/.test(dev) && args[1]) out({ type: 'CNT', address: n(dev), direction: 'UP', preset: operand(args[1]), resetAddress: null });
@@ -266,7 +287,7 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
       }
       case 'TMR': case 'TMRH': { // Delta: TMR T0 K50 (100 ms timers; TMRH 10 ms)
         const dev = args[0].toUpperCase();
-        const b = op === 'TMRH' ? { ms: 10, retentive: false } : timerBase(dev);
+        const b = timerBase(dev, op);
         const p = timerPreset(dev, args[1] ?? 'K0', b.ms);
         out({ type: 'TMR', address: n(dev), mode: 'ON_DELAY', preset: p.preset, unit: p.unit, accumulate: b.retentive, resetAddress: null });
         continue;
@@ -300,6 +321,7 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
     }
   }
   flush();
+  if (unsure.length) notes.push(`The file does not say which ${brand.vendor} series this is, so these timers were read as 100 ms timers: ${[...new Set(unsure)].join(', ')}. Confirm each timer's time base (it decides the delay) and change the preset if it differs.`);
   if (timerBases.length) notes.push(`Timer time bases (${brand.vendor}${module ? ` ${module}` : ''}): ${timerBases.join('; ')}. Presets were converted with them; check them against the PLC.`);
 
   for (const [dev, steps] of coilSteps) {

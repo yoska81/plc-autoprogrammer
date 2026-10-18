@@ -66,9 +66,11 @@ const logic = (p: LadderProgram) => {
   const ex = exportUpgrade(plan.original, text, now, target());
   assert.deepEqual(ex.changed, ['Mixer_Control']);
   const out = ex.files[0].content;
+  // The declarations stay as they were, plus the copy of Step the CASE compares (taken at its start).
   const head = text.slice(0, text.indexOf('BEGIN'));
-  assert.ok(out.startsWith(head), 'the declarations stay as they were');
-  assert.match(out, /IF \(#Step = 10\) AND NOT "Tank_Low" THEN "Fill_Valve" := TRUE; END_IF;/, 'globals "quoted", the block\'s own variables #Name');
+  assert.equal(out.slice(0, out.indexOf('BEGIN')), head.replace('Batches : Int;   // Batches made today\n', 'Batches : Int;   // Batches made today\n      Step_Case : DInt;   // added by the upgrade\n'));
+  assert.match(out, /BEGIN\n {3}#Step_Case := #Step;\n/);
+  assert.match(out, /IF \(#Step_Case = 10\) AND NOT "Tank_Low" THEN "Fill_Valve" := TRUE; END_IF;/, 'globals "quoted", the block\'s own variables #Name');
   assert.match(out, /#Mix_Timer\(IN := /, 'the timer instance keeps its name');
   assert.ok(ex.warnings.some((w) => /comments and layout are not kept \(Mixer_Control\)/.test(w)));
   // Read back: the program that was exported.
@@ -79,9 +81,9 @@ const logic = (p: LadderProgram) => {
   const t = 'T9';
   const timed = edit(now, (r) => r.id === fill.id, (r) => ({ ...r, outputs: [...r.outputs, { type: 'TMR', address: t, mode: 'ON_DELAY', preset: '5', unit: 'sec', accumulate: false, resetAddress: null }] }));
   const ex2 = exportUpgrade(plan.original, text, { ...timed, tags: [...timed.tags, { address: t, nickname: 'Fill_Watchdog', comment: 'Fill takes too long' }] }, target());
-  assert.match(ex2.files[0].content, /Batches : Int;[^\n]*\n\s*Fill_Watchdog : TON_TIME; {3}\/\/ Fill takes too long\n\s*END_VAR/);
+  assert.match(ex2.files[0].content, /Batches : Int;[^\n]*\n\s*Step_Case : DInt;[^\n]*\n\s*Fill_Watchdog : TON_TIME; {3}\/\/ Fill takes too long\n\s*END_VAR/);
   assert.match(ex2.files[0].content, /#Fill_Watchdog\(IN := /);
-  assert.deepEqual(ex2.newTags, ['Mixer_Control.Fill_Watchdog']);
+  assert.deepEqual(ex2.newTags, ['Mixer_Control.Step_Case', 'Mixer_Control.Fill_Watchdog']);
 
   // A block the app added: a new FB with its instance DB (no OB in this source: the call is to add).
   const added: LadderProgram = { ...now, blocks: [...(now.blocks ?? []), { id: 'b_new', name: 'Alarm Horn', description: '' }], rungs: [...now.rungs, { id: 'n1', block: 'b_new', comment: 'Horn while the lid is open', branches: [[{ type: 'NC', address: addr(now, 'Lid_Closed') }]], outputs: [{ type: 'OUT', address: addr(now, 'Agitator') }] }] };

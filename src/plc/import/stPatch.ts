@@ -69,7 +69,11 @@ function blockCode(rungs: Rung[], p: StPatchInput, block: string, scope: Scope, 
   const refs = new Map<string, string>();
   const unreachable: string[] = [];
   for (const v of st.variables) {
-    const orig = p.names[v.base];
+    // A name the original file does not have (a copy the import added, like Step_Case) is a new variable.
+    const named = p.names[v.base];
+    const orig = named && inFile(p.originalText, named) ? named : undefined;
+    // An absolute address (%MD20, %I0.1) is written as it is.
+    if (orig && /^%[IQM]/i.test(orig)) { refs.set(v.name, orig); continue; }
     if (orig) {
       const [head, ...rest] = orig.split('.');
       const tail = rest.length ? `.${rest.join('.')}` : '';
@@ -95,7 +99,14 @@ function blockCode(rungs: Rung[], p: StPatchInput, block: string, scope: Scope, 
   return { code, added };
 }
 
-const decl = (v: StVariable) => `      ${v.name} : ${v.type};   // ${(v.comment || v.base).replace(/[\r\n]+/g, ' ')}`;
+/** Does the original file name this (the first part of a dotted name, as a whole word)? */
+function inFile(text: string, name: string): boolean {
+  const head = name.split('.')[0].replace(/[.*+?^${}()|[\]\\%]/g, '\\$&');
+  return new RegExp(`(^|[^\\w])${head}(?!\\w)`, 'i').test(text);
+}
+
+const note = (v: StVariable) => (v.comment && v.comment !== v.base ? v.comment : 'added by the upgrade').replace(/[\r\n]+/g, ' ');
+const decl = (v: StVariable) => `      ${v.name} : ${v.type};   // ${note(v)}`;
 
 /** Blocks of an SCL source: kind, name, [start, end) of the whole block. */
 function sclBlocks(text: string): { kind: string; name: string; start: number; end: number }[] {
@@ -132,7 +143,7 @@ export function patchScl(p: StPatchInput): StPatchResult {
   // Each block's own variables, from the original text.
   const blocks = sclBlocks(text).filter((b) => b.kind !== 'DATA_BLOCK' && b.kind !== 'TYPE').map((b) => ({ ...b, vars: stVariables(text.slice(b.start, b.end)).map((v) => v.name.toLowerCase()) }));
   const elsewhereOf = (name: string) => new Map(blocks.filter((b) => b.name !== name).flatMap((b) => b.vars.map((v) => [v, b.name] as const)));
-  const taken = new Set([...blocks.map((b) => b.name.toLowerCase()), ...stVariables(text).map((v) => v.name.toLowerCase()), ...Object.values(p.names).map((n) => n.split('.')[0].toLowerCase())]);
+  const taken = new Set([...blocks.map((b) => b.name.toLowerCase()), ...stVariables(text).map((v) => v.name.toLowerCase()), ...Object.values(p.names).filter((n) => inFile(p.originalText, n)).map((n) => n.split('.')[0].toLowerCase())]);
   const byBlock = (id: string) => p.current.rungs.filter((r) => (r.block ?? '') === id);
   const plan = changedBlocks(p);
 
@@ -195,7 +206,7 @@ function plcopenType(t: string): string {
   const u = t.toUpperCase();
   return /^(BOOL|SINT|INT|DINT|LINT|USINT|UINT|UDINT|ULINT|REAL|LREAL|TIME|BYTE|WORD|DWORD|LWORD)$/.test(u) ? `<${u} />` : `<derived name="${esc(t)}" />`;
 }
-const plcopenVar = (v: StVariable) => `<variable name="${esc(v.name)}"><type>${plcopenType(v.type)}</type><documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">${esc(v.comment || v.base)}</xhtml></documentation></variable>`;
+const plcopenVar = (v: StVariable) => `<variable name="${esc(v.name)}"><type>${plcopenType(v.type)}</type><documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">${esc(note(v))}</xhtml></documentation></variable>`;
 /** Code as element text: only & and < > are escaped (SCL "PLC tags" stay readable). */
 const stBody = (code: string) => `<body>\n<ST>\n<xhtml xmlns="http://www.w3.org/1999/xhtml">${code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</xhtml>\n</ST>\n</body>`;
 
@@ -219,7 +230,7 @@ export function patchPlcopen(p: StPatchInput): StPatchResult {
   const all = pous(xml).map((x) => ({ name: unesc(x.name), vars: pouVars(xml.slice(x.start, x.end)) }));
   const elsewhereOf = (name: string) => new Map(all.filter((x) => x.name !== name).flatMap((x) => x.vars.map((v) => [v, x.name] as const)));
   const globals = [...(/<instances>[\s\S]*<\/instances>/.exec(xml)?.[0] ?? '').matchAll(/<variable\s[^>]*\bname="([^"]*)"/g)].map((m) => unesc(m[1]).toLowerCase());
-  const taken = new Set([...all.map((x) => x.name.toLowerCase()), ...all.flatMap((x) => x.vars), ...globals, ...Object.values(p.names).map((n) => n.split('.')[0].toLowerCase())]);
+  const taken = new Set([...all.map((x) => x.name.toLowerCase()), ...all.flatMap((x) => x.vars), ...globals, ...Object.values(p.names).filter((n) => inFile(p.originalText, n)).map((n) => n.split('.')[0].toLowerCase())]);
   const byBlock = (id: string) => p.current.rungs.filter((r) => (r.block ?? '') === id);
   const plan = changedBlocks(p);
 

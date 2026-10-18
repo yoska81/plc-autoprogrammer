@@ -8,7 +8,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { detectFormat, importProgramText, materialize, unreadableReason } from './index';
+import { detectFormat, importProgramFiles, importProgramText, materialize, unreadableReason } from './index';
+import { convertForeign } from './convert';
+import { planUpgrade } from './upgrade';
+import { createSimulator } from '../sim/engine';
 import { convertLogixRung, parseRungText } from './logixText';
 import { convertSt, timeMs } from './st';
 import { and, el, or, toBranches } from './cond';
@@ -95,8 +98,11 @@ const writes = (r: Rung, a: string) => r.outputs.some((o) => 'address' in o && o
   assert.ok(rs.some((r) => r.outputs.some((x) => x.type === 'TMR' && x.address === 'T1' && x.preset === '2' && x.unit === 'sec')), 'TON call → timer, T#2S = 2 sec');
   assert.ok(rs.some((r) => r.outputs.some((x) => x.type === 'SET' && x.address === 'Valve')) && rs.some((r) => r.outputs.some((x) => x.type === 'RST' && x.address === 'Valve')), 'TRUE / FALSE in CASE → SET / RST');
   const range = rs.find((r) => r.outputs.some((x) => x.type === 'SET' && x.address === 'Lamp'))!;
-  assert.deepEqual(range.branches[0].slice(0, 2), [{ type: 'CMP', left: 'Step', op: '>=', right: '40' }, { type: 'CMP', left: 'Step', op: '<=', right: '50' }], 'CASE range label');
-  assert.ok(rs.some((r) => r.outputs.some((x) => x.type === 'COPY' && x.dest === 'Step' && x.source === '0') && r.branches.length > 0 && r.branches.every((b) => b.some((e) => e.type === 'CMP' && e.left === 'Step' && e.op === '<>' && e.right === '10'))), 'CASE ELSE: none of the labels');
+  // The branches write Step: the CASE compares the value Step had at its start (Step_Case), so a step
+  // change does not run the next step's branch in the same scan.
+  assert.ok(rs.some((r) => r.branches.flat().length === 0 && r.outputs.some((x) => x.type === 'COPY' && x.source === 'Step' && x.dest === 'Step_Case')), 'Step copied at the start of the CASE');
+  assert.deepEqual(range.branches[0].slice(0, 2), [{ type: 'CMP', left: 'Step_Case', op: '>=', right: '40' }, { type: 'CMP', left: 'Step_Case', op: '<=', right: '50' }], 'CASE range label');
+  assert.ok(rs.some((r) => r.outputs.some((x) => x.type === 'COPY' && x.dest === 'Step' && x.source === '0') && r.branches.length > 0 && r.branches.every((b) => b.some((e) => e.type === 'CMP' && e.left === 'Step_Case' && e.op === '<>' && e.right === '10'))), 'CASE ELSE: none of the labels');
   assert.equal(st.untranslated.length, 1, 'the WHILE loop is reported, nothing else');
 }
 
@@ -233,6 +239,38 @@ const capper = importProgramText('capper.L5X', fixture('capper.L5X'));
   assert.equal(c.io[0].description, 'Start pushbutton');
   assert.equal(c.program.rungs.length, 0);
   assert.ok(c.report.notes.some((n) => /PDF printout/.test(n)), 'tells how to get the rungs');
+}
+
+// ── CASE / IF run as the original does: one branch per scan, chosen on the values at its start ──
+{
+  const { program: imp } = importProgramFiles(['Mixer.scl', 'PLC_Tags_Mixer.csv'].map((n) => ({ name: n, text: readFileSync(join(here, '__fixtures__', n), 'utf8') })));
+  const prog = planUpgrade(imp, 'click').program;
+  const at = (n: string) => prog.tags.find((t) => t.nickname === n)!.address;
+  const sim = createSimulator(prog);
+  sim.setInput(at('Lid_Closed'), true);
+  sim.setInput(at('Level_High'), true);
+  sim.write(at('Step'), 10);
+  sim.step();
+  // Original: step 10 fills until the level is high, then Step := 20; the step 20 branch waits for the next scan.
+  assert.equal(sim.readWord(at('Step')), 20);
+  assert.equal(sim.readBit(at('Fill_Valve')), false);
+  assert.equal(sim.readBit(at('Agitator')), false, 'the step 20 branch does not run in the scan that set Step := 20');
+  sim.step();
+  assert.equal(sim.readBit(at('Agitator')), true, 'it runs on the next scan');
+}
+{
+  // IF: the guard reads Step, the branch writes it: the rest of the branch still runs.
+  const st = convertSt('IF Step = 10 AND Go THEN Step := 20; Done := TRUE; END_IF;', 'if', { types: new Map([['step', 'INT'], ['go', 'BOOL'], ['done', 'BOOL']]) });
+  assert.deepEqual(st.untranslated, []);
+  const imp = convertForeign({ format: 'st', vendor: 'IEC', controller: '', projectName: 'P', tags: [{ name: 'Step', dataType: 'INT', comment: '' }, { name: 'Go', dataType: 'BOOL', comment: '' }, { name: 'Done', dataType: 'BOOL', comment: '' }], routines: [{ name: 'Main', language: 'st', rungs: st.rungs, untranslated: [] }], notes: [] }, 'p.st');
+  const prog = planUpgrade(imp, 'click').program;
+  const at = (n: string) => prog.tags.find((t) => t.nickname === n)!.address;
+  const sim = createSimulator(prog);
+  sim.write(at('Step'), 10);
+  sim.write(at('Go'), true);
+  sim.step();
+  assert.equal(sim.readWord(at('Step')), 20);
+  assert.equal(sim.readBit(at('Done')), true, 'Done := TRUE still runs after Step := 20');
 }
 
 console.log('import.test: all passed');

@@ -197,6 +197,10 @@ export function convertSt(src: string, idBase: string, opts: StOptions = {}): { 
   const isBoolExpr = (e: E): boolean => (e.t === 'lit' ? e.kind === 'bool' : e.t === 'var' ? isBoolVar(e.name) : e.t === 'un' ? e.op === 'NOT' : e.t === 'bin' ? ['AND', 'OR', 'XOR', '=', '<>', '<', '>', '<=', '>='].includes(e.op) : false);
 
   const out = (c: Cond, o: LadderOutput) => driven.push({ cond: c, out: o });
+  /** What an output writes (lower case). */
+  const target = (o: LadderOutput) => (o.type === 'COPY' || o.type === 'MATH' ? o.dest : 'address' in o ? o.address : '').toLowerCase();
+  /** The names a condition reads (lower case). */
+  const condNames = (x: Cond): string[] => x.k === 'el' ? ('address' in x.el ? [x.el.address] : x.el.type === 'CMP' ? [x.el.left, x.el.right].flatMap((v) => v.match(/[A-Za-z_%][\w.%]*/g) ?? []) : []).map((n) => n.toLowerCase()) : 'xs' in x ? x.xs.flatMap(condNames) : 'x' in x ? condNames(x.x) : [];
 
   function assign(target: string, e: E, c: Cond, top: boolean, text: string) {
     const boolTarget = isBoolVar(target) || isBoolExpr(e);
@@ -273,44 +277,37 @@ export function convertSt(src: string, idBase: string, opts: StOptions = {}): { 
       if (p.is(';')) { p.i++; return; }
       if (p.is('IF')) {
         p.i++;
-        let rest = TRUE;
-        let g = p.expr();
-        p.eat('THEN');
-        for (;;) {
-          const gc = cond(g);
-          if (!gc) { untranslated.push(`IF ${src.slice(p.toks[start].pos, p.toks[p.i - 1].pos)}… (condition not converted)`); skipTo('END_IF'); return; }
-          block(and(c, rest, gc), false, ['ELSIF', 'ELSE', 'END_IF']);
-          rest = and(rest, not(gc));
-          if (p.is('ELSIF')) { p.i++; g = p.expr(); p.eat('THEN'); continue; }
-          if (p.is('ELSE')) { p.i++; block(and(c, rest), false, ['END_IF']); }
-          p.eat('END_IF');
-          if (p.is(';')) p.i++;
-          return;
+        const at = p.i, d0 = driven.length, u0 = untranslated.length;
+        const guards: Cond[] = [];
+        if (!ifChain(c, start, guards, null)) return;
+        // One branch runs, chosen on the values at the start of the IF. When a branch writes what a guard
+        // reads (IF #Step = 10 THEN #Step := 20; …), each guard is copied to a bit at the start and the rungs
+        // test the bits; testing the guard itself would stop the rest of the branch (or start the next one).
+        const read = new Set(guards.flatMap(condNames));
+        if (driven.slice(d0).some((d) => read.has(target(d.out)))) {
+          p.i = at; driven.length = d0; untranslated.length = u0;
+          ifChain(c, start, [], d0);
         }
+        return;
       }
       if (p.is('CASE')) {
         p.i++;
-        const sel = num(p.expr());
+        const selE = p.expr();
+        const sel = num(selE);
         p.eat('OF');
         if (sel === null) { untranslated.push(stmtText(start)); skipTo('END_CASE'); return; }
-        let rest = TRUE;
-        while (!p.is('END_CASE') && !p.is('ELSE') && p.peek()) {
-          const labels: Cond[] = [];
-          do {
-            if (p.is(',')) p.i++;
-            const a = num(p.expr());
-            if (p.is('..')) { p.i++; const b = num(p.expr()); labels.push(and(el({ type: 'CMP', left: sel, op: '>=', right: a! }), el({ type: 'CMP', left: sel, op: '<=', right: b! }))); }
-            else labels.push(el({ type: 'CMP', left: sel, op: '==', right: a! }));
-          } while (p.is(','));
-          p.eat(':');
-          const lc = or(...labels);
-          // Statements of this label: until the next "<label>:" or ELSE / END_CASE.
-          while (p.peek() && !p.is('END_CASE') && !p.is('ELSE') && !isLabel()) statement(and(c, lc), false);
-          rest = and(rest, not(lc));
+        const at = p.i, d0 = driven.length, u0 = untranslated.length;
+        caseBody(sel, c);
+        // The CASE picks its branch once, on the selector's value at its start. When a branch writes the
+        // selector (#Step := 20), the rungs compare a copy taken at the start; comparing the selector itself
+        // would run the next step's branch in the same scan.
+        const read = new Set((sel.match(/[A-Za-z_%][\w.%]*/g) ?? []).map((x) => x.toLowerCase()));
+        if (driven.slice(d0).some((d) => read.has(target(d.out)))) {
+          p.i = at; driven.length = d0; untranslated.length = u0;
+          const snap = /^[A-Za-z_][\w.]*$/.test(sel) ? `${sel.replace(/\W/g, '_')}_Case` : `Case_${start}_Value`;
+          out(c, selE.t === 'var' || selE.t === 'lit' ? { type: 'COPY', source: sel, dest: snap } : { type: 'MATH', dest: snap, expression: sel });
+          caseBody(snap, c);
         }
-        if (p.is('ELSE')) { p.i++; block(and(c, rest), false, ['END_CASE']); }
-        p.eat('END_CASE');
-        if (p.is(';')) p.i++;
         return;
       }
       if (p.is('FOR') || p.is('WHILE') || p.is('REPEAT')) {
@@ -365,6 +362,56 @@ export function convertSt(src: string, idBase: string, opts: StOptions = {}): { 
       untranslated.push(`${src.slice(p.toks[start]?.pos ?? 0, p.peek()?.pos ?? src.length).trim().slice(0, 160)} (${e instanceof Error ? e.message : e})`);
     }
   }
+  /**
+   * IF … ELSIF … ELSE … END_IF after the IF keyword; the guards' conditions go into `guards`. `snapAt`: write each
+   * guard to a bit (rungs inserted at that index of `driven`, before the branches) and test the bits instead.
+   * false = a guard the ladder can't draw (the statement is listed as not converted).
+   */
+  function ifChain(c: Cond, start: number, guards: Cond[], snapAt: number | null): boolean {
+    let rest = TRUE;
+    let g = p.expr();
+    p.eat('THEN');
+    for (let k = 0; ; k++) {
+      let gc = cond(g);
+      if (!gc) { untranslated.push(`IF ${src.slice(p.toks[start].pos, p.toks[p.i - 1].pos)}… (condition not converted)`); skipTo('END_IF'); return false; }
+      guards.push(gc);
+      if (snapAt !== null) {
+        const bit = `If${start}_${k + 1}`;
+        driven.splice(snapAt + k, 0, { cond: and(c, gc), out: { type: 'OUT', address: bit } });
+        gc = el({ type: 'NO', address: bit });
+      }
+      block(and(c, rest, gc), false, ['ELSIF', 'ELSE', 'END_IF']);
+      rest = and(rest, not(gc));
+      if (p.is('ELSIF')) { p.i++; g = p.expr(); p.eat('THEN'); continue; }
+      if (p.is('ELSE')) { p.i++; block(and(c, rest), false, ['END_IF']); }
+      p.eat('END_IF');
+      if (p.is(';')) p.i++;
+      return true;
+    }
+  }
+
+  /** CASE labels and their statements up to END_CASE, comparing `sel`; `c` = the enclosing condition. */
+  function caseBody(sel: string, c: Cond) {
+    let rest = TRUE;
+    while (!p.is('END_CASE') && !p.is('ELSE') && p.peek()) {
+      const labels: Cond[] = [];
+      do {
+        if (p.is(',')) p.i++;
+        const a = num(p.expr());
+        if (p.is('..')) { p.i++; const b = num(p.expr()); labels.push(and(el({ type: 'CMP', left: sel, op: '>=', right: a! }), el({ type: 'CMP', left: sel, op: '<=', right: b! }))); }
+        else labels.push(el({ type: 'CMP', left: sel, op: '==', right: a! }));
+      } while (p.is(','));
+      p.eat(':');
+      const lc = or(...labels);
+      // Statements of this label: until the next "<label>:" or ELSE / END_CASE.
+      while (p.peek() && !p.is('END_CASE') && !p.is('ELSE') && !isLabel()) statement(and(c, lc), false);
+      rest = and(rest, not(lc));
+    }
+    if (p.is('ELSE')) { p.i++; block(and(c, rest), false, ['END_CASE']); }
+    p.eat('END_CASE');
+    if (p.is(';')) p.i++;
+  }
+
   /** At "<number or name>[, …]:" (a CASE label, not "x := …"). */
   function isLabel(): boolean {
     let j = p.i;

@@ -9,6 +9,7 @@
 import { rawTextNames, type LadderElement, type LadderOutput, type LadderProgram, type ProgramBlock, type Rung, type TagDefinition } from '../core/ladder';
 import type { CpuModel, ModuleSlot, PlcProfile } from '../core/profile';
 import { resolveAddresses } from '../core/profile';
+import { siemensAddress } from '../core/profiles/siemens';
 import type { IOPoint } from '../../types/io';
 import type { ForeignProgram, ForeignTag, ImportedIoPoint, ImportedProgram, ImportReport } from './types';
 import { slug } from './l5x';
@@ -268,6 +269,22 @@ export function pretty(name: string): string {
  * The imported program for a chosen PLC: I/O points get that PLC's addresses (analog points their
  * analog channel register) and every "@IN:n" / "@OUT:n" in the program is replaced.
  */
+/** The app's address of an S7 digital bit as written in the original (%IX0.2, %I0.2, I0.2 → X003), or null. */
+function s7Terminal(original: string, cpu: CpuModel, modules: ModuleSlot[]): string | null {
+  const m = /^%?([IQ])X?(\d+)\.([0-7])$/i.exec(original.trim());
+  if (!m) return null;
+  const want = `%${m[1].toUpperCase()}${Number(m[2])}.${m[3]}`;
+  const isIn = m[1].toUpperCase() === 'I';
+  const slots = [isIn ? cpu.builtInInputs : cpu.builtInOutputs, ...modules.map((x) => (isIn ? x.inputs : x.outputs))];
+  for (let slot = 0; slot < slots.length && slot < 10; slot++) {
+    for (let n = 1; n <= Math.min(slots[slot], 99); n++) {
+      const base = `${isIn ? 'X' : 'Y'}${slot}${String(n).padStart(2, '0')}`;
+      if (siemensAddress(base, cpu, modules)?.address === want) return base;
+    }
+  }
+  return null;
+}
+
 export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuModel, modules: ModuleSlot[] = []): { program: LadderProgram; io: IOPoint[]; names: Record<string, string> } {
   let i = 0, o = 0;
   // The imported program scales its own analog values: the app's channel scaling passes the raw counts through
@@ -277,8 +294,10 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
     id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++o).padStart(3, '0')}`,
     description: p.description, type: p.type, category: 'Spare',
     ...(p.analog ? { signal: 'analog' as const, analog: { range: '4-20mA' as const, min: 0, max: full, units: 'raw counts' } } : {}),
-    // A CLICK program going back on a CLICK keeps its terminals (X001 stays X001, gaps included).
+    // A CLICK program going back on a CLICK keeps its terminals (X001 stays X001, gaps included); an S7
+    // program keeps its %I / %Q bits (%Q0.2 stays %Q0.2).
     ...(profile.id === 'click' && /^[XY]\d{3}$/i.test(p.original) && profile.parseAddress(p.original.toUpperCase()) ? { plcAddress: p.original.toUpperCase() } : {}),
+    ...(profile.id === 'siemens-s7' && !p.analog ? (() => { const a = s7Terminal(p.original, cpu, modules); return a ? { plcAddress: a } : {}; })() : {}),
   }));
   const addr = resolveAddresses(profile, cpu, points, modules);
   const ph = new Map<string, string>();
