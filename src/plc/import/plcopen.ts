@@ -11,6 +11,7 @@ import { and, el, not, or, toRungs, TRUE, type Cond, type Driven } from './cond'
 import { msPreset } from './logixText';
 import { timeMs } from './st';
 import { slug } from './l5x';
+import { blockRung } from './stSource';
 import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType } from './types';
 
 function iecType(typeNode: XNode | undefined): { type: ForeignType; raw: string } {
@@ -39,8 +40,30 @@ function variables(n: XNode | undefined): ForeignTag[] {
   return out;
 }
 
-/** Ladder diagram body → outputs with conditions. */
-function ldBody(body: XNode, untranslated: string[]): Driven[] {
+/**
+ * A POU written back as source text: Siemens SCL (`FUNCTION "Name" : Real … BEGIN … END_FUNCTION`) for a
+ * TIA Portal export, IEC Structured Text otherwise.
+ */
+function pouSource(pou: XNode, body: string, siemens: boolean): string {
+  const kind = pou.attrs.pouType === 'function' ? 'FUNCTION' : pou.attrs.pouType === 'functionBlock' ? 'FUNCTION_BLOCK' : 'PROGRAM';
+  const iface = kid(pou, 'interface');
+  const ret = iecType(kid(iface, 'returnType')).raw;
+  const name = siemens ? `"${pou.attrs.name}"` : pou.attrs.name;
+  const SECTIONS: [string, string][] = [['inputVars', 'VAR_INPUT'], ['outputVars', 'VAR_OUTPUT'], ['inOutVars', 'VAR_IN_OUT'], ['localVars', siemens && kind === 'FUNCTION' ? 'VAR_TEMP' : 'VAR'], ['tempVars', 'VAR_TEMP']];
+  const vars = SECTIONS.map(([tag, kw]) => {
+    const vs = kids(kid(iface, tag), 'variable');
+    if (!vs.length) return '';
+    const lines = vs.map((v) => {
+      const doc = textOf(kid(v, 'documentation')).trim();
+      return `      ${v.attrs.name} : ${iecType(kid(v, 'type')).raw};${doc ? `   // ${doc}` : ''}`;
+    });
+    return `   ${kw}\n${lines.join('\n')}\n   END_VAR\n`;
+  }).join('');
+  return `${kind} ${name}${kind === 'FUNCTION' && ret ? ` : ${ret}` : ''}\n${vars}${siemens ? 'BEGIN\n' : ''}${body.trim()}\nEND_${kind}`;
+}
+
+/** Ladder diagram body → outputs with conditions. `vendor`: a call to a block the ladder model has no form for is kept as a RAW statement of that PLC. */
+function ldBody(body: XNode, untranslated: string[], vendor = 'iec'): Driven[] {
   const nodes = new Map<string, XNode>();
   const order: XNode[] = [];
   const walkAll = (x: XNode) => { for (const c of x.children) { if (c.attrs.localId) { nodes.set(c.attrs.localId, c); order.push(c); } walkAll(c); } };
@@ -157,7 +180,20 @@ function ldBody(body: XNode, untranslated: string[]): Driven[] {
         const op = ({ ADD: '+', SUB: '-', MUL: '*', DIV: '/' } as const)[type as 'ADD'];
         for (const d of outVars('OUT')) if (a && b) driven.push({ cond: inCond('EN'), out: { type: 'MATH', dest: d, expression: `${a} ${op} ${b}` } });
       } else if (!['R_TRIG', 'F_TRIG', 'GT', 'GE', 'EQ', 'NE', 'LE', 'LT'].includes(type)) {
-        untranslated.push(`${n.attrs.typeName} block${inst ? ` ${inst}` : ''}: not converted`);
+        // A call the ladder can't draw (a user function, a library block): kept as the call statement, in place.
+        const params = [...ins.entries()].filter(([p]) => p !== 'EN').map(([p, node]) => {
+          const v = inVal(p);
+          return v === null ? null : `${node.attrs.formalParameter} := ${v}`;
+        });
+        if (params.some((x) => x === null)) { untranslated.push(`${n.attrs.typeName} block${inst ? ` ${inst}` : ''}: not converted (an input is wired from logic)`); continue; }
+        const q = (s: string) => (vendor === 'siemens-s7' ? `"${s}"` : s);
+        const outs = order.filter((x) => local(x) === 'outVariable' && kids(kid(x, 'connectionPointIn'), 'connection').some((c) => c.attrs.refLocalId === n.attrs.localId)).map((x) => ({ v: varOf(x), p: (kids(kid(x, 'connectionPointIn'), 'connection')[0].attrs.formalParameter ?? '').toUpperCase() }));
+        const ret = outs.find((o) => !o.p || o.p === 'OUT' || o.p === 'RET_VAL' || o.p === n.attrs.typeName?.toUpperCase());
+        const outArgs = outs.filter((o) => o !== ret).map((o) => `${o.p} => ${o.v}`);
+        const calleeName = n.attrs.typeName ?? type;
+        const callee = inst ? q(inst) : q(calleeName);
+        const text = `${ret ? `${ret.v} := ` : ''}${callee}(${[...params, ...outArgs].join(', ')});`;
+        driven.push({ cond: ins.has('EN') ? inCond('EN') : TRUE, out: { type: 'RAW', vendor, text } });
       }
     }
   }
@@ -182,27 +218,34 @@ export function readPlcopen(src: string): ForeignProgram {
     for (const v of local_) if (!tags.some((t) => t.name.toLowerCase() === v.name.toLowerCase())) tags.push(v);
   }
   const types = new Map(tags.map((t) => [t.name.toLowerCase(), t.rawType || t.dataType]));
+  const siemens = /siemens|tia portal/i.test(`${header?.attrs.companyName ?? ''} ${header?.attrs.productName ?? ''}`);
+  const vendor = siemens ? 'siemens-s7' : /codesys|3s-smart/i.test(header?.attrs.companyName ?? '') ? 'codesys' : 'iec';
   for (const pou of pous) {
     const name = pou.attrs.name;
     const type = pou.attrs.pouType ?? 'program';
     const body = kid(pou, 'body');
     const lang = body?.children[0];
     const routine: ForeignRoutine = { name, language: 'other', rungs: [], untranslated: [] };
-    if (type === 'function' || (type === 'functionBlock' && !pous.some((p) => p.attrs.pouType === 'program' && p.attrs.name === name))) {
-      notes.push(`${type === 'function' ? 'Function' : 'Function block'} ${name}: its code is imported as a block; calls to it are listed as not converted.`);
-    }
+    if (type === 'function') notes.push(`Function ${name}: kept as written (the ladder has no functions); its calls are kept in place.`);
     if (!lang) { routines.push({ ...routine, untranslated: ['Empty body'] }); continue; }
     switch (local(lang)) {
       case 'ST': {
         routine.language = 'st';
-        const st = convertSt(textOf(lang), slug(name), { types });
+        const code = textOf(lang);
+        const st = convertSt(code, slug(name), { types });
+        // A function (the ladder model has none), or Siemens code with statements the converter can't draw
+        // (it goes back to the S7 as written): the whole POU kept as written.
+        if (type === 'function' || (siemens && st.untranslated.length)) {
+          routine.rungs = [blockRung(pouSource(pou, code, siemens), name, vendor)];
+          break;
+        }
         routine.rungs = st.rungs;
         routine.untranslated = st.untranslated;
         break;
       }
       case 'LD': {
         routine.language = 'ladder';
-        const driven = ldBody(lang, routine.untranslated);
+        const driven = ldBody(lang, routine.untranslated, vendor);
         const { rungs, failed } = toRungs(driven, '', slug(name));
         routine.rungs = rungs.map((r, i) => ({ ...r, id: `${slug(name)}_ld${i + 1}` }));
         for (const f of failed) routine.untranslated.push(`${f.out.type} ${'address' in f.out ? f.out.address : ''}: condition too complex`);

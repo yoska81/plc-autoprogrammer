@@ -20,7 +20,7 @@
  *   UniLogic (column layout not published), so no tag spreadsheet is written.
  */
 import type { CpuModel, ExportContext, PlcProfile, ProgramExporter } from '../profile';
-import type { LadderProgram } from '../ladder';
+import { elementAddresses, type LadderProgram } from '../ladder';
 import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses } from './click';
 import { toIecSt, type StDialect, type StProgram } from './iecSt';
 import { UNISTREAM_CPUS, pointOf, npnOutputsLast, unitronicsAnalogChannels, unitronicsParse } from './unitronics';
@@ -29,6 +29,7 @@ const pad = (n: number) => String(n).padStart(2, '0');
 
 /** UniLogic dialect: plain global tag names, IEC blocks, first scan from an Initialized flag. */
 export const UNILOGIC_ST: StDialect = {
+  vendor: 'unitronics-unistream',
   title: 'UniLogic: right-click a Ladder module › Import ST Code From File; call Machine_Logic from the Main ladder; link the I/O tags in Hardware Configuration (I/O link list).',
   // I/O are tags the engineer links to the module channel: no copy statement, the tag is the I/O.
   ioVar: () => null,
@@ -139,7 +140,7 @@ export const unistreamProfile: PlcProfile = {
   promptKnowledge: KNOWLEDGE,
   checkRung: (rung) => {
     const issues: { severity: 'error' | 'warning'; message: string }[] = [];
-    for (const e of rung.branches.flat()) for (const a of e.type === 'CMP' ? [e.left, e.right] : [e.address]) {
+    for (const e of rung.branches.flat()) for (const a of elementAddresses(e)) {
       if (/^SC\d+$/i.test(a) && !['SC1', 'SC2', 'SC7'].includes(a.toUpperCase())) issues.push({ severity: 'error', message: `${a}: UniLogic has no equivalent system bit here (use SC1, SC2 or SC7 only).` });
     }
     for (const o of rung.outputs) if (o.type === 'CNT' && /^\d+$/.test(o.preset.trim()) && Number(o.preset) > 32767) issues.push({ severity: 'error', message: `${o.address}: UniLogic CTU / CTD presets are INT (at most 32767).` });

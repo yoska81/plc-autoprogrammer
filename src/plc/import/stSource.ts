@@ -7,6 +7,7 @@ import { convertSt } from './st';
 import { iecIo } from './plcopen';
 import { slug } from './l5x';
 import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType } from './types';
+import type { Rung } from '../core/ladder';
 
 const POU = /(PROGRAM|FUNCTION_BLOCK|FUNCTION|ORGANIZATION_BLOCK)\s+("?)([^"\s:]+)\2[^\n]*\n([\s\S]*?)\n\s*END_(PROGRAM|FUNCTION_BLOCK|FUNCTION|ORGANIZATION_BLOCK)/gi;
 
@@ -45,6 +46,11 @@ export function stVariables(text: string): ForeignTag[] {
   return out;
 }
 
+/** A whole Structured Text / SCL block kept as written (RAW): read-only in the editor, exported as its own block. */
+export function blockRung(text: string, name: string, vendor: string): Rung {
+  return { id: `${slug(name)}_block`, comment: `${name}: kept as written in the original program`, branches: [], outputs: [{ type: 'RAW', vendor, text: text.trim() }] };
+}
+
 export function readStSource(src: string, siemens: boolean): ForeignProgram {
   const text = src.replace(/\r\n?/g, '\n');
   const tags = stVariables(text);
@@ -52,7 +58,8 @@ export function readStSource(src: string, siemens: boolean): ForeignProgram {
   const notes: string[] = [];
   const types = new Map(tags.map((t) => [t.name.toLowerCase(), t.rawType || t.dataType]));
   const pous = [...text.matchAll(POU)];
-  const bodies = pous.length ? pous.map((m) => ({ name: m[3], body: m[4] })) : [{ name: 'Main', body: text }];
+  const bodies = pous.length ? pous.map((m) => ({ name: m[3], body: m[4], kind: m[1].toUpperCase(), whole: m[0] })) : [{ name: 'Main', body: text, kind: 'PROGRAM', whole: '' }];
+  const vendor = siemens ? 'siemens-s7' : 'iec';
   for (const p of bodies) {
     // Code: after BEGIN (SCL) or after the last END_VAR.
     let code = p.body;
@@ -61,6 +68,12 @@ export function readStSource(src: string, siemens: boolean): ForeignProgram {
     else { const lastVar = code.toUpperCase().lastIndexOf('END_VAR'); if (lastVar >= 0) code = code.slice(lastVar + 7); }
     code = code.replace(/^\s*(TITLE|VERSION|AUTHOR|FAMILY|NAME)\s*[:=][^\n]*$/gim, '').replace(/^\s*\{[^}]*\}\s*$/gm, '');
     const st = convertSt(code, slug(p.name), { types });
+    // A function (the ladder model has none), or SCL with statements the converter can't draw (it goes back
+    // to the S7 as written): the whole block kept as written.
+    if (p.whole && (p.kind === 'FUNCTION' || (siemens && st.untranslated.length))) {
+      routines.push({ name: p.name, language: 'st', rungs: [blockRung(p.whole, p.name, vendor)], untranslated: [] });
+      continue;
+    }
     routines.push({ name: p.name, language: 'st', rungs: st.rungs, untranslated: st.untranslated });
   }
   if (siemens && !tags.some((t) => t.io)) notes.push('The SCL source names the PLC tags but not their addresses: add the PLC tag table (TIA Portal: PLC tags › Export) to know which tags are inputs and outputs.');

@@ -6,11 +6,11 @@
  *   COUNTER / CTU / CTD → CT (done → CT, count → CTD), first scan → SC2.
  * The original names become nicknames (program.tags) or I/O descriptions, and `names` maps back.
  */
-import type { LadderElement, LadderOutput, LadderProgram, ProgramBlock, Rung, TagDefinition } from '../core/ladder';
+import { rawTextNames, type LadderElement, type LadderOutput, type LadderProgram, type ProgramBlock, type Rung, type TagDefinition } from '../core/ladder';
 import type { CpuModel, ModuleSlot, PlcProfile } from '../core/profile';
 import { resolveAddresses } from '../core/profile';
 import type { IOPoint } from '../../types/io';
-import type { ForeignProgram, ForeignTag, ImportedIoPoint, ImportedProgram } from './types';
+import type { ForeignProgram, ForeignTag, ImportedIoPoint, ImportedProgram, ImportReport } from './types';
 import { slug } from './l5x';
 
 const NUM = /^[-+]?(\d+(\.\d+)?|\d+#[0-9A-Fa-f_]+)$/;
@@ -59,9 +59,18 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     addUse(base, member ? (/^\d+$/.test(member) ? 'wordbit' : `member:${member.toUpperCase()}`) : role);
   };
   const exprNames = (e: string) => (e.match(NAME_RE) ?? []).filter((n) => !RESERVED.has(n.toUpperCase()));
+  // Names a kept instruction of a tag-based PLC uses (SCL, ST) become operands of the program too, so the
+  // export declares them (Logix instructions bring their own definitions instead).
+  const rawNames = (text: string) => rawTextNames(text).map((x) => x.name)
+    .filter((n) => ['BOOL', 'INT', 'DINT', 'REAL'].includes(tagBy.get(n.toLowerCase())?.dataType ?? ''));
   for (const { rung } of rungs) {
+    for (const x of [...rung.branches.flat(), ...rung.outputs]) {
+      if (x.type === 'RAW' && x.vendor !== 'logix' && !/^\s*(FUNCTION|FUNCTION_BLOCK|ORGANIZATION_BLOCK|DATA_BLOCK)\b/i.test(x.text)) {
+        for (const n of rawNames(x.text)) operand(n, tagBy.get(n.toLowerCase())!.dataType === 'BOOL' ? 'contact' : 'word');
+      }
+    }
     for (const b of rung.branches) for (const e of b) {
-      if (e.type === 'CMP') { for (const n of [...exprNames(e.left), ...exprNames(e.right)]) operand(n, 'word'); } else operand(e.address, 'contact');
+      if (e.type === 'CMP') { for (const n of [...exprNames(e.left), ...exprNames(e.right)]) operand(n, 'word'); } else if (e.type !== 'RAW') operand(e.address, 'contact');
     }
     for (const o of rung.outputs) {
       switch (o.type) {
@@ -107,7 +116,14 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
 
   // ── 3. Neutral addresses for everything else ──
   const next: Record<string, number> = { C: 0, DS: 0, DD: 0, DF: 0, T: 0, CT: 0 };
-  const alloc = (p: keyof typeof next) => `${p}${++next[p]}`;
+  // Kept clear of the HMI's register blocks (C1001–C1300, DS1001–DS1200, DF101–DF200): the HMI reads roles from them.
+  const HMI_BLOCK: Partial<Record<keyof typeof next, [number, number]>> = { C: [1001, 1300], DS: [1001, 1200], DF: [101, 200] };
+  const alloc = (p: keyof typeof next) => {
+    let n = ++next[p];
+    const skip = HMI_BLOCK[p];
+    if (skip && n >= skip[0] && n <= skip[1]) next[p] = n = skip[1] + 1;
+    return `${p}${n}`;
+  };
   const map = new Map<string, string>(); // base (lower) → neutral base
   const names: Record<string, string> = {};
   const tags: TagDefinition[] = [];
@@ -135,7 +151,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     map.set(lower, addr);
     names[addr] = base;
     const t = typeOf(base);
-    tags.push({ address: addr, nickname: base, comment: t?.comment ?? '' });
+    tags.push({ address: addr, nickname: base, comment: [t?.rawType && t.dataType === 'OTHER' ? t.rawType : '', t?.comment ?? ''].filter(Boolean).join(' — ') });
     if (t?.dataType === 'OTHER' && t.rawType) notes.push(`${base} (${t.rawType}) is used as ${kind === 'bit' ? 'a bit' : kind === 'int' || kind === 'dint' ? 'a number' : kind}; its other members were not imported.`);
   }
   for (const p of io) names[ioIndex.get(p.name.toLowerCase())!] = p.name;
@@ -185,7 +201,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   };
   const trExpr = (e: string) => (NUM.test(e.trim()) ? translate(e) : e.replace(NAME_RE, (n) => (RESERVED.has(n.toUpperCase()) ? n : translate(n))));
 
-  const trEl = (e: LadderElement): LadderElement => (e.type === 'CMP' ? { ...e, left: trExpr(e.left), right: trExpr(e.right) } : { ...e, address: translate(e.address) });
+  const trEl = (e: LadderElement): LadderElement => (e.type === 'CMP' ? { ...e, left: trExpr(e.left), right: trExpr(e.right) } : e.type === 'RAW' ? e : { ...e, address: translate(e.address) });
   const trOut = (o: LadderOutput): LadderOutput => {
     switch (o.type) {
       case 'OUT': case 'SET': case 'RST': return { ...o, address: translate(o.address) };
@@ -193,6 +209,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
       case 'CNT': return { ...o, address: translate(o.address), preset: trExpr(o.preset), resetAddress: o.resetAddress ? translate(o.resetAddress) : null };
       case 'COPY': return { ...o, source: trExpr(o.source), dest: translate(o.dest) };
       case 'MATH': return { ...o, dest: translate(o.dest), expression: trExpr(o.expression) };
+      case 'RAW': return o;
     }
   };
 
@@ -200,14 +217,19 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   const blocks: ProgramBlock[] = [];
   const outRungs: Rung[] = [];
   const usedIds = new Set<string>();
-  const notConverted: { where: string; text: string }[] = [];
+  const notConverted: ImportReport['notConverted'] = [];
+  const blockOrigin: ImportedProgram['blockOrigin'] = {};
   for (const r of fp.routines) {
     for (const u of r.untranslated) notConverted.push({ where: r.name, text: u });
     if (!r.rungs.length) continue;
     let id = `b_${slug(r.name)}`;
     while (blocks.some((b) => b.id === id)) id += '_';
+    if (r.origin) blockOrigin[id] = r.origin;
     blocks.push({ id, name: r.name, description: `Imported from ${fp.vendor} ${r.language === 'ladder' ? 'ladder' : r.language.toUpperCase()} routine "${r.name}"` });
     for (const g of r.rungs) {
+      // Rung ids end in the original rung number (readers: `<routine>_<n>`).
+      const n = /_(\d+)(?:_\d+)?$/.exec(g.id)?.[1];
+      for (const x of [...g.branches.flat(), ...g.outputs]) if (x.type === 'RAW') notConverted.push({ where: r.name, text: `${n ? `Rung ${n}: ` : ''}${x.text}`, kept: true });
       let rid = `r_${g.id}`;
       while (usedIds.has(rid)) rid += '_';
       usedIds.add(rid);
@@ -215,13 +237,17 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     }
   }
   const program: LadderProgram = { rungs: outRungs, blocks, tags };
-  const total = outRungs.length + notConverted.length;
+  const total = outRungs.length + notConverted.filter((n) => !n.kept).length;
+  const converted = outRungs.filter((r) => ![...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW')).length;
   return {
     source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName },
-    program, io, names,
-    report: { rungs: total, converted: outRungs.length, notConverted, notes: [...new Set(notes)] },
+    program, io, names, blockOrigin,
+    report: { rungs: total, converted, notConverted, notes: [...new Set(notes)], outside: fp.outside ?? [] },
   };
 }
+
+/** CLICK nickname for an original tag name: letters, digits and _, at most 24 characters (only for a CLICK target). */
+export const nickOf = (name: string): string => name.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24);
 
 /** "Conv1_Start_PB" → "Conv1 Start PB". */
 export function pretty(name: string): string {
@@ -234,10 +260,13 @@ export function pretty(name: string): string {
  */
 export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuModel, modules: ModuleSlot[] = []): { program: LadderProgram; io: IOPoint[]; names: Record<string, string> } {
   let i = 0, o = 0;
+  // The imported program scales its own analog values: the app's channel scaling passes the raw counts through
+  // (0..full scale → 0..full scale), so nothing is scaled twice.
+  const full = /logix|allen-bradley|rockwell/i.test(`${imp.source.vendor} ${imp.source.format}`) || /^l5[xk]$/.test(imp.source.format) ? 32767 : 27648;
   const points: IOPoint[] = imp.io.map((p) => ({
     id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++o).padStart(3, '0')}`,
     description: p.description, type: p.type, category: 'Spare',
-    ...(p.analog ? { signal: 'analog' as const, analog: { range: '4-20mA' as const, min: 0, max: 100, units: '%' } } : {}),
+    ...(p.analog ? { signal: 'analog' as const, analog: { range: '4-20mA' as const, min: 0, max: full, units: 'raw counts' } } : {}),
   }));
   const addr = resolveAddresses(profile, cpu, points, modules);
   const ph = new Map<string, string>();
@@ -258,7 +287,17 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   }
   const OP = /@(?:IN|OUT):\d+|\b(?:TD|CTD|DS|DD|DF|CT|C|T)\d+\b/g;
   const sub = (s: string) => s.replace(OP, (m) => (m.startsWith('@') ? ph.get(m) || m : moved.get(m.toUpperCase()) ?? m));
-  const program: LadderProgram = JSON.parse(JSON.stringify(imp.program), (k, v) => (typeof v === 'string' && k !== 'comment' && k !== 'nickname' && k !== 'name' && k !== 'description' && k !== 'id' && k !== 'block' ? sub(v) : v));
+  // Operands only: RAW instructions keep their original text and definitions.
+  const subObj = <T,>(o: T): T => JSON.parse(JSON.stringify(o), (k, v) => (typeof v === 'string' && k !== 'type' ? sub(v) : v));
+  const program: LadderProgram = {
+    ...imp.program,
+    rungs: imp.program.rungs.map((r) => ({
+      ...r,
+      branches: r.branches.map((b) => b.map((e) => (e.type === 'RAW' ? e : subObj(e)))),
+      outputs: r.outputs.map((o) => (o.type === 'RAW' ? o : subObj(o))),
+    })),
+    tags: imp.program.tags.map((t) => ({ ...t, address: sub(t.address) })),
+  };
   const names: Record<string, string> = {};
   for (const [k, v] of Object.entries(imp.names)) names[sub(k)] = v;
   return { program, io: points, names };
