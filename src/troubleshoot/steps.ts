@@ -89,6 +89,8 @@ export function chains(p: WiringPath) {
   const src = (hs: PathHop[]) => hs.filter((h) => h.kind === 'source').slice(0, 1);
   const retSource = src(p.ret).length ? src(p.ret) : src(p.supply);
   const sourcing = p.type === 'output' && !sinking;
+  // A chain read place by place ends at its own supply; one from the wire list gets the supply added.
+  const withSource = (hs: PathHop[], source: PathHop[]) => (hs.some((h) => h.kind === 'source') ? hs : [...hs, ...source]);
   // An NPN input group has its common on 24+ (it is in the supply list), a PNP one on 0 V.
   const comOnPlus = p.type === 'input' && p.supply.some((h) => h.common);
   return {
@@ -99,7 +101,7 @@ export function chains(p: WiringPath) {
     // The device's own 0 V; a sinking output's load returns through the PLC instead.
     ret: sinking ? [] : p.ret.filter((h) => !h.common),
     // What the PLC module itself needs: its common to 0 V, or a sourcing module's output supply.
-    common: sourcing ? p.supply : comOnPlus ? [...p.supply.filter((h) => h.common), ...(src(p.supply).length ? src(p.supply) : retSource)] : [...p.ret.filter((h) => h.common), ...retSource],
+    common: sourcing ? p.supply : withSource([...p.supply, ...p.ret].filter((h) => h.common), comOnPlus ? (src(p.supply).length ? src(p.supply) : retSource) : retSource),
   };
 }
 
@@ -202,6 +204,41 @@ function between(a: PathHop | undefined, b: PathHop | undefined): Verdict {
   };
 }
 
+/**
+ * The fault between a bad and a good reading of one chain (`list` in its own order): the conductors that join
+ * them (each hop knows the one that reaches it). One wire, a jumper, a contact that does not close or a fuse.
+ */
+function faultBetween(list: PathHop[], x: PathHop | undefined, y: PathHop | undefined): Verdict {
+  if (!x || !y) return between(x, y);
+  const [i, j] = [list.indexOf(x), list.indexOf(y)].sort((m, n) => m - n);
+  if (i < 0) return between(x, y);
+  const links = list.slice(i + 1, j + 1).map((h) => h.link).filter(Boolean) as NonNullable<PathHop['link']>[];
+  if (!links.length) return between(x, y);
+  const [a, b] = list.indexOf(x) < list.indexOf(y) ? [x, y] : [y, x];
+  const hops = [a, b];
+  const contact = links.find((l) => l.kind === 'contact');
+  const fuse = links.find((l) => l.kind === 'fuse');
+  if (links.length === 1 && contact) return {
+    text: `${contact.text} does not close: the reading is there at ${a.label} and missing at ${b.label}.`,
+    fix: `Find out why ${contact.tag} is OFF (safety relay not reset, two-hand released, overload tripped…). If it is ON, its contact is faulty: ${lockout}replace it.`,
+    hops, wire: undefined,
+  };
+  if (links.length === 1 && fuse) return {
+    text: `${fuse.text[0].toUpperCase()}${fuse.text.slice(1)} is blown (its LED lit): wire ${fuse.wire ?? ''} after it is dead.`,
+    fix: `${LOCKOUT}Find what shorted it (disconnect the loads on wire ${fuse.wire ?? ''} one by one), then replace the fuse with the same rating.`,
+    hops, wire: fuse.wire,
+  };
+  const wire = links.find((l) => l.wire && l.kind !== 'contact')?.wire ?? b.wire ?? a.wire;
+  const what = links.map((l) => l.text).join(', then ');
+  return {
+    text: `Open connection on ${what} between ${a.label} and ${b.label}.`,
+    fix: links.every((l) => l.kind === 'jumper')
+      ? `${LOCKOUT}The jumper is loose or missing: seat it and tighten both screws, then measure again.`
+      : `${LOCKOUT}Check both ends of that conductor: loose or missing screw, wire not in the terminal, broken core in the cable. Re-terminate it and measure again.`,
+    hops, wire,
+  };
+}
+
 /** Next step after an answer (the session is immutable). */
 export function answer(s: Session, a: Answer): Session {
   const step = s.steps[s.at];
@@ -255,7 +292,9 @@ export function answer(s: Session, a: Answer): Session {
       if (step.okVerdict) return done(step.okVerdict);
       const before = s.steps.slice(0, s.at).filter((x, i) => x.part === step.part && x.hop && s.answers[i] === 'no').pop()?.hop;
       const what = { supply: 'supply', return: '0 V return', common: 'module common' }[step.part];
-      return done({ ...between(h, before), text: `The ${what} is good at ${h.label} but missing at ${before?.label ?? dev}: open connection on wire ${before?.wire ?? h.wire ?? ''} between them.` });
+      const list = step.part === 'supply' ? ch.feed : step.part === 'return' ? ch.ret : ch.common;
+      const v = faultBetween(list, before, h);
+      return done(h.link || before?.link ? { ...v, text: `The ${what} is good at ${h.label} but missing at ${before?.label ?? dev}. ${v.text}` } : { ...between(h, before), text: `The ${what} is good at ${h.label} but missing at ${before?.label ?? dev}: open connection on wire ${before?.wire ?? h.wire ?? ''} between them.` });
     }
     if (a === 'no' && h.kind === 'source') return done({ text: `No output from ${h.tag}.`, fix: `${h.tag}: check its DC OK lamp first. ${LOCKOUT}Then look for a short on its output (disconnect the loads one by one) and check its primary breaker / fuse. Mains checks only by a qualified person.`, hops: [h] });
     return next();
@@ -284,7 +323,7 @@ export function answer(s: Session, a: Answer): Session {
   if (p.type === 'input') {
     // Inputs: the signal comes from the device; the first good reading out from the PLC is just past the break.
     if (a === 'yes') {
-      if (h.kind !== 'plc') return done(between(prevHop(), h));
+      if (h.kind !== 'plc') return done(faultBetween(p.signal, prevHop(), h));
       const ok: Verdict = { text: `The PLC terminal ${p.address} reads ${onV} (ON) and its common is connected: the field wiring is good.`, fix: `If ${p.address} still shows OFF: check the input LED, a force on the address, the input settings or the module.`, hops: [h] };
       const com = chainSteps(ch.common, 'common', ok);
       return com.length ? next(com) : done(ok);
@@ -305,9 +344,9 @@ export function answer(s: Session, a: Answer): Session {
       return com.length ? next(com) : done(ok);
     }
     const prev = prevHop();
-    // Good at a series contact's input, bad after it: the contact is open.
-    if (prev?.kind === 'contact') return done({ text: `${prev.tag} blocks the signal: ${prev.note ?? 'its contact is open'}`, fix: `Find out why ${prev.tag} is OFF (safety relay not reset, two-hand released, overload tripped…). If it is ON, its contact is faulty.`, hops: [prev, h] });
-    return done(between(prev, h));
+    // Good at a series contact's input, bad after it: the contact is open (both sides are read first).
+    if (prev?.kind === 'contact' && !h.link && !prev.link) return done({ text: `${prev.tag} blocks the signal: ${prev.note ?? 'its contact is open'}`, fix: `Find out why ${prev.tag} is OFF (safety relay not reset, two-hand released, overload tripped…). If it is ON, its contact is faulty.`, hops: [prev, h] });
+    return done(faultBetween(p.signal, prev, h));
   }
   if (a === 'yes' && h.kind === 'device') {
     // The output reaches the load: its other side (the feed of a sinking output's load, the 0 V of a sourcing one) or the load itself.

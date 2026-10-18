@@ -31,11 +31,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     return Boolean(row?.querySelector('span.rounded-full')?.className.match(/bg-(brand|emerald|violet)-500/));
   }, a);
   const before = await lit('X005');
-  await bar.getByLabel('Wire to break').selectOption('X005');
+  // The conductor of X005 at the PLC terminal (the options name each conductor: wire — from → to).
+  const x005 = await bar.getByLabel('Wire to break').locator('option', { hasText: /^X005 — (PLC:X005 → |\S+ → PLC:X005\b)/ }).first().getAttribute('value');
+  await bar.getByLabel('Wire to break').selectOption(x005);
   await bar.getByLabel('Fault').selectOption('short-24V');
   await bar.getByRole('button', { name: 'Break this wire' }).click();
   await page.waitForTimeout(300);
-  check(/wire X005 shorted to 24 V/.test(await bar.innerText()), 'fault shown');
+  check(/shorted to 24 V/.test(await bar.innerText()), 'fault shown');
   check(await lit('X005'), 'X005 reads ON with its wire shorted to 24 V');
   await page.screenshot({ path: OUT + 'short.png' });
   await bar.getByRole('button', { name: 'Repair the wire' }).click();
@@ -80,10 +82,11 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await panel.getByRole('button', { name: 'No', exact: true }).click();
   check(/Terminal strip TB2, terminal 1/.test(await panel.innerText()), 'next step at TB2-1');
   await panel.getByRole('button', { name: 'No', exact: true }).click();
+  check(/Junction box JB1, terminal 1/.test(await panel.innerText()), 'then at the junction box terminal');
   await panel.getByRole('button', { name: /^Yes/ }).click();
   const verdict = await panel.getByRole('status').innerText();
   log('Verdict:', verdict.replace(/\s+/g, ' ').slice(0, 200));
-  check(/Open connection on wire X004 between Terminal strip TB2, terminal 1 and PE1/.test(verdict), 'verdict names the open conductor');
+  check(/Open connection on wire X004 \(cable W002, core 1 BU\) between Terminal strip TB2, terminal 1 and Junction box JB1, terminal 1/.test(verdict), 'verdict names the open conductor (the trunk core)');
   await page.screenshot({ path: OUT + 'phone_verdict.png', fullPage: true });
   await page.getByRole('button', { name: 'Back to the page' }).click();
 

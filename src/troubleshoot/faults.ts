@@ -1,11 +1,11 @@
 /**
- * Wiring faults for practice (simulator) and for ranking causes: what each fault does to the PLC points.
+ * Wiring faults by wire number, for ranking causes: what each fault does to the PLC points. (Practice in the
+ * simulator breaks one real conductor instead: see oracle.ts.)
  * A wire number is a net, so a fault on it acts on every point whose path uses it, the way a real broken
  * conductor or short does: an open signal wire keeps its input OFF, an open supply wire kills every device
  * fed through it, a signal shorted to 24 V keeps its input ON.
  */
 import type { PathHop, WiringPath } from './wiringPath';
-import { chains } from './steps';
 
 export type WireFaultKind = 'open' | 'short-0V' | 'short-24V';
 
@@ -77,75 +77,4 @@ export function faultableWires(paths: WiringPath[]): { wire: string; label: stri
     }
   }
   return [...by].map(([wire, e]) => ({ wire, label: e.label, points: [...e.points] }));
-}
-
-/** "TB2:5" / "PLC:COM": the key a fault's `at` names a hop by. */
-export const hopKey = (h: PathHop) => `${h.tag}:${h.terminal ?? ''}`;
-
-/**
- * Practice mode: what the meter would show at a step of guided fault finding with this fault in the wiring,
- * so a learner can walk the steps on the simulator (and the tests can check every fault). `yes` = the
- * step's question is answered yes (the reading it asks for, or "still ON" when a wire is taken off).
- * An open conductor sits just past the faulty hop, on the side away from where the current comes from:
- * hops on the near side read bad, hops beyond it read good.
- */
-export function practiceReading(path: WiringPath, step: { part: string; hop?: PathHop }, f: WireFault, symptom: string): { yes: boolean; shows: string } {
-  const h = step.hop;
-  if (!h) return { yes: true, shows: '' };
-  const m = h.measure;
-  const zero = m?.kind === 'mA' ? '0 mA' : 'about 0 V';
-  const hit = (x: PathHop) => x.wire === f.wire && (!f.at || hopKey(x) === f.at);
-  const ch = chains(path);
-  // The short that holds an input ON: to 24 V for PNP, to 0 V for NPN.
-  const onShort = ch.npn ? 'short-0V' : 'short-24V';
-  if (step.part === 'isolate') {
-    const still = f.kind === onShort && path.signal.some(hit);
-    return { yes: still, shows: still ? `${path.address} stays ON` : `${path.address} goes OFF` };
-  }
-  if (symptom === 'always-on') {
-    // The question asks for the OFF value with the device OFF; the short shows the ON value on its wire.
-    const on = f.kind === onShort && h.wire === f.wire;
-    const off = (m?.otherwise ?? '').replace(/\s+(when|with|while|after|below|in the|:).*$/i, '') || zero;
-    return { yes: !on, shows: on ? (m?.expect ?? '24 VDC') : off };
-  }
-  // Where the fault is: the signal, the device feed / return, or the module's common (or output supply).
-  const inSig = path.signal.some(hit), inFeed = ch.feed.some(hit), inRet = ch.ret.some(hit), inCom = ch.common.some(hit);
-  const supplyDead = f.kind === 'short-0V' && path.supply.some((x) => x.kind === 'source' && x.wire === f.wire);
-  const sourceSide = (x: PathHop) => ['source', 'protection', 'disconnect', 'supply'].includes(x.kind);
-  const listOf = (part: string) => (part === 'supply' ? ch.feed : part === 'return' ? ch.ret : part === 'common' ? ch.common : part === 'signal' ? path.signal : []);
-  const list = listOf(step.part);
-  let good: boolean;
-  if (supplyDead) good = false;
-  else if (f.kind !== 'open') good = f.kind === 'short-24V' || h.wire !== f.wire;
-  else if (step.part === 'signal') {
-    if (inSig) {
-      const i0 = path.signal.findIndex(hit), idx = path.signal.indexOf(h);
-      // Inputs are fed from the device end, outputs from the PLC.
-      good = path.type === 'output' ? idx <= i0 : idx > i0;
-    // An input's device without its supply or 0 V gives no signal.
-    } else if (path.type === 'input') good = !(inFeed || inRet);
-    // A sinking output's terminal floats up without its common; a sourcing one has nothing without its supply.
-    else good = !inCom;
-    // Mains-side faults kill the 24 V everywhere.
-    if (!inSig && [...ch.feed, ...ch.common].filter(hit).some(sourceSide)) good = false;
-  } else if (list.some(hit)) {
-    const i0 = list.findIndex(hit), idx = list.indexOf(h);
-    good = idx > i0;
-  } else good = !(path.supply.filter(hit).some(sourceSide) && step.part !== 'return');
-  return { yes: good, shows: good ? (m?.expect ?? '') : zero };
-}
-
-/**
- * Practice: did the steps find the fault that was set? The wire itself (at the right hop when the fault
- * names one), or for a fault on the mains side of the power supply, "no output from" that supply (the 24 V
- * steps stop there; mains is for an electrician).
- */
-export function practiceFound(path: WiringPath, v: { wire?: string; hops: PathHop[] }, f: WireFault): boolean {
-  if (v.wire === f.wire && (!f.at || v.hops.some((h) => hopKey(h) === f.at))) return true;
-  for (const list of [path.supply, path.ret]) {
-    const src = list.findIndex((h) => h.kind === 'source');
-    const at = list.findIndex((h) => h.wire === f.wire && (!f.at || hopKey(h) === f.at));
-    if (src >= 0 && at >= src && v.hops.some((h) => h.kind === 'source' && h.tag === list[src].tag)) return true;
-  }
-  return false;
 }

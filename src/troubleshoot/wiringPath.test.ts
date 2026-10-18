@@ -8,12 +8,13 @@ import assert from 'node:assert/strict';
 import { seedSampleProject } from '../preview/sampleProject';
 import { collectProject } from '../deliverables/collect';
 import { buildModel } from '../electrical/derive';
-import { partnerPins, prepareWiring, wiringPath, wiringPaths, type PathHop, type WiringPath } from './wiringPath';
+import { circuitOf, partnerPins, prepareWiring, wiringPath, wiringPaths, type PathHop, type WiringPath } from './wiringPath';
 import { withDrawingOptions } from '../standards/drawingOptions';
-import { faultEffects, faultableWires, hopKey, practiceFound, practiceReading, type WireFault } from './faults';
+import { faultEffects, faultableWires } from './faults';
+import { circuitFaultEffects, linksOf, oracleFor, showsSymptom, verdictNames, type CircuitFault } from './oracle';
 import { chains } from './steps';
 import { FlickerWatch, wiggleResult, wiggleSpots } from './watch';
-import { answer, back, currentStep, startSession, type Answer } from './steps';
+import { answer, back, currentStep, startSession, type Answer, type Step } from './steps';
 
 const warn = console.warn;
 console.warn = (...a: unknown[]) => { if (!String(a[0]).includes('zustand persist')) warn(...a); };
@@ -64,16 +65,18 @@ test('example: photo-eye X004 through TB2, the trunk, JB1 and its cable, supplie
   assert.match(w.signal[0].measure!.when, /sensor detects/);
   assert.match(w.signal[0].measure!.otherwise!, /0 V/);
   assert.deepEqual(w.signal[0].measure!.between, ['PLC:X004', 'TB1 0V']);
-  assert.deepEqual(tags(w.supply), ['TB2', 'PS1', 'CB2', 'DS1', 'SUPPLY']);
-  assert.equal(w.supply[0].terminal, '4');
-  assert.equal(w.supply[1].measure!.expect.startsWith('24 VDC'), true);
-  assert.match(w.supply[2].measure!.expect, /480 VAC/);
-  assert.deepEqual(tags(w.ret), ['PLC', 'TB1', 'PE1', 'TB2', 'PS1']);
-  assert.equal(w.ret[0].terminal, 'COM', 'the input common first');
-  assert.match(w.ret[0].note!, /common/);
-  assert.equal(w.ret[2].terminal, 'BU', 'the sensor own 0 V pin');
-  assert.equal(w.ret[3].terminal, '5');
-  assert.deepEqual(w.ret[3].measure!.between, ['TB1 24+', 'TB2-5'], 'a 0 V return is checked from 24 V');
+  assert.ok(w.signal.find((h) => h.kind === 'junction-box')!.measure, 'the junction-box terminal is read too');
+  // Place by place from the sensor's own feed pin to the supply, then (not measured) its mains side.
+  assert.deepEqual(w.supply.map((h) => h.node ?? h.tag), ['PE1:BN', 'JB1:2', 'TB2-4', 'TB1 24+', 'TB1 0V', 'PS1:+V', 'CB2', 'DS1', 'SUPPLY']);
+  assert.equal(w.supply[2].terminal, '4');
+  assert.deepEqual(w.supply[4].measure!.between, ['TB1 24+', 'PS1 -V'], 'the 0 V lead is checked before the supply is blamed');
+  assert.equal(w.supply[5].measure!.expect.startsWith('24 VDC'), true);
+  assert.match(w.supply[6].measure!.expect, /480 VAC/);
+  const ch = chains(w);
+  assert.deepEqual(ch.common.map((h) => h.node), ['PLC:COM', 'TB1 0V', 'TB1 24+', 'PS1:-V'], 'the input common to the supply −V');
+  assert.match(ch.common[0].label, /common of X004/);
+  assert.deepEqual(ch.ret.map((h) => h.node), ['PE1:BU', 'JB1:3', 'TB2-5', 'TB1 0V', 'TB1 24+', 'PS1:-V']);
+  assert.deepEqual(ch.ret[0].measure!.between, ['TB1 24+', 'PE1:BU'], 'a 0 V return is read from 24 V');
   assert.match(w.signal[0].where!.sheet, /-E-\d+$/);
   assert.equal(w.reference, 'TB1 0V');
 });
@@ -87,21 +90,19 @@ test('example: sinking output Y001 to the K1 coil, fed through the overload and 
   const w = wiringPath(ex, 'Y001')!;
   assert.deepEqual(tags(w.signal), ['PLC', 'K1']);
   assert.equal(w.signal[1].terminal, 'A2');
-  assert.equal(w.signal[0].measure!.expect, 'about 0 V');
   assert.equal(w.signal[0].measure!.expect, 'about 0 V', 'a sinking output reads about 0 V when ON');
   assert.doesNotMatch(w.signal[0].measure!.when, /sinking|pulls/, 'no jargon');
-  assert.deepEqual(tags(w.supply).slice(0, 3), ['OL1', 'SR1', 'PS1']);
-  assert.match(w.supply[0].measure!.expect, /24 VDC/, 'a reading at the overload contact');
+  assert.deepEqual(tags(w.supply).slice(0, 8), ['K1', 'OL1', 'OL1', 'TB1', 'SR1', 'SR1', 'TB1', 'TB1']);
+  assert.match(w.supply[0].measure!.expect, /24 VDC/, 'a reading at the coil A1');
   assert.ok(!w.supply.some((h) => /^M1-/.test(h.wire ?? '')), 'no motor power poles in the coil supply');
 });
 
-test('example: solenoid output Y002 into JB1, return on 24+S at TB3-2', () => {
+test('example: solenoid output Y002 into JB1, fed with 24+S through JB1:11 and TB3-2', () => {
   const w = wiringPath(ex, 'Y002')!;
   assert.deepEqual(tags(w.signal), ['PLC', 'TB3', 'W002', 'JB1', 'W006', 'SOL1']);
-  assert.equal(w.supply[0].tag, 'TB3');
-  assert.equal(w.supply[0].terminal, '2');
-  assert.equal(w.supply[0].wire, '24+S');
-  assert.match(w.supply[0].measure!.when, /safety circuit is OK/);
+  assert.deepEqual(w.supply.slice(0, 3).map((h) => h.node), ['SOL1:A2', 'JB1:11', 'TB3-2']);
+  assert.equal(w.supply[2].wire, '24+S');
+  assert.match(w.supply[0].measure!.when, /while SR1 is ON/);
 });
 
 test('example: no hop without a label, every hop with a wire number', () => {
@@ -118,7 +119,8 @@ test('imported drawings: a wire list with other wire numbers is followed as give
   assert.equal(w.signal[0].wire, '205');
   assert.deepEqual(tags(w.signal).filter((t) => t !== 'W002' && t !== 'W003' && t !== 'JB1'), ['PLC', 'TB2', 'PE1']);
   assert.equal(w.supply[0].wire, '201');
-  assert.equal(w.supply[1].tag, 'PS1');
+  assert.ok(w.supply.some((h) => h.kind === 'source' && h.tag === 'PS1'));
+  assert.ok(!w.supply.some((h) => h.wire === '24+'), 'no wire number from the design\'s own cables');
 });
 
 const sh = sealingHead();
@@ -337,23 +339,69 @@ const play = (w: WiringPath, symptom: Parameters<typeof startSession>[1], answer
   for (const a of answers) { const st = currentStep(s); if (!st) break; asked.push(st.hop ? `${st.part}:${st.hop.tag}` : st.part); s = answer(s, a); }
   return { s, asked };
 };
+/** Answer every step by a rule (prepare is always answered yes). */
+const playBy = (w: WiringPath, symptom: Parameters<typeof startSession>[1], rule: (st: Step) => Answer) => {
+  let s = startSession(w, symptom);
+  const asked: string[] = [];
+  for (let i = 0; i < 60 && currentStep(s); i++) { const st = currentStep(s)!; asked.push(st.hop ? `${st.part}:${st.hop.node ?? st.hop.tag}` : st.part); s = answer(s, st.part === 'prepare' ? 'yes' : rule(st)); }
+  return { s, asked };
+};
+// The meter readings the circuit itself gives with one conductor broken (circuit.ts solver), per design.
+const circEx = circuitOf(ex), circSh = circuitOf(sh);
+const linkAt = (cc: typeof circEx, a: string, b: string) => {
+  const l = cc.circuit.links.find((x) => (x.a === a && x.b === b) || (x.a === b && x.b === a));
+  assert.ok(l, `a conductor ${a} – ${b}`);
+  return l!;
+};
+const byFault = (cc: typeof circEx, w: WiringPath, symptom: Parameters<typeof startSession>[1], f: CircuitFault) => {
+  assert.ok(showsSymptom(cc.model, cc.circuit, w, f, symptom), `${f.label} gives "${symptom}" on ${w.address}`);
+  const o = oracleFor(cc.model, cc.circuit, w, f, symptom)!;
+  return playBy(w, symptom, (st) => (o.answer(st, symptom).yes ? 'yes' : 'no'));
+};
+const open = (cc: typeof circEx, a: string, b: string): CircuitFault => { const l = linkAt(cc, a, b); return { link: l.id, label: l.text }; };
 
-test('photo-eye never ON: good at the sensor, bad at TB2 → open between TB2-1 and PE1 on wire X004', () => {
-  const { s, asked } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'yes']);
-  assert.deepEqual(asked, ['prepare', 'signal:PLC', 'signal:TB2', 'signal:PE1']);
-  assert.match(s.verdict!.text, /Open connection on wire X004 between Terminal strip TB2, terminal 1 and PE1/);
+test('photo-eye X004: trunk core W002/1 open between TB2-1 and JB1:1 → that core is named', () => {
+  const w = wiringPath(ex, 'X004')!;
+  const { s, asked } = byFault(circEx, w, 'never-on', open(circEx, 'TB2-1', 'JB1:1'));
+  assert.deepEqual(asked, ['prepare', 'signal:PLC:X004', 'signal:TB2-1', 'signal:JB1:1']);
+  assert.match(s.verdict!.text, /Open connection on wire X004 \(cable W002, core 1 BU\) between Terminal strip TB2, terminal 1 and Junction box JB1, terminal 1/);
   assert.equal(s.verdict!.wire, 'X004');
+  assert.match(s.verdict!.fix, /^Switch off and lock out first\./);
 });
 
-test('photo-eye never ON: no signal anywhere, supply good at TB2-4, 0 V good at PE1 → the sensor is not switching', () => {
-  const { s, asked } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'no', 'yes', 'yes']);
-  assert.deepEqual(asked.slice(4), ['supply:TB2', 'return:PE1']);
+test('photo-eye X004: the sensor feed core open between JB1:2 and PE1:BN → read at the sensor pin, the core named (not "replace the sensor")', () => {
+  const w = wiringPath(ex, 'X004')!;
+  assert.equal(w.supply[0].node, 'PE1:BN', 'the supply is read at the sensor\'s own feed pin first');
+  const { s } = byFault(circEx, w, 'never-on', open(circEx, 'JB1:2', 'PE1:BN'));
+  assert.match(s.verdict!.text, /supply is good at Junction box JB1, terminal 2 but missing at PE1.*terminal BN/);
+  assert.match(s.verdict!.text, /wire 24\+ \(cable W003, core 1 BN\)/);
+  assert.doesNotMatch(s.verdict!.text, /gives no signal/);
+});
+
+test('photo-eye X004: 0 V core open between TB2-5 and JB1:3 → the 0 V return named on that core', () => {
+  const { s } = byFault(circEx, wiringPath(ex, 'X004')!, 'never-on', open(circEx, 'TB2-5', 'JB1:3'));
+  assert.match(s.verdict!.text, /0 V return is good at Terminal strip TB2, terminal 5 but missing at Junction box JB1, terminal 3.*wire 0V \(cable W002, core 3/);
+});
+
+test('photo-eye X004: the strip jumper TB1 24+ → TB2-4 missing → the jumper is named', () => {
+  const { s } = byFault(circEx, wiringPath(ex, 'X004')!, 'never-on', open(circEx, 'TB1 24+', 'TB2-4'));
+  assert.match(s.verdict!.text, /the jumper TB1 24\+ → TB2-4/);
+  assert.match(s.verdict!.fix, /jumper is loose or missing/);
+});
+
+test('the power-supply leads: an open PS1 −V → TB1 0V is named as the 0 V lead, an open PS1 +V → TB1 24+ as the 24 V lead', () => {
+  const w = wiringPath(ex, 'X004')!;
+  const zero = byFault(circEx, w, 'never-on', open(circEx, 'PS1:-V', 'TB1 0V')).s.verdict!;
+  assert.equal(zero.wire, '0V', zero.text);
+  assert.doesNotMatch(zero.text, /wire 24\+ between/);
+  const plus = byFault(circEx, w, 'never-on', open(circEx, 'PS1:+V', 'TB1 24+')).s.verdict!;
+  assert.equal(plus.wire, '24+', plus.text);
+});
+
+test('photo-eye X004 never ON: no signal anywhere, 24 V and 0 V good at the sensor pins → the sensor is not switching', () => {
+  const { s, asked } = playBy(wiringPath(ex, 'X004')!, 'never-on', (st) => (st.part === 'signal' ? 'no' : 'yes'));
+  assert.deepEqual(asked.slice(-2), ['supply:PE1:BN', 'return:PE1:BU']);
   assert.match(s.verdict!.text, /PE1 has 24 V and 0 V but gives no signal/);
-});
-
-test('photo-eye never ON: 0 V missing at PE1 BU, good at TB2-5 → open 0 V return between them', () => {
-  const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'no', 'yes', 'no', 'yes']);
-  assert.match(s.verdict!.text, /0 V return is good at Terminal strip TB2, terminal 5 but missing at PE1.*wire 0V/);
 });
 
 test('input common: 24 V at X004 but the common reads 0 V from 24+ → open common', () => {
@@ -405,31 +453,52 @@ test('Back: one answer back replays the session without it', () => {
   assert.equal(back(back(b)).at, 0);
 });
 
-test('photo-eye never ON: supply missing at TB2-4, good at PS1 → open on 24+ between them', () => {
-  const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'no', 'no', 'no', 'yes']);
-  assert.match(s.verdict!.text, /supply is good at PS1.*missing at Terminal strip TB2, terminal 4/);
-});
-
 test('24 V at the PLC terminal → the wiring is good, check the PLC side', () => {
   const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'yes', 'yes']);
   assert.match(s.verdict!.text, /field wiring is good/);
 });
 
-test('solenoid Y002 dead: output good out to SOL1, 24+S good at TB3-2 → the valve itself', () => {
-  const { s, asked } = play(wiringPath(ex, 'Y002')!, 'output-dead', ['yes', 'yes', 'yes', 'yes', 'yes']);
-  assert.deepEqual(asked, ['prepare', 'signal:PLC', 'signal:TB3', 'signal:SOL1', 'supply:TB3']);
+test('solenoid Y002: good out to SOL1 and on both its pins → the valve itself', () => {
+  const { s, asked } = playBy(wiringPath(ex, 'Y002')!, 'output-dead', () => 'yes');
+  assert.deepEqual(asked, ['prepare', 'signal:PLC:Y002', 'signal:TB3-1', 'signal:JB1:10', 'signal:SOL1:A1', 'supply:SOL1:A2']);
   assert.match(s.verdict!.text, /SOL1 has power on both sides but does not work/);
 });
 
-test('solenoid Y002 dead: good at TB3-1, bad at the valve → open on Y002 between them', () => {
-  const { s } = play(wiringPath(ex, 'Y002')!, 'output-dead', ['yes', 'yes', 'yes', 'no']);
-  assert.match(s.verdict!.text, /Open connection on wire Y002 between Terminal strip TB3, terminal 1 and SOL1/);
+test('solenoid Y002: device cable core W006/1 open → named between JB1:10 and the valve', () => {
+  const { s } = byFault(circEx, wiringPath(ex, 'Y002')!, 'output-dead', open(circEx, 'JB1:10', 'SOL1:A1'));
+  assert.match(s.verdict!.text, /Open connection on wire Y002 \(cable W006, core 1 BU\) between Junction box JB1, terminal 10 and SOL1/);
 });
 
-test('Sealing Head: down solenoid dead behind the two-hand relay contact → the contact blocks it', () => {
+test('junction-box loads: the valve supply is read at JB1 too — W006/2 open between JB1:11 and SOL1:A2 is named', () => {
+  const w = wiringPath(ex, 'Y002')!;
+  assert.ok(w.supply.some((h) => h.node === 'JB1:11' && h.measure), 'JB1:11 is a measured place');
+  const { s } = byFault(circEx, w, 'output-dead', open(circEx, 'JB1:11', 'SOL1:A2'));
+  assert.match(s.verdict!.text, /supply is good at Junction box JB1, terminal 11 but missing at SOL1/);
+  assert.doesNotMatch(s.verdict!.text, /power on both sides/);
+});
+
+test('a supply through several wires (24+ → SR1 13-14 → 24+S → OL1 95-96 → K1): every place is read and the one open wire named', () => {
+  const w = wiringPath(ex, 'Y001')!;
+  const nodes = w.supply.map((h) => h.node);
+  for (const n of ['K1:A1', 'OL1:96', 'OL1:95', 'TB1 24+S', 'SR1:14', 'SR1:13', 'TB1 24+', 'PS1:+V']) assert.ok(nodes.includes(n), `${n} in ${nodes.join(' ')}`);
+  assert.equal(w.supply.find((h) => h.node === 'OL1:96')!.kind, 'contact');
+  assert.match(w.supply.find((h) => h.node === 'OL1:96')!.note!, /not tripped/);
+  const { s } = byFault(circEx, w, 'output-dead', open(circEx, 'TB1 24+S', 'OL1:95'));
+  assert.match(s.verdict!.text, /supply is good at Terminal strip TB1, 24\+S terminals but missing at OL1.*terminal 95/);
+  assert.equal(s.verdict!.wire, '24+S');
+  const c = byFault(circEx, w, 'output-dead', open(circEx, 'SR1:13', 'SR1:14')).s.verdict!;
+  assert.match(c.text, /contact SR1 13-14 does not close/);
+});
+
+test('Sealing Head down solenoid: both sides of the two-hand relay contact are read before it is blamed', () => {
   const w = shPaths.find((x) => x.type === 'output' && /down solenoid/i.test(x.description))!;
-  const { s } = play(w, 'output-dead', ['yes', 'yes', 'yes', 'no']);
-  assert.match(s.verdict!.text, /SR\d blocks the signal/);
+  assert.ok(w.signal.some((h) => h.node === 'SR3:13') && w.signal.some((h) => h.node === 'SR3:14'));
+  assert.match(w.signal.find((h) => h.kind === 'contact')!.note!, /closed only when/);
+  const contact = byFault(circSh, w, 'output-dead', open(circSh, 'SR3:13', 'SR3:14')).s.verdict!;
+  assert.match(contact.text, /contact SR3 13-14 does not close/);
+  const wire = byFault(circSh, w, 'output-dead', open(circSh, 'SR3:14', 'TB3-1')).s.verdict!;
+  assert.match(wire.text, /Open connection on wire Y001A between SR3.*terminal 14 and Terminal strip TB3, terminal 1/);
+  assert.doesNotMatch(wire.text, /does not close/);
 });
 
 test('input ON all the time: 0 V at TB2-1 with the sensor OFF → a short to 24 V before TB2-1', () => {
@@ -445,7 +514,7 @@ test('flickers: wiggle steps along the path, a flicker names the spot', () => {
 
 test('skipped steps are not evidence', () => {
   const { s } = play(wiringPath(ex, 'X004')!, 'never-on', ['yes', 'no', 'skip', 'yes']);
-  assert.match(s.verdict!.text, /between PLC terminal X004 and PE1/);
+  assert.match(s.verdict!.text, /between PLC terminal X004 and Junction box JB1, terminal 1/);
 });
 
 test('always-on, 24 V out at the device: take the wire off — still ON → the wire is shorted, OFF → the device', () => {
@@ -458,42 +527,6 @@ test('always-on, 24 V out at the device: take the wire off — still ON → the 
   assert.match(play(w, 'always-on', [...toDevice, 'no']).s.verdict!.text, /PE1 gives 24 V \(ON\) while it should be OFF/);
 });
 
-// Practice: walk the steps answering with the simulated meter; the verdict must name the broken wire.
-const practise = (w: WiringPath, f: WireFault, symptom: Parameters<typeof startSession>[1]) => {
-  let s = startSession(w, symptom);
-  for (let i = 0; i < 40 && currentStep(s); i++) {
-    const st = currentStep(s)!;
-    s = answer(s, st.part === 'prepare' ? 'yes' : practiceReading(w, st, f, symptom).yes ? 'yes' : 'no');
-  }
-  return s;
-};
-test('practice: every open signal wire of an input is found by the steps (example and Sealing Head)', () => {
-  const miss: string[] = [];
-  for (const ps of [wiringPaths(ex), shPaths]) {
-    for (const w of ps.filter((p) => p.type === 'input' && !p.analog)) {
-      const wire = w.signal.find((h) => h.wire && h.kind === 'plc')?.wire;
-      if (!wire) continue;
-      const v = practise(w, { wire, kind: 'open' }, 'never-on').verdict!;
-      if (v.wire !== wire) miss.push(`${w.address} wire ${wire}: ${v.text}`);
-    }
-  }
-  assert.deepEqual(miss, []);
-});
-test('practice: an open signal wire of an output, and a signal shorted to 24 V', () => {
-  const y = wiringPath(ex, 'Y002')!;
-  const v = practise(y, { wire: 'Y002', kind: 'open' }, 'output-dead').verdict!;
-  assert.equal(v.wire, 'Y002', v.text);
-  const x = wiringPath(ex, 'X004')!;
-  const sh = practise(x, { wire: 'X004', kind: 'short-24V' }, 'always-on').verdict!;
-  assert.match(sh.text, /Wire X004 is shorted to 24 V/);
-});
-test('practice: a broken supply wire of a sensor is found on the supply side', () => {
-  const x = wiringPath(ex, 'X004')!;
-  const v = practise(x, { wire: '24+', kind: 'open' }, 'never-on').verdict!;
-  assert.match(v.text, /supply is good at PS1 .* missing at Terminal strip TB2, terminal 4: open connection on wire 24\+/);
-  assert.match(practise(x, { wire: 'PS1-L1', kind: 'open' }, 'never-on').verdict!.text, /No output from PS1/);
-});
-
 test('Sealing Head X103 (VFD1 fault relay R1O): fed from 24+ through the relay common R1', () => {
   const w = shPaths.find((x) => x.address === 'X103')!;
   assert.ok(w.supply.length > 0, 'a supply chain');
@@ -501,20 +534,23 @@ test('Sealing Head X103 (VFD1 fault relay R1O): fed from 24+ through the relay c
   assert.ok(partnerPins('R1O').includes('R1'));
 });
 
-test('Sealing Head X101 on IO1: the return names IO1:COM, the common of its own module; no 0 V terminal twice', () => {
+test('Sealing Head X101 on IO1: the common is IO1:COM, its own module; no place twice in one chain', () => {
   const w = shPaths.find((x) => x.address === 'X101')!;
   assert.equal(`${w.ret[0].tag}:${w.ret[0].terminal}`, 'IO1:COM');
   for (const p of shPaths) {
-    const keys = p.ret.map((h) => `${h.tag}:${h.terminal ?? ''}`);
-    assert.equal(new Set(keys).size, keys.length, `${p.address}: ${keys.join(' ')}`);
+    const ch = chains(p);
+    for (const list of [ch.feed, ch.ret, ch.common]) {
+      const keys = list.filter((h) => h.node && h.kind !== 'source').map((h) => `${h.node}|${h.measure?.nodes?.join('~') ?? ''}`);
+      assert.equal(new Set(keys).size, keys.length, `${p.address}: ${keys.join(' ')}`);
+    }
   }
 });
 
-// The reviewer's 8 misses, answered with the readings worked out by hand from the circuit (not the practice meter).
+// The reviewer's earlier misses, answered with the readings worked out by hand from the circuit.
 const npnSh = wiringPaths(sealingHead(false, true));
 const npnPt = (a: string) => npnSh.find((x) => x.address === a)!;
 test('review case 1: NPN input X101 (common on 24+), input common IO1:COM open → found on the common, no "24 V" wording', () => {
-  // Sensor ON pulls X101 to 0 V: 0 V at the PLC terminal reads right. IO1:COM to 0 V: 0 V (open, floats down
+  // Sensor ON pulls X101 to 0 V: 0 V at the PLC terminal reads right. IO1:COM: 0 V (open, floats down
   // through the input) — wrong; TB1 24+: 24 V — right.
   const w = npnPt('X101');
   const { s, asked } = play(w, 'never-on', ['yes', 'yes', 'no', 'yes']);
@@ -531,8 +567,6 @@ test('review case 1b: NPN input X008 on the CPU: common PLC:COM on 24+ open → 
 });
 test('review case 2: NPN input shorted to 0 V → "short to 0 V", never "24 V"', () => {
   const w = npnPt('X101');
-  // Sensor OFF: an NPN input reads 24 V when OFF; the shorted wire reads 0 V everywhere out to the sensor;
-  // with the wire off the sensor X101 stays ON.
   const n = startSession(w, 'always-on').steps.length;
   const { s } = play(w, 'always-on', ['yes', ...Array(n - 1).fill('no'), 'yes']);
   assert.match(s.verdict!.text, /Wire X101 is shorted to 0 V between the PLC and LS2/);
@@ -559,7 +593,9 @@ test('review safety: lock-out in the thermocouple, transmitter and power-supply 
   const t = wiringPaths(sealingHead(true)).find((w) => w.analog)!;
   assert.match(play(t, 'analog-wrong', ['yes', 'yes', 'no']).s.verdict!.fix, /switch off and lock out first/i);
   const x = wiringPath(ex, 'X004')!;
-  assert.match(play(x, 'never-on', ['yes', 'no', 'no', 'no', 'no', 'no']).s.verdict!.fix, /lock out first/i);
+  const dead = playBy(x, 'never-on', () => 'no').s.verdict!;
+  assert.match(dead.text, /No output from PS1/);
+  assert.match(dead.fix, /lock out first/i);
   const say = startSession(wiringPath(ex, 'Y002')!, 'output-dead').steps[0].say;
   assert.ok(say.indexOf('Keep everyone clear') < say.indexOf('force'), say);
 });
@@ -567,48 +603,62 @@ test('review safety: lock-out in the thermocouple, transmitter and power-supply 
 test('dry contacts on an NPN common (+24 V): ON reads 0 V, the contact is fed from 0 V through its partner pin', () => {
   const pb = npnPt('X002');
   assert.equal(pb.signal[0].measure!.expect, 'about 0 V', 'a pushbutton on the NPN group switches 0 V');
-  assert.equal(`${pb.ret[0].tag}:${pb.ret[0].terminal}`, 'PB1L:C', 'its 0 V feed is the contact common');
-  assert.ok(pb.supply.every((h) => h.common || h.kind === 'source' || h.wire === '24+'), 'the only 24 V hops are the module common');
+  assert.equal(chains(pb).ret[0].node, 'PB1L:C', 'its 0 V feed is the contact common');
+  assert.ok(chains(pb).feed.length === 0, 'no 24 V feed: the only 24 V is the module common');
   const vfd = npnPt('X103');
   assert.equal(vfd.signal[0].measure!.expect, 'about 0 V');
-  assert.equal(`${vfd.ret[0].tag}:${vfd.ret[0].terminal}`, 'VFD1:R1', 'the fault relay is fed through its common R1, not DCM');
-  // Sensor not switching vs. an open 0 V feed: answered by hand from the circuit.
-  const ok = play(pb, 'never-on', ['yes', 'no', 'no', 'no', 'yes']).s.verdict!.text;
+  assert.equal(chains(vfd).ret[0].node, 'VFD1:R1', 'the fault relay is fed through its common R1, not DCM');
+  const ok = playBy(pb, 'never-on', (st) => (st.part === 'signal' ? 'no' : 'yes')).s.verdict!.text;
   assert.match(ok, /PB1L has 24 V and 0 V but gives no signal/);
-  const open = play(pb, 'never-on', ['yes', 'no', 'no', 'no', 'no', 'yes']).s.verdict!.text;
-  assert.match(open, /0 V return is good at Terminal strip TB2, terminal 7 but missing at PB1L/);
-  // Stuck ON on an NPN group: a short to 0 V.
+  const circNpn = circuitOf(sealingHead(false, true));
+  const feed = chains(pb).ret[1].node!;
+  const v = byFault(circNpn, pb, 'never-on', open(circNpn, 'PB1L:C', feed)).s.verdict!;
+  assert.match(v.text, /0 V return is good at .* but missing at PB1L/);
   const n = startSession(pb, 'always-on').steps.length;
   assert.match(play(pb, 'always-on', ['yes', ...Array(n - 1).fill('no'), 'yes']).s.verdict!.text, /shorted to 0 V/);
 });
 
-// Fault sweep: every discrete point × every single fault on its path, answered truthfully by the practice
-// meter; the verdict must name the fault (the wire, at the right hop). Target ≥ 97 %.
-test('fault sweep: every point × every single wiring fault is found (example + Sealing Head)', () => {
+test('practice faults in the simulator: one broken conductor only affects the points that use it', () => {
+  const paths = wiringPaths(ex);
+  // The sensor feed core of PE1 only: X004 dead, the other sensors on the same 24+ wire still work.
+  const pe1 = circuitFaultEffects(circEx.model, circEx.circuit, paths, open(circEx, 'JB1:2', 'PE1:BN'));
+  assert.deepEqual(pe1.map((e) => `${e.address}:${e.reads}`), ['X004:false']);
+  // The trunk core feeding the junction box: every sensor in it.
+  const trunk = circuitFaultEffects(circEx.model, circEx.circuit, paths, open(circEx, 'TB2-4', 'JB1:2'));
+  assert.deepEqual(trunk.map((e) => e.address).sort(), ['X004', 'X005', 'X006']);
+  // A signal shorted to 24 V: that input ON whatever the sensor does.
+  const short = circuitFaultEffects(circEx.model, circEx.circuit, paths, { short: { node: 'JB1:4', to: 24 }, label: 'JB1:4 shorted to 24 V' });
+  assert.deepEqual(short.map((e) => `${e.address}:${e.reads}`), ['X005:true']);
+  // The output's load feed: the valve dead.
+  const sol = circuitFaultEffects(circEx.model, circEx.circuit, paths, open(circEx, 'JB1:11', 'SOL1:A2'));
+  assert.deepEqual(sol.map((e) => `${e.address}:${e.type}`), ['Y002:output']);
+});
+
+// Strict fault sweep: every discrete point × every conductor its steps walk past (each wire end, cable core,
+// jumper, contact and fuse), plus a short on every signal place, answered with the voltages the circuit solver
+// works out. Correct only when the verdict names the exact conductor (its wire and one of its ends).
+test('strict fault sweep: every conductor of every point is found (example + Sealing Head + NPN)', () => {
   let total = 0;
   const miss: string[] = [];
-  const isMains = (w?: string) => !w || /^(L\d|\dL\d|PE)$/i.test(w);
-  for (const [name, ps] of [['example', wiringPaths(ex)], ['Sealing Head', shPaths], ['Sealing Head NPN', wiringPaths(sealingHead(false, true))]] as const) {
-    for (const w of ps.filter((p) => !p.analog && !p.noWire)) {
-      const ch = chains(w);
-      const faults: [WireFault, Parameters<typeof startSession>[1]][] = [];
-      const run: Parameters<typeof startSession>[1] = w.type === 'input' ? 'never-on' : 'output-dead';
-      for (const wire of new Set(w.signal.map((h) => h.wire).filter((x): x is string => !isMains(x)))) {
-        faults.push([{ wire, kind: 'open' }, run]);
-        if (w.type === 'input') faults.push([{ wire, kind: chains(w).npn ? 'short-0V' : 'short-24V' }, 'always-on']);
-      }
-      for (const h of [...ch.feed, ...ch.ret, ...ch.common]) if (h.measure && !isMains(h.wire) && h.kind !== 'supply') faults.push([{ wire: h.wire!, kind: 'open', at: hopKey(h) }, run]);
-      for (const [f, sym] of faults) {
+  for (const [name, ctx] of [['example', ex], ['Sealing Head', sh], ['Sealing Head NPN', sealingHead(false, true)]] as const) {
+    const cc = circuitOf(ctx);
+    for (const w of wiringPaths(ctx).filter((p) => !p.analog && !p.noWire)) {
+      const sym: Parameters<typeof startSession>[1] = w.type === 'input' ? 'never-on' : 'output-dead';
+      const faults: [CircuitFault, Parameters<typeof startSession>[1]][] = linksOf(cc.circuit, w).map((l) => [{ link: l.id, label: l.text }, sym]);
+      if (w.type === 'input') for (const h of w.signal) if (h.node && h.kind !== 'cable') faults.push([{ short: { node: h.node, to: chains(w).npn ? 0 : 24 }, label: `short at ${h.node}` }, 'always-on']);
+      for (const [f, s] of faults) {
+        if (!showsSymptom(cc.model, cc.circuit, w, f, s)) continue;
+        const o = oracleFor(cc.model, cc.circuit, w, f, s)!;
         total++;
-        const v = practise(w, f, sym).verdict!;
-        if (!practiceFound(w, v, f)) miss.push(`${name} ${w.address} ${f.kind} ${f.wire}${f.at ? ` at ${f.at}` : ''}: ${v.text}`);
+        const v = playBy(w, s, (st) => (o.answer(st, s).yes ? 'yes' : 'no')).s.verdict!;
+        if (!verdictNames(cc.circuit, v, f)) miss.push(`${name} ${w.address} ${f.label}: ${v.text}`);
       }
     }
   }
   const pct = ((total - miss.length) / total) * 100;
   console.log(`       ${total - miss.length}/${total} = ${pct.toFixed(1)} % found`);
-  for (const m of miss.slice(0, 40)) console.log(`       miss: ${m}`);
-  assert.ok(total > 150, `${total} faults swept`);
+  for (const m of miss.slice(0, 30)) console.log(`       miss: ${m}`);
+  assert.ok(total > 300, `${total} faults swept`);
   assert.ok(pct >= 97, `${pct.toFixed(1)} % found`);
 });
 
