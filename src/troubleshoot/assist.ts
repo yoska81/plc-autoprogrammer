@@ -350,7 +350,22 @@ const keeps = (orig: string, next: string) => {
 
 /** A sentence about safety: never sent to the AI, always shown and spoken as the rules wrote it. */
 const SAFETY = /lock ?(ed )?out|lockout|switch(ed)? off|power|energi[sz]|de-?energi|voltage|volts?\b|\bforc(e|ed|ing)\b|override|keep (everyone )?clear|clear of|\bSTO\b|safe torque|e-?stop|emergency|mains|danger|\bPPE\b|qualified|\bSERIES\b|\blive\b|isolat|guard|interlock|machine will move|never across|\brunning\b|\brun\b|\bleave\b|\bstay(s|ing)?\b|start(ed|s)? up|\bmoving\b|\bmotion\b/i;
-const sentences = (t: string) => t.match(/[^.?!]+[.?!]*(\s+|$)/g)?.map((x) => x.trim()).filter(Boolean) ?? [t];
+/** Sentences: a break only after . ? ! followed by a space ("Q0.1", "%I0.5", "TB1-12" and "2.5 V" stay whole). */
+const sentences = (t: string) => t.split(/(?<=[.?!])\s+(?=\S)/).map((x) => x.trim()).filter(Boolean);
+
+/** Words that carry no instruction of their own (articles, pronouns, plain connectors). Modal words (can, may, ok…) are not here. */
+const FILLER = new Set(['a', 'an', 'the', 'and', 'or', 'of', 'to', 'on', 'in', 'at', 'by', 'for', 'with', 'from', 'into', 'onto', 'is', 'are', 'it', 'its', 'this', 'that', 'these', 'those', 'you', 'your', 'do', 'does', 'then', 'there', 'here', 'now', 'first', 'next', 'between', 'each', 'both']);
+const contentWords = (t: string) => (t.toLowerCase().match(/[a-zà-ÿ]+/g) ?? []).filter((w) => !FILLER.has(w));
+/**
+ * The allowlist: a reworded sentence may only use the words of the sentence it rewords (same stem: "measure" ≈
+ * "measuring"), never new ones, and stays one sentence. So the AI can shorten and simplify, never add meaning
+ * ("Feel free to reach inside", "Bypass the door switch" bring words the rule text does not have).
+ */
+const onlyOwnWords = (orig: string, next: string) => {
+  const own = contentWords(orig);
+  const same = (a: string, b: string) => a === b || (a.length >= 4 && b.length >= 4 && a.slice(0, 4) === b.slice(0, 4));
+  return sentences(next).length <= 1 && contentWords(next).every((w) => own.some((o) => same(o, w)));
+};
 
 /**
  * With a key: a step in plainer words (or in the technician's language). Safety sentences are never sent to the AI:
@@ -374,7 +389,7 @@ export async function aiPlainStep(ask: Ask, say: string, language = 'en'): Promi
     for (let k = 0; k < plain.length; k++) {
       const t = out[k];
       const o = plain[k].x;
-      if (!t || t.length > o.length * 2 + 60 || SAFETY.test(t) || !keeps(o, t)) return say;
+      if (!t || t.length > o.length * 2 + 60 || SAFETY.test(t) || !keeps(o, t) || !onlyOwnWords(o, t)) return say;
       next[plain[k].i] = t;
     }
     return next.join(' ');

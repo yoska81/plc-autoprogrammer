@@ -175,7 +175,31 @@ const logic = (p: LadderProgram) => {
   // The 4–20 mA transmitters at %IW96 / %IW98 sit on an SM 1231 current module, not the CPU's 0–10 V inputs.
   assert.deepEqual(plan.modules, ['6ES7231-4HD32-0XB0']);
   assert.ok(!plan.questions.some((q) => /Address changed/.test(q)), plan.questions.join(' | '));
-  assert.deepEqual(plan.io.filter((p) => p.signal === 'analog').map((p) => p.analog?.range), ['4-20mA', '4-20mA']);
+  // The file says "4-20 mA" for both transmitters: nothing assumed, nothing asked.
+  assert.deepEqual(plan.io.filter((p) => p.signal === 'analog').map((p) => [p.analog?.range, p.analog?.assumed]), [['4-20mA', undefined], ['4-20mA', undefined]]);
+  assert.ok(!plan.questions.some((q) => /^Analog signal of/.test(q)));
+  {
+    // Without the range in the file: 4–20 mA assumed, shown "to check" and asked for each point.
+    const bare = file('mixer_tia_plcopen.xml').text.replace(/(Tank level|Product temperature)[^<]*4-20 mA/g, '$1');
+    const bp = setup([{ name: 'mixer.xml', text: bare }]).plan;
+    assert.deepEqual(bp.io.filter((p) => p.signal === 'analog').map((p) => [p.analog?.range, p.analog?.assumed]), [['4-20mA', true], ['4-20mA', true]]);
+    assert.equal(bp.questions.filter((q) => /^Analog signal of (Level_Raw|Temp_Raw) \(%IW9[68]\): the original program does not say whether it is 4–20 mA or 0–10 V/.test(q)).length, 2, bp.questions.join(' | '));
+  }
+  {
+    // The range the description states is used, never the guess.
+    const { importedRange } = await import('./convert');
+    assert.deepEqual(importedRange('%IW96', 'Tank level 0-10 V'), { range: '0-10V', assumed: false });
+    assert.deepEqual(importedRange('%IW96', 'Pressure transmitter 4…20 mA'), { range: '4-20mA', assumed: false });
+    assert.deepEqual(importedRange('%IW96', 'Flow 0 to 20 mA'), { range: '0-20mA', assumed: false });
+    assert.deepEqual(importedRange('%IW96', 'Oven type K'), { range: 'thermocouple', assumed: false });
+    assert.deepEqual(importedRange('%IW64', ''), { range: '0-10V', assumed: false });
+    assert.deepEqual(importedRange('%IW96', 'Level 1.0-10 bar'), { range: '4-20mA', assumed: true }, '"1.0-10 bar" is not 0-10 V');
+    const volts = file('mixer_tia_plcopen.xml').text.replace('Tank level 4-20 mA', 'Tank level 0-10 V');
+    const vp = setup([{ name: 'mixer.xml', text: volts }]).plan;
+    const lv = vp.io.find((p) => p.signal === 'analog' && /level/i.test(p.description))!;
+    assert.deepEqual([lv.analog?.range, lv.analog?.assumed], ['0-10V', undefined], lv.description);
+    assert.ok(!vp.questions.some((q) => /^Analog signal of Level_Raw/.test(q)));
+  }
   {
     const profile = getProfile('siemens-s7');
     const cpu = getCpu(profile, plan.cpuId);

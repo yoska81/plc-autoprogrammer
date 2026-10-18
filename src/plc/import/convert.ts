@@ -271,12 +271,22 @@ export function pretty(name: string): string {
  * analog channel register) and every "@IN:n" / "@OUT:n" in the program is replaced.
  */
 /**
- * Signal range of an imported analog point, as far as the file tells: an S7-1200 onboard input word (%IW64 / %IW66) is
- * 0–10 V (the CPU's AI take nothing else); anything else is taken as 4–20 mA, the usual transmitter signal, so a
- * current channel is planned for it (the I/O list shows the range to check).
+ * Signal range of an imported analog point: as its description or tag comment says ("0-10 V", "4…20 mA", "0-20 mA",
+ * a thermocouple); an S7-1200 onboard input word (%IW64 / %IW66) is 0–10 V (the CPU's inputs take nothing else).
+ * Otherwise 4–20 mA, the usual transmitter signal, `assumed` (asked, and shown "to check" in the I/O list).
  */
-export function importedRange(original: string): AnalogRange {
-  return /^%?IW6[46]$/i.test(original.trim()) ? '0-10V' : '4-20mA';
+export function importedRange(original: string, text = ''): { range: AnalogRange; assumed: boolean } {
+  const said: [RegExp, AnalogRange][] = [
+    [/\b4\s*(?:-|–|\.\.\.?|…|to)\s*20\s*mA\b/i, '4-20mA'],
+    [/\b0\s*(?:-|–|\.\.\.?|…|to)\s*20\s*mA\b/i, '0-20mA'],
+    [/(?:^|[^\d.])0\s*(?:-|–|\.\.\.?|…|to)\s*10\s*V(DC)?\b/i, '0-10V'],
+    [/(?:^|[^\d.])0\s*(?:-|–|\.\.\.?|…|to)\s*5\s*V(DC)?\b/i, '0-5V'],
+    [/thermocouple|\bT\/C\b|\btype [JKTENRSB]\b/i, 'thermocouple'],
+  ];
+  const hit = said.find(([re]) => re.test(text));
+  if (hit) return { range: hit[1], assumed: false };
+  if (/^%?IW6[46]$/i.test(original.trim())) return { range: '0-10V', assumed: false };
+  return { range: '4-20mA', assumed: true };
 }
 
 /** The app's address of an S7 bit or analog word as written in the original (%IX0.2, %I0.2, I0.2 → X003; %IW96 → its channel), or null. */
@@ -309,7 +319,7 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   const points: IOPoint[] = imp.io.map((p) => ({
     id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++o).padStart(3, '0')}`,
     description: p.description, type: p.type, category: 'Spare',
-    ...(p.analog ? { signal: 'analog' as const, analog: { range: importedRange(p.original), min: 0, max: full, units: 'raw counts' } } : {}),
+    ...(p.analog ? (() => { const r = importedRange(p.original, p.description); return { signal: 'analog' as const, analog: { range: r.range, min: 0, max: full, units: 'raw counts', ...(r.assumed ? { assumed: true } : {}) } }; })() : {}),
     // A CLICK program going back on a CLICK keeps its terminals (X001 stays X001, gaps included); an S7
     // program keeps its %I / %Q bits (%Q0.2 stays %Q0.2).
     ...(profile.id === 'click' && /^[XY]\d{3}$/i.test(p.original) && profile.parseAddress(p.original.toUpperCase()) ? { plcAddress: p.original.toUpperCase() } : {}),

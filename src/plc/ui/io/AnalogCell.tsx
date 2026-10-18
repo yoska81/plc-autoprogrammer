@@ -41,9 +41,10 @@ export default function AnalogCell({ point, address }: { point: IOPoint; address
       </button>
       {a && (
         <>
-          <select aria-label={`Signal range of ${point.id}`} value={a.range} onChange={(e) => set({ range: e.target.value as AnalogRange })} className={box}>
+          <select aria-label={`Signal range of ${point.id}`} value={a.range} onChange={(e) => set({ range: e.target.value as AnalogRange, assumed: undefined })} className={box}>
             {ANALOG_RANGES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
+          {a.assumed && <span role="note" title="The original program does not say this signal's range: check the transmitter, then pick the range." className="rounded-sm bg-amber-100 px-1 text-[11px] font-semibold text-amber-800" data-testid={`range-to-check-${point.id}`}>to check</span>}
           <input aria-label={`Scale minimum of ${point.id}`} defaultValue={a.min} key={`min${a.min}`} onBlur={(e) => setScale(e.target, 'min')} className={`${box} w-12 text-right`} />
           <span className="text-xs text-steel-400">–</span>
           <input aria-label={`Scale maximum of ${point.id}`} defaultValue={a.max} key={`max${a.max}`} onBlur={(e) => setScale(e.target, 'max')} className={`${box} w-14 text-right`} />

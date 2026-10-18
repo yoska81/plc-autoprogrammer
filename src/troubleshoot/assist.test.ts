@@ -98,8 +98,9 @@ const asks = (reply: string | Error): Ask => async () => { if (reply instanceof 
   // The AI only ever sees the non-safety sentences; the safety ones stay word for word, in place.
   let seen = '';
   const reply = (sentences: string[]): Ask => async (_s, user) => { seen = user; return JSON.stringify({ sentences }); };
-  const plain = await aiPlainStep(reply(['Touch the meter leads to TB2-1 and PE1 pin 4.', 'Does it beep (about 0 Ω)?']), say);
-  assert.equal(plain, 'Switch off and lock out first. Power OFF and locked out, meter on continuity. Touch the meter leads to TB2-1 and PE1 pin 4. Does it beep (about 0 Ω)?');
+  const plain = await aiPlainStep(reply(['Measure TB2-1 and PE1 pin 4.', 'About 0 Ω?']), say);
+  assert.equal(plain, 'Switch off and lock out first. Power OFF and locked out, meter on continuity. Measure TB2-1 and PE1 pin 4. About 0 Ω?', 'a shorter wording with its own words is used');
+  assert.equal(await aiPlainStep(reply(['Touch the meter leads to TB2-1 and PE1 pin 4.', 'Does it beep (about 0 Ω)?']), say), say, 'new words ("touch", "leads", "beep"): the rule text');
   assert.ok(!/lock|power/i.test(seen), `safety sentences are never sent: ${seen}`);
   assert.equal(await aiPlainStep(reply(['Check the wire with a meter.', 'Beep?']), say), say, 'a rewording that loses the terminals is dropped');
   assert.equal(await aiPlainStep(reply(['Touch TB2-1 and PE1 pin 4.']), say), say, 'a sentence missing: the rule text');
@@ -107,9 +108,18 @@ const asks = (reply: string | Error): Ask => async () => { if (reply instanceof 
   assert.equal(await aiPlainStep(reply(['TB2-1 to TB1 0V, part in front of the sensor.', '12 VDC?']), volts), volts, 'a changed reading is dropped');
   assert.equal(await aiPlainStep(asks(new Error('x')), volts), volts);
   // Review: rewordings that reverse or loosen a warning never get through, whatever their wording.
-  for (const bad of ['Do not lock out for this one.', 'There is no need to switch off.', 'You can leave power on.', 'Leave the machine running while you measure.', 'Lockout only if you want.', 'Power can stay ON.']) {
+  for (const bad of ['Do not lock out for this one.', 'There is no need to switch off.', 'You can leave power on.', 'Leave the machine running while you measure.', 'Lockout only if you want.', 'Power can stay ON.',
+    'Feel free to reach inside while it spins.', 'Bypass the door switch to test it.', 'Jumper out the safety relay first.', 'Keep the breaker closed while you measure.', 'The supply can remain connected.', 'Hands on the belt are OK.', 'Unplugging is up to you.']) {
     assert.equal(await aiPlainStep(reply([`${bad} Touch TB2-1 and PE1 pin 4.`, 'Does it beep (about 0 Ω)?']), say), say, bad);
   }
+  // The same phrases inside a sentence, and a sentence split in two, are dropped too.
+  for (const bad of ['Measure TB2-1 and PE1 pin 4, bypass the door switch.', 'Measure TB2-1. Feel free to reach inside.', 'Measure TB2-1 and PE1 pin 4 (hands on the belt are OK).']) {
+    assert.equal(await aiPlainStep(reply([bad, 'About 0 Ω?']), say), say, bad);
+  }
+  // Addresses and decimals are never cut into sentences.
+  let sent = '';
+  await aiPlainStep(async (_s, user) => { sent = user; return JSON.stringify({ sentences: [] }); }, 'Does Q0.1 come on at 2.5 V on TB1-12? Check %I0.5 too.');
+  assert.equal(sent, '1. Does Q0.1 come on at 2.5 V on TB1-12?\n2. Check %I0.5 too.');
   // A step that is all safety is never sent at all.
   let asked = false;
   assert.equal(await aiPlainStep(async () => { asked = true; return '{}'; }, 'Switch off and lock out first.'), 'Switch off and lock out first.');

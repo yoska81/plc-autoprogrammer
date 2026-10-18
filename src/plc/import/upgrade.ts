@@ -83,7 +83,7 @@ function printoutFamily(text: string): string | undefined {
 export function needOf(imp: ImportedProgram): Need {
   const n = (type: 'input' | 'output', analog: boolean) => imp.io.filter((p) => p.type === type && p.analog === analog).length;
   // The signal of each analog point, so a current transmitter gets a current channel (not a 0–10 V onboard input).
-  const ranges = (type: 'input' | 'output') => imp.io.filter((p) => p.type === type && p.analog).map((p) => importedRange(p.original));
+  const ranges = (type: 'input' | 'output') => imp.io.filter((p) => p.type === type && p.analog).map((p) => importedRange(p.original, p.description).range);
   return { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: false, minHmiSizeIn: null, analogRanges: { input: ranges('input'), output: ranges('output') } };
 }
 
@@ -139,6 +139,11 @@ export function originalCpu(profile: PlcProfile, imp: ImportedProgram): { cpuId:
   return null;
 }
 
+/** Analog points whose signal the program does not state: asked (taken as 4–20 mA, which decides the module). */
+function assumedRanges(imp: ImportedProgram): string[] {
+  return imp.io.filter((p) => p.analog && importedRange(p.original, p.description).assumed).map((p) => `Analog signal of ${p.name}${p.original && p.original !== p.name ? ` (${p.original})` : ''}: the original program does not say whether it is 4–20 mA or 0–10 V. It is taken as 4–20 mA, and a current input is planned for it. Check the transmitter's nameplate and change the range on the I/O list if it differs.`);
+}
+
 /** S7 → S7: original %I / %Q / %IW / %QW addresses that the chosen PLC puts elsewhere, as questions (never silent). */
 function movedS7(imp: ImportedProgram, profile: PlcProfile, cpu: PlcProfile['cpuModels'][number], modules: string[], io: IOPoint[]): string[] {
   if (profile.id !== 'siemens-s7') return [];
@@ -182,7 +187,7 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
     io: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type, category: p.category, ...(p.signal ? { signal: p.signal, analog: p.analog } : {}), ...(p.plcAddress ? { plcAddress: p.plcAddress } : {}) })),
     spec: describeProgram(imp),
     // Likely bugs (missing seal-in, interlock on another station's sensor) are asked before the general question.
-    questions: withFindings([...(cpuNote ? [cpuNote] : []), ...questionsFor(imp), ...movedS7(imp, profile, cpu, modules, m.io)], programFindings(program).map((f) => f.message)),
+    questions: withFindings([...(cpuNote ? [cpuNote] : []), ...questionsFor(imp), ...assumedRanges(imp), ...movedS7(imp, profile, cpu, modules, m.io)], programFindings(program).map((f) => f.message)),
     original: {
       importedAt: now.toISOString(), source: imp.source, report: imp.report, io: imp.io, plcId: profile.id, cpuId: cpu.id, program, summary,
       ioList: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type })),
