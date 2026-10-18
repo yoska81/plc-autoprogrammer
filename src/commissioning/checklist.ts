@@ -113,28 +113,44 @@ export interface CommSignoff {
   date: string;
 }
 
-/** A sign-off made void by a failure recorded after it: kept so the record shows it was signed, and why it no longer holds. */
+/**
+ * A sign-off that no longer holds, kept on the record: voided by a failure recorded after it, removed,
+ * or replaced by a new sign-off.
+ */
 export interface VoidedSignoff {
   signoff: CommSignoff;
-  /** When the failure was recorded (YYYY-MM-DD HH:MM) and by whom. */
+  reason: 'failed' | 'removed' | 'replaced';
+  /** When (YYYY-MM-DD HH:MM) and by whom. */
   voidedAt: string;
   voidedBy: string;
-  /** The item that failed. */
-  itemId: string;
+  /** The item that failed (reason 'failed'). */
+  itemId?: string;
 }
+
+/** A failed result of an item no longer in the checklist (its I/O point deleted, its alarm renamed), dismissed. */
+export interface DismissedResult { itemId: string; result: CommResult; at: string; by: string }
 
 export interface CommRecord {
   results: Record<string, CommResult>;
   signoff: CommSignoff | null;
-  /** Sign-offs voided by a later failure, oldest first (absent on records made before it existed). */
+  /** Sign-offs that no longer hold, oldest first (absent on records made before it existed). */
   voided?: VoidedSignoff[];
+  /** Failed results of removed items, dismissed (absent when none). */
+  dismissed?: DismissedResult[];
 }
 
-/** "J. Tech (ISA) signed 2026-10-17 10:00; voided 2026-10-17 11:20 by A. Lead: Y001 Conveyor motor failed." */
+/** One line for the record, e.g. "J. Tech (ISA) signed 2026-10-17 10:00; voided 2026-10-17 11:20 by A. Lead: Y001 Conveyor motor failed." */
 export function voidedText(v: VoidedSignoff, items: CommItem[]): string {
-  const item = items.find((it) => it.id === v.itemId)?.title ?? v.itemId;
-  return `${v.signoff.name}${v.signoff.company ? ` (${v.signoff.company})` : ''} signed ${v.signoff.date}; voided ${v.voidedAt}${v.voidedBy ? ` by ${v.voidedBy}` : ''}: ${item} failed.`;
+  const who = `${v.signoff.name}${v.signoff.company ? ` (${v.signoff.company})` : ''} signed ${v.signoff.date}`;
+  const by = v.voidedBy ? ` by ${v.voidedBy}` : '';
+  if (v.reason === 'removed') return `${who}; signature removed ${v.voidedAt}${by}.`;
+  if (v.reason === 'replaced') return `${who}; replaced by a new sign-off ${v.voidedAt}${by}.`;
+  const item = items.find((it) => it.id === v.itemId)?.title ?? v.itemId ?? 'an item';
+  return `${who}; voided ${v.voidedAt}${by}: ${item} failed.`;
 }
+
+export const dismissedText = (d: DismissedResult) =>
+  `Failed result of ${d.itemId} (no longer in the checklist${d.result.note ? `; note: ${d.result.note}` : ''}) dismissed ${d.at}${d.by ? ` by ${d.by}` : ''}.`;
 
 /** Done: passed or not applicable. A failed item is not done: it is fixed and tested again. */
 export function progress(items: CommItem[], results: Record<string, CommResult>): { done: number; pass: number; fail: number; total: number } {
@@ -148,13 +164,60 @@ export function progress(items: CommItem[], results: Record<string, CommResult>)
   return { done, pass, fail, total: items.length };
 }
 
-/** Why the checklist can't be signed off yet (null: it can): a failed item blocks the sign-off until it passes. */
+/** Failed results whose item is no longer in the checklist: shown on their own, to be dismissed. */
+export const orphanFails = (items: CommItem[], results: Record<string, CommResult>): string[] =>
+  Object.keys(results).filter((id) => results[id]?.status === 'fail' && !items.some((it) => it.id === id));
+
+/**
+ * Why the checklist can't be signed off yet (null: it can). A failed item blocks the sign-off until it
+ * passes; a failed result of an item no longer in the checklist, until it is dismissed (the store
+ * refuses the sign-off on the same rule: any failed result).
+ */
 export function signBlock(items: CommItem[], results: Record<string, CommResult>): string | null {
-  // every failed result, an item no longer in the checklist included (the store refuses the sign-off on the same rule)
-  const failed = Object.keys(results).filter((id) => results[id].status === 'fail').map((id) => ({ title: items.find((it) => it.id === id)?.title ?? `${id} (no longer in the checklist)` }));
-  if (!failed.length) return null;
-  const names = failed.slice(0, 3).map((it) => it.title).join('; ');
-  return `${failed.length} failed item${failed.length === 1 ? '' : 's'} (${names}${failed.length > 3 ? '; …' : ''}): fix ${failed.length === 1 ? 'it' : 'them'} and test again before signing off.`;
+  const failed = items.filter((it) => results[it.id]?.status === 'fail');
+  const orphans = orphanFails(items, results);
+  const parts: string[] = [];
+  if (failed.length) {
+    const names = failed.slice(0, 3).map((it) => it.title).join('; ');
+    parts.push(`${failed.length} failed item${failed.length === 1 ? '' : 's'} (${names}${failed.length > 3 ? '; …' : ''}): fix ${failed.length === 1 ? 'it' : 'them'} and test again before signing off.`);
+  }
+  if (orphans.length) parts.push(`${orphans.length} failed result${orphans.length === 1 ? '' : 's'} of item${orphans.length === 1 ? '' : 's'} no longer in the checklist: dismiss ${orphans.length === 1 ? 'it' : 'them'} below.`);
+  return parts.length ? parts.join(' ') : null;
+}
+
+/* ---- a record as stored (browser storage, project file): anything malformed is dropped, never thrown on ---- */
+const obj = (x: unknown): Record<string, unknown> | null => (x && typeof x === 'object' && !Array.isArray(x) ? x as Record<string, unknown> : null);
+const str = (x: unknown) => (typeof x === 'string' ? x : '');
+function cleanResult(x: unknown): CommResult | null {
+  const r = obj(x);
+  if (!r) return null;
+  const out: CommResult = { note: str(r.note), by: str(r.by), date: str(r.date) };
+  if (r.status === 'pass' || r.status === 'fail' || r.status === 'na') out.status = r.status;
+  return out;
+}
+function cleanSignoff(x: unknown): CommSignoff | null {
+  const s = obj(x);
+  if (!s || !str(s.name)) return null;
+  return { name: str(s.name), company: str(s.company), signature: str(s.signature), date: str(s.date), ...(typeof s.drawn === 'string' ? { drawn: s.drawn } : {}) };
+}
+/** A commissioning record from storage or a project file, cleaned: unknown shapes become empty, legacy voided entries 'failed'. */
+export function cleanRecord(raw: unknown): CommRecord {
+  const r = obj(raw) ?? {};
+  const results: Record<string, CommResult> = {};
+  for (const [id, v] of Object.entries(obj(r.results) ?? {})) { const c = cleanResult(v); if (c) results[id] = c; }
+  const voided = (Array.isArray(r.voided) ? r.voided : []).flatMap((x): VoidedSignoff[] => {
+    const v = obj(x);
+    const signoff = cleanSignoff(v?.signoff);
+    if (!v || !signoff) return [];
+    const reason = v.reason === 'removed' || v.reason === 'replaced' ? v.reason : 'failed';
+    return [{ signoff, reason, voidedAt: str(v.voidedAt), voidedBy: str(v.voidedBy), ...(str(v.itemId) ? { itemId: str(v.itemId) } : {}) }];
+  });
+  const dismissed = (Array.isArray(r.dismissed) ? r.dismissed : []).flatMap((x): DismissedResult[] => {
+    const d = obj(x);
+    const result = cleanResult(d?.result);
+    return d && str(d.itemId) && result ? [{ itemId: str(d.itemId), result, at: str(d.at), by: str(d.by) }] : [];
+  });
+  return { results, signoff: cleanSignoff(r.signoff), ...(voided.length ? { voided } : {}), ...(dismissed.length ? { dismissed } : {}) };
 }
 
 export const STATUS_TEXT: Record<NonNullable<CommResult['status']>, string> = { pass: 'Pass', fail: 'FAIL', na: 'N/A' };

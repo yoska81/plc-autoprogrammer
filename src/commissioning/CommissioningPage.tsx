@@ -9,7 +9,7 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useUi } from '../store/useUiStore';
 import { useDraft } from '../store/useDraftStore';
 import { notify } from '../store/useNoticeStore';
-import { commissioningItems, progress, SECTION_TITLE, signBlock, voidedText, type CommItem, type CommResult, type CommSection } from './checklist';
+import { commissioningItems, dismissedText, orphanFails, progress, SECTION_TITLE, signBlock, voidedText, type CommItem, type CommResult, type CommSection } from './checklist';
 import { nowStamp, useCommissioningStore } from './useCommissioningStore';
 import { commissioningPdf, commissioningXlsx } from './export';
 
@@ -88,7 +88,7 @@ function SignaturePad({ value, onChange }: { value?: string; onChange: (png: str
 export default function CommissioningPage() {
   const projectId = useProjectsStore((s) => s.activeId);
   const rec = useCommissioningStore((s) => s.byProject[projectId ?? 'default'] ?? EMPTY);
-  const { tech, setTech, setResult, sign } = useCommissioningStore();
+  const { tech, setTech, setResult, sign, dismiss } = useCommissioningStore();
   const items = useItems();
   const [section, setSection] = useUi<CommSection | 'all'>('comm.section', 'all');
   const [todo, setTodo] = useUi('comm.todo', false);
@@ -153,9 +153,23 @@ export default function CommissioningPage() {
                 </ol>
               </section>
             ))}
+            {orphanFails(items, rec.results).length > 0 && (
+              <section aria-label="Failed results of removed items" className="space-y-1.5 rounded border border-red-300 bg-red-50 p-3">
+                <h3 className="text-sm font-semibold text-red-800">Failed results of items no longer in the checklist</h3>
+                <p className="text-xs text-red-800">Their I/O point or alarm was removed or renamed since they were tested. Dismiss each one (it stays on the record) to sign off.</p>
+                {orphanFails(items, rec.results).map((id) => (
+                  <div key={id} className="flex flex-wrap items-center gap-2 text-xs" data-testid="comm-orphan">
+                    <span className="font-mono">{id}</span>
+                    <span className="text-steel-600">{[rec.results[id].note, rec.results[id].by && `${rec.results[id].by} ${rec.results[id].date}`].filter(Boolean).join(' — ')}</span>
+                    <button type="button" onClick={() => dismiss(projectId, id)} className="rounded border border-red-400 bg-white px-2 py-0.5 text-red-800 hover:bg-red-100">Dismiss</button>
+                  </div>
+                ))}
+              </section>
+            )}
             <section aria-label="Sign-off" className="space-y-2 rounded border border-steel-200 bg-white p-3">
               <h3 className="text-sm font-semibold text-steel-800">Sign-off</h3>
-              {rec.voided?.map((v, i) => <p key={i} className="text-xs text-red-800" data-testid="comm-voided">Voided sign-off: {voidedText(v, items)}</p>)}
+              {rec.voided?.map((v, i) => <p key={i} className="text-xs text-red-800" data-testid="comm-voided">{v.reason === 'failed' ? 'Voided' : v.reason === 'removed' ? 'Removed' : 'Replaced'} sign-off: {voidedText(v, items)}</p>)}
+              {rec.dismissed?.map((d, i) => <p key={`d${i}`} className="text-xs text-steel-600" data-testid="comm-dismissed">{dismissedText(d)}</p>)}
               {rec.signoff && <p className="text-xs text-green-800" data-testid="comm-signed">Signed by {rec.signoff.name}{rec.signoff.company ? ` (${rec.signoff.company})` : ''} on {rec.signoff.date}.</p>}
               <div className="grid gap-2 sm:grid-cols-3">
                 <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" aria-label="Sign-off name" className="rounded border border-steel-300 px-2 py-1 text-sm" />

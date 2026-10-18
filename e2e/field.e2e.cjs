@@ -55,6 +55,31 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await items.nth(0).getByRole('button', { name: 'Pass' }).click();
   await page.getByRole('button', { name: 'Sign', exact: true }).click();
   check(await page.getByTestId('comm-signed').count() === 1 && await page.getByTestId('comm-voided').count() === 1, 'signed again; the voided one stays on the record');
+  // the record survives the project file (.isap): saved, opened as a new project, the same record; a malformed one is cleaned
+  const isap = await page.evaluate(async () => {
+    const pf = await import('/src/project/projectFile.ts');
+    const { useCommissioningStore } = await import('/src/commissioning/useCommissioningStore.ts');
+    const { useProjectsStore } = await import('/src/store/useProjectsStore.ts');
+    const id = useProjectsStore.getState().activeId ?? 'default';
+    const before = useCommissioningStore.getState().byProject[id];
+    const opened = await pf.openProjectFile((await pf.buildProjectFile()).blob);
+    const after = useCommissioningStore.getState().byProject[opened.id];
+    useProjectsStore.getState().openProject(id);
+    return { same: JSON.stringify(before) === JSON.stringify(after), voided: after?.voided?.length ?? 0 };
+  });
+  check(isap.same && isap.voided === 1, `the voided sign-off survives save and open (${JSON.stringify(isap)})`);
+  // a failed result whose item was removed (its I/O point deleted) gets its own row: dismiss it, then sign again
+  await page.evaluate(async () => {
+    const { useCommissioningStore } = await import('/src/commissioning/useCommissioningStore.ts');
+    const { useProjectsStore } = await import('/src/store/useProjectsStore.ts');
+    useCommissioningStore.getState().setResult(useProjectsStore.getState().activeId, 'io:gone', { status: 'fail', note: 'I/O point deleted' });
+  });
+  await page.getByTestId('comm-orphan').waitFor({ timeout: 5000 }).catch(() => {});
+  check(await page.getByTestId('comm-orphan').count() === 1 && await page.getByRole('button', { name: 'Sign', exact: true }).isDisabled(), 'an orphaned failure is shown and blocks the sign-off');
+  await page.getByTestId('comm-orphan').getByRole('button', { name: 'Dismiss' }).click();
+  check(await page.getByTestId('comm-orphan').count() === 0 && /Failed result of io:gone .*dismissed/.test(await page.getByTestId('comm-dismissed').innerText()), 'dismissed, on the record');
+  await page.getByRole('button', { name: 'Sign', exact: true }).click();
+  check(await page.getByTestId('comm-signed').count() === 1, 'signed again after the dismissal');
   for (const [btn, ext] of [['PDF', 'pdf'], ['Excel', 'xlsx']]) {
     const [d] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: btn, exact: true }).click()]);
     const f = path.join(OUT, d.suggestedFilename());

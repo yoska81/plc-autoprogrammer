@@ -2,7 +2,7 @@ import type { ProjectSnapshot } from '../deliverables/collect';
 import { simpleDoc } from '../deliverables/programListingPdf';
 import { makeTable, type DocRow } from '../deliverables/docs/table';
 import { MUTED } from '../deliverables/docs/pdfWriter';
-import { exportRows, progress, voidedText, type CommItem, type CommRecord } from './checklist';
+import { dismissedText, exportRows, progress, voidedText, type CommItem, type CommRecord } from './checklist';
 
 const summary = (items: CommItem[], rec: CommRecord) => {
   const s = progress(items, rec.results);
@@ -27,8 +27,12 @@ export async function commissioningPdf(p: ProjectSnapshot, items: CommItem[], re
     if (s?.drawn) w.image(s.drawn, 'PNG', 600, 200, 25, 'Signature');
     if (rec.voided?.length) {
       w.h2('Voided sign-offs', false);
-      w.text('Each was signed, then a failure was recorded after it, so it no longer covers the results.', { size: 8, color: MUTED });
+      w.text('Earlier sign-offs that no longer hold: voided by a failure recorded after them, removed, or replaced by a new sign-off.', { size: 8, color: MUTED });
       for (const v of rec.voided) w.text(voidedText(v, items), { size: 8 });
+    }
+    if (rec.dismissed?.length) {
+      w.h2('Dismissed results', false);
+      for (const d of rec.dismissed) w.text(dismissedText(d), { size: 8 });
     }
   });
 }
@@ -61,6 +65,11 @@ export async function commissioningXlsx(projectName: string, items: CommItem[], 
     ws.addRow([]);
     ws.addRow(['Voided sign-offs']).font = { bold: true };
     for (const v of rec.voided) ws.addRow(['Voided', voidedText(v, items)]);
+  }
+  if (rec.dismissed?.length) {
+    ws.addRow([]);
+    ws.addRow(['Dismissed results']).font = { bold: true };
+    for (const d of rec.dismissed) ws.addRow(['Dismissed', dismissedText(d)]);
   }
   return new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
