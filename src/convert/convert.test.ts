@@ -480,6 +480,9 @@ await test('relay logic kept: C1–C11 as ladder rungs with the new tags, every 
   assert.equal(logic!.devices.find((d) => d.tag === 'K1')!.oldTag, 'KM1');
   assert.ok(logic!.devices.find((d) => d.tag === 'K1')!.partNumber, 'the contactor carries its North-America equivalent');
   assert.equal(c.circuits.find((x) => x.id === 'C1')!.circuit.output, 'KM1');
+  // the shared fixture for the ladder-sheet drawings stays what the converter produces
+  assert.deepEqual(JSON.parse(readFileSync(new URL('../../e2e/fixtures/convert/cn-rollformer-01.relayLogic.json', import.meta.url), 'utf8')), JSON.parse(JSON.stringify(logic)),
+    'e2e/fixtures/convert/cn-rollformer-01.relayLogic.json is stale: regenerate it from toRelayLogic');
 });
 
 await test('retag: whole tags only', () => {
