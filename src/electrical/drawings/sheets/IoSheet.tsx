@@ -204,14 +204,16 @@ function InputRow({ plan, p, y }: { plan: DrawingPlan; p: IoPoint; y: number }) 
   const half = sensor ? 9 : p.deviceType === 'safety-relay-output' ? 4 : 5;
   const tag = p.deviceTag;
   const srRef = p.deviceType === 'safety-relay-output' ? plan.xref.get(`coil:${p.deviceTag}`) : undefined;
-  const npn = p.deviceType === 'sensor-npn';
+  const sw = sensor ? '24+' : p.supplyWire ?? '24+';
+  const rail = sw === '0V' ? I.R0 : I.R24;
   return (
     <g>
       {/* supply */}
-      <Dot x={I.R24} y={y} />
-      <Line x1={I.R24} y1={y} x2={p.supplyTerminal ? I.TBS - 2.5 : dx - half} y2={y} />
+      {/* a dry contact in a +24V-common (NPN) group switches 0V into the input: fed from the 0V rail */}
+      <Dot x={rail} y={y} />
+      <Line x1={rail} y1={y} x2={p.supplyTerminal ? I.TBS - 2.5 : dx - half} y2={y} />
       {p.supplyTerminal && <><TermBox x={I.TBS} y={y} n={tn(p.supplyTerminal)} /><Line x1={I.TBS + 2.5} y1={y} x2={dx - half} y2={y} /></>}
-      <WireNo x={(p.supplyTerminal ? I.TBS + 2.5 + dx - half : I.R24 + dx - half) / 2 + (p.supplyTerminal ? 0 : 8)} y={y} n="24+" />
+      <WireNo x={(p.supplyTerminal ? I.TBS + 2.5 + dx - half : rail + dx - half) / 2 + (p.supplyTerminal ? 0 : 8)} y={y} n={sw} />
       {/* device */}
       <DeviceSymbol p={p} x={dx} y={y} />
       {tag && <Txt x={dx + (sensor ? 8 : 6)} y={y - 4.4} size={2.6} mono bold>{tag}</Txt>}
@@ -225,7 +227,6 @@ function InputRow({ plan, p, y }: { plan: DrawingPlan; p: IoPoint; y: number }) 
           <Line x1={dx} y1={y + 6} x2={p.returnTerminal ? I.TBS + 2.5 : I.R0} y2={y + 6} />
           {p.returnTerminal && <><TermBox x={I.TBS} y={y + 6} n={tn(p.returnTerminal)} /><Line x1={I.TBS - 2.5} y1={y + 6} x2={I.R0} y2={y + 6} /></>}
           <Dot x={I.R0} y={y + 6} />
-          {npn && <Txt x={dx} y={y + 9.6} size={2.0} anchor="middle">NPN: INPUT COMMON TO +24V</Txt>}
         </g>
       )}
       {/* signal */}

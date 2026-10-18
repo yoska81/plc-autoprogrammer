@@ -46,6 +46,25 @@ export interface AnalogSpec {
 
 export const isAnalog = (p: Pick<IOPoint, 'signal'>) => p.signal === 'analog';
 
+const BARE_TC_RE = /thermocouple|\bT\/C\b|\btype [JKTENRSB]\b/i;
+const LOOP_RE = /transmitter|transducer|\bmA\b|\d\s*-\s*\d+\s*(m?A|V)\b/i;
+
+/**
+ * The range an analog point is given when it is generated, imported or first made analog: a bare thermocouple
+ * ("Seal bar temperature (thermocouple)", "type J") becomes 'thermocouple' instead of the 4-20 mA default, so it
+ * lands on a thermocouple input (only a 'thermocouple' range may). A transmitter / mA / V description, or any range
+ * other than the 4-20 mA default, is kept as it is.
+ */
+export function analogRangeFor(description: string, range: AnalogRange): AnalogRange {
+  return range === '4-20mA' && BARE_TC_RE.test(description) && !LOOP_RE.test(description) ? 'thermocouple' : range;
+}
+
+/** An analog spec with its range set by analogRangeFor. */
+export const withAnalogRange = (description: string, a: AnalogSpec): AnalogSpec => {
+  const range = analogRangeFor(description, a.range);
+  return range === a.range ? a : { ...a, range, ...(range === 'thermocouple' && a.units === '%' ? { units: '°C' } : {}) };
+};
+
 export interface TemplatePoint {
   templateId: string;
   description: string;

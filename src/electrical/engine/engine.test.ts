@@ -512,6 +512,35 @@ for (const s of SCENARIOS) {
   }
 }
 
+// NPN sensors put their input group's common on +24V (sourcing inputs): a pushbutton, limit switch or relay contact
+// in the same group must switch 0V into its input, or it can never turn ON. An input turns ON when its device
+// pulls it away from the common: to +24V on a 0V common, to 0V on a +24V common.
+{
+  const npn: Scenario = {
+    name: 'npn-mixed', supply: '480VAC-3PH',
+    points: [pt('Safety relay OK', 'input', { deviceType: 'safety-relay-output' }), pt('Start PB', 'input', { deviceType: 'pushbutton-no' }), pt('Stop PB', 'input', { deviceType: 'pushbutton-nc' }),
+      pt('Part present NPN', 'input', { deviceType: 'sensor-npn' }), pt('Guard closed limit switch', 'input', { deviceType: 'limit-switch' }),
+      pt('Conveyor run', 'output', { deviceType: 'contactor-coil' })],
+    motors: [motor('M1', 'Conveyor', 1, '480VAC-3PH')],
+  };
+  const { ctx } = run(npn);
+  const m = buildModel(ctx);
+  const g = m.groups.find((x) => x.type === 'input' && x.points.some((p) => p.deviceType === 'sensor-npn'))!;
+  assert.equal(g.commonTo, '24+', 'NPN group: common to +24V');
+  for (const p of g.points) {
+    if (p.deviceType === 'sensor-npn') continue;
+    assert.equal(p.supplyWire, '0V', `${p.address} ${p.description}: switches 0V`);
+    // the wire into the contact that feeds the input: from its supply terminal, else from TB1 to C / 23 (relay status)
+    const tag = p.deviceTag;
+    const pin = p.deviceType === 'safety-relay-output' ? '23' : 'C';
+    const feed = m.wires.filter((w) => w.to.startsWith(`${tag}:`) && (p.supplyTerminal ? w.from === p.supplyTerminal : w.from.startsWith('TB1 ') && w.to === `${tag}:${pin}`));
+    assert.ok(feed.length && feed.every((w) => w.wire === '0V'), `${p.address} ${tag}: fed ${feed.map((w) => w.wire).join(', ') || 'nothing'} — must be 0V to turn ON`);
+  }
+  // a PNP-only design keeps 0V commons and +24V-fed contacts
+  const pnp = buildModel(run({ ...npn, name: 'pnp-mixed', points: npn.points.map((p) => (p.deviceType === 'sensor-npn' ? { ...p, deviceType: 'sensor-pnp' as const } : p)) }).ctx);
+  assert.ok(pnp.groups.filter((x) => x.type === 'input').every((x) => x.commonTo === '0V' && x.points.every((p) => p.supplyWire === '24+')));
+}
+
 // Acceptance (pump skid): two 10 HP pumps on GS20 drives at 480 V heat a NEMA 12 cabinet far above 15 °C; the engine
 // fits a filter fan, its exhaust filter and a thermostat, and the review comes out without a heat finding.
 {
