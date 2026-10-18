@@ -115,16 +115,24 @@ export interface CommSignoff {
 
 export interface CommRecord { results: Record<string, CommResult>; signoff: CommSignoff | null }
 
+/** Done: passed or not applicable. A failed item is not done: it is fixed and tested again. */
 export function progress(items: CommItem[], results: Record<string, CommResult>): { done: number; pass: number; fail: number; total: number } {
   let done = 0, pass = 0, fail = 0;
   for (const it of items) {
     const st = results[it.id]?.status;
-    if (!st) continue;
-    done++;
+    if (st === 'pass' || st === 'na') done++;
     if (st === 'pass') pass++;
     if (st === 'fail') fail++;
   }
   return { done, pass, fail, total: items.length };
+}
+
+/** Why the checklist can't be signed off yet (null: it can): a failed item blocks the sign-off until it passes. */
+export function signBlock(items: CommItem[], results: Record<string, CommResult>): string | null {
+  const failed = items.filter((it) => results[it.id]?.status === 'fail');
+  if (!failed.length) return null;
+  const names = failed.slice(0, 3).map((it) => it.title).join('; ');
+  return `${failed.length} failed item${failed.length === 1 ? '' : 's'} (${names}${failed.length > 3 ? '; …' : ''}): fix ${failed.length === 1 ? 'it' : 'them'} and test again before signing off.`;
 }
 
 export const STATUS_TEXT: Record<NonNullable<CommResult['status']>, string> = { pass: 'Pass', fail: 'FAIL', na: 'N/A' };

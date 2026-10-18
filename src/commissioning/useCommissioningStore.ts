@@ -34,7 +34,9 @@ export const useCommissioningStore = create<CommissioningStore>()(
         // Ticking (or changing the result) records who and when; a note alone keeps them.
         const next: CommResult = { ...cur, ...patch, ...('status' in patch ? { date: nowStamp(), by: patch.by ?? (s.tech || cur.by) } : {}) };
         if (!next.status) delete next.status;
-        return { byProject: { ...s.byProject, [key(projectId)]: { ...rec, results: { ...rec.results, [itemId]: next } } } };
+        // a failure recorded after the sign-off voids it: the signature no longer covers the results
+        const signoff = next.status === 'fail' ? null : rec.signoff;
+        return { byProject: { ...s.byProject, [key(projectId)]: { ...rec, signoff, results: { ...rec.results, [itemId]: next } } } };
       }),
       sign: (projectId, signoff) => set((s) => ({ byProject: { ...s.byProject, [key(projectId)]: { ...(s.byProject[key(projectId)] ?? EMPTY), signoff } } })),
       clear: (projectId) => set((s) => ({ byProject: { ...s.byProject, [key(projectId)]: EMPTY } })),

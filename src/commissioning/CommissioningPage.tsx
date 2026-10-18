@@ -9,7 +9,7 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useUi } from '../store/useUiStore';
 import { useDraft } from '../store/useDraftStore';
 import { notify } from '../store/useNoticeStore';
-import { commissioningItems, progress, SECTION_TITLE, type CommItem, type CommResult, type CommSection } from './checklist';
+import { commissioningItems, progress, SECTION_TITLE, signBlock, type CommItem, type CommResult, type CommSection } from './checklist';
 import { nowStamp, useCommissioningStore } from './useCommissioningStore';
 import { commissioningPdf, commissioningXlsx } from './export';
 
@@ -98,6 +98,7 @@ export default function CommissioningPage() {
   const [drawn, setDrawn] = useState<string | undefined>(rec.signoff?.drawn);
   const [busy, setBusy] = useState<'pdf' | 'xlsx' | null>(null);
   const s = progress(items, rec.results);
+  const blocked = signBlock(items, rec.results);
   const base = useProgramStore((st) => st.projectName).trim().replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'project';
   const shown = items.filter((it) => (section === 'all' || it.section === section) && (!todo || !rec.results[it.id]?.status));
 
@@ -162,12 +163,12 @@ export default function CommissioningPage() {
               </div>
               <SignaturePad value={drawn} onChange={setDrawn} />
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" disabled={!name.trim() || !(signature.trim() || drawn)}
+                <button type="button" disabled={Boolean(blocked) || !name.trim() || !(signature.trim() || drawn)} title={blocked ?? undefined}
                   onClick={() => sign(projectId, { name: name.trim(), company: company.trim(), signature: signature.trim(), drawn, date: nowStamp() })}
                   className="rounded bg-brand-600 px-3 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{rec.signoff ? 'Sign again' : 'Sign'}</button>
                 {rec.signoff && <button type="button" onClick={() => sign(projectId, null)} className="text-sm text-steel-500 underline">Remove signature</button>}
                 {s.done < s.total && <span className="text-xs text-amber-800">{s.total - s.done} item{s.total - s.done === 1 ? '' : 's'} not done yet.</span>}
-                {s.fail > 0 && <span className="text-xs font-semibold text-red-700">{s.fail} failed item{s.fail === 1 ? '' : 's'} — list them on the punch list.</span>}
+                {blocked && <span className="text-xs font-semibold text-red-700" data-testid="comm-sign-blocked">Sign-off blocked: {blocked}</span>}
               </div>
             </section>
           </>

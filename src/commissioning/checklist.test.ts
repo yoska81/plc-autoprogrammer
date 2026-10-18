@@ -9,7 +9,7 @@ import { seedSampleProject } from '../preview/sampleProject';
 import { collectProject } from '../deliverables/collect';
 import { safetyFunctions } from '../deliverables/docs/safety';
 import { alarmRows } from '../deliverables/docs/program';
-import { commissioningItems, exportRows, progress } from './checklist';
+import { commissioningItems, exportRows, progress, signBlock } from './checklist';
 import { commissioningFor, useCommissioningStore } from './useCommissioningStore';
 import { commissioningPdf, commissioningXlsx } from './export';
 
@@ -46,13 +46,24 @@ const rec = () => commissioningFor('proj');
 assert.equal(rec().results[by('inputs')[0].id].by, 'J. Tech');
 assert.match(rec().results[by('outputs')[0].id].date, /^\d{4}-\d\d-\d\d \d\d:\d\d$/);
 assert.equal(rec().results[by('outputs')[0].id].note, 'Contactor coil open circuit');
-assert.deepEqual(progress(commissioningItems(collectProject()), rec().results), { done: 3, pass: 1, fail: 1, total: items.length });
+assert.deepEqual(progress(commissioningItems(collectProject()), rec().results), { done: 2, pass: 1, fail: 1, total: items.length }, 'a failed item is not done');
+assert.match(signBlock(items, rec().results) ?? '', /^1 failed item \(.+\): fix it and test again before signing off\.$/, 'a failure blocks the sign-off');
 st.setResult('proj', by('safety')[0].id, { status: undefined });
 assert.equal(rec().results[by('safety')[0].id].status, undefined, 'untick');
 assert.deepEqual(commissioningFor('other').results, {}, 'other project untouched');
-st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:00' });
 const rows = exportRows(items, rec().results);
 assert.equal(rows.find((r) => r.cells[0] === by('outputs')[0].title)?.cells[4], 'FAIL');
+// fixed and tested again: it passes, the sign-off is allowed; a later failure voids the signature
+st.setResult('proj', by('outputs')[0].id, { status: 'pass' });
+assert.equal(signBlock(items, rec().results), null);
+st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:00' });
+assert.equal(rec().signoff?.name, 'J. Tech');
+st.setResult('proj', by('inputs')[0].id, { note: 'retightened' });
+assert.ok(rec().signoff, 'a note keeps the signature');
+st.setResult('proj', by('inputs')[0].id, { status: 'fail' });
+assert.equal(rec().signoff, null, 'a failure after the sign-off voids it');
+st.setResult('proj', by('inputs')[0].id, { status: 'pass' });
+st.sign('proj', { name: 'J. Tech', company: 'ISA', signature: 'J. Tech', date: '2026-10-17 10:30' });
 
 // Exports.
 const pdf = await commissioningPdf(p, items, rec());
@@ -65,6 +76,6 @@ await wb.xlsx.load(await xlsx.arrayBuffer());
 const ws = wb.getWorksheet('Commissioning')!;
 const texts: string[] = [];
 ws.eachRow((r) => texts.push((r.values as unknown[]).map(String).join('|')));
-assert.ok(texts.some((t) => t.includes('Contactor coil open circuit') && t.includes('FAIL')));
+assert.ok(texts.some((t) => t.includes('Contactor coil open circuit') && t.includes('Pass')), 'the retested item: its note kept, now passed');
 assert.ok(texts.some((t) => t.includes('Signature|J. Tech')));
 console.log(`commissioning tests passed (${items.length} items)`);

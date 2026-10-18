@@ -41,6 +41,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await items.nth(1).getByRole('textbox').blur();
   await page.getByLabel('Sign-off name').fill('J. Tech');
   await page.getByLabel('Typed signature').fill('J. Tech');
+  check(/1 of \d+ done/.test(await page.getByTestId('comm-progress').innerText()), 'a failed item is not done');
+  check(await page.getByRole('button', { name: 'Sign', exact: true }).isDisabled() && /1 failed item/.test(await page.getByTestId('comm-sign-blocked').innerText()), 'a failure blocks the sign-off');
+  // fixed and tested again
+  await items.nth(1).getByRole('button', { name: 'Pass' }).click();
   await page.getByRole('button', { name: 'Sign', exact: true }).click();
   check(/2 of \d+ done/.test(await page.getByTestId('comm-progress').innerText()), 'progress counts the ticks');
   check(await page.getByTestId('comm-signed').count() === 1, 'signed');
