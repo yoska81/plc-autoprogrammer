@@ -71,6 +71,9 @@ const REQUIRED: Partial<Record<CatalogCategory, string[]>> = {
   solenoidValve: ['coilVoltage'],
   safetyRelay: ['coilVoltage', 'safetyOutputs'],
   stackLight: ['volts'],
+  servoDrive: ['inputVolts', 'outputAmps'],
+  servoMotor: ['ratedWatts', 'ratedTorqueNm'],
+  encoder: ['ppr', 'supplyVolts'],
 };
 /** Some parts state a rating under another name. */
 const ALIASES: Record<string, string[]> = { volts: ['volts', 'supplyVolts'], coilVoltage: ['coilVoltage', 'coil'] };
