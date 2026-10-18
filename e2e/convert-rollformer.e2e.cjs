@@ -93,6 +93,15 @@ function sse(model, text) {
   check(/KM1[\s\S]*seal-in/.test(circuits) && /SD1[\s\S]*cuts at the set length/.test(circuits) && /the drive/.test(circuits), 'review: control circuits read as functions (seal-in, the flying shear in the drive)');
   check(await page.getByTestId('not-safety-circuit').isVisible(), 'review: the E-stop is flagged "not a safety circuit"');
   check(/1 low-confidence reading not confirmed/.test(await page.getByTestId('review-status').innerText()), 'review: the unsure pendant reading is counted');
+  // a picture of the sheet (cut to the column) next to the readings
+  const thumbs = page.getByTestId('review-parts').getByTestId('source-thumb');
+  await thumbs.first().waitFor({ timeout: 15000 });
+  check(await thumbs.count() >= 10, `review: sheet thumbnails next to the parts (${await thumbs.count()})`);
+  await thumbs.first().click();
+  const dlg = page.getByRole('dialog');
+  check(/sheet 1, column 1/.test(await dlg.innerText()), 'thumbnail opens the sheet it was read from');
+  await dlg.screenshot({ path: OUT + '01b_source_sheet.png' });
+  await dlg.click();
   await page.getByTestId('convert-recognised').screenshot({ path: OUT + '01_review.png' });
 
   // Conversion

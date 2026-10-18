@@ -8,6 +8,7 @@ import { convertMachine, kwToHp, mm2ToAwg, naTags, NA_TARGET, retag, targetSuppl
 import { RELAY_CONVEYOR } from './__fixtures__/relayConveyor';
 import { ioId } from './types';
 import { scoreReading, scoreText } from './score';
+import { columnCrop, dxfSheetSvg, parseSource } from './thumbs';
 import { CN_ROLLFORMER_01 } from './__fixtures__/cnRollformer01.facts';
 import { CN_ROLLFORMER_01_READING } from './__fixtures__/cnRollformer01.reading';
 import { normalizeMachine } from './derive';
@@ -402,6 +403,19 @@ await test('cn-rollformer-01 converted: claimed Cat 3 / PL d not met (no STO), r
   const kept = functionKept(m, c, collectProject()).filter((k) => k.kind === 'circuit');
   assert.equal(kept.length, 18);
   assert.ok(kept.every((k) => k.status !== 'missing'), kept.filter((k) => k.status === 'missing').map((k) => `${k.original}: ${k.note}`).join('\n'));
+});
+
+await test('thumbnails: the sheet and column a source names, a DXF sheet drawn from its frame', () => {
+  assert.deepEqual(parseSource('sheet 3, column 4'), { sheet: 3, column: 4 });
+  assert.deepEqual(parseSource('第2页'), { sheet: 2, column: null });
+  assert.deepEqual(parseSource('cross-reference /5.4'), { sheet: 5, column: 4 });
+  assert.equal(parseSource('parts list, row 5'), null);
+  assert.deepEqual(columnCrop(4), { left: 2.5 / 8, right: 4.5 / 8 });
+  const ents = parseDxfEntities(readFileSync(new URL('../../e2e/fixtures/convert/roll-former.dxf', import.meta.url), 'utf8'));
+  const svg = dxfSheetSvg(ents, sheetFrames(ents)[2]);
+  assert.match(svg, /^<svg[^>]+viewBox/);
+  assert.match(svg, /CN1-19/, 'sheet 3 text is drawn');
+  assert.ok(!/主电路 Main circuit/.test(svg), 'sheet 1 text is not');
 });
 
 await test('retag: whole tags only', () => {

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { create } from 'zustand';
 import { Link } from 'react-router-dom';
 import { Spinner } from '../components/common';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -14,13 +13,7 @@ import { desktopBridge } from '../desktop/bridge';
 import { hasDwgReader } from './dxf';
 import { READ_KEY, setReading, type Reading } from './reading';
 import { Step } from './ReviewAndConvert';
-
-/** Files chosen for upload, per project and in memory only: they never follow the user into another project. */
-const useUploadFiles = create<{ byProject: Record<string, File[]>; set: (projectId: string, files: File[]) => void }>((set) => ({
-  byProject: {},
-  set: (projectId, files) => set((s) => ({ byProject: { ...s.byProject, [projectId]: files } })),
-}));
-const NO_FILES: File[] = [];
+import { NO_FILES, useUploadFiles } from './thumbs';
 
 /** How DWG files are read here: the ODA File Converter in the Windows app (found or how to install it), else export. */
 function DwgStatus() {

@@ -16,6 +16,7 @@ import { functionKept, type KeptStatus } from './functionKept';
 import { EMPTY_REVIEW, itemKey, reviewItems, reviewedMachine, unconfirmed, type ReviewKind, type ReviewState } from './review';
 import { READ_KEY, REVIEW_KEY, type Reading } from './reading';
 import { ioId, type ExistingMachine } from './types';
+import SourceThumb from './SourceThumb';
 
 const th = 'text-left py-1.5 pr-3 font-medium text-steel-500';
 const card = 'rounded-sm border border-steel-200 bg-white p-4 space-y-3';
@@ -130,7 +131,7 @@ export default function ReviewAndConvert() {
                         <td className="pr-2"><input defaultValue={p.description} aria-label={`Function of ${p.address.trim()}${raw.io.filter((x) => x.address.trim() === p.address.trim()).length > 1 ? ` (${p.deviceTag ?? id})` : ''}`} className={cell}
                           onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== p.description) correct('io', id, (m) => ({ ...m, io: m.io.map((x, j) => (ioId(x, j) === id ? { ...x, description: v } : x)) })); }} /></td>
                         <td className="whitespace-nowrap pr-2">{p.deviceTag ?? ''} {p.deviceType}</td>
-                        <td className="pr-2 text-steel-500">{p.source}</td>
+                        <td className="pr-2 text-steel-500"><div className="flex items-start gap-2"><SourceThumb source={p.source} /><span>{p.source}</span></div></td>
                         <td><Mark k={k} confidence={p.confidence} /></td>
                       </tr>
                     );
@@ -152,7 +153,7 @@ export default function ReviewAndConvert() {
                           onBlur={(e) => { const v = e.target.value.trim(); if (v !== (c.partNumber ?? '')) correct('part', c.tag, (m) => ({ ...m, components: m.components.map((x) => (x.tag === c.tag ? { ...x, partNumber: v || null } : x)) })); }} /></td>
                         <td className="pr-2">{c.manufacturer ?? ''}</td>
                         <td className="pr-2">{c.description}</td>
-                        <td className="pr-2 text-steel-500">{c.source}</td>
+                        <td className="pr-2 text-steel-500"><div className="flex items-start gap-2"><SourceThumb source={c.source} /><span>{c.source}</span></div></td>
                         <td><Mark k={k} confidence={c.confidence} /></td>
                       </tr>
                     );
@@ -173,7 +174,7 @@ export default function ReviewAndConvert() {
                         <td className="w-20 pr-2"><input defaultValue={x.kw ?? ''} inputMode="decimal" aria-label={`kW of ${x.tag}`} className={cell}
                           onBlur={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v !== x.kw) correct('motor', x.tag, (m) => ({ ...m, motors: m.motors.map((y) => (y.tag === x.tag ? { ...y, kw: v, hp: null } : y)) })); }} /></td>
                         <td className="pr-2">{x.starter ?? '—'}{x.reversing ? ', reversing' : ''}</td>
-                        <td className="pr-2 text-steel-500">{x.source}</td>
+                        <td className="pr-2 text-steel-500"><div className="flex items-start gap-2"><SourceThumb source={x.source} /><span>{x.source}</span></div></td>
                         <td><Mark k={k} confidence={x.confidence} /></td>
                       </tr>
                     );
@@ -194,7 +195,7 @@ export default function ReviewAndConvert() {
                         <td className="pr-2">{a.driveTag}{a.drivePart ? ` ${a.drivePart}` : ''}</td>
                         <td className="pr-2">{a.motorTag} {a.motorKw ? `${a.motorKw} kW` : ''}</td>
                         <td className="pr-2">{[a.encoder, a.brakingResistor && `braking resistor ${a.brakingResistor}`].filter(Boolean).join(', ') || '—'}</td>
-                        <td className="pr-2 text-steel-500">{a.source}</td>
+                        <td className="pr-2 text-steel-500"><div className="flex items-start gap-2"><SourceThumb source={a.source} /><span>{a.source}</span></div></td>
                         <td><Mark k={k} confidence={a.confidence} /></td>
                       </tr>
                     );
@@ -214,7 +215,7 @@ export default function ReviewAndConvert() {
                         <td className="pr-2">{c.function}{c.setting && <div className="text-steel-500">Setting: {c.setting}</div>}</td>
                         <td className="pr-2">{c.conditions.join(' · ') || '—'}</td>
                         <td className="whitespace-nowrap pr-2">{c.logicIn === 'relays' ? 'relays' : c.logicIn === 'drive' ? 'the drive' : 'controller'} · {c.kind}</td>
-                        <td className="pr-2 text-steel-500">{c.source}</td>
+                        <td className="pr-2 text-steel-500"><div className="flex items-start gap-2"><SourceThumb source={c.source} /><span>{c.source}</span></div></td>
                         <td><Mark k={k} confidence={c.confidence} /></td>
                       </tr>
                     );
