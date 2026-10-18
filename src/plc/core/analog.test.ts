@@ -64,5 +64,27 @@ test('a voltage signal prefers a channel that takes voltage; manual DF pins the 
   assert.deepEqual(io.map((p) => a.get(p.id)), ['DF1', 'DF2', 'DF8']);
 });
 
+test('a voltage / current signal never lands on a thermocouple-only channel (C0-04THM), nor a thermocouple on a current channel', () => {
+  const cpu = getCpu(click, 'C0-11DD2E-D');
+  const tc = pt('I001', 'input', 'Seal bar temperature', { range: 'thermocouple', min: 0, max: 300, units: '°C' });
+  const v = pt('I002', 'input', 'Film tension', { range: '0-10V', min: 0, max: 100, units: '%' });
+  const thm = analogMap(click, cpu, moduleSlots(['C0-08ND3', 'C0-04THM']), [tc, v]);
+  assert.equal(thm.byPoint.get('I001')?.partNumber, 'C0-04THM');
+  assert.equal(thm.byPoint.get('I002'), undefined, '0-10 V: no THM channel, unassigned');
+  assert.ok(!resolveAddresses(click, cpu, [tc, v], moduleSlots(['C0-08ND3', 'C0-04THM'])).get('I002'), 'no DF register');
+  // with a current module beside it the voltage signal goes there (a scaling question, not a wrong module)
+  const both = analogMap(click, cpu, moduleSlots(['C0-04THM', 'C0-04AD-1']), [tc, v]);
+  assert.equal(both.byPoint.get('I002')?.partNumber, 'C0-04AD-1');
+  assert.equal(analogMap(click, cpu, moduleSlots(['C0-04AD-1']), [tc]).byPoint.get('I001'), undefined, 'thermocouple: not on a current input');
+  // the family also comes from the description: a "thermocouple" left at the 4-20 mA default goes to the THM; a
+  // "thermocouple transmitter" is a 4-20 mA loop and never does
+  const bare = pt('I003', 'input', 'Seal bar temperature (thermocouple)', { range: '4-20mA', min: 0, max: 300, units: '°C' });
+  const tx = pt('I004', 'input', 'Seal heater temperature (thermocouple transmitter)', { range: '4-20mA', min: 0, max: 300, units: '°C' });
+  const mixed = analogMap(click, getCpu(click, 'C0-12DD1E-D'), moduleSlots(['C0-04THM']), [bare, tx]);
+  assert.equal(mixed.byPoint.get('I003')?.partNumber, 'C0-04THM');
+  assert.equal(mixed.byPoint.get('I004')?.label, 'CPU AD1');
+  assert.equal(analogMap(click, cpu, moduleSlots(['C0-04THM']), [tx]).byPoint.get('I004'), undefined, 'transmitter: not on the THM');
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

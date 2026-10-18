@@ -171,6 +171,20 @@ test('spec coverage: analog, guarding, motors, VFD and servo the design misses',
   assert.ok(!ids().includes('spec-servo'));
 });
 
+test('analog: a 0-10 V input with only a thermocouple module is flagged (no channel takes it)', () => {
+  seedSampleProject();
+  useProjectStore.setState({ plcId: 'click', cpuId: 'C0-11DD2E-D', modules: ['C0-04THM'] });
+  useIOStore.getState().importPoints([
+    { description: 'Seal bar temperature', type: 'input', category: 'Analog/Process', signal: 'analog', analog: { range: 'thermocouple', min: 0, max: 300, units: '°C' } },
+    { description: 'Film tension', type: 'input', category: 'Analog/Process', signal: 'analog', analog: { range: '0-10V', min: 0, max: 100, units: '%' } },
+  ], false);
+  const f = check().find((x) => x.id === 'fit:analog-inputs');
+  assert.ok(f, `expected fit:analog-inputs in ${ids().join(', ')}`);
+  assert.equal(f!.severity, 'critical');
+  assert.match(f!.title, /Film tension.*0-10V/);
+  assert.ok(!/Seal bar/.test(f!.title), 'the thermocouple has its channel');
+});
+
 test('drives: undersized VFD, unmonitored fault, commissioning values', () => {
   seedSampleProject();
   const el = useElectricalStore.getState();

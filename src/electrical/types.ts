@@ -63,6 +63,55 @@ export interface DesignInputs {
   /** Enclosure the designer picked (part number). Kept when the parts fit (even when larger than needed); when it is
    * too small the smallest enclosure that holds the parts is used and the pick stays recorded. Null/absent = recommended. */
   enclosurePreference?: string | null;
+  /** Control circuits kept as relay logic (a converted machine, "keep relay logic with NA parts"): drawn as NFPA 79
+   * ladder sheets instead of PLC I/O sheets. Written by the converter (src/convert), read by the engine and drawings. */
+  relayLogic?: RelayLogic;
+}
+
+/** Relay control logic: rungs between the control rails, in drawing order. */
+export interface RelayLogic {
+  /** Control rails: 24+ / 0V, or X1 / X2 from a control transformer (120 VAC). */
+  supply: '24VDC' | '120VAC';
+  rungs: RelayRung[];
+}
+
+/** One rung from the left rail to the right rail. */
+export interface RelayRung {
+  /** Stable key: the source circuit's id (ties the rung to the original drawing's circuit). */
+  id: string;
+  /** "PUMP 1 RUN", "SEAL-IN M1" — printed beside the rung. */
+  description?: string;
+  /** Series path left → right; it ends in a coil (or a drive input). */
+  path: RelayEl[];
+}
+
+/** Contact, coil or a parallel branch. Branches are one level deep: a branch's paths hold contacts only. */
+export type RelayEl = RelayContact | RelayCoil | RelayBranch;
+
+export interface RelayContact {
+  t: 'contact';
+  /** Device tag (a component of the design); a relay / contactor / timer contact names its coil's tag. */
+  tag: string;
+  nc: boolean;
+  /** Terminal numbers, e.g. '13-14', '95-96'. */
+  terms?: string;
+  kind?: 'pb' | 'relay' | 'timer' | 'limit' | 'ol' | 'selector' | 'safety' | 'other';
+}
+
+export interface RelayCoil {
+  t: 'coil';
+  tag: string;
+  kind: 'relay' | 'contactor' | 'timer-on' | 'timer-off' | 'counter' | 'solenoid' | 'light' | 'drive-input' | 'other';
+  /** Timer / counter preset as read, e.g. '2 s', '50'. */
+  preset?: string;
+  /** Drive-input terminal ('MI1', 'SON') when the rung ends in a drive's input instead of a coil. */
+  terms?: string;
+}
+
+export interface RelayBranch {
+  t: 'branch';
+  /** Parallel paths (e.g. the start PB and the K1 13-14 seal-in), each a series of contacts. */
+  paths: RelayContact[][];
 }
 
 /** How the design's enclosure was chosen (Electrical page "Enclosure" control). */

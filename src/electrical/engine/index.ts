@@ -158,7 +158,9 @@ export function generateDesign(input: EngineInput): EngineResult {
     required.push(comp(tags.next(TAG_PREFIX[p?.category ?? 'other'] ?? 'X'), r.partNumber, r.quantity, `Required by the designer${p ? `: ${p.description}` : ''}`));
   }
 
-  const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(dev.components.find((c) => c.tag === w.deviceTag)?.partNumber ?? '')).length;
+  // a button of a station (PB1L / PB1R on station PB1) is the station's part, not an uncatalogued sensor
+  const compOf = (tag: string) => dev.components.find((c) => c.tag === tag) ?? dev.components.find((c) => tag.startsWith(c.tag) && /^[A-Z]$/.test(tag.slice(c.tag.length)));
+  const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(compOf(w.deviceTag)?.partNumber ?? '')).length;
   const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
   const ctl = controlPower(pk, tags, supply, loadA);
   notes.push(...ctl.notes);
