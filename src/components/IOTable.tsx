@@ -6,6 +6,8 @@ import { usePlc } from '../plc/core/usePlc';
 import type { IOPoint } from '../types/io';
 import type { IOFilter } from './IOToolbar';
 import type { Rack } from '../plc/core/addressCheck';
+import { useProjectStore } from '../store/useProjectStore';
+import { Link } from 'react-router-dom';
 
 function Group({ title, color, points, addresses, dupes, devices, rack }: {
   title: string; color: string; points: IOPoint[]; addresses: Map<string, string>; dupes: Set<string>; devices: Map<string, string>; rack: Rack;
@@ -27,6 +29,7 @@ export function IOTable({ filter }: { filter: IOFilter }) {
   const { projectIO } = useIOStore();
   const { profile, cpu, modules, addresses } = usePlc();
   const rack: Rack = { profile, cpu, modules };
+  const chosenCpu = useProjectStore((st) => st.cpuId);
   // The field device wired to each address in the electrical design (tag and type).
   const ioWiring = useElectricalStore((st) => st.design?.ioWiring);
   const devices = new Map((ioWiring ?? []).map((w) => [w.address.toUpperCase(), `${w.deviceTag} · ${FIELD_DEVICE_LABEL[w.deviceType] ?? w.deviceType}`]));
@@ -46,6 +49,11 @@ export function IOTable({ filter }: { filter: IOFilter }) {
     );
   }
 
+  // Said, never silent: addresses on modules nobody chose (a preview), and points the PLC has no terminal for.
+  const noCpu = !chosenCpu;
+  const preview = !modules.length && [...addresses.values()].some((a) => /^[XY][1-9]\d\d$/.test(a));
+  const unaddressed = projectIO.filter((p) => !addresses.get(p.id)).length;
+
   const q = filter.text.trim().toLowerCase();
   const shown = projectIO.filter((p) =>
     (filter.type === 'all' || p.type === filter.type) &&
@@ -57,6 +65,13 @@ export function IOTable({ filter }: { filter: IOFilter }) {
         <h4 className="text-xs font-semibold text-steel-700">I/O list — {profile.name}</h4>
         {shown.length !== projectIO.length && <span className="text-xs text-steel-500">Showing {shown.length} of {projectIO.length}</span>}
       </div>
+      {(noCpu || preview || unaddressed > 0) && (
+        <div role="status" className="px-3 py-2 text-xs bg-amber-50 border-b border-amber-200 text-amber-900 space-y-0.5">
+          {noCpu && <p>No PLC CPU is chosen yet: the addresses assume a {cpu.label.split(' — ')[0]}. Choose the PLC on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
+          {preview && <p>No expansion modules are chosen: addresses past the CPU's own {cpu.builtInInputs} inputs / {cpu.builtInOutputs} outputs (X101…, Y101…) are a preview on 16-point modules that do not exist yet. Add the modules on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
+          {unaddressed > 0 && <p>{unaddressed} of {projectIO.length} points have no address: the PLC has no terminal left for them. Choose a larger CPU or more modules on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>

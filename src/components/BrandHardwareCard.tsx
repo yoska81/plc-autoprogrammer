@@ -3,6 +3,7 @@ import { ALL_PARTS, VENDORS } from '../electrical/catalogs';
 import { useVendorPreference } from '../store/useProjectStore';
 import type { Need } from '../plc/core/fit';
 import { hmiCompatible, platformFit, platformsOf, suggestModules } from '../plc/core/platforms';
+import { hasPlcProfile } from '../spec/brand';
 
 const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50';
 const td = 'px-3 py-1.5 border-b border-steel-100 align-top';
@@ -15,15 +16,14 @@ function moduleText(mods: string[]): string {
 }
 
 /**
- * The preferred PLC brands' hardware for this machine, from the verified
- * catalogs: each CPU with the expansion modules it would need, whether it
- * fits (same reasons as the CLICK chooser), and which touch panels can talk
- * to it. A comparison for quotes; the program is still written for CLICK
- * until programming support for the brand is added.
+ * Hardware of the preferred PLC brands this tool cannot program yet (Mitsubishi, Omron, Schneider, Delta…), from
+ * the verified catalogs: each CPU with the expansion modules it would need, whether it fits, and which touch panels
+ * can talk to it. A comparison for quotes. Brands it can program (Siemens, Allen-Bradley, Unitronics) are chosen
+ * in the CPU list below like CLICK, so they get no card here.
  */
 export default function BrandHardwareCard({ need }: { need: Need }) {
   const pref = useVendorPreference();
-  const plcVendors = pref.plc.filter((v) => v !== 'automationdirect');
+  const plcVendors = pref.plc.filter((v) => !hasPlcProfile(v));
   const platforms = platformsOf(plcVendors);
   if (!platforms.length) return null;
   const hmiVendors = pref.hmi.filter((v) => v !== 'automationdirect');
@@ -32,7 +32,7 @@ export default function BrandHardwareCard({ need }: { need: Need }) {
     <section className="bg-white border border-steel-200" aria-label="Preferred PLC brands for this machine">
       <div className="px-3 py-2 bg-[#e9edef] border-b border-steel-200">
         <h4 className="text-xs font-semibold text-steel-700">{plcVendors.map((v) => VENDORS.find((x) => x.id === v)?.name).join(' / ')} hardware for this machine</h4>
-        <p className="text-[11px] text-steel-600">From the verified catalogs: the expansion modules each CPU would need for {need.digitalInputs} inputs / {need.digitalOutputs} outputs{need.analogInputs || need.analogOutputs ? ` / ${need.analogInputs} analog in / ${need.analogOutputs} analog out` : ''}. For comparison and quotes — the program is still written for the CLICK selection below.</p>
+        <p className="text-[11px] text-steel-600">From the verified catalogs: the expansion modules each CPU would need for {need.digitalInputs} inputs / {need.digitalOutputs} outputs{need.analogInputs || need.analogOutputs ? ` / ${need.analogInputs} analog in / ${need.analogOutputs} analog out` : ''}. This tool cannot program {plcVendors.length > 1 ? 'these brands' : 'this brand'} yet, so its CPUs cannot be chosen: use this for comparison and quotes. The program, I/O addresses and drawings follow the PLC chosen below (CLICK, Siemens, Allen-Bradley or Unitronics).</p>
       </div>
       {platforms.map((pl) => (
         <div key={pl.id} className="border-b border-steel-200 last:border-b-0">

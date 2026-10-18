@@ -59,6 +59,32 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await type('%Q0.0');
   check(/%Q0.0 is an output, and this point is an input/.test(await alertText()), '%Q0.0 on an input: refused');
 
+  // D16: no CPU chosen and more points than terminals: said on the I/O list, never silent.
+  await page.evaluate(async () => {
+    const { useProjectStore } = await import('/src/store/useProjectStore.ts');
+    useProjectStore.setState({ plcId: 'click', cpuId: '', modules: [] });
+    const { useIOStore } = await import('/src/store/useIOStore.ts');
+    useIOStore.getState().importPoints(Array.from({ length: 160 }, (_, i) => ({ description: `Sensor ${i + 1}`, type: 'input', category: 'Product Detection' })), false);
+  });
+  await page.goto(BASE + '/io');
+  const status = page.getByRole('status').filter({ hasText: /No PLC CPU is chosen yet/ });
+  await status.waitFor({ timeout: 10000 }).catch(() => {});
+  const txt = await status.innerText().catch(() => '');
+  console.log('  ·', txt.replace(/\s+/g, ' ').slice(0, 300));
+  check(/No PLC CPU is chosen yet/.test(txt), 'no CPU: said');
+  check(/a preview on 16-point modules that do not exist yet/.test(txt), 'addresses on modules nobody chose: said');
+  check(/\d+ of \d+ points have no address/.test(txt), 'points with no terminal: counted and said');
+
+  // D14: a brand this tool cannot program gets the comparison card with plain words; Siemens gets none.
+  await page.evaluate(async () => (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().setInfo({ vendors: { plc: ['mitsubishi'] }, plcChosen: true }));
+  await page.goto(BASE + '/equipment');
+  const card = page.locator('section[aria-label="Preferred PLC brands for this machine"]');
+  await card.waitFor({ timeout: 10000 }).catch(() => {});
+  check(/This tool cannot program this brand yet, so its CPUs cannot be chosen/.test(await card.innerText().catch(() => '')), 'Mitsubishi card: says why its CPUs cannot be chosen');
+  await page.evaluate(async () => (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().setInfo({ vendors: { plc: ['siemens'] }, plcChosen: true }));
+  await page.waitForTimeout(500);
+  check(await card.count() === 0, 'Siemens: no comparison card (its CPUs are in the list)');
+
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await browser.close();
   console.log(fails.length ? `address-check e2e: ${fails.length} failed` : 'address-check e2e: all passed');
