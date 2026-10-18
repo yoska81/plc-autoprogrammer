@@ -103,3 +103,53 @@ export function programRoles(program: LadderProgram, labels: Map<string, string>
   if (!out.faults.length) out.missing.push('No fault or alarm bits were found: the alarm screen has nothing to show until the program sets some.');
   return out;
 }
+
+/** The parts of an HMI tag (src/hmi/types.ts HmiTag) the panel builder reuses for a role. */
+export interface RoleTag { name: string; address: string; dataType: 'BIT' | 'INT' | 'INT2' | 'FLOAT'; access: 'read' | 'write' | 'read-write'; description: string; role: string }
+
+export interface ImportPanelTags {
+  /** Tags with a role of the panel builder (build.ts planTags): it binds to these instead of its own C1001… blocks. */
+  tags: RoleTag[];
+  /** Commands the program takes from a physical input: the panel needs its own bit in parallel (in series for a stop). */
+  parallelTo: { role: string; address: string; nickname: string }[];
+  /** Counter presets written as constants in the rung: to move into a register so the panel can set them. */
+  constPresets: { address: string; nickname: string; preset: string }[];
+}
+
+const dataTypeOf = (a: string): RoleTag['dataType'] => (/^(DF)\d+$/i.test(a) ? 'FLOAT' : /^(DD|CTD)\d+$/i.test(a) ? 'INT2' : /^(DS|DH|TD)\d+$/i.test(a) ? 'INT' : 'BIT');
+
+/**
+ * The roles as the panel builder's tags (role names of src/hmi/engine/build.ts): commands an old panel already
+ * wrote (cmd:start / stop / reset / manual), the running state, fault inputs (alarm:fault:<input>), the count and
+ * the batch setpoint. Only roles whose meaning is plain are given; the builder allocates the rest and lists them as
+ * PLC changes. An "OK" safety input is the inverse of an alarm bit, so it is not given as alarm:safety.
+ */
+export function panelTags(r: ProgramRoles): ImportPanelTags {
+  const tags: RoleTag[] = [];
+  const parallelTo: ImportPanelTags['parallelTo'] = [];
+  const constPresets: ImportPanelTags['constPresets'] = [];
+  const tag = (x: Role, role: string, access: RoleTag['access'], address = x.address) => tags.push({ name: x.nickname, address, dataType: dataTypeOf(address), access, description: x.why, role });
+  const command = (xs: Role[], role: string) => {
+    const bit = xs.find((x) => !isX(x.address));
+    if (bit) tag(bit, role, 'read-write');
+    else if (xs[0]) parallelTo.push({ role, address: xs[0].address, nickname: xs[0].nickname });
+  };
+  command(r.start, 'cmd:start');
+  command(r.stop, 'cmd:stop');
+  command(r.reset, 'cmd:reset');
+  const manual = r.mode.find((x) => /manual|hand/i.test(x.nickname));
+  if (manual) { if (isX(manual.address)) tag(manual, 'sts:manual', 'read'); else tag(manual, 'cmd:manual', 'read-write'); }
+  if (r.running[0]) tag(r.running[0], 'sts:running', 'read');
+  for (const f of r.faults) if (isX(f.address) && !/\bok\b|_ok\b|healthy/i.test(f.nickname)) tag(f, `alarm:fault:${f.address}`, 'read');
+  // The production count: not a reject / fault counter, and one with a settable preset first.
+  const score = (c: ValueRole) => (/reject|fault|error|alarm|scrap/i.test(c.nickname) ? 0 : 2) + (c.preset && isWord(c.preset) ? 1 : 0);
+  const count = [...r.counters].sort((a, b) => score(b) - score(a))[0];
+  if (count) {
+    // The counter's value word: CT1 counts in CTD1.
+    tag(count, 'word:count', 'read', count.address.replace(/^CT(\d+)$/i, 'CTD$1'));
+    if (count.preset && isWord(count.preset)) tag({ ...count, nickname: nickOf(r, count.preset) ?? count.preset, why: `the preset of ${count.nickname}` }, 'sp:batch', 'read-write', count.preset.toUpperCase());
+    else if (count.preset) constPresets.push({ address: count.address, nickname: count.nickname, preset: count.preset });
+  }
+  return { tags, parallelTo, constPresets };
+}
+const nickOf = (r: ProgramRoles, address: string) => r.setpoints.find((s) => s.address === address.toUpperCase())?.nickname;
