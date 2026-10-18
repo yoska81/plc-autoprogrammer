@@ -22,19 +22,45 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "state": "single-phase models (PSR-24-xxx), mains on",
         "meter": "VAC",
         "expected": "100-240 VAC nominal; operating range 90-264 VAC, 47-63 Hz",
+        "pins": [
+          [
+            "L",
+            "N"
+          ]
+        ],
         "note": "PSR-24-120 technical data; three-phase -3 models take 3 x 380-500 VAC (range 3 x 320-575 VAC) on L1, L2, L3."
       },
       {
         "terminals": "L1-L2, L2-L3, L1-L3",
         "state": "three-phase models (PSR-24-xxx-3), mains on",
         "meter": "VAC",
-        "expected": "380-500 VAC nominal; operating range 320-575 VAC (or 2 x 340-575 VAC)"
+        "expected": "380-500 VAC nominal; operating range 320-575 VAC (or 2 x 340-575 VAC)",
+        "pins": [
+          [
+            "L1",
+            "L2"
+          ],
+          [
+            "L2",
+            "L3"
+          ],
+          [
+            "L1",
+            "L3"
+          ]
+        ]
       },
       {
         "terminals": "+ to -",
         "state": "normal operation",
         "meter": "VDC",
         "expected": "24 VDC +/-1% (single-phase) / +/-2% (three-phase) at factory setting; adjustable 24-28 VDC with the potentiometer",
+        "pins": [
+          [
+            "+",
+            "-"
+          ]
+        ],
         "note": "Load regulation +/-0.5%; ripple < 100 mVpp (0-70 C)."
       },
       {
@@ -182,13 +208,25 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "L to N",
         "state": "AC input, mains on (PSN24-240)",
         "meter": "VAC",
-        "expected": "100-240 VAC nominal; range 85-276 VAC (DC input 88-375 VDC: L = +, N = -)"
+        "expected": "100-240 VAC nominal; range 85-276 VAC (DC input 88-375 VDC: L = +, N = -)",
+        "pins": [
+          [
+            "L",
+            "N"
+          ]
+        ]
       },
       {
         "terminals": "+ to -",
         "state": "normal operation",
         "meter": "VDC",
         "expected": "24 VDC at factory setting; adjustable 24-28 VDC",
+        "pins": [
+          [
+            "+",
+            "-"
+          ]
+        ],
         "note": "PSN24-240: 10 A at 24 V, 15 A for 5 s (power boost)."
       },
       {
@@ -308,13 +346,25 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "L to N",
         "state": "mains on",
         "meter": "VAC",
-        "expected": "100-240 VAC nominal; range 90-264 VAC, 47-63 Hz"
+        "expected": "100-240 VAC nominal; range 90-264 VAC, 47-63 Hz",
+        "pins": [
+          [
+            "L",
+            "N"
+          ]
+        ]
       },
       {
         "terminals": "+ to -",
         "state": "normal operation",
         "meter": "VDC",
         "expected": "24 VDC +/-2% factory; adjustable 24-28 VDC",
+        "pins": [
+          [
+            "+",
+            "-"
+          ]
+        ],
         "note": "PSL-24-030: 1.25 A; PSL-24-060: 2.5 A."
       }
     ],
@@ -396,31 +446,69 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "state": "1-phase AC input, mains on",
         "meter": "VAC",
         "expected": "100-240 VAC -15%...+10% (85-264 VAC), 50-60 Hz",
+        "pins": [
+          [
+            "L/+",
+            "N/-"
+          ]
+        ],
         "note": "Values from QUINT4-PS/1AC/24DC/10; DC input 110-250 VDC -18%...+40% is also allowed."
       },
       {
         "terminals": "+ to - (Output DC 24V)",
         "state": "normal operation",
         "meter": "VDC",
-        "expected": "24 VDC nominal; setting range UOut 24-29.5 VDC (constant capacity)"
+        "expected": "24 VDC nominal; setting range UOut 24-29.5 VDC (constant capacity)",
+        "pins": [
+          [
+            "+",
+            "-"
+          ]
+        ]
       },
       {
         "terminals": "13 / 14 (relay)",
         "state": "normal operation, UOut > 0.9 x USet",
         "meter": "continuity",
-        "expected": "closed (default DC OK function)"
+        "expected": "closed (default DC OK function)",
+        "pins": [
+          [
+            "13",
+            "14"
+          ]
+        ]
       },
       {
         "terminals": "Out 1 to SGnd",
         "state": "normal operation (default DC OK)",
         "meter": "VDC",
-        "expected": "24 VDC (active high) while UOut > 0.9 x USet; 0 V when below"
+        "expected": "24 VDC (active high) while UOut > 0.9 x USet; 0 V when below",
+        "pins": [
+          [
+            "Out1",
+            "SGnd"
+          ]
+        ]
       },
       {
         "terminals": "Out 2 to SGnd",
         "state": "default POut < PN",
         "meter": "VDC",
-        "expected": "24 VDC while output power below nominal; 0 V in boost or overload"
+        "expected": "24 VDC while output power below nominal; 0 V in boost or overload",
+        "pins": [
+          [
+            "Out2",
+            "SGnd"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "DC OK (default relay function, UOut > 0.9 x USet)",
+        "note": "Data sheet QUINT4-PS/1AC/24DC/10 (107100_en_00): Relay contact (configurable) 13/14, default DC OK, closed in normal operation"
       }
     ],
     "indicators": [
@@ -547,20 +635,46 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "L1/+ to L2/N/-",
         "state": "mains on",
         "meter": "VAC",
-        "expected": "120-240 VAC rated; range 85-264 VAC (DC 110-275 V)"
+        "expected": "120-240 VAC rated; range 85-264 VAC (DC 110-275 V)",
+        "pins": [
+          [
+            "L1/+",
+            "L2/N/-"
+          ]
+        ]
       },
       {
         "terminals": "+1/+2 to -1/-2/-3",
         "state": "normal operation",
         "meter": "VDC",
-        "expected": "24 VDC; adjustable 24-28 V on 6EP3333 (5 A) and 6EP3334 (10 A), 22.2-26.4 V on 6EP3332 (2.5 A)"
+        "expected": "24 VDC; adjustable 24-28 V on 6EP3333 (5 A) and 6EP3334 (10 A), 22.2-26.4 V on 6EP3332 (2.5 A)",
+        "pins": [
+          [
+            "+1",
+            "-1"
+          ]
+        ]
       },
       {
         "terminals": "13 / 14",
         "state": "DC O.K. (6EP3333 / 6EP3334)",
         "meter": "continuity",
         "expected": "closed when DC O.K. (electronic NO contact, 30 VDC / 0.1 A)",
+        "pins": [
+          [
+            "13",
+            "14"
+          ]
+        ],
         "note": "6EP3332 (2.5 A) has no 13/14 alarm contact."
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "DC O.K.",
+        "note": "SITOP PSU6200 data sheets 6EP3333/6EP3334: 13, 14 auxiliary contact (alarm signal), electronic NO contact closed when DC O.K."
       }
     ],
     "indicators": [
@@ -637,13 +751,25 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "L to N",
         "state": "mains on",
         "meter": "VAC",
-        "expected": "100-240 VAC (allowable 85-264 VAC); DC input 90-350 VDC with + on L"
+        "expected": "100-240 VAC (allowable 85-264 VAC); DC input 90-350 VDC with + on L",
+        "pins": [
+          [
+            "L",
+            "N"
+          ]
+        ]
       },
       {
         "terminals": "+V to -V",
         "state": "normal operation",
         "meter": "VDC",
-        "expected": "24 VDC; V.ADJ range -10% to +15% (21.6-27.6 VDC)"
+        "expected": "24 VDC; V.ADJ range -10% to +15% (21.6-27.6 VDC)",
+        "pins": [
+          [
+            "+V",
+            "-V"
+          ]
+        ]
       }
     ],
     "indicators": [
@@ -1292,25 +1418,77 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "A1 to A2",
         "state": "coil energized, 24 VDC coil (SC-E..PG-24VDC, SC-E1G)",
         "meter": "VDC",
-        "expected": "24 VDC; pick-up 0.85-1.1 x rated (20.4-26.4 V); drop-out 0.1-0.75 x rated"
+        "expected": "24 VDC; pick-up 0.85-1.1 x rated (20.4-26.4 V); drop-out 0.1-0.75 x rated",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "A1 to A2",
         "state": "coil energized, AC coil 110VAC (100-110 V 50 Hz / 110-120 V 60 Hz)",
         "meter": "VAC",
-        "expected": "pick-up 0.85-1.1 x rated; drop-out 0.2-0.75 x rated"
+        "expected": "pick-up 0.85-1.1 x rated; drop-out 0.2-0.75 x rated",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "A1 to A2",
         "state": "operating",
         "meter": "VAC",
-        "expected": "within 85-110% of coil voltage (allowable fluctuation)"
+        "expected": "within 85-110% of coil voltage (allowable fluctuation)",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "1/L1-2/T1, 3/L2-4/T2, 5/L3-6/T3",
         "state": "coil energized",
         "meter": "continuity",
-        "expected": "closed"
+        "expected": "closed",
+        "pins": [
+          [
+            "1/L1",
+            "2/T1"
+          ],
+          [
+            "3/L2",
+            "4/T2"
+          ],
+          [
+            "5/L3",
+            "6/T3"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "1/L1",
+        "b": "2/T1",
+        "when": "energized",
+        "note": "https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf (INA-F0154-E) wiring diagram L1-T1, L2-T2, L3-T3 main contacts; terminal marks 1/L1 3/L2 5/L3 / 2/T1 4/T2 6/T3 (https://cdn.automationdirect.com/static/specs/fujimc9150.pdf dimension drawings). Auxiliary contacts are add-on blocks (SC-E02..E4 have no internal auxiliary contact), so no 13-14/21-22 pair is given."
+      },
+      {
+        "a": "3/L2",
+        "b": "4/T2",
+        "when": "energized",
+        "note": "https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf (INA-F0154-E) wiring diagram L1-T1, L2-T2, L3-T3 main contacts; terminal marks 1/L1 3/L2 5/L3 / 2/T1 4/T2 6/T3 (https://cdn.automationdirect.com/static/specs/fujimc9150.pdf dimension drawings). Auxiliary contacts are add-on blocks (SC-E02..E4 have no internal auxiliary contact), so no 13-14/21-22 pair is given."
+      },
+      {
+        "a": "5/L3",
+        "b": "6/T3",
+        "when": "energized",
+        "note": "https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf (INA-F0154-E) wiring diagram L1-T1, L2-T2, L3-T3 main contacts; terminal marks 1/L1 3/L2 5/L3 / 2/T1 4/T2 6/T3 (https://cdn.automationdirect.com/static/specs/fujimc9150.pdf dimension drawings). Auxiliary contacts are add-on blocks (SC-E02..E4 have no internal auxiliary contact), so no 13-14/21-22 pair is given."
       }
     ],
     "indicators": [
@@ -1399,13 +1577,25 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "95-96 (NC)",
         "state": "not tripped",
         "meter": "continuity",
-        "expected": "closed"
+        "expected": "closed",
+        "pins": [
+          [
+            "95",
+            "96"
+          ]
+        ]
       },
       {
         "terminals": "97-98 (NO)",
         "state": "not tripped",
         "meter": "continuity",
-        "expected": "open"
+        "expected": "open",
+        "pins": [
+          [
+            "97",
+            "98"
+          ]
+        ]
       },
       {
         "terminals": "adjustment dial",
@@ -1417,7 +1607,35 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "2/T1, 4/T2, 6/T3",
         "state": "running",
         "meter": "VAC",
-        "expected": "balanced phase voltages (open-phase protection trips on a lost phase)"
+        "expected": "balanced phase voltages (open-phase protection trips on a lost phase)",
+        "pins": [
+          [
+            "2/T1",
+            "4/T2"
+          ],
+          [
+            "4/T2",
+            "6/T3"
+          ],
+          [
+            "2/T1",
+            "6/T3"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "95",
+        "b": "96",
+        "when": "not tripped",
+        "note": "https://cdn.automationdirect.com/static/specs/fujimcor.pdf and https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf wiring diagram: 95-96 N.C. and 97-98 N.O. overload contacts"
+      },
+      {
+        "a": "97",
+        "b": "98",
+        "when": "tripped",
+        "note": "https://cdn.automationdirect.com/static/specs/fujimcor.pdf and https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf wiring diagram: 95-96 N.C. and 97-98 N.O. overload contacts"
       }
     ],
     "indicators": [
@@ -1521,31 +1739,119 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "13 (A1) to 14 (A2)",
         "state": "coil energized, 24 VDC coil",
         "meter": "VDC",
-        "expected": "24 VDC; must pull in at <= 80% (19.2 V); drops out at >= 10% (2.4 V); max 110% continuous"
+        "expected": "24 VDC; must pull in at <= 80% (19.2 V); drops out at >= 10% (2.4 V); max 110% continuous",
+        "pins": [
+          [
+            "13",
+            "14"
+          ]
+        ]
       },
       {
         "terminals": "13 (A1) to 14 (A2)",
         "state": "coil energized, 120 VAC coil",
         "meter": "VAC",
-        "expected": "120 VAC; pull-in <= 85%, drop-out >= 15%, max 110%"
+        "expected": "120 VAC; pull-in <= 85%, drop-out >= 15%, max 110%",
+        "pins": [
+          [
+            "13",
+            "14"
+          ]
+        ]
       },
       {
         "terminals": "13 (A1) to 14 (A2)",
         "state": "power off, relay pulled or wires lifted",
         "meter": "ohms",
-        "expected": "782: 24VDC 640 ohm, 12VDC 177, 24VAC 177, 120VAC 4.43 k, 240VAC 17.72 k; 784: 24VDC 303 ohm, 120VAC 2.1 k"
+        "expected": "782: 24VDC 640 ohm, 12VDC 177, 24VAC 177, 120VAC 4.43 k, 240VAC 17.72 k; 784: 24VDC 303 ohm, 120VAC 2.1 k",
+        "pins": [
+          [
+            "13",
+            "14"
+          ]
+        ]
       },
       {
         "terminals": "9 (11) - 5 (14) and 12 (41) - 8 (44)",
         "state": "coil energized (782)",
         "meter": "continuity",
-        "expected": "closed (NO)"
+        "expected": "closed (NO)",
+        "pins": [
+          [
+            "9",
+            "5"
+          ],
+          [
+            "12",
+            "8"
+          ]
+        ]
       },
       {
         "terminals": "9 (11) - 1 (12) and 12 (41) - 4 (42)",
         "state": "coil de-energized (782)",
         "meter": "continuity",
-        "expected": "closed (NC)"
+        "expected": "closed (NC)",
+        "pins": [
+          [
+            "9",
+            "1"
+          ],
+          [
+            "12",
+            "4"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "9",
+        "b": "5",
+        "when": "energized",
+        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+      },
+      {
+        "a": "10",
+        "b": "6",
+        "when": "energized",
+        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+      },
+      {
+        "a": "11",
+        "b": "7",
+        "when": "energized",
+        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+      },
+      {
+        "a": "12",
+        "b": "8",
+        "when": "energized",
+        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+      },
+      {
+        "a": "9",
+        "b": "1",
+        "when": "de-energized",
+        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+      },
+      {
+        "a": "10",
+        "b": "2",
+        "when": "de-energized",
+        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+      },
+      {
+        "a": "11",
+        "b": "3",
+        "when": "de-energized",
+        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+      },
+      {
+        "a": "12",
+        "b": "4",
+        "when": "de-energized",
+        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
       }
     ],
     "indicators": [
@@ -1632,13 +1938,33 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "A1 to A2",
         "state": "ON command, DC control (GQ...-D-)",
         "meter": "VDC",
-        "expected": "3-32 VDC; turn ON >= 2.7 VDC, turn OFF <= 1 VDC; <= 13 mA at 32 V"
+        "expected": "3-32 VDC; turn ON >= 2.7 VDC, turn OFF <= 1 VDC; <= 13 mA at 32 V",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "L1 to T1",
         "state": "ON, at nominal current",
         "meter": "VAC",
-        "expected": "<= 1.45 Vrms (GQ15/25), <= 1.35 Vrms (GQ50)"
+        "expected": "<= 1.45 Vrms (GQ15/25), <= 1.35 Vrms (GQ50)",
+        "pins": [
+          [
+            "L1",
+            "T1"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "L1",
+        "b": "T1",
+        "when": "ON (control voltage applied to A1-A2)",
+        "note": "https://cdn.automationdirect.com/static/manuals/gefranrelays/gq_05_2024_manual.pdf: output L1 - T1 switched by the A1/A2 control input (AC load)"
       }
     ],
     "indicators": [
@@ -1711,13 +2037,33 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "4/A1+ to 3/A2-",
         "state": "ON command (D-0 control input)",
         "meter": "VDC",
-        "expected": "5.1-32 VDC; activation > 5.1 VDC, deactivation < 5 VDC; < 9 mA at 32 V"
+        "expected": "5.1-32 VDC; activation > 5.1 VDC, deactivation < 5 VDC; < 9 mA at 32 V",
+        "pins": [
+          [
+            "4/A1+",
+            "3/A2-"
+          ]
+        ]
       },
       {
         "terminals": "1/L1 to 2/T1",
         "state": "ON at rated current",
         "meter": "VAC",
-        "expected": "< 1.2 Vrms potential drop"
+        "expected": "< 1.2 Vrms potential drop",
+        "pins": [
+          [
+            "1/L1",
+            "2/T1"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "1/L1",
+        "b": "2/T1",
+        "when": "ON (control voltage applied to 4/A1+ - 3/A2-)",
+        "note": "https://cdn.automationdirect.com/static/manuals/gefranrelays/grsh_06_2024_manual.pdf: 1/L1 Line Connection, 2/T1 Load Connection, control input 4/A1+ 3/A2- (AC load)"
       }
     ],
     "indicators": [
@@ -1790,31 +2136,99 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "A1(+) to A2",
         "state": "powered",
         "meter": "VDC",
-        "expected": "24 V AC/DC; range 0.9-1.1 UN"
+        "expected": "24 V AC/DC; range 0.9-1.1 UN",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "S11 to S21",
         "state": "powered (AC/DC units)",
         "meter": "VDC",
-        "expected": "DC 22 V control voltage"
+        "expected": "DC 22 V control voltage",
+        "pins": [
+          [
+            "S11",
+            "S21"
+          ]
+        ]
       },
       {
         "terminals": "S12, S22 to S21",
         "state": "E-stop released, relays activated",
         "meter": "VDC",
-        "expected": ">= DC 20 V (AC/DC units)"
+        "expected": ">= DC 20 V (AC/DC units)",
+        "pins": [
+          [
+            "S12",
+            "S21"
+          ],
+          [
+            "S22",
+            "S21"
+          ]
+        ]
       },
       {
         "terminals": "13-14, 23-24, 33-34",
         "state": "K1/K2 energized",
         "meter": "continuity",
-        "expected": "closed (forcibly guided NO safety contacts)"
+        "expected": "closed (forcibly guided NO safety contacts)",
+        "pins": [
+          [
+            "13",
+            "14"
+          ],
+          [
+            "23",
+            "24"
+          ],
+          [
+            "33",
+            "34"
+          ]
+        ]
       },
       {
         "terminals": "41-42",
         "state": "K1/K2 energized",
         "meter": "continuity",
-        "expected": "open (NC monitoring only)"
+        "expected": "open (NC monitoring only)",
+        "pins": [
+          [
+            "41",
+            "42"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "safety OK (K1/K2 energized)",
+        "note": "https://www.dold.com/downloads/LG5925_DB.pdf: 13-14, 23-24, 33-34 forcibly guided NO safety contacts; 41-42 NC \"can only be used for monitoring\" (LG 5925.48: 3 NO, 1 NC)"
+      },
+      {
+        "a": "23",
+        "b": "24",
+        "when": "safety OK (K1/K2 energized)",
+        "note": "https://www.dold.com/downloads/LG5925_DB.pdf: 13-14, 23-24, 33-34 forcibly guided NO safety contacts; 41-42 NC \"can only be used for monitoring\" (LG 5925.48: 3 NO, 1 NC)"
+      },
+      {
+        "a": "33",
+        "b": "34",
+        "when": "safety OK (K1/K2 energized)",
+        "note": "https://www.dold.com/downloads/LG5925_DB.pdf: 13-14, 23-24, 33-34 forcibly guided NO safety contacts; 41-42 NC \"can only be used for monitoring\" (LG 5925.48: 3 NO, 1 NC)"
+      },
+      {
+        "a": "41",
+        "b": "42",
+        "when": "safety not OK (K1/K2 de-energized)",
+        "note": "https://www.dold.com/downloads/LG5925_DB.pdf: 13-14, 23-24, 33-34 forcibly guided NO safety contacts; 41-42 NC \"can only be used for monitoring\" (LG 5925.48: 3 NO, 1 NC)"
       }
     ],
     "indicators": [
@@ -1910,26 +2324,88 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "A1+ to A2",
         "state": "powered",
         "meter": "VDC",
-        "expected": "DC 24 V; range 0.9-1.1 UN"
+        "expected": "DC 24 V; range 0.9-1.1 UN",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "S11 to S21",
         "state": "powered",
         "meter": "VDC",
-        "expected": "DC 22.5 V"
+        "expected": "DC 22.5 V",
+        "pins": [
+          [
+            "S11",
+            "S21"
+          ]
+        ]
       },
       {
         "terminals": "S12, S22 to S21",
         "state": "light curtain clear, relays activated",
         "meter": "VDC",
         "expected": ">= DC 21 V",
+        "pins": [
+          [
+            "S12",
+            "S21"
+          ],
+          [
+            "S22",
+            "S21"
+          ]
+        ],
         "note": "Asymmetric curtains: minus-switching OSSD to S22, plus-switching to S12."
       },
       {
         "terminals": "13-14, 23-24, 33-34",
         "state": "K1/K2 energized",
         "meter": "continuity",
-        "expected": "closed"
+        "expected": "closed",
+        "pins": [
+          [
+            "13",
+            "14"
+          ],
+          [
+            "23",
+            "24"
+          ],
+          [
+            "33",
+            "34"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "safety OK (light curtain clear, K1/K2 energized)",
+        "note": "https://cdn.automationdirect.com/static/manuals/safetyrelays/lg5925_900.pdf: LG 5925.48 3 NO, 1 NC contact; NO contacts are safety contacts; NC contacts 41-42 only for monitoring"
+      },
+      {
+        "a": "23",
+        "b": "24",
+        "when": "safety OK (light curtain clear, K1/K2 energized)",
+        "note": "https://cdn.automationdirect.com/static/manuals/safetyrelays/lg5925_900.pdf: LG 5925.48 3 NO, 1 NC contact; NO contacts are safety contacts; NC contacts 41-42 only for monitoring"
+      },
+      {
+        "a": "33",
+        "b": "34",
+        "when": "safety OK (light curtain clear, K1/K2 energized)",
+        "note": "https://cdn.automationdirect.com/static/manuals/safetyrelays/lg5925_900.pdf: LG 5925.48 3 NO, 1 NC contact; NO contacts are safety contacts; NC contacts 41-42 only for monitoring"
+      },
+      {
+        "a": "41",
+        "b": "42",
+        "when": "safety not OK (K1/K2 de-energized)",
+        "note": "https://cdn.automationdirect.com/static/manuals/safetyrelays/lg5925_900.pdf: LG 5925.48 3 NO, 1 NC contact; NO contacts are safety contacts; NC contacts 41-42 only for monitoring"
       }
     ],
     "indicators": [
@@ -2010,19 +2486,61 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "A1(+) to A2(-)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "AC/DC 24 V; DC 0.9-1.1 UN, AC 0.85-1.1 UN"
+        "expected": "AC/DC 24 V; DC 0.9-1.1 UN, AC 0.85-1.1 UN",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "Y1-Y2",
         "state": "ready",
         "meter": "continuity",
-        "expected": "closed (feedback circuit through external contactor NC contacts)"
+        "expected": "closed (feedback circuit through external contactor NC contacts)",
+        "pins": [
+          [
+            "Y1",
+            "Y2"
+          ]
+        ]
       },
       {
         "terminals": "13-14, 23-24",
         "state": "both buttons pressed within 0.5 s",
         "meter": "continuity",
-        "expected": "closed"
+        "expected": "closed",
+        "pins": [
+          [
+            "13",
+            "14"
+          ],
+          [
+            "23",
+            "24"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "both buttons pressed within 0.5 s (outputs enabled)",
+        "note": "https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf: BG 5933 block diagram 13, 23 (NO) and 31 (NC); function diagram 13-14/23-24 close when S1 and S2 are activated within 0.5 s; NC 31-32 only for signalling"
+      },
+      {
+        "a": "23",
+        "b": "24",
+        "when": "both buttons pressed within 0.5 s (outputs enabled)",
+        "note": "https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf: BG 5933 block diagram 13, 23 (NO) and 31 (NC); function diagram 13-14/23-24 close when S1 and S2 are activated within 0.5 s; NC 31-32 only for signalling"
+      },
+      {
+        "a": "31",
+        "b": "32",
+        "when": "outputs not enabled (K1/K2 de-energized)",
+        "note": "https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf: BG 5933 block diagram 13, 23 (NO) and 31 (NC); function diagram 13-14/23-24 close when S1 and S2 are activated within 0.5 s; NC 31-32 only for signalling"
       }
     ],
     "indicators": [
@@ -2119,7 +2637,13 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "A1 to A2",
         "state": "powered",
         "meter": "VDC",
-        "expected": "24 VAC/DC; range 85-110%"
+        "expected": "24 VAC/DC; range 85-110%",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "S11",
@@ -2131,7 +2655,41 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "13-14, 23-24, 33-34",
         "state": "K1/K2 closed",
         "meter": "continuity",
-        "expected": "closed"
+        "expected": "closed",
+        "pins": [
+          [
+            "13",
+            "14"
+          ],
+          [
+            "23",
+            "24"
+          ],
+          [
+            "33",
+            "34"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "safety OK (K1/K2 closed)",
+        "note": "https://cdn.automationdirect.com/static/specs/viperscr31.pdf p.tESC-472: 13-14, 23-24, 33-34 safety outputs; LED K1/K2 \"Internal relay safety output contacts closed\""
+      },
+      {
+        "a": "23",
+        "b": "24",
+        "when": "safety OK (K1/K2 closed)",
+        "note": "https://cdn.automationdirect.com/static/specs/viperscr31.pdf p.tESC-472: 13-14, 23-24, 33-34 safety outputs; LED K1/K2 \"Internal relay safety output contacts closed\""
+      },
+      {
+        "a": "33",
+        "b": "34",
+        "when": "safety OK (K1/K2 closed)",
+        "note": "https://cdn.automationdirect.com/static/specs/viperscr31.pdf p.tESC-472: 13-14, 23-24, 33-34 safety outputs; LED K1/K2 \"Internal relay safety output contacts closed\""
       }
     ],
     "indicators": [
@@ -2228,13 +2786,43 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "X1-X2",
         "state": "ready",
         "meter": "continuity",
-        "expected": "closed (feedback loop)"
+        "expected": "closed (feedback loop)",
+        "pins": [
+          [
+            "X1",
+            "X2"
+          ]
+        ]
       },
       {
         "terminals": "13-14, 23-24",
         "state": "T1 and T2 pressed within 0.5 s",
         "meter": "continuity",
-        "expected": "closed"
+        "expected": "closed",
+        "pins": [
+          [
+            "13",
+            "14"
+          ],
+          [
+            "23",
+            "24"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "T1 and T2 pressed within 0.5 s (outputs enabled)",
+        "note": "https://cdn.automationdirect.com/static/manuals/idem2hand/e61-328-00.pdf: 13-14 Safety contact 1, 23-24 Safety contact 2 (2 NO contacts)"
+      },
+      {
+        "a": "23",
+        "b": "24",
+        "when": "T1 and T2 pressed within 0.5 s (outputs enabled)",
+        "note": "https://cdn.automationdirect.com/static/manuals/idem2hand/e61-328-00.pdf: 13-14 Safety contact 1, 23-24 Safety contact 2 (2 NO contacts)"
       }
     ],
     "indicators": [
@@ -2288,31 +2876,105 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "A1 to A2",
         "state": "powered",
         "meter": "VDC",
-        "expected": "20.4-26.4 VDC"
+        "expected": "20.4-26.4 VDC",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "S11, S21 (pulse test outputs) to A2",
         "state": "device contacts open (CI)",
         "meter": "VDC",
-        "expected": "18-19 V on DMM"
+        "expected": "18-19 V on DMM",
+        "pins": [
+          [
+            "S11",
+            "A2"
+          ],
+          [
+            "S21",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "S12, S22 to A2",
         "state": "contacts closed (CI)",
         "meter": "VDC",
-        "expected": "about 19 V (DMM); DI/DIS/SI: ch1 about 14 V, ch2 about 18 V"
+        "expected": "about 19 V (DMM); DI/DIS/SI: ch1 about 14 V, ch2 about 18 V",
+        "pins": [
+          [
+            "S12",
+            "A2"
+          ],
+          [
+            "S22",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "S34 to A2",
         "state": "reset pressed",
         "meter": "VDC",
-        "expected": "24 V; monitored manual reset needs 0 -> 24 -> 0 V within 250-3000 ms"
+        "expected": "24 V; monitored manual reset needs 0 -> 24 -> 0 V within 250-3000 ms",
+        "pins": [
+          [
+            "S34",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "13 / 14 (23 / 24)",
         "state": "OUT steady green",
         "meter": "VDC",
-        "expected": "14 equals supply voltage when output closed"
+        "expected": "14 equals supply voltage when output closed",
+        "pins": [
+          [
+            "14",
+            "A2"
+          ],
+          [
+            "24",
+            "A2"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "safety OK (OUT on)",
+        "note": "https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf status indicators table: OUT On = 13/14, 23/24, 33/34 closed (41/42 open) on CI; 13/14, 23/24 closed on DI/SI; 13/14, 23/24, 33/34, 43/44 on EM. DIS has OSSD outputs 14, 24, 34, 44 (no relay contacts) (CI, DI, EM, SI)"
+      },
+      {
+        "a": "23",
+        "b": "24",
+        "when": "safety OK (OUT on)",
+        "note": "https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf status indicators table: OUT On = 13/14, 23/24, 33/34 closed (41/42 open) on CI; 13/14, 23/24 closed on DI/SI; 13/14, 23/24, 33/34, 43/44 on EM. DIS has OSSD outputs 14, 24, 34, 44 (no relay contacts) (CI, DI, EM, SI)"
+      },
+      {
+        "a": "33",
+        "b": "34",
+        "when": "safety OK (OUT on)",
+        "note": "https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf status indicators table: OUT On = 13/14, 23/24, 33/34 closed (41/42 open) on CI; 13/14, 23/24 closed on DI/SI; 13/14, 23/24, 33/34, 43/44 on EM. DIS has OSSD outputs 14, 24, 34, 44 (no relay contacts) (CI and EM only)"
+      },
+      {
+        "a": "43",
+        "b": "44",
+        "when": "safety OK (OUT on)",
+        "note": "https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf status indicators table: OUT On = 13/14, 23/24, 33/34 closed (41/42 open) on CI; 13/14, 23/24 closed on DI/SI; 13/14, 23/24, 33/34, 43/44 on EM. DIS has OSSD outputs 14, 24, 34, 44 (no relay contacts) (EM only)"
+      },
+      {
+        "a": "41",
+        "b": "42",
+        "when": "safety not OK (OUT off)",
+        "note": "https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf status indicators table: OUT On = 13/14, 23/24, 33/34 closed (41/42 open) on CI; 13/14, 23/24 closed on DI/SI; 13/14, 23/24, 33/34, 43/44 on EM. DIS has OSSD outputs 14, 24, 34, 44 (no relay contacts) (CI only)"
       }
     ],
     "indicators": [
@@ -2478,19 +3140,71 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "A1 to A2",
         "state": "powered",
         "meter": "VDC",
-        "expected": "24 V AC/DC (3SK1111-.AB30)"
+        "expected": "24 V AC/DC (3SK1111-.AB30)",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "13-14, 23-24, 33-34",
         "state": "DEVICE and OUT green",
         "meter": "continuity",
-        "expected": "closed"
+        "expected": "closed",
+        "pins": [
+          [
+            "13",
+            "14"
+          ],
+          [
+            "23",
+            "24"
+          ],
+          [
+            "33",
+            "34"
+          ]
+        ]
       },
       {
         "terminals": "41-42",
         "state": "outputs on",
         "meter": "continuity",
-        "expected": "open (NC signaling)"
+        "expected": "open (NC signaling)",
+        "pins": [
+          [
+            "41",
+            "42"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "safety OK (enabling circuits on)",
+        "note": "https://cache.industry.siemens.com/dl/files/885/67585885/att_37825/v1/manual_safety_relay_3SK1_en-US.pdf 5.1.3: NO contacts 13/14, 23/24, 33/34 (safety-related)"
+      },
+      {
+        "a": "23",
+        "b": "24",
+        "when": "safety OK (enabling circuits on)",
+        "note": "https://cache.industry.siemens.com/dl/files/885/67585885/att_37825/v1/manual_safety_relay_3SK1_en-US.pdf 5.1.3"
+      },
+      {
+        "a": "33",
+        "b": "34",
+        "when": "safety OK (enabling circuits on)",
+        "note": "https://cache.industry.siemens.com/dl/files/885/67585885/att_37825/v1/manual_safety_relay_3SK1_en-US.pdf 5.1.3"
+      },
+      {
+        "a": "41",
+        "b": "42",
+        "when": "enabling circuits off",
+        "note": "https://cache.industry.siemens.com/dl/files/885/67585885/att_37825/v1/manual_safety_relay_3SK1_en-US.pdf 5.1.3: NC contacts 41/42 (non-safety signalling)"
       }
     ],
     "indicators": [
@@ -2560,19 +3274,87 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "A1 to A2",
         "state": "powered",
         "meter": "VDC",
-        "expected": "24 VDC"
+        "expected": "24 VDC",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "T1-IN1, T2-IN2",
         "state": "sensors closed",
         "meter": "continuity",
-        "expected": "closed (channels must close within 0.5 s)"
+        "expected": "closed (channels must close within 0.5 s)",
+        "pins": [
+          [
+            "T1",
+            "IN1"
+          ],
+          [
+            "T2",
+            "IN2"
+          ]
+        ]
       },
       {
         "terminals": "13-14, 23-24, 33-34",
         "state": "DEVICE/OUT/IN green",
         "meter": "continuity",
-        "expected": "closed"
+        "expected": "closed",
+        "pins": [
+          [
+            "13",
+            "14"
+          ],
+          [
+            "23",
+            "24"
+          ],
+          [
+            "33",
+            "34"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "safety OK (enabling circuits on)",
+        "note": "https://cache.industry.siemens.com/dl/files/885/67585885/att_37825/v1/manual_safety_relay_3SK1_en-US.pdf 5.2.6.4 / 5.2.7: 13-14 enabling circuit (NO, relay contact)"
+      },
+      {
+        "a": "23",
+        "b": "24",
+        "when": "safety OK (enabling circuits on)",
+        "note": "https://cache.industry.siemens.com/dl/files/885/67585885/att_37825/v1/manual_safety_relay_3SK1_en-US.pdf 5.2.6.4 / 5.2.7"
+      },
+      {
+        "a": "33",
+        "b": "34",
+        "when": "safety OK (enabling circuits on)",
+        "note": "https://cache.industry.siemens.com/dl/files/885/67585885/att_37825/v1/manual_safety_relay_3SK1_en-US.pdf 5.2.6.4: instantaneous 3SK1121-xAB40 only"
+      },
+      {
+        "a": "41",
+        "b": "42",
+        "when": "enabling circuits off",
+        "note": "https://cache.industry.siemens.com/dl/files/885/67585885/att_37825/v1/manual_safety_relay_3SK1_en-US.pdf 5.2.6.4: signalling circuit (NC, relay contact), instantaneous 3SK1121-xAB40 only"
+      },
+      {
+        "a": "37",
+        "b": "38",
+        "when": "safety OK (opens after the set OFF-delay)",
+        "note": "https://cache.industry.siemens.com/dl/files/885/67585885/att_37825/v1/manual_safety_relay_3SK1_en-US.pdf 5.2.7: time-delayed enabling circuit 1 (NO), 3SK1121-xCB4y only"
+      },
+      {
+        "a": "47",
+        "b": "48",
+        "when": "safety OK (opens after the set OFF-delay)",
+        "note": "https://cache.industry.siemens.com/dl/files/885/67585885/att_37825/v1/manual_safety_relay_3SK1_en-US.pdf 5.2.7: time-delayed enabling circuit 2 (NO), 3SK1121-xCB4y only"
       }
     ],
     "indicators": [
@@ -2722,19 +3504,61 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "A1 to A2",
         "state": "powered",
         "meter": "VDC",
-        "expected": "24 VAC/VDC"
+        "expected": "24 VAC/VDC",
+        "pins": [
+          [
+            "A1",
+            "A2"
+          ]
+        ]
       },
       {
         "terminals": "S12, S22 (CH+) to B2",
         "state": "channels closed",
         "meter": "VDC",
-        "expected": "> 15 VDC (activate); < 5 VDC = deactivated"
+        "expected": "> 15 VDC (activate); < 5 VDC = deactivated",
+        "pins": [
+          [
+            "S12",
+            "B2"
+          ],
+          [
+            "S22",
+            "B2"
+          ]
+        ]
       },
       {
         "terminals": "Y1-Y2",
         "state": "start",
         "meter": "continuity",
-        "expected": "closed on start"
+        "expected": "closed on start",
+        "pins": [
+          [
+            "Y1",
+            "Y2"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "13",
+        "b": "14",
+        "when": "safety OK (outputs on)",
+        "note": "https://www.se.com/us/en/download/document/PHA71842/ (PHA71842): terminals 13/23/33 - 14/24/34 normally open relay contacts (safety outputs)"
+      },
+      {
+        "a": "23",
+        "b": "24",
+        "when": "safety OK (outputs on)",
+        "note": "https://www.se.com/us/en/download/document/PHA71842/ (PHA71842): terminals 13/23/33 - 14/24/34 normally open relay contacts (safety outputs)"
+      },
+      {
+        "a": "33",
+        "b": "34",
+        "when": "safety OK (outputs on)",
+        "note": "https://www.se.com/us/en/download/document/PHA71842/ (PHA71842): terminals 13/23/33 - 14/24/34 normally open relay contacts (safety outputs)"
       }
     ],
     "indicators": [

@@ -26,6 +26,12 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "state": "input ON (24 VDC CPU inputs, C0-16ND3, C0-16CDD1)",
         "meter": "VDC",
         "expected": "> 19 VDC magnitude (input voltage range 21.6-26.4 VDC); typ. 4 mA (X3-X8) / 5 mA (X1-X2 of C0-0x CPUs) / 6.5 mA (high-speed X1-X4 of Ethernet C0-1x CPUs) at 24 VDC",
+        "pins": [
+          [
+            "X001",
+            "C1"
+          ]
+        ],
         "note": "Polarity depends on sink/source wiring; the dual input diodes accept either direction."
       },
       {
@@ -33,19 +39,37 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "state": "input OFF (24 VDC inputs)",
         "meter": "VDC",
         "expected": "< 7 VDC on standard points; < 4 VDC on X1-X2 of C0-0x CPUs; < 2 VDC on the high-speed inputs of Ethernet C0-1x CPUs",
+        "pins": [
+          [
+            "X001",
+            "C1"
+          ]
+        ],
         "note": "Between the OFF and ON levels the input state is not specified."
       },
       {
         "terminals": "1 to C1 (C0-08ND3 terminals 1-4 share C1, 5-8 share C2; address X101... in slot 1)",
         "state": "input ON (C0-08ND3, 12-24 VDC module)",
         "meter": "VDC",
-        "expected": "> 8.0 VDC (input voltage range 10.8-26.4 VDC); typ. 5 mA at 24 VDC"
+        "expected": "> 8.0 VDC (input voltage range 10.8-26.4 VDC); typ. 5 mA at 24 VDC",
+        "pins": [
+          [
+            "1",
+            "C1"
+          ]
+        ]
       },
       {
         "terminals": "1 to C1",
         "state": "input OFF (C0-08ND3)",
         "meter": "VDC",
-        "expected": "< 3.0 VDC"
+        "expected": "< 3.0 VDC",
+        "pins": [
+          [
+            "1",
+            "C1"
+          ]
+        ]
       },
       {
         "terminals": "C1 to supply 0 V",
@@ -211,13 +235,25 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "X1 to C1 (X1-X4 share C1, X5-X8 share C2)",
         "state": "input ON",
         "meter": "VAC",
-        "expected": "> 60 VAC (operating 100-120 VAC, input voltage range 80-144 VAC); typ. 10 mA at 100 VAC 60 Hz"
+        "expected": "> 60 VAC (operating 100-120 VAC, input voltage range 80-144 VAC); typ. 10 mA at 100 VAC 60 Hz",
+        "pins": [
+          [
+            "X001",
+            "C1"
+          ]
+        ]
       },
       {
         "terminals": "X1 to C1",
         "state": "input OFF",
         "meter": "VAC",
-        "expected": "< 20 VAC; maximum OFF current 2 mA"
+        "expected": "< 20 VAC; maximum OFF current 2 mA",
+        "pins": [
+          [
+            "X001",
+            "C1"
+          ]
+        ]
       }
     ],
     "indicators": [
@@ -312,19 +348,79 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "state": "powered",
         "meter": "VDC",
         "expected": "CPU and C2-14D1: 20-28 VDC external DC power (max 60 mA); C0-08TD1 / C0-16TD1: 21.6-26.4 VDC",
+        "pins": [
+          [
+            "+V",
+            "C3"
+          ],
+          [
+            "+V",
+            "C4"
+          ]
+        ],
         "note": "The sinking output circuit needs this supply in addition to the load supply."
       },
       {
         "terminals": "Y1 to C3 (output to its common)",
         "state": "output ON (Y LED on)",
         "meter": "VDC",
-        "expected": "close to 0 V: ON voltage drop 0.5 VDC @ 0.1 A (CPU, C0-16TD1, C2-14D1), 1.5 VDC @ 0.3 A (C0-08TD1)"
+        "expected": "close to 0 V: ON voltage drop 0.5 VDC @ 0.1 A (CPU, C0-16TD1, C2-14D1), 1.5 VDC @ 0.3 A (C0-08TD1)",
+        "pins": [
+          [
+            "Y001",
+            "C3"
+          ]
+        ]
       },
       {
         "terminals": "Y1 to C3",
         "state": "output OFF, load wired from Y1 to load supply +",
         "meter": "VDC",
-        "expected": "about the load supply voltage (operating range 5-27 VDC; 3.3-27 VDC on C0-08TD1); leakage max 0.1 mA @ 30 VDC"
+        "expected": "about the load supply voltage (operating range 5-27 VDC; 3.3-27 VDC on C0-08TD1); leakage max 0.1 mA @ 30 VDC",
+        "pins": [
+          [
+            "Y001",
+            "C3"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "Y001",
+        "b": "C3",
+        "when": "output ON",
+        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+      },
+      {
+        "a": "Y002",
+        "b": "C3",
+        "when": "output ON",
+        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+      },
+      {
+        "a": "Y003",
+        "b": "C3",
+        "when": "output ON",
+        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+      },
+      {
+        "a": "Y004",
+        "b": "C3",
+        "when": "output ON",
+        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+      },
+      {
+        "a": "Y005",
+        "b": "C4",
+        "when": "output ON",
+        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+      },
+      {
+        "a": "Y006",
+        "b": "C4",
+        "when": "output ON",
+        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
       }
     ],
     "indicators": [
@@ -469,25 +565,91 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "V1 to CO (CPU: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the 0 V common; C0-16TD2: V1/C1, V2/C2)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "24 VDC nominal; output voltage range 19.2-30 VDC (CPU, C2-14D2); 9.6-30 VDC on C0-16TD2 (12-24 VDC); 4.5-5.5 VDC on C2-14TTL"
+        "expected": "24 VDC nominal; output voltage range 19.2-30 VDC (CPU, C2-14D2); 9.6-30 VDC on C0-16TD2 (12-24 VDC); 4.5-5.5 VDC on C2-14TTL",
+        "pins": [
+          [
+            "V1",
+            "CO"
+          ],
+          [
+            "V2",
+            "CO"
+          ]
+        ]
       },
       {
         "terminals": "Y1 to V1",
         "state": "output ON (Y LED on)",
         "meter": "VDC",
-        "expected": "close to 0 V (ON voltage drop: Y1 1.0 VDC, Y2-Y6 0.5 VDC @ 0.1 A on CPU; 0.6 VDC @ 0.1 A C0-16TD2)"
+        "expected": "close to 0 V (ON voltage drop: Y1 1.0 VDC, Y2-Y6 0.5 VDC @ 0.1 A on CPU; 0.6 VDC @ 0.1 A C0-16TD2)",
+        "pins": [
+          [
+            "Y001",
+            "V1"
+          ]
+        ]
       },
       {
         "terminals": "Y1 to 0 V (CO)",
         "state": "output ON (Y LED on)",
         "meter": "VDC",
-        "expected": "about the V1 supply voltage minus the ON voltage drop"
+        "expected": "about the V1 supply voltage minus the ON voltage drop",
+        "pins": [
+          [
+            "Y001",
+            "CO"
+          ]
+        ]
       },
       {
         "terminals": "Y1 to 0 V (CO)",
         "state": "output OFF",
         "meter": "VDC",
-        "expected": "about 0 V (leakage max 0.1 mA @ 30 VDC)"
+        "expected": "about 0 V (leakage max 0.1 mA @ 30 VDC)",
+        "pins": [
+          [
+            "Y001",
+            "CO"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "V1",
+        "b": "Y001",
+        "when": "output ON",
+        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+      },
+      {
+        "a": "V1",
+        "b": "Y002",
+        "when": "output ON",
+        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+      },
+      {
+        "a": "V1",
+        "b": "Y003",
+        "when": "output ON",
+        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+      },
+      {
+        "a": "V1",
+        "b": "Y004",
+        "when": "output ON",
+        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+      },
+      {
+        "a": "V2",
+        "b": "Y005",
+        "when": "output ON",
+        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+      },
+      {
+        "a": "V2",
+        "b": "Y006",
+        "when": "output ON",
+        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
       }
     ],
     "indicators": [
@@ -611,13 +773,63 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "Y1 to C3 (output to its common; C0-08TR: 1-4 to C1, 5-8 to C2; C0-04TRS: NO1/NC1 to C1...)",
         "state": "output ON (Y LED on), load supply present",
         "meter": "VAC",
-        "expected": "close to 0 V (closed contact); same check in VDC for DC loads"
+        "expected": "close to 0 V (closed contact); same check in VDC for DC loads",
+        "pins": [
+          [
+            "Y001",
+            "C3"
+          ]
+        ]
       },
       {
         "terminals": "Y1 to C3",
         "state": "output OFF, load supply present",
         "meter": "VAC",
-        "expected": "about the load supply voltage (operating range 6-240 VAC 47-63 Hz / 6-27 VDC)"
+        "expected": "about the load supply voltage (operating range 6-240 VAC 47-63 Hz / 6-27 VDC)",
+        "pins": [
+          [
+            "Y001",
+            "C3"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "Y001",
+        "b": "C3",
+        "when": "output ON",
+        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+      },
+      {
+        "a": "Y002",
+        "b": "C3",
+        "when": "output ON",
+        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+      },
+      {
+        "a": "Y003",
+        "b": "C3",
+        "when": "output ON",
+        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+      },
+      {
+        "a": "Y004",
+        "b": "C3",
+        "when": "output ON",
+        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+      },
+      {
+        "a": "Y005",
+        "b": "C4",
+        "when": "output ON",
+        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+      },
+      {
+        "a": "Y006",
+        "b": "C4",
+        "when": "output ON",
+        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
       }
     ],
     "indicators": [
@@ -753,32 +965,62 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "24V to 0V (module supply terminals)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "24 VDC external supply; draws 65 mA (C0-04AD-x), 145 mA (C0-04DA-1)"
+        "expected": "24 VDC external supply; draws 65 mA (C0-04AD-x), 145 mA (C0-04DA-1)",
+        "pins": [
+          [
+            "24V",
+            "0V"
+          ]
+        ]
       },
       {
         "terminals": "CH1 to 0V (C0-04AD-1)",
         "state": "transmitter connected",
         "meter": "mA",
         "expected": "0-20 mA (sink), 13-bit, 2.44 uA/count; input impedance 124 ohm",
+        "pins": [
+          [
+            "CH1",
+            "0V"
+          ]
+        ],
         "note": "By Ohm's law the CH-0V voltage is about 0.5 V at 4 mA and 2.5 V at 20 mA."
       },
       {
         "terminals": "CH1 to 0V (C0-04AD-2)",
         "state": "transmitter connected",
         "meter": "VDC",
-        "expected": "0-10 V, 1.22 mV/count; input impedance > 150 k ohm"
+        "expected": "0-10 V, 1.22 mV/count; input impedance > 150 k ohm",
+        "pins": [
+          [
+            "CH1",
+            "0V"
+          ]
+        ]
       },
       {
         "terminals": "CH1 to 0V (C0-04DA-1)",
         "state": "running",
         "meter": "mA",
-        "expected": "4-20 mA (source) into 0-600 ohm at 24 VDC; < 4 mA in fault mode; 4 mA at power up / down"
+        "expected": "4-20 mA (source) into 0-600 ohm at 24 VDC; < 4 mA in fault mode; 4 mA at power up / down",
+        "pins": [
+          [
+            "CH1",
+            "0V"
+          ]
+        ]
       },
       {
         "terminals": "CH1 to 0V (C0-04DA-2)",
         "state": "running",
         "meter": "VDC",
-        "expected": "0-10 V into > 1000 ohm; 0 V in fault mode"
+        "expected": "0-10 V into > 1000 ohm; 0 V in fault mode",
+        "pins": [
+          [
+            "CH1",
+            "0V"
+          ]
+        ]
       }
     ],
     "indicators": [
@@ -898,6 +1140,12 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "state": "thermocouple connected",
         "meter": "VDC",
         "expected": "thermocouple millivolts (input ranges 0-39.0625 mV, +/-39.0625 mV, +/-78.125 mV, 0-156.25 mV, +/-156.25 mV, 0-1.25 V); common mode range -1.3 to +3.8 V to COM",
+        "pins": [
+          [
+            "TC1+",
+            "TC1-"
+          ]
+        ],
         "note": "No external DC supply is required (bus power 25 mA)."
       }
     ],
@@ -1008,37 +1256,97 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "AD1V to ACOM (C0-02xx, C0-12xxE-D)",
         "state": "voltage transmitter",
         "meter": "VDC",
-        "expected": "0-5 VDC (6 VDC max.), 12-bit"
+        "expected": "0-5 VDC (6 VDC max.), 12-bit",
+        "pins": [
+          [
+            "AD1V",
+            "ACOM"
+          ]
+        ]
       },
       {
         "terminals": "AD1I to ACOM (C0-02xx, C0-12xxE-D)",
         "state": "current transmitter",
         "meter": "mA",
-        "expected": "4-20 mA (sink), 12-bit; input impedance 100 ohm (C0-02) / 125 ohm (C0-12)"
+        "expected": "4-20 mA (sink), 12-bit; input impedance 100 ohm (C0-02) / 125 ohm (C0-12)",
+        "pins": [
+          [
+            "AD1I",
+            "ACOM"
+          ]
+        ]
       },
       {
         "terminals": "DA1I to ACOM (C0-02xx, C0-12xxE-D)",
         "state": "current output",
         "meter": "mA",
-        "expected": "4-20 mA (sink); needs loop supply 18-30 VDC; load max 600 ohm @ 18 V, 900 ohm @ 24 V, 1200 ohm @ 30 V"
+        "expected": "4-20 mA (sink); needs loop supply 18-30 VDC; load max 600 ohm @ 18 V, 900 ohm @ 24 V, 1200 ohm @ 30 V",
+        "pins": [
+          [
+            "DA1I",
+            "ACOM"
+          ]
+        ]
       },
       {
         "terminals": "DA1V to ACOM (C0-02xx, C0-12xxE-D)",
         "state": "voltage output",
         "meter": "VDC",
-        "expected": "0-5 VDC into >= 2 k ohm"
+        "expected": "0-5 VDC into >= 2 k ohm",
+        "pins": [
+          [
+            "DA1V",
+            "ACOM"
+          ]
+        ]
       },
       {
         "terminals": "analog inputs to ACOM (C0-12xxE-1-D)",
         "state": "current transmitter",
         "meter": "mA",
-        "expected": "4 inputs, 0-20 mA (sink), 125 ohm; 2 outputs 4-20 mA (source), load 200-800 ohm, loop 21.6-26.4 VDC"
+        "expected": "4 inputs, 0-20 mA (sink), 125 ohm; 2 outputs 4-20 mA (source), load 200-800 ohm, loop 21.6-26.4 VDC",
+        "pins": [
+          [
+            "AD1I",
+            "ACOM"
+          ],
+          [
+            "AD2I",
+            "ACOM"
+          ],
+          [
+            "AD3I",
+            "ACOM"
+          ],
+          [
+            "AD4I",
+            "ACOM"
+          ]
+        ]
       },
       {
         "terminals": "analog inputs to ACOM (C0-12xxE-2-D)",
         "state": "voltage transmitter",
         "meter": "VDC",
-        "expected": "4 inputs 0-10 VDC (40 k ohm); 2 outputs 0-10 VDC"
+        "expected": "4 inputs 0-10 VDC (40 k ohm); 2 outputs 0-10 VDC",
+        "pins": [
+          [
+            "AD1V",
+            "ACOM"
+          ],
+          [
+            "AD2V",
+            "ACOM"
+          ],
+          [
+            "AD3V",
+            "ACOM"
+          ],
+          [
+            "AD4V",
+            "ACOM"
+          ]
+        ]
       }
     ],
     "indicators": [],
@@ -1107,7 +1415,13 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "24V to 0V (power connector at the bottom of the PLC)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "20-28 VDC"
+        "expected": "20-28 VDC",
+        "pins": [
+          [
+            "24V",
+            "0V"
+          ]
+        ]
       }
     ],
     "indicators": [
@@ -2149,7 +2463,13 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "24V to 0V (power connector at the bottom of the PLC)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "20-28 VDC"
+        "expected": "20-28 VDC",
+        "pins": [
+          [
+            "24V",
+            "0V"
+          ]
+        ]
       }
     ],
     "indicators": [
@@ -3285,25 +3605,49 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "X1 to C1 (X1-X4 on C1, X5-X8 on C2)",
         "state": "input ON (24 VDC modules)",
         "meter": "VDC",
-        "expected": "> 19 VDC (input voltage range 21.6-26.4 VDC), typ. 6.5 mA"
+        "expected": "> 19 VDC (input voltage range 21.6-26.4 VDC), typ. 6.5 mA",
+        "pins": [
+          [
+            "X001",
+            "C1"
+          ]
+        ]
       },
       {
         "terminals": "X1 to C1",
         "state": "input OFF (24 VDC modules)",
         "meter": "VDC",
-        "expected": "< 2 VDC"
+        "expected": "< 2 VDC",
+        "pins": [
+          [
+            "X001",
+            "C1"
+          ]
+        ]
       },
       {
         "terminals": "X1 to C1 (C2-14TTL)",
         "state": "input ON / OFF",
         "meter": "VDC",
-        "expected": "ON > 4.0 VDC, OFF < 2.0 VDC (input voltage range 4.5-5.5 VDC)"
+        "expected": "ON > 4.0 VDC, OFF < 2.0 VDC (input voltage range 4.5-5.5 VDC)",
+        "pins": [
+          [
+            "X001",
+            "C1"
+          ]
+        ]
       },
       {
         "terminals": "+V to C4 (C2-14D1 sinking outputs)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "20-28 VDC external DC power"
+        "expected": "20-28 VDC external DC power",
+        "pins": [
+          [
+            "+V",
+            "C4"
+          ]
+        ]
       }
     ],
     "indicators": [
@@ -3438,25 +3782,63 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "BN (+) to BU (-)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "10-30 VDC; no-load current < 10 mA"
+        "expected": "10-30 VDC; no-load current < 10 mA",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "BK (out) to BU (-)",
         "state": "target present, N.O. model",
         "meter": "VDC",
-        "expected": "about the supply voltage minus the output voltage drop (< 2.5 V); load max 100 mA"
+        "expected": "about the supply voltage minus the output voltage drop (< 2.5 V); load max 100 mA",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "BK (out) to BU (-)",
         "state": "target absent, N.O. model",
         "meter": "VDC",
-        "expected": "about 0 V (off-state leakage < 50 uA, PNK 3-wire)"
+        "expected": "about 0 V (off-state leakage < 50 uA, PNK 3-wire)",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "WH (out, pin 2) to BU (-)",
         "state": "N.C. model (PNK-CP...)",
         "meter": "VDC",
-        "expected": "about supply minus drop with target absent; about 0 V with target present"
+        "expected": "about supply minus drop with target absent; about 0 V with target present",
+        "pins": [
+          [
+            "WH",
+            "BU"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "BN",
+        "b": "BK",
+        "when": "target present (N.O. models)",
+        "note": "https://cdn.automationdirect.com/static/specs/prox18mmpnk.pdf p.tSEN-338 wiring diagrams 1-4 (cable: BN L+, BU L-, BK output; N.C. M12 models output on pin 2 WH); PNP output switches L+ to the output"
+      },
+      {
+        "a": "BN",
+        "b": "WH",
+        "when": "target absent (N.C. M12 models, pin 2)",
+        "note": "https://cdn.automationdirect.com/static/specs/prox18mmpnk.pdf p.tSEN-338 wiring diagrams 1-4 (cable: BN L+, BU L-, BK output; N.C. M12 models output on pin 2 WH)"
       }
     ],
     "indicators": [
@@ -3571,25 +3953,63 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "BN (+) to BU (-)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "10-30 VDC; no-load current < 10 mA"
+        "expected": "10-30 VDC; no-load current < 10 mA",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "BK (out) to BU (-)",
         "state": "target present, N.O. model (output pulled to 0 V)",
         "meter": "VDC",
-        "expected": "< 2.5 V (output voltage drop); load max 100 mA"
+        "expected": "< 2.5 V (output voltage drop); load max 100 mA",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "BK (out) to BN (+)",
         "state": "target present, N.O. model",
         "meter": "VDC",
-        "expected": "about the supply voltage (the load between BN/+ and BK is energized)"
+        "expected": "about the supply voltage (the load between BN/+ and BK is energized)",
+        "pins": [
+          [
+            "BK",
+            "BN"
+          ]
+        ]
       },
       {
         "terminals": "BK (out) to BU (-)",
         "state": "target absent, N.O. model",
         "meter": "VDC",
-        "expected": "about the supply voltage through the load (off-state leakage < 50 uA)"
+        "expected": "about the supply voltage through the load (off-state leakage < 50 uA)",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "BK",
+        "b": "BU",
+        "when": "target present (N.O. models)",
+        "note": "https://cdn.automationdirect.com/static/specs/prox18mmpnk.pdf p.tSEN-338 wiring diagrams 1-4 (cable: BN L+, BU L-, BK output; N.C. M12 models output on pin 2 WH); NPN output switches the output to L-"
+      },
+      {
+        "a": "WH",
+        "b": "BU",
+        "when": "target absent (N.C. M12 models, pin 2)",
+        "note": "https://cdn.automationdirect.com/static/specs/prox18mmpnk.pdf p.tSEN-338 wiring diagrams 1-4 (cable: BN L+, BU L-, BK output; N.C. M12 models output on pin 2 WH)"
       }
     ],
     "indicators": [
@@ -3697,25 +4117,75 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "BN (+, pin 1) to BU (-, pin 3)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "10-36 VDC; ripple <= 20%; no-load current 20 mA (diffuse)"
+        "expected": "10-36 VDC; ripple <= 20%; no-load current 20 mA (diffuse)",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "BK (out, pin 4) to BU (-) - PNP model",
         "state": "diffuse: target reflecting (light-on output, N.O.)",
         "meter": "VDC",
-        "expected": "about supply minus <= 2.0 V voltage drop; load <= 200 mA"
+        "expected": "about supply minus <= 2.0 V voltage drop; load <= 200 mA",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "WH (out, pin 2) to BU (-) - PNP model",
         "state": "diffuse: target reflecting (dark-on output, N.C.)",
         "meter": "VDC",
-        "expected": "about 0 V (leakage <= 10 uA)"
+        "expected": "about 0 V (leakage <= 10 uA)",
+        "pins": [
+          [
+            "WH",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "BK (out, pin 4) to BU (-) - NPN model",
         "state": "diffuse: target reflecting",
         "meter": "VDC",
-        "expected": "<= 2.0 V (output pulled to 0 V)"
+        "expected": "<= 2.0 V (output pulled to 0 V)",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "BN",
+        "b": "BK",
+        "when": "target reflecting (diffuse, PNP models)",
+        "note": "https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf p.tSEN-59 wiring diagrams 1-4 (pin 4 BK N.O., pin 2 WH N.C. on 4-wire models) and Switching Element Function table (diffuse models: light-on = N.O., dark-on = N.C.)"
+      },
+      {
+        "a": "BN",
+        "b": "WH",
+        "when": "no target (diffuse, PNP 4-wire models)",
+        "note": "https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf p.tSEN-59 wiring diagrams 1-4 (pin 4 BK N.O., pin 2 WH N.C. on 4-wire models) and Switching Element Function table (diffuse models: light-on = N.O., dark-on = N.C.)"
+      },
+      {
+        "a": "BK",
+        "b": "BU",
+        "when": "target reflecting (diffuse, NPN models)",
+        "note": "https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf p.tSEN-59 wiring diagrams 1-4 (pin 4 BK N.O., pin 2 WH N.C. on 4-wire models) and Switching Element Function table (diffuse models: light-on = N.O., dark-on = N.C.)"
+      },
+      {
+        "a": "WH",
+        "b": "BU",
+        "when": "no target (diffuse, NPN 4-wire models)",
+        "note": "https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf p.tSEN-59 wiring diagrams 1-4 (pin 4 BK N.O., pin 2 WH N.C. on 4-wire models) and Switching Element Function table (diffuse models: light-on = N.O., dark-on = N.C.)"
       }
     ],
     "indicators": [
@@ -3829,26 +4299,64 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "BN/1 (+) to BU/3 (-)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "10-30 VDC, ripple 5%; no-load current <= 50 mA"
+        "expected": "10-30 VDC, ripple 5%; no-load current <= 50 mA",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "analog out (WH/2 on PNP + analog models) to BU/3 (-)",
         "state": "target between the taught points P1 and P2",
         "meter": "mA",
         "expected": "4-20 mA proportional to distance (max load 500 ohm at 24 VDC); 0-10 V models: 0-10 V (min load 3 k ohm)",
+        "pins": [
+          [
+            "WH",
+            "BU"
+          ]
+        ],
         "note": "Slope set by teach order: P1 > P2 positive slope, P1 < P2 negative slope."
       },
       {
         "terminals": "BK/4 (digital out) to BU/3 (-)",
         "state": "PNP output ON",
         "meter": "VDC",
-        "expected": "supply minus <= 2.2 V at 100 mA; leakage 10 uA @ 30 VDC when OFF"
+        "expected": "supply minus <= 2.2 V at 100 mA; leakage 10 uA @ 30 VDC when OFF",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "target distance",
         "state": "normal operation",
         "meter": "visual",
         "expected": "within the sensing range: UK1A 50-400 mm, UK1C 80-900 mm, UK1D 150-1600 mm, UK1F 200-2200 mm (minimum sensing distance = blind zone)"
+      }
+    ],
+    "pairs": [
+      {
+        "a": "BN",
+        "b": "BK",
+        "when": "digital output ON (PNP models)",
+        "note": "https://cdn.automationdirect.com/static/manuals/sensors/uk1_single_digital_output.pdf / uk1_mixed_analog_output.pdf wiring: BN/1 +, BK/4 digital out, BU/3 -; output N.O./N.C. selectable"
+      },
+      {
+        "a": "BK",
+        "b": "BU",
+        "when": "digital output ON (NPN models)",
+        "note": "https://cdn.automationdirect.com/static/manuals/sensors/uk1_single_digital_output.pdf NPN wiring: BK/4 digital out to BU/3 -"
+      },
+      {
+        "a": "BN",
+        "b": "WH",
+        "when": "second digital output ON (PNP double-output models)",
+        "note": "https://cdn.automationdirect.com/static/manuals/sensors/uk1_double_digital_output.pdf wiring: WH/2 and BK/4 digital outputs (PNP)"
       }
     ],
     "indicators": [
@@ -4006,19 +4514,37 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "BN (+) to BU (-)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "10-30 VDC, ripple 5%; no-load current <= 35 mA"
+        "expected": "10-30 VDC, ripple 5%; no-load current <= 35 mA",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "BK (out) to BU (-)",
         "state": "analog models, target in window",
         "meter": "mA",
-        "expected": "4-20 mA (max load 500 ohm @ 24 VDC) or 0-10 V (min load 3 k ohm)"
+        "expected": "4-20 mA (max load 500 ohm @ 24 VDC) or 0-10 V (min load 3 k ohm)",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "BK (out) to BU (-)",
         "state": "PNP digital output ON",
         "meter": "VDC",
-        "expected": "supply minus <= 2.2 V at 100 mA"
+        "expected": "supply minus <= 2.2 V at 100 mA",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "WH (teach wire)",
@@ -4032,6 +4558,20 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "state": "normal operation",
         "meter": "visual",
         "expected": "UK6A 40-300 mm (blind zone 40 mm); UK6C 60-800 mm (blind zone 60 mm)"
+      }
+    ],
+    "pairs": [
+      {
+        "a": "BN",
+        "b": "BK",
+        "when": "digital output ON (PNP models)",
+        "note": "https://cdn.automationdirect.com/static/specs/prox18mmultrauk6.pdf PNP output wiring diagram (BN +, BK out, BU -); N.O./N.C. selectable"
+      },
+      {
+        "a": "BK",
+        "b": "BU",
+        "when": "digital output ON (NPN models)",
+        "note": "https://cdn.automationdirect.com/static/specs/prox18mmultrauk6.pdf NPN output wiring diagram"
       }
     ],
     "indicators": [
@@ -4128,13 +4668,25 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "1 BN (+UB) to 3 BU (-UB)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "10-30 VDC (I models) / 15-30 VDC (U models), ripple 10%"
+        "expected": "10-30 VDC (I models) / 15-30 VDC (U models), ripple 10%",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "4 BK (analog out) to 3 BU",
         "state": "object between evaluation limits A1 and A2",
         "meter": "mA",
         "expected": "4-20 mA into 0-300 ohm (I models); 0-10 V into > 1 k ohm (U models); rising ramp if A1 < A2, falling if A2 < A1",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ],
         "note": "Defaults: UB300 A1 50 / A2 300 mm; UB800 A1 70 / A2 800 mm."
       },
       {
@@ -4255,25 +4807,57 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "1 BN (+UB) to 3 BU (-UB)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "10-30 VDC, ripple 10%"
+        "expected": "10-30 VDC, ripple 10%",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "4 BK (switch out) to 3 BU",
         "state": "E5 (PNP), output ON",
         "meter": "VDC",
-        "expected": "supply minus <= 3 V; rated 200 mA"
+        "expected": "supply minus <= 3 V; rated 200 mA",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "4 BK (switch out) to 3 BU",
         "state": "E4 (NPN), output ON",
         "meter": "VDC",
-        "expected": "<= 3 V (output pulled to -UB)"
+        "expected": "<= 3 V (output pulled to -UB)",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "target distance",
         "state": "normal",
         "meter": "visual",
         "expected": "sensing range 35-300 mm, dead band 0-35 mm; default switch points A1 50 mm, A2 300 mm"
+      }
+    ],
+    "pairs": [
+      {
+        "a": "BN",
+        "b": "BK",
+        "when": "switch output ON (E5, PNP)",
+        "note": "https://files.pepperl-fuchs.com/webcat/navi/productInfo/pds/220357_eng.pdf connection: 1 BN +UB, 4 BK switch output (E5 pnp)"
+      },
+      {
+        "a": "BK",
+        "b": "BU",
+        "when": "switch output ON (E4, NPN)",
+        "note": "https://files.pepperl-fuchs.com/webcat/navi/productInfo/pds/220356_eng.pdf connection: 4 BK switch output, 3 BU -UB (E4 npn)"
       }
     ],
     "indicators": [
@@ -4366,19 +4950,37 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "bn (1, +) to bu (3, -)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "10-30 VDC (10% max ripple) at 40 mA"
+        "expected": "10-30 VDC (10% max ripple) at 40 mA",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "bk (4, analog out) to bu (3)",
         "state": "target in taught window",
         "meter": "mA",
-        "expected": "4-20 mA (tracks 3.8-20.5 mA slightly past the limits); 0-10 V on U models"
+        "expected": "4-20 mA (tracks 3.8-20.5 mA slightly past the limits); 0-10 V on U models",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "bk (4) to bu (3)",
         "state": "signal lost > 2 s",
         "meter": "mA",
-        "expected": "3.6 mA (I models) / 0 V (U models)"
+        "expected": "3.6 mA (I models) / 0 V (U models)",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "target distance",
@@ -4492,19 +5094,51 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "bn (1, +) to bu (3, -)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "10-30 VDC (10% max ripple) per specifications (wiring diagram shows 12-30 VDC)"
+        "expected": "10-30 VDC (10% max ripple) per specifications (wiring diagram shows 12-30 VDC)",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "bk (4, out) to bu (3)",
         "state": "PNP selected, output ON",
         "meter": "VDC",
-        "expected": "supply minus < 3 V at 100 mA; OFF leakage < 10 uA"
+        "expected": "supply minus < 3 V at 100 mA; OFF leakage < 10 uA",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "bk (4, out) to bu (3)",
         "state": "NPN selected, output ON",
         "meter": "VDC",
-        "expected": "< 1.6 V at 100 mA; OFF leakage < 200 uA"
+        "expected": "< 1.6 V at 100 mA; OFF leakage < 200 uA",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "BN",
+        "b": "BK",
+        "when": "output ON (PNP selected)",
+        "note": "https://info.bannerengineering.com/cs/groups/public/documents/literature/257922.pdf wiring: PNP (sourcing) output selected, load bk (4) to -"
+      },
+      {
+        "a": "BK",
+        "b": "BU",
+        "when": "output ON (NPN selected)",
+        "note": "https://info.bannerengineering.com/cs/groups/public/documents/literature/257922.pdf wiring: NPN (sinking) output selected, load + to bk (4)"
       }
     ],
     "indicators": [
@@ -4592,25 +5226,49 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "bn (+) to bu (-)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "10-30 VDC (10% max ripple)"
+        "expected": "10-30 VDC (10% max ripple)",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "wh (analog out) to bu",
         "state": "target in window",
         "meter": "mA",
-        "expected": "4-20 mA (max load (Vcc-4)/0.02 ohm, 1 k ohm at 24 V) or 0-10 V (min 2.5 k ohm)"
+        "expected": "4-20 mA (max load (Vcc-4)/0.02 ohm, 1 k ohm at 24 V) or 0-10 V (min 2.5 k ohm)",
+        "pins": [
+          [
+            "WH",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "wh (analog out) to bu",
         "state": "signal lost",
         "meter": "mA",
-        "expected": "3.6 mA (current models) / 0 V (voltage models)"
+        "expected": "3.6 mA (current models) / 0 V (voltage models)",
+        "pins": [
+          [
+            "WH",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "bk (speed select) to bu",
         "state": "fast / slow response",
         "meter": "VDC",
-        "expected": "5-30 VDC = fast; 0-2 VDC = slow"
+        "expected": "5-30 VDC = fast; 0-2 VDC = slow",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "target distance",
@@ -4705,25 +5363,57 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "bn (1, +) to bu (3, -)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "12-30 VDC (10% max ripple)"
+        "expected": "12-30 VDC (10% max ripple)",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "bk (4, out) to bu (3)",
         "state": "PNP model, target within window (NO)",
         "meter": "VDC",
-        "expected": "supply minus < 3.0 V at 100 mA; OFF leakage < 10 uA"
+        "expected": "supply minus < 3.0 V at 100 mA; OFF leakage < 10 uA",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "bk (4, out) to bu (3)",
         "state": "NPN model, target within window (NO)",
         "meter": "VDC",
-        "expected": "< 1.6 V at 100 mA; OFF leakage < 200 uA"
+        "expected": "< 1.6 V at 100 mA; OFF leakage < 200 uA",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "target distance",
         "state": "normal",
         "meter": "visual",
         "expected": "50-500 mm"
+      }
+    ],
+    "pairs": [
+      {
+        "a": "BN",
+        "b": "BK",
+        "when": "output ON (PNP models)",
+        "note": "https://info.bannerengineering.com/cs/groups/public/documents/literature/119287.pdf wiring: PNP (sourcing) output models"
+      },
+      {
+        "a": "BK",
+        "b": "BU",
+        "when": "output ON (NPN models)",
+        "note": "https://info.bannerengineering.com/cs/groups/public/documents/literature/119287.pdf wiring: NPN (sinking) output models"
       }
     ],
     "indicators": [
@@ -4794,25 +5484,73 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "Brown (power) to Blue (0 V)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "5-26 VDC nominal (4.75-26.4 VDC); 90 mA max"
+        "expected": "5-26 VDC nominal (4.75-26.4 VDC); 90 mA max",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "Black (OUT A) to Blue (0 V)",
         "state": "output ON (L, active low)",
         "meter": "VDC",
-        "expected": "<= 0.4 V; sinks max 30 mA; load voltage max 30 VDC"
+        "expected": "<= 0.4 V; sinks max 30 mA; load voltage max 30 VDC",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "Black (OUT A) to Blue (0 V)",
         "state": "output OFF",
         "meter": "VDC",
-        "expected": "pulled up to the input / pull-up supply (open collector)"
+        "expected": "pulled up to the input / pull-up supply (open collector)",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "White (OUT B), Orange (OUT Z)",
         "state": "turning slowly",
         "meter": "VDC",
-        "expected": "B alternates like A, 90 deg shifted; Z once per revolution"
+        "expected": "B alternates like A, 90 deg shifted; Z once per revolution",
+        "pins": [
+          [
+            "WH",
+            "BU"
+          ],
+          [
+            "OG",
+            "BU"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "BK",
+        "b": "BU",
+        "when": "OUT A low (ON)",
+        "note": "https://cdn.automationdirect.com/static/specs/encodertrd.pdf p.tECD-55 (TRD-SR/SHR \"A\" models: NPN open collector output, sinking; negative logic, active low; L <= 0.4 V) and p.tECD-56 wiring (Black OUT A, White OUT B, Orange OUT Z, Blue 0V)"
+      },
+      {
+        "a": "WH",
+        "b": "BU",
+        "when": "OUT B low (ON)",
+        "note": "https://cdn.automationdirect.com/static/specs/encodertrd.pdf p.tECD-55 (TRD-SR/SHR \"A\" models: NPN open collector output, sinking; negative logic, active low; L <= 0.4 V) and p.tECD-56 wiring (Black OUT A, White OUT B, Orange OUT Z, Blue 0V)"
+      },
+      {
+        "a": "OG",
+        "b": "BU",
+        "when": "OUT Z low (ON)",
+        "note": "https://cdn.automationdirect.com/static/specs/encodertrd.pdf p.tECD-55 (TRD-SR/SHR \"A\" models: NPN open collector output, sinking; negative logic, active low; L <= 0.4 V) and p.tECD-56 wiring (Black OUT A, White OUT B, Orange OUT Z, Blue 0V)"
       }
     ],
     "indicators": [],
@@ -4901,25 +5639,53 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "Brown (power) to Blue (0 V)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "TRD-GK 10-30 VDC (9.7-30.9); TRD-N/TRDA 5-30 VDC (4.75-30.0)"
+        "expected": "TRD-GK 10-30 VDC (9.7-30.9); TRD-N/TRDA 5-30 VDC (4.75-30.0)",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "Black (OUT A) to Blue (0 V)",
         "state": "output H",
         "meter": "VDC",
-        "expected": "TRD-GK >= supply - 4 V; TRD-N/TRDA >= supply - 2.5 V"
+        "expected": "TRD-GK >= supply - 4 V; TRD-N/TRDA >= supply - 2.5 V",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "Black (OUT A) to Blue (0 V)",
         "state": "output L",
         "meter": "VDC",
-        "expected": "TRD-GK <= 2 V; TRD-N/TRDA <= 0.4 V"
+        "expected": "TRD-GK <= 2 V; TRD-N/TRDA <= 0.4 V",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "White (OUT B), Orange (OUT Z)",
         "state": "turning slowly",
         "meter": "VDC",
-        "expected": "B alternates like A, 90 deg shifted; Z once per revolution"
+        "expected": "B alternates like A, 90 deg shifted; Z once per revolution",
+        "pins": [
+          [
+            "WH",
+            "BU"
+          ],
+          [
+            "OG",
+            "BU"
+          ]
+        ]
       }
     ],
     "indicators": [],
@@ -4994,19 +5760,49 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "Brown (power) to Blue (0 V)",
         "state": "powered",
         "meter": "VDC",
-        "expected": "5 VDC nominal (4.75-5.25 VDC)"
+        "expected": "5 VDC nominal (4.75-5.25 VDC)",
+        "pins": [
+          [
+            "BN",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "Black (OUT A) to Blue (0 V)",
         "state": "output H / L",
         "meter": "VDC",
-        "expected": "H >= 2.5 V, L <= 0.5 V; Purple (OUT A-not) is the complement"
+        "expected": "H >= 2.5 V, L <= 0.5 V; Purple (OUT A-not) is the complement",
+        "pins": [
+          [
+            "BK",
+            "BU"
+          ]
+        ]
       },
       {
         "terminals": "White (OUT B) / Gray (OUT B-not), Orange (OUT Z) / Yellow (OUT Z-not)",
         "state": "turning slowly",
         "meter": "VDC",
-        "expected": "each pair complementary; B 90 deg from A"
+        "expected": "each pair complementary; B 90 deg from A",
+        "pins": [
+          [
+            "WH",
+            "BU"
+          ],
+          [
+            "GY",
+            "BU"
+          ],
+          [
+            "OG",
+            "BU"
+          ],
+          [
+            "YE",
+            "BU"
+          ]
+        ]
       }
     ],
     "indicators": [],
@@ -5105,25 +5901,63 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "N.O. contact block (green ECX1040) terminals",
         "state": "released",
         "meter": "continuity",
-        "expected": "open"
+        "expected": "open",
+        "pins": [
+          [
+            "3",
+            "4"
+          ]
+        ]
       },
       {
         "terminals": "N.O. contact block terminals",
         "state": "pressed",
         "meter": "ohms",
-        "expected": "closed; initial contact resistance <= 25 m ohm"
+        "expected": "closed; initial contact resistance <= 25 m ohm",
+        "pins": [
+          [
+            "3",
+            "4"
+          ]
+        ]
       },
       {
         "terminals": "N.C. contact block (red ECX1030) terminals",
         "state": "released",
         "meter": "ohms",
-        "expected": "closed (<= 25 m ohm)"
+        "expected": "closed (<= 25 m ohm)",
+        "pins": [
+          [
+            "1",
+            "2"
+          ]
+        ]
       },
       {
         "terminals": "N.C. contact block terminals",
         "state": "pressed",
         "meter": "continuity",
-        "expected": "open"
+        "expected": "open",
+        "pins": [
+          [
+            "1",
+            "2"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "3",
+        "b": "4",
+        "when": "pressed (N.O. block ECX1040)",
+        "note": "https://cdn.automationdirect.com/static/specs/cents22mmpb.pdf p.tPIL-26 Typical Wiring: Normally Open 3-4, Normally Closed 1-2 (terminal markings per CENELEC EN 50013)"
+      },
+      {
+        "a": "1",
+        "b": "2",
+        "when": "released (N.C. block ECX1030)",
+        "note": "https://cdn.automationdirect.com/static/specs/cents22mmpb.pdf p.tPIL-26 Typical Wiring: Normally Open 3-4, Normally Closed 1-2 (terminal markings per CENELEC EN 50013)"
       }
     ],
     "indicators": [],
@@ -5177,13 +6011,33 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "N.C. contact block (red ECX1030) terminals",
         "state": "released (pulled out / twisted to release)",
         "meter": "ohms",
-        "expected": "closed; initial contact resistance <= 25 m ohm"
+        "expected": "closed; initial contact resistance <= 25 m ohm",
+        "pins": [
+          [
+            "1",
+            "2"
+          ]
+        ]
       },
       {
         "terminals": "N.C. contact block terminals",
         "state": "pushed (latched)",
         "meter": "continuity",
-        "expected": "open (slow-action, positive opening contact)"
+        "expected": "open (slow-action, positive opening contact)",
+        "pins": [
+          [
+            "1",
+            "2"
+          ]
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "1",
+        "b": "2",
+        "when": "released (not pressed; N.C. block ECX1030)",
+        "note": "https://cdn.automationdirect.com/static/specs/cents22mmpb.pdf p.tPIL-26 Typical Wiring: Normally Open 3-4, Normally Closed 1-2 (terminal markings per CENELEC EN 50013)"
       }
     ],
     "indicators": [],

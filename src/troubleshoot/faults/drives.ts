@@ -21,6 +21,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, GS20 120 V class 1-phase (100-120 VAC -15%/+10%)",
         "meter": "VAC",
         "expected": "85-132 VAC",
+        "pins": [
+          [
+            "R/L1",
+            "S/L2"
+          ]
+        ],
         "note": "Operating voltage range from the model specification tables, ch1.pdf p.1-11"
       },
       {
@@ -28,6 +34,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, GS20/GS20X 230 V class (200-240 VAC -15%/+10%)",
         "meter": "VAC",
         "expected": "170-265 VAC (GS20X: 170-264 VAC)",
+        "pins": [
+          [
+            "R/L1",
+            "S/L2"
+          ],
+          [
+            "S/L2",
+            "T/L3"
+          ],
+          [
+            "R/L1",
+            "T/L3"
+          ]
+        ],
         "note": "Operating voltage range from the model specification tables, ch1.pdf p.1-12 to 1-14, 1-18, 1-19"
       },
       {
@@ -35,6 +55,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, GS20/GS20X 460 V class 3-phase (380-480 VAC -15%/+10%)",
         "meter": "VAC",
         "expected": "323-528 VAC",
+        "pins": [
+          [
+            "R/L1",
+            "S/L2"
+          ],
+          [
+            "S/L2",
+            "T/L3"
+          ],
+          [
+            "R/L1",
+            "T/L3"
+          ]
+        ],
         "note": "Operating voltage range from the model specification tables, ch1.pdf p.1-15, 1-16, 1-20"
       },
       {
@@ -42,6 +76,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, GS20 575 V class 3-phase (500-600 VAC -15%/+10%)",
         "meter": "VAC",
         "expected": "425-660 VAC",
+        "pins": [
+          [
+            "R/L1",
+            "S/L2"
+          ],
+          [
+            "S/L2",
+            "T/L3"
+          ],
+          [
+            "R/L1",
+            "T/L3"
+          ]
+        ],
         "note": "Operating voltage range from the model specification tables, ch1.pdf p.1-17"
       },
       {
@@ -56,6 +104,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "powered",
         "meter": "VDC",
         "expected": "24 VDC ±10% (21.6-26.4 VDC), 100 mA max",
+        "pins": [
+          [
+            "+24V",
+            "DCM"
+          ]
+        ],
         "note": "Control terminal specifications, https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-31"
       },
       {
@@ -63,6 +117,36 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input ON (activated)",
         "meter": "VDC",
         "expected": ">= 11 VDC (activation current 3.3 mA)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ],
+          [
+            "DI6",
+            "DCM"
+          ],
+          [
+            "DI7",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-31; DCM is the digital control common"
       },
       {
@@ -70,6 +154,36 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input OFF",
         "meter": "VDC",
         "expected": "<= 5 VDC (cut-off voltage)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ],
+          [
+            "DI6",
+            "DCM"
+          ],
+          [
+            "DI7",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-31"
       },
       {
@@ -77,6 +191,36 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input ON (activated)",
         "meter": "VDC",
         "expected": "<= 13 VDC (activation current 3.3 mA)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ],
+          [
+            "DI6",
+            "DCM"
+          ],
+          [
+            "DI7",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-31"
       },
       {
@@ -84,6 +228,36 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input OFF",
         "meter": "VDC",
         "expected": ">= 19 VDC (cut-off voltage)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ],
+          [
+            "DI6",
+            "DCM"
+          ],
+          [
+            "DI7",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-31"
       },
       {
@@ -91,6 +265,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "powered",
         "meter": "VDC",
         "expected": "10.5 ±0.5 VDC (10.0-11.0 VDC), 20 mA max (potentiometer supply)",
+        "pins": [
+          [
+            "+10V",
+            "ACM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-32"
       },
       {
@@ -98,6 +278,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "voltage-mode speed reference",
         "meter": "VDC",
         "expected": "0-10 VDC = 0 to maximum output frequency (P01.00)",
+        "pins": [
+          [
+            "AI1",
+            "ACM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-32"
       },
       {
@@ -105,6 +291,16 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "run permitted (STO cut-off mode; default STO1/STO2 jumpered to +24V)",
         "meter": "VDC",
         "expected": "11-30 VDC on both channels (rated 24 VDC ±10%, 6.67 mA)",
+        "pins": [
+          [
+            "STO1",
+            "SCM"
+          ],
+          [
+            "STO2",
+            "SCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-33"
       },
       {
@@ -112,7 +308,31 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "safe torque off active",
         "meter": "VDC",
         "expected": "0-5 VDC on either channel; drive output stops within 20 ms",
+        "pins": [
+          [
+            "STO1",
+            "SCM"
+          ],
+          [
+            "STO2",
+            "SCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-33"
+      }
+    ],
+    "pairs": [
+      {
+        "a": "R1",
+        "b": "R1O",
+        "when": "fault (default P02.13 = 11, malfunction indication)",
+        "note": "R1O = Relay Output 1 (N.O.), R1C = Relay Output 1 (N.C.), R1 = Relay Output 1 Common (https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-32); P02.13 Multi-function Output 1 (R1) default 11 = Malfunction indication, \"Activates when fault occurs (except Lv stop)\" (https://cdn.automationdirect.com/static/manuals/gs20m/ch4.pdf p.4-94)"
+      },
+      {
+        "a": "R1",
+        "b": "R1C",
+        "when": "no fault (relay not activated, default P02.13 = 11)",
+        "note": "R1O = Relay Output 1 (N.O.), R1C = Relay Output 1 (N.C.), R1 = Relay Output 1 Common (https://cdn.automationdirect.com/static/manuals/gs20m/ch2.pdf p.2-32); P02.13 Multi-function Output 1 (R1) default 11 = Malfunction indication, \"Activates when fault occurs (except Lv stop)\" (https://cdn.automationdirect.com/static/manuals/gs20m/ch4.pdf p.4-94); the N.C. contact is also closed with the drive unpowered"
       }
     ],
     "indicators": [
@@ -1848,6 +2068,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, GS10 120 V class 1-phase (100-120 VAC -15%/+10%)",
         "meter": "VAC",
         "expected": "85-132 VAC",
+        "pins": [
+          [
+            "R/L1",
+            "S/L2"
+          ]
+        ],
         "note": "Operating voltage range from the model specification tables, ch1.pdf p.1-11"
       },
       {
@@ -1855,6 +2081,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, GS10 230 V class 1-/3-phase (200-240 VAC -15%/+10%)",
         "meter": "VAC",
         "expected": "170-265 VAC",
+        "pins": [
+          [
+            "R/L1",
+            "S/L2"
+          ],
+          [
+            "S/L2",
+            "T/L3"
+          ],
+          [
+            "R/L1",
+            "T/L3"
+          ]
+        ],
         "note": "Operating voltage range from the model specification tables, ch1.pdf p.1-12 to 1-14"
       },
       {
@@ -1862,6 +2102,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, GS10 460 V class 3-phase (380-480 VAC -15%/+10%)",
         "meter": "VAC",
         "expected": "323-528 VAC",
+        "pins": [
+          [
+            "R/L1",
+            "S/L2"
+          ],
+          [
+            "S/L2",
+            "T/L3"
+          ],
+          [
+            "R/L1",
+            "T/L3"
+          ]
+        ],
         "note": "Operating voltage range from the model specification tables, ch1.pdf p.1-15, 1-16"
       },
       {
@@ -1876,6 +2130,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "powered",
         "meter": "VDC",
         "expected": "24 VDC ±10% (21.6-26.4 VDC), 100 mA max",
+        "pins": [
+          [
+            "+24V",
+            "DCM"
+          ]
+        ],
         "note": "Control terminal specifications, https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf p.2-23"
       },
       {
@@ -1883,6 +2143,28 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input ON (activated)",
         "meter": "VDC",
         "expected": ">= 11 VDC (activation current 3.3 mA)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf p.2-23; DCM is the digital control common"
       },
       {
@@ -1890,6 +2172,28 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input OFF",
         "meter": "VDC",
         "expected": "<= 5 VDC (cut-off voltage)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf p.2-23"
       },
       {
@@ -1897,6 +2201,28 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input ON (activated)",
         "meter": "VDC",
         "expected": "<= 13 VDC (activation current 3.3 mA)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf p.2-23"
       },
       {
@@ -1904,6 +2230,28 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input OFF",
         "meter": "VDC",
         "expected": ">= 19 VDC (cut-off voltage)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf p.2-23"
       },
       {
@@ -1911,6 +2259,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "powered",
         "meter": "VDC",
         "expected": "10.5 ±0.5 VDC (10.0-11.0 VDC), 20 mA max (potentiometer supply)",
+        "pins": [
+          [
+            "+10V",
+            "ACM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf p.2-23/2-24"
       },
       {
@@ -1918,7 +2272,27 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "voltage-mode speed reference",
         "meter": "VDC",
         "expected": "0-10 VDC = 0 to maximum output frequency (P01.00)",
+        "pins": [
+          [
+            "AI",
+            "ACM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf p.2-23/2-24"
+      }
+    ],
+    "pairs": [
+      {
+        "a": "R1",
+        "b": "R1O",
+        "when": "fault (default P02.13 = 11, malfunction indication)",
+        "note": "R1O = Relay Output 1 (N.O.), R1C = Relay Output 1 (N.C.), R1 = Relay Output 1 Common (https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf p.2-23); P02.13 Multi-function Output 1 (R1) default 11 = Malfunction indication, \"Activates when fault occurs (except Lv stop)\" (https://cdn.automationdirect.com/static/manuals/gs10m/ch4.pdf p.4-87)"
+      },
+      {
+        "a": "R1",
+        "b": "R1C",
+        "when": "no fault (relay not activated, default P02.13 = 11)",
+        "note": "R1O = Relay Output 1 (N.O.), R1C = Relay Output 1 (N.C.), R1 = Relay Output 1 Common (https://cdn.automationdirect.com/static/manuals/gs10m/ch2.pdf p.2-23); P02.13 Multi-function Output 1 (R1) default 11 = Malfunction indication, \"Activates when fault occurs (except Lv stop)\" (https://cdn.automationdirect.com/static/manuals/gs10m/ch4.pdf p.4-87); the N.C. contact is also closed with the drive unpowered"
       }
     ],
     "indicators": [
@@ -3318,6 +3692,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, GS30 230 V class 1-/3-phase (200-240 VAC -15%/+10%)",
         "meter": "VAC",
         "expected": "170-265 VAC",
+        "pins": [
+          [
+            "R/L1",
+            "S/L2"
+          ],
+          [
+            "S/L2",
+            "T/L3"
+          ],
+          [
+            "R/L1",
+            "T/L3"
+          ]
+        ],
         "note": "Operating voltage range from the model specification tables, ch1.pdf p.1-14 to 1-17"
       },
       {
@@ -3325,6 +3713,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, GS30 460 V class 3-phase (380-480 VAC -15%/+10%)",
         "meter": "VAC",
         "expected": "323-528 VAC",
+        "pins": [
+          [
+            "R/L1",
+            "S/L2"
+          ],
+          [
+            "S/L2",
+            "T/L3"
+          ],
+          [
+            "R/L1",
+            "T/L3"
+          ]
+        ],
         "note": "Operating voltage range from the model specification tables, ch1.pdf p.1-18 to 1-20"
       },
       {
@@ -3339,6 +3741,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "powered",
         "meter": "VDC",
         "expected": "24 VDC ±10% (21.6-26.4 VDC), 100 mA max",
+        "pins": [
+          [
+            "+24V",
+            "DCM"
+          ]
+        ],
         "note": "Control terminal specifications, https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-30"
       },
       {
@@ -3346,6 +3754,36 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input ON (activated)",
         "meter": "VDC",
         "expected": ">= 11 VDC (activation current 3.3 mA)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ],
+          [
+            "DI6",
+            "DCM"
+          ],
+          [
+            "DI7",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-30; DCM is the digital control common"
       },
       {
@@ -3353,6 +3791,36 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input OFF",
         "meter": "VDC",
         "expected": "<= 5 VDC (cut-off voltage)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ],
+          [
+            "DI6",
+            "DCM"
+          ],
+          [
+            "DI7",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-30"
       },
       {
@@ -3360,6 +3828,36 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input ON (activated)",
         "meter": "VDC",
         "expected": "<= 13 VDC (activation current 3.3 mA)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ],
+          [
+            "DI6",
+            "DCM"
+          ],
+          [
+            "DI7",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-30"
       },
       {
@@ -3367,6 +3865,36 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input OFF",
         "meter": "VDC",
         "expected": ">= 19 VDC (cut-off voltage)",
+        "pins": [
+          [
+            "DI1",
+            "DCM"
+          ],
+          [
+            "DI2",
+            "DCM"
+          ],
+          [
+            "DI3",
+            "DCM"
+          ],
+          [
+            "DI4",
+            "DCM"
+          ],
+          [
+            "DI5",
+            "DCM"
+          ],
+          [
+            "DI6",
+            "DCM"
+          ],
+          [
+            "DI7",
+            "DCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-30"
       },
       {
@@ -3374,6 +3902,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "powered",
         "meter": "VDC",
         "expected": "10.5 ±0.5 VDC (10.0-11.0 VDC), 20 mA max (potentiometer supply)",
+        "pins": [
+          [
+            "+10V",
+            "ACM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-31"
       },
       {
@@ -3381,6 +3915,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "voltage-mode speed reference",
         "meter": "VDC",
         "expected": "0-10 VDC = 0 to maximum output frequency (P01.00)",
+        "pins": [
+          [
+            "AI1",
+            "ACM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-31"
       },
       {
@@ -3388,6 +3928,16 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "run permitted (STO cut-off mode; default STO1/STO2 jumpered to +24V)",
         "meter": "VDC",
         "expected": "11-30 VDC on both channels (rated 24 VDC ±10%, 6.67 mA)",
+        "pins": [
+          [
+            "STO1",
+            "SCM"
+          ],
+          [
+            "STO2",
+            "SCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-32"
       },
       {
@@ -3395,7 +3945,31 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "safe torque off active",
         "meter": "VDC",
         "expected": "0-5 VDC on either channel; drive output stops within 20 ms",
+        "pins": [
+          [
+            "STO1",
+            "SCM"
+          ],
+          [
+            "STO2",
+            "SCM"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-32"
+      }
+    ],
+    "pairs": [
+      {
+        "a": "R1",
+        "b": "R1O",
+        "when": "fault (default P02.13 = 11, malfunction indication)",
+        "note": "R1O = Relay Output 1 (N.O.), R1C = Relay Output 1 (N.C.), R1 = Relay Output 1 Common (https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-31); P02.13 Multi-function Output 1 (R1) default 11 = Malfunction indication, \"Activates when fault occurs (except Lv stop)\" (https://cdn.automationdirect.com/static/manuals/gs30m/ch4.pdf p.4-112)"
+      },
+      {
+        "a": "R1",
+        "b": "R1C",
+        "when": "no fault (relay not activated, default P02.13 = 11)",
+        "note": "R1O = Relay Output 1 (N.O.), R1C = Relay Output 1 (N.C.), R1 = Relay Output 1 Common (https://cdn.automationdirect.com/static/manuals/gs30m/ch2.pdf p.2-31); P02.13 Multi-function Output 1 (R1) default 11 = Malfunction indication, \"Activates when fault occurs (except Lv stop)\" (https://cdn.automationdirect.com/static/manuals/gs30m/ch4.pdf p.4-112); the N.C. contact is also closed with the drive unpowered"
       }
     ],
     "indicators": [
@@ -5344,6 +5918,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, 3-phase 380-480 VAC models",
         "meter": "VAC",
         "expected": "323-528 VAC (380-480 VAC -15%/+10%), 47.5-63 Hz",
+        "pins": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "S",
+            "T"
+          ],
+          [
+            "R",
+            "T"
+          ]
+        ],
         "note": "MD290 User Guide B06, Table 4-2/4-3 Electrical specifications: https://portal-file.inovance.com/owfile/ProdDoc/SC/PS00000462_PDF_EN/B06/MD290%20Series%20General-Purpose%20AC%20Drive%20User%20Guide-EN-B06.PDF"
       },
       {
@@ -5351,6 +5939,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, 200-240 VAC models",
         "meter": "VAC",
         "expected": "170-264 VAC (-15%/+10%)",
+        "pins": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "S",
+            "T"
+          ],
+          [
+            "R",
+            "T"
+          ]
+        ],
         "note": "MD290 User Guide B06, chapter 4 Technical data"
       },
       {
@@ -5365,6 +5967,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "powered",
         "meter": "VDC",
         "expected": "+24 V supply for DIs/DOs and sensors, 200 mA max",
+        "pins": [
+          [
+            "+24V",
+            "COM"
+          ]
+        ],
         "note": "MD290 User Guide B06, Table 5-36 control terminal functions, p.185"
       },
       {
@@ -5372,6 +5980,28 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input ON",
         "meter": "VDC",
         "expected": "Operating voltage range 9-30 V (input impedance 1.39 kOhm; DI5 1.03 kOhm). OP is jumpered to +24V by default (internal supply).",
+        "pins": [
+          [
+            "DI1",
+            "OP"
+          ],
+          [
+            "DI2",
+            "OP"
+          ],
+          [
+            "DI3",
+            "OP"
+          ],
+          [
+            "DI4",
+            "OP"
+          ],
+          [
+            "DI5",
+            "OP"
+          ]
+        ],
         "note": "MD290 User Guide B06, Table 5-36, p.185"
       },
       {
@@ -5379,6 +6009,12 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "powered",
         "meter": "VDC",
         "expected": "+10 V, 10 mA max (potentiometer 1-5 kOhm)",
+        "pins": [
+          [
+            "+10V",
+            "GND"
+          ]
+        ],
         "note": "MD290 User Guide B06, Table 5-36, p.185"
       },
       {
@@ -5386,7 +6022,27 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "speed reference",
         "meter": "VDC",
         "expected": "0-10 VDC (input impedance 22 kOhm)",
+        "pins": [
+          [
+            "AI1",
+            "GND"
+          ]
+        ],
         "note": "MD290 User Guide B06, Table 5-36, p.185"
+      }
+    ],
+    "pairs": [
+      {
+        "a": "T/A",
+        "b": "T/C",
+        "when": "fault (default F5-02 = 2, fault output)",
+        "note": "Relay outputs T/A-T/B normally-closed (NC), T/A-T/C normally-open (NO); F5-02 Relay (T/A-T/B-T/C) function selection default 2 = Fault output, \"When a fault occurs and the AC drive stops due to the fault, terminal set for this function becomes on\" (MD500 User Guide 19010355-SC ch.3 control terminals, ch.6 F5-02; MD290 User Guide PS00000462 F5-02)"
+      },
+      {
+        "a": "T/A",
+        "b": "T/B",
+        "when": "no fault (relay off, default F5-02 = 2)",
+        "note": "Relay outputs T/A-T/B normally-closed (NC), T/A-T/C normally-open (NO); F5-02 Relay (T/A-T/B-T/C) function selection default 2 = Fault output, \"When a fault occurs and the AC drive stops due to the fault, terminal set for this function becomes on\" (MD500 User Guide 19010355-SC ch.3 control terminals, ch.6 F5-02; MD290 User Guide PS00000462 F5-02)"
       }
     ],
     "indicators": [
@@ -6204,6 +6860,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, SV2A-2040/2075/2150/2200",
         "meter": "VAC",
         "expected": "1-phase or 3-phase 100-120 VAC or 200-230 VAC, -15% to +10%",
+        "pins": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "S",
+            "T"
+          ],
+          [
+            "R",
+            "T"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/sureservo2/appxa.pdf p.A-2 Drive Specifications (Permissible Voltage)"
       },
       {
@@ -6211,6 +6881,20 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "power applied, SV2A-2300/2550/2750/2F00",
         "meter": "VAC",
         "expected": "3-phase 200-230 VAC, -15% to +10%",
+        "pins": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "S",
+            "T"
+          ],
+          [
+            "R",
+            "T"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/sureservo2/appxa.pdf p.A-2"
       },
       {
@@ -6225,6 +6909,48 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input ON",
         "meter": "VDC",
         "expected": "15-24 VDC, 8 mA",
+        "pins": [
+          [
+            "DI1-",
+            "COM+"
+          ],
+          [
+            "DI2-",
+            "COM+"
+          ],
+          [
+            "DI3-",
+            "COM+"
+          ],
+          [
+            "DI4-",
+            "COM+"
+          ],
+          [
+            "DI5-",
+            "COM+"
+          ],
+          [
+            "DI6-",
+            "COM+"
+          ],
+          [
+            "DI7-",
+            "COM+"
+          ],
+          [
+            "DI8-",
+            "COM+"
+          ],
+          [
+            "DI9-",
+            "COM+"
+          ],
+          [
+            "DI10-",
+            "COM+"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/sureservo2/ch3.pdf p.3-41 wiring diagram, Digital Input Rating"
       },
       {
@@ -6232,6 +6958,48 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "input OFF",
         "meter": "VDC",
         "expected": "< 5 VDC, < 0.5 mA",
+        "pins": [
+          [
+            "DI1-",
+            "COM+"
+          ],
+          [
+            "DI2-",
+            "COM+"
+          ],
+          [
+            "DI3-",
+            "COM+"
+          ],
+          [
+            "DI4-",
+            "COM+"
+          ],
+          [
+            "DI5-",
+            "COM+"
+          ],
+          [
+            "DI6-",
+            "COM+"
+          ],
+          [
+            "DI7-",
+            "COM+"
+          ],
+          [
+            "DI8-",
+            "COM+"
+          ],
+          [
+            "DI9-",
+            "COM+"
+          ],
+          [
+            "DI10-",
+            "COM+"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/sureservo2/ch3.pdf p.3-41"
       },
       {
@@ -6260,7 +7028,33 @@ export const DRIVE_FAULTS: DeviceFaultProfile[] = [
         "state": "STO event, both channels open (AL500)",
         "meter": "continuity",
         "expected": "Closed; open when STO circuit is in the running state, and stays open if only one channel opens or on an internal STO error (non-latching; 80 VDC 0.5 A max)",
+        "pins": [
+          [
+            "FDBK+",
+            "FDBK-"
+          ]
+        ],
         "note": "https://cdn.automationdirect.com/static/manuals/sureservo2/ch3.pdf p.3-36, p.3-40 FDBK behavior"
+      }
+    ],
+    "pairs": [
+      {
+        "a": "DO5+",
+        "b": "DO5-",
+        "when": "no alarm (default ALRM on DO5 as B contact)",
+        "note": "CN1 DO5+ (pin 28) / DO5- (pin 27) default ALRM servo alarm (https://cdn.automationdirect.com/static/manuals/sureservo2/ch3.pdf p.3-16/3-18); P2.022 DO5 default 0x0007, Z = 0 sets the output contact normally closed (B contact) (https://cdn.automationdirect.com/static/manuals/sureservo2/ch8.pdf p.8-104); ALRM \"When an alarm occurs, this DO is on\" (p.8-244). Transistor (photocoupler) output, conducts DO5+ -> DO5-."
+      },
+      {
+        "a": "DO1+",
+        "b": "DO1-",
+        "when": "servo ready (default SRDY on DO1 as A contact)",
+        "note": "CN1 DO1+ (pin 7) / DO1- (pin 6) default SRDY servo ready (https://cdn.automationdirect.com/static/manuals/sureservo2/ch3.pdf p.3-16/3-18); P2.018 DO1 default 0x0101, Z = 1 sets the output contact normally open (A contact) (https://cdn.automationdirect.com/static/manuals/sureservo2/ch8.pdf p.8-104). Transistor output, conducts DO1+ -> DO1-."
+      },
+      {
+        "a": "FDBK+",
+        "b": "FDBK-",
+        "when": "STO active (both STO channels off)",
+        "note": "CN10 FDBK+ (pin 7) / FDBK- (pin 8): closed when both STO channels are open; open in the running state, if only one channel opens, or on an internal STO error (https://cdn.automationdirect.com/static/manuals/sureservo2/ch3.pdf p.3-36, p.3-40)"
       }
     ],
     "indicators": [
