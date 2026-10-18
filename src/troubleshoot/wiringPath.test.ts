@@ -15,7 +15,7 @@ import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
 import { analogSetup } from '../plc/core/analog';
 import type { IOPoint } from '../types/io';
-import { partnerPins, wiringPath, wiringPaths, type PathHop, type WiringPath } from './wiringPath';
+import { partnerPins, prepareWiring, wiringPath, wiringPaths, type PathHop, type WiringPath } from './wiringPath';
 import { withDrawingOptions } from '../standards/drawingOptions';
 import { faultEffects, faultableWires } from './faults';
 import { FlickerWatch, wiggleResult, wiggleSpots } from './watch';
@@ -47,11 +47,15 @@ const SEAL = [
   pt('Sealing head down solenoid', 'output', 'solenoid'), pt('Sealing head up solenoid', 'output', 'solenoid'),
   pt('Seal heater on (SSR)', 'output', 'other'), pt('Unwinder VFD run', 'output', 'vfd-input'), pt('Running light', 'output', 'pilot-light'),
 ];
-function sealingHead(): DrawingContext {
-  const io = SEAL.map((p, i) => ({ ...p, id: `s${i + 1}` })) as IOPoint[];
+/** The user's Sealing Head; `transmitter` swaps the thermocouple for a 2-wire 4-20 mA transmitter on a C0-04AD-1. */
+function sealingHead(transmitter = false): DrawingContext {
+  const points = transmitter
+    ? SEAL.map((p) => (/thermocouple/.test(p.description) ? { ...p, description: 'Seal bar temperature (4-20 mA transmitter)', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } } as Omit<IOPoint, 'id'> : p))
+    : SEAL;
+  const io = points.map((p, i) => ({ ...p, id: `s${i + 1}` })) as IOPoint[];
   const profile = getProfile('click');
   const cpu = getCpu(profile, 'C0-11DD2E-D');
-  const modules = ['C0-08ND3', 'C0-04THM'];
+  const modules = transmitter ? ['C0-08ND3', 'C0-04AD-1'] : ['C0-08ND3', 'C0-04THM'];
   const addresses = resolveAddresses(profile, cpu, io, moduleSlots(modules));
   const plc = { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label };
   const spec = 'Sealing head: two-hand start, light curtain, interlocked guard door, E-stop. Heated seal bar with a type J thermocouple read by the PLC and a separate over-temperature limit. Film unwinder 0.5 HP on a VFD. NEMA 4X stainless panel, 480 V 3-phase.';
@@ -105,8 +109,10 @@ test('example: photo-eye X004 through TB2, the trunk, JB1 and its cable, supplie
   assert.equal(w.supply[0].terminal, '4');
   assert.equal(w.supply[1].measure!.expect.startsWith('24 VDC'), true);
   assert.match(w.supply[2].measure!.expect, /480 VAC/);
-  assert.deepEqual(tags(w.ret), ['TB2', 'PS1']);
-  assert.equal(w.ret[0].terminal, '5');
+  assert.deepEqual(tags(w.ret), ['PLC', 'TB1', 'TB2', 'PS1']);
+  assert.equal(w.ret[0].terminal, 'COM', 'the input common first');
+  assert.match(w.ret[0].note!, /common/);
+  assert.equal(w.ret[2].terminal, '5');
   assert.match(w.signal[0].where!.sheet, /-E-\d+$/);
   assert.equal(w.reference, 'TB1 0V');
 });
@@ -199,10 +205,13 @@ test('Sealing Head: the VFD run output does not wander into the motor power circ
 
 test('Sealing Head: the thermocouple path ends at its field device', () => {
   const w = shPaths.find((x) => x.analog && /thermocouple/i.test(x.description))!;
-  const last = w.signal[w.signal.length - 1];
-  assert.equal(last.kind, 'device');
-  assert.equal(last.location, 'field');
-  assert.match(last.note ?? '', /must not be swapped/);
+  const dev = w.signal.find((h) => h.kind === 'device')!;
+  assert.equal(dev.location, 'field');
+  assert.match(dev.note ?? '', /must not be swapped/);
+  // Out on + (CH1+ → TBA-1 → cable core), back on − (cable core → TBA-2 → CH1−).
+  const order = w.signal.map((h) => `${h.kind}:${h.terminal ?? h.tag}`);
+  assert.deepEqual(order.filter((x) => x.startsWith('plc') || x.startsWith('terminal')), ['plc:CH1+', 'terminal:1', 'terminal:2', 'plc:CH1-'], order.join(' '));
+  assert.equal(w.signal.filter((h) => h.kind === 'cable').length, 2, 'both cores');
 });
 
 test('IEC designations: the example in Europe (-K2 PLC, -X2 terminals)', () => {
@@ -214,6 +223,87 @@ test('IEC designations: the example in Europe (-K2 PLC, -X2 terminals)', () => {
   assert.match(pe.signal[0].tag, /^-K/, pe.summary);
   assert.ok(pe.signal.some((h) => h.kind === 'terminal' && /^-X/.test(h.tag)), pe.summary);
   assert.ok(pe.supply.some((h) => h.kind === 'source'), pe.summary);
+});
+
+test('review: sinking outputs return through the module common (open common = classic fault)', () => {
+  for (const a of ['Y001', 'Y002', 'Y003']) {
+    const w = wiringPath(ex, a)!;
+    assert.ok(w.ret.length, `${a} has a return`);
+    assert.match(w.ret[0].label, /common of/);
+    assert.equal(w.ret[0].wire, '0V');
+  }
+});
+
+test('review: a supply contact reads 24 V only while it is ON itself (SR1:14 drops after an E-stop)', () => {
+  const w = shPaths.find((x) => x.supply.some((h) => h.tag === 'SR1' && h.terminal === '14'))!;
+  const h = w.supply.find((x) => x.tag === 'SR1' && x.terminal === '14')!;
+  assert.equal(h.kind, 'contact');
+  assert.match(h.measure!.when, /SR1/, h.measure!.when);
+});
+
+test('review: supply contacts are kind contact (OL1:96)', () => {
+  const ol = wiringPath(ex, 'Y001')!.supply.find((h) => h.tag === 'OL1')!;
+  assert.equal(ol.kind, 'contact');
+  assert.match(ol.note!, /not tripped/);
+});
+
+test('review: the supply chain goes through a fused terminal to the power supply', () => {
+  const m = buildModel(ex);
+  // The HMI feed: 24+ → TB1-12 (fused) → 24+H → HMI1. Make an input device fed from 24+H.
+  const fused = m.strips.flatMap((s) => s.terminals).find((t) => t.fuse)!;
+  const outNet = m.wires.find((w) => w.from === fused.label && w.wire !== '24+')!.wire;
+  const wires = m.wires.map((w) => (w.wire === '24+' && w.to === 'PB1:C' ? { ...w, wire: outNet, from: fused.label } : w));
+  const w = wiringPath(ex, 'X002', { wires })!;
+  const kinds = w.supply.map((h) => `${h.kind}:${h.tag}`);
+  assert.ok(kinds.some((k) => k.startsWith('protection:') && w.supply.some((h) => /Fused terminal/.test(h.label))), kinds.join(' '));
+  assert.ok(w.supply.some((h) => h.kind === 'source' && h.tag === 'PS1'), kinds.join(' '));
+});
+
+test('review: 2-wire 4-20 mA loop — PLC hop on the channel, measured IN SERIES, never across', () => {
+  const t = sealingHead(true);
+  const w = wiringPaths(t).find((x) => x.analog)!;
+  assert.equal(w.signal[0].kind, 'plc');
+  assert.match(w.signal[0].terminal!, /^CH\d$/, w.signal[0].label);
+  const m = w.signal[0].measure!;
+  assert.equal(m.kind, 'mA');
+  assert.match(m.when, /BROKEN.*SERIES.*never put the meter across/);
+  const dev = w.signal.find((h) => h.kind === 'device')!;
+  assert.equal(dev.measure!.kind, 'VDC', 'across the transmitter: volts only');
+  assert.ok(w.supply.some((h) => h.kind === 'source'), w.supply.map((h) => h.tag).join(' '));
+});
+
+test('review: a device without a known partner pin does not mix two supply chains', () => {
+  for (const w of shPaths) {
+    const incoming = w.supply.filter((h) => h.kind === 'supply').length;
+    assert.ok(incoming <= 1, `${w.address}: ${w.supply.map((h) => h.tag).join(' ')}`);
+    const i = w.supply.findIndex((h) => h.kind === 'supply');
+    assert.ok(i < 0 || i === w.supply.length - 1 || w.supply.slice(i + 1).every((h) => h.kind !== 'source'), `${w.address}: chain runs on past the incoming supply`);
+  }
+});
+
+test('review: parallel devices on one input are all returned', () => {
+  const m = buildModel(ex);
+  const wires = [...m.wires, { wire: 'X002', from: 'PB3:NO', to: 'PLC:X002', color: 'BU', size: '18 AWG', function: 'parallel start' }];
+  const w = wiringPath(ex, 'X002', { wires })!;
+  assert.deepEqual(w.parallel.map((h) => h.tag), ['PB3']);
+});
+
+test('review: a PLC terminal with no wire returns the PLC hop and noWire', () => {
+  const m = buildModel(ex);
+  const w = wiringPath(ex, 'X004', { wires: m.wires.filter((x) => x.wire !== 'X004') })!;
+  assert.equal(w.noWire, true);
+  assert.equal(w.signal.length, 1);
+  assert.equal(w.signal[0].kind, 'plc');
+});
+
+test('review: terminal and device hops on the I/O sheet carry the line', () => {
+  const w = wiringPath(ex, 'X002')!;
+  assert.ok(w.signal.every((h) => !h.where || h.where.line), w.signal.map((h) => `${h.tag} ${h.where?.sheet} ${h.where?.line}`).join(' | '));
+});
+
+test('review: a prepared context gives the same paths', () => {
+  const prep = prepareWiring(ex);
+  assert.deepEqual(wiringPath(prep, 'X004'), wiringPath(ex, 'X004'));
 });
 
 console.log('wiring faults');

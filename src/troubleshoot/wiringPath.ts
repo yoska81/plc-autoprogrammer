@@ -64,7 +64,14 @@ export interface WiringPath {
   reference: string;
   /** One-line summary for the step list. */
   summary: string;
+  /** Other devices on the same signal wire (parallel contacts / sensors), each a device hop. */
+  parallel: PathHop[];
+  /** True when the PLC terminal has no wire in the design (only the PLC hop is given). */
+  noWire?: boolean;
 }
+
+/** A design prepared once for many path lookups (live UI, why-stuck analysis). */
+export interface WiringContext { readonly prepared: true }
 
 export interface WiringPathOptions {
   /** Wire list to use instead of the derived one (imported drawings keep their own wire numbers). */
@@ -353,7 +360,19 @@ function supplyChain(c: Ctx, net: string, p: IoPoint | undefined, seen: Set<stri
   };
   cand.sort((a, b) => rank(a) - rank(b));
   const src = cand[0];
-  if (!src) return [];
+  if (!src) {
+    // A terminal that joins two wire numbers (fused terminal: 24+ in, 24+H out): go through it.
+    for (const x of ends) {
+      if (!x.end.strip || !/^\d+$/.test(x.end.pin)) continue;
+      const other = c.edges.find((e) => e.wire !== net && !seen.has(e.wire) && (e.a.raw === x.end.raw || e.b.raw === x.end.raw));
+      if (!other) continue;
+      const t = c.m.strips.flatMap((st) => st.terminals).find((tt) => tt.label === x.end.raw);
+      const hop = hopOf(c, x.end, net, p, x.color);
+      if (t?.fuse) { hop.kind = 'protection'; hop.label = `Fused terminal ${x.end.raw} (${t.fuse} fuse)`; hop.note = `The fuse in ${x.end.raw} feeds wire ${net}: a blown fuse (its LED lit) leaves ${net} dead while ${other.wire} is live.`; }
+      return [hop, ...supplyChain(c, other.wire, p, seen, depth + 1)];
+    }
+    return [];
+  }
   const hop = hopOf(c, src.end, net, p, src.color);
   const cat = c.rc.get(src.end.tag)!.category;
   if (cat === 'powerSupply') {
@@ -369,18 +388,28 @@ function supplyChain(c: Ctx, net: string, p: IoPoint | undefined, seen: Set<stri
     return [hop, ...(l ? supplyChain(c, l.net, p, seen, depth + 1) : [])];
   }
   if (!up.length) return [hop];
-  if (cat === 'safetyRelay' || cat === 'relay') hop.note = `${src.end.tag} contact ${up[0].pin}-${src.end.pin}: closed when the relay is ON.`;
+  if (!['breaker', 'fuse', 'disconnect', 'motorProtector'].includes(cat)) {
+    hop.kind = 'contact';
+    hop.note = `${src.end.tag} contact ${up[0].pin}-${src.end.pin}: closed only when ${src.end.tag} is ${cat === 'overload' ? 'not tripped' : 'ON'}.`;
+  }
   return [hop, ...supplyChain(c, up[0].net, p, seen, depth + 1)];
 }
 
+/** Build the nets, the drawing plan and the junction boxes once, for many lookups. */
+export function prepareWiring(ctx: DrawingContext, opts: WiringPathOptions = {}): WiringContext {
+  return { prepared: true, ...build(ctx, opts) } as unknown as WiringContext;
+}
+const isPrepared = (x: DrawingContext | WiringContext): x is WiringContext => (x as WiringContext).prepared === true;
+const ctxOf = (x: DrawingContext | WiringContext, opts: WiringPathOptions): Ctx => (isPrepared(x) ? (x as unknown as Ctx) : build(x, opts));
+
 /** The path of one PLC point (address as in the I/O list, e.g. "X004", "Y001", "DF1"). */
-export function wiringPath(ctx: DrawingContext, address: string, opts: WiringPathOptions = {}): WiringPath | null {
-  return pathIn(build(ctx, opts), address);
+export function wiringPath(ctx: DrawingContext | WiringContext, address: string, opts: WiringPathOptions = {}): WiringPath | null {
+  return pathIn(ctxOf(ctx, opts), address);
 }
 
 /** Paths of every PLC point of the design. */
-export function wiringPaths(ctx: DrawingContext, opts: WiringPathOptions = {}): WiringPath[] {
-  const c = build(ctx, opts);
+export function wiringPaths(ctx: DrawingContext | WiringContext, opts: WiringPathOptions = {}): WiringPath[] {
+  const c = ctxOf(ctx, opts);
   const out: WiringPath[] = [];
   for (const p of c.m.io) { const w = pathIn(c, p.address); if (w) out.push(w); }
   for (const a of c.m.analog.circuits) { const w = pathIn(c, a.row.address); if (w && !out.some((x) => x.address === w.address)) out.push(w); }
@@ -399,7 +428,15 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
   const seen = new Set<string>();
   let device = point.deviceTag;
   let deviceEnd: End | undefined;
-  if (plcEnd) {
+  const parallel: PathHop[] = [];
+  if (!plcEnd) {
+    return {
+      address: point.address, description: point.description, type: point.type, analog: false, device: device ?? '', noWire: true, parallel,
+      signal: [{ kind: 'plc', tag: c.m.plcTag, terminal: address, wire: point.wire || address, label: `PLC terminal ${address} (no wire in the design)`, where: whereOf(c, c.m.plcTag, `io:${address}`, ['io']), location: 'cabinet' }],
+      supply: [], ret: [], reference: c.zeroRef, summary: `${point.address} ${point.description}: no wire on the PLC terminal in the design`,
+    };
+  }
+  {
     let net = c.edges.find((e) => key(e.a) === key(plcEnd) || key(e.b) === key(plcEnd))?.wire ?? address;
     signal.push({ ...hopOf(c, plcEnd, net, point), measure: signalMeasure(c, point, plcEnd.raw, net) });
     let from = key(plcEnd);
@@ -410,17 +447,23 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
       for (const { end, color } of ends) {
         if (c.plcTags.has(end.tag)) continue;
         const atDevice = end.jbDevice ? end.jbDevice === device || !device : end.tag === device;
-        if (end.jbDevice || (!end.strip && atDevice)) {
+        if (end.jbDevice || (!end.strip && (atDevice || deviceEnd))) {
           signal.push(...cableHops(c, net, end.jbDevice ?? end.tag));
           const h = hopOf(c, end, net, point, color);
           if (end.jbDevice) { h.label = `${end.jbDevice}${describe(c, end.jbDevice) ? ` (${describe(c, end.jbDevice)})` : ''}, wired in junction box ${end.tag}`; h.tag = end.jbDevice; h.where = whereOf(c, end.jbDevice, undefined, ['io', 'machine', 'jb']); }
           h.kind = 'device';
           h.measure = signalMeasure(c, point, end.jbDevice ? `${end.tag} (${end.jbDevice})` : end.raw, net);
+          if (deviceEnd) { parallel.push(h); continue; }
           signal.push(h);
           deviceEnd = end;
           if (!device) device = end.jbDevice ?? end.tag;
           next = null;
-          break;
+          continue;
+        }
+        if (deviceEnd) {
+          // Another device on the same wire after the first: a parallel branch.
+          if (!end.strip) { const h = hopOf(c, end, net, point, color); h.kind = 'device'; h.measure = signalMeasure(c, point, end.raw, net); parallel.push(h); }
+          continue;
         }
         const h = hopOf(c, end, net, point, color);
         if (h.kind === 'terminal') { h.measure = signalMeasure(c, point, end.raw, net); signal.push(h); continue; }
@@ -455,7 +498,12 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
   if (deviceEnd && !deviceEnd.jbDevice && pins) {
     feed = otherPins(c, dTag, deviceEnd.pin, true).map((x) => x.net).filter((n) => !seen.has(n) && !isZero(n));
     back = [...pins.values()].filter(isZero);
-    if (!feed.length && point.type === 'input') feed = [...pins.values()].filter((n) => !seen.has(n) && !isZero(n) && !isPe(n) && (c.dcNets.has(n) || DC_SUPPLY.test(n) || /^24\+/.test(n)));
+    if (!feed.length && point.type === 'input') {
+      // No known partner pin (drive relay outputs, special devices): the common of the device, else its only DC supply.
+      const dc = [...pins.entries()].filter(([, n]) => !seen.has(n) && !isZero(n) && !isPe(n) && (c.dcNets.has(n) || DC_SUPPLY.test(n) || /^24\+/.test(n)));
+      const common = dc.find(([pp]) => /^(C|COM|RC|R\dC|\+24V?|24V)$/i.test(pp));
+      feed = common ? [common[1]] : dc.length === 1 ? [dc[0][1]] : [];
+    }
   } else {
     // Junction-box devices: their supply / return terminals in the cabinet.
     for (const t of [point.supplyTerminal, point.returnTerminal]) {
@@ -470,7 +518,7 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
     return t && e ? { t, color: e.color } : null;
   };
   const supplySeen = new Set(seen);
-  for (const n of [...new Set(feed)]) {
+  for (const n of [...new Set(feed)].slice(0, 1)) {
     const t = termOn(n);
     if (t) supply.push(hopOf(c, t.t, n, point, t.color));
     supply.push(...supplyChain(c, n, point, supplySeen));
@@ -491,6 +539,19 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
       supply.push(...supplyChain(c, e.wire, point, new Set(supplySeen)));
     }
   }
+  // The module common the current returns through (Input common / Output common): an open common is a classic fault.
+  if (plcEnd) {
+    const kind = point.type === 'input' ? /input common/i : /output common/i;
+    const e = c.edges.find((x) => kind.test(x.fn) && (x.a.tag === plcEnd.tag || x.b.tag === plcEnd.tag));
+    if (e) {
+      const pe = e.a.tag === plcEnd.tag ? e.a : e.b;
+      const t = e.a.tag === plcEnd.tag ? e.b : e.a;
+      const common = { ...hopOf(c, pe, e.wire, point, e.color), label: `${endLabel(c, pe)} — the common of ${point.address}`, note: `All the ${point.type}s of this group return through this common: if it is open, they all stay OFF.` };
+      common.measure = { between: [pe.raw, isZero(e.wire) ? 'PE bar' : c.zeroRef], kind: 'VDC', expect: isZero(e.wire) ? 'about 0 V' : '24 VDC', when: '', otherwise: isZero(e.wire) ? 'more than 1 V: the common wire is open' : 'about 0 V: the common wire is open' };
+      const target = isZero(e.wire) ? ret : supply;
+      target.unshift(common, ...(t.strip ? [hopOf(c, t, e.wire, point, e.color)] : []));
+    }
+  }
   // Hops between the device and its 24 V source (overload contact, safety relay output…): 24 VDC to 0 V while
   // every contact between them is closed.
   const lastSrc = supply.map((h) => h.kind).lastIndexOf('source');
@@ -499,49 +560,72 @@ function pathIn(c: Ctx, address: string): WiringPath | null {
     for (let i = src - 1; i >= 0; i--) {
       const h = supply[i];
       if (h.measure || /^(L\d|T\d|\d?L\d)$/.test(h.wire ?? '')) continue;
-      const contacts = supply.slice(i + 1, src).filter((x) => x.kind === 'device' || x.kind === 'contact').map((x) => x.tag);
+      const contacts = supply.slice(i, src).filter((x) => x.kind === 'device' || x.kind === 'contact').map((x) => x.tag);
       h.measure = { between: [`${h.tag}${h.terminal ? `:${h.terminal}` : ''}`, c.zeroRef], kind: 'VDC', expect: '24 VDC', when: contacts.length ? `while ${[...new Set(contacts)].join(' and ')} ${contacts.length > 1 ? 'are' : 'is'} closed / ON` : '', otherwise: `about 0 V: the break is between here and ${supply[src].tag}` };
     }
   }
+  // Hops drawn on the PLC point's own I/O sheet share its line.
+  const io = signal[0]?.where;
+  if (io?.line) for (const h of [...signal, ...parallel, ...supply.slice(0, 2), ...ret.slice(0, 2)]) if (h.where && h.where.sheet === io.sheet && !h.where.line) h.where = { ...h.where, line: io.line };
   const dev = signal.find((h) => h.kind === 'device');
   const summary = `${point.address} ${point.description}: ${signal.filter((h) => h.kind !== 'cable').map((h) => h.terminal && h.kind !== 'device' ? `${h.tag}${h.kind === 'terminal' ? '-' : ':'}${h.terminal}` : h.tag).join(' → ')}${supply.length ? `; supply ${supply.map((h) => h.tag).filter((t, i, a) => a.indexOf(t) === i).join(' ← ')}` : ''}`;
-  return { address: point.address, description: point.description, type: point.type, analog: false, device: dev?.tag ?? device, signal, supply, ret, reference: c.zeroRef, summary };
+  return { address: point.address, description: point.description, type: point.type, analog: false, device: dev?.tag ?? device, signal, supply, ret, reference: c.zeroRef, summary, parallel };
 }
 
 function analogPath(c: Ctx, a: ElectricalModel['analog']['circuits'][number]): WiringPath {
   const row = a.row;
   const tc = a.loop === 'thermocouple';
+  const twoWire = a.loop === 'two-wire';
   const mod = a.moduleTag;
-  const hops: PathHop[] = [];
-  const ch = (pm: '+' | '-') => (pm === '+' ? a.wires.plus : a.wires.minus);
-  for (const pm of ['+', '-'] as const) {
-    const net = ch(pm);
-    const plc = (c.byNet.get(net) ?? []).flatMap((e) => [e.a, e.b]).find((x) => x.tag === mod) ?? (c.byNet.get(net) ?? []).flatMap((e) => [e.a, e.b])[0];
-    if (!plc) continue;
-    if (pm === '+') hops.push({ ...hopOf(c, plc, net), kind: 'plc', label: `${endLabel(c, plc)} (${row.address})`, where: whereOf(c, mod, undefined, ['analog', 'io']) });
-    for (const { end, color } of walkNet(c, net, key(plc))) {
-      if (end.tag === mod) continue;
-      const h = hopOf(c, end, net, undefined, color);
-      if (h.kind === 'terminal' || h.kind === 'device') h.where = whereOf(c, end.strip ?? end.tag, undefined, ['analog']) ?? h.where;
-      hops.push(h);
-    }
-    if (pm === '+') hops.push(...cableHops(c, net, a.deviceTag));
-  }
-  if (a.deviceTag && !a.internal) hops.push({
-    kind: 'device', tag: a.deviceTag, label: `${a.deviceTag} (${tc ? 'thermocouple' : a.loop === 'two-wire' ? '2-wire transmitter' : row.kind === 'output' ? 'analog output device' : 'transmitter'}) — ${row.description}`,
-    wire: a.wires.plus, where: whereOf(c, a.deviceTag, undefined, ['analog', 'machine']), location: 'field',
+  const endsOf = (net: string) => (c.byNet.get(net) ?? []).flatMap((e) => [{ end: e.a, color: e.color }, { end: e.b, color: e.color }]);
+  // The module terminal of the channel: on the + net for voltage / thermocouple / outputs, on the − net for a
+  // 2-wire loop (24 V → transmitter → TBA → CHn).
+  const modOn = (net: string) => endsOf(net).find((x) => x.end.tag === mod && !/^0V$/i.test(x.end.pin));
+  const nets = [a.wires.plus, a.wires.minus];
+  const sigNet = nets.find((n) => modOn(n)) ?? a.wires.plus;
+  const otherNet = nets.find((n) => n !== sigNet)!;
+  const modEnd = modOn(sigNet);
+  const label = (h: PathHop) => ({ ...h, where: whereOf(c, h.tag, undefined, ['analog']) ?? h.where });
+  // PLC side → field along one net (terminals), then its cable cores.
+  const along = (net: string, from?: string): PathHop[] => {
+    const start = from ?? endsOf(net).find((x) => x.end.strip)?.end.raw;
+    if (!start) return [];
+    const hs = walkNet(c, net, start).filter((x) => x.end.tag !== mod && x.end.raw !== start).map((x) => label(hopOf(c, x.end, net, undefined, x.color)));
+    const first = endsOf(net).find((x) => x.end.raw === start);
+    return [...(from ? [] : first ? [label(hopOf(c, first.end, net, undefined, first.color))] : []), ...hs.filter((h) => h.kind === 'terminal')];
+  };
+  const signal: PathHop[] = [];
+  if (modEnd) signal.push({ ...hopOf(c, modEnd.end, sigNet), kind: 'plc', label: `${endLabel(c, modEnd.end)} (${row.address})`, where: whereOf(c, mod, undefined, ['analog', 'io']) });
+  signal.push(...along(sigNet, modEnd?.end.raw), ...cableHops(c, sigNet, a.deviceTag));
+  const dev: PathHop | null = a.deviceTag && !a.internal ? {
+    kind: 'device', tag: a.deviceTag, label: `${a.deviceTag} (${tc ? 'thermocouple' : twoWire ? '2-wire transmitter' : row.kind === 'output' ? 'analog output device' : 'transmitter'}) — ${row.description}`,
+    wire: sigNet, where: whereOf(c, a.deviceTag, undefined, ['analog', 'machine']), location: 'field',
     ...(tc ? { note: 'Thermocouple + / − must not be swapped: a reversed pair reads below room temperature and falls as it heats.' } : {}),
-  });
-  const at = a.plus || hops.find((h) => h.kind === 'terminal')?.terminal || row.address;
-  const m: Measure = tc
-    ? { between: [a.plus || `${mod} CH+`, a.minus || `${mod} CH−`], kind: 'mV', expect: 'a few millivolts that rise with temperature (type J ≈ 0.05 mV per °C above the panel temperature)', when: '', otherwise: 'an open circuit (the module shows burnout) means a broken thermocouple or extension wire' }
-    : row.kind === 'output'
-      ? { between: [a.plus || at, a.minus || c.zeroRef], kind: row.range.includes('mA') ? 'mA' : 'VDC', expect: row.range.includes('mA') ? '4–20 mA in series with the loop' : row.range, when: `${row.scaleMin}–${row.scaleMax} ${row.units} gives the full range` }
-      : { between: [a.plus || at, a.minus || c.zeroRef], kind: row.range.includes('mA') ? 'mA' : 'VDC', expect: row.range.includes('mA') ? '4–20 mA in series (4 mA = ' + row.scaleMin + ' ' + row.units + ', 20 mA = ' + row.scaleMax + ' ' + row.units + ')' : row.range, when: '', otherwise: 'below 3.8 mA: open loop or no loop supply' };
-  if (hops[0]) hops[0].measure = m;
-  const supply = a.loop === 'two-wire' ? supplyChain(c, (c.byNet.get(ch('+')) ?? []).length ? (c.edges.find((e) => e.wire === ch('+') && DC_SUPPLY.test(e.a.pin))?.wire ?? '24+') : '24+', undefined, new Set([ch('+'), ch('-')])) : [];
+  } : null;
+  if (dev) signal.push(dev);
+  // Back from the device on the other conductor: its cable core, the terminals, then the module (or the loop supply).
+  const back = [...cableHops(c, otherNet, a.deviceTag).reverse(), ...along(otherNet).reverse()];
+  const otherMod = endsOf(otherNet).find((x) => x.end.tag === mod);
+  if (otherMod) back.push({ ...hopOf(c, otherMod.end, otherNet), kind: 'plc', label: `${endLabel(c, otherMod.end)} (${row.address} ${tc ? '−' : 'common'})`, where: whereOf(c, mod, undefined, ['analog', 'io']) });
+  signal.push(...back);
+  const plus = a.plus || 'the + terminal', minus = a.minus || 'the − terminal';
+  const mA = row.range.includes('mA');
+  const lo = `${row.scaleMin} ${row.units}`, hi = `${row.scaleMax} ${row.units}`;
+  if (signal[0]) {
+    signal[0].measure = tc
+      ? { between: [plus, minus], kind: 'mV', expect: 'a few millivolts that rise with temperature (type J ≈ 0.05 mV per °C above the panel temperature)', when: '', otherwise: 'an open circuit (the module shows burnout) means a broken thermocouple or extension wire' }
+      : mA
+        ? { between: [minus, `the lifted ${twoWire ? 'wire' : 'conductor'}`], kind: 'mA', expect: `4–20 mA (4 mA = ${lo}, 20 mA = ${hi})`, when: `with the loop BROKEN at ${minus} and the meter in SERIES on its mA range — never put the meter across the terminals on mA (that shorts the ${twoWire ? 'transmitter' : 'output'})`, otherwise: 'below 3.8 mA: open loop, no loop supply or a dead transmitter' }
+        : { between: [plus, minus], kind: 'VDC', expect: `${row.range} (${row.range.split('-')[0]} = ${lo}, top of range = ${hi})`, when: '' };
+  }
+  if (twoWire && dev) dev.measure = { between: [plus, minus], kind: 'VDC', expect: 'about 12–24 VDC (the loop supply minus the input drop)', when: 'loop connected, meter on VOLTS (safe across the terminals)', otherwise: '0 V: no loop supply; about 24 V with no current: the transmitter or its wiring is open' };
+  const supply = twoWire ? (() => {
+    const src = endsOf(otherNet).find((x) => !x.end.strip && x.end.tag !== mod);
+    const net = src && (c.dcNets.has(src.end.raw) || DC_SUPPLY.test(src.end.raw)) ? src.end.raw : '24+';
+    return supplyChain(c, net, undefined, new Set([a.wires.plus, a.wires.minus]));
+  })() : [];
   return {
-    address: row.address, description: row.description, type: row.kind, analog: true, device: a.deviceTag, signal: hops, supply, ret: [], reference: tc ? (a.minus || 'CH−') : c.zeroRef,
+    address: row.address, description: row.description, type: row.kind, analog: true, device: a.deviceTag, signal, supply, ret: [], reference: tc ? minus : c.zeroRef, parallel: [],
     summary: `${row.address} ${row.description}: ${tc ? 'thermocouple' : a.loop} loop ${a.plus || ''} / ${a.minus || ''} to ${a.deviceTag}${a.cable ? ` (cable ${a.cable})` : ''}`,
   };
 }
