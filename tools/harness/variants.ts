@@ -40,6 +40,10 @@ import { specToText } from '../../src/spec/types';
 import { buildHmi } from '../../src/hmi/engine';
 import { projectHmiContent } from '../../src/lib/ai/hmiContentAI';
 import { programWithCycle } from '../../src/plc/engine/sequence';
+import { missingOperatorIo } from '../../src/spec/operatorIo';
+import { generatedToPoint } from '../../src/lib/ai/ioAI';
+import { useStageStore } from '../../src/store/useStageStore';
+import { fingerprint } from '../../src/spec/types';
 
 type Point = { description: string; type: 'input' | 'output'; category: IOCategory; tag: string; deviceType: FieldDeviceType; location: string; part?: string; signal?: 'analog'; analog?: AnalogSpec };
 
@@ -292,6 +296,22 @@ async function setupRules(v: string) {
     useProjectStore.setState({ plcId: 'click', cpuId: 'C0-10DD1E-D', modules });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, enclosureRating: 'NEMA 4X', motors: [], requiredParts: [{ partNumber: 'C0-10DD2E-D', quantity: 1 }, ...modules.map((partNumber) => ({ partNumber, quantity: 1 }))] });
   }
+  // "rules-nopanel": the sealing head with no touch panel — the I/O list gets the door pushbuttons, the Auto/Manual
+  // selector and the lamps it lacks; no HMI design; the program runs from the door devices alone.
+  const noPanel = v === 'rules-nopanel';
+  if (noPanel) {
+    const sections = useSpecStore.getState().sections;
+    const spec = { ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC.replace(/CLICK PLC with a C-more 7" touch panel;[^.]*\./, 'CLICK PLC, no touch panel: pushbuttons, a selector and lamps on the cabinet door; the seal temperature and time are set in the program.') };
+    useSpecStore.getState().setSections(spec);
+    const io = SEALING_IO.map(([description, type, category, deviceType, analog], i) => ({ id: `seal${i + 1}`, description, type, category, deviceType, ...(analog ? { signal: 'analog' as const, analog } : {}) }));
+    useIOStore.setState({ projectIO: [...io, ...missingOperatorIo(io).map((g, i) => ({ id: `op${i + 1}`, ...generatedToPoint(g) }))] });
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-12DD1E-D', modules: ['C0-16ND3', 'C0-08TD1'] });
+    useHmiStore.getState().setHmiPartNumber('');
+    useHmiStore.getState().setDesign(null, null);
+    useStageStore.getState().markGenerated('equipment', { specFp: fingerprint(spec), spec });
+    useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [{ partNumber: 'C0-12DD1E-D', quantity: 1 }, { partNumber: 'C0-16ND3', quantity: 1 }, { partNumber: 'C0-08TD1', quantity: 1 }] });
+  }
   // Unitronics all-in-ones (the screen is the PLC's own): the sealing head on a Vision V700 + snap-in (VisiLogic) or a
   // UniStream US10 + Uni-I/O (UniLogic); the rules build the HMI and the program too, so the exporters run.
   const uni = v === 'rules-unitronics' ? { plcId: 'unitronics-vision', cpu: 'V700-T20BJ', modules: ['V200-18-E3XB'] }
@@ -307,7 +327,7 @@ async function setupRules(v: string) {
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [uni.cpu, ...uni.modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
   }
   const el = useElectricalStore.getState();
-  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
+  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || uni || noPanel ? el.inputs : el.design?.inputs ?? el.inputs;
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
@@ -337,6 +357,11 @@ async function setupRules(v: string) {
     useHmiStore.getState().setDesign(hmi, 'rules');
     const prog = programWithCycle({ content, hmiTags: hmi.tags, hmiScreens: hmi.screens, hmiAlarms: hmi.alarms, spec: specToText(q.spec) });
     useProgramStore.setState({ ladder: prog.program });
+  }
+  if (noPanel) {
+    const q = collectProject();
+    const content = projectHmiContent({ io: q.io, addresses: q.addresses, machineName: 'Sealing Head', spec: specToText(q.spec), electrical: design, panel: { partNumber: '', widthPx: 800, heightPx: 480 } });
+    useProgramStore.setState({ ladder: programWithCycle({ content, spec: specToText(q.spec), panel: false }).program });
   }
 }
 

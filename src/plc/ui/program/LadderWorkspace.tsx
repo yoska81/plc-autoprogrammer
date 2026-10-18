@@ -1,3 +1,4 @@
+import { noTouchPanelNow } from '../../../spec/useStages';
 import { useSettingsStore } from '../../../store/useSettingsStore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';
@@ -230,7 +231,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     if (!full) {
       return runAI('program', 'PLC program', (signal) => generateRuleBasedProgram({
         ai: ready && ai.apiKey ? { ...ai, signal } : undefined, ctx, spec: machineText,
-        electrical: useElectricalStore.getState().design, hmi: hmiDesign,
+        electrical: useElectricalStore.getState().design, hmi: hmiDesign, noPanel: noTouchPanelNow(),
       }), (r) => {
         useProgramStore.getState().setGeneratedLadder(r.program, r.explanation, r.reasoning);
         recordSource();

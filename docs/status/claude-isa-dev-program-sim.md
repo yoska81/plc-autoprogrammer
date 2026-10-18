@@ -2,6 +2,18 @@
 
 Current: **Unitronics as a PLC brand, end to end** (manager request) — draft PR → `claude/optimistic-maxwell-6nfcs6`. Sealing head (#64, #67) merged. No blockers (real-AI scores still wait for an API key in the environment settings).
 
+## No touch panel (coordinator; Dev 5 owns the HMI stage / review / deliverables wording)
+
+- **I/O:** `src/spec/operatorIo.ts` `missingOperatorIo(io)` lists the door devices a no-panel machine still lacks: E-stop safety relay OK, Start PB, Stop PB (NC), Reset PB, Auto/Manual selector (ON = Manual), Running lamp (green), Fault lamp (red). Existing devices are recognised by their words, the same ones the program engine reads. `noTouchPanelNow()` in `src/spec/useStages.ts` means equipment was chosen with no HMI.
+  - The I/O AI prompt swaps its "HMI functions are not I/O" rule for `NO_PANEL_RULE`.
+  - Update all and I/O from spec add whatever the AI left out before the merge, so kept points keep their wiring.
+  - Applying equipment with "No touch panel" adds the missing points to an existing I/O list.
+- **Program:** `ProgramInput.panel: false` (`generateRuleBasedProgram({ noPanel })` from Update all and the Program page). Each door device replaces its HMI command. An HMI command bit stays only when its device is missing, with a note saying what to add.
+  - The Auto/Manual selector (with or without a panel) puts the machine in Manual and stops the cycle.
+  - New lamp rules: horn / buzzer while faulted, Ready / Power / white = Safety OK with no fault and stopped, Reset / blue lamp = fault latched.
+- **Electrical:** the door already took the devices from the I/O list. Fixed the pushbutton colour regex: "...button" matched `on\b`, so Reset and Fault reset were green; now black (sealing-head and unitronics-v700 goldens updated). engine.test checks the no-panel door, parts, wiring, and that there's no HMI in the BOM or network.
+- **Tests:** `src/plc/engine/noPanel.test.ts` runs closed loop: Start and Stop from the door, the selector to Manual stops the cycle, E-stop turns the Fault lamp on, Reset, and no rung reads an HMI command bit. New harness variant `rules-nopanel` (sealing head, no HMI) is in gen-outputs and check_overlap.
+
 ## Load into PLC + Online check (manager: URGENT, user connects a CLICK C0-11DD2E-D tomorrow)
 - [x] "Load into PLC" button (PLC program page and Online): step-by-step guide per brand with a download button for each step's files. CLICK: free software → CPU + modules in slot order (Setup > System Configuration) → File > Import > Nickname → rung entry sheet → PC on the PLC's subnet (default fixed 192.168.0.10 / 255.255.0.0, APIPA when DHCP finds no server) → PLC > Connect, Write Project into PLC, RUN → Online: Test connection, Program check, I/O check-out. Facts from the CLICK help (topics 057, 090, 109, 211) and the C0-PGMSW page. Logix / CCW / TIA / Unitronics: their import path and files.
 - [x] CLICK rung entry sheet (printable HTML + the rungs .txt): block by block, real rung numbers, row / column of every instruction, every dialog field (Timer, Counter + reset line, Compare, Copy, Math, edge contacts), a tick box per rung, END rung.

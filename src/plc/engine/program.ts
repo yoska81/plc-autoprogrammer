@@ -41,6 +41,8 @@ export interface ProgramInput {
   /** The HMI's screens and alarms (button interlocks name the permits, the alarm list names the alarms). */
   hmiScreens?: HmiScreen[];
   hmiAlarms?: HmiAlarm[];
+  /** false: the machine has no touch panel — the door pushbuttons and selector replace the HMI commands. */
+  panel?: boolean;
 }
 
 export interface ProgramResult {
@@ -109,6 +111,19 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   const startPb = inputs.find((p) => /\bstart\b/i.test(p.description) && !TWO_HAND_RE.test(p.description));
   const stopPb = inputs.find((p) => /\bstop\b/i.test(p.description) && !/e-?stop|emergency/i.test(p.description));
   const resetPb = inputs.find((p) => /\breset\b/i.test(p.description) && !/safety/i.test(p.description));
+  // An Auto/Manual selector: ON = Manual unless its text says ON = Auto (or names Auto only).
+  const modeSel = inputs.find((p) => /\b(auto|manual)\b/i.test(p.description) && /\b(selector|switch|mode)\b|auto\s*\/\s*manual/i.test(p.description) && !/\blimit\b/i.test(p.description));
+  const selOnManual = modeSel ? !/\bon\s*=\s*auto\b/i.test(modeSel.description) && (/\bmanual\b/i.test(modeSel.description) || !/\bauto\b/i.test(modeSel.description)) : true;
+  const selManual = modeSel ? (selOnManual ? NO(modeSel.address) : NC(modeSel.address)) : null;
+  const selAuto = modeSel ? (selOnManual ? NC(modeSel.address) : NO(modeSel.address)) : null;
+  // No touch panel: a door device replaces its HMI command (the HMI bit stays only where the device is missing).
+  const panel = input.panel !== false;
+  const hmiStart = panel || !startPb, hmiStop = panel || !stopPb, hmiReset = panel || !resetPb, hmiManual = panel || !modeSel;
+  if (!panel) {
+    const missing = [!startPb && 'Start', !stopPb && 'Stop', !resetPb && 'Reset'].filter(Boolean);
+    if (missing.length) notes.push(`No touch panel, and the I/O list has no ${missing.join(' / ')} pushbutton: the program keeps the command bit (set it from Online) — add the pushbutton to the I/O list and regenerate.`);
+    if (!modeSel) notes.push('No touch panel, and the I/O list has no Auto/Manual selector: Manual mode is a command bit only — add the selector to the I/O list and regenerate.');
+  }
   const start = must('cmd:start'), stop = must('cmd:stop'), reset = must('cmd:reset'), manualSel = must('cmd:manual');
   const manual = must('sts:manual'), running = must('sts:running'), heartbeat = must('sts:heartbeat'), state = must('word:state');
 
@@ -142,13 +157,15 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   if (c.safetyOk) R('safety', `Safety OK from the safety relay (${c.safetyOk.description})`, [[NO(c.safetyOk.address)]], [OUT(SAFE)]);
   else { R('safety', 'Safety OK: no safety relay input in the I/O list — always ON until one is added (see notes)', [[NO('SC1')]], [OUT(SAFE)]); notes.push('No "Safety OK" input from the safety relay: the program treats safety as always OK. Add the input to the I/O list and regenerate.'); }
   nick(SAFE, 'Safety_OK', 'Safety relay healthy');
-  R('safety', 'Reset command: HMI Reset' + (resetPb ? ` or the ${resetPb.description}` : ''), [[NO(reset)], ...(resetPb ? [[NO(resetPb.address)]] : [])], [OUT(RESET)]);
-  nick(RESET, 'Cmd_Reset', 'Reset from the HMI or the panel');
-  R('safety', 'Manual mode request is refused while the cycle runs: the HMI toggle is reset', [[NO(RUN), NO(manualSel)]], [RST(manualSel)]);
-  R('safety', 'Manual mode active: HMI Manual selected and the cycle stopped', [[NO(manualSel), NC(RUN)]], [OUT(manual)]);
-  const stopChain = [...(stopPb ? [NO(stopPb.address)] : []), NC(stop), NO(SAFE), NC(FAULT), NC(manual), NC(BATCH)];
-  R('safety', `Cycle running: ${startPb ? `${startPb.description} or ` : ''}HMI Start seals in; ${stopPb ? `${stopPb.description} (NC), ` : ''}HMI Stop, safety loss, a fault, Manual mode or batch complete drops it`,
-    [...(startPb ? [[RISE(startPb.address), ...stopChain]] : []), [RISE(start), ...stopChain], [NO(RUN), ...stopChain]], [OUT(RUN)]);
+  const or = (...xs: (string | false | undefined)[]) => xs.filter(Boolean).join(' or ');
+  R('safety', `Reset command: ${or(hmiReset && 'HMI Reset', resetPb && (hmiReset ? `the ${resetPb.description}` : resetPb.description))}`, [...(hmiReset ? [[NO(reset)]] : []), ...(resetPb ? [[NO(resetPb.address)]] : [])], [OUT(RESET)]);
+  nick(RESET, 'Cmd_Reset', panel ? 'Reset from the HMI or the panel' : 'Reset from the panel');
+  if (hmiManual) R('safety', 'Manual mode request is refused while the cycle runs: the HMI toggle is reset', [[NO(RUN), NO(manualSel)]], [RST(manualSel)]);
+  R('safety', `Manual mode active: ${[hmiManual && 'HMI Manual selected', modeSel && `${modeSel.description} in Manual`].filter(Boolean).join(' or ')} and the cycle stopped`,
+    [...(hmiManual ? [[NO(manualSel), NC(RUN)]] : []), ...(selManual ? [[selManual, NC(RUN)]] : [])], [OUT(manual)]);
+  const stopChain = [...(stopPb ? [NO(stopPb.address)] : []), ...(hmiStop ? [NC(stop)] : []), ...(selAuto ? [selAuto] : []), NO(SAFE), NC(FAULT), NC(manual), NC(BATCH)];
+  R('safety', `Cycle running: ${or(startPb?.description, hmiStart && 'HMI Start')} seals in; ${[stopPb && `${stopPb.description} (NC)`, hmiStop && 'HMI Stop', modeSel && `${modeSel.description} to Manual`].filter(Boolean).join(', ')}, safety loss, a fault, Manual mode or batch complete drops it`,
+    [...(startPb ? [[RISE(startPb.address), ...stopChain]] : []), ...(hmiStart ? [[RISE(start), ...stopChain]] : []), [NO(RUN), ...stopChain]], [OUT(RUN)]);
   nick(RUN, 'Cycle_Running', 'Automatic cycle running');
   // Two-hand start: Start (HMI / panel) only arms the cycle; each cycle starts with both two-hand buttons, and both
   // must have been released since the last start (anti-tie-down). The two-hand relay enforces the 0.5 s simultaneity.
@@ -309,9 +326,12 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   const actOuts = new Set(c.actuators.flatMap((a) => [a.run, a.reverse, a.extend, a.retract].filter(Boolean).map((p) => p!.address)));
   for (const o of c.io.filter((p) => p.type === 'output' && !actOuts.has(p.address))) {
     const d = o.description;
-    if (/\b(fault|alarm|red)\b/i.test(d)) R('outputs', `${d}: any alarm or safety open`, [[NO(FAULT)], [NC(SAFE)]], [OUT(o.address)]);
+    if (/\b(horn|buzzer|siren|beeper)\b/i.test(d)) R('outputs', `${d}: sounds while a fault is active (Reset silences it once the cause is gone)`, [[NO(FAULT)]], [OUT(o.address)]);
+    else if (/\b(fault|alarm|red)\b/i.test(d)) R('outputs', `${d}: any alarm or safety open`, [[NO(FAULT)], [NC(SAFE)]], [OUT(o.address)]);
+    else if (/\b(ready|power|safety ok)\b/i.test(d) || (/\bwhite\b/i.test(d) && !/\b(run\w*|green)\b/i.test(d))) R('outputs', `${d}: ready to start (Safety OK, no fault, cycle stopped)`, [[NO(SAFE), NC(FAULT), NC(RUN)]], [OUT(o.address)]);
     else if (/\b(run\w*|green)\b/i.test(d)) R('outputs', `${d}: cycle running`, [[NO(RUN)]], [OUT(o.address)]);
     else if (/\b(amber|yellow|manual|warning)\b/i.test(d)) R('outputs', `${d}: Manual mode`, [[NO(manual)]], [OUT(o.address)]);
+    else if (/\b(reset|blue)\b/i.test(d) && /\b(lamp|light|indicator)\b/i.test(d)) R('outputs', `${d}: Reset needed (a fault is latched)`, [[NO(FAULT)]], [OUT(o.address)]);
     else notes.push(`${o.address} ${d}: no rule drives it; the cycle block (AI) or you must add its rung.`);
   }
 

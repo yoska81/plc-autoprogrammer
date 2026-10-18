@@ -8,6 +8,9 @@ import { getPart } from '../electrical/catalog';
 import { hasBuiltInPanel } from '../hmi/panels';
 import { PLC_PROFILES } from '../plc/core/profiles';
 import { fingerprint } from './types';
+import { useIOStore } from '../store/useIOStore';
+import { missingOperatorIo } from './operatorIo';
+import { generatedToPoint } from '../lib/ai/ioAI';
 import { modulesInSlotOrder, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 
 export interface EquipmentChoice {
@@ -47,6 +50,11 @@ export function applyEquipment(choice: EquipmentChoice, rec: EquipmentRecommenda
   if (getPart(choice.cpuId)) counts.set(choice.cpuId, 1);
   for (const m of choice.modules) counts.set(m, (counts.get(m) ?? 0) + 1);
   el.setInputs({ ...el.inputs, requiredParts: [...keep, ...[...counts].map(([partNumber, quantity]) => ({ partNumber, quantity }))] });
+
+  // No touch panel: the I/O list gets the door pushbuttons, selector and lamps it still lacks.
+  const io = useIOStore.getState();
+  const missing = choice.hmiPartNumber || !io.projectIO.length ? [] : missingOperatorIo(io.projectIO);
+  if (missing.length) io.applyIOUpdate([], missing.map(generatedToPoint), []);
 
   const spec = useSpecStore.getState().sections;
   useStageStore.getState().markGenerated('equipment', { specFp: fingerprint(spec), spec });

@@ -27,7 +27,8 @@ import { reviseLadder } from '../plc/ai/ladderAI';
 import { generateRuleBasedProgram } from '../plc/ai/cycleAI';
 import { getHmi } from '../hmi/hmiCatalog';
 import { rulesEquipment } from './equipmentRules';
-import { stagesNow } from './useStages';
+import { noTouchPanelNow, stagesNow } from './useStages';
+import { missingOperatorIo } from './operatorIo';
 import { aiNow } from '../lib/ai/timing';
 import type { AIConfig, PlcContext } from '../plc/ai/ladderAI';
 
@@ -161,11 +162,12 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
 
     if (step === 'io') {
       const { profile, cpu } = plc();
-      const r = await generateIOFromSpec({ ...ai, spec, existing: ioNow(), profile, cpu, lean: pipelining });
+      const r = await generateIOFromSpec({ ...ai, spec, existing: ioNow(), profile, cpu, lean: pipelining, noPanel: noTouchPanelNow() });
       // Applied once the equipment step (running alongside) has chosen the CPU and modules.
       if (stageMode('equipment') !== 'quick' && !(await ctx.after('equipment'))) return false;
       const before = ioFingerprint(ioNow());
-      const plan = planIOMerge(ioNow(), r.points);
+      // No touch panel: the door pushbuttons, selector and lamps the AI left out (matched by description, so kept ones keep their wiring).
+      const plan = planIOMerge(ioNow(), noTouchPanelNow() ? [...r.points, ...missingOperatorIo(r.points)] : r.points);
       useIOStore.getState().applyIOUpdate(
         plan.kept.map(({ point, next }) => keptUpdate(point, next)),
         plan.added.map(generatedToPoint),
@@ -268,7 +270,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const ctxP: PlcContext = { profile, cpu, io, addresses, wiring, hmi };
       const aiCfg: AIConfig = { ...ai, provider: settings.provider };
       const mode = stageMode('program');
-      const rulesProgram = (withAi: boolean) => generateRuleBasedProgram({ ai: withAi && aiCfg.apiKey ? aiCfg : undefined, ctx: ctxP, spec: specToText(spec), electrical: useElectricalStore.getState().design, hmi: hmi ?? null });
+      const rulesProgram = (withAi: boolean) => generateRuleBasedProgram({ ai: withAi && aiCfg.apiKey ? aiCfg : undefined, ctx: ctxP, spec: specToText(spec), electrical: useElectricalStore.getState().design, hmi: hmi ?? null, noPanel: noTouchPanelNow() });
       const markProgram = () => mark('program', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(hmi ?? null) });
       if (!prog.ladder.rungs.length) {
         // Standard blocks from the rules (every HMI tag implemented); the AI writes only the cycle block.
@@ -333,7 +335,7 @@ function prefetchCycle(ctx: RunCtx, signal?: AbortSignal): void {
   const addresses = resolveAddresses(profile, cpu, io, moduleSlots(modules));
   const wiring = new Map((useElectricalStore.getState().design?.ioWiring ?? []).map((w) => [w.address, { deviceTag: w.deviceTag, deviceType: w.deviceType }]));
   const ai: AIConfig = { apiKey: settings.anthropicApiKey, model: settings.anthropicModel, effort: settings.effort, provider: 'anthropic', signal, cache: true };
-  void generateRuleBasedProgram({ ai, ctx: { profile, cpu, io, addresses, wiring }, spec: specToText(useSpecStore.getState().sections), electrical: useElectricalStore.getState().design, hmi: null }).catch(() => { /* the program stage asks again */ });
+  void generateRuleBasedProgram({ ai, ctx: { profile, cpu, io, addresses, wiring }, spec: specToText(useSpecStore.getState().sections), electrical: useElectricalStore.getState().design, hmi: null, noPanel: noTouchPanelNow() }).catch(() => { /* the program stage asks again */ });
 }
 
 /** After the I/O step: the CPU + modules must hold every point; missing modules are added (and become required parts). */

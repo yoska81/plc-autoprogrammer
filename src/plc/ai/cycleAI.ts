@@ -100,13 +100,13 @@ export function renameActions(seq: CycleSequence, asked: ProgramResult['autoBits
 export interface RuleProgramResult { program: LadderProgram; explanation: string; reasoning: null; source: 'ai' | 'rules'; notes: string[]; aiError?: string; sequence: CycleSequence }
 
 /** The program for the project: the standard blocks plus the cycle (the AI's steps when a key is set, else the default steps). Never fails because of the AI. */
-export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcContext; spec: string; electrical?: ElectricalDesign | null; hmi?: HmiDesign | null }): Promise<RuleProgramResult> {
+export async function generateRuleBasedProgram(o: { ai?: AIConfig; ctx: PlcContext; spec: string; electrical?: ElectricalDesign | null; hmi?: HmiDesign | null; /** The equipment has no touch panel (door pushbuttons, selector and lamps only). */ noPanel?: boolean }): Promise<RuleProgramResult> {
   const content = projectHmiContent({ io: o.ctx.io, addresses: o.ctx.addresses, machineName: o.hmi?.machineName ?? 'Machine', spec: o.spec, electrical: o.electrical, panel: { partNumber: '', widthPx: 800, heightPx: 480 } });
   // The HMI's own machine states (it may have the cycle's steps from the AI).
   const stateTag = o.hmi ? inferRoles(o.hmi.tags, { content, screens: o.hmi.screens, alarms: o.hmi.alarms }).tags.find((t) => t.role === 'word:state')?.address : undefined;
   const stateEl = o.hmi?.screens.flatMap((s) => s.elements).find((e) => e.kind === 'multistate' && e.address === stateTag && e.states?.length);
   if (stateEl?.states) content.states = stateEl.states;
-  const input = { content, hmiTags: o.hmi?.tags, hmiScreens: o.hmi?.screens, hmiAlarms: o.hmi?.alarms, spec: o.spec };
+  const input = { content, hmiTags: o.hmi?.tags, hmiScreens: o.hmi?.screens, hmiAlarms: o.hmi?.alarms, spec: o.spec, ...(o.noPanel ? { panel: false } : {}) };
   const ioSet = new Set([...o.ctx.addresses.values()].filter(Boolean).map((a) => a.toUpperCase()));
   const inputs = content.io.filter((p) => p.type === 'input');
   let source: RuleProgramResult['source'] = 'rules', aiError: string | undefined, explanation = '';
