@@ -1,7 +1,7 @@
 /**
  * The user's roll former (cn-rollformer-01) as converted from its relay drawings: Debug 1's
- * convertMachine(normalizeMachine(CN_ROLLFORMER_01_READING)).io at claude/isa-debug-app 8250d4f (E-stops and guard on
- * the safety relay, Safety OK into the PLC, the KT1 cut watchdog as "(watchdog 2 s)"). Addresses are the drawn ones;
+ * convertMachine(normalizeMachine(CN_ROLLFORMER_01_READING)).io at claude/isa-debug-app 8250d4f + ad141d3 (E-stops and guard on
+ * the safety relay, Safety OK into the PLC, the KT1 cut watchdog as "(watchdog 2 s)"; the measuring-wheel encoder on the servo's CN5 is not a PLC point). Addresses are the drawn ones;
  * the app reassigns PLC addresses on import, so only description / type / category / deviceType are used.
  */
 import type { IOCategory } from '../../../types/io';
@@ -21,7 +21,6 @@ export const CN_ROLLFORMER_IO: { address: string; description: string; type: 'in
   { address: 'KA8 coil', description: 'Shear up limit (上限位)', type: 'input', deviceType: 'limit-switch', category: 'Station 1' },
   { address: 'KA9 coil', description: 'Run-out end photo eye, NPN (出料到位)', type: 'input', deviceType: 'sensor-npn', category: 'Product Detection' },
   { address: 'KA10 coil', description: 'Entry inductive sensor, NPN (有料检测)', type: 'input', deviceType: 'sensor-npn', category: 'Product Detection' },
-  { address: 'U2 CN5', description: 'Measuring-wheel encoder 1000 ppr, line driver', type: 'input', deviceType: 'other', category: 'Servo/Axis' },
   { address: 'U1 RB-RC', description: 'U1 healthy (RB-RC)', type: 'input', deviceType: 'other', category: 'Conveyor' },
   { address: 'U1 RA-RC', description: 'U1 fault (RA-RC)', type: 'input', deviceType: 'other', category: 'Conveyor' },
   { address: 'U2 DO1', description: 'U2 ready (DO1)', type: 'input', deviceType: 'other', category: 'Servo/Axis' },
