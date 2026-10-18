@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { cadToText, cleanDxfText, dwgToEntities, dxfToText, hasDwgReader, parseDxfEntities, parseDxfTexts, setDwgReader, sheetFrames, sheetNumber, type CadEntity } from './dxf';
 import { ROLL_FORMER } from './__fixtures__/rollFormer';
 import { foreignRatings } from './foreignParts';
-import { convertMachine, kwToHp, mm2ToAwg, naTags, NA_TARGET, retag, safetyOutputCount, safetyOutputsNeeded, targetSupply } from './convert';
+import { convertMachine, kwToHp, mm2ToAwg, naTags, NA_TARGET, retag, safetyOutputCount, safetyOutputsNeeded, sizeSafetyRelay, targetSupply } from './convert';
+import type { CatalogPart } from '../electrical/types';
 import { ALL_PARTS } from '../electrical/catalogs';
 import { RELAY_CONVEYOR } from './__fixtures__/relayConveyor';
 import { ioId, type ExistingMachine } from './types';
@@ -671,19 +672,48 @@ await test('cn-rollformer-01: the safety relay is sized for its outputs (as draw
   assert.equal(now.status, 'matched');
   assert.ok(safetyOutputCount(now.to!) >= 2);
   assert.ok(now.differences.some((d) => /^Needs 6 safety outputs \(2 as drawn \(13-14, 23-24\) \+ 2 for the STO of each of VFD1, SD1\)/.test(d)), now.differences.join(' | '));
-  // with an expansion module of the same maker in the catalog, the conversion names it
-  const exp = { ...now.to!, partNumber: 'UG6929-TEST', description: 'Contact expansion module, 4 N.O. safety outputs', ratings: { ...now.to!.ratings, safetyOutputs: '(4) N.O.' } };
+  // with an expansion module its maker lists for that base (forUse) in the catalog, the conversion names it
+  const stem = now.to!.partNumber.split(/[-\s.]/)[0];
+  const exp = { ...now.to!, partNumber: 'EXP-TEST', family: undefined, description: 'Contact expansion module, 4 N.O. safety outputs', ratings: { safetyOutputs: '(4) N.O.', safetyOutputCount: 4, forUse: `Contact expansion for ${stem} base units` } };
   ALL_PARTS.push(exp);
   try {
     const withExp = sr();
-    assert.equal(withExp.to!.partNumber, now.to!.partNumber, 'the base relay stays the choice');
-    assert.ok(withExp.differences.some((d) => new RegExp(`${safetyOutputCount(now.to!)} here \\+ expansion ${exp.manufacturer} UG6929-TEST \\(4\\)`).test(d)), withExp.differences.join(' | '));
+    assert.ok(withExp.differences.some((d) => /here \+ expansion .* EXP-TEST \(4\)/.test(d)), withExp.differences.join(' | '));
+    assert.ok(withExp.to!.partNumber.startsWith(stem), 'the base it expands is the choice');
   } finally {
     ALL_PARTS.splice(ALL_PARTS.indexOf(exp), 1);
   }
   // all STO already wired: only the outputs as drawn
   const wired = { ...m, safety: { ...m.safety, drives: m.safety.drives.map((d) => ({ ...d, sto: 'wired' as const })) } };
   assert.ok(convertMachine(wired).parts.find((p) => p.oldTag === 'KA0')!.differences.some((d) => /safety outputs for the 2 needed \(2 as drawn/.test(d)));
+});
+
+await test('safety relay sizing: one unit with enough outputs first, else a base + an expansion its maker lists (forUse)', () => {
+  const part = (manufacturer: string, partNumber: string, description: string, ratings: Record<string, string | number>, family?: string): CatalogPart =>
+    ({ id: partNumber, category: 'safetyRelay', manufacturer, partNumber, description, family, ratings, verified: true } as unknown as CatalogPart);
+  const s3 = part('Pilz', '750103', 'PNOZ s3 24VDC 2 n/o: safety relay', { typeName: 'PNOZ s3 24VDC 2 n/o', series: 'PNOZsigma', safetyOutputs: '(2) N.O.', safetyOutputCount: 2 });
+  const s7 = part('Pilz', '750107', 'PNOZ s7 24VDC 4 n/o 1 n/c: PNOZsigma contact expansion module', { safetyOutputs: '(4) N.O.', safetyOutputCount: 4, forUse: 'Contact expansion for PNOZsigma base units (e.g. PNOZ s3) via the PNOZsigma connector' }, 'PNOZ s7');
+  const lg5925 = part('Dold', 'LG5925-48-61-24', 'Dold safety relay, 3 N.O.', { safetyOutputs: '(3) N.O.', safetyOutputCount: 3 });
+  const lg5929 = part('Dold', 'LG5929-60-100-61', 'Dold safety relay extension module, 5 N.O.', { safetyOutputs: '(5) N.O.', safetyOutputCount: 5, forUse: 'Contact extension for Dold E-stop / safety-gate base units with feedback loop (AD spec application drawings: LG5925, LG5924.48)' }, 'LG5929');
+  const ug6929 = part('Dold', 'UG6929-60PS-100-24', 'Dold safety relay extension module, 5 N.O.', { safetyOutputs: '(5) N.O.', safetyOutputCount: 5, forUse: 'Contact extension for Dold emergency-stop modules and safety gate monitors (AD spec application example: UG6970)' });
+  const scr73 = part('IDEM', 'SCR73-280005', 'Safety relay 7 N.O.', { safetyOutputs: '(7) N.O.', safetyOutputCount: 7 });
+  const need = { need: 6, why: 'test' };
+  // the count from safetyOutputCount (the text only when it is missing)
+  assert.equal(safetyOutputCount(s7), 4);
+  assert.equal(safetyOutputCount({ ...s3, ratings: { safetyOutputs: '3 NO (relay)' } }), 3);
+  // PNOZ s3 (2) + PNOZ s7 (4): s7 names PNOZsigma / PNOZ s3
+  assert.match(sizeSafetyRelay([s3], need, [s7]).note, /2 here \+ expansion Pilz 750107 \(4\)/);
+  // LG5925 (3) + LG5929 (5) is listed; UG6929 (for UG6970) is not, even with the same maker and enough outputs
+  assert.match(sizeSafetyRelay([lg5925], need, [ug6929, lg5929]).note, /3 here \+ expansion Dold LG5929-60-100-61 \(5\)/);
+  assert.match(sizeSafetyRelay([lg5925], need, [ug6929]).note, /this one has 3: add a contact expansion module its maker lists for it/);
+  // a single unit with all the outputs is preferred over a pair
+  const one = sizeSafetyRelay([s3, lg5925, scr73], need, [s7, lg5929]);
+  assert.equal(one.list[0].partNumber, 'SCR73-280005');
+  assert.match(one.note, /^7 safety outputs for the 6 needed/);
+  // no single unit: the base that has a listed expansion is chosen, even with fewer outputs of its own
+  const pair = sizeSafetyRelay([lg5925, s3], need, [s7, ug6929]);
+  assert.equal(pair.list[0].partNumber, '750103');
+  assert.match(pair.note, /2 here \+ expansion Pilz 750107/);
 });
 
 await test('retag: whole tags only', () => {

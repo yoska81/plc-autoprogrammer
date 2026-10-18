@@ -247,9 +247,36 @@ function differences(c: DrawnComponent, r: DrawnRatings, to: CatalogPart, target
 }
 
 /** One component: its new tag and catalog equivalent. */
-/** A safety relay's safety outputs from its ratings ("(3) N.O.", "2 N.O. relay", "3 NO (relay)"); 0 when not given. */
-export const safetyOutputCount = (p: CatalogPart): number => Number(String(p.ratings.safetyOutputs ?? '').match(/\d+/)?.[0] ?? 0);
+/** A safety relay's safety outputs: ratings.safetyOutputCount, else from the text ("(3) N.O.", "2 N.O. relay"); 0 when not given. */
+export const safetyOutputCount = (p: CatalogPart): number => Number(p.ratings.safetyOutputCount ?? String(p.ratings.safetyOutputs ?? '').match(/\d+/)?.[0] ?? 0) || 0;
 const isExpansion = (p: CatalogPart) => /expansion|extension|erweiterung|contact expan/i.test(`${p.description} ${p.ratings.application ?? ''}`);
+/** The names a base unit goes by: family, series, type name without the voltage ("PNOZ s3"), part-number stem ("LG5925"). */
+const baseNames = (p: CatalogPart) => [p.family, p.ratings.family, p.ratings.series, String(p.ratings.typeName ?? '').replace(/\s+\d+\s*V.*$/i, ''), p.partNumber.split(/[-\s.]/)[0]]
+  .map((s) => String(s ?? '').trim()).filter((s) => s.length >= 4);
+/** An expansion module goes with a base unit only when its maker says so (ratings.forUse names the base). */
+export const expands = (exp: CatalogPart, base: CatalogPart): boolean => {
+  const forUse = String(exp.ratings.forUse ?? '');
+  return exp.manufacturer === base.manufacturer && baseNames(base).some((n) => new RegExp(`(^|[^\\w])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w])`, 'i').test(forUse));
+};
+
+/**
+ * The safety relay for the outputs needed: a single unit that has them all first (the smallest such), else
+ * the base with the most outputs and an expansion module its maker lists for it (forUse), else a note.
+ */
+export function sizeSafetyRelay(list: CatalogPart[], safety: { need: number; why: string }, pool: CatalogPart[] = ALL_PARTS): { list: CatalogPart[]; note: string } {
+  const n = safetyOutputCount;
+  const enough = (p: CatalogPart) => n(p) >= safety.need;
+  const base = list.filter((p) => !isExpansion(p)).sort((a, b) => Number(enough(b)) - Number(enough(a)) || (enough(a) ? n(a) - n(b) : n(b) - n(a)));
+  const sorted = [...base, ...list.filter(isExpansion)];
+  const have = n(sorted[0]);
+  if (have >= safety.need) return { list: sorted, note: `${have} safety outputs for the ${safety.need} needed (${safety.why})` };
+  // the bases that take an expansion, most outputs first; the first that reaches the count with the smallest module
+  for (const b of base.filter((p) => n(p) === have).concat(base.filter((p) => n(p) !== have))) {
+    const exp = pool.filter((p) => p.category === 'safetyRelay' && isExpansion(p) && n(p) > 0 && expands(p, b) && n(b) + n(p) >= safety.need).sort((x, y) => n(x) - n(y))[0];
+    if (exp) return { list: [b, ...sorted.filter((p) => p !== b)], note: `Needs ${safety.need} safety outputs (${safety.why}): ${n(b)} here + expansion ${exp.manufacturer} ${exp.partNumber} (${n(exp)})` };
+  }
+  return { list: sorted, note: `Needs ${safety.need} safety outputs (${safety.why}); this one has ${have}: add a contact expansion module its maker lists for it (to select)` };
+}
 
 /**
  * How many safety outputs the converted machine's safety relay needs: the ones the drawings use (its
@@ -287,20 +314,12 @@ export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTar
     return { oldTag: c.tag, newTag, from, to: null, alternatives: [], differences: [], status: 'to-select',
       reason: `No catalog part matches${r.amps !== null || r.kw !== null || r.minAmps !== null ? '' : `: ${missing} not on the drawing`}. Pick one, or let the design size it from the motors.` };
   }
-  // a safety relay with enough safety outputs (one that has them all first, then the most), or with an expansion module
+  // a safety relay with enough safety outputs, or with an expansion module listed for it
   const extra: string[] = [];
   if (c.category === 'safetyRelay' && safety?.need) {
-    const base = list.filter((p) => !isExpansion(p));
-    base.sort((a, b) => Number(safetyOutputCount(b) >= safety.need) - Number(safetyOutputCount(a) >= safety.need) || (safetyOutputCount(a) >= safety.need ? safetyOutputCount(a) - safetyOutputCount(b) : safetyOutputCount(b) - safetyOutputCount(a)));
-    list.splice(0, list.length, ...base, ...list.filter(isExpansion));
-    const have = safetyOutputCount(list[0]);
-    if (have < safety.need) {
-      const exp = ALL_PARTS.filter((p) => p.category === 'safetyRelay' && isExpansion(p) && p.manufacturer === list[0].manufacturer && safetyOutputCount(p) > 0)
-        .sort((a, b) => Number(have + safetyOutputCount(b) >= safety.need) - Number(have + safetyOutputCount(a) >= safety.need) || safetyOutputCount(a) - safetyOutputCount(b))[0];
-      extra.push(exp && have + safetyOutputCount(exp) >= safety.need
-        ? `Needs ${safety.need} safety outputs (${safety.why}): ${have} here + expansion ${exp.manufacturer} ${exp.partNumber} (${safetyOutputCount(exp)})`
-        : `Needs ${safety.need} safety outputs (${safety.why}); this one has ${have}: add a contact expansion module (to select)`);
-    } else extra.push(`${have} safety outputs for the ${safety.need} needed (${safety.why})`);
+    const sized = sizeSafetyRelay(list, safety);
+    list.splice(0, list.length, ...sized.list);
+    extra.push(sized.note);
   }
   const [to, ...alternatives] = list;
   const listing = to.ratings.ul ? `maker's listing: UL ${String(to.ratings.ul).replace(/^UL\s*/i, '')}` : 'listing: see the maker\'s data';
