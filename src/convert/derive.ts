@@ -11,6 +11,7 @@ import { CATEGORIES, DEVICE_TYPES, IO_CATEGORIES, fileToBlock } from '../lib/ai/
 import { SPEC_SECTIONS, type SpecSectionId } from '../spec/types';
 import { cadToText, dwgToEntities, dxfToText } from './dxf';
 import { desktopBridge } from '../desktop/bridge';
+import { checkUploadFiles } from './uploadCheck';
 import type { DrawnRatings, ExistingMachine, PathContact, PathEl } from './types';
 
 export const MAX_UPLOAD_FILES = 20;
@@ -46,6 +47,9 @@ export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,applicat
 /** One upload as content blocks for the AI: PDFs and images as they are, DXF as its text. */
 export async function readUpload(files: File[], notes: string[] = []): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
   if (files.length > MAX_UPLOAD_FILES) throw new Error(`At most ${MAX_UPLOAD_FILES} files at once.`);
+  // an empty or damaged file never goes to the AI
+  const bad = await checkUploadFiles(files);
+  if (bad.length) throw new Error(bad.join(' '));
   const out: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
   for (const f of files) {
     const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
