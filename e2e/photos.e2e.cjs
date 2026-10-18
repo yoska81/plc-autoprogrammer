@@ -93,6 +93,13 @@ async function png(page, shade) {
   check(!d.tags.some((t) => /^CR/.test(t)), 'the unconfirmed hidden relay is left out');
   check(/As-built from photos — verify/.test(d.notes?.[0] ?? ''), 'marked "as-built from photos — verify"');
 
+  // Or convert: the photographed devices go to the shared review below the tab (same path as drawings).
+  await page.getByTestId('photos-convert').click();
+  const parts = page.getByTestId('review-parts');
+  await parts.waitFor({ timeout: 10000 });
+  const partsText = await parts.innerText();
+  check(['GMCBU-1C-5', 'SC-E02PG-24VDC', 'C0-08ND3'].every((pn) => partsText.includes(pn)) && /photo 1, rail 2, position 3/.test(partsText), 'the shared review lists the photographed parts with where they were seen');
+
   // What the photos can't show: on the Machine description page only.
   await page.goto(BASE + '/spec');
   await page.waitForTimeout(800);
