@@ -239,6 +239,12 @@ test('prices belong to catalog parts and come from the same site', () => {
   assert.deepEqual(bad, []);
 });
 
+test('safety relays and expansions state their safety outputs as a count', () => {
+  // The drawing converter sizes the safety relay (base + expansion) from these: '(4) N.O.' and safetyOutputCount 4.
+  const bad = CATALOG.filter((p) => p.category === 'safetyRelay' && !(/^\(\d+\) N\.O\.$/.test(String(p.ratings.safetyOutputs)) && Number(p.ratings.safetyOutputCount) === Number(String(p.ratings.safetyOutputs).match(/\d+/)?.[0]))).map((p) => p.partNumber);
+  assert.deepEqual(bad, []);
+});
+
 test('every CLICK CPU the PLC profile offers is in the catalog with a footprint', () => {
   // The CPU chooser lists CLICK_CPUS; the BOM, back-panel layout and prices need the catalog part.
   const bad = CLICK_CPUS.filter((c) => { const p = CATALOG.find((x) => x.partNumber === c.id); return !p || !(p.widthMm && p.heightMm); }).map((c) => c.id);
