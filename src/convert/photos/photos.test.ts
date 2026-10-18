@@ -15,6 +15,8 @@ import { mergeDevices, mergeReading } from './merge';
 import { asBuiltDesign, matchPart, nameplateRatings, photosToMachine, reviewItems, tracedPoints, type ReviewItem } from './toDesign';
 import { plcAddress, traceAll, traceNets } from './trace';
 import { RELAY_CABINET } from './__fixtures__/relayCabinet';
+import { rollformerReading } from './__fixtures__/rollformerCabinet';
+import { readFileSync } from 'node:fs';
 import { convertMachine, NA_TARGET } from '../convert';
 import { toRelayLogic } from '../relayLogic';
 import { tagger } from './toDesign';
@@ -230,8 +232,8 @@ assert.deepEqual(c1.path, [
   { t: 'coil', tag: 'KM1', kind: 'contactor', preset: null, terms: null },
 ], 'stop, start ∥ seal-in, overload, coil');
 assert.equal(c1.sealIn, 'KM1 13-14');
-assert.deepEqual(rt.circuits[2].path.at(-1), { t: 'coil', tag: 'KT1', kind: 'timer-on', preset: null, terms: null });
-assert.deepEqual(rt.circuits[3].path.at(-1), { t: 'coil', tag: 'VFD1', kind: 'drive-input', preset: null, terms: 'MI1' });
+assert.deepEqual(rt.circuits.find((c) => c.output === 'KT1')!.path!.at(-1), { t: 'coil', tag: 'KT1', kind: 'timer-on', preset: null, terms: null });
+assert.deepEqual(rt.circuits.find((c) => c.output === 'VFD1')!.path!.at(-1), { t: 'coil', tag: 'VFD1', kind: 'drive-input', preset: null, terms: 'MI1' });
 assert.ok(rt.questions.includes('Cabinet photos: KA2 relay coil (C2): no contact feeding wire 9 was read, which leaves the cabinet on XT1-3 — what switches it?'));
 assert.ok(rt.questions.includes('Cabinet photos: XT1: what is wired to terminals 3 (wire 9 → KA2:A1), 4 (wire T1) and 5 (wire T2) outside the cabinet?'), 'field terminals asked per strip (24+ / 0V left out)');
 const relayMachine = photosToMachine(relayItems, RELAY_CABINET, '', () => undefined);
@@ -244,6 +246,48 @@ assert.deepEqual(kept.notDrawn, []);
 const pumpRung = kept.logic!.rungs.find((x) => x.id === 'C1')!;
 assert.equal(pumpRung.path.filter((e) => e.t === 'branch').length, 1, 'the seal-in stays a parallel branch');
 assert.equal(pumpRung.description, 'KM1 CONTACTOR COIL');
+
+// ── The approved fixture cn-rollformer-01 (no PLC) as photographed: its relay logic from the wire numbers ──
+const rfExpected = JSON.parse(readFileSync(new URL('../../../fixtures/import/cn-rollformer-01/expected.json', import.meta.url), 'utf8')) as { terminals: { strip: string; no: number; wire: string }[]; relayLogic: { id: string; coil: string; description: string }[] };
+const rfReading = rollformerReading(rfExpected.terminals);
+const rfItems = reviewItems(rfReading);
+const rf = traceAll(rfItems, tagger(rfItems), () => undefined);
+assert.deepEqual(rf.io, [], 'no PLC: no I/O list from the wires');
+const rfCircuit = (coil: string, terms?: string) => rf.circuits.find((c) => c.output === coil && (!terms || c.path!.at(-1)!.t === 'coil' && (c.path!.at(-1) as { terms: string | null }).terms === terms))!;
+const tagsOf = (c: typeof rf.circuits[number]) => (c.path ?? []).flatMap((e) => (e.t === 'branch' ? e.paths.flat().map((x) => x.tag) : e.t === 'contact' ? [e.tag] : []));
+const DEVICE = /\b(K[AMT]\d+|SB\d+|SA\d+|FR\d+|U\d|H7CX)\b/g;
+// every traced contact appears, in the same order, in the fixture's own description of the circuit
+for (const [id, coil, terms] of [['C1', 'KM1'], ['C2', 'KA1'], ['C3', 'KA2'], ['C3', 'KA3'], ['C4', 'KA4'], ['C11', 'U1', 'MI1'], ['C11', 'U1', 'MI2'], ['C11', 'U1', 'MI3']] as const) {
+  const want = rfExpected.relayLogic.find((x) => x.id === id)!.description.match(DEVICE)!;
+  const got = tagsOf(rfCircuit(coil, terms));
+  let k = 0;
+  for (const t of got) { k = want.indexOf(t, k); assert.ok(k >= 0, `${id} ${coil}${terms ? ` ${terms}` : ''}: ${got.join(' ')} follows "${want.join(' ')}"`); }
+}
+assert.deepEqual(rfCircuit('KM1').conditions, ['KA0 13-14 (NO)', 'SB2 11-12 (NC)', 'SB1 13-14 (NO) ∥ KM1 13-14 (NO)', 'FR1 95-96 (NC)'], 'pump: safety, stop, start ∥ seal-in, overload');
+assert.equal(rfCircuit('KA1').conditions.length, 10, 'line run: the nine permissives in series and start ∥ seal-in');
+assert.equal(rfCircuit('KA1').sealIn, 'KA1 11-14');
+assert.ok(rfCircuit('KA1').conditions.includes('U1 RB-RC (NC)') && rfCircuit('KA1').conditions.includes('H7CX OUT-NC (NC)'), 'the VFD fault relay and the counter output, by their named pins');
+assert.deepEqual(rfCircuit('KA2').conditions, ['KA1 41-42 (NC)', 'SB5 13-14 (NO)', 'KA3 11-12 (NC)'], 'jog forward, no sneak path back through the manual-cut button');
+assert.deepEqual(rfCircuit('U1', 'MI1').conditions, ['KA1 21-24 (NO) ∥ KA2 21-24 (NO)'], 'the drive input from its common (DCM)');
+assert.deepEqual(rfCircuit('KT1').conditions, ['KA7 11-14 (NO) ∥ KA1 41-42 (NC) + SB7 13-14 (NO)', 'KA8 11-12 (NC)'], 'two wires on KA8:11 (361 and 341) are one node: servo cut or manual cut');
+assert.ok(rf.nets.some((n) => n.wire === '341 / 361' && n.joinedAt.includes('KA8:11')));
+assert.equal(rfCircuit('KA9').confidence, 'low');
+assert.ok(rf.questions.includes('Cabinet photos: KA9 relay coil (C10) is switched on its A2 side by wire 332, which leaves the cabinet on XT2-11 — what switches it?'), 'the NPN sensor relays are asked');
+assert.ok(rf.questions.includes('Cabinet photos: KA8 relay coil (C9): no contact feeding wire 364 was read, which leaves the cabinet on XT2-18 — what switches it?'), 'the shear limit switches are in the field');
+assert.ok(rf.questions.some((q) => /^Cabinet photos: XT2: what is wired to terminals 1–8, 11, 14–15, 18–21 outside the cabinet\?$/.test(q)), 'one question for XT2, its 24VS / 0V terminals left out');
+const rfMachine = photosToMachine(rfItems, rfReading, '', () => undefined);
+assert.equal(rfMachine.controller, 'relays');
+const rfKept = toRelayLogic(rfMachine, convertMachine(rfMachine, { ...NA_TARGET, logic: 'keep-relays' }));
+assert.equal(rfKept.logic!.rungs.length, rf.circuits.length, 'every traced circuit is a ladder rung');
+assert.deepEqual(rfKept.notDrawn, []);
+
+// ── Addresses as read: the siemens-mixer-01 fixture's S7 terminals (%I0.0 …, %Q0.0 …) stay as printed ──
+const s7 = readFileSync(new URL('../../../fixtures/import/siemens-mixer-01/PLC_Tags_MT01.csv', import.meta.url), 'utf8').split(/\r?\n/)
+  .map((l) => /,(%[IQ]\d+\.\d+),/.exec(l)?.[1]).filter((x): x is string => Boolean(x));
+const s7io = traceAll(asItems([dev('A1', 'plc', s7.map((a, i): [string, string] => [a, `W${i + 1}`]), '6ES7214-1AG40-0XB0')]), tagOfIt, () => undefined).io;
+assert.deepEqual(s7io.map((p) => p.address).sort(), [...s7].sort(), 'every S7 address kept as read');
+assert.ok(s7io.every((p) => !p.guessed && p.type === (p.address.startsWith('%I') ? 'input' : 'output')));
+assert.equal(new Set(s7io.map((p) => p.address)).size, s7.length, 'no two points collide');
 
 // ── Recogniser: one AI call with every photo labelled; boxes kept inside their photo ──
 assert.ok(JSON.stringify(PHOTO_SCHEMA).includes('"seen"'));

@@ -199,7 +199,7 @@ export function traceIO(items: ReviewItem[], nets: TracedWire[], tagOf: (it: Rev
 
 /* ---------------------------------------------- relay circuits (a machine without a PLC; the hardwired part of one with a PLC) */
 
-const SUPPLY = /^(\+?24\s*V?(DC)?\s*\+S?|24\+S?|\+24\s*V?(DC)?|L\+|\+V|L\d?|P24)$/i;
+const SUPPLY = /^(\+?24\s*V?(DC)?\s*\+S?|24\+S?|\+24\s*V?(DC)?|24\s*V[S\d]|L\+|\+V|L\d?|P24)$/i;
 const RETURN = /^(0\s*V(DC)?|M|N|-V|L-|24\s*V?-|-24\s*V?)$/i;
 /** A supply or return rail (not a terminal that leaves for a field device). */
 const isRail = (n: TracedWire) => n.numbers.some((x) => SUPPLY.test(x.trim()) || RETURN.test(x.trim()) || /^(PE|GND)$/i.test(x.trim()));
@@ -212,6 +212,12 @@ function contactOf(a: string, b: string, cat: CatalogCategory): boolean | null {
     return (x === 1 && y === 2) || (x === 5 && y === 6) ? true : (x === 1 && y === 4) || (x === 3 && y === 4) || (x === 5 && y === 8) || (x === 7 && y === 8) ? false : null;
   };
   if (/^\d\d$/.test(a) && /^\d\d$/.test(b) && a[0] === b[0]) return pair(Number(a[1]), Number(b[1]));
+  // a drive's or counter's changeover output: RA-RC / MA-MC NO, RB-RC / MB-MC NC; OUT (C, COM) with NO / NC
+  const ch = /^([A-Z]+)([ABC])$/;
+  const ca = ch.exec(a), cb = ch.exec(b);
+  if (ca && cb && ca[1] === cb[1] && ca[1].length <= 2 && [ca[2], cb[2]].includes('C') && ca[2] !== cb[2]) return [ca[2], cb[2]].includes('B');
+  const com = (t: string) => /^(OUT|C|COM)$/.test(t);
+  if ((com(a) && /^N[CO]$/.test(b)) || (com(b) && /^N[CO]$/.test(a))) return a === 'NC' || b === 'NC';
   // single-digit blocks on buttons and switches (power poles on contactors and breakers are not control contacts)
   if (/^\d$/.test(a) && /^\d$/.test(b) && ['pushbutton', 'estop', 'selector'].includes(cat)) return pair(Number(a), Number(b));
   return null;
@@ -223,14 +229,15 @@ const contactKind = (it: ReviewItem): PathContact['kind'] => {
     : c === 'overload' || c === 'motorProtector' ? 'ol' : c === 'selector' ? 'selector' : c === 'sensor' ? 'limit' : 'other';
 };
 
-interface Edge { a: TracedWire; b: TracedWire; c: PathContact }
+/** A contact between two nets; directed: numbered pins, a on the supply side (13 → 14, 95 → 96), b on the load side. */
+interface Edge { a: TracedWire; b: TracedWire; c: PathContact; directed: boolean }
 type Coil = Extract<PathEl, { t: 'coil' }>;
 
 /**
  * Paths of contacts from a supply rail to a coil's net, supply first; when none reaches a supply, the
  * dead ends, with the net each one stops at.
  */
-function pathsTo(target: TracedWire, edges: Edge[], supply: Set<TracedWire>, ret: TracedWire | undefined): { paths: Edge[][]; reached: boolean; stop: TracedWire } {
+function pathsTo(target: TracedWire, edges: Edge[], supply: Set<TracedWire>, ret: TracedWire | undefined, directed = true): { paths: Edge[][]; reached: boolean; stop: TracedWire } {
   if (supply.has(target)) return { paths: [[]], reached: true, stop: target };
   const done: Edge[][] = [];
   const dead: { p: Edge[]; at: TracedWire }[] = [];
@@ -241,7 +248,8 @@ function pathsTo(target: TracedWire, edges: Edge[], supply: Set<TracedWire>, ret
     if (supply.has(net)) { done.push([...acc].reverse()); return; }
     let moved = false;
     for (const e of edges) {
-      if (e.a !== net && e.b !== net) continue;
+      // back toward the supply only through a contact's load side (no sneak path back through another rung's button)
+      if (directed && e.directed ? e.b !== net : e.a !== net && e.b !== net) continue;
       const o = e.a === net ? e.b : e.a;
       if (seen.has(o) || o === ret) continue;
       moved = true;
@@ -287,7 +295,8 @@ export function traceCircuits(items: ReviewItem[], nets: TracedWire[], tagOf: (i
   for (const n of nets) for (const e of n.ends) netOf.set(endKey(e), n);
   const plcIo = (n: TracedWire) => n.ends.some((e) => isPlc(e.category) && (ADDR.test(normTerm(e.terminal)) || /^\d{1,2}$/.test(e.terminal.trim())));
   const edges: Edge[] = [];
-  const coils: { el: Coil; net: TracedWire; ret?: TracedWire }[] = [];
+  /** A coil's switched net; low: switched on its A2 side (A1 on the supply, e.g. by an NPN sensor); from: an extra source (a drive input's common). */
+  const coils: { el: Coil; net: TracedWire; ret?: TracedWire; a1?: TracedWire; from?: TracedWire }[] = [];
   for (const it of devices) {
     const tag = tagOf(it);
     const cat = itemCategory(it);
@@ -295,18 +304,20 @@ export function traceCircuits(items: ReviewItem[], nets: TracedWire[], tagOf: (i
     const terms = [...new Set(it.device!.wires.map((w) => normTerm(w.terminal)))];
     terms.forEach((a, i) => terms.slice(i + 1).forEach((b) => {
       const nc = contactOf(a, b, cat);
-      const [x, y] = Number(a) < Number(b) ? [a, b] : [b, a];
+      const [x, y] = /^\d+$/.test(a) && /^\d+$/.test(b) && Number(b) < Number(a) ? [b, a] : [a, b];
       const nx = at(x), ny = at(y);
-      if (nc !== null && nx && ny && nx !== ny) edges.push({ a: nx, b: ny, c: { t: 'contact', tag, nc, terms: `${x}-${y}`, kind: contactKind(it) } });
+      if (nc !== null && nx && ny && nx !== ny) edges.push({ a: nx, b: ny, c: { t: 'contact', tag, nc, terms: `${x}-${y}`, kind: contactKind(it) }, directed: /^\d+$/.test(x) });
     }));
     const a1 = at('A1');
     if ((cat === 'relay' || cat === 'contactor') && a1) {
       const kind: Coil['kind'] = cat === 'contactor' ? 'contactor' : !isTimer(it) ? 'relay' : /off-?\s*delay/i.test(`${it.device!.ratings} ${itemPart(it)}`) ? 'timer-off' : 'timer-on';
-      coils.push({ el: { t: 'coil', tag, kind, preset: null, terms: null }, net: a1, ret: at('A2') });
+      coils.push({ el: { t: 'coil', tag, kind, preset: null, terms: null }, net: a1, ret: at('A2'), a1 });
     }
     const x1 = at('X1');
     if (cat === 'pilotLight' && x1) coils.push({ el: { t: 'coil', tag, kind: 'light', preset: null, terms: null }, net: x1, ret: at('X2') });
-    if (cat === 'vfd') for (const t of terms.filter((x) => DRIVE_INPUT.test(x))) { const n = at(t); if (n) coils.push({ el: { t: 'coil', tag, kind: 'drive-input', preset: null, terms: t }, net: n }); }
+    // a drive's run inputs, switched from its own common (sink: DCM / COM, source: +24V)
+    const common = ['DCM', 'COM', 'SC', 'CM', '+24V', '24V'].map(at).find(Boolean);
+    if (cat === 'vfd') for (const t of terms.filter((x) => DRIVE_INPUT.test(x))) { const n = at(t); if (n) coils.push({ el: { t: 'coil', tag, kind: 'drive-input', preset: null, terms: t }, net: n, from: common }); }
   }
   // the return rail: where most coils end (else a 0V / N number); the supply: a +24 / L number, or a supply's or breaker's terminal
   const count = new Map<TracedWire, number>();
@@ -317,9 +328,13 @@ export function traceCircuits(items: ReviewItem[], nets: TracedWire[], tagOf: (i
   const circuits: DrawnCircuit[] = [];
   const questions: string[] = [];
   for (const c of coils.filter((x) => !plcIo(x.net) && x.net !== ret)) {
-    const { paths, reached, stop } = pathsTo(c.net, edges, supply, ret);
-    // the start button first, the coil's own seal-in across it after
-    const path: PathEl[] = [...rung(paths).map((e) => (e.t === 'branch' ? { ...e, paths: [...e.paths].sort((x, y) => Number(x.some((k) => k.tag === c.el.tag)) - Number(y.some((k) => k.tag === c.el.tag))) } : e)), c.el];
+    // A1 on the supply and A2 not on the return: the coil is switched on its A2 side; trace that side to the return
+    const low = Boolean(supply.has(c.net) && c.ret && c.ret !== ret && ret && !plcIo(c.ret));
+    const { paths, reached, stop } = low ? pathsTo(c.ret!, edges, new Set([ret!]), c.net, false)
+      : pathsTo(c.net, edges, c.from ? new Set([...supply, c.from]) : supply, ret);
+    // in a parallel branch: the buttons first, the coil's own seal-in last
+    const rank = (p: PathContact[]) => (p.some((k) => k.tag === c.el.tag) ? 2 : p[0].kind === 'pb' ? 0 : 1);
+    const path: PathEl[] = [...rung(paths).map((e) => (e.t === 'branch' ? { ...e, paths: [...e.paths].sort((x, y) => rank(x) - rank(y)) } : e)), c.el];
     const contacts = path.filter((e): e is PathContact => e.t === 'contact');
     const branch = path.find((e): e is Extract<PathEl, { t: 'branch' }> => e.t === 'branch');
     const all = [...contacts, ...(branch?.paths.flat() ?? [])];
@@ -338,7 +353,10 @@ export function traceCircuits(items: ReviewItem[], nets: TracedWire[], tagOf: (i
     });
     if (!reached) {
       const out = stop.ends.find((e) => e.category === 'strip');
-      questions.push(`Cabinet photos: ${c.el.tag} ${what} (${id}): ${paths.length ? `its contacts were traced back to wire ${stop.wire} only` : `no contact feeding wire ${c.net.wire} was read`}${out ? `, which leaves the cabinet on ${out.tag}-${out.terminal}` : ''} — what switches it?`);
+      const leaves = out ? `, which leaves the cabinet on ${out.tag}-${out.terminal}` : '';
+      const why = low ? ` is switched on its A2 side by wire ${c.ret!.wire}${paths.length ? `; its contacts were traced to wire ${stop.wire} only` : ''}${leaves}`
+        : `: ${paths.length ? `its contacts were traced back to wire ${stop.wire} only` : `no contact feeding wire ${c.net.wire} was read`}${leaves}`;
+      questions.push(`Cabinet photos: ${c.el.tag} ${what} (${id})${why} — what switches it?`);
     }
   }
   return { circuits, questions };
