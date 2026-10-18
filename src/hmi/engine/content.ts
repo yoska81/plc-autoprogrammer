@@ -28,6 +28,10 @@ export interface HmiActuator {
   fault?: HmiPoint;
   /** Analog speed reference (drives). */
   speedRef?: HmiAnalog;
+  /** A drive's jog / preset jog-speed input, ON while jogging (e.g. "U1 MI3 jog speed"). */
+  jogSpeed?: HmiPoint;
+  /** Cylinder: seconds before a stroke counts as not reached (from "(timeout 2 s)" / "(watchdog 2 s)" on its valve). */
+  timeoutS?: number;
   /** Hand operation on the Manual screen (hold-to-run). */
   manual: boolean;
 }
@@ -49,6 +53,10 @@ export interface HmiAxis {
   /** Position units: mm (default), deg, or counts. */
   units: string;
   ready?: HmiPoint; fault?: HmiPoint; homed?: HmiPoint; inPos?: HmiPoint; limitPos?: HmiPoint; limitNeg?: HmiPoint; enable?: HmiPoint;
+  /** The drive's own motion follows the line (E-CAM / gearing engage output), ON only while the line runs. */
+  engage?: HmiPoint;
+  /** A servo enable selector on the operator station (the drive is enabled from it). */
+  enableSelector?: HmiPoint;
   /** Every I/O point of the axis. */
   points: HmiPoint[];
 }
@@ -140,7 +148,7 @@ export function defaultHmiContent(opts: {
   const point = (x: { p: IOPoint; address: string }): HmiPoint => ({ address: x.address, description: x.p.description || x.address });
   const discrete = pts.filter((x) => x.p.signal !== 'analog');
   // Servo axes and encoders first: their fault / limit inputs and enable outputs are not alarms, actuators or feedback.
-  const { axes, encoders, taken } = motionContent(discrete.map((x) => ({ ...point(x), type: x.p.type, category: x.p.category })));
+  const { axes, encoders, taken } = motionContent(discrete.map((x) => ({ ...point(x), type: x.p.type, category: x.p.category, deviceType: typeOf(x) })));
   const inputs = discrete.filter((x) => x.p.type === 'input' && !taken.has(x.address));
   const outputs = discrete.filter((x) => x.p.type === 'output' && !taken.has(x.address));
   const used = new Set<string>();
@@ -154,7 +162,9 @@ export function defaultHmiContent(opts: {
   const motorKey = (x: { p: IOPoint; address: string }) => {
     const tag = wiring.get(x.address)?.deviceTag;
     const m = tag ? opts.motorOf?.get(tag) : undefined;
-    return m ? `m:${m.tag}` : tag && /^VFD/i.test(tag) ? `d:${tag}` : `n:${keyWords(x.p.description).join(' ')}`;
+    // A drive tag leading the description ("U1 MI2 …"): one drive, whatever its inputs are called.
+    const lead = /^(U|VFD|VF|INV|DRV|SD|A)\d+\b/i.exec(x.p.description.trim())?.[0];
+    return m ? `m:${m.tag}` : tag && /^VFD/i.test(tag) ? `d:${tag}` : lead ? `d:${lead.toUpperCase()}` : `n:${keyWords(x.p.description).join(' ')}`;
   };
   const motorOuts = outputs.filter((x) => { const t = typeOf(x); return (t === 'contactor-coil' || t === 'vfd-input') && !/\bheat\w*\b/i.test(x.p.description); });
   const groups = new Map<string, typeof motorOuts>();
@@ -162,16 +172,20 @@ export function defaultHmiContent(opts: {
   for (const [key, xs] of groups) {
     const drive = xs.some((x) => typeOf(x) === 'vfd-input');
     const rev = xs.find((x) => /\b(rev|reverse|backward)\b/i.test(x.p.description));
-    const run = xs.find((x) => x !== rev && !/\b(speed|preset)\b/i.test(x.p.description)) ?? xs[0];
+    const jog = xs.find((x) => x !== rev && /\bjog\b/i.test(x.p.description) && /\b(speed|preset|frequency)\b/i.test(x.p.description));
+    // One signal, one role: the run output is never the reverse (or the jog speed) output.
+    const run = xs.find((x) => x !== rev && x !== jog && !/\b(speed|preset)\b/i.test(x.p.description)) ?? xs.find((x) => x !== rev && x !== jog) ?? (rev ? undefined : xs[0]);
+    if (!run) { for (const x of xs) used.add(x.address); continue; }
     const tag = wiring.get(run.address)?.deviceTag;
     const motor = key.startsWith('m:') && tag ? opts.motorOf?.get(tag) : undefined;
     const name = motor ? nameOf(motor.description) : nameOf(run.p.description);
     for (const x of xs) used.add(x.address);
-    const a: HmiActuator = { name, kind: drive ? 'drive' : 'motor', run: point(run), ...(rev ? { reverse: point(rev) } : {}), feedback: [], manual: true };
+    const lead = /^d:(.+)$/.exec(key)?.[1];
+    const a: HmiActuator = { name: lead && !motor ? `${lead} drive` : name, kind: drive ? 'drive' : 'motor', run: point(run), ...(rev ? { reverse: point(rev) } : {}), ...(jog ? { jogSpeed: point(jog) } : {}), feedback: [], manual: true };
     // Drive fault / overload tripped / running feedback with the same device tag or name.
     for (const i of inputs) {
       if (used.has(i.address)) continue;
-      const sameTag = tag && wiring.get(i.address)?.deviceTag === tag;
+      const sameTag = (tag && wiring.get(i.address)?.deviceTag === tag) || (lead && new RegExp(`^${lead}\\b`, 'i').test(i.p.description.trim()));
       if (!sameTag && !shareKey(i.p.description, run.p.description)) continue;
       if (/\b(fault|trip\w*|overload|alarm)\b/i.test(i.p.description)) { a.fault = point(i); used.add(i.address); }
       else if (/\b(running|run feedback|at speed|aux)\b/i.test(i.p.description)) { a.feedback.push(point(i)); used.add(i.address); }
@@ -187,12 +201,16 @@ export function defaultHmiContent(opts: {
     done.add(x.address);
     const d = x.p.description;
     const dump = /\b(dump|exhaust|main air|air supply|blow ?off|vacuum)\b/i.test(d);
-    const pair = sols.find((y) => !done.has(y.address) && shareKey(y.p.description, d) && keyWords(y.p.description).join(' ') === keyWords(d).join(' '));
+    // A timeout note ("(watchdog 2 s)") is not part of the valve's name: the pair is found without it.
+    const bare = (t: string) => t.replace(/\(\s*(?:timeout|watchdog)[^)]*\)/gi, ' ');
+    const pair = sols.find((y) => !done.has(y.address) && shareKey(bare(y.p.description), bare(d)) && keyWords(bare(y.p.description)).join(' ') === keyWords(bare(d)).join(' '));
     if (pair) done.add(pair.address);
     const [ext, ret] = pair && RETRACT.test(d) && !EXTEND.test(d) ? [pair, x] : [x, pair];
+    // A stroke time drawn on the valve ("(timeout 2 s)", "(watchdog 2 s)"): the timeout default instead of 3 s.
+    const tmo = [ext, ret].map((y) => (y ? /\b(?:timeout|watchdog)\s*(\d+(?:\.\d+)?)\s*s(?:ec\w*)?\b/i.exec(y.p.description)?.[1] : undefined)).find(Boolean);
     const a: HmiActuator = {
       name: nameOf(d), kind: dump ? 'valve' : 'cylinder', extend: point(ext), ...(ret ? { retract: point(ret) } : {}),
-      feedback: [], manual: !dump,
+      feedback: [], manual: !dump, ...(tmo ? { timeoutS: Number(tmo) } : {}),
     };
     for (const i of inputs) {
       if (used.has(i.address) || !FEEDBACK.test(i.p.description) || !shareKey(i.p.description, d)) continue;
@@ -313,18 +331,23 @@ const unitsOf = (texts: string[]) => {
  * servo, stepper or axis, grouped by axis number ("Axis 1 …") or name; encoder channels (A / B / Z) per encoder.
  * Power supplies ("Servo Power OK / Enable") are the safety circuit's, not an axis.
  */
-export function motionContent(pts: (HmiPoint & { type: 'input' | 'output'; category?: string })[]): { axes: HmiAxis[]; encoders: HmiEncoder[]; taken: Set<string> } {
+export function motionContent(pts: (HmiPoint & { type: 'input' | 'output'; category?: string; deviceType?: string })[]): { axes: HmiAxis[]; encoders: HmiEncoder[]; taken: Set<string> } {
   const taken = new Set<string>();
+  // Operator devices (a reset button that also resets the servo, the servo enable selector) are not drive signals.
+  const operator = (x: { deviceType?: string }) => /^(pushbutton|selector|estop)/.test(x.deviceType ?? '');
   const groupOf = (d: string, words: RegExp) => {
+    // A drive tag leading the description ("U2 DI1 SON", "U2 ready (DO1)"): one axis per drive.
+    const lead = /^(U|SD|SV|A)\d+\b/i.exec(d.trim())?.[0];
+    if (lead) return lead.toUpperCase();
     const n = /\baxis\s*(\d+|[xyzuvw])\b/i.exec(d) ?? /\b([xyzuvw])[- ]axis\b/i.exec(d);
     if (n) return /^\d+$/.test(n[1]) ? `Axis ${n[1]}` : `${n[1].toUpperCase()} Axis`;
     // "Encoder 1 A" is Encoder 1; "Servo 2 ready" is Axis 2.
-    const k = /\b(servo|stepper|encoder)\s*(\d+)\b/i.exec(d);
+    const k = /\b(servo|stepper|encoder)\s*(\d+)\b(?!\s*(?:ppr|p\/r|pulses?|counts?|cpr|khz|mm|rpm))/i.exec(d);
     if (k) return `${/encoder/i.test(k[1]) ? 'Encoder' : 'Axis'} ${k[2]}`;
     const rest = d.replace(/\([^)]*\)/g, ' ').replace(words, ' ').replace(/\b(servo|stepper|axis|drive|encoder|channel|phase|ready|fault|alarm|home\w*|complete|done|in\s*position|positive|negative|limit|enable\w*|command|jog\w*|move\w*|to|position|[abz]|ok|pulse|input|output)\b/gi, ' ');
     return title(keyWords(rest).slice(0, 3).join(' ')) || 'Axis';
   };
-  const axisPts = pts.filter((x) => (x.category === 'Servo/Axis' || AXIS_RE.test(x.description)) && !ENCODER_RE.test(x.description) && !/\bpower\b/i.test(x.description));
+  const axisPts = pts.filter((x) => (x.category === 'Servo/Axis' || AXIS_RE.test(x.description)) && !ENCODER_RE.test(x.description) && !/\bpower\b/i.test(x.description) && !operator(x));
   const byAxis = new Map<string, typeof axisPts>();
   for (const x of axisPts) byAxis.set(groupOf(x.description, AXIS_RE), [...(byAxis.get(groupOf(x.description, AXIS_RE)) ?? []), x]);
   const axes: HmiAxis[] = [];
@@ -343,9 +366,15 @@ export function motionContent(pts: (HmiPoint & { type: 'input' | 'output'; categ
     set('inPos', pt(find(ins, /\bin[- ]?position\b|\binpos\b/i)));
     set('limitPos', pt(find(ins, /\b(positive|forward|\+)\s*(limit|overtravel)\b|\b(limit|overtravel)\s*(\+|positive|fwd)/i)));
     set('limitNeg', pt(find(ins, /\b(negative|reverse|-)\s*(limit|overtravel)\b|\b(limit|overtravel)\s*(-|negative|rev)/i)));
-    set('enable', pt(find(outs, /\b(enable|servo on)\b/i)));
+    set('enable', pt(find(outs, /\b(enable|servo on|son)\b/i)));
+    set('engage', pt(find(outs, /\b(cam|e-?cam|gear\w*|engage|sync\w*)\b/i, /\b(son|enable)\b/i)));
     for (const x of xs) taken.add(x.address);
     axes.push(a);
+  }
+  // A servo enable selector belongs to the axis (to the only one, or the one its words name).
+  for (const sel of pts.filter((x) => x.type === 'input' && x.deviceType === 'selector' && /\b(servo|axis|drive)\b/i.test(x.description) && /\b(enable|on|son)\b/i.test(x.description))) {
+    const ax = axes.length === 1 ? axes[0] : axes.find((y) => y.points.some((p) => shareKey(p.description, sel.description)));
+    if (ax && !ax.enableSelector) { ax.enableSelector = { address: sel.address, description: sel.description }; taken.add(sel.address); }
   }
   // Encoders: counting channels only (an "Encoder position OK" status input is an ordinary input).
   const encPts = pts.filter((x) => x.type === 'input' && ENCODER_RE.test(x.description) && !/\b(ok|fault|alarm|error)\b/i.test(x.description));

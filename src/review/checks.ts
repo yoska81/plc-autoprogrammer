@@ -19,6 +19,9 @@ import { isIssueNote } from '../components/questions/classify';
 import type { Finding, ReviewArea, ReviewPage, Severity } from './types';
 import { isAnalog } from '../types/io';
 import { analogMap, analogNeed } from '../plc/core/analog';
+import { motionFit } from '../plc/core/motionFit';
+import { getPart } from '../electrical/catalog';
+import { specToText } from '../spec/types';
 
 export interface ReviewInput {
   p: ProjectSnapshot;
@@ -340,6 +343,15 @@ function driveChecks({ p }: ReviewInput): Finding[] {
   return out;
 }
 
+/** Servo axes / encoders the chosen PLC cannot run (pulse axes, counters, rates, coordinated moves): said, never generated silently. */
+function motionChecks({ p }: ReviewInput): Finding[] {
+  const f = motionFit(p.io, getPart(p.cpu.id), specToText(p.spec));
+  const out: Finding[] = [];
+  if (!f.ok) out.push(finding('motion:fit', 'critical', 'equipment', 'equipment', p.cpu.id, `The motion does not fit ${p.cpu.id}`, f.problems.join(' '), f.recommend.join(' ')));
+  for (const [i, n] of f.notes.entries()) out.push(finding(`motion:note:${i}`, 'info', 'equipment', 'equipment', p.cpu.id, 'High-speed I/O set-up', n, 'Set it up in the PLC software (CLICK: High Speed I/O Setup) before writing the program.'));
+  return out;
+}
+
 function projectChecks({ p }: ReviewInput): Finding[] {
   const out: Finding[] = [];
   if (!p.info.revisions?.length) {
@@ -476,7 +488,7 @@ function specCoverage({ p, cautions = [] }: ReviewInput): Finding[] {
 export function runChecks(input: ReviewInput): Finding[] {
   const all = [
     ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input), ...driveChecks(input),
-    ...programChecks(input), ...hmiChecks(input), ...noPanelChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
+    ...programChecks(input), ...hmiChecks(input), ...noPanelChecks(input), ...motionChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
   ];
   // The Engineer review's rule checks (SCCR weak link, heat, voltage drop…) count here too: one set of findings everywhere.
   const eng = engineerChecksFor(input.p);

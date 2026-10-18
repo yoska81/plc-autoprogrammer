@@ -36,15 +36,32 @@ const CMP = (left: string, op: CompareOp, right: string): LadderElement => ({ ty
 const EXT_FB = /\b(extended|advanced|down|closed|clamped|out|forward|lowered)\b/i;
 const RET_FB = /\b(retracted|returned|up|open(ed)?|unclamped|home|back|raised)\b/i;
 
+const AUX_RE = /\b(pump|oil|hydraulic\w*|lube|lubrication|fan|blower|vacuum|chiller|compressor|coolant)\b/i;
+
 /** Default sequence from the I/O list and the spec's words (no AI): feed / wait for a part, then each cylinder out and back, in the order the spec names them. */
 export function defaultSequence(c: HmiContent, spec: string): CycleSequence {
   const questions: string[] = [];
   const s = spec.toLowerCase();
   const at = (name: string) => { const i = s.indexOf(name.toLowerCase().split(' ')[0]); return i < 0 ? Infinity : i; };
-  const motors = c.actuators.filter((a) => (a.kind === 'motor' || a.kind === 'drive') && a.run);
+  // Auxiliaries with their own start / stop (pump, lube…) are not cycle actions (the program runs them).
+  const motors = c.actuators.filter((a) => (a.kind === 'motor' || a.kind === 'drive') && a.run && !AUX_RE.test(`${a.name} ${a.run.description}`));
   const cylinders = c.actuators.filter((a) => a.kind === 'cylinder' && a.extend).sort((a, b) => at(a.name) - at(b.name));
   const run: StepAction[] = motors.map((m) => ({ actuator: m.name, what: 'run' }));
   const steps: CycleStep[] = [];
+  // A drive's cut signal (a flying shear's "cut" output): the line runs throughout; each cut is the shear down to its
+  // down limit and back up to its up limit, guarded by the shear's timeout.
+  const cutIn = (c.axes ?? []).flatMap((ax) => ax.points).find((p) => /^X/i.test(p.address) && /\bcut\b/i.test(p.description))
+    ?? c.io.find((p) => p.type === 'input' && /\b(cut|shear)\s+(command|signal|request)\b/i.test(p.description));
+  const shear = cutIn ? cylinders.find((cy) => /\b(shear|cut\w*|knife|blade|saw)\b/i.test(cy.name)) ?? cylinders[0] : undefined;
+  if (cutIn && shear) {
+    const down = shear.feedback.find((f) => EXT_FB.test(f.description)), up = shear.feedback.find((f) => f !== down && RET_FB.test(f.description));
+    const tmo = shear.timeoutS ?? 5;
+    steps.push({ name: `Wait for the cut signal (${cutIn.description})`, actions: run, waitFor: [{ input: cutIn.address, on: true }], timeoutSec: null });
+    steps.push({ name: `${shear.name} down${down ? ` until ${down.description}` : ''}`, actions: [...run, { actuator: shear.name, what: 'extend' }], waitFor: [down ? { input: down.address, on: true } : { seconds: 1 }], timeoutSec: down ? tmo : null });
+    steps.push({ name: `${shear.name} up${up ? ` until ${up.description}` : ''}`, actions: [...run, ...(shear.retract ? [{ actuator: shear.name, what: 'retract' as const }] : [])], waitFor: [up ? { input: up.address, on: true } : { seconds: 1 }], timeoutSec: up ? tmo : null });
+    questions.push(`The automatic cycle cuts on the drive's cut signal (${cutIn.description}): ${steps.map((x) => x.name).join(' → ')}, the line running throughout — confirm.`);
+    return { steps, questions, source: 'rules' };
+  }
   if (c.partSensor) steps.push({ name: run.length ? `Feed until a part is at ${c.partSensor.description}` : `Wait for a part at ${c.partSensor.description}`, actions: run, waitFor: [{ input: c.partSensor.address, on: true }], timeoutSec: null });
   else if (run.length && cylinders.length) steps.push({ name: `Run ${motors.map((m) => m.name).join(', ')}`, actions: run, waitFor: [{ seconds: 2 }], timeoutSec: null });
   const dwell = /\b(dwell|seal\w*|press\w*|hold)\b/.exec(s);

@@ -228,5 +228,18 @@ test('no safety reset is reported once (code rule), not again as a design warnin
   assert.equal(reset.length, 1, JSON.stringify(reset.map((f) => f.id)));
 });
 
+test('motion: a pulse-train axis on a CLICK C0 is a critical finding with what would fit; none on a CLICK PLUS', () => {
+  const snap = collectProject();
+  const axis = [['Axis 1 servo pulse', 'output'], ['Axis 1 servo direction', 'output'], ['Axis 1 servo ready', 'input']].map(([description, type], i) => ({ id: `ax${i}`, description, type: type as 'input' | 'output', category: 'Servo/Axis' as const }));
+  const c0 = checksFor({ ...snap, io: [...snap.io, ...axis], cpu: { ...snap.cpu, id: 'C0-11DD2E-D' } }).filter((f) => f.id === 'motion:fit');
+  assert.equal(c0.length, 1);
+  assert.equal(c0[0].severity, 'critical');
+  assert.match(c0[0].detail, /no pulse-train \(PTO\) outputs/);
+  assert.match(c0[0].fix, /CLICK PLUS/);
+  const plus = checksFor({ ...snap, io: [...snap.io, ...axis], cpu: { ...snap.cpu, id: 'C2-03CPU' } });
+  assert.ok(!plus.some((f) => f.id === 'motion:fit') && plus.some((f) => f.id.startsWith('motion:note')), 'CLICK PLUS fits, with the slot-0 set-up note');
+  assert.ok(!check().some((f) => f.id.startsWith('motion:')), 'no motion: no finding');
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

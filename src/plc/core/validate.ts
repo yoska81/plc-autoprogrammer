@@ -1,4 +1,4 @@
-import { elementAddresses, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
+import { elementAddresses, motionWrites, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
 
 export interface ValidationIssue {
@@ -129,6 +129,10 @@ export function validateProgram(
       }
       for (const w of rungWrites(r)) note(writes, w, r.id);
     }
+    // The PLC's motion (instructions, axes, counters) writes its status bits and registers and reads its request
+    // bits and targets: set up in the PLC software, not in the rungs.
+    for (const w of motionWrites(program.motion)) note(writes, w, 'motion');
+    for (const i of program.motion?.instructions ?? []) for (const a of [i.enable, i.target, i.velocity].filter((x): x is string => !!x)) note(reads, a, 'motion');
     const hmiAddr = new Set((hmi?.tags ?? []).map((t) => t.address.trim().toUpperCase()));
     const hmiRange = (a: string) => /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/.test(a);
     const skip = (a: string) => {
@@ -145,7 +149,7 @@ export function validateProgram(
   // A coil that can never turn on: every branch that could switch it on (its own seal-in aside) needs a contact on a
   // bit nothing writes — e.g. Cycle running started only from a panel Start bit on a machine with no touch panel.
   if (program.rungs.length) {
-    const written = new Set(program.rungs.flatMap((r) => rungWrites(r).map((a) => a.trim().toUpperCase())));
+    const written = new Set([...program.rungs.flatMap((r) => rungWrites(r)), ...motionWrites(program.motion)].map((a) => a.trim().toUpperCase()));
     for (const t of hmi?.tags ?? []) if (t.access !== 'read') written.add(t.address.trim().toUpperCase());
     const panelRange = (a: string) => /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/.test(a);
     const dead = (a: string) => {

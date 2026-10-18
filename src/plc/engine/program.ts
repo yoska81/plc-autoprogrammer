@@ -11,6 +11,7 @@ import type { CompareOp, LadderElement, LadderOutput, LadderProgram, ProgramBloc
 import type { HmiAlarm, HmiScreen, HmiTag } from '../../hmi/types';
 import { inferRoles } from '../../hmi/engine/roles';
 import { TWO_HAND_RE } from '../../electrical/engine/machineModel';
+import { buildMotion } from './motion';
 import { planHmiTags, type HmiActuator, type HmiContent, type HmiPoint } from '../../hmi/engine';
 
 const NO = (address: string): LadderElement => ({ type: 'NO', address });
@@ -24,6 +25,9 @@ const COPY = (source: string, dest: string): LadderOutput => ({ type: 'COPY', so
 const MATH = (dest: string, expression: string): LadderOutput => ({ type: 'MATH', dest, expression });
 const TMR = (address: string, preset: string, unit: 'sec' | 'ms' = 'sec', accumulate = false, resetAddress: string | null = null): LadderOutput =>
   ({ type: 'TMR', address, mode: 'ON_DELAY', preset, unit, accumulate, resetAddress });
+
+/** Two texts share a significant word (a name in a button's text: "Pump", "Conveyor"). */
+const shareWords = (a: string, b: string) => { const w = (t: string) => new Set(t.toLowerCase().split(/[^a-z0-9]+/).filter((x) => x.length > 2 && !/^(the|and|for|drive|motor|run|jog|forward|reverse)$/.test(x))); const B = w(b); return [...w(a)].some((x) => B.has(x)); };
 
 /** Which feedback input says "extended" and which "retracted" (by the words in their descriptions). */
 const EXT_FB = /\b(extended|advanced|down|closed|clamped|out|forward|in position)\b/i;
@@ -99,6 +103,10 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   // Internal float registers above the HMI's DF101-DF200.
   let nextDf = 201;
   const freeDf = () => { let a: string; do { a = `DF${nextDf++}`; } while (taken.has(a)); taken.add(a); return a; };
+  // Motion registers: DD from DD1, error codes in DS from DS1 (clear of the HMI's DS1001-DS1200 and the step register).
+  let nextDd = 1, nextDs = 1;
+  const freeDd = () => { let a: string; do { a = `DD${nextDd++}`; } while (taken.has(a)); taken.add(a); return a; };
+  const freeDs = () => { let a: string; do { a = `DS${nextDs++}`; } while (taken.has(a)); taken.add(a); return a; };
   const timer = () => { let a: string; do { a = `T${nextTimer++}`; } while (taken.has(a) || taken.has(`TD${a.slice(1)}`)); taken.add(a); return a; };
   const tags: TagDefinition[] = [];
   const nick = (address: string, nickname: string, comment: string) => { if (!tags.some((t) => t.address === address)) tags.push({ address, nickname: nickname.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24), comment }); };
@@ -107,10 +115,25 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   const R = (block: string, comment: string, branches: LadderElement[][], outputs: LadderOutput[]) => rungs.push({ id: `r_${block}_${++n}`, block, comment, branches, outputs });
 
   const inputs = c.io.filter((p) => p.type === 'input');
-  // A panel Start button (two-hand start buttons start each cycle, they do not arm the machine).
-  const startPb = inputs.find((p) => /\bstart\b/i.test(p.description) && !TWO_HAND_RE.test(p.description));
-  const stopPb = inputs.find((p) => /\bstop\b/i.test(p.description) && !/e-?stop|emergency/i.test(p.description));
-  const resetPb = inputs.find((p) => /\breset\b/i.test(p.description) && !/safety/i.test(p.description));
+  // The machine's Start / Stop: the line / cycle / main ones first; an auxiliary's own pair (hydraulic pump, lube,
+  // fan…) runs only that auxiliary. Two-hand start buttons start each cycle, they do not arm the machine.
+  const AUX_RE = /\b(pump|oil|hydraulic\w*|lube|lubrication|fan|blower|vacuum|chiller|compressor|coolant)\b/i;
+  const PRIMARY_RE = /\b(line|cycle|machine|main|master|system|auto)\b/i;
+  const pick = (list: typeof inputs) => list.find((p) => PRIMARY_RE.test(p.description) && !AUX_RE.test(p.description)) ?? list.find((p) => !AUX_RE.test(p.description));
+  const starts = inputs.filter((p) => /\bstart\b/i.test(p.description) && !TWO_HAND_RE.test(p.description));
+  const stops = inputs.filter((p) => /\bstop\b/i.test(p.description) && !/e-?stop|emergency/i.test(p.description));
+  const startPb = pick(starts), stopPb = pick(stops);
+  // Reset: a general (fault) reset — not a counter's reset; a safety-relay reset only when it also resets the faults.
+  const resets = inputs.filter((p) => /\breset\b/i.test(p.description) && !/\b(counter|count)\b/i.test(p.description));
+  const resetPb = resets.find((p) => !/safety/i.test(p.description)) ?? resets.find((p) => /\b(alarm|fault|servo)\b/i.test(p.description));
+  // Auxiliaries with their own Start / Stop: each pair runs its actuator (by the shared word), and the cycle needs it running.
+  const auxPairs = starts.filter((p) => AUX_RE.test(p.description)).map((st) => {
+    const word = AUX_RE.exec(st.description)![1].toLowerCase();
+    const stop = stops.find((p) => new RegExp(`\\b${word}`, 'i').test(p.description));
+    const act = c.actuators.find((a) => new RegExp(`\\b${word}`, 'i').test(`${a.name} ${a.run?.description ?? ''}`) && a.run);
+    return stop && act ? { word, start: st, stop, act } : null;
+  }).filter((x): x is NonNullable<typeof x> => !!x);
+  const auxRun = new Map<string, string>(); // actuator name → its running bit
   // An Auto/Manual (Run/Setup, Auto/Hand) selector: ON = Manual unless its text says ON = Auto / Run (or names Auto only).
   const MANUAL_W = /\b(manual|set-?up|hand|maintenance)\b/i, AUTO_W = /\b(auto\w*|run|production)\b/i;
   const modeSel = inputs.find((p) => (MANUAL_W.test(p.description) || AUTO_W.test(p.description)) && /\b(selector|switch|mode)\b/i.test(p.description) && !/\b(limit|pressure|level|flow|temp\w*)\b/i.test(p.description));
@@ -146,7 +169,7 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   };
   for (const a of c.actuators) {
     const key = (a.extend ?? a.run)?.address;
-    if (key) sp(`sp:timeout:${key}`, 1, 30, 3, `${a.name} timeout (s)`);
+    if (key) sp(`sp:timeout:${key}`, 1, 30, a.timeoutS ?? 3, `${a.name} timeout (s)`);
     // A speed below 10% of the range (e.g. 0 Hz from a fresh PLC) counts as not set: load the mid-range default.
     if (a.speedRef) sp(`sp:speed:${a.speedRef.address}`, a.speedRef.min + (a.speedRef.max - a.speedRef.min) * 0.1, a.speedRef.max, Math.round((a.speedRef.min + a.speedRef.max) / 2), `${a.name} speed`);
   }
@@ -177,7 +200,24 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   if (hmiManual) R('safety', 'Manual mode request is refused while the cycle runs: the HMI toggle is reset', [[NO(RUN), NO(manualSel)]], [RST(manualSel)]);
   R('safety', `Manual mode active: ${[hmiManual && 'HMI Manual selected', modeSel && `${modeSel.description} in Manual`].filter(Boolean).join(' or ')} and the cycle stopped`,
     [...(hmiManual ? [[NO(manualSel), NC(RUN)]] : []), ...(selManual ? [[selManual, NC(RUN)]] : [])], [OUT(manual)]);
-  const stopChain = [...(stopPb ? [NO(stopPb.address)] : []), ...(hmiStop ? [NC(stop)] : []), ...(selAuto ? [selAuto] : []), NO(SAFE), NC(FAULT), NC(manual), NC(BATCH)];
+  // Auxiliaries with their own Start / Stop (hydraulic pump…): own seal-in, Safety OK and their own fault only.
+  for (const x of auxPairs) {
+    const A = bit(), alm = x.act.fault ? tag(`alarm:fault:${x.act.fault.address}`) : undefined;
+    const keep = [NO(x.stop.address), NO(SAFE), ...(alm ? [NC(alm)] : [])];
+    R('safety', `${x.act.name} running: ${x.start.description} seals in; ${x.stop.description} (NC), safety loss${alm ? ' or its fault' : ''} drops it (the cycle needs it running)`,
+      [[RISE(x.start.address), ...keep], [NO(A), ...keep]], [OUT(A)]);
+    nick(A, `${x.act.name}_Running`, `${x.act.name} running (its own start / stop)`);
+    auxRun.set(x.act.name, A);
+  }
+  // The cycle runs only with the auxiliaries running, the servo drives ready, the drives healthy and material present;
+  // the material at the run-out end stops it (a line that must not run off the end).
+  const healthy = inputs.filter((p) => /\bhealthy\b/i.test(p.description));
+  const material = inputs.filter((p) => /\b(material|strip|stock)\s+present\b|有料|\bentry\b.*\b(sensor|eye|prox)\b/i.test(p.description));
+  const runOutEnd = inputs.filter((p) => /\brun-?out\s+end\b|出料到位|\boverrun\b/i.test(p.description));
+  const permits = [...[...auxRun.values()].map(NO), ...(c.axes ?? []).filter((ax) => ax.ready).map((ax) => NO(ax.ready!.address)),
+    ...healthy.map((p) => NO(p.address)), ...material.map((p) => NO(p.address)), ...runOutEnd.map((p) => NC(p.address))];
+  if (permits.length > auxRun.size) notes.push(`The cycle runs only with ${[...healthy, ...material].map((p) => p.description).concat((c.axes ?? []).filter((ax) => ax.ready).map((ax) => ax.ready!.description)).join(', ')}${runOutEnd.length ? `; ${runOutEnd.map((p) => p.description).join(', ')} stops it` : ''}.`);
+  const stopChain = [...(stopPb ? [NO(stopPb.address)] : []), ...permits, ...(hmiStop ? [NC(stop)] : []), ...(selAuto ? [selAuto] : []), NO(SAFE), NC(FAULT), NC(manual), NC(BATCH)];
   R('safety', `Cycle running: ${or(startPb?.description, hmiStart && 'HMI Start', twoHandStarts && 'both two-hand buttons')} seals in; ${[stopPb && `${stopPb.description} (NC)`, hmiStop && 'HMI Stop', modeSel && `${modeSel.description} to Manual`].filter(Boolean).join(', ')}, safety loss, a fault, Manual mode or batch complete drops it`,
     [...(startPb ? [[RISE(startPb.address), ...stopChain]] : []), ...(hmiStart ? [[RISE(start), ...stopChain]] : []),
       ...(twoHandStarts ? [[...c.twoHand!.map((p) => NO(p.address)), ...stopChain]] : []), [NO(RUN), ...stopChain]], [OUT(RUN)]);
@@ -210,12 +250,12 @@ export function buildProgram(input: ProgramInput): ProgramResult {
       const what = out === a.reverse ? 'reverse' : out === a.retract ? 'retract' : a.kind === 'cylinder' ? 'extend' : 'run';
       nick(auto, `Auto_${a.name}_${what}`, `Automatic ${what} request for ${a.name} (set by the cycle block)`);
       req.set(out.address, { auto });
-      if (a.kind !== 'valve' && a.kind !== 'heater') autoBits.push({ actuator: a.name, output: out.address, bit: auto, what });
+      if (a.kind !== 'valve' && a.kind !== 'heater' && !auxPairs.some((x) => x.act === a)) autoBits.push({ actuator: a.name, output: out.address, bit: auto, what });
     }
     if (a.kind === 'cylinder') {
       const key = (a.extend ?? a.run)!.address;
       const fb = feedbackOf(a);
-      const sp = tag(`sp:timeout:${key}`) ?? '3';
+      const sp = tag(`sp:timeout:${key}`) ?? String(a.timeoutS ?? 3);
       const alm = alarm(`alarm:timeout:${key}`);
       const ext = a.extend!.address, ret = a.retract?.address;
       // The HMI may show the extend timeout timer (e.g. TD1 "Push_Timer"): use that timer.
@@ -257,6 +297,9 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     if (hi && aHi) R('alarms', `${an.name} high warning: value at or above the high limit`, [[CMP(an.address, '>=', hi)]], [OUT(aHi)]);
     if (lo && aLo) R('alarms', `${an.name} low warning: value at or below the low limit`, [[CMP(an.address, '<=', lo)]], [OUT(aLo)]);
   }
+  // Servo / stepper axes and encoders (their faults stop the cycle too).
+  const motion = buildMotion(c, { R, tag, bit, timer, freeDf, freeDd, freeDs, nick, blocks, notes, faultBits, SAFE, RESET, RUN, manual, panel });
+
   // Any latched fault stops the cycle.
   R('alarms', `Any fault (stops the cycle): ${faultBits.length ? faultBits.join(', ') : 'none latched yet'}`, faultBits.length ? faultBits.map((f) => [NO(f)]) : [[NC('SC1')]], [OUT(FAULT)]);
   nick(FAULT, 'Any_Fault', 'A latched fault: stops the cycle');
@@ -265,7 +308,6 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   // Jog-able actuators: the ones the HMI has hold-to-run buttons for (whatever the content says).
   const manualActs = c.actuators.filter((a) => [a.run, a.reverse, a.extend, a.retract].some((o) => o && tag(`jog:${o.address}`)));
   // No touch panel: no hold-to-run buttons, so Manual mode moves nothing (the cycle is stopped, outputs stay off).
-  if (!panel && manualActs.length) notes.push(`No touch panel: Manual mode stops the cycle but has no jog buttons — ${manualActs.map((a) => a.name).join(', ')} move only in Auto. Add jog pushbuttons to the I/O list if setup needs them.`);
   if (panel && manualActs.some((a) => [a.run, a.reverse, a.extend, a.retract].some((o) => o && tag(`jog:${o.address}`)))) {
     blocks.push({ id: 'manual', name: 'Manual', description: 'Permits and hold-to-run requests from the HMI Manual screen.' });
     const allOuts = manualActs.flatMap((a) => [a.run, a.reverse, a.extend, a.retract].filter((p): p is HmiPoint => !!p));
@@ -286,6 +328,37 @@ export function buildProgram(input: ProgramInput): ProgramResult {
       req.get(out.address)!.manual = m;
     }
   }
+
+  // Jog pushbuttons on the operator station: each drives the motor / drive it names (or the only reversing one).
+  const jogIns = inputs.filter((p) => /\bjog\b/i.test(p.description) && !/\bspeed\b/i.test(p.description));
+  const jog = new Map<HmiActuator, { fwd?: HmiPoint; rev?: HmiPoint }>();
+  for (const p of jogIns) {
+    const rev = /\b(rev\w*|backward|minus|-)\b/i.test(p.description);
+    const movers = c.actuators.filter((a) => (a.kind === 'motor' || a.kind === 'drive') && !auxPairs.some((x) => x.act === a));
+    const target = movers.find((a) => shareWords(a.name, p.description)) ?? (rev ? movers.find((a) => a.reverse) : movers.find((a) => a.jogSpeed) ?? movers.find((a) => a.reverse)) ?? (movers.length === 1 ? movers[0] : undefined);
+    if (!target || (rev && !target.reverse)) continue;
+    jog.set(target, { ...jog.get(target), [rev ? 'rev' : 'fwd']: p });
+  }
+
+  // Manual cut (the cycle stopped): the shear down to its down limit, then up to its up limit.
+  const manualCut = inputs.find((p) => /\bmanual\b/i.test(p.description) && /\b(cut|shear)\b/i.test(p.description));
+  const cutCyl = manualCut ? c.actuators.find((a) => a.kind === 'cylinder' && a.extend && /\b(shear|cut\w*|knife|blade|saw)\b/i.test(a.name)) : undefined;
+  const mcut = new Map<string, string>(); // output → its manual-cut bit
+  if (manualCut && cutCyl) {
+    const downFb = feedbackOf(cutCyl).ext, upFb = feedbackOf(cutCyl).ret;
+    const MD = bit(), MU = bit();
+    R('safety', `Manual cut: ${manualCut.description} with the cycle stopped starts ${cutCyl.name} down`, [[RISE(manualCut.address), NC(RUN), NO(SAFE), NC(FAULT)]], [SET(MD)]);
+    R('safety', `Manual cut: ${cutCyl.name} down ends ${downFb ? `at ${downFb.description}` : 'after 1 s'}, then up`, [[NO(MD), ...(downFb ? [NO(downFb.address)] : [])], [NC(SAFE)], [NO(RUN)], [NO(FAULT)]], [RST(MD), ...(downFb ? [] : [])]);
+    if (downFb && cutCyl.retract) {
+      R('safety', `Manual cut: ${cutCyl.name} up from ${downFb.description}${upFb ? ` until ${upFb.description}` : ''}`, [[NO(downFb.address), NC(RUN), NO(SAFE)]], [SET(MU)]);
+      R('safety', `Manual cut: ${cutCyl.name} up ends${upFb ? ` at ${upFb.description}` : ''} (or on safety loss / the cycle starting)`, [...(upFb ? [[NO(upFb.address)]] : []), [NC(SAFE)], [NO(RUN)]], [RST(MU)]);
+      mcut.set(cutCyl.retract.address, MU);
+    }
+    mcut.set(cutCyl.extend!.address, MD);
+    nick(MD, `Man_Cut_Down`, `Manual cut: ${cutCyl.name} down`); nick(MU, `Man_Cut_Up`, `Manual cut: ${cutCyl.name} up`);
+  }
+  const noJog = manualActs.filter((a) => !jog.has(a));
+  if (!panel && noJog.length) notes.push(`No touch panel: Manual mode stops the cycle but has no jog buttons — ${noJog.map((a) => a.name).join(', ')} move only in Auto. Add jog pushbuttons to the I/O list if setup needs them.`);
 
   // ---- Outputs: one coil per output, every motion output gated by Safety OK
   blocks.push({ id: 'outputs', name: 'Outputs', description: 'One coil per output: automatic or manual request, gated by Safety OK and the actuator\'s fault.' });
@@ -317,9 +390,19 @@ export function buildProgram(input: ProgramInput): ProgramResult {
         continue;
       }
       const gate = [NO(SAFE), ...(faultAlm ? [NC(faultAlm)] : []), ...(opposite ? [NC(opposite.address)] : [])];
-      R('outputs', `${out.description}: automatic (cycle running) or manual request, Safety OK${faultAlm ? ', no fault' : ''}${opposite ? `, never with ${opposite.description}` : ''}`,
-        [[NO(r.auto), NO(RUN), ...gate], ...(r.manual ? [[NO(r.manual), ...gate]] : [])], [OUT(out.address)]);
+      const aux = auxRun.get(a.name);
+      if (aux) { R('outputs', `${out.description}: while ${a.name} runs (its own start / stop), Safety OK${faultAlm ? ', no fault' : ''}`, [[NO(aux), ...gate]], [OUT(out.address)]); continue; }
+      // Jog pushbuttons (hold-to-run) with the cycle stopped: forward on the run output, reverse on the reverse output.
+      const jogBtn = out === a.run ? jog.get(a)?.fwd : out === a.reverse ? jog.get(a)?.rev : undefined;
+      const other = out === a.run ? jog.get(a)?.rev : jog.get(a)?.fwd;
+      const mc = mcut.get(out.address);
+      R('outputs', `${out.description}: automatic (cycle running) or manual request${jogBtn ? `, or ${jogBtn.description} held with the cycle stopped` : ''}${mc ? ', or the manual cut' : ''}, Safety OK${faultAlm ? ', no fault' : ''}${opposite ? `, never with ${opposite.description}` : ''}`,
+        [[NO(r.auto), NO(RUN), ...gate], ...(r.manual ? [[NO(r.manual), ...gate]] : []), ...(jogBtn ? [[NO(jogBtn.address), ...(other ? [NC(other.address)] : []), NC(RUN), ...gate]] : []), ...(mc ? [[NO(mc), NC(RUN), ...gate]] : [])], [OUT(out.address)]);
     }
+    // The drive's jog-speed input: ON while a jog button is held with the cycle stopped.
+    const j = jog.get(a);
+    if (a.jogSpeed && j) R('outputs', `${a.jogSpeed.description}: while a jog button is held with the cycle stopped`,
+      [...(j.fwd ? [[NO(j.fwd.address), NC(RUN), NO(SAFE)]] : []), ...(j.rev ? [[NO(j.rev.address), NC(RUN), NO(SAFE)]] : [])], [OUT(a.jogSpeed.address)]);
     if (a.speedRef) {
       const spd = tag(`sp:speed:${a.speedRef.address}`);
       const runOut = a.run?.address;
@@ -345,7 +428,12 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   const actOuts = new Set(c.actuators.flatMap((a) => [a.run, a.reverse, a.extend, a.retract].filter(Boolean).map((p) => p!.address)));
   for (const o of c.io.filter((p) => p.type === 'output' && !actOuts.has(p.address))) {
     const d = o.description;
-    if (/\b(horn|buzzer|siren|beeper)\b/i.test(d)) R('outputs', `${d}: sounds while a fault is active (Reset silences it once the cause is gone)`, [[NO(FAULT)]], [OUT(o.address)]);
+    const named = c.actuators.find((a) => a.run && shareWords(a.name, d));
+    const batchIn = inputs.find((p) => /\bbatch\b/i.test(p.description) && /\b(complete|done|reached|end)\b/i.test(p.description));
+    if (/\bpower\b/i.test(d) && /\b(on|lamp|light)\b/i.test(d)) R('outputs', `${d}: on while the PLC runs (control power on)`, [[NO('SC1')]], [OUT(o.address)]);
+    else if (/\bbatch\b/i.test(d)) R('outputs', `${d}: batch complete${batchIn ? ` (${batchIn.description})` : ''}`, [[NO(BATCH)]], [OUT(o.address)]);
+    else if (named && /\b(run\w*|on)\b/i.test(d) && !/\b(line|cycle|machine)\b/i.test(d)) R('outputs', `${d}: ${named.name} running (${named.run!.description})`, [[NO(named.run!.address)]], [OUT(o.address)]);
+    else if (/\b(horn|buzzer|siren|beeper)\b/i.test(d)) R('outputs', `${d}: sounds while a fault is active (Reset silences it once the cause is gone)`, [[NO(FAULT)]], [OUT(o.address)]);
     else if (/\b(fault|alarm|red)\b/i.test(d)) R('outputs', `${d}: any alarm or safety open${serviceDue ? '; flashes when service is due (no touch panel to show it)' : ''}`, [[NO(FAULT)], [NC(SAFE)], ...(serviceDue ? [[NO(serviceDue), NO('SC7')]] : [])], [OUT(o.address)]);
     else if (/\b(ready|power|safety ok)\b/i.test(d) || (/\bwhite\b/i.test(d) && !/\b(run\w*|green)\b/i.test(d))) R('outputs', `${d}: ready to start (Safety OK, no fault, cycle stopped)`, [[NO(SAFE), NC(FAULT), NC(RUN)]], [OUT(o.address)]);
     else if (/\b(run\w*|green)\b/i.test(d)) R('outputs', `${d}: cycle running`, [[NO(RUN)]], [OUT(o.address)]);
@@ -383,7 +471,7 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     const resetC = panel ? must('cmd:countreset') : RESET;
     R('status', `Part counter: each part at ${c.partSensor.description}, ${panel ? 'reset from the HMI' : 'reset by the Reset pushbutton (a new batch)'}`, [[NO(c.partSensor.address)]], [{ type: 'CNT', address: `CT${count.slice(3)}`, direction: 'UP', preset: '9999', resetAddress: resetC }]);
     const batch = tag('sp:batch');
-    if (batch) { R('status', 'Batch complete: a batch target is set and the part count reached it', [[CMP(batch, '>', '0'), CMP(count, '>=', batch)]], [OUT(BATCH)]); nick(BATCH, 'Batch_Done', 'Batch target reached'); }
+    if (batch && !inputs.some((p) => /\bbatch\b/i.test(p.description) && /\b(complete|done|reached|end)\b/i.test(p.description))) { R('status', 'Batch complete: a batch target is set and the part count reached it', [[CMP(batch, '>', '0'), CMP(count, '>=', batch)]], [OUT(BATCH)]); nick(BATCH, 'Batch_Done', 'Batch target reached'); }
     const rate = tag('word:rate');
     if (rate) {
       const tw = timer();
@@ -395,7 +483,10 @@ export function buildProgram(input: ProgramInput): ProgramResult {
       nick(tw, 'Tmr_Rate', '10 s rate window');
     }
   }
-  if (!tag('word:count') || !c.partSensor) R('status', 'No batch counting (no part sensor)', [[NC('SC1')]], [OUT(BATCH)]);
+  // An external batch counter's output (e.g. an H7CX "batch complete") stops the cycle like a reached batch target.
+  const batchIn = inputs.find((p) => /\bbatch\b/i.test(p.description) && /\b(complete|done|reached|end)\b/i.test(p.description));
+  if (batchIn) R('status', `Batch complete from the external counter (${batchIn.description}): stops the cycle`, [[NO(batchIn.address)]], [OUT(BATCH)]);
+  else if (!tag('word:count') || !c.partSensor) R('status', 'No batch counting (no part sensor)', [[NC('SC1')]], [OUT(BATCH)]);
   const hours = tag('word:runhours'), since = tag('word:sinceservice'), interval = tag('sp:serviceinterval'), done = tag('cmd:servicedone'), due = alarm('alarm:servicedue');
   if (hours && since) {
     const th = timer();
@@ -454,7 +545,7 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   const order = new Map(blocks.map((b, i) => [b.id, i]));
   rungs.sort((x, y) => (order.get(x.block ?? '') ?? 99) - (order.get(y.block ?? '') ?? 99));
   return {
-    program: { blocks: blocks.filter((b) => rungs.some((r) => r.block === b.id)), rungs, tags },
+    program: { blocks: blocks.filter((b) => rungs.some((r) => r.block === b.id)), rungs, tags, ...(motion ? { motion } : {}) },
     autoBits,
     roles: new Map([...byRole].map(([k, t]) => [k, t.address])),
     internal: { safe: SAFE, run: RUN, fault: FAULT, reset: RESET },
