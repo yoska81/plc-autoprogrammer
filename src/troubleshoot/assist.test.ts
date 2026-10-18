@@ -102,6 +102,13 @@ const asks = (reply: string | Error): Ask => async () => { if (reply instanceof 
   const volts = 'Meter on DC volts. Measure between TB2-1 and TB1 0V, with the sensor seeing a part. Do you read 24 VDC?';
   assert.equal(await aiPlainStep(asks(JSON.stringify({ text: 'DC volts: TB2-1 to TB1 0V, part in front of the sensor. 12 VDC?' })), volts), volts, 'a changed reading is dropped');
   assert.equal(await aiPlainStep(asks(new Error('x')), volts), volts);
+  // Review: a rewording that keeps the words but reverses a warning is dropped.
+  const lock = 'Switch off and lock out first. Power OFF and locked out, meter on continuity. Measure between TB2-1 and PE1 pin 4. Do you read about 0 Ω?';
+  for (const bad of [
+    'Switch off and lock out first. Power OFF and locked out, meter on continuity. Do not lock out for this one. Measure TB2-1 to PE1 pin 4: about 0 Ω?',
+    'Switch off and lock out first. Power OFF and locked out, meter on continuity. There is no need to switch off. Measure TB2-1 to PE1 pin 4: about 0 Ω?',
+    'Switch off and lock out first (optional). Power OFF and locked out, meter on continuity. Measure TB2-1 to PE1 pin 4: about 0 Ω?',
+  ]) assert.equal(await aiPlainStep(asks(JSON.stringify({ text: bad })), lock), lock, bad);
 }
 
 // ── Dev 2's routing: a machine function that won't go, or a stuck step, goes to "why is it stuck?" first ──

@@ -11,6 +11,8 @@ import type { IOPoint } from '../../types/io';
 import type { SpecSectionId } from '../../spec/types';
 import { PLC_PROFILES, getProfile } from '../core/profiles';
 import { moduleSlots } from '../core/modules';
+import { resolveAddresses } from '../core/profile';
+import { siemensAddress } from '../core/profiles/siemens';
 import { modulesToFit, type Need } from '../core/fit';
 import { materialize, nickOf, pretty } from './convert';
 import { programFindings } from './findings';
@@ -89,9 +91,57 @@ export function chooseCpu(profile: PlcProfile, need: Need): { cpuId: string; mod
   return { cpuId: profile.defaultCpuId, modules: [] };
 }
 
+/** "%IX1.0" / "%I1.0" / "I1.0" → byte and bit of an S7 digital address, or null. */
+const s7Bit = (a: string) => { const m = /^%?([IQ])X?(\d+)\.([0-7])$/i.exec(a.trim()); return m ? { area: m[1].toUpperCase(), index: Number(m[2]) * 8 + Number(m[3]) } : null; };
+
+/**
+ * The original program's own CPU, when it goes back on the same family: the CPU the file names ("CPU 1214C",
+ * "1769-L33ER", an order number), else (S7) the smallest CPU whose onboard I/O holds every original %I / %Q bit, so
+ * the addresses stay as they were. null = no such CPU in the app's list (the general choice applies).
+ */
+export function originalCpu(profile: PlcProfile, imp: ImportedProgram): { cpuId: string; modules: string[] } | null {
+  const named = imp.source.controller;
+  const key = /\b(\d{4}-\w+|1[25]\d\d[A-Z]*|6ES7[\w-]+)\b/i.exec(named)?.[1];
+  const fit = (id: string) => { const mods = modulesToFit(id, [], needOf(imp)); return mods ? { cpuId: id, modules: mods } : null; };
+  if (key) {
+    const cpu = profile.cpuModels.find((c) => c.id.toUpperCase() === key.toUpperCase() || new RegExp(`(^|[^\\w])${key}([^\\w]|$)`, 'i').test(c.label));
+    const r = cpu && fit(cpu.id);
+    if (r) return r;
+  }
+  if (profile.id !== 'siemens-s7') return null;
+  const bits = imp.io.map((p) => s7Bit(p.original)).filter((b): b is { area: string; index: number } => b !== null);
+  if (!bits.length) return null;
+  const maxIn = Math.max(-1, ...bits.filter((b) => b.area === 'I').map((b) => b.index));
+  const maxOut = Math.max(-1, ...bits.filter((b) => b.area === 'Q').map((b) => b.index));
+  // Onboard bytes only (%I0.0–%I1.7 on an S7-1200): higher bytes are module addresses, kept by the module layout.
+  const onboard = (n: number) => (n < 16 ? n : -1);
+  for (const c of profile.cpuModels) {
+    if (c.builtInInputs <= onboard(maxIn) || c.builtInOutputs <= onboard(maxOut)) continue;
+    const r = fit(c.id);
+    if (r) return r;
+  }
+  return null;
+}
+
+/** S7 → S7: original %I / %Q / %IW / %QW addresses that the chosen PLC puts elsewhere, as questions (never silent). */
+function movedS7(imp: ImportedProgram, profile: PlcProfile, cpu: PlcProfile['cpuModels'][number], modules: string[], io: IOPoint[]): string[] {
+  if (profile.id !== 'siemens-s7') return [];
+  const slots = moduleSlots(modules);
+  const addr = resolveAddresses(profile, cpu, io, slots);
+  const norm = (a: string) => a.trim().toUpperCase().replace(/^%?([IQ])X(\d+\.)/, '%$1$2').replace(/^([IQ])/, '%$1');
+  const out: string[] = [];
+  io.forEach((p, k) => {
+    const orig = imp.io[k]?.original ?? '';
+    if (!/^%?[IQ][XWB]?\d+(\.\d)?$/i.test(orig)) return;
+    const now = siemensAddress(addr.get(p.id) ?? '', cpu, slots)?.address;
+    if (now && norm(now) !== norm(orig)) out.push(`Address changed: ${imp.io[k].name} was ${norm(orig)} in the original program and is ${now} on this PLC (${cpu.label.split(' — ')[0]}${modules.length ? ` + ${modules.join(', ')}` : ''}). Rewire it, or set its address on the I/O addressing page.`);
+  });
+  return out;
+}
+
 export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = new Date()): UpgradePlan {
   const profile = targetPlc(imp.source.format, currentPlcId, `${imp.source.vendor} ${imp.source.controller}`);
-  const { cpuId, modules } = chooseCpu(profile, needOf(imp));
+  const { cpuId, modules } = originalCpu(profile, imp) ?? chooseCpu(profile, needOf(imp));
   const cpu = profile.cpuModels.find((c) => c.id === cpuId) ?? profile.cpuModels[0];
   const m = materialize(imp, profile, cpu, moduleSlots(modules));
   // I/O keeps its name from the original program (Start_PB, not the description).
@@ -111,7 +161,7 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
     io: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type, category: p.category, ...(p.signal ? { signal: p.signal, analog: p.analog } : {}), ...(p.plcAddress ? { plcAddress: p.plcAddress } : {}) })),
     spec: describeProgram(imp),
     // Likely bugs (missing seal-in, interlock on another station's sensor) are asked before the general question.
-    questions: withFindings(questionsFor(imp), programFindings(program).map((f) => f.message)),
+    questions: withFindings([...questionsFor(imp), ...movedS7(imp, profile, cpu, modules, m.io)], programFindings(program).map((f) => f.message)),
     original: {
       importedAt: now.toISOString(), source: imp.source, report: imp.report, io: imp.io, plcId: profile.id, cpuId: cpu.id, program, summary,
       ioList: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type })),

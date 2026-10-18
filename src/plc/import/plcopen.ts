@@ -259,7 +259,8 @@ export function readPlcopen(src: string): ForeignProgram {
   }
   return {
     format: 'plcopen', vendor: [header?.attrs.companyName, header?.attrs.productName].filter(Boolean).join(' ') || 'IEC 61131-3',
-    controller: header?.attrs.productName ?? '', projectName: content?.attrs.name ?? header?.attrs.contentDescription ?? 'Imported project',
+    // The CPU, when the configuration names it (TIA Portal: <resource name="CPU_1214C">).
+    controller: all(kid(project, 'instances'), 'resource').map((r) => r.attrs.name ?? '').find((n) => /CPU|\b1[25]\d\d[A-Z]*\b|\d{4}-\w+/i.test(n))?.replace(/_/g, ' ') ?? header?.attrs.productName ?? '', projectName: content?.attrs.name ?? header?.attrs.contentDescription ?? 'Imported project',
     tags, routines, notes,
   };
 }

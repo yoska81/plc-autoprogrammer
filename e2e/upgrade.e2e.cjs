@@ -102,6 +102,8 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
   log('download for another PLC: what is missing is confirmed first');
   const cpuBefore = await page.evaluate(async () => { const s = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState(); const c = s.cpuId; s.setPlc('micro800', ''); return c; });
+  // The page shows the new PLC before the download is prepared for it.
+  await page.waitForFunction(() => /Micro8/.test(document.querySelector('[data-testid="upgrade-export"]')?.textContent ?? ''), null, { timeout: 5000 });
   await page.getByTestId('upgrade-export').click();
   await page.getByTestId('upgrade-missing').waitFor({ timeout: 5000 });
   check(/MSG\(Line_Msg\)/.test(await page.getByTestId('upgrade-missing').innerText()), 'the MSG is listed as missing on another PLC');

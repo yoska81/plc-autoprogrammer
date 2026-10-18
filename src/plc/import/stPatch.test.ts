@@ -128,4 +128,53 @@ const logic = (p: LadderProgram) => {
   assert.ok(kept && kept.type === 'RAW' && kept.text.includes('"Heater" := #S_Heat AND "Safety_Thermostat_OK";'), 'the patched file reads back with the change');
 }
 
+// ── Review: globals are never written as the block's own variables; a block kept whole is never nested ──
+{
+  // SCL: a VAR_EXTERNAL section names PLC tags ("Lid_Closed"), not statics (#Lid_Closed).
+  const files = [file('Mixer.scl'), file('PLC_Tags_Mixer.csv')];
+  const ext = files[0].text.replace('   VAR\n', '   VAR_EXTERNAL\n      Lid_Closed : Bool;\n   END_VAR\n   VAR\n');
+  const { text, plan, target } = setup([{ name: 'Mixer.scl', text: ext }, files[1]]);
+  const fill = plan.program.rungs.find((r) => r.outputs.some((o) => o.type === 'SET' && o.address === addr(plan.program, 'Fill_Valve')))!;
+  const now = edit(plan.program, (r) => r.id === fill.id, (r) => ({ ...r, comment: 'changed' }));
+  const out = exportUpgrade(plan.original, text, now, target()).files[0].content;
+  assert.match(out, /"Lid_Closed"/);
+  assert.ok(!/#Lid_Closed/.test(out), 'an external variable is a PLC tag');
+}
+{
+  // SCL: a FUNCTION kept as written that changes (here its comment) replaces the block, not nested in it.
+  const files = [file('Mixer.scl'), file('PLC_Tags_Mixer.csv')];
+  const fn = '\nFUNCTION "Scale" : Real\n   VAR_INPUT\n      Raw : Int;\n   END_VAR\nBEGIN\n   #Scale := INT_TO_REAL(#Raw) / 276.48;\nEND_FUNCTION\n';
+  const { text, plan, target } = setup([{ name: 'Mixer.scl', text: files[0].text + fn }, files[1]]);
+  const kept = plan.program.rungs.find((r) => r.outputs.some((o) => o.type === 'RAW' && /FUNCTION "Scale"/.test(o.text)))!;
+  const now = edit(plan.program, (r) => r.id === kept.id, (r) => ({ ...r, comment: 'Scale: checked' }));
+  const ex = exportUpgrade(plan.original, text, now, target());
+  assert.deepEqual(ex.changed, ['Scale']);
+  assert.equal((ex.files[0].content.match(/FUNCTION "Scale"/g) ?? []).length, 1, 'one FUNCTION "Scale", not nested');
+  assert.equal(ex.files[0].content, text, 'the kept block is written as it was');
+}
+{
+  // PLCopen: externalVars are PLC tags; the kept FC's code goes into its <body> without its header.
+  const files = [file('mixer_tia_plcopen.xml')];
+  const ext = files[0].text.replace('<pou name="FB_Mixer" pouType="functionBlock">\n        <interface>', '<pou name="FB_Mixer" pouType="functionBlock">\n        <interface>\n          <externalVars><variable name="Heater"><type><BOOL /></type></variable></externalVars>');
+  const { text, plan, target } = setup([{ name: 'mixer.xml', text: ext }]);
+  const heater = plan.program.rungs.find((r) => r.outputs.some((o) => o.type === 'OUT' && o.address === addr(plan.program, 'Heater')))!;
+  const fc = plan.program.rungs.find((r) => r.outputs.some((o) => o.type === 'RAW' && /FUNCTION "FC_ScaleAnalog"/.test(o.text)))!;
+  const now = edit(edit(plan.program, (r) => r.id === heater.id, (r) => ({ ...r, comment: 'changed' })), (r) => r.id === fc.id, (r) => ({ ...r, comment: 'FC: checked' }));
+  const out = exportUpgrade(plan.original, text, now, target()).files[0].content;
+  assert.match(out, /"Heater" := /);
+  assert.ok(!/#Heater/.test(out), 'an external variable is a PLC tag');
+  const fcBody = /<pou name="FC_ScaleAnalog"[\s\S]*?<\/pou>/.exec(out)![0];
+  assert.ok(!/FUNCTION|END_VAR|BEGIN/.test(/<body>[\s\S]*<\/body>/.exec(fcBody)![0]), 'only the code in the body, no nested FUNCTION');
+}
+
+// ── Review: S7 → S7 keeps the CPU the file names; an address it can't keep is asked, never changed silently ──
+{
+  const { plan } = setup([file('mixer_tia_plcopen.xml')]);
+  assert.equal(plan.cpuId, '6ES7214-1AG40-0XB0', 'the CPU 1214C named in the file');
+  assert.ok(plan.questions.some((q) => /Address changed: Level_Raw was %IW96 in the original program and is %IW64/.test(q)), plan.questions.join(' | '));
+  const stl = setup([{ name: 'q.awl', text: 'ORGANIZATION_BLOCK OB1\nBEGIN\nNETWORK\nTITLE =\nA I 1.0\n= Q 0.7\nEND_ORGANIZATION_BLOCK\n' }]);
+  assert.equal(stl.plan.cpuId, '6ES7214-1AG40-0XB0', '%I1.0 needs more than 8 onboard inputs: a 1214C, not a 1212C + module');
+  assert.ok(!stl.plan.questions.some((q) => /Address changed/.test(q)), stl.plan.questions.join(' | '));
+}
+
 console.log('stPatch.test: all passed');

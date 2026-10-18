@@ -338,9 +338,14 @@ function tokensToKeep(say: string): string[] {
   const words = say.match(/lock(ed)? out|SERIES|never|mains|qualified|DANGER|power OFF|continuity/gi) ?? [];
   return [...new Set([...nums.map((n) => n.replace(/\s+/g, '')), ...tags, ...words.map((w) => w.toLowerCase())])];
 }
+/** Words that reverse or weaken an instruction ("Do NOT lock out", "no need to switch off", "skip the lock-out"). */
+const NEGATION = /\b(not|no|never|don'?t|doesn'?t|isn'?t|aren'?t|won'?t|can'?t|cannot|without|skip(ped|ping)?|unnecessary|needless|optional|instead|avoid|ignore|nor|neither|none)\b|n't\b/gi;
+const negations = (t: string) => (t.match(NEGATION) ?? []).length;
 const keeps = (orig: string, next: string) => {
   const flat = next.replace(/\s+/g, '').toLowerCase();
-  return mustKeep(orig).every((k) => flat.includes(k.replace(/\s+/g, '').toLowerCase()));
+  // Every reading, terminal and safety sentence is still there, and no negation was added: a rewording may not
+  // turn "Switch off and lock out first." into "Do not lock out" while keeping the words.
+  return mustKeep(orig).every((k) => flat.includes(k.replace(/\s+/g, '').toLowerCase())) && negations(next) <= negations(orig);
 };
 
 /** With a key: a step in plainer words (or in the technician's language); the rule text when anything is lost. */

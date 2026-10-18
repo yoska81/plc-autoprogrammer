@@ -214,9 +214,16 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
     else if (op === 'OUTHS') r = R(1, st);
     else if (v === 'Xinje') r = k < 100 ? R(100) : k < 200 ? R(100, true) : k < 300 ? R(10) : k < 400 ? R(10, true) : k < 500 ? R(1) : R(1, true);
     else if (v === 'Delta') {
-      if (k >= 256) unsure.push(dev);
+      // DVP-ES / EX / SS (first generation) differ from T64 on (T64–126 10 ms, T127 1 ms): unless the file names a
+      // later series (ES2, EX2, SS2, SA2, SX2, SE, EH, EC3…), those timers are to be confirmed.
+      const later = /ES2|EX2|SS2|SA2|SX2|SE\b|SE[^\w]|EH|EC3|SV|SA\b|SX\b|AS\d/i.test(module);
+      if (k >= 256 || (!later && k >= 64)) unsure.push(dev);
       r = k < 200 ? R(100) : k < 240 ? R(10) : k < 246 ? R(10, true) : k < 250 ? R(1, true) : R(100, true);
-    } else if (v === 'Inovance' || (v === 'Mitsubishi' && fx3 && !fx5)) r = k < 200 ? R(100) : k < 246 ? R(10) : k < 250 ? R(1, true) : k < 256 ? R(100, true) : R(1);
+    } else if (v === 'Inovance' || (v === 'Mitsubishi' && fx3 && !fx5)) {
+      // FX1S: T32–62 become 10 ms timers when M8028 is on.
+      if (/FX1S/i.test(module) && k >= 32 && k <= 62) unsure.push(dev);
+      r = k < 200 ? R(100) : k < 246 ? R(10) : k < 250 ? R(1, true) : k < 256 ? R(100, true) : R(1);
+    }
     else if (!(v === 'Mitsubishi' && fx5)) unsure.push(dev);
     if (r.ms !== 100 || r.retentive) timerBases.push(`${dev} ${r.ms} ms${r.retentive ? ', retentive' : ''}`);
     return r;
@@ -321,7 +328,7 @@ export function runIl(prog: { name: string; module: string; list: Instr[] }, com
     }
   }
   flush();
-  if (unsure.length) notes.push(`The file does not say which ${brand.vendor} series this is, so these timers were read as 100 ms timers: ${[...new Set(unsure)].join(', ')}. Confirm each timer's time base (it decides the delay) and change the preset if it differs.`);
+  if (unsure.length) notes.push(`The time base of these timers depends on the ${brand.vendor} series${module ? ` (the file says ${module})` : ', which the file does not say'}: ${[...new Set(unsure)].join(', ')}. They were read with ${brand.vendor === 'Delta' ? 'the DVP-ES2 / EH table' : brand.vendor === 'Mitsubishi' && fx3 ? 'the FX3 table' : '100 ms'}. Confirm each timer's time base (it decides the delay) and change the preset if it differs.`);
   if (timerBases.length) notes.push(`Timer time bases (${brand.vendor}${module ? ` ${module}` : ''}): ${timerBases.join('; ')}. Presets were converted with them; check them against the PLC.`);
 
   for (const [dev, steps] of coilSteps) {
@@ -419,6 +426,8 @@ export function readIlText(programInput: string, commentText = ''): ForeignProgr
   const programText = programInput.replace(/\r\n?/g, '\n');
   const brand = ilBrand(programText);
   const prog = ilInstructions(programText);
-  const header = /(?:PLC|CPU|Model)\s*[:=]\s*(\S+)/i.exec(programText.slice(0, 2000));
-  return runIl({ ...prog, module: header?.[1] ?? '' }, commentText ? ilComments(commentText) : null, brand);
+  const head = programText.slice(0, 2000);
+  // The series: "PLC: DVP-14SS2", or as named in a header comment ("; ISPSoft DVP-ES2", "; AutoShop H3U").
+  const module = /(?:PLC|CPU|Model)\s*[:=]\s*(\S+)/i.exec(head)?.[1] ?? /\b(DVP-?\s?\w+|AS\d{3}\w*|H\dU\w*|X[CDL]\d\w*|FX\w+)\b/i.exec(head)?.[1] ?? '';
+  return runIl({ ...prog, module }, commentText ? ilComments(commentText) : null, brand);
 }

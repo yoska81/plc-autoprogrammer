@@ -273,4 +273,12 @@ const capper = importProgramText('capper.L5X', fixture('capper.L5X'));
   assert.equal(sim.readBit(at('Done')), true, 'Done := TRUE still runs after Step := 20');
 }
 
+// Review: the CASE start copy never takes a name the program already uses.
+{
+  const st = convertSt('Step_Case := 99; CASE Step OF 10: Step := 20; END_CASE;', 'c', { types: new Map([['step', 'INT'], ['step_case', 'INT']]) });
+  const copies = st.rungs.flatMap((r) => r.outputs).filter((o) => o.type === 'COPY' && o.source === 'Step');
+  assert.deepEqual(copies.map((o) => (o.type === 'COPY' ? o.dest : '')), ['Step_Case_2']);
+  assert.ok(st.rungs.flatMap((r) => r.outputs).some((o) => o.type === 'COPY' && o.dest === 'Step_Case' && o.source === '99'), "the user's Step_Case keeps its own value");
+}
+
 console.log('import.test: all passed');

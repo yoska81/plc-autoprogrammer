@@ -197,6 +197,19 @@ export function convertSt(src: string, idBase: string, opts: StOptions = {}): { 
   const isBoolExpr = (e: E): boolean => (e.t === 'lit' ? e.kind === 'bool' : e.t === 'var' ? isBoolVar(e.name) : e.t === 'un' ? e.op === 'NOT' : e.t === 'bin' ? ['AND', 'OR', 'XOR', '=', '<>', '<', '>', '<=', '>='].includes(e.op) : false);
 
   const out = (c: Cond, o: LadderOutput) => driven.push({ cond: c, out: o });
+  /** A name for a helper the conversion adds (a CASE's start value, an IF's guard bit) that the program does not use. */
+  // The same helper (parsed again after a snapshot) keeps its name.
+  const added = new Map<string, string>();
+  const freeName = (base: string): string => {
+    const had = added.get(base);
+    if (had) return had;
+    const taken = new Set([...added.values()].map((n) => n.toLowerCase()));
+    const used = (n: string) => types.has(n.toLowerCase()) || taken.has(n.toLowerCase()) || new RegExp(`(^|[^\\w.])${n}(?![\\w])`, 'i').test(src);
+    let name = base;
+    for (let i = 2; used(name); i++) name = `${base}_${i}`;
+    added.set(base, name);
+    return name;
+  };
   /** What an output writes (lower case). */
   const target = (o: LadderOutput) => (o.type === 'COPY' || o.type === 'MATH' ? o.dest : 'address' in o ? o.address : '').toLowerCase();
   /** The names a condition reads (lower case). */
@@ -304,7 +317,7 @@ export function convertSt(src: string, idBase: string, opts: StOptions = {}): { 
         const read = new Set((sel.match(/[A-Za-z_%][\w.%]*/g) ?? []).map((x) => x.toLowerCase()));
         if (driven.slice(d0).some((d) => read.has(target(d.out)))) {
           p.i = at; driven.length = d0; untranslated.length = u0;
-          const snap = /^[A-Za-z_][\w.]*$/.test(sel) ? `${sel.replace(/\W/g, '_')}_Case` : `Case_${start}_Value`;
+          const snap = freeName(/^[A-Za-z_][\w.]*$/.test(sel) ? `${sel.replace(/\W/g, '_')}_Case` : 'Case_Value');
           out(c, selE.t === 'var' || selE.t === 'lit' ? { type: 'COPY', source: sel, dest: snap } : { type: 'MATH', dest: snap, expression: sel });
           caseBody(snap, c);
         }
@@ -376,7 +389,7 @@ export function convertSt(src: string, idBase: string, opts: StOptions = {}): { 
       if (!gc) { untranslated.push(`IF ${src.slice(p.toks[start].pos, p.toks[p.i - 1].pos)}… (condition not converted)`); skipTo('END_IF'); return false; }
       guards.push(gc);
       if (snapAt !== null) {
-        const bit = `If${start}_${k + 1}`;
+        const bit = freeName(`If${start}_${k + 1}`);
         driven.splice(snapAt + k, 0, { cond: and(c, gc), out: { type: 'OUT', address: bit } });
         gc = el({ type: 'NO', address: bit });
       }

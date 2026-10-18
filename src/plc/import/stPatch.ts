@@ -12,7 +12,7 @@
  * - Blocks the app added become new function blocks with an instance DB, called from the first OB of an SCL
  *   source (in a PLCopen file the call is to add by hand).
  */
-import type { LadderProgram, Rung } from '../core/ladder';
+import { isBlockRaw, type LadderProgram, type Rung } from '../core/ladder';
 import type { ExportContext } from '../core/profile';
 import { toIecSt, type StVariable } from '../core/profiles/iecSt';
 import { SCL_BLOCKS } from '../core/profiles/siemens';
@@ -108,6 +108,9 @@ function inFile(text: string, name: string): boolean {
 const note = (v: StVariable) => (v.comment && v.comment !== v.base ? v.comment : 'added by the upgrade').replace(/[\r\n]+/g, ' ');
 const decl = (v: StVariable) => `      ${v.name} : ${v.type};   // ${note(v)}`;
 
+/** A block's own variables (lower case): VAR_EXTERNAL / VAR_GLOBAL sections name PLC tags, not the block's. */
+const ownVariables = (block: string) => stVariables(block.replace(/\bVAR_(?:EXTERNAL|GLOBAL)\b[\s\S]*?\bEND_VAR\b/gi, '')).map((v) => v.name.toLowerCase());
+
 /** Blocks of an SCL source: kind, name, [start, end) of the whole block. */
 function sclBlocks(text: string): { kind: string; name: string; start: number; end: number }[] {
   const out: { kind: string; name: string; start: number; end: number }[] = [];
@@ -120,6 +123,14 @@ function sclBlocks(text: string): { kind: string; name: string; start: number; e
     if (e) out.push({ kind, name: m[3], start: m.index, end: e.index + e[0].length });
   }
   return out;
+}
+
+/** The text of a block kept whole as written (its one RAW rung), or null; other rungs added to it are reported. */
+function keptBlock(rungs: Rung[], name: string, warnings: string[]): string | null {
+  const raw = rungs.flatMap((r) => r.outputs).find((o) => o.type === 'RAW' && o.vendor === 'siemens-s7' && isBlockRaw(o));
+  if (!raw || raw.type !== 'RAW') return null;
+  if (rungs.length > 1) warnings.push(`${name} is kept as written in the original; the ${rungs.length - 1} rung(s) added to it are not in the file. Add them in TIA Portal, or put them in a new block.`);
+  return raw.text;
 }
 
 const withLineEnds = (original: string, text: string) => (original.includes('\r\n') && !/(?<!\r)\n/.test(original) ? text.replace(/(?<!\r)\n/g, '\r\n') : text);
@@ -141,7 +152,7 @@ export function patchScl(p: StPatchInput): StPatchResult {
   let text = p.originalText.replace(/\r\n?/g, '\n');
   const warnings: string[] = [], changed: string[] = [], added: string[] = [], newTags: string[] = [];
   // Each block's own variables, from the original text.
-  const blocks = sclBlocks(text).filter((b) => b.kind !== 'DATA_BLOCK' && b.kind !== 'TYPE').map((b) => ({ ...b, vars: stVariables(text.slice(b.start, b.end)).map((v) => v.name.toLowerCase()) }));
+  const blocks = sclBlocks(text).filter((b) => b.kind !== 'DATA_BLOCK' && b.kind !== 'TYPE').map((b) => ({ ...b, vars: ownVariables(text.slice(b.start, b.end)) }));
   const elsewhereOf = (name: string) => new Map(blocks.filter((b) => b.name !== name).flatMap((b) => b.vars.map((v) => [v, b.name] as const)));
   const taken = new Set([...blocks.map((b) => b.name.toLowerCase()), ...stVariables(text).map((v) => v.name.toLowerCase()), ...Object.values(p.names).filter((n) => inFile(p.originalText, n)).map((n) => n.split('.')[0].toLowerCase())]);
   const byBlock = (id: string) => p.current.rungs.filter((r) => (r.block ?? '') === id);
@@ -151,6 +162,13 @@ export function patchScl(p: StPatchInput): StPatchResult {
     const name = p.blockOrigin[id].routine;
     const b = sclBlocks(text).find((x) => x.name === name && x.kind !== 'DATA_BLOCK' && x.kind !== 'TYPE');
     if (!b) { warnings.push(`Block ${name} was not found in the original file; its changes are not in it.`); continue; }
+    // A block kept as written (a whole FUNCTION … END_FUNCTION): it replaces the block, never goes inside it.
+    const kept = keptBlock(byBlock(id), name, warnings);
+    if (kept !== null) {
+      text = text.slice(0, b.start) + kept.trim() + text.slice(b.end);
+      changed.push(name);
+      continue;
+    }
     const whole = text.slice(b.start, b.end);
     const begin = /^[ \t]*BEGIN[ \t]*$/m.exec(whole);
     const endLine = whole.lastIndexOf('\n') + 1;
@@ -221,7 +239,12 @@ function pous(xml: string): { name: string; type: string; start: number; end: nu
   return out;
 }
 const unesc = (s: string) => s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-const pouVars = (pouXml: string) => [...(/<interface>[\s\S]*?<\/interface>/.exec(pouXml)?.[0] ?? '').matchAll(/<variable\s[^>]*\bname="([^"]*)"/g)].map((m) => unesc(m[1]).toLowerCase());
+/** The POU's own variables (inputs, outputs, in-outs, locals, temps): external / global ones are PLC tags, written "Name". */
+const pouVars = (pouXml: string) => {
+  const iface = /<interface>[\s\S]*?<\/interface>/.exec(pouXml)?.[0] ?? '';
+  const own = [...iface.matchAll(/<(inputVars|outputVars|inOutVars|localVars|tempVars)\b[^>]*>([\s\S]*?)<\/\1>/g)].map((m) => m[2]).join('\n');
+  return [...own.matchAll(/<variable\s[^>]*\bname="([^"]*)"/g)].map((m) => unesc(m[1]).toLowerCase());
+};
 
 /** Write the changed POUs into the original PLCopen XML (TIA Portal: the code is SCL). */
 export function patchPlcopen(p: StPatchInput): StPatchResult {
@@ -239,6 +262,16 @@ export function patchPlcopen(p: StPatchInput): StPatchResult {
     const pou = pous(xml).find((x) => unesc(x.name) === name);
     if (!pou) { warnings.push(`Block ${name} was not found in the original file; its changes are not in it.`); continue; }
     let px = xml.slice(pou.start, pou.end);
+    // A block kept as written: its code (BEGIN … END_…) is the body; its declarations are the POU's interface already.
+    const kept = keptBlock(byBlock(id), name, warnings);
+    if (kept !== null) {
+      const code = /\bBEGIN\b[ \t]*\n?([\s\S]*?)\n?[ \t]*END_(?:FUNCTION_BLOCK|FUNCTION|ORGANIZATION_BLOCK)\b[^\n]*\s*$/i.exec(kept)?.[1] ?? kept;
+      const body = /<body>[\s\S]*?<\/body>|<body\s*\/>/.exec(px);
+      px = body ? px.slice(0, body.index) + stBody(code) + px.slice(body.index + body[0].length) : px.replace(/<\/pou>$/, `${stBody(code)}\n</pou>`);
+      xml = xml.slice(0, pou.start) + px + xml.slice(pou.end);
+      changed.push(name);
+      continue;
+    }
     const statics = pou.type === 'functionBlock' || pou.type === 'program';
     const scope: Scope = { locals: new Set(pouVars(px)), elsewhere: elsewhereOf(name), taken, statics };
     const { code, added: vars } = blockCode(byBlock(id), p, name, scope, warnings);

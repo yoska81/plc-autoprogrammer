@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useDraftStore } from '../../../store/useDraftStore';
 import { useProgramStore } from '../../../store/useProgramStore';
+import { useProjectStore } from '../../../store/useProjectStore';
 import { usePlc } from '../../core/usePlc';
 import { diffPrograms, summarizeDiff, type RungChange } from '../../core/diff';
 import type { LadderProgram } from '../../core/ladder';
@@ -51,8 +52,10 @@ export default function UpgradePage() {
     setBusy(true);
     try {
       const file = original.fileGz ? await gunzipText(original.fileGz).catch(() => null) : null;
+      // The PLC as it is now (a click right after changing the PLC may come before this page shows it).
+      const plcId = useProjectStore.getState().plcId;
       const snap = collectProject();
-      setPrepared({ ex: exportUpgrade(original, file, ladder, { plcId: profile.id, ctx: exportContext(snap), fullFiles: () => programFiles(snap) }), ladder, plcId: profile.id });
+      setPrepared({ ex: exportUpgrade(original, file, ladder, { plcId, ctx: exportContext(snap), fullFiles: () => programFiles(snap) }), ladder, plcId });
       setUnderstood(false);
     } finally { setBusy(false); }
   };

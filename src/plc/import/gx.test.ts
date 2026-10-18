@@ -211,7 +211,12 @@ assert.throws(() => importProgramFiles([file('CAPPER_DeviceComment.csv')]), /add
   assert.deepEqual(gxT(gx('FX3U', rows.slice(0, 3))), ['500 ms'], 'FX3: T200 is 10 ms');
   // Unknown series: read as 100 ms, with a note to confirm each timer.
   const unknown = readIlText('LD X0\nOUT T200 K50\nLD X1\nOUT T3 K10\nEND');
-  assert.ok(unknown.notes.some((n) => /does not say which .* series .*read as 100 ms timers: T200, T3\. Confirm each timer's time base/.test(n)), unknown.notes.join(' | '));
+  assert.ok(unknown.notes.some((n) => /depends on the .* series, which the file does not say: T200, T3\. They were read with 100 ms\. Confirm each timer's time base/.test(n)), unknown.notes.join(' | '));
+  // Review: first-generation Delta DVP-ES (T64–126 10 ms) and FX1S (T32–62 10 ms with M8028) are to be confirmed.
+  const confirm = (t: string) => readIlText(t).notes.find((n) => /Confirm each timer's time base/.test(n)) ?? '';
+  assert.match(confirm('; ISPSoft DVP-14ES\nLD X0\nTMR T64 K50\nLD X1\nTMR T10 K50\nEND'), /\(the file says DVP-14ES\): T64\. They were read with the DVP-ES2 \/ EH table/);
+  assert.equal(confirm('; ISPSoft DVP-14ES2\nLD X0\nTMR T64 K50\nEND'), '', 'ES2: the table is right');
+  assert.match(confirm('PLC: FX1S-30MR\nLD X0\nOUT T40 K50\nEND'), /T40/);
 }
 
 console.log('gx.test: all passed');
