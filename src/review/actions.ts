@@ -2,13 +2,19 @@ import { collectProject, type ProjectSnapshot } from '../deliverables/collect';
 import { stagesNow } from '../spec/useStages';
 import { useProjectStore } from '../store/useProjectStore';
 import { runChecks } from './checks';
+import { storedMachine, storedTarget } from '../convert/apply';
+import { convertMachine, NA_TARGET } from '../convert/convert';
+import { functionKept, functionKeptFindings } from '../convert/functionKept';
 import { useReviewStore } from './useReviewStore';
 import { AREA_LABEL, SEVERITY_LABEL, type Finding } from './types';
 
 /** Deterministic checks for a project snapshot with the current stage status, modules and equipment cautions. */
 export function checksFor(p: ProjectSnapshot): Finding[] {
   const { modules, recommendation } = useProjectStore.getState();
-  return runChecks({ p, stages: stagesNow(), modules, cautions: recommendation?.cautions ?? [] });
+  const found = runChecks({ p, stages: stagesNow(), modules, cautions: recommendation?.cautions ?? [] });
+  // a project converted from existing drawings: every original function must still be there
+  const m = storedMachine();
+  return m ? [...found, ...functionKeptFindings(functionKept(m, convertMachine(m, storedTarget() ?? NA_TARGET), p))] : found;
 }
 
 /** Run the deterministic checks on the current project and store them. */
