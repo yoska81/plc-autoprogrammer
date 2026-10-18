@@ -27,6 +27,11 @@ for (const g of crossReference().filter((x) => x.fn === 'breaker')) {
 }
 const ol = differences(getPart('TK-E02-600')!, getPart('LRD10')!);
 assert.ok(ol.some((x) => /^Mounts on: /.test(x)), ol.join(' | '));
+// Enclosure cooling: filter fans by CFM class and supply, air conditioners by capacity, across makers.
+const fan75 = crossReference().find((g) => g.fn === 'cooling' && g.key === 'filter fan up to 75 CFM AC')!;
+assert.ok(fan75.parts.automationdirect?.length && fan75.parts.hoffman?.length && fan75.parts.rittal?.length, 'AD / Hoffman / Rittal 75 CFM fans');
+assert.equal(functionKey(getPart('118000-00')!), null, 'exhaust grilles have no airflow of their own');
+assert.ok(crossReference().some((g) => g.fn === 'cooling' && /^air conditioner/.test(g.key) && Object.keys(g.parts).length === 3), 'air conditioners of three makers');
 console.log(`cross-reference tests passed (${crossReference().length} groups)`);
 
 // Sourcing: page records, with lifecycle / successor where the maker names one.

@@ -115,6 +115,14 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
 - Prices and stock as of 2026-10-18 from each product page (JSON-LD), USD $104-$294. C0-00DD1-D is backordered until 11/02 and recorded as `short`.
 - New catalog test: every CPU in CLICK_CPUS is in the catalog with a footprint.
 
+## Enclosure cooling parts (fans, filters, AC, heat exchangers, thermostats)
+- AutomationDirect (78): 19 Stego filter fans (115 VAC / 24 VDC, 12-391 CFM free-blowing, plus CFM with filters) and 9 matching exhaust grilles; 26 air conditioners (Stratus TA10/TA20, Saginaw NextGen, 1,195-14,300 BTU/h nominal); 16 heat exchangers (Stratus TE, Saginaw SCE-HE, 7.2-71.6 W/K); 8 Stego thermostats. Prices and stock (2026-10-18) are in sourcingData: 46 in stock, 25 short, 7 long. Saginaw's direct-ship / R-513A note is kept as `orderingNote`.
+- nVent HOFFMAN (43), from maker PDFs (nvent.com blocks scripted reads): TFP fan packages 4/6/10 in. (25-215 CFM with one exhaust grille) and TEP exhaust packages from Cat-00004 (2018, so current availability is unconfirmed); SpectraCool N17/G28/G52 air conditioners from Spec-00750/00728; ATEMNC/ATEMNO thermostats.
+- Rittal (29): Blue e+ filter fans (20-910 m³/h) and outlet filters, Blue e+ cooling units (780-5,500 W at L35/L35, plus the L35/L50 figure), TopTherm heat exchangers (17.5-60 W/K), SK 3110.000 thermostat. Part numbers use the existing '3237.710' style. The old TopTherm fans have been discontinued since 29 Apr 2025.
+- Keys for the engine: `kind` (filter fan / exhaust filter / air conditioner / heat exchanger / thermostat), `airflowCfm` (+ `airflowM3h` for Rittal), `coolingW` / `coolingBtuh`, `wPerK`, `cutoutWidthMm`/`cutoutHeightMm`, or `cutout1..2WidthMm/HeightMm` + `cutoutCount` for two-opening units, `cutoutNote` where the cutout isn't a single rectangle (most AC/HX units; Hoffman AC cutouts are only in the instruction manuals), and `pairsWith` from fan to exhaust filter.
+- Cross-reference: new "Enclosure cooling" groups for filter fans by CFM class and supply (AC / 24 VDC), air conditioners by capacity in W (BTU/h ÷ 3.412 when only BTU/h is published) and heat exchangers by W/K. That is 17 groups across AD / Hoffman / Rittal. A swap shows the airflow, cooling and cutout differences.
+- Test change: the `amps` plausibility floor is now 0.01 A, since small fans draw 0.06 A.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.

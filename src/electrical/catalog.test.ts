@@ -76,7 +76,8 @@ const ALIASES: Record<string, string[]> = { volts: ['volts', 'supplyVolts'], coi
 
 /** Plausible ranges for numeric ratings (a typo like 4800 V or 0.0 A fails). */
 const RANGES: Record<string, [number, number]> = {
-  amps: [0.1, 2000], minAmps: [0.05, 1000], maxAmps: [0.1, 1000], outputAmps: [0.1, 2000], vtAmps: [0.1, 2000],
+  // amps from 0.01: small enclosure fans draw 0.06 A (Stego 018000-02, Rittal 3237.724).
+  amps: [0.01, 2000], minAmps: [0.05, 1000], maxAmps: [0.1, 1000], outputAmps: [0.1, 2000], vtAmps: [0.1, 2000],
   interruptingKA: [1, 200], sccrKA: [1, 200], sccrKA480: [1, 200], poles: [1, 4],
   hp200: [0, 500], hp230: [0, 500], hp480: [0, 1000], hp575: [0, 1000], hp1ph120: [0, 50], hp1ph230: [0, 50], hp1ph: [0, 50],
   outputVolts: [5, 600], watts: [0.1, 5000], va: [10, 100000],
