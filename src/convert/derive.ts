@@ -107,10 +107,13 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
   };
 }
 
-/** Read the upload and build the existing machine (one AI request). */
-export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = ''): Promise<{ machine: ExistingMachine; reasoning: string | null }> {
-  const blocks = await readUpload(files);
-  const names = files.map((f, i) => `${i + 1}. ${f.name}`).join('\n');
+/**
+ * Read the upload and build the existing machine (one AI request). `extra`: more content for the same
+ * request, e.g. a PLC program's symbol table or rung listing from the program reader (src/plc/import/).
+ */
+export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = []): Promise<{ machine: ExistingMachine; reasoning: string | null }> {
+  const blocks = [...(await readUpload(files)), ...extra];
+  const names = files.map((f, i) => `${i + 1}. ${f.name}`).join('\n') || '(none: program data only)';
   const { text, reasoning } = await callClaude({
     apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'import',
     system: DERIVE_SYSTEM, schema: EXISTING_SCHEMA,
