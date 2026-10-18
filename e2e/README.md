@@ -15,7 +15,7 @@ Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/streng
 
 Update-all speed: `npx tsx tools/bench-update.ts` (see `tools/bench/README.md`).
 
-Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/review/codeRules/iec.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/electrical/layout/layout.test.ts`, `npx tsx src/electrical/catalog.test.ts`, `npx tsx src/electrical/vfdLine.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/hmi/theme.test.ts`, `npx tsx src/deliverables/noPanel.test.ts`, `npx tsx src/hmi/engine/motion.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/plc/core/profiles/logix.test.ts`, `npx tsx src/plc/core/profiles/micro800.test.ts`, `npx tsx src/plc/core/profiles/siemens.test.ts`, `npx tsx src/plc/core/tagNames.test.ts` `npx tsx src/electrical/vfd.test.ts` and `npx tsx src/deliverables/certPack.test.ts` (certification pack, shop build time).
+Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/review/codeRules/iec.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/electrical/layout/layout.test.ts`, `npx tsx src/electrical/catalog.test.ts`, `npx tsx src/electrical/vfdLine.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/hmi/theme.test.ts`, `npx tsx src/deliverables/noPanel.test.ts`, `npx tsx src/hmi/engine/motion.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/plc/core/profiles/logix.test.ts`, `npx tsx src/plc/core/profiles/micro800.test.ts`, `npx tsx src/plc/core/profiles/siemens.test.ts`, `npx tsx src/plc/core/tagNames.test.ts` `npx tsx src/electrical/vfd.test.ts` and `npx tsx src/deliverables/certPack.test.ts` (certification pack, shop build time), `npx tsx src/troubleshoot/wiringPath.test.ts` (troubleshooter wiring paths, guided steps, fault sweep).
 
 ## Preview build
 
@@ -148,6 +148,13 @@ The first press of a microphone asks with a native dialog (stubbed: Allow once /
 is explained in the mic popover (no address-bar advice); "Allow once" lasts until the app closes; camera
 requests are refused. Unit test: `npx tsx src/voice/micAccess.test.ts`. The preview e2e checks that the
 preview shows the mic as not available (it has no microphone) and makes no microphone request.
+
+## Troubleshooter practice (simulator wiring faults)
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/troubleshoot.e2e.cjs   # simulator: break a wire (X005 shorted to 24 V → X005 ON), repair, hidden fault; Online → Fault finding on a phone: X004 never ON → steps → verdict; fake Modbus PLC answers a wiggle test
+```
+Unit tests: `npx tsx src/troubleshoot/wiringPath.test.ts` (wiring paths, fault effects, live watch, guided steps, fault sweep). The Sealing Head journey (`node e2e/journeys.e2e.cjs sealclick`) also breaks a sensor wire in the simulator, finds it with the meter steps and checks the fault log.
 
 ## Cabinet photos → as-built drawing
 

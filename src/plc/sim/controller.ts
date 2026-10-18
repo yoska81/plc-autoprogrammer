@@ -61,7 +61,12 @@ export interface SimSnapshot {
   /** Newest first. */
   log: LogEntry[];
   errors: string[];
+  /** Practice wiring fault (null = none): inputs it holds and loads it leaves without power. */
+  wireFault: SimWireFault | null;
 }
+
+/** A wiring fault injected for practice: the inputs read a fixed value, the dead outputs' loads get no power. */
+export interface SimWireFault { label: string; inputs: Map<string, boolean>; deadOutputs: Set<string> }
 
 const LOGGED = /^(X|Y|C|T|CT)\d+$/;
 
@@ -93,6 +98,7 @@ export class SimController {
   private block: string | null = null;
   private blockOnly = false;
   private blockSignals: BlockSignal[] = [];
+  private wireFault: SimWireFault | null = null;
   readonly handle: SimHandle;
 
   constructor(program: LadderProgram, io: SimIOPoint[], wiring: IOWiring[]) {
@@ -131,6 +137,7 @@ export class SimController {
     const counters = new Map<string, CounterState>();
     for (const [a, c] of st.counters) counters.set(a, { ...c });
     return {
+      wireFault: this.wireFault,
       running: this.running,
       skipLeftMs: this.skipLeftMs,
       speed: this.speed,
@@ -159,10 +166,15 @@ export class SimController {
     const now = machineInputs(this.machine);
     for (const [a, v] of now) this.sim.setInput(a, v);
     this.machine.inputs = now;
+    if (this.wireFault) for (const [a, v] of this.wireFault.inputs) this.sim.setInput(a, v);
   }
 
   private scan(dt = SCAN_MS) {
-    for (const [a, v] of stepMachine(this.machine, (a) => this.sim.readBit(a), dt, (a) => this.sim.readWord(a))) this.sim.setInput(a, v);
+    // A practice wiring fault: its dead loads see their output OFF; its inputs read the faulted value.
+    const fault = this.wireFault;
+    const out = fault?.deadOutputs.size ? (a: string) => !fault.deadOutputs.has(a) && this.sim.readBit(a) : (a: string) => this.sim.readBit(a);
+    for (const [a, v] of stepMachine(this.machine, out, dt, (a) => this.sim.readWord(a))) this.sim.setInput(a, fault?.inputs.has(a) ? fault.inputs.get(a)! : v);
+    if (fault) for (const [a, v] of fault.inputs) this.sim.setInput(a, v);
     for (const [a, v] of machineAnalogValues(this.machine)) this.sim.write(a, v);
     const changes = this.sim.step(dt);
     for (const c of changes) {
@@ -450,5 +462,12 @@ export class SimController {
 
   write(address: string, value: boolean | number) {
     this.handle.write(address, value);
+  }
+
+  /** Inject a wiring fault for practice (null clears it). */
+  setWireFault(fault: SimWireFault | null) {
+    this.wireFault = fault;
+    this.syncInputs();
+    this.emit();
   }
 }

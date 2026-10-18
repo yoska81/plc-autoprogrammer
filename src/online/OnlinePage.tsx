@@ -20,8 +20,9 @@ import { buildCheckoutPdf, checkoutRows, checkoutSummary } from './checkoutPdf';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
+import TroubleshootPanel from '../troubleshoot/TroubleshootPanel';
 
-type Tab = 'monitor' | 'ladder' | 'hmi' | 'checkout';
+type Tab = 'monitor' | 'ladder' | 'hmi' | 'checkout' | 'troubleshoot';
 
 const input = 'border border-steel-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 bg-white hover:bg-steel-50 disabled:opacity-40';
@@ -122,7 +123,7 @@ export default function OnlinePage() {
           <LoadIntoPlc />
         </div>
         <p className="text-xs text-steel-500 mt-0.5">Live values from the real {profile.name} {cpu.id} over Ethernet (Modbus TCP). Read-only unless you switch on writes. Use it at the machine during commissioning: watch the ladder, the HMI and every I/O point, and tick the I/O check-out.</p>
-        <div className="flex mt-2">{tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}</div>
+        <div className="flex mt-2">{tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}{tabBtn('troubleshoot', 'Fault finding')}</div>
       </header>
 
       {/* Connection bar */}
@@ -237,6 +238,8 @@ export default function OnlinePage() {
             </div>
           ) : <p className="text-sm text-steel-500">No HMI design yet.</p>
         )}
+
+        {tab === 'troubleshoot' && <TroubleshootPanel />}
 
         {tab === 'checkout' && (
           <div className="bg-white border border-steel-200 rounded-sm">

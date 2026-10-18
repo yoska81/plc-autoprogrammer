@@ -1,9 +1,11 @@
 // User journeys: a non-engineer makes a new project from scratch for four machine types and takes each one
 // through every stage to Deliverables, with the AI mocked (answers a good AI gives for that machine):
 //   sealing head (heater + VFD + two-hand + light curtain + guard door), conveyor with 3 motors,
-//   pick-and-place, pump skid with analogs.
+//   pick-and-place, pump skid with analogs; and two existing machines: drawings converted (journey 8) and an
+//   L5X program upgraded (journey 9), each taken through the same stages.
 // On every page it clicks every safe button (no delete / clear / new project / leave) and records page errors,
 // error banners and failed downloads. Deliverables: every download button, the certification pack and the ZIP.
+// Sealing Head: a practice wiring fault in the simulator found with the meter steps, then the fault log entry.
 //   npm run dev -- --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/journeys.e2e.cjs [machine]
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const JSZip = require('jszip');
@@ -83,7 +85,7 @@ const MACHINES = [
     di: 6, do: 3, ai: 4, ao: 2,
   },
   {
-    key: 'sealclick', name: 'Sealing Head', region: 'United States', enclosure: 'NEMA 4X', online: true,
+    key: 'sealclick', name: 'Sealing Head', region: 'United States', enclosure: 'NEMA 4X', online: true, practice: 'Sealing head down',
     text: 'Sealing head for pouches, washdown area. Two-hand start, light curtain at the front, interlocked guard door at the back, E-stop. Heated seal bar with a type J thermocouple read by the PLC and a separate over-temperature limit. Film unwinder 0.5 HP on a VFD (run and fault only). CLICK PLC C0-11DD2E-D with a C0-08ND3 input module and a C0-04THM thermocouple module, C-more 7 inch screen. Stainless NEMA 4X panel.',
     io: [
       P('Safety relay OK (E-stop, guard door, light curtain)', 'input', 'Safety', 'safety-relay-output'),
@@ -120,8 +122,37 @@ const MACHINES = [
     equip: { profileId: 'unitronics-vision', cpuId: 'V700-T20BJ', modules: [{ partNumber: 'V200-18-E3XB', quantity: 1, why: 'Snap-in I/O' }], hmi: 'V700-T20BJ' },
     di: 11, do: 5, ai: 1, ao: 0,
   },
-];
-function reply(mc, system) {
+  {
+    key: 'nohmi', name: 'Bench Press', region: 'United States', noHmi: true,
+    text: 'Small pneumatic bench press with no touch screen: the operator uses a start button, a stop button, a reset button, a run/setup selector switch and a green running lamp and red fault lamp. Two-hand start, E-stop, guard door. Press cylinder with up and down sensors, a pressure switch for the air supply.',
+    io: [
+      P('Safety relay OK (E-stop, guard door)', 'input', 'Safety', 'safety-relay-output'), P('Guard door closed', 'input', 'Safety', 'limit-switch'),
+      P('Two-hand start button left', 'input', 'Operator/HMI', 'pushbutton-no'), P('Two-hand start button right', 'input', 'Operator/HMI', 'pushbutton-no'),
+      P('Stop button', 'input', 'Operator/HMI', 'pushbutton-nc'), P('Reset button', 'input', 'Operator/HMI', 'pushbutton-no'), P('Run / setup selector', 'input', 'Operator/HMI', 'selector'),
+      P('Press up', 'input', 'Pneumatic', 'sensor-pnp'), P('Press down', 'input', 'Pneumatic', 'sensor-pnp'), P('Air pressure OK', 'input', 'Pneumatic', 'pressure-switch'),
+      P('Press down solenoid', 'output', 'Pneumatic', 'solenoid'), P('Running lamp (green)', 'output', 'Operator/HMI', 'pilot-light'), P('Fault lamp (red)', 'output', 'Operator/HMI', 'pilot-light'),
+    ],
+    model: { motors: [], estops: 1, guardDoors: [{ zone: 'Press' }], lightCurtains: [], zones: ['Press'], interfaces: [], questions: [] },
+    equip: { profileId: 'click', cpuId: 'C0-11DD1E-D', modules: [{ partNumber: 'C0-08ND3', quantity: 1, why: 'Inputs' }], hmi: null },
+    di: 10, do: 3, ai: 0, ao: 0,
+  },
+  // Journey 8: an existing machine's drawings (Chinese-style PDF + DXF) → read (AI mocked) → converted to North
+  // America → rebuilt by the engine → then every stage like a new machine.
+  {
+    key: 'convert', name: 'Sorting Conveyor Retrofit', region: 'United States', start: 'drawings', keepDesign: true, keepProgram: true, hmi: false,
+    model: { motors: [M('M1', 'Conveyor belt, forward and reverse', 1.5, 'reversing', 'Conveyor'), M('M2', 'Coolant pump', 1, 'dol', 'Pump')], estops: 1, guardDoors: [], lightCurtains: [], zones: ['Conveyor', 'Pump'], interfaces: [], questions: [] },
+    equip: { profileId: 'click', cpuId: 'C0-12DD1E-D', modules: [{ partNumber: 'C0-16ND3', quantity: 1, why: 'Inputs' }], hmi: null },
+    di: 9, do: 6, ai: 0, ao: 0, io: [], routes: ['/import'],
+  },
+  // Journey 9: an exported Studio 5000 program (.L5X) → read → "Use this program" → electrical, HMI and the
+  // rest built around it, the program itself kept → change a rung → download the upgraded L5X.
+  {
+    key: 'upgrade', name: 'Bottle Capper Upgrade', region: 'United States', start: 'program', keepProgram: true,
+    model: { motors: [], estops: 1, guardDoors: [{ zone: 'Capper' }], lightCurtains: [], zones: ['Capper'], interfaces: [], questions: [] },
+    di: 0, do: 0, ai: 0, ao: 0, io: [], routes: ['/upgrade'],
+  },
+];function reply(mc, system) {
+  if (system.includes('taking over an existing machine from its electrical drawings')) return mc.drawings;
   const k = system.includes('checks a machine control design') ? 'review'
     : system.includes('functional specification') ? 'spec'
     : system.includes('choosing the control equipment') ? 'equipment'
@@ -137,7 +168,7 @@ function reply(mc, system) {
       if (mc.equip) return {
         summary: `${mc.equip.cpuId} for ${mc.name}.`, estimatedIO: { digitalInputs: mc.di, digitalOutputs: mc.do, analogInputs: mc.ai, analogOutputs: mc.ao, motionAxes: 0 },
         plc: { profileId: mc.equip.profileId, cpuId: mc.equip.cpuId, why: 'The customer standard.' }, modules: mc.equip.modules,
-        hmi: { partNumber: mc.equip.hmi, why: 'The customer standard.' }, alternatives: [], cautions: [],
+        hmi: mc.equip.hmi ? { partNumber: mc.equip.hmi, why: 'The customer standard.' } : null, alternatives: [], cautions: [],
       };
       const mods = [];
       if (mc.di > 4) mods.push({ partNumber: 'C0-16ND3', quantity: 1, why: 'Inputs' });
@@ -221,7 +252,49 @@ async function journey(browser, mc) {
     }
   };
 
-  await step('wizard', async () => {
+  if (mc.start) await step(`import (${mc.start})`, async () => {
+    // A machine that already exists: the start option for existing drawings / programs, then the Import page.
+    if (mc.start === 'drawings') mc.drawings = await page.evaluate(async () => (await import('/src/convert/__fixtures__/chineseConveyor.ts')).CHINESE_CONVEYOR);
+    await page.getByRole('button', { name: 'New project' }).first().click();
+    await page.getByTestId('start-option').getByRole('button', { name: /^From existing drawings \/ program/ }).click();
+    await page.getByPlaceholder('e.g. Line 3 case packer').fill(mc.name);
+    await page.getByRole('button', { name: 'Continue to the import →' }).click();
+    await page.waitForURL(/\/import/);
+    if (mc.start === 'drawings') {
+      const FIX = __dirname + '/fixtures/convert/';
+      await page.getByTestId('convert-files').setInputFiles([FIX + 'sorting_conveyor_drawings.pdf', FIX + 'E-03_PLC_IO.dxf']);
+      await page.getByRole('button', { name: 'Read the drawings' }).click();
+      await page.getByTestId('convert-recognised').waitFor({ timeout: 60000 });
+      await page.screenshot({ path: `${OUT}${mc.key}_review.png`, fullPage: true });
+      await page.getByTestId('convert-build').click();
+      for (let t = 0; t < 360; t++) {
+        if (await page.evaluate(async () => Boolean((await import('/src/spec/updateRun.ts')).useUpdateRun.getState().finishedAt))) break;
+        await page.waitForTimeout(500);
+      }
+      const run = await page.evaluate(async () => (await import('/src/spec/updateRun.ts')).useUpdateRun.getState().results.map((r) => `${r.step}:${r.status}${r.status === 'done' ? '' : ` (${r.message})`}`));
+      log(mc.key, 'build', run.join(' | '));
+      for (const r of run) if (!/:done$/.test(r) && !/^hmi:skipped/.test(r)) problem(mc.key, 'convert build', r);
+      await page.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
+      const kept = await page.getByTestId('convert-kept').innerText().catch(() => '');
+      for (const l of kept.split('\n').filter((x) => /Missing/.test(x))) problem(mc.key, 'function kept', l);
+    } else {
+      // The Program tab of the Import page reads the program; until it is there, the Upgrade page does.
+      await page.getByRole('button', { name: 'Program', exact: true }).click().catch(() => {});
+      if (!(await page.getByTestId('program-file').count())) {
+        problem(mc.key, 'import', 'the Import page has no program reader (Program tab): went to /upgrade by its address — no menu leads there');
+        await page.goto(BASE + '/upgrade');
+      }
+      await page.getByTestId('program-file').setInputFiles(__dirname + '/../src/plc/import/__fixtures__/capper.L5X');
+      await page.getByTestId('program-found').waitFor({ timeout: 10000 });
+      log(mc.key, 'found', (await page.getByTestId('program-found').innerText()).split('\n').slice(0, 3).join(' | '));
+      await page.getByTestId('program-apply').click();
+      await page.waitForTimeout(1500);
+      mc.rungs = await page.evaluate(async () => (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
+      const io = await page.evaluate(async () => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.length);
+      log(mc.key, 'program used', mc.rungs, 'rungs,', io, 'I/O');
+    }
+  });
+  if (!mc.start) await step('wizard', async () => {
     await page.getByRole('button', { name: 'New project' }).first().click();
     await page.getByPlaceholder('e.g. Line 3 case packer').fill(mc.name);
     await page.getByRole('button', { name: new RegExp(`^${mc.region}`) }).click();
@@ -239,7 +312,7 @@ async function journey(browser, mc) {
     await page.getByRole('button', { name: 'Open project →' }).click();
     await page.waitForURL('**/io');
   });
-  await step('I/O', async () => {
+  if (!mc.start) await step('I/O', async () => {
     await page.getByRole('button', { name: /Generate I\/O from spec|Update I\/O from spec/ }).click();
     await page.getByText('Review I/O changes').waitFor({ timeout: 15000 });
     await page.getByRole('button', { name: 'Apply changes' }).click();
@@ -247,17 +320,56 @@ async function journey(browser, mc) {
     if (n !== mc.io.length) problem(mc.key, 'I/O', `${n} points shown, ${mc.io.length} generated`);
     log(mc.key, 'I/O points', n);
   });
-  await step('electrical', async () => {
+  if (!mc.keepDesign) await step('electrical', async () => {
     await page.goto(BASE + '/electrical?tab=design');
     await page.getByRole('button', { name: /Generate (Electrical Design|New Design)/ }).click();
     await page.getByRole('button', { name: 'BOM CSV' }).waitFor({ timeout: 30000 });
   });
-  await step('HMI', async () => {
+  if (mc.noHmi) await step('HMI (no touch panel)', async () => {
     await page.goto(BASE + '/hmi');
+    await page.getByText('This machine has no touch panel.').waitFor({ timeout: 15000 });
+    const door = await page.evaluate(async () => {
+      const { collectProject } = await import('/src/deliverables/collect.ts');
+      const p = collectProject();
+      const { getPart } = await import('/src/electrical/catalog.ts');
+      return { hmi: p.hmi, door: (p.electrical?.components ?? []).map((c) => `${c.tag} ${getPart(c.partNumber)?.description ?? ''} ${c.function}`).filter((d) => /pushbutton|selector|pilot light/i.test(d)) };
+    });
+    if (door.hmi) problem(mc.key, 'HMI', 'an HMI design exists for a machine with no touch panel');
+    log(mc.key, 'door devices', door.door.length, door.door.join(' | ').slice(0, 300));
+    for (const want of [/selector/i, /pilot light, green/i, /pilot light, red/i, /pushbutton, (green|blue)/i]) if (!door.door.some((d) => want.test(d))) problem(mc.key, 'electrical', `no door device for ${want}`);
+  });
+  if (!mc.noHmi && mc.hmi !== false) await step('HMI', async () => {
+    await page.goto(BASE + '/hmi');
+    // No panel chosen yet (a program that came without one): the user picks the first one offered.
+    const choose = page.getByText('Which HMI are you using?');
+    if (await choose.waitFor({ timeout: 5000 }).then(() => true, () => false)) {
+      const first = page.locator('button', { has: page.locator('div.font-mono') }).first();
+      log(mc.key, 'HMI chosen', (await first.innerText()).split('\n')[0]);
+      await first.click();
+    }
     await page.getByRole('button', { name: 'Design the HMI screens' }).click();
     await page.getByRole('button', { name: 'Redesign screens' }).waitFor({ timeout: 30000 });
   });
-  await step('program', async () => {
+  if (mc.keepProgram) await step('program kept', async () => {
+    // The program that came with the machine must not be replaced by the later stages.
+    const n = await page.evaluate(async () => (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
+    if (mc.rungs && n !== mc.rungs) problem(mc.key, 'program', `${mc.rungs} rungs read, ${n} now`);
+    log(mc.key, 'program rungs', n);
+  });
+  if (mc.start === 'program') await step('upgraded program download', async () => {
+    await page.goto(BASE + '/upgrade');
+    await page.getByTestId('upgrade-original').waitFor({ timeout: 10000 });
+    log(mc.key, 'original vs now', await page.getByTestId('upgrade-diff-summary').innerText());
+    await page.getByTestId('upgrade-export').click();
+    const understood = page.getByTestId('upgrade-understood');
+    if (await understood.count()) { log(mc.key, 'missing on download', (await page.getByTestId('upgrade-missing').innerText()).replace(/\s+/g, ' ').slice(0, 200)); await understood.check(); }
+    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.getByTestId('upgrade-download').click()]);
+    const out = OUT + mc.key + '_' + d.suggestedFilename();
+    await d.saveAs(out);
+    if (!/\.L5X$/i.test(out) || !/<RSLogix5000Content/.test(fs.readFileSync(out, 'utf8'))) problem(mc.key, 'upgrade', `download ${d.suggestedFilename()} is not an L5X`);
+    log(mc.key, 'download', d.suggestedFilename());
+  });
+  if (!mc.keepProgram) await step('program', async () => {
     await page.goto(BASE + '/program');
     await page.getByRole('button', { name: 'Build', exact: true }).click();
     await page.getByRole('button', { name: 'Build program from my project' }).click();
@@ -273,8 +385,67 @@ async function journey(browser, mc) {
     log(mc.key, 'critical/major review findings after the build', f.length);
     for (const x of f) console.log('    ', x);
   });
+  // Troubleshooter: break a sensor wire in the simulator, find it with the guided meter steps, see it logged.
+  if (mc.practice) await step('troubleshoot practice', async () => {
+    const pt = await page.evaluate(async (desc) => {
+      const { collectProject } = await import('/src/deliverables/collect.ts');
+      const { wiringPaths } = await import('/src/troubleshoot/wiringPath.ts');
+      const w = wiringPaths(collectProject().drawingCtx).find((p) => p.type === 'input' && p.description === desc);
+      return w && { address: w.address, wire: w.signal.find((h) => h.kind === 'plc')?.wire };
+    }, mc.practice);
+    if (!pt?.wire) throw new Error(`no wiring path for "${mc.practice}"`);
+    await page.goto(BASE + '/simulate');
+    const bar = page.getByLabel('Practice wiring fault');
+    await bar.waitFor({ timeout: 15000 });
+    await bar.getByLabel('Wire to break').selectOption(pt.wire);
+    await bar.getByLabel('Fault').selectOption('open');
+    await bar.getByRole('button', { name: 'Break this wire' }).click();
+    await bar.getByRole('button', { name: 'Find it with the meter steps' }).click();
+    const panel = page.getByLabel('Fault finding');
+    if (await panel.getByLabel('Point to troubleshoot').inputValue() !== pt.address) problem(mc.key, 'troubleshoot', `the point is not preselected (${pt.address})`);
+    await panel.getByRole('button', { name: `${pt.address} never comes ON` }).click();
+    await panel.getByRole('button', { name: 'Ready' }).click();
+    const trail = [];
+    for (let i = 0; i < 20 && !(await panel.getByRole('status').count()); i++) {
+      const say = (await panel.locator('p[aria-live="polite"]').innerText()).trim();
+      await panel.getByRole('button', { name: 'Take the reading (practice meter)' }).click();
+      const shows = (await panel.getByLabel('Practice meter').innerText()).trim();
+      const yes = panel.getByRole('button', { name: /^Yes/ });
+      const good = (await yes.innerText()).replace(/^Yes,?\s*/, '') === shows;
+      trail.push(`${say.slice(0, 70)} → ${shows}`);
+      await (good ? yes : panel.getByRole('button', { name: 'No', exact: true })).click();
+    }
+    for (const t of trail) console.log('    ', t);
+    const verdict = (await panel.getByRole('status').innerText()).replace(/\s+/g, ' ');
+    log(mc.key, 'verdict', verdict.slice(0, 220));
+    if (!/Found it/.test(verdict)) problem(mc.key, 'troubleshoot', `the steps did not find wire ${pt.wire}: ${verdict.slice(0, 200)}`);
+    if (!verdict.includes(`wire ${pt.wire}`)) problem(mc.key, 'troubleshoot', `the verdict does not name wire ${pt.wire}`);
+    if (trail.length > 6) problem(mc.key, 'troubleshoot', `${trail.length} readings to find one open wire`);
+    await page.screenshot({ path: `${OUT}${mc.key}_troubleshoot_verdict.png`, fullPage: true });
+    const logBox = panel.getByLabel('Fault log');
+    await logBox.getByLabel('Technician name').fill('Q.A.');
+    const entry = (await logBox.locator('li[data-fault-log]').first().innerText()).replace(/\s+/g, ' ');
+    if (!entry.includes(pt.address) || !/practice/.test(entry) || !entry.includes(`wire ${pt.wire}`)) problem(mc.key, 'fault log', `entry: ${entry.slice(0, 200)}`);
+    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 10000 }), logBox.getByRole('button', { name: 'Download CSV' }).click()]);
+    const csv = OUT + mc.key + '_' + d.suggestedFilename();
+    await d.saveAs(csv);
+    if (!fs.readFileSync(csv, 'utf8').includes(pt.address)) problem(mc.key, 'fault log', 'CSV has no entry');
+    await bar.getByRole('button', { name: 'Repair the wire' }).click();
+    // The log belongs to the project: it is on the Online page too, and in the project file.
+    await page.goto(BASE + '/online');
+    await page.getByRole('button', { name: 'Fault finding' }).click();
+    if (!(await page.getByLabel('Fault log').innerText()).includes(pt.address)) problem(mc.key, 'fault log', 'not on the Online page');
+    await page.getByRole('button', { name: 'Monitor', exact: true }).click();
+    const saved = await page.evaluate(async () => {
+      const { buildProjectFile, readProjectFile } = await import('/src/project/projectFile.ts');
+      const { body } = await readProjectFile((await buildProjectFile()).blob);
+      return (body.perProject.faultLog ?? []).length;
+    });
+    if (saved !== 1) problem(mc.key, 'fault log', `${saved} entries in the project file`);
+    log(mc.key, 'fault log entry', entry.slice(0, 160));
+  });
   // Every page: look and click.
-  for (const route of ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/review', '/export']) {
+  for (const route of ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/review', ...(mc.routes ?? []), '/export']) {
     await step(`page ${route}`, async () => {
       await page.goto(BASE + route);
       await page.waitForTimeout(1200);
