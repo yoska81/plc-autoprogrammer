@@ -397,7 +397,9 @@ async function journey(browser, mc) {
     await page.goto(BASE + '/simulate');
     const bar = page.getByLabel('Practice wiring fault');
     await bar.waitFor({ timeout: 15000 });
-    await bar.getByLabel('Wire to break').selectOption(pt.wire);
+    // The conductor at the PLC terminal of that point (options: wire — from → to).
+    const id = await bar.getByLabel('Wire to break').locator('option', { hasText: new RegExp(`^${pt.wire} — (PLC:${pt.address} → |\\S+ → PLC:${pt.address}\\b)`) }).first().getAttribute('value');
+    await bar.getByLabel('Wire to break').selectOption(id);
     await bar.getByLabel('Fault').selectOption('open');
     await bar.getByRole('button', { name: 'Break this wire' }).click();
     await bar.getByRole('button', { name: 'Find it with the meter steps' }).click();

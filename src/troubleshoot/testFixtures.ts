@@ -27,7 +27,16 @@ export const SEAL = [
 ];
 /** The user's Sealing Head; `transmitter` swaps the thermocouple for a 2-wire 4-20 mA transmitter on a C0-04AD-1, `npn` makes the head sensors NPN (their input groups then have the common on 24+). */
 export function sealingHead(transmitter = false, npn = false): DrawingContext {
-  const base = npn ? SEAL.map((p) => (p.deviceType === 'sensor-pnp' ? { ...p, deviceType: 'sensor-npn' } : p)) : SEAL;
+  return sealingHeadOf(npn ? SEAL.map((p) => (p.deviceType === 'sensor-pnp' ? { ...p, deviceType: 'sensor-npn' } : p)) : SEAL, transmitter);
+}
+
+/** The reviewer's MIXED variant: "Sealing head down" NPN among PNP devices, the over-temperature input replaced by a jog button and a film-low limit switch. */
+export function sealingHeadMixed(): DrawingContext {
+  return sealingHeadOf(SEAL.flatMap((p) => (/Sealing head down$/.test(p.description) ? [{ ...p, deviceType: 'sensor-npn' }]
+    : /over-temperature/.test(p.description) ? [pt('Jog button', 'input', 'pushbutton-no'), pt('Film low limit switch', 'input', 'limit-switch')] : [p])), false);
+}
+
+function sealingHeadOf(base: Omit<IOPoint, 'id'>[], transmitter: boolean): DrawingContext {
   const points = transmitter
     ? base.map((p) => (/thermocouple/.test(p.description) ? { ...p, description: 'Seal bar temperature (4-20 mA transmitter)', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } } as Omit<IOPoint, 'id'> : p))
     : base;

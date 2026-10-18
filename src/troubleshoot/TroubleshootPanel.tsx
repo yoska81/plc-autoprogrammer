@@ -8,13 +8,13 @@ import { micUsable } from '../voice/micAccess';
 import { spokenReply } from '../voice/text';
 import { useVoiceSettings } from '../voice/useVoiceSettings';
 import { useOnlineStore } from '../online/useOnline';
-import { wiringPaths, type WiringPath } from './wiringPath';
+import { circuitOf, prepareWiring, wiringPaths, type WiringPath } from './wiringPath';
 import { answer, back, currentStep, startSession, symptomsFor, SYMPTOM_LABEL, type Answer, type Session, type Symptom } from './steps';
 import { FlickerWatch } from './watch';
 import SheetThumb from './SheetThumb';
 import { useUi } from '../store/useUiStore';
 import { useProjectsStore } from '../store/useProjectsStore';
-import { practiceFound, practiceReading, type WireFault } from './faults';
+import { oracleFor, verdictNames, type CircuitFault } from './oracle';
 import FaultLog from './FaultLog';
 import { useFaultLogStore } from './useFaultLogStore';
 
@@ -24,7 +24,7 @@ const WIGGLE_MS = 10_000;
 const WIGGLE_POLL_MS = 100;
 
 /** Practice on the simulator: the wiring fault set there, and the points it affects. */
-export interface Practice { fault: WireFault; points: string[] }
+export interface Practice { fault: CircuitFault; points: string[] }
 
 /**
  * Guided fault finding at the cabinet: pick the PLC point that misbehaves and what it does, then follow one
@@ -34,13 +34,17 @@ export interface Practice { fault: WireFault; points: string[] }
  * come from the fault that was set, one tap per step.
  */
 export default function TroubleshootPanel({ practice }: { practice?: Practice } = {}) {
-  const [{ paths, plan }] = useState(() => {
+  const [{ paths, plan, circ }] = useState(() => {
     const ctx = collectProject().drawingCtx;
     let p: WiringPath[] = [];
     let pl: DrawingPlan | null = null;
-    try { if (ctx) { p = wiringPaths(ctx); pl = planDrawings(ctx); } } catch { /* no design */ }
-    return { paths: p, plan: pl };
+    let cc: ReturnType<typeof circuitOf> | null = null;
+    try { if (ctx) { const prep = prepareWiring(ctx); p = wiringPaths(prep); cc = circuitOf(prep); pl = planDrawings(ctx); } } catch { /* no design */ }
+    return { paths: p, plan: pl, circ: cc };
   });
+  // Practice: the meter reads what the circuit gives with the fault that was set.
+  const found = (_path: WiringPath, v: Parameters<typeof verdictNames>[1]) => Boolean(practice && circ && verdictNames(circ.circuit, v, practice.fault));
+  const practiceReading = (path: WiringPath, st: NonNullable<ReturnType<typeof currentStep>>, sym: Symptom) => (practice && circ ? oracleFor(circ.model, circ.circuit, path, practice.fault, sym)?.answer(st, sym).shows ?? '' : '');
   // Practice opens on the point the fault affects (a hidden fault: the first point, so nothing is given away).
   const [address, setAddress] = useState(practice ? practice.points[0] ?? paths[0]?.address ?? '' : '');
   const [reading, setReading] = useState<string | null>(null);
@@ -98,7 +102,7 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
       logged.current = addLog(projectId, {
         address: next.path.address, description: next.path.description, symptom: SYMPTOM_LABEL[next.symptom], found: v.text, fix: v.fix, wire: v.wire,
         readings: next.answers.filter((x, i) => x !== 'skip' && next.steps[i]?.part !== 'prepare').length,
-        ...(practice ? { practice: true, note: practiceFound(next.path, v, practice.fault) ? 'Practice: found the fault that was set' : `Practice: the fault set was wire ${practice.fault.wire}` } : {}),
+        ...(practice ? { practice: true, note: found(next.path, v) ? 'Practice: found the fault that was set' : `Practice: the fault set was ${practice.fault.label}` } : {}),
       }).id;
     }
   };
@@ -135,7 +139,8 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
   return (
     <div className={full ? 'fixed inset-0 z-40 overflow-auto bg-steel-50 p-3' : ''}>
     <div className="mx-auto max-w-xl space-y-3" aria-label="Fault finding">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <span className="mr-auto rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900" title="Fault finding is new: check each verdict with your own judgement before you replace a part.">Beta</span>
         <button type="button" className="rounded border border-steel-300 bg-white px-3 py-1.5 text-sm" onClick={() => setFull(!full)}>{full ? 'Back to the page' : 'Full screen'}</button>
       </div>
       {!session ? (
@@ -177,7 +182,7 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
               {step.hop?.note && <p className="text-sm text-amber-800">{step.hop.note}</p>}
               {practice && step.part !== 'prepare' && step.part !== 'wiggle' && (
                 reading === null
-                  ? <button type="button" className={`${big} w-full border border-violet-400 bg-violet-50 text-violet-900`} onClick={() => setReading(practiceReading(session.path, step, practice.fault, session.symptom).shows)}>Take the reading (practice meter)</button>
+                  ? <button type="button" className={`${big} w-full border border-violet-400 bg-violet-50 text-violet-900`} onClick={() => setReading(practiceReading(session.path, step, session.symptom))}>Take the reading (practice meter)</button>
                   : <p className="rounded-lg bg-violet-600 px-3 py-2 text-center font-mono text-lg font-bold text-white" aria-label="Practice meter">{reading}</p>
               )}
               {plan && step.hop?.where && (
@@ -216,8 +221,8 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
             <div className="space-y-2" role="status">
               <p className="text-lg font-semibold text-steel-900">{session.verdict.text}</p>
               {practice && session.verdict.text !== 'Stopped.' && (
-                <p className={`rounded px-3 py-2 text-sm font-semibold ${practiceFound(session.path, session.verdict, practice.fault) ? 'bg-green-100 text-green-900' : 'bg-amber-100 text-amber-900'}`}>
-                  {practiceFound(session.path, session.verdict, practice.fault) ? `Found it: the fault set was wire ${practice.fault.wire}.` : `Not quite: the fault set was wire ${practice.fault.wire}. Repair it and try another.`}
+                <p className={`rounded px-3 py-2 text-sm font-semibold ${found(session.path, session.verdict) ? 'bg-green-100 text-green-900' : 'bg-amber-100 text-amber-900'}`}>
+                  {found(session.path, session.verdict) ? `Found it: the fault set was ${practice.fault.label}.` : `Not quite: the fault set was ${practice.fault.label}. Repair it and try another.`}
                 </p>
               )}
               {session.verdict.text !== 'Stopped.' && <p className="text-xs text-steel-500">Saved in the fault log below.</p>}
