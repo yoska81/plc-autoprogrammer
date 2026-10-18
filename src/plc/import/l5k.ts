@@ -7,7 +7,7 @@
 import { convertLogixRung } from './logixText';
 import { convertSt } from './st';
 import { toRungs } from './cond';
-import { fillPresets, logixIoKind, logixType, opsOf, OPERAND_KEYS, slug, wholeRung } from './l5x';
+import { fillPresets, logixIoKind, logixType, opsOf, OPERAND_KEYS, slug, rawRepeated, wholeRung } from './l5x';
 import type { ForeignProgram, ForeignRoutine, ForeignTag } from './types';
 
 /** Split text into statements ending with ";" outside quotes / brackets / parentheses. */
@@ -116,7 +116,7 @@ export function readL5k(src: string): ForeignProgram {
           for (const d of driven) for (const op of opsOf(d)) if (logixIoKind(op)) ioRefs.add(op);
           const { rungs, failed } = toRungs(mapOps(driven), comment, `${slug(name)}_${idx}`);
           // A rung the ladder model can't hold is kept whole, as it was.
-          const got = failed.length || untranslated.length ? [wholeRung(rung, comment, `${slug(name)}_${idx}`)] : rungs;
+          const got = failed.length || untranslated.length || rawRepeated(rungs) ? [wholeRung(rung, comment, `${slug(name)}_${idx}`)] : rungs;
           routine.rungs.push(...got);
           for (const g of got) (routine.rungNumbers ??= {})[g.id] = String(idx);
         } catch {

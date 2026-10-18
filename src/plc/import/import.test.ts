@@ -60,6 +60,15 @@ const writes = (r: Rung, a: string) => r.outputs.some((o) => 'address' in o && o
   assert.equal(leg.driven.length, 1);
   const outLeg = convertLogixRung('XIC(A)[OTE(B),MSG(M)];');
   assert.deepEqual(outLeg.driven.map((d) => d.out.type), ['OUT', 'RAW'], 'in a branch at the end of the rung it is an output');
+  // A RAW the paths would repeat (one OSR becomes one per path): the rung is kept whole, as written.
+  const l5xOf = (text: string) => `<?xml version="1.0"?><RSLogix5000Content><Controller Name="T" ProcessorType="1769-L33ER"><Tags/><Programs><Program Name="P" MainRoutineName="R"><Routines><Routine Name="R" Type="RLL"><RLLContent><Rung Number="0" Type="N"><Text><![CDATA[${text}]]></Text></Rung></RLLContent></Routine></Routines></Program></Programs></Controller></RSLogix5000Content>`;
+  const rep = importProgramText('r.L5X', l5xOf('[XIC(V1),XIC(V2)]OSR(a,b)XIC(V3)OTE(V20);'));
+  assert.equal(rep.program.rungs.length, 1);
+  assert.deepEqual(rep.program.rungs[0].outputs, [{ type: 'RAW', vendor: 'logix', text: '[XIC(V1),XIC(V2)]OSR(a,b)XIC(V3)OTE(V20)' }], 'kept whole: one OSR, as in the PLC');
+  assert.deepEqual(rep.program.rungs[0].branches, []);
+  // One path: nothing repeats, the rest of the rung stays editable.
+  const one = importProgramText('r.L5X', l5xOf('XIC(V1)OSR(a,b)OTE(V20);'));
+  assert.equal(one.program.rungs[0].branches[0].length, 2);
   const mid = convertLogixRung('XIC(A)MEQ(Src,Mask,Cmp)OTE(B);');
   assert.deepEqual(toBranches(mid.driven[0].cond), [[{ type: 'NO', address: 'A' }, { type: 'RAW', vendor: 'logix', text: 'MEQ(Src,Mask,Cmp)' }]], 'in the middle of a rung it is a RAW condition');
   assert.throws(() => parseRungText('XIC(a OTE(b);'), /missing/);
