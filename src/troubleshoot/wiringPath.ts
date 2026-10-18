@@ -648,7 +648,9 @@ function analogPath(c: Ctx, a: ElectricalModel['analog']['circuits'][number]): W
         ? { between: [minus, `the lifted ${twoWire ? 'wire' : 'conductor'}`], kind: 'mA', expect: `4–20 mA (4 mA = ${lo}, 20 mA = ${hi})`, when: `with the loop BROKEN at ${minus} and the meter in SERIES on its mA range — never put the meter across the terminals on mA (that shorts the ${twoWire ? 'transmitter' : 'output'})`, otherwise: 'below 3.8 mA: open loop, no loop supply or a dead transmitter' }
         : { between: [plus, minus], kind: 'VDC', expect: `${row.range} (${row.range.split('-')[0]} = ${lo}, top of range = ${hi})`, when: '' };
   }
-  if (twoWire && dev) dev.measure = { between: [plus, minus], kind: 'VDC', expect: 'about 12–24 VDC (the loop supply minus the input drop)', when: 'loop connected, meter on VOLTS (safe across the terminals)', otherwise: '0 V: no loop supply; about 24 V with no current: the transmitter or its wiring is open' };
+  // Across the transmitter's OWN terminals in the field: at the cabinet terminals an open cable core would show the
+  // full 24 V across the gap and look like a healthy loop.
+  if (twoWire && dev) dev.measure = { between: [`${a.deviceTag} +`, `${a.deviceTag} −`], kind: 'VDC', expect: 'about 12–24 VDC (the loop supply minus the input drop)', when: `at the transmitter itself, loop connected, meter on VOLTS (safe across the terminals)`, otherwise: '0 V: no loop supply or the loop is open on its way' };
   const supply = twoWire ? (() => {
     const src = endsOf(otherNet).find((x) => !x.end.strip && x.end.tag !== mod);
     const net = src && (c.dcNets.has(src.end.raw) || DC_SUPPLY.test(src.end.raw)) ? src.end.raw : '24+';

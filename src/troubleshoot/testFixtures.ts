@@ -25,11 +25,12 @@ export const SEAL = [
   pt('Sealing head down solenoid', 'output', 'solenoid'), pt('Sealing head up solenoid', 'output', 'solenoid'),
   pt('Seal heater on (SSR)', 'output', 'other'), pt('Unwinder VFD run', 'output', 'vfd-input'), pt('Running light', 'output', 'pilot-light'),
 ];
-/** The user's Sealing Head; `transmitter` swaps the thermocouple for a 2-wire 4-20 mA transmitter on a C0-04AD-1. */
-export function sealingHead(transmitter = false): DrawingContext {
+/** The user's Sealing Head; `transmitter` swaps the thermocouple for a 2-wire 4-20 mA transmitter on a C0-04AD-1, `npn` makes the head sensors NPN (their input groups then have the common on 24+). */
+export function sealingHead(transmitter = false, npn = false): DrawingContext {
+  const base = npn ? SEAL.map((p) => (p.deviceType === 'sensor-pnp' ? { ...p, deviceType: 'sensor-npn' } : p)) : SEAL;
   const points = transmitter
-    ? SEAL.map((p) => (/thermocouple/.test(p.description) ? { ...p, description: 'Seal bar temperature (4-20 mA transmitter)', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } } as Omit<IOPoint, 'id'> : p))
-    : SEAL;
+    ? base.map((p) => (/thermocouple/.test(p.description) ? { ...p, description: 'Seal bar temperature (4-20 mA transmitter)', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } } as Omit<IOPoint, 'id'> : p))
+    : base;
   const io = points.map((p, i) => ({ ...p, id: `s${i + 1}` })) as IOPoint[];
   const profile = getProfile('click');
   const cpu = getCpu(profile, 'C0-11DD2E-D');

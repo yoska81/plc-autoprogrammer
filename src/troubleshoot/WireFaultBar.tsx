@@ -56,7 +56,7 @@ export default function WireFaultBar({ ctl, snap }: { ctl: SimController; snap: 
 
   return (
     <>
-    <div className={`flex flex-wrap items-center gap-2 border-b border-violet-200 bg-violet-50 px-3 py-1.5 text-[12px] ${narrow ? 'fixed inset-x-0 bottom-0 z-30 border-t shadow-lg [&_select]:max-w-full [&_select]:min-w-0 [&_select]:flex-1 [&_label]:min-w-0 [&_label]:flex-1' : ''}`} aria-label="Practice wiring fault">
+    <div className={`flex flex-wrap items-center gap-2 border-b border-violet-200 bg-violet-50 px-3 py-1.5 text-[12px] ${narrow ? 'fixed inset-x-0 bottom-0 z-30 border-t shadow-lg [&_select]:max-w-full [&_select]:min-w-0 [&_select]:flex-1 [&_label]:min-w-0 [&_label]:flex-1 [&_button]:min-h-11 [&_button]:px-3 [&_select]:min-h-11' : ''}`} aria-label="Practice wiring fault">
       <span className="font-bold text-violet-900">Practice fault finding</span>
       {!active ? (
         <>

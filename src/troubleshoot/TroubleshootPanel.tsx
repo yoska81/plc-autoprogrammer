@@ -41,7 +41,8 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
     try { if (ctx) { p = wiringPaths(ctx); pl = planDrawings(ctx); } } catch { /* no design */ }
     return { paths: p, plan: pl };
   });
-  const [address, setAddress] = useState(practice?.points[0] ?? '');
+  // Practice opens on the point the fault affects (a hidden fault: the first point, so nothing is given away).
+  const [address, setAddress] = useState(practice ? practice.points[0] ?? paths[0]?.address ?? '' : '');
   const [reading, setReading] = useState<string | null>(null);
   const projectId = useProjectsStore((s) => s.activeId);
   const addLog = useFaultLogStore((s) => s.add);

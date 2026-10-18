@@ -96,14 +96,17 @@ export function practiceReading(path: WiringPath, step: { part: string; hop?: Pa
   const zero = m?.kind === 'mA' ? '0 mA' : 'about 0 V';
   const hit = (x: PathHop) => x.wire === f.wire && (!f.at || hopKey(x) === f.at);
   const ch = chains(path);
+  // The short that holds an input ON: to 24 V for PNP, to 0 V for NPN.
+  const onShort = ch.npn ? 'short-0V' : 'short-24V';
   if (step.part === 'isolate') {
-    const still = f.kind === 'short-24V' && path.signal.some(hit);
+    const still = f.kind === onShort && path.signal.some(hit);
     return { yes: still, shows: still ? `${path.address} stays ON` : `${path.address} goes OFF` };
   }
   if (symptom === 'always-on') {
-    // The question asks for "about 0 V" with the device OFF; a short to 24 V shows 24 V on its wire.
-    const on = f.kind === 'short-24V' && h.wire === f.wire;
-    return { yes: !on, shows: on ? (m?.expect ?? '24 VDC') : zero };
+    // The question asks for the OFF value with the device OFF; the short shows the ON value on its wire.
+    const on = f.kind === onShort && h.wire === f.wire;
+    const off = (m?.otherwise ?? '').replace(/\s+(when|with|while|after|below|in the|:).*$/i, '') || zero;
+    return { yes: !on, shows: on ? (m?.expect ?? '24 VDC') : off };
   }
   // Where the fault is: the signal, the device feed / return, or the module's common (or output supply).
   const inSig = path.signal.some(hit), inFeed = ch.feed.some(hit), inRet = ch.ret.some(hit), inCom = ch.common.some(hit);
