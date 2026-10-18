@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fileText, importProgramFiles } from './index';
 import { planUpgrade } from './upgrade';
+import { importedCategory } from './convert';
 import { programFindings } from './findings';
 import { validateProgram } from '../core/validate';
 import { getProfile } from '../core/profiles';
@@ -67,6 +68,49 @@ function scoreIo(dir: string, io: { name: string; type: string }[]) {
   assert.ok(mel1, `MEL-1 found with both rung steps: ${program.report.notes.join(' | ')}`);
   assert.deepEqual(programFindings(planUpgrade(program, 'click').program), [], 'no false findings on the capper');
   console.log(`  ${dir}: MEL-1 found`);
+}
+
+// Every point of the 3 real fixtures lands in the right I/O list category (a stop blade is not an E-stop, a clamp
+// is not a lamp, a photo-eye on a conveyor is product detection, a level switch is not analog).
+{
+  const CATEGORIES: Record<string, Record<string, string[]>> = {
+    'ab-palletizer-01': {
+      'Safety': ['E_Stop_OK', 'Guard_Door_Closed'],
+      'Operator/HMI': ['Start_PB', 'Stop_PB', 'Reset_PB', 'Auto_Sel', 'Light_Green', 'Light_Amber', 'Light_Red', 'Horn'],
+      'Product Detection': ['Infeed_Case_PE', 'Infeed_Count_PE', 'Elev_Up_LS', 'Elev_Down_LS', 'Pallet_Present_PE', 'Case_Stop_Up_PX'],
+      'Pneumatic': ['Pusher_Retracted_PX', 'Pusher_Extended_PX', 'Air_Pressure_OK', 'Case_Stop_Sol', 'Pusher_Extend_Sol'],
+      'Conveyor': ['Infeed_OL_OK', 'Infeed_Conv_Run', 'Layer_Conv_Run', 'Pallet_Conv_Run'],
+      'Station 1': ['Elev_Up_Mtr', 'Elev_Down_Mtr'],
+      'Analog/Process': ['Elev_Position'],
+    },
+    'siemens-mixer-01': {
+      'Analog/Process': ['Level_Raw', 'Temp_Raw'],
+      'Operator/HMI': ['Start_PB', 'Stop_PB', 'Reset_PB', 'Lamp_Running', 'Lamp_Fault', 'Lamp_Batch_Done'],
+      'Safety': ['EStop_OK', 'Heater_OT_OK'],
+      'Station 1': ['Agitator_Running', 'Agitator_OL_OK', 'LSHH_OK', 'Lid_Closed', 'Agitator_Run', 'Heater_On'],
+      'Pneumatic': ['Outlet_Valve_Closed', 'Inlet_Valve_A', 'Inlet_Valve_B', 'Outlet_Valve'],
+    },
+    'mitsubishi-capper-01': {
+      'Operator/HMI': ['Start_PB', 'Stop_PB', 'Reset_PB', 'Jog_Spindle_PB', 'Lamp_Green', 'Lamp_Red', 'Buzzer'],
+      'Safety': ['EStop_OK', 'Guard_Closed'],
+      'Product Detection': ['Bottle_At_Station_PE', 'Cap_In_Chuck_PE', 'Head_Up_LS', 'Head_Down_LS', 'Cap_Chute_Full_PE'],
+      'Pneumatic': ['Clamp_Closed_LS', 'Air_OK', 'Bottle_Gate_Sol', 'Clamp_Close_Sol', 'Head_Down_Sol', 'Cap_Feed_Sol', 'Reject_Sol'],
+      'Station 1': ['Torque_Reached', 'Spindle_Run'],
+      'Conveyor': ['Conveyor_Run'],
+    },
+  };
+  const FILES: Record<string, string[]> = {
+    'ab-palletizer-01': ['Palletizer_PL01.L5X'],
+    'siemens-mixer-01': ['MixTank_MT01.xml', 'PLC_Tags_MT01.csv'],
+    'mitsubishi-capper-01': ['CAPPER_MAIN.csv', 'CAPPER_DeviceComment.csv'],
+  };
+  for (const [dir, byCategory] of Object.entries(CATEGORIES)) {
+    const { program } = importProgramFiles(FILES[dir].map((n) => file(dir, n)));
+    const want = new Map(Object.entries(byCategory).flatMap(([c, names]) => names.map((n) => [n, c] as const)));
+    assert.equal(want.size, program.io.length, `${dir}: every point has an expected category`);
+    for (const p of program.io) assert.equal(importedCategory(`${p.name} ${p.description}`, p.analog), want.get(p.name), `${dir}: ${p.name}`);
+    console.log(`  ${dir}: categories ${program.io.length}/${program.io.length}`);
+  }
 }
 
 console.log('fixtures.test: all passed');
