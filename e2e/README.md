@@ -115,3 +115,10 @@ The first press of a microphone asks with a native dialog (stubbed: Allow once /
 is explained in the mic popover (no address-bar advice); "Allow once" lasts until the app closes; camera
 requests are refused. Unit test: `npx tsx src/voice/micAccess.test.ts`. The preview e2e checks that the
 preview shows the mic as not available (it has no microphone) and makes no microphone request.
+
+## Troubleshooter practice (simulator wiring faults)
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/troubleshoot.e2e.cjs   # break a wire (X005 shorted to 24 V → X005 ON), repair, hidden fault + reveal
+```
+Unit tests: `npx tsx src/troubleshoot/wiringPath.test.ts` (wiring paths and fault effects).

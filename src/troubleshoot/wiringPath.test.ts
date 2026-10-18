@@ -17,6 +17,7 @@ import { analogSetup } from '../plc/core/analog';
 import type { IOPoint } from '../types/io';
 import { partnerPins, wiringPath, wiringPaths, type PathHop, type WiringPath } from './wiringPath';
 import { withDrawingOptions } from '../standards/drawingOptions';
+import { faultEffects, faultableWires } from './faults';
 
 const warn = console.warn;
 console.warn = (...a: unknown[]) => { if (!String(a[0]).includes('zustand persist')) warn(...a); };
@@ -211,6 +212,47 @@ test('IEC designations: the example in Europe (-K2 PLC, -X2 terminals)', () => {
   assert.match(pe.signal[0].tag, /^-K/, pe.summary);
   assert.ok(pe.signal.some((h) => h.kind === 'terminal' && /^-X/.test(h.tag)), pe.summary);
   assert.ok(pe.supply.some((h) => h.kind === 'source'), pe.summary);
+});
+
+console.log('wiring faults');
+
+test('an open photo-eye signal wire keeps only X004 OFF', () => {
+  const e = faultEffects(exPaths, { wire: 'X004', kind: 'open' });
+  assert.deepEqual(e.map((x) => `${x.address}=${x.reads}`), ['X004=false']);
+  assert.match(e[0].why, /never turns ON/);
+});
+
+test('a signal wire shorted to 24 V keeps its input ON', () => {
+  const e = faultEffects(exPaths, { wire: 'X005', kind: 'short-24V' });
+  assert.deepEqual(e.map((x) => `${x.address}=${x.reads}`), ['X005=true']);
+});
+
+test('an open 24+S wire kills the loads fed through the safety relay, not the inputs on 24+', () => {
+  const e = faultEffects(exPaths, { wire: '24+S', kind: 'open' });
+  const addrs = e.map((x) => x.address);
+  assert.ok(addrs.includes('Y001') && addrs.includes('Y002'), addrs.join(' '));
+  assert.ok(!addrs.includes('X004'), 'photo-eye is on 24+');
+  assert.ok(e.filter((x) => x.type === 'output').every((x) => x.reads === null));
+});
+
+test('24+ shorted to 0 V: everything on the supply dies', () => {
+  const e = faultEffects(exPaths, { wire: '24+', kind: 'short-0V' });
+  assert.equal(new Set(e.map((x) => x.address)).size, exPaths.length);
+  assert.ok(e.filter((x) => x.type === 'input').every((x) => x.reads === false));
+});
+
+test('faultable wires: signal and supply wires, no mains or PE', () => {
+  const ws = faultableWires(exPaths);
+  const names = ws.map((x) => x.wire);
+  for (const w of ['X004', 'Y002', '24+', '24+S', '0V']) assert.ok(names.includes(w), `${w} in ${names.join(' ')}`);
+  assert.ok(!names.some((w) => /^(L1|L2|L3|PE)$/.test(w)));
+  assert.deepEqual(ws.find((x) => x.wire === 'X004')!.points, ['X004']);
+});
+
+test('Sealing Head: an open thermocouple wire puts DF1 out of range', () => {
+  const tc = shPaths.find((x) => x.analog)!;
+  const e = faultEffects(shPaths, { wire: tc.signal[0].wire!, kind: 'open' });
+  assert.ok(e.some((x) => x.address === tc.address && /out of range/.test(x.why)));
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
