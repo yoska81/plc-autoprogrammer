@@ -106,6 +106,15 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
 
 - [x] **Large drives + Class T fuses (manager, from Debug 4's QA)**: AutomationDirect GS20 to 30 HP 460 V / 20 HP 230 V, GS30 to 100 HP 460 V / 30 HP 230 V, each with fuseClass / fuseAmps / fusePart (all GS drives) and SCCR (GS30 5-10 kA per the model tables, not the manual's general 100 kA); Edison TJN / TJS Class T fuses 3-350 A, Bussmann Class T blocks to 60 A (AutomationDirect retired the larger ones), Class J 60 A holders and 100 / 200 A blocks. Cross-reference: PowerFlex 525 to 30 HP, G120C to 150 hp, GA500 to 40 HP, ABB ACS180 / ACS380 to 30 HP, all with SCCR and fuse / breaker conditions from the makers' UL tables. Catalog test: apim.industry.siemens.cloud (Siemens datasheet host) allowed.
 
+## CLICK / CLICK PLUS CPUs (all of them)
+- Added the 19 CPUs the PLC profile offered but the catalog lacked (C0-11DD2E-D first): C0-11DRE-D, C0-12DD2E-D, C0-12DRE-D, C0-10ARE-D, C0-11ARE-D, C0-12ARE-D, C0-00DD1-D, C0-00DD2-D, C0-00DR-D, C0-00AR-D, C0-01DD2-D, C0-01DR-D, C0-01AR-D, C0-02DD2-D, C0-02DR-D, C2-01CPU, C2-02CPU, C2-03CPU.
+- Footprints are read from each AutomationDirect drawing. All C0 units are 53.5 x 93 mm. C2-01CPU is 53.5 x 97.1 mm and C2-02/03CPU are 53.5 x 101.8 mm (including the plug and antenna connector; see footprintNote).
+- I/O counts, output type and amps come from the AutomationDirect attribute data; ports from hardware manual ch. 4; `supplyCurrentMa` from the spec sheets.
+- Correction: the AR/ARE CPUs are 24 VDC powered, like the others. Only their inputs are 100-120 VAC (`inputType`).
+- CLICK PLUS: no on-board I/O, `optionSlots: 1`, and wifi/bluetooth flags. `powerWatts: 20` is AutomationDirect's maximum with the most I/O modules attached (`powerNote`).
+- Prices and stock as of 2026-10-18 from each product page (JSON-LD), USD $104-$294. C0-00DD1-D is backordered until 11/02 and recorded as `short`.
+- New catalog test: every CPU in CLICK_CPUS is in the catalog with a footprint.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.

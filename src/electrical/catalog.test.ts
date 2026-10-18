@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { CATALOG } from './catalog';
 import { PRICES } from './prices';
 import { HMI_MODELS } from '../hmi/hmiCatalog';
+import { CLICK_CPUS } from '../plc/core/profiles/clickData';
 import type { CatalogCategory, CatalogPart } from './types';
 
 let passed = 0;
@@ -205,6 +206,12 @@ test('prices belong to catalog parts and come from the same site', () => {
     if (new URL(pr.sourceUrl).host !== new URL(p.url).host) bad.push(`${pn}: price from ${new URL(pr.sourceUrl).host}, part page on ${new URL(p.url).host}`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(pr.date)) bad.push(`${pn}: price date ${pr.date}`);
   }
+  assert.deepEqual(bad, []);
+});
+
+test('every CLICK CPU the PLC profile offers is in the catalog with a footprint', () => {
+  // The CPU chooser lists CLICK_CPUS; the BOM, back-panel layout and prices need the catalog part.
+  const bad = CLICK_CPUS.filter((c) => { const p = CATALOG.find((x) => x.partNumber === c.id); return !p || !(p.widthMm && p.heightMm); }).map((c) => c.id);
   assert.deepEqual(bad, []);
 });
 
