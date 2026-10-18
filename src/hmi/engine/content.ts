@@ -291,8 +291,17 @@ export function defaultHmiContent(opts: {
 const AXIS_RE = /\b(servo|stepper|axis)\b/i;
 const ENCODER_RE = /\bencoder\b/i;
 
-/** Position units from the I/O texts: degrees, counts / pulses, else millimetres. */
-const unitsOf = (texts: string[]) => (texts.some((t) => /\b(deg|degrees?|rotary|indexer|turntable)\b|°/i.test(t)) ? 'deg' : texts.some((t) => /\b(counts?|pulses?|ppr)\b/i.test(t)) ? 'counts' : 'mm');
+/** A unit named with a ratio wins ("200 pulses/mm", "5 mm/rev", "pulses/deg"). */
+const PER_UNIT = /\b(?:pulses?|counts?|ppr|p)\s*\/\s*(mm|deg|degrees?|°)|\b(mm|deg|degrees?|°)\s*\/\s*(?:rev|revolution|pulses?|counts?)\b/i;
+
+/** Position units from the I/O texts: a unit given as a ratio, else degrees, counts / pulses, else millimetres. */
+const unitsOf = (texts: string[]) => {
+  for (const t of texts) {
+    const m = PER_UNIT.exec(t);
+    if (m) return /^mm$/i.test(m[1] ?? m[2]) ? 'mm' : 'deg';
+  }
+  return texts.some((t) => /\b(deg|degrees?|rotary|indexer|turntable)\b|°/i.test(t)) ? 'deg' : texts.some((t) => /\b(counts?|pulses?|ppr)\b/i.test(t)) ? 'counts' : 'mm';
+};
 
 /**
  * Servo / stepper axes and encoders from the discrete I/O: points in the Servo/Axis category or naming a
@@ -302,9 +311,12 @@ const unitsOf = (texts: string[]) => (texts.some((t) => /\b(deg|degrees?|rotary|
 export function motionContent(pts: (HmiPoint & { type: 'input' | 'output'; category?: string })[]): { axes: HmiAxis[]; encoders: HmiEncoder[]; taken: Set<string> } {
   const taken = new Set<string>();
   const groupOf = (d: string, words: RegExp) => {
-    const n = /\baxis\s*(\d+|[xyzuvw])\b/i.exec(d) ?? /\b([xyzuvw])[- ]axis\b/i.exec(d) ?? /\b(?:servo|stepper|encoder)\s*(\d+)\b/i.exec(d);
+    const n = /\baxis\s*(\d+|[xyzuvw])\b/i.exec(d) ?? /\b([xyzuvw])[- ]axis\b/i.exec(d);
     if (n) return /^\d+$/.test(n[1]) ? `Axis ${n[1]}` : `${n[1].toUpperCase()} Axis`;
-    const rest = d.replace(words, ' ').replace(/\b(servo|stepper|axis|drive|encoder|channel|phase|ready|fault|alarm|home\w*|complete|done|in\s*position|positive|negative|limit|enable\w*|command|jog\w*|move\w*|to|position|[abz]|ok|pulse|input|output)\b/gi, ' ');
+    // "Encoder 1 A" is Encoder 1; "Servo 2 ready" is Axis 2.
+    const k = /\b(servo|stepper|encoder)\s*(\d+)\b/i.exec(d);
+    if (k) return `${/encoder/i.test(k[1]) ? 'Encoder' : 'Axis'} ${k[2]}`;
+    const rest = d.replace(/\([^)]*\)/g, ' ').replace(words, ' ').replace(/\b(servo|stepper|axis|drive|encoder|channel|phase|ready|fault|alarm|home\w*|complete|done|in\s*position|positive|negative|limit|enable\w*|command|jog\w*|move\w*|to|position|[abz]|ok|pulse|input|output)\b/gi, ' ');
     return title(keyWords(rest).slice(0, 3).join(' ')) || 'Axis';
   };
   const axisPts = pts.filter((x) => (x.category === 'Servo/Axis' || AXIS_RE.test(x.description)) && !ENCODER_RE.test(x.description) && !/\bpower\b/i.test(x.description));
