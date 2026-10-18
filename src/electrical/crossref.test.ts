@@ -32,6 +32,10 @@ const fan75 = crossReference().find((g) => g.fn === 'cooling' && g.key === 'filt
 assert.ok(fan75.parts.automationdirect?.length && fan75.parts.hoffman?.length && fan75.parts.rittal?.length, 'AD / Hoffman / Rittal 75 CFM fans');
 assert.equal(functionKey(getPart('118000-00')!), null, 'exhaust grilles have no airflow of their own');
 assert.ok(crossReference().some((g) => g.fn === 'cooling' && /^air conditioner/.test(g.key) && Object.keys(g.parts).length === 3), 'air conditioners of three makers');
+// Power supplies by input class: a supply that takes 480 V L-L is never swapped for a 90-264 VAC one.
+assert.equal(functionKey(getPart('ABL8RPS24100')!)?.[1], '24 V 10 A up to 480 V L-L in');
+assert.ok(equivalents(getPart('ABL8RPS24100')!).every((e) => /480 V L-L/.test(functionKey(e.part)![1])), 'no 1-phase universal supply offered');
+assert.ok(equivalents(getPart('PSR-24-240-3')!).every((e) => /3-phase in/.test(functionKey(e.part)![1])), '3-phase stays 3-phase');
 console.log(`cross-reference tests passed (${crossReference().length} groups)`);
 
 // Sourcing: page records, with lifecycle / successor where the maker names one.

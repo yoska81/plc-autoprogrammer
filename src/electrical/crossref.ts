@@ -1,5 +1,5 @@
 import { CATALOG } from './catalog';
-import { parseVolts } from './strength';
+import { parseVolts, supplyInputClass } from './strength';
 import type { CatalogPart, VendorId } from './types';
 
 /**
@@ -70,7 +70,7 @@ export function functionKey(p: CatalogPart): [CrossFunction, string] | null {
     }
     case 'powerSupply': {
       const v = n(r.outputVolts), a = n(r.outputAmps);
-      return v && a ? ['powerSupply', `${v} V ${a} A${String(r.phases ?? '').includes('3') ? ' 3-phase in' : ''}`] : null;
+      return v && a ? ['powerSupply', `${v} V ${a} A${supplyInputClass(r)}`] : null;
     }
     case 'relay': {
       if (r.switching !== undefined || r.loadVolts !== undefined) {

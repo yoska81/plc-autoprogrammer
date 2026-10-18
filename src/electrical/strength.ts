@@ -76,6 +76,21 @@ export function motorBranchMaxA(p: CatalogPart, fla: number): number | null {
 }
 
 /**
+ * The input class of a power supply, so a swap never offers one that cannot take the feed: 3-phase 400-500 V,
+ * 1/2-phase up to 480 V L-L (the highest AC volts in `inputVolts`, DC ranges ignored), DC in, or '' for the usual
+ * 1-phase 100-240 V universal input.
+ */
+export function supplyInputClass(r: CatalogPart['ratings']): string {
+  const txt = String(r.inputVolts ?? '');
+  const ac = txt.replace(/[\d.\s\-…]+V\s?DC/gi, ' ').match(/\d+(?:\.\d+)?(?=\s*(?:V\s?AC|VAC|V\b|L-L|L-N))|\d+(?=\s*[-…]\s*\d)/gi);
+  const max = Math.max(0, ...(ac ?? []).map(Number).filter((x) => x >= 24));
+  if (String(r.phases ?? '').includes('3')) return ' 3-phase in';
+  if (max > 300) return ' up to 480 V L-L in';
+  if (!max && /dc/i.test(txt)) return ' DC in';
+  return '';
+}
+
+/**
  * Compare a candidate with the part the design uses now. Weaker on any key
  * rating (or incompatible) = not ok, with the reason in plain words; equal or
  * stronger everywhere = ok. `better` is set when it is stronger somewhere.
@@ -94,6 +109,14 @@ export function compareStrength(current: CatalogPart, candidate: CatalogPart, ct
   for (const m of MUST_MATCH) {
     if (a[m.key] !== undefined && b[m.key] !== undefined && String(a[m.key]) !== String(b[m.key])) {
       return { ok: false, reason: `Different ${m.label} (${b[m.key]} instead of ${a[m.key]})`, better: false };
+    }
+  }
+  // Power supplies: the candidate must take the same feed. A 480 V L-L supply can stand in for a 1-phase universal
+  // or a 3-phase one; nothing else crosses input classes (a 90-264 VAC supply cannot be fed 480 V).
+  if (current.category === 'powerSupply' && candidate.category === 'powerSupply') {
+    const ci = supplyInputClass(a), ki = supplyInputClass(b);
+    if (ci !== ki && !(ki === ' up to 480 V L-L in' && (ci === '' || ci === ' 3-phase in'))) {
+      return { ok: false, reason: `Different input (${b.inputVolts ?? '?'} instead of ${a.inputVolts ?? '?'})`, better: false };
     }
   }
   let better = false;

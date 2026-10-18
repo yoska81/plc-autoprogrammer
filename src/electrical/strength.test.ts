@@ -59,3 +59,11 @@ for (const p of CATALOG.filter((x) => (x.category === 'vfd' || x.category === 'p
 assert.equal(getPart('GS23-45P0')!.ratings.sccrKA, 100);
 assert.equal(getPart('ATV320U07N4B')!.ratings.sccrKA, 5, 'ATV320 without the line reactor');
 console.log('SCCR rating tests passed');
+
+// Power supplies: the swap must take the same feed. A 480 V 3-phase PS is never offered a 90-264 VAC one.
+assert.match(compareStrength(getPart('PSR-24-240-3')!, getPart('PSR-24-240')!).reason, /^Different input/);
+assert.match(compareStrength(getPart('PSR-24-240')!, getPart('PSR-24-240-3')!).reason, /^Different input/, 'and not the other way');
+assert.ok(compareStrength(getPart('PSR-24-240-3')!, getPart('ABL8RPS24100')!).ok, '200-500 V L-L takes a 480 V feed');
+assert.ok(compareStrength(getPart('PSR-24-240')!, getPart('ABL8RPS24100')!).ok, 'and a 120 / 240 V one');
+assert.ok(!compareStrength(getPart('ABL8RPS24100')!, getPart('PSR-24-240-3')!).ok, 'a 3-phase supply needs all three lines');
+console.log('power supply input tests passed');
