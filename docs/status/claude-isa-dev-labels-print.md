@@ -189,6 +189,48 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
 - **Inovance SV660P** (imported data): 27 MS1 motors. The 12 drives were left out because their part numbers would be assembled from a pattern.
 - **Delta ASDA-B3/A3:** not added. Delta's documents now sit behind a captcha; it was not bypassed, and third-party copies were not used.
 
+## Encoders, ultrasonic sensors, CLICK high-speed counter / pulse output limits
+- **Encoders (category `encoder`):** 225 AD-sold JTEKT/Koyo incremental encoders (TRD-N/NH, TRD-SR, TRD-GK, TRDA-20, TRDA-25) plus 6 TRDA-25 cables. Fields: ppr, outputs, outputType, supplyVolts, maxFreqKHz, shaft/bore.
+  - Retired lines were not added (TRD-S/SH, TRDA-2E, TRD-MX).
+  - Encoder Products base models were dropped: full order codes are built from an ordering guide, and AD does not sell them.
+- **Ultrasonic sensors** (category `sensor`, type 'ultrasonic', with rangeMm, rangeMinMm and rangeMaxMm):
+  - AD Micro Detectors UK1/UK6 (100): PNP, NPN, 0-10 V, 4-20 mA, and analog + PNP.
+  - Pepperl+Fuchs UB (20) and Banner T30UX/QS18U/S18U (20) are new vendors (`pepperl`, `banner`). Their source is the maker datasheet PDF.
+  - Baumer was not added: baumer.com returned 403 to every request.
+- **Prices:** 353 AD prices and stock records (2026-10-18).
+- **File split:** the new AD parts are in automationdirectSensors.ts. automationdirect.ts became too large for the TypeScript compiler to type as one list (TS2590).
+- **CLICK high-speed limits, as data on the CPUs** (hsc*/pto* keys, manual page in hscSource):
+  - C0-10/C0-12 Ethernet DC CPUs: 4 HSC on X001-X004, 2 quadrature (1 with Z), 100 kHz.
+  - C0-11: 6 HSC on X001-X008, 3 quadrature (2 with Z).
+  - The C0 CPUs have no PTO (ptoNote says so). C0-0x and AC-input CPUs have no high-speed inputs.
+  - CLICK PLUS C2-0xCPU: the limits come from the module in option slot 0. C2-14D1/D2/TTL give 6 HSC, 4 quadrature, 3 PTO axes on Y1/Y3/Y5 at 100 kHz. C2-08D1/D2 give 2 axes on Y1/Y3.
+- **New CLICK parts:** 13 option-slot modules, 3 two-slot CPUs (-2) and 6 C0 Ethernet Analog -1/-2 CPUs.
+  - The slot modules have no footprint of their own because they sit inside the CPU.
+  - The -2 CPU width (80.5 mm) comes from the manual drawing. Both are on the unverified list with the reason.
+
+## Troubleshooter: device fault knowledge (src/troubleshoot)
+- The API is in deviceFaults.ts: DeviceFaultProfile holds normal terminal readings per state, LED/display meanings, and faults (code, symptom, causes, confirm, fix, source). Lookups: faultProfilesFor(part) (most specific first), faultCode(part, code) and faultsMatching(part, words).
+- The test checks that every source is an https URL, every match selects a real catalog or imported part, codes are unique per profile, and each fault has symptom, confirm and fix.
+- Drives and servo (faults/drives.ts): 5 profiles, 408 faults, all from the maker manuals with chapter and page.
+  - GS20 (75), GS10 (60), GS30 (85): every keypad code (ocA, ovd, GFF, oH1, cF2, CE10 …). Confirm steps use fault records P06.17-22 and the values at malfunction (P06.34 DC bus, P06.35 current, P06.40 DI status). Normal readings include the supply range, the DC bus band between Lv and ov, +24V-DCM, DI levels for source and sink, and STO1/STO2 to SCM.
+  - Inovance MD290/MD500 (37; codes E002.0… with the Err02 panel text in the symptom).
+  - SureServo2 (151 alarms AL001-AL809; P0.001 and P4.000-004 history; STO state table).
+- I/O and field devices (faults/ioField.ts): 28 profiles, 240 faults.
+  - CLICK C0 and CLICK PLUS CPUs, with every error code (101-108, 201-205, 301-384, 001, 109); DC inputs (sink/source, with the C1 wiring for PNP vs NPN); AC inputs; sinking, sourcing and relay outputs; analog, thermocouple and built-in analog; option-slot I/O.
+  - PNP/NPN inductive and photoelectric sensors; ultrasonic sensors (AD UK1/UK6, P+F UB, Banner T30UX/S18U/QS18U); TRD encoders by output type; GCX pushbuttons and E-stops; Mindman valves.
+  - To check: the C0 sourcing-output common extracted as "CO" and may be "C0" on the part.
+- Power and protection (faults/power.ts): 28 profiles, 87 faults.
+  - Rhino PSR/PSN/PSL, QUINT4, SITOP PSU6200 and S8VK-C supplies; Gladiator, S200U, 5SJ4, C60BP and 1489-M breakers; Class T, J and CC fuses; Fuji SC-E contactors and TK-E overloads; 78x, GQ and GRS-H relays; Dold, IDEM, 440R, 3SK1 and XPSUAF safety relays.
+  - The QUINT4 data sheet was read from a distributor's copy of Phoenix's own document, because Phoenix refused scripted access.
+  - No maker states a "~0 V across a healthy fuse" figure, so the fuse profiles use the Bussmann continuity test.
+- Coverage of the families asked for:
+  - Every CLICK part, every encoder, fuse, safety relay and valve, the GS drives and SureServo2.
+  - Other brands' contactors, overloads, VFDs and servo motors have no profile yet.
+- Gaps:
+  - Delta VFD-E/MS300/C2000: manuals are behind a captcha.
+  - No drive manual gives a DC bus nominal value, so only the trip band is used.
+  - In the GS20 short-circuit check, one terminal is a symbol that did not extract. The text says so instead of guessing the terminal.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.
