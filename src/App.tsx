@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { useNoTouchPanel, useProjectPanelPart } from './hmi/projectPanel';
+import { useNarrow } from './components/useNarrow';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   DocumentPlusIcon, ArrowUpTrayIcon, PlayIcon, ArrowDownTrayIcon, Cog6ToothIcon,
@@ -55,20 +56,6 @@ function Menu({ label, children }: { label: string; children: ReactNode }) {
 
 function MenuItem({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return <button onClick={onClick} className="w-full text-left px-4 py-1.5 hover:bg-brand-50 hover:text-brand-800">{children}</button>;
-}
-
-/** True while the window is phone-narrow (under 640 px). */
-function useNarrow(): boolean {
-  const query = '(max-width: 639px)';
-  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia?.(query);
-    if (!mq) return;
-    const on = () => setNarrow(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
-  return narrow;
 }
 
 function ToolButton({ title, onClick, children, ...aria }: {

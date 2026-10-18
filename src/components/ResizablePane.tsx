@@ -20,13 +20,15 @@ interface Props {
   className?: string;
   style?: CSSProperties;
   children: ReactNode;
+  /** Fill the free width instead (no splitter): a phone shows the pane on its own. */
+  fill?: boolean;
 }
 
 /**
  * A panel whose width the user drags, like a Windows splitter. The width is
  * remembered; double-click the divider to go back to the default width.
  */
-export default function ResizablePane({ id, defaultSize, min = 160, max = 1400, handle = 'right', className = '', style, children }: Props) {
+export default function ResizablePane({ id, defaultSize, min = 160, max = 1400, handle = 'right', className = '', style, children, fill }: Props) {
   const key = `pane-width:${id}`;
   const [width, setWidth] = useState(() => read(key) ?? defaultSize);
   const [dragging, setDragging] = useState(false);
@@ -59,6 +61,7 @@ export default function ResizablePane({ id, defaultSize, min = 160, max = 1400, 
     if (e.key === shrink) { e.preventDefault(); setWidth((w) => clamp(w - step)); }
   };
 
+  if (fill) return <div className={`relative flex-1 min-w-0 ${className}`} style={style}>{children}</div>;
   return (
     <div className={`relative flex-shrink-0 ${className}`} style={{ ...style, width }}>
       {children}

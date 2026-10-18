@@ -2,7 +2,8 @@
 // page only explicit horizontal scrollers (overflow-x-auto boxes around wide tables / tab strips, or
 // anything marked data-scroll-x: drawings, canvases, the simulator's columns) may scroll sideways; page
 // headers fit (nothing past their edge) and the page title gets a usable width (not squeezed into a
-// narrow column beside the buttons).
+// narrow column beside the buttons); no button or field is cut off at the right edge (outside a horizontal
+// scroller). Workspaces that show one pane at a time on a phone (Labels, PLC program) are checked pane by pane.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/phone.e2e.cjs
 const fs = require('fs');
 const path = require('path');
@@ -32,6 +33,16 @@ function audit() {
     if (!/(auto|scroll)/.test(getComputedStyle(el).overflowX) || intentional(el)) continue;
     out.push(`${el.tagName.toLowerCase()}.${String(el.className).split(' ').slice(0, 4).join('.')} scrolls sideways (+${el.scrollWidth - el.clientWidth}px)`);
   }
+  // Controls cut off: a button or field whose box ends past the screen, outside a horizontal scroller.
+  const inScroller = (el) => {
+    for (let x = el.parentElement; x && x !== document.body; x = x.parentElement) if (/(auto|scroll)/.test(getComputedStyle(x).overflowX) && intentional(x)) return true;
+    return false;
+  };
+  const cut = [...document.querySelectorAll('main button, main input, main select, main textarea, main a[href]')].filter((el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.right > W + 1 && !inScroller(el);
+  });
+  if (cut.length) out.push(`${cut.length} control(s) cut off at the right edge: ${cut.slice(0, 3).map((el) => `“${(el.textContent || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.tagName).trim().slice(0, 22)}”`).join(', ')}`);
   const hdr = document.querySelector('main header');
   if (hdr) {
     if (hdr.scrollWidth > hdr.clientWidth + 1) out.push(`the header runs past the screen (${hdr.scrollWidth} > ${hdr.clientWidth})`);
@@ -65,8 +76,18 @@ function audit() {
     await page.goto(BASE + r);
     await page.waitForTimeout(1000);
     const found = await page.evaluate(audit);
+    // Workspaces that show one pane at a time on a phone: every pane is checked.
+    const tabs = page.locator('[data-phone-tabs] [role="tab"]');
+    const names = await tabs.allInnerTexts();
+    for (let i = 0; i < names.length; i++) {
+      await tabs.nth(i).click();
+      await page.waitForTimeout(300);
+      for (const f of await page.evaluate(audit)) found.push(`[${names[i]}] ${f}`);
+      await page.screenshot({ path: path.join(OUT, `${r.replace(/\W+/g, '_')}_${names[i].replace(/\W+/g, '_')}.png`) });
+    }
+    if (names.length) log(`${r}: phone panes ${names.join(' / ')}`);
     if (found.length) bad++;
-    check(found.length === 0, `${r}: ${found.slice(0, 4).join('; ')}`);
+    check(found.length === 0, `${r}: ${[...new Set(found)].slice(0, 4).join('; ')}`);
     await page.screenshot({ path: path.join(OUT, `${r.replace(/\W+/g, '_') || 'root'}.png`) });
   }
   log(`${ROUTES.length} pages at 390 px, ${bad} with problems`);
