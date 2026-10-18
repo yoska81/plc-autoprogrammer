@@ -35,12 +35,20 @@ function voicesReady(ms = 1500): Promise<SpeechSynthesisVoice[]> {
 
 export const NO_VOICES = 'No voices are installed on this computer, so nothing can be read aloud. On Windows: Settings → Time & language → Speech → Add voices; then restart the app.';
 
-/** Read `text`; resolves when it has been read (or was stopped). `id` marks which button shows "Stop". */
-export async function speak(text: string, id = 'speech'): Promise<void> {
-  if (!canSpeak()) return;
-  // no voice at all: say so instead of a button that does nothing
-  if (!(await voicesReady()).length) { notify(NO_VOICES); return; }
-  return speakNow(text, id);
+let noVoicesShown = false;
+
+/**
+ * Read `text`; resolves when it has been read (or was stopped). `id` marks which button shows "Stop".
+ * Resolves false when nothing can be read: no speech here, or no voice installed (said once per session).
+ */
+export async function speak(text: string, id = 'speech'): Promise<boolean> {
+  if (!canSpeak()) return false;
+  if (!(await voicesReady()).length) {
+    if (!noVoicesShown) { noVoicesShown = true; notify(NO_VOICES); }
+    return false;
+  }
+  await speakNow(text, id);
+  return true;
 }
 
 function speakNow(text: string, id: string): Promise<void> {
