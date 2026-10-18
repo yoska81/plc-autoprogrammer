@@ -71,10 +71,10 @@ export function readStSource(src: string, siemens: boolean): ForeignProgram {
     // A function (the ladder model has none), or SCL with statements the converter can't draw (it goes back
     // to the S7 as written): the whole block kept as written.
     if (p.whole && (p.kind === 'FUNCTION' || (siemens && st.untranslated.length))) {
-      routines.push({ name: p.name, language: 'st', rungs: [blockRung(p.whole, p.name, vendor)], untranslated: [] });
+      routines.push({ name: p.name, language: 'st', rungs: [blockRung(p.whole, p.name, vendor)], untranslated: [], origin: { program: '', routine: p.name } });
       continue;
     }
-    routines.push({ name: p.name, language: 'st', rungs: st.rungs, untranslated: st.untranslated });
+    routines.push({ name: p.name, language: 'st', rungs: st.rungs, untranslated: st.untranslated, ...(p.whole ? { origin: { program: '', routine: p.name } } : {}) });
   }
   if (siemens && !tags.some((t) => t.io)) notes.push('The SCL source names the PLC tags but not their addresses: add the PLC tag table (TIA Portal: PLC tags › Export) to know which tags are inputs and outputs.');
   return { format: siemens ? 'siemens-scl' : 'st', vendor: siemens ? 'Siemens' : 'IEC 61131-3', controller: '', projectName: bodies[0]?.name ?? 'Imported program', tags, routines, notes };

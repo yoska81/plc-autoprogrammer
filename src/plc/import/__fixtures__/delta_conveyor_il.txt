@@ -1,0 +1,34 @@
+; ISPSoft 3.18 - Instruction List export
+; Project: Case_Sealer_2   PLC: DVP-14SS2
+; Network 1: run latch
+0     LD    X0
+1     OR    M0
+2     AND   X1
+3     ANI   M10
+4     OUT   M0
+; Network 2: conveyor runs while running and no jam
+5     LD    M0
+6     ANI   T1
+7     OUT   Y0
+; Network 3: case at the sealer for 1.5 s
+8     LD    M0
+9     AND   X2
+10    TMR   T0    K15
+; Network 4: seal head down after the delay, count cases
+13    LD    T0
+14    OUT   Y1
+15    LDP   X2
+16    CNT   C0    K200
+; Network 5: jam if the eye stays blocked 6 s
+19    LD    X2
+20    TMR   T1    K60
+23    LD    T1
+24    OR    M10
+25    ANI   X3
+26    OUT   M10
+; Network 6: batch full lamp, reset with the reset button
+27    LD    C0
+28    OUT   Y2
+29    LD    X3
+30    RST   C0
+31    END

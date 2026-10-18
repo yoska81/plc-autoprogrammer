@@ -42,6 +42,8 @@ export interface AnalogSpec {
   min: number;
   max: number;
   units: string;
+  /** The range was assumed (an imported program did not say it): shown as "to check" until someone sets it. */
+  assumed?: boolean;
 }
 
 export const isAnalog = (p: Pick<IOPoint, 'signal'>) => p.signal === 'analog';

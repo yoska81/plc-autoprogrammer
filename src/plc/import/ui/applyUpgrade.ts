@@ -6,6 +6,7 @@ import { useDraftStore } from '../../../store/useDraftStore';
 import { useProjectsStore } from '../../../store/useProjectsStore';
 import { planUpgrade, UPGRADE_KEY, type UpgradeOriginal, type UpgradePlan } from '../upgrade';
 import { gzipText } from '../gz';
+import { canPatch } from '../exportUpgrade';
 import { notify } from '../../../store/useNoticeStore';
 import type { ImportedProgram } from '../types';
 import type { SpecSectionId } from '../../../spec/types';
@@ -37,7 +38,7 @@ export function applyUpgrade(imp: ImportedProgram, fileText?: string): UpgradePl
   spec.setQuestions([...spec.questions, ...plan.questions.filter((q) => !asked.has(q))]);
   useDraftStore.getState().setDraft(UPGRADE_KEY, plan.original);
   // The original file goes with the project (compressed) so the download can write the changes into it.
-  if (fileText && imp.source.format === 'l5x') void keepFile(fileText, plan.original.importedAt);
+  if (fileText && canPatch(plan.original, plan.plcId)) void keepFile(fileText, plan.original.importedAt);
   return plan;
 }
 

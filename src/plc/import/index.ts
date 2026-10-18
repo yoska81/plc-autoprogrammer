@@ -9,7 +9,10 @@ import { readPlcopen } from './plcopen';
 import { readStSource } from './stSource';
 import { readClickCsv } from './clickCsv';
 import { convertForeign } from './convert';
-import { decodeCsv, isGxComments, isGxProgram, readGxCsv } from './gxCsv';
+import { decodeCsv, isGxComments, isGxProgram, isIlComments, isIlText, readGxCsv, readIlText } from './gxCsv';
+import { isSiemensTagTable, mergeSiemensTags, readSiemensTags } from './siemensTags';
+import { isStlSource, readStlSource } from './stl';
+import { readTiaXml } from './tiaXml';
 import type { ForeignProgram, ImportedProgram, SourceFormat } from './types';
 
 export { materialize } from './convert';
@@ -36,6 +39,8 @@ export function detectFormat(fileName: string, text: string): SourceFormat | nul
   if (/<Document>[\s\S]*SW\.Blocks/i.test(head)) return 'siemens-xml';
   if (/^\s*(IE_VER\s*:=|CONTROLLER\s+\w+\s*\()/m.test(head) || /\.l5k$/i.test(fileName)) return 'l5k';
   if (isGxProgram(head)) return 'mitsubishi-csv';
+  if (isIlText(text)) return 'il-text';
+  if (isStlSource(text) || /\.awl$|\.stl$/i.test(fileName)) return 'siemens-stl';
   const first = head.split(/\r?\n/)[0] ?? '';
   if (/address/i.test(first) && /nickname/i.test(first)) return 'click-csv';
   if (/\b(ORGANIZATION_BLOCK|DATA_BLOCK)\b/.test(head) || /FUNCTION_BLOCK\s+"/.test(head) || (/\bBEGIN\b/.test(text) && /\bEND_FUNCTION_BLOCK\b|\bEND_ORGANIZATION_BLOCK\b/.test(text)) || /\.scl$/i.test(fileName)) return 'siemens-scl';
@@ -63,6 +68,9 @@ function read(format: SourceFormat, text: string): ForeignProgram {
     case 'siemens-scl': return readStSource(text.replace(/\r\n?/g, '\n'), true);
     case 'click-csv': return readClickCsv(text);
     case 'mitsubishi-csv': return readGxCsv(text);
+    case 'il-text': return readIlText(text);
+    case 'siemens-stl': return readStlSource(text);
+    case 'siemens-xml': return readTiaXml(text);
     default: throw new Error('This file type is not read yet.');
   }
 }
@@ -98,6 +106,19 @@ export function importProgramFiles(files: { name: string; text: string }[]): { p
     if (files.every((f) => isGxComments(f.text))) throw new Error('This is a GX Works device comment file: add the program CSV (Project › Export to CSV) with it.');
   }
   const main = files.find((f) => detectFormat(f.name, f.text) && detectFormat(f.name, f.text) !== 'click-csv') ?? files.find((f) => detectFormat(f.name, f.text));
-  if (!main) throw new Error(NOT_RECOGNISED);
+  if (!main) throw new Error(files.some((f) => isSiemensTagTable(f.text)) ? 'This is a PLC tag table: add the program (SCL source or PLCopen XML) with it.' : NOT_RECOGNISED);
+  const format = detectFormat(main.name, main.text)!;
+  // Delta / Inovance / Xinje instruction list with its device comment list.
+  if (format === 'il-text') {
+    const comments = files.find((f) => f !== main && isIlComments(f.text));
+    return { program: convertForeign(readIlText(main.text, comments?.text ?? ''), main.name), main };
+  }
+  // Siemens: the PLC tag table gives the addresses the SCL source does not have.
+  const table = files.find((f) => f !== main && isSiemensTagTable(f.text));
+  if (table && (format === 'siemens-scl' || format === 'siemens-stl' || format === 'siemens-xml' || format === 'st' || format === 'plcopen')) {
+    const fp = read(format, main.text);
+    mergeSiemensTags(fp, readSiemensTags(table.text));
+    return { program: convertForeign(fp, main.name), main };
+  }
   return { program: importProgramText(main.name, main.text), main };
 }

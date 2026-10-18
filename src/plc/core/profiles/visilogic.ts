@@ -93,7 +93,7 @@ export function visiOperands(program: LadderProgram, ctx: ExportContext): VisiMa
     return { operand: `${type} ${index}`, type, index, name, comment };
   };
   const nameOf = (a: string) => nick.get(a)?.nickname || labels.get(a) || a;
-  const commentOf = (a: string) => [labels.get(a), nick.get(a)?.comment].filter(Boolean).join(' — ') || a;
+  const commentOf = (a: string) => [labels.get(a), nick.get(a)?.comment].filter((x, i, all): x is string => !!x && all.indexOf(x) === i).join(' — ') || a;
   const TYPE: Record<string, VisiType> = { C: 'MB', DS: 'MI', DH: 'MI', DD: 'ML', DF: 'MF', T: 'T', CT: 'C' };
   const sorted = [...used].sort((a, b) => { const [pa, na] = nkey(a), [pb, nb] = nkey(b); return pa === pb ? na - nb : pa.localeCompare(pb); });
   for (const a of sorted) {

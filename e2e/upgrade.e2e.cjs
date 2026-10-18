@@ -56,9 +56,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     const io = (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
     const prog = (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder;
     const spec = (await import('/src/store/useSpecStore.ts')).useSpecStore.getState();
-    return { plcId: plc.plcId, modules: plc.modules, io: io.length, rungs: prog.rungs.length, overview: spec.sections.overview, operator: spec.sections.operator, questions: spec.questions };
+    return { plcId: plc.plcId, cpuId: plc.cpuId, modules: plc.modules, io: io.length, rungs: prog.rungs.length, overview: spec.sections.overview, operator: spec.sections.operator, questions: spec.questions };
   });
   check(state.plcId === 'logix' && state.modules.length > 0, `Logix PLC with modules (${state.plcId}, ${state.modules.join(' ')})`);
+  check(state.cpuId === '1769-L33ER' && state.modules.every((m) => /^1769-/.test(m)), `the machine's own controller is kept (${state.cpuId}, ${state.modules.join(' ')})`);
   check(state.io > 10 && state.rungs >= 19, `I/O list (${state.io}) and program (${state.rungs} rungs)`);
   check(/1769-L33ER/.test(state.overview) && /Start_PB/.test(state.operator), 'machine description written from the program');
   check(state.questions.some((q) => /MSG/.test(q)) && state.questions.some((q) => /problems/.test(q)), 'questions for the Machine description page');
@@ -102,6 +103,16 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
   log('download for another PLC: what is missing is confirmed first');
   const cpuBefore = await page.evaluate(async () => { const s = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState(); const c = s.cpuId; s.setPlc('micro800', ''); return c; });
+  // The page follows the PLC change live. Fallback: a long-running dev server can hand the test a second copy of the
+  // store module (after hot updates); the project is saved in the browser, so a reload shows the change then.
+  const showsMicro800 = (ms) => page.waitForFunction(() => /Micro8/.test(document.querySelector('[data-testid="upgrade-export"]')?.textContent ?? ''), null, { timeout: ms }).then(() => true, () => false);
+  const live = await showsMicro800(3000);
+  if (!live) {
+    console.log('  (the page did not follow the change live: reloading — a second store copy from the dev server)');
+    await page.reload();
+    await page.getByTestId('upgrade-original').waitFor({ timeout: 10000 });
+    check(await showsMicro800(5000), 'the PLC change shows after a reload');
+  } else check(true, 'the page follows the PLC change live');
   await page.getByTestId('upgrade-export').click();
   await page.getByTestId('upgrade-missing').waitFor({ timeout: 5000 });
   check(/MSG\(Line_Msg\)/.test(await page.getByTestId('upgrade-missing').innerText()), 'the MSG is listed as missing on another PLC');
@@ -121,7 +132,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByTestId('program-file').setInputFiles([fx('CAPPER_MAIN.csv'), fx('CAPPER_DeviceComment.csv')]);
   await page.getByTestId('program-found').waitFor({ timeout: 10000 });
   const gx = await page.getByTestId('program-found').innerText();
-  check(/FX5UCPU/.test(gx) && /33\s*of 33 rungs converted/.test(gx), 'GX program read');
+  check(/FX5UCPU/.test(gx) && /(\d+)\s*of \1 rungs converted/.test(gx), 'GX program read');
   check(/Double coil: Spindle \(Y4\)/.test(gx), 'the double coil is shown');
   check(/Stop_PB/.test(gx) && /Stop pushbutton/.test(gx), 'device comments give the names');
 

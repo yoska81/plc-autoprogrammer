@@ -40,7 +40,7 @@ export function validateProgram(
   };
 
   for (const rung of program.rungs) {
-    for (const extra of profile.checkRung?.(rung) ?? []) issues.push({ rungId: rung.id, ...extra });
+    for (const extra of profile.checkRung?.(rung, { ioAddresses }) ?? []) issues.push({ rungId: rung.id, ...extra });
     if (rung.outputs.length === 0) issues.push({ rungId: rung.id, severity: 'error', message: 'Rung has no output instruction.' });
 
     for (const branch of rung.branches) {
@@ -183,7 +183,7 @@ export function validateProgram(
 /** PLC families imported instructions come from (profile ids, plus brands the app reads but has no profile for). */
 const VENDOR_NAME: Record<string, string> = {
   logix: 'Logix', click: 'CLICK', micro800: 'Micro800', 'siemens-s7': 'Siemens S7', 'unitronics-unistream': 'UniStream', 'unitronics-vision': 'Vision',
-  'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS',
+  'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS', 'siemens-stl': 'Siemens STL', 'siemens-lad': 'a TIA Portal LAD network', delta: 'Delta', inovance: 'Inovance', xinje: 'Xinje',
 };
 
 /**

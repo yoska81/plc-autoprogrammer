@@ -116,10 +116,12 @@ export function logixIoMapping(program: LadderProgram, ctx: ExportContext): stri
   const lx = toLogix(program, ctx, logixIoTag);
   const io = lx.tags.filter((t) => t.aliasFor);
   const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  // The platform of the chosen controller: CompactLogix 5370 with 1769 Compact I/O, or 5380 with 5069 Compact 5000 I/O.
+  const c1769 = /^1769-/i.test(ctx.cpuId ?? '');
   const lines = [
-    'REMARK,"I/O mapping for the generated Studio 5000 project (CompactLogix 5380 + Compact 5000 I/O)."',
+    `REMARK,"I/O mapping for the generated Studio 5000 project (${c1769 ? `CompactLogix 5370 ${ctx.cpuId} + 1769 Compact I/O` : 'CompactLogix 5380 + Compact 5000 I/O'})."`,
     `REMARK,${q(ctx.header)}`,
-    'REMARK,"1. Add the 5069 modules in the slots listed below (I/O Configuration). 2. Either delete the Base tags of these names and import this file as aliases, or paste the IO_Mapping rungs at the end of this file into a routine called first from MainRoutine."',
+    `REMARK,"1. Add the ${c1769 ? '1769' : '5069'} modules in the slots listed below (I/O Configuration). 2. Either delete the Base tags of these names and import this file as aliases, or paste the IO_Mapping rungs at the end of this file into a routine called first from MainRoutine."`,
     ...io.map((t) => `ALIAS,"",${q(t.name)},${q(t.description)},"",${q(t.aliasFor!)},""`),
     'REMARK,"IO_Mapping rungs (neutral text):"',
     ...io.map((t) => {

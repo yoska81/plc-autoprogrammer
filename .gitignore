@@ -60,6 +60,7 @@ tools/bench/out/
 e2e/out-voice-edit/
 e2e/out-desktop-mic/
 e2e/out-upgrade/
+e2e/out-printout/
 
 # GNU LibreDWG program and DLLs: downloaded by scripts/fetch-libredwg.cjs for the installer (COPYING and SOURCE.txt are kept)
 resources/libredwg/*.exe

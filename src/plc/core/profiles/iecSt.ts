@@ -18,6 +18,11 @@ export interface StDialect {
   title: string;
   /** PLC profile id: RAW instructions imported from this PLC are written as they are. */
   vendor?: string;
+  /**
+   * How a kept (RAW) instruction of this PLC reads an analog channel: the raw word it used in the original
+   * program (the app's own variable is scaled to engineering units). null = the variable itself.
+   */
+  rawWord?(base: string, ref: string): string | null;
   /** Vendor I/O variable / tag for a physical neutral address (name = the variable's name); null = not known (TODO line). */
   ioVar(base: string, name: string): string | null;
   ioTodo(base: string, name: string, isInput: boolean): string;
@@ -43,6 +48,10 @@ export interface StDialect {
   counterPv?(expr: string): string;
   /** Extra I/O statements once every variable is known (e.g. analog scaling); inputs go first, outputs last. */
   ioExtra?(vars: Map<string, StVariable>): { inputs: string[]; outputs: string[] };
+  /** Only the rungs' statements (the code of an existing block is replaced): no header, I/O copy or clock. */
+  rungsOnly?: boolean;
+  /** Is this variable (neutral base) a TIME already (an original program's TIME preset)? Then it is the PT as it is. */
+  isTime?(base: string): boolean;
 }
 
 const UNIT_MS: Record<string, number> = { ms: 1, sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 };
@@ -72,7 +81,7 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     const n = nick.get(base), label = ctx.labels.get(base);
     const name = logixName(n?.nickname || label || (base === 'SC7' ? 'Clock_1s' : base), used, base);
     const io = d.ioVar(base, name);
-    vars.set(base, { name, type: d.types[type], comment: [label, n?.comment].filter(Boolean).join(' — ') || base, base, ...(io ? { io } : {}) });
+    vars.set(base, { name, type: d.types[type], comment: [label, n?.comment].filter((x, i, all): x is string => !!x && all.indexOf(x) === i).join(' — ') || base, base, ...(io ? { io } : {}) });
     return d.ref(name);
   }
   const refOf = (base: string) => d.ref(vars.get(base)!.name);
@@ -110,7 +119,9 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     let out = text;
     for (const { name, index } of rawTextNames(text).reverse()) {
       const a = byNick.get(name.toLowerCase());
-      if (a) out = out.slice(0, index) + op(a, true) + out.slice(index + name.length);
+      if (!a) continue;
+      const ref = op(a, true);
+      out = out.slice(0, index) + (d.rawWord?.(a.toUpperCase(), ref) ?? ref) + out.slice(index + name.length);
     }
     return out;
   };
@@ -159,7 +170,8 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
             break;
           }
           const t = v(a, blockType.get(a)!);
-          const ptv = NUM_RE.test(o.preset.trim()) ? d.msToTime(String(Math.round(Number(o.preset) * unit))) : d.msToTime(`${op(o.preset)} * ${unit}`);
+          const pre = o.preset.trim().toUpperCase();
+          const ptv = NUM_RE.test(pre) ? d.msToTime(String(Math.round(Number(o.preset) * unit))) : d.isTime?.(pre) ? op(o.preset) : d.msToTime(unit === 1 ? op(o.preset) : `${op(o.preset)} * ${unit}`);
           if (o.accumulate) out.push(`${t}(IN := ${cond}, ${d.params.rtoReset} := ${o.resetAddress ? op(o.resetAddress) : 'FALSE'}, PT := ${ptv});`);
           else out.push(`${t}(IN := ${cond}, PT := ${ptv});`);
           break;
@@ -196,6 +208,7 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     if (!rungs.length) continue;
     sections.push(`(* ===== ${b.name} ===== *)`, ...rungs.flatMap(rungSt), '');
   }
+  if (d.rungsOnly) return { body: sections.filter((l) => !/^\(\* ===== .* ===== \*\)$/.test(l)).join('\n').trim(), variables: [...vars.values()], warnings };
   // HMI tags the ladder doesn't use are still declared, so the HMI can bind to them.
   for (const t of ctx.extraTags) op(t.address);
   // I/O copy at the start / end of the scan: named variables ↔ the PLC's I/O.
