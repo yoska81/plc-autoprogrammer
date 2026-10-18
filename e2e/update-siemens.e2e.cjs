@@ -21,6 +21,8 @@ const IO = [
   P('Spindle motor contactor', 'output', 'Station 1', 'contactor-coil'), P('Running light', 'output', 'Operator/HMI', 'pilot-light'),
 ];
 const CPU = '6ES7214-1AG40-0XB0';
+// The equipment the mocked AI answers with (the S7-1500 case changes it).
+let EQUIP = { cpuId: CPU, modules: [] };
 
 const seen = { equipment: null, unknown: [] };
 function reply(system) {
@@ -28,8 +30,8 @@ function reply(system) {
     seen.equipment = system;
     const panel = (system.match(/^- (\S+) \((Siemens|Weintek|Maple Systems|Red Lion)[^)]*\): 7"/m) || system.match(/^- (\S+) \([^)]*\): 7"/m) || system.match(/^- (\S+) \([^)]*\):/m) || [])[1] ?? null;
     return {
-      summary: `${CPU} for the capper.`, estimatedIO: { digitalInputs: 8, digitalOutputs: 4, analogInputs: 0, analogOutputs: 0, motionAxes: 0 },
-      plc: { profileId: 'siemens-s7', cpuId: CPU, why: 'Siemens, as the customer asked.' }, modules: [],
+      summary: `${EQUIP.cpuId} for the capper.`, estimatedIO: { digitalInputs: 8, digitalOutputs: 4, analogInputs: 0, analogOutputs: 0, motionAxes: 0 },
+      plc: { profileId: 'siemens-s7', cpuId: EQUIP.cpuId, why: 'Siemens, as the customer asked.' }, modules: EQUIP.modules.map((partNumber) => ({ partNumber, quantity: 1, why: 'I/O' })),
       hmi: panel ? { partNumber: panel, why: '7 inch' } : null, alternatives: [], cautions: [],
     };
   }
@@ -207,8 +209,73 @@ async function extras(browser) {
   await page.context().close();
 }
 
+// S7-1500 + ET 200SP: the Siemens address the user sees (I/O list column, HMI tag list) is the one the exported
+// tag table (.sdf) gives the same point. The CPU has no I/O of its own, so every point is on an ET 200SP module.
+async function s1500(browser) {
+  console.log('• === S7-1500 + ET 200SP: shown and exported addresses agree');
+  EQUIP = { cpuId: '6ES7511-1AL03-0AB0', modules: ['6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0'] };
+  const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
+  await page.route('https://api.anthropic.com/**', async (route) => {
+    const body = JSON.parse(route.request().postData());
+    let text = '{}', status = 200;
+    try { text = JSON.stringify(reply(sysText(body.system))); } catch { status = 500; }
+    await route.fulfill({ status, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: status === 200 ? sse(body.model, text) : '{}' });
+  });
+  await page.goto(BASE + '/spec');
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'max', openaiApiKey: '', openaiModel: 'gpt-4o' }, version: 4 }));
+  });
+  await page.goto(BASE + '/spec');
+  const results = await page.evaluate(async (text) => {
+    (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: text });
+    const { runStages } = await import('/src/spec/updateRun.ts');
+    return (await runStages(['equipment', 'io', 'electrical', 'hmi', 'program'])).map((r) => `${r.step} ${r.status}: ${r.message}`);
+  }, TEXT.replace('Siemens S7-1200', 'Siemens S7-1500 with ET 200SP I/O'));
+  for (const r of results) console.log('  ·', r.slice(0, 160));
+  await page.goto(BASE + '/io');
+  await page.locator('input[aria-label^="PLC address for"]').first().waitFor();
+  // Shown: the I/O list's Siemens address column, by tag.
+  const shown = await page.locator('tr', { has: page.locator('input[aria-label^="PLC address for"]') }).evaluateAll((rows) => rows.map((r) => {
+    const id = r.querySelector('input[aria-label^="PLC address for"]').getAttribute('aria-label').replace('PLC address for ', '');
+    return [id, r.children[2].textContent.trim()];
+  }));
+  const out = await page.evaluate(async () => {
+    const { collectProject } = await import('/src/deliverables/collect.ts');
+    const { exportContext } = await import('/src/deliverables/exportContext.ts');
+    const { hmiTagRows } = await import('/src/deliverables/hmiTags.ts');
+    const p = collectProject();
+    const sdf = p.profile.exporters.find((e) => e.id === 'siemens-tags').build(p.ladder, exportContext(p));
+    const exported = sdf.trim().split(/\r?\n/).map((l) => JSON.parse(`[${l}]`)).map(([name, address, type, , , , comment]) => ({ name, address, type, comment }));
+    const ids = Object.fromEntries(p.io.map((x) => [x.id, { neutral: p.addresses.get(x.id), description: x.description }]));
+    return { cpu: p.cpu.id, modules: p.modules, exported, ids, hmi: hmiTagRows(p).filter((r) => r.plcIo).map((r) => [r.address, r.plcIo]) };
+  });
+  console.log('  ·', out.cpu, out.modules.join(', '), '|', shown.slice(0, 3).map((x) => x.join('=')).join(' '), '| export', out.exported.slice(0, 3).map((t) => `${t.name}=${t.address}`).join(' '));
+  check(out.cpu === '6ES7511-1AL03-0AB0' && out.modules.length >= 2, `S7-1500 with ET 200SP modules (${out.cpu} ${out.modules.join(', ')})`);
+  const exportedAt = new Set(out.exported.filter((t) => t.type === 'Bool').map((t) => t.address));
+  // The tag table lists the I/O the program uses, each with its description as the comment: compare point by point.
+  const byDescription = new Map(out.exported.filter((t) => t.type === 'Bool').map((t) => [t.comment.replace(/ — check against Device configuration$/, ''), t.address]));
+  const pairs = shown.map(([id, a]) => [id, a, byDescription.get(out.ids[id].description)]);
+  const bad = pairs.filter(([, a, e]) => e && a !== e);
+  const unused = pairs.filter(([, , e]) => !e).map(([id]) => id);
+  console.log('  · not in the tag table (the program does not use them):', unused.join(', ') || 'none');
+  check(shown.length > 0 && shown.every(([, a]) => /^%[IQ]\d+\.\d$/.test(a)), `every point shows a %I / %Q address (${shown.map(([, a]) => a).join(' ')})`);
+  check(pairs.length - unused.length > 0 && bad.length === 0, `the I/O list shows the exported address of each point (${bad.map(([id, a, e]) => `${id} shows ${a}, export ${e}`).join('; ') || `${pairs.length - unused.length} match`})`);
+  check(!shown.some(([, a]) => a === '%I8.0') || exportedAt.has('%I8.0'), 'no S7-1200 module numbering (%I8.0) where the export has another');
+  const neutralToShown = new Map(shown.map(([id, a]) => [out.ids[id].neutral, a]));
+  const hmiBad = out.hmi.filter(([addr, io]) => /^%[IQ]\d/.test(io) && neutralToShown.has(addr) && neutralToShown.get(addr) !== io);
+  check(hmiBad.length === 0, `HMI tag list shows the same Siemens address as the I/O list (${hmiBad.map((x) => x.join('=')).join(' ') || `${out.hmi.length} I/O tags match`})`);
+  check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
+  await page.context().close();
+  EQUIP = { cpuId: CPU, modules: [] };
+}
+
 (async () => {
   const browser = await chromium.launch();
+  await s1500(browser);
   await scenario(browser, false);
   await scenario(browser, true);
   await extras(browser);
