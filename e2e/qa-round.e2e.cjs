@@ -1,6 +1,7 @@
-// Q&A on the example project: questions the stages asked are on Design review without visiting their
-// pages; "Change" keeps the saved answer until Save (Cancel leaves it); answering an HMI question
-// makes only the HMI and the program out of date; using the AI's assumption stales nothing.
+// Q&A on the example project: questions the stages raised are registered without visiting their pages
+// and asked only on the Machine description page (Design review points there and lists none);
+// "Change" keeps the saved answer until Save (Cancel leaves it); answering an HMI question makes only
+// the HMI and the program out of date; using the AI's assumption stales nothing.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/qa-round.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
@@ -28,7 +29,11 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   });
   log('Questions registered without visiting the stage pages:', JSON.stringify(qs));
   check(qs.bySource.electrical > 0 && qs.bySource.hmi > 0, 'electrical and HMI questions registered globally');
-  check(await page.locator('li[data-question]').count() > 0, 'Design review lists questions to answer');
+  check(await page.locator('li[data-question]').count() === 0, 'Design review asks no questions itself');
+  check(await page.getByTestId('review-open-questions').count() === 1, 'Design review points to the questions on the Machine description page');
+  await page.getByTestId('review-open-questions').getByRole('link', { name: 'Machine description' }).click();
+  await page.waitForTimeout(800);
+  check(await page.locator('li[data-question]').count() > 0, 'Machine description lists the questions to answer');
 
   // Answer an HMI question: only HMI and program go out of date.
   const stages = () => page.evaluate(async () => { const s = (await import('/src/spec/useStages.ts')).stagesNow(); return Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.status])); });
@@ -42,9 +47,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   log('Stages before / after an HMI answer:', JSON.stringify(before), JSON.stringify(after));
   check(['equipment', 'io', 'electrical'].every((k) => after[k] === before[k]) && after.hmi === 'stale' && after.program === 'stale', 'an HMI answer stales only HMI and program');
 
-  // "Change" (on the description page, which lists answered questions too): the saved answer stays until Save; Cancel leaves it.
-  await page.goto(BASE + '/spec');
-  await page.waitForTimeout(800);
+  // "Change": the saved answer stays until Save; Cancel leaves it.
   const card = page.locator(`li[data-question="${id}"]`);
   await card.getByRole('button', { name: 'Change' }).click();
   const status = () => page.evaluate(async (qid) => { const { useQuestionStore } = await import('/src/components/questions/useQuestionStore.ts'); const q = useQuestionStore.getState().byProject.p_example.find((x) => x.id === qid); return `${q.status}:${q.answer}`; }, id);
@@ -63,7 +66,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     for (const st of ['equipment', 'io', 'electrical', 'hmi', 'program']) useStageStore.getState().markGenerated(st, { specFp: fingerprint(spec), spec });
   });
   const fresh = await stages();
-  await page.goto(BASE + '/review');
+  await page.goto(BASE + '/spec');
   await page.waitForTimeout(800);
   const elQ = page.locator('li[data-question^="electrical"]').filter({ has: page.getByRole('button', { name: "Don't know — use the AI's assumption" }) }).first();
   await elQ.getByRole('button', { name: "Don't know — use the AI's assumption" }).click();

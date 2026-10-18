@@ -59,8 +59,9 @@ export function useFingerprints() {
 
 /** Questions whose answers a stage is built on (the stages before it ask the rest). */
 const QA_SOURCES: Partial<Record<StageId, QuestionSource[]>> = {
-  equipment: ['spec', 'io'], io: ['spec', 'io'], electrical: ['spec', 'io', 'electrical'], hmi: ['spec', 'io', 'hmi'],
-  program: ['spec', 'io', 'electrical', 'hmi', 'program', 'review'],
+  // drawings: answers about the existing machine are part of the description for every stage
+  equipment: ['spec', 'drawings', 'io'], io: ['spec', 'drawings', 'io'], electrical: ['spec', 'drawings', 'io', 'electrical'], hmi: ['spec', 'drawings', 'io', 'hmi'],
+  program: ['spec', 'drawings', 'io', 'electrical', 'hmi', 'program', 'review'],
 };
 
 /**

@@ -19,6 +19,21 @@ const num = (v: unknown): number | undefined => {
 const vendorOf = (p: CatalogPart): VendorId => p.vendor ?? 'automationdirect';
 const isDc = (p: CatalogPart) => /dc/i.test(String(p.ratings.volts ?? ''));
 
+/** Current a 24 VDC filter fan draws from the control supply (catalog amps, else watts / 24 V); null for AC fans and other parts. */
+export function dcFanAmps(p: CatalogPart | undefined): number | null {
+  if (!p || p.category !== 'fan' || p.ratings.kind !== 'filter fan' || !isDc(p)) return null;
+  const a = num(p.ratings.amps);
+  if (a !== undefined) return a;
+  const w = num(p.ratings.watts);
+  return w !== undefined ? w / 24 : null;
+}
+
+/** Thermostat to switch a filter fan: a N.O. (close on rise) adjustable contact, the AutomationDirect one first. */
+export function pickFanThermostat(pool: CatalogPart[] = CATALOG): CatalogPart | null {
+  const ts = pool.filter((p) => p.ratings.kind === 'thermostat' && /N\.O\.\s*\(close on rise\)/i.test(String(p.ratings.contact ?? '')) && !/dual/i.test(String(p.ratings.contact ?? '')));
+  return ts.sort((a, b) => Number(vendorOf(b) === 'automationdirect') - Number(vendorOf(a) === 'automationdirect') || Number(/deg C/i.test(String(b.ratings.contact))) - Number(/deg C/i.test(String(a.ratings.contact))))[0] ?? null;
+}
+
 /** Airflow of a filter fan in m³/h, with filters fitted where published. */
 export function fanAirflowM3h(p: CatalogPart): number | undefined {
   const r = p.ratings;
@@ -34,6 +49,32 @@ export function coolingWatts(p: CatalogPart): number | undefined {
   if (w !== undefined) return w;
   const btu = num(p.ratings.coolingBtuh);
   return btu !== undefined ? btu * BTUH_TO_W : undefined;
+}
+
+/**
+ * Cooling already in a design (filter fans, heat exchangers, air conditioners) against what the walls cannot shed:
+ * each part's share is its air flow / airflowM3h or its capacity (heat exchanger at riseK) / wattsToRemove; the
+ * shares add up. `fitted` is false when there is no cooling part at all.
+ */
+export function coolingCover(
+  components: { partNumber: string; quantity: number }[],
+  getPart: (pn: string) => CatalogPart | undefined,
+  need: { wattsToRemove: number; airflowM3h: number },
+  riseK: number,
+): { fitted: boolean; covers: boolean; share: number } {
+  let share = 0;
+  let fitted = false;
+  for (const c of components) {
+    const p = getPart(c.partNumber);
+    const kind = p?.ratings.kind;
+    if (!p || !['filter fan', 'heat exchanger', 'air conditioner'].includes(String(kind))) continue;
+    fitted = true;
+    const q = c.quantity || 1;
+    if (kind === 'filter fan') share += (q * (fanAirflowM3h(p) ?? 0)) / need.airflowM3h;
+    else if (kind === 'heat exchanger') share += (q * (num(p.ratings.wPerK) ?? 0) * riseK) / need.wattsToRemove;
+    else share += (q * (coolingWatts(p) ?? 0)) / need.wattsToRemove;
+  }
+  return { fitted, covers: fitted && share >= 0.999, share };
 }
 
 export interface CoolingOptions {
