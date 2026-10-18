@@ -51,5 +51,6 @@ assert.ok(foreignEquivalents(pnpProx[0]).every((e) => e.part.ratings.output === 
 // A 1.5 kW imported servo motor → catalog servo motors of 1.5-2.25 kW, smallest first.
 const sm = foreignEquivalents('MS1H2-15C30CB-A331Z');
 assert.ok(sm.length && sm.every((e) => Number(e.part.ratings.ratedWatts) >= 1500 && Number(e.part.ratings.ratedWatts) <= 2250), sm.map((e) => e.part.partNumber).join());
+assert.equal(foreignPart('4WE 6 E6X/EG24N9K4')?.part.partNumber, '4WE6E6X/EG24N9K4', 'Rexroth spaced type code found');
 assert.deepEqual(foreignEquivalents('NOT-A-PART'), []);
 console.log('foreign part matching tests passed');

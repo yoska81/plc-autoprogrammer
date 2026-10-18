@@ -867,7 +867,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.5,
     heightMm: 100,
-    ratings: { family: '3SK1 Standard', coilVoltage: '24 V AC/DC', safetyOutputs: '3 NO (relay)', auxOutputs: '1 NC', restart: 'monitored or automatic', application: 'E-stop, guard door, light curtain' },
+    ratings: { family: '3SK1 Standard', coilVoltage: '24 V AC/DC', safetyOutputs: '(3) N.O.', auxOutputs: '1 NC', restart: 'monitored or automatic', application: 'E-stop, guard door, light curtain', safetyOutputCount: 3 },
     verified: true,
   },
   {
@@ -880,7 +880,7 @@ export const SIEMENS: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.5,
     heightMm: 100,
-    ratings: { family: '3SK1 Advanced', coilVoltage: '24 VDC', safetyOutputs: '3 NO (relay)', auxOutputs: '1 NC' },
+    ratings: { family: '3SK1 Advanced', coilVoltage: '24 VDC', safetyOutputs: '(3) N.O.', auxOutputs: '1 NC', safetyOutputCount: 3 },
     verified: true,
   },
   {

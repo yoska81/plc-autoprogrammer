@@ -35,6 +35,7 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)ifm\.com$/, makers: /\bifm\b/i },
   { host: /(^|\.)pepperl-fuchs\.com$/, makers: /pepperl/i },
   { host: /(^|\.)bannerengineering\.com$/, makers: /banner/i },
+  { host: /(^|\.)pilz\.com$/, makers: /pilz/i },
   { host: /(^|\.)yaskawa\.(com|eu)$/, makers: /yaskawa/i },
   { host: /(^|\.)(nvent\.com|hoffmanonline\.com)$/, makers: /hoffman|nvent/i },
   { host: /(^|\.)rittal\.(com|us)$/, makers: /rittal/i },
@@ -235,6 +236,12 @@ test('prices belong to catalog parts and come from the same site', () => {
     if (new URL(pr.sourceUrl).host !== new URL(p.url).host) bad.push(`${pn}: price from ${new URL(pr.sourceUrl).host}, part page on ${new URL(p.url).host}`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(pr.date)) bad.push(`${pn}: price date ${pr.date}`);
   }
+  assert.deepEqual(bad, []);
+});
+
+test('safety relays and expansions state their safety outputs as a count', () => {
+  // The drawing converter sizes the safety relay (base + expansion) from these: '(4) N.O.' and safetyOutputCount 4.
+  const bad = CATALOG.filter((p) => p.category === 'safetyRelay' && !(/^\(\d+\) N\.O\.$/.test(String(p.ratings.safetyOutputs)) && Number(p.ratings.safetyOutputCount) === Number(String(p.ratings.safetyOutputs).match(/\d+/)?.[0]))).map((p) => p.partNumber);
   assert.deepEqual(bad, []);
 });
 
