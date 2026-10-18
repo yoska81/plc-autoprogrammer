@@ -132,6 +132,9 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
     const where = k === 0 ? 'cabinet door' : `${zones[Math.min(k - 1, zones.length - 1)]} (field station)`;
     if (estopPart) add(comp(t, estopPart.partNumber, 1, `Emergency stop, ${where} — dual channel into ${srTag ?? 'the safety circuit'}`));
     if (secondNc) add(comp(`${t}C`, secondNc.partNumber, 1, `Second NC contact for dual-channel E-stop ${t}`));
+    // the PLC reads the E-stop as N.C. (ON = released): with both N.C. blocks in the safety relay's channels its
+    // status input needs a third one (31-32); without a safety relay 21-22 is free for it
+    if (secondNc && srTag && k < estopIo.length) add(comp(`${t}D`, secondNc.partNumber, 1, `Third NC contact (31-32) of E-stop ${t} for its PLC status input`));
     if (legend) add(comp(`${t}L`, legend.partNumber, 1, `EMERGENCY STOP legend plate for ${t}`));
   }
   if (nEstops > 1) askUser.push(`${nEstops - 1} field E-stop station(s) assumed: the push-button enclosure for each is a field item; confirm the locations.`);

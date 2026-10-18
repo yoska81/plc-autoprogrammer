@@ -320,7 +320,9 @@ async function setupRules(v: string) {
   }
   // "rules-sealing-npn": the sealing head with NPN sensors — their input commons go to +24V, so the buttons, limit /
   // pressure switches and relay contacts on the same modules must switch 0V (check_consistency: every input can turn ON).
-  if (v === 'rules-sealing-npn') useIOStore.setState({ projectIO: useIOStore.getState().projectIO.map((p) => (p.deviceType === 'sensor-pnp' ? { ...p, deviceType: 'sensor-npn' } : p)) });
+  // It also reads the door E-stop's status (N.C., ON = released) on that +24V common: through the E-stop's own N.C.
+  // block, switching 0V.
+  if (v === 'rules-sealing-npn') useIOStore.setState({ projectIO: [...useIOStore.getState().projectIO.map((p) => (p.deviceType === 'sensor-pnp' ? { ...p, deviceType: 'sensor-npn' as const } : p)), { id: 'seal-es', description: 'E-stop released (status)', type: 'input' as const, category: 'Safety' as const, deviceType: 'estop-contact' as const }] });
   // "rules-sealing-thm": the user's Sealing Head as built — C0-11DD2E-D + C0-08ND3 + C0-04THM, NEMA 4X, the seal bar's
   // type J thermocouple read straight by the THM (no transmitter, no analog output). The point comes in through the
   // store's import at the list's 4-20 mA default: the import must make it a 'thermocouple' range, or it gets no channel.
@@ -494,7 +496,8 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
       points: g.points.map((q) => {
         // the wire landing on the input's feed terminal as derive wired it (C, 23, R1, BN…): every input is checked
         const feed = q.feedTo ? m.wires.filter((w) => w.to === q.feedTo && w.wire !== q.address).map((w) => w.wire) : [];
-        return { address: q.address, tag: q.deviceTag, deviceType: q.deviceType, feedTo: q.feedTo ?? null, feed: [...new Set(feed)] };
+        const sig = m.wires.find((w) => w.wire === q.address && w.from.startsWith(`${q.deviceTag}:`));
+        return { address: q.address, tag: q.deviceTag, deviceType: q.deviceType, feedTo: q.feedTo ?? null, feed: [...new Set(feed)], signalFrom: sig?.from ?? null };
       }),
     })),
     drives: m.motors.filter((x) => x.vfd).map((x) => ({ motor: x.motor.tag, tag: x.vfd!.tag, partNumber: x.vfd!.partNumber, fuseClass: x.vfd!.part?.ratings.fuseClass ?? null, fusePart: x.vfd!.part?.ratings.fusePart ?? null,

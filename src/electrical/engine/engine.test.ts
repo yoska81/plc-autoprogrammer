@@ -541,6 +541,18 @@ for (const s of SCENARIOS) {
   assert.ok(pnp.groups.filter((x) => x.type === 'input').every((x) => x.commonTo === '0V' && x.points.every((p) => p.supplyWire === '24+')));
 }
 
+// An E-stop's PLC status input is read N.C. (ON = released): it is wired through the E-stop's own N.C. block — 31-32
+// (a third block) beside the safety relay's two channels on 11-12 / 21-22 — never the C / NO terminals of a button.
+for (const s of SCENARIOS) {
+  const { r, ctx } = run(s);
+  const m = buildModel(ctx);
+  for (const p of m.io.filter((q) => q.type === 'input' && q.deviceType === 'estop-contact')) {
+    const sig = m.wires.find((w) => w.wire === p.address && w.from.startsWith(`${p.deviceTag}:`));
+    assert.ok(sig && /:(12|22|32)$/.test(sig.from), `${s.name} ${p.address}: the PLC status from an N.C. block (${sig?.from})`);
+    if (m.safety.relay) assert.ok(r.design.components.some((c) => c.tag === `${p.deviceTag}D`), `${s.name}: ${p.deviceTag} has its third N.C. block`);
+  }
+}
+
 // Acceptance (pump skid): two 10 HP pumps on GS20 drives at 480 V heat a NEMA 12 cabinet far above 15 °C; the engine
 // fits a filter fan, its exhaust filter and a thermostat, and the review comes out without a heat finding.
 {

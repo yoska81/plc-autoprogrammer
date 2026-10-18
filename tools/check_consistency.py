@@ -258,6 +258,11 @@ def check(vdir: Path):
         npn = g['commonTo'] == '24+'
         for q in g['points']:
             t = q['deviceType']
+            # the program reads an E-stop / N.C. button input as N.C. (ON = released): its signal must come off an
+            # N.C. contact (12, 22, 32, NC), or the machine never starts (E-stop) / the stop never stops (button)
+            sf = q.get('signalFrom') or ''
+            if t in ('estop-contact', 'pushbutton-nc') and sf and not re.search(r':(1|2|3|4)2$|:NC$', sf):
+                report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is read N.C. by the program but wired from {sf} — use an N.C. contact')
             if t in ('sensor-pnp', 'sensor-npn'):
                 if (t == 'sensor-npn') != npn:
                     report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is {t} on a common to {g["commonTo"]} — it can never turn ON')

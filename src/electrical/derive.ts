@@ -368,6 +368,9 @@ export interface IoPoint {
   supplyWire?: '24+' | '0V';
   /** Inputs: the device terminal the supply wire lands on (the contact's feed side: C, 23, R1…), as wired. */
   feedTo?: string;
+  /** Inputs: the contact's terminals [feed, signal] — C / NO, C / NC for an N.C. button, and an E-stop's own N.C.
+   *  block (31-32 beside a safety relay's two channels, else 21-22): the PLC reads those N.C. (ON = released). */
+  inPins?: [string, string];
   /** Load terminals the output switches ([feed, return]): A1/A2, B1/B2 for a second coil of the same device
    *  (double solenoid), X1/X2 for a pilot light. */
   pins: [string, string];
@@ -805,6 +808,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   for (const g of groups) if (g.type === 'input' && g.points.some((p) => p.deviceType === 'sensor-npn')) g.commonTo = '24+';
   // a group with its common on +24V (NPN sensors) only sees an input pulled to 0V: its dry contacts switch 0V
   for (const g of groups) for (const p of g.points) if (g.type === 'input') p.supplyWire = g.commonTo === '24+' && !isSensor3(p.deviceType) ? '0V' : '24+';
+  for (const p of io) if (p.type === 'input' && p.deviceTag) {
+    p.inPins = p.deviceType === 'estop-contact' ? (relay ? ['31', '32'] : ['21', '22'])
+      : [pinOf(p.deviceTag, 'C'), pinOf(p.deviceTag, p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO')];
+  }
 
   // safety status input
   safety.statusInput = io.find((p) => p.deviceType === 'safety-relay-output');
@@ -947,9 +954,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${p.jb} (${tag})`, kind: 'feed', group: p.jb });
         continue;
       }
-      p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${tag}:${sensor ? 'BK' : pinOf(tag, 'NO')}`, kind: 'feed', group: tag });
+      p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${tag}:${sensor ? 'BK' : p.inPins?.[1] ?? pinOf(tag, 'NO')}`, kind: 'feed', group: tag });
       const sw = sensor ? '24+' : p.supplyWire ?? '24+';
-      p.supplyTerminal = add(tb2, { wire: sw, internal: `TB1 ${sw} (jumper)`, external: `${tag}:${sensor ? 'BN' : pinOf(tag, 'C')}`, kind: 'feed', group: tag });
+      p.supplyTerminal = add(tb2, { wire: sw, internal: `TB1 ${sw} (jumper)`, external: `${tag}:${sensor ? 'BN' : p.inPins?.[0] ?? pinOf(tag, 'C')}`, kind: 'feed', group: tag });
       if (sensor) p.returnTerminal = add(tb2, { wire: '0V', internal: 'TB1 0V (jumper)', external: `${tag}:BU`, kind: 'feed', group: tag });
       // the device cable's PE core gets its own clamp (one conductor per terminal)
       else add(tb2, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${tag}:${pinOf(tag, 'PE')}`, kind: 'ground', group: tag });
@@ -1276,20 +1283,20 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     if (p.type === 'input') {
       if (p.signalTerminal) {
         const s3 = isSensor3(p.deviceType);
-        const sig = p.deviceType === 'encoder' ? encoderChannel(p.description) ?? 'A' : s3 ? 'BK' : pinOf(tag, 'NO');
+        const sig = p.deviceType === 'encoder' ? encoderChannel(p.description) ?? 'A' : s3 ? 'BK' : p.inPins?.[1] ?? pinOf(tag, 'NO');
         addWire({ wire: p.address, from: `${tag}:${sig}`, to: p.signalTerminal, color: s3 ? `${p.deviceType === 'encoder' ? sig : 'BK'} (cable)` : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
         if (p.supplyTerminal) {
           const sw = s3 ? '24+' : p.supplyWire ?? '24+';
-          p.feedTo = `${tag}:${p.deviceType === 'encoder' ? '+V' : s3 ? 'BN' : pinOf(tag, 'C')}`;
+          p.feedTo = `${tag}:${p.deviceType === 'encoder' ? '+V' : s3 ? 'BN' : p.inPins?.[0] ?? pinOf(tag, 'C')}`;
           addWire({ wire: sw, from: p.supplyTerminal, to: p.feedTo, color: s3 ? 'BN (cable)' : sw === '0V' ? 'WH/BU' : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: `${tag} supply` });
         }
         if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '0V' : 'BU'}`, color: p.deviceType === 'encoder' ? 'WH (cable)' : 'BU (cable)', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: `${tag} 0V` });
       } else {
         const sw = p.supplyWire ?? '24+';
-        p.feedTo = `${tag}:C`;
+        p.feedTo = `${tag}:${p.inPins?.[0] ?? 'C'}`;
         addWire({ wire: sw, from: `TB1 ${sw}`, to: p.feedTo, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `${tag} supply` });
-        addWire({ wire: p.address, from: `${tag}:${p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO'}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
+        addWire({ wire: p.address, from: `${tag}:${p.inPins?.[1] ?? (p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO')}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
       }
     } else {
       const sink = g?.outputStyle === 'sinking';
@@ -1598,9 +1605,9 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
       else type = '3-core 18 AWG sensor cable (BN/BU/BK)';
     } else if (p0.type === 'input') {
       const sw = p0.supplyWire ?? '24+';
-      cores.push({ core: '1', color: sw === '0V' ? 'WH/BU' : 'BU', wire: sw, from: term(p0, 'sup'), to: `${d.tag}:C` });
+      cores.push({ core: '1', color: sw === '0V' ? 'WH/BU' : 'BU', wire: sw, from: term(p0, 'sup'), to: `${d.tag}:${p0.inPins?.[0] ?? 'C'}` });
       // one signal core per input of the device (the terminal name matches the wire list)
-      d.points.forEach((p, k) => cores.push({ core: String(k + 2), color: 'BU', wire: p.wire, from: term(p, 'sig'), to: `${d.tag}:NO` }));
+      d.points.forEach((p, k) => cores.push({ core: String(k + 2), color: 'BU', wire: p.wire, from: term(p, 'sig'), to: `${d.tag}:${p.inPins?.[1] ?? 'NO'}` }));
       cores.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: from !== 'CABINET' ? `${from}:PE` : 'PE', to: `${d.tag}:PE` });
       type = `${cores.length}-core 18 AWG control cable (${cores.length - 1} + PE)`;
     } else {
