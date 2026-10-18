@@ -17,7 +17,7 @@ export const SMALL_CABINET: PhotoReading = {
     // Photo 0 (overview): labels readable, most nameplates not.
     { tag: 'CB1', category: 'breaker', manufacturer: '', partNumber: '', ratings: '', rail: 1, order: 1, confidence: 'medium', seen: [{ photo: 0, x: 0.12, y: 0.12, w: 0.06, h: 0.14 }], wires: [] },
     { tag: 'CB2', category: 'breaker', manufacturer: '', partNumber: '', ratings: '', rail: 1, order: 2, confidence: 'medium', seen: [{ photo: 0, x: 0.19, y: 0.12, w: 0.03, h: 0.14 }], wires: [] },
-    { tag: 'PS1', category: 'powerSupply', manufacturer: 'RHINO', partNumber: 'PSL-24-030', ratings: '24 VDC 3 A', rail: 1, order: 3, confidence: 'high', seen: [{ photo: 0, x: 0.3, y: 0.11, w: 0.1, h: 0.16 }], wires: [{ terminal: '+V', wire: '24+' }] },
+    { tag: 'PS1', category: 'powerSupply', manufacturer: 'RHINO', partNumber: 'PSL-24-030', ratings: '24 VDC 3 A', rail: 1, order: 3, confidence: 'high', seen: [{ photo: 0, x: 0.3, y: 0.11, w: 0.1, h: 0.16 }], wires: [{ terminal: '+V', wire: '24+' }, { terminal: '-V', wire: '0V' }, { terminal: 'L', wire: '101' }] },
     { tag: 'PLC1', category: 'plc', manufacturer: 'AutomationDirect', partNumber: 'C0-10DD1E-D', ratings: '24 VDC', rail: 2, order: 1, confidence: 'high', seen: [{ photo: 0, x: 0.12, y: 0.38, w: 0.1, h: 0.15 }], wires: [] },
     { tag: '', category: 'contactor', manufacturer: 'Fuji Electric', partNumber: '', ratings: '', rail: 2, order: 3, confidence: 'low', seen: [{ photo: 0, x: 0.45, y: 0.38, w: 0.07, h: 0.13 }], wires: [] },
     // Photo 1 (top rail close-up): the breakers' nameplates — CB1 and CB2 a second time.

@@ -96,7 +96,7 @@ async function png(page, shade) {
   check(JSON.stringify(d.rails) === JSON.stringify([['CB1', 'CB2', 'PS24'], ['PLC1', 'IO1', 'K1', 'OL1'], ['TB1']]), 'rails in the photographed order with the corrected tag');
   check(!d.tags.some((t) => /^CR/.test(t)), 'the unconfirmed hidden relay is left out');
   check(/As-built from photos — verify/.test(d.notes?.[0] ?? ''), 'marked "as-built from photos — verify"');
-  check(/4 I\/O traced · 4 wires/.test(await page.getByTestId('photos-applied').innerText()), 'apply reports the traced I/O and wires');
+  check(/4 I\/O traced · 6 wires/.test(await page.getByTestId('photos-applied').innerText()), 'apply reports the traced I/O and wires');
   const io = await page.evaluate(async () => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.map((p) => `${p.plcAddress}:${p.type}`));
   check(JSON.stringify(io) === JSON.stringify(['X001:input', 'X002:input', 'X101:input', 'Y001:output']), `I/O list at the addresses read (${io.join(', ')})`);
 
@@ -122,6 +122,13 @@ async function png(page, shade) {
   const sheets = await page.locator('nav[aria-label="Drawing sheets"] li button').evaluateAll((bs) => bs.map((b) => b.title));
   log('Sheets:', sheets.join(' | '));
   check(sheets.some((t) => /PANEL LAYOUT/i.test(t)) && sheets.some((t) => /BILL OF MATERIALS/i.test(t)), 'panel layout and BOM sheets');
+  // As-built power distribution from the traced wires (supply first, then branch circuits; PLC I/O wires on the I/O sheets).
+  check(sheets.some((t) => /AS-BUILT POWER DISTRIBUTION \(FROM PHOTOS\)/.test(t)), 'as-built power distribution sheet');
+  const abWires = await page.locator('[data-asbuilt-wire]').evaluateAll((gs) => gs.map((g) => g.getAttribute('data-asbuilt-wire')));
+  check(JSON.stringify(abWires) === JSON.stringify(['0V', '24+', '101']), `as-built sheet draws the supply and branch wires (${abWires.join(', ')})`);
+  const abText = await page.locator('[data-cad-sheet="asbuilt"]').first().textContent();
+  await page.locator('[data-cad-sheet="asbuilt"]').first().screenshot({ path: OUT + 'asbuilt-sheet.png' });
+  check(/PS24:\+V/.test(abText) && /TB1:1/.test(abText) && /READ AT ONE END ONLY/.test(abText) && /102 @ CB2:2/.test(abText), 'drops to every terminal; single-ended wires listed');
   const bom = await page.evaluate(async () => {
     const { collectProject } = await import('/src/deliverables/collect.ts');
     const { billOfMaterials } = await import('/src/electrical/derive.ts');

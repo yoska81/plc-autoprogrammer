@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { getPart } from '../../electrical/catalog';
 import { DEFAULT_INPUTS } from '../../store/useElectricalStore';
 import { billOfMaterials, panelLayout, type DrawingContext } from '../../electrical/derive';
+import { planDrawings, wireClass } from '../../electrical/drawings/plan';
 import { clampReading, PHOTO_EDGE, PHOTO_SCHEMA, photoBlocks, recogniseCabinet } from './recognise';
 import { mergeDevices, mergeReading } from './merge';
 import { asBuiltDesign, matchPart, nameplateRatings, photosToMachine, reviewItems, tracedPoints, type ReviewItem } from './toDesign';
@@ -93,6 +94,19 @@ assert.ok(at('K1').y > at('PS1').y, 'rails top to bottom as photographed');
 const bom = billOfMaterials(ctx).flatMap((g) => g.lines);
 for (const pn of ['GMCBU-1C-5', 'GMCBU-1C-2', 'PSL-24-030', 'C0-10DD1E-D', 'C0-08ND3', 'SC-E02PG-24VDC', 'TK-E02-72']) assert.ok(bom.some((l) => l.partNumber === pn), `BOM has ${pn}`);
 assert.ok(bom.filter((l) => l.partNumber === 'SC-E02PG-24VDC').every((l) => /— from photo, verify$/.test(l.description)), 'the BOM says by the part number that it was read from a photo');
+// As-built power distribution sheet: the traced supply / branch wires (PLC I/O wires are on the I/O sheets).
+const plan = planDrawings(ctx);
+const ab = plan.sheets.filter((sh) => sh.spec.kind === 'asbuilt');
+assert.equal(ab.length, 1);
+assert.equal(ab[0].title, 'AS-BUILT POWER DISTRIBUTION (FROM PHOTOS)');
+assert.ok(plan.sheets.findIndex((sh) => sh.spec.kind === 'asbuilt') === plan.sheets.findIndex((sh) => sh.spec.kind === 'power') + 1, 'right after POWER DISTRIBUTION');
+const abSpec = ab[0].spec as Extract<typeof ab[0]['spec'], { kind: 'asbuilt' }>;
+assert.deepEqual(abSpec.nets.map((n) => `${n.wire}(${n.cls}): ${n.ends.map((e) => `${e.tag}:${e.terminal}`).join(' ')}`), ['0V(dc): PS1:-V TB1:2', '24+(dc): PS1:+V TB1:1', '101(branch): CB1:2 PS1:L'], 'supply wires first, then branch circuits; 1001 / 1101 / 2001 are PLC I/O');
+assert.equal(abSpec.nets[0].ends[0].what, 'power supply PSL-24-030');
+assert.deepEqual(abSpec.single.map((x) => `${x.wire}@${x.at}`), ['102@CB2:2', '1002@PLC1:X2', 'L1@CB1:1'], 'wire numbers read at one end only');
+assert.deepEqual(['L1', 'N', 'PE', '24+', '0V', '+24V', '101', '1001', 'L2-480VAC'].map(wireClass), ['ac', 'ac', 'pe', 'dc', 'dc', 'dc', 'branch', 'branch', 'ac']);
+assert.ok(!planDrawings({ ...ctx, design: { ...r.design, asBuilt: undefined } }).sheets.some((sh) => sh.spec.kind === 'asbuilt'), 'no as-built sheet for a designed panel');
+
 // Without as-built rails the normal packing runs (nothing changes for designed panels).
 assert.ok(!panelLayout({ ...ctx, design: { ...r.design, asBuilt: undefined } }).warnings.some((w) => /As-built/.test(w)));
 
@@ -105,7 +119,7 @@ assert.equal(mk1.source, 'photo 3, rail 2, position 3', 'where the close-up show
 assert.equal(mk1.photos?.length, 2, 'every sighting handed over, not only the first');
 assert.deepEqual(mk1.wires, [{ terminal: 'A1', wire: '2001' }], 'the wire numbers at its terminals are kept');
 assert.deepEqual(machine.terminals?.map((t) => `${t.strip}-${t.terminal}:${t.wire}`), ['TB1-1:24+', 'TB1-2:0V', 'TB1-3:1001', 'TB1-4:1101'], 'terminal strips as data, not text');
-assert.deepEqual(machine.wiring?.map((w) => w.wire), ['24+', '1001', '1101', '2001']);
+assert.deepEqual(machine.wiring?.map((w) => w.wire), ['0V', '24+', '101', '1001', '1101', '2001']);
 assert.equal(machine.spec.utilities, 'Line 3 starter panel');
 // …and shown on the machine description when the reading is applied (convertedSpec).
 const wt = wiringText(machine);
@@ -127,7 +141,7 @@ assert.equal(nameplateRatings('24 VDC 3 A').amps, 3);
 // ── Wiring from wire numbers: a number read at two places is one wire; the PLC's wires are the I/O list ──
 const wires = r.design.asBuilt!.wires!;
 assert.deepEqual(wires.map((w) => `${w.wire}: ${w.ends.join(' – ')}`), [
-  '24+: PS1:+V – TB1:1', '1001: PLC1:X1 – TB1:3', '1101: IO1:1 – TB1:4', '2001: PLC1:Y1 – K1:A1',
+  '0V: PS1:-V – TB1:2', '24+: PS1:+V – TB1:1', '101: CB1:2 – PS1:L', '1001: PLC1:X1 – TB1:3', '1101: IO1:1 – TB1:4', '2001: PLC1:Y1 – K1:A1',
 ], 'wires seen at two places (1002 is seen only at the PLC)');
 const ioOf = (a: string) => r.io.find((p) => p.address === a)!;
 assert.deepEqual(r.io.map((p) => p.address), ['X001', 'X002', 'X101', 'Y001'], 'CPU X1 → X001, slot 1 point 1 → X101 (CLICK), CPU Y1 → Y001');

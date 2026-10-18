@@ -8,7 +8,7 @@ import type { DrawnComponent, DrawnRatings, ExistingMachine } from '../types';
 import { normalizeMachine } from '../derive';
 import { CATALOG } from '../../electrical/catalog';
 import type { IOCategory, IOPoint } from '../../types/io';
-import { traceIO, traceQuestions, traceWires, type TracedIO } from './trace';
+import { singleWires, traceIO, traceQuestions, traceWires, type TracedIO } from './trace';
 
 /**
  * The REVIEW step and its result. Every recognised device and terminal strip is an item the user
@@ -127,7 +127,7 @@ export function asBuiltDesign(items: ReviewItem[], reading: PhotoReading, base: 
     design: {
       inputs: base, components, notes, askUser: questions, generatedAt: now,
       ioWiring: io.map((p) => ({ address: p.address, deviceTag: p.deviceTag || p.via || `W${p.wire}`, deviceType: p.deviceType, description: p.description, location: p.deviceTag ? 'Cabinet' : 'Field (not in the photos)' })),
-      asBuilt: { source: 'photos', rails, wires: wires.map((w) => ({ wire: w.wire, ends: w.ends.map((e) => `${e.tag}:${e.terminal}`) })) },
+      asBuilt: { source: 'photos', rails, wires: wires.map((w) => ({ wire: w.wire, ends: w.ends.map((e) => `${e.tag}:${e.terminal}`) })), single: singleWires(confirmed, tagOf) },
     },
     io,
     questions,

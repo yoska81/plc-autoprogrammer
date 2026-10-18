@@ -49,6 +49,23 @@ export function traceWires(items: ReviewItem[], tagOf: (it: ReviewItem) => strin
   return [...nets.values()].filter((n) => n.ends.length >= 2).sort((a, b) => a.wire.localeCompare(b.wire, undefined, { numeric: true }));
 }
 
+/** Wire numbers read at one place only (the other end is not in the photos). */
+export function singleWires(items: ReviewItem[], tagOf: (it: ReviewItem) => string): { wire: string; at: string }[] {
+  const seen = new Map<string, { wire: string; at: string[] }>();
+  for (const it of items.filter((x) => x.status !== 'rejected')) {
+    const tag = tagOf(it);
+    const list = it.kind === 'strip' ? it.strip!.terminals : it.device!.wires;
+    for (const w of list) {
+      const k = normWire(w.wire);
+      if (!k) continue;
+      const e = seen.get(k) ?? { wire: w.wire.trim(), at: [] };
+      if (!e.at.includes(`${tag}:${w.terminal}`)) e.at.push(`${tag}:${w.terminal}`);
+      seen.set(k, e);
+    }
+  }
+  return [...seen.values()].filter((e) => e.at.length === 1).map((e) => ({ wire: e.wire, at: e.at[0] })).sort((a, b) => a.wire.localeCompare(b.wire, undefined, { numeric: true }));
+}
+
 /** Field device type of a panel device a PLC terminal drives or reads. */
 function deviceTypeOf(cat: CatalogCategory | 'strip', terminal: string, type: 'input' | 'output'): FieldDeviceType {
   if (type === 'output') return cat === 'contactor' ? 'contactor-coil' : cat === 'relay' ? 'relay-coil' : cat === 'vfd' ? 'vfd-input' : cat === 'pilotLight' ? 'pilot-light' : cat === 'stackLight' ? 'stack-light' : 'other';
