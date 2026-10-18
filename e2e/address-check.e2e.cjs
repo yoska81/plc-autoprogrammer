@@ -26,6 +26,8 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   });
   await page.goto(BASE + '/io');
   const field = page.locator(`input[aria-label="PLC address for ${first}"]`);
+  await field.waitFor();
+  check((await page.locator('th').allInnerTexts()).filter((t) => /address$/i.test(t)).length === 1, 'CLICK: one address column (its addresses are its own)');
   const saved = () => page.evaluate(async (id) => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.find((p) => p.id === id).plcAddress ?? '', first);
   const type = async (text) => { await field.fill(text); await field.press('Enter'); await page.waitForTimeout(150); };
   const alertText = () => page.getByRole('alert').filter({ hasText: /address|input|output|module|CPU/ }).first().innerText().catch(() => '');
@@ -48,6 +50,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     applyEquipment({ cpuId: '6ES7214-1AG40-0XB0', modules: [], hmiPartNumber: null }, null);
   });
   await page.goto(BASE + '/io');
+  // The brand's own address is shown next to the app's (A3).
+  await field.waitFor();
+  check((await page.locator('th').allInnerTexts()).includes('Siemens address'), 'Siemens address column shown');
+  check(/%I0\.0/.test(await page.locator('tr', { has: field }).innerText()), 'first input shows %I0.0');
   await type('%I0.1');
   check(await saved() === 'X002', `%I0.1 on an S7: saved as X002 (${await saved()})`);
   await type('%Q0.0');

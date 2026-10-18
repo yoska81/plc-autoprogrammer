@@ -7,7 +7,7 @@ import { useEditsStore } from '../edits/useEditsStore';
 import { EditedMark } from '../edits/EditedMark';
 import MicButton from '../voice/MicButton';
 import { FIELD_DEVICE_LABEL, type FieldDeviceType } from '../electrical/types';
-import { checkIOAddress, type Rack } from '../plc/core/addressCheck';
+import { checkIOAddress, nativeName, type Rack } from '../plc/core/addressCheck';
 
 const ALL_CATEGORIES: IOCategory[] = [
   'Safety', 'Operator/HMI', 'External Machine', 'Product Detection',
@@ -76,6 +76,7 @@ export function IORow({ point, address, duplicate, device, rack }: IORowProps) {
         </div>
         {bad && <p role="alert" className="mt-0.5 max-w-xs whitespace-normal text-[11px] leading-snug text-red-700">{bad.reason}</p>}
       </td>
+      {rack.profile.ioTag && <td className={`${td} font-mono text-xs text-steel-700 whitespace-nowrap`}>{(address && nativeName(rack, address)) || address || '—'}</td>}
       <td className={td}>
         <div className="flex items-center gap-1">
         <input

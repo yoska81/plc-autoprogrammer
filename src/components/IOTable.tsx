@@ -14,7 +14,7 @@ function Group({ title, color, points, addresses, dupes, devices, rack }: {
   return (
     <>
       <tr>
-        <td colSpan={6} className="px-3 py-1 bg-[#e9edef] border-y border-steel-200 text-xs font-semibold text-steel-700">
+        <td colSpan={rack.profile.ioTag ? 7 : 6} className="px-3 py-1 bg-[#e9edef] border-y border-steel-200 text-xs font-semibold text-steel-700">
           <span className={`inline-block w-2 h-2 rounded-sm mr-2 ${color}`} />{title} ({points.length})
         </td>
       </tr>
@@ -63,6 +63,7 @@ export function IOTable({ filter }: { filter: IOFilter }) {
             <tr>
               <th className={`${ioTh} w-20`}>Tag</th>
               <th className={`${ioTh} w-28`} title="Address on the selected PLC. Type to override.">Address</th>
+              {profile.ioTag && <th className={`${ioTh} w-36`} title={`The address as ${profile.vendor} software shows it`}>{profile.vendor} address</th>}
               <th className={ioTh}>Description</th>
               <th className={`${ioTh} w-40`}>Category</th>
               <th className={`${ioTh} w-32`} title="Field device type; Discrete / Analog with range and engineering units">Device / signal</th>
