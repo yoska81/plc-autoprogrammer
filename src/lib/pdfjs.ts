@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference -- the declaration must also reach the tools/ type check, which does not include src/lib/*.d.ts
 /// <reference path="./pdfjsWorker.d.ts" />
 /**
  * pdf.js with its worker. In the browser and the Windows app the worker is its own file (a real Worker).
