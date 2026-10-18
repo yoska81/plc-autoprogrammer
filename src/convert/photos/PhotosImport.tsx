@@ -44,6 +44,9 @@ const itemName = (it: ReviewItem) => {
   return tag ? `${tag} (${what})` : `the ${what}${src?.rail ? ` on rail ${src.rail}, position ${src.order}` : ''}`;
 };
 
+/** Keys of items added by hand: unique even for two adds in the same millisecond. */
+let handSeq = 0;
+
 /** A device or terminal strip added by hand (no AI, or something the photos missed). */
 function AddByHand({ onAdd }: { onAdd: (it: ReviewItem) => void }) {
   const [kind, setKind] = useState<CatalogCategory>('contactor');
@@ -56,7 +59,7 @@ function AddByHand({ onAdd }: { onAdd: (it: ReviewItem) => void }) {
   const add = () => {
     const ws = wires.split(',').map((w) => w.split('=').map((x) => x.trim())).filter((w) => w.length === 2 && w[0] && w[1]).map(([terminal, wire]) => ({ terminal, wire }));
     const at = { rail: Math.max(0, Number(rail) || 0), order: Math.max(1, Number(order) || 1) };
-    const key = `h${Date.now().toString(36)}`;
+    const key = `h${++handSeq}-${Date.now().toString(36)}`;
     onAdd(kind === 'terminal'
       ? { key, kind: 'strip', status: 'confirmed', strip: { tag: tag.trim(), ...at, terminals: ws, confidence: 'high', seen: [] } }
       : { key, kind: 'device', status: 'confirmed', device: { tag: tag.trim(), category: kind, manufacturer: '', partNumber: part.trim(), ratings: ratings.trim(), ...at, confidence: 'high', seen: [], wires: ws } });

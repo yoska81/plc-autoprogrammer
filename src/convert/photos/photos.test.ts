@@ -13,6 +13,7 @@ import { clampReading, PHOTO_EDGE, PHOTO_SCHEMA, photoBlocks, recogniseCabinet }
 import { mergeDevices, mergeReading } from './merge';
 import { asBuiltDesign, matchPart, nameplateRatings, photosToMachine, reviewItems, tracedPoints, type ReviewItem } from './toDesign';
 import { plcAddress } from './trace';
+import { wiringText } from './wiringText';
 import { SMALL_CABINET } from './__fixtures__/smallCabinet';
 import type { PhotoDevice } from './recognise';
 import { setClaudeInterceptor } from '../../lib/ai/anthropic';
@@ -106,6 +107,11 @@ assert.deepEqual(mk1.wires, [{ terminal: 'A1', wire: '2001' }], 'the wire number
 assert.deepEqual(machine.terminals?.map((t) => `${t.strip}-${t.terminal}:${t.wire}`), ['TB1-1:24+', 'TB1-2:0V', 'TB1-3:1001', 'TB1-4:1101'], 'terminal strips as data, not text');
 assert.deepEqual(machine.wiring?.map((w) => w.wire), ['24+', '1001', '1101', '2001']);
 assert.equal(machine.spec.utilities, 'Line 3 starter panel');
+// …and shown on the machine description when the reading is applied (convertedSpec).
+const wt = wiringText(machine);
+assert.match(wt, /TB1: 1 = wire 24\+, 2 = wire 0V, 3 = wire 1001, 4 = wire 1101/);
+assert.match(wt, /2001: PLC1:Y1 – K1:A1/);
+assert.equal(wiringText({ terminals: [], wiring: [] }), '');
 assert.ok(machine.components.some((c) => c.tag === 'IO1') && r.design.components.some((c) => c.tag === 'IO1'), 'the unlabelled module has the same tag in both outputs');
 assert.equal(mk1.confidence, 'high', 'confirmed in the photo review');
 assert.equal(mk1.ratings.coilVoltage, '24VDC');
