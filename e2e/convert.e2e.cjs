@@ -6,7 +6,8 @@
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/convert.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const fs = require('fs');
-const OUT = __dirname + '/out-convert/';
+// its own folder: the roll-former test writes to out-convert/rollformer/ and may run at the same time
+const OUT = __dirname + '/out-convert/conveyor/';
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const FIX = __dirname + '/fixtures/convert/';
@@ -49,6 +50,9 @@ function sse(model, text) {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // the app's own summary of each build run: "[update] … equipment done · hmi skipped · electrical done · program done"
+  const updates = [];
+  page.on('console', (m) => { if (m.text().startsWith('[update]')) updates.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
@@ -127,14 +131,13 @@ function sse(model, text) {
 
   // Build the converted design with the engine
   await page.getByTestId('convert-build').click();
-  // (waitForFunction can't await an import: poll)
-  for (let t = 0; t < 360; t++) {
-    if (await page.evaluate(async () => Boolean((await import('/src/spec/updateRun.ts')).useUpdateRun.getState().finishedAt))) break;
-    await page.waitForTimeout(500);
-  }
-  const run = await page.evaluate(async () => (await import('/src/spec/updateRun.ts')).useUpdateRun.getState().results.map((r) => `${r.step}:${r.status}${r.status === 'done' ? '' : ` (${r.message})`}`));
-  log('Build:', run.join(' | '));
-  check(run.length === 4 && run.every((r) => /:done$/.test(r) || /^hmi:skipped \((No HMI chosen|No touch panel)/.test(r)), 'equipment, electrical and program built (no HMI: the old machine has none)');
+  // wait for this build's summary line (a module imported from the test could be another instance than the app's)
+  const before = updates.length;
+  for (let t = 0; t < 360 && updates.length === before; t++) await page.waitForTimeout(500);
+  const line = updates[before] ?? '';
+  const run = [...line.matchAll(/(equipment|io|electrical|hmi|program) (done|skipped|failed|stopped)/g)].map((x) => `${x[1]}:${x[2]}`);
+  log('Build:', line);
+  check(run.length === 4 && run.every((r) => /:done$/.test(r) || r === 'hmi:skipped'), 'equipment, electrical and program built (no HMI: the old machine has none)');
   await page.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
   const after = await page.evaluate(async () => {
     const el = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState();

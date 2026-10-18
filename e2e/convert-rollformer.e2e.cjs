@@ -50,6 +50,9 @@ function sse(model, text) {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // the app's own summary of each build run: "[update] … equipment done · hmi skipped · electrical done · program done"
+  const updates = [];
+  page.on('console', (m) => { if (m.text().startsWith('[update]')) updates.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
@@ -121,12 +124,12 @@ function sse(model, text) {
 
   // Rebuild
   await page.getByTestId('convert-build').click();
-  for (let t = 0; t < 360; t++) {
-    if (await page.evaluate(async () => Boolean((await import('/src/spec/updateRun.ts')).useUpdateRun.getState().finishedAt))) break;
-    await page.waitForTimeout(500);
-  }
-  const run = await page.evaluate(async () => (await import('/src/spec/updateRun.ts')).useUpdateRun.getState().results.map((r) => `${r.step}:${r.status}`));
-  log('Build:', run.join(' | '));
+  // wait for this build's summary line (a module imported from the test could be another instance than the app's)
+  const before = updates.length;
+  for (let t = 0; t < 360 && updates.length === before; t++) await page.waitForTimeout(500);
+  const line = updates[before] ?? '';
+  const run = [...line.matchAll(/(equipment|io|electrical|hmi|program) (done|skipped|failed|stopped)/g)].map((x) => `${x[1]}:${x[2]}`);
+  log('Build:', line);
   check(run.filter((r) => /:done$/.test(r)).length === 3, 'equipment, electrical and program built');
   await page.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
   const kept = page.getByTestId('convert-kept');
