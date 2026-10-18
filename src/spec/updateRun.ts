@@ -4,7 +4,7 @@
  */
 import { create } from 'zustand';
 import { startAiJob } from '../lib/ai/jobs';
-import { runUpdateAll, type StepResult, type UpdateStep } from './updateAll';
+import type { StepResult, UpdateStep } from './updateSteps';
 import { aiBusyMs, aiNow, callsBetween, fmtDuration } from '../lib/ai/timing';
 
 export const STEP_LABEL: Record<UpdateStep, string> = { equipment: 'Equipment', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI screens', program: 'PLC program' };
@@ -45,6 +45,8 @@ export async function runStages(steps: UpdateStep[], title = 'Updating the proje
     run: async (h) => {
       h.stage(`${STEP_LABEL[ordered[0]]} (1/${ordered.length})`);
       try {
+        // the pipeline and the engines load with the first update, not at startup
+        const { runUpdateAll } = await import('./updateAll');
         await runUpdateAll(ordered, (r) => {
           // a first (rules) result is replaced by the stage's final one
           useUpdateRun.setState((s) => ({ results: [...s.results.filter((x) => x.step !== r.step), r] }));

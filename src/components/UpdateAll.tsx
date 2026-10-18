@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStages } from '../spec/useStages';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { UPDATE_GROUPS, type UpdateStep } from '../spec/updateAll';
+import { UPDATE_GROUPS, type UpdateStep } from '../spec/updateSteps';
 import { runStages, runSummary, useUpdateRun } from '../spec/updateRun';
 import { cancelAiJob, useAiJob } from '../lib/ai/jobs';
 import { Spinner } from './common';

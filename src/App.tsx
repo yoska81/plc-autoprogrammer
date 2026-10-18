@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   DocumentPlusIcon, ArrowUpTrayIcon, PlayIcon, ArrowDownTrayIcon, Cog6ToothIcon,
@@ -245,7 +245,8 @@ export default function App() {
               Preview: everything is clickable and editable, and the example project is in the project list (top right). AI runs on your Claude account (it asks once); files are saved through Claude.
             </div>
           )}
-          <Outlet />
+          {/* a page opened for the first time loads its chunk: the shell stays */}
+          <Suspense fallback={<div className="flex-1 bg-gray-50" data-page-loading />}><Outlet /></Suspense>
         </main>
       </div>
 

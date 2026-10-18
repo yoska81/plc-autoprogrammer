@@ -11,7 +11,7 @@ import { useProjectsStore } from '../store/useProjectsStore';
 import { useQuestionStore } from './questions/useQuestionStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { exampleLeftovers, startClean } from '../spec/startClean';
-import type { StepResult, UpdateStep } from '../spec/updateAll';
+import type { StepResult, UpdateStep } from '../spec/updateSteps';
 import { useAiJobRunning } from '../lib/ai/jobs';
 import { useIOStore } from '../store/useIOStore';
 import { useUi } from '../store/useUiStore';
@@ -43,11 +43,12 @@ export default function StartCleanBanner() {
   const keepIo = keepIoChoice ?? !ioExample;
   const [clearSections, setClearSections] = useState(true);
 
+  const ORDER: UpdateStep[] = ['equipment', 'io', 'electrical', 'hmi', 'program'];
   const build = async () => {
     const steps: UpdateStep[] = ['equipment', ...(cleanedIo ? [] : ['io' as const]), 'electrical', 'hmi', 'program'];
     const results = await runStages(steps, 'Building the project from your description');
     const name = (r: StepResult) => STEP_LABEL[r.step];
-    setOutcome({ ok: results.filter((r) => r.status === 'done' || r.status === 'proposal' || (r.status === 'skipped' && r.message.startsWith('Up to date'))).map(name), failed: results.filter((r) => r.status === 'failed').map((r) => `${name(r)}: ${r.message}`) });
+    setOutcome({ ok: results.filter((r) => r.status === 'done' || r.status === 'proposal' || (r.status === 'skipped' && r.message.startsWith('Up to date'))).map(name), failed: results.filter((r) => r.status === 'failed').sort((a, b) => ORDER.indexOf(a.step) - ORDER.indexOf(b.step)).map((r) => `${name(r)}: ${r.message}`) });
     setStep('built');
   };
 

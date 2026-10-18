@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { sheetOnPaper } from '../../standards/regions';
 import { codeRefs, supplyText } from '../derive';
 import type { DrawingPlan, PlannedSheet } from './plan';
@@ -41,7 +42,7 @@ function Content({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
 }
 
 /** One complete sheet (frame + content) as an SVG element. */
-export default function SheetView({ plan, sheet, width, height }: { plan: DrawingPlan; sheet: PlannedSheet; width?: string; height?: string }) {
+function SheetView({ plan, sheet, width, height }: { plan: DrawingPlan; sheet: PlannedSheet; width?: string; height?: string }) {
   const kind = sheet.spec.kind;
   const sp = sheet.spec;
   const ansiScale = kind === 'panel' ? scaleText(panelScale(plan)) : kind === 'door' ? scaleText(doorScale(plan)) : sp.kind === 'drill' && sp.drawing ? scaleText(drillSheetScale(sp.drill)) : kind === 'layout' ? `1:${machineLayoutScale(plan) ?? '—'}` : 'NONE';
@@ -62,3 +63,6 @@ export default function SheetView({ plan, sheet, width, height }: { plan: Drawin
     </SheetFrame>
   );
 }
+
+// Memoized: the drawing document re-renders on scroll (current sheet); a sheet redraws only when its own data changes.
+export default memo(SheetView);

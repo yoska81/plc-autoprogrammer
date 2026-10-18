@@ -530,6 +530,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               issues={issues}
               selectedRungId={selectedRungId}
               onSelectRung={setSelectedRungId}
+              progressive
             />
             </>
           ) : isGenerating ? (

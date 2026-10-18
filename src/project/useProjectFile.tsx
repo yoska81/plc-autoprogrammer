@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { buildProjectFile, openProjectFile, PROJECT_EXT } from './projectFile';
-import { saveBlobResult } from '../deliverables/files';
+import { saveBlobResult } from '../deliverables/save';
 import { desktopBridge } from '../desktop/bridge';
 import { notify } from '../store/useNoticeStore';
 import { useProjectsStore } from '../store/useProjectsStore';

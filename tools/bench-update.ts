@@ -8,6 +8,8 @@
  *   npx tsx tools/bench-update.ts m1-case-erector       # one machine
  *   npx tsx tools/bench-update.ts --json out.json       # also write the numbers as JSON
  *   npx tsx tools/bench-update.ts --max-non-ai-ms=5000  # exit 1 when the pipeline itself (no AI) gets slower than this (CI)
+ *   npx tsx tools/bench-update.ts --preview             # the claude.ai preview path: the viewer's account caps effort at high and
+ *                                                       # answers 2 requests at a time (the old preview code: 1)
  *
  * Replies come from tools/ai-quality/recordings/<machine>/ (real or E2E answers) and
  * tools/bench/recordings/<machine>/ (hand-written answers of realistic size; see its README).
@@ -112,10 +114,21 @@ function prune(v: unknown, schema: Record<string, unknown> | undefined): unknown
   return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([k]) => k in props).map(([k, x]) => [k, prune(x, props[k])]));
 }
 
+let PREVIEW = false;
+// the preview's account takes low / medium / high only (src/preview/claudeAccount.ts)
+const previewEffort = (e: string) => (e === 'low' || e === 'medium' ? e : 'high');
+
 /** Replay: each stage's recorded replies in order (the last one repeats), after the modelled latency (or at once). */
-function replay(rec: Map<Stage, string[]>, instant: boolean) {
+function replay(rec: Map<Stage, string[]>, instant: boolean, parallel = Infinity) {
   const used = new Map<Stage, number>();
+  let running = 0;
+  const waiting: (() => void)[] = [];
   setClaudeInterceptor(async (opts: ClaudeOptions) => {
+    if (running >= parallel) await new Promise<void>((r) => waiting.push(r));
+    running++;
+    try { return await answer(opts); } finally { running--; waiting.shift()?.(); }
+  });
+  async function answer(opts: ClaudeOptions) {
     const stage = stageOfPrompt(opts.system);
     const list = rec.get(stage);
     if (!list?.length) throw new Error(`No recording for stage "${stage}"`);
@@ -123,9 +136,9 @@ function replay(rec: Map<Stage, string[]>, instant: boolean) {
     used.set(stage, n + 1);
     const recorded = list[Math.min(n, list.length - 1)];
     const text = opts.schema ? JSON.stringify(prune(JSON.parse(recorded), opts.schema)) : recorded;
-    if (!instant) await aiSleep(modelledLatencyMs(opts.effort, text.length));
+    if (!instant) await aiSleep(modelledLatencyMs(PREVIEW ? previewEffort(opts.effort) : opts.effort, text.length));
     return { text, reasoning: null };
-  });
+  }
 }
 
 interface StageTime { step: UpdateStep; status: string; modelledMs: number; provisionalModelledMs?: number }
@@ -159,7 +172,7 @@ async function runOnce(machine: string, config: Config, rec: Map<Stage, string[]
   useSettingsStore.setState({ provider: 'anthropic', anthropicApiKey: 'bench', effort: 'max', speed: before ? 'thorough' : 'fast', smallTaskModel: '', stageModes: modes });
   if (setup.region) useProjectStore.getState().setInfo({ region: setup.region });
   if (setup.supply) useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, supply: setup.supply as SupplyVoltage });
-  replay(rec, instant);
+  replay(rec, instant, PREVIEW ? (before ? 1 : 2) : Infinity);
 
   const t0 = performance.now();
   const stepEvents: StepResult[] = [];
@@ -192,14 +205,14 @@ async function bench(machine: string, config: Config, rec: Map<Stage, string[]>)
     machine, config, io: v.io,
     modelledMs: v.virtualMs + nonAiMs, nonAiMs, aiModelledMs: aiBusyMs(calls),
     requests: calls.filter((c) => !c.cached).length, cached: calls.filter((c) => c.cached).length, stages: v.stages,
-    calls: calls.map((c) => ({ task: c.task, effort: c.effort, promptChars: c.promptChars, outChars: c.outChars, modelledMs: c.cached ? 0 : c.endedAt - c.startedAt, cached: c.cached })),
+    calls: calls.map((c) => ({ task: c.task, effort: PREVIEW ? previewEffort(c.effort) : c.effort, promptChars: c.promptChars, outChars: c.outChars, modelledMs: c.cached ? 0 : c.endedAt - c.startedAt, cached: c.cached })),
   };
 }
 
 const fmt = (ms: number) => (ms < 1000 ? `${Math.round(ms)} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60000)} min ${String(Math.round(ms / 1000) % 60).padStart(2, '0')} s`);
 
 function report(runs: BenchRun[]): string {
-  const L: string[] = ['# Update-all benchmark', '', `Latency model: ${FIRST_TOKEN_S} s to the first token + thinking (${Object.entries(THINK_S).map(([k, v]) => `${k} ${v} s`).join(', ')}) + answer at ${OUT_CHARS_PER_S} characters/s. Non-AI time is measured.`, ''];
+  const L: string[] = [`# Update-all benchmark${PREVIEW ? ' — preview path (account: effort ≤ high; 1 request at a time before, 2 now)' : ''}`, '', `Latency model: ${FIRST_TOKEN_S} s to the first token + thinking (${Object.entries(THINK_S).map(([k, v]) => `${k} ${v} s`).join(', ')}) + answer at ${OUT_CHARS_PER_S} characters/s. Non-AI time is measured.`, ''];
   L.push('| Machine | I/O | Configuration | Description → design (modelled) | AI (modelled) | Non-AI (measured) | AI requests | From cache |', '|---|---:|---|---:|---:|---:|---:|---:|');
   for (const r of runs) L.push(`| ${r.machine} | ${r.io} | ${r.config} | **${fmt(r.modelledMs)}** | ${fmt(r.aiModelledMs)} | ${fmt(r.nonAiMs)} | ${r.requests} | ${r.cached} |`);
   for (const r of runs) {
@@ -213,6 +226,7 @@ function report(runs: BenchRun[]): string {
 
 async function main() {
   const args = process.argv.slice(2);
+  PREVIEW = args.includes('--preview');
   const jsonOut = args.includes('--json') ? args[args.indexOf('--json') + 1] : undefined;
   const maxNonAi = Number(args.find((a) => a.startsWith('--max-non-ai-ms='))?.split('=')[1] ?? 0);
   const only = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--json');

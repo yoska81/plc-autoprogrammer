@@ -1,16 +1,12 @@
 import { hmiReadme, hmiTagCsv, needsHmiTagList } from './hmiTags';
 import { exportContext, hmiExtraTags } from './exportContext';
 import { sheetOnPaper } from '../standards/regions';
-import { IS_PREVIEW } from '../preview/mode';
-import { saveViaAccount } from '../preview/claudeAccount';
-import { notify } from '../store/useNoticeStore';
-import { desktopBridge } from '../desktop/bridge';
 import { backPanelDxf, doorDxf, enclosureFaceDxfs } from '../electrical/dxf';
 import { cabinetStep } from '../electrical/step/cabinetStep';
 import { createElement, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import type { ProjectSnapshot } from './collect';
-import DrawingSet from '../electrical/drawings/DrawingSet';
 import SheetView from '../electrical/drawings/SheetView';
 import { planDrawings } from '../electrical/drawings/plan';
 import HmiScreenView from '../hmi/HmiScreenView';
@@ -29,15 +25,16 @@ import { cabinetPng } from '../electrical/render/renderToPng';
 import { cableScheduleCsvWithNotes, wireListCsvWithNotes } from '../edits/lists';
 import { MACHINE_SPEC_KEY, textOr } from '../edits/useEditsStore';
 
-/** Render React content off-screen, let the caller read the DOM, then clean up. */
-async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) => Promise<T>): Promise<T> {
+/** Render React content off-screen, let the caller read the DOM, then clean up. `sync`: committed at once (no settling wait). */
+async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) => Promise<T>, sync = false): Promise<T> {
   const host = document.createElement('div');
   host.style.cssText = 'position:fixed;left:-20000px;top:0;width:1700px;pointer-events:none;';
   document.body.appendChild(host);
   const root = createRoot(host);
   try {
-    root.render(el);
-    await new Promise((r) => setTimeout(r, 300)); // let React commit and layout settle
+    if (sync) flushSync(() => root.render(el));
+    else root.render(el);
+    await new Promise((r) => setTimeout(r, sync ? 0 : 300)); // let React commit and layout settle
     return await read(host);
   } finally {
     root.unmount();
@@ -45,28 +42,36 @@ async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) =>
   }
 }
 
-/** Drawing sheets rendered by `el` as a vector PDF, one page per sheet on the project's paper. */
-async function sheetsPdf(ctx: DrawingContext, el: ReactElement, title: string): Promise<Blob> {
+/**
+ * Drawing sheets as a vector PDF, one page per sheet on the project's paper. The sheets are drawn and
+ * converted a few at a time, one sheet per task, so the page stays responsive while a 50-sheet set is made.
+ */
+async function sheetsPdf(ctx: DrawingContext, sheetEls: ReactElement[], title: string): Promise<Blob> {
   const [{ jsPDF }] = await Promise.all([import('jspdf'), import('svg2pdf.js')]);
   const on = sheetOnPaper(ctx.sheet);
   const PW = on.paper.w, PH = on.paper.h;
-  return renderOffscreen(el, async (host) => {
-    const sheets = [...host.querySelectorAll<SVGSVGElement>(`svg[viewBox="0 0 ${PW} ${PH}"]`)];
-    if (!sheets.length) throw new Error('No drawing sheets were produced.');
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [PW, PH] });
-    doc.setProperties({ title: `${ctx.projectName} — ${title}`, creator: 'ISA Auto Programmer' });
-    for (let i = 0; i < sheets.length; i++) {
-      if (i > 0) doc.addPage([PW, PH], 'landscape');
-      await doc.svg(sheets[i], { x: on.x, y: on.y, width: on.w, height: on.h });
-    }
-    return doc.output('blob');
-  });
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [PW, PH] });
+  doc.setProperties({ title: `${ctx.projectName} — ${title}`, creator: 'ISA Auto Programmer' });
+  const BATCH = 6;
+  let pages = 0;
+  for (let b = 0; b < sheetEls.length; b += BATCH) {
+    await renderOffscreen(createElement('div', null, ...sheetEls.slice(b, b + BATCH)), async (host) => {
+      for (const svg of host.querySelectorAll<SVGSVGElement>(`svg[viewBox="0 0 ${PW} ${PH}"]`)) {
+        if (pages++ > 0) doc.addPage([PW, PH], 'landscape');
+        await doc.svg(svg, { x: on.x, y: on.y, width: on.w, height: on.h });
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }, true);
+  }
+  if (!pages) throw new Error('No drawing sheets were produced.');
+  return doc.output('blob');
 }
 
 /** Electrical drawing set as a vector PDF, one page per sheet on the project's paper (ANSI B 17x11 or A3). */
 export async function buildDrawingsPdf(p: ProjectSnapshot): Promise<Blob | null> {
   if (!p.drawingCtx) return null;
-  return sheetsPdf(p.drawingCtx, createElement(DrawingSet, { ctx: p.drawingCtx, printMode: true }), 'Electrical drawings');
+  const plan = planDrawings(p.drawingCtx);
+  return sheetsPdf(p.drawingCtx, plan.sheets.map((s) => createElement(SheetView, { key: s.n, plan, sheet: s })), 'Electrical drawings');
 }
 
 /**
@@ -79,7 +84,7 @@ export async function buildMachiningPdf(ctx: DrawingContext, which: DrillingPlan
   const isWall = (k: DrillingPlan['kind']) => k !== 'backpanel' && k !== 'door';
   const sheets = plan.sheets.filter((s) => s.spec.kind === 'drill' && (which === 'all' || s.spec.drill.kind === which || (which === 'walls' && isWall(s.spec.drill.kind))));
   if (!sheets.length) return null;
-  return sheetsPdf(ctx, createElement('div', null, ...sheets.map((s) => createElement(SheetView, { key: s.n, plan, sheet: s }))), 'Machining drawings');
+  return sheetsPdf(ctx, sheets.map((s) => createElement(SheetView, { key: s.n, plan, sheet: s })), 'Machining drawings');
 }
 
 /** Every HMI screen as a PNG at the panel's native resolution, in the design's look. */
@@ -249,34 +254,4 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
   return zip.generateAsync({ type: 'blob' });
 }
 
-/** Save a file: download in the browser, Save dialog in the Windows app, the account's save in the preview. */
-export function saveBlobResult(name: string, blob: Blob): Promise<{ ok: boolean; path?: string }> {
-  // The preview can't download directly: the viewer's Claude app offers the file.
-  if (IS_PREVIEW) {
-    return saveViaAccount(name, blob).then((r) => {
-      if (r === 'unavailable') notify('Saving files is not available in this view. Run the app on your PC to download.');
-      else if (r === 'saved') notify(`Saved: ${name}`);
-      return { ok: r !== 'unavailable' };
-    })
-      .catch((e: unknown) => { notify(e instanceof Error ? e.message : String(e)); return { ok: false }; });
-  }
-  // Windows app: native Save dialog.
-  const save = desktopBridge()?.saveFile;
-  if (save) {
-    return blob.arrayBuffer().then((buf) => save(name, new Uint8Array(buf)))
-      .then((r) => { if (r.ok) notify(`Saved: ${r.path ?? name}`); else if (!r.cancelled) notify(`The file could not be saved: ${r.error ?? 'unknown error'}`); return { ok: r.ok, path: r.path }; })
-      .catch((e: unknown) => { notify(e instanceof Error ? e.message : String(e)); return { ok: false }; });
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-  notify(`Downloaded: ${name}`);
-  return Promise.resolve({ ok: true });
-}
-
-export function saveBlob(name: string, blob: Blob): void {
-  void saveBlobResult(name, blob);
-}
+export { saveBlobResult, saveBlob } from './save';

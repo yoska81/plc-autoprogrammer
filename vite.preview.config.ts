@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { svg2pdfFastMeasure } from './vite.svg2pdf'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -13,7 +14,7 @@ const whisperStub = fileURLToPath(new URL('./src/preview/localWhisperStub.ts', i
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 
 export default defineConfig({
-  plugins: [react(), viteSingleFile()],
+  plugins: [react(), svg2pdfFastMeasure(), viteSingleFile()],
   define: { __APP_VERSION__: JSON.stringify(version) },
   resolve: {
     alias: [
