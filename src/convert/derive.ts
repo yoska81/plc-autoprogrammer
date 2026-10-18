@@ -72,7 +72,7 @@ const PATH_EL = obj({
   paths: { type: 'array', items: { type: 'array', items: CONTACT } },
 });
 
-export const EXISTING_SCHEMA = obj({
+const EXISTING_PROPS = {
   summary: str,
   drawingStandard: en(['IEC', 'GB', 'JIS', 'NFPA', 'other']),
   language: str,
@@ -102,7 +102,9 @@ export const EXISTING_SCHEMA = obj({
   spec: obj(Object.fromEntries(SECTION_IDS.map((id) => [id, str]))),
   questions: { type: 'array', items: obj({ text: str, section: en(SECTION_IDS), assumption: nstr }) },
   uncertainties: { type: 'array', items: str },
-});
+};
+/** The whole reading in one answer. */
+export const EXISTING_SCHEMA = obj(EXISTING_PROPS);
 
 export const DERIVE_SYSTEM = `You are a senior controls and electrical engineer taking over an existing machine from its electrical drawings. The drawings may follow IEC or Chinese GB conventions (device letters QF, QS, KM, KA, FR, SB, SA, SQ, SP, HL, YV, FU, TC, XT, M), use Chinese text, metric wire sizes (mm²) and a 380 V / 400 V 50 Hz supply. You read PDF pages, scans, photos and the text of DXF exports. Build an exact picture of the machine so it can be redesigned for another standard while it keeps doing exactly the same thing.
 
@@ -122,7 +124,33 @@ Read and report only what the drawings show. Never invent a part number, address
 - questions: what a designer must still know that the drawings cannot tell (e.g. "What is the conveyor speed?", "Is the product detected before the pusher or after?"), each with the spec section it belongs to and your assumption if you have one. Do not ask what the drawings already show.
 - summary: two sentences on the machine and its control system.`;
 
-export interface DeriveOptions { apiKey: string; model: string; effort: Effort; signal?: AbortSignal }
+/**
+ * The reading split into three answers that can run at the same time on the same files (sent once as a
+ * cached prefix): what the machine is built from, its logic, its safety and description. Each part fills
+ * its own fields; all of them may list uncertainties.
+ */
+export const DERIVE_PARTS = [
+  { id: 'hardware', fields: ['drawingStandard', 'language', 'plc', 'modules', 'supplyDrawn', 'components', 'motors', 'axes'],
+    instruction: 'PART 1 of 3 — HARDWARE. Fill only: drawingStandard, language, plc, modules, supplyDrawn, components (every device with its ratings), motors and axes, plus uncertainties. Another reader does the I/O, circuits and description at the same time: use every device tag exactly as printed.' },
+  { id: 'logic', fields: ['io', 'circuits', 'interlocks', 'controller'],
+    instruction: 'PART 2 of 3 — LOGIC. Fill only: io (every I/O point, or on a machine without a PLC every field device as the I/O it would be), circuits (every control circuit with its structured path), interlocks and controller, plus uncertainties. Another reader does the parts list and the description at the same time: use every device tag exactly as printed.' },
+  { id: 'safety', fields: ['safety', 'spec', 'questions', 'summary'],
+    instruction: 'PART 3 of 3 — SAFETY AND DESCRIPTION. Fill only: safety (E-stops, guards, safety relay, category, kind, and how every drive stops, STO), spec (the machine description, section by section), questions and summary, plus uncertainties. Another reader does the parts list and the I/O at the same time: use every device tag exactly as printed.' },
+] as const;
+
+const pick = (keys: readonly string[]) => Object.fromEntries(keys.map((k) => [k, (EXISTING_PROPS as Record<string, unknown>)[k]]));
+/** A part's answer: its own fields and its uncertainties. */
+export const partSchema = (part: (typeof DERIVE_PARTS)[number]) => obj({ ...pick(part.fields), uncertainties: EXISTING_PROPS.uncertainties });
+
+/** The three answers as one reading (each part's own fields; uncertainties from all, once each). */
+export function mergeParts(answers: Partial<ExistingMachine>[]): Partial<ExistingMachine> {
+  const out: Record<string, unknown> = {};
+  answers.forEach((a, i) => { for (const k of DERIVE_PARTS[i].fields) if ((a as Record<string, unknown>)[k] !== undefined) out[k] = (a as Record<string, unknown>)[k]; });
+  return { ...(out as Partial<ExistingMachine>), uncertainties: [...new Set(answers.flatMap((a) => a.uncertainties ?? []))] };
+}
+
+/** split (default): the three parts at the same time; false: one request for everything. */
+export interface DeriveOptions { apiKey: string; model: string; effort: Effort; signal?: AbortSignal; split?: boolean }
 
 const NO_RATINGS: DrawnRatings = { amps: null, poles: null, coilVoltage: null, kA: null, curve: null, minAmps: null, maxAmps: null, kw: null, outputVolts: null, outputAmps: null };
 
@@ -165,21 +193,30 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
 }
 
 /**
- * Read the upload and build the existing machine (one AI request). `extra`: more content for the same
- * request, e.g. a PLC program's symbol table or rung listing from the program reader (src/plc/import/).
+ * Read the upload and build the existing machine: three AI requests at the same time on the same files
+ * (DERIVE_PARTS; the files are sent once as a cached prefix), or one request with `split: false`. `extra`:
+ * more content for the same request, e.g. a PLC program's symbol table or rung listing from the program
+ * reader (src/plc/import/).
  */
 export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = []): Promise<{ machine: ExistingMachine; reasoning: string | null; notes: string[] }> {
   const notes: string[] = [];
   const blocks = [...(await readUpload(files, notes)), ...extra];
   const names = files.map((f, i) => `${i + 1}. ${f.name}`).join('\n') || '(none: program data only)';
-  const { text, reasoning } = await callClaude({
-    apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'import',
-    system: DERIVE_SYSTEM, schema: EXISTING_SCHEMA,
-    messages: [{ role: 'user', content: [...blocks, { type: 'text', text: `Files (in the order attached):\n${names}\n\n${note ? `Notes from the engineer:\n${note}\n\n` : ''}Read this machine from its drawings and write its description.` }] }],
-  });
-  try {
-    return { machine: normalizeMachine(JSON.parse(text) as Partial<ExistingMachine>), reasoning, notes };
-  } catch (err) {
-    throw new Error('The AI returned a result the app could not read. Please try again.', { cause: err });
+  const ask = `Files (in the order attached):\n${names}\n\n${note ? `Notes from the engineer:\n${note}\n\n` : ''}Read this machine from its drawings and write its description.`;
+  const base = { apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, task: 'import' as const, system: DERIVE_SYSTEM };
+  const read = (text: string) => {
+    try { return JSON.parse(text) as Partial<ExistingMachine>; } catch (err) { throw new Error('The AI returned a result the app could not read. Please try again.', { cause: err }); }
+  };
+  if (opts.split === false) {
+    const { text, reasoning } = await callClaude({ ...base, schema: EXISTING_SCHEMA, messages: [{ role: 'user', content: [...blocks, { type: 'text', text: ask }] }] });
+    return { machine: normalizeMachine(read(text)), reasoning, notes };
   }
+  // the same prefix for every part (the files, cached once), then the part's own instruction and schema
+  const prefix = blocks.map((b, i) => (i === blocks.length - 1 && b.type !== 'tool_use' && b.type !== 'tool_result' ? { ...b, cache_control: { type: 'ephemeral' as const } } : b)) as Anthropic.Beta.Messages.BetaContentBlockParam[];
+  const answers = await Promise.all(DERIVE_PARTS.map((part) => callClaude({
+    ...base, schema: partSchema(part),
+    messages: [{ role: 'user', content: [...prefix, { type: 'text', text: `${ask}\n\n${part.instruction}` }] }],
+  })));
+  const reasoning = answers.map((a) => a.reasoning).filter(Boolean).join('\n\n') || null;
+  return { machine: normalizeMachine(mergeParts(answers.map((a) => read(a.text)))), reasoning, notes };
 }

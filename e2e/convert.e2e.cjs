@@ -18,8 +18,20 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 const M = (tag, description, power, start, zone) => ({ tag, description, power, unit: 'hp', powerGiven: true, start, vertical: false, zone });
 let MACHINE = null;
 const requests = [];
-function reply(system) {
-  if (system.includes('taking over an existing machine from its electrical drawings')) return MACHINE;
+const PARTS = [
+  { marker: 'PART 1 of 3 — HARDWARE', fields: ['drawingStandard', 'language', 'plc', 'modules', 'supplyDrawn', 'components', 'motors', 'axes'] },
+  { marker: 'PART 2 of 3 — LOGIC', fields: ['io', 'circuits', 'interlocks', 'controller'] },
+  { marker: 'PART 3 of 3 — SAFETY AND DESCRIPTION', fields: ['safety', 'spec', 'questions', 'summary'] },
+];
+const derives = [];
+function reply(system, body) {
+  if (system.includes('taking over an existing machine from its electrical drawings')) {
+    // the reading runs as three parts at once (src/convert/derive.ts DERIVE_PARTS): each answers only its own fields
+    const ask = (body?.messages?.[0]?.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const part = PARTS.find((p) => ask.includes(p.marker));
+    derives.push(part ? part.marker : 'one request');
+    return part ? Object.fromEntries([...part.fields, 'uncertainties'].map((k) => [k, MACHINE[k]])) : MACHINE;
+  }
   if (system.includes('checks a machine control design')) return { findings: [], summary: 'No further findings.' };
   if (system.includes('choosing the control equipment')) return {
     summary: 'CLICK PLC for the converted sorting conveyor.', estimatedIO: { digitalInputs: 9, digitalOutputs: 6, analogInputs: 0, analogOutputs: 0, motionAxes: 0 },
@@ -58,7 +70,7 @@ function sse(model, text) {
     const body = JSON.parse(route.request().postData());
     requests.push(body);
     let text;
-    try { text = JSON.stringify(reply(sysText(body.system))); } catch (e) { fails.push('AI mock: ' + e.message); text = '{}'; }
+    try { text = JSON.stringify(reply(sysText(body.system), body)); } catch (e) { fails.push('AI mock: ' + e.message); text = '{}'; }
     await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, text) });
   });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
@@ -87,6 +99,7 @@ function sse(model, text) {
   await page.getByTestId('convert-files').setInputFiles([FIX + 'sorting_conveyor_drawings.pdf', FIX + 'E-03_PLC_IO.dxf']);
   await page.getByRole('button', { name: 'Read the drawings' }).click();
   await page.getByTestId('convert-recognised').waitFor({ timeout: 60000 });
+  check(derives.length === 3 && PARTS.every((p) => derives.includes(p.marker)), `the drawings are read as three parts at once (${derives.join(', ')})`);
   const derive = requests.find((r) => sysText(r.system).includes('taking over an existing machine'));
   const content = derive?.messages[0].content ?? [];
   check(content.some((b) => b.type === 'document' && b.source?.media_type === 'application/pdf'), 'the PDF goes to the AI as a document');

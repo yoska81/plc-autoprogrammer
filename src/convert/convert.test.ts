@@ -6,13 +6,14 @@ import { ROLL_FORMER } from './__fixtures__/rollFormer';
 import { foreignRatings } from './foreignParts';
 import { convertMachine, kwToHp, mm2ToAwg, naTags, NA_TARGET, retag, targetSupply } from './convert';
 import { RELAY_CONVEYOR } from './__fixtures__/relayConveyor';
-import { ioId } from './types';
+import { ioId, type ExistingMachine } from './types';
 import { factsFromExpected, scoreReading, scoreText, type ExpectedJson } from './score';
 import { columnCrop, dxfSheetSvg, parseSource } from './thumbs';
 import { toRelayLogic, type RelayEl } from './relayLogic';
 import { CN_ROLLFORMER_01 } from './__fixtures__/cnRollformer01.facts';
 import { CN_ROLLFORMER_01_READING } from './__fixtures__/cnRollformer01.reading';
-import { normalizeMachine } from './derive';
+import { DERIVE_PARTS, deriveFromUpload, EXISTING_SCHEMA, mergeParts, normalizeMachine, partSchema } from './derive';
+import { setClaudeInterceptor, type ClaudeOptions } from '../lib/ai/anthropic';
 import { applyExistingMachine, storedMachine } from './apply';
 import { functionKept, functionKeptFindings, similarity } from './functionKept';
 import { EMPTY_REVIEW, itemKey, reviewItems, reviewedMachine, unconfirmed } from './review';
@@ -572,6 +573,44 @@ await test('relay logic kept: C1–C11 as ladder rungs with the new tags, every 
   // the shared fixture for the ladder-sheet drawings stays what the converter produces
   assert.deepEqual(JSON.parse(readFileSync(new URL('../../e2e/fixtures/convert/cn-rollformer-01.relayLogic.json', import.meta.url), 'utf8')), JSON.parse(JSON.stringify({ ...logic, devices })),
     'e2e/fixtures/convert/cn-rollformer-01.relayLogic.json is stale: regenerate it from toRelayLogic');
+});
+
+await test('the reading as three parts at once: every field in exactly one part; merged = one request (same score)', async () => {
+  const all = Object.keys((EXISTING_SCHEMA as { properties: Record<string, unknown> }).properties).filter((k) => k !== 'uncertainties').sort();
+  assert.deepEqual(DERIVE_PARTS.flatMap((p) => [...p.fields]).sort(), all, 'each field is read by one part');
+  for (const p of DERIVE_PARTS) assert.deepEqual(Object.keys((partSchema(p) as { properties: Record<string, unknown> }).properties).sort(), [...p.fields, 'uncertainties'].sort());
+  // three answers built from the one-request reading give back the same machine
+  const full = { ...CN_ROLLFORMER_01_READING, uncertainties: ['Sheet 7 partly legible'] };
+  const answers = DERIVE_PARTS.map((p, i) => ({ ...Object.fromEntries(p.fields.map((k) => [k, full[k as keyof typeof full]])), uncertainties: i === 1 ? ['Sheet 7 partly legible', 'KA9 contact unclear'] : ['Sheet 7 partly legible'] }));
+  const merged = normalizeMachine(mergeParts(answers as Partial<ExistingMachine>[]));
+  assert.deepEqual({ ...merged, uncertainties: [] }, { ...normalizeMachine(full), uncertainties: [] });
+  assert.deepEqual(merged.uncertainties, ['Sheet 7 partly legible', 'KA9 contact unclear'], 'uncertainties from all parts, once each');
+  assert.equal(scoreReading(merged, CN_ROLLFORMER_01).percent, scoreReading(normalizeMachine(full), CN_ROLLFORMER_01).percent);
+  // the requests: the same system and file prefix (cached at its last block), then the part's instruction and schema
+  const seen: ClaudeOptions[] = [];
+  setClaudeInterceptor(async (o) => {
+    seen.push(o);
+    const content = o.messages[0].content as { type: string; text?: string }[];
+    const part = DERIVE_PARTS.find((p) => content.some((b) => b.text?.includes(p.instruction)));
+    const fields = part ? [...part.fields, 'uncertainties'] : Object.keys(full);
+    return { reasoning: null, text: JSON.stringify(Object.fromEntries(fields.map((k) => [k, (full as Record<string, unknown>)[k]]))) };
+  });
+  try {
+    const file = new File([readFileSync(new URL('../../e2e/fixtures/convert/roll-former.dxf', import.meta.url), 'utf8')], 'roll-former.dxf');
+    const three = await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low' }, [file], 'note');
+    assert.equal(seen.length, 3);
+    assert.ok(seen.every((o) => o.system === seen[0].system), 'one system prompt');
+    const prefixes = seen.map((o) => JSON.stringify((o.messages[0].content as unknown[]).slice(0, -1)));
+    assert.ok(prefixes.every((x) => x === prefixes[0]), 'the same file prefix for every part');
+    assert.deepEqual((seen[0].messages[0].content as { cache_control?: unknown }[]).slice(-2, -1)[0].cache_control, { type: 'ephemeral' }, 'the prefix is cached at its last block');
+    assert.deepEqual(seen.map((o) => Object.keys((o.schema as { properties: object }).properties).length), DERIVE_PARTS.map((p) => p.fields.length + 1));
+    seen.length = 0;
+    const one = await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low', split: false }, [file], 'note');
+    assert.equal(seen.length, 1, 'split: false asks once');
+    assert.deepEqual(three.machine, one.machine);
+  } finally {
+    setClaudeInterceptor(null);
+  }
 });
 
 await test('retag: whole tags only', () => {
