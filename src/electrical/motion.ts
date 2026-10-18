@@ -8,14 +8,17 @@
  * this module claims are left out of the motor and device rules. Parts come from the catalog only (rating
  * keys below); anything the catalog cannot cover becomes a note, never an invented part.
  *
- * Catalog rating keys read here (Dev 1's motion parts):
- *   servo drive  — category 'vfd' or 'other', kind 'servo-drive': series, ratedWatts, inputVolts, inputPhases,
- *                  inputAmps, breakerAmps (maker's recommended), control ('pulse' …), maxPulseKhzOC
- *   servo motor  — kind 'servo-motor' (field): ratedWatts, forDrive (drive series / part numbers), brake
- *   cables       — kind 'servo-power-cable' / 'servo-feedback-cable' / 'encoder-cable': forMotor | forPart, lengthM
- *   EMI filter   — kind 'emc-filter': amps, volts;  braking resistor — kind 'braking-resistor': forDrive, ohms, watts
- *   encoder      — category 'sensor', kind 'encoder': ppr, output ('push-pull' | 'open-collector' | 'line-driver'), supplyVolts
+ * Catalog rating keys read here (the catalog's motion parts):
+ *   servo drive  — category 'servoDrive': series, ratedWatts, inputVolts ('200-230 VAC' …), inputPhases ('1/3' | '3'),
+ *                  inputAmps / inputAmpsNote ("2.8A at 230 VAC with 3-phase input"), breakerAmps (when the maker
+ *                  states one), controlCircuitVolts ('L1C/L2C from AC supply' | '24 VDC'), pairsWith (motors)
+ *   servo motor  — category 'servoMotor' (field): ratedWatts, pairsWith (drives), brake ('yes' | 'no')
+ *   cables       — category 'other', kind 'servo cable' (cableType 'power' | 'brake') / 'encoder cable': forMotor, lengthM, flex
+ *   EMI filter   — kind 'emc-filter' with amps (a line filter; ferrite rings are not counted);
+ *   braking resistor — kind 'braking-resistor': forDrive, ohms, watts
+ *   encoder      — category 'encoder': ppr, outputs ('A, B, Z'), outputType ('totem pole' | 'open collector' | 'line driver'), supplyVolts
  *   ultrasonic   — category 'sensor', kind 'ultrasonic': output ('4-20mA' | '0-10V' | 'PNP' | 'NPN'), rangeMaxMm
+ * (The older keys kind 'servo-drive' / 'servo-motor' / 'servo-power-cable' / 'servo-feedback-cable' are read too.)
  *
  * SureServo2 (SV2A) terminals: SureServo2 User Manual 2nd Ed. Rev C, ch. 3 (cdn.automationdirect.com/static/
  * manuals/sureservo2manual/ch3.pdf): main circuit R/S/T, control power L1c/L2c (230 V drives), regenerative
@@ -121,7 +124,36 @@ export function servoPins(p: CatalogPart | undefined): ServoPins | null {
   return /sureservo\s*2|^SV2A-/i.test(`${p.ratings.series ?? ''} ${p.family ?? ''} ${p.partNumber}`) ? SUREServo2 : null;
 }
 
-export const isServoDrive = (p: CatalogPart | undefined) => !!p && (kind(p) === 'servo-drive' || (p.category === 'vfd' && /\bservo\b/i.test(`${p.description} ${p.family ?? ''}`)));
+export const isServoDrive = (p: CatalogPart | undefined) => !!p && (p.category === 'servoDrive' || kind(p) === 'servo-drive');
+export const isServoMotor = (p: CatalogPart | undefined) => !!p && (p.category === 'servoMotor' || kind(p) === 'servo-motor');
+const listOf = (v: unknown) => String(v ?? '').split(/[,;]\s*/).map((x) => x.trim()).filter(Boolean);
+/** Cable kind of a part: motor power, holding brake or encoder feedback (null: not a servo cable). */
+export function servoCableKind(p: CatalogPart | undefined): 'power' | 'brake' | 'feedback' | null {
+  if (!p) return null;
+  const k = kind(p), t = String(p.ratings.cableType ?? '');
+  if (k === 'servo-power-cable' || (k === 'servo cable' && t === 'power')) return 'power';
+  if (k === 'servo cable' && t === 'brake') return 'brake';
+  if (k === 'servo-feedback-cable' || k === 'encoder cable') return 'feedback';
+  return null;
+}
+/** Supply class of a drive: 230 or 460 V (from a number or the "200-230 VAC" text). */
+export function voltClass(p: CatalogPart): number | undefined {
+  const v = p.ratings.inputVolts;
+  const nums = String(v ?? '').match(/\d{3}/g)?.map(Number) ?? (typeof v === 'number' ? [v] : []);
+  if (nums.some((n) => n >= 380)) return 460;
+  if (nums.some((n) => n >= 200)) return 230;
+  return undefined;
+}
+/** Drive input current for the supply: inputAmps, else the maker's note ("2.8A at 230 VAC with 3-phase input", "AD page: 1.5A"). */
+export function driveInputAmps(p: CatalogPart, phases: 1 | 3): number | undefined {
+  const a = num(p.ratings.inputAmps);
+  if (a !== undefined) return a;
+  const note = String(p.ratings.inputAmpsNote ?? '');
+  const ph = new RegExp(`([\\d.]+)\\s*A at 2\\d0 VAC with ${phases}-phase`, 'i').exec(note);
+  if (ph) return Number(ph[1]);
+  const one = /AD page:\s*([\d.]+)\s*A\b(?![^.]*at)/i.exec(note);
+  return one ? Number(one[1]) : undefined;
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // Design
@@ -174,7 +206,7 @@ const comp = (tag: string, partNumber: string, quantity: number, fn: string, mot
 /** Candidates: the project's preferred vendors first, then everything (motion parts may come from one maker only). */
 function candidates(parts: CatalogPart[] | undefined, pref: VendorPreference, ok: (p: CatalogPart) => boolean, extra: CatalogPart[] = []): CatalogPart[] {
   if (parts) return [...parts, ...extra].filter(ok);
-  const preferred = [...partsFor('vfd', pref).parts, ...partsFor('sensor', pref).parts, ...partsFor('other', pref).parts].filter(ok);
+  const preferred = (['servoDrive', 'servoMotor', 'encoder', 'sensor', 'breaker', 'other'] as const).flatMap((c) => partsFor(c, pref).parts).filter(ok);
   const seen = new Set(preferred.map((p) => p.partNumber));
   return [...preferred, ...[...ALL_PARTS, ...extra].filter((p) => ok(p) && !seen.has(p.partNumber))];
 }
@@ -193,8 +225,12 @@ export function motionDesign(input: MotionInput): MotionResult {
   const pref = input.pref ?? DEFAULT_PREFERENCE;
   const out: MotionResult = { components: [], ioWiring: [], notes: [], askUser: [], claimed: new Set(), axes: [], loadA: 0 };
   const addr = (p: IOPoint) => input.addresses.get(p.id) ?? '';
-  const pick = (ok: (p: CatalogPart) => boolean, size: (p: CatalogPart) => number = () => 0) =>
-    candidates(input.parts, pref, ok, input.extraParts).sort((a, b) => size(a) - size(b))[0];
+  // As the engine's Picker: the first (preferred) vendor that has a fitting part, its smallest.
+  const pick = (ok: (p: CatalogPart) => boolean, size: (p: CatalogPart) => number = () => 0): CatalogPart | undefined => {
+    const all = candidates(input.parts, pref, ok, input.extraParts);
+    const v = all[0]?.vendor ?? 'automationdirect';
+    return all.filter((p) => (p.vendor ?? 'automationdirect') === v).sort((a, b) => size(a) - size(b))[0];
+  };
   const info = SUPPLY_INFO[input.supply];
 
   // ---- Servo axes
@@ -208,7 +244,7 @@ export function motionDesign(input: MotionInput): MotionResult {
     const vertical = texts.some((t) => new RegExp(`\\baxis\\s*${key}\\b.*\\b(vertical|z[- ]axis|lift|hoist)\\b|\\b(vertical|z[- ]axis)\\b.*\\baxis\\s*${key}\\b`, 'i').test(t));
     const v = info.volts;
     const cls = v >= 380 ? 460 : 230;
-    const drive = pick((p) => isServoDrive(p) && (num(p.ratings.ratedWatts) ?? 0) >= watts && (num(p.ratings.inputVolts) ?? cls) === cls
+    const drive = pick((p) => isServoDrive(p) && (num(p.ratings.ratedWatts) ?? 0) >= watts && (voltClass(p) ?? cls) === cls
       && (info.phases === 3 || /1/.test(String(p.ratings.inputPhases ?? '1'))), (p) => num(p.ratings.ratedWatts) ?? 0);
     const axis: ServoAxis = { key, drive: '', signals: [], watts, assumed: stated === null };
     if (stated === null) out.askUser.push(`Axis ${key}: servo sized for ${watts} W — size it from the load (torque, inertia, speed) and confirm the motor and drive.`);
@@ -220,7 +256,7 @@ export function motionDesign(input: MotionInput): MotionResult {
       axis.drive = dt;
       const motorTag = `AX${key}`;
       // Branch protection: the maker's recommended breaker, else 1.25 x the drive's input current.
-      const inA = num(drive.ratings.inputAmps);
+      const inA = driveInputAmps(drive, info.phases === 3 ? 3 : 1);
       const needA = num(drive.ratings.breakerAmps) ?? (inA !== undefined ? inA * 1.25 : undefined);
       const poles = info.phases === 3 ? 3 : 2;
       const cb = needA === undefined ? undefined : pick((p) => p.category === 'breaker' && num(p.ratings.poles) === poles && (num(p.ratings.amps) ?? 0) >= needA
@@ -229,20 +265,26 @@ export function motionDesign(input: MotionInput): MotionResult {
         axis.protection = input.nextTag('CB');
         out.components.push(comp(axis.protection, cb.partNumber, 1, `Axis ${key} servo drive branch protection — ${num(cb.ratings.amps)} A >= ${needA!.toFixed(1)} A (${drive.ratings.breakerAmps !== undefined ? 'maker\'s recommended breaker' : '1.25 x drive input current'})`, motorTag));
       } else out.notes.push(`Axis ${key} (${drive.partNumber}): select the branch protection${needA !== undefined ? ` (>= ${needA.toFixed(1)} A, ${poles}-pole)` : ' from the drive manual'}.`);
-      const filt = pick((p) => kind(p) === 'emc-filter' && (num(p.ratings.amps) ?? 0) >= (inA ?? 0) && (num(p.ratings.volts) ?? 0) >= v, (p) => num(p.ratings.amps) ?? 0);
+      const filt = pick((p) => kind(p) === 'emc-filter' && num(p.ratings.amps) !== undefined && num(p.ratings.amps)! >= (inA ?? 0) && (num(p.ratings.volts) ?? 0) >= v, (p) => num(p.ratings.amps) ?? 0);
       if (filt) { axis.filter = input.nextTag('FL'); out.components.push(comp(axis.filter, filt.partNumber, 1, `Axis ${key} EMI filter on the drive input (as in the drive manual's wiring diagrams)`, motorTag)); }
       else out.notes.push(`Axis ${key}: the ${series || 'servo'} manual shows an EMI filter on the drive input — add one if the site needs it (CE / sensitive equipment nearby).`);
       out.loadA += inA ?? watts / (info.volts * (info.phases === 3 ? 1.732 : 1) * 0.85);
       out.components.push(comp(dt, drive.partNumber, 1, `Axis ${key} servo drive — ${num(drive.ratings.ratedWatts)} W >= ${watts} W${axis.assumed ? ' (assumed)' : ''}; pulse/direction from the PLC, STO from the safety relay`, motorTag));
-      const motor = pick((p) => kind(p) === 'servo-motor' && (num(p.ratings.ratedWatts) ?? 0) >= watts
-        && (!p.ratings.forDrive || String(p.ratings.forDrive).split(/[,;]\s*/).some((x) => x === drive.partNumber || (series && x.includes(series)))), (p) => num(p.ratings.ratedWatts) ?? 0);
+      // The drive's own motors (pairsWith), the smallest that carries the axis; a holding brake on a vertical axis only.
+      const pairs = listOf(drive.ratings.pairsWith);
+      const fits = (p: CatalogPart) => isServoMotor(p) && (num(p.ratings.ratedWatts) ?? 0) >= watts
+        && (pairs.length ? pairs.includes(p.partNumber) : listOf(p.ratings.pairsWith ?? p.ratings.forDrive).some((x) => x === drive.partNumber || (!!series && x.includes(series))));
+      const brake = (p: CatalogPart) => /yes/i.test(String(p.ratings.brake ?? ''));
+      const motor = pick((p) => fits(p) && brake(p) === vertical, (p) => num(p.ratings.ratedWatts) ?? 0) ?? pick(fits, (p) => num(p.ratings.ratedWatts) ?? 0);
       if (motor) {
         axis.motor = input.nextTag('SM');
         out.components.push(comp(axis.motor, motor.partNumber, 1, `Axis ${key} servo motor — ${num(motor.ratings.ratedWatts)} W${/yes/i.test(String(motor.ratings.brake ?? '')) ? ', holding brake 24 VDC' : ''}`, motorTag));
-        const cable = (k: string) => pick((p) => kind(p) === k && String(p.ratings.forMotor ?? p.ratings.forPart ?? '').split(/[,;]\s*/).some((x) => x && (motor.partNumber.startsWith(x) || x === motor.partNumber)), (p) => num(p.ratings.lengthM) ?? 0);
-        for (const [k, what] of [['servo-power-cable', 'motor power cable (U/V/W/PE)'], ['servo-feedback-cable', 'encoder feedback cable (CN2)']] as const) {
+        // Shortest standard length, non-flex first (a moving axis needs the flex version: note).
+        const cable = (k: 'power' | 'feedback') => pick((p) => servoCableKind(p) === k && listOf(p.ratings.forMotor ?? p.ratings.forPart).some((x) => x === motor.partNumber || motor.partNumber.startsWith(x)),
+          (p) => (/yes/i.test(String(p.ratings.flex ?? '')) ? 1000 : 0) + (num(p.ratings.lengthM) ?? 0));
+        for (const [k, what] of [['power', `motor power cable (U/V/W/PE${brake(motor) ? ' + brake' : ''})`], ['feedback', 'encoder feedback cable (CN2)']] as const) {
           const c = cable(k);
-          if (c) out.components.push(comp(input.nextTag('SVC'), c.partNumber, 1, `Axis ${key} ${what}${num(c.ratings.lengthM) ? `, ${num(c.ratings.lengthM)} m — confirm the routed length` : ''}`, motorTag));
+          if (c) out.components.push(comp(input.nextTag('SVC'), c.partNumber, 1, `Axis ${key} ${what}${num(c.ratings.lengthM) ? `, ${num(c.ratings.lengthM)} m — confirm the routed length` : ''}${/yes/i.test(String(c.ratings.flex ?? '')) ? ', flex' : '; use the flex version in a cable chain'}`, motorTag));
           else out.notes.push(`Axis ${key}: select the ${what} for ${motor.partNumber} (length from the machine layout).`);
         }
       } else out.notes.push(`Axis ${key}: no servo motor in the catalog matching ${drive.partNumber} — select the motor (and its power and feedback cables).`);
@@ -273,9 +315,12 @@ export function motionDesign(input: MotionInput): MotionResult {
     encGroups.set(name, [...(encGroups.get(name) ?? []), p]);
   }
   for (const [, pts] of encGroups) {
-    const enc = pick((p) => p.category === 'sensor' && kind(p) === 'encoder' && !/line[- ]?driver/i.test(String(p.ratings.output ?? '')) && /24/.test(String(p.ratings.supplyVolts ?? '24')), (p) => num(p.ratings.ppr) ?? 0);
+    const isEnc = (p: CatalogPart) => p.category === 'encoder' || (p.category === 'sensor' && kind(p) === 'encoder');
+    const outType = (p: CatalogPart) => String(p.ratings.outputType ?? p.ratings.output ?? '');
+    // 24 V push-pull / open-collector (a 5 V line driver needs a receiver before the PLC); 1000 PPR or the nearest.
+    const enc = pick((p) => isEnc(p) && !/line[- ]?driver/i.test(outType(p)) && /24/.test(String(p.ratings.supplyVolts ?? '24')), (p) => Math.abs((num(p.ratings.ppr) ?? 0) - 1000));
     const tag = input.nextTag('SE'); // ISA-5.1 speed element (ENC1 is the enclosure)
-    if (enc) out.components.push(comp(tag, enc.partNumber, 1, `Incremental encoder, ${enc.ratings.ppr ?? '?'} PPR, ${enc.ratings.output ?? ''} — channels ${pts.map((p) => encoderChannel(p.description) ?? '?').join('/')} to PLC high-speed inputs, 24 VDC supply, shielded cable (shield to PE at the cabinet end only)`));
+    if (enc) out.components.push(comp(tag, enc.partNumber, 1, `Incremental encoder, ${enc.ratings.ppr ?? '?'} PPR, ${outType(enc)} — channels ${pts.map((p) => encoderChannel(p.description) ?? '?').join('/')} to PLC high-speed inputs, 24 VDC supply, shielded cable (shield to PE at the cabinet end only)`));
     else out.notes.push(`${tag}: no 24 V push-pull / open-collector encoder in the catalog — select one (a 5 V line-driver encoder needs a line receiver before the PLC inputs).`);
     for (const p of pts) {
       out.claimed.add(p.id);

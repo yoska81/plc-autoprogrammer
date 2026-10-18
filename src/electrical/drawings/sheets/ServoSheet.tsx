@@ -27,7 +27,8 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const sto = P ? [[P.sto.aPlus, '24+S', 'STO_A+ — SAFE TORQUE OFF CH A (SAFETY RELAY OUTPUT)'], [P.sto.aMinus, '0V', '/STO_A'], [P.sto.bPlus, '24+S', 'STO_B+ — SAFE TORQUE OFF CH B (SAFETY RELAY OUTPUT)'], [P.sto.bMinus, '0V', '/STO_B']] : [];
   const fixed = [...pullUps, ...sto];
   const boxH = Math.max(40, (a.terminals.length + fixed.length) * pitch + 14);
-  const chain = [a.protection && `${a.protection.tag} ${a.protection.partNumber}`, a.filter && `${a.filter.tag} EMI FILTER ${a.filter.partNumber}`, `${d.tag} ${d.partNumber}`, a.motor && `${a.motor.tag} MOTOR ${a.motor.partNumber}`].filter(Boolean) as string[];
+  // Each device with its tag as its own text (the CAD export turns a text equal to a tag into a device reference).
+  const chain = [a.protection && [a.protection.tag, a.protection.partNumber], a.filter && [a.filter.tag, `EMI FILTER ${a.filter.partNumber}`], [d.tag, d.partNumber], a.motor && [a.motor.tag, `MOTOR ${a.motor.partNumber}`]].filter(Boolean) as [string, string][];
   return (
     <g>
       <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`AXIS ${a.axis} — SERVO ${d.tag} ${d.partNumber}${P ? ` (${P.family.toUpperCase()})` : ''}${a.motor ? ` · MOTOR ${a.motor.tag} ${a.motor.partNumber}` : ''}`}</Txt>
@@ -65,19 +66,36 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
       <Txt x={X.drv + 15} y={y0 + boxH + 4} size={2.0} anchor="middle" bold>SAFETY STOP: STO (BOTH CHANNELS)</Txt>
       {/* power path */}
       <Txt x={right} y={AREA.y + 20} size={2.6} bold>POWER</Txt>
-      {chain.map((c, i) => {
+      {chain.map(([ctag, ctext], i) => {
         const y = y0 + 6 + i * 14;
         return (
-          <g key={c}>
+          <g key={ctag}>
             <rect x={right} y={y - 4} width={AREA_R - right - 4} height={9} strokeWidth={0.35} fill="#fff" />
-            <Txt x={right + 2} y={y + 1.5} size={2.1} bold maxW={AREA_R - right - 8}>{c}</Txt>
+            <Txt x={right + 2} y={y + 1.5} size={2.1} bold>{ctag}</Txt>
+            <Txt x={right + 16} y={y + 1.5} size={2.1} maxW={AREA_R - right - 22}>{ctext}</Txt>
             {i < chain.length - 1 && <Line x1={right + 12} y1={y + 5} x2={right + 12} y2={y + 10} w={LW_THIN} />}
             {i < chain.length - 1 && <Txt x={right + 15} y={y + 8.5} size={1.8}>{i === chain.length - 2 && a.motor ? `${P?.power.motor.join(' / ') ?? 'U / V / W'} + PE · SERVO POWER CABLE` : `${P ? P.power.line.join(' / ') : 'L1 / L2 / L3'}${P && i === chain.length - 2 ? ` + ${P.power.control.join(' / ')} (CONTROL)` : ''}`}</Txt>}
           </g>
         );
       })}
       <Txt x={right} y={y0 + 8 + chain.length * 14} size={2.0} maxW={AREA_R - right - 4}>{a.brakingResistor ? `EXTERNAL REGEN RESISTOR ${a.brakingResistor.tag} ON ${P?.power.regen.p}-${P?.power.regen.c}, JUMPER ${P?.power.regen.p}-${P?.power.regen.d} REMOVED` : `BUILT-IN REGEN RESISTOR: JUMPER ${P?.power.regen.p ?? 'P'}-${P?.power.regen.d ?? 'D'} IN PLACE`}</Txt>
-      {a.cables.map((c, i) => <Txt key={c.tag} x={right} y={y0 + 14 + chain.length * 14 + i * 4.5} size={2.0} maxW={AREA_R - right - 4}>{`${c.tag} ${c.partNumber}: ${c.comp.function.replace(/^Axis \d+ /, '').toUpperCase()}`}</Txt>)}
+      {/* power wire numbers of this axis (wire list: protection → drive, control power jumpers, drive → motor) */}
+      {(() => {
+        const ws = plan.model.wires.filter((w) => w.wire.startsWith(`${d.tag}-`));
+        const y = y0 + 22 + chain.length * 14 + a.cables.length * 4.5;
+        return ws.length ? (
+          <g>
+            <Txt x={right} y={y} size={2.1} bold>POWER WIRES</Txt>
+            {ws.map((w, i) => <Txt key={`${w.wire}-${i}`} x={right + (i % 2) * ((AREA_R - right) / 2)} y={y + 4.5 + Math.floor(i / 2) * 4} size={1.9} mono maxW={(AREA_R - right) / 2 - 2}>{`${w.wire}  ${w.from} TO ${w.to}`}</Txt>)}
+          </g>
+        ) : null;
+      })()}
+      {a.cables.map((c, i) => (
+        <g key={c.tag}>
+          <Txt x={right} y={y0 + 14 + chain.length * 14 + i * 4.5} size={2.0} bold>{c.tag}</Txt>
+          <Txt x={right + 14} y={y0 + 14 + chain.length * 14 + i * 4.5} size={2.0} maxW={AREA_R - right - 18}>{`${c.partNumber}: ${c.comp.function.replace(/^Axis \d+ /, '').toUpperCase()}`}</Txt>
+        </g>
+      ))}
       {/* notes */}
       {a.notes.map((n, i) => (
         <Txt key={i} x={AREA.x + 6} y={y0 + boxH + 12 + i * 5} size={2.0} maxW={right - AREA.x - 14}>{`${i + 1}. ${n.toUpperCase()}`}</Txt>

@@ -3,7 +3,7 @@
  * protection → EMI filter → R/S/T and L1c/L2c, U/V/W to the motor, regenerative resistor), Safe Torque Off
  * from the safety relay output, and each PLC signal on its drive terminal (pins from src/electrical/motion.ts).
  */
-import { isServoDrive, servoPins, type ServoPins, type ServoRole, servoRole } from './motion';
+import { isServoDrive, isServoMotor, servoCableKind, servoPins, type ServoPins, type ServoRole, servoRole } from './motion';
 import type { CatalogPart, DesignComponent } from './types';
 
 interface Rc { tag: string; partNumber: string; part?: CatalogPart; comp: DesignComponent; category: string }
@@ -38,9 +38,9 @@ export function servoAxes(rc: Rc[]): Omit<ServoAxisModel, 'terminals' | 'notes'>
     const k = (x: Rc) => String(x.part?.ratings.kind ?? '');
     out.push({
       axis: ax.replace(/^AX/, '') || d.tag, drive: d, pins: servoPins(d.part),
-      motor: own.find((c) => k(c) === 'servo-motor'), protection: own.find((c) => c.category === 'breaker' || c.category === 'fuse'),
+      motor: own.find((c) => isServoMotor(c.part)), protection: own.find((c) => c.category === 'breaker' || c.category === 'fuse'),
       filter: own.find((c) => k(c) === 'emc-filter'), brakingResistor: own.find((c) => k(c) === 'braking-resistor'),
-      cables: own.filter((c) => /cable/.test(k(c))),
+      cables: own.filter((c) => servoCableKind(c.part) !== null),
     });
   }
   return out;

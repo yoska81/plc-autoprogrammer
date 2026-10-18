@@ -4,6 +4,7 @@
  * exactly like the Export page does, plus extra DXF options and JSON dumps of the derived
  * data so the Python checkers can cross-check the files.
  */
+import { SERVO_IO } from '../../src/electrical/motion.fixture';
 import { seedSampleProject, DESIGN, HMI, EXAMPLE_ID } from '../../src/preview/sampleProject';
 import { useLayoutStore } from '../../src/electrical/layout/useLayoutStore';
 import { EMPTY_LAYOUT, type LayoutItem, type LayoutItemKind } from '../../src/electrical/layout/types';
@@ -269,6 +270,8 @@ const STRESS_EXTRA: [string, 'input' | 'output', IOCategory, string][] = Array.f
   'input', 'Product Detection', 'sensor-pnp',
 ]);
 
+const SERVO_SPEC = 'Cup filler: a servo axis (axis 1) indexes the cup carrier by pulse and direction from the PLC; a line encoder on the infeed conveyor measures its speed; an ultrasonic sensor reads the hopper level (4-20 mA). E-stop on the door into a safety relay; the servo stops by Safe Torque Off.';
+
 async function setupRules(v: string) {
   setupVariant(v === 'rules-big' || v === 'rules-floor' ? 'big' : 'us480');
   if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress' || v === 'rules-sealing-4x') {
@@ -292,6 +295,18 @@ async function setupRules(v: string) {
     useProjectStore.setState({ plcId: 'click', cpuId: 'C0-10DD1E-D', modules });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, enclosureRating: 'NEMA 4X', motors: [], requiredParts: [{ partNumber: 'C0-10DD2E-D', quantity: 1 }, ...modules.map((partNumber) => ({ partNumber, quantity: 1 }))] });
   }
+  // "rules-servo": motion — one SureServo2 axis (pulse/direction, STO), a line encoder on the high-speed inputs and a
+  // 4-20 mA ultrasonic level sensor on a 240 V machine (src/electrical/motion.fixture.ts).
+  if (v === 'rules-servo') {
+    const sections = useSpecStore.getState().sections;
+    useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SERVO_SPEC });
+    useIOStore.setState({ projectIO: SERVO_IO.map(([description, type, category, signal], i) => ({ id: `servo${i + 1}`, description, type, category: category as IOCategory, ...(signal ? { signal, analog: { range: '4-20mA' as const, min: 0, max: 100, units: '%' } } : {}) })) });
+    const modules = ['C0-04AD-1', 'C0-16TD1'];
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-10DD1E-D', modules });
+    useHmiStore.getState().setHmiPartNumber('CM5-T7W');
+    useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, supply: '240VAC-3PH', motors: [], requiredParts: ['C0-10DD1E-D', ...modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
+  }
   // Unitronics all-in-ones (the screen is the PLC's own): the sealing head on a Vision V700 + snap-in (VisiLogic) or a
   // UniStream US10 + Uni-I/O (UniLogic); the rules build the HMI and the program too, so the exporters run.
   const uni = v === 'rules-unitronics' ? { plcId: 'unitronics-vision', cpu: 'V700-T20BJ', modules: ['V200-18-E3XB'] }
@@ -307,7 +322,7 @@ async function setupRules(v: string) {
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [uni.cpu, ...uni.modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
   }
   const el = useElectricalStore.getState();
-  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
+  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || v === 'rules-servo' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };

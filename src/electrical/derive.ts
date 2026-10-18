@@ -24,7 +24,7 @@
 import type { AnalogSetupRow } from '../plc/core/analog';
 import { analogWiring, type AnalogWiring } from './analog';
 import { driveControls, type DriveControl, type DriveTerminal } from './vfd';
-import { encoderChannel, isServoDrive, motionWarnings } from './motion';
+import { encoderChannel, isServoDrive, isServoMotor, motionWarnings, servoCableKind } from './motion';
 import { servoAxes, servoControls, type ServoAxisModel } from './servoWiring';
 import type {
   CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, EnclosureChoice, EnclosureRating, FieldDeviceType, IOWiring, JunctionBox,
@@ -1607,17 +1607,18 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
   // Servo motors: the maker's power and feedback cables, drive to motor (plugged, no terminals in between).
   for (const c of comps) {
     const part = ctx.getPart(c.partNumber);
-    const k = String(part?.ratings.kind ?? '');
-    if (k !== 'servo-power-cable' && k !== 'servo-feedback-cable') continue;
+    const k = servoCableKind(part);
+    if (!k) continue;
     const drive = comps.find((x) => x.motorTag === c.motorTag && isServoDrive(ctx.getPart(x.partNumber)));
-    const motor = comps.find((x) => x.motorTag === c.motorTag && ctx.getPart(x.partNumber)?.ratings.kind === 'servo-motor');
+    const motor = comps.find((x) => x.motorTag === c.motorTag && isServoMotor(ctx.getPart(x.partNumber)));
     if (!drive || !motor) continue;
-    const power = k === 'servo-power-cable';
-    const cores: CableCore[] = power
+    const power = k === 'power';
+    const cores: CableCore[] = k === 'brake' ? [{ core: '1', color: "maker's", wire: 'BRK+', from: `${drive.tag} brake supply`, to: `${motor.tag}:BRAKE1` }, { core: '2', color: "maker's", wire: 'BRK-', from: `${drive.tag} brake supply`, to: `${motor.tag}:BRAKE2` }]
+      : power
       ? [...['U', 'V', 'W'].map((u, i) => ({ core: String(i + 1), color: 'BK', wire: `${drive.tag}-${u}`, from: `${drive.tag}:${u}`, to: `${motor.tag}:${u}` })), { core: 'PE', color: 'GN/YE', wire: 'PE', from: `${drive.tag}:PE`, to: `${motor.tag}:PE` }]
       : [{ core: 'all', color: "maker's", wire: 'ENC', from: `${drive.tag}:CN2`, to: `${motor.tag}:ENC` }];
     const len = num(part?.ratings, 'lengthM');
-    cables.push({ tag: nextTag(), kind: 'motor', zone: 'Machine', from: `${drive.tag}:${power ? 'U/V/W' : 'CN2'}`, to: motor.tag, type: `${power ? 'Servo motor power cable' : 'Servo encoder feedback cable'} (maker's, plugged both ends)`, partNumber: c.partNumber, size: power ? '16 AWG' : '—', length: len ? `${len} m` : 'BY SITE', cores, spareCores: 0 });
+    cables.push({ tag: nextTag(), kind: 'motor', zone: 'Machine', from: `${drive.tag}:${power ? 'U/V/W' : 'CN2'}`, to: motor.tag, type: `${power ? 'Servo motor power cable' : k === 'brake' ? 'Servo brake cable' : 'Servo encoder feedback cable'} (maker's, plugged both ends${/yes/i.test(String(part?.ratings.flex ?? '')) ? ', flex' : ''})`, partNumber: c.partNumber, size: power ? '16 AWG' : '—', length: len ? `${len} m` : 'BY SITE', cores, spareCores: 0 });
   }
 
   const guessedDev = devices.filter((d) => d.kind === 'io' && d.guessed).map((d) => d.tag);
@@ -2024,7 +2025,8 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
       const terminals = ri === 3;
       const last = bands[bands.length - 1];
       // A whole group that fits on the end of the previous rail shares it (never for terminal strips).
-      if (!terminals && last && !last.terminals && rowW(last.items) + 3 * GAP + rowW(row) <= areaW) {
+      // bandW: the rail may already hold merged groups with their wider gaps (gapLeft), which rowW does not count.
+      if (!terminals && last && !last.terminals && bandW(last.items) + 3 * GAP + rowW(row) <= areaW) {
         row[0].gapLeft = 3 * GAP;
         last.items.push(...row);
         return;

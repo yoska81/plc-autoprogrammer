@@ -12,7 +12,7 @@ import { planDrawings } from './drawings/plan';
 import { ServoSheet } from './drawings/sheets/ServoSheet';
 import { generateDefaultDesign } from './engine';
 import { getPart as catalogPart } from './catalog';
-import { billOfMaterials, buildModel, cableSchedule, designWarnings, terminalPlan, wireNumbers, type DrawingContext } from './derive';
+import { billOfMaterials, buildModel, cableSchedule, designWarnings, panelLayout, terminalPlan, wireNumbers, type DrawingContext } from './derive';
 import { analogSetup } from '../plc/core/analog';
 import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
@@ -48,7 +48,10 @@ const inputs: DesignInputs = { supply: '240VAC-3PH', enclosureRating: 'NEMA 12',
 // Motion alone: what it claims and picks.
 const m = motionDesign({ io, addresses, supply: '240VAC-3PH', nextTag: (() => { const n = new Map<string, number>(); return (p: string) => { n.set(p, (n.get(p) ?? 0) + 1); return `${p}${n.get(p)}`; }; })(), extraParts: MOTION_STUB_PARTS });
 assert.equal(m.axes.length, 1);
-assert.deepEqual(m.components.map((c) => c.partNumber).filter((pn) => pn.startsWith('STUB')).sort(), MOTION_STUB_PARTS.map((p) => p.partNumber).sort(), 'drive, motor, two cables, encoder, ultrasonic');
+const pns = m.components.map((c) => c.partNumber);
+// 400 W at 240 V: the SV2A-2040 drive, its 400 W motor without brake (horizontal axis), 3 m non-flex cables.
+for (const pn of ['SV2A-2040', 'SV2L-204N', 'SV2C-PA18-03NN', 'SV2C-E122-03NN', 'STUB-UK30-4-20']) assert.ok(pns.includes(pn), `${pn} picked (${pns.join(', ')})`);
+assert.ok(pns.includes('STUB-ENC-1000-24'), 'a 24 V totem-pole encoder');
 assert.equal(m.claimed.size, 10, 'servo signals, encoder channels and the ultrasonic are claimed');
 assert.ok(m.askUser.some((q) => /Axis 1: servo sized for 400 W/.test(q)), 'assumed size is a question');
 
@@ -56,10 +59,10 @@ assert.ok(m.askUser.some((q) => /Axis 1: servo sized for 400 W/.test(q)), 'assum
 const r = generateDefaultDesign({ io, addresses, spec: 'Filler: a servo indexes the cups (axis 1), a line encoder measures the conveyor, an ultrasonic sensor reads the hopper level.', inputs, plc, modules, region: 'US', getPart, hmiPartNumber: null, analog, now: '2026-01-01T00:00:00.000Z', projectName: 'servo', motionParts: MOTION_STUB_PARTS });
 const ctx: DrawingContext = { projectName: 'servo', design: r.design, getPart, plc, region: 'US', hmiPartNumber: null, analog, io: io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type })) };
 const tag = (pn: string) => r.design.components.find((c) => c.partNumber === pn)?.tag;
-const drive = tag('STUB-SV2A-2040')!;
+const drive = tag('SV2A-2040')!;
 assert.ok(drive && /^SVD\d$/.test(drive));
 assert.ok(!r.design.inputs.motors.length, 'no DOL / VFD motor made up from the servo signals');
-assert.ok(r.design.components.some((c) => c.motorTag === 'AX1' && /branch protection — 5 A/.test(c.function)), 'drive breaker at the maker\'s 5 A');
+assert.ok(r.design.components.some((c) => c.motorTag === 'AX1' && /branch protection — 5 A >= 3\.5 A \(1\.25 x drive input current\)/.test(c.function)), 'drive breaker from the 2.8 A 3-phase input current');
 
 const model = buildModel(ctx);
 assert.equal(model.servos.length, 1);
@@ -79,7 +82,7 @@ assert.ok(has(new RegExp(`^${drive}:CN1-27$`), new RegExp(`:${addr('Axis 1 servo
 assert.ok(has(/^TB1 24\+S$/, new RegExp(`^${drive}:CN10-3$`)) && has(/^TB1 24\+S$/, new RegExp(`^${drive}:CN10-5$`)), 'STO from the safety relay output');
 // Encoder: A/B on TB2 from the encoder, one supply pair and the shield.
 const tb2 = terminalPlan(ctx).find((s) => s.tag === 'TB2')!;
-const enc = tag('STUB-TRD-GK1000-RZ')!;
+const enc = tag('STUB-ENC-1000-24')!;
 assert.ok(tb2.terminals.some((t) => t.external === `${enc}:A`) && tb2.terminals.some((t) => t.external === `${enc}:B`));
 assert.equal(tb2.terminals.filter((t) => t.external === `${enc}:+V`).length, 1, 'one supply per encoder');
 assert.ok(tb2.terminals.some((t) => /cable shield/.test(t.external)));
@@ -88,7 +91,7 @@ const lt = tag('STUB-UK30-4-20')!;
 assert.ok(model.analog.circuits.some((c) => c.deviceTag === lt), `ultrasonic ${lt} on the analog sheet`);
 // BOM, wire numbers, cables.
 const bom = billOfMaterials(ctx).flatMap((g) => g.lines).map((l) => l.partNumber);
-for (const p of MOTION_STUB_PARTS) assert.ok(bom.includes(p.partNumber), `${p.partNumber} in the BOM`);
+for (const pn of ['SV2A-2040', 'SV2L-204N', 'SV2C-PA18-03NN', 'SV2C-E122-03NN', 'STUB-UK30-4-20']) assert.ok(bom.includes(pn), `${pn} in the BOM`);
 assert.ok(wireNumbers(ctx).length > 0);
 assert.ok(cableSchedule(ctx).length > 0);
 const warns = designWarnings(ctx);
@@ -110,4 +113,9 @@ if (process.env.SHOW) {
   console.log('--- notes\n' + r.design.notes.join('\n'));
   console.log('--- cables'); for (const c of cableSchedule(ctx)) console.log(c.tag, c.from, '→', c.to, c.type);
   console.log('--- comps'); for (const c of r.design.components) console.log(c.tag, c.partNumber, c.motorTag ?? '', c.function.slice(0, 90));
+}
+if (process.env.LAYOUT) {
+  const L = panelLayout(ctx);
+  for (const it of L.items) console.log(it.tag, it.category, Math.round(it.x), Math.round(it.y), Math.round(it.w), Math.round(it.h));
+  console.log('rails', JSON.stringify(L.rails.map((r) => [Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)])));
 }
