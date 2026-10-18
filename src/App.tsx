@@ -3,7 +3,7 @@ import { useNoTouchPanel, useProjectPanelPart } from './hmi/projectPanel';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   DocumentPlusIcon, ArrowUpTrayIcon, PlayIcon, ArrowDownTrayIcon, Cog6ToothIcon,
-  FolderOpenIcon, ArrowDownOnSquareIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, DocumentIcon, InformationCircleIcon,
+  FolderOpenIcon, ArrowDownOnSquareIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, DocumentIcon, InformationCircleIcon, Bars3Icon,
 } from '@heroicons/react/24/outline';
 import { IS_PREVIEW } from './preview/mode';
 import { useAutoReview } from './review/useAutoReview';
@@ -57,6 +57,20 @@ function MenuItem({ onClick, children }: { onClick: () => void; children: ReactN
   return <button onClick={onClick} className="w-full text-left px-4 py-1.5 hover:bg-brand-50 hover:text-brand-800">{children}</button>;
 }
 
+/** True while the window is phone-narrow (under 640 px). */
+function useNarrow(): boolean {
+  const query = '(max-width: 639px)';
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return;
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return narrow;
+}
+
 function ToolButton({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
   return (
     <button title={title} aria-label={title} onClick={onClick}
@@ -107,6 +121,14 @@ export default function App() {
   const noHmi = useNoTouchPanel();
   const rev = currentRevision(useProjectStore((s) => s.info));
   useEffect(() => { ensureActive(); }, [ensureActive]);
+  // Phones: the project navigation folds behind a toolbar button and opens over the page.
+  const narrow = useNarrow();
+  // Open for the page it was opened on: going to another page closes it.
+  const location = useLocation();
+  const here = `${location.pathname}${location.search}`;
+  const [navOpenOn, setNavOpenOn] = useState<string | null>(null);
+  const navOpen = navOpenOn === here;
+  const setNavOpen = (f: (v: boolean) => boolean) => setNavOpenOn(f(navOpen) ? here : null);
   const projectFile = useProjectFile();
   useAutoReview();
 
@@ -201,7 +223,8 @@ export default function App() {
       </div>
 
       {/* Toolbar */}
-      <div className="h-10 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-2 gap-1">
+      <div className="h-10 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-2 gap-1 min-w-0">
+        {narrow && <ToolButton title={navOpen ? 'Hide project navigation' : 'Project navigation'} onClick={() => setNavOpen((v) => !v)}><Bars3Icon className="w-5 h-5" /></ToolButton>}
         <ToolButton title="New project" onClick={() => navigate('/new')}><DocumentPlusIcon className="w-5 h-5" /></ToolButton>
         <ToolButton title="Open project file (Ctrl+O)" onClick={projectFile.open}><FolderOpenIcon className="w-5 h-5" /></ToolButton>
         <ToolButton title={dirty ? 'Save (Ctrl+S) — unsaved changes' : 'Save (Ctrl+S)'} onClick={projectFile.save}>
@@ -215,18 +238,19 @@ export default function App() {
         <span className="w-px h-6 bg-steel-200 mx-1" />
         <ToolButton title="Settings" onClick={() => navigate('/settings')}><Cog6ToothIcon className="w-5 h-5" /></ToolButton>
         <div className="ml-3"><UpdateAll /></div>
-        <div className="ml-auto flex items-center gap-2">
-          <FolderOpenIcon className="w-4 h-4 text-steel-500" />
+        <div className="ml-auto flex items-center gap-2 min-w-0">
+          <FolderOpenIcon className="w-4 h-4 text-steel-500 shrink-0 hidden sm:block" />
           <select aria-label="Open project" value={activeId ?? ''} onChange={(e) => openProject(e.target.value)}
-            className="border border-steel-300 rounded-sm px-2 py-1 bg-white max-w-[16rem]">
+            className="border border-steel-300 rounded-sm px-2 py-1 bg-white min-w-0 w-full max-w-[16rem]">
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Project navigation */}
-        <ResizablePane id="app.nav" defaultSize={256} min={180} max={520} className="bg-white border-r border-steel-300 flex flex-col">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Project navigation (on phones: over the page, opened from the toolbar) */}
+        {(!narrow || navOpen) && (
+        <ResizablePane id="app.nav" defaultSize={256} min={180} max={520} className={`bg-white border-r border-steel-300 flex flex-col${narrow ? ' absolute inset-y-0 left-0 z-40 shadow-lg' : ''}`}>
           <div className="h-7 flex items-center px-2 bg-[#e9edef] border-b border-steel-300 text-xs font-semibold text-steel-700">Project navigation</div>
           <nav className="flex-1 overflow-y-auto py-1">
             <ul><TreeItem node={tree} depth={0} stages={stages} /></ul>
@@ -238,6 +262,7 @@ export default function App() {
             <span className="flex items-center gap-1" title="Questions the AI asked; answer them on the page or in Design review"><span className="rounded-full bg-amber-100 px-1 text-[10px] font-semibold text-amber-900">2?</span> questions</span>
           </div>
         </ResizablePane>
+        )}
 
         <main className="flex-1 flex flex-col overflow-hidden">
           {IS_PREVIEW && (
