@@ -3,6 +3,7 @@
  * whole project (plus the deterministic findings) and raises what a checker
  * would raise. Structured output; findings link back to the app's pages.
  */
+import { operatorDevices } from '../deliverables/docs/operatorStation';
 import { byRegion, regionSpec } from '../standards/regions';
 import type { ProjectSnapshot } from '../deliverables/collect';
 import { billOfMaterials, wireNumbers } from '../electrical/derive';
@@ -92,6 +93,9 @@ export function projectSummary(p: ProjectSnapshot, deterministic: Finding[]): st
   else parts.push('# PLC program\n(none yet)');
   if (p.hmi) {
     parts.push(`# HMI ${p.hmi.hmiPartNumber}: screens ${p.hmi.screens.map((s) => `${s.id} "${s.name}"`).join(', ')}\nTags:\n${p.hmi.tags.map((t) => `${t.address}\t${t.access}\t${t.name}: ${t.description}`).join('\n')}\nAlarms:\n${p.hmi.alarms.map((a) => `${a.address}\t${a.severity}\t${a.message}`).join('\n') || '(none)'}`);
+  } else if (p.noHmi) {
+    const devices = operatorDevices(p);
+    parts.push(`# Operator interface\nNo touch panel, by the customer's choice: the operator uses pushbuttons, selector switches and lamps (operator station). Do not report the missing HMI. Do check that every operator command the program needs (start, stop, reset, mode) has a physical device, and that faults are shown on a lamp.\nOperator station:\n${devices.map((d) => `${d.tag}\t${d.kind}\t${d.description}\t${d.location}\t${d.address || '-'}`).join('\n') || '(no devices in the electrical design yet)'}`);
   } else parts.push('# HMI\n(none)');
   parts.push(`# Deterministic findings already reported (do not repeat)\n${deterministic.map((f) => `- [${f.severity}] ${f.title}`).join('\n') || '(none)'}`);
   return parts.join('\n\n');

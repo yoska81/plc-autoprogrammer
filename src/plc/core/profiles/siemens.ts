@@ -21,7 +21,7 @@
  */
 import type { AnalogChannel, CpuModel, ExportContext, ModuleSlot, PlcProfile, ProgramExporter } from '../profile';
 import type { AnalogRange } from '../../../types/io';
-import type { LadderProgram } from '../ladder';
+import { elementAddresses, isBlockRaw, type LadderOutput, type LadderProgram } from '../ladder';
 import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress } from './click';
 import { toIecSt, type StDialect, type StProgram, type StVariable } from './iecSt';
 import { getPart } from '../../../electrical/catalog';
@@ -101,6 +101,7 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
   const modules = ctx.modules ?? [];
   const analog = new Map(ctx.io.filter((p) => p.signal === 'analog' && p.analog).map((p) => [ctx.addresses.get(p.id)?.toUpperCase() ?? '', p]));
   return {
+    vendor: 'siemens-s7',
     title: 'TIA Portal SCL external source: External source files › Add new external file, then "Generate blocks from source".',
     ioVar: (base, name) => {
       const s = siemensAddress(base, c, modules);
@@ -143,7 +144,12 @@ export interface SclExport { scl: string; tags: SiemensTag[]; st: StProgram }
 export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport {
   const c = SIEMENS_CPUS.find((x) => x.id === ctx.cpuId) ?? SIEMENS_CPUS[1];
   const tags: SiemensTag[] = [];
-  const st = toIecSt(program, ctx, sclDialect(ctx, c, tags));
+  // Whole SCL blocks kept from an imported program (an FC the ladder model can't hold) go in as blocks of their own.
+  const blocks: string[] = [];
+  const own = (x: LadderOutput) => x.type === 'RAW' && x.vendor === 'siemens-s7' && isBlockRaw(x);
+  for (const r of program.rungs) for (const o of r.outputs) if (own(o) && o.type === 'RAW') blocks.push(o.text.trim());
+  const rest: LadderProgram = { ...program, rungs: program.rungs.map((r) => ({ ...r, outputs: r.outputs.filter((o) => !own(o)) })).filter((r) => r.outputs.length) };
+  const st = toIecSt(rest, ctx, sclDialect(ctx, c, tags));
   // Setpoints, counters and run hours survive a power cycle (CLICK keeps DS / DD / DH / DF registers and
   // counters retentive): those statics are RETAIN in the optimized instance DB, the rest are not.
   const RETAIN_RE = /^(DS|DD|DH|DF|CT|CTD)\d+$/i;
@@ -156,7 +162,7 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   const retain = st.variables.filter((v) => RETAIN_RE.test(v.base)).map(line);
   const indent = (s: string) => (s ? `   ${s}` : s);
   const body = st.body.split('\n').map(indent).join('\n');
-  const scl = `${BOM}FUNCTION_BLOCK "Machine"
+  const scl = `${BOM}${blocks.map((b) => `${b}\n\n`).join('')}FUNCTION_BLOCK "Machine"
 { S7_Optimized_Access := 'TRUE' }
 VERSION : 0.1
    VAR
@@ -225,7 +231,7 @@ export const siemensProfile: PlcProfile = {
   promptKnowledge: KNOWLEDGE,
   checkRung: (rung) => {
     const issues: { severity: 'error' | 'warning'; message: string }[] = [];
-    for (const e of rung.branches.flat()) for (const a of e.type === 'CMP' ? [e.left, e.right] : [e.address]) {
+    for (const e of rung.branches.flat()) for (const a of elementAddresses(e)) {
       if (/^SC\d+$/i.test(a) && !['SC1', 'SC2', 'SC7'].includes(a.toUpperCase())) issues.push({ severity: 'error', message: `${a}: S7 has no equivalent system bit (use SC1, SC2 or SC7 only).` });
     }
     return issues;

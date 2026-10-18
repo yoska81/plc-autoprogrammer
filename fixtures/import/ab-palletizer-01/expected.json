@@ -1,0 +1,549 @@
+{
+  "fixture": "ab-palletizer-01",
+  "sourceFiles": [
+    "Palletizer_PL01.L5X"
+  ],
+  "format": "Rockwell Studio 5000 Logix Designer L5X (full controller export, v33.11), RLL neutral text",
+  "machine": "Simple single-row layer palletizer (PL01) at the end of a case packing line. Cases arrive on an infeed conveyor and are counted onto a layer forming table by photo eye PE2. When the recipe count of cases (Cases_Per_Layer, default 6) is reached, the infeed stops, a case stop blade rises and a pneumatic pusher sweeps the layer onto a pallet carried by a hoist elevator. The elevator then lowers one layer pitch (timed 1.5 s). After Layers_Per_Pallet layers (default 5) the elevator goes to the bottom, the full pallet is discharged on a powered conveyor, the operator loads an empty pallet and the elevator returns to the top. A 4-20 mA height transmitter guards against overtravel; alarms are latched bits in a DINT array and shown on a stack light and horn.",
+  "plc": {
+    "brand": "Allen-Bradley (Rockwell Automation)",
+    "family": "CompactLogix 5380",
+    "cpu": "5069-L306ER",
+    "firmware": "33.11",
+    "software": "Studio 5000 Logix Designer",
+    "controllerName": "PL01_Palletizer",
+    "modules": [
+      {
+        "slot": 0,
+        "name": "Local",
+        "catalog": "5069-L306ER",
+        "description": "CompactLogix 5380 controller, 0.6 MB, 16 nodes"
+      },
+      {
+        "slot": 1,
+        "name": "DI_Slot1",
+        "catalog": "5069-IB16",
+        "description": "16 pt 24 V DC sinking input"
+      },
+      {
+        "slot": 2,
+        "name": "DO_Slot2",
+        "catalog": "5069-OB16",
+        "description": "16 pt 24 V DC sourcing output"
+      },
+      {
+        "slot": 3,
+        "name": "AI_Slot3",
+        "catalog": "5069-IF8",
+        "description": "8 ch current/voltage analog input"
+      }
+    ],
+    "tasks": [
+      {
+        "name": "MainTask",
+        "type": "CONTINUOUS",
+        "programs": [
+          "MainProgram"
+        ]
+      }
+    ],
+    "routines": [
+      "MainRoutine",
+      "Safety_Modes",
+      "Infeed",
+      "LayerForm",
+      "Elevator",
+      "Alarms",
+      "HMI"
+    ]
+  },
+  "io": [
+    {
+      "address": "Local:1:I.Pt00.Data",
+      "tag": "E_Stop_OK",
+      "description": "Safety relay K1 healthy (E-stop circuit closed)",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt01.Data",
+      "tag": "Start_PB",
+      "description": "Start pushbutton PB1 (NO)",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt02.Data",
+      "tag": "Stop_PB",
+      "description": "Stop pushbutton PB2 (NC, ON = not pressed)",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt03.Data",
+      "tag": "Reset_PB",
+      "description": "Fault reset pushbutton PB3 (NO)",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt04.Data",
+      "tag": "Auto_Sel",
+      "description": "Mode selector SS1 in AUTO",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt05.Data",
+      "tag": "Infeed_Case_PE",
+      "description": "Infeed conveyor case present photo eye PE1 (jam detection)",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt06.Data",
+      "tag": "Infeed_Count_PE",
+      "description": "Layer table entry case count photo eye PE2",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt07.Data",
+      "tag": "Pusher_Retracted_PX",
+      "description": "Layer pusher retracted prox PX1",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt08.Data",
+      "tag": "Pusher_Extended_PX",
+      "description": "Layer pusher extended prox PX2",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt09.Data",
+      "tag": "Elev_Up_LS",
+      "description": "Pallet elevator at top (load height) limit switch LS1",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt10.Data",
+      "tag": "Elev_Down_LS",
+      "description": "Pallet elevator at bottom (discharge) limit switch LS2",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt11.Data",
+      "tag": "Pallet_Present_PE",
+      "description": "Pallet present on elevator photo eye PE3",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt12.Data",
+      "tag": "Guard_Door_Closed",
+      "description": "Guard door interlock switch GS1 closed",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt13.Data",
+      "tag": "Air_Pressure_OK",
+      "description": "Main air pressure switch PS1 OK",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt14.Data",
+      "tag": "Infeed_OL_OK",
+      "description": "Infeed conveyor motor protector Q1 not tripped",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:1:I.Pt15.Data",
+      "tag": "Case_Stop_Up_PX",
+      "description": "Case stop blade up (blocking infeed) prox PX3",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt00.Data",
+      "tag": "Infeed_Conv_Run",
+      "description": "Infeed conveyor motor contactor K10",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt01.Data",
+      "tag": "Layer_Conv_Run",
+      "description": "Layer forming table conveyor contactor K11",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt02.Data",
+      "tag": "Case_Stop_Sol",
+      "description": "Case stop blade raise solenoid Y1",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt03.Data",
+      "tag": "Pusher_Extend_Sol",
+      "description": "Layer pusher extend solenoid Y2 (spring return)",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt04.Data",
+      "tag": "Elev_Up_Mtr",
+      "description": "Pallet elevator hoist UP contactor K12",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt05.Data",
+      "tag": "Elev_Down_Mtr",
+      "description": "Pallet elevator hoist DOWN contactor K13",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt06.Data",
+      "tag": "Light_Green",
+      "description": "Stack light green - running",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt07.Data",
+      "tag": "Light_Amber",
+      "description": "Stack light amber - stopped / ready",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt08.Data",
+      "tag": "Light_Red",
+      "description": "Stack light red - fault",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt09.Data",
+      "tag": "Horn",
+      "description": "Alarm horn H1",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:2:O.Pt10.Data",
+      "tag": "Pallet_Conv_Run",
+      "description": "Full pallet discharge conveyor contactor K14",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Local:3:I.Ch00.Data",
+      "tag": "Elev_Position",
+      "description": "Elevator height transmitter LT1, 4-20 mA = 0-2000 mm (scaled in module)",
+      "type": "input",
+      "signal": "analog",
+      "analog": {
+        "range": "4-20mA",
+        "engMin": 0.0,
+        "engMax": 2000.0,
+        "units": "mm"
+      }
+    }
+  ],
+  "sequence": {
+    "register": "Seq_Step (INT, MainProgram scope)",
+    "steps": [
+      {
+        "step": 0,
+        "name": "Idle",
+        "description": "Machine stopped or waiting. Goes to 10 when running, elevator at top (Elev_Up_LS), pallet present and pusher retracted. Any time Machine_Running drops, the step is forced back to 0."
+      },
+      {
+        "step": 10,
+        "name": "Accumulate layer",
+        "description": "Infeed and layer table conveyors run; PE2 counts cases with Case_Ctr. When Case_Ctr.DN (count reached) go to 20."
+      },
+      {
+        "step": 20,
+        "name": "Push layer",
+        "description": "Infeed stops, case stop blade rises, pusher extends the layer onto the pallet. When Pusher_Extended_PX go to 30 (3 s watchdog)."
+      },
+      {
+        "step": 30,
+        "name": "Retract pusher",
+        "description": "Pusher solenoid off (spring return), case stop still up. When Pusher_Retracted_PX reset Case_Ctr and go to 40 (3 s watchdog)."
+      },
+      {
+        "step": 40,
+        "name": "Lower one layer",
+        "description": "Hoist runs down for Layer_Lower_Tmr (1.5 s); then Layer_Ctr counts the layer and go to 50."
+      },
+      {
+        "step": 50,
+        "name": "Pallet full?",
+        "description": "If Layer_Ctr not done go back to 10 for the next layer, otherwise go to 60."
+      },
+      {
+        "step": 60,
+        "name": "Lower to bottom",
+        "description": "Hoist runs down until Elev_Down_LS, then go to 70."
+      },
+      {
+        "step": 70,
+        "name": "Discharge pallet",
+        "description": "Discharge conveyor runs; 3 s after the pallet clears PE3 go to 80."
+      },
+      {
+        "step": 80,
+        "name": "Wait empty pallet",
+        "description": "Wait for the operator to place an empty pallet (Pallet_Present_PE), then go to 90."
+      },
+      {
+        "step": 90,
+        "name": "Raise elevator",
+        "description": "Hoist runs up until Elev_Up_LS (20 s watchdog), reset Layer_Ctr and go back to 10."
+      }
+    ]
+  },
+  "timers": [
+    {
+      "name": "Infeed_Jam_Tmr",
+      "type": "TON",
+      "presetMs": 5000,
+      "purpose": "Case blocking infeed eye = jam",
+      "where": "MainProgram/Infeed, rung 4"
+    },
+    {
+      "name": "Pusher_Ext_Tmr",
+      "type": "TON",
+      "presetMs": 3000,
+      "purpose": "Pusher extend watchdog",
+      "where": "MainProgram/LayerForm, rung 5"
+    },
+    {
+      "name": "Pusher_Ret_Tmr",
+      "type": "TON",
+      "presetMs": 3000,
+      "purpose": "Pusher retract watchdog",
+      "where": "MainProgram/LayerForm, rung 7"
+    },
+    {
+      "name": "Layer_Lower_Tmr",
+      "type": "TON",
+      "presetMs": 1500,
+      "purpose": "Elevator lowering time for one layer pitch",
+      "where": "MainProgram/Elevator, rung 1"
+    },
+    {
+      "name": "Discharge_Tmr",
+      "type": "TON",
+      "presetMs": 3000,
+      "purpose": "Discharge run-on after pallet clears eye",
+      "where": "MainProgram/Elevator, rung 7"
+    },
+    {
+      "name": "Elev_Raise_Tmr",
+      "type": "TON",
+      "presetMs": 20000,
+      "purpose": "Elevator raise watchdog",
+      "where": "MainProgram/Elevator, rung 10"
+    }
+  ],
+  "counters": [
+    {
+      "name": "Case_Ctr",
+      "type": "CTU",
+      "preset": 6,
+      "presetSource": "Cases_Per_Layer (default 6, copied to .PRE every scan)",
+      "purpose": "Cases counted onto the layer table",
+      "reset": "RES in step 30 -> 40",
+      "where": "MainProgram/Infeed, rung 3"
+    },
+    {
+      "name": "Layer_Ctr",
+      "type": "CTU",
+      "preset": 5,
+      "presetSource": "Layers_Per_Pallet (default 5, copied to .PRE every scan)",
+      "purpose": "Layers placed on the pallet",
+      "reset": "RES in step 90 -> 10",
+      "where": "MainProgram/Elevator, rung 2"
+    },
+    {
+      "name": "Pallet_Count",
+      "type": "CTU",
+      "preset": 32767,
+      "presetSource": "32767",
+      "purpose": "Pallets completed (production total)",
+      "reset": "RES from HMI_Reset_Count",
+      "where": "MainProgram/HMI, rung 6"
+    }
+  ],
+  "alarms": [
+    {
+      "address": "Alm[0].0",
+      "text": "Emergency stop pressed",
+      "condition": "E_Stop_OK off",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB (one-shot) clears Alm[0] and Alm[1]"
+    },
+    {
+      "address": "Alm[0].1",
+      "text": "Guard door open",
+      "condition": "Guard_Door_Closed off",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB (one-shot) clears Alm[0] and Alm[1]"
+    },
+    {
+      "address": "Alm[0].2",
+      "text": "Low air pressure",
+      "condition": "Air_Pressure_OK off",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB (one-shot) clears Alm[0] and Alm[1]"
+    },
+    {
+      "address": "Alm[0].3",
+      "text": "Infeed conveyor motor overload",
+      "condition": "Infeed_OL_OK off",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB (one-shot) clears Alm[0] and Alm[1]"
+    },
+    {
+      "address": "Alm[0].4",
+      "text": "Pusher failed to extend",
+      "condition": "Pusher_Ext_Tmr done (3 s in step 20)",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB (one-shot) clears Alm[0] and Alm[1]"
+    },
+    {
+      "address": "Alm[0].5",
+      "text": "Pusher failed to retract",
+      "condition": "Pusher_Ret_Tmr done (3 s in step 30)",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB (one-shot) clears Alm[0] and Alm[1]"
+    },
+    {
+      "address": "Alm[0].6",
+      "text": "Elevator overtravel (height > 1950 mm)",
+      "condition": "Elev_Position > 1950.0",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB (one-shot) clears Alm[0] and Alm[1]"
+    },
+    {
+      "address": "Alm[0].7",
+      "text": "Case jam at infeed",
+      "condition": "Infeed_Jam_Tmr done (case on PE1 for 5 s while infeed runs)",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB (one-shot) clears Alm[0] and Alm[1]"
+    },
+    {
+      "address": "Alm[0].8",
+      "text": "Elevator failed to reach top",
+      "condition": "Elev_Raise_Tmr done (20 s in step 90)",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB (one-shot) clears Alm[0] and Alm[1]"
+    }
+  ],
+  "interlocks": [
+    {
+      "output": "Machine_Running",
+      "requires": [
+        "Stop_PB",
+        "Safety_OK",
+        "Auto_Sel",
+        "NOT Fault_Latched"
+      ],
+      "where": "MainProgram/Safety_Modes, rung 1"
+    },
+    {
+      "output": "Safety_OK",
+      "requires": [
+        "E_Stop_OK",
+        "Guard_Door_Closed",
+        "Air_Pressure_OK"
+      ],
+      "where": "MainProgram/Safety_Modes, rung 0"
+    },
+    {
+      "output": "Infeed_Conv_Run",
+      "requires": [
+        "Machine_Running",
+        "Seq_Step = 10",
+        "Infeed_OL_OK"
+      ],
+      "where": "MainProgram/Infeed, rung 0"
+    },
+    {
+      "output": "Pusher_Extend_Sol",
+      "requires": [
+        "Seq_Step = 20",
+        "Case_Stop_Up_PX",
+        "Pallet_Present_PE (intended; program actually checks Infeed_Case_PE - see knownIssues)"
+      ],
+      "where": "MainProgram/LayerForm, rung 4"
+    },
+    {
+      "output": "Elev_Down_Mtr",
+      "requires": [
+        "Seq_Step = 40 or 60",
+        "NOT Elev_Down_LS",
+        "NOT Elev_Up_Mtr"
+      ],
+      "where": "MainProgram/Elevator, rung 12"
+    },
+    {
+      "output": "Elev_Up_Mtr",
+      "requires": [
+        "Seq_Step = 90",
+        "NOT Elev_Up_LS",
+        "NOT Elev_Down_Mtr"
+      ],
+      "where": "MainProgram/Elevator, rung 13"
+    },
+    {
+      "output": "Seq_Step 0 -> 10",
+      "requires": [
+        "Machine_Running",
+        "Elev_Up_LS",
+        "Pallet_Present_PE",
+        "Pusher_Retracted_PX"
+      ],
+      "where": "MainProgram/LayerForm, rung 1"
+    }
+  ],
+  "knownIssues": [
+    {
+      "id": "AB-1",
+      "where": "MainProgram/Safety_Modes, rung 1",
+      "rungText": "XIC(Start_PB)XIC(Stop_PB)XIC(Safety_OK)XIC(Auto_Sel)XIO(Fault_Latched)OTE(Machine_Running);",
+      "what": "Missing seal-in: Machine_Running has no parallel XIC(Machine_Running) branch around Start_PB, so the machine only runs while Start is held and the sequencer drops back to step 0 as soon as the button is released.",
+      "fix": "[XIC(Start_PB),XIC(Machine_Running)]XIC(Stop_PB)XIC(Safety_OK)XIC(Auto_Sel)XIO(Fault_Latched)OTE(Machine_Running);"
+    },
+    {
+      "id": "AB-2",
+      "where": "MainProgram/LayerForm, rung 4",
+      "rungText": "EQU(Seq_Step,20)XIC(Case_Stop_Up_PX)XIC(Infeed_Case_PE)OTE(Pusher_Extend_Sol);",
+      "what": "Interlock checks the wrong sensor: the rung comment says the pusher may only extend with a pallet on the elevator, but the rung examines Infeed_Case_PE (Local:1:I.Pt05) instead of Pallet_Present_PE (Local:1:I.Pt11). The pusher can push a layer onto an empty elevator, or refuse to push (and raise a pusher timeout) when no case is sitting at the infeed eye.",
+      "fix": "EQU(Seq_Step,20)XIC(Case_Stop_Up_PX)XIC(Pallet_Present_PE)OTE(Pusher_Extend_Sol);"
+    }
+  ]
+}

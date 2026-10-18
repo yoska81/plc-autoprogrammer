@@ -123,6 +123,22 @@ export function ElementCell({ element, label, selected, struck, onClick }: CellP
       </CellShell>
     );
   }
+  if (element.type === 'RAW') {
+    // An imported instruction the app can't draw: its original text, dashed (not simulated).
+    return (
+      <CellShell width={CELL_W} height={ROW_H} selected={selected} onClick={onClick} title={`Not converted: ${element.text}`}>
+        <div className="absolute left-0 h-[2px] bg-slate-800" style={{ top: WIRE_Y - 1, width: 6 }} />
+        <div className="absolute right-0 h-[2px] bg-slate-800" style={{ top: WIRE_Y - 1, width: 6 }} />
+        <div className="absolute inset-x-0 top-0 text-center text-[10px] font-semibold uppercase leading-[18px] tracking-wider text-amber-600">Not converted</div>
+        <div
+          className={`absolute flex items-center justify-center rounded-sm border-2 border-dashed border-amber-500 bg-amber-50 px-1 font-mono text-[11px] font-bold text-amber-900 ${struck ? 'line-through' : ''}`}
+          style={{ left: 6, top: SYM_TOP, width: CELL_W - 12, height: SYM_H }}
+        >
+          <span className="truncate">{element.text}</span>
+        </div>
+      </CellShell>
+    );
+  }
   return (
     <CellShell width={CELL_W} height={ROW_H} selected={selected} onClick={onClick}>
       <Address text={element.address} struck={struck} />
@@ -154,7 +170,7 @@ function CoilSvg({ type }: { type: 'OUT' | 'SET' | 'RST' }) {
   );
 }
 
-const BOX_TITLE: Record<string, string> = { TMR: 'TMR', CNT: 'CNT', COPY: 'COPY', MATH: 'MATH' };
+const BOX_TITLE: Record<string, string> = { TMR: 'TMR', CNT: 'CNT', COPY: 'COPY', MATH: 'MATH', RAW: 'NOT CONVERTED' };
 
 function CompareTitle({ op }: { op: string }) {
   return <>{useContext(MnemonicsContext)?.[op] ?? 'Compare'}</>;

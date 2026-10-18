@@ -18,6 +18,7 @@ import { layoutForDesign } from '../electrical/layout/geometry';
 import { checkoutFor } from '../online/useCheckoutStore';
 import { useQuestionStore } from '../components/questions/useQuestionStore';
 import { useProjectsStore } from '../store/useProjectsStore';
+import { noTouchPanelNow } from '../hmi/projectPanel';
 
 /** Everything the deliverables need, read once from the stores. */
 export function collectProject() {
@@ -26,7 +27,11 @@ export function collectProject() {
   const { plcId, cpuId, modules, recommendation, info } = useProjectStore.getState();
   const spec = useSpecStore.getState().sections;
   const electrical = useElectricalStore.getState();
-  const hmi = useHmiStore.getState();
+  const hmiState = useHmiStore.getState();
+  // No touch panel: screens left from an earlier panel are ignored everywhere (src/hmi/projectPanel.ts).
+  const noHmi = noTouchPanelNow();
+  const hmi = noHmi ? { ...hmiState, design: null } : hmiState;
+  const hmiPart = noHmi ? null : hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null;
 
   const profile = getProfile(plcId);
   const cpu = getCpu(profile, cpuId);
@@ -46,7 +51,7 @@ export function collectProject() {
     plc: { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label },
     io: io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type })),
     region: info.region,
-    hmiPartNumber: hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null,
+    hmiPartNumber: hmiPart,
     doc: docInfo(info),
     machineLayout: layoutForDesign(layoutFor(useProjectsStore.getState().activeId)),
     analog: analogSetup(profile, cpu, moduleSlots(modules), io),
@@ -63,6 +68,8 @@ export function collectProject() {
     electrical: electrical.design,
     drawingCtx,
     hmi: hmi.design,
+    /** Built without a touch panel: the operator uses pushbuttons, a selector and lamps (the operator station). */
+    noHmi,
     info,
     /** Commissioning I/O check-out (Online page), by I/O id. */
     checkout: checkoutFor(useProjectsStore.getState().activeId),
@@ -72,7 +79,7 @@ export function collectProject() {
       cpu: cpuId,
       why: recommendation.plc.cpuId === cpuId ? recommendation.plc.why : '',
       modules,
-      hmi: hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null,
+      hmi: hmiPart,
     } : null,
   };
 }

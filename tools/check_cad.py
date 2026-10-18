@@ -1,6 +1,9 @@
 """CAD export checks ("Save as AutoCAD" / "Save as EPLAN") for every variant in tools/out (cad/*.zip).
 
 AutoCAD package (cad/autocad.zip):
+  - the whole set in ONE <project>_drawings.dxf ("Save as AutoCAD"): reads and audits clean, text styles ISA_SANS /
+    ISA_SANS_BOLD / ISA_MONO, one sheet frame per sheet, five per row in sheet order, frames apart, nothing outside
+    them, each cell with the same device tags and wire numbers as that sheet's own DXF, text heights 0.3–20 mm
   - README.txt and one DXF per sheet under dxf/; every DXF reads and audits clean in ezdxf
   - mm units ($INSUNITS 4), layers BORDER / SYMS / WIRES / WIRENO / TAGS / TEXT / GRAPHICS,
     text styles ISA_SANS / ISA_MONO
@@ -76,6 +79,7 @@ def check_autocad(v: str, z: zipfile.ZipFile, data) -> list[str]:
     parts = bom_parts(data)
     seen_tags: set[str] = set()
     n_dev = n_wn = 0
+    sheets: list[dict] = []  # per sheet: frame size, device tags and wire numbers (for the one-file DXF)
     for n in dxfs:
         where = f'{v} {n}'
         try:
@@ -83,6 +87,8 @@ def check_autocad(v: str, z: zipfile.ZipFile, data) -> list[str]:
         except Exception as e:  # noqa: BLE001
             report('FAIL', where, f'does not read: {e}')
             continue
+        frames = border_rects(doc.modelspace())
+        sheets.append({'name': n, 'frame': max(frames, key=lambda r: r[2] * r[3])[2:] if frames else None, **sheet_content(doc.modelspace())})
         aud = doc.audit()
         if aud.has_errors or aud.has_fixes:
             report('FAIL', where, f'audit: {len(aud.errors)} errors, {len(aud.fixes)} fixes ({"; ".join(str(e.message) for e in aud.errors[:3])})')
@@ -126,7 +132,8 @@ def check_autocad(v: str, z: zipfile.ZipFile, data) -> list[str]:
                 w = at.get('WIRENO', '')
                 if ins.dxf.layer != 'WIRENO':
                     report('FAIL', where, f'wire number {w} on layer {ins.dxf.layer}')
-                if w not in wires:
+                # the symbols / abbreviations sheet shows example wire numbers (the numbering convention)
+                if w not in wires and 'SYMBOLS' not in n.upper():
                     report('FAIL', where, f'wire number {w} is drawn but not in the wire list')
     if not n_dev:
         report('FAIL', v, 'autocad: no ISA_DEVICE blocks')
@@ -139,7 +146,107 @@ def check_autocad(v: str, z: zipfile.ZipFile, data) -> list[str]:
     if missing:
         report('FAIL', v, f'autocad: BOM devices drawn nowhere with their tag: {", ".join(missing[:12])}')
     print(f'{v}: autocad {len(dxfs)} sheets, {n_dev} device blocks ({len(seen_tags)} tags), {n_wn} wire numbers')
+    check_one_dxf(v, z, sheets)
     return dxfs
+
+
+def border_rects(msp) -> list[tuple[float, float, float, float]]:
+    """Closed rectangles on layer BORDER as (x0, y0, w, h)."""
+    out = []
+    for e in msp.query('LWPOLYLINE[layer=="BORDER"]'):
+        pts = [(p[0], p[1]) for p in e.get_points()]
+        if len(pts) < 4 or not (e.closed or (abs(pts[0][0] - pts[-1][0]) < 0.01 and abs(pts[0][1] - pts[-1][1]) < 0.01)):
+            continue
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        if all(min(abs(x - min(xs)), abs(x - max(xs))) < 0.05 for x in xs) and all(min(abs(y - min(ys)), abs(y - max(ys))) < 0.05 for y in ys):
+            out.append((min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)))
+    return out
+
+
+def sheet_content(msp, box=None) -> dict:
+    """Device tags and wire numbers (as sorted lists with repeats) of the inserts in a model space, or inside `box`."""
+    tags, wns = [], []
+    for ins in msp.query('INSERT'):
+        if box and not inside(box, ins.dxf.insert.x, ins.dxf.insert.y):
+            continue
+        at = {a.dxf.tag: a.dxf.text for a in ins.attribs}
+        if ins.dxf.name == 'ISA_DEVICE':
+            tags.append(at.get('TAG1', ''))
+        elif ins.dxf.name == 'ISA_WIRENO':
+            wns.append(at.get('WIRENO', ''))
+    return {'tags': sorted(tags), 'wns': sorted(wns)}
+
+
+def inside(box, x, y, tol=0.5) -> bool:
+    x0, y0, w, h = box
+    return x0 - tol <= x <= x0 + w + tol and y0 - tol <= y <= y0 + h + tol
+
+
+def check_one_dxf(v: str, z: zipfile.ZipFile, sheets: list[dict]):
+    """The whole drawing set in ONE DXF ("Save as AutoCAD"): one frame per sheet, five per row in sheet order, cells apart,
+    and each cell holding the same device tags and wire numbers as that sheet's own DXF."""
+    names = [n for n in z.namelist() if '/' not in n and n.endswith('_drawings.dxf')]
+    where = f'{v} one-file DXF'
+    if len(names) != 1:
+        report('FAIL', where, f'{len(names)} *_drawings.dxf files in the AutoCAD package (want 1)')
+        return
+    try:
+        doc = read_dxf(names[0], z.read(names[0]))
+    except Exception as e:  # noqa: BLE001
+        report('FAIL', where, f'does not read: {e}')
+        return
+    aud = doc.audit()
+    if aud.has_errors or aud.has_fixes:
+        report('FAIL', where, f'audit: {len(aud.errors)} errors, {len(aud.fixes)} fixes')
+    for st in ['ISA_SANS', 'ISA_SANS_BOLD', 'ISA_MONO']:
+        if st not in doc.styles:
+            report('FAIL', where, f'text style {st} missing')
+    msp = doc.modelspace()
+    sizes = [s['frame'] for s in sheets if s['frame']]
+    rects = [r for r in border_rects(msp) if any(abs(r[2] - w) < 0.5 and abs(r[3] - h) < 0.5 for w, h in sizes)]
+    # the sheet frames: the outermost such rectangles (a title block or inner border is inside one)
+    frames = [r for r in rects if not any(o is not r and o[2] * o[3] > r[2] * r[3] and inside(o, r[0], r[1]) and inside(o, r[0] + r[2], r[1] + r[3]) for o in rects)]
+    frames.sort(key=lambda r: (-round(r[1] + r[3]), r[0]))
+    if len(frames) != len(sheets):
+        report('FAIL', where, f'{len(frames)} sheet frames for {len(sheets)} sheets')
+        return
+    for i, a in enumerate(frames):
+        for b in frames[i + 1:]:
+            if a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]:
+                report('FAIL', where, f'sheet frames overlap at ({a[0]:.0f}, {a[1]:.0f}) and ({b[0]:.0f}, {b[1]:.0f})')
+    # five per row, sheet order left to right, rows top to bottom
+    rows: list[list] = []
+    for f in frames:
+        if rows and abs((rows[-1][0][1] + rows[-1][0][3]) - (f[1] + f[3])) < 1:
+            rows[-1].append(f)
+        else:
+            rows.append([f])
+    if any(len(r) != 5 for r in rows[:-1]) or len(rows[-1]) > 5:
+        report('FAIL', where, f'rows of {[len(r) for r in rows]} sheets (want 5 per row)')
+    # every entity in some cell (nothing between the sheets), and each cell's tags / wire numbers = its sheet's DXF
+    stray = 0
+    for e in msp:
+        try:
+            p = e.dxf.insert if e.dxf.hasattr('insert') else e.dxf.start if e.dxf.hasattr('start') else e.dxf.center if e.dxf.hasattr('center') else None
+            if p is None and e.dxftype() == 'LWPOLYLINE':
+                pt = next(iter(e.get_points()))
+                p = type('P', (), {'x': pt[0], 'y': pt[1]})
+        except StopIteration:
+            continue
+        if p is not None and e.dxftype() != 'ATTRIB' and not any(inside(f, p.x, p.y, 2) for f in frames):
+            stray += 1
+    if stray:
+        report('FAIL', where, f'{stray} entities outside every sheet frame')
+    for k, (f, s) in enumerate(zip(frames, sheets)):
+        got = sheet_content(msp, f)
+        if got['tags'] != s['tags'] or got['wns'] != s['wns']:
+            report('FAIL', where, f'cell {k + 1} ({s["name"]}): {len(got["tags"])} tags / {len(got["wns"])} wire numbers, its sheet DXF has {len(s["tags"])} / {len(s["wns"])}')
+    hs = [t.dxf.height for t in msp.query('TEXT')]
+    # cap heights (the writer converts the drawing's em sizes): the smallest sheet text (~0.6 mm em) is ~0.43 mm
+    bad = [h for h in hs if not 0.3 <= h <= 20]
+    if bad:
+        report('FAIL', where, f'{len(bad)} text heights outside 0.3–20 mm (e.g. {bad[0]:.2f})')
+    print(f'{v}: one-file DXF {len(frames)} sheets in rows of {[len(r) for r in rows]}, {sum(len(s["tags"]) for s in sheets)} device tags, {sum(len(s["wns"]) for s in sheets)} wire numbers')
 
 
 def check_aml(v: str, xml: bytes, data):

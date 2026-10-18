@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useActiveHmiDesign } from '../hmi/projectPanel';
 import { useProgramStore } from '../store/useProgramStore';
-import { useHmiStore } from '../store/useHmiStore';
 import { usePlc } from '../plc/core/usePlc';
 import { naturalCompare } from '../electrical/derive';
 import { getHmi } from '../hmi/hmiCatalog';
@@ -32,7 +32,7 @@ const NO_CHECKS: Record<string, CheckoutEntry> = {};
 /** PLC program → Online: live values from a real CLICK PLC, I/O check-out, and (only when allowed) writes. */
 export default function OnlinePage() {
   const ladder = useProgramStore((s) => s.ladder);
-  const hmi = useHmiStore((s) => s.design);
+  const hmi = useActiveHmiDesign();
   const { io, addresses, profile, cpu } = usePlc();
   const st = useOnlineStore();
   const projectId = useProjectsStore((s) => s.activeId);

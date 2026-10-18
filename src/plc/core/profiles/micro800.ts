@@ -14,7 +14,7 @@
  * exported as named variables with a TODO line to map them in CCW.
  */
 import type { CpuModel, ExportContext, PlcProfile, ProgramExporter } from '../profile';
-import type { LadderProgram } from '../ladder';
+import { elementAddresses, type LadderProgram } from '../ladder';
 import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress } from './click';
 import { toIecSt, type StDialect, type StProgram } from './iecSt';
 
@@ -42,6 +42,7 @@ export function micro800IoVar(address: string): string | null {
 
 /** Micro800 dialect of the shared IEC Structured Text generator (iecSt.ts). */
 export const MICRO800_ST: StDialect = {
+  vendor: 'micro800',
   title: 'Micro800 Structured Text for one CCW program; declare the variables listed in the variable file.',
   ioVar: micro800IoVar,
   ioTodo: (base, name, isIn) => `(* TODO map ${base} (expansion slot ${base[1]}, point ${pt(Number(base.slice(2)) - 1)}) in CCW: ${isIn ? `${name} := <expansion input>;` : `<expansion output> := ${name};`} *)`,
@@ -98,7 +99,7 @@ export const micro800Profile: PlcProfile = {
   checkRung: (rung) => {
     const issues: { severity: 'error' | 'warning'; message: string }[] = [];
     for (const e of rung.branches.flat()) {
-      const as = e.type === 'CMP' ? [e.left, e.right] : [e.address];
+      const as = elementAddresses(e);
       for (const a of as) if (/^SC\d+$/i.test(a) && !['SC1', 'SC2', 'SC7'].includes(a.toUpperCase())) issues.push({ severity: 'error', message: `${a}: Micro800 has no equivalent system bit (use SC1, SC2 or SC7 only).` });
     }
     return issues;

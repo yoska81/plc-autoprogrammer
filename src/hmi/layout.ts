@@ -48,6 +48,7 @@ function textBoxes(e: HmiElement): { text: string; room: number; size: number; s
     case 'button': return texts(e.label, e.onText, e.action === 'toggle' ? e.offText : null).map((text) => ({ text, room: e.w - 16 - 2 * lockInset(e), size: 10, spacing: 1.5 }));
     case 'nav': return texts(e.label).map((text) => ({ text, room: e.w - 18, size: 10, spacing: 0.8 }));
     case 'indicator': return texts(e.onText || e.label, e.offText || e.label).map((text) => ({ text, room: e.w - 40 - 2 * Math.min(e.h * 0.28, 7), size: 10.5, spacing: 1.2 }));
+    case 'bar': return texts(e.label).map((text) => ({ text, room: e.w * 0.6, size: 10, spacing: 1.5 }));
     case 'text':
       if (e.h >= 32) return texts(e.label).map((text) => ({ text, room: e.w, size: Math.min(30, e.h * 0.62), spacing: 3 }));
       if (e.style !== 'normal' || e.h < 24) return texts(e.label).map((text) => ({ text, room: e.w, size: Math.max(10, Math.min(13, e.h * 0.55)), spacing: 1.6 }));

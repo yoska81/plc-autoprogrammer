@@ -13,16 +13,20 @@ const DB_NAME = 'isa-ai-cache';
 const STORE = 'answers';
 
 const memory = new Map<string, CachedAnswer>();
-const inflight = new Map<string, Promise<CachedAnswer>>();
+const inflight = new Map<string, Promise<{ answer: CachedAnswer; hit: CacheHit }>>();
 let enabled = true;
 
 /** Test hook (and the "clear" button): turn the cache off / on. */
 export function setAiCacheEnabled(on: boolean) { enabled = on; }
 
+let syncKeys = false;
+/** Test hook: keys from the in-thread hash only (WebCrypto completes off-thread, in no fixed order). */
+export function setAiCacheSyncKeys(on: boolean) { syncKeys = on; }
+
 /** Hex SHA-256 of the request (FNV-1a when no WebCrypto). */
 export async function cacheKey(p: CacheKeyParts): Promise<string> {
   const text = JSON.stringify([p.model, p.effort, p.system, p.messages, p.schema ?? null]);
-  const subtle = globalThis.crypto?.subtle;
+  const subtle = syncKeys ? undefined : globalThis.crypto?.subtle;
   if (subtle) {
     const buf = await subtle.digest('SHA-256', new TextEncoder().encode(text));
     return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -97,24 +101,31 @@ export type CacheHit = 'memory' | 'stored' | 'shared' | null;
 export async function cachedAnswer(parts: CacheKeyParts, fn: () => Promise<CachedAnswer>, opts: { fresh?: boolean; signal?: AbortSignal } = {}): Promise<{ answer: CachedAnswer; hit: CacheHit }> {
   if (!enabled) return { answer: await fn(), hit: null };
   const key = await cacheKey(parts);
+  // From here to `inflight.set` nothing awaits: a second identical request always finds the first one
+  // (the stored-answer lookup happens inside the shared promise, not before it is registered).
   if (!opts.fresh) {
     const m = memory.get(key);
     if (m) { memory.delete(key); memory.set(key, m); return { answer: m, hit: 'memory' }; }
     const running = inflight.get(key);
     if (running) {
       // the request it joins may be cancelled by its own caller: then ask itself
-      try { return { answer: await running, hit: 'shared' }; } catch (err) { if (opts.signal?.aborted) throw err; }
+      try { return { ...(await running), hit: 'shared' }; } catch (err) { if (opts.signal?.aborted) throw err; }
     }
-    const stored = await dbGet(key);
-    if (stored) { remember(key, stored); return { answer: stored, hit: 'stored' }; }
   }
-  const p = fn();
-  inflight.set(key, p);
-  try {
-    const answer = await p;
+  const fresh = opts.fresh;
+  const p = (async (): Promise<{ answer: CachedAnswer; hit: CacheHit }> => {
+    if (!fresh) {
+      const stored = await dbGet(key);
+      if (stored) { remember(key, stored); return { answer: stored, hit: 'stored' }; }
+    }
+    const answer = await fn();
     remember(key, answer);
     void dbPut(key, answer);
     return { answer, hit: null };
+  })();
+  inflight.set(key, p);
+  try {
+    return await p;
   } finally {
     if (inflight.get(key) === p) inflight.delete(key);
   }

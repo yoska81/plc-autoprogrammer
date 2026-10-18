@@ -128,7 +128,7 @@ assert.equal(gap[0].topic, 'Found while designing: Electrical design', 'asked un
 // The stage pages only list assumptions (read-only); the one question list is on the Machine description page.
 const src = join(import.meta.dirname, '../..');
 const files = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? files(p) : /\.tsx$/.test(f) ? [p] : []; });
-const usesList = files(src).filter((f) => /import QuestionList from/.test(readFileSync(f, 'utf8'))).map((f) => f.slice(src.length + 1));
+const usesList = files(src).filter((f) => /import QuestionList from/.test(readFileSync(f, 'utf8'))).map((f) => f.slice(src.length + 1).replace(/\\/g, '/')).sort();
 // The new-project wizard's description step is the machine description being written.
 assert.deepEqual(usesList, ['pages/NewProjectPage.tsx', 'pages/SpecPage.tsx'], 'only the Machine description asks');
 

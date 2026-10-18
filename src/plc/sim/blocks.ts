@@ -51,7 +51,7 @@ export function rungReads(rung: Rung): { address: string; how: ReadKind }[] {
   };
   for (const br of rung.branches) for (const el of br) {
     if (el.type === 'CMP') { add(el.left, 'WORD'); add(el.right, 'WORD'); }
-    else add(el.address, el.type === 'NO' ? 'NO' : el.type === 'NC' ? 'NC' : 'EDGE');
+    else if (el.type !== 'RAW') add(el.address, el.type === 'NO' ? 'NO' : el.type === 'NC' ? 'NC' : 'EDGE');
   }
   for (const o of rung.outputs) {
     switch (o.type) {

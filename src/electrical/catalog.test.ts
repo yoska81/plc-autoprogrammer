@@ -33,6 +33,8 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)(siemens\.com|tia\.siemens\.cloud|industry\.siemens\.cloud)$/, makers: /siemens/i },
   { host: /(^|\.)(se\.com|schneider-electric\.com|schneider-electric\.us)$/, makers: /schneider|square ?d|telemecanique/i },
   { host: /(^|\.)ifm\.com$/, makers: /\bifm\b/i },
+  { host: /(^|\.)pepperl-fuchs\.com$/, makers: /pepperl/i },
+  { host: /(^|\.)bannerengineering\.com$/, makers: /banner/i },
   { host: /(^|\.)yaskawa\.(com|eu)$/, makers: /yaskawa/i },
   { host: /(^|\.)(nvent\.com|hoffmanonline\.com)$/, makers: /hoffman|nvent/i },
   { host: /(^|\.)rittal\.(com|us)$/, makers: /rittal/i },
@@ -71,6 +73,9 @@ const REQUIRED: Partial<Record<CatalogCategory, string[]>> = {
   solenoidValve: ['coilVoltage'],
   safetyRelay: ['coilVoltage', 'safetyOutputs'],
   stackLight: ['volts'],
+  servoDrive: ['inputVolts', 'outputAmps'],
+  servoMotor: ['ratedWatts', 'ratedTorqueNm'],
+  encoder: ['ppr', 'supplyVolts'],
 };
 /** Some parts state a rating under another name. */
 const ALIASES: Record<string, string[]> = { volts: ['volts', 'supplyVolts'], coilVoltage: ['coilVoltage', 'coil'] };
@@ -95,6 +100,29 @@ const ENCLOSURE_IN: [number, number] = [2, 100];
 const UNVERIFIED_OK: Record<string, string> = {
   'XCSPA993': 'contacts (2 NC + 1 NO slow break), 1/2in NPT entry and AC-15 rating from the Schneider XCS catalog; terminal numbers still to be checked on the product data sheet (se.com not reachable).',
   '3SE5112-0QV10': 'Siemens data sheet server refused the download (403): terminal numbers and AC-15 / DC-13 ratings still to be checked; contacts (1 NO + 2 NC), M20 entry and actuator from distributor listings.',
+  '6SL3210-5FB10-1UF2': 'SINAMICS V90 FSA (new version): the Siemens datasheet gives no peak current, so peakAmps is the predecessor\'s figure from the V90 PN Operating Instructions (04/2016).',
+  '6SL3210-5FB10-2UF2': 'SINAMICS V90 FSA (new version): the Siemens datasheet gives no peak current, so peakAmps is the predecessor\'s figure from the V90 PN Operating Instructions (04/2016).',
+  '6SL3210-5FB10-1UA2': 'SINAMICS V90 FSA (new version): the Siemens datasheet gives no peak current, so peakAmps is the predecessor\'s figure from the V90 PN Operating Instructions (04/2016).',
+  '6SL3210-5FB10-2UA2': 'SINAMICS V90 FSA (new version): the Siemens datasheet gives no peak current, so peakAmps is the predecessor\'s figure from the V90 PN Operating Instructions (04/2016).',
+  'C2-14D1': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-14D2': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-14TTL': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-14DR': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D1-4VC': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D2-4VC': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08DR-4VC': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D1-6C': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D2-6C': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08DR-6C': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D1-6V': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D2-6V': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08DR-6V': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-01CPU-2': 'CLICK PLUS two-slot CPU: width 80.5 mm read from the C2 manual dual-slot drawing (the part drawing is not dimensioned); 87.8 mm in the same drawing taken as including the latch.',
+  'C2-02CPU-2': 'CLICK PLUS two-slot CPU: width 80.5 mm read from the C2 manual dual-slot drawing (the part drawing is not dimensioned); 87.8 mm in the same drawing taken as including the latch.',
+  'C2-03CPU-2': 'CLICK PLUS two-slot CPU: width 80.5 mm read from the C2 manual dual-slot drawing (the part drawing is not dimensioned); 87.8 mm in the same drawing taken as including the latch.',
+  'VFD2A8MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
+  'VFD4A8MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
+  'VFD7A5MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
 };
 
 /** A maker's document (PDF catalog / datasheet or documentation portal) covering many parts. */
