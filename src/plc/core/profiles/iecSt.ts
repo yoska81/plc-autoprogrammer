@@ -50,6 +50,8 @@ export interface StDialect {
   ioExtra?(vars: Map<string, StVariable>): { inputs: string[]; outputs: string[] };
   /** Only the rungs' statements (the code of an existing block is replaced): no header, I/O copy or clock. */
   rungsOnly?: boolean;
+  /** Is this variable (neutral base) a TIME already (an original program's TIME preset)? Then it is the PT as it is. */
+  isTime?(base: string): boolean;
 }
 
 const UNIT_MS: Record<string, number> = { ms: 1, sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 };
@@ -168,7 +170,8 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
             break;
           }
           const t = v(a, blockType.get(a)!);
-          const ptv = NUM_RE.test(o.preset.trim()) ? d.msToTime(String(Math.round(Number(o.preset) * unit))) : d.msToTime(`${op(o.preset)} * ${unit}`);
+          const pre = o.preset.trim().toUpperCase();
+          const ptv = NUM_RE.test(pre) ? d.msToTime(String(Math.round(Number(o.preset) * unit))) : d.isTime?.(pre) ? op(o.preset) : d.msToTime(unit === 1 ? op(o.preset) : `${op(o.preset)} * ${unit}`);
           if (o.accumulate) out.push(`${t}(IN := ${cond}, ${d.params.rtoReset} := ${o.resetAddress ? op(o.resetAddress) : 'FALSE'}, PT := ${ptv});`);
           else out.push(`${t}(IN := ${cond}, PT := ${ptv});`);
           break;

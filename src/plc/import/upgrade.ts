@@ -14,7 +14,8 @@ import { moduleSlots } from '../core/modules';
 import { resolveAddresses } from '../core/profile';
 import { siemensAddress } from '../core/profiles/siemens';
 import { modulesToFit, type Need } from '../core/fit';
-import { materialize, nickOf, pretty } from './convert';
+import { getPart } from '../../electrical/catalog';
+import { importedRange, materialize, nickOf, pretty } from './convert';
 import { programFindings } from './findings';
 import type { ImportedProgram, SourceFormat } from './types';
 
@@ -81,7 +82,9 @@ function printoutFamily(text: string): string | undefined {
 
 export function needOf(imp: ImportedProgram): Need {
   const n = (type: 'input' | 'output', analog: boolean) => imp.io.filter((p) => p.type === type && p.analog === analog).length;
-  return { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: false, minHmiSizeIn: null };
+  // The signal of each analog point, so a current transmitter gets a current channel (not a 0–10 V onboard input).
+  const ranges = (type: 'input' | 'output') => imp.io.filter((p) => p.type === type && p.analog).map((p) => importedRange(p.original));
+  return { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: false, minHmiSizeIn: null, analogRanges: { input: ranges('input'), output: ranges('output') } };
 }
 
 /** First CPU of the profile (smallest first) that holds the I/O, with the modules it needs. */
@@ -106,8 +109,16 @@ const cpuKey = (controller: string) => /\b(6ES7[\w-]+|\d{4}-\w+|1[25]\d\d[A-Z]*)
 const matchesCpu = (c: PlcProfile['cpuModels'][number], key: string) => c.id.toUpperCase() === key.toUpperCase() || new RegExp(`(^|[^\\w])${key}([^\\w]|$)`, 'i').test(c.label);
 
 export function originalCpu(profile: PlcProfile, imp: ImportedProgram): { cpuId: string; modules: string[] } | null {
+  // Order numbers the file states (CPU and modules): the CPU among them, and its modules to start from.
+  const orders = [...imp.source.controller.matchAll(/\b6ES7[\w-]+|\b\d{4}-[A-Z]\w+/gi)].map((m) => m[0].toUpperCase());
+  const named = profile.cpuModels.find((c) => orders.includes(c.id.toUpperCase()));
+  const own = orders.filter((o) => !profile.cpuModels.some((c) => c.id.toUpperCase() === o) && getPart(o)?.category === 'plcModule');
+  const fit = (id: string, start: string[] = []) => { const mods = modulesToFit(id, start, needOf(imp)); return mods ? { cpuId: id, modules: mods } : null; };
+  if (named) {
+    const r = fit(named.id, own) ?? fit(named.id);
+    if (r) return r;
+  }
   const key = cpuKey(imp.source.controller);
-  const fit = (id: string) => { const mods = modulesToFit(id, [], needOf(imp)); return mods ? { cpuId: id, modules: mods } : null; };
   if (key) {
     const cpu = profile.cpuModels.find((c) => matchesCpu(c, key));
     const r = cpu && fit(cpu.id);

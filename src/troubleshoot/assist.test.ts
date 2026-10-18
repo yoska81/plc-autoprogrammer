@@ -95,20 +95,25 @@ const asks = (reply: string | Error): Ask => async () => { if (reply instanceof 
 {
   const say = 'Switch off and lock out first. Power OFF and locked out, meter on continuity. Measure between TB2-1 and PE1 pin 4. Do you read about 0 Ω?';
   assert.ok(mustKeep(say).includes('TB2-1') && mustKeep(say).includes('lock out') && mustKeep(say).includes('continuity'));
-  const plain = 'Switch off and lock out first. Power OFF and locked out, meter on continuity. Touch TB2-1 and PE1 pin 4. Does it beep (about 0 Ω)?';
-  assert.equal(await aiPlainStep(asks(JSON.stringify({ text: 'Switch off and lock out first. Power OFF, locked out, continuity. Touch TB2-1 and PE1 pin 4. Beep (0 Ω)?' })), say), say, 'a safety / meter sentence must stay word for word');
-  assert.equal(await aiPlainStep(asks(JSON.stringify({ text: plain })), say), plain, 'a rewording that keeps everything is used');
-  assert.equal(await aiPlainStep(asks(JSON.stringify({ text: 'Check the wire to the eye with a meter.' })), say), say, 'a rewording that loses the terminals and the lock-out is dropped');
+  // The AI only ever sees the non-safety sentences; the safety ones stay word for word, in place.
+  let seen = '';
+  const reply = (sentences: string[]): Ask => async (_s, user) => { seen = user; return JSON.stringify({ sentences }); };
+  const plain = await aiPlainStep(reply(['Touch the meter leads to TB2-1 and PE1 pin 4.', 'Does it beep (about 0 Ω)?']), say);
+  assert.equal(plain, 'Switch off and lock out first. Power OFF and locked out, meter on continuity. Touch the meter leads to TB2-1 and PE1 pin 4. Does it beep (about 0 Ω)?');
+  assert.ok(!/lock|power/i.test(seen), `safety sentences are never sent: ${seen}`);
+  assert.equal(await aiPlainStep(reply(['Check the wire with a meter.', 'Beep?']), say), say, 'a rewording that loses the terminals is dropped');
+  assert.equal(await aiPlainStep(reply(['Touch TB2-1 and PE1 pin 4.']), say), say, 'a sentence missing: the rule text');
   const volts = 'Meter on DC volts. Measure between TB2-1 and TB1 0V, with the sensor seeing a part. Do you read 24 VDC?';
-  assert.equal(await aiPlainStep(asks(JSON.stringify({ text: 'DC volts: TB2-1 to TB1 0V, part in front of the sensor. 12 VDC?' })), volts), volts, 'a changed reading is dropped');
+  assert.equal(await aiPlainStep(reply(['TB2-1 to TB1 0V, part in front of the sensor.', '12 VDC?']), volts), volts, 'a changed reading is dropped');
   assert.equal(await aiPlainStep(asks(new Error('x')), volts), volts);
-  // Review: a rewording that keeps the words but reverses a warning is dropped.
-  const lock = 'Switch off and lock out first. Power OFF and locked out, meter on continuity. Measure between TB2-1 and PE1 pin 4. Do you read about 0 Ω?';
-  for (const bad of [
-    'Switch off and lock out first. Power OFF and locked out, meter on continuity. Do not lock out for this one. Measure TB2-1 to PE1 pin 4: about 0 Ω?',
-    'Switch off and lock out first. Power OFF and locked out, meter on continuity. There is no need to switch off. Measure TB2-1 to PE1 pin 4: about 0 Ω?',
-    'Switch off and lock out first (optional). Power OFF and locked out, meter on continuity. Measure TB2-1 to PE1 pin 4: about 0 Ω?',
-  ]) assert.equal(await aiPlainStep(asks(JSON.stringify({ text: bad })), lock), lock, bad);
+  // Review: rewordings that reverse or loosen a warning never get through, whatever their wording.
+  for (const bad of ['Do not lock out for this one.', 'There is no need to switch off.', 'You can leave power on.', 'Leave the machine running while you measure.', 'Lockout only if you want.', 'Power can stay ON.']) {
+    assert.equal(await aiPlainStep(reply([`${bad} Touch TB2-1 and PE1 pin 4.`, 'Does it beep (about 0 Ω)?']), say), say, bad);
+  }
+  // A step that is all safety is never sent at all.
+  let asked = false;
+  assert.equal(await aiPlainStep(async () => { asked = true; return '{}'; }, 'Switch off and lock out first.'), 'Switch off and lock out first.');
+  assert.equal(asked, false);
 }
 
 // ── Dev 2's routing: a machine function that won't go, or a stuck step, goes to "why is it stuck?" first ──

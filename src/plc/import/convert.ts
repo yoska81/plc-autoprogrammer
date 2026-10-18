@@ -9,7 +9,8 @@
 import { rawTextNames, type LadderElement, type LadderOutput, type LadderProgram, type ProgramBlock, type Rung, type TagDefinition } from '../core/ladder';
 import type { CpuModel, ModuleSlot, PlcProfile } from '../core/profile';
 import { resolveAddresses } from '../core/profile';
-import { siemensAddress } from '../core/profiles/siemens';
+import { siemensAddress, siemensAnalogChannels } from '../core/profiles/siemens';
+import type { AnalogRange } from '../../types/io';
 import type { IOPoint } from '../../types/io';
 import type { ForeignProgram, ForeignTag, ImportedIoPoint, ImportedProgram, ImportReport } from './types';
 import { slug } from './l5x';
@@ -269,8 +270,23 @@ export function pretty(name: string): string {
  * The imported program for a chosen PLC: I/O points get that PLC's addresses (analog points their
  * analog channel register) and every "@IN:n" / "@OUT:n" in the program is replaced.
  */
-/** The app's address of an S7 digital bit as written in the original (%IX0.2, %I0.2, I0.2 → X003), or null. */
+/**
+ * Signal range of an imported analog point, as far as the file tells: an S7-1200 onboard input word (%IW64 / %IW66) is
+ * 0–10 V (the CPU's AI take nothing else); anything else is taken as 4–20 mA, the usual transmitter signal, so a
+ * current channel is planned for it (the I/O list shows the range to check).
+ */
+export function importedRange(original: string): AnalogRange {
+  return /^%?IW6[46]$/i.test(original.trim()) ? '0-10V' : '4-20mA';
+}
+
+/** The app's address of an S7 bit or analog word as written in the original (%IX0.2, %I0.2, I0.2 → X003; %IW96 → its channel), or null. */
 function s7Terminal(original: string, cpu: CpuModel, modules: ModuleSlot[]): string | null {
+  // An analog word (%IW96): the channel at that address, on the CPU or a module.
+  const w = /^%?([IQ])W(\d+)$/i.exec(original.trim());
+  if (w) {
+    const want = `%${w[1].toUpperCase()}W${Number(w[2])}`;
+    return siemensAnalogChannels(cpu, modules).find((ch) => siemensAddress(ch.address, cpu, modules)?.address === want)?.address ?? null;
+  }
   const m = /^%?([IQ])X?(\d+)\.([0-7])$/i.exec(original.trim());
   if (!m) return null;
   const want = `%${m[1].toUpperCase()}${Number(m[2])}.${m[3]}`;
@@ -293,11 +309,11 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   const points: IOPoint[] = imp.io.map((p) => ({
     id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++o).padStart(3, '0')}`,
     description: p.description, type: p.type, category: 'Spare',
-    ...(p.analog ? { signal: 'analog' as const, analog: { range: '4-20mA' as const, min: 0, max: full, units: 'raw counts' } } : {}),
+    ...(p.analog ? { signal: 'analog' as const, analog: { range: importedRange(p.original), min: 0, max: full, units: 'raw counts' } } : {}),
     // A CLICK program going back on a CLICK keeps its terminals (X001 stays X001, gaps included); an S7
     // program keeps its %I / %Q bits (%Q0.2 stays %Q0.2).
     ...(profile.id === 'click' && /^[XY]\d{3}$/i.test(p.original) && profile.parseAddress(p.original.toUpperCase()) ? { plcAddress: p.original.toUpperCase() } : {}),
-    ...(profile.id === 'siemens-s7' && !p.analog ? (() => { const a = s7Terminal(p.original, cpu, modules); return a ? { plcAddress: a } : {}; })() : {}),
+    ...(profile.id === 'siemens-s7' ? (() => { const a = s7Terminal(p.original, cpu, modules); return a ? { plcAddress: a } : {}; })() : {}),
   }));
   const addr = resolveAddresses(profile, cpu, points, modules);
   const ph = new Map<string, string>();

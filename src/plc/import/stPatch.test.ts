@@ -17,6 +17,7 @@ import { resolveAddresses, type ExportContext } from '../core/profile';
 import { moduleSlots } from '../core/modules';
 import type { LadderProgram, Rung } from '../core/ladder';
 import type { IOPoint } from '../../types/io';
+import { buildScl, siemensAddress } from '../core/profiles/siemens';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const file = (n: string) => ({ name: n, text: fileText(n, new Uint8Array(readFileSync(join(here, '__fixtures__', n)))) });
@@ -171,10 +172,47 @@ const logic = (p: LadderProgram) => {
 {
   const { plan } = setup([file('mixer_tia_plcopen.xml')]);
   assert.equal(plan.cpuId, '6ES7214-1AG40-0XB0', 'the CPU 1214C named in the file');
-  assert.ok(plan.questions.some((q) => /Address changed: Level_Raw was %IW96 in the original program and is %IW64/.test(q)), plan.questions.join(' | '));
+  // The 4–20 mA transmitters at %IW96 / %IW98 sit on an SM 1231 current module, not the CPU's 0–10 V inputs.
+  assert.deepEqual(plan.modules, ['6ES7231-4HD32-0XB0']);
+  assert.ok(!plan.questions.some((q) => /Address changed/.test(q)), plan.questions.join(' | '));
+  assert.deepEqual(plan.io.filter((p) => p.signal === 'analog').map((p) => p.analog?.range), ['4-20mA', '4-20mA']);
+  {
+    const profile = getProfile('siemens-s7');
+    const cpu = getCpu(profile, plan.cpuId);
+    let i = 0, q = 0;
+    const io: IOPoint[] = plan.io.map((p) => ({ ...p, id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++q).padStart(3, '0')}` }));
+    const slots = moduleSlots(plan.modules);
+    const addr = resolveAddresses(profile, cpu, io, slots);
+    assert.deepEqual(io.filter((p) => p.signal === 'analog').map((p) => siemensAddress(addr.get(p.id)!, cpu, slots)?.address), ['%IW96', '%IW98'], 'the original addresses');
+  }
+  // The real export: resource "PLC_1"; the CPU and the module only in the hardware data and the header comment.
+  const real = file('mixer_tia_plcopen.xml').text
+    .replace('<resource name="CPU_1214C">', '<resource name="PLC_1">')
+    .replace('<contentHeader name="MixTank_MT01"', '<contentHeader name="MixTank_MT01" comment="PLC_1: SM 1231 AI4 6ES7231-4HD32-0XB0"')
+    .replace('</project>', '<addData><data name="http://www.siemens.com/tia/hardware" handleUnknown="discard"><Hardware Cpu="CPU 1214C DC/DC/DC" OrderNumber="6ES7 214-1AG40-0XB0" /></data></addData>\n</project>');
+  const fromHw = setup([{ name: 'mixer.xml', text: real }]).plan;
+  assert.equal(fromHw.cpuId, '6ES7214-1AG40-0XB0', 'the CPU from the hardware data, not a guess');
+  assert.deepEqual(fromHw.modules, ['6ES7231-4HD32-0XB0'], 'the module from the file');
   const stl = setup([{ name: 'q.awl', text: 'ORGANIZATION_BLOCK OB1\nBEGIN\nNETWORK\nTITLE =\nA I 1.0\n= Q 0.7\nEND_ORGANIZATION_BLOCK\n' }]);
   assert.equal(stl.plan.cpuId, '6ES7214-1AG40-0XB0', '%I1.0 needs more than 8 onboard inputs: a 1214C, not a 1212C + module');
   assert.ok(!stl.plan.questions.some((q) => /Address changed/.test(q)), stl.plan.questions.join(' | '));
+}
+
+// ── Review: a Time-typed preset (#Mix_Time) is the PT as it is: DINT_TO_TIME(#Mix_Time * 1) does not compile ──
+{
+  const files = [file('Mixer.scl'), file('PLC_Tags_Mixer.csv')];
+  const timed = files[0].text.replace('      Step : Int;', '      Mix_Time : Time;   // Mixing time\n      Step : Int;').replace(/PT := T#3M\)/, 'PT := #Mix_Time)');
+  assert.ok(timed.includes('PT := #Mix_Time)'));
+  const { text, plan, target } = setup([{ name: 'Mixer.scl', text: timed }, files[1]]);
+  const fill = plan.program.rungs.find((r) => r.outputs.some((o) => o.type === 'SET' && o.address === addr(plan.program, 'Fill_Valve')))!;
+  const now = edit(plan.program, (r) => r.id === fill.id, (r) => ({ ...r, comment: 'changed' }));
+  const out = exportUpgrade(plan.original, text, now, target()).files[0].content;
+  assert.match(out, /#Mix_Timer\(IN := [^;]*, PT := #Mix_Time\);/);
+  assert.ok(!/DINT_TO_TIME/.test(out), out.slice(out.indexOf('BEGIN')));
+  // The full S7 export: the preset is a DInt of milliseconds there, converted once, without "* 1".
+  const scl = buildScl(now, target().ctx).scl;
+  assert.match(scl, /PT := DINT_TO_TIME\(#Mix_Time\)/);
+  assert.ok(!/\* 1\)/.test(scl));
 }
 
 console.log('stPatch.test: all passed');

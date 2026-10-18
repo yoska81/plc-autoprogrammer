@@ -348,16 +348,36 @@ const keeps = (orig: string, next: string) => {
   return mustKeep(orig).every((k) => flat.includes(k.replace(/\s+/g, '').toLowerCase())) && negations(next) <= negations(orig);
 };
 
-/** With a key: a step in plainer words (or in the technician's language); the rule text when anything is lost. */
+/** A sentence about safety: never sent to the AI, always shown and spoken as the rules wrote it. */
+const SAFETY = /lock ?(ed )?out|lockout|switch(ed)? off|power|energi[sz]|de-?energi|voltage|volts?\b|\bforc(e|ed|ing)\b|override|keep (everyone )?clear|clear of|\bSTO\b|safe torque|e-?stop|emergency|mains|danger|\bPPE\b|qualified|\bSERIES\b|\blive\b|isolat|guard|interlock|machine will move|never across|\brunning\b|\brun\b|\bleave\b|\bstay(s|ing)?\b|start(ed|s)? up|\bmoving\b|\bmotion\b/i;
+const sentences = (t: string) => t.match(/[^.?!]+[.?!]*(\s+|$)/g)?.map((x) => x.trim()).filter(Boolean) ?? [t];
+
+/**
+ * With a key: a step in plainer words (or in the technician's language). Safety sentences are never sent to the AI:
+ * they stay exactly as written, in their place; only the other sentences are reworded, each one checked (its
+ * readings, terminals and wire numbers kept, no negation added, no safety wording brought in). Anything else: the
+ * rule text.
+ */
 export async function aiPlainStep(ask: Ask, say: string, language = 'en'): Promise<string> {
-  const schema = { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string' } } };
+  const parts = sentences(say);
+  const plain = parts.map((x, i) => ({ x, i })).filter(({ x }) => !SAFETY.test(x));
+  if (!plain.length) return say;
+  const schema = { type: 'object', additionalProperties: false, required: ['sentences'], properties: { sentences: { type: 'array', items: { type: 'string' } } } };
   try {
-    const r = parse<{ text: string }>(await ask(
-      `Reword one fault-finding step for a maintenance technician at the machine: short sentences, plain words, ${language === 'en' ? 'English' : `language code ${language}`}. Keep every number, unit, terminal, wire number, device tag and safety warning exactly as written. Do not add steps or advice.`,
-      say, schema,
+    const r = parse<{ sentences: string[] }>(await ask(
+      `Reword each sentence of one fault-finding step for a maintenance technician at the machine: plain words, ${language === 'en' ? 'English' : `language code ${language}`}. One sentence out for each sentence in, same order. Keep every number, unit, terminal, wire number and device tag exactly as written. Do not add steps, advice or warnings.`,
+      plain.map(({ x }, k) => `${k + 1}. ${x}`).join('\n'), schema,
     ));
-    const t = r?.text?.trim();
-    return t && t.length < say.length * 2 + 80 && keeps(say, t) ? t : say;
+    const out = r?.sentences?.map((t) => t.trim().replace(/^\d+\.\s*/, '')) ?? [];
+    if (out.length !== plain.length) return say;
+    const next = [...parts];
+    for (let k = 0; k < plain.length; k++) {
+      const t = out[k];
+      const o = plain[k].x;
+      if (!t || t.length > o.length * 2 + 60 || SAFETY.test(t) || !keeps(o, t)) return say;
+      next[plain[k].i] = t;
+    }
+    return next.join(' ');
   } catch {
     return say;
   }

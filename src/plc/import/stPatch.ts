@@ -62,6 +62,8 @@ interface Scope {
 function blockCode(rungs: Rung[], p: StPatchInput, block: string, scope: Scope, warnings: string[]): { code: string; added: StVariable[] } {
   const st = toIecSt({ rungs: rungs.map((r) => ({ ...r, block: undefined })), tags: p.current.tags }, { ...p.ctx, extraTags: [] }, {
     vendor: 'siemens-s7', title: '', ioVar: () => null, ioTodo: () => '', rungsOnly: true,
+    // A preset the original declares as Time (#Mix_Time) is the PT as it is: DINT_TO_TIME of a Time does not compile.
+    isTime: (base) => { const n = p.names[base]; return Boolean(n && timeVars(p.originalText).has(n.split('.')[0].toLowerCase())); },
     ref: (n) => `⟦${n}⟧`, firstScan: FIRST_SCAN, ...SCL_BLOCKS,
   });
   for (const w of st.warnings) if (!warnings.includes(w)) warnings.push(w);
@@ -98,6 +100,9 @@ function blockCode(rungs: Rung[], p: StPatchInput, block: string, scope: Scope, 
   }
   return { code, added };
 }
+
+/** Names the original declares with a Time type (lower case). */
+const timeVars = (text: string) => new Set(stVariables(text).filter((v) => /^(L?TIME|S5TIME)$/i.test((v.rawType ?? '').trim())).map((v) => v.name.toLowerCase()));
 
 /** Does the original file name this (the first part of a dotted name, as a whole word)? */
 function inFile(text: string, name: string): boolean {

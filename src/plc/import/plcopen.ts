@@ -200,6 +200,27 @@ function ldBody(body: XNode, untranslated: string[], vendor = 'iec'): Driven[] {
   return driven;
 }
 
+/**
+ * The PLC hardware the file states: the CPU and module order numbers from the TIA Portal addData
+ * (<Hardware Cpu="CPU 1214C DC/DC/DC" OrderNumber="6ES7 214-1AG40-0XB0">), the content header's comment
+ * ("… SM 1231 AI4 6ES7231-4HD32-0XB0"), else the resource name when it names a CPU (CPU_1214C). '' = not stated.
+ */
+function hardwareOf(src: string, project: XNode): string {
+  const orders: string[] = [];
+  const names: string[] = [];
+  for (const m of src.matchAll(/<(?:\w+:)?(?:Hardware|Module|Device|Cpu)\b[^>]*>/gi)) {
+    const on = /\bOrderNumber="([^"]+)"/i.exec(m[0])?.[1];
+    if (on) orders.push(on.replace(/\s+/g, ''));
+    const cpu = /\bCpu="([^"]+)"/i.exec(m[0])?.[1];
+    if (cpu) names.push(cpu);
+  }
+  const header = kid(project, 'contentHeader');
+  const note = [header?.attrs.comment ?? '', textOf(kid(header, 'Comment'))].join(' ');
+  for (const m of note.matchAll(/\b6ES7\s?\d{3}-\w{5}-\w{4}\b/gi)) orders.push(m[0].replace(/\s+/g, ''));
+  const resource = all(kid(project, 'instances'), 'resource').map((r) => r.attrs.name ?? '').find((n) => /CPU|\b1[25]\d\d[A-Z]*\b/i.test(n))?.replace(/_/g, ' ') ?? '';
+  return [...new Set([...names, ...orders])].join('; ') || resource;
+}
+
 export function readPlcopen(src: string): ForeignProgram {
   const doc = parseXml(src);
   const project = doc.children.find((c) => local(c) === 'project');
@@ -259,8 +280,7 @@ export function readPlcopen(src: string): ForeignProgram {
   }
   return {
     format: 'plcopen', vendor: [header?.attrs.companyName, header?.attrs.productName].filter(Boolean).join(' ') || 'IEC 61131-3',
-    // The CPU, when the configuration names it (TIA Portal: <resource name="CPU_1214C">).
-    controller: all(kid(project, 'instances'), 'resource').map((r) => r.attrs.name ?? '').find((n) => /CPU|\b1[25]\d\d[A-Z]*\b|\d{4}-\w+/i.test(n))?.replace(/_/g, ' ') ?? header?.attrs.productName ?? '', projectName: content?.attrs.name ?? header?.attrs.contentDescription ?? 'Imported project',
+    controller: hardwareOf(src, project) || (header?.attrs.productName ?? ''), projectName: content?.attrs.name ?? header?.attrs.contentDescription ?? 'Imported project',
     tags, routines, notes,
   };
 }
