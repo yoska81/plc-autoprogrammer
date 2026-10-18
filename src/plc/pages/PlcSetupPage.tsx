@@ -1,10 +1,17 @@
 import { Link } from 'react-router-dom';
 import { PLC_PROFILES } from '../core/profiles';
 import { useProjectStore } from '../../store/useProjectStore';
+import { withIoRemap } from '../core/ioChange';
+import { notify } from '../../store/useNoticeStore';
 import { usePlc } from '../core/usePlc';
 
 export default function PlcSetupPage() {
-  const setPlc = useProjectStore((s) => s.setPlc);
+  // A PLC / CPU change renumbers the I/O: the program and the HMI follow it (one remap), and say so.
+  const storeSetPlc = useProjectStore((s) => s.setPlc);
+  const setPlc = (plcId: string, cpuId: string) => {
+    const notes = withIoRemap(() => storeSetPlc(plcId, cpuId));
+    if (notes.length) notify(`The I/O was renumbered for the new PLC; the program and the HMI followed. ${notes.join(' ')}`);
+  };
   const { profile, cpu } = usePlc();
 
   return (

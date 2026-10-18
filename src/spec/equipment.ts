@@ -14,6 +14,8 @@ import { useIOStore } from '../store/useIOStore';
 import { missingOperatorIo } from './operatorIo';
 import { generatedToPoint } from '../lib/ai/ioAI';
 import { modulesInSlotOrder, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
+import { withIoRemap } from '../plc/core/ioChange';
+import { notify } from '../store/useNoticeStore';
 
 export interface EquipmentChoice {
   cpuId: string;
@@ -54,10 +56,14 @@ export function applyEquipment(choice: EquipmentChoice, rec: EquipmentRecommenda
       if (fitted) modules = fitted;
       else warning = `${choice.cpuId} cannot hold the I/O list with the ${missing.length} door devices for "No touch panel", even with more modules: choose a bigger CPU (the devices were added to the I/O list).`;
     }
-    io.applyIOUpdate([], missing.map(generatedToPoint), []);
   }
-  project.setPlc(profile.id, choice.cpuId);
-  project.setModules(modules.slice(0, 8));
+  // The new PLC / modules (and door devices) renumber the I/O: the program and the HMI follow (one remap).
+  const remapped = withIoRemap(() => {
+    if (missing.length) io.applyIOUpdate([], missing.map(generatedToPoint), []);
+    project.setPlc(profile.id, choice.cpuId);
+    project.setModules(modules.slice(0, 8));
+  });
+  if (remapped.length) notify(`The new PLC renumbered the I/O; the program and the HMI followed. ${remapped.join(' ')}`);
   if (rec) project.setRecommendation(rec);
   // A designed HMI follows a new panel (scaled to its resolution).
   setProjectPanel(choice.hmiPartNumber ?? '');

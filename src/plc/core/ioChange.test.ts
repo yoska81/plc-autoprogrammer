@@ -12,7 +12,11 @@ import { seedSampleProject } from '../../preview/sampleProject';
 import { useIOStore } from '../../store/useIOStore';
 import { useProgramStore } from '../../store/useProgramStore';
 import { useProjectStore } from '../../store/useProjectStore';
-import { deletePointWithUndo, ioAddresses, ioUsesOf, lastIoUndo, undoIoDelete } from './ioChange';
+import { deletePointWithUndo, ioAddresses, ioUsesOf, lastIoUndo, undoIoDelete, withIoRemap } from './ioChange';
+import '../../hmi/ioParticipant';
+import { useHmiStore } from '../../store/useHmiStore';
+import { generateRuleBasedProgram } from '../ai/cycleAI';
+import { getCpu } from './profiles';
 import { ioRemap } from './ioRemap';
 import { remapProgram } from './remapProgram';
 import { validateProgram } from './validate';
@@ -83,5 +87,39 @@ assert.equal(undoIoDelete(), false);
 // A plain edit that moves nothing leaves the program alone.
 useIOStore.getState().updateDescription(eye.id, 'Part at end photo-eye (PE1)');
 assert.equal(useProgramStore.getState().ladder, ladderBefore);
+
+// 3. Delete I002 Start Button: the HMI's Start element is unbound and marked (a layout error), the program's
+// Start contacts marked; Undo restores the HMI too.
+const start = io.find((p) => /^Start Button/i.test(p.description))!;
+const hmiBefore = useHmiStore.getState().design!;
+const usesStart = ioUsesOf(start.id);
+assert.ok(usesStart.some((u) => /^Program rung/.test(u)) && usesStart.some((u) => /^Screen /.test(u)), usesStart.join(' | '));
+const startMsgs = deletePointWithUndo(start.id);
+const hmiAfter = useHmiStore.getState().design!;
+const lost = hmiAfter.screens.flatMap((s) => s.elements.filter((e) => e.lostIo));
+assert.ok(lost.length > 0 && lost.every((e) => !e.address), 'the HMI elements on Start PB are unbound and marked');
+assert.ok(!hmiAfter.screens.some((s) => s.elements.some((e) => e.address === 'X002' && /start/i.test(e.label ?? ''))), 'no Start element left on X002 (now Stop)');
+assert.ok(startMsgs.some((m) => /^HMI: /.test(m)), startMsgs.join(' | '));
+const afterStart = ioAddresses(useIOStore.getState().projectIO);
+assert.ok(validateProgram(useProgramStore.getState().ladder, getProfile('click'), new Set([...afterStart.values()])).some((i) => i.severity === 'error' && /used X002, whose I\/O point was deleted/.test(i.message)), 'the checker blocks the Start rungs');
+undoIoDelete();
+assert.equal(useHmiStore.getState().design, hmiBefore, 'Undo restores the HMI');
+
+// 4. CLICK → CompactLogix: the I/O renumbers (X001 → X101 …), the program, its saved versions and the HMI
+// follow; the checker has 0 errors, and so does a rebuild from the remapped HMI.
+useProgramStore.getState().saveVersion('before Logix');
+const notes = withIoRemap(() => useProjectStore.getState().setPlc('logix', getProfile('logix').defaultCpuId));
+assert.ok(notes.some((n) => /operands moved/.test(n)), notes.join(' | '));
+const lx = getProfile('logix'), lxAddr = ioAddresses(useIOStore.getState().projectIO), lxSet = new Set([...lxAddr.values()]);
+assert.notEqual(lxAddr.get(eye.id), 'X004', 'renumbered for CompactLogix');
+const lxErrs = (p: LadderProgram) => validateProgram(p, lx, lxSet, useHmiStore.getState().design ?? undefined).filter((i) => i.severity === 'error').map((i) => i.message);
+assert.deepEqual(lxErrs(useProgramStore.getState().ladder), [], 'CompactLogix: 0 checker errors');
+assert.deepEqual(lxErrs(useProgramStore.getState().versions.at(-1)!.program), [], 'the saved version follows too');
+assert.ok(JSON.stringify(useProgramStore.getState().ladder).includes(`"${lxAddr.get(eye.id)}"`), 'the part counter is on the photo-eye\'s new address');
+const hmiNow = useHmiStore.getState().design!;
+assert.ok(!hmiNow.screens.some((s) => s.elements.some((e) => /^[XY]0\d\d$/.test(e.address ?? ''))), 'no HMI element left on a CLICK address');
+const io2 = useIOStore.getState().projectIO;
+const rebuilt = await generateRuleBasedProgram({ ctx: { profile: lx, cpu: getCpu(lx, lx.defaultCpuId), io: io2, addresses: lxAddr, wiring: new Map() }, spec: '', electrical: null, hmi: hmiNow, noPanel: false });
+assert.deepEqual(lxErrs(rebuilt.program), [], 'CompactLogix rebuild: 0 checker errors');
 
 console.log('ioChange tests passed');

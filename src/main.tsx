@@ -10,6 +10,7 @@ import { installQaSync } from './components/questions/qa'
 import Notice from './components/Notice.tsx'
 // The program and the HMI follow I/O list edits (address remap, delete with undo).
 import './plc/core/ioChange'
+import './hmi/ioParticipant'
 import {
   IOPage, ProgramPage, ExportPage, SettingsPage, ProjectDataPage, PlcSetupPage, PrintPage, ImportPage, ElectricalPage, PrintElectricalPage, SpecPage, HmiPage, ReviewPage, SimulatePage, OnlinePage, EquipmentPage, NewProjectPage, SourcingPage, EngineerPage, CommissioningPage, RedlinesPage,
 } from './pages/lazyPages'
