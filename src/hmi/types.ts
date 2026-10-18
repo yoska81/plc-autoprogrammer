@@ -158,4 +158,14 @@ export interface HmiDesign {
   machineName?: string;
   /** Visual style; missing means the look of the panel's maker (also for designs saved before looks existed). */
   look?: HmiLook;
+  /** Upgrade of an imported program: what that program must get so this HMI works (src/hmi/engine/upgradeHmi.ts). */
+  plcChanges?: PlcChange[];
+}
+
+/** One change an imported program needs for an HMI tag it does not have yet. */
+export interface PlcChange {
+  address: string;
+  name: string;
+  /** In plain words, e.g. "Add HMI_Start (C1001) in parallel with Start_PB (X001)". */
+  change: string;
 }

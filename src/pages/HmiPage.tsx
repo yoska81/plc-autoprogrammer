@@ -37,7 +37,8 @@ import { defaultLookFor, LEVEL_LABEL } from '../hmi/theme';
 import LookPicker from '../hmi/LookPicker';
 import AssumptionsUsed from '../components/questions/AssumptionsUsed';
 import { useQuestions } from '../components/questions/useQuestionStore';
-import { useDraft } from '../store/useDraftStore';
+import { useDraft, useDraftStore } from '../store/useDraftStore';
+import { projectUpgradeRoles } from '../plc/import/ui/applyUpgrade';
 import { useUi } from '../store/useUiStore';
 import { withAnalogScale } from '../hmi/analogScale';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
@@ -531,6 +532,7 @@ export default function HmiPage() {
             io, addresses, spec: specToText(fp.spec), machineName: useProgramStore.getState().projectName,
             electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
             existingHmi: useHmiStore.getState().design, program: useProgramStore.getState().ladder,
+            upgradeRoles: projectUpgradeRoles(useDraftStore.getState().drafts, useProgramStore.getState().ladder),
           });
         } finally { useHmiStore.getState().setIsGenerating(false); }
       },

@@ -10,6 +10,9 @@ import { canPatch } from '../exportUpgrade';
 import { notify } from '../../../store/useNoticeStore';
 import type { ImportedProgram } from '../types';
 import type { SpecSectionId } from '../../../spec/types';
+import type { LadderProgram } from '../../core/ladder';
+import { panelTags, programRoles } from '../hmiRoles';
+import type { UpgradeRoles } from '../../../hmi/engine/upgradeHmi';
 
 /**
  * Make the imported program the open project: PLC and modules, the I/O list (replaced), the program
@@ -58,3 +61,22 @@ async function keepFile(text: string, importedAt: string): Promise<void> {
 }
 
 export const upgradeOriginal = (drafts: Record<string, unknown>) => (drafts[UPGRADE_KEY] as UpgradeOriginal | undefined) ?? null;
+
+/** The upgraded program's own addresses for the HMI's functions, or null when the project is not an upgrade. */
+export function projectUpgradeRoles(drafts: Record<string, unknown>, ladder: LadderProgram): UpgradeRoles | null {
+  const orig = upgradeOriginal(drafts);
+  if (!orig) return null;
+  const roles = programRoles(ladder, new Map(Object.entries(orig.names).map(([a, n]) => [a.toUpperCase(), n])));
+  const panel = panelTags(roles);
+  // The exact panel Start / Stop changes are in the HMI's PLC change list; the rest is said as the importer found it.
+  const missing = roles.missing.filter((m) => !(panel.parallelTo.length && /in parallel/i.test(m)));
+  return { ...panel, alarms: roles.alarms.map((a) => ({ ...a, text: alarmText(a, ladder) })), missing };
+}
+
+/** An alarm known only by its tag ("Alm[0].3") is named by the comment of the rung that sets it ("Alarm 3: Pallet jam"). */
+function alarmText(a: { address: string; nickname: string; text: string }, ladder: LadderProgram): string {
+  if (a.text !== a.nickname && /\s/.test(a.text)) return a.text;
+  const setter = ladder.rungs.find((r) => r.comment.trim() && r.outputs.some((o) => (o.type === 'OUT' || o.type === 'SET') && o.address.toUpperCase() === a.address.toUpperCase()));
+  const said = setter?.comment.replace(/^original:\s*\S+\s*[—-]\s*/i, '').replace(/^alarm\s*\d*\s*:\s*/i, '').split(/[.\n]/)[0].trim();
+  return said ? said[0].toUpperCase() + said.slice(1) : a.text;
+}
