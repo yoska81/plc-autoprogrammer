@@ -72,17 +72,16 @@ await test('units: kW to standard HP, mm² to AWG, supply to 480 V 60 Hz', () =>
   assert.equal(targetSupply({ volts: 380, hz: 50, phases: 3, text: '' }, { region: 'Canada', supply: '600VAC-3PH', controlVolts: '24VDC' }).supply, '600VAC-3PH');
 });
 
-await test('GB / IEC tags become NFPA tags, numbered per kind', () => {
-  const t = naTags(CHINESE_CONVEYOR.components);
-  assert.equal(t.get('QS1'), 'DS1');
+await test('GB / IEC tags become NFPA 79 / JIC tags (numbers kept where a group has them)', () => {
+  const t = naTags(CHINESE_CONVEYOR.components, CHINESE_CONVEYOR);
+  assert.equal(t.get('QS1'), 'DISC1');
   assert.equal(t.get('QF2'), 'CB2');
   assert.equal(t.get('KM3'), 'K3');
-  assert.equal(t.get('FR1'), 'OL1');
-  assert.equal(t.get('SB1'), 'ES1');
-  assert.equal(t.get('SB2'), 'PB1');
-  assert.equal(t.get('HL2'), 'PL2');
+  assert.equal(t.get('SB1'), 'ESTOP1');
+  assert.equal(t.get('SB2'), 'PB2', 'the push buttons keep their numbers');
+  assert.equal(t.get('HL2'), 'LT2');
   assert.equal(t.get('B1'), 'PE1');
-  assert.equal(t.get('SP1'), 'PRS1');
+  assert.equal(t.get('SP1'), 'PSW1');
   assert.equal(t.get('YV1'), 'SOL1');
   assert.equal(t.get('PLC'), 'PLC');
 });
@@ -342,7 +341,7 @@ await test('relay logic moved into a new PLC: field devices become I/O, relays a
   assert.ok(c.circuits.every((x) => x.becomes === 'program'));
   const pump = c.circuits.find((x) => x.circuit.output === 'KM2')!.text;
   assert.match(pump, /^K2: Pump runs 5 s after/);
-  assert.match(pump, /setting: CR1 on-delay 5 s/, 'timer setting kept with the new tag');
+  assert.match(pump, /setting: TR1 on-delay 5 s/, 'timer setting kept with the new tag (KT1 → TR1)');
   assert.ok(c.questions.some((q) => /no PLC/.test(q.text) && /new PLC/.test(q.text)));
   seedSampleProject();
   applyExistingMachine(RELAY_CONVEYOR, c);
@@ -448,9 +447,12 @@ await test('cn-rollformer-01 fixture (fixtures/import): facts from its expected.
   assert.deepEqual(path('U1 MI3')!.contacts, ['KA2', 'KA3']);
   assert.equal(facts.signals.length, 28);
   assert.ok(facts.safety.stoFinding && facts.safety.claimed.test('Cat 3 / PL d'));
-  // the reading written from these facts scores 100 % on the fixture's own expected.json
+  // the reading written from these facts scores 100 % on the fixture's own expected.json, but for the tags
   const s = scoreReading(normalizeMachine(CN_ROLLFORMER_01_READING), facts);
-  assert.equal(s.percent, 100, scoreText(s));
+  assert.ok(s.parts.filter((p) => p.label !== 'Tags').every((p) => p.found === p.total), scoreText(s));
+  // NFPA 79 / JIC tags as the fixture expects them, except the motor names: the design engine calls motors M1…
+  // (JIC: motors MTR1…, their starters M1…), so KM1 stays K1 and the motors M1–M3
+  assert.deepEqual(s.parts.find((p) => p.label === 'Tags')!.misses, ['KM1 → M2 (got K1)', 'M1 → MTR1', 'M2 → MTR2', 'M3 → MTR3']);
   // the real DXF (sheets 2, 3, 5, 6 of 8): numbered and named from the title blocks
   const text = dxfToText(readFileSync(new URL('../../fixtures/import/cn-rollformer-01/drawings.dxf', import.meta.url), 'utf8'), 'drawings.dxf');
   const heads = text.split('\n').filter((l) => /^--- Sheet/.test(l));
@@ -464,8 +466,8 @@ await test('cn-rollformer-01 converted: claimed Cat 3 / PL d not met (no STO), r
   const m = normalizeMachine(CN_ROLLFORMER_01_READING);
   const c = convertMachine(m);
   const sto = c.recommendations.find((r) => /Safe Torque Off/.test(r.text))!.text;
-  assert.match(sto, /claim Cat 3 \/ PL d, but the safety relay SR1 Pilz PNOZ s3/);
-  assert.match(sto, /VFD1 \(no STO[^)]*CR1[^)]*\)\), U2 \(STO not wired; stops only by single CR4 contact/);
+  assert.match(sto, /claim Cat 3 \/ PL d, but the safety relay MSR1 Pilz PNOZ s3/);
+  assert.match(sto, /VFD1 \(no STO[^)]*CR1[^)]*\)\), SD1 \(STO not wired; stops only by single CR4 contact/);
   assert.match(sto, /the claimed Cat 3 \/ PL d is not met/);
   assert.deepEqual(c.motors.map((x) => [x.tag, x.hp]), [['M1', 7.5], ['M2', 3]]);
   assert.equal(c.supply, '480VAC-3PH');
@@ -483,14 +485,14 @@ await test('cn-rollformer-01 converted: claimed Cat 3 / PL d not met (no STO), r
   assert.match(c.io.find((p) => p.address === 'U2 DO3')!.description, /cut/);
   // the safety relay contact in the pump circuit stays hardwired; the safety circuit as drawn goes into the description
   const pump = c.circuits.find((x) => x.circuit.output === 'KM1')!;
-  assert.deepEqual(pump.hardwired, ['SR1 13-14']);
-  assert.match(pump.text, /stays hardwired in the coil circuit, not through the PLC: SR1 13-14/);
-  assert.ok(c.recommendations.some((r) => r.section === 'safety' && /stay hardwired, not through the PLC/.test(r.text) && /SR1 23-24 removes 24VS/.test(r.text)));
+  assert.deepEqual(pump.hardwired, ['MSR1 13-14']);
+  assert.match(pump.text, /stays hardwired in the coil circuit, not through the PLC: MSR1 13-14/);
+  assert.ok(c.recommendations.some((r) => r.section === 'safety' && /stay hardwired, not through the PLC/.test(r.text) && /MSR1 23-24 removes 24VS/.test(r.text)));
   seedSampleProject();
   applyExistingMachine(m, c);
   const safety = useSpecStore.getState().sections.safety;
   assert.match(safety, /is not met/);
-  assert.match(safety, /Safety circuit as drawn \(kept, new tags\): ES1, ES2 and LS\d in both channels of SR1/);
+  assert.match(safety, /Safety circuit as drawn \(kept, new tags\): ESTOP1, ESTOP2 and LS-GD1 in both channels of MSR1/);
   const kept = functionKept(m, c, collectProject()).filter((k) => k.kind === 'circuit');
   assert.equal(kept.length, 24);
   assert.ok(kept.every((k) => k.status !== 'missing'), kept.filter((k) => k.status === 'missing').map((k) => `${k.original}: ${k.note}`).join('\n'));
@@ -533,16 +535,16 @@ await test('relay logic kept: C1–C11 as ladder rungs with the new tags, every 
   assert.equal(logic!.supply, '24VDC');
   assert.equal(logic!.rungs.length, 22, 'every relay circuit (the cut command and the E-CAM stay in the servo drive)');
   const rung = (coil: string) => logic!.rungs.find((r) => r.path.some((e) => e.t === 'coil' && e.tag === coil))!;
-  // C1: safety relay contact, stop, start ∥ seal-in, overload, contactor coil
+  // C1: safety relay contact, stop, start ∥ seal-in, the overload of the pump M2 (OL2), contactor coil
   assert.deepEqual(rung('K1').path, [
-    { t: 'contact', tag: 'SR1', nc: false, terms: '13-14', kind: 'safety' }, { t: 'contact', tag: 'PB2', nc: true, kind: 'pb' },
+    { t: 'contact', tag: 'MSR1', nc: false, terms: '13-14', kind: 'safety' }, { t: 'contact', tag: 'PB2', nc: true, kind: 'pb' },
     { t: 'branch', paths: [[{ t: 'contact', tag: 'PB1', nc: false, kind: 'pb' }], [{ t: 'contact', tag: 'K1', nc: false, terms: '13-14', kind: 'relay' }]] },
-    { t: 'contact', tag: 'OL1', nc: true, terms: '95-96', kind: 'ol' }, { t: 'coil', tag: 'K1', kind: 'contactor' }]);
+    { t: 'contact', tag: 'OL2', nc: true, terms: '95-96', kind: 'ol' }, { t: 'coil', tag: 'K1', kind: 'contactor' }]);
   assert.equal(rung('K1').id, 'C1');
   assert.equal(rung('K1').description, 'HYDRAULIC PUMP');
-  assert.deepEqual(rung('CR11').path.at(-1), { t: 'coil', tag: 'CR11', kind: 'timer-on', preset: '2 s' }, 'the cut watchdog keeps its preset');
+  assert.deepEqual(rung('TR1').path.at(-1), { t: 'coil', tag: 'TR1', kind: 'timer-on', preset: '2 s' }, 'the cut watchdog keeps its preset');
   assert.deepEqual(rung('VFD1').path.at(-1), { t: 'coil', tag: 'VFD1', kind: 'drive-input', terms: 'MI1' });
-  assert.ok(rung('H7CX').path.some((e) => e.t === 'coil' && e.kind === 'counter'));
+  assert.ok(rung('CTR1').path.some((e) => e.t === 'coil' && e.kind === 'counter'), 'the batch counter H7CX → CTR1');
   // every tag in the rungs is a device with its new tag (buttons and switches read only from the I/O list included)
   const tags = new Set(logic!.devices.map((d) => d.tag));
   for (const r of logic!.rungs) for (const e of r.path.flatMap((x) => (x.t === 'branch' ? x.paths.flat() : [x])) as Exclude<RelayEl, { t: 'branch' }>[]) assert.ok(tags.has(e.tag), `${r.id}: ${e.tag} has no device`);

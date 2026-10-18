@@ -3,7 +3,7 @@
  * cn-rollformer-01): signals, relays, the relay logic coil by coil, motors, motion and safety (including the
  * STO finding). Used by the tests and to score a real AI reading of the fixture's files.
  */
-import { stoFinding } from './convert';
+import { convertMachine, ioOnlyDevices, stoFinding } from './convert';
 import type { ExistingMachine } from './types';
 
 export interface ExpectedFacts {
@@ -18,6 +18,8 @@ export interface ExpectedFacts {
   relayLogic: { id: string; coil: string; contacts: string[]; sealIn: string | null }[];
   motion: { axisDrive: string; encoder: string; mode: RegExp; cutLength: [number, number] };
   safety: { estops: string[]; guards: string[]; safetyRelay: string; claimed: RegExp; stoFinding: boolean };
+  /** Expected North-America device tags, old → new (NFPA 79 / JIC), when the fixture gives them. */
+  tags?: [string, string][];
 }
 
 export interface ScorePart { label: string; found: number; total: number; misses: string[] }
@@ -69,6 +71,12 @@ export function scoreReading(m: ExistingMachine, f: ExpectedFacts): Score {
   ]);
   // rounded down, and never 100 % while anything is missing
   const raw = Math.floor(parts.reduce((a, p) => a + (p.total ? p.found / p.total : 1), 0) / parts.length * 100);
+  // device tags of the conversion to North America (only devices the reading has)
+  if (f.tags?.length) {
+    const conv = convertMachine(m);
+    const have = new Set([...m.components, ...ioOnlyDevices(m)].map((c) => c.tag));
+    part('Tags', f.tags.filter(([o]) => have.has(o) || m.motors.some((x) => x.tag === o)).map(([o, n]): [string, boolean] => [`${o} → ${n}${conv.tags.get(o) && conv.tags.get(o) !== n ? ` (got ${conv.tags.get(o)})` : ''}`, conv.tags.get(o) === n]));
+  }
   const percent = parts.some((p) => p.found < p.total) ? Math.min(raw, 99) : raw;
   return { parts, percent };
 }
@@ -160,6 +168,20 @@ export function factsFromExpected(e: ExpectedJson): ExpectedFacts {
     }
     void COIL;
   }
+  // "QF0->DISC1, QF1-QF5->CB1-CB5, SB0/SB10->ESTOP1/ESTOP2, KM1->M2 (pump starter)": old → new pairs
+  const tagNote = (e.naNotes ?? []).find((n) => /device tags/i.test(n.topic))?.change ?? '';
+  const tags: [string, string][] = [];
+  const expand = (spec: string): string[] => {
+    const range = spec.match(/^([A-Z-]+)(\d+)-([A-Z-]+)(\d+)$/);
+    if (range && range[1] === range[3]) return Array.from({ length: Number(range[4]) - Number(range[2]) + 1 }, (_, i) => `${range[1]}${Number(range[2]) + i}`);
+    return spec.split('/');
+  };
+  for (const pair of tagNote.replace(/^[^:]*:\s*/, '').split(/,\s*/)) {
+    const x = pair.match(/^([A-Z0-9/-]+)->([A-Z0-9/-]+)/);
+    if (!x) continue;
+    const from = expand(x[1]), to = expand(x[2]);
+    if (from.length === to.length) from.forEach((o, i) => { if (/\d/.test(o)) tags.push([o, to[i]]); });
+  }
   const safetyText = e.safety.map((x) => `${x.category ?? ''} ${x.pl ?? ''}`).join(' ');
   const noSto = (e.naNotes ?? []).some((n) => /no STO/i.test(n.current));
   return {
@@ -179,5 +201,6 @@ export function factsFromExpected(e: ExpectedJson): ExpectedFacts {
       claimed: /3/.test(safetyText) && /d/i.test(safetyText) ? /cat\s*3|pl\s*d/i : /cat|pl/i,
       stoFinding: noSto,
     },
+    ...(tags.length ? { tags } : {}),
   };
 }

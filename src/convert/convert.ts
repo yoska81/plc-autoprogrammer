@@ -62,32 +62,83 @@ export function targetSupply(drawn: ExistingMachine['supplyDrawn'], target: Conv
 
 /** NFPA-style tag prefix for a device category. */
 const PREFIX: Partial<Record<CatalogCategory, string>> = {
-  breaker: 'CB', disconnect: 'DS', fuse: 'FU', contactor: 'K', overload: 'OL', motorProtector: 'MP', vfd: 'VFD', relay: 'CR',
-  safetyRelay: 'SR', powerSupply: 'PS', terminal: 'TB', pushbutton: 'PB', estop: 'ES', pilotLight: 'PL', selector: 'SS',
-  stackLight: 'SL', plc: 'PLC', plcModule: 'PLC', hmi: 'HMI', solenoidValve: 'SOL', fan: 'FAN', enclosure: 'ENC',
+  breaker: 'CB', disconnect: 'DISC', fuse: 'FU', contactor: 'K', overload: 'OL', motorProtector: 'MP', vfd: 'VFD', relay: 'CR',
+  safetyRelay: 'MSR', powerSupply: 'PS', terminal: 'TB', pushbutton: 'PB', estop: 'ESTOP', pilotLight: 'LT', selector: 'SS',
+  stackLight: 'SL', plc: 'PLC', plcModule: 'PLC', hmi: 'HMI', solenoidValve: 'SOL', fan: 'FAN', enclosure: 'ENCL',
 };
 
-/** A sensor's prefix from what it is (limit switch, photo-eye, pressure switch, proximity). */
+/** A sensor's prefix from what it is: guard switch, photo-eye, proximity, pressure switch, else a limit switch. */
 function sensorPrefix(c: DrawnComponent): string {
   const d = `${c.tag} ${c.description}`.toLowerCase();
-  if (/press|sp\d/.test(d)) return 'PRS';
+  if (/guard|door|gate|防护/.test(d)) return 'LS-GD';
+  if (/press|sp\d/.test(d)) return 'PSW';
   if (/photo|光电|eye|beam/.test(d)) return 'PE';
-  if (/prox|接近|inductive|capacitive/.test(d)) return 'PX';
+  if (/prox|接近|inductive|capacitive/.test(d)) return 'PRS';
   return 'LS';
 }
 
-/** Old → new tag for every component (numbered per prefix in drawing order). */
-export function naTags(components: DrawnComponent[]): Map<string, string> {
-  const count = new Map<string, number>();
+/** The prefix of a device the catalog calls "relay" or "other": timers, counters, drives' parts. */
+function otherPrefix(c: DrawnComponent, axisDrives: Set<string>): string | undefined {
+  const d = `${c.tag} ${c.description}`;
+  if (c.category === 'relay') return /^KT\d|timer|time relay|时间继电器/i.test(d) ? 'TR' : 'CR';
+  if (c.category !== 'other') return undefined;
+  if (axisDrives.has(c.tag) || /servo drive|伺服驱动/i.test(d)) return 'SD';
+  if (/counter|计数|H7CX/i.test(d)) return 'CTR';
+  if (/braking resistor|制动电阻/i.test(d)) return 'BR';
+  if (/encoder|编码器/i.test(d)) return 'ENC';
+  if (/transformer|变压器|^TC\d/i.test(d)) return 'XFMR';
+  return undefined;
+}
+
+/**
+ * Old → new tag for every component, NFPA 79 / JIC style (QF1 → CB1, KA0 safety relay → MSR1, KT1 → TR1,
+ * HL → LT, SB → PB / ESTOP, SQ → LS / PE / PRS / LS-GD, U servo drive → SD, encoder → ENC). A group keeps
+ * the drawing's numbers when it has several devices numbered from 1 (QF1, QF2, QF3, QF5 → CB1, CB2, CB3, CB5),
+ * else it is numbered in drawing order; an overload takes its motor's number (FR1 of the pump M2 → OL2).
+ */
+export function naTags(components: DrawnComponent[], m?: Pick<ExistingMachine, 'motors' | 'axes'> & Partial<Pick<ExistingMachine, 'circuits'>>): Map<string, string> {
   const out = new Map<string, string>();
   const num = (t: string) => Number(t.match(/\d+/)?.[0] ?? 0);
-  for (const c of [...components].sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }) || num(a.tag) - num(b.tag))) {
-    if (out.has(c.tag)) continue;
-    const prefix = c.category === 'sensor' ? sensorPrefix(c) : PREFIX[c.category];
+  const axisDrives = new Set((m?.axes ?? []).map((a) => a.driveTag));
+  const panelMotors = (m?.motors ?? []).filter((x) => x.kind !== 'servo');
+  const groups = new Map<string, DrawnComponent[]>();
+  const sorted = [...components].sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }) || num(a.tag) - num(b.tag));
+  for (const c of sorted) {
+    if (out.has(c.tag) || [...groups.values()].some((g) => g.some((x) => x.tag === c.tag))) continue;
+    const prefix = c.category === 'sensor' ? sensorPrefix(c) : otherPrefix(c, axisDrives) ?? PREFIX[c.category];
     if (!prefix) { out.set(c.tag, c.tag); continue; }
-    const n = (count.get(prefix) ?? 0) + 1;
-    count.set(prefix, n);
-    out.set(c.tag, prefix === 'PLC' || prefix === 'HMI' || prefix === 'ENC' ? (n === 1 ? prefix : `${prefix}${n}`) : `${prefix}${n}`);
+    groups.set(prefix, [...(groups.get(prefix) ?? []), c]);
+  }
+  for (const [prefix, list] of groups) {
+    if (prefix === 'PLC' || prefix === 'HMI') { list.forEach((c, i) => out.set(c.tag, i ? `${prefix}${i + 1}` : prefix)); continue; }
+    // an overload is named after its motor (the motor number), when each finds its own
+    if (prefix === 'OL' && panelMotors.length) {
+      // its motor: named with it, or the motor of the contactor in its coil circuit ("Hydraulic pump, DOL on KM1"), or the same words
+      const withContactor = (ol: string) => (m?.circuits ?? []).filter((k) => k.devices.includes(ol)).flatMap((k) => k.devices);
+      const motorOf = list.map((c) => panelMotors.findIndex((x) => x.description.includes(c.tag) || withContactor(c.tag).some((k) => k !== c.tag && new RegExp(`\\b${k}\\b`).test(x.description)))).map((i, k) => (i >= 0 ? i : panelMotors.findIndex((x) => similarity(x.description, list[k].description) >= 0.5)));
+      if (motorOf.every((i) => i >= 0) && new Set(motorOf).size === motorOf.length) {
+        list.forEach((c, k) => out.set(c.tag, `OL${num(panelMotors[motorOf[k]].tag) || motorOf[k] + 1}`));
+        continue;
+      }
+    }
+    // the two solenoids of one valve ("Shear down valve", "Shear up valve") are SOL1A and SOL1B
+    if (prefix === 'SOL') {
+      const OPPOSITE = /\b(down|up|extend|retract|open|close|forward|reverse|in|out|on|off|a|b|下|上|伸|缩|开|关)\b|[下上伸缩开关]/gi;
+      const key = (c: DrawnComponent) => c.description.toLowerCase().replace(/\(.*?\)/g, '').replace(OPPOSITE, '').replace(/\s+/g, ' ').trim();
+      let n = 0;
+      const done = new Set<string>();
+      for (const c of list) {
+        if (done.has(c.tag)) continue;
+        const pair = list.filter((x) => !done.has(x.tag) && key(x) === key(c));
+        n++;
+        pair.forEach((x, i) => { out.set(x.tag, pair.length === 2 ? `SOL${n}${'AB'[i]}` : pair.length > 2 ? `SOL${n + i}` : `SOL${n}`); done.add(x.tag); });
+        if (pair.length > 2) n += pair.length - 1;
+      }
+      continue;
+    }
+    const nums = list.map((c) => num(c.tag));
+    const keep = list.length > 1 && nums.every((n) => n >= 1) && new Set(nums).size === nums.length;
+    list.forEach((c, i) => out.set(c.tag, `${prefix}${keep ? nums[i] : i + 1}`));
   }
   return out;
 }
@@ -414,7 +465,7 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   const recommendations: Conversion['recommendations'] = [];
   // North America renames the devices (QF1 → CB1…); an IEC target keeps the drawing's own tags
   const na = target.region === 'US' || target.region === 'Canada';
-  const tags = na ? naTags([...m.components, ...ioOnlyDevices(m)]) : new Map(m.components.map((c) => [c.tag, c.tag]));
+  const tags = na ? naTags([...m.components, ...ioOnlyDevices(m)], m) : new Map(m.components.map((c) => [c.tag, c.tag]));
   const sto = stoFinding(m, tags);
   if (sto) {
     recommendations.push({ section: 'safety', text: sto });
