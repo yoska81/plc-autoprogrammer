@@ -1,6 +1,20 @@
 # Dev 2 — program & simulation (`claude/isa-dev-program-sim`)
 
-Current: **Unitronics as a PLC brand, end to end** (manager request) — draft PR → `claude/optimistic-maxwell-6nfcs6`. Sealing head (#64, #67) merged. No blockers (real-AI scores still wait for an API key in the environment settings).
+Current: **the user's roll former (cn-rollformer-01), full drawn sequence on the simulator** — draft PR #88 → `claude/optimistic-maxwell-6nfcs6`. Motion slice and troubleshooter slice 2 are on the same branch. No blockers (real-AI scores still wait for an API key in the environment settings).
+
+## Roll former: the user's machine (coordinator + side manager; Debug 1's converted I/O at 8250d4f)
+
+- Fixture `src/plc/engine/__fixtures__/cnRollformerIo.ts`: Debug 1's 35 converted points. The E-stops and the guard are on the safety relay; Safety OK goes into the PLC; the KT1 cut watchdog is written "(watchdog 2 s)".
+- Rules (program.ts / sequence.ts / content.ts):
+  - pump and line each have their own Start / Stop;
+  - line permissives: pump running, U2 ready (SON from the selector), no alarm, material present (entry sensor), U1 healthy, no run-out end;
+  - U1 is one drive: MI1 forward, MI2 reverse, MI3 jog speed. Jog forward / reverse are exclusive and work only with the line stopped;
+  - U2 is one axis: SON from the selector, CAM only while running;
+  - the cut follows Debug 1's cut rule. U2 DO3 while running starts it (Manual cut while stopped does the same): shear down holds until the down limit, then up until the up limit. The 2 s watchdog trips the line;
+  - the external batch counter stops the line;
+  - Reset is the general Reset;
+  - E-stop drops everything; releasing it plus Reset restarts nothing.
+- Test `rollformer.test.ts` runs closed loop in the side manager's order: pump → permissives → jog → manual cut → DO3 cut (YV1 → SQ1 → YV2 → SQ2) → line stop → KT1 trip / Reset → batch stop → E-stop / Reset / no restart / Start → U2 alarm / Reset.
 
 ## Motion slice: one CLICK PLUS axis + encoder (coordinator, after #88)
 
