@@ -136,6 +136,20 @@ assert.deepEqual(gaps, [], 'no design gaps');
   const load4 = Number(/load (\d+\.\d) A/.exec(r4.design.components.find((c) => c.tag === 'PS1')!.function)![1]);
   const load2 = Number(/load (\d+\.\d) A/.exec(r.design.components.find((c) => c.tag === 'PS1')!.function)![1]);
   assert.ok(load4 >= load2 + 1.1, `drive control current in the 24 V load (${load2} → ${load4} A)`);
+  // Two big 460 V axes: their 24 V control current steps the 24 V supply up (sized from the same load, x1.25).
+  const io2 = [...io, ...(['pulse', 'direction', 'servo on'] as const).map((d, i) => ({ id: `ax2${i}`, description: `Axis 2 ${d}`, type: 'output', category: 'Servo/Axis' }) as IOPoint)];
+  const addr2 = resolveAddresses(profile, cpu, io2, slots);
+  const r2 = generateDefaultDesign({ io: io2, addresses: addr2, spec: 'Axis 1 servo 7.5 kW. Axis 2 servo 7.5 kW.', inputs: inputs480, plc, modules, region: 'US', getPart, hmiPartNumber: null, analog, now: '2026-01-01T00:00:00.000Z', projectName: 'servo480x2' });
+  const drives2 = r2.design.components.filter((c) => getPart(c.partNumber)?.category === 'servoDrive');
+  assert.equal(drives2.length, 2, `two drives (${drives2.map((c) => c.partNumber).join(', ')})`);
+  const ctlA = drives2.reduce((a, c) => a + (Number(getPart(c.partNumber)!.ratings.controlInputAmps) || ({ 'SV2A-4550': 1.91, 'SV2A-4750': 1.91, 'SV2A-4F00': 4.26 } as Record<string, number>)[c.partNumber] || 0), 0);
+  const ps2 = r2.design.components.find((c) => c.tag === 'PS1')!;
+  const load2x = Number(/load (\d+\.\d) A/.exec(ps2.function)![1]);
+  const out2 = Number(getPart(ps2.partNumber)!.ratings.outputAmps);
+  assert.ok(ctlA >= 3.8 && load2x >= load2 + ctlA - 0.1, `both drives' control current in the load (${drives2.map((c) => c.partNumber).join(', ')}: +${ctlA} A, load ${load2x} A)`);
+  assert.ok(out2 >= load2x * 1.25 - 0.01, `24 V supply ${ps2.partNumber} (${out2} A) sized for ${load2x} A x 1.25`);
+  if (process.env.SHOW) console.log(drives2.map((c) => c.partNumber), ps2.partNumber, out2, load2x);
+  assert.ok(out2 > Number(getPart(r.design.components.find((c) => c.tag === 'PS1')!.partNumber)!.ratings.outputAmps), 'a bigger supply than the 240 V design');
   // The calculations document counts the same current.
   const calc = calculations({ electrical: r4.design, info: { region: 'US' }, hmi: null } as unknown as ProjectSnapshot);
   assert.ok(calc.flatMap((c) => c.lines).some((l) => l.item.startsWith(`${d4!.tag} SV2A-4040`) && /1\.17 A/.test(l.value)), 'drive 24 V control current in the calculations');
