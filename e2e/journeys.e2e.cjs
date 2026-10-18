@@ -525,7 +525,15 @@ async function journey(browser, mc) {
     const ds = page.locator('tr[data-address^="DS"]').first();
     if (await ds.count()) {
       const box = ds.locator('input');
-      if (await box.count()) { await box.first().fill('42'); await ds.getByRole('button', { name: 'Write' }).click(); await page.waitForTimeout(800); if (!plc.state.log.some((l) => l.fc === 6 && l.value === 42)) problem(mc.key, 'online', 'DS write 42 not sent'); }
+      if (await box.count()) {
+        await box.first().fill('42'); await ds.getByRole('button', { name: 'Write' }).click(); await page.waitForTimeout(800);
+        if (!plc.state.log.some((l) => l.fc === 6 && l.value === 42)) problem(mc.key, 'online', 'DS write 42 not sent');
+        // A value the register cannot hold is refused with a plain message and never sent clamped.
+        const sent = plc.state.log.filter((l) => l.fc === 6).length;
+        await box.first().fill('70000'); await ds.getByRole('button', { name: 'Write' }).click(); await page.waitForTimeout(500);
+        if (!(await page.getByText(/70000 is outside what DS\d+ can hold/).count())) problem(mc.key, 'online', 'no message for an out-of-range DS value');
+        if (plc.state.log.filter((l) => l.fc === 6).length !== sent) problem(mc.key, 'online', 'an out-of-range DS value was sent');
+      }
     }
     await page.getByRole('button', { name: 'Live ladder' }).click();
     await page.waitForTimeout(800);
