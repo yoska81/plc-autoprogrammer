@@ -177,6 +177,18 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - The 12 V supplies and Omron timers/SSRs have no catalog equivalent yet.
   - The CHINT JXB footprints are unverified.
 
+## Servo systems: Allen-Bradley Kinetix 5100, Siemens SINAMICS V90, Inovance (imported)
+- **Kinetix 5100** (allenBradley.ts, 133 parts):
+  - 16 2198-E… drives (230/480 V): ratings and dimensions from KNX-TD003N, pulse input from 2198-UM004 (4 MHz line driver), SCCR 5 kA.
+  - 72 TLP motors (KNX-TD001J), with pairings from KNX-RM011D. TLP-B235-11K is paired with E4150 only: its 70 A peak exceeds E4075's 53.3 A.
+  - 45 continuous-flex cables (…-xxF). The standard cables were discontinued in May 2024.
+- **SINAMICS V90** (siemens.ts, 133 parts):
+  - 30 PN/PTI drives (200/400 V) from each part's Siemens datasheet. The PTI pulse input is 1 MHz line driver / 200 kHz optocoupler. The PN versions have no pulse input.
+  - 76 1FL6 motors (keyed or plain shaft, with or without brake) and 27 MOTION-CONNECT 300 cables, with pairings from catalog D33.
+  - The 4 new FSA drives are on the unverified list: their datasheets give no peak current.
+- **Inovance SV660P** (imported data): 27 MS1 motors. The 12 drives were left out because their part numbers would be assembled from a pattern.
+- **Delta ASDA-B3/A3:** not added. Delta's documents now sit behind a captcha; it was not bypassed, and third-party copies were not used.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.
