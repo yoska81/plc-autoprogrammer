@@ -684,6 +684,17 @@ await test('cn-rollformer-01: the safety relay is sized for its outputs (as draw
   assert.ok(safetyOutputCount(closest) >= 2 && safetyOutputCount(closest) < 6);
   assert.ok(now.differences.some((d) => /^Needs 6 safety outputs \(2 as drawn \(13-14, 23-24\) \+ 2 for the STO of each of VFD1, SD1\)/.test(d)), now.differences.join(' | '));
   assert.ok(convertMachine(m).questions.some((q) => q.section === 'safety' && /MSR1 needs 6 safety outputs/.test(q.text)));
+  // an unverified relay with all 6 outputs in the catalog: still to select, offered and named in the question
+  const loose = { ...closest, id: 'loose-test', partNumber: 'LOOSE-7', description: 'Safety relay 7 N.O.', verified: false, verify: 'PFHd as printed', ratings: { ...closest.ratings, safetyOutputs: '(7) N.O.', safetyOutputCount: 7 } };
+  ALL_PARTS.push(loose);
+  try {
+    const off = sr();
+    assert.equal(off.status, 'to-select');
+    assert.ok(off.alternatives.some((x) => x.partNumber === 'LOOSE-7'));
+    assert.ok(convertMachine(m).questions.some((q) => /LOOSE-7 has 7, but its ratings are not verified \(PFHd as printed\)/.test(q.text)));
+  } finally {
+    ALL_PARTS.splice(ALL_PARTS.indexOf(loose), 1);
+  }
   // with an expansion module its maker lists for that base (forUse) in the catalog, the conversion names it
   const stem = closest.partNumber.split(/[-\s.]/)[0];
   const exp = { ...closest, partNumber: 'EXP-TEST', family: undefined, description: 'Contact expansion module, 4 N.O. safety outputs', ratings: { safetyOutputs: '(4) N.O.', safetyOutputCount: 4, forUse: `Contact expansion for ${stem} base units` } };
@@ -735,6 +746,14 @@ await test('safety relay sizing: one unit with enough outputs first, else a base
   const one = sizeSafetyRelay([s3, lg5925, scr73], need, [s7, lg5929]);
   assert.equal(one.list[0].partNumber, 'SCR73-280005');
   assert.match(one.note, /^7 safety outputs for the 6 needed/);
+  // a safety function never gets an unverified part: a 7-output relay whose ratings aren't verified is offered, not chosen
+  const loose = { ...scr73, partNumber: 'SCR73-UNVERIFIED', verified: false, verify: 'PFHd 7.20E-05 as printed' } as CatalogPart;
+  const offered = sizeSafetyRelay([s3, lg5925, loose], need, [ug6929]);
+  assert.equal(offered.ok, false);
+  assert.equal(offered.unverified?.partNumber, 'SCR73-UNVERIFIED');
+  assert.match(offered.note, /SCR73-UNVERIFIED has them, but its ratings are not verified \(PFHd 7\.20E-05 as printed\): not chosen for a safety function/);
+  assert.equal(sizeSafetyRelay([s3, loose], need, [s7]).list[0].partNumber, '750103', 'a verified pair wins over an unverified single unit');
+  assert.equal(sizeSafetyRelay([lg5925], need, [{ ...lg5929, verified: false } as CatalogPart]).ok, false, 'nor an unverified expansion');
   // no single unit: the base that has a listed expansion is chosen, even with fewer outputs of its own
   const pair = sizeSafetyRelay([lg5925, s3], need, [s7, ug6929]);
   assert.equal(pair.list[0].partNumber, '750103');

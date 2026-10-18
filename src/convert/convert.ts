@@ -263,17 +263,31 @@ export const expands = (exp: CatalogPart, base: CatalogPart): boolean => {
  * The safety relay for the outputs needed: a single unit that has them all first (the smallest such), else
  * the base with the most outputs and an expansion module its maker lists for it (forUse), else a note.
  */
-export function sizeSafetyRelay(list: CatalogPart[], safety: { need: number; why: string }, pool: CatalogPart[] = ALL_PARTS): { list: CatalogPart[]; note: string; ok: boolean } {
+export function sizeSafetyRelay(list: CatalogPart[], safety: { need: number; why: string }, pool: CatalogPart[] = ALL_PARTS): { list: CatalogPart[]; note: string; ok: boolean; unverified?: CatalogPart } {
+  // a safety function is never given a part whose ratings are not verified: such a part is only offered
+  const verified = (p: CatalogPart) => p.verified === true;
+  const sure = sizeFrom(list.filter(verified), safety, pool.filter(verified));
+  if (sure.ok) return { ...sure, list: [...sure.list, ...list.filter((p) => !verified(p))] };
+  const any = sizeFrom(list, safety, pool);
+  const loose = any.ok ? [any.list[0], ...(any.expansion ? [any.expansion] : [])].find((p) => !verified(p)) : undefined;
+  if (!loose) return { ...sure, list: sure.list.length ? [...sure.list, ...list.filter((p) => !verified(p))] : any.list };
+  return {
+    list: [any.list[0], ...list.filter((p) => p !== any.list[0])], ok: false, unverified: loose,
+    note: `Needs ${safety.need} safety outputs (${safety.why}); ${loose.manufacturer} ${loose.partNumber} has them, but its ratings are not verified${loose.verify ? ` (${loose.verify})` : ''}: not chosen for a safety function`,
+  };
+}
+
+function sizeFrom(list: CatalogPart[], safety: { need: number; why: string }, pool: CatalogPart[]): { list: CatalogPart[]; note: string; ok: boolean; expansion?: CatalogPart } {
   const n = safetyOutputCount;
   const enough = (p: CatalogPart) => n(p) >= safety.need;
   const base = list.filter((p) => !isExpansion(p)).sort((a, b) => Number(enough(b)) - Number(enough(a)) || (enough(a) ? n(a) - n(b) : n(b) - n(a)));
   const sorted = [...base, ...list.filter(isExpansion)];
-  const have = n(sorted[0]);
-  if (have >= safety.need) return { list: sorted, note: `${have} safety outputs for the ${safety.need} needed (${safety.why})`, ok: true };
+  const have = sorted.length ? n(sorted[0]) : 0;
+  if (sorted.length && have >= safety.need) return { list: sorted, note: `${have} safety outputs for the ${safety.need} needed (${safety.why})`, ok: true };
   // the bases that take an expansion, most outputs first; the first that reaches the count with the smallest module
   for (const b of base.filter((p) => n(p) === have).concat(base.filter((p) => n(p) !== have))) {
     const exp = pool.filter((p) => p.category === 'safetyRelay' && isExpansion(p) && n(p) > 0 && expands(p, b) && n(b) + n(p) >= safety.need).sort((x, y) => n(x) - n(y))[0];
-    if (exp) return { list: [b, ...sorted.filter((p) => p !== b)], note: `Needs ${safety.need} safety outputs (${safety.why}): ${n(b)} here + expansion ${exp.manufacturer} ${exp.partNumber} (${n(exp)})`, ok: true };
+    if (exp) return { list: [b, ...sorted.filter((p) => p !== b)], note: `Needs ${safety.need} safety outputs (${safety.why}): ${n(b)} here + expansion ${exp.manufacturer} ${exp.partNumber} (${n(exp)})`, ok: true, expansion: exp };
   }
   return { list: sorted, note: `Needs ${safety.need} safety outputs (${safety.why}); the closest has ${have}, and the catalog has no expansion its maker lists for it`, ok: false };
 }
@@ -295,6 +309,9 @@ export function safetyOutputsNeeded(m: ExistingMachine, stoDrives: string[]): { 
   const why = [drawn.size ? `${drawn.size} as drawn (${[...drawn].join(', ')})` : '', stoDrives.length ? `2 for the STO of each of ${stoDrives.join(', ')}` : ''].filter(Boolean).join(' + ');
   return { need, drawn: [...drawn], why };
 }
+
+/** Parts of a safety function: never matched to a part whose ratings are not verified. */
+const SAFETY_PARTS = new Set<CatalogCategory>(['safetyRelay', 'estop']);
 
 export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTarget, hp?: number, safety?: { need: number; why: string }): PartMatch {
   const r = ratingsOf(c);
@@ -321,10 +338,17 @@ export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTar
     // too few outputs, and no listed expansion: not an equivalent, the user picks (the closest ones offered)
     if (!sized.ok) {
       return { oldTag: c.tag, newTag, from, to: null, alternatives: sized.list.slice(0, 5), differences: [sized.note, REVALIDATE], status: 'to-select',
-        reason: `No catalog safety relay has the ${safety.need} safety outputs needed (${safety.why}), alone or with an expansion module its maker lists for it. Pick one with ${safety.need} outputs, or a base unit and its expansion.` };
+        reason: sized.unverified
+          ? `${sized.unverified.manufacturer} ${sized.unverified.partNumber} would have the ${safety.need} safety outputs needed, but its ratings are not verified, and a safety function needs a verified part. Check it against the maker's datasheet, or pick another.`
+          : `No catalog safety relay has the ${safety.need} safety outputs needed (${safety.why}), alone or with an expansion module its maker lists for it. Pick one with ${safety.need} outputs, or a base unit and its expansion.` };
     }
     list.splice(0, list.length, ...sized.list);
     extra.push(sized.note);
+  }
+  // a safety function never gets a part whose ratings are not verified: offered, the user picks
+  if (SAFETY_PARTS.has(c.category) && list[0].verified !== true) {
+    return { oldTag: c.tag, newTag, from, to: null, alternatives: list.slice(0, 5), differences: [...extra, `${list[0].manufacturer} ${list[0].partNumber}: ratings not verified${list[0].verify ? ` (${list[0].verify})` : ''}`, REVALIDATE], status: 'to-select',
+      reason: `The closest, ${list[0].manufacturer} ${list[0].partNumber}, has ratings that are not verified, and a safety function needs a verified part. Check it against the maker's datasheet, or pick another.` };
   }
   const [to, ...alternatives] = list;
   const listing = to.ratings.ul ? `maker's listing: UL ${String(to.ratings.ul).replace(/^UL\s*/i, '')}` : 'listing: see the maker\'s data';
@@ -608,7 +632,8 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   });
   const srPick = parts.find((x) => x.from.category === 'safetyRelay' && x.status === 'to-select');
   if (srPick && srOutputs.need) {
-    questions.push({ text: `The safety relay ${srPick.newTag} needs ${srOutputs.need} safety outputs (${srOutputs.why}), and no catalog relay has that many, alone or with an expansion module its maker lists for it. Which safety relay (or base unit + expansion) should the new design use?`, section: 'safety', assumption: `A safety relay with ${srOutputs.need} safety outputs, or a base unit with a listed contact expansion` });
+    const loose = srPick.alternatives.find((x) => x.verified !== true && safetyOutputCount(x) >= srOutputs.need);
+    questions.push({ text: `The safety relay ${srPick.newTag} needs ${srOutputs.need} safety outputs (${srOutputs.why}), and no verified catalog relay has that many, alone or with an expansion module its maker lists for it.${loose ? ` ${loose.manufacturer} ${loose.partNumber} has ${safetyOutputCount(loose)}, but its ratings are not verified${loose.verify ? ` (${loose.verify})` : ''}.` : ''} Which safety relay (or base unit + expansion) should the new design use?`, section: 'safety', assumption: `A safety relay with ${srOutputs.need} safety outputs, or a base unit with a listed contact expansion` });
   }
   const circuits = convertCircuits(m, tags, logic);
   const hardwired = circuits.filter((c) => c.hardwired.length);
