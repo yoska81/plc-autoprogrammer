@@ -21,6 +21,12 @@ export interface TerminalCheck {
   meter: Meter;
   /** The expected reading in words and numbers, e.g. '20.4-28.8 VDC', '< 1 VDC', 'open', '4-20 mA proportional to distance'. */
   expected: string;
+  /**
+   * The terminal pin pairs measured, in the wire list's spelling (TAG:PIN without the tag): CLICK 'X001'/'C1'/'+V',
+   * sensor 'BN'/'BU'/'BK'/'WH', drive 'DI1'/'DCM'/'R1O', relay '13'/'14', coil 'A1'/'A2'. One pair per measurement
+   * ('L1-L2, L2-L3, L1-L3' gives three). Absent when the reading is not between terminals (a display value).
+   */
+  pins?: [string, string][];
   note?: string;
 }
 
@@ -31,6 +37,20 @@ export interface Indicator {
   /** Its state: 'on green', 'flashing red 1 Hz', 'off', 'shows oc'. */
   state: string;
   meaning: string;
+}
+
+/**
+ * Terminals the device connects internally in a state, as its manual / terminal diagram shows them: a drive relay
+ * output (R1O-R1C when faulted per the manual), a safety relay output 13-14 when safety OK, a contactor aux 13-14 when
+ * energized, a PNP sensor BN-BK when the target is present. The wiring-path engine follows a path through the device
+ * only along these.
+ */
+export interface InternalPair {
+  a: string;
+  b: string;
+  /** Device state in which a and b are connected: 'energized', 'fault', 'safety OK', 'target present', 'always'. */
+  when: string;
+  note?: string;
 }
 
 /** One common fault: how it shows, how to confirm it, the fix. */
@@ -69,8 +89,10 @@ export interface DeviceFaultProfile {
   id: string;
   title: string;
   match: ProfileMatch;
-  /** Healthy readings, per state. */
+  /** Healthy readings, per state. Terminals as on the device and in the wire list: 'X001 to C1', 'BK to BU'. */
   normal: TerminalCheck[];
+  /** Terminals connected inside the device per state (from the maker's terminal diagram). */
+  pairs?: InternalPair[];
   indicators: Indicator[];
   faults: FaultEntry[];
   /** Maker manuals / datasheets the profile comes from. */
@@ -115,3 +137,4 @@ export function faultsMatching(p: CatalogPart, words: string, data: DeviceFaultP
     .filter((f) => ws.every((w) => `${f.code ?? ''} ${f.title} ${f.symptom} ${f.causes.join(' ')}`.toLowerCase().includes(w)))
     .map((fault) => ({ profile, fault })));
 }
+

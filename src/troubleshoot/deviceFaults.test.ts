@@ -30,6 +30,10 @@ for (const d of DEVICE_FAULT_DATA) {
       codes.add(f.code.toLowerCase());
     }
   }
+  for (const p of d.pairs ?? []) if (!p.a.trim() || !p.b.trim() || !p.when.trim() || p.a === p.b) bad.push(`${d.id}: bad pair ${p.a}-${p.b}`);
+  const pin = /^[A-Za-z0-9+\-/.]+$/;
+  for (const t of d.normal) for (const [a, b] of t.pins ?? []) if (!pin.test(a) || !pin.test(b) || a === b) bad.push(`${d.id}: pin pair '${a}'-'${b}' (plain pin names, as in the wire list)`);
+  for (const p of d.pairs ?? []) if (!pin.test(p.a) || !pin.test(p.b)) bad.push(`${d.id}: pair pins '${p.a}'-'${p.b}' (plain pin names)`);
   for (const t of d.normal) if (!t.terminals.trim() || !t.state.trim() || !t.expected.trim()) bad.push(`${d.id}: incomplete normal reading`);
 }
 assert.deepEqual(bad, []);
