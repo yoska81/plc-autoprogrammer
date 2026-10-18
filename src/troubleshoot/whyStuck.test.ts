@@ -115,8 +115,10 @@ const press = (sim: Simulator, model: ReturnType<typeof buildMachineModel>, faul
   for (const bad of [20, 400, -32768, 140.5, NaN]) assert.equal(settingChange(ds6, bad), null, `no change to ${bad}`);
   assert.equal(settingChange({ ...ds6, limits: undefined }, 140), null, 'no declared range: no live change');
   for (const point of ['C5', 'T1', 'CT1', 'X001', 'Y001', 'SC1', 'DD1', 'TD1']) assert.equal(settingChange({ ...ds6, point }, 140), null, `${point} is not a setting`);
-  await assert.rejects(applySettingChange({ ...ch, to: -32768 }, () => true, async () => { throw new Error('must not write'); }), /outside the range/);
-  await assert.rejects(applySettingChange({ ...ch, address: 'C5' }, () => true, async () => { throw new Error('must not write'); }), /not a setpoint register/);
+  const never = async () => { throw new Error('must not write'); };
+  for (const forged of [{ ...ch, to: -32768 }, { ...ch, address: 'C5' }, { ...ch, min: -40000, to: -32768 }, { address: 'DS6', from: 180, to: -32768, min: -32768, max: 32767, question: '?', live: true }])
+    await assert.rejects(applySettingChange(forged, () => true, never), /not made from the program's declared range/, `forged ${JSON.stringify(forged)}`);
+  assert.throws(() => { (ch as { to: number }).to = -32768; }, TypeError, 'a change is frozen');
   const writes: string[] = [];
   const fake = async (a: string, v: boolean | number) => { writes.push(`${a}=${v}`); };
   assert.equal(await applySettingChange(ch, () => false, fake), 'cancelled');

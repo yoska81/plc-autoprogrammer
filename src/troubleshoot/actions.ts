@@ -24,6 +24,9 @@ export interface SettingChange {
   live: boolean;
 }
 
+/** Changes made by settingChange (from the program's declared range): the only ones applySettingChange writes. */
+const ISSUED = new WeakSet<SettingChange>();
+
 /** Only setpoint registers: DS (16-bit integer) and DF (float). Never bits (C, T, CT, X, Y, SC) or other words. */
 const SETPOINT = /^(DS|DF)\d+$/;
 
@@ -36,10 +39,12 @@ export function settingChange(b: Blocker, to?: number): SettingChange | null {
   const value = to ?? b.limits.default;
   if (value === undefined || !valueOk(b.point, value, b.limits.min, b.limits.max)) return null;
   const live = /^DS/i.test(b.point) && isWritable(b.point);
-  return {
+  const c: SettingChange = Object.freeze({
     address: b.point.toUpperCase(), from: Number(b.actual), to: value, min: b.limits.min, max: b.limits.max, live,
     question: `Write ${value} to ${b.point.toUpperCase()}${b.description ? ` (${b.description})` : ''}? It is ${b.actual} now; the program allows ${b.limits.min}–${b.limits.max}. The machine uses the new value at once.`,
-  };
+  });
+  ISSUED.add(c);
+  return c;
 }
 
 function valueOk(address: string, v: number, min: number, max: number): boolean {
@@ -50,6 +55,8 @@ function valueOk(address: string, v: number, min: number, max: number): boolean 
 
 /** Change it on the PLC: checks the register and the range again, asks `confirm`, then writes (Online logs the write). */
 export async function applySettingChange(c: SettingChange, confirm: (question: string) => boolean | Promise<boolean>, write = writePlc): Promise<'written' | 'cancelled'> {
+  // Only a change settingChange made from the program's declared range (frozen): a hand-built or copied object is refused.
+  if (!ISSUED.has(c)) throw new Error('This setting change was not made from the program\'s declared range: ask for it again from the finding.');
   if (!SETPOINT.test(c.address.toUpperCase())) throw new Error(`${c.address} is not a setpoint register: only DS / DF settings are changed here.`);
   if (!valueOk(c.address, c.to, c.min, c.max)) throw new Error(`${c.to} is outside the range the program allows for ${c.address} (${c.min}–${c.max}${/^DS/i.test(c.address) ? ', whole numbers' : ''}).`);
   if (!c.live) throw new Error(`${c.address} cannot be written from here (Online writes DS registers only): change it in the program (see the edit steps).`);
