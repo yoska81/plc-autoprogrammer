@@ -352,3 +352,7 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Weintek, Maple and Red Lion only say "CompactLogix", without naming a series. That is the same basis on which they already list 5380.
   - C-more (Dev 5's HMI list) also says only "CompactLogix" (ea9drivers.pdf). Neither the PanelView Plus 7 nor the C-more is in the catalog's driver lists.
   - Test: a 1769-L33ER has at least 10 compatible panels, including Allen-Bradley ones (platforms.test.ts).
+  - Review fixes:
+    - The serial-only Pro-face GP4100 panels (PFXGP4115T2D / T3D, PFXGP4116T2D) no longer list any CompactLogix driver.
+    - Tests: a Logix driver needs ethernetPorts > 0; the 5370 / 5370-l1 / 5380 ids stay in step; L1 works on Weintek and Red Lion panels.
+    - PanelView 5310 / 5510 carry `logixFirmwareMin: 27` (controller firmware V27 or later). The upgrade plan should check the L5X's firmware against it.

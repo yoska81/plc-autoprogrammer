@@ -112,6 +112,18 @@ assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000
   assert.ok(fits.some((p) => p.vendor === 'allen-bradley') && fits.length >= 10, `1769-L33ER panels: ${fits.length}`);
   assert.ok(ok('ab-compactlogix-5370', '2713P-T7WD1') && ok('ab-compactlogix-5370-l1', '2711R-T7T'), 'PanelView 5310 with an L33ER, PanelView 800 with an L1');
   for (const p of fits.filter((x) => driversOf(x).includes('ab-compactlogix-5370'))) assert.ok(p.ratings.drivers5370Source, `${p.partNumber}: 5370 driver source`);
+  assert.ok(ok('ab-compactlogix-5370-l1', 'cMT2078X') && ok('ab-compactlogix-5370-l1', 'G07C0000'), 'L1 on Weintek and Red Lion panels too');
+  // CompactLogix speaks EtherNet/IP only: never on a serial-only panel (Pro-face GP4100 series).
+  const LOGIX = ['ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1'];
+  for (const p of ALL_HMIS()) {
+    const d = driversOf(p).filter((id) => LOGIX.includes(id));
+    if (d.length) assert.ok(Number(p.ratings.ethernetPorts) > 0, `${p.partNumber}: Logix driver on a panel with no Ethernet port`);
+    // 5370 and 5380 come from the same maker statements: the two sets stay in step.
+    assert.ok(d.length === 0 || d.length === 3, `${p.partNumber}: Logix driver ids out of step (${d.join(', ')})`);
+  }
+  assert.ok(!ok('ab-compactlogix-5370', 'PFXGP4115T2D'), 'serial-only GP4100: no CompactLogix');
+  // PanelView 5310 / 5510 need Logix firmware V27 or later (Rockwell 2713P-TD001K / 2715P-TD001G).
+  for (const p of ALL_HMIS().filter((x) => /^271[35]P-/.test(x.partNumber))) assert.equal(p.ratings.logixFirmwareMin, 27, `${p.partNumber}: firmware V27+`);
 }
 // Driver ids are platform ids (agreed list; every platform that exists must be on it).
 const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz']);
