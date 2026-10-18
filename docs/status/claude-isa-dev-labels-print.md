@@ -215,6 +215,17 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - GS20 (75), GS10 (60), GS30 (85): every keypad code (ocA, ovd, GFF, oH1, cF2, CE10 …). Confirm steps use fault records P06.17-22 and the values at malfunction (P06.34 DC bus, P06.35 current, P06.40 DI status). Normal readings include the supply range, the DC bus band between Lv and ov, +24V-DCM, DI levels for source and sink, and STO1/STO2 to SCM.
   - Inovance MD290/MD500 (37; codes E002.0… with the Err02 panel text in the symptom).
   - SureServo2 (151 alarms AL001-AL809; P0.001 and P4.000-004 history; STO state table).
+- I/O and field devices (faults/ioField.ts): 28 profiles, 240 faults.
+  - CLICK C0 and CLICK PLUS CPUs, with every error code (101-108, 201-205, 301-384, 001, 109); DC inputs (sink/source, with the C1 wiring for PNP vs NPN); AC inputs; sinking, sourcing and relay outputs; analog, thermocouple and built-in analog; option-slot I/O.
+  - PNP/NPN inductive and photoelectric sensors; ultrasonic sensors (AD UK1/UK6, P+F UB, Banner T30UX/S18U/QS18U); TRD encoders by output type; GCX pushbuttons and E-stops; Mindman valves.
+  - To check: the C0 sourcing-output common extracted as "CO" and may be "C0" on the part.
+- Power and protection (faults/power.ts): 28 profiles, 87 faults.
+  - Rhino PSR/PSN/PSL, QUINT4, SITOP PSU6200 and S8VK-C supplies; Gladiator, S200U, 5SJ4, C60BP and 1489-M breakers; Class T, J and CC fuses; Fuji SC-E contactors and TK-E overloads; 78x, GQ and GRS-H relays; Dold, IDEM, 440R, 3SK1 and XPSUAF safety relays.
+  - The QUINT4 data sheet was read from a distributor's copy of Phoenix's own document, because Phoenix refused scripted access.
+  - No maker states a "~0 V across a healthy fuse" figure, so the fuse profiles use the Bussmann continuity test.
+- Coverage of the families asked for:
+  - Every CLICK part, every encoder, fuse, safety relay and valve, the GS drives and SureServo2.
+  - Other brands' contactors, overloads, VFDs and servo motors have no profile yet.
 - Gaps:
   - Delta VFD-E/MS300/C2000: manuals are behind a captcha.
   - No drive manual gives a DC bus nominal value, so only the trip band is used.
