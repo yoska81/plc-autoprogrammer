@@ -20,7 +20,7 @@ export type MountLocation = 'backplate' | 'door' | 'field';
 /** Catalog a part comes from (brand / supplier); see src/electrical/catalogs. */
 export type VendorId = 'automationdirect' | 'allen-bradley' | 'siemens' | 'schneider' | 'yaskawa' | 'ifm' | 'hoffman' | 'rittal'
   | 'omron' | 'mitsubishi' | 'delta' | 'weintek' | 'redlion' | 'maple' | 'proface' | 'unitronics'
-  | 'phoenix' | 'weidmuller' | 'eaton' | 'abb' | 'pepperl' | 'banner' | 'pilz';
+  | 'phoenix' | 'weidmuller' | 'eaton' | 'abb' | 'pepperl' | 'banner';
 
 export interface CatalogPart {
   /** Manufacturer / supplier part number, exactly as on the source page. */

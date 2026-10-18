@@ -72,11 +72,10 @@ export const FOREIGN_PART_DATA: Record<string, ForeignPart> = Object.fromEntries
   part: p,
 }]));
 
-// Spaces are print formatting: 'NXC-09  220V' and Rexroth's '4WE 6 E6X/EG24N9K4' find their records.
-const norm = (s: string) => s.toUpperCase().replace(/[\s_]+/g, '');
+const norm = (s: string) => s.toUpperCase().replace(/[\s_]+/g, ' ').trim();
 const BY_NORM = new Map(Object.keys(FOREIGN_PART_DATA).map((pn) => [norm(pn), pn]));
 
-/** A foreign part by its part number as printed (case and spaces ignored). */
+/** A foreign part by its part number as printed (case and spacing ignored). */
 export function foreignPart(partNumber: string): ForeignPart | undefined {
   const pn = BY_NORM.get(norm(partNumber));
   return pn ? FOREIGN_PART_DATA[pn] : undefined;

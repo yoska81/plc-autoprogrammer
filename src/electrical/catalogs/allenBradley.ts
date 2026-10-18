@@ -907,7 +907,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.5,
     heightMm: 119.4,
-    ratings: { family: 'Guardmaster 440R', channels: '1 dual-channel universal input', coilVoltage: '24VDC', safetyOutputs: '(2) N.O.', auxOutputs: '1 solid-state', application: 'E-stop / safety gate, up to Cat 4', safetyOutputCount: 2 },
+    ratings: { family: 'Guardmaster 440R', channels: '1 dual-channel universal input', coilVoltage: '24VDC', safetyOutputs: '2 N.O. relay', auxOutputs: '1 solid-state', application: 'E-stop / safety gate, up to Cat 4' },
     verified: true,
   },
   {
@@ -920,7 +920,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.5,
     heightMm: 119.4,
-    ratings: { family: 'Guardmaster 440R', channels: '1 dual-channel universal input', coilVoltage: '24VDC', safetyOutputs: '(3) N.O.', auxOutputs: '1 N.C.', application: 'up to Cat 4', safetyOutputCount: 3 },
+    ratings: { family: 'Guardmaster 440R', channels: '1 dual-channel universal input', coilVoltage: '24VDC', safetyOutputs: '3 N.O. relay', auxOutputs: '1 N.C.', application: 'up to Cat 4' },
     verified: true,
   },
   {
@@ -933,7 +933,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.5,
     heightMm: 119.4,
-    ratings: { family: 'Guardmaster 440R', channels: '2 dual-channel universal inputs', coilVoltage: '24VDC', safetyOutputs: '(2) N.O.', auxOutputs: '1 solid-state', application: 'E-stop + gate, up to Cat 4', safetyOutputCount: 2 },
+    ratings: { family: 'Guardmaster 440R', channels: '2 dual-channel universal inputs', coilVoltage: '24VDC', safetyOutputs: '2 N.O. relay', auxOutputs: '1 solid-state', application: 'E-stop + gate, up to Cat 4' },
     verified: true,
   },
   {

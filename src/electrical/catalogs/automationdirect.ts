@@ -1634,7 +1634,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.5,
     heightMm: 90,
-    ratings: { channels: 2, coilVoltage: '24VAC/VDC', safetyOutputs: '(3) N.O.', auxOutputs: '(1) N.C.', restart: 'manual or automatic restart', application: 'emergency stop and safety gates', footprintSource: 'https://cdn.automationdirect.com/static/drawings/LG5925-48-61-24.pdf', safetyOutputCount: 3 },
+    ratings: { channels: 2, coilVoltage: '24VAC/VDC', safetyOutputs: '(3) N.O.', auxOutputs: '(1) N.C.', restart: 'manual or automatic restart', application: 'emergency stop and safety gates', footprintSource: 'https://cdn.automationdirect.com/static/drawings/LG5925-48-61-24.pdf' },
     verified: true,
   },
   {
@@ -1646,7 +1646,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.6,
     heightMm: 99,
-    ratings: { channels: 2, coilVoltage: '24VAC/VDC', safetyOutputs: '(3) N.O.', auxOutputs: '(1) N.C.', restart: 'manual or automatic restart', application: 'emergency stop and safety gates', footprintSource: 'https://cdn.automationdirect.com/static/drawings/SCR31-280002.pdf', safetyOutputCount: 3 },
+    ratings: { channels: 2, coilVoltage: '24VAC/VDC', safetyOutputs: '(3) N.O.', auxOutputs: '(1) N.C.', restart: 'manual or automatic restart', application: 'emergency stop and safety gates', footprintSource: 'https://cdn.automationdirect.com/static/drawings/SCR31-280002.pdf' },
     verified: true,
   },
   {
@@ -2438,7 +2438,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.5,
     heightMm: 84,
-    ratings: { coilVoltage: '24 VDC', safetyOutputs: '(2) N.O.', auxOutputs: '(1) N.C.', application: 'Two-hand control', inputs: '2 pushbuttons, each 1 N.O. + 1 N.C. (simultaneity <= 0.5 s)', standard: 'EN ISO 13851 type IIIC', PL: 'PL e', category: 'Cat. 4', SIL: 'SIL 3', resetMode: 'Manual or automatic restart', channels: 2, connection: 'Fixed screw terminals', footprintSource: 'https://cdn.automationdirect.com/static/drawings/BG5933-22-61-24.pdf', datasheet: 'https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf', specSource: 'https://cdn.automationdirect.com/static/specs/safetyrelay2handcontrollers.pdf', safetyOutputCount: 2 },
+    ratings: { coilVoltage: '24 VDC', safetyOutputs: '(2) N.O.', auxOutputs: '(1) N.C.', application: 'Two-hand control', inputs: '2 pushbuttons, each 1 N.O. + 1 N.C. (simultaneity <= 0.5 s)', standard: 'EN ISO 13851 type IIIC', PL: 'PL e', category: 'Cat. 4', SIL: 'SIL 3', resetMode: 'Manual or automatic restart', channels: 2, connection: 'Fixed screw terminals', footprintSource: 'https://cdn.automationdirect.com/static/drawings/BG5933-22-61-24.pdf', datasheet: 'https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf', specSource: 'https://cdn.automationdirect.com/static/specs/safetyrelay2handcontrollers.pdf' },
     verified: true,
   },
   {
@@ -2451,7 +2451,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.6,
     heightMm: 99,
-    ratings: { coilVoltage: '24 VAC/VDC', safetyOutputs: '(2) N.O.', auxOutputs: 'none', application: 'Two-hand control', inputs: '2 two-hand pushbuttons (T1/T2, simultaneity 0.5 s) + feedback loop X1-X2', standard: 'ISO 13851 type IIIC', PL: 'PL e', category: 'Cat. 4', SIL: 'SIL 3', resetMode: 'Manual restart', channels: 2, connection: 'Fixed screw terminals', footprintSource: 'https://cdn.automationdirect.com/static/drawings/2d/SCR2H-180030.pdf', datasheet: 'https://cdn.automationdirect.com/static/manuals/idem2hand/e61-328-00.pdf', specSource: 'https://cdn.automationdirect.com/static/specs/idemtwohandcontroller.pdf', safetyOutputCount: 2 },
+    ratings: { coilVoltage: '24 VAC/VDC', safetyOutputs: '(2) N.O.', auxOutputs: 'none', application: 'Two-hand control', inputs: '2 two-hand pushbuttons (T1/T2, simultaneity 0.5 s) + feedback loop X1-X2', standard: 'ISO 13851 type IIIC', PL: 'PL e', category: 'Cat. 4', SIL: 'SIL 3', resetMode: 'Manual restart', channels: 2, connection: 'Fixed screw terminals', footprintSource: 'https://cdn.automationdirect.com/static/drawings/2d/SCR2H-180030.pdf', datasheet: 'https://cdn.automationdirect.com/static/manuals/idem2hand/e61-328-00.pdf', specSource: 'https://cdn.automationdirect.com/static/specs/idemtwohandcontroller.pdf' },
     verified: true,
   },
   {
@@ -2464,7 +2464,7 @@ export const AUTOMATIONDIRECT: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.5,
     heightMm: 90,
-    ratings: { coilVoltage: '24 VDC', safetyOutputs: '(3) N.O.', auxOutputs: '(1) N.C.', application: 'Light curtain controller (Type 4 self-testing light curtains, IEC/EN 61496-1)', inputs: 'OSSD1/OSSD2 on S12/S22, symmetric or asymmetric outputs (switch S1); 1- or 2-channel', ossdInputs: 'yes', PL: 'PL e', category: 'Cat. 4', SIL: 'SIL 3', resetMode: 'Manual or automatic restart (switch S2)', channels: 2, connection: 'Fixed screw terminals', footprintSource: 'https://cdn.automationdirect.com/static/drawings/LG5925-48-900-61.pdf', datasheet: 'https://cdn.automationdirect.com/static/manuals/safetyrelays/lg5925_900.pdf', specSource: 'https://cdn.automationdirect.com/static/specs/safetyrelaylccontroller.pdf', safetyOutputCount: 3 },
+    ratings: { coilVoltage: '24 VDC', safetyOutputs: '(3) N.O.', auxOutputs: '(1) N.C.', application: 'Light curtain controller (Type 4 self-testing light curtains, IEC/EN 61496-1)', inputs: 'OSSD1/OSSD2 on S12/S22, symmetric or asymmetric outputs (switch S1); 1- or 2-channel', ossdInputs: 'yes', PL: 'PL e', category: 'Cat. 4', SIL: 'SIL 3', resetMode: 'Manual or automatic restart (switch S2)', channels: 2, connection: 'Fixed screw terminals', footprintSource: 'https://cdn.automationdirect.com/static/drawings/LG5925-48-900-61.pdf', datasheet: 'https://cdn.automationdirect.com/static/manuals/safetyrelays/lg5925_900.pdf', specSource: 'https://cdn.automationdirect.com/static/specs/safetyrelaylccontroller.pdf' },
     verified: true,
   },
   {
