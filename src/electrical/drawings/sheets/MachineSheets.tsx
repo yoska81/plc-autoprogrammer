@@ -11,7 +11,7 @@ const TYPE_SHORT: Record<string, string> = {
   'sensor-pnp': 'PNP SENSOR', 'sensor-npn': 'NPN SENSOR', 'limit-switch': 'LIMIT SWITCH', 'pressure-switch': 'PRESSURE SW.',
   'pushbutton-no': 'PUSHBUTTON', 'pushbutton-nc': 'PUSHBUTTON', selector: 'SELECTOR', 'estop-contact': 'E-STOP',
   solenoid: 'SOLENOID', 'pilot-light': 'PILOT LIGHT', 'stack-light': 'STACK LIGHT', 'contactor-coil': 'COIL', 'relay-coil': 'COIL',
-  'vfd-input': 'VFD INPUT', 'safety-relay-output': 'SAFETY', other: 'DEVICE', motor: 'MOTOR',
+  'vfd-input': 'VFD INPUT', 'safety-relay-output': 'SAFETY', 'servo-drive': 'SERVO', encoder: 'ENCODER', ultrasonic: 'ULTRASONIC', other: 'DEVICE', motor: 'MOTOR',
 };
 
 // ---------------------------------------------------------------------------

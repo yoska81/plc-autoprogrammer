@@ -1,0 +1,113 @@
+/// <reference types="node" />
+/**
+ * Motion end to end on the servo fixture: one SureServo2 axis (power, STO, pulse/direction and drive I/O to
+ * the PLC), one encoder on the high-speed inputs, one 4-20 mA ultrasonic level sensor.
+ * Run with:  npx tsx src/electrical/motion.test.ts
+ */
+import assert from 'node:assert/strict';
+import * as React from 'react';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { planDrawings } from './drawings/plan';
+import { ServoSheet } from './drawings/sheets/ServoSheet';
+import { generateDefaultDesign } from './engine';
+import { getPart as catalogPart } from './catalog';
+import { billOfMaterials, buildModel, cableSchedule, designWarnings, terminalPlan, wireNumbers, type DrawingContext } from './derive';
+import { analogSetup } from '../plc/core/analog';
+import { getCpu, getProfile } from '../plc/core/profiles';
+import { resolveAddresses } from '../plc/core/profile';
+import { moduleSlots } from '../plc/core/modules';
+import { axisKey, encoderChannel, motionDesign, servoRole } from './motion';
+import { MOTION_STUB_PARTS, SERVO_IO, stubPart } from './motion.fixture';
+import type { IOPoint } from '../types/io';
+import type { DesignInputs } from './types';
+
+// Classification
+assert.equal(servoRole({ type: 'output', description: 'Axis 1 pulse' }), 'pulse');
+assert.equal(servoRole({ type: 'output', description: 'Axis 1 direction' }), 'direction');
+assert.equal(servoRole({ type: 'output', description: 'Axis 1 alarm reset' }), 'reset');
+assert.equal(servoRole({ type: 'input', description: 'Axis 1 servo alarm' }), 'alarm');
+assert.equal(servoRole({ type: 'input', description: 'Axis 2 in position' }), 'inPosition');
+assert.equal(axisKey('Axis 2 servo ready'), '2');
+assert.equal(encoderChannel('Line encoder B'), 'B');
+assert.equal(encoderChannel('Encoder Z index'), 'Z');
+
+const getPart = (pn: string) => stubPart(pn) ?? catalogPart(pn);
+const io = SERVO_IO.map(([description, type, category, signal], i) => ({
+  id: `p${i + 1}`, description, type, category, ...(signal ? { signal, analog: { range: '4-20mA', min: 0, max: 100, units: '%' } } : {}),
+})) as IOPoint[];
+const profile = getProfile('click');
+const cpu = getCpu(profile, 'C0-10DD1E-D');
+const modules = ['C0-04AD-1', 'C0-16TD1'];
+const slots = moduleSlots(modules);
+const addresses = resolveAddresses(profile, cpu, io, slots);
+const analog = analogSetup(profile, cpu, slots, io);
+const plc = { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label };
+const inputs: DesignInputs = { supply: '240VAC-3PH', enclosureRating: 'NEMA 12', notes: '', motors: [], requiredParts: [] };
+
+// Motion alone: what it claims and picks.
+const m = motionDesign({ io, addresses, supply: '240VAC-3PH', nextTag: (() => { const n = new Map<string, number>(); return (p: string) => { n.set(p, (n.get(p) ?? 0) + 1); return `${p}${n.get(p)}`; }; })(), extraParts: MOTION_STUB_PARTS });
+assert.equal(m.axes.length, 1);
+assert.deepEqual(m.components.map((c) => c.partNumber).filter((pn) => pn.startsWith('STUB')).sort(), MOTION_STUB_PARTS.map((p) => p.partNumber).sort(), 'drive, motor, two cables, encoder, ultrasonic');
+assert.equal(m.claimed.size, 10, 'servo signals, encoder channels and the ultrasonic are claimed');
+assert.ok(m.askUser.some((q) => /Axis 1: servo sized for 400 W/.test(q)), 'assumed size is a question');
+
+// Through the engine and the drawings.
+const r = generateDefaultDesign({ io, addresses, spec: 'Filler: a servo indexes the cups (axis 1), a line encoder measures the conveyor, an ultrasonic sensor reads the hopper level.', inputs, plc, modules, region: 'US', getPart, hmiPartNumber: null, analog, now: '2026-01-01T00:00:00.000Z', projectName: 'servo', motionParts: MOTION_STUB_PARTS });
+const ctx: DrawingContext = { projectName: 'servo', design: r.design, getPart, plc, region: 'US', hmiPartNumber: null, analog, io: io.map((p) => ({ address: addresses.get(p.id) ?? '', description: p.description, type: p.type })) };
+const tag = (pn: string) => r.design.components.find((c) => c.partNumber === pn)?.tag;
+const drive = tag('STUB-SV2A-2040')!;
+assert.ok(drive && /^SVD\d$/.test(drive));
+assert.ok(!r.design.inputs.motors.length, 'no DOL / VFD motor made up from the servo signals');
+assert.ok(r.design.components.some((c) => c.motorTag === 'AX1' && /branch protection — 5 A/.test(c.function)), 'drive breaker at the maker\'s 5 A');
+
+const model = buildModel(ctx);
+assert.equal(model.servos.length, 1);
+const ax = model.servos[0];
+const wires = model.wires;
+const has = (from: RegExp, to: RegExp) => wires.some((w) => from.test(w.from) && to.test(w.to));
+const addr = (d: string) => addresses.get(io.find((p) => p.description === d)!.id)!;
+// Power: breaker → R/S/T, L1C/L2C jumpered, U/V/W to the motor.
+assert.ok(has(new RegExp(`^${ax.protection!.tag}:T1$`), new RegExp(`^${drive}:R$`)) && has(new RegExp(`^${drive}:R$`), new RegExp(`^${drive}:L1C$`)));
+assert.ok(has(new RegExp(`^${drive}:U$`), new RegExp(`^${ax.motor!.tag}:U$`)));
+// Pulse / direction from sinking outputs: PULL HI to 24 V, the output on /PULSE (CN1-41) and /SIGN (CN1-37).
+assert.ok(has(/^TB1 24\+$/, new RegExp(`^${drive}:CN1-39$`)) && has(new RegExp(`:${addr('Axis 1 pulse')}$`), new RegExp(`^${drive}:CN1-41$`)));
+assert.ok(has(new RegExp(`:${addr('Axis 1 direction')}$`), new RegExp(`^${drive}:CN1-37$`)));
+assert.ok(has(new RegExp(`:${addr('Axis 1 servo on')}$`), new RegExp(`^${drive}:CN1-9$`)), 'SON on DI1');
+assert.ok(has(new RegExp(`^${drive}:CN1-27$`), new RegExp(`:${addr('Axis 1 servo alarm')}$`)), 'ALRM DO5- to the PLC input');
+// STO: both channels from the safety-switched 24 V.
+assert.ok(has(/^TB1 24\+S$/, new RegExp(`^${drive}:CN10-3$`)) && has(/^TB1 24\+S$/, new RegExp(`^${drive}:CN10-5$`)), 'STO from the safety relay output');
+// Encoder: A/B on TB2 from the encoder, one supply pair and the shield.
+const tb2 = terminalPlan(ctx).find((s) => s.tag === 'TB2')!;
+const enc = tag('STUB-TRD-GK1000-RZ')!;
+assert.ok(tb2.terminals.some((t) => t.external === `${enc}:A`) && tb2.terminals.some((t) => t.external === `${enc}:B`));
+assert.equal(tb2.terminals.filter((t) => t.external === `${enc}:+V`).length, 1, 'one supply per encoder');
+assert.ok(tb2.terminals.some((t) => /cable shield/.test(t.external)));
+// Ultrasonic on the analog card, tagged as in the BOM.
+const lt = tag('STUB-UK30-4-20')!;
+assert.ok(model.analog.circuits.some((c) => c.deviceTag === lt), `ultrasonic ${lt} on the analog sheet`);
+// BOM, wire numbers, cables.
+const bom = billOfMaterials(ctx).flatMap((g) => g.lines).map((l) => l.partNumber);
+for (const p of MOTION_STUB_PARTS) assert.ok(bom.includes(p.partNumber), `${p.partNumber} in the BOM`);
+assert.ok(wireNumbers(ctx).length > 0);
+assert.ok(cableSchedule(ctx).length > 0);
+const warns = designWarnings(ctx);
+assert.ok(!warns.some((w) => /encoder channel not on a high-speed input/.test(w)), 'encoder on X001/X002');
+assert.ok(warns.some((w) => /has no pulse-train output — use a CLICK PLUS CPU with the C2-14D1/.test(w)), 'CLICK C0 has no pulse output: said so');
+const gaps = designWarnings(ctx).filter((w) => /no PLC output drives|not found in the catalog|without wiring|over capacity/i.test(w));
+assert.deepEqual(gaps, [], 'no design gaps');
+// Drawings: one servo sheet that renders the drive's terminals; the encoder on an I/O sheet.
+// tsx compiles the sheet's JSX with the classic runtime: React in scope.
+(globalThis as { React?: unknown }).React = React;
+const plan = planDrawings(ctx);
+const sheet = plan.sheets.find((x) => x.spec.kind === 'servo');
+assert.ok(sheet, 'servo axis sheet planned');
+const svg = renderToStaticMarkup(createElement('svg', null, createElement(ServoSheet, { plan, sheet: sheet! })));
+for (const t of ['CN1-41', 'CN1-37', 'CN1-9', 'CN10-3', 'CN10-5', 'STO_A+', 'SAFETY STOP: STO']) assert.ok(svg.includes(t), `servo sheet shows ${t}`);
+console.log(`motion tests passed (${r.design.components.length} parts, ${wires.length} wires; notes: ${r.design.notes.filter((n) => /Axis|SVD|SE\d|LT\d/.test(n)).length})`);
+if (process.env.SHOW) {
+  console.log(designWarnings(ctx).join('\n'));
+  console.log('--- notes\n' + r.design.notes.join('\n'));
+  console.log('--- cables'); for (const c of cableSchedule(ctx)) console.log(c.tag, c.from, '→', c.to, c.type);
+  console.log('--- comps'); for (const c of r.design.components) console.log(c.tag, c.partNumber, c.motorTag ?? '', c.function.slice(0, 90));
+}

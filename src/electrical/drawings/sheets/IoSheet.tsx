@@ -18,7 +18,8 @@ const TYPE_TEXT: Record<string, string> = {
   'pushbutton-no': 'PUSHBUTTON N.O.', 'pushbutton-nc': 'PUSHBUTTON N.C.', selector: 'SELECTOR SWITCH', 'estop-contact': 'E-STOP AUX. CONTACT',
   'sensor-pnp': 'PNP SENSOR, 3-WIRE', 'sensor-npn': 'NPN SENSOR, 3-WIRE', 'limit-switch': 'LIMIT SWITCH', 'pressure-switch': 'PRESSURE SWITCH',
   'safety-relay-output': 'SAFETY RELAY CONTACT', 'contactor-coil': 'CONTACTOR COIL', 'relay-coil': 'RELAY COIL', solenoid: 'SOLENOID VALVE',
-  'pilot-light': 'PILOT LIGHT', 'stack-light': 'STACK LIGHT', 'vfd-input': 'VFD DIGITAL INPUT', other: 'DEVICE (NOT SPECIFIED)',
+  'pilot-light': 'PILOT LIGHT', 'stack-light': 'STACK LIGHT', 'vfd-input': 'VFD DIGITAL INPUT',
+  'servo-drive': 'SERVO DRIVE CN1 (SEE SERVO SHEET)', encoder: 'ENCODER CHANNEL, SHIELDED', ultrasonic: 'ULTRASONIC SENSOR, 3-WIRE', other: 'DEVICE (NOT SPECIFIED)',
 };
 
 export function IoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
@@ -198,7 +199,7 @@ function InputSheet({ plan, sheet, g, rows: ioRows, last }: { plan: DrawingPlan;
 }
 
 function InputRow({ plan, p, y }: { plan: DrawingPlan; p: IoPoint; y: number }) {
-  const sensor = p.deviceType === 'sensor-pnp' || p.deviceType === 'sensor-npn';
+  const sensor = p.deviceType === 'sensor-pnp' || p.deviceType === 'sensor-npn' || p.deviceType === 'ultrasonic' || p.deviceType === 'encoder';
   const field = !!p.signalTerminal;
   const dx = I.DEV;
   const half = sensor ? 9 : p.deviceType === 'safety-relay-output' ? 4 : 5;
@@ -255,6 +256,9 @@ function DeviceSymbol({ p, x, y, color }: { p: IoPoint; x: number; y: number; co
     case 'solenoid': return <Solenoid x={x} y={y} />;
     case 'pilot-light': case 'stack-light': return <Lamp x={x} y={y} color={colorWord(p.description) || color} />;
     case 'vfd-input': return <DevBox x={x} y={y} label="DI" w={7} />;
+    case 'servo-drive': return <DevBox x={x} y={y} label="SV" w={7} />;
+    case 'encoder': return <DevBox x={x} y={y} label="ENC" w={8} />;
+    case 'ultrasonic': return <Sensor3W x={x} y={y} kind={/npn/i.test(p.description) ? 'NPN' : 'PNP'} />;
     default: return <DevBox x={x} y={y} label="?" w={7} />;
   }
 }

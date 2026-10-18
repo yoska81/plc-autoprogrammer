@@ -18,6 +18,7 @@ import { comp, controlPower, mainDisconnect, motorBranches, Tags } from './power
 import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
 import { processLoads } from './process';
 import { num, Picker } from './select';
+import { motionDesign, motionDeviceType } from '../motion';
 
 export { defaultMachineModel, type MachineModel } from './machineModel';
 
@@ -39,6 +40,8 @@ export interface EngineInput {
   projectName?: string;
   /** The specification (motor powers for drives found only in the I/O list). */
   spec?: string;
+  /** Motion parts not in the catalog yet (tests only; see src/electrical/motion.ts). */
+  motionParts?: CatalogPart[];
   /** Timestamp for generatedAt (tests pass a fixed one). */
   now?: string;
 }
@@ -86,15 +89,18 @@ interface Trial { components: DesignComponent[]; spare: number; fits: boolean; o
 
 export function generateDesign(input: EngineInput): EngineResult {
   const { inputs, getPart } = input;
-  const model = drivesFromIo(input.model, input.io, input.spec ?? '');
   const supply = inputs.supply;
   const pk = new Picker(input.pref ?? DEFAULT_PREFERENCE);
   const tags = new Tags(['PLC', 'ENC1', 'SP1', 'DS1', 'SR1']);
-  const notes: string[] = [];
-  const askUser: string[] = [...model.assumptions];
+  // Servo axes, encoders and ultrasonic sensors (src/electrical/motion.ts): wired there, left out of the rules below.
+  const motion = motionDesign({ io: input.io, addresses: input.addresses, supply, region: input.region, pref: input.pref, spec: input.spec, nextTag: (p) => tags.next(p), extraParts: input.motionParts });
+  const io = input.io.filter((p) => !motion.claimed.has(p.id));
+  const model = drivesFromIo(input.model, io, input.spec ?? '');
+  const notes: string[] = [...motion.notes];
+  const askUser: string[] = [...model.assumptions, ...motion.askUser];
 
   // Discrete PLC points with addresses (analog channels are wired by electrical/analog.ts).
-  const points = input.io
+  const points = io
     .map((point) => ({ point, address: input.addresses.get(point.id) ?? '' }))
     .filter(({ point, address }) => address && point.signal !== 'analog' && !/^DF\d+$/i.test(address));
 
@@ -111,7 +117,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   const power = motorBranches(pk, tags, model.motors, supply, input.region, reversingByIo);
   notes.push(...power.notes);
   const overTempInput = points.some(({ point }) => point.type === 'input' && OVER_TEMP_RE.test(point.description));
-  const proc = processLoads(pk, tags, model.heaters ?? [], supply, input.io, overTempInput);
+  const proc = processLoads(pk, tags, model.heaters ?? [], supply, io, overTempInput);
   notes.push(...proc.notes);
   askUser.push(...proc.askUser);
   const dev = devicesAndWiring(pk, tags, model, power.branches, points, proc);
@@ -157,7 +163,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   }
 
   const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(dev.components.find((c) => c.tag === w.deviceTag)?.partNumber ?? '')).length;
-  const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
+  const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...motion.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
   const ctl = controlPower(pk, tags, supply, loadA);
   notes.push(...ctl.notes);
 
@@ -173,7 +179,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   const sto = power.branches.filter((b) => b.sto).map((b) => b.vfd);
   if (sto.length) notes.push(`${sto.join(', ')}: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.`);
 
-  const core = [...power.components, ...proc.components, ...ctl.components, ...plc, ...dev.components, ...required];
+  const core = [...power.components, ...proc.components, ...ctl.components, ...plc, ...dev.components, ...motion.components, ...required];
   const nema4 = /4/.test(inputs.enclosureRating ?? '');
   const bigIo = points.length > 48;
   const termFeed = pk.byNumber('DN-T10-A') ?? pk.pick('terminal', (p) => !/ground/i.test(p.description));
@@ -187,7 +193,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   const ctxOf = (components: DesignComponent[], design: Partial<ElectricalDesign> = {}): DrawingContext => ({
     projectName: input.projectName ?? 'Machine',
     design: {
-      inputs: { ...inputs, motors: motorSpecs }, components, ioWiring: dev.ioWiring, notes: [], machine: dev.machine,
+      inputs: { ...inputs, motors: motorSpecs }, components, ioWiring: [...dev.ioWiring, ...motion.ioWiring], notes: [], machine: dev.machine,
       generatedAt: input.now ?? new Date().toISOString(), ...design,
     },
     getPart, plc: input.plc,
@@ -217,7 +223,7 @@ export function generateDesign(input: EngineInput): EngineResult {
     if (hit) return hit;
     const sub = pk.byNumber(String(enc.ratings.subpanel ?? '')) ?? getPart(String(enc.ratings.subpanel ?? ''));
     const depth = num(enc.ratings.depthIn) ?? 8;
-    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps);
+    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps + motion.loadA);
     const head = [
       comp('ENC1', enc.partNumber, 1, `Main enclosure ${enc.ratings.heightIn}x${enc.ratings.widthIn}x${enc.ratings.depthIn} ${enclosureText(inputs.enclosureRating, input.region)}`),
       ...(sub ? [comp('SP1', sub.partNumber, 1, 'Back panel')] : []),
@@ -285,7 +291,7 @@ export function generateDesign(input: EngineInput): EngineResult {
     design: {
       inputs: { ...inputs, motors: motorSpecs, enclosureRating: inputs.enclosureRating },
       components: best.components,
-      ioWiring: dev.ioWiring,
+      ioWiring: [...dev.ioWiring, ...motion.ioWiring],
       notes: [...askUser, ...notes],
       askUser,
       machine: dev.machine,
@@ -299,5 +305,5 @@ export function generateDesign(input: EngineInput): EngineResult {
 
 /** Design straight from the project (no AI): the default machine model, then the rules. */
 export function generateDefaultDesign(input: Omit<EngineInput, 'model'> & { spec?: string }): EngineResult {
-  return generateDesign({ ...input, model: defaultMachineModel(input.io, input.inputs, input.spec ?? '') });
+  return generateDesign({ ...input, model: defaultMachineModel(input.io.filter((p) => !motionDeviceType(p)), input.inputs, input.spec ?? '') });
 }

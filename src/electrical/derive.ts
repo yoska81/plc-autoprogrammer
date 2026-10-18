@@ -24,6 +24,8 @@
 import type { AnalogSetupRow } from '../plc/core/analog';
 import { analogWiring, type AnalogWiring } from './analog';
 import { driveControls, type DriveControl, type DriveTerminal } from './vfd';
+import { encoderChannel, isServoDrive, motionWarnings } from './motion';
+import { servoAxes, servoControls, type ServoAxisModel } from './servoWiring';
 import type {
   CatalogCategory, CatalogPart, DesignComponent, ElectricalDesign, EnclosureChoice, EnclosureRating, FieldDeviceType, IOWiring, JunctionBox,
   MachineWiring, MotorSpec, MountLocation, SupplyVoltage,
@@ -442,6 +444,8 @@ export interface ElectricalModel {
   analog: AnalogWiring;
   /** VFD control wiring and parameters, one per drive (electrical/vfd.ts). */
   drives: DriveControl[];
+  /** Servo axes (src/electrical/servoWiring.ts): drive, motor, protection, control terminals. */
+  servos: ServoAxisModel[];
   rc: ResolvedComponent[];
   supply: SupplyVoltage;
   phases: 1 | 3;
@@ -538,7 +542,7 @@ function poles(rc: ResolvedComponent | undefined, fallback: number): number {
 
 /** Device location for an I/O point. */
 function ioLocation(rc: ResolvedComponent | undefined, t: FieldDeviceType): IoPoint['location'] {
-  if (t === 'contactor-coil' || t === 'relay-coil' || t === 'vfd-input' || t === 'safety-relay-output') return 'internal';
+  if (t === 'contactor-coil' || t === 'relay-coil' || t === 'vfd-input' || t === 'servo-drive' || t === 'safety-relay-output') return 'internal';
   if (rc) return rc.mount === 'backplate' ? 'internal' : rc.mount;
   if (t === 'pushbutton-no' || t === 'pushbutton-nc' || t === 'selector' || t === 'estop-contact' || t === 'pilot-light') return 'door';
   return 'field';
@@ -871,7 +875,21 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     for (const p of ins) {
       if (p.location !== 'field') continue;
       const tag = p.deviceTag || p.address;
-      const sensor = p.deviceType === 'sensor-pnp' || p.deviceType === 'sensor-npn';
+      const sensor = isSensor3(p.deviceType);
+      if (p.deviceType === 'encoder') {
+        // Encoder channels: a home-run shielded cable (never through a junction box); one 24+ / 0V pair and the
+        // shield per encoder, the channel colour on the PLC side (A / B / Z).
+        p.jb = null;
+        const first = ins.find((q) => q.deviceTag === p.deviceTag && q.deviceType === 'encoder') === p;
+        const ch = encoderChannel(p.description) ?? 'A';
+        p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${tag}:${ch}`, kind: 'feed', group: tag });
+        if (first) {
+          p.supplyTerminal = add(tb2, { wire: '24+', internal: 'TB1 24+ (jumper)', external: `${tag}:+V`, kind: 'feed', group: tag });
+          p.returnTerminal = add(tb2, { wire: '0V', internal: 'TB1 0V (jumper)', external: `${tag}:0V`, kind: 'feed', group: tag });
+          add(tb2, { wire: 'SH', internal: groundBar?.tag ?? 'PE BAR', external: `${tag} cable shield (cabinet end only)`, kind: 'ground', group: tag });
+        }
+        continue;
+      }
       if (p.jb) {
         p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${p.jb} (${tag})`, kind: 'feed', group: p.jb });
         continue;
@@ -888,7 +906,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       if (!pts.length) continue;
       const sup = add(tb2, { wire: '24+', internal: 'TB1 24+ (jumper)', external: `${jb.tag} 24+`, kind: 'feed', group: jb.tag });
       const ret = add(tb2, { wire: '0V', internal: 'TB1 0V (jumper)', external: `${jb.tag} 0V`, kind: 'feed', group: jb.tag });
-      for (const p of pts) { p.supplyTerminal = sup; if (p.deviceType === 'sensor-pnp' || p.deviceType === 'sensor-npn') p.returnTerminal = ret; }
+      for (const p of pts) { p.supplyTerminal = sup; if (isSensor3(p.deviceType)) p.returnTerminal = ret; }
     }
     add(tb2, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: 'FIELD SHIELDS/PE', kind: 'ground', group: 'PE' });
     addSpares(tb2, 2);
@@ -953,6 +971,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   if (xfmrBranch) busTaps.push({ tag: xfmrBranch.protection?.tag ?? xfmrBranch.xfmr.tag, poles: xfmrBranch.primaryWires.length });
   for (const b of psBranches) if (!b.fromXfmr) busTaps.push({ tag: b.protection?.tag ?? b.ps.tag, poles: b.feedWires.length });
   for (const b of auxBranches) busTaps.push({ tag: b.protection.tag, poles: b.feedWires.length });
+  const servoBase = servoAxes(rc);
+  for (const a of servoBase) if (a.protection) busTaps.push({ tag: a.protection.tag, poles: phases === 1 ? 2 : 3 });
   bus.forEach((w, k) => {
     if (w === 'N') return;
     let prev = mainBreaker ? `${mainBreaker.tag}:T${k + 1}` : `${dsTag}:${loadPhase(k)}`;
@@ -1148,11 +1168,24 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     if (c.terminals.some((t) => t.role === 'running')) addWire({ wire: '0V', from: `${tag}:DOC`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} DO1 common` });
   }
 
+  // Servo axes: power, STO and each PLC signal on its drive terminal (electrical/servoWiring.ts).
+  const servoOut = groups.find((g) => g.type === 'output' && g.points.some((p) => p.deviceType === 'servo-drive'))?.outputStyle ?? 'sinking';
+  const servoIn = groups.find((g) => g.type === 'input' && g.points.some((p) => p.deviceType === 'servo-drive'))?.commonTo === '24+' ? '24+' : '0V';
+  const servo = servoControls(servoBase, io, servoOut, servoIn, safety.outputSupply, pe, phases);
+  for (const sw of servo.wires) addWire(sw);
+
   // IO wires
   for (const p of io) {
     if (safety.statusInput === p) continue;
     const tag = p.deviceTag || '(device)';
     const g = groups.find((x) => x.key === p.group);
+    const st = servo.terms.get(p.address);
+    if (st) {
+      addWire(p.type === 'input'
+        ? { wire: p.address, from: `${st.tag}:${st.terminal}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description }
+        : { wire: p.address, from: `${plcTag}:${p.address}`, to: `${st.tag}:${st.terminal}`, color: 'BU', size: '18 AWG', function: p.description });
+      continue;
+    }
     const dt = driveTerm.get(p.address);
     if (dt) {
       addWire(p.type === 'input'
@@ -1162,10 +1195,12 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     }
     if (p.type === 'input') {
       if (p.signalTerminal) {
-        addWire({ wire: p.address, from: `${tag}:${p.deviceType.startsWith('sensor') ? 'BK' : pinOf(tag, 'NO')}`, to: p.signalTerminal, color: p.deviceType.startsWith('sensor') ? 'BK (cable)' : 'BU', size: '18 AWG', function: p.description });
+        const s3 = isSensor3(p.deviceType);
+        const sig = p.deviceType === 'encoder' ? encoderChannel(p.description) ?? 'A' : s3 ? 'BK' : pinOf(tag, 'NO');
+        addWire({ wire: p.address, from: `${tag}:${sig}`, to: p.signalTerminal, color: s3 ? `${p.deviceType === 'encoder' ? sig : 'BK'} (cable)` : 'BU', size: '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
-        if (p.supplyTerminal) addWire({ wire: '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType.startsWith('sensor') ? 'BN' : pinOf(tag, 'C')}`, color: p.deviceType.startsWith('sensor') ? 'BN (cable)' : 'BU', size: '18 AWG', function: `${tag} supply` });
-        if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:BU`, color: 'BU (cable)', size: '18 AWG', function: `${tag} 0V` });
+        if (p.supplyTerminal) addWire({ wire: '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '+V' : s3 ? 'BN' : pinOf(tag, 'C')}`, color: s3 ? 'BN (cable)' : 'BU', size: '18 AWG', function: `${tag} supply` });
+        if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '0V' : 'BU'}`, color: p.deviceType === 'encoder' ? 'WH (cable)' : 'BU (cable)', size: '18 AWG', function: `${tag} 0V` });
       } else {
         addWire({ wire: '24+', from: 'TB1 24+', to: `${tag}:C`, color: 'BU', size: '18 AWG', function: `${tag} supply` });
         addWire({ wire: p.address, from: `${tag}:${p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO'}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
@@ -1230,7 +1265,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   if (iec) toIec(wires, machine.cables);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, hmi,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, servos: servo.axes, hmi,
   };
 }
 
@@ -1415,7 +1450,8 @@ function rangeText(labels: string[]): string {
   return out.join(', ');
 }
 
-const isSensor3 = (t: FieldDeviceType | 'motor') => t === 'sensor-pnp' || t === 'sensor-npn';
+/** 3-wire DC devices: supply, 0 V and signal (PNP/NPN sensors, a discrete ultrasonic sensor, an encoder channel). */
+const isSensor3 = (t: FieldDeviceType | 'motor') => t === 'sensor-pnp' || t === 'sensor-npn' || t === 'ultrasonic' || t === 'encoder';
 
 function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], motors: MotorModel[], peBar: string, strips: TerminalStrip[]): MachineModel {
   const warnings = [...mw.warnings];
@@ -1456,7 +1492,14 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
     const p0 = d.points[0];
     let type: string;
     let partNumber: string | undefined;
-    if (isSensor3(t)) {
+    if (t === 'encoder') {
+      // Encoder: shielded, one core per channel plus supply; the shield is grounded at the cabinet end only.
+      cores.push({ core: '1', color: 'BN', wire: '24+', from: term(p0, 'sup'), to: `${d.tag}:+V` });
+      cores.push({ core: '2', color: 'WH', wire: '0V', from: term(p0, 'ret'), to: `${d.tag}:0V` });
+      d.points.forEach((p, k) => cores.push({ core: String(k + 3), color: ['GN', 'YE', 'GY', 'PK'][k] ?? 'BK', wire: p.wire, from: term(p, 'sig'), to: `${d.tag}:${encoderChannel(p.description) ?? 'A'}` }));
+      cores.push({ core: 'SH', color: 'shield', wire: 'SH', from: 'PE (cabinet end only)', to: `${d.tag}: not connected` });
+      type = `${cores.length - 1}-core 24 AWG shielded encoder cable (twisted pairs, overall shield) — keep away from motor power cables`;
+    } else if (isSensor3(t)) {
       cores.push({ core: '1', color: 'BN', wire: '24+', from: term(p0, 'sup'), to: `${d.tag}:1` });
       cores.push({ core: '3', color: 'BU', wire: '0V', from: term(p0, 'ret'), to: `${d.tag}:3` });
       cores.push({ core: '4', color: 'BK', wire: p0.wire, from: term(p0, 'sig'), to: `${d.tag}:4` });
@@ -1559,6 +1602,22 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
       });
       d.cable = tag;
     }
+  }
+
+  // Servo motors: the maker's power and feedback cables, drive to motor (plugged, no terminals in between).
+  for (const c of comps) {
+    const part = ctx.getPart(c.partNumber);
+    const k = String(part?.ratings.kind ?? '');
+    if (k !== 'servo-power-cable' && k !== 'servo-feedback-cable') continue;
+    const drive = comps.find((x) => x.motorTag === c.motorTag && isServoDrive(ctx.getPart(x.partNumber)));
+    const motor = comps.find((x) => x.motorTag === c.motorTag && ctx.getPart(x.partNumber)?.ratings.kind === 'servo-motor');
+    if (!drive || !motor) continue;
+    const power = k === 'servo-power-cable';
+    const cores: CableCore[] = power
+      ? [...['U', 'V', 'W'].map((u, i) => ({ core: String(i + 1), color: 'BK', wire: `${drive.tag}-${u}`, from: `${drive.tag}:${u}`, to: `${motor.tag}:${u}` })), { core: 'PE', color: 'GN/YE', wire: 'PE', from: `${drive.tag}:PE`, to: `${motor.tag}:PE` }]
+      : [{ core: 'all', color: "maker's", wire: 'ENC', from: `${drive.tag}:CN2`, to: `${motor.tag}:ENC` }];
+    const len = num(part?.ratings, 'lengthM');
+    cables.push({ tag: nextTag(), kind: 'motor', zone: 'Machine', from: `${drive.tag}:${power ? 'U/V/W' : 'CN2'}`, to: motor.tag, type: `${power ? 'Servo motor power cable' : 'Servo encoder feedback cable'} (maker's, plugged both ends)`, partNumber: c.partNumber, size: power ? '16 AWG' : '—', length: len ? `${len} m` : 'BY SITE', cores, spareCores: 0 });
   }
 
   const guessedDev = devices.filter((d) => d.kind === 'io' && d.guessed).map((d) => d.tag);
@@ -2746,7 +2805,9 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (m.motors.some((x) => x.vfd)) w.push('VFD: enter the drive parameters marked NAMEPLATE / SET ON SITE on the drive sheets at commissioning; Safe Torque Off is not used (factory jumper) unless the risk assessment calls for it.');
   const noWiring = m.io.filter((p) => !p.wiring);
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
-  const extra = ctx.design.ioWiring.filter((x) => !m.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase()));
+  w.push(...motionWarnings(ctx.plc.cpuPartNumber, m.io));
+  // Analog points (DF) are in ctx.io but not in the discrete m.io.
+  const extra = ctx.design.ioWiring.filter((x) => !m.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase()) && !(/^DF\d+$/i.test(x.address) && ctx.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase())));
   if (extra.length) w.push(`ioWiring entries not in the project I/O list: ${extra.map((x) => x.address).join(', ')}.`);
   const unaddressed = ctx.io.filter((p) => !p.address).length;
   if (unaddressed) w.push(`${unaddressed} project I/O point(s) have no PLC address and are not drawn.`);
