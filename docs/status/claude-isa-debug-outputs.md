@@ -510,13 +510,13 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - -U1 / -U2 / -U3 are the enclosure and back panel under IEC tags. check_cad now excludes undrawn parts by BOM category, not by tag prefix.
 - **check_cad:** both former warnings are now FAIL (a drawn wire number not in the wire list; a BOM device whose tag is drawn nowhere). On the 7 affected variants: CAD 0 FAIL / 0 WARN, CONSISTENCY 0, LAYOUT 0.
 
-## Engine cooling; single-file DXF check; Unitronics AML (integration e5bfd12)
+## Engine cooling; single-file DXF check; Unitronics AML (integration e5bfd12, merged 7138eef)
 - **Cooling** (Dev 1's catalog fe5dfcd and pickers 82a9a3e). After the enclosure is chosen, `cabinetHeat` gives the heat the walls cannot shed (15 °C rise limit).
   - **NEMA 1/12:** the smallest 24 VDC filter fan that moves the air with filters fitted (`pickFilterFan`, preferred enclosure makers first). It falls back to an AC fan when the panel has a control voltage.
-    - Parts added: FAN1 + its exhaust filter FLT1 (`pairsWith`) + thermostat TH1 (011160-00, N.O. closes on rise, 30 W DC).
+    - Parts added: FAN1 + its exhaust filter FAN1F (`pairsWith`; accessory tag = holder + F) + thermostat TH1 (011160-00, N.O. closes on rise, 30 W DC).
     - The engine notes when the 24 VDC supply has no margin left for the fan.
   - **Sealed NEMA 4/4X, or no fan fits:**
-    - the next larger enclosure of the same material that sheds the heat itself (not past a designer's pick);
+    - the next larger enclosure of the same material and mounting that sheds the heat itself, at most twice the panel area (not past a designer's pick);
     - else a heat exchanger (W/K × 15 K, ambient up to ~40 °C);
     - else an air conditioner;
     - else a note.
@@ -525,15 +525,20 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
     - `model.fan` is new.
     - The design review flags "Cabinet cooling missing" when a hot cabinet has no fan, heat exchanger or air conditioner, and flags an AC fan as "not drawn".
   - **Drawings, calcs, walls:**
-    - Control sheet: a rung 24+ — TH1 1-2 — FAN1 — 0V.
+    - Control sheet: a rung 24+ — TH1 1-2 — FAN1 — 0V (box labelled FAN).
     - 24 VDC load calc: the fan's catalog current.
     - Enclosure walls: the fan's and exhaust filter's catalog cutouts (verified). Heat-exchanger / air-conditioner cutouts are marked "per the maker's drawing" (no invented rectangle).
   - **check_consistency:** a hot cabinet without cooling and without the review finding fails. A 24 VDC fan without its wire fails. A fan without its exhaust filter or thermostat warns.
   - **engine.test:**
-    - big gets FAN1 / FLT1 / TH1, enough air flow, and is wired;
+    - big gets FAN1 / FAN1F / TH1, enough air flow, and is wired;
     - the example gets nothing;
     - big in NEMA 4X gets no fan and is cooled by a larger enclosure or closed-loop cooling;
-    - a hand-removed fan is flagged.
+    - a hand-removed fan is flagged; an undersized fan is flagged ("Cabinet cooling too small") in the warnings and the review;
+    - **acceptance, pump skid** (2× 10 HP on GS20 drives, 480 V): NEMA 12 gets FAN1 018722-30 (156 m³/h ≥ 112 m³/h for 541 W) + FAN1F + TH1, and the review has no heat finding. In 4X it keeps the 30×24 in stainless enclosure with HX1 TE30-030-17-4X (44 W/K × 15 K ≥ 541 W). Before the cap, 4X jumped to a 90×72×24 in floor-standing enclosure.
+- **Fitted cooling counts everywhere** (`coolingCover`: fan air flow / needed air flow, heat exchanger W/K × 15 K and air-conditioner W / watts to remove, added up):
+  - engineer review (`checks.ts`): no "Cabinet runs N °C above ambient" once the cooling carries the heat; "Cabinet cooling too small" (major) when it does not;
+  - calcs "Cabinet temperature rise" and the electrical doc's thermal row: "cooled by FAN1 …", ok; the cooling row lists fans, heat exchangers and air conditioners;
+  - check_consistency: undersized cooling that the review does not flag fails.
 - **check_cad, single-file DXF** (`<project>_drawings.dxf`, "Save as AutoCAD"):
   - reads and audits clean;
   - ISA_SANS / ISA_SANS_BOLD / ISA_MONO present;
