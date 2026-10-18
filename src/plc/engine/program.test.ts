@@ -18,7 +18,7 @@ import { getCpu, getProfile } from '../core/profiles';
 import { resolveAddresses } from '../core/profile';
 import { moduleSlots } from '../core/modules';
 import { validateProgram } from '../core/validate';
-import { rungAddresses, rungWrites, type LadderProgram } from '../core/ladder';
+import { elementAddresses, rungAddresses, rungWrites, type LadderProgram } from '../core/ladder';
 import { createSimulator } from '../sim/engine';
 import { buildMachineModel, machineInputs, resetSafetyRelay, stepMachine } from '../sim/machineModel';
 import type { IOPoint } from '../../types/io';
@@ -43,7 +43,7 @@ function reviewProblems(p: LadderProgram, io: IOPoint[], addresses: Map<string, 
   const out: string[] = [];
   const writes = new Set(p.rungs.flatMap(rungWrites).map((w) => w.toUpperCase()));
   for (const r of p.rungs) for (const o of r.outputs) { if (o.type === 'TMR') writes.add(`TD${o.address.slice(1)}`); if (o.type === 'CNT') writes.add(`CTD${o.address.slice(2)}`); }
-  const reads = new Set(p.rungs.flatMap((r) => r.branches.flat().flatMap((e) => (e.type === 'CMP' ? [e.left, e.right] : [e.address]))
+  const reads = new Set(p.rungs.flatMap((r) => r.branches.flat().flatMap((e) => (elementAddresses(e)))
     .concat(r.outputs.flatMap((o) => (o.type === 'COPY' ? [o.source] : o.type === 'MATH' ? (o.expression.match(/[A-Z]+\d+/g) ?? []) : o.type === 'TMR' || o.type === 'CNT' ? [o.preset, o.resetAddress ?? ''] : [])))).map((a) => a.toUpperCase()));
   const sets = new Set(p.rungs.flatMap((r) => r.outputs.filter((o) => o.type === 'SET').map((o) => (o as { address: string }).address)));
   const resets = new Set(p.rungs.flatMap((r) => r.outputs.filter((o) => o.type === 'RST').map((o) => (o as { address: string }).address)));
@@ -69,7 +69,7 @@ function reviewProblems(p: LadderProgram, io: IOPoint[], addresses: Map<string, 
 
 function golden(name: string, p: LadderProgram, notes: string[]) {
   const g = [...(p.blocks ?? []).map((b) => `block ${b.id} "${b.name}"`), '',
-    ...p.rungs.map((r) => `[${r.block}] ${r.comment}\n    ${r.branches.map((b) => b.map((e) => (e.type === 'CMP' ? `${e.left}${e.op}${e.right}` : `${e.type}:${e.address}`)).join(' ')).join(' | ') || '(always)'}  ->  ${r.outputs.map((o) => (o.type === 'TMR' ? `TMR ${o.address} ${o.preset}${o.unit}` : o.type === 'CNT' ? `CNT ${o.address} rst ${o.resetAddress}` : o.type === 'COPY' ? `COPY ${o.source}->${o.dest}` : o.type === 'MATH' ? `MATH ${o.dest}=${o.expression}` : `${o.type} ${o.address}`)).join(', ')}`),
+    ...p.rungs.map((r) => `[${r.block}] ${r.comment}\n    ${r.branches.map((b) => b.map((e) => (e.type === 'CMP' ? `${e.left}${e.op}${e.right}` : e.type === 'RAW' ? `RAW:${e.text}` : `${e.type}:${e.address}`)).join(' ')).join(' | ') || '(always)'}  ->  ${r.outputs.map((o) => (o.type === 'TMR' ? `TMR ${o.address} ${o.preset}${o.unit}` : o.type === 'CNT' ? `CNT ${o.address} rst ${o.resetAddress}` : o.type === 'COPY' ? `COPY ${o.source}->${o.dest}` : o.type === 'MATH' ? `MATH ${o.dest}=${o.expression}` : o.type === 'RAW' ? `RAW ${o.text}` : `${o.type} ${o.address}`)).join(', ')}`),
     '', ...p.tags.map((t) => `${t.address} ${t.nickname}: ${t.comment}`), '', ...notes.map((n) => `note: ${n}`), ''].join('\n');
   const file = path.join(FIX, `program-${name}.txt`);
   if (process.env.UPDATE) { fs.mkdirSync(FIX, { recursive: true }); fs.writeFileSync(file, g); }

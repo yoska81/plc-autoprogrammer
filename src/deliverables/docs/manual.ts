@@ -4,6 +4,7 @@ import { buildModel, billOfMaterials } from '../../electrical/derive';
 import { reviewRows } from '../../review/report';
 import { getHmi, hmiMakerOf } from '../../hmi/hmiCatalog';
 import { alarmRows, programInfo, type ProgramInfo } from './program';
+import { operatorDevices } from './operatorStation';
 import { makeTable, specLines, type DocRow, type DocTable } from './table';
 
 export interface ManualSection { title: string; paragraphs: string[] }
@@ -21,11 +22,11 @@ export function operatorManual(p: ProjectSnapshot, info: ProgramInfo = programIn
     'Never bypass guards, interlocks or the E-stop.',
     'Before cleaning, clearing a jam or maintenance: stop the machine, switch the main disconnect OFF and lock it out (lockout/tagout), and release stored air pressure.',
   ] });
-  const doorDevices = (p.electrical?.ioWiring ?? []).filter((w) => /door/i.test(w.location ?? '') || ['pushbutton-no', 'pushbutton-nc', 'selector', 'estop-contact', 'pilot-light'].includes(w.deviceType));
-  out.push({ title: '3. Controls on the cabinet', paragraphs: [
+  const devices = operatorDevices(p);
+  out.push({ title: p.noHmi ? '3. Operator station (pushbuttons, selector and lamps)' : '3. Controls on the cabinet', paragraphs: [
+    ...(p.noHmi ? ['This machine has no touch panel: you run it with the pushbuttons, the selector switch and the lamps below. A lit fault lamp means a fault: remove the cause, then press Reset.'] : []),
     ...(m?.disconnect ? [`${m.disconnect.tag}: main disconnect switch (ON / OFF, lockable in OFF).`] : []),
-    ...(doorDevices.length ? doorDevices.map((w) => `${w.deviceTag}: ${w.description}`) : spec('operator')),
-    ...(m?.safety.estops.filter((t) => !doorDevices.some((w) => w.deviceTag === t)).map((t) => `${t}: emergency stop (push to stop, twist to release).`) ?? []),
+    ...(devices.length ? devices.map((d) => `${d.tag}: ${d.description}${/door/i.test(d.location) ? '' : ` (${d.location})`}`) : spec('operator')),
   ] });
   if (p.hmi) {
     const model = getHmi(p.hmi.hmiPartNumber);
@@ -43,7 +44,7 @@ export function operatorManual(p: ProjectSnapshot, info: ProgramInfo = programIn
     'Switch the main disconnect ON. Release any pressed E-stop and reset the safety circuit.',
     ...spec('homing'),
     ...spec('modes'),
-    'Press Start (cabinet pushbutton or HMI).',
+    p.hmi ? 'Press Start (cabinet pushbutton or HMI).' : 'Press the Start pushbutton.',
   ] });
   out.push({ title: '6. Normal operation', paragraphs: spec('sequence') });
   const alarms = alarmRows(p, info);
@@ -54,9 +55,10 @@ export function operatorManual(p: ProjectSnapshot, info: ProgramInfo = programIn
   out.push({ title: '8. Stopping and shutting down', paragraphs: [
     'Press Stop to end the cycle. In an emergency, press the E-stop.',
     'At the end of the shift: Stop, then switch the main disconnect OFF.',
-    'If the machine stops unexpectedly, read the alarm on the HMI before resetting.',
+    p.hmi ? 'If the machine stops unexpectedly, read the alarm on the HMI before resetting.' : 'If the machine stops unexpectedly, check the fault lamp and find the cause (see Alarms) before pressing Reset.',
   ] });
-  return out.filter((s) => s.paragraphs.length);
+  // Number the sections that are there (no gap where the touch panel section is left out).
+  return out.filter((s) => s.paragraphs.length).map((s, i) => ({ ...s, title: s.title.replace(/^\d+\. /, `${i + 1}. `) }));
 }
 
 export function bomTable(p: ProjectSnapshot): DocTable {

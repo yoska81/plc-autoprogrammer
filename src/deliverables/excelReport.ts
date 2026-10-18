@@ -1,4 +1,5 @@
 import { isIec, regionSpec } from '../standards/regions';
+import { OPERATOR_STATION_HEAD, operatorInterfaceShort, operatorStationRows } from './docs/operatorStation';
 import type { Worksheet, Workbook } from 'exceljs';
 import type { ProjectSnapshot } from './collect';
 import { SPEC_SECTIONS } from '../spec/types';
@@ -90,7 +91,7 @@ function documentControl(wb: Workbook, p: ProjectSnapshot) {
     ['Report number', m.reportNo], ['Engineering package', m.docNo], ['Drawing set', m.drawings ? `${m.drawings.first} … ${m.drawings.last} (${m.drawings.sheets.length} sheets)` : 'not generated'],
     ['Current revision', `${m.rev.rev} — ${m.rev.date} — ${m.rev.description}`],
     ['Region / codes', isIec(m.region) ? `${regionSpec(m.region).label} — ${m.codes.short}, ${m.codes.installation}` : `${m.region} — ${m.codes.installation}, ${m.codes.panel}, NFPA 79`],
-    ['PLC', `${p.profile.vendor} ${p.profile.name} ${p.cpu.id}`], ['HMI', hmiText(m.hmiPart)],
+    ['PLC', `${p.profile.vendor} ${p.profile.name} ${p.cpu.id}`], ['HMI', operatorInterfaceShort(p, hmiText(m.hmiPart))],
     ['Supply', d ? `${supplyText(d.inputs.supply)}, ${d.inputs.enclosureRating}` : 'not designed'],
     ['Report generated', new Date().toLocaleString()],
   ];
@@ -136,7 +137,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
   [
     ['Project', p.projectName],
     ['PLC', `${p.profile.vendor} ${p.profile.name} · ${p.cpu.label}`],
-    ['HMI', hmiModel ? `${hmiModel.partNumber} · ${hmiModel.sizeIn}" ${hmiModel.widthPx}x${hmiModel.heightPx}` : 'not designed'],
+    ['HMI', hmiModel ? `${hmiModel.partNumber} · ${hmiModel.sizeIn}" ${hmiModel.widthPx}x${hmiModel.heightPx}` : p.noHmi ? operatorInterfaceShort(p, '') : 'not designed'],
     ['I/O points', `${p.io.filter((x) => x.type === 'input').length} inputs, ${p.io.filter((x) => x.type === 'output').length} outputs`],
     ['Program', p.profile.language === 'ladder' ? `${p.ladder.rungs.length} rungs` : p.stCode ? 'Structured Text' : 'not generated'],
     ['Electrical design', p.electrical ? `${p.electrical.components.length} components, supply ${p.electrical.inputs.supply}` : 'not designed'],
@@ -241,6 +242,13 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
     const sc = wb.addWorksheet('HMI Screens');
     header(sc, [{ header: 'Screen', key: 's', width: 20 }, { header: 'Element', key: 'e', width: 30 }, { header: 'Kind', key: 'k', width: 14 }, { header: 'Address', key: 'a', width: 10 }, { header: 'Action', key: 'x', width: 11 }]);
     for (const s of p.hmi.screens) for (const e of s.elements) sc.addRow({ s: s.name, e: e.label, k: e.kind, a: e.address ?? '', x: e.action ?? '' });
+  }
+
+  // No touch panel: the operator station is the operator interface.
+  if (!p.hmi && p.noHmi) {
+    const os = wb.addWorksheet('Operator Station');
+    header(os, OPERATOR_STATION_HEAD.map((h, i) => ({ header: h, key: `c${i}`, width: [10, 20, 60, 22, 12][i] })));
+    for (const r of operatorStationRows(p)) os.addRow(Object.fromEntries(r.map((v, i) => [`c${i}`, v])));
   }
 
   // Program

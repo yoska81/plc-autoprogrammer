@@ -14,7 +14,7 @@
  */
 import type { AnalogChannel, CpuModel, ModuleSlot, PlcProfile, ProgramExporter, SimSemantics } from '../profile';
 import type { AnalogRange } from '../../../types/io';
-import type { Rung } from '../ladder';
+import { elementAddresses, type Rung } from '../ladder';
 import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress } from './click';
 import { buildL5x, logixIoMapping } from './l5x';
 
@@ -67,7 +67,7 @@ const LOGIX_KNOWLEDGE = (cpu: CpuModel) => `Target: Allen-Bradley ${cpu.label}, 
 
 function checkRung(rung: Rung) {
   const issues: { severity: 'error' | 'warning'; message: string }[] = [];
-  const all = [...rung.branches.flat().flatMap((e) => (e.type === 'CMP' ? [e.left, e.right] : [e.address]))];
+  const all = [...rung.branches.flat().flatMap((e) => (elementAddresses(e)))];
   for (const a of all) {
     const u = a.toUpperCase();
     if (/^SC\d+$/.test(u) && !['SC1', 'SC2', 'SC7'].includes(u)) issues.push({ severity: 'error', message: `${a}: Logix has no equivalent system bit (use SC1, SC2 or SC7 only).` });

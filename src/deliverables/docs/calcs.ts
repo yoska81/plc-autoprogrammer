@@ -16,6 +16,8 @@ export interface CalcLine { item: string; value: string; basis: string; estimate
 export interface CalcSection { title: string; lines: CalcLine[]; result: string; ok: boolean }
 
 // Typical values used when the catalog doesn't publish one (labelled as estimates).
+import { coolingCover, dcFanAmps } from '../../electrical/cooling';
+
 export const DC_LOAD_A: Partial<Record<CatalogCategory, number>> = {
   plc: 0.3, plcModule: 0.05, safetyRelay: 0.1, relay: 0.03, pilotLight: 0.02, stackLight: 0.1, sensor: 0.03, contactor: 0.1,
 };
@@ -46,6 +48,9 @@ export function calculations(p: ProjectSnapshot): CalcSection[] {
       basis = `${part.ratings.watts} W coil (catalog)`;
     } else if (part.category === 'contactor' && !String(part.ratings.coilVoltage ?? part.ratings.coil ?? '').includes('24')) {
       continue; // AC coil, not on the 24 VDC supply
+    } else if (dcFanAmps(part) !== null) {
+      a = dcFanAmps(part)! * c.quantity;
+      basis = `${dcFanAmps(part)!.toFixed(2)} A 24 VDC fan (catalog)`;
     } else if (DC_LOAD_A[part.category] !== undefined) {
       a = DC_LOAD_A[part.category]! * c.quantity;
       basis = `${DC_LOAD_A[part.category]} A each (typical)`;
@@ -111,12 +116,16 @@ export function calculations(p: ProjectSnapshot): CalcSection[] {
   const th = cabinetHeat(d.components, getPart, hmi ? { partNumber: hmi.partNumber, sizeIn: hmi.sizeIn } : undefined);
   if (th.enclosure && th.area !== null && th.rise !== null) {
     const v = th.ventilation;
+    const cover = v ? coolingCover(d.components, getPart, v, ALLOWED_RISE_C) : null;
+    const coolTags = d.components.filter((c) => ['filter fan', 'heat exchanger', 'air conditioner'].includes(String(getPart(c.partNumber)?.ratings.kind))).map((c) => `${c.tag} ${c.partNumber}`).join(', ');
     sections.push({
       title: 'Cabinet temperature rise',
       lines: [...th.lines, { item: 'Effective surface area', value: `${th.area.toFixed(2)} m²`, basis: `${th.enclosure.partNumber}, ${th.enclosure.ratings.mounting === 'floor' ? 'floor-standing (back and bottom not counted)' : 'wall mounted (back not counted)'}`, estimate: false },
         ...(v ? [{ item: 'Filter fan air flow', value: `${Math.ceil(v.airflowM3h)} m³/h (${Math.ceil(v.airflowM3h / 1.699)} CFM)`, basis: `V = 3.1 x ${v.wattsToRemove.toFixed(0)} W / ${ALLOWED_RISE_C} K (heat above what the walls shed at ${ALLOWED_RISE_C} °C rise)`, estimate: true }] : [])],
-      result: `${th.watts.toFixed(0)} W in ${th.area.toFixed(2)} m² -> about ${th.rise.toFixed(1)} °C above room temperature (painted steel, k ~ 5.5 W/m²K). ${v ? `Above ${ALLOWED_RISE_C} °C: add a filter fan of at least ${Math.ceil(v.airflowM3h)} m³/h (with an outlet filter), or a larger enclosure.` : 'Natural cooling is enough at normal room temperatures (<= 40 °C).'}`,
-      ok: !v,
+      result: `${th.watts.toFixed(0)} W in ${th.area.toFixed(2)} m² -> about ${th.rise.toFixed(1)} °C above room temperature without cooling (painted steel, k ~ 5.5 W/m²K). ${!v ? 'Natural cooling is enough at normal room temperatures (<= 40 °C).'
+        : cover?.covers ? `Above ${ALLOWED_RISE_C} °C: cooled by ${coolTags} (${Math.round(cover.share * 100)} % of the ${v.wattsToRemove.toFixed(0)} W the walls cannot shed), holding the rise at <= ${ALLOWED_RISE_C} °C.`
+        : `Above ${ALLOWED_RISE_C} °C: add a filter fan of at least ${Math.ceil(v.airflowM3h)} m³/h (with an outlet filter), a heat exchanger / air conditioner, or a larger enclosure${cover?.fitted ? ` (the fitted ${coolTags} carry only ${Math.round(cover.share * 100)} %)` : ''}.`}`,
+      ok: !v || !!cover?.covers,
     });
   }
 

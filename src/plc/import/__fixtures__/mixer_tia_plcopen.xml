@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0201" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <fileHeader companyName="Siemens AG" productName="TIA Portal" productVersion="V18 Update 2" creationDateTime="2025-02-11T07:52:30" contentDescription="MixTank_MT01" />
+  <contentHeader name="MixTank_MT01" modificationDateTime="2025-02-11T07:52:30">
+    <coordinateInfo>
+      <fbd><scaling x="1" y="1" /></fbd>
+      <ld><scaling x="1" y="1" /></ld>
+      <sfc><scaling x="1" y="1" /></sfc>
+    </coordinateInfo>
+  </contentHeader>
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="FB_Mixer" pouType="functionBlock">
+        <interface>
+          <localVars>
+            <variable name="Level_Pct"><type><REAL /></type><documentation><xhtml:p>Tank level, %</xhtml:p></documentation></variable>
+            <variable name="Temp_C"><type><REAL /></type><documentation><xhtml:p>Product temperature, °C</xhtml:p></documentation></variable>
+            <variable name="S_Heat"><type><BOOL /></type><documentation><xhtml:p>Step: heat</xhtml:p></documentation></variable>
+          </localVars>
+        </interface>
+        <body>
+          <LD>
+            <leftPowerRail localId="1"><position x="0" y="0" /><connectionPointOut formalParameter="none" /></leftPowerRail>
+            <inVariable localId="2"><position x="0" y="0" /><connectionPointOut /><expression>Level_Raw</expression></inVariable>
+            <inVariable localId="3"><position x="0" y="0" /><connectionPointOut /><expression>0.0</expression></inVariable>
+            <inVariable localId="4"><position x="0" y="0" /><connectionPointOut /><expression>100.0</expression></inVariable>
+            <block localId="5" typeName="FC_ScaleAnalog">
+              <position x="0" y="0" />
+              <inputVariables>
+                <variable formalParameter="EN"><connectionPointIn><connection refLocalId="1" /></connectionPointIn></variable>
+                <variable formalParameter="Raw"><connectionPointIn><connection refLocalId="2" /></connectionPointIn></variable>
+                <variable formalParameter="LoEng"><connectionPointIn><connection refLocalId="3" /></connectionPointIn></variable>
+                <variable formalParameter="HiEng"><connectionPointIn><connection refLocalId="4" /></connectionPointIn></variable>
+              </inputVariables>
+              <inOutVariables />
+              <outputVariables><variable formalParameter="Ret_Val"><connectionPointOut /></variable></outputVariables>
+            </block>
+            <outVariable localId="6"><position x="0" y="0" /><connectionPointIn><connection refLocalId="5" formalParameter="Ret_Val" /></connectionPointIn><expression>Level_Pct</expression></outVariable>
+            <inVariable localId="10"><position x="0" y="0" /><connectionPointOut /><expression>Temp_Raw</expression></inVariable>
+            <inVariable localId="11"><position x="0" y="0" /><connectionPointOut /><expression>0.0</expression></inVariable>
+            <inVariable localId="12"><position x="0" y="0" /><connectionPointOut /><expression>150.0</expression></inVariable>
+            <block localId="13" typeName="FC_ScaleAnalog">
+              <position x="0" y="0" />
+              <inputVariables>
+                <variable formalParameter="EN"><connectionPointIn><connection refLocalId="1" /></connectionPointIn></variable>
+                <variable formalParameter="Raw"><connectionPointIn><connection refLocalId="10" /></connectionPointIn></variable>
+                <variable formalParameter="LoEng"><connectionPointIn><connection refLocalId="11" /></connectionPointIn></variable>
+                <variable formalParameter="HiEng"><connectionPointIn><connection refLocalId="12" /></connectionPointIn></variable>
+              </inputVariables>
+              <inOutVariables />
+              <outputVariables><variable formalParameter="Ret_Val"><connectionPointOut /></variable></outputVariables>
+            </block>
+            <outVariable localId="14"><position x="0" y="0" /><connectionPointIn><connection refLocalId="13" formalParameter="Ret_Val" /></connectionPointIn><expression>Temp_C</expression></outVariable>
+            <contact localId="20" negated="false" storage="none" edge="none">
+              <position x="0" y="0" /><connectionPointIn><connection refLocalId="1" /></connectionPointIn><connectionPointOut /><variable>S_Heat</variable>
+            </contact>
+            <contact localId="21" negated="false" storage="none" edge="none">
+              <position x="0" y="0" /><connectionPointIn><connection refLocalId="20" /></connectionPointIn><connectionPointOut /><variable>Agitator_Running</variable>
+            </contact>
+            <contact localId="22" negated="false" storage="none" edge="none">
+              <position x="0" y="0" /><connectionPointIn><connection refLocalId="21" /></connectionPointIn><connectionPointOut /><variable>Safety_Thermostat_OK</variable>
+            </contact>
+            <coil localId="23" negated="false" storage="none">
+              <position x="0" y="0" /><connectionPointIn><connection refLocalId="22" /></connectionPointIn><connectionPointOut /><variable>Heater</variable>
+            </coil>
+            <contact localId="30" negated="false" storage="none" edge="none">
+              <position x="0" y="0" /><connectionPointIn><connection refLocalId="1" /></connectionPointIn><connectionPointOut /><variable>S_Heat</variable>
+            </contact>
+            <coil localId="31" negated="false" storage="none">
+              <position x="0" y="0" /><connectionPointIn><connection refLocalId="30" /></connectionPointIn><connectionPointOut /><variable>Agitator</variable>
+            </coil>
+            <rightPowerRail localId="99"><position x="0" y="0" /><connectionPointIn /></rightPowerRail>
+          </LD>
+        </body>
+      </pou>
+      <pou name="FC_ScaleAnalog" pouType="function">
+        <interface>
+          <returnType><REAL /></returnType>
+          <inputVars>
+            <variable name="Raw"><type><INT /></type><documentation><xhtml:p>Raw analog word</xhtml:p></documentation></variable>
+            <variable name="LoEng"><type><REAL /></type></variable>
+            <variable name="HiEng"><type><REAL /></type></variable>
+          </inputVars>
+          <tempVars>
+            <variable name="Norm"><type><REAL /></type></variable>
+          </tempVars>
+        </interface>
+        <body>
+          <ST>
+            <xhtml:p><![CDATA[// 4-20 mA input on SM 1231 AI, scaled to engineering units
+IF #Raw < 0 THEN
+    #FC_ScaleAnalog := #LoEng;
+    RETURN;
+END_IF;
+#Norm := NORM_X(MIN := 0, VALUE := #Raw, MAX := 32767);
+#FC_ScaleAnalog := SCALE_X(MIN := #LoEng, VALUE := #Norm, MAX := #HiEng);]]></xhtml:p>
+          </ST>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances>
+    <configurations>
+      <configuration name="PLC_1">
+        <resource name="CPU_1214C">
+          <globalVars name="PLC_Tags">
+            <variable name="Start_PB" address="%IX0.0"><type><BOOL /></type><documentation><xhtml:p>Start pushbutton (NO)</xhtml:p></documentation></variable>
+            <variable name="Stop_PB" address="%IX0.1"><type><BOOL /></type><documentation><xhtml:p>Stop pushbutton (NC, TRUE = not pressed)</xhtml:p></documentation></variable>
+            <variable name="Agitator_Running" address="%IX0.4"><type><BOOL /></type><documentation><xhtml:p>Agitator contactor feedback</xhtml:p></documentation></variable>
+            <variable name="Safety_Thermostat_OK" address="%IX0.5"><type><BOOL /></type><documentation><xhtml:p>Safety thermostat healthy</xhtml:p></documentation></variable>
+            <variable name="Level_Raw" address="%IW96"><type><INT /></type><documentation><xhtml:p>Tank level 4-20 mA</xhtml:p></documentation></variable>
+            <variable name="Temp_Raw" address="%IW98"><type><INT /></type><documentation><xhtml:p>Product temperature 4-20 mA</xhtml:p></documentation></variable>
+            <variable name="Agitator" address="%QX0.0"><type><BOOL /></type><documentation><xhtml:p>Agitator motor contactor</xhtml:p></documentation></variable>
+            <variable name="Heater" address="%QX0.1"><type><BOOL /></type><documentation><xhtml:p>Heater contactor</xhtml:p></documentation></variable>
+          </globalVars>
+          <task name="Main" interval="T#10ms" priority="1"><pouInstance name="Mixer_DB" typeName="FB_Mixer" /></task>
+        </resource>
+      </configuration>
+    </configurations>
+  </instances>
+</project>

@@ -194,6 +194,18 @@ def check(vdir: Path):
         elif nick and a not in nick_txt:
             report('FAIL', v, f'I/O address {a} not in the nickname CSV')
 
+    # an analog channel takes only its own signal family: no voltage / current signal (a transmitter, mA, V) on a
+    # thermocouple-only module, no bare thermocouple on a voltage / current input
+    if ana_txt:
+        for r in csv.DictReader(io.StringIO(ana_txt)):
+            pn, desc = r.get('Part number', ''), r.get('Description', '')
+            electrical = re.search(r'\d\s*-\s*\d+\s*(m?A|V)\b|\bmA\b|transmitter|transducer', desc, re.I)
+            thm = re.search(r'THM', pn)
+            if thm and electrical:
+                report('FAIL', v, f'analog {r.get("Data register")} "{desc}": a voltage / current signal on thermocouple module {pn}')
+            elif pn and not thm and not electrical and re.search(r'thermocouple|\bT/C\b', desc, re.I):
+                report('FAIL', v, f'analog {r.get("Data register")} "{desc}": a thermocouple on {pn}, not a thermocouple input')
+
     # ---- Alarms
     hmi_al = [r for r in sheet_rows(wb, 'HMI Alarms')] if 'HMI Alarms' in wb.sheetnames else []
     for a in data['alarms']:
@@ -223,6 +235,23 @@ def check(vdir: Path):
             report('FAIL', v, f'{mo["tag"]} {mo["hp"]} HP {mo["voltage"]}: FLA {mo["fla"]} A, NEC/CEC table says {ref} A')
         if f'{mo["fla"]} A' not in eng_flat:
             report('WARN', v, f'{mo["tag"]} FLA {mo["fla"]} A not printed in the engineering package')
+    # ---- Cabinet cooling: heat the walls cannot shed (rise above the limit) needs a filter fan, a heat exchanger or an
+    # air conditioner in the design, or the design review saying so; a filter fan comes with its exhaust filter and
+    # thermostat, the fitted cooling carries the heat (or the review says it is too small), and a 24 VDC fan is wired (its wire on the drawings and in the wire list)
+    co = data.get('cooling') or {}
+    kinds = {c['kind'] for c in co.get('parts', [])}
+    if co.get('ventilation') and not kinds & {'filter fan', 'heat exchanger', 'air conditioner'} and not any('Cabinet cooling missing' in w for w in data['warnings']):
+        report('FAIL', v, f'cabinet needs {co["ventilation"]["airflowM3h"]:.0f} m³/h of cooling ({co["rise"]:.0f} °C rise) but has no fan / heat exchanger / air conditioner and the review does not say so')
+    cover = co.get('cover') or {}
+    if cover.get('fitted') and not cover.get('covers') and not any('Cabinet cooling too small' in w for w in data['warnings']):
+        report('FAIL', v, f'the fitted cooling carries {cover["share"] * 100:.0f} % of the heat the walls cannot shed and the review does not say so')
+    if 'filter fan' in kinds:
+        for need in ('exhaust filter', 'thermostat'):
+            if need not in kinds:
+                report('WARN', v, f'filter fan without a {need}')
+        fan = co.get('fan') or {}
+        if fan.get('dc') and fan.get('thermostat') and fan['tag'] not in {w['wire'] for w in data['wires']}:
+            report('FAIL', v, f'24 VDC fan {fan["tag"]}: no wire {fan["tag"]} from thermostat {fan["thermostat"]} in the wire list')
     # ---- Drive branches: the drive's listed Class T fuses (its SCCR condition), or the review says why not
     iec = str(data.get('region', '')) not in ('US', 'Canada', '')
     for dr in data.get('drives', []):

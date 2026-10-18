@@ -38,8 +38,8 @@ WD       T1-1530G-1         x2    Wire duct
 GB1      SCE-GB10           x1    Ground bar
 
 X001   SR1    safety-relay-output  Cabinet        Safety OK
-X002   PB1    pushbutton-no        Machine        Left palm button
-X003   PB1    pushbutton-no        Machine        Right palm button
+X002   PB1L   pushbutton-no        Machine        Left palm button
+X003   PB1R   pushbutton-no        Machine        Right palm button
 X004   LS1    sensor-pnp           Machine        Head up sensor
 X005   LS2    sensor-pnp           Machine        Head down sensor
 X006   LS3    sensor-pnp           Machine        Sealing bar temperature OK
@@ -51,7 +51,7 @@ Y004   SOL1   solenoid             Machine        Head up solenoid
 zones ["Machine"]
 junctionBoxes [{"tag":"JB1","location":"Machine","partNumber":"SCE-16EL1206LP"}]
 motorLocations {"M2":"Machine"}
-routing {"PB1":"JB1","LS1":"JB1","LS2":"JB1","LS3":"JB1","SOL1":"JB1"}
+routing {"PB1L":"JB1","PB1R":"JB1","LS1":"JB1","LS2":"JB1","LS3":"JB1","SOL1":"JB1"}
 
 note: M1 Conveyor motor (1 HP) is in the motor list but not in the machine description or I/O list, so it was left out of the design: add it back on the Design tab if this machine has it.
 note: Unwinder motor: motor power not given — assumed 1 HP; confirm the nameplate.

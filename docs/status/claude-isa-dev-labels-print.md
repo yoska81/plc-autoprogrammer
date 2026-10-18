@@ -129,6 +129,85 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Test: src/electrical/cooling.test.ts. There is no 4X air conditioner in the catalog; 4X cabinets get the Stratus TE…-4X heat exchangers.
 - Test change: the `amps` plausibility floor is now 0.01 A, since small fans draw 0.06 A.
 
+## Servo systems: AutomationDirect SureServo2
+- 213 parts:
+  - 16 SV2A drives (230 V and 460 V, 400 W to 15 kW), with footprints from the AD spec sheet;
+  - 52 SV2L/M/H motors;
+  - 128 SV2C power, encoder and brake cables;
+  - 17 accessories.
+- Prices and stock come from each product page (2026-10-18).
+- New categories: `servoDrive` (backplate), `servoMotor` (field) and `encoder` (field). Cables are `other` with kind 'servo cable' or 'encoder cable', plus `lengthM`, `forMotor` and `forDrive`.
+- Drive keys: ratedWatts, inputVolts, inputPhases, outputAmps, peakAmps, controlModes, pulseInputMaxKHz (line driver 4000; the open-collector 200 kHz is in pulseInputNote), network, sto and stoRating, brakeOutput, regenResistor, pairsWith.
+- Motor keys: ratedWatts, ratedTorqueNm, peakTorqueNm, ratedRpm, maxRpm, ratedAmps, flangeMm, shaftMm, encoder, brake and brakeVolts, inertiaKgm2, pairsWith, plus the powerCable and encoderCable families (`xx` = length code 03/05/10/20 m).
+- Accessories that plug into the drive (comm modules, battery box, connectors, STO plug, SV2-TOR1 toroid) take no back-panel space. They are `mount: 'field'` with `mountsOn`.
+- AutomationDirect lists no braking resistor, line reactor or EMC filter for SureServo2.
+- Source typo kept as published: the SV2H-455B inertia equals the SV2H-445B figure (see inertiaNote).
+
+## Imported (IEC / Chinese) parts → UL cross-reference ("Convert existing drawings")
+- 273 imported parts, each from the maker's own catalogue (src/electrical/catalogs/foreignPartsData.ts):
+  - CHINT (78): NXC contactors with one record per coil, NXR overloads, NS2 motor protectors, NXB-63 and NB1-63 MCBs, JXB terminals.
+  - Delixi (45): CJX2s, JRS1Dsp, CDP6.
+  - Schneider IEC-only (64): LC1D…M7C/F7C/Q7C, LRD, GV2ME, iC60N/iC65N/OSMC32N, XB2/XB4/XB5/ZB5.
+  - Siemens 5SY6 (17), ABB S200 (16), Mean Well DIN supplies (25), IDEC RJ/RU relays (14), Omron MY/LY/G3NA/H3CR (14).
+- Each record carries the maker's own UL wording. CHINT NXC/NXR/NXB, all Delixi parts and Schneider's Chinese-market parts state no UL listing. 5SY, S200 and NB1-63 are UL 1077 supplementary protectors.
+- These parts are kept OUT of the catalog, so a new design never picks one.
+- `FOREIGN_PART_DATA` (catalogs/foreignParts.ts) is keyed by the exact part number and uses Debug 1's DrawnRatings units (`drawn`). It also holds `part`, the full record. `foreignPart(pn)` ignores case and spacing.
+- `foreignEquivalents(pn)` (src/electrical/foreign.ts) returns UL catalog parts with their differences:
+  - contactors: same poles and at least the AC-3 current;
+  - MCBs: same poles and curve, current within 20 % (16 A → 15 A, listed as a change), UL 489 first; UL 1077 is flagged as not branch rated;
+  - overloads: a range that contains the middle of the drawn range;
+  - supplies: same voltage, at least the current;
+  - relays: 1CO = SPDT, 2CO = DPDT, same coil first;
+  - 22 mm operators: same colour.
+- Every CHINT and Delixi contactor, overload and motor protector has at least one UL equivalent (tested).
+- Automation parts:
+  - 131 imported parts added: Inovance H3U/H5U/Easy PLCs, GL20 modules and MD290/MD500 drives; Xinje XD3/XD5, VH1/VH5 and TG HMIs; Mitsubishi FX3U/FX3G and FR-D700 -CHT; Autonics PR/PRD/BJ sensors, E40/E50 encoders and TCN/TK controllers; Omron E2E/E3Z/E5CC/E6B2.
+  - The 7 Inovance MD200 drives were left out: their part numbers were assembled from a brochure pattern, not printed.
+  - Records whose maker documents state no UL get `ul: 'not stated in the maker documents read'`.
+  - Delta (UL listed, sold in North America) went into the catalog instead (delta.ts, 39 parts): DVP-ES2/EX2/SS2 and AS200/AS300 CPUs, DVP modules, VFD-E, and MS300 1-phase 230 V. The 3 MS300 drives without the EMC filter are unverified (their output current comes from the same-kW filtered model).
+  - New matching rules:
+    - PLC: inputs and outputs at least the drawn ones, same output type.
+    - Sensors: same type and PNP/NPN.
+    - Encoders: same PPR and output type (encoder catalog parts are still to come).
+    - Drives use the cross-reference HP/voltage key.
+- Gaps:
+  - Delixi MCBs and CHINT DZ47: the maker pages are captcha- or 403-blocked.
+  - Fuji: already in the catalog under AD part numbers.
+  - IDEC pilot lights and pushbuttons.
+  - The 12 V supplies and Omron timers/SSRs have no catalog equivalent yet.
+  - The CHINT JXB footprints are unverified.
+
+## Servo systems: Allen-Bradley Kinetix 5100, Siemens SINAMICS V90, Inovance (imported)
+- **Kinetix 5100** (allenBradley.ts, 133 parts):
+  - 16 2198-E… drives (230/480 V): ratings and dimensions from KNX-TD003N, pulse input from 2198-UM004 (4 MHz line driver), SCCR 5 kA.
+  - 72 TLP motors (KNX-TD001J), with pairings from KNX-RM011D. TLP-B235-11K is paired with E4150 only: its 70 A peak exceeds E4075's 53.3 A.
+  - 45 continuous-flex cables (…-xxF). The standard cables were discontinued in May 2024.
+- **SINAMICS V90** (siemens.ts, 133 parts):
+  - 30 PN/PTI drives (200/400 V) from each part's Siemens datasheet. The PTI pulse input is 1 MHz line driver / 200 kHz optocoupler. The PN versions have no pulse input.
+  - 76 1FL6 motors (keyed or plain shaft, with or without brake) and 27 MOTION-CONNECT 300 cables, with pairings from catalog D33.
+  - The 4 new FSA drives are on the unverified list: their datasheets give no peak current.
+- **Inovance SV660P** (imported data): 27 MS1 motors. The 12 drives were left out because their part numbers would be assembled from a pattern.
+- **Delta ASDA-B3/A3:** not added. Delta's documents now sit behind a captcha; it was not bypassed, and third-party copies were not used.
+
+## Encoders, ultrasonic sensors, CLICK high-speed counter / pulse output limits
+- **Encoders (category `encoder`):** 225 AD-sold JTEKT/Koyo incremental encoders (TRD-N/NH, TRD-SR, TRD-GK, TRDA-20, TRDA-25) plus 6 TRDA-25 cables. Fields: ppr, outputs, outputType, supplyVolts, maxFreqKHz, shaft/bore.
+  - Retired lines were not added (TRD-S/SH, TRDA-2E, TRD-MX).
+  - Encoder Products base models were dropped: full order codes are built from an ordering guide, and AD does not sell them.
+- **Ultrasonic sensors** (category `sensor`, type 'ultrasonic', with rangeMm, rangeMinMm and rangeMaxMm):
+  - AD Micro Detectors UK1/UK6 (100): PNP, NPN, 0-10 V, 4-20 mA, and analog + PNP.
+  - Pepperl+Fuchs UB (20) and Banner T30UX/QS18U/S18U (20) are new vendors (`pepperl`, `banner`). Their source is the maker datasheet PDF.
+  - Baumer was not added: baumer.com returned 403 to every request.
+- **Prices:** 353 AD prices and stock records (2026-10-18).
+- **File split:** the new AD parts are in automationdirectSensors.ts. automationdirect.ts became too large for the TypeScript compiler to type as one list (TS2590).
+- **CLICK high-speed limits, as data on the CPUs** (hsc*/pto* keys, manual page in hscSource):
+  - C0-10/C0-12 Ethernet DC CPUs: 4 HSC on X001-X004, 2 quadrature (1 with Z), 100 kHz.
+  - C0-11: 6 HSC on X001-X008, 3 quadrature (2 with Z).
+  - The C0 CPUs have no PTO (ptoNote says so). C0-0x and AC-input CPUs have no high-speed inputs.
+  - CLICK PLUS C2-0xCPU: the limits come from the module in option slot 0. C2-14D1/D2/TTL give 6 HSC, 4 quadrature, 3 PTO axes on Y1/Y3/Y5 at 100 kHz. C2-08D1/D2 give 2 axes on Y1/Y3.
+- **New CLICK parts:** 13 option-slot modules, 3 two-slot CPUs (-2) and 6 C0 Ethernet Analog -1/-2 CPUs.
+  - The slot modules have no footprint of their own because they sit inside the CPU.
+  - The -2 CPU width (80.5 mm) comes from the manual drawing. Both are on the unverified list with the reason.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.

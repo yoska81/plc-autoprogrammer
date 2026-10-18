@@ -9,7 +9,7 @@
  * (1756-RM084 / RM014D, ch. 1 and 9): RSLogix5000Content › Controller › Tags / Programs /
  * Routines / RLLContent / Rung › Text CDATA, Tasks › ScheduledPrograms.
  */
-import type { CompareElement, LadderElement, LadderOutput, LadderProgram, Rung } from '../ladder';
+import { rawTodo, type CompareElement, type LadderElement, type LadderOutput, type LadderProgram, type RawInstruction, type Rung } from '../ladder';
 import type { ExportContext, ModuleSlot } from '../profile';
 
 export type LogixType = 'BOOL' | 'DINT' | 'REAL' | 'TIMER' | 'COUNTER';
@@ -17,7 +17,11 @@ export type LogixType = 'BOOL' | 'DINT' | 'REAL' | 'TIMER' | 'COUNTER';
 export interface LogixTag { name: string; dataType: LogixType; aliasFor?: string; description: string; base?: string }
 export interface LogixRung { comment: string; text: string }
 export interface LogixRoutine { name: string; rungs: LogixRung[] }
-export interface LogixProgram { tags: LogixTag[]; routines: LogixRoutine[]; warnings: string[] }
+export interface LogixProgram {
+  tags: LogixTag[]; routines: LogixRoutine[]; warnings: string[];
+  /** Original Logix definitions that imported (RAW) instructions need, by kind, without duplicates. */
+  decls: { dataTypes: string[]; aois: string[]; tags: string[] };
+}
 
 const UNIT_MS: Record<string, number> = { ms: 1, sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 };
 const OPERAND_RE = /\b(CTD|TXT|DS|DD|DH|DF|TD|SD|CT|SC|C|T|X|Y)(\d+)\b/gi;
@@ -45,8 +49,30 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
   const used = new Set<string>(['s', 'local']);
   const warnings: string[] = [];
   const tags = new Map<string, LogixTag>(); // key: neutral base address (T1 for T1/TD1, CT1 for CT1/CTD1)
+  /** Bases that are members of tags declared from the original (not tags of their own). */
+  const declared = new Set<string>();
   const nick = new Map<string, { nickname: string; comment: string }>();
   for (const t of [...ctx.extraTags, ...program.tags]) nick.set(t.address.toUpperCase(), { nickname: t.nickname, comment: t.comment });
+  // Definitions imported instructions need (their own tags, types and add-on instructions).
+  const decls: LogixProgram['decls'] = { dataTypes: [], aois: [], tags: [] };
+  const declNames = new Set<string>();
+  for (const r of program.rungs) for (const x of [...r.branches.flat(), ...r.outputs]) {
+    if (x.type !== 'RAW' || x.vendor !== 'logix') continue;
+    for (const d of x.decl ?? []) {
+      const kind = /^<(\w+)/.exec(d)?.[1], name = /\bName="([^"]+)"/.exec(d)?.[1] ?? '';
+      const key = `${kind}:${name.toLowerCase()}`;
+      if (declNames.has(key)) continue;
+      declNames.add(key);
+      if (kind === 'DataType') decls.dataTypes.push(d);
+      else if (kind === 'AddOnInstructionDefinition') decls.aois.push(d);
+      else if (kind === 'Tag') decls.tags.push(d);
+    }
+  }
+  /** "Capper.Torque_SP" when the tag Capper is declared from the original: the member itself, not a new tag. */
+  const declaredMember = (name: string | undefined) => {
+    const root = name && /^([A-Za-z_]\w*)[.[]/.exec(name)?.[1];
+    return root && declNames.has(`Tag:${root.toLowerCase()}`) ? name : null;
+  };
   const timerUnit = new Map<string, number>();
   for (const r of program.rungs) for (const o of r.outputs) if (o.type === 'TMR') timerUnit.set(o.address.toUpperCase(), UNIT_MS[o.unit] ?? 1000);
 
@@ -57,6 +83,13 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     const have = tags.get(base);
     if (have) return have;
     const n = nick.get(base);
+    const member = declaredMember(n?.nickname);
+    if (member) {
+      const tag: LogixTag = { base, name: member, dataType, description: '' };
+      tags.set(base, tag);
+      declared.add(base);
+      return tag;
+    }
     const label = ctx.labels.get(base);
     const alias = dataType === 'BOOL' || dataType === 'REAL' ? ioTag(base, modules) : null;
     const tag: LogixTag = {
@@ -111,6 +144,7 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
       const l = operand(el.left, true), r = operand(el.right, true);
       return isExpr(l) || isExpr(r) ? `CMP(${l}${CMP_EXPR[el.op]}${r})` : `${CMP_INSTR[el.op]}(${l},${r})`;
     }
+    if (el.type === 'RAW') return raw(el) ?? null;
     const a = el.address.trim().toUpperCase();
     if (a === 'SC1') return el.type === 'NO' || el.type === 'RISE' ? '' : null; // always on
     const op = operand(a);
@@ -126,16 +160,41 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
   /** Rung conditions; null = never true (AFI). */
   function conditions(branches: LadderElement[][]): string | null {
     if (!branches.length) return '';
-    const paths: string[] = [];
+    const paths: string[][] = [];
     for (const b of branches) {
       const parts = b.map(element);
       if (parts.some((x) => x === null)) continue;
-      const s = parts.join('');
-      if (!s) return ''; // one path always true
-      paths.push(s);
+      const kept = parts.filter((x): x is string => !!x);
+      if (!kept.length) return ''; // one path always true
+      paths.push(kept);
     }
     if (!paths.length) return null;
-    return paths.length === 1 ? paths[0] : `[${paths.join(',')}]`;
+    if (paths.length === 1) return paths[0].join('');
+    // Conditions every path shares go in front of / behind the branch: [XIC(Start),XIC(Run)]XIC(Stop)…
+    // Only plain contacts move or merge: a one-shot, JSR or kept instruction runs once per leg, so
+    // factoring it out (or dropping a repeated leg) would change what the rung does.
+    const pure = (t: string) => /^XI[CO]\([^()]*\)$/.test(t);
+    const n = Math.min(...paths.map((x) => x.length));
+    let pre = 0, post = 0;
+    while (pre < n && pure(paths[0][pre]) && paths.every((x) => x[pre] === paths[0][pre])) pre++;
+    while (post < n - pre && pure(paths[0][paths[0].length - 1 - post]) && paths.every((x) => x[x.length - 1 - post] === paths[0][paths[0].length - 1 - post])) post++;
+    const legParts = paths.map((x) => x.slice(pre, x.length - post));
+    const head = paths[0].slice(0, pre).join(''), tail = paths[0].slice(paths[0].length - post).join('');
+    // A leg left empty is always true: the branch is too.
+    if (legParts.some((l) => !l.length)) return head + tail;
+    const legs = legParts.map((l) => l.join(''));
+    const allPure = legParts.every((l) => l.every(pure));
+    return `${head}[${(allPure ? [...new Set(legs)] : legs).join(',')}]${tail}`;
+  }
+
+  /** Instructions of other PLCs in the current rung: written into its comment. */
+  const todos: string[] = [];
+  /** A RAW instruction from a Logix program as it was; from another PLC: undefined (the rung comment says what it was). */
+  function raw(r: RawInstruction): string | undefined {
+    if (r.vendor === 'logix') return r.text.trim().replace(/;$/, '');
+    todos.push(rawTodo(r));
+    warnings.push(rawTodo(r));
+    return undefined;
   }
 
   const pre: LogixRung[] = []; // rungs emitted before the current one (presets from registers)
@@ -173,15 +232,16 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
         return isExpr(src) ? `CPT(${dst},${src})` : `MOV(${src},${dst})`;
       }
       case 'MATH': return `CPT(${operand(o.dest)},${expr(o.expression)})`;
+      case 'RAW': return raw(o) ?? 'NOP()';
     }
   }
 
   function rungText(r: Rung): LogixRung[] {
-    pre.length = 0; post.length = 0;
+    pre.length = 0; post.length = 0; todos.length = 0;
     const cond = conditions(r.branches);
     const outs = r.outputs.map(output);
     const body = outs.length === 1 ? outs[0] : `[${outs.join(',')}]`;
-    const main: LogixRung = { comment: r.comment, text: `${cond === null ? 'AFI()' : cond}${body};` };
+    const main: LogixRung = { comment: [r.comment, ...todos].filter(Boolean).join('\n'), text: `${cond === null ? 'AFI()' : cond}${body};` };
     return [...pre, main, ...post];
   }
 
@@ -205,6 +265,9 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     main.push({ comment: '', text: `LES(${tmr}.ACC,500)OTE(${clk});` });
   }
   for (const r of routines) main.push({ comment: '', text: `JSR(${r.name},0);` });
-  return { tags: [...tags.values()], routines: [{ name: 'MainRoutine', rungs: main }, ...routines], warnings };
+  // Declarations of the original whose names the export also uses for its own tags are left out (one tag per name).
+  const own = new Set([...tags.values()].map((t) => t.name.toLowerCase()));
+  decls.tags = decls.tags.filter((d) => !own.has((/\bName="([^"]+)"/.exec(d)?.[1] ?? '').toLowerCase()));
+  return { tags: [...tags.values()].filter((t) => !declared.has(t.base ?? '')), routines: [{ name: 'MainRoutine', rungs: main }, ...routines], warnings, decls };
 }
 

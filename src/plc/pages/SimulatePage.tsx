@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useActiveHmiDesign } from '../../hmi/projectPanel';
 import ResizablePane from '../../components/ResizablePane';
 import { Link } from 'react-router-dom';
 import SimulatorPanel from '../sim/SimulatorPanel';
@@ -6,7 +7,6 @@ import type { SimHandle } from '../sim/controller';
 import LiveHmi from '../../hmi/LiveHmi';
 import { useProgramStore } from '../../store/useProgramStore';
 import { useElectricalStore } from '../../store/useElectricalStore';
-import { useHmiStore } from '../../store/useHmiStore';
 import { usePlc } from '../core/usePlc';
 
 // On a 1366 px laptop a 460 px HMI pane leaves too little room for the machine, logic and I/O columns.
@@ -15,7 +15,7 @@ const HMI_PANE_DEFAULT = Math.round(Math.max(320, Math.min(460, window.innerWidt
 export default function SimulatePage() {
   const ladder = useProgramStore((s) => s.ladder);
   const wiring = useElectricalStore((s) => s.design?.ioWiring);
-  const hmiDesign = useHmiStore((s) => s.design);
+  const hmiDesign = useActiveHmiDesign();
   const { profile, io, addresses, labels } = usePlc();
   const [handle, setHandle] = useState<SimHandle | null>(null);
 
