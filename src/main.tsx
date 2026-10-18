@@ -11,6 +11,7 @@ import Notice from './components/Notice.tsx'
 import {
   IOPage, ProgramPage, ExportPage, SettingsPage, ProjectDataPage, PlcSetupPage, PrintPage, ImportPage, ElectricalPage, PrintElectricalPage, SpecPage, HmiPage, ReviewPage, SimulatePage, OnlinePage, EquipmentPage, NewProjectPage,
 } from './pages/lazyPages'
+import { preloadPagesWhenIdle, preloadRoute } from './pages/lazyPages'
 
 
 // The side-panel preview frame needs hash routing, blocks confirm() dialogs
@@ -27,6 +28,9 @@ if (IS_PREVIEW) {
 
 // Questions & answers are part of the spec (sections.qa), kept in step with the question list.
 installQaSync()
+
+// The start page's chunk first: the first render shows it (no blank step), as before pages were split.
+await preloadRoute(IS_PREVIEW ? window.location.hash : window.location.pathname).catch(() => {})
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -60,3 +64,5 @@ createRoot(document.getElementById('root')!).render(
     </Router>
   </StrictMode>,
 )
+
+preloadPagesWhenIdle()

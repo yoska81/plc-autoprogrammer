@@ -51,21 +51,22 @@ export default function DrawingSet({ ctx, printMode, section = 'all' }: DrawingS
 
   const width = zoom === 'fit' ? '100%' : `${paper.paper.w * zoom}mm`;
   const height = zoom === 'fit' ? undefined : `${paper.paper.h * zoom}mm`;
-  return <DrawingDocument plan={plan} shown={shown} idx={idx} setActive={setActive} zoom={zoom} setZoom={setZoom} width={width} height={height} />;
+  return <DrawingDocument plan={plan} shown={shown} idx={idx} setActive={setActive} zoom={zoom} setZoom={setZoom} width={width} height={height} aspect={`${paper.paper.w} / ${paper.paper.h}`} />;
 }
 
 /**
  * The drawing set as ONE document: every sheet stacked, scrolled like a PDF, with a sheet list on the
  * left to jump to a sheet. The list follows the scroll; the last sheet viewed is remembered.
  */
-function DrawingDocument({ plan, shown, idx, setActive, zoom, setZoom, width, height }: {
+function DrawingDocument({ plan, shown, idx, setActive, zoom, setZoom, width, height, aspect }: {
   plan: ReturnType<typeof planDrawings>; shown: ReturnType<typeof planDrawings>['sheets']; idx: number; setActive: (i: number) => void;
-  zoom: Zoom; setZoom: (z: Zoom) => void; width: string; height: string | undefined;
+  zoom: Zoom; setZoom: (z: Zoom) => void; width: string; height: string | undefined; aspect: string;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pages = useRef<(HTMLDivElement | null)[]>([]);
   const [current, setCurrent] = useState(idx);
   const jumping = useRef(false);
+  const mounted = useProgressiveSheets(shown.length, current);
 
   const jump = (i: number, smooth = true) => {
     const el = pages.current[i];
@@ -122,13 +123,34 @@ function DrawingDocument({ plan, shown, idx, setActive, zoom, setZoom, width, he
               Sheet {s.n} of {plan.sheets.length} · <span className="font-mono">{s.drawingNo}</span> · {s.title}
             </div>
             <div className="shadow-md bg-white">
-              <SheetView plan={plan} sheet={s} width={zoom === 'fit' ? '100%' : width} height={height} />
+              {mounted(i)
+                ? <SheetView plan={plan} sheet={s} width={zoom === 'fit' ? '100%' : width} height={height} />
+                : <div style={{ width: zoom === 'fit' ? '100%' : width, height, aspectRatio: height ? undefined : aspect }} aria-hidden />}
             </div>
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+/**
+ * Which sheets are drawn: the ones around the current sheet at once, the rest a few at a time while
+ * the browser is idle (a big set — 50+ sheets — would otherwise block the page for a second when it
+ * opens). Every sheet is drawn in the end, so find-in-page and printing see the whole set.
+ */
+function useProgressiveSheets(count: number, current: number): (i: number) => boolean {
+  // drawn in idle time so far (sheet indexes from the top)
+  const [idleDrawn, setIdleDrawn] = useState(0);
+  useEffect(() => {
+    if (idleDrawn >= count) return;
+    const next = () => setIdleDrawn((n) => n + 2);
+    if (typeof requestIdleCallback === 'function') { const h = requestIdleCallback(next, { timeout: 200 }); return () => cancelIdleCallback(h); }
+    const h = setTimeout(next, 16);
+    return () => clearTimeout(h);
+  }, [idleDrawn, count]);
+  // and the sheets around the current one: jumping to a sheet draws it and its neighbours at once
+  return (i: number) => i < idleDrawn || Math.abs(i - current) <= 2;
 }
 
 function shortTitle(t: string): string {

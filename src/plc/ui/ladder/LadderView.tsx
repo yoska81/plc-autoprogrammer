@@ -5,7 +5,7 @@
  * power rails, parallel branches joined by vertical wires, outputs stacked on
  * the right. Read-only unless `onChange` is given.
  */
-import { Fragment, useCallback, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownIcon, ArrowUpIcon, ChatBubbleBottomCenterTextIcon, DocumentDuplicateIcon,
   ExclamationCircleIcon, ExclamationTriangleIcon, PlusIcon, TrashIcon,
@@ -39,6 +39,24 @@ export interface LadderViewProps {
   issues?: ValidationIssue[];
   selectedRungId?: string | null;
   onSelectRung?: (id: string) => void;
+  /** Draw the first rungs (and the selected one) at once and the rest while the browser is idle (long programs on screen; not for printing). */
+  progressive?: boolean;
+}
+
+const NO_ISSUES: ValidationIssue[] = [];
+
+/** How many rungs to draw: `first` at once, then 30 more each time the browser is idle, up to `total`. */
+function useProgressiveCount(total: number, first: number): number {
+  const [drawn, setDrawn] = useState(0);
+  const shown = Math.min(total, Math.max(first, drawn));
+  useEffect(() => {
+    if (shown >= total) return;
+    const next = () => setDrawn((d) => Math.max(d, first) + 30);
+    if (typeof requestIdleCallback === 'function') { const h = requestIdleCallback(next, { timeout: 300 }); return () => cancelIdleCallback(h); }
+    const h = setTimeout(next, 16);
+    return () => clearTimeout(h);
+  }, [shown, total, first]);
+  return shown;
 }
 
 type EditPath =
@@ -281,7 +299,8 @@ function anchorOf(e: React.MouseEvent<HTMLElement>): Anchor {
   return { left: r.left, top: r.top, bottom: r.bottom };
 }
 
-function RungRow(props: RungRowProps) {
+// Memoized: selecting or editing one rung redraws that rung only.
+const RungRow = memo(function RungRow(props: RungRowProps) {
   const { rung, index, count, cols, labels, change, issues, selected, editable, editingComment, editing } = props;
   const st = CHANGE_STYLE[change];
   const removed = change === 'removed';
@@ -380,10 +399,10 @@ function RungRow(props: RungRowProps) {
       </div>
     </div>
   );
-}
+});
 
 export default function LadderView({
-  program, onChange, labels, changes, issues = [], selectedRungId = null, onSelectRung, numberOf,
+  program, onChange, labels, changes, issues = NO_ISSUES, selectedRungId = null, onSelectRung, numberOf, progressive = false,
 }: LadderViewProps) {
   const [editing, setEditing] = useState<EditPath | null>(null);
   const [editingComment, setEditingComment] = useState<string | null>(null);
@@ -400,6 +419,13 @@ export default function LadderView({
   const blockOf = (r: Rung) => (r.block && blocks.some((b) => b.id === r.block) ? r.block : '');
   const cols = Math.max(MIN_COLS, ...program.rungs.map((r) => Math.max(0, ...r.branches.map((b) => b.length))));
   const globalIssues = issues.filter((i) => !i.rungId || !program.rungs.some((r) => r.id === i.rungId));
+  const issuesOf = useMemo(() => {
+    const m = new Map<string, ValidationIssue[]>();
+    for (const i of issues) if (i.rungId) m.set(i.rungId, [...(m.get(i.rungId) ?? []), i]);
+    return m;
+  }, [issues]);
+  const selectedIndex = selectedRungId ? program.rungs.findIndex((r) => r.id === selectedRungId) : -1;
+  const shownCount = useProgressiveCount(program.rungs.length, progressive ? Math.max(40, selectedIndex + 10) : program.rungs.length);
 
   // Resolve the popover target from the current program so it never goes stale.
   const editRung = editing ? program.rungs.find((r) => r.id === editing.rungId) : undefined;
@@ -451,7 +477,7 @@ export default function LadderView({
             <div className="absolute inset-y-0 right-0 bg-slate-800" style={{ width: RAIL_W }} />
           </div>
         </div>
-        {program.rungs.map((rung, i) => (
+        {program.rungs.slice(0, shownCount).map((rung, i) => (
           <Fragment key={rung.id}>
           {blocks.length > 0 && (i === 0 || blockOf(program.rungs[i - 1]) !== blockOf(rung)) && (
             <div className="flex sticky left-0">
@@ -470,11 +496,11 @@ export default function LadderView({
             cols={cols}
             labels={labels}
             change={changes?.get(rung.id) ?? 'unchanged'}
-            issues={issues.filter((x) => x.rungId === rung.id)}
+            issues={issuesOf.get(rung.id) ?? NO_ISSUES}
             selected={selectedRungId === rung.id}
             editable={editable}
             editingComment={editingComment === rung.id}
-            editing={editing}
+            editing={editing?.rungId === rung.id ? editing : null}
             onSelect={onSelectRung}
             setEditingComment={setEditingComment}
             setEditing={setEditing}
