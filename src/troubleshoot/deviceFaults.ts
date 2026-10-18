@@ -125,11 +125,13 @@ export function faultProfilesFor(p: CatalogPart, data: DeviceFaultProfile[] = DE
   return data.filter((d) => profileMatches(d.match, p)).sort((a, b) => weight(b.match) - weight(a.match));
 }
 
-/** A displayed fault / alarm code on a part, e.g. faultCode(gs20Part, 'oc'). Case-insensitive. */
+/** A displayed fault / alarm code on a part, e.g. faultCode(gs20Part, 'oc'). Case, spaces and dots are ignored. */
 export function faultCode(p: CatalogPart, code: string, data: DeviceFaultProfile[] = DEVICE_FAULT_DATA): { profile: DeviceFaultProfile; fault: FaultEntry } | undefined {
-  const c = code.trim().toLowerCase();
+  // Spaces and dots are display formatting: 'E 001' = 'E001', 'AL.009' = 'AL009'.
+  const key = (s: string) => s.toLowerCase().replace(/[\s.]+/g, '');
+  const c = key(code);
   for (const profile of faultProfilesFor(p, data)) {
-    const fault = profile.faults.find((f) => f.code?.toLowerCase() === c);
+    const fault = profile.faults.find((f) => f.code !== undefined && key(f.code) === c);
     if (fault) return { profile, fault };
   }
   return undefined;

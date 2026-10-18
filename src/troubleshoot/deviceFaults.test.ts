@@ -26,8 +26,8 @@ for (const d of DEVICE_FAULT_DATA) {
     if (!isUrl(f.source)) bad.push(`${d.id} / ${f.code ?? f.title}: source must start with an https URL`);
     if (!f.title.trim() || !f.symptom.trim() || !f.confirm.length || !f.fix.length) bad.push(`${d.id} / ${f.code ?? f.title}: title, symptom, confirm and fix are required`);
     if (f.code) {
-      if (codes.has(f.code.toLowerCase())) bad.push(`${d.id}: code ${f.code} twice`);
-      codes.add(f.code.toLowerCase());
+      if (codes.has(f.code.toLowerCase().replace(/[\s.]+/g, ''))) bad.push(`${d.id}: code ${f.code} twice`);
+      codes.add(f.code.toLowerCase().replace(/[\s.]+/g, ''));
     }
   }
   for (const p of d.pairs ?? []) if (!p.a.trim() || !p.b.trim() || !p.when.trim() || p.a === p.b) bad.push(`${d.id}: bad pair ${p.a}-${p.b}`);
@@ -48,6 +48,7 @@ assert.deepEqual(faultProfilesFor(part, [generic, specific]).map((d) => d.id), [
 assert.equal(faultCode(part, 'OC', [generic, specific])?.fault.title, 'Overcurrent');
 assert.equal(faultsMatching(part, 'trips acceleration', [generic, specific]).length, 1);
 assert.equal(faultCode(part, 'nope', [generic, specific]), undefined);
+assert.equal(faultCode(part, ' o.C ', [generic, specific])?.fault.title, 'Overcurrent', 'spaces and dots ignored');
 // Symptom kinds: set in the data wins; else a code means a displayed code; else from the wording.
 const fe = (title: string, symptom: string, extra: Partial<FaultEntry> = {}): FaultEntry => ({ title, symptom, causes: [], confirm: ['x'], fix: ['y'], source: 'https://example.com', ...extra });
 assert.equal(symptomKindOf(fe('Input signal on but input LED off', 'Sensor detecting but the X LED stays off')), 'no-input');

@@ -223,6 +223,19 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Rhino PSR/PSN/PSL, QUINT4, SITOP PSU6200 and S8VK-C supplies; Gladiator, S200U, 5SJ4, C60BP and 1489-M breakers; Class T, J and CC fuses; Fuji SC-E contactors and TK-E overloads; 78x, GQ and GRS-H relays; Dold, IDEM, 440R, 3SK1 and XPSUAF safety relays.
   - The QUINT4 data sheet was read from a distributor's copy of Phoenix's own document, because Phoenix refused scripted access.
   - No maker states a "~0 V across a healthy fuse" figure, so the fuse profiles use the Bussmann continuity test.
+- Extension (manager request):
+  - **VFDs (faults/vfd2.ts):** PowerFlex 525 (51), G120C (103), V20 (50), GA500 (184), ACS380 (191). Each drive's fault-history parameters are used in `confirm`, with relay pairs per state. For five V20 codes the manual gives no remedy, so their fix says exactly that instead of an invented remedy.
+  - **Servos and controllers (faults/servoCtrl.ts):** Kinetix 5100 (115), V90 PTI 400 V (105) and PN (86), Micro800 error codes (61) plus Micro820/850 and 2085 I/O, CompactLogix 5380 (201: major faults and #xxxx I/O codes), Compact 5000 I/O, and Unitronics UniStream/Vision/Jazz.
+  - **Pilz PNOZ s3 / X2.8P** (faults/pilz.ts and catalog vendor `pilz`).
+  - **Pins and internal pairs** backfilled into the 61 earlier profiles (194 of 237 readings; 105 pairs).
+  - `symptomKind` and `faultsOfKind()` added for Dev 2. faultCode() ignores spaces and dots, so 'E001' finds Kinetix 'E 001' and 'AL009' finds 'AL.009'.
+  - **Total:** 83 profiles, 1,933 faults.
+  - **Gaps:**
+    - V90 200 V PTI: the 2021 manual returned 403.
+    - Unitronics publishes no numeric system-error list in these guides.
+    - Micro800 plug-ins: 2080-UM004 not read.
+    - ACS355: not in the catalog.
+    - Delta drives: their manuals are behind a captcha.
 - Coverage of the families asked for:
   - Every CLICK part, every encoder, fuse, safety relay and valve, the GS drives and SureServo2.
   - Other brands' contactors, overloads, VFDs and servo motors have no profile yet.
