@@ -110,6 +110,8 @@ function stageQuestions(): Record<Exclude<QuestionSource, 'review'>, Item[] | nu
     electrical: el ? userNotes(el).map((n) => ({ text: n, assumption: n, topic: foundWhile('electrical') })) : null,
     hmi: hmi ? userNotes(hmi).map((n) => ({ text: n, assumption: n, section: 'operator' as const, topic: foundWhile('hmi') })) : null,
     program: ladder.rungs.length ? (ladder.sequence?.questions ?? []).map((text) => ({ text, section: 'sequence' as const, topic: foundWhile('program') })) : null,
+    // Convert existing drawings: what the drawings don't tell (src/convert/apply.ts keeps them with the project)
+    drawings: (useDraftStore.getState().drafts['convert.questions'] as Item[] | undefined) ?? null,
   };
 }
 
