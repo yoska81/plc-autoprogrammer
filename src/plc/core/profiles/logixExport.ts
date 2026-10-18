@@ -257,6 +257,9 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
   }
   // HMI tags the ladder doesn't use still exist in the controller, so the HMI can bind to them.
   for (const t of ctx.extraTags) operand(t.address);
+  // Every wired I/O point is a tag (an alias of its terminal), used by the program or not: Studio 5000 users expect
+  // the whole I/O list in the controller tags.
+  for (const p of ctx.io) { const a = ctx.addresses.get(p.id)?.toUpperCase(); if (a && /^(X|Y|DF)\d+$/.test(a)) operand(a); }
   const main: LogixRung[] = [];
   if (usesClock) {
     const clk = tagFor('SC7', 'BOOL').name;

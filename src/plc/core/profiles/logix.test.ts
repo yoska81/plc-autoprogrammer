@@ -82,6 +82,16 @@ assert.deepEqual(validateProgram(program, logixProfile, new Set(addr.values())).
 const labels = new Map<string, string>(io.map((p) => [addr.get(p.id)!, p.description]));
 const ctx: ExportContext = { io, addresses: addr, labels, header: 'Test cell — CompactLogix 5380 5069-L310ER', extraTags: [], cpuId: cpu.id, modules, projectName: 'Test cell', now: new Date(Date.UTC(2026, 9, 16, 12, 0, 0)) };
 const lx = toLogix(program, ctx, logixIoTag);
+// Every wired I/O point is a controller tag (an alias of its terminal), used by the program or not.
+{
+  const unused = { id: 'I099', description: 'Spare door switch', type: 'input', category: 'Station 1' } as IOPoint;
+  const addr2 = new Map(addr);
+  addr2.set('I099', 'X116');
+  const t = toLogix(program, { ...ctx, io: [...io, unused], addresses: addr2, labels: new Map([...labels, ['X116', unused.description]]) }, logixIoTag).tags;
+  const tag = t.find((x) => x.name === 'Spare_door_switch');
+  assert.ok(tag && tag.aliasFor && /:I\./.test(tag.aliasFor), `unused input is an alias tag (${JSON.stringify(tag)})`);
+  for (const p of io) assert.ok(t.some((x) => x.base === addr.get(p.id)?.toUpperCase()), `${p.id} has a tag`);
+}
 const all = lx.routines.flatMap((r) => r.rungs.map((g) => g.text));
 const has = (t: string) => assert.ok(all.includes(t), `missing rung ${t}\n${all.join('\n')}`);
 has('[XIC(Start_PB),XIC(Run_Latch)]XIO(Stop_PB)OTE(Run_Latch);'); // shared conditions behind the branch

@@ -24,6 +24,7 @@ import type { AnalogRange } from '../../../types/io';
 import { elementAddresses, isBlockRaw, type LadderOutput, type LadderProgram } from '../ladder';
 import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress } from './click';
 import { toIecSt, type StDialect, type StProgram, type StVariable } from './iecSt';
+import { logixName } from './logixExport';
 import { getPart } from '../../../electrical/catalog';
 
 type Family = 'S7-1200' | 'S7-1500';
@@ -199,10 +200,33 @@ END_ORGANIZATION_BLOCK
   return { scl, tags, st };
 }
 
+/**
+ * Tags for the wired I/O points the program does not use (yet): TIA users expect every terminal of the I/O list in
+ * the tag table, with its description. Named like the program's tags; said in the comment.
+ */
+export function unusedIoTags(program: LadderProgram, ctx: ExportContext): SiemensTag[] {
+  const c = SIEMENS_CPUS.find((x) => x.id === ctx.cpuId) ?? SIEMENS_CPUS[1];
+  const modules = ctx.modules ?? [];
+  const have = buildScl(program, ctx).tags;
+  const at = new Set(have.map((t) => t.address));
+  const used = new Set(have.map((t) => t.name.toLowerCase()));
+  const out: SiemensTag[] = [];
+  for (const p of ctx.io) {
+    const base = ctx.addresses.get(p.id)?.toUpperCase() ?? '';
+    const s = base ? siemensAddress(base, c, modules) : null;
+    if (!s || at.has(s.address)) continue;
+    const analog = p.signal === 'analog';
+    const name = logixName(p.description || base, used, base);
+    at.add(s.address);
+    out.push({ name: analog ? `${name}_raw` : name, address: s.address, type: analog ? 'Int' : 'Bool', comment: `${p.description || base} (not used by the program yet)`, inferred: s.inferred });
+  }
+  return out;
+}
+
 /** PLC tag table for TIA Portal import (.sdf). Module tags whose address is inferred say so in the comment. */
 export function siemensTagsSdf(program: LadderProgram, ctx: ExportContext): string {
   const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  const { tags } = buildScl(program, ctx);
+  const tags = [...buildScl(program, ctx).tags, ...unusedIoTags(program, ctx)];
   return tags.map((t) => [t.name, t.address, t.type, 'True', 'True', 'False', t.inferred ? `${t.comment} — check against Device configuration` : t.comment, '', 'True'].map(q).join(',')).join('\r\n') + '\r\n';
 }
 

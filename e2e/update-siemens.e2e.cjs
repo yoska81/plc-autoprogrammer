@@ -256,12 +256,12 @@ async function s1500(browser) {
   console.log('  ·', out.cpu, out.modules.join(', '), '|', shown.slice(0, 3).map((x) => x.join('=')).join(' '), '| export', out.exported.slice(0, 3).map((t) => `${t.name}=${t.address}`).join(' '));
   check(out.cpu === '6ES7511-1AL03-0AB0' && out.modules.length >= 2, `S7-1500 with ET 200SP modules (${out.cpu} ${out.modules.join(', ')})`);
   const exportedAt = new Set(out.exported.filter((t) => t.type === 'Bool').map((t) => t.address));
-  // The tag table lists the I/O the program uses, each with its description as the comment: compare point by point.
-  const byDescription = new Map(out.exported.filter((t) => t.type === 'Bool').map((t) => [t.comment.replace(/ — check against Device configuration$/, ''), t.address]));
+  // Every wired point is in the tag table with its description (the ones the program does not use say so).
+  const byDescription = new Map(out.exported.filter((t) => t.type === 'Bool').map((t) => [t.comment.replace(/ — check against Device configuration$/, '').replace(/ \(not used by the program yet\)$/, ''), t.address]));
   const pairs = shown.map(([id, a]) => [id, a, byDescription.get(out.ids[id].description)]);
   const bad = pairs.filter(([, a, e]) => e && a !== e);
   const unused = pairs.filter(([, , e]) => !e).map(([id]) => id);
-  console.log('  · not in the tag table (the program does not use them):', unused.join(', ') || 'none');
+  check(unused.length === 0, `every I/O point is in the .sdf tag table (missing: ${unused.join(', ') || 'none'})`);
   check(shown.length > 0 && shown.every(([, a]) => /^%[IQ]\d+\.\d$/.test(a)), `every point shows a %I / %Q address (${shown.map(([, a]) => a).join(' ')})`);
   check(pairs.length - unused.length > 0 && bad.length === 0, `the I/O list shows the exported address of each point (${bad.map(([id, a, e]) => `${id} shows ${a}, export ${e}`).join('; ') || `${pairs.length - unused.length} match`})`);
   check(!shown.some(([, a]) => a === '%I8.0') || exportedAt.has('%I8.0'), 'no S7-1200 module numbering (%I8.0) where the export has another');
