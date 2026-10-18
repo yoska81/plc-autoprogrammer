@@ -1,7 +1,8 @@
 import type { AddressInfo, AddressKind, AnalogChannel, CpuModel, IecDataType, ModuleSlot, PlcProfile, ProgramExporter, SimSemantics } from '../profile';
 import { clickNicknameCsv, clickRungListing } from '../clickExport';
 import { assignAnalog } from '../analog';
-import { clickAnalogChannels } from './clickAnalog';
+import { clickAnalogChannels, clickSlots } from './clickAnalog';
+import { ptoPointsFor } from '../../../electrical/highSpeedIo';
 import { isAnalog, type IOPoint } from '../../../types/io';
 import type { Rung } from '../ladder';
 import { CLICK_CPUS, CLICK_KNOWLEDGE } from './clickData';
@@ -48,21 +49,35 @@ export function parseAddress(raw: string): AddressInfo | null {
 }
 
 /**
- * Fill CPU built-in points first, then expansion slots 1..8 using each
- * module's real point count. With no modules chosen yet, assume 16-point
- * modules so addresses can still be previewed.
+ * Fill CPU built-in points (and a CLICK PLUS option-slot module) first, then expansion slots 1..8 using each
+ * module's real point count. With no modules chosen yet, assume 16-point modules so addresses can still be previewed.
  */
 function* ioAddresses(letter: 'X' | 'Y', builtIn: number, modules: ModuleSlot[]) {
-  for (let p = 1; p <= builtIn; p++) yield `${letter}0${String(p).padStart(2, '0')}`;
+  const slots = clickSlots(modules);
+  const option = modules[slots.indexOf(0)];
+  const slot0 = builtIn + (option ? (letter === 'X' ? option.inputs : option.outputs) : 0);
+  for (let p = 1; p <= slot0; p++) yield `${letter}0${String(p).padStart(2, '0')}`;
+  const stack = modules.filter((_, i) => slots[i] !== 0);
   for (let slot = 1; slot <= 8; slot++) {
-    const m = modules[slot - 1];
+    const m = stack[slot - 1];
     const count = modules.length ? (m ? (letter === 'X' ? m.inputs : m.outputs) : 0) : 16;
     for (let p = 1; p <= count; p++) yield `${letter}${slot}${String(p).padStart(2, '0')}`;
   }
 }
 
+// An axis's pulse output ("Axis 1 servo pulse", "Stepper step"): it must sit on a pulse-train output.
+const PULSE_OUT_RE = /\b(pulse|step|pul)\b/i;
+const MOTION_RE = /\b(servo|stepper|axis|drive|motor)\b/i;
+
 function autoAddresses(io: IOPoint[], cpu: CpuModel, modules: ModuleSlot[]): Map<string, string> {
-  return neutralAutoAddresses(io, cpu, modules, clickAnalogChannels(cpu, modules));
+  // Pulse outputs first take the pulse-train points of the option-slot module (Y001 / Y003 / Y005), in list order.
+  const manual = new Set(io.map((p) => p.plcAddress?.trim().toUpperCase()).filter(Boolean));
+  const free = ptoPointsFor(cpu.id, modules.map((m) => m.partNumber)).filter((a) => !manual.has(a));
+  const pulses = io.filter((p) => p.type === 'output' && !p.plcAddress?.trim() && !isAnalog(p) && PULSE_OUT_RE.test(p.description) && (p.category === 'Servo/Axis' || MOTION_RE.test(p.description)));
+  const pre = new Map(pulses.slice(0, free.length).map((p, i) => [p.id, free[i]] as const));
+  const out = neutralAutoAddresses(pre.size ? io.map((p) => (pre.has(p.id) ? { ...p, plcAddress: pre.get(p.id) } : p)) : io, cpu, modules, clickAnalogChannels(cpu, modules));
+  for (const [id, a] of pre) out.set(id, a);
+  return out;
 }
 
 /**

@@ -37,6 +37,8 @@ import { useUi } from '../../../store/useUiStore';
 import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 import VoiceTextarea from '../../../voice/VoiceTextarea';
 import SpeakButton from '../../../voice/SpeakButton';
+import { useProjectStore } from '../../../store/useProjectStore';
+import { ptoPointsFor } from '../../../electrical/highSpeedIo';
 
 type Tab = 'describe' | 'fix' | 'history';
 
@@ -194,7 +196,10 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     );
   };
 
-  const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet, hmiDesign ?? undefined), [ladder, ctx.profile, ioAddressSet, hmiDesign]);
+  // CLICK: a motion axis's pulse must be on a pulse-train output of the CPU's option-slot module.
+  const modules = useProjectStore((st) => st.modules);
+  const checkOpts = useMemo(() => (ctx.profile.id === 'click' ? { pulseOutputs: ptoPointsFor(ctx.cpu.id, modules) } : {}), [ctx.profile.id, ctx.cpu.id, modules]);
+  const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet, hmiDesign ?? undefined, checkOpts), [ladder, ctx.profile, ioAddressSet, hmiDesign, checkOpts]);
 
   // While reviewing an AI change, show the proposed program with removed rungs kept in place.
   const review = useMemo(() => {
@@ -206,9 +211,9 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       display,
       changes,
       summary: summarizeDiff(entries),
-      issues: validateProgram(proposal.program, ctx.profile, ioAddressSet, hmiDesign ?? undefined),
+      issues: validateProgram(proposal.program, ctx.profile, ioAddressSet, hmiDesign ?? undefined, checkOpts),
     };
-  }, [proposal, ladder, ctx.profile, ioAddressSet, hmiDesign]);
+  }, [proposal, ladder, ctx.profile, ioAddressSet, hmiDesign, checkOpts]);
 
   const rungNumber = (id: string) => (review?.display ?? ladder).rungs.findIndex((r) => r.id === id) + 1;
 

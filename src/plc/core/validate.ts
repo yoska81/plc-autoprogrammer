@@ -19,8 +19,12 @@ export function validateProgram(
   ioAddresses: Set<string>,
   /** The project's HMI: a tag the HMI shows that no rung writes, or a command no rung reads, is an error. */
   hmi?: { tags: { address: string; name: string; access: string }[] },
-  /** noPanel: the machine has no touch panel, so nothing writes the panel ranges C1001–C1300 / DS1001–DS1200 / DF101–DF200. */
-  opts: { noPanel?: boolean } = {},
+  /**
+   * noPanel: the machine has no touch panel, so nothing writes the panel ranges C1001–C1300 / DS1001–DS1200 / DF101–DF200.
+   * pulseOutputs: the outputs that can carry a pulse train on this CPU / option module (electrical/highSpeedIo.ts);
+   * a motion axis whose pulse is elsewhere is an error.
+   */
+  opts: { noPanel?: boolean; pulseOutputs?: string[] } = {},
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const outCoils = new Map<string, number>();
@@ -41,6 +45,14 @@ export function validateProgram(
       add('error', `${a} is not assigned to any point in the I/O list.`);
     }
   };
+
+  // Pulse trains only come out of the PLC's pulse outputs (CLICK PLUS: Y001 / Y003 / Y005 of the option-slot module).
+  if (opts.pulseOutputs) {
+    const ok = new Set(opts.pulseOutputs.map((a) => a.toUpperCase()));
+    for (const ax of program.motion?.axes ?? []) {
+      if (!ok.has(ax.pulse.trim().toUpperCase())) issues.push({ rungId: null, severity: 'error', message: `${ax.name}: its pulse output ${ax.pulse} cannot make a pulse train on this PLC — ${ok.size ? `use ${[...ok].join(' / ')}` : 'it has no pulse-train outputs (CLICK PLUS needs a C2-14D1 / D2 / TTL or C2-08D1 / D2 module in its option slot)'}.` });
+    }
+  }
 
   for (const rung of program.rungs) {
     for (const extra of profile.checkRung?.(rung, { ioAddresses }) ?? []) issues.push({ rungId: rung.id, ...extra });

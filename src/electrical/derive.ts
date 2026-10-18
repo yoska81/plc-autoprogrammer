@@ -777,7 +777,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const mw = effectiveMachine(ctx, io, motors);
 
   // groups
-  const modules = byCat(rc, 'plcModule');
+  // A CLICK PLUS option-slot module plugs into the CPU: its points are slot 0 (X001… / Y001…), the CPU's own.
+  const allModules = byCat(rc, 'plcModule');
+  const optionMod = allModules.find((mm) => isOptionSlotModule(mm.part));
+  const modules = allModules.filter((mm) => mm !== optionMod);
   const groups: IoGroup[] = [];
   for (const p of io) {
     let g = groups.find((x) => x.key === p.group);
@@ -787,7 +790,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       let part: CatalogPart | undefined;
       let label: string;
       let devTag = plcTag;
-      if (slot === '0') { partNumber = ctx.plc.cpuPartNumber; part = plcPart; label = `CPU ${ctx.plc.cpuPartNumber}`; }
+      if (slot === '0' && optionMod) { partNumber = optionMod.partNumber; part = optionMod.part; devTag = optionMod.tag; label = `CPU ${ctx.plc.cpuPartNumber} OPTION SLOT ${optionMod.partNumber}`; }
+      else if (slot === '0') { partNumber = ctx.plc.cpuPartNumber; part = plcPart; label = `CPU ${ctx.plc.cpuPartNumber}`; }
       else if (slot) {
         const mod = modules.find((mm) => String(num(mm.part?.ratings, 'slot') ?? '') === slot)
           ?? modules.filter((mm) => num(mm.part?.ratings, 'slot') === undefined)[Number(slot) - 1];
@@ -2915,7 +2919,8 @@ export function designWarnings(ctx: DrawingContext): string[] {
       ? `${a.drive.tag}: Safe Torque Off (STO) is not wired because the design has no safety relay — the servo drive cannot run without it. Add a safety relay with at least two N.O. safety outputs.`
       : `${a.drive.tag}: the safety relay ${m.safety.relay?.tag ?? ''} has no free N.O. safety output for the second STO channel — STO is not wired and the drive cannot run. Choose a safety relay with more safety outputs, or take the PLC status signal from its N.C. auxiliary contact.`);
   }
-  const slots = m.groups.flatMap((g) => { const n = Number(/:(\d+)$/.exec(g.key)?.[1]); return n > 0 ? [{ slot: n, part: g.partNumber ? ctx.getPart(g.partNumber) : undefined }] : []; });
+  // Slot 0 included: a CLICK PLUS option-slot module (where the pulse outputs are) is addressed there.
+  const slots = m.groups.flatMap((g) => { const n = Number(/:(\d+)$/.exec(g.key)?.[1]); return n >= 0 ? [{ slot: n, part: g.partNumber ? ctx.getPart(g.partNumber) : undefined }] : []; });
   w.push(...motionWarnings(ctx.getPart(ctx.plc.cpuPartNumber), ctx.plc.cpuPartNumber, m.io, slots));
   // Analog points (DF) are in ctx.io but not in the discrete m.io.
   const extra = ctx.design.ioWiring.filter((x) => !m.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase()) && !(/^DF\d+$/i.test(x.address) && ctx.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase())));
@@ -3076,6 +3081,9 @@ export interface PlcRackSlot {
   known: boolean;
 }
 
+/** A CLICK PLUS option-slot module (plugs into the CPU, addressed as slot 0). */
+const isOptionSlotModule = (p?: CatalogPart) => /option slot/i.test(String(p?.ratings.moduleType ?? ''));
+
 /** CPU + discrete I/O modules in slot order, with point counts from the catalog. */
 export function plcRack(ctx: DrawingContext): PlcRackSlot[] {
   const m = buildModel(ctx);
@@ -3090,6 +3098,12 @@ export function plcRack(ctx: DrawingContext): PlcRackSlot[] {
   const modules = byCat(m.rc, 'plcModule');
   let free = 0;
   for (const mod of modules) {
+    // The option-slot module is slot 0 (it takes the CPU's place for I/O: a CLICK PLUS CPU has none of its own).
+    if (isOptionSlotModule(mod.part)) {
+      const i = ins(mod.part) ?? 0, o = outs(mod.part) ?? 0;
+      out[0] = { ...out[0], tag: mod.tag, partNumber: mod.partNumber, part: mod.part, description: `${out[0].description} + ${mod.part?.description ?? mod.partNumber}`, inputs: out[0].inputs + i, outputs: out[0].outputs + o, outputStyle: outputStyleOf(mod.partNumber, mod.part), known: true };
+      continue;
+    }
     const fixed = num(mod.part?.ratings, 'slot');
     const slot = fixed ?? ++free;
     const i = ins(mod.part), o = outs(mod.part);
