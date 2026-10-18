@@ -35,6 +35,8 @@ async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) =>
     if (sync) flushSync(() => root.render(el));
     else root.render(el);
     await new Promise((r) => setTimeout(r, sync ? 0 : 300)); // let React commit and layout settle
+    // a busy page (a big project, other work) may not have committed yet: wait for the content (up to 10 s)
+    for (let t = 0; !host.firstElementChild && t < 200; t++) await new Promise((r) => setTimeout(r, 50));
     return await read(host);
   } finally {
     root.unmount();
@@ -95,7 +97,11 @@ export async function buildHmiImages(p: ProjectSnapshot): Promise<{ name: string
   for (const [i, screen] of p.hmi.screens.entries()) {
     const dataUrl = await renderOffscreen(
       createElement(HmiScreenView, { screen, widthPx: model.widthPx, heightPx: model.heightPx, design: p.hmi }),
-      async (host) => svgToPngDataUrl(host.querySelector('svg')!, model.widthPx, model.heightPx),
+      async (host) => {
+        const svg = host.querySelector('svg');
+        if (!svg) throw new Error(`HMI screen "${screen.name}" could not be drawn for its image.`);
+        return svgToPngDataUrl(svg, model.widthPx, model.heightPx);
+      },
     );
     out.push({ name: `${String(i + 1).padStart(2, '0')}_${screen.name.replace(/[^\w-]+/g, '_')}.png`, dataUrl });
   }

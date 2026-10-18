@@ -44,6 +44,9 @@ const itemName = (it: ReviewItem) => {
   return tag ? `${tag} (${what})` : `the ${what}${src?.rail ? ` on rail ${src.rail}, position ${src.order}` : ''}`;
 };
 
+/** Keys of items added by hand: unique even for two adds in the same millisecond. */
+let handSeq = 0;
+
 /** A device or terminal strip added by hand (no AI, or something the photos missed). */
 function AddByHand({ onAdd }: { onAdd: (it: ReviewItem) => void }) {
   const [kind, setKind] = useState<CatalogCategory>('contactor');
@@ -56,7 +59,7 @@ function AddByHand({ onAdd }: { onAdd: (it: ReviewItem) => void }) {
   const add = () => {
     const ws = wires.split(',').map((w) => w.split('=').map((x) => x.trim())).filter((w) => w.length === 2 && w[0] && w[1]).map(([terminal, wire]) => ({ terminal, wire }));
     const at = { rail: Math.max(0, Number(rail) || 0), order: Math.max(1, Number(order) || 1) };
-    const key = `h${Date.now().toString(36)}`;
+    const key = `h${++handSeq}-${Date.now().toString(36)}`;
     onAdd(kind === 'terminal'
       ? { key, kind: 'strip', status: 'confirmed', strip: { tag: tag.trim(), ...at, terminals: ws, confidence: 'high', seen: [] } }
       : { key, kind: 'device', status: 'confirmed', device: { tag: tag.trim(), category: kind, manufacturer: '', partNumber: part.trim(), ratings: ratings.trim(), ...at, confidence: 'high', seen: [], wires: ws } });
@@ -117,7 +120,7 @@ function Crop({ file, s }: { file: File | undefined; s: Sighting }) {
 function TracedWires({ items, reading }: { items: ReviewItem[]; reading: PhotoReading }) {
   const r = useMemo(() => asBuiltDesign(items, reading, useElectricalStore.getState().inputs, getPart), [items, reading]);
   const wires = r.design.asBuilt?.wires ?? [];
-  if (!wires.length && !r.io.length) return <p className="text-xs text-steel-500">No wire number was read at two places yet: confirm the PLC and the terminal strips to trace the wiring.</p>;
+  if (!wires.length && !r.io.length && !r.circuits.length) return <p className="text-xs text-steel-500">No wire number was read at two places yet: confirm the PLC and the terminal strips to trace the wiring.</p>;
   return (
     <div className="grid gap-3 text-xs md:grid-cols-2" data-testid="photos-traced">
       <div>
@@ -127,9 +130,17 @@ function TracedWires({ items, reading }: { items: ReviewItem[]; reading: PhotoRe
       <div>
         <div className="font-semibold text-steel-700">I/O from the PLC terminals ({r.io.length})</div>
         <ul className="mt-1 space-y-0.5 text-steel-700">{r.io.map((p) => (
-          <li key={p.address}><span className="font-mono">{p.address}</span> {p.description} <span className={`rounded px-1 text-[10px] font-semibold ${CONF[p.confidence]}`}>{p.confidence}</span></li>
+          <li key={`${p.plcTag}:${p.address}`}><span className="font-mono">{p.address}</span> {p.description} <span className={`rounded px-1 text-[10px] font-semibold ${CONF[p.confidence]}`}>{p.confidence}</span></li>
         ))}</ul>
       </div>
+      {r.circuits.length > 0 && (
+        <div className="md:col-span-2" data-testid="photos-circuits">
+          <div className="font-semibold text-steel-700">Relay circuits from the coils ({r.circuits.length})</div>
+          <ul className="mt-1 space-y-0.5 text-steel-700">{r.circuits.map((c) => (
+            <li key={c.id}><span className="font-mono">{c.id} {c.output}</span>: {c.conditions.join(' → ') || 'no contact read'} <span className={`rounded px-1 text-[10px] font-semibold ${CONF[c.confidence]}`}>{c.confidence}</span></li>
+          ))}</ul>
+        </div>
+      )}
     </div>
   );
 }

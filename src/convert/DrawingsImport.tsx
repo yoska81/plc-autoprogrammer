@@ -68,7 +68,7 @@ export default function DrawingsImport() {
     const names = files.map((f) => f.name);
     void startAiJob({
       kind: 'convert', label: 'Reading the drawings', keepResult: true,
-      run: async (h) => ({ ...(await deriveFromUpload({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal }, files, note)), at: new Date().toISOString(), files: names }),
+      run: async (h) => ({ ...(await deriveFromUpload({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal }, files, note, [], (t) => h.stage(t))), at: new Date().toISOString(), files: names }),
     });
   };
 

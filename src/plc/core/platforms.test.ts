@@ -105,7 +105,7 @@ assert.ok(ok('ab-micro850', 'cMT2078X') && ok('siemens-s7-1200', 'cMT2078X') && 
 assert.ok(!ok('siemens-s7-1200-g2', 'MT8072iP'), 'Weintek iP: no S7-1200 G2 driver');
 assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000'), 'Red Lion: Logix yes, NX1P2 not listed');
 // Driver ids are platform ids (agreed list; every platform that exists must be on it).
-const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz']);
+const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz']);
 for (const pl of PLATFORMS) assert.ok(DRIVER_IDS.has(pl.id), `platform ${pl.id} is on the driver id list`);
 for (const p of ALL_HMIS()) for (const id of driversOf(p)) assert.ok(DRIVER_IDS.has(id), `${p.partNumber}: driver id ${id} is a known platform id`);
 console.log('driver list tests passed');
@@ -138,4 +138,29 @@ console.log('HMI panel spec tests passed');
   assert.deepEqual(modulesToFit('C0-12DD1E-D', mods, n), mods, 'already fits: unchanged');
   assert.equal(modulesToFit('C0-12DD1E-D', [], need({ digitalInputs: 400 })), null, 'too much I/O for any module set');
   console.log('module fit tests passed');
+}
+
+// Signal families: a 4-20 mA point needs a channel that takes current, a thermocouple a thermocouple input — the
+// S7-1200 CPU's own inputs are 0-10 V only, CLICK's C0-04THM takes thermocouples only.
+{
+  const cpuOf = (id: string) => PLC_PROFILES.flatMap((p) => p.cpuModels).find((c) => c.id === id)!;
+  const ma = need({ analogInputs: 1, analogRanges: { input: ['4-20mA'], output: [] } });
+  // Siemens 1212C: two onboard 0-10 V inputs are not enough for one 4-20 mA signal; an SM 1231 is added
+  const s7 = '6ES7212-1AE40-0XB0';
+  assert.ok(cpuFit(cpuOf(s7), [], need({ analogInputs: 1 })).ok, 'by count alone the onboard inputs would do');
+  const f = cpuFit(cpuOf(s7), [], ma);
+  assert.ok(!f.ok && /current \(mA\) analog input/.test(f.reason ?? ''), `1212C alone: ${f.reason}`);
+  const mods = modulesToFit(s7, [], ma);
+  assert.ok(mods?.includes('6ES7231-4HD32-0XB0'), `SM 1231 added: ${mods?.join(', ')}`);
+  assert.ok(cpuFit(cpuOf(s7), mods!, ma).ok);
+  assert.ok(cpuFit(cpuOf(s7), [], need({ analogInputs: 1, analogRanges: { input: ['0-10V'], output: [] } })).ok, '0-10 V: the onboard input takes it');
+  // CLICK with only a thermocouple module: a 4-20 mA input adds the C0-04AD-1; a thermocouple adds the C0-04THM
+  const click = 'C0-11DD2E-D';
+  assert.ok(!cpuFit(cpuOf(click), ['C0-04THM'], ma).ok, '4-20 mA on a THM-only CLICK: no fit');
+  const cm = modulesToFit(click, ['C0-04THM'], ma);
+  assert.ok(cm?.includes('C0-04AD-1'), `C0-04AD-1 added: ${cm?.join(', ')}`);
+  const tc = need({ analogInputs: 1, analogRanges: { input: ['thermocouple'], output: [] } });
+  assert.ok(modulesToFit(click, [], tc)?.includes('C0-04THM'), 'a thermocouple adds the C0-04THM');
+  assert.ok(!modulesToFit('C0-12DD1E-D', [], ma)?.length, 'analog CLICK CPU: its AD inputs take 4-20 mA, nothing added');
+  console.log('signal family fit tests passed');
 }

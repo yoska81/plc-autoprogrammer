@@ -24,6 +24,8 @@ export interface L5xPatchInput {
   names: Record<string, string>;
   /** Block id → its routine in the original file. */
   blockOrigin: Record<string, { program: string; routine: string }>;
+  /** App rung id → number of the original rung it came from. */
+  rungOrigin: Record<string, string>;
   ctx: ExportContext;
 }
 
@@ -131,11 +133,11 @@ export function patchL5x(p: L5xPatchInput): L5xPatchResult {
     const origRungs = new Map<string, string>();
     for (const m of old.matchAll(/<Rung\s[^>]*\bNumber="(\d+)"[^>]*>[\s\S]*?<\/Rung>/g)) origRungs.set(m[1], m[0]);
     const origApp = new Map<string, Rung[]>();
-    for (const r of byBlock(p.original, id)) { const n = rungNumber(r.id); if (n !== null) origApp.set(n, [...(origApp.get(n) ?? []), r]); }
+    for (const r of byBlock(p.original, id)) { const n = p.rungOrigin[r.id]; if (n !== undefined) origApp.set(n, [...(origApp.get(n) ?? []), r]); }
     const now = byBlock(p.current, id);
     const parts: string[] = [];
     for (let k = 0; k < now.length;) {
-      const n = rungNumber(now[k].id);
+      const n = p.rungOrigin[now[k].id] ?? null;
       const orig = n !== null ? origApp.get(n) : undefined;
       const group = orig ? now.slice(k, k + orig.length) : [];
       if (orig && origRungs.has(n!) && group.length === orig.length && sig(group) === sig(orig)) {
@@ -208,9 +210,4 @@ export function patchL5x(p: L5xPatchInput): L5xPatchResult {
   // Keep the file's own line ends: a CRLF file stays CRLF (the copied parts already are; the new ones get it).
   if (p.originalXml.includes('\r\n') && !/(?<!\r)\n/.test(p.originalXml)) xml = xml.replace(/(?<!\r)\n/g, '\r\n');
   return { xml, changed, added, newTags: add.map((t) => t.name), warnings };
-}
-
-/** Original rung number of an imported rung (ids end in it: r_<routine>_<n>[_<k>]). */
-function rungNumber(id: string): string | null {
-  return /^r_.*_(\d+)(?:_\d+)?$/.exec(id)?.[1] ?? null;
 }

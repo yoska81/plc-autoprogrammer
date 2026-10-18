@@ -565,3 +565,18 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - engine.test: unique two-hand tags; one signal wire per field-device terminal; trunk core = device-cable core on every JB terminal;
   - analog.test: THM / current / transmitter cases;
   - review.test: 0-10 V with only a THM.
+
+## Analog channels by signal family; NPN commons (PR #92, on integration f8f47f7)
+- The relay ladder sheets were reviewed separately (changes needed) and are kept off #92; they follow once reworked.
+- **Analog channels:**
+  - Only a 'thermocouple' range uses a thermocouple channel.
+  - `acceptsRange`: current only on a mA channel, voltage only on a V channel.
+  - Module fit (`Need.analogRanges`, all brands) adds the module that takes the missing family: SM 1231 on a 1212C, C0-04AD-1 / C0-04THM on CLICK.
+  - A generated or imported bare thermocouple gets the 'thermocouple' range.
+  - Check-all variant: `rules-sealing-thm`, the user's Sealing Head as built. Its thermocouple lands on C0-04THM CH1.
+- **NPN commons:**
+  - A group with NPN sensors has its common on +24V, so its dry contacts are wired to switch 0V into the input (`IoPoint.supplyWire`). This covers pushbuttons, limit and pressure switches, the safety relay status contact and the VFD fault relay. Before, they were fed +24V and could never turn ON.
+  - The change reaches strip terminals, the wire list, JB terminals and cables, and the I/O sheet (fed from the 0V rail).
+  - A design warning names those contacts.
+  - check_consistency fails when an input can never turn ON (proved: with the old feed it fails X101 / X102 / X105 / X106).
+  - Check-all variant: `rules-sealing-npn`.

@@ -85,7 +85,7 @@ async function png(page, shade) {
   // Wiring from wire numbers (slice 2): a number read at two places is one wire; the PLC's wires are the I/O.
   const traced = await page.getByTestId('photos-traced').innerText();
   check(/2001: PLC1:Y1 – K1:A1/.test(traced) && /1001: PLC1:X1 – TB1:3/.test(traced), 'wires traced by their numbers');
-  check(/Y001 K1 contactor coil/.test(traced) && /X001 Field device on TB1-3/.test(traced), 'I/O from the PLC terminals');
+  check(/\bY1 K1 contactor coil/.test(traced) && /\bX1 Field device on TB1-3/.test(traced) && /X101 .*address guessed/.test(traced), 'I/O from the PLC terminals, at the addresses read (the module\'s guessed from its slot)');
   await page.screenshot({ path: OUT + 'review.png', fullPage: true });
 
   // 3. As-built design.
@@ -96,9 +96,9 @@ async function png(page, shade) {
   check(JSON.stringify(d.rails) === JSON.stringify([['CB1', 'CB2', 'PS24'], ['PLC1', 'IO1', 'K1', 'OL1'], ['TB1']]), 'rails in the photographed order with the corrected tag');
   check(!d.tags.some((t) => /^CR/.test(t)), 'the unconfirmed hidden relay is left out');
   check(/As-built from photos — verify/.test(d.notes?.[0] ?? ''), 'marked "as-built from photos — verify"');
-  check(/4 I\/O traced · 4 wires/.test(await page.getByTestId('photos-applied').innerText()), 'apply reports the traced I/O and wires');
+  check(/4 I\/O traced · 6 wires/.test(await page.getByTestId('photos-applied').innerText()), 'apply reports the traced I/O and wires');
   const io = await page.evaluate(async () => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.map((p) => `${p.plcAddress}:${p.type}`));
-  check(JSON.stringify(io) === JSON.stringify(['X001:input', 'X002:input', 'X101:input', 'Y001:output']), `I/O list at the addresses read (${io.join(', ')})`);
+  check(JSON.stringify(io) === JSON.stringify(['X1:input', 'X2:input', 'X101:input', 'Y1:output']), `I/O list at the addresses read (${io.join(', ')})`);
 
   // Or convert: the photographed devices go to the shared review below the tab (same path as drawings).
   await page.getByTestId('photos-convert').click();
@@ -107,14 +107,15 @@ async function png(page, shade) {
   const partsText = await shared.innerText();
   check(['GMCBU-1C-5', 'SC-E02PG-24VDC', 'C0-08ND3'].every((pn) => partsText.includes(pn)) && /photo 3, rail 2, position 3/.test(partsText), 'the shared review lists the photographed parts with where they were seen');
   const sharedIO = await page.getByTestId('review-io').innerText().catch(() => '');
-  check(/Y001/.test(sharedIO) && /K1/.test(sharedIO), 'the shared review lists the traced I/O');
+  check(/\bY1\b/.test(sharedIO) && /K1/.test(sharedIO), 'the shared review lists the traced I/O');
 
   // What the photos can't show: on the Machine description page only.
   await page.goto(BASE + '/spec');
   await page.waitForTimeout(800);
   const qa = await page.locator('#questions-and-answers').innerText();
   check(/behind the left duct/.test(qa) && /could not be confirmed from the photos/.test(qa), 'hidden wiring and the unconfirmed relay are asked on the Machine description page');
-  check(/which field device is wired to TB1-3 \(wire 1001, PLC input X001\)/.test(qa), 'the field device behind each traced terminal is asked');
+  check(/TB1: what is wired to terminals 3 \(wire 1001 → PLC input X1\) and 4 \(wire 1101 → PLC input X101\)/.test(qa), 'the field devices behind the strip are asked, one question per strip');
+  check(/IO1 \(C0-08ND3\) is taken as I\/O slot 1/.test(qa), 'the module address guessed from its slot is asked');
 
   // Drawings: the panel layout sheet and the BOM.
   await page.goto(BASE + '/electrical?tab=cabinet');
@@ -122,6 +123,15 @@ async function png(page, shade) {
   const sheets = await page.locator('nav[aria-label="Drawing sheets"] li button').evaluateAll((bs) => bs.map((b) => b.title));
   log('Sheets:', sheets.join(' | '));
   check(sheets.some((t) => /PANEL LAYOUT/i.test(t)) && sheets.some((t) => /BILL OF MATERIALS/i.test(t)), 'panel layout and BOM sheets');
+  // As-built power distribution from the traced wires (supply first, then branch circuits; PLC I/O wires on the I/O sheets).
+  check(sheets.some((t) => /AS-BUILT POWER DISTRIBUTION \(FROM PHOTOS\)/.test(t)), 'as-built power distribution sheet');
+  // sheets are drawn progressively (the ones around the current sheet first): wait for this one
+  await page.getByTestId('asbuilt-sheet').waitFor({ state: 'attached', timeout: 30000 }).catch(() => {});
+  const abWires = await page.locator('[data-asbuilt-wire]').evaluateAll((gs) => gs.map((g) => g.getAttribute('data-asbuilt-wire')));
+  check(JSON.stringify(abWires) === JSON.stringify(['0V', '24+', '101']), `as-built sheet draws the supply and branch wires (${abWires.join(', ')})`);
+  const abText = await page.locator('[data-cad-sheet="asbuilt"]').first().textContent();
+  await page.locator('[data-cad-sheet="asbuilt"]').first().screenshot({ path: OUT + 'asbuilt-sheet.png' });
+  check(/PS24:\+V/.test(abText) && /TB1:1/.test(abText) && /READ AT ONE END ONLY/.test(abText) && /102 @ CB2:2/.test(abText), 'drops to every terminal; single-ended wires listed');
   const bom = await page.evaluate(async () => {
     const { collectProject } = await import('/src/deliverables/collect.ts');
     const { billOfMaterials } = await import('/src/electrical/derive.ts');
@@ -154,7 +164,7 @@ async function png(page, shade) {
   await page.getByRole('button', { name: 'Make the as-built panel layout and BOM' }).click();
   await page.getByTestId('photos-applied').waitFor();
   const byHand = await page.evaluate(async () => { const s = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState(); return { rails: s.design?.asBuilt?.rails, wiring: s.design?.ioWiring.map((w) => `${w.address}:${w.deviceTag}`) }; });
-  check(JSON.stringify(byHand.rails) === '[["PLC1","K1"]]' && JSON.stringify(byHand.wiring) === '["Y001:K1"]', `as-built from hand entry (${JSON.stringify(byHand)})`);
+  check(JSON.stringify(byHand.rails) === '[["PLC1","K1"]]' && JSON.stringify(byHand.wiring) === '["Y1:K1"]', `as-built from hand entry (${JSON.stringify(byHand)})`);
 
   for (const e of errors) fails.push(`page error: ${e.slice(0, 160)}`);
   await browser.close();

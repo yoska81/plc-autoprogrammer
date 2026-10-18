@@ -117,6 +117,69 @@ export interface LadderProgram {
   tags: TagDefinition[];
   /** The automatic cycle as steps, when the program was built from the templates (shown as a table; exporters ignore it). */
   sequence?: import('../engine/sequence').CycleSequence;
+  /** Motion the PLC runs itself (pulse-train axes, high-speed counters): set up in the PLC software, enabled by bits the rungs set. */
+  motion?: ProgramMotion;
+}
+
+/**
+ * A pulse-train (PTO) axis set up in the PLC's high-speed I/O (CLICK PLUS: High Speed I/O Setup, pulse on
+ * Y001 / Y003 / Y005 of the slot-0 module, direction on any Y; CLICK help 292).
+ */
+export interface MotionAxis {
+  /** PTO axis number (1–3). */
+  axis: number;
+  name: string;
+  pulse: string;
+  direction: string;
+  /** DD registers the PLC writes: current position (pulses) and velocity (pulses/s). */
+  position: string;
+  velocity: string;
+  /** Pulses per position unit (e.g. 200 pulses/mm) and the unit. */
+  pulsesPerUnit: number;
+  units: string;
+  /** Limit switch inputs assigned to the axis (a limit faults the move: CLICK error 103). */
+  limitPos?: string;
+  limitNeg?: string;
+}
+
+/** A motion instruction the PLC runs (CLICK PLUS: Home / Velocity Move / Position Move for PTO Axis, help 294–296). */
+export interface MotionInstruction {
+  kind: 'home' | 'velocity' | 'position';
+  axis: number;
+  /** The bit the rungs set to run it. */
+  enable: string;
+  /** Status bits and the error code register the instruction writes. */
+  busy: string;
+  complete: string;
+  success: string;
+  error: string;
+  errorCode: string;
+  /** Position move: target (DD, pulses, ABS); velocity move: target velocity (DD, pulses/s, signed). */
+  target?: string;
+  /** Position move: velocity (DD, pulses/s). */
+  velocity?: string;
+  /** Acceleration / deceleration (pulses/s²). */
+  accel: number;
+  decel: number;
+  /** Home: the switch input it searches for. */
+  homeSwitch?: string;
+}
+
+/** A high-speed counter (encoder) set up in the PLC's high-speed I/O; it writes its count to a DD register. */
+export interface HighSpeedCounter {
+  name: string;
+  channels: string[];
+  quadrature: boolean;
+  withZ: boolean;
+  count: string;
+}
+
+export interface ProgramMotion { axes: MotionAxis[]; instructions: MotionInstruction[]; counters: HighSpeedCounter[] }
+
+/** Registers and bits the PLC's motion (instructions, axes, counters) writes, not the rungs. */
+export function motionWrites(m: ProgramMotion | undefined): string[] {
+  if (!m) return [];
+  return [...m.instructions.flatMap((i) => [i.busy, i.complete, i.success, i.error, i.errorCode]), ...m.axes.flatMap((a) => [a.position, a.velocity]), ...m.counters.map((c) => c.count)];
 }
 
 export const EMPTY_PROGRAM: LadderProgram = { rungs: [], tags: [] };

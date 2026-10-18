@@ -9,8 +9,10 @@ import { IoSheet } from './sheets/IoSheet';
 import { DoorLayoutSheet, PanelLayoutSheet } from './sheets/LayoutSheets';
 import { ControlSheet, MotorSheet, PowerSheet } from './sheets/SchematicSheets';
 import { DrillingSheet } from './sheets/DrillingSheet';
+import { ServoSheet } from './sheets/ServoSheet';
 import { DriveSheet } from './sheets/DriveSheet';
 import { AnalogSheet } from './sheets/AnalogSheet';
+import { AsBuiltSheet } from './sheets/AsBuiltSheet';
 import { CableScheduleSheet, JunctionBoxSheet, MachineOverviewSheet } from './sheets/MachineSheets';
 import { MachineLayoutSheet } from './sheets/MachineLayoutSheet';
 import { BomSheet, CoverSheet, NotesSheet, TerminalSheet } from './sheets/TableSheets';
@@ -38,6 +40,8 @@ function Content({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
     case 'drill': return <DrillingSheet plan={plan} sheet={sheet} />;
     case 'analog': return <AnalogSheet plan={plan} sheet={sheet} />;
     case 'drive': return <DriveSheet plan={plan} sheet={sheet} />;
+    case 'asbuilt': return <AsBuiltSheet plan={plan} sheet={sheet} />;
+    case 'servo': return <ServoSheet plan={plan} sheet={sheet} />;
   }
 }
 

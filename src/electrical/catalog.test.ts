@@ -35,6 +35,7 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)ifm\.com$/, makers: /\bifm\b/i },
   { host: /(^|\.)pepperl-fuchs\.com$/, makers: /pepperl/i },
   { host: /(^|\.)bannerengineering\.com$/, makers: /banner/i },
+  { host: /(^|\.)pilz\.com$/, makers: /pilz/i },
   { host: /(^|\.)yaskawa\.(com|eu)$/, makers: /yaskawa/i },
   { host: /(^|\.)(nvent\.com|hoffmanonline\.com)$/, makers: /hoffman|nvent/i },
   { host: /(^|\.)rittal\.(com|us)$/, makers: /rittal/i },
@@ -120,6 +121,8 @@ const UNVERIFIED_OK: Record<string, string> = {
   'C2-01CPU-2': 'CLICK PLUS two-slot CPU: width 80.5 mm read from the C2 manual dual-slot drawing (the part drawing is not dimensioned); 87.8 mm in the same drawing taken as including the latch.',
   'C2-02CPU-2': 'CLICK PLUS two-slot CPU: width 80.5 mm read from the C2 manual dual-slot drawing (the part drawing is not dimensioned); 87.8 mm in the same drawing taken as including the latch.',
   'C2-03CPU-2': 'CLICK PLUS two-slot CPU: width 80.5 mm read from the C2 manual dual-slot drawing (the part drawing is not dimensioned); 87.8 mm in the same drawing taken as including the latch.',
+  'SCR73-280005': 'IDEM SCR73: the AD spec sheet prints PFHd 7.20E-05, which is impossible for SIL 3 (needs < 1E-07); SIL / PL figures to be checked against the IDEM data sheet.',
+  'SCR73-280005-P': 'IDEM SCR73: the AD spec sheet prints PFHd 7.20E-05, which is impossible for SIL 3 (needs < 1E-07); SIL / PL figures to be checked against the IDEM data sheet.',
   'VFD2A8MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
   'VFD4A8MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
   'VFD7A5MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
@@ -235,6 +238,12 @@ test('prices belong to catalog parts and come from the same site', () => {
     if (new URL(pr.sourceUrl).host !== new URL(p.url).host) bad.push(`${pn}: price from ${new URL(pr.sourceUrl).host}, part page on ${new URL(p.url).host}`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(pr.date)) bad.push(`${pn}: price date ${pr.date}`);
   }
+  assert.deepEqual(bad, []);
+});
+
+test('safety relays and expansions state their safety outputs as a count', () => {
+  // The drawing converter sizes the safety relay (base + expansion) from these: '(4) N.O.' and safetyOutputCount 4.
+  const bad = CATALOG.filter((p) => p.category === 'safetyRelay' && !(/^\(\d+\) N\.O\.$/.test(String(p.ratings.safetyOutputs)) && Number(p.ratings.safetyOutputCount) === Number(String(p.ratings.safetyOutputs).match(/\d+/)?.[0]))).map((p) => p.partNumber);
   assert.deepEqual(bad, []);
 });
 

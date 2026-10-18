@@ -20,7 +20,7 @@ export type MountLocation = 'backplate' | 'door' | 'field';
 /** Catalog a part comes from (brand / supplier); see src/electrical/catalogs. */
 export type VendorId = 'automationdirect' | 'allen-bradley' | 'siemens' | 'schneider' | 'yaskawa' | 'ifm' | 'hoffman' | 'rittal'
   | 'omron' | 'mitsubishi' | 'delta' | 'weintek' | 'redlion' | 'maple' | 'proface' | 'unitronics'
-  | 'phoenix' | 'weidmuller' | 'eaton' | 'abb' | 'pepperl' | 'banner';
+  | 'phoenix' | 'weidmuller' | 'eaton' | 'abb' | 'pepperl' | 'banner' | 'pilz';
 
 export interface CatalogPart {
   /** Manufacturer / supplier part number, exactly as on the source page. */
@@ -156,14 +156,17 @@ export interface DesignComponent {
 export type FieldDeviceType =
   | 'pushbutton-no' | 'pushbutton-nc' | 'selector' | 'estop-contact'
   | 'sensor-pnp' | 'sensor-npn' | 'limit-switch' | 'pressure-switch' | 'safety-relay-output'
-  | 'contactor-coil' | 'relay-coil' | 'solenoid' | 'pilot-light' | 'stack-light' | 'vfd-input' | 'other';
+  | 'contactor-coil' | 'relay-coil' | 'solenoid' | 'pilot-light' | 'stack-light' | 'vfd-input'
+  // Motion (src/electrical/motion.ts): a servo drive's control signal, an encoder channel, an ultrasonic sensor.
+  | 'servo-drive' | 'encoder' | 'ultrasonic' | 'other';
 
 /** Field device types in words. */
 export const FIELD_DEVICE_LABEL: Record<FieldDeviceType, string> = {
   'pushbutton-no': 'pushbutton (NO)', 'pushbutton-nc': 'pushbutton (NC)', selector: 'selector switch', 'estop-contact': 'E-stop contact',
   'sensor-pnp': 'sensor (PNP)', 'sensor-npn': 'sensor (NPN)', 'limit-switch': 'limit switch', 'pressure-switch': 'pressure switch',
   'safety-relay-output': 'safety relay output', 'contactor-coil': 'contactor coil', 'relay-coil': 'relay coil', solenoid: 'solenoid valve',
-  'pilot-light': 'pilot light', 'stack-light': 'stack light', 'vfd-input': 'drive input', other: 'other',
+  'pilot-light': 'pilot light', 'stack-light': 'stack light', 'vfd-input': 'drive input',
+  'servo-drive': 'servo drive signal', encoder: 'encoder channel', ultrasonic: 'ultrasonic sensor', other: 'other',
 };
 
 /** How one PLC I/O point is wired in the field. */
@@ -215,6 +218,12 @@ export interface ElectricalDesign {
   /** How the enclosure was chosen (absent on older designs). */
   enclosureChoice?: EnclosureChoice;
   /** Documented from an existing cabinet (src/convert/photos): the DIN rails top to bottom, each the device tags left to right. */
-  asBuilt?: { source: 'photos'; rails: string[][]; /** Wires traced by their numbers: each wire's ends ("K1:A1", "TB1:3"). */ wires?: { wire: string; ends: string[] }[] };
+  asBuilt?: {
+    source: 'photos'; rails: string[][];
+    /** Wires traced by their numbers: each wire's ends ("K1:A1", "TB1:3"). */
+    wires?: { wire: string; ends: string[] }[];
+    /** Wire numbers read at one place only (the other end is not in the photos). */
+    single?: { wire: string; at: string }[];
+  };
   generatedAt: string;
 }

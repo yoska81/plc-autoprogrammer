@@ -24,6 +24,12 @@ async function open(browser) {
   return { page, errors };
 }
 const screenButton = (page, name) => page.locator('nav[aria-label="Screens"] > button', { has: page.locator('span', { hasText: new RegExp(`^\\d+\\. ${name}$`) }) });
+// Open a screen and wait until the editor shows it: typing into the name field before the switch lands
+// renames the previous screen (seen under load).
+const openScreen = async (page, name) => {
+  await screenButton(page, name).click();
+  await page.waitForFunction((n) => document.querySelector('input[aria-label="Screen name"]')?.value === n, name, { timeout: 10000 });
+};
 const hmiState = (page) => page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design);
 
 (async () => {
@@ -48,7 +54,7 @@ const hmiState = (page) => page.evaluate(async () => (await import('/src/store/u
   check(/cannot reach it/.test(checkText) && /Orphan screen/.test(checkText), 'layout check: unreachable screen');
 
   // 2 + 7. Screen access is one undo step; Ctrl+Z works while the editor is open with the focus elsewhere.
-  await screenButton(page, 'Setup').click();
+  await openScreen(page, 'Setup');
   await page.getByRole('button', { name: 'Edit screen' }).click();
   const before = (await hmiState(page)).screens.find((s) => s.name === 'Setup').level ?? 'operator';
   const access = page.locator('label', { hasText: 'Screen access' }).locator('select');
@@ -64,7 +70,7 @@ const hmiState = (page) => page.evaluate(async () => (await import('/src/store/u
   check((await hmiState(page)).screens.find((s) => s.name === 'Setup').level === 'engineer', 'Ctrl+Y redoes it');
 
   // 5. Rename a screen: its navigation buttons follow.
-  await screenButton(page, 'Alarms').click();
+  await openScreen(page, 'Alarms');
   await page.locator('input[aria-label="Screen name"]').fill('Faults');
   const renamed = await hmiState(page);
   const target = renamed.screens.find((s) => s.name === 'Faults');

@@ -1,4 +1,4 @@
-import { elementAddresses, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
+import { elementAddresses, motionWrites, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
 
 export interface ValidationIssue {
@@ -18,6 +18,8 @@ export function validateProgram(
   ioAddresses: Set<string>,
   /** The project's HMI: a tag the HMI shows that no rung writes, or a command no rung reads, is an error. */
   hmi?: { tags: { address: string; name: string; access: string }[] },
+  /** noPanel: the machine has no touch panel, so nothing writes the panel ranges C1001–C1300 / DS1001–DS1200 / DF101–DF200. */
+  opts: { noPanel?: boolean } = {},
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const outCoils = new Map<string, number>();
@@ -38,7 +40,7 @@ export function validateProgram(
   };
 
   for (const rung of program.rungs) {
-    for (const extra of profile.checkRung?.(rung) ?? []) issues.push({ rungId: rung.id, ...extra });
+    for (const extra of profile.checkRung?.(rung, { ioAddresses }) ?? []) issues.push({ rungId: rung.id, ...extra });
     if (rung.outputs.length === 0) issues.push({ rungId: rung.id, severity: 'error', message: 'Rung has no output instruction.' });
 
     for (const branch of rung.branches) {
@@ -127,6 +129,10 @@ export function validateProgram(
       }
       for (const w of rungWrites(r)) note(writes, w, r.id);
     }
+    // The PLC's motion (instructions, axes, counters) writes its status bits and registers and reads its request
+    // bits and targets: set up in the PLC software, not in the rungs.
+    for (const w of motionWrites(program.motion)) note(writes, w, 'motion');
+    for (const i of program.motion?.instructions ?? []) for (const a of [i.enable, i.target, i.velocity].filter((x): x is string => !!x)) note(reads, a, 'motion');
     const hmiAddr = new Set((hmi?.tags ?? []).map((t) => t.address.trim().toUpperCase()));
     const hmiRange = (a: string) => /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/.test(a);
     const skip = (a: string) => {
@@ -140,6 +146,36 @@ export function validateProgram(
     for (const [a, rung] of writes) if (!timerRead(a) && !skip(a)) issues.push({ rungId: rung, severity: 'warning', message: `${a} is written but never read: this logic does nothing.` });
   }
 
+  // A coil that can never turn on: every branch that could switch it on (its own seal-in aside) needs a contact on a
+  // bit nothing writes — e.g. Cycle running started only from a panel Start bit on a machine with no touch panel.
+  if (program.rungs.length) {
+    const written = new Set([...program.rungs.flatMap((r) => rungWrites(r)), ...motionWrites(program.motion)].map((a) => a.trim().toUpperCase()));
+    for (const t of hmi?.tags ?? []) if (t.access !== 'read') written.add(t.address.trim().toUpperCase());
+    const panelRange = (a: string) => /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/.test(a);
+    const dead = (a: string) => {
+      const info = profile.parseAddress(a);
+      if (!info || info.kind === 'constant' || info.kind === 'input' || info.kind === 'output' || info.kind === 'system' || ioAddresses.has(a) || written.has(a)) return false;
+      if (/^(T|TD|CT|CTD)\d+$/.test(a)) return false;
+      return !panelRange(a) || Boolean(opts.noPanel);
+    };
+    const coils = new Map<string, Rung[]>();
+    for (const r of program.rungs) for (const o of r.outputs) if (o.type === 'OUT' || o.type === 'SET') { const k = o.address.trim().toUpperCase(); coils.set(k, [...(coils.get(k) ?? []), r]); }
+    for (const [a, rs] of coils) {
+      const blockers = new Set<string>();
+      const live = rs.some((r) => r.branches.some((b) => {
+        const contacts = b.filter((e): e is Extract<typeof e, { address: string }> => (e.type === 'NO' || e.type === 'RISE') && 'address' in e).map((e) => e.address.trim().toUpperCase());
+        if (contacts.includes(a)) return false; // its own seal-in
+        const d = contacts.filter(dead);
+        d.forEach((x) => blockers.add(x));
+        return !d.length;
+      }) || !r.branches.length);
+      if (live || !blockers.size) continue;
+      const panelOnly = [...blockers].some(panelRange);
+      issues.push({ rungId: rs[0].id, severity: panelOnly && opts.noPanel ? 'error' : 'warning',
+        message: `${a} can never turn on: every way to switch it on needs ${[...blockers].join(' / ')}, which nothing writes${panelOnly && opts.noPanel ? ' (a touch-panel command, and this machine has no touch panel — use a pushbutton input)' : ''}.` });
+    }
+  }
+
   for (const [address, count] of outCoils) {
     if (count > 1) {
       issues.push({ rungId: null, severity: 'warning', message: `${address} is driven by OUT coils in ${count} rungs; only the last one wins (double coil).` });
@@ -151,7 +187,7 @@ export function validateProgram(
 /** PLC families imported instructions come from (profile ids, plus brands the app reads but has no profile for). */
 const VENDOR_NAME: Record<string, string> = {
   logix: 'Logix', click: 'CLICK', micro800: 'Micro800', 'siemens-s7': 'Siemens S7', 'unitronics-unistream': 'UniStream', 'unitronics-vision': 'Vision',
-  'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS',
+  'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS', 'siemens-stl': 'Siemens STL', 'siemens-lad': 'a TIA Portal LAD network', delta: 'Delta', inovance: 'Inovance', xinje: 'Xinje',
 };
 
 /**

@@ -47,6 +47,15 @@ function tagOf(t: XNode, comments: Map<string, string>): ForeignTag {
   };
 }
 
+/** The I/O modules in the controller's own rack (ParentModule="Local", not the controller itself), by slot. */
+function localModules(ctrl: XNode): { slot: number; catalog: string }[] {
+  return kids(kid(ctrl, 'Modules'), 'Module')
+    .filter((m) => m.attrs.ParentModule === 'Local' && m.attrs.Name !== 'Local' && m.attrs.CatalogNumber)
+    .map((m) => ({ slot: Number(kids(kid(m, 'Ports'), 'Port').find((p) => p.attrs.Upstream === 'true')?.attrs.Address ?? NaN), catalog: m.attrs.CatalogNumber }))
+    .filter((m) => Number.isInteger(m.slot))
+    .sort((a, b) => a.slot - b.slot);
+}
+
 /** Comments on module I/O points: "Local:1:I.Data.0" → "Start pushbutton". */
 function moduleComments(root: XNode): Map<string, string> {
   const out = new Map<string, string>();
@@ -103,12 +112,22 @@ function attachDecls(src: string, routines: ForeignRoutine[]): void {
   }
 }
 
+/**
+ * A kept instruction that the rung's paths would repeat ([XIC(A),XIC(B)]OSR(s,o)…: one OSR in the PLC, one
+ * per path in the app): its state (one-shot, call) can't be split, so the rung is kept whole instead.
+ */
+export function rawRepeated(rungs: Rung[]): boolean {
+  return rungs.some((r) => r.branches.length > 1 && r.branches.flat().some((e) => e.type === 'RAW'));
+}
+
 /** A rung kept whole as its original text (RAW): it goes back into the PLC as it was. */
 export function wholeRung(text: string, comment: string, id: string): Rung {
   return { id, comment, branches: [], outputs: [{ type: 'RAW', vendor: 'logix', text: text.replace(/;\s*$/, '') }] };
 }
 
-export function readL5x(src: string): ForeignProgram {
+export function readL5x(input: string): ForeignProgram {
+  // Windows exports are CRLF: read as LF lines.
+  const src = input.replace(/\r\n?/g, '\n');
   const doc = parseXml(src);
   const content = kid(doc, 'RSLogix5000Content');
   if (!content) throw new Error('This is not a Studio 5000 .L5X file (no RSLogix5000Content).');
@@ -167,10 +186,13 @@ export function readL5x(src: string): ForeignProgram {
             for (const d of driven) for (const op of opsOf(d)) if (logixIoKind(op)) ioRefs.add(op);
             const { rungs, failed } = toRungs(mapOps(driven), comment, `${slug(rname)}_${i}`);
             // A rung the ladder model can't hold is kept whole, as it was.
-            if (failed.length || untranslated.length) routine.rungs.push(wholeRung(text, comment, `${slug(rname)}_${i}`));
-            else routine.rungs.push(...rungs);
+            const got = failed.length || untranslated.length || rawRepeated(rungs) ? [wholeRung(text, comment, `${slug(rname)}_${i}`)] : rungs;
+            routine.rungs.push(...got);
+            for (const g of got) (routine.rungNumbers ??= {})[g.id] = String(i);
           } catch {
-            routine.rungs.push(wholeRung(text, comment, `${slug(rname)}_${i}`));
+            const g = wholeRung(text, comment, `${slug(rname)}_${i}`);
+            routine.rungs.push(g);
+            (routine.rungNumbers ??= {})[g.id] = String(i);
           }
         });
       } else if (type === 'ST') {
@@ -203,6 +225,7 @@ export function readL5x(src: string): ForeignProgram {
   return {
     outside,
     format: 'l5x', vendor: 'Allen-Bradley', controller: ctrl.attrs.ProcessorType ?? '', projectName: ctrl.attrs.Name ?? content.attrs.TargetName ?? 'Imported project',
+    modules: localModules(ctrl),
     tags, routines, notes,
   };
 }

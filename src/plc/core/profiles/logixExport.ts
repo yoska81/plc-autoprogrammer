@@ -41,7 +41,7 @@ export function logixName(text: string, used: Set<string>, fallback: string): st
   return name;
 }
 
-interface IoTagOf { (address: string, modules: ModuleSlot[]): string | null }
+interface IoTagOf { (address: string, modules: ModuleSlot[], cpuId?: string): string | null }
 
 /** Build the Logix tag set and rung text for a neutral program. */
 export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTagOf): LogixProgram {
@@ -91,7 +91,7 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
       return tag;
     }
     const label = ctx.labels.get(base);
-    const alias = dataType === 'BOOL' || dataType === 'REAL' ? ioTag(base, modules) : null;
+    const alias = dataType === 'BOOL' || dataType === 'REAL' ? ioTag(base, modules, ctx.cpuId) : null;
     const tag: LogixTag = {
       base,
       name: logixName(n?.nickname || label || GENERATED[base] || base, used, base),

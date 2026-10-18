@@ -60,6 +60,8 @@ export interface ForeignRoutine {
   untranslated: string[];
   /** Where the routine is in the original file (program and routine name), for writing changes back into it. */
   origin?: { program: string; routine: string };
+  /** Rung id → the number of the original rung it came from (one original rung can give several). */
+  rungNumbers?: Record<string, string>;
 }
 
 export interface ForeignProgram {
@@ -67,6 +69,8 @@ export interface ForeignProgram {
   vendor: string;
   /** Controller / CPU as the file names it (e.g. "1769-L33ER", "CPU 1214C", "FX5U"). */
   controller: string;
+  /** The I/O modules in the controller's own rack, by slot, as the file names them ("1769-IQ16/A"). */
+  modules?: { slot: number; catalog: string }[];
   projectName: string;
   tags: ForeignTag[];
   routines: ForeignRoutine[];
@@ -101,7 +105,7 @@ export interface ImportReport {
 }
 
 export interface ImportedProgram {
-  source: { format: SourceFormat; vendor: string; controller: string; projectName: string; fileName: string };
+  source: { format: SourceFormat; vendor: string; controller: string; projectName: string; fileName: string; modules?: { slot: number; catalog: string }[] };
   /** Program with neutral addresses; I/O points are written as "@IN:<n>" / "@OUT:<n>" until a PLC is chosen (materialize). */
   program: LadderProgram;
   io: ImportedIoPoint[];
@@ -110,4 +114,6 @@ export interface ImportedProgram {
   report: ImportReport;
   /** Block id → its routine in the original file. */
   blockOrigin: Record<string, { program: string; routine: string }>;
+  /** App rung id → number of the original rung it came from (in its routine). */
+  rungOrigin: Record<string, string>;
 }

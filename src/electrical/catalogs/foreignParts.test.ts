@@ -23,6 +23,7 @@ const MAKER_HOSTS: [RegExp, RegExp][] = [
   [/xinje/i, /(^|\.)(xinje\.com|xinje\.co)$/],
   [/mitsubishi/i, /(^|\.)(mitsubishielectric\.com|mitsubishielectric\.co\.jp)$/],
   [/autonics/i, /(^|\.)autonics\.com$/],
+  [/rexroth/i, /(^|\.)boschrexroth\.com$/],
 ];
 
 const bad: string[] = [];

@@ -485,6 +485,27 @@ await test('cn-rollformer-01 fixture (fixtures/import): facts from its expected.
   }
 });
 
+await test('CAD text: title-block rows repeated on 3+ sheets given once, circuit rows kept on each; rows in a fixed order', () => {
+  // three A3-like sheets side by side: the bus "L1 L2 L3 PE" at the top of each, the company in the title block (bottom right)
+  const ents: CadEntity[] = [];
+  for (let i = 0; i < 3; i++) {
+    const x = i * 500;
+    ents.push({ type: 'LWPOLYLINE', layer: 'FRAME', points: [[x, 0], [x + 420, 0], [x + 420, 297], [x, 297]], closed: true });
+    for (const [k, t] of ['L1', 'L2', 'L3', 'PE'].entries()) ents.push({ type: 'TEXT', layer: 'WIRENO', x: x + 20 + k * 10, y: 280, text: t });
+    ents.push({ type: 'TEXT', layer: 'TEXT', x: x + 100, y: 150, text: `K${i + 1}` });
+    ents.push({ type: 'TEXT', layer: 'TEXT', x: x + 330, y: 20, text: 'ACME Machines Ltd' });
+    ents.push({ type: 'TEXT', layer: 'TEXT', x: x + 330, y: 10, text: `第${i + 1}页 共3页` });
+  }
+  const text = cadToText(ents, 'set.dxf');
+  assert.equal(text.split('\n').filter((l) => l.startsWith('L1 [WIRENO]')).length, 3, 'the bus row on every sheet');
+  assert.equal(text.split('\n').filter((l) => l.includes('ACME Machines Ltd')).length, 1, 'the company once');
+  // texts within one row height, given in any order: the same rows (by height, then left to right)
+  const row = [{ x: 30, y: 100.4 }, { x: 10, y: 100 }, { x: 20, y: 99.7 }, { x: 40, y: 50 }].map((p, k) => ({ type: 'TEXT' as const, layer: '0', ...p, text: `T${k}` }));
+  const one = cadToText(row, 'r.dxf');
+  for (const order of [[3, 2, 1, 0], [2, 0, 3, 1], [1, 3, 0, 2]]) assert.equal(cadToText(order.map((k) => row[k]), 'r.dxf'), one);
+  assert.match(one, /T1 {3}T2 {3}T0\nT3/);
+});
+
 await test('cn-rollformer-01 converted: claimed Cat 3 / PL d not met (no STO), relay logic C1–C11 into the PLC, each circuit kept', () => {
   const m = normalizeMachine(CN_ROLLFORMER_01_READING);
   const c = convertMachine(m);
@@ -676,40 +697,52 @@ await test('cn-rollformer-01: the safety relay is sized for its outputs (as draw
   const m = normalizeMachine(CN_ROLLFORMER_01_READING);
   assert.deepEqual(safetyOutputsNeeded(m, ['VFD1', 'SD1']), { need: 6, drawn: ['13-14', '23-24'], why: '2 as drawn (13-14, 23-24) + 2 for the STO of each of VFD1, SD1' });
   const sr = () => convertMachine(m).parts.find((p) => p.oldTag === 'KA0')!;
-  // too few outputs and no expansion listed for it in this catalog: not an equivalent, the user picks (closest offered) and is asked
-  const now = sr();
-  assert.equal(now.status, 'to-select');
-  assert.equal(now.to, null);
-  const closest = now.alternatives[0];
-  assert.ok(safetyOutputCount(closest) >= 2 && safetyOutputCount(closest) < 6);
-  assert.ok(now.differences.some((d) => /^Needs 6 safety outputs \(2 as drawn \(13-14, 23-24\) \+ 2 for the STO of each of VFD1, SD1\)/.test(d)), now.differences.join(' | '));
-  assert.ok(convertMachine(m).questions.some((q) => q.section === 'safety' && /MSR1 needs 6 safety outputs/.test(q.text)));
-  // an unverified relay with all 6 outputs in the catalog: still to select, offered and named in the question
-  const loose = { ...closest, id: 'loose-test', partNumber: 'LOOSE-7', description: 'Safety relay 7 N.O.', verified: false, verify: 'PFHd as printed', ratings: { ...closest.ratings, safetyOutputs: '(7) N.O.', safetyOutputCount: 7 } };
-  ALL_PARTS.push(loose);
+  // the catalog's own answer: a verified base with an expansion its maker lists (3 + 5 outputs)
+  const real = sr();
+  assert.equal(real.status, 'matched');
+  assert.equal(real.to!.verified, true);
+  assert.ok(real.differences.some((d) => /3 here \+ expansion Dold LG5929-60-100-61 \(5\)/.test(d)), real.differences.join(' | '));
+  // the cases below on a catalog with no relay that has the 6 outputs, alone or with a listed expansion
+  const hidden = ALL_PARTS.filter((p) => p.category === 'safetyRelay' && (safetyOutputCount(p) >= 6 || /expansion|extension/i.test(p.description)));
+  for (const p of hidden) ALL_PARTS.splice(ALL_PARTS.indexOf(p), 1);
   try {
-    const off = sr();
-    assert.equal(off.status, 'to-select');
-    assert.ok(off.alternatives.some((x) => x.partNumber === 'LOOSE-7'));
-    assert.ok(convertMachine(m).questions.some((q) => /LOOSE-7 has 7, but its ratings are not verified \(PFHd as printed\)/.test(q.text)));
+    // too few outputs and no expansion listed for it in this catalog: not an equivalent, the user picks (closest offered) and is asked
+    const now = sr();
+    assert.equal(now.status, 'to-select');
+    assert.equal(now.to, null);
+    const closest = now.alternatives[0];
+    assert.ok(safetyOutputCount(closest) >= 2 && safetyOutputCount(closest) < 6);
+    assert.ok(now.differences.some((d) => /^Needs 6 safety outputs \(2 as drawn \(13-14, 23-24\) \+ 2 for the STO of each of VFD1, SD1\)/.test(d)), now.differences.join(' | '));
+    assert.ok(convertMachine(m).questions.some((q) => q.section === 'safety' && /MSR1 needs 6 safety outputs/.test(q.text)));
+    // an unverified relay with all 6 outputs in the catalog: still to select, offered and named in the question
+    const loose = { ...closest, id: 'loose-test', partNumber: 'LOOSE-7', description: 'Safety relay 7 N.O.', verified: false, verify: 'PFHd as printed', ratings: { ...closest.ratings, safetyOutputs: '(7) N.O.', safetyOutputCount: 7 } };
+    ALL_PARTS.push(loose);
+    try {
+      const off = sr();
+      assert.equal(off.status, 'to-select');
+      assert.ok(off.alternatives.some((x) => x.partNumber === 'LOOSE-7'));
+      assert.ok(convertMachine(m).questions.some((q) => /LOOSE-7 has 7, but its ratings are not verified \(PFHd as printed\)/.test(q.text)));
+    } finally {
+      ALL_PARTS.splice(ALL_PARTS.indexOf(loose), 1);
+    }
+    // with an expansion module its maker lists for that base (forUse) in the catalog, the conversion names it
+    const stem = closest.partNumber.split(/[-\s.]/)[0];
+    const exp = { ...closest, partNumber: 'EXP-TEST', family: undefined, description: 'Contact expansion module, 4 N.O. safety outputs', ratings: { safetyOutputs: '(4) N.O.', safetyOutputCount: 4, forUse: `Contact expansion for ${stem} base units` } };
+    ALL_PARTS.push(exp);
+    try {
+      const withExp = sr();
+      assert.equal(withExp.status, 'matched');
+      assert.ok(withExp.differences.some((d) => /here \+ expansion .* EXP-TEST \(4\)/.test(d)), withExp.differences.join(' | '));
+      assert.ok(withExp.to!.partNumber.startsWith(stem), 'the base it expands is the choice');
+    } finally {
+      ALL_PARTS.splice(ALL_PARTS.indexOf(exp), 1);
+    }
+    // all STO already wired: only the outputs as drawn
+    const wired = { ...m, safety: { ...m.safety, drives: m.safety.drives.map((d) => ({ ...d, sto: 'wired' as const })) } };
+    assert.ok(convertMachine(wired).parts.find((p) => p.oldTag === 'KA0')!.differences.some((d) => /safety outputs for the 2 needed \(2 as drawn/.test(d)));
   } finally {
-    ALL_PARTS.splice(ALL_PARTS.indexOf(loose), 1);
+    ALL_PARTS.push(...hidden);
   }
-  // with an expansion module its maker lists for that base (forUse) in the catalog, the conversion names it
-  const stem = closest.partNumber.split(/[-\s.]/)[0];
-  const exp = { ...closest, partNumber: 'EXP-TEST', family: undefined, description: 'Contact expansion module, 4 N.O. safety outputs', ratings: { safetyOutputs: '(4) N.O.', safetyOutputCount: 4, forUse: `Contact expansion for ${stem} base units` } };
-  ALL_PARTS.push(exp);
-  try {
-    const withExp = sr();
-    assert.equal(withExp.status, 'matched');
-    assert.ok(withExp.differences.some((d) => /here \+ expansion .* EXP-TEST \(4\)/.test(d)), withExp.differences.join(' | '));
-    assert.ok(withExp.to!.partNumber.startsWith(stem), 'the base it expands is the choice');
-  } finally {
-    ALL_PARTS.splice(ALL_PARTS.indexOf(exp), 1);
-  }
-  // all STO already wired: only the outputs as drawn
-  const wired = { ...m, safety: { ...m.safety, drives: m.safety.drives.map((d) => ({ ...d, sto: 'wired' as const })) } };
-  assert.ok(convertMachine(wired).parts.find((p) => p.oldTag === 'KA0')!.differences.some((d) => /safety outputs for the 2 needed \(2 as drawn/.test(d)));
 });
 
 await test('cn-rollformer-01: the cut watchdog KT1 keeps its 2 s (on the shear-down valve, for the program\'s timeout)', () => {

@@ -8,6 +8,7 @@ import { YASKAWA } from './yaskawa';
 import { IFM } from './ifm';
 import { PEPPERL } from './pepperl';
 import { BANNER } from './banner';
+import { PILZ } from './pilz';
 import { PHOENIX } from './phoenix';
 import { ABB } from './abb';
 import { EATON } from './eaton';
@@ -104,6 +105,10 @@ export const VENDORS: Vendor[] = [
   {
     id: 'banner', name: 'Banner Engineering', supplier: 'Banner Engineering (distributor)', parts: tag('banner', BANNER), otherGroup: 'field',
     notes: 'Ultrasonic sensors (per part datasheet): T30UX D = discrete PNP, U = 0-10 V, I = 4-20 mA; QS18U N = NPN, P = PNP; S18U U = 0-10 V, I = 4-20 mA. Models ending Q8 / Q have an M12 quick-disconnect, the others a 2 m cable. Targets closer than rangeMinMm are not detected.',
+  },
+  {
+    id: 'pilz', name: 'Pilz', supplier: 'Pilz (distributor)', parts: tag('pilz', PILZ),
+    notes: 'PNOZ s3: 2 N/O safety contacts 13-14 / 23-24 and a semiconductor signal output Y32 (not for safety circuits); 24 VDC only. PNOZ X2.8P: 3 N/O safety contacts 13-14 / 23-24 / 33-34 and 1 N/C auxiliary 41-42; 24 VAC/DC or 24-240 VAC/DC. Both: dual-channel inputs S11-S12 / S21-S22, start / feedback loop through the contactors\' N/C contacts.',
   },
   {
     id: 'eaton', name: 'Eaton', supplier: 'Eaton (distributor)', parts: tag('eaton', EATON),

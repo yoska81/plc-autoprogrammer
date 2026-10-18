@@ -64,7 +64,7 @@ export function collectProject() {
     ladder: program.ladder,
     stCode: program.generatedCode,
     // The neutral ladder is checked against the selected PLC (every vendor exports from it) and the project's HMI.
-    issues: program.ladder.rungs.length ? validateProgram(program.ladder, profile, ioAddressSet, hmi.design ?? undefined) : [],
+    issues: program.ladder.rungs.length ? validateProgram(program.ladder, profile, ioAddressSet, hmi.design ?? undefined, { noPanel: noHmi }) : [],
     electrical: electrical.design,
     drawingCtx,
     hmi: hmi.design,

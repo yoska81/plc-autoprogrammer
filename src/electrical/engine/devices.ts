@@ -74,7 +74,7 @@ export function zoneOf(desc: string, zones: string[]): string {
 
 /** Interposing / pilot / operator parts picked by words in the description. */
 function pickPushbutton(pk: Picker, desc: string, nc: boolean): CatalogPart | null {
-  const color = nc || /\bstop\b/i.test(desc) ? 'red' : /\bstart|run|on\b/i.test(desc) ? 'green' : /\bjog|manual\b/i.test(desc) ? 'black' : /\b(ack|silence)\b/i.test(desc) ? 'yellow' : 'black';
+  const color = nc || /\bstop\b/i.test(desc) ? 'red' : /\b(start|run|on)\b/i.test(desc) ? 'green' : /\bjog|manual\b/i.test(desc) ? 'black' : /\b(ack|silence)\b/i.test(desc) ? 'yellow' : 'black';
   return pk.pick('pushbutton', (p) => String(p.ratings.color ?? '') === color && (nc ? /N\.C\./.test(String(p.ratings.contacts)) : /N\.O\./.test(String(p.ratings.contacts))))
     ?? pk.pick('pushbutton', (p) => (nc ? /N\.C\./ : /N\.O\./).test(String(p.ratings.contacts ?? '')));
 }
