@@ -265,6 +265,25 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Huade 4WE6: no English data sheet on huade-hyd.com.
   - Blade wear / burrs, and strip slip in the roll stands: no maker document covers them.
 
+## No-PLC roll-former → CLICK conversion: catalog coverage
+- **Already covered:** CLICK PLUS C2-0xCPU + C2-14D1/D2/TTL (3 PTO axes and 6 HSC at 100 kHz); GS20/GS23; SureServo2; TRD encoders; 17 safety relays.
+- **CLICK C0 modules (17):**
+  - Discrete: C0-08NE3, C0-16NE3, C0-08NA, C0-08ND3-1, C0-08TD2, C0-08TA, C0-08TR-3, C0-04TRS-10, C0-08CDR, C0-16CDD2.
+  - Analog: C0-04AD-2, C0-04DA-2, C0-4AD2DA-1/-2, C0-04RTD.
+  - Simulators: C0-08SIM, C0-04POT.
+  - C0-00AC is retired; C0-01AC is the current CLICK power supply.
+- **Encoder accessories (48):**
+  - Measuring wheels: Wachendorff MR200/MR500 (10 mm bore, fits TRD-GK); Lika AR01X 250 mm / 12.5 in with BR1 reducer bushings.
+  - Lika AR01 complete measuring-wheel kits (encoder + wheels + spring arm + bracket).
+  - 14 couplings and 13 brackets.
+  - Gap: AD sells no spring arm for the TRD encoders. The WDGMA arms fit Wachendorff WDG 58V/WDGI 36J only.
+- **Safety outputs:**
+  - Dold LG5929 (5 N.O.) and UG6929-60/61/62 (5/6/7 N.O.) expansions.
+  - IDEM SCR73 base relay with 7 N.O. Its spec sheet transposes N.O./N.C. and prints PFHd 7.20E-05; both are noted.
+  - Pilz PNOZ s7 (4 N.O. + 1 N.C.) and s7.1 (3 N.O., cascade) for the PNOZ s3.
+  - Combinations covering 2+2 STO channels + valves: PNOZ s3 + s7 = 6 N.O.; LG5925 + UG6929-62 = 10 N.O.; SCR73 = 7 N.O.
+- **Prices:** 71 AD prices and stock records. STP-MTRA-SC-3812 is end of life, successor SRBA-32C-9.525-12.7.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.
