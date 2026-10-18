@@ -72,6 +72,8 @@ function sse(model, text) {
   await page.getByRole('button', { name: 'Continue to the import →' }).click();
   await page.waitForURL(/\/import$/);
 
+  // DWG in the browser: the Windows app opens it (its LibreDWG converter); here DXF or PDF
+  check(/DWG opens in the Windows app; here use DXF or PDF/.test(await page.getByTestId('dwg-status').innerText()), 'DWG: "opens in the Windows app" line in the browser');
   // The one CAD file
   await page.getByTestId('convert-files').setInputFiles([FIX + 'roll-former.dxf']);
   await page.getByRole('button', { name: 'Read the drawings' }).click();

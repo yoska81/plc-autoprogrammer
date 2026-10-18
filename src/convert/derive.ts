@@ -16,36 +16,44 @@ import type { DrawnRatings, ExistingMachine, PathContact, PathEl } from './types
 
 export const MAX_UPLOAD_FILES = 20;
 
-/** Where the free ODA File Converter is downloaded (Open Design Alliance). */
-export const ODA_DOWNLOAD = 'https://www.opendesign.com/guestfiles/oda_file_converter';
+/** What to do when no DWG reader is set up (the Windows app with its ODA Drawings SDK reader reads DWG). */
+/** DWG in the browser (and the claude.ai preview): the Windows app opens it. */
+export const DWG_IN_BROWSER = 'DWG opens in the Windows app; here use DXF or PDF (in AutoCAD: File → Save As → DXF, or print to PDF).';
+/** The Windows app without its DWG converter (e.g. removed from the installation). */
+export const DWG_NOT_AVAILABLE = 'DWG reading is not available in this installation: save the drawings as DXF in AutoCAD (File → Save As → DXF), or install the app again.';
 
-/** A DWG as text: the Windows app converts it with the ODA File Converter; else a plugged-in reader; else how to export it. */
-async function dwgText(f: File): Promise<string> {
-  const oda = desktopBridge()?.oda;
-  if (oda?.toDxf) {
-    const r = await oda.toDxf([{ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }]);
-    if (r.ok) return dxfToText(r.files[0].text, f.name);
-    if (!('notInstalled' in r && r.notInstalled)) throw new Error(`${f.name}: ${r.error}`);
+/**
+ * A DWG as text: the Windows app converts it to DXF (GNU LibreDWG, shipped with the installer); else a
+ * plugged-in reader; else what to do. What the converter could not read goes to `notes` (and to the AI).
+ */
+async function dwgText(f: File, notes: string[]): Promise<string> {
+  const dwg = desktopBridge()?.dwg;
+  if (dwg) {
+    const r = await dwg.read([{ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }]);
+    if (r.ok) {
+      const w = r.files[0].warnings ?? [];
+      notes.push(...w);
+      return `${dxfToText(r.files[0].text, f.name)}${w.length ? `\n(Note from the DWG converter: ${w.join(' ')})` : ''}`;
+    }
+    if (!r.notConfigured) throw new Error(`${f.name}: ${r.error}`);
   }
   const entities = await dwgToEntities(await f.arrayBuffer());
   if (entities) return cadToText(entities, f.name);
-  throw new Error(oda
-    ? `${f.name}: reading DWG needs the free ODA File Converter (${ODA_DOWNLOAD}). Install it and read again, or export the drawings to DXF or PDF in the CAD program.`
-    : `${f.name}: DWG files can't be read in the browser. In the CAD program, export the drawings to DXF (File → Save As → DXF) or print them to PDF, or use the Windows app with the free ODA File Converter.`);
+  throw new Error(`${f.name}: ${dwg ? DWG_NOT_AVAILABLE : DWG_IN_BROWSER}`);
 }
 
 /** File types the upload takes (the file picker's accept list). */
 export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,application/pdf,image/*';
 
 /** One upload as content blocks for the AI: PDFs and images as they are, DXF as its text. */
-/** `onFile`: called before each file is read (progress: "Reading 3 of 8: …"). */
-export async function readUpload(files: File[], onFile?: (i: number, name: string) => void): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
+/** `notes`: warnings collected while reading (DWG); `onFile`: called before each file is read (progress: "Reading 3 of 8: …"). */
+export async function readUpload(files: File[], notes: string[] = [], onFile?: (i: number, name: string) => void): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
   if (files.length > MAX_UPLOAD_FILES) throw new Error(`At most ${MAX_UPLOAD_FILES} files at once.`);
   const out: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
   for (const [i, f] of files.entries()) {
     onFile?.(i, f.name);
     const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f) }); else if (ext === 'dxf') out.push({ type: 'text', text: await dxfText(f) });
+    if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f, notes) }); else if (ext === 'dxf') out.push({ type: 'text', text: await dxfText(f) });
     else out.push(await fileToBlock(f));
   }
   // Drawing text past this is more than one reading can take in (about 150 k tokens): say so instead of failing at the AI.
@@ -169,8 +177,9 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
  * Read the upload and build the existing machine (one AI request). `extra`: more content for the same
  * request, e.g. a PLC program's symbol table or rung listing from the program reader (src/plc/import/).
  */
-export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = [], onStage?: (text: string) => void): Promise<{ machine: ExistingMachine; reasoning: string | null }> {
-  const blocks = [...(await readUpload(files, (i, name) => onStage?.(`Reading the files (${i + 1}/${files.length}): ${name}`))), ...extra];
+export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = [], onStage?: (text: string) => void): Promise<{ machine: ExistingMachine; reasoning: string | null; notes: string[] }> {
+  const notes: string[] = [];
+  const blocks = [...(await readUpload(files, notes, (i, name) => onStage?.(`Reading the files (${i + 1}/${files.length}): ${name}`))), ...extra];
   onStage?.('Reading the drawings (AI)');
   const names = files.map((f, i) => `${i + 1}. ${f.name}`).join('\n') || '(none: program data only)';
   const { text, reasoning } = await callClaude({
@@ -179,7 +188,7 @@ export async function deriveFromUpload(opts: DeriveOptions, files: File[], note 
     messages: [{ role: 'user', content: [...blocks, { type: 'text', text: `Files (in the order attached):\n${names}\n\n${note ? `Notes from the engineer:\n${note}\n\n` : ''}Read this machine from its drawings and write its description.` }] }],
   });
   try {
-    return { machine: normalizeMachine(JSON.parse(text) as Partial<ExistingMachine>), reasoning };
+    return { machine: normalizeMachine(JSON.parse(text) as Partial<ExistingMachine>), reasoning, notes };
   } catch (err) {
     throw new Error('The AI returned a result the app could not read. Please try again.', { cause: err });
   }

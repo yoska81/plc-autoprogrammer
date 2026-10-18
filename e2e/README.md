@@ -85,9 +85,14 @@ npx tsx src/convert/convert.test.ts                        # DXF text, foreign p
 
 The acceptance case `roll-former.dxf` mirrors a real drawing a user sent (a DWG): a roll-forming machine with a 5.5 kW
 VFD and a 1.5 kW servo flying shear, six A3 sheets side by side in model space, MTEXT with SimSun codes. A DWG is read
-in the Windows app through the installed (free) ODA File Converter (`electron/oda.cjs` `toDxf`: DWG → DXF → `dxf.ts`), or
-through a plugged-in in-browser reader (`setDwgReader` in `src/convert/dxf.ts`; none is bundled). Otherwise the upload
-links the ODA download and asks for DXF or PDF. The mocked AI answer is `src/convert/__fixtures__/rollFormer.ts`.
+in the Windows app by GNU LibreDWG's `dwg2dxf.exe` (0.14, official win64 build), shipped as a separate program in the
+installer (`resources/libredwg/`, fetched with its pinned SHA-256 by `scripts/fetch-libredwg.cjs`; only COPYING and
+SOURCE.txt are committed) and run by `electron/dwgReader.cjs`: DWG → DXF in a temp folder → the DXF reader; what it
+skips and DWG versions outside R13–R2018 are shown as notes. Settings → DWG drawings → Advanced takes another reader.
+In the browser: "DWG opens in the Windows app; here use DXF or PDF". `npx tsx src/convert/dwgReader.test.ts` runs the
+real converter when it is there (Windows, or wine) on `dwg-sample.dwg` (our own drawing, built by
+`make-dwg-sample.py`), else a stand-in; `dwg-sample.libredwg.dxf` is what LibreDWG writes for it and tests the DXF reader
+(INSERT with scale / rotation, block definitions, old POLYLINE / VERTEX, DIMENSION text, MTEXT codes).
 
 Machines without a PLC: every control circuit is read as a function (coil, contacts, timer setting, or a drive's
 built-in logic). The conversion either moves the relay logic into a new PLC (default: field devices become I/O, relays

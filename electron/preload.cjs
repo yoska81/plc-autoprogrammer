@@ -30,7 +30,13 @@ contextBridge.exposeInMainWorld('isaDesktop', {
   oda: {
     detect: () => ipcRenderer.invoke('isa:oda-detect'),
     convert: (files) => ipcRenderer.invoke('isa:oda-convert', files),
-    toDxf: (files) => ipcRenderer.invoke('isa:oda-to-dxf', files),
+  },
+  // DWG import: the ODA Drawings SDK reader the user set up (electron/dwgReader.cjs)
+  dwg: {
+    status: () => ipcRenderer.invoke('isa:dwg-status'),
+    configure: () => ipcRenderer.invoke('isa:dwg-configure'),
+    clear: () => ipcRenderer.invoke('isa:dwg-clear'),
+    read: (files) => ipcRenderer.invoke('isa:dwg-read', files),
   },
   modbus: {
     connect: async (o) => { const r = await ipcRenderer.invoke('isa:modbus', 'connect', [o]); return r.ok ? r.value : { ok: false, error: r.error }; },

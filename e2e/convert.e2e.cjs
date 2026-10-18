@@ -120,7 +120,7 @@ function sse(model, text) {
   check(/CB1/.test(qf1) && /UL 489/.test(qf1) && /Equivalent/.test(qf1), 'QF1 → CB1, a UL 489 breaker');
   check(/K1/.test(km1) && /Coil 220VAC → 24/.test(km1), 'KM1 → K1 with the coil change named');
   check(/OL1/.test(fr1) && /480 V/.test(fr1) && /Chosen by the design/.test(fr1), 'FR1 → OL1, set by the design for the new current');
-  check(/PB1/.test(sb2) && /Chosen by the design/.test(sb2), 'SB2 → PB1');
+  check(/PB2/.test(sb2) && /Chosen by the design/.test(sb2), 'SB2 → PB2 (JIC, the number kept)');
   const tableText = await table.innerText();
   check(/480 VAC 3-phase 60 Hz/.test(tableText) && /M1: 1\.1 kW → 1\.5 HP/.test(tableText), 'supply and motors converted');
   await table.screenshot({ path: OUT + '01_convert_table.png' });
@@ -134,7 +134,7 @@ function sse(model, text) {
   }
   const run = await page.evaluate(async () => (await import('/src/spec/updateRun.ts')).useUpdateRun.getState().results.map((r) => `${r.step}:${r.status}${r.status === 'done' ? '' : ` (${r.message})`}`));
   log('Build:', run.join(' | '));
-  check(run.length === 4 && run.every((r) => /:done$/.test(r) || /^hmi:skipped \(No HMI chosen/.test(r)), 'equipment, electrical and program built (no HMI: the old machine has none)');
+  check(run.length === 4 && run.every((r) => /:done$/.test(r) || /^hmi:skipped \((No HMI chosen|No touch panel)/.test(r)), 'equipment, electrical and program built (no HMI: the old machine has none)');
   await page.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
   const after = await page.evaluate(async () => {
     const el = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState();

@@ -154,6 +154,13 @@ export const CN_ROLLFORMER_01_READING: ExistingMachine = {
   interlocks: [
     { description: 'Jog forward and jog reverse are cross-interlocked and work only with the line stopped', devices: ['KA2', 'KA3', 'KA1'] },
     { description: 'Manual cut SB7 only with the line stopped', devices: ['SB7', 'KA1'] },
+    { description: 'The pump KM1 runs only with the safety relay KA0 closed and its overload FR1 healthy', devices: ['KM1', 'KA0', 'FR1'] },
+    { description: 'The line KA1 runs only with the pump running (KM1 53-54)', devices: ['KA1', 'KM1'] },
+    { description: 'The line KA1 runs only with the servo ready (KA5) and no servo alarm (KA6)', devices: ['KA1', 'KA5', 'KA6'] },
+    { description: 'The line KA1 stops on a VFD fault (U1 RB-RC open)', devices: ['KA1', 'U1'] },
+    { description: 'The cut watchdog KT1 stops the line when the shear stays down longer than 2 s', devices: ['KT1', 'KA1'] },
+    { description: 'The line stops at the batch quantity (H7CX OUT NC) and on run-out overrun (KA9); it needs material present (KA10)', devices: ['KA1', 'H7CX', 'KA9', 'KA10'] },
+    { description: 'Shear down YV1 and shear up YV2 never together: the return latch KA8 drops YV1 and drives YV2', devices: ['YV1', 'YV2', 'KA8'] },
   ],
   safety: {
     estops: ['SB0', 'SB10'], guards: ['SQ5'], safetyRelay: 'KA0 Pilz PNOZ s3', category: 'Cat 3 / PL d (claimed)', kind: 'safety-relay',

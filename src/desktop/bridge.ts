@@ -85,8 +85,20 @@ export interface OdaBridge {
   detect(): Promise<{ found: boolean; path?: string }>;
   /** DXF text in, AutoCAD 2018 DWG out (same order, names with .dwg). */
   convert(files: { name: string; text: string }[]): Promise<{ ok: true; files: { name: string; bytes: Uint8Array }[] } | { ok: false; error: string }>;
-  /** DWG in, DXF text out (the drawing import). Older app builds don't have it. */
-  toDxf?(files: { name: string; bytes: Uint8Array }[]): Promise<{ ok: true; files: { name: string; text: string }[] } | { ok: false; notInstalled?: boolean; error: string }>;
+}
+
+/** The DWG reader in use: the bundled GNU LibreDWG converter (builtIn), or another one chosen in Settings (configured). */
+export interface DwgReaderStatus { configured: boolean; ok: boolean; builtIn?: boolean; path?: string; error?: string }
+
+/** DWG import (electron/dwgReader.cjs): LibreDWG's dwg2dxf shipped with the installer, or another reader. */
+export interface DwgReaderBridge {
+  status(): Promise<DwgReaderStatus>;
+  /** Advanced: choose another reader (a program or a .node module) in a native dialog. */
+  configure(): Promise<DwgReaderStatus>;
+  /** Back to the bundled converter. */
+  clear(): Promise<DwgReaderStatus>;
+  /** DWG in, DXF text out (same order), with the DWG version and warnings about what was not read. */
+  read(files: { name: string; bytes: Uint8Array }[]): Promise<{ ok: true; files: { name: string; text: string; version?: string | null; warnings?: string[] }[] } | { ok: false; notConfigured?: boolean; error: string }>;
 }
 
 export interface IsaDesktop {
@@ -109,6 +121,8 @@ export interface IsaDesktop {
   modbus?: ModbusBridge;
   /** DWG conversion (desktop app only). */
   oda?: OdaBridge;
+  /** DWG import (desktop app only; older builds don't have it). */
+  dwg?: DwgReaderBridge;
 }
 
 export type MicPermission = 'always' | 'session' | 'ask';

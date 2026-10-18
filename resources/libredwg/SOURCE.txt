@@ -1,0 +1,12 @@
+GNU LibreDWG 0.14 — the DWG to DXF converter (dwg2dxf.exe) used by ISA Auto Programmer to open DWG drawings.
+
+LibreDWG is free software under the GNU General Public License version 3 or later (see COPYING in this
+folder). ISA Auto Programmer runs it as a separate program; it is not part of the app's own code.
+
+Program and DLLs in this folder: dwg2dxf.exe, libredwg-0.dll, libiconv-2.dll, unchanged from the official
+GNU LibreDWG 0.14 Windows build:
+  https://github.com/LibreDWG/libredwg/releases/download/0.14/libredwg-0.14-win64.zip
+Complete corresponding source code of that release:
+  https://github.com/LibreDWG/libredwg/releases/tag/0.14
+  https://ftp.gnu.org/gnu/libredwg/  (libredwg-0.14.tar.xz)
+Project home: https://www.gnu.org/software/libredwg/
