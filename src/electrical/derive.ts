@@ -37,6 +37,7 @@ import { CABINET, type LayoutForDesign } from './layout/types';
 import { iecColor, iecMotorCurrent, isIec, mm2For, mm2FromAwg, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
 import { ALL_PARTS } from './catalogs';
 import { coolingCover, dcFanAmps } from './cooling';
+import { relayLadder } from './relayLogic';
 import { ALLOWED_RISE_C, cabinetHeat } from './thermal';
 import { withIecStrips } from '../standards/designations';
 import { issuedForConstruction } from '../standards/issue';
@@ -1335,6 +1336,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   addWire({ wire: 'PE', from: 'BACK PANEL (ground stud)', to: pe, color: 'GN/YE', size: mainAwg, function: 'Back panel bonding' });
   addWire({ wire: 'PE', from: 'DOOR (ground stud)', to: 'ENCLOSURE (ground stud)', color: 'GN/YE', size: '14 AWG', function: 'Door bonding jumper (flexible, across the hinge)' });
   wires.push(...analog.wires);
+  // relay logic kept from a converted machine: the ladder's nodes (relayLogic.ts, same numbers as the ladder sheets);
+  // NFPA 79 13.2.4: DC control blue, AC control red
+  const logic = ctx.design.inputs.relayLogic;
+  if (logic?.rungs.length) for (const w of relayLadder(logic).wires) addWire({ ...w, color: logic.supply === '120VAC' ? 'RD' : 'BU', size: '18 AWG' });
   if (analog.strip) strips.push(analog.strip);
   machine.cables.push(...analog.cables);
   if (iec) toIec(wires, machine.cables);
@@ -2942,6 +2947,13 @@ export function designWarnings(ctx: DrawingContext): string[] {
     if (dry.length) w.push(`${g.label}: input common on +24V for its NPN sensors — ${dry.map((p) => `${p.deviceTag || p.address} (${p.address})`).join(', ')} switch 0V into their inputs (sourcing inputs); do not feed them +24V. A device that sources +24V (PNP sensor, OSSD) cannot share this common.`);
   }
   for (const p of m.io) if (!p.deviceTag && p.wiring) w.push(`${p.address}: wiring has no device tag.`);
+  // relay logic: every device of a rung is a part of the design (the converter maps each original tag to one)
+  const logic = ctx.design.inputs.relayLogic;
+  if (logic) {
+    const tags = new Set(ctx.design.components.map((c) => c.tag));
+    const missing = [...new Set(logic.rungs.flatMap((r) => r.path.flatMap((e) => (e.t === 'branch' ? e.paths.flat() : [e])).map((e) => e.tag)))].filter((t) => !tags.has(t));
+    if (missing.length) w.push(`Relay logic: ${missing.join(', ')} drawn on the ladder but not in the design's parts — add the part or correct the tag.`);
+  }
   w.push(...panelLayout(ctx).warnings);
   // cooling: heat the walls cannot shed needs a filter fan, a heat exchanger or an air conditioner in the design
   {

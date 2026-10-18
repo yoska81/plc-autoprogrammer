@@ -34,7 +34,7 @@ import { ALLOWED_RISE_C, cabinetHeat } from '../../src/electrical/thermal';
 import { coolingCover } from '../../src/electrical/cooling';
 import { runCodeRules } from '../../src/review/codeRules';
 import { sccrTable } from '../../src/deliverables/docs/electrical';
-import type { DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, MotorSpec } from '../../src/electrical/types';
+import type { DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, MotorSpec, RelayLogic } from '../../src/electrical/types';
 import type { AnalogSpec, IOCategory } from '../../src/types/io';
 import { generateRuleBasedDesign } from '../../src/lib/ai/machineModelAI';
 import { getPart } from '../../src/electrical/catalog';
@@ -251,6 +251,18 @@ const text = (s: string) => btoa(unescape(encodeURIComponent(s)));
  * its design replaced by the engine's (no AI: the same path as Generate without an API key).
  */
 /** The user's "Sealing Head": two-hand start, light curtain, heater with thermocouple, unwinder on a VFD. */
+const RELAY_LOGIC: RelayLogic = {
+  supply: '24VDC',
+  rungs: [
+    { id: 'C1', description: 'Hydraulic pump start / stop (seal-in)', path: [
+      { t: 'contact', tag: 'PB11', nc: true, terms: '11-12', kind: 'pb' },
+      { t: 'branch', paths: [[{ t: 'contact', tag: 'PB12', nc: false, terms: '13-14', kind: 'pb' }], [{ t: 'contact', tag: 'CR1', nc: false, terms: '9-5', kind: 'relay' }]] },
+      { t: 'coil', tag: 'CR1', kind: 'relay' },
+    ] },
+    { id: 'C2', description: 'Hydraulic pump running light', path: [{ t: 'contact', tag: 'CR1', nc: false, terms: '10-6', kind: 'relay' }, { t: 'coil', tag: 'PL11', kind: 'light' }] },
+    { id: 'C3', description: 'Pump ready', path: [{ t: 'contact', tag: 'CR1', nc: false, terms: '11-7', kind: 'relay' }, { t: 'coil', tag: 'CR2', kind: 'relay' }] },
+  ],
+};
 const SEALING_SPEC = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, holds for the dwell time at the set temperature, then opens. Two-hand start, light curtain, heater with thermocouple. The film comes off an unwinder driven by a 0.5 HP motor on a VFD. CLICK PLC with a C-more 7" touch panel; the operator sets the seal temperature and the dwell time on the HMI. 480 V 3-phase supply.';
 const SEALING_IO: [string, 'input' | 'output', IOCategory, string, AnalogSpec?][] = [
   ['Safety relay OK (E-stop and light curtain)', 'input', 'Safety', 'safety-relay-output'], ['Two-hand start button left', 'input', 'Operator/HMI', 'pushbutton-no'],
@@ -378,6 +390,19 @@ async function setupRules(v: string) {
     const sub = enc && getPart(enc.partNumber)?.ratings.subpanel;
     design = { ...design, components: design.components.map((x) => (x.tag === 'ENC1' ? { ...x, partNumber: 'SCE-72EL7218LPPL', function: 'Main enclosure 72x72x18 NEMA 12, floor-standing, two doors' }
       : sub && x.partNumber === sub ? { ...x, partNumber: 'SCE-72P72', function: 'Subpanel for ENC1' } : x)) };
+  }
+  // "rules-relay": the example plus relay logic kept from a converted machine (DesignInputs.relayLogic): a hydraulic
+  // pump on a stop / start seal-in, its run light and a second relay — drawn as an NFPA 79 ladder sheet.
+  if (v === 'rules-relay') {
+    design = {
+      ...design,
+      inputs: { ...design.inputs, relayLogic: RELAY_LOGIC },
+      components: [...design.components,
+        c('CR1', '784-4C-24D', 1, 'Hydraulic pump run relay (relay logic)'), c('CR1S', '784-4C-SKT-1', 1, 'Socket for CR1'),
+        c('CR2', '784-4C-24D', 1, 'Pump ready relay (relay logic)'), c('CR2S', '784-4C-SKT-1', 1, 'Socket for CR2'),
+        c('PB11', 'GCX1101', 1, 'Hydraulic pump stop'), c('PB12', 'GCX1102', 1, 'Hydraulic pump start'), c('PL11', 'GCX1232-24L', 1, 'Hydraulic pump running')],
+    };
+    el.setInputs(design.inputs);
   }
   el.setDesign(design, 'generated', r.explanation);
   if (uni) {

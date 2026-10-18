@@ -17,6 +17,7 @@ import { getHmi, hmiMaker } from '../../hmi/hmiCatalog';
 import { lineNo } from './geometry';
 import { powerText } from '../../standards/regions';
 import { stripTag } from '../../standards/designations';
+import { relayLadder, type LadderRung } from '../relayLogic';
 
 export type RungEnd = { kind: 'rail' } | { kind: 'node'; label: string } | { kind: 'xref'; label: string };
 export type RungEl =
@@ -52,6 +53,7 @@ export type SheetSpec =
   | { kind: 'power'; branches: PowerBranchPlan[]; contIdx: number; groundIdx: number }
   | { kind: 'motors'; items: { m: MotorModel; idx: number }[]; busEnd: number; continues: boolean; first: boolean }
   | { kind: 'control'; rungs: Rung[] }
+  | { kind: 'ladder'; rails: [string, string]; rungs: { r: LadderRung; idx: number }[] }
   | { kind: 'io'; group: IoGroup; rows: IoRow[]; points: IoPoint[]; first: boolean; last: boolean; rack?: PlcRackSlot; page: number; pages: number }
   | { kind: 'panel' }
   | { kind: 'door' }
@@ -387,6 +389,26 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     }
   }
 
+  // relay logic kept from a converted machine (DesignInputs.relayLogic): NFPA 79 ladder sheets, rungs never split
+  const logic = ctx.design.inputs.relayLogic;
+  if (logic?.rungs.length) {
+    const lad = relayLadder(logic);
+    const pages: { r: LadderRung; idx: number }[][] = [];
+    let cur: { r: LadderRung; idx: number }[] = [];
+    let row = 1;
+    for (const r of lad.rungs) {
+      if (cur.length && row + r.rows - 1 > CONTROL_RUNGS) { pages.push(cur); cur = []; row = 1; }
+      cur.push({ r, idx: row });
+      row += r.rows;
+    }
+    if (cur.length) pages.push(cur);
+    const volts = logic.supply === '120VAC' ? '120VAC' : '24VDC';
+    pages.forEach((rungs, i) => specs.push({
+      title: `RELAY CONTROL CIRCUIT ${volts} — RUNGS ${rungs[0].r.n}–${rungs[rungs.length - 1].r.n}${pages.length > 1 ? ` (${i + 1} OF ${pages.length})` : ''}`,
+      spec: { kind: 'ladder', rails: lad.rails, rungs },
+    }));
+  }
+
   // IO: one block per CPU / module, inputs then outputs, spares included
   for (const blk of ioBlocks(ctx, model)) {
     const g = blk.group;
@@ -564,6 +586,15 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
         if (r.key) xref.set(r.key, l);
         for (const e of r.els) if (e.t === 'contact' && e.dev !== 'pb' && e.dev !== 'estop' && e.dev !== 'guard') addContact({ tag: e.tag, term: e.term, nc: e.nc, line: l });
       }
+    } else if (sp.kind === 'ladder') {
+      for (const { r, idx } of sp.rungs) {
+        const l = lineNo(sh.n, idx);
+        xref.set(`rung:${r.rung.id}`, l);
+        for (const c of r.cols) for (const e of c.kind === 'el' ? [c.e] : c.paths.flat()) {
+          if (e.el.t === 'coil' && e.el.kind !== 'drive-input') xref.set(`coil:${e.el.tag}`, l);
+          else if (e.el.t === 'contact' && e.el.kind && ['relay', 'timer', 'ol', 'safety'].includes(e.el.kind)) addContact({ tag: e.el.tag, term: e.pins.join('-'), nc: e.el.nc, line: l });
+        }
+      }
     } else if (sp.kind === 'io') {
       sp.rows.forEach((r, i) => {
         const l = lineNo(sh.n, i + 1);
@@ -595,6 +626,9 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
         break;
       case 'control':
         for (const r of sp.rungs) for (const e of r.els) mark(e.tag, n);
+        break;
+      case 'ladder':
+        for (const { r } of sp.rungs) for (const c of r.cols) for (const e of c.kind === 'el' ? [c.e] : c.paths.flat()) mark(e.el.tag, n);
         break;
       case 'io':
         mark(sp.group.devTag, n);
