@@ -128,6 +128,8 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
     spec,
     questions: (raw.questions ?? []).filter((q) => q.text?.trim()),
     uncertainties: raw.uncertainties ?? [],
+    ...(raw.terminals?.length ? { terminals: raw.terminals } : {}),
+    ...(raw.wiring?.length ? { wiring: raw.wiring } : {}),
   };
 }
 

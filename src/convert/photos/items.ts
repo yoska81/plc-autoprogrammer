@@ -1,5 +1,5 @@
 import type { CatalogCategory } from '../../electrical/types';
-import type { PhotoDevice, TerminalStrip } from './recognise';
+import type { PhotoDevice, Sighting, TerminalStrip } from './recognise';
 
 /** One recognised device or terminal strip in the photo review, with the user's corrections. */
 export type ReviewStatus = 'pending' | 'confirmed' | 'rejected';
@@ -20,3 +20,6 @@ export const itemTag = (it: ReviewItem) => (it.tag ?? it.device?.tag ?? it.strip
 export const itemPart = (it: ReviewItem) => (it.partNumber ?? it.device?.partNumber ?? '').trim();
 export const itemCategory = (it: ReviewItem): CatalogCategory => it.category ?? it.device?.category ?? 'terminal';
 
+
+/** The sighting to show: the largest box, i.e. the close-up (where the nameplate is readable). */
+export const closest = (seen: Sighting[]): Sighting | undefined => seen.reduce<Sighting | undefined>((b, s) => (!b || s.w * s.h > b.w * b.h ? s : b), undefined);

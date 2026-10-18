@@ -105,7 +105,7 @@ async function png(page, shade) {
   const shared = page.getByTestId('review-parts');
   await shared.waitFor({ timeout: 10000 });
   const partsText = await shared.innerText();
-  check(['GMCBU-1C-5', 'SC-E02PG-24VDC', 'C0-08ND3'].every((pn) => partsText.includes(pn)) && /photo 1, rail 2, position 3/.test(partsText), 'the shared review lists the photographed parts with where they were seen');
+  check(['GMCBU-1C-5', 'SC-E02PG-24VDC', 'C0-08ND3'].every((pn) => partsText.includes(pn)) && /photo 3, rail 2, position 3/.test(partsText), 'the shared review lists the photographed parts with where they were seen');
   const sharedIO = await page.getByTestId('review-io').innerText().catch(() => '');
   check(/Y001/.test(sharedIO) && /K1/.test(sharedIO), 'the shared review lists the traced I/O');
 
@@ -130,6 +130,31 @@ async function png(page, shade) {
   });
   for (const pn of ['GMCBU-1C-5', 'PSL-24-030', 'C0-10DD1E-D', 'C0-08ND3', 'SC-E02PG-24VDC', 'TK-E02-72']) check(bom.includes(pn), `BOM has ${pn}`);
   await page.screenshot({ path: OUT + 'drawings.png' });
+
+  // No API key: the review still works — the devices are entered by hand.
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: '', anthropicModel: 'claude-opus-5-5', effort: 'high', openaiApiKey: '', openaiModel: 'gpt-4o' }, version: 4 })); });
+  await page.goto(BASE + '/import?tab=photos');
+  await page.getByTestId('photos-tab').waitFor();
+  check(await page.getByRole('button', { name: 'Read the photos' }).isDisabled(), 'no key: reading is off');
+  await page.getByTestId('photos-by-hand').click();
+  const addDev = async (kind, tag, part, rail, pos, wires) => {
+    const f = page.getByTestId('photos-add');
+    await f.getByLabel('Kind of the new device').selectOption({ label: kind });
+    await f.getByLabel('Tag of the new device').fill(tag);
+    if (part) await f.getByLabel('Part number of the new device').fill(part);
+    await f.getByLabel('Rail of the new device').fill(rail);
+    await f.getByLabel('Position of the new device on its rail').fill(pos);
+    await f.getByLabel("Wire numbers at the new device's terminals").fill(wires);
+    await f.getByRole('button', { name: 'Add' }).click();
+  };
+  await addDev('PLC CPU', 'PLC1', 'C0-10DD1E-D', '1', '1', 'Y1=2001');
+  await addDev('Contactor', 'K1', 'SC-E02PG-24VDC', '1', '2', 'A1=2001');
+  check(/2 confirmed/.test(await page.getByTestId('photos-counts').innerText()), 'devices added by hand are confirmed');
+  check(/2001: PLC1:Y1 – K1:A1/.test(await page.getByTestId('photos-traced').innerText()), 'hand-entered wires are traced too');
+  await page.getByRole('button', { name: 'Make the as-built panel layout and BOM' }).click();
+  await page.getByTestId('photos-applied').waitFor();
+  const byHand = await page.evaluate(async () => { const s = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState(); return { rails: s.design?.asBuilt?.rails, wiring: s.design?.ioWiring.map((w) => `${w.address}:${w.deviceTag}`) }; });
+  check(JSON.stringify(byHand.rails) === '[["PLC1","K1"]]' && JSON.stringify(byHand.wiring) === '["Y001:K1"]', `as-built from hand entry (${JSON.stringify(byHand)})`);
 
   for (const e of errors) fails.push(`page error: ${e.slice(0, 160)}`);
   await browser.close();

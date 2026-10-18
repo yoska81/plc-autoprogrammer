@@ -12,6 +12,7 @@ import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../..
 import type { CatalogCategory } from '../../electrical/types';
 import { recogniseCabinet, type PhotoReading, type Sighting } from './recognise';
 import { mergeReading } from './merge';
+import { closest } from './items';
 import { asBuiltDesign, itemCategory, itemPart, itemTag, matchPart, photosToMachine, reviewItems, tracedPoints, type ReviewItem, type ReviewStatus } from './toDesign';
 import { setReading } from '../reading';
 
@@ -27,7 +28,67 @@ interface Read { reading: PhotoReading; photos: string[]; at: string }
 const CONF = { high: 'bg-green-100 text-green-800', medium: 'bg-amber-100 text-amber-800', low: 'bg-red-100 text-red-800' } as const;
 const card = 'rounded-sm border border-steel-200 bg-white p-4 space-y-3';
 const input = 'w-full rounded-sm border border-steel-300 px-1.5 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500';
-const KINDS: CatalogCategory[] = ['disconnect', 'breaker', 'fuse', 'powerSupply', 'contactor', 'overload', 'motorProtector', 'vfd', 'relay', 'safetyRelay', 'plc', 'plcModule', 'terminal', 'groundBar', 'fan', 'other'];
+/** Kinds of device the review offers, in plain words. */
+const KIND_LABEL: Partial<Record<CatalogCategory, string>> = {
+  disconnect: 'Disconnect switch', breaker: 'Circuit breaker', fuse: 'Fuse', powerSupply: 'Power supply', contactor: 'Contactor',
+  overload: 'Overload relay', motorProtector: 'Motor protector', vfd: 'Drive (VFD)', relay: 'Relay / timer', safetyRelay: 'Safety relay',
+  plc: 'PLC CPU', plcModule: 'PLC I/O module', terminal: 'Terminal strip', groundBar: 'Ground bar', fan: 'Fan', pushbutton: 'Pushbutton',
+  estop: 'E-stop', pilotLight: 'Pilot light', selector: 'Selector switch', other: 'Other (servo drive, counter …)',
+};
+const KINDS = Object.keys(KIND_LABEL) as CatalogCategory[];
+/** How the review names an item for screen readers and messages: "the contactor on rail 2, position 3". */
+const itemName = (it: ReviewItem) => {
+  const tag = itemTag(it);
+  const src = it.device ?? it.strip;
+  const what = (KIND_LABEL[itemCategory(it)] ?? itemCategory(it)).toLowerCase();
+  return tag ? `${tag} (${what})` : `the ${what}${src?.rail ? ` on rail ${src.rail}, position ${src.order}` : ''}`;
+};
+
+/** A device or terminal strip added by hand (no AI, or something the photos missed). */
+function AddByHand({ onAdd }: { onAdd: (it: ReviewItem) => void }) {
+  const [kind, setKind] = useState<CatalogCategory>('contactor');
+  const [tag, setTag] = useState('');
+  const [part, setPart] = useState('');
+  const [ratings, setRatings] = useState('');
+  const [rail, setRail] = useState('1');
+  const [order, setOrder] = useState('1');
+  const [wires, setWires] = useState('');
+  const add = () => {
+    const ws = wires.split(',').map((w) => w.split('=').map((x) => x.trim())).filter((w) => w.length === 2 && w[0] && w[1]).map(([terminal, wire]) => ({ terminal, wire }));
+    const at = { rail: Math.max(0, Number(rail) || 0), order: Math.max(1, Number(order) || 1) };
+    const key = `h${Date.now().toString(36)}`;
+    onAdd(kind === 'terminal'
+      ? { key, kind: 'strip', status: 'confirmed', strip: { tag: tag.trim(), ...at, terminals: ws, confidence: 'high', seen: [] } }
+      : { key, kind: 'device', status: 'confirmed', device: { tag: tag.trim(), category: kind, manufacturer: '', partNumber: part.trim(), ratings: ratings.trim(), ...at, confidence: 'high', seen: [], wires: ws } });
+    setTag(''); setPart(''); setRatings(''); setWires(''); setOrder(String(at.order + 1));
+  };
+  return (
+    <div className="space-y-1.5 rounded border border-dashed border-steel-300 p-2" data-testid="photos-add">
+      <div className="text-xs font-semibold text-steel-700">Add a device by hand</div>
+      <div className="grid grid-cols-2 gap-1.5 text-xs md:grid-cols-7">
+        <select value={kind} onChange={(e) => setKind(e.target.value as CatalogCategory)} aria-label="Kind of the new device" className={input}>{KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}</select>
+        <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Tag (K1)" aria-label="Tag of the new device" className={input} />
+        <input value={part} onChange={(e) => setPart(e.target.value)} placeholder="Part number" aria-label="Part number of the new device" className={input} disabled={kind === 'terminal'} />
+        <input value={ratings} onChange={(e) => setRatings(e.target.value)} placeholder="Nameplate (24 VDC coil)" aria-label="Nameplate of the new device" className={input} disabled={kind === 'terminal'} />
+        <input value={rail} onChange={(e) => setRail(e.target.value)} placeholder="Rail (0 = door)" aria-label="Rail of the new device" className={input} />
+        <input value={order} onChange={(e) => setOrder(e.target.value)} placeholder="Position" aria-label="Position of the new device on its rail" className={input} />
+        <input value={wires} onChange={(e) => setWires(e.target.value)} placeholder="Wires: A1=2001, A2=0V" aria-label="Wire numbers at the new device's terminals" className={input} />
+      </div>
+      <button type="button" onClick={add} className="rounded border border-brand-600 px-2 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-50">Add</button>
+    </div>
+  );
+}
+
+/** Each photo decoded once for all its crops; closed when the photos are replaced. */
+const bitmaps = new Map<File, Promise<ImageBitmap>>();
+function bitmapOf(file: File): Promise<ImageBitmap> {
+  let b = bitmaps.get(file);
+  if (!b) { b = createImageBitmap(file); bitmaps.set(file, b); b.catch(() => bitmaps.delete(file)); }
+  return b;
+}
+function releaseBitmaps(keep: File[]) {
+  for (const [f, b] of bitmaps) if (!keep.includes(f)) { bitmaps.delete(f); void b.then((x) => x.close()).catch(() => {}); }
+}
 
 /** The part of a photo a device was seen in (the review shows it next to the reading). */
 function Crop({ file, s }: { file: File | undefined; s: Sighting }) {
@@ -35,7 +96,7 @@ function Crop({ file, s }: { file: File | undefined; s: Sighting }) {
   useEffect(() => {
     if (!file || !ref.current || typeof createImageBitmap !== 'function') return;
     let cancelled = false;
-    void createImageBitmap(file).then((bmp) => {
+    void bitmapOf(file).then((bmp) => {
       const c = ref.current;
       if (cancelled || !c) return;
       // a little margin around the box, so the label next to the device shows too
@@ -85,7 +146,7 @@ export default function PhotosImport() {
   const apiKey = settings.provider === 'anthropic' ? settings.anthropicApiKey : '';
   const projectId = useProjectsStore((s) => s.activeId) ?? 'default';
   const files = usePhotoFiles((s) => s.byProject[projectId]) ?? NO_FILES;
-  const setFiles = (f: File[]) => usePhotoFiles.getState().set(projectId, f);
+  const setFiles = (f: File[]) => { releaseBitmaps(f); usePhotoFiles.getState().set(projectId, f); };
   const [note, setNote] = useDraft('photos.note', '');
   const [read, setRead] = useDraft<Read | null>('photos.read', null);
   const [items, setItems] = useDraft<ReviewItem[]>('photos.items', []);
@@ -136,7 +197,9 @@ export default function PhotosImport() {
           <button type="button" onClick={run} disabled={!apiKey || !files.length || busy} className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40">
             {busy ? <><Spinner /> Reading the photos…</> : 'Read the photos'}
           </button>
-          {!apiKey && <span className="text-xs text-amber-800">Add your API key in Settings to read photos.</span>}
+          {!read && <button type="button" onClick={() => { setRead({ reading: { summary: 'Entered by hand from the cabinet.', rails: [], ducts: 0, devices: [], strips: [], unseen: [] }, photos: files.map((f) => f.name), at: new Date().toISOString() }); setItems([]); setDone(null); }}
+            className="rounded border border-steel-300 bg-white px-3 py-1.5 text-sm hover:bg-steel-50" data-testid="photos-by-hand">Enter the devices by hand</button>}
+          {!apiKey && <span className="text-xs text-amber-800">No API key: enter the devices by hand (the photos are shown next to them), or add your key in Settings to have them read.</span>}
         </div>
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
       </section>
@@ -152,27 +215,27 @@ export default function PhotosImport() {
               <tbody className="divide-y divide-steel-100">
                 {items.map((it) => {
                   const src = it.device ?? it.strip!;
-                  const seen = src.seen[0];
+                  const seen = closest(src.seen);
                   const part = itemPart(it);
                   const inCatalog = part ? Boolean(matchPart(part, getPart)) : false;
                   return (
                     <tr key={it.key} data-photo-item={it.key} className={it.status === 'rejected' ? 'opacity-40' : ''}>
                       <td className="py-1.5 pr-2 align-top">{seen ? <Crop file={files[seen.photo]} s={seen} /> : '—'}{src.seen.length > 1 && <div className="text-[10px] text-steel-500">seen in {src.seen.length} photos</div>}</td>
                       <td className="pr-2 align-top">{it.kind === 'strip' ? 'Terminal strip' : (
-                        <select value={itemCategory(it)} onChange={(e) => patch(it.key, { category: e.target.value as CatalogCategory })} aria-label={`Kind of ${itemTag(it) || it.key}`} className={input}>
-                          {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                        <select value={itemCategory(it)} onChange={(e) => patch(it.key, { category: e.target.value as CatalogCategory })} aria-label={`Kind of ${itemName(it)}`} className={input}>
+                          {KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
                         </select>)}
                       </td>
-                      <td className="w-20 pr-2 align-top"><input value={itemTag(it)} onChange={(e) => patch(it.key, { tag: e.target.value })} aria-label={`Tag of ${it.key}`} placeholder="(none)" className={input} /></td>
+                      <td className="w-20 pr-2 align-top"><input value={itemTag(it)} onChange={(e) => patch(it.key, { tag: e.target.value })} aria-label={`Tag of ${itemName(it)}`} placeholder="(none)" className={input} /></td>
                       <td className="w-36 pr-2 align-top">{it.kind === 'strip' ? <span className="text-steel-500">{it.strip!.terminals.length} terminals read</span> : <>
-                        <input value={part} onChange={(e) => patch(it.key, { partNumber: e.target.value })} aria-label={`Part number of ${itemTag(it) || it.key}`} placeholder="unreadable" className={input} />
+                        <input value={part} onChange={(e) => patch(it.key, { partNumber: e.target.value })} aria-label={`Part number of ${itemName(it)}`} placeholder="unreadable" className={input} />
                         {part && <div className={`text-[10px] ${inCatalog ? 'text-green-700' : 'text-amber-700'}`}>{inCatalog ? 'in the catalog' : 'not in the catalog — kept as read'}</div>}
                       </>}</td>
                       <td className="pr-2 align-top text-steel-600">{it.device ? [it.device.manufacturer, it.device.ratings].filter(Boolean).join(' · ') : it.strip!.terminals.map((t) => `${t.terminal}:${t.wire}`).join(' ')}{it.device?.wires.length ? <div className="text-[10px]">wires {it.device.wires.map((w) => `${w.terminal}:${w.wire}`).join(' ')}</div> : null}</td>
                       <td className="pr-2 align-top text-steel-600">{src.rail ? `${src.rail} / ${src.order}` : 'door / wall'}</td>
                       <td className="pr-2 align-top"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${CONF[src.confidence]}`}>{src.confidence}</span></td>
                       <td className="align-top">
-                        <div className="flex gap-1" role="group" aria-label={`Review ${itemTag(it) || it.key}`}>
+                        <div className="flex gap-1" role="group" aria-label={`Review ${itemName(it)}`}>
                           {(['confirmed', 'rejected'] as ReviewStatus[]).map((st) => (
                             <button key={st} type="button" aria-pressed={it.status === st} onClick={() => patch(it.key, { status: it.status === st ? 'pending' : st })}
                               className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${it.status === st ? (st === 'confirmed' ? 'border-green-600 bg-green-600 text-white' : 'border-steel-500 bg-steel-500 text-white') : 'border-steel-300 bg-white text-steel-700'}`}>
@@ -187,6 +250,7 @@ export default function PhotosImport() {
               </tbody>
             </table>
           </div>
+          <AddByHand onAdd={(it) => setItems([...items, it])} />
           <TracedWires items={items} reading={read.reading} />
           {read.reading.unseen.length > 0 && (
             <div className="text-xs text-steel-600"><span className="font-semibold">Not visible in the photos (asked on the Machine description page):</span>

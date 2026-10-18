@@ -38,6 +38,10 @@ export interface DrawnComponent {
   confidence: 'high' | 'medium' | 'low';
   /** Where it was read, e.g. "sheet 1, column 3" or "parts list, row 5". */
   source: string;
+  /** Wire numbers read at its terminals (cabinet photos). */
+  wires?: { terminal: string; wire: string }[];
+  /** Every photo it was seen in, with its box (fractions 0-1) — cabinet photos. */
+  photos?: { photo: number; x: number; y: number; w: number; h: number }[];
 }
 
 export interface DrawnMotor {
@@ -100,4 +104,8 @@ export interface ExistingMachine extends Omit<ImportResult, 'components' | 'moto
   spec: Record<SpecSectionId, string>;
   /** What the drawings don't tell: asked on the Machine description page. */
   questions: { text: string; section: SpecSectionId; assumption: string | null }[];
+  /** Terminal-strip points with the wire number read on each (cabinet photos). */
+  terminals?: { strip: string; terminal: string; wire: string }[];
+  /** Wires traced by their numbers: each wire's ends ("K1:A1", "TB1:3") — cabinet photos. */
+  wiring?: { wire: string; ends: string[] }[];
 }

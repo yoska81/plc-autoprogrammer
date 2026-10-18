@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { Effort } from '../../store/useSettingsStore';
 import type { CatalogCategory } from '../../electrical/types';
 import { callClaude } from '../../lib/ai/anthropic';
-import { fileToBlock, type Confidence } from '../../lib/ai/importAI';
+import type { Confidence } from '../../lib/ai/importAI';
 
 /**
  * Cabinet photos → what is in the cabinet. One AI call reads every photo (door open, several angles,
@@ -77,7 +77,7 @@ export const PHOTO_SCHEMA = obj({
 export const PHOTO_SYSTEM = `You are a senior panel builder documenting an existing control cabinet from photos so it can be redrawn as-built. The photos show the SAME cabinet (door open, several angles, close-ups of nameplates and terminal strips).
 
 Report:
-- devices: every breaker, fuse, disconnect, contactor, overload, motor protector, relay, safety relay, PLC CPU and I/O module, VFD, servo drive (category "other"), power supply, door device and fan you can see. A device seen in several photos is ONE device: report it once and list every photo it appears in under "seen" (photo index from 0 in the order attached; box x, y, w, h as fractions 0-1 of that photo, top-left origin).
+- devices: every breaker, fuse, disconnect, contactor, overload, motor protector, relay, timer relay (category "relay", say "timer" and its range in ratings), counter (category "other"), safety relay (category "safetyRelay"), PLC CPU and I/O module, VFD / frequency drive (category "vfd"), servo drive (category "other", say "servo drive" in ratings), power supply, transformer, door device (pushbutton, E-stop, pilot light, selector) and fan you can see. A device seen in several photos is ONE device: report it once and list every photo it appears in under "seen" (photo index from 0 in the order attached; box x, y, w, h as fractions 0-1 of that photo, top-left origin).
 - tag: the device label in the cabinet (e.g. K1, CB2, -Q1); "" if none is visible. partNumber: exactly as printed on the nameplate; "" if unreadable (never guess). manufacturer and ratings from the nameplate.
 - rail: DIN rails counted from the top of the back panel (1 = top); order: position on that rail from the left (1 = leftmost). Door and wall devices: rail 0.
 - wires: wire numbers / ferrule labels you can read at the device's terminals.
@@ -87,17 +87,62 @@ Report:
 - unseen: what cannot be seen and must be asked (wiring behind ducts, covered nameplates, devices outside the photos), one short question each.
 Never invent part numbers, tags or wire numbers. "summary": one or two sentences on the cabinet.`;
 
+/** Longest photo edge sent to the AI (it reads detail up to about this size; more only costs upload). */
+export const PHOTO_EDGE = 1568;
+/** All photos together stay under this (base64 bytes), so 20 phone photos never make a ~90 MB request. */
+export const PHOTO_BUDGET = 18 * 1024 * 1024;
+export const MAX_PHOTOS = 20;
+
+function toBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] ?? '');
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+/** A photo as a JPEG of at most `edge` px on its longest side (decoded once, closed after). */
+async function photoJpeg(file: File, edge: number): Promise<string> {
+  const bmp = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, edge / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bmp.width * scale));
+    canvas.height = Math.max(1, Math.round(bmp.height * scale));
+    canvas.getContext('2d')!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob: Blob = await new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error(`${file.name}: the photo could not be converted.`))), 'image/jpeg', 0.85));
+    return await toBase64(blob);
+  } finally { bmp.close(); }
+}
+
+type Block = Anthropic.Beta.Messages.BetaContentBlockParam;
+
+/**
+ * Every photo at most PHOTO_EDGE px, all together within PHOTO_BUDGET: when the set is too large the
+ * photos are sent smaller (down to 1000 px); still too large means too many photos for one request.
+ */
+export async function photoBlocks(photos: File[], encode: (f: File, edge: number) => Promise<string> = photoJpeg, budget = PHOTO_BUDGET): Promise<Block[]> {
+  if (photos.length > MAX_PHOTOS) throw new Error(`At most ${MAX_PHOTOS} photos at once: pick the overview and the close-ups of the rails, nameplates and terminal strips.`);
+  for (const edge of [PHOTO_EDGE, 1280, 1000]) {
+    const data: string[] = [];
+    for (const f of photos) data.push(await encode(f, edge));
+    if (data.reduce((n, d) => n + d.length, 0) <= budget) return data.map((d) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: d } }));
+  }
+  throw new Error('These photos are too large to send together. Use fewer photos (the overview plus close-ups of each rail and terminal strip) and try again.');
+}
+
 export interface RecogniseOptions {
   apiKey: string; model: string; effort: Effort; signal?: AbortSignal; photos: File[]; note: string;
-  /** Photo → AI content block (default: the import path's downscaled JPEG); replaced in tests. */
-  toBlock?: (f: File) => Promise<Anthropic.Beta.Messages.BetaContentBlockParam>;
+  /** Photos → AI content blocks (default: photoBlocks, size-capped JPEGs); replaced in tests. */
+  toBlocks?: (photos: File[]) => Promise<Block[]>;
 }
 
 /** Read the photos with the AI. */
 export async function recogniseCabinet(o: RecogniseOptions): Promise<{ reading: PhotoReading; reasoning: string | null }> {
   if (!o.photos.length) throw new Error('Add at least one photo of the cabinet.');
-  const blocks = await Promise.all(o.photos.map(o.toBlock ?? fileToBlock));
-  const content: Anthropic.Beta.Messages.BetaContentBlockParam[] = [
+  const blocks = await (o.toBlocks ?? photoBlocks)(o.photos);
+  const content: Block[] = [
     ...blocks.flatMap((b, i) => [{ type: 'text' as const, text: `Photo ${i} (${o.photos[i].name}):` }, b]),
     { type: 'text', text: `${o.note.trim() ? `Notes from the engineer:\n${o.note.trim()}\n\n` : ''}Document this cabinet as-built.` },
   ];

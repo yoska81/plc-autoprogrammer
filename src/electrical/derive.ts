@@ -1658,7 +1658,8 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
     if (l) { l.qty += c.comp.quantity; l.tags.push(c.tag); continue; }
     lines.set(key, {
       item: 0, qty: c.comp.quantity, partNumber: c.partNumber, manufacturer: c.part?.manufacturer ?? '',
-      description: c.part?.description ?? `${c.comp.function} (part not found in catalog — verify)`, tags: [c.tag], category: c.category,
+      // Read from a photo of an existing cabinet: say so right by the part number.
+      description: `${c.part?.description ?? `${c.comp.function} (part not found in catalog — verify)`}${c.part && /as-built from photos/i.test(c.comp.function) ? ' — from photo, verify' : ''}`, tags: [c.tag], category: c.category,
     });
   }
   // Accepted machine-layout suggestions: parts still to be selected (never an invented part number).

@@ -1,10 +1,12 @@
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign } from '../../electrical/types';
 import type { PhotoReading } from './recognise';
-import { itemCategory, itemPart, itemTag, type ReviewItem } from './items';
+import { closest, itemCategory, itemPart, itemTag, type ReviewItem } from './items';
+import type { Sighting } from './recognise';
 
 export { itemCategory, itemPart, itemTag, type ReviewItem, type ReviewStatus } from './items';
 import type { DrawnComponent, DrawnRatings, ExistingMachine } from '../types';
 import { normalizeMachine } from '../derive';
+import { CATALOG } from '../../electrical/catalog';
 import type { IOCategory, IOPoint } from '../../types/io';
 import { traceIO, traceQuestions, traceWires, type TracedIO } from './trace';
 
@@ -30,10 +32,17 @@ const PREFIX: Partial<Record<CatalogCategory, string>> = {
   pilotLight: 'PL', selector: 'SS', stackLight: 'LT', hmi: 'HMI', fan: 'FAN', enclosure: 'ENC', groundBar: 'GND',
 };
 
-/** The catalog part a nameplate number names (exact, then without spaces / dots / case). */
-export function matchPart(pn: string, getPart: (pn: string) => CatalogPart | undefined): CatalogPart | undefined {
-  if (!pn) return undefined;
-  return getPart(pn) ?? getPart(pn.toUpperCase()) ?? getPart(pn.replace(/[\s.]+/g, '')) ?? getPart(pn.toUpperCase().replace(/[\s.]+/g, ''));
+/** Part numbers compared without case, spaces, dots, dashes or slashes ("SC-E02PG-24VDC" = "SCE02PG 24VDC"). */
+const squash = (pn: string) => pn.toUpperCase().replace(/[\s.\-_/]+/g, '');
+let squashed: Map<string, CatalogPart> | null = null;
+
+/** The catalog part a nameplate number names: exact first, then ignoring case, spaces, dots and dashes. */
+export function matchPart(pn: string, getPart: (pn: string) => CatalogPart | undefined, catalog: CatalogPart[] = CATALOG): CatalogPart | undefined {
+  if (!pn.trim()) return undefined;
+  const exact = getPart(pn.trim());
+  if (exact) return exact;
+  if (!squashed) squashed = new Map(catalog.map((p) => [squash(p.partNumber), p]));
+  return squashed.get(squash(pn));
 }
 
 /** I/O list category of a traced point (by what it is wired to). */
@@ -57,27 +66,30 @@ export interface AsBuiltResult {
   notInCatalog: string[];
 }
 
-/** A tag of its kind for each item without a label (CB3, K2 …), never one the photos already show. */
-function tagger(items: ReviewItem[]) {
+/**
+ * A tag of its kind for each item without a label (CB3, K2 …), never one the photos already show; the
+ * same for every output of one review (rejected items take no number).
+ */
+export function tagger(all: ReviewItem[]) {
+  const items = all.filter((it) => it.status !== 'rejected');
   const used = new Set(items.map(itemTag).filter(Boolean).map((t) => t.toUpperCase()));
+  // Numbered up front in review order, so every output gives an unlabelled device the same tag.
   const given = new Map<string, string>();
-  return (it: ReviewItem) => {
-    const own = itemTag(it);
-    if (own) return own;
-    const had = given.get(it.key);
-    if (had) return had;
+  for (const it of items) {
+    if (itemTag(it)) continue;
     const p = PREFIX[itemCategory(it)] ?? 'D';
     let n = 1;
     while (used.has(`${p}${n}`)) n++;
     used.add(`${p}${n}`);
     given.set(it.key, `${p}${n}`);
-    return `${p}${n}`;
-  };
+  }
+  return (it: ReviewItem) => itemTag(it) || given.get(it.key) || '';
 }
 
 export function asBuiltDesign(items: ReviewItem[], reading: PhotoReading, base: DesignInputs, getPart: (pn: string) => CatalogPart | undefined, now = new Date().toISOString()): AsBuiltResult {
   const confirmed = items.filter((it) => it.status === 'confirmed');
-  const tagOf = tagger(confirmed);
+  // One tagger for both outputs (and the review): unlabelled devices get the same tag everywhere.
+  const tagOf = tagger(items);
   const components: DesignComponent[] = [];
   const notInCatalog: string[] = [];
   const placed: { rail: number; order: number; tag: string }[] = [];
@@ -152,10 +164,10 @@ export function nameplateRatings(text: string): DrawnRatings {
  */
 export function photosToMachine(items: ReviewItem[], reading: PhotoReading, note = '', getPart: (pn: string) => CatalogPart | undefined = () => undefined): ExistingMachine {
   const kept = items.filter((it) => it.status !== 'rejected');
-  const tagOf = tagger(kept);
+  const tagOf = tagger(items);
   const wires = traceWires(kept, tagOf);
   const io = traceIO(kept, wires, tagOf, getPart);
-  const where = (s: { seen: { photo: number }[]; rail: number; order: number }) => `photo ${(s.seen[0]?.photo ?? 0) + 1}${s.rail ? `, rail ${s.rail}, position ${s.order}` : ', door / wall'}`;
+  const where = (s: { seen: Sighting[]; rail: number; order: number }) => `photo ${(closest(s.seen)?.photo ?? 0) + 1}${s.rail ? `, rail ${s.rail}, position ${s.order}` : ', door / wall'}`;
   const components: DrawnComponent[] = kept.filter((it) => it.kind === 'device').map((it) => {
     const d = it.device!;
     return {
@@ -163,10 +175,11 @@ export function photosToMachine(items: ReviewItem[], reading: PhotoReading, note
       description: [d.manufacturer, itemPart(it), d.ratings].filter(Boolean).join(' ') || itemCategory(it),
       category: itemCategory(it), ratings: nameplateRatings(d.ratings), source: where(d),
       confidence: it.status === 'confirmed' ? 'high' : d.confidence,
+      wires: d.wires, photos: d.seen,
     };
   });
   const plcDev = kept.find((it) => itemCategory(it) === 'plc');
-  const strips = kept.filter((it) => it.kind === 'strip').map((it) => `${itemTag(it) || 'Terminal strip'}: ${it.strip!.terminals.map((t) => `${t.terminal} = wire ${t.wire}`).join(', ')}`);
+  const terminals = kept.filter((it) => it.kind === 'strip').flatMap((it) => it.strip!.terminals.map((t) => ({ strip: tagOf(it), terminal: t.terminal, wire: t.wire })));
   return normalizeMachine({
     summary: reading.summary,
     drawingStandard: 'other',
@@ -175,7 +188,9 @@ export function photosToMachine(items: ReviewItem[], reading: PhotoReading, note
     modules: kept.filter((it) => itemCategory(it) === 'plcModule').map((it, i) => ({ slot: i + 1, partNumber: itemPart(it), description: it.device!.ratings })),
     components,
     io: io.map((p) => ({ address: p.address, description: p.description, type: p.type, category: ioCategory(p), deviceTag: p.deviceTag || null, deviceType: p.deviceType, confidence: p.confidence, source: `wire ${p.wire}${p.via ? ` via ${p.via}` : ''} (photos)` })),
-    spec: { utilities: [note.trim(), strips.length ? `Terminal strips as photographed:\n${strips.join('\n')}` : '', wires.length ? `Wires traced by their numbers:\n${wires.map((w) => `${w.wire}: ${w.ends.map((e) => `${e.tag}:${e.terminal}`).join(' – ')}`).join('\n')}` : ''].filter(Boolean).join('\n') } as ExistingMachine['spec'],
+    spec: { utilities: note.trim() } as ExistingMachine['spec'],
+    terminals,
+    wiring: wires.map((w) => ({ wire: w.wire, ends: w.ends.map((e) => `${e.tag}:${e.terminal}`) })),
     questions: [...reading.unseen, ...traceQuestions(io).map((q) => q.replace(/^Cabinet photos: /, ''))].map((text) => ({ text, section: 'other' as const, assumption: null })),
     uncertainties: ['As-built from photos: wiring behind ducts and covered nameplates could not be read — verify on the cabinet.'],
   });
