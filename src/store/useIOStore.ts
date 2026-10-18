@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AnalogSpec, IOPoint, IOCategory, TemplatePoint } from '../types/io';
+import { withAnalogRange, type AnalogSpec, type IOPoint, type IOCategory, type TemplatePoint } from '../types/io';
 import { useEditsStore } from '../edits/useEditsStore';
 
 interface IOStore {
@@ -119,7 +119,7 @@ export const useIOStore = create<IOStore>()(
           let current = replace ? [] : [...s.projectIO];
           for (const p of points) {
             const id = p.type === 'input' ? nextInputId(current) : nextOutputId(current);
-            current = [...current, { ...p, id }];
+            current = [...current, { ...p, ...(p.analog ? { analog: withAnalogRange(p.description, p.analog) } : {}), id }];
           }
           return { projectIO: current };
         });

@@ -360,6 +360,9 @@ export interface IoPoint {
   signalTerminal?: string;
   supplyTerminal?: string;
   returnTerminal?: string;
+  /** Inputs: the wire a dry contact (button, switch, relay contact) switches into the input — '24+', or '0V' in a
+   *  group whose common goes to +24V for NPN sensors (sourcing inputs: the contact must pull the input to 0V). */
+  supplyWire?: '24+' | '0V';
   /** Load terminals the output switches ([feed, return]): A1/A2, B1/B2 for a second coil of the same device
    *  (double solenoid), X1/X2 for a pilot light. */
   pins: [string, string];
@@ -772,6 +775,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     g.points.push(p);
   }
   for (const g of groups) if (g.type === 'input' && g.points.some((p) => p.deviceType === 'sensor-npn')) g.commonTo = '24+';
+  // a group with its common on +24V (NPN sensors) only sees an input pulled to 0V: its dry contacts switch 0V
+  for (const g of groups) for (const p of g.points) if (g.type === 'input') p.supplyWire = g.commonTo === '24+' && !isSensor3(p.deviceType) ? '0V' : '24+';
 
   // safety status input
   safety.statusInput = io.find((p) => p.deviceType === 'safety-relay-output');
@@ -901,7 +906,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         continue;
       }
       p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${tag}:${sensor ? 'BK' : pinOf(tag, 'NO')}`, kind: 'feed', group: tag });
-      p.supplyTerminal = add(tb2, { wire: '24+', internal: 'TB1 24+ (jumper)', external: `${tag}:${sensor ? 'BN' : pinOf(tag, 'C')}`, kind: 'feed', group: tag });
+      const sw = sensor ? '24+' : p.supplyWire ?? '24+';
+      p.supplyTerminal = add(tb2, { wire: sw, internal: `TB1 ${sw} (jumper)`, external: `${tag}:${sensor ? 'BN' : pinOf(tag, 'C')}`, kind: 'feed', group: tag });
       if (sensor) p.returnTerminal = add(tb2, { wire: '0V', internal: 'TB1 0V (jumper)', external: `${tag}:BU`, kind: 'feed', group: tag });
       // the device cable's PE core gets its own clamp (one conductor per terminal)
       else add(tb2, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${tag}:${pinOf(tag, 'PE')}`, kind: 'ground', group: tag });
@@ -912,7 +918,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       if (!pts.length) continue;
       const sup = add(tb2, { wire: '24+', internal: 'TB1 24+ (jumper)', external: `${jb.tag} 24+`, kind: 'feed', group: jb.tag });
       const ret = add(tb2, { wire: '0V', internal: 'TB1 0V (jumper)', external: `${jb.tag} 0V`, kind: 'feed', group: jb.tag });
-      for (const p of pts) { p.supplyTerminal = sup; if (p.deviceType === 'sensor-pnp' || p.deviceType === 'sensor-npn') p.returnTerminal = ret; }
+      for (const p of pts) { p.supplyTerminal = p.supplyWire === '0V' ? ret : sup; if (p.deviceType === 'sensor-pnp' || p.deviceType === 'sensor-npn') p.returnTerminal = ret; }
     }
     add(tb2, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: 'FIELD SHIELDS/PE', kind: 'ground', group: 'PE' });
     addSpares(tb2, 2);
@@ -1118,7 +1124,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       addWire({ wire: '0V', from: `${k.tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${k.tag} coil return` });
     }
     if (safety.statusInput) {
-      addWire({ wire: '24+', from: 'TB1 24+', to: `${relay.tag}:23`, color: 'BU', size: '18 AWG', function: 'Safety status contact' });
+      const sw = io.find((q) => q.address === safety.statusInput!.address)?.supplyWire ?? '24+';
+      addWire({ wire: sw, from: `TB1 ${sw}`, to: `${relay.tag}:23`, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `Safety status contact${sw === '0V' ? ' (switches 0V: NPN input common)' : ''}` });
       addWire({ wire: safety.statusInput.address, from: `${relay.tag}:24`, to: `${plcTag}:${safety.statusInput.address}`, color: 'BU', size: '18 AWG', function: 'Safety relay status to PLC' });
     }
   } else if (estopTags.length) {
@@ -1168,7 +1175,11 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       if (driveOutStyle === 'sinking') addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${tag}:DCM`, color: 'BU', size: '18 AWG', function: `${tag} digital input common (sinking PLC outputs)` });
       else addWire({ wire: '0V', from: `${tag}:DCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} digital input common` });
     }
-    if (c.terminals.some((t) => t.role === 'fault')) addWire({ wire: '24+', from: 'TB1 24+', to: `${tag}:R1`, color: 'BU', size: '18 AWG', function: `${tag} fault relay common` });
+    const fault = c.terminals.find((t) => t.role === 'fault');
+    if (fault) {
+      const sw = io.find((q) => q.address === fault.address)?.supplyWire ?? '24+';
+      addWire({ wire: sw, from: `TB1 ${sw}`, to: `${tag}:R1`, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `${tag} fault relay common` });
+    }
     if (c.safetyStop === 'sto') {
       // Safe Torque Off from the safety relay output (factory STO jumper removed), GS20 manual App. E.
       for (const ch of ['STO1', 'STO2']) addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${tag}:${ch}`, color: 'BU', size: '18 AWG', function: `${tag} Safe Torque Off ${ch} (safety relay output)` });
@@ -1193,10 +1204,11 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       if (p.signalTerminal) {
         addWire({ wire: p.address, from: `${tag}:${p.deviceType.startsWith('sensor') ? 'BK' : pinOf(tag, 'NO')}`, to: p.signalTerminal, color: p.deviceType.startsWith('sensor') ? 'BK (cable)' : 'BU', size: '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
-        if (p.supplyTerminal) addWire({ wire: '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType.startsWith('sensor') ? 'BN' : pinOf(tag, 'C')}`, color: p.deviceType.startsWith('sensor') ? 'BN (cable)' : 'BU', size: '18 AWG', function: `${tag} supply` });
+        if (p.supplyTerminal) addWire({ wire: p.deviceType.startsWith('sensor') ? '24+' : p.supplyWire ?? '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType.startsWith('sensor') ? 'BN' : pinOf(tag, 'C')}`, color: p.deviceType.startsWith('sensor') ? 'BN (cable)' : 'BU', size: '18 AWG', function: `${tag} supply` });
         if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:BU`, color: 'BU (cable)', size: '18 AWG', function: `${tag} 0V` });
       } else {
-        addWire({ wire: '24+', from: 'TB1 24+', to: `${tag}:C`, color: 'BU', size: '18 AWG', function: `${tag} supply` });
+        const sw = p.supplyWire ?? '24+';
+        addWire({ wire: sw, from: `TB1 ${sw}`, to: `${tag}:C`, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `${tag} supply` });
         addWire({ wire: p.address, from: `${tag}:${p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO'}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
       }
     } else {
@@ -1493,7 +1505,8 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
       else if (/pigtail|integral cable/i.test(`${partOf(d.tag)?.ratings.connection ?? ''}`)) type = 'Integral sensor pigtail (BN/BU/BK) — check length, extend in JB';
       else type = '3-core 18 AWG sensor cable (BN/BU/BK)';
     } else if (p0.type === 'input') {
-      cores.push({ core: '1', color: 'BU', wire: '24+', from: term(p0, 'sup'), to: `${d.tag}:C` });
+      const sw = p0.supplyWire ?? '24+';
+      cores.push({ core: '1', color: sw === '0V' ? 'WH/BU' : 'BU', wire: sw, from: term(p0, 'sup'), to: `${d.tag}:C` });
       // one signal core per input of the device (the terminal name matches the wire list)
       d.points.forEach((p, k) => cores.push({ core: String(k + 2), color: 'BU', wire: p.wire, from: term(p, 'sig'), to: `${d.tag}:NO` }));
       cores.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: from !== 'CABINET' ? `${from}:PE` : 'PE', to: `${d.tag}:PE` });
@@ -1540,7 +1553,7 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
         }
         const p0 = d.points[0];
         // outputs: one JB terminal per return wire (the coils of a double solenoid may return on different wires)
-        const commons: [string, 'sup' | 'ret', IoPoint][] = p0.type === 'input' ? [['24+', 'sup', p0], ...(isSensor3(d.deviceType) ? [['0V', 'ret', p0] as [string, 'ret', IoPoint]] : [])]
+        const commons: [string, 'sup' | 'ret', IoPoint][] = p0.type === 'input' ? [[isSensor3(d.deviceType) ? '24+' : p0.supplyWire ?? '24+', 'sup', p0], ...(isSensor3(d.deviceType) ? [['0V', 'ret', p0] as [string, 'ret', IoPoint]] : [])]
           : [...new Map(d.points.map((p) => [retWire(p), p] as const)).entries()].map(([w, p]) => [w, 'ret', p] as [string, 'ret', IoPoint]);
         for (const [w, role, pc] of commons) {
           const lab = addT({ wire: w, incoming: '', outgoing: '', device: d.tag, kind: 'feed' });
@@ -2818,6 +2831,10 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (capKnown && nOut > outCap) w.push(`PLC outputs over capacity: ${nOut} used, ${outCap} available — add an output module.`);
   for (const g of m.groups) {
     if (g.type === 'input' && g.points.some((p) => p.deviceType === 'sensor-npn') && g.points.some((p) => p.deviceType === 'sensor-pnp')) w.push(`${g.label}: mixed PNP and NPN sensors on one common — not possible; split commons or change sensors.`);
+    // NPN sensors put the common on +24V: the group's dry contacts are wired to switch 0V (said, so the electrician
+    // does not "fix" them back to +24V, where they could never turn the input ON)
+    const dry = g.type === 'input' && g.commonTo === '24+' ? g.points.filter((p) => p.supplyWire === '0V') : [];
+    if (dry.length) w.push(`${g.label}: input common on +24V for its NPN sensors — ${dry.map((p) => `${p.deviceTag || p.address} (${p.address})`).join(', ')} switch 0V into their inputs (sourcing inputs); do not feed them +24V. A device that sources +24V (PNP sensor, OSSD) cannot share this common.`);
   }
   for (const p of m.io) if (!p.deviceTag && p.wiring) w.push(`${p.address}: wiring has no device tag.`);
   w.push(...panelLayout(ctx).warnings);

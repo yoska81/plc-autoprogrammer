@@ -194,17 +194,16 @@ def check(vdir: Path):
         elif nick and a not in nick_txt:
             report('FAIL', v, f'I/O address {a} not in the nickname CSV')
 
-    # an analog channel takes only its own signal family: no voltage / current signal (a transmitter, mA, V) on a
-    # thermocouple-only module, no bare thermocouple on a voltage / current input
+    # an analog channel takes only its own signal family: a thermocouple module only 'thermocouple' ranges, a voltage /
+    # current input never a thermocouple
     if ana_txt:
         for r in csv.DictReader(io.StringIO(ana_txt)):
-            pn, desc = r.get('Part number', ''), r.get('Description', '')
-            electrical = re.search(r'\d\s*-\s*\d+\s*(m?A|V)\b|\bmA\b|transmitter|transducer', desc, re.I)
+            pn, rng = r.get('Part number', ''), r.get('Signal range', '')
             thm = re.search(r'THM', pn)
-            if thm and electrical:
-                report('FAIL', v, f'analog {r.get("Data register")} "{desc}": a voltage / current signal on thermocouple module {pn}')
-            elif pn and not thm and not electrical and re.search(r'thermocouple|\bT/C\b', desc, re.I):
-                report('FAIL', v, f'analog {r.get("Data register")} "{desc}": a thermocouple on {pn}, not a thermocouple input')
+            if thm and rng != 'thermocouple':
+                report('FAIL', v, f'analog {r.get("Data register")} "{r.get("Description")}": {rng} on thermocouple module {pn}')
+            elif pn and not thm and rng == 'thermocouple':
+                report('FAIL', v, f'analog {r.get("Data register")} "{r.get("Description")}": a thermocouple on {pn}, not a thermocouple input')
 
     # ---- Alarms
     hmi_al = [r for r in sheet_rows(wb, 'HMI Alarms')] if 'HMI Alarms' in wb.sheetnames else []
@@ -252,6 +251,23 @@ def check(vdir: Path):
         fan = co.get('fan') or {}
         if fan.get('dc') and fan.get('thermostat') and fan['tag'] not in {w['wire'] for w in data['wires']}:
             report('FAIL', v, f'24 VDC fan {fan["tag"]}: no wire {fan["tag"]} from thermostat {fan["thermostat"]} in the wire list')
+    # ---- Input commons: every input can turn ON. A 0V common (sinking inputs) needs +24V from the device (PNP
+    # sensor, contact fed 24+); a +24V common (NPN sensors) needs 0V (NPN sensor, contact fed 0V). PNP and NPN on one
+    # common, or a dry contact fed the common's own potential, can never switch.
+    for g in data.get('inputCommons', []):
+        npn = g['commonTo'] == '24+'
+        for q in g['points']:
+            t = q['deviceType']
+            if t in ('sensor-pnp', 'sensor-npn'):
+                if (t == 'sensor-npn') != npn:
+                    report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is {t} on a common to {g["commonTo"]} — it can never turn ON')
+                continue
+            if not q['feed']:
+                continue  # no separate feed wire (drive / relay internal contacts are checked on their own sheets)
+            want = '0V' if npn else '24+'
+            bad = [w for w in q['feed'] if w in ('0V', '24+') and w != want]
+            if bad:
+                report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is fed {bad[0]} on a common to {g["commonTo"]} — it can never turn ON')
     # ---- Drive branches: the drive's listed Class T fuses (its SCCR condition), or the review says why not
     iec = str(data.get('region', '')) not in ('US', 'Canada', '')
     for dr in data.get('drives', []):
