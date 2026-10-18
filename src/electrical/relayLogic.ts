@@ -88,7 +88,9 @@ function driveCommon(logic: RelayLogic, tag: string): string {
   return /^GS\d/i.test(pn) || /^GS\d/i.test(tag) ? 'DCM' : 'COM';
 }
 
-export function relayLadder(logic: RelayLogic): Ladder {
+export function relayLadder(logic: RelayLogic, opts: { occupied?: Map<string, string> } = {}): Ladder {
+  // terminals the rest of the panel already wires (e.g. the safety relay's 13-14 on 24+S): a terminal is one net
+  const occupied = opts.occupied ?? new Map<string, string>();
   const rails: [string, string] = logic.supply === '120VAC' ? ['X1', 'X2'] : ['24+', '0V'];
   const questions: string[] = [];
   // ---- coils the reading missed: a rung with a "?" contact for each relay / timer used only by its contacts
@@ -128,7 +130,7 @@ export function relayLadder(logic: RelayLogic): Ladder {
     let start: LadderRung['start'] = { kind: 'rail' };
     if (driveEnd) {
       const com = `${last.tag}:${driveCommon(logic, last.tag)}`;
-      startWire = termNet.get(com) ?? fresh();
+      startWire = termNet.get(com) ?? occupied.get(com) ?? fresh();
       termNet.set(com, startWire);
       join(startWire, com, `${last.tag} input common`, n);
       start = { kind: 'node', wire: startWire, label: `${last.tag} ${driveCommon(logic, last.tag)}` };
@@ -148,6 +150,11 @@ export function relayLadder(logic: RelayLogic): Ladder {
       const clash = el.t === 'contact' && pins.some((p, j) => p !== '?' && termNet.has(`${el.tag}:${p}`) && termNet.get(`${el.tag}:${p}`) !== [wIn, wOut][j]);
       if (clash) {
         questions.push(`${el.tag} ${el.terms}: the same contact is used again in rung ${n} (${fn}) — the original must use a second contact of ${el.tag}; read its terminal numbers.`);
+        pins = ['?', '?'];
+      }
+      const taken = pins.find((p, j) => p !== '?' && occupied.has(`${el.tag}:${p}`) && occupied.get(`${el.tag}:${p}`) !== [wIn, wOut][j]);
+      if (taken) {
+        questions.push(`${el.tag} ${el.terms ?? ''}: terminal ${taken} is already wired by the panel (wire ${occupied.get(`${el.tag}:${taken}`)}) — rung ${n} (${fn}) needs another ${el.t === 'coil' ? 'device' : `contact of ${el.tag}`}; confirm its terminal numbers.`);
         pins = ['?', '?'];
       }
       pins.forEach((p, j) => {

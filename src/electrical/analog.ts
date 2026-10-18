@@ -102,7 +102,8 @@ export function analogWiring(rows: AnalogSetupRow[], o: AnalogOptions): AnalogWi
       // shield grounded at the PLC end only.
       const slot = slotOf(row.channel);
       const moduleTag = slot === 0 ? o.plcTag : o.moduleTag(slot, row.partNumber);
-      const wp = `${row.address}+`, wm = `${row.address}-`;
+      // the minus leaves the module's 0V terminal: it is the 0V net, so it carries 0V's number
+      const wp = `${row.address}+`, wm = '0V';
       const fn = `${row.description} (${row.range}, ${row.scaleMin}…${row.scaleMax} ${row.units})`;
       wires.push({ wire: wp, from: `${moduleTag}:${row.terminal}`, to: `${inside.tag}:${inside.plus}`, color: 'WH', size: '18 AWG', function: `Speed reference + ${fn}` });
       wires.push({ wire: wm, from: `${moduleTag}:0V`, to: `${inside.tag}:${inside.minus}`, color: 'BK', size: '18 AWG', function: `Speed reference - ${fn}` });
@@ -124,7 +125,9 @@ export function analogWiring(rows: AnalogSetupRow[], o: AnalogOptions): AnalogWi
     const cableTag = `W${String(cable++).padStart(3, '0')}`;
     const supply = loop === 'powered' ? `TBA-${++tn}` : '';
     const plus = `TBA-${++tn}`, minus = `TBA-${++tn}`, shield = `TBA-${++tn}`;
-    const wp = `${row.address}+`, wm = `${row.address}-`;
+    // A voltage / output loop's minus lands on the module's 0V terminal: it is the 0V net, so it carries 0V's number
+    // (one terminal, one wire number). The thermocouple and two-wire minus go to their own channel terminal.
+    const wp = `${row.address}+`, wm = loop === 'voltage' || loop === 'output' ? '0V' : `${row.address}-`;
     const ch = `${moduleTag}:${row.terminal}`;
     const zero = `${moduleTag}:0V`;
     const fn = `${row.description} (${row.range}, ${row.scaleMin}…${row.scaleMax} ${row.units})`;

@@ -60,6 +60,10 @@ assert.ok(!lad.wires.some((w) => w.to === 'VFD1:MI1' && w.wire === '24+'), 'MI1 
 assert.ok(lad.wires.some((w) => [w.from, w.to].includes('VFD1:DCM')), 'DCM in the wire list');
 oneNetPerTerminal(lad);
 assert.deepEqual(lad.questions, []);
+// a terminal the panel already wires (the engine's safety relay 13-14 on 24+S) is never joined to a ladder net
+const occ = relayLadder(LOGIC, { occupied: new Map([['K1:13', '24+S']]) });
+assert.ok(!occ.wires.some((w) => [w.from, w.to].includes('K1:13')), 'K1:13 stays on 24+S');
+assert.ok(occ.questions.some((q) => /K1 13-14: terminal 13 is already wired by the panel \(wire 24\+S\)/.test(q)), 'and the reading is asked');
 assert.deepEqual(relayLadder({ supply: '120VAC', rungs: LOGIC.rungs.slice(0, 1) }).rails, ['X1', 'X2']);
 assert.ok(coilMatchesRail('24VDC', '24VDC') && coilMatchesRail('24VDC', '24 VAC/VDC') && !coilMatchesRail('24VDC', '120VAC') && coilMatchesRail('120VAC', '120 VAC') && !coilMatchesRail('120VAC', '24 VDC'));
 

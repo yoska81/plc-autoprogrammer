@@ -6,6 +6,7 @@
  * Line references use the "sheet.line" notation ("5.04" = sheet 5, line 4).
  */
 import {
+  limitRelayPins,
   billOfMaterials, buildModel, designWarnings, drawingPrefix, naturalCompare, panelLayout, plcRack, revisionState,
   backPanelDrilling, doorDrilling, dualDim, dualSize, type DrillingPlan, type PlcRackSlot, type RevisionState,
   type AuxBranch, type Cable, type CableCore, type JbTerminal, type JunctionBoxPlan, type MachineDevice, type BomLine, type DrawingContext, type ElectricalModel, type IoGroup, type IoPoint,
@@ -268,7 +269,7 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   const limit = model.rc.find((c) => c.part?.ratings.kind === 'limitAlarm');
   for (const k of model.rc.filter((c) => c.category === 'contactor' && !c.comp.motorTag && !ioTags.has(c.tag) && /safety contactor/i.test(c.comp.function))) {
     out.push({ start: { kind: 'node', label: s.outputSupply }, end: rail,
-      els: [...(limit ? [{ t: 'contact' as const, nc: false, tag: limit.tag, term: 'R1', dev: 'relay' as const }] : []), { t: 'coil', tag: k.tag }],
+      els: [...(limit ? [{ t: 'contact' as const, nc: false, tag: limit.tag, term: limitRelayPins(limit.part).join('-'), dev: 'relay' as const }] : []), { t: 'coil', tag: k.tag }],
       wires: [s.outputSupply, ...(limit ? [`${k.tag}A1`] : []), '0V'],
       desc: [`${k.tag} ${k.comp.function.split(' — ')[0].toUpperCase()}`, limit ? `OVER-TEMPERATURE LIMIT ${limit.tag} (LATCHED) AND 24+S DROP IT` : 'DROPS WITH 24+S'], key: `coil:${k.tag}` });
   }
@@ -294,8 +295,10 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
     out.push({
       start: ch.sink ? { kind: 'node', label: s.outputSupply } : { kind: 'xref', label: `${p.address} FROM {=io:${p.address}}` },
       end: ch.sink ? { kind: 'xref', label: `${p.address} TO {=io:${p.address}}` } : rail,
-      els: [...ch.devices.map((d) => ({ t: 'contact' as const, nc: d.nc, tag: d.tag, term: d.terminals, dev: d.kind === 'ol' ? 'ol' as const : 'relay' as const })), { t: 'coil', tag: p.deviceTag || '?' }],
-      wires: [...ch.wires, ch.sink ? p.address : '0V'],
+      // a reversing starter's shared overload on sourcing outputs sits in the coil's return, after the coil
+      els: [...ch.devices.map((d) => ({ t: 'contact' as const, nc: d.nc, tag: d.tag, term: d.terminals, dev: d.kind === 'ol' ? 'ol' as const : 'relay' as const })), { t: 'coil', tag: p.deviceTag || '?' },
+        ...(ch.returnVia ? [{ t: 'contact' as const, nc: true, tag: ch.returnVia.tag, term: ch.returnVia.terminals, dev: 'ol' as const }] : [])],
+      wires: [...ch.wires, ...(ch.returnVia ? [ch.returnVia.wire] : []), ch.sink ? p.address : '0V'],
       desc: [p.description.toUpperCase(), `${p.deviceTag} CONTACTS: {c:${p.deviceTag}}`], key: `coil:${p.deviceTag}`,
     });
   }
@@ -392,7 +395,7 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   // relay logic kept from a converted machine (DesignInputs.relayLogic): NFPA 79 ladder sheets, rungs never split
   const logic = ctx.design.inputs.relayLogic;
   if (logic?.rungs.length) {
-    const lad = relayLadder(logic);
+    const lad = model.ladder ?? relayLadder(logic);
     const pages: { r: LadderRung; idx: number }[][] = [];
     let cur: { r: LadderRung; idx: number }[] = [];
     let row = 1;

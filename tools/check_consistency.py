@@ -275,6 +275,19 @@ def check(vdir: Path):
             bad = [w for w in q['feed'] if w in ('0V', '24+') and w != want]
             if bad:
                 report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is fed {bad[0]} on a common to {g["commonTo"]} — it can never turn ON')
+    # ---- One device pin, one net, generator-wide: a pin with two different wire numbers is a short on paper, or a
+    # series contact whose in and out land on the same pin (the over-temperature limit then never breaks the heater
+    # contactor's coil). A bridge or jumper is one net with one number, so it passes.
+    pins = {}
+    for w in data['wires']:
+        if w['wire'] == 'PE':
+            continue
+        for e in (w['from'], w['to']):
+            if re.fullmatch(r'[A-Z][A-Z0-9-]*:[^\s?]+', e):
+                pins.setdefault(e, set()).add(w['wire'])
+    for pin, ws in sorted(pins.items()):
+        if len(ws) > 1:
+            report('FAIL', v, f'pin {pin} carries wire numbers {", ".join(sorted(ws))} — one pin is one net')
     # ---- Relay logic (ladder sheets): one device terminal = one net = one wire number; every coil is rated for the
     # voltage of its rung's rail (a 120 VAC contactor on the 24 VDC ladder never pulls in)
     rel = data.get('relay')

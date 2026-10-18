@@ -553,6 +553,39 @@ for (const s of SCENARIOS) {
   }
 }
 
+// One pin, one wire number, generator-wide: a series contact has its in and out on different pins (the over-
+// temperature limit feeding a safety contactor's coil once took 24+S and K1A1 on the same R1 pin, so the limit
+// never broke the coil). Strip terminals and bus bars ("TB1 24+", "GB1") and free-text ends are not device pins.
+const multiNet = (wires: { wire: string; from: string; to: string }[]) => {
+  const nets = new Map<string, Set<string>>();
+  for (const w of wires) for (const e of [w.from, w.to]) {
+    if (!/^[A-Z][A-Z0-9-]*:[^\s]+$/.test(e) || w.wire === 'PE') continue;
+    nets.set(e, new Set([...(nets.get(e) ?? []), w.wire]));
+  }
+  return [...nets].filter(([, ws]) => ws.size > 1).map(([pin, ws]) => `${pin} = ${[...ws].join(' / ')}`);
+};
+for (const s of SCENARIOS) {
+  const { ctx } = run(s);
+  assert.deepEqual(multiNet(buildModel(ctx).wires), [], `${s.name}: a device pin carries two wire numbers`);
+}
+{
+  // the over-temperature limit breaks the heater contactor's coil: 24+S in on one side of its relay, the coil out on the other
+  const m = buildModel(run(SCENARIOS.find((x) => x.name === 'sealing-head')!).ctx);
+  const lim = m.rc.find((c) => c.part?.ratings.kind === 'limitAlarm')!;
+  const into = m.wires.find((w) => w.to.startsWith(`${lim.tag}:`) && w.wire === '24+S')!;
+  const out = m.wires.find((w) => w.from.startsWith(`${lim.tag}:`) && /A1$/.test(w.wire))!;
+  assert.ok(into && out && into.to !== out.from, `${lim.tag}: in ${into?.to}, out ${out?.from}`);
+  // a reversing starter on sourcing outputs: two PLC outputs never meet on the shared overload contact
+  const rev = SCENARIOS.find((x) => x.name === 'reversing240')!;
+  const src = buildModel(run({ ...rev, name: 'reversing240-sourcing', cpu: 'C0-10DD2E-D' }).ctx);
+  assert.deepEqual(multiNet(src.wires), [], 'sourcing reversing: one wire number per pin');
+  const coils = src.io.filter((q) => q.coilChain);
+  assert.ok(coils.every((q) => q.coilChain!.returnVia?.tag === 'OL1' && !q.coilChain!.devices.some((d) => d.kind === 'ol')), 'the shared overload is in the coil return');
+  assert.ok(src.wires.some((w) => w.from === 'OL1:96' && w.wire === '0V'));
+  // its interlocks use the second N.C. (71-72): the first N.C. is in the safety relay's feedback loop
+  assert.ok(coils.every((q) => q.coilChain!.devices.some((d) => d.kind === 'interlock' && d.terminals === '71-72')));
+}
+
 // Acceptance (pump skid): two 10 HP pumps on GS20 drives at 480 V heat a NEMA 12 cabinet far above 15 °C; the engine
 // fits a filter fan, its exhaust filter and a thermostat, and the review comes out without a heat finding.
 {
