@@ -3,13 +3,14 @@
  * Positioned with `position: fixed` from the clicked cell's bounding rect;
  * closes on Escape, outside click, or page scroll.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import type { CompareOp, LadderElement, LadderOutput, TimeUnit } from '../../core/ladder';
 import { defaultElement, defaultOutput, normAddr } from './ladderEdit';
 import type { ElementType, OutputType } from './ladderEdit';
 
-export interface Anchor { left: number; top: number; bottom: number }
+/** Where the editor opens; `el` (the clicked element) lets it follow the element when the ladder scrolls. */
+export interface Anchor { left: number; top: number; bottom: number; el?: HTMLElement }
 
 const inputCls =
   'w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500';
@@ -188,6 +189,9 @@ export default function ElementEditor({
   anchor, target, onDelete, onClose,
 }: { anchor: Anchor; target: EditorTarget; onDelete: () => void; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Scrolling the ladder moves the editor with its element (it closes only when the element leaves the window).
+  const [scrolled, setScrolled] = useState<{ from: Anchor; pos: Anchor } | null>(null);
+  const pos = scrolled?.from === anchor ? scrolled.pos : anchor;
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -196,7 +200,11 @@ export default function ElementEditor({
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     const onScroll = (e: Event) => {
       if (ref.current && e.target instanceof Node && ref.current.contains(e.target)) return;
-      onClose();
+      const el = anchor.el;
+      if (!el || !el.isConnected) return onClose();
+      const r = el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight) return onClose();
+      setScrolled({ from: anchor, pos: { left: r.left, top: r.top, bottom: r.bottom, el } });
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -206,14 +214,14 @@ export default function ElementEditor({
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('scroll', onScroll, true);
     };
-  }, [onClose]);
+  }, [onClose, anchor]);
 
   const width = 290;
-  const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
-  const below = window.innerHeight - anchor.bottom > 320;
+  const left = Math.max(8, Math.min(pos.left, window.innerWidth - width - 8));
+  const below = window.innerHeight - pos.bottom > 320;
   const style: React.CSSProperties = below
-    ? { left, top: anchor.bottom + 6, width }
-    : { left, bottom: window.innerHeight - anchor.top + 6, width };
+    ? { left, top: pos.bottom + 6, width }
+    : { left, bottom: window.innerHeight - pos.top + 6, width };
 
   return (
     <div ref={ref} className="fixed z-50 rounded-lg border border-slate-300 bg-white p-3 shadow-xl" style={style} role="dialog">
