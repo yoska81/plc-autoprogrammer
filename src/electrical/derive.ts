@@ -633,6 +633,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const bus = phases === 3 ? ['1L1', '1L2', '1L3'] : ['1L1', 'N'];
   const wires: WireRecord[] = [];
   const addWire = (w: WireRecord) => wires.push(w);
+  // a return both coils of a double solenoid share is one conductor
+  const addWireOnce = (w: WireRecord) => { if (!wires.some((x) => x.wire === w.wire && x.from === w.from && x.to === w.to)) addWire(w); };
 
   const disconnect = byCat(rc, 'disconnect').filter((c) => c.mount === 'backplate' && !isLayoutAccessory(c))[0];
   const looseProt = byCat(rc, 'breaker', 'fuse').filter((c) => !c.comp.motorTag && !isFuseCartridge(c));
@@ -1344,7 +1346,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
           // Field coil: from the chain through its output terminal, returning through the field return terminal.
           addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });
           addWire({ wire: ch.wires[ch.wires.length - 1], from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
-          if (p.returnTerminal) addWire({ wire: '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: 'WH/BU', size: '18 AWG', function: `${tag} return` });
+          if (p.returnTerminal) addWireOnce({ wire: '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: 'WH/BU', size: '18 AWG', function: `${tag} return` });
         } else addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: `${tag}:${p.pins[0]}`, color: 'BU', size: '18 AWG', function: p.description });
         if (p.signalTerminal && !ch.sink) { /* return wired above */ } else if (ch.sink) addWire({ wire: p.address, from: `${tag}:${p.pins[1]}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: `${p.description} (sinking output)` });
         else if (ch.returnVia) {
@@ -1356,7 +1358,7 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       } else if (p.signalTerminal) {
         addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
-        if (p.returnTerminal) addWire({ wire: sink ? lampSupply(p) : '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
+        if (p.returnTerminal) addWireOnce({ wire: sink ? lampSupply(p) : '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       } else {
         addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: `${tag}:${p.deviceType === 'vfd-input' ? 'DI' : p.pins[0]}`, color: 'BU', size: '18 AWG', function: p.description });
         if (p.deviceType === 'vfd-input') addWire({ wire: '0V', from: `${tag}:DCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} digital input common` });
@@ -1700,12 +1702,15 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
           const lab = addT({ wire: w, incoming: '', outgoing: '', device: d.tag, kind: 'feed' });
           roles.set(role === 'ret' && p0.type === 'output' ? `ret:${w}` : role, lab);
           const cabTerm = role === 'sup' ? pc.supplyTerminal : pc.returnTerminal;
-          if (!firstOf.has(w)) {
-            firstOf.set(w, lab);
+          // one trunk core per cabinet terminal the wire list leaves from (SOL1's 0V on TB3-2 is its own core, not
+          // the sensors' 0V core from TB2-9); the same wire from the same terminal is jumpered in the JB
+          const key = `${w}|${cabTerm ?? `TB1 ${w}`}`;
+          if (!firstOf.has(key)) {
+            firstOf.set(key, lab);
             trunk.push({ core: String(trunk.length + 1), color: w === '0V' ? 'WH/BU' : 'BU', wire: w, from: cabTerm ?? `TB1 ${w}`, to: lab });
             terms[terms.length - 1].incoming = `${trunkTag}/${trunk.length}`;
-            landed.set(w, lab);
-          } else terms[terms.length - 1].incoming = `JUMPER ${firstOf.get(w)}`;
+            if (!landed.has(w)) landed.set(w, lab);
+          } else terms[terms.length - 1].incoming = `JUMPER ${firstOf.get(key)}`;
         }
         const c = deviceCable(d, jb.tag, (p, role) => (role === 'sig' ? roles.get(`sig:${p.address}`) : role === 'ret' && p.type === 'output' ? roles.get(`ret:${retWire(p)}`) : roles.get(role)) ?? '?');
         d.cable = c.tag;

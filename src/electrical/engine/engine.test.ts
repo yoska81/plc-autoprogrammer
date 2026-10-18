@@ -564,9 +564,20 @@ const multiNet = (wires: { wire: string; from: string; to: string }[]) => {
   }
   return [...nets].filter(([, ws]) => ws.size > 1).map(([pin, ws]) => `${pin} = ${[...ws].join(' / ')}`);
 };
+// the wire list and the cable schedule agree: a field wire leaving a strip terminal rides a cable core of the same
+// number from that terminal (SOL1's 0V from TB3-2 was routed on the sensors' 0V core from TB2-9)
+const offCable = (m: ReturnType<typeof buildModel>) => {
+  const strip = /^TB[A-Z0-9]*-\d+$/;
+  const cores = m.machine.cables.flatMap((c) => c.cores).filter((k) => strip.test(k.from) && k.wire !== 'PE');
+  const at = new Set(cores.map((k) => `${k.wire}@${k.from}`));
+  const field = (e: string) => /^JB\d/.test(e);
+  return m.wires.filter((w) => w.wire !== 'PE').flatMap((w) => [[w.from, w.to], [w.to, w.from]].filter(([t, o]) => strip.test(t) && field(o) && !at.has(`${w.wire}@${t}`)).map(([t, o]) => `${w.wire} ${t} → ${o}`));
+};
 for (const s of SCENARIOS) {
   const { ctx } = run(s);
-  assert.deepEqual(multiNet(buildModel(ctx).wires), [], `${s.name}: a device pin carries two wire numbers`);
+  const m = buildModel(ctx);
+  assert.deepEqual(multiNet(m.wires), [], `${s.name}: a device pin carries two wire numbers`);
+  assert.deepEqual(offCable(m), [], `${s.name}: wire-list field wires with no cable core at their terminal`);
 }
 {
   // the over-temperature limit breaks the heater contactor's coil: 24+S in on one side of its relay, the coil out on the other

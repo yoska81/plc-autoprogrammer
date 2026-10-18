@@ -288,6 +288,25 @@ def check(vdir: Path):
     for pin, ws in sorted(pins.items()):
         if len(ws) > 1:
             report('FAIL', v, f'pin {pin} carries wire numbers {", ".join(sorted(ws))} — one pin is one net')
+
+    # ---- Wire list vs cable schedule: every field wire leaving a strip terminal rides a cable core with the same
+    # number at that terminal, and every core landing on a strip terminal is a wire-list wire there (a 0V the wire
+    # list returns via TB3-2 while the cable routes it on another core to other JB terminals is a wiring error).
+    cs = read_csv(z / 'electrical' / 'cable_schedule.csv')
+    strip = re.compile(r'TB[A-Z0-9]*-\d+')
+    tag = lambda e: re.split(r'[:\s]', e.strip(), maxsplit=1)[0]  # noqa: E731
+    cores = [c for c in cs if c['Wire'] and c['Wire'] != 'PE' and strip.fullmatch(c['Core From'].strip())]
+    field = {tag(c['Core To']) for c in cs if c['Core To']} | {tag(c['To']) for c in cs if c['To']}
+    at = {(c['Wire'], c['Core From'].strip()) for c in cores}
+    for c in cores:
+        if not any(r['Wire'] == c['Wire'] and c['Core From'].strip() in (r['From'], r['To']) for r in wl):
+            report('FAIL', v, f'cable {c["Cable"]} core {c["Core"]} carries {c["Wire"]} at {c["Core From"]}, but the wire list has no {c["Wire"]} on {c["Core From"]}')
+    for r in wl:
+        if not r['Wire'] or r['Wire'] == 'PE':
+            continue
+        for t, o in ((r['From'], r['To']), (r['To'], r['From'])):
+            if strip.fullmatch(t) and not strip.fullmatch(o) and tag(o) in field and (r['Wire'], t) not in at:
+                report('FAIL', v, f'wire {r["Wire"]} {t} → {o} (wire list) rides no cable core at {t}')
     # ---- Relay logic (ladder sheets): one device terminal = one net = one wire number; every coil is rated for the
     # voltage of its rung's rail (a 120 VAC contactor on the 24 VDC ladder never pulls in)
     rel = data.get('relay')
