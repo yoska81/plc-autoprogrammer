@@ -48,8 +48,13 @@ export async function readUpload(files: File[], onFile?: (i: number, name: strin
     if (ext === 'dwg') out.push({ type: 'text', text: await dwgText(f) }); else if (ext === 'dxf') out.push({ type: 'text', text: await dxfText(f) });
     else out.push(await fileToBlock(f));
   }
+  // Drawing text past this is more than one reading can take in (about 150 k tokens): say so instead of failing at the AI.
+  const chars = out.reduce((n, b) => n + (b.type === 'text' ? b.text.length : 0), 0);
+  if (chars > MAX_DRAWING_TEXT) throw new Error(`The CAD drawings hold ${Math.round(chars / 1000)} k characters of text, more than one reading can take (${MAX_DRAWING_TEXT / 1000} k). Read them in parts (fewer DXF/DWG files at a time), or upload the drawings as PDF.`);
   return out;
 }
+
+export const MAX_DRAWING_TEXT = 600_000;
 
 const str = { type: 'string' } as const;
 const num = { type: ['number', 'null'] } as const;

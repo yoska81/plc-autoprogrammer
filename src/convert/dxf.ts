@@ -198,17 +198,24 @@ export function cadToText(entities: CadEntity[], name = 'drawing'): string {
   const rowH = frames.length ? (frames[0].y2 - frames[0].y1) / 120 : 2.5;
   if (frames.length < 2) return `${name} (CAD drawing, ${texts.length} text items, top to bottom; [layer]):\n${textRows(texts, rowH).join('\n')}`;
   const used = new Set<DxfText>();
-  const sheets = frames.map((f, i) => {
+  const perSheet = frames.map((f, i) => {
     const mine = texts.filter((t) => !used.has(t) && inside(f, t.x, t.y));
     mine.forEach((t) => used.add(t));
     const title = sheetTitle(mine);
     // the sheet's own number (sheets 2, 3, 5, 6 of an 8-sheet set), else its place in the file
     const no = sheetNumber(mine);
     const label = no ? `Sheet ${no.n}${no.of ? ` of ${no.of}` : ''}${no.of !== frames.length ? ` (frame ${i + 1} of ${frames.length} in this file)` : ''}` : `Sheet ${i + 1} of ${frames.length}`;
-    return `--- ${label}${title ? `: ${title}` : ''} ---\n${textRows(mine, rowH).join('\n')}`;
+    return { head: `--- ${label}${title ? `: ${title}` : ''} ---`, rows: textRows(mine, rowH) };
   });
+  // Rows repeated word for word on 3+ sheets (the title block's company, drawn-by, project…) are given once,
+  // on the first sheet: a big set otherwise repeats them on every sheet (the sheet numbers and titles differ, so they stay).
+  const onSheets = new Map<string, number>();
+  for (const sh of perSheet) for (const r of new Set(sh.rows)) onSheets.set(r, (onSheets.get(r) ?? 0) + 1);
+  const repeated = new Set([...onSheets].filter(([, n]) => n >= 3).map(([r]) => r));
+  const seen = new Set<string>();
+  const sheets = perSheet.map((sh) => [sh.head, ...sh.rows.filter((r) => !repeated.has(r) || (!seen.has(r) && seen.add(r)))].join('\n'));
   const rest = texts.filter((t) => !used.has(t));
-  return `${name} (CAD drawing, ${frames.length} sheets side by side, split by their border frames; ${texts.length} text items; [layer]):\n${sheets.join('\n')}${rest.length ? `\n--- Outside the sheet frames ---\n${textRows(rest, rowH).join('\n')}` : ''}`;
+  return `${name} (CAD drawing, ${frames.length} sheets side by side, split by their border frames; ${texts.length} text items; [layer]${repeated.size ? `; ${repeated.size} rows repeated on every sheet (title block) are given on the first sheet only` : ''}):\n${sheets.join('\n')}${rest.length ? `\n--- Outside the sheet frames ---\n${textRows(rest, rowH).join('\n')}` : ''}`;
 }
 
 /** A DXF file as text for the AI (see cadToText). */
