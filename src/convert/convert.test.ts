@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { cadToText, cleanDxfText, dwgToEntities, dxfToText, hasDwgReader, parseDxfEntities, parseDxfTexts, setDwgReader, sheetFrames, sheetNumber, type CadEntity } from './dxf';
 import { ROLL_FORMER } from './__fixtures__/rollFormer';
 import { foreignRatings } from './foreignParts';
-import { convertMachine, kwToHp, mm2ToAwg, naTags, NA_TARGET, retag, safetyOutputCount, safetyOutputsNeeded, sizeSafetyRelay, targetSupply } from './convert';
+import { convertMachine, crossMatch, isSafetyRated, kwToHp, mm2ToAwg, naTags, NA_TARGET, retag, safetyOutputCount, safetyOutputsNeeded, sizeSafetyRelay, targetSupply } from './convert';
 import type { CatalogPart } from '../electrical/types';
 import { ALL_PARTS } from '../electrical/catalogs';
 import { RELAY_CONVEYOR } from './__fixtures__/relayConveyor';
@@ -720,6 +720,40 @@ await test('cn-rollformer-01: the cut watchdog KT1 keeps its 2 s (on the shear-d
   assert.ok(!io.some((p) => p.deviceType === 'estop-contact' || /guard/i.test(p.description)));
   assert.equal(io.filter((p) => p.deviceType === 'safety-relay-output').length, 1);
   assert.ok(io.some((p) => /^Reset/.test(p.description)), 'the reset button stays (it also resets the servo alarm)');
+});
+
+await test('safety-rated parts: a safety function never gets an unverified part (STO drives, safety relays, safety switches)', () => {
+  const r = { amps: null, poles: null, coilVoltage: null, kA: null, curve: null, minAmps: null, maxAmps: null, kw: 500, outputVolts: null, outputAmps: null };
+  const drive = { tag: 'VF9', partNumber: 'ABC-500', manufacturer: 'Acme', description: 'Frequency inverter 500 kW', category: 'vfd' as const, ratings: r, confidence: 'high' as const, source: 'test' };
+  const base = ALL_PARTS.find((p) => p.category === 'vfd' && p.verified === true && p.ratings.hp480 !== undefined)!;
+  // the only drive big enough: unverified, with Safe Torque Off in its data (safety-rated)
+  const big = { ...base, id: 'big-test', partNumber: 'BIG-700', description: 'AC drive 700 HP, STO (Safe Torque Off) SIL 3', verified: false, verify: 'hp from the brochure', ratings: { ...base.ratings, hp480: 700, hp460: 700, SIL: 'SIL 3' } };
+  ALL_PARTS.push(big);
+  try {
+    assert.ok(isSafetyRated(big));
+    // the drive stops through its STO: part of the safety function, so not auto-matched
+    const sto = crossMatch(drive, 'VFD9', NA_TARGET, undefined, undefined, true);
+    assert.equal(sto.status, 'to-select');
+    assert.equal(sto.alternatives[0].partNumber, 'BIG-700');
+    assert.match(sto.reason, /not verified, and a safety function needs a verified part/);
+    // a safety-rated replacement is held to the same rule even where the drive isn't (yet) in the safety function
+    assert.equal(crossMatch(drive, 'VFD9', NA_TARGET).status, 'to-select');
+    // an unverified part without any safety rating, for a plain function: matched as before (with the note)
+    big.description = 'AC drive 700 HP';
+    delete (big.ratings as Record<string, unknown>).SIL;
+    const plain = crossMatch(drive, 'VFD9', NA_TARGET);
+    assert.equal(plain.status, 'matched');
+    assert.ok(plain.differences.some((d) => /ratings not fully verified/.test(d)));
+  } finally {
+    ALL_PARTS.splice(ALL_PARTS.indexOf(big), 1);
+  }
+  // safety-rated by category, by PL / SIL, or by its function words
+  const p0 = ALL_PARTS[0];
+  assert.ok(isSafetyRated({ ...p0, category: 'estop' }));
+  assert.ok(isSafetyRated({ ...p0, category: 'sensor', description: 'Type 4 safety light curtain, 14 mm resolution' }));
+  assert.ok(isSafetyRated({ ...p0, category: 'other', description: 'Safety interlock switch with guard locking' }));
+  assert.ok(isSafetyRated({ ...p0, category: 'relay', description: 'Relay', ratings: { PL: 'PL e' } }));
+  assert.ok(!isSafetyRated({ ...p0, category: 'relay', description: 'Control relay 2 C/O', ratings: { coilVoltage: '24VDC' } }));
 });
 
 await test('safety relay sizing: one unit with enough outputs first, else a base + an expansion its maker lists (forUse)', () => {
