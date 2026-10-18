@@ -163,7 +163,10 @@ const PAIR_OR_BARE = new RegExp(`([A-Za-z_][\\w.]*) \\((${ADDR})\\)|\\b(${ADDR})
  */
 export function inPlcNames(text: string, nameOf: (address: string) => { name: string; io?: string }): string {
   return text.replace(PAIR_OR_BARE, (all, word: string | undefined, pairAddr: string | undefined, bare: string | undefined) => {
-    const n = nameOf((pairAddr ?? bare)!);
+    const a = (pairAddr ?? bare)!;
+    const raw = nameOf(a);
+    // A counter / timer by itself (CT3, T2) is the instruction, not its done bit: "Pallet_Count", not "Pallet_Count.DN".
+    const n = /^(CT|T)\d+$/i.test(a) ? { ...raw, name: raw.name.replace(/\.(DN|Q|QU|QD|CU|CD|EN|TT)$/i, '') } : raw;
     if (bare) return n.name || n.io || bare;
     if (n.io && n.name && !n.name.endsWith(word!)) return `${word} (${n.io})`;
     if (n.io && /^%/.test(n.io)) return `${word} (${n.io})`;

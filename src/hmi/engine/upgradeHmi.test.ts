@@ -127,6 +127,11 @@ assert.equal(inPlcNames('Add HMI_Start (C1001) in parallel with Start_PB (X102);
 const tia = (a: string) => ({ C1001: { name: '"Machine_DB".HMI_Start' }, X001: { name: '"Machine_DB".Start_PB', io: '%I0.0' } } as Record<string, { name: string; io?: string }>)[a] ?? { name: '' };
 assert.equal(inPlcNames('Add HMI_Start (C1001) in parallel with Start_PB (X001), Y9 (Y009).', tia), 'Add "Machine_DB".HMI_Start in parallel with Start_PB (%I0.0), Y9 (Y009).');
 
+// A counter is named as the counter, not its done bit (Logix .DN, TIA .Q); its value word keeps its member.
+const counters = (a: string) => ({ CT3: { name: 'Pallet_Count.DN' }, CTD3: { name: 'Pallet_Count.ACC' }, CT1: { name: '"Machine_DB".C_Batch.Q' } } as Record<string, { name: string; io?: string }>)[a] ?? { name: '' };
+assert.equal(inPlcNames('Momentary: resets the part counter CT3; preset of Pallet_Count (CT3); value CTD3; TIA CT1.', counters),
+  'Momentary: resets the part counter Pallet_Count; preset of Pallet_Count; value Pallet_Count.ACC; TIA "Machine_DB".C_Batch.');
+
 // An "… OK" input whose note names an over-temperature: ON is healthy, so the alarm is OFF and says "tripped".
 const ok = defaultHmiContent({
   io: [{ id: 'e', description: 'Emergency stop OK (safety relay)', type: 'input', category: 'Safety' }, { id: 'a', description: 'Heater safety thermostat TSH102 OK (opens on over-temperature)', type: 'input', category: 'Analog/Process' }],
