@@ -21,7 +21,7 @@ export const SYMPTOM_LABEL: Record<Symptom, string> = {
 /** The symptoms that fit a point. */
 export const symptomsFor = (p: WiringPath): Symptom[] => (p.analog ? ['analog-wrong'] : p.type === 'output' ? ['output-dead'] : ['never-on', 'always-on', 'flickers']);
 
-export type StepPart = 'prepare' | 'signal' | 'supply' | 'return' | 'common' | 'wiggle' | 'isolate' | 'analog';
+export type StepPart = 'prepare' | 'signal' | 'supply' | 'return' | 'common' | 'wiggle' | 'isolate' | 'analog' | 'coil';
 
 export interface Step {
   id: string;
@@ -37,9 +37,11 @@ export interface Step {
   /** First step of a chain: what a good reading here means (a verdict, or the next chain to check). */
   okVerdict?: Verdict;
   okNext?: Step[];
-  /** Analog flow: the verdict for yes / no, or the steps that follow. */
+  /** Analog flow and coil checks: the verdict for yes / no, or the steps that follow. */
   onYes?: Verdict | Step[];
   onNo?: Verdict | Step[];
+  /** The chain this reading belongs to (a relay coil's feed or return), when it is not one of the path's own. */
+  chain?: PathHop[];
 }
 
 export interface Verdict {
@@ -105,16 +107,30 @@ export function chains(p: WiringPath) {
   };
 }
 
-function chainSteps(hops: PathHop[], part: 'supply' | 'return' | 'common', ok: Verdict | Step[]): Step[] {
-  const what = { supply: 'the supply', return: 'the 0 V return', common: 'the module common' }[part];
+function chainSteps(hops: PathHop[], part: 'supply' | 'return' | 'common', ok: Verdict | Step[], own?: { tag: string }): Step[] {
+  const what = own ? { supply: `the coil supply of ${own.tag}`, return: `the coil 0 V of ${own.tag}`, common: '' }[part] : { supply: 'the supply', return: 'the 0 V return', common: 'the module common' }[part];
   const out: Step[] = [];
   for (const h of hops) {
     if (!measurable(h)) continue;
-    out.push({ id: `${part}${out.length}`, part, hop: h, say: `Check ${what} at ${where(h)}. ${readingText(h)}`, yes: yesOf(h), no: 'No' });
+    out.push({ id: `${own ? `coil-${own.tag}-` : ''}${part}${out.length}`, part, hop: h, say: `Check ${what} at ${where(h)}. ${readingText(h)}`, yes: yesOf(h), no: 'No', ...(own ? { chain: hops } : {}) });
     if (h.kind === 'source') break;
   }
   if (out[0]) { if (Array.isArray(ok)) out[0].okNext = ok; else out[0].okVerdict = ok; }
   return out;
+}
+
+/**
+ * A relay before it (or its contact) is blamed: 24 V across its coil / supply A1–A2? Good → `ok`; missing →
+ * the feed to A1, then the return from A2, place by place.
+ */
+function coilSteps(p: WiringPath, tag: string, ok: Verdict): Step[] | null {
+  const k = p.coils?.[tag];
+  if (!k) return null;
+  const fine: Verdict = { text: `${tag} has 24 V on A1 and 0 V on A2 but not across its coil.`, fix: `${LOCKOUT}Check the coil terminals A1 / A2 of ${tag} and their screws; if they are tight, replace ${tag}.`, hops: [k.across] };
+  return [{
+    id: `coil-${tag}`, part: 'coil', hop: k.across, say: `Check the supply of ${tag} across its coil. ${readingText(k.across)}`, yes: yesOf(k.across), no: 'No',
+    onYes: ok, onNo: chainSteps(k.feed, 'supply', chainSteps(k.ret, 'return', fine, { tag }), { tag }),
+  }];
 }
 
 function analogSteps(p: WiringPath): Step[] {
@@ -204,6 +220,15 @@ function between(a: PathHop | undefined, b: PathHop | undefined): Verdict {
   };
 }
 
+/** The device whose contact is the only conductor between two readings (a relay to check before blaming). */
+function contactOf(list: PathHop[], x: PathHop | undefined, y: PathHop | undefined): string | undefined {
+  if (!x || !y) return undefined;
+  const [i, j] = [list.indexOf(x), list.indexOf(y)].sort((m, n) => m - n);
+  if (i < 0) return undefined;
+  const links = list.slice(i + 1, j + 1).map((h) => h.link).filter(Boolean);
+  return links.length === 1 && links[0]!.kind === 'contact' ? links[0]!.tag : undefined;
+}
+
 /**
  * The fault between a bad and a good reading of one chain (`list` in its own order): the conductors that join
  * them (each hop knows the one that reaches it). One wire, a jumper, a contact that does not close or a fuse.
@@ -268,7 +293,7 @@ export function answer(s: Session, a: Answer): Session {
     return next();
   }
 
-  if (step.part === 'analog') return a === 'skip' ? next() : then(a === 'yes' ? step.onYes : step.onNo);
+  if (step.part === 'analog' || step.part === 'coil') return a === 'skip' ? next() : then(a === 'yes' ? step.onYes : step.onNo);
 
   if (step.part === 'wiggle') {
     if (a === 'yes') return done({ text: `Loose connection at ${step.hop!.label} on wire ${step.hop!.wire ?? ''}.`, fix: `${LOCKOUT}Tighten the terminal screw, re-strip and re-terminate the wire (or replace the connector / cable), then wiggle again.`, hops: [step.hop!], wire: step.hop!.wire });
@@ -290,10 +315,13 @@ export function answer(s: Session, a: Answer): Session {
     if (a === 'yes') {
       if (step.okNext?.length) return next(step.okNext);
       if (step.okVerdict) return done(step.okVerdict);
-      const before = s.steps.slice(0, s.at).filter((x, i) => x.part === step.part && x.hop && s.answers[i] === 'no').pop()?.hop;
-      const what = { supply: 'supply', return: '0 V return', common: 'module common' }[step.part];
-      const list = step.part === 'supply' ? ch.feed : step.part === 'return' ? ch.ret : ch.common;
+      const before = s.steps.slice(0, s.at).filter((x, i) => x.part === step.part && x.chain === step.chain && x.hop && s.answers[i] === 'no').pop()?.hop;
+      const what = step.chain ? { supply: 'coil supply', return: 'coil 0 V', common: '' }[step.part] : { supply: 'supply', return: '0 V return', common: 'module common' }[step.part];
+      const list = step.chain ?? (step.part === 'supply' ? ch.feed : step.part === 'return' ? ch.ret : ch.common);
       const v = faultBetween(list, before, h);
+      // A relay contact that does not close: the relay's own supply first.
+      const relay = contactOf(list, before, h);
+      if (relay) { const cs = coilSteps(p, relay, v); if (cs) return next(cs); }
       return done(h.link || before?.link ? { ...v, text: `The ${what} is good at ${h.label} but missing at ${before?.label ?? dev}. ${v.text}` } : { ...between(h, before), text: `The ${what} is good at ${h.label} but missing at ${before?.label ?? dev}: open connection on wire ${before?.wire ?? h.wire ?? ''} between them.` });
     }
     if (a === 'no' && h.kind === 'source') return done({ text: `No output from ${h.tag}.`, fix: `${h.tag}: check its DC OK lamp first. ${LOCKOUT}Then look for a short on its output (disconnect the loads one by one) and check its primary breaker / fuse. Mains checks only by a qualified person.`, hops: [h] });
@@ -323,16 +351,24 @@ export function answer(s: Session, a: Answer): Session {
   if (p.type === 'input') {
     // Inputs: the signal comes from the device; the first good reading out from the PLC is just past the break.
     if (a === 'yes') {
-      if (h.kind !== 'plc') return done(faultBetween(p.signal, prevHop(), h));
+      if (h.kind !== 'plc') {
+        const v = faultBetween(p.signal, prevHop(), h);
+        const relay = contactOf(p.signal, prevHop(), h);
+        const cs = relay ? coilSteps(p, relay, v) : null;
+        return cs ? next(cs) : done(v);
+      }
       const ok: Verdict = { text: `The PLC terminal ${p.address} reads ${onV} (ON) and its common is connected: the field wiring is good.`, fix: `If ${p.address} still shows OFF: check the input LED, a force on the address, the input settings or the module.`, hops: [h] };
       const com = chainSteps(ch.common, 'common', ok);
       return com.length ? next(com) : done(ok);
     }
     if (a === 'no' && h.kind === 'device') {
-      const ok: Verdict = { text: `${dev} has 24 V and 0 V but gives no signal.`, fix: `${dev} is not switching: check its LED, alignment / target, setting; ${lockout}replace it if it still does not switch.`, hops: [h] };
+      const plain: Verdict = { text: `${dev} has 24 V and 0 V but gives no signal.`, fix: `${dev} is not switching: check its LED, alignment / target, setting; ${lockout}replace it if it still does not switch.`, hops: [h] };
+      // A relay (safety relay, interlock relay) is read across its coil / supply before it is blamed.
+      const relayOk: Verdict = { text: `${dev} has its supply and its contact is fed, but it gives no signal.`, fix: `${dev} is OFF: find out why (safety circuit open, not reset, input missing). If it shows ON, its contact is faulty: ${lockout}replace it.`, hops: [h] };
+      const ok: Verdict | Step[] = coilSteps(p, dev, relayOk) ?? plain;
       const ret = chainSteps(ch.ret, 'return', ok);
       const sup = chainSteps(ch.feed, 'supply', ret.length ? ret : ok);
-      return sup.length ? next(sup) : ret.length ? next(ret) : done(ok);
+      return sup.length ? next(sup) : ret.length ? next(ret) : then(ok);
     }
     return next();
   }
@@ -346,7 +382,10 @@ export function answer(s: Session, a: Answer): Session {
     const prev = prevHop();
     // Good at a series contact's input, bad after it: the contact is open (both sides are read first).
     if (prev?.kind === 'contact' && !h.link && !prev.link) return done({ text: `${prev.tag} blocks the signal: ${prev.note ?? 'its contact is open'}`, fix: `Find out why ${prev.tag} is OFF (safety relay not reset, two-hand released, overload tripped…). If it is ON, its contact is faulty.`, hops: [prev, h] });
-    return done(faultBetween(p.signal, prev, h));
+    const v = faultBetween(p.signal, prev, h);
+    const relay = contactOf(p.signal, prev, h);
+    const cs = relay ? coilSteps(p, relay, v) : null;
+    return cs ? next(cs) : done(v);
   }
   if (a === 'yes' && h.kind === 'device') {
     // The output reaches the load: its other side (the feed of a sinking output's load, the 0 V of a sourcing one) or the load itself.

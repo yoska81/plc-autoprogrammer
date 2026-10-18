@@ -22,8 +22,9 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
-  // The example itself: nothing to clean.
-  await page.waitForTimeout(500);
+  // The example itself: nothing to clean (the page has loaded once its title is there).
+  await page.locator('main h1, main h2').first().waitFor({ timeout: 15000 });
+  await page.waitForTimeout(300);
   check(await page.getByTestId('start-clean').count() === 0, 'no banner on the example itself');
 
   // A copy of the example, then the user's own description and program notes copied along.
@@ -39,13 +40,14 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
 
   // The leftover warnings (Electrical motors, Program notes).
   await page.goto(BASE + '/electrical?tab=design');
-  await page.waitForTimeout(1000);
+  // Wait for the state, not a fixed time (flaky under load).
+  await page.getByTestId('leftover-motor').first().waitFor({ timeout: 15000 }).catch(() => {});
   check(await page.getByTestId('leftover-motor').count() > 0, 'Electrical: leftover motor warning');
   await page.goto(BASE + '/program');
   await page.waitForTimeout(800);
   const describe = page.getByRole('button', { name: 'Build', exact: true });
   if (await describe.count()) await describe.first().click();
-  await page.waitForTimeout(300);
+  await page.getByTestId('leftover-notes').first().waitFor({ timeout: 15000 }).catch(() => {});
   check(await page.getByTestId('leftover-notes').count() > 0, 'Program: leftover notes warning');
 
   // The Sealing Head case: the user rewrote the overview; the other sections are still the example's.
@@ -57,8 +59,8 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
 
   // The banner on the description page.
   await page.goto(BASE + '/spec');
-  await page.waitForTimeout(600);
   const banner = page.getByTestId('start-clean');
+  await banner.waitFor({ timeout: 15000 });
   const text = (await banner.innerText()).replace(/\s+/g, ' ');
   log('Banner:', text.slice(0, 260));
   for (const part of ['description sections still the example', 'sequence of operation', "the example's I/O list (9 conveyor points)", 'document control', 'Example Foods Inc.', '24-117', 'drawing prefix CNV', 'revision history', 'equipment suggestion', 'electrical design', 'HMI screens', 'PLC program']) check(text.includes(part), `banner names ${part}`);
@@ -69,7 +71,7 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   }));
   // Reload: the banner is still there while the leftovers remain.
   await page.reload();
-  await page.waitForTimeout(800);
+  await page.getByTestId('start-clean').waitFor({ timeout: 15000 }).catch(() => {});
   check(await page.getByTestId('start-clean').count() === 1, 'banner still shown after a reload');
   await banner.getByRole('button', { name: 'Start clean from my description' }).click();
   check(await banner.getByLabel('Make it again from the description').isChecked(), "the example's I/O is made again by default");

@@ -15,7 +15,8 @@ import LoadIntoPlc from '../plc/ui/LoadIntoPlc';
 import { clickModbus, isWritable, modbus984 } from './clickModbus';
 import { rungPowerFromValues } from './power';
 import { connectPlc, disconnectPlc, modbusBridge, refsFor, useOnlineStore, writePlc } from './useOnline';
-import { programCheck, testConnection, type CheckLine } from './programCheck';
+import { firstScanRanges, programCheck, testConnection, type CheckLine } from './programCheck';
+import { wordValueError } from './poll';
 import { useCheckoutStore, type CheckoutEntry } from './useCheckoutStore';
 import { buildCheckoutPdf, checkoutRows, checkoutSummary } from './checkoutPdf';
 import { useProjectsStore } from '../store/useProjectsStore';
@@ -90,9 +91,24 @@ export default function OnlinePage() {
     return bl.length > 1 ? bl.map((b) => ({ id: b.id, name: b.name, description: b.description, rungIds: b.rungIds })) : undefined;
   }, [ladder]);
 
+  // Ranges the project declares for its registers: HMI entries' min / max and the program's first-scan limits.
+  const declared = useMemo(() => {
+    const m = new Map<string, { min: number | null; max: number | null }>();
+    const put = (a: string, min: number | null, max: number | null) => {
+      const k = a.toUpperCase(), cur = m.get(k) ?? { min: null, max: null };
+      m.set(k, { min: min === null ? cur.min : cur.min === null ? min : Math.max(cur.min, min), max: max === null ? cur.max : cur.max === null ? max : Math.min(cur.max, max) });
+    };
+    for (const sc of hmi?.screens ?? []) for (const e of sc.elements) if (e.address && (e.min !== null || e.max !== null)) put(e.address, e.min, e.max);
+    for (const f of firstScanRanges(ladder)) put(f.address, f.min, f.max);
+    return m;
+  }, [hmi, ladder]);
   const write = async (address: string, v: boolean | number) => {
+    // A value the register cannot hold, or outside its declared range, is refused before anything is asked or sent.
+    const r = clickModbus(address);
+    const bad = typeof v === 'number' && r && r.table !== 'coil' ? wordValueError(address.toUpperCase(), v, r.type, declared.get(address.toUpperCase())) : null;
+    if (bad) { setMsg({ text: bad, error: true }); return; }
     if (!confirm(`Write ${typeof v === 'boolean' ? (v ? 'ON' : 'OFF') : v} to ${address}${names.get(address) ? ` (${names.get(address)})` : ''} in the running PLC?\n\nThe machine may move. Make sure the area is clear.`)) return;
-    try { await writePlc(address, v); setMsg({ text: `${address} written.` }); } catch (e) { setMsg({ text: e instanceof Error ? e.message : String(e), error: true }); }
+    try { await writePlc(address, v, modbusBridge(), declared.get(address.toUpperCase())); setMsg({ text: `${address} written.` }); } catch (e) { setMsg({ text: e instanceof Error ? e.message : String(e), error: true }); }
   };
   const allowWrites = (on: boolean) => {
     if (on && !confirm('Allow writes to the PLC?\n\nWrites change values in a running machine (C bits and DS registers only; X inputs and Y outputs are never written). Only do this when you are at the machine and it is safe.')) return;
