@@ -57,6 +57,20 @@ export const PLATFORMS: Platform[] = [
     notes: 'Every 5069 I/O module needs a 5069-RTB18-SCREW terminal block; the controller and the 5069-FPD field potential distributor need 5069-RTB64-SCREW.',
   },
   {
+    id: 'ab-compactlogix-5370', vendor: 'allen-bradley', name: 'Allen-Bradley CompactLogix 5370 (1769 L2 / L3)',
+    cpus: ['1769-L30ER', '1769-L30ERM', '1769-L30ER-NSE', '1769-L33ER', '1769-L33ERM', '1769-L36ERM', '1769-L24ER-QB1B', '1769-L24ER-QBFC1B', '1769-L27ERM-QBFC1B'],
+    modules: ['1769-IQ16', '1769-IQ16F', '1769-IQ32', '1769-OB16', '1769-OB16P', '1769-OB32', '1769-OW8', '1769-OW16', '1769-IF4', '1769-IF8', '1769-OF2', '1769-OF4', '1769-IR6', '1769-IT6', '1769-HSC'],
+    protocols: ['EtherNet/IP'],
+    notes: 'L3 controllers need a 1769-PA2 / PB2 / PA4 / PB4 power supply (up to 3 I/O banks); L2 controllers power up to 4 modules from their built-in 24 VDC supply. Every bank ends with a 1769-ECR (or ECL) end cap. Rockwell lists most of the family as Active Mature.',
+  },
+  {
+    id: 'ab-compactlogix-5370-l1', vendor: 'allen-bradley', name: 'Allen-Bradley CompactLogix 5370 L1',
+    cpus: ['1769-L16ER-BB1B', '1769-L18ER-BB1B', '1769-L18ERM-BB1B'],
+    modules: [],
+    protocols: ['EtherNet/IP'],
+    notes: 'Embedded 16 DC inputs / 16 DC outputs; expansion is 1734 POINT I/O (up to 6 on the L16, 8 on the L18), not 1769 Compact I/O, and POINT I/O is not in the catalog yet.',
+  },
+  {
     id: 'siemens-s7-1200', vendor: 'siemens', name: 'Siemens S7-1200',
     cpus: ['6ES7212-1AE40-0XB0', '6ES7214-1AG40-0XB0', '6ES7215-1AG40-0XB0'],
     modules: ['6ES7221-1BH32-0XB0', '6ES7222-1BH32-0XB0', '6ES7223-1BL32-0XB0', '6ES7231-4HD32-0XB0', '6ES7232-4HB32-0XB0'],

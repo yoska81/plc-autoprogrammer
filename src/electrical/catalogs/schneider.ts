@@ -946,7 +946,7 @@ export const SCHNEIDER: CatalogPart[] = [
     mount: 'backplate',
     widthMm: 22.5,
     heightMm: 100,
-    ratings: { family: 'Harmony XPSU', channels: 2, coilVoltage: '24VAC/DC', safetyOutputs: '3 NO relay', auxOutputs: 'solid-state pulsed diagnostic output 24VDC 20mA (not safety-related)', restart: 'automatic / manual / monitored (selectable)', application: 'E-stop (2NC), guard switches, 2 PNP sensors, magnetic/RFID switches, light curtains (OSSD); PL e / SIL 3' },
+    ratings: { family: 'Harmony XPSU', channels: 2, coilVoltage: '24VAC/DC', safetyOutputs: '(3) N.O.', auxOutputs: 'solid-state pulsed diagnostic output 24VDC 20mA (not safety-related)', restart: 'automatic / manual / monitored (selectable)', application: 'E-stop (2NC), guard switches, 2 PNP sensors, magnetic/RFID switches, light curtains (OSSD); PL e / SIL 3', safetyOutputCount: 3 },
     verified: true,
   },
   {
