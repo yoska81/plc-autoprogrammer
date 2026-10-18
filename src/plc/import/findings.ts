@@ -94,7 +94,13 @@ export function programFindings(program: LadderProgram, labels: Map<string, stri
         const z = zone(text(s));
         if (!own.size || !z.size || [...z].some((w) => own.has(w))) continue;
         // A sensor of the same kind that belongs where the actuator works, not checked in this rung.
-        const better = allSensors.filter((x) => x !== s && !checked.includes(x) && kindOf(text(x)) === kind && [...zone(text(x))].some((w) => own.has(w)));
+        // Offered only when it matches the actuator or the rung comment (the routine name alone is too broad).
+        // Those the rung comment points to come first: when there are any, only they are offered.
+        const said = new Set([...zone(r.comment)].filter((w) => !explained.has(w)));
+        const strong = new Set([...zone(text(actuator)), ...said]);
+        const matching = allSensors.filter((x) => x !== s && !checked.includes(x) && kindOf(text(x)) === kind && [...zone(text(x))].some((w) => strong.has(w)));
+        const byComment = matching.filter((x) => [...zone(text(x))].some((w) => said.has(w)));
+        const better = byComment.length ? byComment : matching;
         if (!better.length) continue;
         const desc = text(s).replace(name(s), '').trim().replace(/^[—:-]\s*/, '');
         out.push({

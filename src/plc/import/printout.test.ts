@@ -106,4 +106,10 @@ assert.ok(plan.program.tags.some((t) => t.nickname === 'Part_Sensor' && t.addres
   assert.equal(new Set(m.routines.flatMap((r) => r.rungs.map((g) => g.id))).size, 4, 'unique rung ids');
 }
 
+// Siemens addresses as printed without "%", and in German.
+{
+  const { ioOfAddress } = await import('./printout');
+  assert.deepEqual(['I0.0', 'IW96', 'E1.3', 'EW64', 'Q0.1', 'QW80', 'A4.7', 'AW96', '%I0.2', 'X001', 'M10.0', 'MW4'].map(ioOfAddress), ['input', 'input', 'input', 'input', 'output', 'output', 'output', 'output', 'input', 'input', null, null]);
+}
+
 console.log('printout.test: all passed');

@@ -137,7 +137,7 @@ export function clickNicknames(tags: TagDefinition[]): TagDefinition[] {
   const used = new Set<string>();
   return tags.map((t) => {
     let n = clickName(t);
-    for (let i = 2; used.has(n.toLowerCase()); i++) n = `${clickName(t).slice(0, 24 - String(i).length - 1)}_${i}`;
+    for (let i = 2; used.has(n.toLowerCase()); i++) n = `${clickName(t).slice(0, 24 - String(i).length - 1).replace(/_+$/, '')}_${i}`;
     used.add(n.toLowerCase());
     return n === t.nickname ? t : { ...t, nickname: n, comment: [`Original: ${t.nickname}`, t.comment].filter(Boolean).join(' — ') };
   });

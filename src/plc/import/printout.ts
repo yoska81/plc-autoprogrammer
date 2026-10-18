@@ -170,8 +170,9 @@ export function normalizeReading(input: unknown): PrintoutReading {
 /** Physical I/O from an address as printed (CLICK X001 / Y001, PLC-5/SLC I:1/0 / O:2/3, Logix Local:1:I…, IEC %I / %Q, Mitsubishi X0 / Y0). */
 export function ioOfAddress(a: string): 'input' | 'output' | null {
   const s = a.trim();
-  if (/^X\d+$/i.test(s) || /^I:\d/i.test(s) || /:\d+:I\b/i.test(s) || /^%I[XBWD]?\d/i.test(s)) return 'input';
-  if (/^Y\d+$/i.test(s) || /^O:\d/i.test(s) || /:\d+:O\b/i.test(s) || /^%Q[XBWD]?\d/i.test(s)) return 'output';
+  // Siemens also without "%" (I0.0, IW96) and in German (E0.0 / A0.0, EW / AW).
+  if (/^X\d+$/i.test(s) || /^I:\d/i.test(s) || /:\d+:I\b/i.test(s) || /^%I[XBWD]?\d/i.test(s) || /^[IE]\d+\.[0-7]$/i.test(s) || /^[IE][BWD]\d+$/i.test(s)) return 'input';
+  if (/^Y\d+$/i.test(s) || /^O:\d/i.test(s) || /:\d+:O\b/i.test(s) || /^%Q[XBWD]?\d/i.test(s) || /^[QA]\d+\.[0-7]$/i.test(s) || /^[QA][BWD]\d+$/i.test(s)) return 'output';
   return null;
 }
 

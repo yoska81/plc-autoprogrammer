@@ -86,6 +86,8 @@ const capper = importProgramText('capper.L5X', readFileSync(join(here, '__fixtur
   ]);
   assert.deepEqual(a.map((x) => x.nickname), ['Good_bottles', 'Orig_T5', 'Step_0_wait_for_a_bottle']);
   assert.ok(clickNicknames([{ address: 'C9', nickname: 'D7', comment: 'Rejected bottles preset for the batch' }])[0].nickname === 'Rejected_bottles_preset', 'whole words, no trailing _');
+  const dup = clickNicknames([{ address: 'C1', nickname: 'Conveyor_Infeed_Long_Name_A', comment: '' }, { address: 'C2', nickname: 'Conveyor_Infeed_Long_Name_B', comment: '' }]).map((x) => x.nickname);
+  assert.ok(dup.every((x) => !/__/.test(x) && x.length <= 24) && dup[0] !== dup[1], dup.join(' '));
   assert.equal(a[1].comment, 'Original: T5');
   assert.equal(planUpgrade(capper, 'click').program.tags.find((x) => x.nickname === 'Capper.Torque_SP')?.address.startsWith('DF'), true, 'Logix target: original names');
 }
