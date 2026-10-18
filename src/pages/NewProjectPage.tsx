@@ -80,6 +80,8 @@ export default function NewProjectPage() {
   const [supply, setSupply] = useUi<SupplyVoltage>('wizard.supply', '480VAC-3PH', { global: true });
   const [enclosure, setEnclosure] = useUi<EnclosureRating>('wizard.enclosure', 'NEMA 12', { global: true });
   const [standards, setStandards] = useUi<string[]>('wizard.standards', ['NFPA 79', 'UL 508A'], { global: true });
+  // How the project starts: a new machine described here, or an existing machine read from its drawings.
+  const [start, setStart] = useUi<'describe' | 'drawings'>('wizard.start', 'describe', { global: true });
 
   // Until the new project exists the stores still hold the open project: show nothing of it here.
   const filled = created ? SPEC_SECTIONS.filter((s) => sections[s.id]?.trim()) : [];
@@ -98,6 +100,13 @@ export default function NewProjectPage() {
       useProjectStore.getState().setInfo({ region, customer, site, standards, company, projectNumber, drawingPrefix: prefix.trim().toUpperCase(), preparedBy });
       const el = useElectricalStore.getState();
       el.setInputs({ ...el.inputs, supply, enclosureRating: enclosure });
+      if (start === 'drawings') {
+        // The drawings / program write the description, I/O and motors: continue on the Import page.
+        const ui = useUiStore.getState();
+        ui.clearUi('_global', Object.keys(ui.byProject._global ?? {}).filter((k) => k.startsWith('wizard.')));
+        navigate('/import');
+        return;
+      }
     }
     // A selection on the Equipment step that was not applied with "Use this selection": apply it now,
     // so the summary and the electrical design use what the user saw.
@@ -150,6 +159,13 @@ export default function NewProjectPage() {
           <div className="max-w-5xl space-y-6">
             {step === 0 && (
               <>
+                <section className="space-y-2" data-testid="start-option">
+                  <h3 className="text-sm font-semibold text-steel-800">How do you want to start?</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <Choice selected={start === 'describe'} onClick={() => setStart('describe')} title="Describe a new machine" hint="Write (or say) what the machine does; the app designs everything from it." />
+                    <Choice selected={start === 'drawings'} onClick={() => setStart('drawings')} title="From existing drawings / program" hint="Upload an existing machine's electrical drawings (PDF, scans, DXF) or program printouts; the app reads them, you check the readings, it writes the description and converts the design to the standard chosen below." />
+                  </div>
+                </section>
                 <section className="bg-white border border-steel-200 rounded-md p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Field label="Project name *"><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Line 3 case packer" className={input} /></Field>
                   <Field label="Customer"><input value={customer} onChange={(e) => setCustomer(e.target.value)} className={input} /></Field>
@@ -260,7 +276,7 @@ export default function NewProjectPage() {
           {equipmentBlocked && <span className="text-xs text-amber-800">{pendingEquipment.label} does not fit the I/O: change the selection before going on.</span>}
           <button onClick={next} disabled={!canNext}
             className="px-5 py-2 text-sm font-medium bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-40">
-            {step === STEPS.length - 1 ? 'Open project →' : 'Next →'}
+            {step === STEPS.length - 1 ? 'Open project →' : step === 0 && start === 'drawings' ? 'Continue to the import →' : 'Next →'}
           </button>
         </div>
       </footer>

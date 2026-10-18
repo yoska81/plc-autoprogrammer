@@ -1,0 +1,1113 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="33.11" TargetName="PL01_Palletizer" TargetType="Controller" ContainsContext="false" ExportDate="Wed Sep 09 14:22:37 2026" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
+<Controller Use="Target" Name="PL01_Palletizer" ProcessorType="5069-L306ER" MajorRev="33" MinorRev="11" TimeSlice="20" ShareUnusedTimeSlice="1" ProjectCreationDate="Mon Mar 02 09:11:05 2026" LastModifiedDate="Wed Sep 09 14:22:37 2026" SFCExecutionControl="CurrentActive" SFCRestartPosition="MostRecent" SFCLastScan="DontScan" ProjectSN="16#2b7e_1a04" MatchProjectToController="false" CanUseRPIFromProducer="false" InhibitAutomaticFirmwareUpdate="0" PassThroughConfiguration="EnabledWithAppend" DownloadProjectDocumentationAndExtendedProperties="true" DownloadProjectCustomProperties="true" ReportMinorOverflow="false">
+<Description>
+<![CDATA[PL01 layer palletizer - line 3 end of line. CompactLogix 5380 5069-L306ER.]]>
+</Description>
+<RedundancyInfo Enabled="false" KeepTestEditsOnSwitchOver="false" IOMemoryPadPercentage="90" DataTablePadPercentage="50"/>
+<Security Code="0" ChangesToDetect="16#ffff_ffff_ffff_ffff"/>
+<SafetyInfo/>
+<DataTypes/>
+<Modules>
+<Module Name="Local" CatalogNumber="5069-L306ER" Vendor="1" ProductType="14" ProductCode="213" Major="33" Minor="11" ParentModule="Local" ParentModPortId="1" Inhibited="false" MajorFault="true">
+<Description>
+<![CDATA[CompactLogix 5380 controller, 0.6 MB, 16 nodes]]>
+</Description>
+<EKey State="Disabled"/>
+<Ports>
+<Port Id="1" Address="0" Type="Compact" Upstream="false">
+<Bus Size="17"/>
+</Port>
+<Port Id="2" Address="192.168.1.20" Type="Ethernet" Upstream="false">
+<Bus/>
+</Port>
+</Ports>
+</Module>
+<Module Name="DI_Slot1" CatalogNumber="5069-IB16" Vendor="1" ProductType="7" ProductCode="7" Major="1" Minor="11" ParentModule="Local" ParentModPortId="1" Inhibited="false" MajorFault="false">
+<Description>
+<![CDATA[16 pt 24 V DC sinking input]]>
+</Description>
+<EKey State="CompatibleModule"/>
+<Ports>
+<Port Id="1" Address="1" Type="Compact" Upstream="true"/>
+</Ports>
+<Communications>
+<Connections>
+<Connection Name="InputData" RPI="2000" Type="Input" EventID="0" ProgrammaticallySendEventTrigger="false"/>
+</Connections>
+</Communications>
+</Module>
+<Module Name="DO_Slot2" CatalogNumber="5069-OB16" Vendor="1" ProductType="7" ProductCode="8" Major="1" Minor="11" ParentModule="Local" ParentModPortId="1" Inhibited="false" MajorFault="false">
+<Description>
+<![CDATA[16 pt 24 V DC sourcing output]]>
+</Description>
+<EKey State="CompatibleModule"/>
+<Ports>
+<Port Id="1" Address="2" Type="Compact" Upstream="true"/>
+</Ports>
+<Communications>
+<Connections>
+<Connection Name="OutputData" RPI="2000" Type="Output" EventID="0" ProgrammaticallySendEventTrigger="false"/>
+</Connections>
+</Communications>
+</Module>
+<Module Name="AI_Slot3" CatalogNumber="5069-IF8" Vendor="1" ProductType="10" ProductCode="21" Major="1" Minor="11" ParentModule="Local" ParentModPortId="1" Inhibited="false" MajorFault="false">
+<Description>
+<![CDATA[8 ch current/voltage analog input]]>
+</Description>
+<EKey State="CompatibleModule"/>
+<Ports>
+<Port Id="1" Address="3" Type="Compact" Upstream="true"/>
+</Ports>
+<Communications>
+<ConfigTag ConfigSize="0" ExternalAccess="Read/Write">
+<Data Format="Decorated">
+<Structure DataType="AB:5000_AI8:C:0">
+<StructureMember Name="Ch00" DataType="AB:5000_AI_Ch_Config_Struct:C:0">
+<DataValueMember Name="Disable" DataType="BOOL" Value="0"/>
+<DataValueMember Name="RangeType" DataType="SINT" Radix="Decimal" Value="1"/>
+<DataValueMember Name="LowSignal" DataType="REAL" Radix="Float" Value="4.0"/>
+<DataValueMember Name="HighSignal" DataType="REAL" Radix="Float" Value="20.0"/>
+<DataValueMember Name="LowEngineering" DataType="REAL" Radix="Float" Value="0.0"/>
+<DataValueMember Name="HighEngineering" DataType="REAL" Radix="Float" Value="2000.0"/>
+</StructureMember>
+</Structure>
+</Data>
+</ConfigTag>
+<Connections>
+<Connection Name="InputData" RPI="2000" Type="Input" EventID="0" ProgrammaticallySendEventTrigger="false"/>
+</Connections>
+</Communications>
+</Module>
+</Modules>
+<AddOnInstructionDefinitions/>
+<Tags>
+<Tag Name="E_Stop_OK" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt00.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Safety relay K1 healthy (E-stop circuit closed)]]>
+</Description>
+</Tag>
+<Tag Name="Start_PB" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt01.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Start pushbutton PB1 (NO)]]>
+</Description>
+</Tag>
+<Tag Name="Stop_PB" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt02.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Stop pushbutton PB2 (NC, ON = not pressed)]]>
+</Description>
+</Tag>
+<Tag Name="Reset_PB" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt03.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Fault reset pushbutton PB3 (NO)]]>
+</Description>
+</Tag>
+<Tag Name="Auto_Sel" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt04.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Mode selector SS1 in AUTO]]>
+</Description>
+</Tag>
+<Tag Name="Infeed_Case_PE" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt05.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Infeed conveyor case present photo eye PE1 (jam detection)]]>
+</Description>
+</Tag>
+<Tag Name="Infeed_Count_PE" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt06.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Layer table entry case count photo eye PE2]]>
+</Description>
+</Tag>
+<Tag Name="Pusher_Retracted_PX" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt07.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Layer pusher retracted prox PX1]]>
+</Description>
+</Tag>
+<Tag Name="Pusher_Extended_PX" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt08.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Layer pusher extended prox PX2]]>
+</Description>
+</Tag>
+<Tag Name="Elev_Up_LS" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt09.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Pallet elevator at top (load height) limit switch LS1]]>
+</Description>
+</Tag>
+<Tag Name="Elev_Down_LS" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt10.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Pallet elevator at bottom (discharge) limit switch LS2]]>
+</Description>
+</Tag>
+<Tag Name="Pallet_Present_PE" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt11.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Pallet present on elevator photo eye PE3]]>
+</Description>
+</Tag>
+<Tag Name="Guard_Door_Closed" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt12.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Guard door interlock switch GS1 closed]]>
+</Description>
+</Tag>
+<Tag Name="Air_Pressure_OK" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt13.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Main air pressure switch PS1 OK]]>
+</Description>
+</Tag>
+<Tag Name="Infeed_OL_OK" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt14.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Infeed conveyor motor protector Q1 not tripped]]>
+</Description>
+</Tag>
+<Tag Name="Case_Stop_Up_PX" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Pt15.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Case stop blade up (blocking infeed) prox PX3]]>
+</Description>
+</Tag>
+<Tag Name="Infeed_Conv_Run" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt00.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Infeed conveyor motor contactor K10]]>
+</Description>
+</Tag>
+<Tag Name="Layer_Conv_Run" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt01.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Layer forming table conveyor contactor K11]]>
+</Description>
+</Tag>
+<Tag Name="Case_Stop_Sol" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt02.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Case stop blade raise solenoid Y1]]>
+</Description>
+</Tag>
+<Tag Name="Pusher_Extend_Sol" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt03.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Layer pusher extend solenoid Y2 (spring return)]]>
+</Description>
+</Tag>
+<Tag Name="Elev_Up_Mtr" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt04.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Pallet elevator hoist UP contactor K12]]>
+</Description>
+</Tag>
+<Tag Name="Elev_Down_Mtr" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt05.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Pallet elevator hoist DOWN contactor K13]]>
+</Description>
+</Tag>
+<Tag Name="Light_Green" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt06.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Stack light green - running]]>
+</Description>
+</Tag>
+<Tag Name="Light_Amber" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt07.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Stack light amber - stopped / ready]]>
+</Description>
+</Tag>
+<Tag Name="Light_Red" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt08.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Stack light red - fault]]>
+</Description>
+</Tag>
+<Tag Name="Horn" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt09.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Alarm horn H1]]>
+</Description>
+</Tag>
+<Tag Name="Pallet_Conv_Run" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Pt10.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Full pallet discharge conveyor contactor K14]]>
+</Description>
+</Tag>
+<Tag Name="Elev_Position" TagType="Alias" Radix="Decimal" AliasFor="Local:3:I.Ch00.Data" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Elevator height transmitter LT1, 4-20 mA = 0-2000 mm (scaled in module)]]>
+</Description>
+</Tag>
+<Tag Name="Cases_Per_Layer" TagType="Base" DataType="INT" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[HMI recipe: cases per layer]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[6]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="INT" Radix="Decimal" Value="6"/>
+</Data>
+</Tag>
+<Tag Name="Layers_Per_Pallet" TagType="Base" DataType="INT" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[HMI recipe: layers per pallet]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[5]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="INT" Radix="Decimal" Value="5"/>
+</Data>
+</Tag>
+<Tag Name="HMI_Step" TagType="Base" DataType="INT" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[HMI display: sequencer step]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="INT" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="HMI_Case_Count" TagType="Base" DataType="DINT" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[HMI display: cases on layer table]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="DINT" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="HMI_Layer_Count" TagType="Base" DataType="DINT" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[HMI display: layers on pallet]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="DINT" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="HMI_Pallet_Count" TagType="Base" DataType="DINT" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[HMI display: pallets completed]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="DINT" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="HMI_Silence_PB" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[HMI button: silence horn]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="HMI_Reset_Count" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[HMI button: reset pallet counter]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Alm" TagType="Base" DataType="DINT" Dimensions="2" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Alarm word array (one bit per alarm, latched)]]>
+</Description>
+<Comments>
+<Comment Operand="[0].0">
+<![CDATA[Emergency stop pressed]]>
+</Comment>
+<Comment Operand="[0].1">
+<![CDATA[Guard door open]]>
+</Comment>
+<Comment Operand="[0].2">
+<![CDATA[Low air pressure]]>
+</Comment>
+<Comment Operand="[0].3">
+<![CDATA[Infeed conveyor motor overload]]>
+</Comment>
+<Comment Operand="[0].4">
+<![CDATA[Pusher failed to extend]]>
+</Comment>
+<Comment Operand="[0].5">
+<![CDATA[Pusher failed to retract]]>
+</Comment>
+<Comment Operand="[0].6">
+<![CDATA[Elevator overtravel (height > 1950 mm)]]>
+</Comment>
+<Comment Operand="[0].7">
+<![CDATA[Case jam at infeed]]>
+</Comment>
+<Comment Operand="[0].8">
+<![CDATA[Elevator failed to reach top]]>
+</Comment>
+</Comments>
+<Data Format="L5K">
+<![CDATA[[0,0]]]>
+</Data>
+<Data Format="Decorated">
+<Array DataType="DINT" Dimensions="2" Radix="Decimal">
+<Element Index="[0]" Value="0"/>
+<Element Index="[1]" Value="0"/>
+</Array>
+</Data>
+</Tag>
+<Tag Name="Alarm_Active" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Any alarm bit set]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+</Tags>
+<Programs>
+<Program Name="MainProgram" TestEdits="false" MainRoutineName="MainRoutine" Disabled="false" UseAsFolder="false">
+<Description>
+<![CDATA[Palletizer machine program]]>
+</Description>
+<Tags>
+<Tag Name="Safety_OK" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[E-stop, guard and air all healthy]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Machine_Running" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Machine running in automatic]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Fault_Latched" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Fault stop latched until reset]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Horn_Silenced" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Horn silenced by operator]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Seq_Step" TagType="Base" DataType="INT" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Palletizer sequencer step]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="INT" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Reset_ONS" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[One-shot storage for alarm reset]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Silence_ONS" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[One-shot storage for horn silence]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Case_Ctr" TagType="Base" DataType="COUNTER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Cases counted onto the layer table]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,6,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="COUNTER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="6"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="CU" DataType="BOOL" Value="0"/>
+<DataValueMember Name="CD" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="OV" DataType="BOOL" Value="0"/>
+<DataValueMember Name="UN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Layer_Ctr" TagType="Base" DataType="COUNTER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Layers placed on the pallet]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,5,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="COUNTER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="5"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="CU" DataType="BOOL" Value="0"/>
+<DataValueMember Name="CD" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="OV" DataType="BOOL" Value="0"/>
+<DataValueMember Name="UN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Pallet_Count" TagType="Base" DataType="COUNTER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Pallets completed (production total)]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,32767,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="COUNTER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="32767"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="CU" DataType="BOOL" Value="0"/>
+<DataValueMember Name="CD" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="OV" DataType="BOOL" Value="0"/>
+<DataValueMember Name="UN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Infeed_Jam_Tmr" TagType="Base" DataType="TIMER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Case blocking infeed eye = jam]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,5000,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="TIMER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="5000"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="EN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="TT" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Pusher_Ext_Tmr" TagType="Base" DataType="TIMER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Pusher extend watchdog]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,3000,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="TIMER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="3000"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="EN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="TT" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Pusher_Ret_Tmr" TagType="Base" DataType="TIMER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Pusher retract watchdog]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,3000,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="TIMER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="3000"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="EN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="TT" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Layer_Lower_Tmr" TagType="Base" DataType="TIMER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Elevator lowering time for one layer pitch]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,1500,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="TIMER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="1500"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="EN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="TT" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Discharge_Tmr" TagType="Base" DataType="TIMER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Discharge run-on after pallet clears eye]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,3000,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="TIMER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="3000"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="EN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="TT" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Elev_Raise_Tmr" TagType="Base" DataType="TIMER" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Elevator raise watchdog]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,20000,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="TIMER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="20000"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="EN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="TT" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+</Tags>
+<Routines>
+<Routine Name="MainRoutine" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Comment>
+<![CDATA[First scan: sequencer to idle]]>
+</Comment>
+<Text>
+<![CDATA[XIC(S:FS)MOV(0,Seq_Step);]]>
+</Text>
+</Rung>
+<Rung Number="1" Type="N">
+<Text>
+<![CDATA[JSR(Safety_Modes,0);]]>
+</Text>
+</Rung>
+<Rung Number="2" Type="N">
+<Text>
+<![CDATA[JSR(Infeed,0);]]>
+</Text>
+</Rung>
+<Rung Number="3" Type="N">
+<Text>
+<![CDATA[JSR(LayerForm,0);]]>
+</Text>
+</Rung>
+<Rung Number="4" Type="N">
+<Text>
+<![CDATA[JSR(Elevator,0);]]>
+</Text>
+</Rung>
+<Rung Number="5" Type="N">
+<Text>
+<![CDATA[JSR(Alarms,0);]]>
+</Text>
+</Rung>
+<Rung Number="6" Type="N">
+<Text>
+<![CDATA[JSR(HMI,0);]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+<Routine Name="Safety_Modes" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Comment>
+<![CDATA[Safety chain healthy: E-stop relay, guard door and air pressure]]>
+</Comment>
+<Text>
+<![CDATA[XIC(E_Stop_OK)XIC(Guard_Door_Closed)XIC(Air_Pressure_OK)OTE(Safety_OK);]]>
+</Text>
+</Rung>
+<Rung Number="1" Type="N">
+<Comment>
+<![CDATA[Machine run: Start in AUTO with Stop not pressed, safety OK and no latched fault]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Start_PB)XIC(Stop_PB)XIC(Safety_OK)XIC(Auto_Sel)XIO(Fault_Latched)OTE(Machine_Running);]]>
+</Text>
+</Rung>
+<Rung Number="2" Type="N">
+<Comment>
+<![CDATA[Any alarm latches a fault stop]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Alarm_Active)OTL(Fault_Latched);]]>
+</Text>
+</Rung>
+<Rung Number="3" Type="N">
+<Comment>
+<![CDATA[Reset clears the fault stop once no alarm remains]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Reset_PB)XIO(Alarm_Active)OTU(Fault_Latched);]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+<Routine Name="Infeed" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Comment>
+<![CDATA[Infeed conveyor runs while the layer is accumulating (step 10)]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Machine_Running)EQU(Seq_Step,10)XIC(Infeed_OL_OK)OTE(Infeed_Conv_Run);]]>
+</Text>
+</Rung>
+<Rung Number="1" Type="N">
+<Comment>
+<![CDATA[Layer table conveyor runs with the infeed during accumulation]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Machine_Running)EQU(Seq_Step,10)OTE(Layer_Conv_Run);]]>
+</Text>
+</Rung>
+<Rung Number="2" Type="N">
+<Comment>
+<![CDATA[Cases per layer from HMI recipe]]>
+</Comment>
+<Text>
+<![CDATA[MOV(Cases_Per_Layer,Case_Ctr.PRE);]]>
+</Text>
+</Rung>
+<Rung Number="3" Type="N">
+<Comment>
+<![CDATA[Count cases entering the layer table]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Infeed_Count_PE)CTU(Case_Ctr,6,0);]]>
+</Text>
+</Rung>
+<Rung Number="4" Type="N">
+<Comment>
+<![CDATA[Jam: case blocking the infeed eye for 5 s while the conveyor runs]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Infeed_Case_PE)XIC(Infeed_Conv_Run)TON(Infeed_Jam_Tmr,5000,0);]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+<Routine Name="LayerForm" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Comment>
+<![CDATA[Machine stopped: sequencer back to idle]]>
+</Comment>
+<Text>
+<![CDATA[XIO(Machine_Running)MOV(0,Seq_Step);]]>
+</Text>
+</Rung>
+<Rung Number="1" Type="N">
+<Comment>
+<![CDATA[Step 0 -> 10: start conditions - elevator at top, pallet present, pusher retracted]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Machine_Running)EQU(Seq_Step,0)XIC(Elev_Up_LS)XIC(Pallet_Present_PE)XIC(Pusher_Retracted_PX)MOV(10,Seq_Step);]]>
+</Text>
+</Rung>
+<Rung Number="2" Type="N">
+<Comment>
+<![CDATA[Step 10 -> 20: layer complete when case count reached]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,10)XIC(Case_Ctr.DN)MOV(20,Seq_Step);]]>
+</Text>
+</Rung>
+<Rung Number="3" Type="N">
+<Comment>
+<![CDATA[Case stop blade up during push (steps 20 and 30)]]>
+</Comment>
+<Text>
+<![CDATA[[EQU(Seq_Step,20),EQU(Seq_Step,30)]OTE(Case_Stop_Sol);]]>
+</Text>
+</Rung>
+<Rung Number="4" Type="N">
+<Comment>
+<![CDATA[Pusher extend: only with case stop up and a pallet on the elevator]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,20)XIC(Case_Stop_Up_PX)XIC(Infeed_Case_PE)OTE(Pusher_Extend_Sol);]]>
+</Text>
+</Rung>
+<Rung Number="5" Type="N">
+<Comment>
+<![CDATA[Step 20 watchdog]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,20)TON(Pusher_Ext_Tmr,3000,0);]]>
+</Text>
+</Rung>
+<Rung Number="6" Type="N">
+<Comment>
+<![CDATA[Step 20 -> 30: pusher extended, layer is on the pallet]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,20)XIC(Pusher_Extended_PX)MOV(30,Seq_Step);]]>
+</Text>
+</Rung>
+<Rung Number="7" Type="N">
+<Comment>
+<![CDATA[Step 30 watchdog]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,30)TON(Pusher_Ret_Tmr,3000,0);]]>
+</Text>
+</Rung>
+<Rung Number="8" Type="N">
+<Comment>
+<![CDATA[Step 30 -> 40: pusher retracted, clear case count]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,30)XIC(Pusher_Retracted_PX)[RES(Case_Ctr),MOV(40,Seq_Step)];]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+<Routine Name="Elevator" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Comment>
+<![CDATA[Layers per pallet from HMI recipe]]>
+</Comment>
+<Text>
+<![CDATA[MOV(Layers_Per_Pallet,Layer_Ctr.PRE);]]>
+</Text>
+</Rung>
+<Rung Number="1" Type="N">
+<Comment>
+<![CDATA[Step 40: lower one layer pitch (timed)]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,40)TON(Layer_Lower_Tmr,1500,0);]]>
+</Text>
+</Rung>
+<Rung Number="2" Type="N">
+<Comment>
+<![CDATA[Step 40 -> 50: count the layer]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,40)XIC(Layer_Lower_Tmr.DN)[CTU(Layer_Ctr,5,0),MOV(50,Seq_Step)];]]>
+</Text>
+</Rung>
+<Rung Number="3" Type="N">
+<Comment>
+<![CDATA[Step 50 -> 10: pallet not full, form next layer]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,50)XIO(Layer_Ctr.DN)MOV(10,Seq_Step);]]>
+</Text>
+</Rung>
+<Rung Number="4" Type="N">
+<Comment>
+<![CDATA[Step 50 -> 60: pallet full]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,50)XIC(Layer_Ctr.DN)MOV(60,Seq_Step);]]>
+</Text>
+</Rung>
+<Rung Number="5" Type="N">
+<Comment>
+<![CDATA[Step 60 -> 70: elevator at bottom]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,60)XIC(Elev_Down_LS)MOV(70,Seq_Step);]]>
+</Text>
+</Rung>
+<Rung Number="6" Type="N">
+<Comment>
+<![CDATA[Step 70: discharge full pallet]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,70)OTE(Pallet_Conv_Run);]]>
+</Text>
+</Rung>
+<Rung Number="7" Type="N">
+<Comment>
+<![CDATA[Step 70: run-on after pallet leaves the eye]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,70)XIO(Pallet_Present_PE)TON(Discharge_Tmr,3000,0);]]>
+</Text>
+</Rung>
+<Rung Number="8" Type="N">
+<Comment>
+<![CDATA[Step 70 -> 80]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,70)XIC(Discharge_Tmr.DN)MOV(80,Seq_Step);]]>
+</Text>
+</Rung>
+<Rung Number="9" Type="N">
+<Comment>
+<![CDATA[Step 80 -> 90: operator has loaded an empty pallet]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,80)XIC(Pallet_Present_PE)MOV(90,Seq_Step);]]>
+</Text>
+</Rung>
+<Rung Number="10" Type="N">
+<Comment>
+<![CDATA[Step 90 watchdog]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,90)TON(Elev_Raise_Tmr,20000,0);]]>
+</Text>
+</Rung>
+<Rung Number="11" Type="N">
+<Comment>
+<![CDATA[Step 90 -> 10: elevator back at top, clear layer count]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,90)XIC(Elev_Up_LS)[RES(Layer_Ctr),MOV(10,Seq_Step)];]]>
+</Text>
+</Rung>
+<Rung Number="12" Type="N">
+<Comment>
+<![CDATA[Hoist DOWN: steps 40 and 60, stop at bottom limit, not with UP]]>
+</Comment>
+<Text>
+<![CDATA[[EQU(Seq_Step,40),EQU(Seq_Step,60)]XIO(Elev_Down_LS)XIO(Elev_Up_Mtr)OTE(Elev_Down_Mtr);]]>
+</Text>
+</Rung>
+<Rung Number="13" Type="N">
+<Comment>
+<![CDATA[Hoist UP: step 90, stop at top limit, not with DOWN]]>
+</Comment>
+<Text>
+<![CDATA[EQU(Seq_Step,90)XIO(Elev_Up_LS)XIO(Elev_Down_Mtr)OTE(Elev_Up_Mtr);]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+<Routine Name="Alarms" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Comment>
+<![CDATA[Alarm 0: E-stop]]>
+</Comment>
+<Text>
+<![CDATA[XIO(E_Stop_OK)OTL(Alm[0].0);]]>
+</Text>
+</Rung>
+<Rung Number="1" Type="N">
+<Comment>
+<![CDATA[Alarm 1: guard door]]>
+</Comment>
+<Text>
+<![CDATA[XIO(Guard_Door_Closed)OTL(Alm[0].1);]]>
+</Text>
+</Rung>
+<Rung Number="2" Type="N">
+<Comment>
+<![CDATA[Alarm 2: air pressure]]>
+</Comment>
+<Text>
+<![CDATA[XIO(Air_Pressure_OK)OTL(Alm[0].2);]]>
+</Text>
+</Rung>
+<Rung Number="3" Type="N">
+<Comment>
+<![CDATA[Alarm 3: infeed overload]]>
+</Comment>
+<Text>
+<![CDATA[XIO(Infeed_OL_OK)OTL(Alm[0].3);]]>
+</Text>
+</Rung>
+<Rung Number="4" Type="N">
+<Comment>
+<![CDATA[Alarm 4: pusher extend timeout]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Pusher_Ext_Tmr.DN)OTL(Alm[0].4);]]>
+</Text>
+</Rung>
+<Rung Number="5" Type="N">
+<Comment>
+<![CDATA[Alarm 5: pusher retract timeout]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Pusher_Ret_Tmr.DN)OTL(Alm[0].5);]]>
+</Text>
+</Rung>
+<Rung Number="6" Type="N">
+<Comment>
+<![CDATA[Alarm 6: elevator overtravel]]>
+</Comment>
+<Text>
+<![CDATA[GRT(Elev_Position,1950.0)OTL(Alm[0].6);]]>
+</Text>
+</Rung>
+<Rung Number="7" Type="N">
+<Comment>
+<![CDATA[Alarm 7: infeed jam]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Infeed_Jam_Tmr.DN)OTL(Alm[0].7);]]>
+</Text>
+</Rung>
+<Rung Number="8" Type="N">
+<Comment>
+<![CDATA[Alarm 8: elevator raise timeout]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Elev_Raise_Tmr.DN)OTL(Alm[0].8);]]>
+</Text>
+</Rung>
+<Rung Number="9" Type="N">
+<Comment>
+<![CDATA[Reset clears all alarm words (still-present conditions re-latch)]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Reset_PB)ONS(Reset_ONS)[MOV(0,Alm[0]),MOV(0,Alm[1])];]]>
+</Text>
+</Rung>
+<Rung Number="10" Type="N">
+<Comment>
+<![CDATA[Summary]]>
+</Comment>
+<Text>
+<![CDATA[[NEQ(Alm[0],0),NEQ(Alm[1],0)]OTE(Alarm_Active);]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+<Routine Name="HMI" Type="RLL">
+<RLLContent>
+<Rung Number="0" Type="N">
+<Comment>
+<![CDATA[Green: running without alarm]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Machine_Running)XIO(Alarm_Active)OTE(Light_Green);]]>
+</Text>
+</Rung>
+<Rung Number="1" Type="N">
+<Comment>
+<![CDATA[Amber: stopped without alarm]]>
+</Comment>
+<Text>
+<![CDATA[XIO(Machine_Running)XIO(Alarm_Active)OTE(Light_Amber);]]>
+</Text>
+</Rung>
+<Rung Number="2" Type="N">
+<Comment>
+<![CDATA[Red: any alarm]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Alarm_Active)OTE(Light_Red);]]>
+</Text>
+</Rung>
+<Rung Number="3" Type="N">
+<Comment>
+<![CDATA[Silence horn from HMI]]>
+</Comment>
+<Text>
+<![CDATA[XIC(HMI_Silence_PB)ONS(Silence_ONS)OTL(Horn_Silenced);]]>
+</Text>
+</Rung>
+<Rung Number="4" Type="N">
+<Comment>
+<![CDATA[Re-arm horn when alarms clear]]>
+</Comment>
+<Text>
+<![CDATA[XIO(Alarm_Active)OTU(Horn_Silenced);]]>
+</Text>
+</Rung>
+<Rung Number="5" Type="N">
+<Comment>
+<![CDATA[Horn]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Alarm_Active)XIO(Horn_Silenced)OTE(Horn);]]>
+</Text>
+</Rung>
+<Rung Number="6" Type="N">
+<Comment>
+<![CDATA[Count completed pallets]]>
+</Comment>
+<Text>
+<![CDATA[XIC(Layer_Ctr.DN)CTU(Pallet_Count,32767,0);]]>
+</Text>
+</Rung>
+<Rung Number="7" Type="N">
+<Comment>
+<![CDATA[Reset pallet total from HMI]]>
+</Comment>
+<Text>
+<![CDATA[XIC(HMI_Reset_Count)RES(Pallet_Count);]]>
+</Text>
+</Rung>
+<Rung Number="8" Type="N">
+<Comment>
+<![CDATA[HMI values]]>
+</Comment>
+<Text>
+<![CDATA[[MOV(Seq_Step,HMI_Step),MOV(Case_Ctr.ACC,HMI_Case_Count),MOV(Layer_Ctr.ACC,HMI_Layer_Count),MOV(Pallet_Count.ACC,HMI_Pallet_Count)];]]>
+</Text>
+</Rung>
+</RLLContent>
+</Routine>
+</Routines>
+</Program>
+</Programs>
+<Tasks>
+<Task Name="MainTask" Type="CONTINUOUS" Priority="10" Watchdog="500" DisableUpdateOutputs="false" InhibitTask="false">
+<ScheduledPrograms>
+<ScheduledProgram Name="MainProgram"/>
+</ScheduledPrograms>
+</Task>
+</Tasks>
+<CST MasterID="0"/>
+<WallClockTime LocalTimeAdjustment="0" TimeZone="0"/>
+<Trends/>
+<DataLogs/>
+<TimeSynchronize Priority1="128" Priority2="128" PTPEnable="false"/>
+<EthernetPorts>
+<EthernetPort Port="1" Label="1" PortEnabled="true"/>
+</EthernetPorts>
+</Controller>
+</RSLogix5000Content>

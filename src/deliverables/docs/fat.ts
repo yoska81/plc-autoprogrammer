@@ -1,4 +1,5 @@
 import { byRegion } from '../../standards/regions';
+import { operatorDevices } from './operatorStation';
 import type { ProjectSnapshot } from '../collect';
 import { buildModel, cableSchedule, supplyText, wireNumbers, terminalPlan } from '../../electrical/derive';
 import { alarmRows, programInfo, type ProgramInfo } from './program';
@@ -34,7 +35,7 @@ export function fatProcedure(p: ProjectSnapshot, meta: DocMeta, info: ProgramInf
     add(S2, 'Terminal tightness', 'Check torque of power terminals (disconnect, breakers, contactor, overload) to the manufacturer values; tug-test control terminals.', 'All terminations tight; torque marks applied.');
   }
   add(S2, 'Protective earth continuity', 'Measure resistance from the PE bar to the door, back panel, every PE terminal and every device ground point.', `Continuity on every point, < 0.1 ohm (NFPA 79 18.2).`);
-  add(S2, 'Insulation resistance', 'Disconnect / isolate the PLC, HMI, power supply and electronic devices. Test the power circuits at 500 VDC between conductors and PE.', '>= 1 Mohm (NFPA 79 18.3).');
+  add(S2, 'Insulation resistance', `Disconnect / isolate the PLC, ${p.hmi ? 'HMI, ' : ''}power supply and electronic devices. Test the power circuits at 500 VDC between conductors and PE.`, '>= 1 Mohm (NFPA 79 18.3).');
   if (m) for (const mm of m.motors) if (mm.overload) add(S2, `${mm.motor.tag} overload setting`, `Set ${mm.overload.tag} dial to the motor FLA.`, `${mm.overload.tag} set to ${mm.fla} A (or the nameplate FLA if different); reset mode as specified.`);
   // 3. Power-up
   const S3 = '3. Power-up and communication';
@@ -56,7 +57,7 @@ export function fatProcedure(p: ProjectSnapshot, meta: DocMeta, info: ProgramInf
   for (const x of p.io.filter((i) => i.type === 'input')) {
     const a = p.addresses.get(x.id) || x.id;
     const dev = info.device(a);
-    add(S5, `${a} ${x.description}`, `Operate ${dev || 'the field device'} (or simulate at the terminal).`, `PLC input ${a} and HMI I/O screen follow the device; OFF when released.`);
+    add(S5, `${a} ${x.description}`, `Operate ${dev || 'the field device'} (or simulate at the terminal).`, `PLC input ${a}${p.hmi ? ' and HMI I/O screen' : ''} follow${p.hmi ? '' : 's'} the device; OFF when released.`);
   }
   // 6. Outputs
   const S6 = '6. Outputs';
@@ -67,9 +68,16 @@ export function fatProcedure(p: ProjectSnapshot, meta: DocMeta, info: ProgramInf
   }
   // 7. Alarms
   const S7 = '7. Alarms';
-  for (const a of alarmRows(p, info)) add(S7, `${a.id} ${a.message}`, `Create the condition: ${a.cause.split('\n')[0]}`, `HMI shows "${a.message}" (${a.address}); ${a.effect.toLowerCase().startsWith('blocks') ? `${a.effect.toLowerCase()}; ` : ''}${a.action}`);
-  // 8. HMI
-  const S8 = '8. HMI screens';
+  for (const a of alarmRows(p, info)) add(S7, `${a.id} ${a.message}`, `Create the condition: ${a.cause.split('\n')[0]}`, `${p.hmi ? `HMI shows "${a.message}" (${a.address})` : `Alarm bit ${a.address} set; fault lamp on`}; ${a.effect.toLowerCase().startsWith('blocks') ? `${a.effect.toLowerCase()}; ` : ''}${a.action}`);
+  // 8. HMI, or on a machine without a touch panel the operator station
+  const S8 = p.hmi ? '8. HMI screens' : '8. Operator station';
+  if (!p.hmi && p.noHmi) {
+    for (const d of operatorDevices(p)) {
+      const lamp = /light|lamp/i.test(d.kind);
+      add(S8, `${d.tag} ${d.description}`, lamp ? `Bring the machine into the state the lamp shows (${d.description.toLowerCase()}).` : `Operate ${d.tag} (${d.kind}).`,
+        lamp ? 'Lamp lights in that state only; legend plate correct.' : `${d.address ? `PLC ${d.address} follows; ` : ''}the machine responds as described; legend plate correct.`);
+    }
+  }
   for (const s of p.hmi?.screens ?? []) {
     const btn = s.elements.filter((e) => e.kind === 'button').map((e) => e.label);
     add(S8, `Screen: ${s.name}`, `Open ${s.name}${btn.length ? `; press ${btn.join(', ')}` : ''}; check every indicator and value against the machine state.`, `${s.purpose} Every button writes the right bit; indicators and values are live; navigation works.`);
@@ -85,8 +93,15 @@ export function fatProcedure(p: ProjectSnapshot, meta: DocMeta, info: ProgramInf
   // 10. Run test
   const S10 = '10. Run test and documentation';
   add(S10, 'Endurance run', 'Run automatic for at least 30 minutes (or the agreed number of cycles).', 'No faults; record cycle time and throughput.');
-  add(S10, 'Backups and red-lines', 'Save PLC program and HMI project backups; collect red-lined drawings and the punch list.', 'Backups stored with this record; punch list agreed and signed.');
-  return rows;
+  add(S10, 'Backups and red-lines', `Save PLC program${p.hmi ? ' and HMI project' : ''} backups; collect red-lined drawings and the punch list.`, 'Backups stored with this record; punch list agreed and signed.');
+  return renumber(rows);
+}
+
+/** Sections numbered in order of appearance (no gap where a section has no tests). */
+function renumber<T extends { section: string }>(rows: T[]): T[] {
+  const order: string[] = [];
+  for (const r of rows) if (!order.includes(r.section)) order.push(r.section);
+  return rows.map((r) => ({ ...r, section: r.section.replace(/^\d+\. /, `${order.indexOf(r.section) + 1}. `) }));
 }
 
 export function testTable(rows: TestRow[]): DocTable {
@@ -127,7 +142,7 @@ export function satChecklist(p: ProjectSnapshot, sf: SafetyFunction[] = safetyFu
   const D = '4. I/O loop check (from the field device)';
   for (const x of p.io) {
     const a = p.addresses.get(x.id) || x.id;
-    add(D, `${a} ${x.description}`, x.type === 'input' ? 'Operate the field device at its installed location.' : 'Force the output with the machine safe.', x.type === 'input' ? `PLC ${a} and HMI follow the device.` : 'Device operates at its installed location.');
+    add(D, `${a} ${x.description}`, x.type === 'input' ? 'Operate the field device at its installed location.' : 'Force the output with the machine safe.', x.type === 'input' ? `PLC ${a}${p.hmi ? ' and HMI follow' : ' follows'} the device.` : 'Device operates at its installed location.');
     const c = p.checkout?.[x.id];
     if (c?.verified) rows[rows.length - 1].result = `OK — I/O check-out ${c.date}${c.by ? ` (${c.by})` : ''}${c.note ? `: ${c.note}` : ''}`;
   }
@@ -137,7 +152,7 @@ export function satChecklist(p: ProjectSnapshot, sf: SafetyFunction[] = safetyFu
   const F = '6. Operation and handover';
   add(F, 'Production run', 'Run with product at rated speed for the agreed time.', 'Rated throughput reached; no faults.');
   add(F, 'Operator and maintenance training', 'Train operators (Operator manual) and maintenance staff (maintenance chapter, LOTO points).', 'Attendance list signed.');
-  add(F, 'Handover documents', 'Hand over as-built drawings, final program / HMI backups, this package, spare parts list.', 'Received by the customer.');
+  add(F, 'Handover documents', `Hand over as-built drawings, final program${p.hmi ? ' / HMI' : ''} backups, this package, spare parts list.`, 'Received by the customer.');
   add(F, 'Acceptance', 'Customer sign-off of the SAT.', 'Signed below.');
   return rows;
 }

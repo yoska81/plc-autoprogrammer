@@ -24,7 +24,20 @@ export interface CompareElement {
   right: string;
 }
 
-export type LadderElement = ContactElement | CompareElement;
+/**
+ * An instruction of an imported program the app cannot draw or run (MSG, PID, a vendor block…),
+ * kept as the original text so a re-export to the same PLC keeps it. As a contact it is open
+ * (false) in the simulator; as an output it does nothing. `vendor` = the PLC profile id it came from.
+ */
+export interface RawInstruction {
+  type: 'RAW';
+  vendor: string;
+  text: string;
+  /** The original definitions the instruction needs, in the vendor's own format (Logix: <Tag>, <DataType>, <AddOnInstructionDefinition> XML). */
+  decl?: string[];
+}
+
+export type LadderElement = ContactElement | CompareElement | RawInstruction;
 
 export type TimerMode = 'ON_DELAY' | 'OFF_DELAY';
 export type TimeUnit = 'ms' | 'sec' | 'min' | 'hour' | 'day';
@@ -69,7 +82,7 @@ export interface MathOutput {
   expression: string;
 }
 
-export type LadderOutput = CoilOutput | TimerOutput | CounterOutput | CopyOutput | MathOutput;
+export type LadderOutput = CoilOutput | TimerOutput | CounterOutput | CopyOutput | MathOutput | RawInstruction;
 
 export interface Rung {
   /** Stable id so edits and AI revisions can be diffed rung by rung. */
@@ -108,8 +121,33 @@ export interface LadderProgram {
 
 export const EMPTY_PROGRAM: LadderProgram = { rungs: [], tags: [] };
 
+/**
+ * Names in the text of a kept (Structured Text / SCL) instruction, with where they are: not quoted block
+ * names, not members after a dot, not calls, not parameter names of a call (`(Raw := …`, `, OUT => …`).
+ */
+export function rawTextNames(text: string): { name: string; index: number }[] {
+  const out: { name: string; index: number }[] = [];
+  for (const m of text.matchAll(/(?<![\w."#])([A-Za-z_]\w*)(?![\w(])/g)) {
+    const before = text.slice(0, m.index), after = text.slice(m.index + m[1].length);
+    if (/[(,]\s*$/.test(before) && /^\s*(:=|=>)/.test(after)) continue;
+    out.push({ name: m[1], index: m.index });
+  }
+  return out;
+}
+
+/** A RAW holding a whole block of Structured Text / SCL (FUNCTION … END_FUNCTION): exported as a block of its own. */
+export const isBlockRaw = (r: RawInstruction): boolean => /^\s*(FUNCTION_BLOCK|FUNCTION|ORGANIZATION_BLOCK|DATA_BLOCK|TYPE)\b/i.test(r.text);
+
+/** What an exporter writes for a RAW instruction of another PLC (never dropped silently). */
+export const rawTodo = (r: RawInstruction): string => `TODO (from ${r.vendor}): ${r.text}`;
+
 export function newRungId(): string {
   return `r_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Addresses an input element reads (none for a RAW instruction). */
+export function elementAddresses(e: LadderElement): string[] {
+  return e.type === 'CMP' ? [e.left, e.right] : e.type === 'RAW' ? [] : [e.address];
 }
 
 /** Every address a rung reads or writes. */
@@ -118,7 +156,7 @@ export function rungAddresses(rung: Rung): string[] {
   for (const branch of rung.branches) {
     for (const el of branch) {
       if (el.type === 'CMP') out.push(el.left, el.right);
-      else out.push(el.address);
+      else if (el.type !== 'RAW') out.push(el.address);
     }
   }
   for (const o of rung.outputs) {
@@ -140,6 +178,7 @@ export function rungWrites(rung: Rung): string[] {
       case 'OUT': case 'SET': case 'RST': case 'TMR': case 'CNT': return [o.address];
       case 'COPY': return [o.dest];
       case 'MATH': return [o.dest];
+      case 'RAW': return [];
     }
   });
 }

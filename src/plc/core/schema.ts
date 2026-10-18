@@ -10,8 +10,15 @@ function obj(properties: Record<string, unknown>) {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
 }
 
+/** An instruction imported from the original PLC program, kept as its text. */
+const raw = {
+  ...obj({ type: { type: 'string', enum: ['RAW'] }, vendor: str, text: str }),
+  description: 'An imported instruction: copy it back exactly as given (same vendor and text), never invent one.',
+};
+
 const element = {
   anyOf: [
+    raw,
     obj({ type: { type: 'string', enum: ['NO', 'NC', 'RISE', 'FALL'] }, address: str }),
     obj({ type: { type: 'string', enum: ['CMP'] }, left: str, op: { type: 'string', enum: ['==', '<>', '>', '>=', '<', '<='] }, right: str }),
   ],
@@ -19,6 +26,7 @@ const element = {
 
 const output = {
   anyOf: [
+    raw,
     obj({ type: { type: 'string', enum: ['OUT', 'SET', 'RST'] }, address: str }),
     obj({
       type: { type: 'string', enum: ['TMR'] },

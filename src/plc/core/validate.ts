@@ -1,4 +1,4 @@
-import { rungAddresses, rungWrites, type LadderProgram, type Rung } from './ladder';
+import { elementAddresses, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
 
 export interface ValidationIssue {
@@ -46,6 +46,8 @@ export function validateProgram(
         if (el.type === 'CMP') {
           check(rung, el.left, 'Compare left side', { valueOk: true });
           check(rung, el.right, 'Compare right side', { valueOk: true });
+        } else if (el.type === 'RAW') {
+          issues.push(...rawIssues(rung.id, el, profile));
         } else {
           check(rung, el.address, 'Contact', { bit: true });
         }
@@ -54,6 +56,9 @@ export function validateProgram(
 
     for (const o of rung.outputs) {
       switch (o.type) {
+        case 'RAW':
+          issues.push(...rawIssues(rung.id, o, profile));
+          break;
         case 'OUT':
           check(rung, o.address, 'Coil', { bit: true, write: true });
           outCoils.set(o.address, (outCoils.get(o.address) ?? 0) + 1);
@@ -114,7 +119,7 @@ export function validateProgram(
     const reads = new Map<string, string>(), writes = new Map<string, string>();
     const note = (m: Map<string, string>, a: string, rung: string) => { const k = a.trim().toUpperCase(); if (k && !m.has(k)) m.set(k, rung); };
     for (const r of program.rungs) {
-      for (const b of r.branches) for (const e of b) for (const a of e.type === 'CMP' ? [e.left, e.right] : [e.address]) note(reads, a, r.id);
+      for (const b of r.branches) for (const e of b) for (const a of elementAddresses(e)) note(reads, a, r.id);
       for (const o of r.outputs) {
         if (o.type === 'COPY') note(reads, o.source, r.id);
         if (o.type === 'MATH') for (const a of o.expression.toUpperCase().match(/[A-Z]+\d+/g) ?? []) note(reads, a, r.id);
@@ -141,4 +146,38 @@ export function validateProgram(
     }
   }
   return issues;
+}
+
+/** PLC families imported instructions come from (profile ids, plus brands the app reads but has no profile for). */
+const VENDOR_NAME: Record<string, string> = {
+  logix: 'Logix', click: 'CLICK', micro800: 'Micro800', 'siemens-s7': 'Siemens S7', 'unitronics-unistream': 'UniStream', 'unitronics-vision': 'Vision',
+  'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS',
+};
+
+/**
+ * An imported instruction kept as written: on its own PLC a warning (it is not checked or simulated);
+ * on another PLC an error, because the rung cannot work there.
+ */
+function rawIssues(rungId: string, r: RawInstruction, profile: PlcProfile): ValidationIssue[] {
+  const short = r.text.length > 80 ? `${r.text.slice(0, 77).replace(/\s+/g, ' ')}…` : r.text;
+  if (r.vendor !== profile.id) {
+    const what = /^\s*(?:FUNCTION_BLOCK|FUNCTION)\s+"?(\w+)/i.exec(r.text)?.[1] ?? /^(\w+)\(/.exec(r.text)?.[1] ?? short;
+    return [{ rungId, severity: 'error', message: `${what} from ${VENDOR_NAME[r.vendor] ?? r.vendor} cannot run on ${profile.name}: this rung will not work (${short}).` }];
+  }
+  return [{ rungId, severity: 'warning', message: `Not understood: check by hand (${short}).` }, ...rawRules(rungId, r)];
+}
+
+/** Known mistakes found in instructions kept as written. */
+function rawRules(rungId: string, r: RawInstruction): ValidationIssue[] {
+  const out: ValidationIssue[] = [];
+  if (r.vendor === 'siemens-s7') {
+    // S7-1200 / 1500 current and voltage inputs: nominal range 0..27648 (not 32767).
+    for (const m of r.text.matchAll(/NORM_X\s*\(([^;]*?)\bMAX\s*:=\s*(\d+)/gi)) {
+      if (m[2] !== '27648' && /\b(INT|WORD)\b|Raw|IW\d/i.test(`${m[1]} ${r.text}`)) {
+        const pct = ((1 - 27648 / Number(m[2])) * 100).toFixed(1);
+        out.push({ rungId, severity: 'error', message: `NORM_X MAX := ${m[2]} on a raw analog word: S7-1200 / 1500 current and voltage inputs read 0..27648, so every scaled value is ${pct} % low (20 mA shows ${(27648 / Number(m[2]) * 100).toFixed(1)} %). Use MAX := 27648.` });
+      }
+    }
+  }
+  return out;
 }

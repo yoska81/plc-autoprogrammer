@@ -1,0 +1,54 @@
+FUNCTION_BLOCK "Mixer_Control"
+TITLE = Batch mixer control
+{ S7_Optimized_Access := 'TRUE' }
+AUTHOR : Maint
+VERSION : 0.3
+   VAR_INPUT
+      Start { ExternalAccessible := 'False'} : Bool;   // Start from the HMI
+      Stop : Bool;   // Stop from the HMI
+   END_VAR
+
+   VAR
+      Mix_Timer {InstructionName := 'TON_TIME'; LibVersion := '1.0'} : TON_TIME;
+      Step : Int;   // Batch step
+      Batches : Int;   // Batches made today
+   END_VAR
+
+
+BEGIN
+	// Step 0: wait for start with the lid closed
+	CASE #Step OF
+	    0:
+	        IF #Start AND "Lid_Closed" AND NOT "Tank_Low" THEN
+	            #Step := 10;
+	        END_IF;
+	    10: // fill
+	        "Fill_Valve" := TRUE;
+	        IF "Level_High" THEN
+	            "Fill_Valve" := FALSE;
+	            #Step := 20;
+	        END_IF;
+	    20: // mix 3 min
+	        "Agitator" := TRUE;
+	        #Mix_Timer(IN := TRUE,
+	                   PT := T#3M);
+	        IF #Mix_Timer.Q THEN
+	            "Agitator" := FALSE;
+	            #Step := 30;
+	        END_IF;
+	    30: // drain
+	        "Drain_Valve" := NOT "Level_Low";
+	        IF "Level_Low" THEN
+	            #Batches := #Batches + 1;
+	            #Step := 0;
+	        END_IF;
+	    ELSE
+	        #Step := 0;
+	END_CASE;
+
+	IF #Stop OR NOT "Lid_Closed" THEN
+	    "Fill_Valve" := FALSE;
+	    "Agitator" := FALSE;
+	    #Step := 0;
+	END_IF;
+END_FUNCTION_BLOCK

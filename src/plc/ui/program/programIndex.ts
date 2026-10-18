@@ -37,7 +37,7 @@ export function rungUses(r: Rung): { address: string; kind: UseKind; how: string
   const CONTACT: Record<string, string> = { NO: 'NO contact', NC: 'NC contact', RISE: 'Rising edge', FALL: 'Falling edge' };
   for (const br of r.branches) for (const el of br) {
     if (el.type === 'CMP') { add(el.left, 'read', `Compare ${el.op}`); add(el.right, 'read', `Compare ${el.op}`); }
-    else add(el.address, 'read', CONTACT[el.type]);
+    else if (el.type !== 'RAW') add(el.address, 'read', CONTACT[el.type]);
   }
   for (const o of r.outputs) {
     switch (o.type) {

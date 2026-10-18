@@ -85,6 +85,8 @@ export interface OdaBridge {
   detect(): Promise<{ found: boolean; path?: string }>;
   /** DXF text in, AutoCAD 2018 DWG out (same order, names with .dwg). */
   convert(files: { name: string; text: string }[]): Promise<{ ok: true; files: { name: string; bytes: Uint8Array }[] } | { ok: false; error: string }>;
+  /** DWG in, DXF text out (the drawing import). Older app builds don't have it. */
+  toDxf?(files: { name: string; bytes: Uint8Array }[]): Promise<{ ok: true; files: { name: string; text: string }[] } | { ok: false; notInstalled?: boolean; error: string }>;
 }
 
 export interface IsaDesktop {

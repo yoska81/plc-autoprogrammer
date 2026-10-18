@@ -7,6 +7,7 @@ import { billOfMaterials, buildModel, cableSchedule, panelLayout, type DrawingCo
 import { planDrawings } from '../electrical/drawings/plan';
 import { panelSccr } from '../electrical/sccr';
 import { ALLOWED_RISE_C, cabinetHeat } from '../electrical/thermal';
+import { coolingCover } from '../electrical/cooling';
 import { awgToMm2, SUPPLY_INFO } from '../standards/regions';
 import { equivalentsOf, sourcingFlags, sourcingOf } from '../sourcing/data';
 import type { Finding, Severity, ReviewArea } from '../review/types';
@@ -62,7 +63,12 @@ export function engineerChecks({ ctx, io, requiredPL }: EngineerInput): Engineer
 
   // Heat load.
   const heat = cabinetHeat(ctx.design.components, ctx.getPart);
-  if (heat.rise !== null && heat.rise > ALLOWED_RISE_C) {
+  const cover = heat.ventilation ? coolingCover(ctx.design.components, ctx.getPart, heat.ventilation, ALLOWED_RISE_C) : null;
+  if (cover?.fitted && !cover.covers) {
+    add('heat', 'major', 'electrical', `Cabinet cooling too small (${Math.round(cover.share * 100)} % of the heat)`,
+      `${Math.round(heat.watts)} W of heat in ${heat.area?.toFixed(2)} m² of surface: the walls shed ${Math.round(heat.watts - heat.ventilation!.wattsToRemove)} W at a ${ALLOWED_RISE_C} °C rise and the fitted cooling carries only part of the remaining ${Math.round(heat.ventilation!.wattsToRemove)} W.`,
+      `Fit a filter fan for about ${Math.round(heat.ventilation!.airflowM3h)} m³/h, a larger heat exchanger / air conditioner, or a larger enclosure.`);
+  } else if (!cover?.covers && heat.rise !== null && heat.rise > ALLOWED_RISE_C) {
     add('heat', heat.rise > ALLOWED_RISE_C * 1.5 ? 'major' : 'minor', 'electrical', `Cabinet runs ${Math.round(heat.rise)} °C above ambient`,
       `${Math.round(heat.watts)} W of heat in ${heat.area?.toFixed(2)} m² of surface: more than the ${ALLOWED_RISE_C} °C rise the parts are rated for at a 40 °C room.`,
       heat.ventilation ? `Fit a filter fan for about ${Math.round(heat.ventilation.airflowM3h)} m³/h, or a larger enclosure.` : 'Fit a filter fan or a larger enclosure.');

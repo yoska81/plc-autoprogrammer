@@ -1,0 +1,1029 @@
+{
+ "supply": "24VDC",
+ "rungs": [
+  {
+   "id": "C1",
+   "description": "HYDRAULIC PUMP",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "SR1",
+     "nc": false,
+     "terms": "13-14",
+     "kind": "safety"
+    },
+    {
+     "t": "contact",
+     "tag": "PB2",
+     "nc": true,
+     "kind": "pb"
+    },
+    {
+     "t": "branch",
+     "paths": [
+      [
+       {
+        "t": "contact",
+        "tag": "PB1",
+        "nc": false,
+        "kind": "pb"
+       }
+      ],
+      [
+       {
+        "t": "contact",
+        "tag": "K1",
+        "nc": false,
+        "terms": "13-14",
+        "kind": "relay"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "contact",
+     "tag": "OL1",
+     "nc": true,
+     "terms": "95-96",
+     "kind": "ol"
+    },
+    {
+     "t": "coil",
+     "tag": "K1",
+     "kind": "contactor"
+    }
+   ]
+  },
+  {
+   "id": "C2",
+   "description": "LINE RUN",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "PB4",
+     "nc": true,
+     "kind": "pb"
+    },
+    {
+     "t": "contact",
+     "tag": "K1",
+     "nc": false,
+     "terms": "53-54",
+     "kind": "relay"
+    },
+    {
+     "t": "contact",
+     "tag": "CR5",
+     "nc": false,
+     "terms": "11-14",
+     "kind": "relay"
+    },
+    {
+     "t": "contact",
+     "tag": "CR6",
+     "nc": true,
+     "terms": "11-12",
+     "kind": "relay"
+    },
+    {
+     "t": "contact",
+     "tag": "VFD1",
+     "nc": false,
+     "terms": "RB-RC",
+     "kind": "other"
+    },
+    {
+     "t": "contact",
+     "tag": "CR11",
+     "nc": true,
+     "terms": "15-16",
+     "kind": "timer"
+    },
+    {
+     "t": "contact",
+     "tag": "H7CX",
+     "nc": true,
+     "terms": "OUT",
+     "kind": "other"
+    },
+    {
+     "t": "contact",
+     "tag": "CR9",
+     "nc": true,
+     "terms": "11-12",
+     "kind": "relay"
+    },
+    {
+     "t": "contact",
+     "tag": "CR10",
+     "nc": false,
+     "terms": "11-14",
+     "kind": "relay"
+    },
+    {
+     "t": "branch",
+     "paths": [
+      [
+       {
+        "t": "contact",
+        "tag": "PB3",
+        "nc": false,
+        "kind": "pb"
+       }
+      ],
+      [
+       {
+        "t": "contact",
+        "tag": "CR1",
+        "nc": false,
+        "terms": "11-14",
+        "kind": "relay"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "coil",
+     "tag": "CR1",
+     "kind": "relay"
+    }
+   ]
+  },
+  {
+   "id": "C3",
+   "description": "JOG FORWARD WHILE THE LINE IS STOPPED",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "CR1",
+     "nc": true,
+     "terms": "41-42",
+     "kind": "relay"
+    },
+    {
+     "t": "contact",
+     "tag": "PB5",
+     "nc": false,
+     "kind": "pb"
+    },
+    {
+     "t": "contact",
+     "tag": "CR3",
+     "nc": true,
+     "terms": "11-12",
+     "kind": "relay"
+    },
+    {
+     "t": "coil",
+     "tag": "CR2",
+     "kind": "relay"
+    }
+   ]
+  },
+  {
+   "id": "C4",
+   "description": "JOG REVERSE WHILE THE LINE IS STOPPED",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "CR1",
+     "nc": true,
+     "terms": "41-42",
+     "kind": "relay"
+    },
+    {
+     "t": "contact",
+     "tag": "PB6",
+     "nc": false,
+     "kind": "pb"
+    },
+    {
+     "t": "contact",
+     "tag": "CR2",
+     "nc": true,
+     "terms": "11-12",
+     "kind": "relay"
+    },
+    {
+     "t": "coil",
+     "tag": "CR3",
+     "kind": "relay"
+    }
+   ]
+  },
+  {
+   "id": "C5",
+   "description": "SERVO ON FROM THE SELECTOR SA1",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "SS1",
+     "nc": false,
+     "kind": "selector"
+    },
+    {
+     "t": "coil",
+     "tag": "CR4",
+     "kind": "relay"
+    }
+   ]
+  },
+  {
+   "id": "C6",
+   "description": "RUN-OUT OVERRUN FROM THE PHOTO EYE SQ3",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "PE1",
+     "nc": false,
+     "kind": "limit"
+    },
+    {
+     "t": "coil",
+     "tag": "CR9",
+     "kind": "relay"
+    }
+   ]
+  },
+  {
+   "id": "C7",
+   "description": "MATERIAL PRESENT FROM THE ENTRY SENSOR S",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "PX1",
+     "nc": false,
+     "kind": "limit"
+    },
+    {
+     "t": "coil",
+     "tag": "CR10",
+     "kind": "relay"
+    }
+   ]
+  },
+  {
+   "id": "C8",
+   "description": "SERVO READY FROM U2 DO1 SRDY",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "U2",
+     "nc": false,
+     "terms": "DO1",
+     "kind": "other"
+    },
+    {
+     "t": "coil",
+     "tag": "CR5",
+     "kind": "relay"
+    }
+   ]
+  },
+  {
+   "id": "C9",
+   "description": "SERVO ALARM FROM U2 DO5 ALRM",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "U2",
+     "nc": false,
+     "terms": "DO5",
+     "kind": "other"
+    },
+    {
+     "t": "coil",
+     "tag": "CR6",
+     "kind": "relay"
+    }
+   ]
+  },
+  {
+   "id": "C11",
+   "description": "SHEAR DOWN FROM THE CUT COMMAND",
+   "path": [
+    {
+     "t": "branch",
+     "paths": [
+      [
+       {
+        "t": "contact",
+        "tag": "CR7",
+        "nc": false,
+        "terms": "11-14",
+        "kind": "relay"
+       }
+      ],
+      [
+       {
+        "t": "contact",
+        "tag": "PB7",
+        "nc": false,
+        "kind": "pb"
+       },
+       {
+        "t": "contact",
+        "tag": "CR1",
+        "nc": true,
+        "terms": "41-42",
+        "kind": "relay"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "contact",
+     "tag": "CR8",
+     "nc": true,
+     "terms": "11-12",
+     "kind": "relay"
+    },
+    {
+     "t": "coil",
+     "tag": "SOL1",
+     "kind": "solenoid"
+    }
+   ]
+  },
+  {
+   "id": "C12",
+   "description": "CUT WATCHDOG",
+   "path": [
+    {
+     "t": "branch",
+     "paths": [
+      [
+       {
+        "t": "contact",
+        "tag": "CR7",
+        "nc": false,
+        "terms": "11-14",
+        "kind": "relay"
+       }
+      ],
+      [
+       {
+        "t": "contact",
+        "tag": "PB7",
+        "nc": false,
+        "kind": "pb"
+       },
+       {
+        "t": "contact",
+        "tag": "CR1",
+        "nc": true,
+        "terms": "41-42",
+        "kind": "relay"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "contact",
+     "tag": "CR8",
+     "nc": true,
+     "terms": "11-12",
+     "kind": "relay"
+    },
+    {
+     "t": "coil",
+     "tag": "CR11",
+     "kind": "timer-on",
+     "preset": "2 s"
+    }
+   ]
+  },
+  {
+   "id": "C13",
+   "description": "CUT RETURN LATCH",
+   "path": [
+    {
+     "t": "branch",
+     "paths": [
+      [
+       {
+        "t": "contact",
+        "tag": "LS1",
+        "nc": false,
+        "kind": "limit"
+       }
+      ],
+      [
+       {
+        "t": "contact",
+        "tag": "CR8",
+        "nc": false,
+        "terms": "21-24",
+        "kind": "relay"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "contact",
+     "tag": "LS2",
+     "nc": true,
+     "kind": "limit"
+    },
+    {
+     "t": "coil",
+     "tag": "CR8",
+     "kind": "relay"
+    }
+   ]
+  },
+  {
+   "id": "C14",
+   "description": "SHEAR UP WHILE THE RETURN LATCH KA8 IS S",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "CR8",
+     "nc": false,
+     "terms": "31-34",
+     "kind": "relay"
+    },
+    {
+     "t": "coil",
+     "tag": "SOL2",
+     "kind": "solenoid"
+    }
+   ]
+  },
+  {
+   "id": "C15",
+   "description": "BATCH COUNTER",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "CR8",
+     "nc": false,
+     "terms": "41-44",
+     "kind": "relay"
+    },
+    {
+     "t": "coil",
+     "tag": "H7CX",
+     "kind": "counter",
+     "preset": "batch quantity",
+     "terms": "CP1"
+    }
+   ]
+  },
+  {
+   "id": "C16",
+   "description": "POWER ON LAMP",
+   "path": [
+    {
+     "t": "coil",
+     "tag": "PL1",
+     "kind": "light"
+    }
+   ]
+  },
+  {
+   "id": "C17",
+   "description": "PUMP RUNNING LAMP",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "K1",
+     "nc": false,
+     "terms": "63-64",
+     "kind": "relay"
+    },
+    {
+     "t": "coil",
+     "tag": "PL2",
+     "kind": "light"
+    }
+   ]
+  },
+  {
+   "id": "C18",
+   "description": "LINE RUNNING LAMP",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "PB4",
+     "nc": true,
+     "kind": "pb"
+    },
+    {
+     "t": "contact",
+     "tag": "K1",
+     "nc": false,
+     "terms": "53-54",
+     "kind": "relay"
+    },
+    {
+     "t": "contact",
+     "tag": "CR5",
+     "nc": false,
+     "terms": "11-14",
+     "kind": "relay"
+    },
+    {
+     "t": "contact",
+     "tag": "CR6",
+     "nc": true,
+     "terms": "11-12",
+     "kind": "relay"
+    },
+    {
+     "t": "contact",
+     "tag": "VFD1",
+     "nc": false,
+     "terms": "RB-RC",
+     "kind": "other"
+    },
+    {
+     "t": "contact",
+     "tag": "CR11",
+     "nc": true,
+     "terms": "15-16",
+     "kind": "timer"
+    },
+    {
+     "t": "contact",
+     "tag": "H7CX",
+     "nc": true,
+     "terms": "OUT",
+     "kind": "other"
+    },
+    {
+     "t": "contact",
+     "tag": "CR9",
+     "nc": true,
+     "terms": "11-12",
+     "kind": "relay"
+    },
+    {
+     "t": "contact",
+     "tag": "CR10",
+     "nc": false,
+     "terms": "11-14",
+     "kind": "relay"
+    },
+    {
+     "t": "branch",
+     "paths": [
+      [
+       {
+        "t": "contact",
+        "tag": "PB3",
+        "nc": false,
+        "kind": "pb"
+       }
+      ],
+      [
+       {
+        "t": "contact",
+        "tag": "CR1",
+        "nc": false,
+        "terms": "11-14",
+        "kind": "relay"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "coil",
+     "tag": "PL3",
+     "kind": "light"
+    }
+   ]
+  },
+  {
+   "id": "C19",
+   "description": "FAULT LAMP",
+   "path": [
+    {
+     "t": "branch",
+     "paths": [
+      [
+       {
+        "t": "contact",
+        "tag": "CR6",
+        "nc": false,
+        "terms": "21-24",
+        "kind": "relay"
+       }
+      ],
+      [
+       {
+        "t": "contact",
+        "tag": "VFD1",
+        "nc": false,
+        "terms": "RA-RC",
+        "kind": "other"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "coil",
+     "tag": "PL4",
+     "kind": "light"
+    }
+   ]
+  },
+  {
+   "id": "C20",
+   "description": "BATCH COMPLETE LAMP",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "H7CX",
+     "nc": false,
+     "terms": "OUT NO",
+     "kind": "other"
+    },
+    {
+     "t": "coil",
+     "tag": "PL5",
+     "kind": "light"
+    }
+   ]
+  },
+  {
+   "id": "C21",
+   "description": "VFD FORWARD FROM LINE RUN OR JOG FORWARD",
+   "path": [
+    {
+     "t": "branch",
+     "paths": [
+      [
+       {
+        "t": "contact",
+        "tag": "CR1",
+        "nc": false,
+        "terms": "21-24",
+        "kind": "relay"
+       }
+      ],
+      [
+       {
+        "t": "contact",
+        "tag": "CR2",
+        "nc": false,
+        "terms": "21-24",
+        "kind": "relay"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "coil",
+     "tag": "VFD1",
+     "kind": "drive-input",
+     "terms": "MI1"
+    }
+   ]
+  },
+  {
+   "id": "C22",
+   "description": "VFD REVERSE FROM JOG REVERSE",
+   "path": [
+    {
+     "t": "contact",
+     "tag": "CR3",
+     "nc": false,
+     "terms": "21-24",
+     "kind": "relay"
+    },
+    {
+     "t": "coil",
+     "tag": "VFD1",
+     "kind": "drive-input",
+     "terms": "MI2"
+    }
+   ]
+  },
+  {
+   "id": "C23",
+   "description": "VFD JOG SPEED FROM EITHER JOG",
+   "path": [
+    {
+     "t": "branch",
+     "paths": [
+      [
+       {
+        "t": "contact",
+        "tag": "CR2",
+        "nc": false,
+        "terms": "31-34",
+        "kind": "relay"
+       }
+      ],
+      [
+       {
+        "t": "contact",
+        "tag": "CR3",
+        "nc": false,
+        "terms": "31-34",
+        "kind": "relay"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "coil",
+     "tag": "VFD1",
+     "kind": "drive-input",
+     "terms": "MI3"
+    }
+   ]
+  }
+ ],
+ "devices": [
+  {
+   "tag": "VFD1",
+   "oldTag": "U1",
+   "category": "vfd",
+   "description": "VFD 5.5 kW for M1",
+   "partNumber": "GS23-47P5",
+   "manufacturer": "DURApulse"
+  },
+  {
+   "tag": "U2",
+   "oldTag": "U2",
+   "category": "other",
+   "description": "Servo drive 1.5 kW, E-CAM flying shear",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "K1",
+   "oldTag": "KM1",
+   "category": "contactor",
+   "description": "Pump contactor, AC220V coil",
+   "partNumber": "SC-E03PG-24VDC",
+   "manufacturer": "Fuji Electric"
+  },
+  {
+   "tag": "OL1",
+   "oldTag": "FR1",
+   "category": "overload",
+   "description": "Pump overload 4–6 A, set 5 A",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "SR1",
+   "oldTag": "KA0",
+   "category": "safetyRelay",
+   "description": "Safety relay",
+   "partNumber": "LG5925-48-61-24",
+   "manufacturer": "Dold"
+  },
+  {
+   "tag": "CR1",
+   "oldTag": "KA1",
+   "category": "relay",
+   "description": "Relay 24 VDC: Line run",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "CR2",
+   "oldTag": "KA2",
+   "category": "relay",
+   "description": "Relay 24 VDC: Jog forward",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "CR3",
+   "oldTag": "KA3",
+   "category": "relay",
+   "description": "Relay 24 VDC: Jog reverse",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "CR4",
+   "oldTag": "KA4",
+   "category": "relay",
+   "description": "Relay 24 VDC: Servo ON",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "CR5",
+   "oldTag": "KA5",
+   "category": "relay",
+   "description": "Relay 24 VDC: Servo ready",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "CR6",
+   "oldTag": "KA6",
+   "category": "relay",
+   "description": "Relay 24 VDC: Servo alarm",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "CR7",
+   "oldTag": "KA7",
+   "category": "relay",
+   "description": "Relay 24 VDC: Cut command",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "CR8",
+   "oldTag": "KA8",
+   "category": "relay",
+   "description": "Relay 24 VDC: Cut return latch",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "CR9",
+   "oldTag": "KA9",
+   "category": "relay",
+   "description": "Relay 24 VDC: Run-out overrun",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "CR10",
+   "oldTag": "KA10",
+   "category": "relay",
+   "description": "Relay 24 VDC: Material present",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "CR11",
+   "oldTag": "KT1",
+   "category": "relay",
+   "description": "Cut watchdog timer 2 s",
+   "partNumber": "KPR-SCS-24VACDC-1",
+   "manufacturer": "Klemsan"
+  },
+  {
+   "tag": "H7CX",
+   "oldTag": "H7CX",
+   "category": "other",
+   "description": "Batch counter",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "SOL1",
+   "oldTag": "YV1",
+   "category": "solenoidValve",
+   "description": "Shear down valve",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "SOL2",
+   "oldTag": "YV2",
+   "category": "solenoidValve",
+   "description": "Shear up valve",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PB1",
+   "oldTag": "SB1",
+   "category": "pushbutton",
+   "description": "Pump start (油泵启动)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PB2",
+   "oldTag": "SB2",
+   "category": "pushbutton",
+   "description": "Pump stop (油泵停止)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PB3",
+   "oldTag": "SB3",
+   "category": "pushbutton",
+   "description": "Line start (运行)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PB4",
+   "oldTag": "SB4",
+   "category": "pushbutton",
+   "description": "Line stop (停止)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PB5",
+   "oldTag": "SB5",
+   "category": "pushbutton",
+   "description": "Jog forward (点动正转)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PB6",
+   "oldTag": "SB6",
+   "category": "pushbutton",
+   "description": "Jog reverse (点动反转)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PB7",
+   "oldTag": "SB7",
+   "category": "pushbutton",
+   "description": "Manual cut, line stopped only (手动剪切)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "SS1",
+   "oldTag": "SA1",
+   "category": "selector",
+   "description": "Servo enable selector (伺服使能)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "LS1",
+   "oldTag": "SQ1",
+   "category": "sensor",
+   "description": "Shear down limit (下限位)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "LS2",
+   "oldTag": "SQ2",
+   "category": "sensor",
+   "description": "Shear up limit (上限位)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PE1",
+   "oldTag": "SQ3",
+   "category": "sensor",
+   "description": "Run-out end photo eye, NPN (出料到位)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PX1",
+   "oldTag": "SQ4",
+   "category": "sensor",
+   "description": "Entry inductive sensor, NPN (有料检测)",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PL1",
+   "oldTag": "HL1",
+   "category": "pilotLight",
+   "description": "Power on lamp",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PL2",
+   "oldTag": "HL2",
+   "category": "pilotLight",
+   "description": "Pump running lamp",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PL3",
+   "oldTag": "HL3",
+   "category": "pilotLight",
+   "description": "Line running lamp",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PL4",
+   "oldTag": "HL4",
+   "category": "pilotLight",
+   "description": "Fault lamp",
+   "partNumber": null,
+   "manufacturer": null
+  },
+  {
+   "tag": "PL5",
+   "oldTag": "HL5",
+   "category": "pilotLight",
+   "description": "Batch complete lamp",
+   "partNumber": null,
+   "manufacturer": null
+  }
+ ]
+}

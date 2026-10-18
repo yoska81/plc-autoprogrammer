@@ -14,7 +14,7 @@ const HASH = process.env.HASH === '1'; // preview build (hash routing, example p
 const log = (...a) => console.log('•', ...a);
 
 const ROUTES = ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=layout',
-  '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/electrical?tab=improve', '/electrical?tab=lists', '/sourcing', '/engineer', '/hmi', '/program', '/simulate', '/review', '/export', '/settings', '/plc', '/import', '/new'];
+  '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/electrical?tab=improve', '/electrical?tab=lists', '/sourcing', '/engineer', '/hmi', '/program', '/simulate', '/review', '/export', '/settings', '/plc', '/import', '/import?tab=program', '/import?tab=photos', '/new'];
 const VIEWPORTS = [[1366, 768], [1920, 1080]];
 
 /** Runs in the page: layout and readability problems. */

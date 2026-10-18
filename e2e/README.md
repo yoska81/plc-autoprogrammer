@@ -11,11 +11,11 @@ node e2e/app.e2e.cjs                  # BASE_URL=http://localhost:5173 by defaul
 Screenshots and downloaded files land in `e2e/out/` (git-ignored).
 Playwright is loaded from the global install (`/opt/node22/lib/node_modules/playwright`, Chromium in `/opt/pw-browsers`).
 
-Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/review/codeRules/iec.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/electrical/layout/layout.test.ts`, `npx tsx src/electrical/catalog.test.ts`, `npx tsx src/electrical/vfdLine.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/hmi/theme.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/plc/core/profiles/logix.test.ts`, `npx tsx src/plc/core/profiles/micro800.test.ts`, `npx tsx src/plc/core/profiles/siemens.test.ts`, `npx tsx src/plc/core/tagNames.test.ts` `npx tsx src/electrical/vfd.test.ts`, `npx tsx src/components/questions/knowledge.test.ts` (answered once anywhere → never asked again), `npx tsx src/components/questions/onePlace.test.ts` (questions only on the Machine description page; Update all leaves none open), `npx tsx src/commissioning/checklist.test.ts`, `npx tsx src/redlines/redlines.test.ts` and `npx tsx src/lib/ai/speed.test.ts` (per-task effort, answer cache, timing, cycle renaming, equipment rules).
+Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/review/codeRules/iec.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/electrical/layout/layout.test.ts`, `npx tsx src/electrical/catalog.test.ts`, `npx tsx src/electrical/vfdLine.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/hmi/theme.test.ts`, `npx tsx src/deliverables/noPanel.test.ts`, `npx tsx src/hmi/engine/motion.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/plc/core/profiles/logix.test.ts`, `npx tsx src/plc/core/profiles/micro800.test.ts`, `npx tsx src/plc/core/profiles/siemens.test.ts`, `npx tsx src/plc/core/tagNames.test.ts` `npx tsx src/electrical/vfd.test.ts`, `npx tsx src/components/questions/knowledge.test.ts` (answered once anywhere → never asked again), `npx tsx src/components/questions/onePlace.test.ts` (questions only on the Machine description page; Update all leaves none open), `npx tsx src/commissioning/checklist.test.ts`, `npx tsx src/redlines/redlines.test.ts` and `npx tsx src/lib/ai/speed.test.ts` (per-task effort, answer cache, timing, cycle renaming, equipment rules).
 
 Update-all speed: `npx tsx tools/bench-update.ts` (see `tools/bench/README.md`).
 
-Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/review/codeRules/iec.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/electrical/layout/layout.test.ts`, `npx tsx src/electrical/catalog.test.ts`, `npx tsx src/electrical/vfdLine.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/hmi/theme.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/plc/core/profiles/logix.test.ts`, `npx tsx src/plc/core/profiles/micro800.test.ts`, `npx tsx src/plc/core/profiles/siemens.test.ts`, `npx tsx src/plc/core/tagNames.test.ts` `npx tsx src/electrical/vfd.test.ts` and `npx tsx src/deliverables/certPack.test.ts` (certification pack, shop build time).
+Unit tests: `npx tsx src/plc/sim/engine.test.ts`, `npx tsx src/electrical/strength.test.ts`, `npx tsx src/electrical/step/cabinetStep.test.ts`, `npx tsx src/electrical/labels/layout.test.ts`, `npx tsx src/electrical/prices.test.ts`, `npx tsx src/review/codeRules/codeRules.test.ts`, `npx tsx src/review/codeRules/iec.test.ts`, `npx tsx src/components/questions/questions.test.ts`, `npx tsx src/electrical/layout/layout.test.ts`, `npx tsx src/electrical/catalog.test.ts`, `npx tsx src/electrical/vfdLine.test.ts`, `npx tsx src/online/online.test.ts`, `npx tsx src/hmi/editor.test.ts`, `npx tsx src/hmi/theme.test.ts`, `npx tsx src/deliverables/noPanel.test.ts`, `npx tsx src/hmi/engine/motion.test.ts`, `npx tsx src/plc/core/analog.test.ts`, `npx tsx src/electrical/analog.test.ts`, `npx tsx src/plc/core/profiles/logix.test.ts`, `npx tsx src/plc/core/profiles/micro800.test.ts`, `npx tsx src/plc/core/profiles/siemens.test.ts`, `npx tsx src/plc/core/tagNames.test.ts` `npx tsx src/electrical/vfd.test.ts` and `npx tsx src/deliverables/certPack.test.ts` (certification pack, shop build time).
 
 ## Preview build
 
@@ -59,6 +59,8 @@ BASE_URL=http://localhost:5203 node e2e/start-clean.e2e.cjs # a copy of the exam
 BASE_URL=http://localhost:5203 node e2e/persist.e2e.cjs    # what was typed/selected survives leaving a page, reloading and switching projects
 BASE_URL=http://localhost:5203 node e2e/hmi-brands.e2e.cjs # Allen-Bradley + Siemens panels: equipment, HMI, simulator, tag list
 BASE_URL=http://localhost:5203 node e2e/hmi-looks.e2e.cjs  # every HMI look: picker thumbnails, look follows the panel maker, no text past its element or on another, PNG/PDF exports in the look
+BASE_URL=http://localhost:5203 node e2e/hmi-no-panel.e2e.cjs # "No touch panel": HMI page shows the operator station (earlier screens kept, not used), no HMI in the simulator or the exports, operator station in the engineering package and Excel
+BASE_URL=http://localhost:5203 node e2e/hmi-motion.e2e.cjs  # servo axes, encoder, ultrasonic level/distance: Motion / Process / Setup screens on a 7" and a 4.3" panel in every look, no text past its element or on another
 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # projects saved by older versions (e2e/old-data/*.json) still open and export
 HASH=1 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # preview build: a new example version never replaces the open project
 ```
@@ -71,6 +73,30 @@ text on lime. `old-data/<commit>.json` is the browser storage the example projec
 BASE_URL=http://localhost:5203 node e2e/sourcing.e2e.cjs   # BOM sourcing, alternatives + Swap (impact, Undo), live check (web search mocked), Optimise, Engineer review (rules + AI with one-click fix), review package
 npx tsx src/sourcing/sourcing.test.ts                      # sourcing data, equivalents, swap impact (mounting), optimise, live-check source verification
 ```
+
+## Convert existing drawings
+
+```bash
+node e2e/fixtures/convert/make-fixtures.cjs                # (re)builds the sample set: 4-sheet GB-style PDF + DXF export with Chinese text
+BASE_URL=http://localhost:5203 node e2e/convert.e2e.cjs    # New project → From existing drawings → upload → read (AI mocked) → description, questions, old → new table → rebuild → function kept
+BASE_URL=http://localhost:5203 node e2e/convert-rollformer.e2e.cjs  # acceptance case: one CAD file, 6 sheets in model space, servo flying shear, no PLC, E-stop only into a VFD → safety relay + STO
+npx tsx src/convert/convert.test.ts                        # DXF text, foreign part numbers, kW → HP, mm² → AWG, 380 V 50 Hz → 480 V 60 Hz, GB → NFPA tags, cross-match, relay logic (kept / into a PLC), function kept
+```
+
+The acceptance case `roll-former.dxf` mirrors a real drawing a user sent (a DWG): a roll-forming machine with a 5.5 kW
+VFD and a 1.5 kW servo flying shear, six A3 sheets side by side in model space, MTEXT with SimSun codes. A DWG is read
+in the Windows app through the installed (free) ODA File Converter (`electron/oda.cjs` `toDxf`: DWG → DXF → `dxf.ts`), or
+through a plugged-in in-browser reader (`setDwgReader` in `src/convert/dxf.ts`; none is bundled). Otherwise the upload
+links the ODA download and asks for DXF or PDF. The mocked AI answer is `src/convert/__fixtures__/rollFormer.ts`.
+
+Machines without a PLC: every control circuit is read as a function (coil, contacts, timer setting, or a drive's
+built-in logic). The conversion either moves the relay logic into a new PLC (default: field devices become I/O, relays
+and timers program logic) or keeps it as relays with parts for the target; a drive's own logic stays in the drive.
+Function kept checks each circuit. Unit fixture: `src/convert/__fixtures__/relayConveyor.ts`.
+
+The sample set is a Chinese-style sorting conveyor (Mitsubishi FX3U, CHINT / Delixi parts, 380 V 50 Hz, 220 VAC
+coils, single-channel E-stop). The mocked AI answers with `src/convert/__fixtures__/chineseConveyor.ts`, which
+the unit tests use too.
 
 ## HMI screens made by hand
 
@@ -115,3 +141,11 @@ The first press of a microphone asks with a native dialog (stubbed: Allow once /
 is explained in the mic popover (no address-bar advice); "Allow once" lasts until the app closes; camera
 requests are refused. Unit test: `npx tsx src/voice/micAccess.test.ts`. The preview e2e checks that the
 preview shows the mic as not available (it has no microphone) and makes no microphone request.
+
+## Cabinet photos → as-built drawing
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/photos.e2e.cjs   # Import → Cabinet photos: 3 photos (AI mocked) → merged review with photo crops → as-built panel layout in the photographed rail order + BOM; hidden items asked on the Machine description page; Convert hands the parts to the shared review
+npx tsx src/convert/photos/photos.test.ts                 # merge (one device per real device), review → as-built design, layout order, BOM, ExistingMachine mapping
+```
+Screenshots land in `e2e/out-photos/`.
