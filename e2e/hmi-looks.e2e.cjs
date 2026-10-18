@@ -14,6 +14,8 @@ fs.mkdirSync(OUT, { recursive: true });
 const log = (...a) => console.log('•', ...a);
 const fails = [];
 const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', what); } };
+/** The large screen on the HMI page (the screen list's thumbnails carry the same aria-label). */
+const mainSvg = (page) => page.evaluateHandle(() => [...document.querySelectorAll('svg[aria-label^="HMI screen:"]')].sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0]);
 
 const hmiState = (page) => page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design);
 const screenButtons = (page) => page.locator('nav[aria-label="Screens"] > button');
@@ -43,7 +45,7 @@ const screenButtons = (page) => page.locator('nav[aria-label="Screens"] > button
   const startDesign = await hmiState(page);
   check(!startDesign.look, 'example design has no look stored');
   check(/C-more style \(panel\)/.test(await picker.innerText()), `picker shows the C-more look as the panel's (${await picker.innerText()})`);
-  const bg = async () => page.locator('svg[aria-label^="HMI screen:"]').first().evaluate((s) => s.style.background);
+  const bg = async () => (await mainSvg(page)).evaluate((s) => s.style.background);
   const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
   check((await bg()) === rgb(theme.screens.cmore), `screen drawn in the C-more look (${await bg()})`);
 
@@ -113,7 +115,7 @@ const screenButtons = (page) => page.locator('nav[aria-label="Screens"] > button
       await page.waitForTimeout(60);
       const design = await hmiState(page);
       const found = await page.evaluate((els) => {
-        const svg = document.querySelector('svg[aria-label^="HMI screen:"]');
+        const svg = [...document.querySelectorAll('svg[aria-label^="HMI screen:"]')].sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
         const out = [];
         const texts = [];
         const byId = Object.fromEntries(els.map((e) => [e.id, e]));
@@ -141,7 +143,7 @@ const screenButtons = (page) => page.locator('nav[aria-label="Screens"] > button
       }, design.screens.find((s) => s.name === design.screens[i].name).elements);
       const name = design.screens[i].name;
       check(found.length === 0, `${look} / ${name}: ${found.slice(0, 4).join('; ')}`);
-      if (i === 0) await page.locator('svg[aria-label^="HMI screen:"]').first().screenshot({ path: path.join(OUT, `${String(theme.looks.indexOf(look) + 1).padStart(2, '0')}_${look}.png`) });
+      if (i === 0) await (await mainSvg(page)).screenshot({ path: path.join(OUT, `${String(theme.looks.indexOf(look) + 1).padStart(2, '0')}_${look}.png`) });
     }
     log(`${theme.labels[look]}: ${nScreens} screens checked`);
   }

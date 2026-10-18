@@ -29,3 +29,16 @@ export const showNum = (v: number) => (Number.isInteger(v) || !Number.isFinite(v
 
 export const stateFor = (states: HmiState[] | undefined, v: number): HmiState | null =>
   (states ?? []).find((s) => s.value === v) ?? null;
+
+/**
+ * Alarm limits of a bar (its `limits` addresses) as fractions of the bar, live only (a static view
+ * has no values), and whether the value is beyond one of them.
+ */
+export function barLimits(el: HmiElement, ctx: Ctx, v: number): { marks: number[]; beyond: boolean } {
+  if (!el.limits || !ctx.read) return { marks: [], beyond: false };
+  const min = el.min ?? 0, max = el.max ?? 100, span = max - min || 1;
+  const num = (a?: string | null) => { if (!a) return null; const x = Number(ctx.read!(a)); return Number.isFinite(x) && x !== 0 ? x : null; };
+  const hi = num(el.limits.hi), lo = num(el.limits.lo);
+  const marks = [hi, lo].filter((x): x is number => x !== null && x > min && x < max).map((x) => (x - min) / span);
+  return { marks, beyond: (hi !== null && v >= hi) || (lo !== null && v <= lo) };
+}

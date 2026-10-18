@@ -96,6 +96,8 @@ export interface HmiElement {
   src?: string;
   /** 'image' elements: darkened 0 (as is) … 0.9, like a screen background's dim. */
   dim?: number;
+  /** Bars: addresses of the high / low alarm limits, drawn as marks on the bar; the bar turns amber beyond them. */
+  limits?: { hi?: string | null; lo?: string | null };
 }
 
 /** A picture behind a screen (photo of the machine, screenshot of an existing HMI, drawing). */
