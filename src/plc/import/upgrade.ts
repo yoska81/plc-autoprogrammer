@@ -54,8 +54,8 @@ export interface UpgradePlan {
 const SAME_FAMILY: Partial<Record<SourceFormat, string>> = { l5x: 'logix', l5k: 'logix', 'click-csv': 'click', 'siemens-scl': 'siemens-s7', 'siemens-stl': 'siemens-s7', 'siemens-xml': 'siemens-s7', 'siemens-tags': 'siemens-s7' };
 
 /** PLC the program goes on: the original's family, else the current PLC when it draws ladder, else CLICK. */
-export function targetPlc(format: SourceFormat, currentPlcId: string): PlcProfile {
-  const same = SAME_FAMILY[format];
+export function targetPlc(format: SourceFormat, currentPlcId: string, vendor = ''): PlcProfile {
+  const same = format === 'plcopen' && /siemens/i.test(vendor) ? 'siemens-s7' : SAME_FAMILY[format];
   const p = same ? PLC_PROFILES.find((x) => x.id === same && x.available) : undefined;
   if (p) return p;
   const cur = getProfile(currentPlcId);
@@ -77,7 +77,7 @@ export function chooseCpu(profile: PlcProfile, need: Need): { cpuId: string; mod
 }
 
 export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = new Date()): UpgradePlan {
-  const profile = targetPlc(imp.source.format, currentPlcId);
+  const profile = targetPlc(imp.source.format, currentPlcId, imp.source.vendor);
   const { cpuId, modules } = chooseCpu(profile, needOf(imp));
   const cpu = profile.cpuModels.find((c) => c.id === cpuId) ?? profile.cpuModels[0];
   const m = materialize(imp, profile, cpu, moduleSlots(modules));
@@ -86,9 +86,11 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
   const ioTags: TagDefinition[] = [];
   m.io.forEach((p, k) => {
     const address = materializedAddress(m.names, imp.io[k].name);
-    if (address && !have.has(address.toUpperCase())) ioTags.push({ address, nickname: nickOf(imp.io[k].name), comment: p.description });
+    if (address && !have.has(address.toUpperCase())) ioTags.push({ address, nickname: imp.io[k].name, comment: p.description });
   });
-  const program: LadderProgram = { ...m.program, tags: [...ioTags, ...m.program.tags] };
+  let program: LadderProgram = { ...m.program, tags: [...ioTags, ...m.program.tags] };
+  // Names stay as in the original program; CLICK nicknames are at most 24 letters, digits and _ (full name in the comment).
+  if (profile.id === 'click') program = { ...program, tags: clickNicknames(program.tags) };
   const summary = programSummary(imp);
   return {
     plcId: profile.id, cpuId: cpu.id, modules,
@@ -102,6 +104,16 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
       names: m.names, blockOrigin: imp.blockOrigin,
     },
   };
+}
+
+export function clickNicknames(tags: TagDefinition[]): TagDefinition[] {
+  const used = new Set<string>();
+  return tags.map((t) => {
+    let n = nickOf(t.nickname);
+    for (let i = 2; used.has(n.toLowerCase()); i++) n = `${nickOf(t.nickname).slice(0, 24 - String(i).length - 1)}_${i}`;
+    used.add(n.toLowerCase());
+    return n === t.nickname ? t : { ...t, nickname: n, comment: [`Original: ${t.nickname}`, t.comment].filter(Boolean).join(' — ') };
+  });
 }
 
 const materializedAddress = (names: Record<string, string>, name: string) => Object.entries(names).find(([a, n]) => n === name && !a.startsWith('@'))?.[0];

@@ -82,9 +82,9 @@ export function buildL5x(program: LadderProgram, ctx: ExportContext): string {
     <RedundancyInfo Enabled="false" KeepTestEditsOnSwitchOver="false" IOMemoryPadPercentage="90" DataTablePadPercentage="50"/>
     <Security Code="0" ChangesToDetect="16#ffff_ffff_ffff_ffff"/>
     <SafetyInfo/>
-    <DataTypes/>
+    ${lx.decls.dataTypes.length ? `<DataTypes>\n${lx.decls.dataTypes.join('\n')}\n    </DataTypes>` : '<DataTypes/>'}${lx.decls.aois.length ? `\n    <AddOnInstructionDefinitions>\n${lx.decls.aois.join('\n')}\n    </AddOnInstructionDefinitions>` : ''}
     <Tags>
-${lx.tags.map((t) => tagXml(t, '      ')).join('\n')}
+${[...lx.tags.map((t) => tagXml(t, '      ')), ...lx.decls.tags].join('\n')}
     </Tags>
     <Programs>
       <Program Name="MainProgram" TestEdits="false" MainRoutineName="MainRoutine" Disabled="false" UseAsFolder="false">

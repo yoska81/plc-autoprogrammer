@@ -21,7 +21,7 @@
  */
 import type { AnalogChannel, CpuModel, ExportContext, ModuleSlot, PlcProfile, ProgramExporter } from '../profile';
 import type { AnalogRange } from '../../../types/io';
-import { elementAddresses, type LadderProgram } from '../ladder';
+import { elementAddresses, isBlockRaw, type LadderOutput, type LadderProgram } from '../ladder';
 import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress } from './click';
 import { toIecSt, type StDialect, type StProgram, type StVariable } from './iecSt';
 import { getPart } from '../../../electrical/catalog';
@@ -144,7 +144,12 @@ export interface SclExport { scl: string; tags: SiemensTag[]; st: StProgram }
 export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport {
   const c = SIEMENS_CPUS.find((x) => x.id === ctx.cpuId) ?? SIEMENS_CPUS[1];
   const tags: SiemensTag[] = [];
-  const st = toIecSt(program, ctx, sclDialect(ctx, c, tags));
+  // Whole SCL blocks kept from an imported program (an FC the ladder model can't hold) go in as blocks of their own.
+  const blocks: string[] = [];
+  const own = (x: LadderOutput) => x.type === 'RAW' && x.vendor === 'siemens-s7' && isBlockRaw(x);
+  for (const r of program.rungs) for (const o of r.outputs) if (own(o) && o.type === 'RAW') blocks.push(o.text.trim());
+  const rest: LadderProgram = { ...program, rungs: program.rungs.map((r) => ({ ...r, outputs: r.outputs.filter((o) => !own(o)) })).filter((r) => r.outputs.length) };
+  const st = toIecSt(rest, ctx, sclDialect(ctx, c, tags));
   // Setpoints, counters and run hours survive a power cycle (CLICK keeps DS / DD / DH / DF registers and
   // counters retentive): those statics are RETAIN in the optimized instance DB, the rest are not.
   const RETAIN_RE = /^(DS|DD|DH|DF|CT|CTD)\d+$/i;
@@ -157,7 +162,7 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   const retain = st.variables.filter((v) => RETAIN_RE.test(v.base)).map(line);
   const indent = (s: string) => (s ? `   ${s}` : s);
   const body = st.body.split('\n').map(indent).join('\n');
-  const scl = `${BOM}FUNCTION_BLOCK "Machine"
+  const scl = `${BOM}${blocks.map((b) => `${b}\n\n`).join('')}FUNCTION_BLOCK "Machine"
 { S7_Optimized_Access := 'TRUE' }
 VERSION : 0.1
    VAR

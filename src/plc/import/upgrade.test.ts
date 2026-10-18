@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { importProgramText } from './index';
-import { planUpgrade, programSummary } from './upgrade';
+import { clickNicknames, planUpgrade, programSummary } from './upgrade';
 import { getProfile, getCpu } from '../core/profiles';
 import { resolveAddresses } from '../core/profile';
 import { moduleSlots } from '../core/modules';
@@ -65,6 +65,20 @@ const capper = importProgramText('capper.L5X', readFileSync(join(here, '__fixtur
   const st = importProgramText('filler.xml', readFileSync(join(here, '__fixtures__', 'filler_plcopen.xml'), 'utf8'));
   assert.equal(planUpgrade(st, 'logix').plcId, 'logix');
   assert.equal(planUpgrade(st, 'generic-st').plcId, 'click');
+}
+
+// CLICK nicknames only for a CLICK target: 24 characters of [A-Za-z0-9_], unique, full name in the comment.
+{
+  const t = clickNicknames([
+    { address: 'DF1', nickname: 'Capper.Torque_SP', comment: 'REAL' },
+    { address: 'C1', nickname: 'Conveyor_Infeed_Running_Fwd', comment: '' },
+    { address: 'C2', nickname: 'Conveyor_Infeed_Running_Rev', comment: '' },
+    { address: 'C3', nickname: 'Start_PB', comment: 'x' },
+  ]);
+  assert.deepEqual(t.map((x) => x.nickname), ['Capper_Torque_SP', 'Conveyor_Infeed_Running_', 'Conveyor_Infeed_Runnin_2', 'Start_PB']);
+  assert.equal(t[0].comment, 'Original: Capper.Torque_SP — REAL');
+  assert.equal(t[3].comment, 'x', 'unchanged names keep their comment');
+  assert.equal(planUpgrade(capper, 'click').program.tags.find((x) => x.nickname === 'Capper.Torque_SP')?.address.startsWith('DF'), true, 'Logix target: original names');
 }
 
 console.log('upgrade.test: all passed');

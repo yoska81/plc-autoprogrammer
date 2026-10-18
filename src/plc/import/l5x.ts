@@ -67,6 +67,42 @@ function moduleComments(root: XNode): Map<string, string> {
   return out;
 }
 
+/**
+ * Each RAW instruction carries the original definitions it needs (tags it names, their user-defined
+ * types, add-on instructions it calls), so an export to Logix can declare them.
+ */
+function attachDecls(src: string, routines: ForeignRoutine[]): void {
+  const slices = (tag: string) => {
+    const m = new Map<string, string>();
+    const re = new RegExp(`<${tag}\\s[^>]*\\bName="([^"]+)"[^>]*?(?:/>|>[\\s\\S]*?</${tag}>)`, 'g');
+    for (const x of src.matchAll(re)) if (!m.has(x[1].toLowerCase())) m.set(x[1].toLowerCase(), x[0]);
+    return m;
+  };
+  const tags = slices('Tag'), types = slices('DataType'), aois = slices('AddOnInstructionDefinition');
+  const declFor = (text: string): string[] => {
+    const out = new Set<string>();
+    const addType = (name: string) => {
+      const k = name.toLowerCase();
+      if (types.has(k)) out.add(types.get(k)!);
+      if (aois.has(k)) out.add(aois.get(k)!);
+    };
+    for (const m of text.matchAll(/(?<![\w.:])([A-Za-z_]\w*)(\s*\()?/g)) {
+      if (m[2]) { addType(m[1]); continue; } // an instruction: an add-on instruction's definition
+      const t = tags.get(m[1].toLowerCase());
+      if (!t || /TagType="Alias"/.test(t)) continue; // aliases point at the original modules
+      out.add(t);
+      const dt = /\bDataType="([^"]+)"/.exec(t)?.[1];
+      if (dt) addType(dt);
+    }
+    return [...out];
+  };
+  for (const r of routines) for (const g of r.rungs) for (const x of [...g.branches.flat(), ...g.outputs]) {
+    if (x.type !== 'RAW') continue;
+    const decl = declFor(x.text);
+    if (decl.length) x.decl = decl;
+  }
+}
+
 /** A rung kept whole as its original text (RAW): it goes back into the PLC as it was. */
 export function wholeRung(text: string, comment: string, id: string): Rung {
   return { id, comment, branches: [], outputs: [{ type: 'RAW', vendor: 'logix', text: text.replace(/;\s*$/, '') }] };
@@ -156,6 +192,7 @@ export function readL5x(src: string): ForeignProgram {
     tags.push({ name: base, dataType: /\.\d+$/.test(base) ? 'BOOL' : 'INT', comment: comments.get(base.toUpperCase()) ?? '', address: base, io: logixIoKind(base)!, ...(/\.\d+$/.test(base) ? {} : { analog: true }) });
   }
   fillPresets(routines, tags);
+  attachDecls(src, routines);
   const outside = [
     ...kids(kid(ctrl, 'AddOnInstructionDefinitions'), 'AddOnInstructionDefinition').map((d) => `Add-on instruction ${d.attrs.Name}`),
     ...routines.filter((r) => r.language === 'fbd' || r.language === 'sfc').map((r) => `${r.language.toUpperCase()} routine ${r.name}`),

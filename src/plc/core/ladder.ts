@@ -33,6 +33,8 @@ export interface RawInstruction {
   type: 'RAW';
   vendor: string;
   text: string;
+  /** The original definitions the instruction needs, in the vendor's own format (Logix: <Tag>, <DataType>, <AddOnInstructionDefinition> XML). */
+  decl?: string[];
 }
 
 export type LadderElement = ContactElement | CompareElement | RawInstruction;
@@ -118,6 +120,23 @@ export interface LadderProgram {
 }
 
 export const EMPTY_PROGRAM: LadderProgram = { rungs: [], tags: [] };
+
+/**
+ * Names in the text of a kept (Structured Text / SCL) instruction, with where they are: not quoted block
+ * names, not members after a dot, not calls, not parameter names of a call (`(Raw := …`, `, OUT => …`).
+ */
+export function rawTextNames(text: string): { name: string; index: number }[] {
+  const out: { name: string; index: number }[] = [];
+  for (const m of text.matchAll(/(?<![\w."#])([A-Za-z_]\w*)(?![\w(])/g)) {
+    const before = text.slice(0, m.index), after = text.slice(m.index + m[1].length);
+    if (/[(,]\s*$/.test(before) && /^\s*(:=|=>)/.test(after)) continue;
+    out.push({ name: m[1], index: m.index });
+  }
+  return out;
+}
+
+/** A RAW holding a whole block of Structured Text / SCL (FUNCTION … END_FUNCTION): exported as a block of its own. */
+export const isBlockRaw = (r: RawInstruction): boolean => /^\s*(FUNCTION_BLOCK|FUNCTION|ORGANIZATION_BLOCK|DATA_BLOCK|TYPE)\b/i.test(r.text);
 
 /** What an exporter writes for a RAW instruction of another PLC (never dropped silently). */
 export const rawTodo = (r: RawInstruction): string => `TODO (from ${r.vendor}): ${r.text}`;

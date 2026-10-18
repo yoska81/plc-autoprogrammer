@@ -55,6 +55,11 @@ const writes = (r: Rung, a: string) => r.outputs.some((o) => 'address' in o && o
   assert.deepEqual(o.driven[0].out, { type: 'MATH', dest: 'Count', expression: 'Count + 1' });
   assert.deepEqual(o.untranslated, [], 'nothing dropped');
   assert.deepEqual(o.driven[1].out, { type: 'RAW', vendor: 'logix', text: 'MSG(M1)' }, 'an unknown instruction at the end is kept as a RAW output');
+  const leg = convertLogixRung('XIC(A)[XIC(B),MEQ(S,M,C)]OTE(C);');
+  assert.deepEqual(toBranches(leg.driven[0].cond), [[{ type: 'NO', address: 'A' }, { type: 'NO', address: 'B' }], [{ type: 'NO', address: 'A' }, { type: 'RAW', vendor: 'logix', text: 'MEQ(S,M,C)' }]], 'a RAW at the end of a branch leg is still a condition (C is not on with A alone)');
+  assert.equal(leg.driven.length, 1);
+  const outLeg = convertLogixRung('XIC(A)[OTE(B),MSG(M)];');
+  assert.deepEqual(outLeg.driven.map((d) => d.out.type), ['OUT', 'RAW'], 'in a branch at the end of the rung it is an output');
   const mid = convertLogixRung('XIC(A)MEQ(Src,Mask,Cmp)OTE(B);');
   assert.deepEqual(toBranches(mid.driven[0].cond), [[{ type: 'NO', address: 'A' }, { type: 'RAW', vendor: 'logix', text: 'MEQ(Src,Mask,Cmp)' }]], 'in the middle of a rung it is a RAW condition');
   assert.throws(() => parseRungText('XIC(a OTE(b);'), /missing/);
@@ -118,8 +123,7 @@ const capper = importProgramText('capper.L5X', fixture('capper.L5X'));
   const nick = new Map(capper.program.tags.map((t) => [t.nickname, t.address]));
   assert.match(nick.get('Step')!, /^DD\d+$/, 'DINT → DD');
   assert.match(nick.get('Torque_Nm')!, /^DF\d+$/, 'REAL → DF');
-  assert.match(nick.get('Capper_Torque_SP')!, /^DF\d+$/, 'UDT member keeps its type');
-  assert.match(capper.program.tags.find((t) => t.nickname === 'Capper_Torque_SP')!.comment, /^Original: Capper\.Torque_SP \(REAL\)/, 'the full original name and type in the comment');
+  assert.match(nick.get('Capper.Torque_SP')!, /^DF\d+$/, 'UDT member keeps its type');
   assert.match(nick.get('Spin_Tmr')!, /^T\d+$/);
   assert.match(nick.get('Bottle_Count')!, /^CT\d+$/);
   // The seal-in rung: (Start rising OR Running) AND permissives.

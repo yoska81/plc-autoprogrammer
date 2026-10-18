@@ -1,7 +1,7 @@
 import type { IOPoint } from '../../types/io';
 import type { AIProvider, Effort } from '../../store/useSettingsStore';
 import type { CpuModel, PlcProfile } from '../core/profile';
-import { newRungId, type LadderProgram } from '../core/ladder';
+import { newRungId, type LadderOutput, type LadderProgram, type Rung } from '../core/ladder';
 import { LADDER_RESPONSE_SCHEMA } from '../core/schema';
 import type { ValidationIssue } from '../core/validate';
 import { callClaude, type ChatTurn } from '../../lib/ai/anthropic';
@@ -230,6 +230,67 @@ export function reviseLadder(
   const issueText = issues.length
     ? issues.map((i) => `- [${i.severity}] ${i.rungId ? `rung ${i.rungId}: ` : ''}${i.message}`).join('\n')
     : '(none)';
-  const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}${hmiText(ctx)}\n\nCurrent program (JSON, includes any manual edits):\n${JSON.stringify(program)}\n\nIssues the app's checker found:\n${issueText}\n\nRequest:\n${request}`;
-  return run(ai, systemPrompt(ctx), [...history, { role: 'user', content }]);
+  const hasRaw = program.rungs.some((r) => [...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW'));
+  const rawNote = hasRaw ? '\n\nElements and outputs of type RAW were imported from the original PLC program and are kept as their text: copy each one back exactly as given, in its rung, unless the request is about that instruction (then change its text only). Never add a RAW.' : '';
+  const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}${hmiText(ctx)}\n\nCurrent program (JSON, includes any manual edits):\n${JSON.stringify(withoutDecl(program))}\n\nIssues the app's checker found:\n${issueText}${rawNote}\n\nRequest:\n${request}`;
+  return run(ai, systemPrompt(ctx), [...history, { role: 'user', content }]).then((r) => {
+    if (!r.program || !hasRaw) return r;
+    const kept = keepRaw(program, r.program);
+    return { ...r, program: kept.program, explanation: kept.note ? `${r.explanation}\n\n${kept.note}` : r.explanation };
+  });
+}
+
+/** The program without the original definitions RAW instructions carry (long, and the AI must not change them). */
+function withoutDecl(p: LadderProgram): LadderProgram {
+  const strip = <T extends { type: string }>(x: T): T => {
+    if (x.type !== 'RAW' || !('decl' in x)) return x;
+    const copy = { ...x } as T & { decl?: unknown };
+    delete copy.decl;
+    return copy;
+  };
+  return { ...p, rungs: p.rungs.map((r) => ({ ...r, branches: r.branches.map((b) => b.map(strip)), outputs: r.outputs.map(strip) })) };
+}
+
+type RawItem = Extract<LadderOutput, { type: 'RAW' }>;
+const rawsOf = (r: Rung): RawItem[] => [...r.branches.flat(), ...r.outputs].filter((x): x is RawItem => x.type === 'RAW');
+
+/**
+ * Imported (RAW) instructions survive an AI revision: each one must still be in its rung (its text may
+ * be edited when asked); a rung that lost one is put back as it was; a RAW the AI made up is removed.
+ * Their original definitions (decl) are carried over.
+ */
+export function keepRaw(before: LadderProgram, after: LadderProgram): { program: LadderProgram; note: string } {
+  const beforeById = new Map(before.rungs.map((r) => [r.id, r]));
+  const afterIds = new Set(after.rungs.map((r) => r.id));
+  let restored = 0, invented = 0;
+  const fix = (r: Rung): Rung => {
+    const orig = beforeById.get(r.id);
+    const want = orig ? rawsOf(orig) : [];
+    const have = rawsOf(r);
+    if (want.length && (have.length < want.length || want.some((w, i) => have[i]?.vendor !== w.vendor))) { restored++; return orig!; }
+    if (!want.length && have.length) {
+      invented += have.length;
+      return { ...r, branches: r.branches.map((b) => b.filter((x) => x.type !== 'RAW')), outputs: r.outputs.filter((x) => x.type !== 'RAW') };
+    }
+    let k = 0;
+    const carry = <T extends { type: string }>(x: T): T => {
+      if (x.type !== 'RAW') return x;
+      const w = want[k++];
+      return (w?.decl ? { ...x, decl: w.decl } : x) as T;
+    };
+    return { ...r, branches: r.branches.map((b) => b.map(carry)), outputs: r.outputs.map(carry) };
+  };
+  const rungs = after.rungs.map(fix);
+  // Rungs with imported instructions the AI left out: back in their place.
+  before.rungs.forEach((r, i) => {
+    if (afterIds.has(r.id) || !rawsOf(r).length) return;
+    const prev = before.rungs.slice(0, i).reverse().find((x) => rungs.some((y) => y.id === x.id));
+    rungs.splice(prev ? rungs.findIndex((y) => y.id === prev.id) + 1 : 0, 0, r);
+    restored++;
+  });
+  const notes = [
+    restored ? `${restored} rung${restored === 1 ? '' : 's'} with instructions imported from the original program ${restored === 1 ? 'was' : 'were'} kept as before (the AI had dropped them).` : '',
+    invented ? `${invented} made-up imported instruction${invented === 1 ? ' was' : 's were'} removed.` : '',
+  ].filter(Boolean);
+  return { program: { ...after, rungs }, note: notes.join(' ') };
 }

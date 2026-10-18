@@ -51,7 +51,10 @@ export function exportUpgrade(
     missing.push(vendor === 'logix'
       ? "The original project's module configuration, tasks and controller settings: this is a new project file (keep the original .L5X with the project to write the changes into it instead)"
       : "The original project's module configuration, tasks and controller settings");
-    if (vendor === 'logix' && r.notConverted.some((n) => n.kept)) missing.push('Tags that the instructions kept as written use (message, add-on instruction tags) are not declared in the new file');
+    if (vendor === 'logix') {
+      const undeclared = current.rungs.flatMap((g) => [...g.branches.flat(), ...g.outputs]).filter((x) => x.type === 'RAW' && x.vendor === 'logix' && !x.decl?.length && !/^JSR\(/i.test(x.text) && /\b[A-Za-z_]\w*\b(?!\s*\()/.test(x.text.replace(/^\w+\(/, '')));
+      if (undeclared.length) missing.push(`Definitions of the tags these kept instructions name (the original was an L5K or they were not in the file): ${undeclared.map((x) => (x.type === 'RAW' ? x.text : '')).join(', ')}`);
+    }
   }
   return { mode: 'full', files: target.fullFiles(), missing, changed: [], added: [], newTags: [], warnings: [] };
 }

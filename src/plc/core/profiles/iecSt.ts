@@ -4,7 +4,7 @@
  * differences (I/O variables, how a variable is referenced, first-scan bit, timer / counter block
  * types and parameter names, TIME ↔ ms conversion) come from the dialect.
  */
-import { rawTodo, type CompareElement, type LadderElement, type LadderOutput, type LadderProgram } from '../ladder';
+import { rawTextNames, rawTodo, type CompareElement, type LadderElement, type LadderOutput, type LadderProgram } from '../ladder';
 import type { ExportContext } from '../profile';
 import { logixName } from './logixExport';
 
@@ -104,12 +104,23 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
   }
   const CMP: Record<CompareElement['op'], string> = { '==': '=', '<>': '<>', '>': '>', '>=': '>=', '<': '<', '<=': '<=' };
 
+  // A kept instruction of this PLC names the program's tags by their original names: written as this export's variables.
+  const byNick = new Map(program.tags.map((t) => [t.nickname.toLowerCase(), t.address]));
+  const rawRefs = (text: string) => {
+    let out = text;
+    for (const { name, index } of rawTextNames(text).reverse()) {
+      const a = byNick.get(name.toLowerCase());
+      if (a) out = out.slice(0, index) + op(a, true) + out.slice(index + name.length);
+    }
+    return out;
+  };
+
   function rungSt(r: { comment: string; branches: LadderElement[][]; outputs: LadderOutput[] }): string[] {
     const pre: string[] = [];
     const el = (e: LadderElement): string => {
       if (e.type === 'CMP') return `(${op(e.left, true)} ${CMP[e.op]} ${op(e.right, true)})`;
       if (e.type === 'RAW') {
-        if (e.vendor === d.vendor) return `(${e.text})`;
+        if (e.vendor === d.vendor) return `(${rawRefs(e.text)})`;
         pre.push(`(* ${rawTodo(e).replace(/\*\)/g, '* )')} *)`);
         return 'FALSE';
       }
@@ -164,7 +175,11 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
         }
         case 'COPY': out.push(when(`${op(o.dest)} := ${op(o.source, true)};`)); break;
         case 'MATH': out.push(when(`${op(o.dest)} := ${o.expression.replace(OPERAND_RE, (t) => op(t, true))};`)); break;
-        case 'RAW': out.push(o.vendor === d.vendor ? when(/;\s*$/.test(o.text) ? o.text.trim() : `${o.text.trim()};`) : `(* ${rawTodo(o).replace(/\*\)/g, '* )')} *)`); break;
+        case 'RAW': {
+          const t = rawRefs(o.text.trim());
+          out.push(o.vendor === d.vendor ? when(/;\s*$/.test(t) ? t : `${t};`) : `(* ${rawTodo(o).replace(/\*\)/g, '* )')} *)`);
+          break;
+        }
       }
     }
     return [...(r.comment ? [`(* ${r.comment.replace(/\*\)/g, '* )')} *)`] : []), ...pre, ...out];

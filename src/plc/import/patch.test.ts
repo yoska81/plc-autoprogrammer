@@ -13,6 +13,9 @@ import { importProgramText } from './index';
 import { planUpgrade, type UpgradePlan } from './upgrade';
 import { exportUpgrade, upgradeChanges } from './exportUpgrade';
 import { gunzipText, gzipText } from './gz';
+import { buildL5x } from '../core/profiles/l5x';
+import { buildScl } from '../core/profiles/siemens';
+import { validateProgram } from '../core/validate';
 import { getCpu, getProfile } from '../core/profiles';
 import { resolveAddresses, type ExportContext } from '../core/profile';
 import { moduleSlots } from '../core/modules';
@@ -116,10 +119,18 @@ function routineRange(xml: string, name: string): [number, number] {
   const other = exportUpgrade(plan.original, text, now, target('micro800'));
   assert.equal(other.mode, 'full');
   for (const m of [/Motor_Start\(Conv_Motor.*TODO comment/, /MSG\(Line_Msg\).*TODO comment/, /Add-on instruction Motor_Start/, /FBD routine Speed_FBD/, /module configuration/]) assert.ok(other.missing.some((x) => m.test(x)), `missing lists ${m}`);
+  // A new project file (no original kept) still declares what the kept instructions name.
+  const full = buildL5x(now, setup('conveyor_aoi.L5X').ctx);
+  for (const d of ['<AddOnInstructionDefinition Name="Motor_Start"', '<Tag Name="Conv_Motor" TagType="Base" DataType="Motor_Start"', '<Tag Name="Line_Msg" TagType="Base" DataType="MESSAGE"']) assert.ok(full.includes(d), `${d} declared in the new file`);
+  assert.ok(full.indexOf('<AddOnInstructionDefinitions>') < full.indexOf('<Tags>'), 'add-on instructions before tags');
+  assert.ok(full.includes('Motor_Start(Conv_Motor,Start_PB,Stop_PB)') && full.includes('MSG(Line_Msg)'));
+  const again = importProgramText('full.L5X', full);
+  assert.ok(again.program.rungs.some((r) => r.outputs.some((o) => o.type === 'RAW' && o.text === 'MSG(Line_Msg)')));
   // Same PLC without the original file: a new project, and it says so.
   const noFile = exportUpgrade(plan.original, null, now, target());
   assert.equal(noFile.mode, 'full');
-  assert.ok(noFile.missing.some((x) => /new project file/.test(x)) && noFile.missing.some((x) => /not declared/.test(x)));
+  assert.ok(noFile.missing.some((x) => /new project file/.test(x)));
+  assert.ok(!noFile.missing.some((x) => /not declared/.test(x)), 'the kept instructions bring their definitions');
 }
 
 // ── "Original vs now" beyond the rungs ──
@@ -135,6 +146,36 @@ function routineRange(xml: string, name: string): [number, number] {
   assert.deepEqual(ch.tags.added, ['Guard_Latch (C99)']);
   assert.ok(ch.tags.removed.some((t) => t.startsWith('Fault_Latch')));
   assert.deepEqual(ch.blocksAdded, ['Reject']);
+}
+
+// ── TIA Portal PLCopen: an SCL function kept as written, its bug found, fixed, exported as SCL ──
+{
+  const text = read('mixer_tia_plcopen.xml');
+  const imp = importProgramText('MixTank_MT01.xml', text);
+  const plan = planUpgrade(imp, 'click');
+  assert.equal(plan.plcId, 'siemens-s7', 'a TIA Portal export stays on S7');
+  const fc = plan.program.rungs.find((r) => r.outputs.some((o) => o.type === 'RAW' && /^FUNCTION "FC_ScaleAnalog" : REAL/.test(o.text)));
+  assert.ok(fc, 'FC_ScaleAnalog kept whole, as SCL');
+  const call = plan.program.rungs.flatMap((r) => r.outputs).find((o) => o.type === 'RAW' && /^Level_Pct := "FC_ScaleAnalog"\(Raw := Level_Raw, LoEng := 0.0, HiEng := 100.0\);$/.test(o.text));
+  assert.ok(call, 'the call kept in place, as an SCL statement');
+  let i = 0, q = 0;
+  const io: IOPoint[] = plan.io.map((p) => ({ ...p, id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++q).padStart(3, '0')}` }));
+  const profile = getProfile('siemens-s7');
+  const addresses = resolveAddresses(profile, getCpu(profile, plan.cpuId), io, moduleSlots(plan.modules));
+  const bug = validateProgram(plan.program, profile, new Set(addresses.values())).filter((x) => /NORM_X MAX := 32767/.test(x.message));
+  assert.equal(bug.length, 1, 'the planted NORM_X bug is found');
+  assert.equal(bug[0].severity, 'error');
+  assert.equal(bug[0].rungId, fc!.id);
+  assert.match(bug[0].message, /15\.6 % low/);
+  // Fixed in the kept text (as the fix-it AI would): the finding goes away.
+  const fixed: LadderProgram = { ...plan.program, rungs: plan.program.rungs.map((r) => (r.id === fc!.id ? { ...r, outputs: r.outputs.map((o) => (o.type === 'RAW' ? { ...o, text: o.text.replace('MAX := 32767', 'MAX := 27648') } : o)) } : r)) };
+  assert.equal(validateProgram(fixed, profile, new Set(addresses.values())).filter((x) => /NORM_X/.test(x.message)).length, 0);
+  const labels = new Map<string, string>();
+  for (const p of io) labels.set(addresses.get(p.id)!, p.description);
+  const scl = buildScl(fixed, { io, addresses, labels, header: 't', extraTags: [], cpuId: plan.cpuId, modules: moduleSlots(plan.modules), projectName: 'MixTank' }).scl;
+  assert.ok(scl.indexOf('FUNCTION "FC_ScaleAnalog" : REAL') < scl.indexOf('FUNCTION_BLOCK "Machine"'), 'the function is a block of its own in the SCL source');
+  assert.match(scl, /NORM_X\(MIN := 0, VALUE := #Raw, MAX := 27648\)/);
+  assert.match(scl, /#Level_Pct := "FC_ScaleAnalog"\(Raw := "Level_Raw"|#Level_Pct := "FC_ScaleAnalog"\(Raw := #?\w+/, 'the call uses the export\'s own variables');
 }
 
 // ── The original file is kept compressed ──

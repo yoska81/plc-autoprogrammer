@@ -14,6 +14,7 @@ import { clickRungListing } from './clickExport';
 import { validateProgram } from './validate';
 import { createSimulator } from '../sim/engine';
 import type { ExportContext } from './profile';
+import { keepRaw } from '../ai/ladderAI';
 
 const program: LadderProgram = {
   tags: [{ address: 'C1', nickname: 'Run', comment: '' }],
@@ -40,7 +41,10 @@ assert.match(click, /TODO \(from logix\): MSG\(Line_Msg\)/);
 const issues = validateProgram(program, logixProfile, new Set()).filter((i) => /Not understood/.test(i.message));
 assert.equal(issues.length, 2);
 assert.ok(issues.every((i) => i.severity === 'warning'));
-assert.ok(validateProgram(program, clickProfile, new Set()).filter((i) => /Not understood/.test(i.message)).every((i) => i.severity === 'warning'));
+const onClick = validateProgram(program, clickProfile, new Set()).filter((i) => /cannot run on/.test(i.message));
+assert.equal(onClick.length, 2, 'on another PLC: an error per instruction');
+assert.ok(onClick.every((i) => i.severity === 'error'));
+assert.match(onClick[0].message, /^MSG from Logix cannot run on CLICK/);
 
 // Simulator: the contact is open, the output does nothing; each reported once.
 const sim = createSimulator(program);
@@ -49,5 +53,23 @@ sim.run(100);
 assert.equal(sim.readBit('C2'), false, 'nothing behind a RAW contact switches on');
 assert.equal(sim.state.errors.filter((e) => /Remote\.Ready/.test(e)).length, 1);
 assert.equal(sim.state.errors.filter((e) => /Line_Msg/.test(e)).length, 1);
+
+// AI revisions keep imported instructions.
+{
+  const withDecl: LadderProgram = { ...program, rungs: program.rungs.map((r) => ({ ...r, outputs: r.outputs.map((o) => (o.type === 'RAW' ? { ...o, decl: ['<Tag Name="Line_Msg"/>'] } : o)) })) };
+  // Dropped: rung r1 left out, rung r2 lost its RAW contact → both put back as they were.
+  const dropped = keepRaw(withDecl, { ...withDecl, rungs: [{ ...withDecl.rungs[1], branches: [[{ type: 'NO', address: 'C3' }]] }] });
+  assert.deepEqual(dropped.program.rungs.map((r) => r.id), ['r1', 'r2']);
+  assert.deepEqual(dropped.program.rungs[1], withDecl.rungs[1]);
+  assert.match(dropped.note, /2 rungs .* kept as before/);
+  // Text edited on request: kept, with its definitions.
+  const edited = keepRaw(withDecl, { ...withDecl, rungs: withDecl.rungs.map((r) => (r.id === 'r1' ? { ...r, outputs: [{ type: 'RAW', vendor: 'logix', text: 'MSG(Line_Msg_2)' }] } : r)) });
+  assert.deepEqual(edited.program.rungs[0].outputs[0], { type: 'RAW', vendor: 'logix', text: 'MSG(Line_Msg_2)', decl: ['<Tag Name="Line_Msg"/>'] });
+  assert.equal(edited.note, '');
+  // Made up: removed.
+  const invented = keepRaw(withDecl, { ...withDecl, rungs: [...withDecl.rungs, { id: 'r3', comment: '', branches: [[{ type: 'RAW', vendor: 'logix', text: 'PID(X)' }]], outputs: [{ type: 'OUT', address: 'C5' }] }] });
+  assert.deepEqual(invented.program.rungs[2].branches, [[]]);
+  assert.match(invented.note, /made-up/);
+}
 
 console.log('raw.test: all passed');

@@ -101,11 +101,13 @@ export function convertLogixRung(text: string): RungResult {
 
   const output = (cin: Cond, o: LadderOutput) => driven.push({ cond: cin, out: o });
 
-  function walk(items: Item[], cin: Cond): Cond {
+  /** `atEnd`: nothing follows this list anywhere in the rung (only there can an unknown instruction be an output). */
+  function walk(items: Item[], cin: Cond, atEnd: boolean): Cond {
     let c = cin;
     for (const [k, it] of items.entries()) {
+      const last = atEnd && k === items.length - 1;
       if (it.t === 'branch') {
-        c = or(...it.legs.map((leg) => walk(leg, c)));
+        c = or(...it.legs.map((leg) => walk(leg, c, last)));
         continue;
       }
       const a = it.args;
@@ -157,13 +159,13 @@ export function convertLogixRung(text: string): RungResult {
           break;
         }
         default:
-          // Kept as it was (RAW): with more instructions after it, it is a condition; at the end, an output.
-          if (k < items.length - 1) c = and(c, el({ type: 'RAW', vendor: 'logix', text: it.text }));
-          else output(c, { type: 'RAW', vendor: 'logix', text: it.text });
+          // Kept as it was (RAW): at the very end of the rung an output, anywhere else a condition.
+          if (last) output(c, { type: 'RAW', vendor: 'logix', text: it.text });
+          else c = and(c, el({ type: 'RAW', vendor: 'logix', text: it.text }));
       }
     }
     return c;
   }
-  walk(items, TRUE);
+  walk(items, TRUE, true);
   return { driven, untranslated };
 }

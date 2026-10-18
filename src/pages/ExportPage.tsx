@@ -114,6 +114,9 @@ export default function ExportPage() {
   const hasHmi = Boolean(p.hmi);
   const progFiles = programFiles(p);
   const progErrors = p.issues.filter((i) => i.severity === 'error');
+  // Instructions of an imported program kept as written (not converted, not simulated).
+  const raws = p.ladder.rungs.flatMap((r) => [...r.branches.flat(), ...r.outputs]).filter((x) => x.type === 'RAW');
+  const rawOther = raws.filter((x) => x.type === 'RAW' && x.vendor !== p.profile.id).length;
   const STAGE_NAME = { equipment: 'Equipment', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI screens', program: 'PLC program' } as const;
   const stale = (['equipment', 'io', 'electrical', 'hmi', 'program'] as const).filter((s) => stages[s].status === 'stale').map((s) => STAGE_NAME[s]);
 
@@ -135,6 +138,12 @@ export default function ExportPage() {
           {progErrors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">
               The PLC program has {progErrors.length} checker error{progErrors.length !== 1 && 's'} for the {p.profile.name} (see PLC program below): rebuild it before sending the program to anyone.
+            </div>
+          )}
+          {raws.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900" data-testid="export-raw-count">
+              The program has {raws.length} instruction{raws.length !== 1 && 's'} kept as written from the original program (not converted, not tested in the simulator).
+              {rawOther > 0 ? ` ${rawOther} of them come from another PLC and cannot run on the ${p.profile.name}: they are written as TODO comments.` : ' They go back into the PLC as they were.'}
             </div>
           )}
           {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}

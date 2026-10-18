@@ -17,7 +17,11 @@ export type LogixType = 'BOOL' | 'DINT' | 'REAL' | 'TIMER' | 'COUNTER';
 export interface LogixTag { name: string; dataType: LogixType; aliasFor?: string; description: string; base?: string }
 export interface LogixRung { comment: string; text: string }
 export interface LogixRoutine { name: string; rungs: LogixRung[] }
-export interface LogixProgram { tags: LogixTag[]; routines: LogixRoutine[]; warnings: string[] }
+export interface LogixProgram {
+  tags: LogixTag[]; routines: LogixRoutine[]; warnings: string[];
+  /** Original Logix definitions that imported (RAW) instructions need, by kind, without duplicates. */
+  decls: { dataTypes: string[]; aois: string[]; tags: string[] };
+}
 
 const UNIT_MS: Record<string, number> = { ms: 1, sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 };
 const OPERAND_RE = /\b(CTD|TXT|DS|DD|DH|DF|TD|SD|CT|SC|C|T|X|Y)(\d+)\b/gi;
@@ -45,8 +49,30 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
   const used = new Set<string>(['s', 'local']);
   const warnings: string[] = [];
   const tags = new Map<string, LogixTag>(); // key: neutral base address (T1 for T1/TD1, CT1 for CT1/CTD1)
+  /** Bases that are members of tags declared from the original (not tags of their own). */
+  const declared = new Set<string>();
   const nick = new Map<string, { nickname: string; comment: string }>();
   for (const t of [...ctx.extraTags, ...program.tags]) nick.set(t.address.toUpperCase(), { nickname: t.nickname, comment: t.comment });
+  // Definitions imported instructions need (their own tags, types and add-on instructions).
+  const decls: LogixProgram['decls'] = { dataTypes: [], aois: [], tags: [] };
+  const declNames = new Set<string>();
+  for (const r of program.rungs) for (const x of [...r.branches.flat(), ...r.outputs]) {
+    if (x.type !== 'RAW' || x.vendor !== 'logix') continue;
+    for (const d of x.decl ?? []) {
+      const kind = /^<(\w+)/.exec(d)?.[1], name = /\bName="([^"]+)"/.exec(d)?.[1] ?? '';
+      const key = `${kind}:${name.toLowerCase()}`;
+      if (declNames.has(key)) continue;
+      declNames.add(key);
+      if (kind === 'DataType') decls.dataTypes.push(d);
+      else if (kind === 'AddOnInstructionDefinition') decls.aois.push(d);
+      else if (kind === 'Tag') decls.tags.push(d);
+    }
+  }
+  /** "Capper.Torque_SP" when the tag Capper is declared from the original: the member itself, not a new tag. */
+  const declaredMember = (name: string | undefined) => {
+    const root = name && /^([A-Za-z_]\w*)[.[]/.exec(name)?.[1];
+    return root && declNames.has(`Tag:${root.toLowerCase()}`) ? name : null;
+  };
   const timerUnit = new Map<string, number>();
   for (const r of program.rungs) for (const o of r.outputs) if (o.type === 'TMR') timerUnit.set(o.address.toUpperCase(), UNIT_MS[o.unit] ?? 1000);
 
@@ -57,6 +83,13 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     const have = tags.get(base);
     if (have) return have;
     const n = nick.get(base);
+    const member = declaredMember(n?.nickname);
+    if (member) {
+      const tag: LogixTag = { base, name: member, dataType, description: '' };
+      tags.set(base, tag);
+      declared.add(base);
+      return tag;
+    }
     const label = ctx.labels.get(base);
     const alias = dataType === 'BOOL' || dataType === 'REAL' ? ioTag(base, modules) : null;
     const tag: LogixTag = {
@@ -217,6 +250,9 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     main.push({ comment: '', text: `LES(${tmr}.ACC,500)OTE(${clk});` });
   }
   for (const r of routines) main.push({ comment: '', text: `JSR(${r.name},0);` });
-  return { tags: [...tags.values()], routines: [{ name: 'MainRoutine', rungs: main }, ...routines], warnings };
+  // Declarations of the original whose names the export also uses for its own tags are left out (one tag per name).
+  const own = new Set([...tags.values()].map((t) => t.name.toLowerCase()));
+  decls.tags = decls.tags.filter((d) => !own.has((/\bName="([^"]+)"/.exec(d)?.[1] ?? '').toLowerCase()));
+  return { tags: [...tags.values()].filter((t) => !declared.has(t.base ?? '')), routines: [{ name: 'MainRoutine', rungs: main }, ...routines], warnings, decls };
 }
 
