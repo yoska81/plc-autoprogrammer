@@ -134,4 +134,27 @@ const press = (sim: Simulator, model: ReturnType<typeof buildMachineModel>, faul
   assert.equal(nextAction({ ...tmr, next: 'wiring', point: 'X004', description: 'Part at end photo-eye' }).kind, 'wiring');
 }
 
+// ---- 5. Review rules: an NC Stop reading OFF, a sensor on an edge contact that never switches, a 3000 s constant preset,
+// an input that is not in the I/O list.
+{
+  const io5 = [
+    { address: 'X001', description: 'Stop pushbutton (NC)', type: 'input', deviceType: 'pushbutton-nc' }, { address: 'X002', description: 'Start pushbutton', type: 'input', deviceType: 'pushbutton-no' },
+    { address: 'X003', description: 'Part present photo-eye', type: 'input', deviceType: 'sensor-pnp' },
+  ];
+  const p: LadderProgram = { tags: [], rungs: [
+    { id: 'a', comment: 'Run', branches: [[{ type: 'NO', address: 'X001' }, { type: 'NO', address: 'X002' }]], outputs: [{ type: 'OUT', address: 'Y001' }] },
+    { id: 'b', comment: 'Count parts', branches: [[{ type: 'RISE', address: 'X003' }]], outputs: [{ type: 'OUT', address: 'Y002' }] },
+    { id: 'c', comment: 'Dwell', branches: [[{ type: 'NO', address: 'X002' }]], outputs: [{ type: 'TMR', address: 'T1', mode: 'ON_DELAY', preset: '3000', unit: 'sec', accumulate: false, resetAddress: null }] },
+    { id: 'd', comment: 'After the dwell', branches: [[{ type: 'NO', address: 'T1' }]], outputs: [{ type: 'OUT', address: 'Y003' }] },
+    { id: 'e', comment: 'Unwired', branches: [[{ type: 'NO', address: 'X009' }]], outputs: [{ type: 'OUT', address: 'Y004' }] },
+  ] };
+  const sim = createSimulator(p);
+  sim.setInput('X002', true); sim.run(500);
+  const k = (out: string) => whyStuck(p, values(sim), { output: out }, { io: io5 }).blockers.map((b) => `${b.kind} ${b.point} ${b.next}`);
+  assert.deepEqual(k('Y001'), ['input X001 wiring'], 'an NC Stop reading OFF: pressed or an open wire, not "waits for the operator"');
+  assert.deepEqual(k('Y002'), ['input X003 wiring'], 'a photo-eye on an edge contact that never switches: wiring / sensor');
+  assert.deepEqual(k('Y003'), ['setting T1 logic'], 'a 3000 s constant preset is a setting typo (edit the program)');
+  assert.deepEqual(k('Y004'), ['logic X009 logic'], 'an input not in the I/O list: logic');
+}
+
 console.log('whyStuck tests passed');

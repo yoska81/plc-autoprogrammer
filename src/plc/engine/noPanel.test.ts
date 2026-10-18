@@ -64,6 +64,8 @@ assert.ok(!r.notes.some((n) => /list has no/.test(n)), 'no missing-device note: 
 assert.ok(r.notes.some((n) => /no jog buttons/.test(n)), 'Manual without jog buttons is noted');
 assert.ok(!r.program.rungs.some((g) => /One-scan pulse/.test(g.comment ?? '')), 'no unused 1 s pulse without a panel');
 assert.ok(r.program.rungs.some((g) => /Reset held for 3 s: service done/.test(g.comment ?? '')), 'service done = Reset held 3 s');
+const faultLamp = r.program.rungs.find((g) => g.outputs.some((o) => o.type === 'OUT' && o.address === A(/Fault lamp/)))!;
+assert.ok(faultLamp.branches.some((b) => b.some((e) => 'address' in e && e.address === 'SC7')) && /flashes when service is due/.test(faultLamp.comment ?? ''), 'service due flashes the Fault lamp');
 assert.ok(r.program.rungs.some((g) => /Part counter: .*reset by the Reset pushbutton/.test(g.comment ?? '') && g.outputs.some((o) => o.type === 'CNT' && o.resetAddress === r.base.internal.reset)), 'Reset clears the count (a finished batch can restart)');
 assert.ok(!r.program.rungs.some((g) => g.block === 'manual' || /heartbeat|HMI Service Done/i.test(g.comment ?? '')), 'no HMI-only rungs (jog, heartbeat, Service Done)');
 assert.deepEqual(validateProgram(r.program, profile, new Set([...addresses.values()])).filter((i) => i.severity === 'error').map((i) => i.message), [], 'checker: no errors');

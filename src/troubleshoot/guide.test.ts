@@ -41,6 +41,7 @@ const ctx = { io: CONVEYOR_IO.map((p) => ({ ...p })) };
 // ---- 1. Safety input never arrives: open wire between the cable and TB2 → "lost between TB2-1 and SR1-14".
 {
   const sim = createSimulator(CONVEYOR_PROGRAM);
+  sim.setInput('X003', true); // Stop (NC) released
   sim.run(200);
   let s = startGuide({ program: CONVEYOR_PROGRAM, values: { bit: (a) => sim.readBit(a), word: (a) => sim.readWord(a) }, target: { output: 'Y001' }, ctx, paths: [X001] });
   assert.equal(s.blocker?.point, 'X001');
@@ -53,7 +54,7 @@ const ctx = { io: CONVEYOR_IO.map((p) => ({ ...p })) };
 
 // ---- 2. Input with no supply: nothing at the device, the fuse F1 blown → "supply lost between F1 and PS1".
 {
-  const s0 = startGuide({ program: CONVEYOR_PROGRAM, values: values({}), target: { output: 'Y001' }, ctx, paths: (p) => (p === 'X001' ? X001 : null) });
+  const s0 = startGuide({ program: CONVEYOR_PROGRAM, values: values({ X003: true }), target: { output: 'Y001' }, ctx, paths: (p) => (p === 'X001' ? X001 : null) });
   const reads: Record<string, Answer> = { plc: 'no', 'signal:0': 'no', 'signal:1': 'no', 'signal:3': 'no', 'supply:0': 'no', 'supply:1': 'no', 'supply:2': 'yes' };
   const s = run(s0, (id) => reads[id]);
   assert.match(s.result!.text, /^The supply is lost between Fuse F1 \(load side\).* and Power supply PS1 \+V/);
@@ -62,7 +63,7 @@ const ctx = { io: CONVEYOR_IO.map((p) => ({ ...p })) };
 
 // ---- 3. Input: signal right at the PLC terminal, LED off → the input common; device dead with supply → device faults.
 {
-  const s0 = startGuide({ program: CONVEYOR_PROGRAM, values: values({}), target: { output: 'Y001' }, ctx, paths: [X001] });
+  const s0 = startGuide({ program: CONVEYOR_PROGRAM, values: values({ X003: true }), target: { output: 'Y001' }, ctx, paths: [X001] });
   assert.match(run(s0, (id) => (id === 'plc' ? 'no' : 'yes')).result!.text, /common .* is open/);
   const dev = run(s0, (id) => (id.startsWith('signal') || id === 'plc' ? 'no' : id.startsWith('ret') ? 'yes' : 'yes'), (tag, k) => [`${tag}:${k}`]);
   // Signal dead everywhere, supply right at the device, return fine → the device.
@@ -114,7 +115,7 @@ const ctx = { io: CONVEYOR_IO.map((p) => ({ ...p })) };
   assert.deepEqual([st.result!.settingChange?.address, st.result!.settingChange?.to], ['DS6', 160], 'the declared default, never a made-up value');
   const lg = startGuide({ program: p, values: v, target: { output: 'Y002' }, paths: [] });
   assert.ok(lg.result!.editSteps?.some((x) => /Replace the contact C1001/.test(x)));
-  const none = startGuide({ program: CONVEYOR_PROGRAM, values: values({}), target: { output: 'Y001' }, ctx, paths: [] });
+  const none = startGuide({ program: CONVEYOR_PROGRAM, values: values({ X003: true }), target: { output: 'Y001' }, ctx, paths: [] });
   assert.match(none.result!.text, /not in the electrical design/);
 }
 

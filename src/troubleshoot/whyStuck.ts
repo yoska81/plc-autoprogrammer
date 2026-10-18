@@ -95,6 +95,10 @@ export function whyStuck(program: LadderProgram, values: Values, target: StuckTa
   const ioType = new Map((ctx.io ?? []).map((p) => [up(p.address), p.deviceType ?? ''] as const));
   const isOperator = (a: string) => /^(pushbutton|selector)/.test(ioType.get(up(a)) ?? '')
     || (!ioType.get(up(a)) && /\b(start|stop|reset|button|pb|push ?button|selector|jog)\b/i.test(desc.get(up(a)) ?? '') && !/\b(sensor|eye|prox|switch|e-?stop|emergency|safety|relay)\b/i.test(desc.get(up(a)) ?? ''));
+  // A normally closed operator device (Stop, a stop / safety pushbutton): OFF means pressed or a broken wire.
+  const isNcOperator = (a: string) => ioType.get(up(a)) === 'pushbutton-nc' || (isOperator(a) && /\(nc\)|\bn\.?c\.?\b|\bstop\b/i.test(desc.get(up(a)) ?? ''));
+  // An X the I/O list does not have (when the list is given): nothing is wired to it.
+  const notInIo = (a: string) => isInput(a) && (ctx.io?.length ?? 0) > 0 && !ioType.has(up(a));
   // A register the program never writes except on the first scan (a default) is a setting the operator / HMI owns.
   const isSetting = (a: string) => !isNum(a) && !ioType.has(up(a)) && /^(DS|DD|DF|DH)\d+$/.test(up(a)) && (wordWriters.get(up(a)) ?? []).every((r) => r.branches.some((b) => b.some((e) => e.type === 'NO' && up(e.address) === 'SC2')));
 
@@ -114,6 +118,9 @@ export function whyStuck(program: LadderProgram, values: Values, target: StuckTa
     }
     return undefined;
   };
+
+  const unwired = (a: string, r: Rung, path: string[]): Omit<Blocker, 'rungNo' | 'description'> => ({ kind: 'logic', point: a, expected: true, actual: values.bit(a), rungId: r.id, path,
+    explain: `${up(a)} is not in the I/O list: the program reads an input nothing is wired to. Correct the address in the program, or add the point to the I/O list.`, next: 'logic' });
 
   const out: Blocker[] = [];
   const seen = new Set<string>();
@@ -139,8 +146,12 @@ export function whyStuck(program: LadderProgram, values: Values, target: StuckTa
     if (e.type === 'NC') return whyOn(a, rung, [...path, `${name(a)} must be OFF`], depth + 1);
     if (e.type === 'RISE' || e.type === 'FALL') {
       if (isInput(a)) {
+        if (notInIo(a)) { add(unwired(a, rung, [...path, name(a)])); return; }
+        const op = isOperator(a);
         add({ kind: 'input', point: a, expected: e.type === 'RISE' ? 'OFF → ON' : 'ON → OFF', actual: values.bit(a), rungId: rung.id, path: [...path, name(a)],
-          explain: `Waits for ${name(a)} to ${e.type === 'RISE' ? 'turn ON' : 'turn OFF'} (an edge). If operating it does not change ${a} on the PLC, check its wiring.`, next: 'operator' });
+          explain: op ? `Waits for ${name(a)} to ${e.type === 'RISE' ? 'turn ON' : 'turn OFF'} (an edge). If operating it does not change ${a} on the PLC, check its wiring.`
+            : `Waits for ${name(a)} to ${e.type === 'RISE' ? 'turn ON' : 'turn OFF'} (a change), and it stays ${values.bit(a) ? 'ON' : 'OFF'}: the sensor does not switch, or its signal does not reach the PLC.`,
+          next: op ? 'operator' : 'wiring' });
         return;
       }
       if (e.type === 'RISE' && !values.bit(a)) return whyOff(a, rung, [...path, `${name(a)} must turn ON`], depth + 1);
@@ -171,7 +182,10 @@ export function whyStuck(program: LadderProgram, values: Values, target: StuckTa
     if (depth > MAX_DEPTH) return;
     if (isSystem(a)) { add({ kind: 'logic', point: a, expected: true, actual: false, rungId: from.id, path, explain: `System bit ${a} is OFF.`, next: 'logic' }); return; }
     if (isInput(a)) {
-      if (isOperator(a)) add({ kind: 'input', point: a, expected: true, actual: false, rungId: from.id, path,
+      if (notInIo(a)) { add(unwired(a, from, path)); return; }
+      if (isNcOperator(a)) add({ kind: 'input', point: a, expected: true, actual: false, rungId: from.id, path,
+        explain: `${name(a)} is normally closed (ON when released) and reads OFF: it is pressed, or its wire / contact is open.`, next: 'wiring' });
+      else if (isOperator(a)) add({ kind: 'input', point: a, expected: true, actual: false, rungId: from.id, path,
         explain: `Waits for ${name(a)} (operator). If operating it does not turn ${a} ON on the PLC, check its wiring.`, next: 'operator' });
       else add({ kind: 'input', point: a, expected: true, actual: false, rungId: from.id, path,
         explain: `Input ${name(a)} is OFF but the logic needs it ON: the device is not made, or its signal does not reach the PLC (wire, fuse, sensor, supply).`, next: 'wiring' });
@@ -187,6 +201,13 @@ export function whyStuck(program: LadderProgram, values: Values, target: StuckTa
         const preset = isNum(o.preset) ? Number(o.preset) : values.word(up(o.preset));
         if (!isNum(o.preset) && isSetting(o.preset) && preset <= 0) {
           add({ kind: 'setting', point: up(o.preset), expected: '> 0', actual: preset, rungId: tr.id, path: [...path, `${name(a)} preset ${o.preset}`], explain: `${name(a)} times to ${name(o.preset)} = ${preset}: a 0 preset never times.`, next: 'setting' });
+          return;
+        }
+        // A constant preset of 10 minutes or more on a machine step timer is almost always a typo (3000 s for 3 s).
+        const SEC: Record<string, number> = { ms: 0.001, sec: 1, min: 60, hour: 3600, day: 86400 };
+        if (isNum(o.preset) && preset * (SEC[o.unit] ?? 1) >= 600 && !/\b(hour|run hour|service)\b/i.test(tr.comment ?? '')) {
+          add({ kind: 'setting', point: a, expected: '< 10 min', actual: preset, rungId: tr.id, path: [...path, `${name(a)} preset ${o.preset} ${o.unit}`],
+            explain: `${name(a)} times to ${preset} ${o.unit} (a constant in the program): ${values.word(`TD${t[1]}`)} so far. That long a time is probably a typo — check the preset in rung ${rungNo.get(tr.id)}.`, next: 'logic' });
           return;
         }
         const def = isNum(o.preset) || !isSetting(o.preset) ? undefined : defaultOf(o.preset);

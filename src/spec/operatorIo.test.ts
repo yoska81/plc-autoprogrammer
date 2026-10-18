@@ -21,7 +21,7 @@ const io: IOPoint[] = [
 useIOStore.setState({ projectIO: io });
 const cpu = findCpu('C0-10DD1E-D')!;
 assert.ok(cpuFit(cpu, [], needFromIo(io, false)).ok, 'fits with the spare before');
-applyEquipment({ cpuId: 'C0-10DD1E-D', modules: [], hmiPartNumber: null }, null);
+assert.equal(applyEquipment({ cpuId: 'C0-10DD1E-D', modules: [], hmiPartNumber: null }, null), null, 'fits: no warning');
 const after = useIOStore.getState().projectIO;
 assert.equal(after.length, io.length + missingOperatorIo(io).length, 'door devices added');
 assert.deepEqual(missingOperatorIo(after), []);
@@ -36,5 +36,11 @@ useIOStore.setState({ projectIO: io });
 applyEquipment({ cpuId: 'C0-10DD1E-D', modules: [], hmiPartNumber: 'CM5-T7W' }, null);
 assert.equal(useIOStore.getState().projectIO.length, io.length);
 assert.deepEqual(useProjectStore.getState().modules, []);
+
+// More I/O than a CLICK CPU can hold even with 8 modules: the devices are added and a warning says so (no silent overfill).
+const tooMany: IOPoint[] = Array.from({ length: 200 }, (_, i) => ({ id: `m${i}`, description: `Sensor ${i + 1}`, type: 'input' as const, category: 'Product Detection' as const, deviceType: 'sensor-pnp' }));
+useIOStore.setState({ projectIO: tooMany });
+const w = applyEquipment({ cpuId: 'C0-10DD1E-D', modules: [], hmiPartNumber: null }, null);
+assert.match(w ?? '', /C0-10DD1E-D cannot hold the I\/O list with the \d+ door devices/);
 
 console.log('operatorIo tests passed');

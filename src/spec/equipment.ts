@@ -33,7 +33,9 @@ export function recommendedChoice(rec: EquipmentRecommendation): EquipmentChoice
  * PLC + CPU, expansion modules in slot order (drives addressing), HMI, and
  * the PLC parts the electrical design must use.
  */
-export function applyEquipment(choice: EquipmentChoice, rec: EquipmentRecommendation | null) {
+/** Returns a warning when the door devices "No touch panel" adds do not fit the CPU even with more modules. */
+export function applyEquipment(choice: EquipmentChoice, rec: EquipmentRecommendation | null): string | null {
+  let warning: string | null = null;
   const project = useProjectStore.getState();
   const profile = PLC_PROFILES.find((p) => p.cpuModels.some((c) => c.id === choice.cpuId)) ?? PLC_PROFILES[0];
   // No touch panel: the I/O list gets the door pushbuttons, selector and lamps it still lacks — first, so the
@@ -47,7 +49,11 @@ export function applyEquipment(choice: EquipmentChoice, rec: EquipmentRecommenda
     // Keep the 20% spare when the choice had it; never fewer points than the list.
     const spare = cpu && cpuFit(cpu, modules, needFromIo(io.projectIO, false)).ok ? 0.2 : 0;
     const need = needFromIo(next, false, spare);
-    if (cpu && !cpuFit(cpu, modules, need).ok) modules = modulesToFit(choice.cpuId, modules, need) ?? modulesToFit(choice.cpuId, modules, needFromIo(next, false, 0)) ?? modules;
+    if (cpu && !cpuFit(cpu, modules, need).ok) {
+      const fitted = modulesToFit(choice.cpuId, modules, need) ?? modulesToFit(choice.cpuId, modules, needFromIo(next, false, 0));
+      if (fitted) modules = fitted;
+      else warning = `${choice.cpuId} cannot hold the I/O list with the ${missing.length} door devices for "No touch panel", even with more modules: choose a bigger CPU (the devices were added to the I/O list).`;
+    }
     io.applyIOUpdate([], missing.map(generatedToPoint), []);
   }
   project.setPlc(profile.id, choice.cpuId);
@@ -69,6 +75,7 @@ export function applyEquipment(choice: EquipmentChoice, rec: EquipmentRecommenda
 
   const spec = useSpecStore.getState().sections;
   useStageStore.getState().markGenerated('equipment', { specFp: fingerprint(spec), spec });
+  return warning;
 }
 
 /**

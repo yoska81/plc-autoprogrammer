@@ -135,9 +135,9 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         const curHmi = useHmiStore.getState().hmiPartNumber || null;
         const choice = rulesEquipment(ioNow(), { plcId: cur.plcId, cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi });
         if (!choice) { onStep({ step, status: 'failed', message: `No ${getProfile(cur.plcId).name} CPU covers the ${ioNow().length} I/O points even with modules: choose a bigger PLC on the Equipment page.` }); return false; }
-        applyEquipment(choice, cur.recommendation ?? null);
+        const warn = applyEquipment(choice, cur.recommendation ?? null);
         if (equipmentNow() !== before) ctx.changed.add('equipment');
-        onStep({ step, status: 'done', message: `${choice.kept ? `Kept your ${choice.cpuId}` : choice.cpuId}${choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}: covers the I/O list with about 20 % spare (rules).` });
+        onStep({ step, status: 'done', message: `${choice.kept ? `Kept your ${choice.cpuId}` : choice.cpuId}${choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}: covers the I/O list with about 20 % spare (rules).${warn ? ` ${warn}` : ''}` });
         return true;
       }
       const { rec } = await recommendEquipment({ ...ai, spec });
@@ -147,16 +147,16 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const need = { ...rec.estimatedIO, ethernetHmi: Boolean(rec.hmi || curHmi), minHmiSizeIn: null };
       // Keep the engineer's own choice while it still covers the machine; otherwise take the recommendation.
       if (curCpu && cur.recommendation && cpuFit(curCpu, cur.modules, need).ok) {
-        applyEquipment({ cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi }, rec);
-        onStep({ step, status: 'done', message: `Kept your ${cur.cpuId}${cur.modules.length ? ` + ${cur.modules.length} module(s)` : ''}: it still covers the I/O.` });
+        const warn = applyEquipment({ cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi }, rec);
+        onStep({ step, status: 'done', message: `Kept your ${cur.cpuId}${cur.modules.length ? ` + ${cur.modules.length} module(s)` : ''}: it still covers the I/O.${warn ? ` ${warn}` : ''}` });
       } else {
         const choice = recommendedChoice(rec);
         // The AI's CPU + modules must cover its own I/O estimate: add the modules it is short of, or stop.
         const mods = modulesToFit(choice.cpuId, choice.modules, need);
         if (!mods) { onStep({ step, status: 'failed', message: `${choice.cpuId} cannot cover ${need.digitalInputs} inputs / ${need.digitalOutputs} outputs even with modules: choose a bigger CPU on the Equipment page.` }); return false; }
-        applyEquipment({ ...choice, modules: mods }, rec);
+        const warn = applyEquipment({ ...choice, modules: mods }, rec);
         const added = mods.length - choice.modules.length;
-        onStep({ step, status: 'done', message: `${rec.plc.cpuId}${cur.cpuId && cur.cpuId !== rec.plc.cpuId ? ` (was ${cur.cpuId}, no longer enough)` : ''}, ${mods.length} module(s)${added ? ` (${added} added to cover the I/O)` : ''}${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.` });
+        onStep({ step, status: 'done', message: `${rec.plc.cpuId}${cur.cpuId && cur.cpuId !== rec.plc.cpuId ? ` (was ${cur.cpuId}, no longer enough)` : ''}, ${mods.length} module(s)${added ? ` (${added} added to cover the I/O)` : ''}${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.${warn ? ` ${warn}` : ''}` });
       }
       if (equipmentNow() !== before) ctx.changed.add('equipment');
       return true;

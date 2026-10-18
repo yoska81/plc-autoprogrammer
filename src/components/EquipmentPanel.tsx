@@ -151,7 +151,8 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     if (doorPoints.length && confirm(`The touch panel takes over Start, Stop, Reset and Auto/Manual. Remove the door devices added for "No touch panel"?\n\n${doorPoints.map((p) => `• ${p.description}`).join('\n')}\n\n(Cancel keeps them: the program then uses both.)`)) {
       useIOStore.getState().applyIOUpdate([], [], doorPoints.map((p) => p.id));
     }
-    applyEquipment(choice, rec);
+    const warning = applyEquipment(choice, rec);
+    if (warning) alert(warning);
     onApplied?.();
   };
   // Let the New project wizard apply a selection the user did not apply themselves.

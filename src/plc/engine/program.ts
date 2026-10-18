@@ -329,12 +329,14 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     R('outputs', `${an.name} (${an.address}): ${spv ? 'the HMI setpoint' : `${value} ${an.units} (no HMI setpoint: set the value here)`} while Safety OK`, [[NO(SAFE)]], [COPY(value, an.address)]);
     if (spv) R('outputs', `${an.name} (${an.address}): ${an.min} ${an.units} when Safety is not OK`, [[NC(SAFE)]], [COPY(String(an.min), an.address)]);
   }
+  // No touch panel: the service-due warning (written in the status block when run hours are kept) flashes the Fault lamp.
+  const serviceDue = !panel && tag('word:runhours') && tag('word:sinceservice') && tag('sp:serviceinterval') ? alarm('alarm:servicedue') : undefined;
   // Lights and indicators by their words; other outputs are left to the cycle block.
   const actOuts = new Set(c.actuators.flatMap((a) => [a.run, a.reverse, a.extend, a.retract].filter(Boolean).map((p) => p!.address)));
   for (const o of c.io.filter((p) => p.type === 'output' && !actOuts.has(p.address))) {
     const d = o.description;
     if (/\b(horn|buzzer|siren|beeper)\b/i.test(d)) R('outputs', `${d}: sounds while a fault is active (Reset silences it once the cause is gone)`, [[NO(FAULT)]], [OUT(o.address)]);
-    else if (/\b(fault|alarm|red)\b/i.test(d)) R('outputs', `${d}: any alarm or safety open`, [[NO(FAULT)], [NC(SAFE)]], [OUT(o.address)]);
+    else if (/\b(fault|alarm|red)\b/i.test(d)) R('outputs', `${d}: any alarm or safety open${serviceDue ? '; flashes when service is due (no touch panel to show it)' : ''}`, [[NO(FAULT)], [NC(SAFE)], ...(serviceDue ? [[NO(serviceDue), NO('SC7')]] : [])], [OUT(o.address)]);
     else if (/\b(ready|power|safety ok)\b/i.test(d) || (/\bwhite\b/i.test(d) && !/\b(run\w*|green)\b/i.test(d))) R('outputs', `${d}: ready to start (Safety OK, no fault, cycle stopped)`, [[NO(SAFE), NC(FAULT), NC(RUN)]], [OUT(o.address)]);
     else if (/\b(run\w*|green)\b/i.test(d)) R('outputs', `${d}: cycle running`, [[NO(RUN)]], [OUT(o.address)]);
     else if (/\b(amber|yellow|manual|warning)\b/i.test(d)) R('outputs', `${d}: Manual mode`, [[NO(manual)]], [OUT(o.address)]);
