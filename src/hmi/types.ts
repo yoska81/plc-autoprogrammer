@@ -158,6 +158,11 @@ export interface HmiDesign {
   machineName?: string;
   /** Visual style; missing means the look of the panel's maker (also for designs saved before looks existed). */
   look?: HmiLook;
+  /**
+   * Screens before they were scaled to another panel (and its size): switching panels scales from these,
+   * so going back restores them exactly. Dropped once the screens are edited after the switch (`after`).
+   */
+  layoutBase?: { w: number; h: number; screens: HmiScreen[]; after: string };
   /** Upgrade of an imported program: what that program must get so this HMI works (src/hmi/engine/upgradeHmi.ts). */
   plcChanges?: PlcChange[];
 }

@@ -70,4 +70,14 @@ assert.equal(regionRun.program.status, 'ready');
   assert.equal(notChosen.hmi.status, 'empty', 'an HMI not designed yet is still to do');
 }
 
+// Screens laid out for one panel and scaled to another: the HMI stage is out of date and says what to do.
+{
+  const laidOut = Object.fromEntries(Object.entries(sources(click)).map(([k, v]) => [k, k === 'hmi' ? { ...v, panel: 'CM5-T7W' } : v]));
+  const moved = computeStages({ fp: { ...fp(click), panel: 'CM5-T4W' }, sources: laidOut, ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true });
+  assert.equal(moved.hmi.status, 'stale');
+  assert.match(moved.hmi.reason ?? '', /touch panel changed .*CM5-T7W.*Redesign screens.*CM5-T4W/);
+  const same = computeStages({ fp: { ...fp(click), panel: 'CM5-T7W' }, sources: laidOut, ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true });
+  assert.equal(same.hmi.status, 'ready', 'back on the panel it was laid out for');
+}
+
 console.log('stage tests passed');

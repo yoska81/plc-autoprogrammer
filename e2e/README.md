@@ -61,6 +61,7 @@ BASE_URL=http://localhost:5203 node e2e/hmi-brands.e2e.cjs # Allen-Bradley + Sie
 BASE_URL=http://localhost:5203 node e2e/hmi-looks.e2e.cjs  # every HMI look: picker thumbnails, look follows the panel maker, no text past its element or on another, PNG/PDF exports in the look
 BASE_URL=http://localhost:5203 node e2e/hmi-no-panel.e2e.cjs # "No touch panel": HMI page shows the operator station (earlier screens kept, not used), no HMI in the simulator or the exports, operator station in the engineering package and Excel
 BASE_URL=http://localhost:5203 node e2e/hmi-motion.e2e.cjs  # servo axes, encoder, ultrasonic level/distance: Motion / Process / Setup screens on a 7" and a 4.3" panel in every look, no text past its element or on another
+BASE_URL=http://localhost:5203 node e2e/hmi-panel-switch.e2e.cjs  # changing the touch panel: the HMI stage says the screens were laid out for the old panel; back on it the screens are exactly as before
 BASE_URL=http://localhost:5203 node e2e/recover-list.e2e.cjs  # Project data, recover lists: no sideways scroll at 390 / 1366 px, texts clamped to 2 lines, buttons aligned, grouped by project, older versions folded
 BASE_URL=http://localhost:5203 node e2e/phone.e2e.cjs         # every page at 390 px: the page never scrolls sideways (only explicit overflow-x / data-scroll-x boxes may), headers fit, titles and buttons not squeezed
 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # projects saved by older versions (e2e/old-data/*.json) still open and export

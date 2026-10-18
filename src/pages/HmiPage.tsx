@@ -544,7 +544,7 @@ export default function HmiPage() {
         if (prev) setHist((x) => ({ ...x, past: [...x.past, prev].slice(-100), future: [] }));
         useHmiStore.getState().setDesign(look ? { ...merged, look } : merged, r.explanation);
         if (notes.length) notify(notes.join(' '));
-        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(merged) });
+        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(merged), panel: merged.hmiPartNumber });
       },
     });
   };

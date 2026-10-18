@@ -250,7 +250,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         // Screens edited by hand are kept (re-bound to the new tags).
         const merged = mergeRegenerated(existing, r.design).design;
         useHmiStore.getState().setDesign(existing?.look ? { ...merged, look: existing.look } : merged, r.explanation);
-        mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(merged) });
+        mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(merged), panel: merged.hmiPartNumber });
         if (hmiFingerprint(merged) !== before) ctx.changed.add('hmi');
       };
       const mode = stageMode('hmi');

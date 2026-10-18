@@ -54,6 +54,7 @@ export function useFingerprints() {
     addrFp: addressFingerprint(plcId, cpuId, modules, io),
     region: info.region,
     hmiFp: hmiFingerprint(hmi),
+    panel: hmi?.hmiPartNumber,
   }), [sections, io, hmi, plcId, cpuId, modules, info.region]);
 }
 
@@ -81,7 +82,7 @@ export function specForStage(spec: Record<string, string>, stage: StageId): Reco
 }
 
 export interface StageInputs {
-  fp: { spec: Record<string, string>; specFp: string; ioFp: string; addrFp?: string; region?: string; hmiFp: string };
+  fp: { spec: Record<string, string>; specFp: string; ioFp: string; addrFp?: string; region?: string; hmiFp: string; panel?: string };
   sources: Partial<Record<StageId, StageSource>>;
   ioCount: number;
   hasDesign: boolean;
@@ -95,7 +96,7 @@ export interface StageInputs {
 export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi = false }: StageInputs): Record<StageId, StageInfo> {
   const specEmpty = !Object.values(fp.spec).some((t) => t.trim());
   const hasEquipment = Boolean(sources.equipment);
-  const info = (id: StageId, has: boolean, deps: { spec?: boolean; io?: boolean; hmi?: boolean; region?: boolean }): StageInfo => {
+  const info = (id: StageId, has: boolean, deps: { spec?: boolean; io?: boolean; hmi?: boolean; region?: boolean; panel?: boolean }): StageInfo => {
     if (!has) return { id, status: 'empty', reason: null };
     const src = sources[id];
     if (!src) return { id, status: 'ready', reason: null }; // made by hand or before tracking
@@ -111,6 +112,8 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
     else if (deps.io && src.addrFp !== undefined && fp.addrFp !== undefined && src.addrFp !== fp.addrFp) reasons.push('the PLC or its I/O addresses changed');
     if (deps.region && src.region !== undefined && fp.region !== undefined && src.region !== fp.region) reasons.push('the installation region changed');
     if (deps.hmi && src.hmiFp !== undefined && src.hmiFp !== fp.hmiFp) reasons.push('the HMI tags changed');
+    // Screens scaled to another panel keep their layout problems until they are laid out for it.
+    if (deps.panel && src.panel && fp.panel && src.panel !== fp.panel) reasons.push(`the touch panel changed (the screens were laid out for ${src.panel}; Redesign screens lays them out for ${fp.panel})`);
     return reasons.length ? { id, status: 'stale', reason: `Out of date: ${reasons.join(' and ')}.` } : { id, status: 'ready', reason: null };
   };
   return {
@@ -118,7 +121,7 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
     equipment: info('equipment', hasEquipment, { spec: true }),
     io: info('io', ioCount > 0, { spec: true }),
     electrical: info('electrical', hasDesign, { spec: true, io: true, region: true }),
-    hmi: noHmi && !hasHmi ? { id: 'hmi', status: 'ready', reason: null } : info('hmi', hasHmi, { spec: true, io: true }),
+    hmi: noHmi && !hasHmi ? { id: 'hmi', status: 'ready', reason: null } : info('hmi', hasHmi, { spec: true, io: true, panel: true }),
     program: info('program', hasProgram, { spec: true, io: true, hmi: true }),
   };
 }
@@ -132,7 +135,7 @@ export function stagesNow(): Record<StageId, StageInfo> {
   const hmi = noHmi ? null : useHmiStore.getState().design;
   const prog = useProgramStore.getState();
   return computeStages({
-    fp: { spec: sections, specFp: fingerprint(sections), ioFp: ioFingerprint(io), addrFp: addressFingerprintNow(), region: useProjectStore.getState().info.region, hmiFp: hmiFingerprint(hmi) },
+    fp: { spec: sections, specFp: fingerprint(sections), ioFp: ioFingerprint(io), addrFp: addressFingerprintNow(), region: useProjectStore.getState().info.region, hmiFp: hmiFingerprint(hmi), panel: hmi?.hmiPartNumber },
     sources: useStageStore.getState().sources,
     ioCount: io.length,
     hasDesign: Boolean(useElectricalStore.getState().design),
