@@ -205,11 +205,11 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
                 <button type="button" className={`${big} bg-red-600 text-white hover:bg-red-700`} disabled={watching !== null} onClick={() => reply('no')}>{step.no}</button>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" className="rounded border border-steel-300 px-3 py-2 text-sm disabled:opacity-40" disabled={!session.answers.length || watching !== null} onClick={() => goBack(session)}>Back</button>
-                <button type="button" className="rounded border border-steel-300 px-3 py-2 text-sm disabled:opacity-40" disabled={watching !== null} onClick={() => reply('skip')}>Didn't check</button>
+                <button type="button" className="min-h-11 rounded border border-steel-300 px-3 py-2 text-sm disabled:opacity-40" disabled={!session.answers.length || watching !== null} onClick={() => goBack(session)}>Back</button>
+                <button type="button" className="min-h-11 rounded border border-steel-300 px-3 py-2 text-sm disabled:opacity-40" disabled={watching !== null} onClick={() => reply('skip')}>Didn't check</button>
                 <SpeakButton text={step.say} label="Read the step aloud" />
-                {micOn && <button type="button" className="rounded border border-steel-300 px-3 py-2 text-sm" onClick={() => void listen()}>{listening ? 'Listening… say yes or no' : 'Answer by voice'}</button>}
-                <button type="button" className="ml-auto rounded border border-steel-300 px-3 py-2 text-sm" onClick={() => { sessionRef.current = null; setSession(null); }}>Stop</button>
+                {micOn && <button type="button" className="min-h-11 rounded border border-steel-300 px-3 py-2 text-sm" onClick={() => void listen()}>{listening ? 'Listening… say yes or no' : 'Answer by voice'}</button>}
+                <button type="button" className="ml-auto min-h-11 rounded border border-steel-300 px-3 py-2 text-sm" onClick={() => { sessionRef.current = null; setSession(null); }}>Stop</button>
               </div>
             </>
           ) : session.verdict && (

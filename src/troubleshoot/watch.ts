@@ -49,7 +49,7 @@ export function wiggleSpots(path: WiringPath): PathHop[] {
 export function wiggleResult(path: WiringPath, spot: PathHop, changes: number): WiggleResult {
   const where = spot.kind === 'device' ? `${spot.tag}${spot.terminal ? ` terminal ${spot.terminal}` : ''}` : spot.label.replace(/^Terminal strip /, '');
   if (changes >= 2) {
-    return { verdict: 'loose', changes, message: `${path.address} flickered ${changes} times while you wiggled ${where} → loose connection on wire ${spot.wire ?? path.signal[0]?.wire ?? ''} at ${where} (or the conductor just before it). Tighten or re-terminate it and wiggle again.` };
+    return { verdict: 'loose', changes, message: `${path.address} flickered ${changes} times while you wiggled ${where} → loose connection on wire ${spot.wire ?? path.signal[0]?.wire ?? ''} at ${where} (or the conductor just before it). Switch off and lock out first, then tighten or re-terminate it and wiggle again.` };
   }
   return { verdict: 'steady', changes, message: `${path.address} stayed steady while you wiggled ${where}: that connection is good. Try the next one.` };
 }
