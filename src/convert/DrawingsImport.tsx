@@ -6,7 +6,7 @@ import { useProjectStore } from '../store/useProjectStore';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useDraft } from '../store/useDraftStore';
-import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
+import { dismissAiJob, startAiJob, useAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 import { regionSpec, SUPPLY_INFO } from '../standards/regions';
 import { checkUploadFiles } from './uploadCheck';
 import { deriveFromUpload, DWG_IN_BROWSER, DWG_NOT_AVAILABLE, MAX_UPLOAD_FILES, UPLOAD_ACCEPT } from './derive';
@@ -42,6 +42,7 @@ export default function DrawingsImport() {
   const [read] = useDraft<Reading | null>(READ_KEY, null);
   const busy = useAiJobRunning('convert');
   const error = useAiJobError('convert');
+  const job = useAiJob('convert');
   useTakeResult<Omit<Reading, 'from'>>('convert', (r) => setReading({ ...r, from: 'drawings' }));
   const [fileError, setFileError] = useState<string | null>(null);
 
@@ -55,6 +56,12 @@ export default function DrawingsImport() {
       if (bad.length) setFileError(bad.join(' '));
       if (ok.length) setFiles([...(useUploadFiles.getState().byProject[projectId] ?? []), ...ok]);
     });
+  };
+  // a file taken out: the message about it (or about the last reading of these files) goes too
+  const removeFile = (i: number) => {
+    setFiles(files.filter((_, k) => k !== i));
+    setFileError(null);
+    if (job?.status === 'failed') dismissAiJob(job.id);
   };
   const readDrawings = () => {
     if (!apiKey || !files.length) return;
@@ -77,7 +84,7 @@ export default function DrawingsImport() {
           </label>
           {files.map((f, i) => (
             <span key={`${f.name}-${i}`} className="inline-flex items-center gap-1 rounded bg-steel-100 px-2 py-0.5 text-xs text-steel-700">
-              {f.name}<button aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, k) => k !== i))} className="text-steel-400 hover:text-red-600">✕</button>
+              {f.name}<button aria-label={`Remove ${f.name}`} onClick={() => removeFile(i)} className="text-steel-400 hover:text-red-600">✕</button>
             </span>
           ))}
         </div>
