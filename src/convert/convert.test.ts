@@ -697,11 +697,12 @@ await test('cn-rollformer-01: the safety relay is sized for its outputs (as draw
   const m = normalizeMachine(CN_ROLLFORMER_01_READING);
   assert.deepEqual(safetyOutputsNeeded(m, ['VFD1', 'SD1']), { need: 6, drawn: ['13-14', '23-24'], why: '2 as drawn (13-14, 23-24) + 2 for the STO of each of VFD1, SD1' });
   const sr = () => convertMachine(m).parts.find((p) => p.oldTag === 'KA0')!;
-  // the catalog's own answer: a verified base with an expansion its maker lists (3 + 5 outputs)
+  // the catalog's own answer: one verified relay with the 6 outputs (IDEM SCR73, 7 N.O.)
   const real = sr();
   assert.equal(real.status, 'matched');
   assert.equal(real.to!.verified, true);
-  assert.ok(real.differences.some((d) => /3 here \+ expansion Dold LG5929-60-100-61 \(5\)/.test(d)), real.differences.join(' | '));
+  assert.equal(real.to!.partNumber, 'SCR73-280005');
+  assert.ok(real.differences.some((d) => /^7 safety outputs for the 6 needed/.test(d)), real.differences.join(' | '));
   // the cases below on a catalog with no relay that has the 6 outputs, alone or with a listed expansion
   const hidden = ALL_PARTS.filter((p) => p.category === 'safetyRelay' && (safetyOutputCount(p) >= 6 || /expansion|extension/i.test(p.description)));
   for (const p of hidden) ALL_PARTS.splice(ALL_PARTS.indexOf(p), 1);

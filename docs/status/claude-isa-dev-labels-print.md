@@ -293,7 +293,7 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
 - **Lazy loading:** `loadFaultKnowledge()` (knowledge.ts) keeps the knowledge out of the main and preview bundles.
 - **Copyright:** the 3,550 text fields over 150 characters were rewritten in our own short words (cause / check / fix). Only codes, parameters, terminals, values and the citation are kept. kbText.test.ts fails on any text field over 150 characters (URLs and citations not counted). The 156 remaining manual-style lists ("•" bullets, "1. … 2. …" steps) were also reworded; none are left.
   - Dropped from the rewrite: list numbering, words such as "2nd" / "7-segment", the generic "H2-xx" (the specific H2-01 to H2-03 is kept), and a few long aux-code lists, which end in "(see source)".
-- **IDEM SCR73:** marked unverified, because the PFHd 7.20E-05 as printed is impossible for SIL 3.
+- **IDEM SCR73:** verified from IDEM's own data sheet 102581 (Jan 19) p.3: PFH 8.4E-10 1/h, SIL 3, PL e, Cat. 4, MTTFd 71 a, DC 99 %. The AD spec sheet's "PFHd 7.20E-05" is IDEM's PFDav figure under the wrong label.
 
 ## Allen-Bradley CompactLogix 5370 (1769), for L5X upgrades
 - 34 parts in allenBradley.ts, from Rockwell product pages and 1769-TD005 / TD006 / TD008 / IN015:
@@ -332,3 +332,17 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
 - 12x6 mm markers with "number + description" are cramped by nature; "number only" is the sensible choice there.
 - "Print" in the claude.ai preview window saves the PDF instead (printing is blocked there).
 - Brady part numbers: only entries verified on Brady / distributor pages go into `printers.ts`; anything unverified is listed here.
+
+## Motion parts, safety data and the supply swap (after the 0e7b78c merge)
+- **IDEM SCR73-280005 / -P:** verified from IDEM's data sheet 102581 (Jan 19): PFH 8.4E-10 1/h, SIL 3, PL e, Cat. 4, MTTFd 71 a, DC 99 %. AD prints PFDav 7.2E-05 as "PFHd".
+- **SINAMICS V90 FSA (-1UA2 / -2UA2 / -1UF2 / -2UF2):** peak current 3.6 / 4.2 A confirmed in Siemens D 33 07/2022 p.2/6, so now verified.
+- **IP ratings added:** Kinetix TLP is IP40 without a shaft seal; IP65 needs the S option or a TLP-SSN seal kit (KNX-TD001J p.129 / 207). S-1FL6 is IP65 with an oil seal (D 33 p.1/17).
+- **Coverage for servo / encoder / ultrasonic machines, all verified and sourced:**
+  - Servo systems (drive + motor + power/encoder cables): SureServo2, Kinetix 5100 + TLP, V90 + S-1FL6.
+  - Encoders: TRD-N / TRDA-20 / TRDA-25 (line driver and push-pull), TRD-SR, TRD-GK.
+  - Measuring wheels: MR wheels and the AR01 measuring-wheel encoder kit.
+  - Ultrasonic sensors: UK1 / UK6, P+F UB, Banner T30UX / S18U / QS18U, each with 4-20 mA and discrete versions.
+- **Gaps left:**
+  - Only the TLP motors without a shaft seal (option A) are in the catalog; the S variants are not.
+  - Measuring wheels and cables have no IP rating, because their makers give none.
+- **Swap picker:** compareStrength now refuses a power supply with a different input class. A 90-264 VAC supply is no longer "Equivalent" to a 480 V 3-phase one. A 200-500 V L-L supply (ABL8RPS) may stand in for a 1-phase or 3-phase one, but not the reverse. The cross-reference key carries the same input class (crossref.ts / strength.ts supplyInputClass).
