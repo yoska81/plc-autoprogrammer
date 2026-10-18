@@ -3,6 +3,7 @@ import type { ElectricalDesign } from '../../electrical/types';
 import type { HmiDesign, HmiState, HmiStyle } from '../../hmi/types';
 import { buildHmi, defaultHmiContent, type HmiContent } from '../../hmi/engine';
 import { inferRoles } from '../../hmi/engine/roles';
+import { plcChangesFor, type UpgradeRoles } from '../../hmi/engine/upgradeHmi';
 import { rungAddresses, rungWrites, type LadderProgram } from '../../plc/core/ladder';
 import { callClaude } from './anthropic';
 import type { AiOptions } from './machineModelAI';
@@ -64,6 +65,8 @@ export interface HmiProjectInput {
   existingHmi?: HmiDesign | null;
   /** The current PLC program: new HMI tags never take an address it uses. */
   program?: LadderProgram | null;
+  /** Upgrade of an imported program: its own addresses for the HMI's functions (src/plc/import/hmiRoles.ts). */
+  upgradeRoles?: UpgradeRoles | null;
 }
 
 /** Rules' content for the project: the electrical design's wiring links reversing contactors and drives to their motor. */
@@ -98,9 +101,19 @@ export async function generateRuleBasedHmi(opts: Partial<AiOptions> & HmiProject
     }
   }
   // Address stability: the existing HMI's functions keep their addresses; new tags avoid every address in use.
-  const keepTags = opts.existingHmi ? inferRoles(opts.existingHmi.tags, { content: base, screens: opts.existingHmi.screens, alarms: opts.existingHmi.alarms }).tags : [];
+  const inferred = opts.existingHmi ? inferRoles(opts.existingHmi.tags, { content: base, screens: opts.existingHmi.screens, alarms: opts.existingHmi.alarms }).tags : [];
+  // An upgraded program: the HMI uses the program's own addresses for the functions it already has.
+  const roles = opts.upgradeRoles;
+  const own = new Set((roles?.tags ?? []).map((t) => t.role));
+  const keepTags = [...(roles?.tags ?? []), ...inferred.filter((t) => !own.has(t.role))];
   const usedAddresses = (opts.program?.rungs ?? []).flatMap((r) => [...rungAddresses(r), ...rungWrites(r)]).filter((a) => /^[A-Z]+\d+$/i.test(a));
   const design = buildHmi(content, { ...opts.panel, plcText: opts.plcText, now: opts.now, keepTags, usedAddresses });
+  if (roles && opts.program) {
+    design.plcChanges = plcChangesFor(design, opts.program, roles);
+    const n = design.plcChanges.length;
+    if (n) design.notes.push(`The HMI uses the upgraded program's own addresses where it has them; ${n} HMI function(s) need a change in the PLC program (listed on the review page).`);
+    for (const m of roles.missing ?? []) design.notes.push(m);
+  }
   if (aiError) {
     const note = `The AI could not name the screens (${aiError}): names and machine states come from the I/O list — check them.`;
     design.notes.unshift(note);
