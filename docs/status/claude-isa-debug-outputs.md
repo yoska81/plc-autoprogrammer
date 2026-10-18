@@ -566,12 +566,8 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - analog.test: THM / current / transmitter cases;
   - review.test: 0-10 V with only a THM.
 
-## Relay ladder sheets; analog channels by signal family; NPN commons (PR #92, on integration f8f47f7)
-- **Relay logic as NFPA 79 ladder sheets** (`DesignInputs.relayLogic`, the type agreed with Debug 1's converter):
-  - `relayLogic.ts` numbers the rungs, the wire numbers (101, 101A…) and the terminals of each node. The ladder sheets and the wire list both read it.
-  - A branch gets its own row; the coil mirrors and the /line references work as on the control sheet.
-  - A rung can end in a drive input. A tag that is not a part of the design is a design warning.
-  - Check-all variant: `rules-relay`.
+## Analog channels by signal family; NPN commons (PR #92, on integration f8f47f7)
+- The relay ladder sheets were reviewed separately (changes needed) and are kept off #92; they follow once reworked.
 - **Analog channels:**
   - Only a 'thermocouple' range uses a thermocouple channel.
   - `acceptsRange`: current only on a mA channel, voltage only on a V channel.
