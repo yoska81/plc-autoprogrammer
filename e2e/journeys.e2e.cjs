@@ -1,7 +1,8 @@
 // User journeys: a non-engineer makes a new project from scratch for four machine types and takes each one
 // through every stage to Deliverables, with the AI mocked (answers a good AI gives for that machine):
 //   sealing head (heater + VFD + two-hand + light curtain + guard door), conveyor with 3 motors,
-//   pick-and-place, pump skid with analogs.
+//   pick-and-place, pump skid with analogs; and two existing machines: drawings converted (journey 8) and an
+//   L5X program upgraded (journey 9), each taken through the same stages.
 // On every page it clicks every safe button (no delete / clear / new project / leave) and records page errors,
 // error banners and failed downloads. Deliverables: every download button, the certification pack and the ZIP.
 // Sealing Head: a practice wiring fault in the simulator found with the meter steps, then the fault log entry.
@@ -135,7 +136,23 @@ const MACHINES = [
     equip: { profileId: 'click', cpuId: 'C0-11DD1E-D', modules: [{ partNumber: 'C0-08ND3', quantity: 1, why: 'Inputs' }], hmi: null },
     di: 10, do: 3, ai: 0, ao: 0,
   },
+  // Journey 8: an existing machine's drawings (Chinese-style PDF + DXF) → read (AI mocked) → converted to North
+  // America → rebuilt by the engine → then every stage like a new machine.
+  {
+    key: 'convert', name: 'Sorting Conveyor Retrofit', region: 'United States', start: 'drawings', keepDesign: true, keepProgram: true, hmi: false,
+    model: { motors: [M('M1', 'Conveyor belt, forward and reverse', 1.5, 'reversing', 'Conveyor'), M('M2', 'Coolant pump', 1, 'dol', 'Pump')], estops: 1, guardDoors: [], lightCurtains: [], zones: ['Conveyor', 'Pump'], interfaces: [], questions: [] },
+    equip: { profileId: 'click', cpuId: 'C0-12DD1E-D', modules: [{ partNumber: 'C0-16ND3', quantity: 1, why: 'Inputs' }], hmi: null },
+    di: 9, do: 6, ai: 0, ao: 0, io: [], routes: ['/import'],
+  },
+  // Journey 9: an exported Studio 5000 program (.L5X) → read → "Use this program" → electrical, HMI and the
+  // rest built around it, the program itself kept → change a rung → download the upgraded L5X.
+  {
+    key: 'upgrade', name: 'Bottle Capper Upgrade', region: 'United States', start: 'program', keepProgram: true,
+    model: { motors: [], estops: 1, guardDoors: [{ zone: 'Capper' }], lightCurtains: [], zones: ['Capper'], interfaces: [], questions: [] },
+    di: 0, do: 0, ai: 0, ao: 0, io: [], routes: ['/upgrade'],
+  },
 ];function reply(mc, system) {
+  if (system.includes('taking over an existing machine from its electrical drawings')) return mc.drawings;
   const k = system.includes('checks a machine control design') ? 'review'
     : system.includes('functional specification') ? 'spec'
     : system.includes('choosing the control equipment') ? 'equipment'
@@ -235,7 +252,49 @@ async function journey(browser, mc) {
     }
   };
 
-  await step('wizard', async () => {
+  if (mc.start) await step(`import (${mc.start})`, async () => {
+    // A machine that already exists: the start option for existing drawings / programs, then the Import page.
+    if (mc.start === 'drawings') mc.drawings = await page.evaluate(async () => (await import('/src/convert/__fixtures__/chineseConveyor.ts')).CHINESE_CONVEYOR);
+    await page.getByRole('button', { name: 'New project' }).first().click();
+    await page.getByTestId('start-option').getByRole('button', { name: /^From existing drawings \/ program/ }).click();
+    await page.getByPlaceholder('e.g. Line 3 case packer').fill(mc.name);
+    await page.getByRole('button', { name: 'Continue to the import →' }).click();
+    await page.waitForURL(/\/import/);
+    if (mc.start === 'drawings') {
+      const FIX = __dirname + '/fixtures/convert/';
+      await page.getByTestId('convert-files').setInputFiles([FIX + 'sorting_conveyor_drawings.pdf', FIX + 'E-03_PLC_IO.dxf']);
+      await page.getByRole('button', { name: 'Read the drawings' }).click();
+      await page.getByTestId('convert-recognised').waitFor({ timeout: 60000 });
+      await page.screenshot({ path: `${OUT}${mc.key}_review.png`, fullPage: true });
+      await page.getByTestId('convert-build').click();
+      for (let t = 0; t < 360; t++) {
+        if (await page.evaluate(async () => Boolean((await import('/src/spec/updateRun.ts')).useUpdateRun.getState().finishedAt))) break;
+        await page.waitForTimeout(500);
+      }
+      const run = await page.evaluate(async () => (await import('/src/spec/updateRun.ts')).useUpdateRun.getState().results.map((r) => `${r.step}:${r.status}${r.status === 'done' ? '' : ` (${r.message})`}`));
+      log(mc.key, 'build', run.join(' | '));
+      for (const r of run) if (!/:done$/.test(r) && !/^hmi:skipped/.test(r)) problem(mc.key, 'convert build', r);
+      await page.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
+      const kept = await page.getByTestId('convert-kept').innerText().catch(() => '');
+      for (const l of kept.split('\n').filter((x) => /Missing/.test(x))) problem(mc.key, 'function kept', l);
+    } else {
+      // The Program tab of the Import page reads the program; until it is there, the Upgrade page does.
+      await page.getByRole('button', { name: 'Program', exact: true }).click().catch(() => {});
+      if (!(await page.getByTestId('program-file').count())) {
+        problem(mc.key, 'import', 'the Import page has no program reader (Program tab): went to /upgrade by its address — no menu leads there');
+        await page.goto(BASE + '/upgrade');
+      }
+      await page.getByTestId('program-file').setInputFiles(__dirname + '/../src/plc/import/__fixtures__/capper.L5X');
+      await page.getByTestId('program-found').waitFor({ timeout: 10000 });
+      log(mc.key, 'found', (await page.getByTestId('program-found').innerText()).split('\n').slice(0, 3).join(' | '));
+      await page.getByTestId('program-apply').click();
+      await page.waitForTimeout(1500);
+      mc.rungs = await page.evaluate(async () => (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
+      const io = await page.evaluate(async () => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.length);
+      log(mc.key, 'program used', mc.rungs, 'rungs,', io, 'I/O');
+    }
+  });
+  if (!mc.start) await step('wizard', async () => {
     await page.getByRole('button', { name: 'New project' }).first().click();
     await page.getByPlaceholder('e.g. Line 3 case packer').fill(mc.name);
     await page.getByRole('button', { name: new RegExp(`^${mc.region}`) }).click();
@@ -253,7 +312,7 @@ async function journey(browser, mc) {
     await page.getByRole('button', { name: 'Open project →' }).click();
     await page.waitForURL('**/io');
   });
-  await step('I/O', async () => {
+  if (!mc.start) await step('I/O', async () => {
     await page.getByRole('button', { name: /Generate I\/O from spec|Update I\/O from spec/ }).click();
     await page.getByText('Review I/O changes').waitFor({ timeout: 15000 });
     await page.getByRole('button', { name: 'Apply changes' }).click();
@@ -261,7 +320,7 @@ async function journey(browser, mc) {
     if (n !== mc.io.length) problem(mc.key, 'I/O', `${n} points shown, ${mc.io.length} generated`);
     log(mc.key, 'I/O points', n);
   });
-  await step('electrical', async () => {
+  if (!mc.keepDesign) await step('electrical', async () => {
     await page.goto(BASE + '/electrical?tab=design');
     await page.getByRole('button', { name: /Generate (Electrical Design|New Design)/ }).click();
     await page.getByRole('button', { name: 'BOM CSV' }).waitFor({ timeout: 30000 });
@@ -279,12 +338,38 @@ async function journey(browser, mc) {
     log(mc.key, 'door devices', door.door.length, door.door.join(' | ').slice(0, 300));
     for (const want of [/selector/i, /pilot light, green/i, /pilot light, red/i, /pushbutton, (green|blue)/i]) if (!door.door.some((d) => want.test(d))) problem(mc.key, 'electrical', `no door device for ${want}`);
   });
-  if (!mc.noHmi) await step('HMI', async () => {
+  if (!mc.noHmi && mc.hmi !== false) await step('HMI', async () => {
     await page.goto(BASE + '/hmi');
+    // No panel chosen yet (a program that came without one): the user picks the first one offered.
+    const choose = page.getByText('Which HMI are you using?');
+    if (await choose.isVisible({ timeout: 3000 }).catch(() => false)) {
+      const first = page.locator('button', { has: page.locator('div.font-mono') }).first();
+      log(mc.key, 'HMI chosen', (await first.innerText()).split('\n')[0]);
+      await first.click();
+    }
     await page.getByRole('button', { name: 'Design the HMI screens' }).click();
     await page.getByRole('button', { name: 'Redesign screens' }).waitFor({ timeout: 30000 });
   });
-  await step('program', async () => {
+  if (mc.keepProgram) await step('program kept', async () => {
+    // The program that came with the machine must not be replaced by the later stages.
+    const n = await page.evaluate(async () => (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
+    if (mc.rungs && n !== mc.rungs) problem(mc.key, 'program', `${mc.rungs} rungs read, ${n} now`);
+    log(mc.key, 'program rungs', n);
+  });
+  if (mc.start === 'program') await step('upgraded program download', async () => {
+    await page.goto(BASE + '/upgrade');
+    await page.getByTestId('upgrade-original').waitFor({ timeout: 10000 });
+    log(mc.key, 'original vs now', await page.getByTestId('upgrade-diff-summary').innerText());
+    await page.getByTestId('upgrade-export').click();
+    const understood = page.getByTestId('upgrade-understood');
+    if (await understood.count()) { log(mc.key, 'missing on download', (await page.getByTestId('upgrade-missing').innerText()).replace(/\s+/g, ' ').slice(0, 200)); await understood.check(); }
+    const [d] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.getByTestId('upgrade-download').click()]);
+    const out = OUT + mc.key + '_' + d.suggestedFilename();
+    await d.saveAs(out);
+    if (!/\.L5X$/i.test(out) || !/<RSLogix5000Content/.test(fs.readFileSync(out, 'utf8'))) problem(mc.key, 'upgrade', `download ${d.suggestedFilename()} is not an L5X`);
+    log(mc.key, 'download', d.suggestedFilename());
+  });
+  if (!mc.keepProgram) await step('program', async () => {
     await page.goto(BASE + '/program');
     await page.getByRole('button', { name: 'Build', exact: true }).click();
     await page.getByRole('button', { name: 'Build program from my project' }).click();
@@ -360,7 +445,7 @@ async function journey(browser, mc) {
     log(mc.key, 'fault log entry', entry.slice(0, 160));
   });
   // Every page: look and click.
-  for (const route of ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/review', '/export']) {
+  for (const route of ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/review', ...(mc.routes ?? []), '/export']) {
     await step(`page ${route}`, async () => {
       await page.goto(BASE + route);
       await page.waitForTimeout(1200);
