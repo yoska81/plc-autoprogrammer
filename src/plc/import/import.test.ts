@@ -53,7 +53,10 @@ const writes = (r: Rung, a: string) => r.outputs.some((o) => 'address' in o && o
   const o = convertLogixRung('XIC(PB)ONS(Store)LIM(10,Lvl,90)CMP(Speed>=Max)ADD(Count,1,Count)MSG(M1);');
   assert.deepEqual(toBranches(o.driven[0].cond), [[{ type: 'RISE', address: 'PB' }, { type: 'CMP', left: 'Lvl', op: '>=', right: '10' }, { type: 'CMP', left: 'Lvl', op: '<=', right: '90' }, { type: 'CMP', left: 'Speed', op: '>=', right: 'Max' }]]);
   assert.deepEqual(o.driven[0].out, { type: 'MATH', dest: 'Count', expression: 'Count + 1' });
-  assert.deepEqual(o.untranslated, ['MSG(M1)']);
+  assert.deepEqual(o.untranslated, [], 'nothing dropped');
+  assert.deepEqual(o.driven[1].out, { type: 'RAW', vendor: 'logix', text: 'MSG(M1)' }, 'an unknown instruction at the end is kept as a RAW output');
+  const mid = convertLogixRung('XIC(A)MEQ(Src,Mask,Cmp)OTE(B);');
+  assert.deepEqual(toBranches(mid.driven[0].cond), [[{ type: 'NO', address: 'A' }, { type: 'RAW', vendor: 'logix', text: 'MEQ(Src,Mask,Cmp)' }]], 'in the middle of a rung it is a RAW condition');
   assert.throws(() => parseRungText('XIC(a OTE(b);'), /missing/);
 }
 
@@ -107,13 +110,16 @@ const capper = importProgramText('capper.L5X', fixture('capper.L5X'));
   assert.equal(capper.io.find((p) => p.original === 'Local:1:I.Data.7')?.description, 'Guard door closed (SW-205)', 'module point used directly in a rung');
   assert.ok(capper.io.find((p) => p.name === 'Torque_Raw')?.analog, 'analog channel');
   assert.equal(capper.report.converted, 19);
-  assert.deepEqual(capper.report.notConverted.map((n) => n.text), ['Rung 10: MSG(Line_Msg)'], 'only the MSG instruction is not converted');
+  assert.equal(capper.report.rungs, 20);
+  assert.deepEqual(capper.report.notConverted, [{ where: 'Sequence', text: 'Rung 10: MSG(Line_Msg)', kept: true }], 'only the MSG instruction is not converted, and it is kept');
+  assert.ok(capper.program.rungs.some((r) => r.outputs.some((o) => o.type === 'RAW' && o.vendor === 'logix' && o.text === 'MSG(Line_Msg)') && r.branches[0]?.[0]?.type === 'NO'), 'XIC(Machine_Running)MSG(Line_Msg): the MSG is a RAW output behind its contact');
   assert.ok(capper.report.notes.some((n) => /JSR/.test(n)), 'subroutine calls explained');
   assert.deepEqual(capper.program.blocks!.map((b) => b.name), ['Modes', 'Sequence', 'Alarms', 'Scaling']);
   const nick = new Map(capper.program.tags.map((t) => [t.nickname, t.address]));
   assert.match(nick.get('Step')!, /^DD\d+$/, 'DINT → DD');
   assert.match(nick.get('Torque_Nm')!, /^DF\d+$/, 'REAL → DF');
-  assert.match(nick.get('Capper.Torque_SP')!, /^DF\d+$/, 'UDT member keeps its type');
+  assert.match(nick.get('Capper_Torque_SP')!, /^DF\d+$/, 'UDT member keeps its type');
+  assert.match(capper.program.tags.find((t) => t.nickname === 'Capper_Torque_SP')!.comment, /^Original: Capper\.Torque_SP \(REAL\)/, 'the full original name and type in the comment');
   assert.match(nick.get('Spin_Tmr')!, /^T\d+$/);
   assert.match(nick.get('Bottle_Count')!, /^CT\d+$/);
   // The seal-in rung: (Start rising OR Running) AND permissives.
@@ -152,7 +158,8 @@ const capper = importProgramText('capper.L5X', fixture('capper.L5X'));
   // Round trip: export to Studio 5000 and read it back — same rungs, same names.
   const l5x = buildL5x(m.program, { io: m.io, addresses: new Map(m.io.map((p, i) => [p.id, i < 9 ? `X10${i + 1}` : `Y20${i - 8}`])), labels: new Map(), header: 'round trip', extraTags: [], cpuId: LOGIX_CPUS[1].id, modules, projectName: 'Capper_Upgraded', now: new Date(Date.UTC(2024, 0, 1)) });
   const back = importProgramText('Capper_Upgraded.L5X', l5x);
-  assert.equal(back.report.notConverted.length, 0, back.report.notConverted.map((n) => n.text).join(' | '));
+  assert.ok(back.report.notConverted.every((n) => n.kept), back.report.notConverted.map((n) => n.text).join(' | '));
+  assert.ok(l5x.includes('MSG(Line_Msg)') && back.program.rungs.some((r) => r.outputs.some((o) => o.type === 'RAW' && o.text === 'MSG(Line_Msg)')), 'the MSG goes back into the L5X as it was');
   assert.ok(back.program.rungs.length >= m.program.rungs.length, 'every rung comes back');
   for (const n of ['Machine_Running', 'Step', 'Spin_Tmr', 'Bottle_Count']) assert.ok(back.program.tags.some((t) => t.nickname === n), `${n} keeps its name through export and import`);
 

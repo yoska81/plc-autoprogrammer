@@ -71,9 +71,11 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
 
           {r.notConverted.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900">
-              <p className="font-medium">Not converted (kept as a note; you'll be asked what it does):</p>
+              <p className="font-medium">Not converted — you'll be asked what each one does:</p>
               <ul className="list-disc ml-5 mt-1 text-xs space-y-0.5">
-                {r.notConverted.map((n, i) => <li key={i}><code>{n.text}</code> — {n.where}</li>)}
+                {r.notConverted.map((n, i) => (
+                  <li key={i}><code>{n.text}</code> — {n.where}{n.kept ? ' (kept as it was: it goes back into the PLC, the simulator skips it)' : ' (left out)'}</li>
+                ))}
               </ul>
             </div>
           )}

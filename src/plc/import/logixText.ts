@@ -103,7 +103,7 @@ export function convertLogixRung(text: string): RungResult {
 
   function walk(items: Item[], cin: Cond): Cond {
     let c = cin;
-    for (const it of items) {
+    for (const [k, it] of items.entries()) {
       if (it.t === 'branch') {
         c = or(...it.legs.map((leg) => walk(leg, c)));
         continue;
@@ -157,7 +157,9 @@ export function convertLogixRung(text: string): RungResult {
           break;
         }
         default:
-          untranslated.push(it.text);
+          // Kept as it was (RAW): with more instructions after it, it is a condition; at the end, an output.
+          if (k < items.length - 1) c = and(c, el({ type: 'RAW', vendor: 'logix', text: it.text }));
+          else output(c, { type: 'RAW', vendor: 'logix', text: it.text });
       }
     }
     return c;

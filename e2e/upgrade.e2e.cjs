@@ -91,6 +91,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     const x = fs.readFileSync(out, 'utf8');
     for (const n of ['Start_PB', 'Machine_Running', 'Spin_Tmr']) check(x.includes(`Name="${n}"`), `${n} keeps its name in the L5X`);
     check(x.includes('Upgraded: start only with the guard closed'), 'the change is in the file');
+    check(x.includes('MSG(Line_Msg)'), 'the MSG the app cannot draw goes back as it was');
   }
 
   log('reload');

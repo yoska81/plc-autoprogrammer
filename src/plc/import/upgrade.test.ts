@@ -54,7 +54,7 @@ const capper = importProgramText('capper.L5X', readFileSync(join(here, '__fixtur
   const l5x = buildL5x(upgraded, { io, addresses, labels, header: 'test', extraTags: [], cpuId: plan.cpuId, modules: moduleSlots(plan.modules), projectName: capper.source.projectName, now: new Date(Date.UTC(2024, 0, 1)) });
   for (const n of ['Start_PB', 'Machine_Running', 'Spin_Tmr', 'Step']) assert.ok(l5x.includes(`Name="${n}"`), `${n} in the exported L5X`);
   const back = importProgramText('again.L5X', l5x);
-  assert.equal(back.report.notConverted.length, 0);
+  assert.ok(back.report.notConverted.every((n) => n.kept), 'nothing lost: the MSG comes back as it was');
   assert.ok(back.io.some((p) => p.name === 'Start_PB'), 'imports back with the same I/O names');
 }
 

@@ -10,7 +10,7 @@ import type { LadderElement, LadderOutput, LadderProgram, ProgramBlock, Rung, Ta
 import type { CpuModel, ModuleSlot, PlcProfile } from '../core/profile';
 import { resolveAddresses } from '../core/profile';
 import type { IOPoint } from '../../types/io';
-import type { ForeignProgram, ForeignTag, ImportedIoPoint, ImportedProgram } from './types';
+import type { ForeignProgram, ForeignTag, ImportedIoPoint, ImportedProgram, ImportReport } from './types';
 import { slug } from './l5x';
 
 const NUM = /^[-+]?(\d+(\.\d+)?|\d+#[0-9A-Fa-f_]+)$/;
@@ -107,7 +107,14 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
 
   // ── 3. Neutral addresses for everything else ──
   const next: Record<string, number> = { C: 0, DS: 0, DD: 0, DF: 0, T: 0, CT: 0 };
-  const alloc = (p: keyof typeof next) => `${p}${++next[p]}`;
+  // Kept clear of the HMI's register blocks (C1001–C1300, DS1001–DS1200, DF101–DF200): the HMI reads roles from them.
+  const HMI_BLOCK: Partial<Record<keyof typeof next, [number, number]>> = { C: [1001, 1300], DS: [1001, 1200], DF: [101, 200] };
+  const alloc = (p: keyof typeof next) => {
+    let n = ++next[p];
+    const skip = HMI_BLOCK[p];
+    if (skip && n >= skip[0] && n <= skip[1]) next[p] = n = skip[1] + 1;
+    return `${p}${n}`;
+  };
   const map = new Map<string, string>(); // base (lower) → neutral base
   const names: Record<string, string> = {};
   const tags: TagDefinition[] = [];
@@ -135,7 +142,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     map.set(lower, addr);
     names[addr] = base;
     const t = typeOf(base);
-    tags.push({ address: addr, nickname: base, comment: t?.comment ?? '' });
+    tags.push({ address: addr, nickname: nickOf(base), comment: origComment(base, t?.rawType || t?.dataType || '', t?.comment ?? '') });
     if (t?.dataType === 'OTHER' && t.rawType) notes.push(`${base} (${t.rawType}) is used as ${kind === 'bit' ? 'a bit' : kind === 'int' || kind === 'dint' ? 'a number' : kind}; its other members were not imported.`);
   }
   for (const p of io) names[ioIndex.get(p.name.toLowerCase())!] = p.name;
@@ -158,7 +165,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
         const a = alloc('C');
         wordBits.set(k, a);
         names[a] = raw;
-        tags.push({ address: a, nickname: raw, comment: `Bit ${member} of ${base}` });
+        tags.push({ address: a, nickname: nickOf(raw), comment: origComment(raw, '', `Bit ${member} of ${base}`) });
         notes.push(`${raw}: bit ${member} of a word, imported as its own bit ${a} (not linked to the word).`);
       }
       return wordBits.get(k)!;
@@ -178,7 +185,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
       const a = alloc(/^(EN|TT|IN|CU|CD|OV|UN)$/i.test(member) ? 'C' : 'DS');
       wordBits.set(k, a);
       names[a] = raw;
-      tags.push({ address: a, nickname: raw, comment: `${member} of ${base} (no direct equivalent; check)` });
+      tags.push({ address: a, nickname: nickOf(raw), comment: origComment(raw, '', `${member} of ${base} (no direct equivalent; check)`) });
       notes.push(`${raw}: ${member} of ${base} has no direct equivalent; imported as ${a}. Check the rungs that use it.`);
     }
     return wordBits.get(k)!;
@@ -201,7 +208,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   const blocks: ProgramBlock[] = [];
   const outRungs: Rung[] = [];
   const usedIds = new Set<string>();
-  const notConverted: { where: string; text: string }[] = [];
+  const notConverted: ImportReport['notConverted'] = [];
   for (const r of fp.routines) {
     for (const u of r.untranslated) notConverted.push({ where: r.name, text: u });
     if (!r.rungs.length) continue;
@@ -209,6 +216,9 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     while (blocks.some((b) => b.id === id)) id += '_';
     blocks.push({ id, name: r.name, description: `Imported from ${fp.vendor} ${r.language === 'ladder' ? 'ladder' : r.language.toUpperCase()} routine "${r.name}"` });
     for (const g of r.rungs) {
+      // Rung ids end in the original rung number (readers: `<routine>_<n>`).
+      const n = /_(\d+)(?:_\d+)?$/.exec(g.id)?.[1];
+      for (const x of [...g.branches.flat(), ...g.outputs]) if (x.type === 'RAW') notConverted.push({ where: r.name, text: `${n ? `Rung ${n}: ` : ''}${x.text}`, kept: true });
       let rid = `r_${g.id}`;
       while (usedIds.has(rid)) rid += '_';
       usedIds.add(rid);
@@ -216,15 +226,21 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     }
   }
   const program: LadderProgram = { rungs: outRungs, blocks, tags };
-  const total = outRungs.length + notConverted.length;
+  const total = outRungs.length + notConverted.filter((n) => !n.kept).length;
+  const converted = outRungs.filter((r) => ![...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW')).length;
   return {
     source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName },
     program, io, names,
-    report: { rungs: total, converted: outRungs.length, notConverted, notes: [...new Set(notes)] },
+    report: { rungs: total, converted, notConverted, notes: [...new Set(notes)] },
   };
 }
 
 /** "Conv1_Start_PB" → "Conv1 Start PB". */
+/** App nickname for an original tag name: letters, digits and _, at most 24 characters (the full name goes in the comment). */
+export const nickOf = (name: string): string => name.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24);
+/** Tag comment: the original name and type when the nickname had to change it, then its description. */
+const origComment = (name: string, type: string, comment: string) => [nickOf(name) !== name ? `Original: ${name}${type ? ` (${type})` : ''}` : '', comment].filter(Boolean).join(' — ');
+
 export function pretty(name: string): string {
   return name.replace(/^.*[:.](?=[A-Za-z])/, '').replace(/[_]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
 }

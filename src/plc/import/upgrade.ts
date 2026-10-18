@@ -12,7 +12,7 @@ import type { SpecSectionId } from '../../spec/types';
 import { PLC_PROFILES, getProfile } from '../core/profiles';
 import { moduleSlots } from '../core/modules';
 import { modulesToFit, type Need } from '../core/fit';
-import { materialize, pretty } from './convert';
+import { materialize, nickOf, pretty } from './convert';
 import type { ImportedProgram, SourceFormat } from './types';
 
 /** Draft key (stored with the project) of the original program. */
@@ -79,7 +79,7 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
   const ioTags: TagDefinition[] = [];
   m.io.forEach((p, k) => {
     const address = materializedAddress(m.names, imp.io[k].name);
-    if (address && !have.has(address.toUpperCase())) ioTags.push({ address, nickname: imp.io[k].name, comment: p.description });
+    if (address && !have.has(address.toUpperCase())) ioTags.push({ address, nickname: nickOf(imp.io[k].name), comment: p.description });
   });
   const program: LadderProgram = { ...m.program, tags: [...ioTags, ...m.program.tags] };
   const summary = programSummary(imp);
@@ -152,7 +152,11 @@ export function questionsFor(imp: ImportedProgram): string[] {
   if (unsure.length) q.push(`Are these wired to the PLC's terminals? ${unsure.map((p) => p.name).join(', ')} (the program does not say).`);
   const noText = imp.io.filter((p) => !p.description);
   if (noText.length) q.push(`What are these I/O points connected to? ${noText.map((p) => p.name).join(', ')}`);
-  for (const n of imp.report.notConverted.slice(0, 8)) q.push(`The original program has "${n.text}" (${n.where}) that the app cannot draw yet. What does it do on the machine?`);
+  for (const n of imp.report.notConverted.slice(0, 8)) {
+    q.push(n.kept
+      ? `The original program has "${n.text}" (${n.where}). It is kept as it was and goes back into the PLC, but the simulator can't run it. What does it do on the machine?`
+      : `The original program has "${n.text}" (${n.where}) that could not be brought in. What does it do on the machine?`);
+  }
   q.push('What problems does the machine have today, and what should the upgrade fix?');
   return q;
 }

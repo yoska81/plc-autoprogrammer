@@ -89,8 +89,8 @@ export interface ImportReport {
   rungs: number;
   /** Rungs converted completely. */
   converted: number;
-  /** Instructions or statements not converted (with where they are). */
-  notConverted: { where: string; text: string }[];
+  /** Instructions or statements not converted (with where they are). `kept`: in the program as the original text (RAW). */
+  notConverted: { where: string; text: string; kept?: boolean }[];
   notes: string[];
 }
 
