@@ -13,6 +13,7 @@ import { PLC_PROFILES, getProfile } from '../core/profiles';
 import { moduleSlots } from '../core/modules';
 import { modulesToFit, type Need } from '../core/fit';
 import { materialize, nickOf, pretty } from './convert';
+import { programFindings } from './findings';
 import type { ImportedProgram, SourceFormat } from './types';
 
 /** Draft key (stored with the project) of the original program. */
@@ -34,6 +35,7 @@ export interface UpgradeOriginal {
   /** App address → original tag name; block id → its routine in the original file. */
   names: Record<string, string>;
   blockOrigin: ImportedProgram['blockOrigin'];
+  rungOrigin?: ImportedProgram['rungOrigin'];
   /** The original file, gzip + base64 (src/plc/import/gz.ts): changes are written back into it. */
   fileGz?: string;
 }
@@ -108,23 +110,39 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
     program,
     io: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type, category: p.category, ...(p.signal ? { signal: p.signal, analog: p.analog } : {}), ...(p.plcAddress ? { plcAddress: p.plcAddress } : {}) })),
     spec: describeProgram(imp),
-    questions: questionsFor(imp),
+    // Likely bugs (missing seal-in, interlock on another station's sensor) are asked before the general question.
+    questions: withFindings(questionsFor(imp), programFindings(program).map((f) => f.message)),
     original: {
       importedAt: now.toISOString(), source: imp.source, report: imp.report, io: imp.io, plcId: profile.id, cpuId: cpu.id, program, summary,
       ioList: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type })),
-      names: m.names, blockOrigin: imp.blockOrigin,
+      names: m.names, blockOrigin: imp.blockOrigin, rungOrigin: imp.rungOrigin,
     },
   };
+}
+
+/** A nickname that reads like a PLC address (C1, T5, X0, M100, DS3) — misleading on a CLICK, where those are addresses. */
+const ADDRESS_LIKE = /^(X|Y|C|T|CT|SC|SD|DS|DD|DH|DF|TD|CTD|TXT|XD|YD|M|D|SM|ST|L|B|W|R)\d+$/i;
+
+/** CLICK nickname: the original name, or from the description when the name is address-like or missing. */
+function clickName(t: TagDefinition): string {
+  if (t.nickname && !ADDRESS_LIKE.test(nickOf(t.nickname))) return nickOf(t.nickname);
+  const words = (t.comment.replace(/^Original:[^—]*—\s*/, '').match(/[A-Za-z0-9]+/g) ?? []).slice(0, 4).join('_');
+  return nickOf(words && !ADDRESS_LIKE.test(words) ? words : `Orig_${t.nickname || t.address}`);
 }
 
 export function clickNicknames(tags: TagDefinition[]): TagDefinition[] {
   const used = new Set<string>();
   return tags.map((t) => {
-    let n = nickOf(t.nickname);
-    for (let i = 2; used.has(n.toLowerCase()); i++) n = `${nickOf(t.nickname).slice(0, 24 - String(i).length - 1)}_${i}`;
+    let n = clickName(t);
+    for (let i = 2; used.has(n.toLowerCase()); i++) n = `${clickName(t).slice(0, 24 - String(i).length - 1)}_${i}`;
     used.add(n.toLowerCase());
     return n === t.nickname ? t : { ...t, nickname: n, comment: [`Original: ${t.nickname}`, t.comment].filter(Boolean).join(' — ') };
   });
+}
+
+function withFindings(questions: string[], findings: string[]): string[] {
+  const last = questions.length - 1; // "What problems does the machine have today…" stays last
+  return [...questions.slice(0, last), ...findings, ...questions.slice(last)];
 }
 
 const materializedAddress = (names: Record<string, string>, name: string) => Object.entries(names).find(([a, n]) => n === name && !a.startsWith('@'))?.[0];

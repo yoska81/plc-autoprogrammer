@@ -110,6 +110,8 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
       return `"${name}"`;
     },
     ioTodo: (base, name) => `(* TODO ${base}: no address on this CPU (${name}) *)`,
+    // Kept SCL of the original program reads / writes the channel's raw word (Int 0…27648), as it did.
+    rawWord: (base, ref) => (analog.has(base) ? `"${ref.replace(/^#/, '')}_raw"` : null),
     ref: (n) => `#${n}`,
     firstScan: '#FirstScan',
     types: { TON: 'TON_TIME', TOF: 'TOF_TIME', RTO: 'TONR_TIME', CTU: 'CTU_DINT', CTD: 'CTD_DINT', R_TRIG: 'R_TRIG', F_TRIG: 'F_TRIG', BOOL: 'Bool', DINT: 'DInt', REAL: 'Real' },

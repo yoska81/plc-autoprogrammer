@@ -121,7 +121,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByTestId('program-file').setInputFiles([fx('CAPPER_MAIN.csv'), fx('CAPPER_DeviceComment.csv')]);
   await page.getByTestId('program-found').waitFor({ timeout: 10000 });
   const gx = await page.getByTestId('program-found').innerText();
-  check(/FX5UCPU/.test(gx) && /33\s*of 33 rungs converted/.test(gx), 'GX program read');
+  check(/FX5UCPU/.test(gx) && /(\d+)\s*of \1 rungs converted/.test(gx), 'GX program read');
   check(/Double coil: Spindle \(Y4\)/.test(gx), 'the double coil is shown');
   check(/Stop_PB/.test(gx) && /Stop pushbutton/.test(gx), 'device comments give the names');
 

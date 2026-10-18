@@ -24,6 +24,9 @@ const file = (n: string) => ({ name: n, text: fileText(n, new Uint8Array(readFil
   const utf16 = new Uint8Array([0xff, 0xfe, ...[...'"A"\t"B"'].flatMap((c) => [c.charCodeAt(0), 0])]);
   assert.equal(decodeCsv(utf16), '"A"\t"B"');
   assert.deepEqual(gxRows('"1"\t"x ""q"""\t""\r\n'), [['1', 'x "q"', '']]);
+  const c = gxComments('"Device Name"\t"Comment"\n"X7"\t"Warning: cap chute low"\n"M3"\t"Run: machine running"');
+  assert.deepEqual(c.get('X7'), { tag: '', comment: 'Warning: cap chute low' }, 'a plain comment does not give a tag name');
+  assert.deepEqual(c.get('M3'), { tag: 'Run', comment: 'machine running' });
   assert.deepEqual(gxComments('"Global Device Comment"\n"Device Name"\t"Comment"\n"X0"\t"Start_PB: Start pushbutton"\n"M5"\t"plain text"').get('X0'), { tag: 'Start_PB', comment: 'Start pushbutton' });
 }
 
@@ -82,11 +85,29 @@ const rungsOf = (text: string) => readGxCsv(text).routines[0].rungs;
   const plan = planUpgrade(imp, 'click');
   const issues = validateProgram(plan.program as LadderProgram, getProfile(plan.plcId), new Set());
   assert.ok(issues.some((i) => /double coil/.test(i.message)), 'and the program checker reports it');
+  // RST C0 / RST C1 rungs become the counters' reset inputs (no false "no reset").
+  const good = plan.program.tags.find((t) => t.nickname === 'Good_Count')!.address;
+  const cnt = plan.program.rungs.flatMap((r) => r.outputs).find((o) => o.type === 'CNT' && o.address === good);
+  assert.ok(cnt && cnt.type === 'CNT' && cnt.resetAddress, 'RST C0 is the counter\'s reset input');
+  assert.ok(!issues.some((i) => new RegExp(`Counter ${good} has no reset`).test(i.message)), 'no false "no reset"');
+  assert.ok(!plan.program.rungs.some((r) => r.outputs.some((o) => o.type === 'RST' && o.address === good)), 'the RST is not kept as well');
+  // On a CLICK no nickname reads like an address.
+  const bad = plan.program.tags.filter((t) => /^(X|Y|C|T|CT|SC|DS|DD|DF|M|D|SM)\d+$/i.test(t.nickname));
+  assert.deepEqual(bad, [], 'no address-like CLICK nicknames');
   // Timer and counter names from the comments; the batch compare uses the counter's value.
   const nick = new Map(imp.program.tags.map((t) => [t.nickname, t.address]));
   assert.match(nick.get('Bottle_Tmr')!, /^T\d+$/);
   assert.match(nick.get('Good_Count')!, /^CT\d+$/);
   assert.ok(imp.program.rungs.some((r) => r.branches[0]?.[0]?.type === 'CMP' && /^CTD\d+$/.test((r.branches[0][0] as { left: string }).left)), 'LD>= C0 D0 compares the count');
+}
+
+// Siemens: the PLC tag table gives the SCL source its inputs and outputs.
+{
+  const { program } = importProgramFiles([file('Mixer.scl'), file('PLC_Tags_Mixer.csv')]);
+  assert.deepEqual(program.io.map((p) => `${p.name}:${p.type}:${p.original}`), ['Lid_Closed:input:%IX0.2', 'Tank_Low:input:%IX0.3', 'Level_High:input:%IX0.4', 'Level_Low:input:%IX0.5', 'Fill_Valve:output:%QX0.0', 'Agitator:output:%QX0.1', 'Drain_Valve:output:%QX0.2']);
+  assert.equal(program.io[0].description, 'Mixer lid closed (safety switch)');
+  assert.ok(!program.report.notes.some((n) => /add the PLC tag table/.test(n)));
+  assert.throws(() => importProgramFiles([file('PLC_Tags_Mixer.csv')]), /PLC tag table: add the program/);
 }
 
 // A device comment file alone is explained.

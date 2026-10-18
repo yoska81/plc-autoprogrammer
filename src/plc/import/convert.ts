@@ -146,6 +146,8 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     const lower = base.toLowerCase();
     if (ioIndex.has(lower)) continue;
     if (/^S:FS$/i.test(base) || /^(FirstScan|First_Scan|%?M?\s*FirstScan)$/i.test(base)) { map.set(lower, 'SC2'); continue; }
+    // The app's own system bits (a reader already mapped the PLC's: SC1 always on, SC7 1-second clock).
+    if (/^SC\d+$/.test(base)) { map.set(lower, base); continue; }
     const kind = kindOf(base, roles);
     const addr = alloc(kind === 'bit' ? 'C' : kind === 'int' ? 'DS' : kind === 'dint' ? 'DD' : kind === 'real' ? 'DF' : kind === 'timer' ? 'T' : 'CT');
     map.set(lower, addr);
@@ -219,6 +221,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   const usedIds = new Set<string>();
   const notConverted: ImportReport['notConverted'] = [];
   const blockOrigin: ImportedProgram['blockOrigin'] = {};
+  const rungOrigin: ImportedProgram['rungOrigin'] = {};
   for (const r of fp.routines) {
     for (const u of r.untranslated) notConverted.push({ where: r.name, text: u });
     if (!r.rungs.length) continue;
@@ -227,21 +230,22 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     if (r.origin) blockOrigin[id] = r.origin;
     blocks.push({ id, name: r.name, description: `Imported from ${fp.vendor} ${r.language === 'ladder' ? 'ladder' : r.language.toUpperCase()} routine "${r.name}"` });
     for (const g of r.rungs) {
-      // Rung ids end in the original rung number (readers: `<routine>_<n>`).
-      const n = /_(\d+)(?:_\d+)?$/.exec(g.id)?.[1];
+      const n = r.rungNumbers?.[g.id];
       for (const x of [...g.branches.flat(), ...g.outputs]) if (x.type === 'RAW') notConverted.push({ where: r.name, text: `${n ? `Rung ${n}: ` : ''}${x.text}`, kept: true });
       let rid = `r_${g.id}`;
       while (usedIds.has(rid)) rid += '_';
       usedIds.add(rid);
+      if (n !== undefined) rungOrigin[rid] = n;
       outRungs.push({ id: rid, block: id, comment: g.comment, branches: g.branches.map((b) => b.map(trEl)), outputs: g.outputs.map(trOut) });
     }
   }
+  linkCounterResets(outRungs, tags, () => alloc('C'), rungOrigin);
   const program: LadderProgram = { rungs: outRungs, blocks, tags };
   const total = outRungs.length + notConverted.filter((n) => !n.kept).length;
   const converted = outRungs.filter((r) => ![...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW')).length;
   return {
     source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName },
-    program, io, names, blockOrigin,
+    program, io, names, blockOrigin, rungOrigin,
     report: { rungs: total, converted, notConverted, notes: [...new Set(notes)], outside: fp.outside ?? [] },
   };
 }
@@ -303,4 +307,34 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   const names: Record<string, string> = {};
   for (const [k, v] of Object.entries(imp.names)) names[sub(k)] = v;
   return { program, io: points, names };
+}
+
+/**
+ * A counter reset in a rung of its own (Logix RES, Mitsubishi RST C0) becomes the counter's reset input,
+ * the form the app (and CLICK) uses: one plain contact is used as it is; any other condition drives a reset
+ * bit of its own (the conditions of all the reset rungs, OR'ed). Rungs left with no output are dropped.
+ */
+export function linkCounterResets(rungs: Rung[], tags: TagDefinition[], newBit: () => string, origin: Record<string, string> = {}): void {
+  for (const cnt of rungs.flatMap((r) => r.outputs).filter((o): o is Extract<LadderOutput, { type: 'CNT' }> => o.type === 'CNT')) {
+    if (cnt.resetAddress) continue;
+    const a = cnt.address.toUpperCase();
+    const rst = rungs.filter((r) => r.outputs.some((o) => o.type === 'RST' && o.address.toUpperCase() === a));
+    if (!rst.length) continue;
+    const single = rst.length === 1 && rst[0].branches.length === 1 && rst[0].branches[0].length === 1 && rst[0].branches[0][0].type === 'NO' ? rst[0].branches[0][0].address : null;
+    if (single) cnt.resetAddress = single;
+    else {
+      const bit = newBit();
+      const nick = tags.find((t) => t.address.toUpperCase() === a)?.nickname ?? a;
+      tags.push({ address: bit, nickname: `${nick}_Reset`, comment: `Reset of ${nick} (from the original reset rung${rst.length > 1 ? 's' : ''})` });
+      const always = rst.some((r) => !r.branches.length);
+      const at = rungs.indexOf(rst[0]);
+      // It stands for the original reset rung (the patch export copies that rung while unchanged).
+      const id = `${rst[0].id}_rst`;
+      if (origin[rst[0].id] !== undefined) origin[id] = origin[rst[0].id];
+      rungs.splice(at, 0, { id, ...(rst[0].block ? { block: rst[0].block } : {}), comment: `Reset ${nick}`, branches: always ? [] : rst.flatMap((r) => r.branches), outputs: [{ type: 'OUT', address: bit }] });
+      cnt.resetAddress = bit;
+    }
+    for (const r of rst) r.outputs = r.outputs.filter((o) => !(o.type === 'RST' && o.address.toUpperCase() === a));
+  }
+  for (let i = rungs.length - 1; i >= 0; i--) if (!rungs[i].outputs.length) rungs.splice(i, 1);
 }

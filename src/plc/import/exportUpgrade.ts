@@ -31,7 +31,7 @@ export function exportUpgrade(
 ): UpgradeExport {
   const r = o.report;
   if (target.plcId === o.plcId && o.source.format === 'l5x' && originalFile) {
-    const p = patchL5x({ originalXml: originalFile, original: o.program, current, names: o.names, blockOrigin: o.blockOrigin, ctx: target.ctx });
+    const p = patchL5x({ originalXml: originalFile, original: o.program, current, names: o.names, blockOrigin: o.blockOrigin, rungOrigin: o.rungOrigin ?? {}, ctx: target.ctx });
     const changedNames = new Set(p.changed.map((c) => c.split(' / ').pop()!.toLowerCase()));
     // Only what could not be brought in from a routine that is now rewritten is lost.
     const missing = r.notConverted

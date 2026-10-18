@@ -167,10 +167,13 @@ export function readL5x(src: string): ForeignProgram {
             for (const d of driven) for (const op of opsOf(d)) if (logixIoKind(op)) ioRefs.add(op);
             const { rungs, failed } = toRungs(mapOps(driven), comment, `${slug(rname)}_${i}`);
             // A rung the ladder model can't hold is kept whole, as it was.
-            if (failed.length || untranslated.length) routine.rungs.push(wholeRung(text, comment, `${slug(rname)}_${i}`));
-            else routine.rungs.push(...rungs);
+            const got = failed.length || untranslated.length ? [wholeRung(text, comment, `${slug(rname)}_${i}`)] : rungs;
+            routine.rungs.push(...got);
+            for (const g of got) (routine.rungNumbers ??= {})[g.id] = String(i);
           } catch {
-            routine.rungs.push(wholeRung(text, comment, `${slug(rname)}_${i}`));
+            const g = wholeRung(text, comment, `${slug(rname)}_${i}`);
+            routine.rungs.push(g);
+            (routine.rungNumbers ??= {})[g.id] = String(i);
           }
         });
       } else if (type === 'ST') {

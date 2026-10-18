@@ -95,7 +95,7 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
     const tag: LogixTag = {
       base,
       name: logixName(n?.nickname || label || GENERATED[base] || base, used, base),
-      dataType, description: [label, n?.comment].filter(Boolean).join(' — ') || base,
+      dataType, description: [label, n?.comment].filter((x, i, all): x is string => !!x && all.indexOf(x) === i).join(' — ') || base,
       ...(alias ? { aliasFor: alias } : {}),
     };
     if (alias && !label && !n) warnings.push(`${base}: I/O point without a description; tag named ${tag.name}.`);

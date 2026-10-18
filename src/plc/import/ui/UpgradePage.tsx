@@ -13,6 +13,7 @@ import { useIOStore } from '../../../store/useIOStore';
 import { UPGRADE_KEY } from '../upgrade';
 import { exportUpgrade, upgradeChanges, type UpgradeExport } from '../exportUpgrade';
 import { gunzipText } from '../gz';
+import { programFindings } from '../findings';
 import { upgradeOriginal } from './applyUpgrade';
 import ProgramImport from './ProgramImport';
 
@@ -34,6 +35,7 @@ export default function UpgradePage() {
   const [understood, setUnderstood] = useState(false);
   const [busy, setBusy] = useState(false);
   const changes = useMemo(() => (original ? upgradeChanges(original, io, ladder) : null), [original, io, ladder]);
+  const findings = useMemo(() => programFindings(ladder, labels), [ladder, labels]);
 
   const diff = useMemo(() => {
     if (!original) return null;
@@ -92,6 +94,16 @@ export default function UpgradePage() {
                   <Link to="/plc" className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700">Move it to another PLC</Link>
                 </div>
               </div>
+
+              {findings.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2" data-testid="upgrade-findings">
+                  <h3 className="text-sm font-semibold text-amber-900">Possible problems in the program ({findings.length})</h3>
+                  <ul className="list-disc ml-5 text-sm text-amber-900 space-y-1">
+                    {findings.map((f) => <li key={`${f.kind}${f.rungId}${f.address}`}>{f.message} <Link to="/program" className="underline text-xs">Open the program</Link></li>)}
+                  </ul>
+                  <p className="text-xs text-amber-800">They are also asked on the Machine description page. Fix them in the program (or ask the AI there), then compare with the original below.</p>
+                </div>
+              )}
 
               <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
                 <div className="flex items-center gap-3">

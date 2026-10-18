@@ -59,9 +59,19 @@ export function gxComments(text: string): Map<string, { tag: string; comment: st
     const dev = (r[di] ?? '').toUpperCase(), c = r[ci] ?? '';
     if (!/^[A-Z]+\d/.test(dev) || !c) continue;
     const m = /^([A-Za-z_]\w*)\s*:\s*(.*)$/.exec(c);
-    out.set(dev, m ? { tag: m[1], comment: m[2] } : { tag: '', comment: c });
+    out.set(dev, m && isTagName(m[1]) ? { tag: m[1], comment: m[2] } : { tag: '', comment: c });
   }
   return out;
+}
+
+/** Words that start a plain comment ("Warning: cap chute low"), not tag names. */
+const COMMON = new Set(['warning', 'note', 'notes', 'caution', 'attention', 'alarm', 'fault', 'error', 'info', 'check', 'spare', 'reserved', 'todo', 'see', 'step', 'input', 'output', 'used', 'unused', 'old', 'new']);
+
+/** "Start_PB" is a tag name; "Warning" (a word), "X0" / "M100" (a device) are not. */
+export function isTagName(s: string): boolean {
+  if (COMMON.has(s.toLowerCase())) return false;
+  if (/^(X|Y|M|L|B|F|D|W|R|T|ST|C|SM|SD|SB|SW|Z|V|U|K|H|E)\d+$/i.test(s)) return false;
+  return /^[A-Za-z_]\w{1,39}$/.test(s);
 }
 
 interface Instr { step: string; comment: string; op: string; args: string[] }
@@ -129,7 +139,8 @@ export function readGxCsv(programText: string, commentText = ''): ForeignProgram
     const d = a.toUpperCase();
     if (d === 'SM400') return op.startsWith('LDI') || op.startsWith('ANI') || op.startsWith('ORI') ? FALSE : TRUE; // always ON
     if (d === 'SM401') return op.startsWith('LDI') || op.startsWith('ANI') || op.startsWith('ORI') ? TRUE : FALSE;
-    const addr = d === 'SM402' ? 'S:FS' : n(d);
+    // First scan, and the 1-second clock (the app's neutral SC7, exported per PLC).
+    const addr = d === 'SM402' ? 'S:FS' : d === 'SM412' ? 'SC7' : n(d);
     if (/^(LDP|ANDP|ORP)$/.test(op)) return el({ type: 'RISE', address: addr });
     if (/^(LDF|ANDF|ORF)$/.test(op)) return el({ type: 'FALL', address: addr });
     return el({ type: /^(LDI|ANI|ORI)$/.test(op) ? 'NC' : 'NO', address: addr });
