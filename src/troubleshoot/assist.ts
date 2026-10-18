@@ -1,15 +1,29 @@
 /**
  * The help around guided fault finding (steps.ts), rules first: works with no API key.
  * - matchSymptom: what the technician says or types ("the box stop eye never comes on", "X4 keeps flickering",
- *   "conveyor motor won't start") → the PLC points it most likely means, each with the symptom.
+ *   "conveyor motor won't start") → the PLC points it most likely means, each with the symptom; a function that
+ *   won't go or a stuck step also names the StuckTarget for "why is it stuck?" (Dev 2's guide.ts) to look at first.
+ * - matchMachineSymptom: the machine-level symptom (Dev 1's machineSymptoms map for the machine type) and its causes.
  * - rankCauses: the likely causes for a point and symptom, in plain words, ordered by what is on its wiring path
- *   (field cable, series contacts, fuses, the kind of device) and by what the project's fault log found there before.
+ *   (field cable, series contacts, fuses, the kind of device; the maker's causes from Dev 1's deviceFaults when the
+ *   device's part is known) and by what the project's fault log found there before.
  * - With a key, the AI may only choose among the rule answers (a point and symptom from the list, an order of the
  *   same causes) or reword a step; a rewording that loses a reading, terminal, wire number or warning is dropped.
  * Types are the parts of Debug 4's WiringPath / Step / FaultLogEntry this reads (structurally the same).
  */
 
+import { findSymptom, rankedCauses, symptomMap, type MachineSymptom, type MachineSymptomMap, type SymptomCause } from './machineSymptoms';
+import type { SymptomKind } from './deviceFaults';
+
 export type Symptom = 'never-on' | 'always-on' | 'flickers' | 'output-dead' | 'analog-wrong';
+
+/** Dev 1's device fault kind for an operator symptom (deviceFaults faultsOfKind); none for flicker / analog. */
+export const FAULT_KIND: Partial<Record<Symptom, SymptomKind>> = { 'never-on': 'no-input', 'always-on': 'stuck-on', 'output-dead': 'output-no-motion' };
+
+/** What "why is it stuck?" (Dev 2's whyStuck.ts StuckTarget) should look at first: an output, or a cycle step. */
+export type StuckTarget = { output: string } | { step: number };
+/** A cycle step, for matching "stops at filling" (number and name). */
+export interface AssistStep { n: number; name: string }
 
 export interface AssistHop {
   kind: string;
@@ -67,6 +81,11 @@ const ADDR_IN_TEXT = /(?<![A-Za-z0-9])%?[IQXYM][XWD]?\s?\d+(?:\.\d+)?\b/gi;
 export interface SymptomMatch {
   address: string;
   symptom: Symptom;
+  /**
+   * The words name a machine function that won't go ("won't start", "never moves") or a stuck step ("stops at
+   * filling"): look at why it is stuck first (whyStuck / guide.ts), the wiring only when that points there.
+   */
+  target?: StuckTarget;
   /** 0…1: how sure the rules are. */
   score: number;
   /** Why this point, in plain words. */
@@ -90,8 +109,26 @@ function symptomFor(text: string, p: AssistPath): { s: Symptom; fit: number } | 
   return null;
 }
 
+const FUNCTION_WONT = /(won'?t|will not|doesn'?t|does not|never|not|can'?t) (start|run|move|go|cycle|turn on)|stops? (at|in|on|during|after)|stuck (at|in|on)|hangs? (at|in)|no arranca|bleibt stehen/;
+
 /** The points a description of the problem most likely means, best first (empty when nothing matches). */
-export function matchSymptom(text: string, paths: AssistPath[]): SymptomMatch[] {
+export function matchSymptom(text: string, paths: AssistPath[], steps: AssistStep[] = []): SymptomMatch[] {
+  const out = matchPoints(text, paths);
+  const said = text.toLowerCase();
+  if (!FUNCTION_WONT.test(said)) return out;
+  // "Stops at filling" / "stuck at step 20": the step.
+  const words = wordsOf(text);
+  const n = /\bstep\s*(\d+)/i.exec(text)?.[1];
+  const step = n !== undefined ? steps.find((x) => x.n === Number(n)) ?? { n: Number(n), name: '' } : steps.find((x) => wordsOf(x.name).some((w) => words.some((t) => sameWord(t, w))));
+  if (step && /stops?|stuck|hangs?|bleibt/.test(said)) {
+    const s: StuckTarget = { step: step.n };
+    return out.length ? out.map((m, i) => (i === 0 ? { ...m, target: s } : m)) : [{ address: '', symptom: 'output-dead', score: 0.6, target: s, why: `Step ${step.n}${step.name ? ` (${step.name})` : ''}: the machine stops there` }];
+  }
+  // "The capper never starts": its output, through why-stuck first.
+  return out.map((m) => (paths.find((p) => p.address === m.address)?.type === 'output' && !paths.find((p) => p.address === m.address)?.analog ? { ...m, target: { output: m.address } } : m));
+}
+
+function matchPoints(text: string, paths: AssistPath[]): SymptomMatch[] {
   const said = text.toLowerCase();
   const words = wordsOf(text);
   const addrs = new Set((text.match(ADDR_IN_TEXT) ?? []).map(addrKey));
@@ -149,8 +186,15 @@ const LOG_CAUSE: [RegExp, string][] = [
   [/setting|range|scal|preset|program|force/i, 'setting'],
 ];
 
-/** The likely causes for a point and symptom, most likely first (rules only). */
-export function rankCauses(p: AssistPath, symptom: Symptom, log: AssistLogEntry[] = []): Cause[] {
+/** A device fault entry (Dev 1's deviceFaults FaultEntry: the parts read here). */
+export interface AssistDeviceFault { title: string; causes: string[]; fix: string[]; source: string }
+
+/**
+ * The likely causes for a point and symptom, most likely first (rules only). `deviceFaults`: the device's own
+ * fault entries for this symptom (faultsOfKind on its catalog part, FAULT_KIND): they replace the general
+ * "the device" cause with the maker's causes.
+ */
+export function rankCauses(p: AssistPath, symptom: Symptom, log: AssistLogEntry[] = [], deviceFaults: AssistDeviceFault[] = []): Cause[] {
   const kind = kindOf(p);
   const dev = p.device ? `${p.device}${kind ? ` (${kind})` : ''}` : kind || 'the device';
   const all = [...p.signal, ...p.supply, ...p.ret];
@@ -199,16 +243,46 @@ export function rankCauses(p: AssistPath, symptom: Symptom, log: AssistLogEntry[
       add('supply', 1, 'No loop power (24 V) at the transmitter', 'A 2-wire transmitter needs 24 V in its loop.');
       break;
   }
+  // The maker's causes for this device, in their order, in place of the general one.
+  const own = deviceFaults.flatMap((f) => f.causes.slice(0, 3).map((cause) => ({ cause, f }))).slice(0, 4);
+  const general = c.find((x) => x.id === 'device');
+  if (own.length && general) {
+    c.splice(c.indexOf(general), 1, ...own.map(({ cause, f }, i) => ({ id: i ? `device:${i}` : 'device', text: `${p.device || 'The device'}: ${cause}`, why: `${f.title} (maker's manual: ${f.source})`, weight: general.weight - i * 0.3 })));
+  }
   // The project's own history on this point: what was found before comes first.
   const past = log.filter((e) => !e.practice && addrKey(e.address) === addrKey(p.address));
   for (const x of c) {
-    const times = past.filter((e) => LOG_CAUSE.some(([re, id]) => id === x.id && re.test(`${e.found} ${e.fix}`)));
+    const times = past.filter((e) => LOG_CAUSE.some(([re, id]) => id === x.id.split(':')[0] && re.test(`${e.found} ${e.fix}`)));
     if (!times.length) continue;
     x.weight += 1.5 * times.length;
     const last = [...times].sort((a, b) => b.date.localeCompare(a.date))[0];
     x.why = `Found here ${times.length === 1 ? 'once' : `${times.length} times`} before (last ${last.date.slice(0, 10)}: ${last.found}). ${x.why}`;
   }
   return c.sort((a, b) => b.weight - a.weight);
+}
+
+// ── Machine-level symptoms (Dev 1's machineSymptoms: roll former / flying shear …) ──
+
+export interface MachineMatch { map: MachineSymptomMap; symptom: MachineSymptom; causes: SymptomCause[]; score: number }
+
+/**
+ * The machine-level symptom the words describe, for the machine type the project is ("roll former", from its
+ * name or description): Dev 1's findSymptom first (every word must match), else the symptom sharing most words.
+ */
+export function matchMachineSymptom(text: string, machine: string, data?: MachineSymptomMap[]): MachineMatch | null {
+  const map = symptomMap(machine, data);
+  if (!map) return null;
+  const exact = findSymptom(map, text);
+  if (exact) return { map, symptom: exact, causes: rankedCauses(exact), score: 1 };
+  const words = wordsOf(text).filter((w) => w.length > 2);
+  let best: { s: MachineSymptom; score: number } | null = null;
+  for (const s of map.symptoms) {
+    const own = wordsOf([s.symptom, ...s.aliases].join(' ')).filter((w) => w.length > 2);
+    const hit = words.filter((t) => own.some((w) => sameWord(t, w))).length;
+    const score = words.length ? hit / words.length : 0;
+    if (hit >= 2 && score > (best?.score ?? 0.4)) best = { s, score };
+  }
+  return best ? { map, symptom: best.s, causes: rankedCauses(best.s), score: best.score } : null;
 }
 
 // ── The AI on top: only choosing among the rule answers, or rewording ──
@@ -251,8 +325,14 @@ export async function aiRankCauses(ask: Ask, p: AssistPath, symptom: Symptom, ca
   }
 }
 
-/** What a step must keep, whatever the wording: readings, terminals and wire numbers, warnings. */
+/** Safety and meter sentences of the steps (steps.ts) that are kept word for word. */
+const EXACT = ['Switch off and lock out first.', 'Keep everyone clear first — the machine will move.', 'never across the terminals (that shorts the transmitter)', 'Meter on DC volts.', 'Meter on AC volts.', 'Meter on DC millivolts.', 'Power OFF and locked out, meter on continuity.'];
+
+/** What a step must keep, whatever the wording: its safety sentences as written, readings, terminals and wire numbers. */
 export function mustKeep(say: string): string[] {
+  return [...EXACT.filter((x) => say.includes(x)), ...tokensToKeep(say)];
+}
+function tokensToKeep(say: string): string[] {
   const nums = say.match(/\d+(?:[.,]\d+)?(?:\s?(?:VDC|VAC|V|mA|mV|ms|s|%))?/g) ?? [];
   const tags = say.match(/\b[A-Z][A-Z0-9]*\d[A-Z0-9]*(?:[-:.][A-Z0-9]+)*\b|\b\d+[A-Z]+\d*\b/g) ?? [];
   const words = say.match(/lock(ed)? out|SERIES|never|mains|qualified|DANGER|power OFF|continuity/gi) ?? [];

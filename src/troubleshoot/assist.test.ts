@@ -5,7 +5,7 @@
  * Run with:  npx tsx src/troubleshoot/assist.test.ts
  */
 import assert from 'node:assert/strict';
-import { aiMatchSymptom, aiPlainStep, aiRankCauses, matchSymptom, mustKeep, rankCauses, type Ask, type AssistHop, type AssistPath } from './assist';
+import { aiMatchSymptom, aiPlainStep, aiRankCauses, matchMachineSymptom, matchSymptom, mustKeep, rankCauses, type Ask, type AssistHop, type AssistPath } from './assist';
 
 const hop = (kind: string, tag: string, label: string, location: AssistHop['location'] = 'cabinet', wire?: string): AssistHop => ({ kind, tag, label, location, ...(wire ? { wire } : {}) });
 const input = (address: string, description: string, device: string, field = true): AssistPath => ({
@@ -95,12 +95,36 @@ const asks = (reply: string | Error): Ask => async () => { if (reply instanceof 
 {
   const say = 'Switch off and lock out first. Power OFF and locked out, meter on continuity. Measure between TB2-1 and PE1 pin 4. Do you read about 0 Ω?';
   assert.ok(mustKeep(say).includes('TB2-1') && mustKeep(say).includes('lock out') && mustKeep(say).includes('continuity'));
-  const plain = 'Switch off and lock out first. Power OFF, locked out. Set the meter to continuity and touch TB2-1 and PE1 pin 4. Does it beep (about 0 Ω)?';
+  const plain = 'Switch off and lock out first. Power OFF and locked out, meter on continuity. Touch TB2-1 and PE1 pin 4. Does it beep (about 0 Ω)?';
+  assert.equal(await aiPlainStep(asks(JSON.stringify({ text: 'Switch off and lock out first. Power OFF, locked out, continuity. Touch TB2-1 and PE1 pin 4. Beep (0 Ω)?' })), say), say, 'a safety / meter sentence must stay word for word');
   assert.equal(await aiPlainStep(asks(JSON.stringify({ text: plain })), say), plain, 'a rewording that keeps everything is used');
   assert.equal(await aiPlainStep(asks(JSON.stringify({ text: 'Check the wire to the eye with a meter.' })), say), say, 'a rewording that loses the terminals and the lock-out is dropped');
   const volts = 'Meter on DC volts. Measure between TB2-1 and TB1 0V, with the sensor seeing a part. Do you read 24 VDC?';
   assert.equal(await aiPlainStep(asks(JSON.stringify({ text: 'DC volts: TB2-1 to TB1 0V, part in front of the sensor. 12 VDC?' })), volts), volts, 'a changed reading is dropped');
   assert.equal(await aiPlainStep(asks(new Error('x')), volts), volts);
+}
+
+// ── Dev 2's routing: a machine function that won't go, or a stuck step, goes to "why is it stuck?" first ──
+{
+  const steps = [{ n: 10, name: 'Fill' }, { n: 20, name: 'Mix' }, { n: 30, name: 'Drain' }];
+  assert.deepEqual(matchSymptom("conveyor motor won't start", paths, steps)[0].target, { output: 'Y001' });
+  assert.deepEqual(matchSymptom('the machine stops at step 20', paths, steps)[0].target, { step: 20 });
+  assert.deepEqual(matchSymptom('it stops at drain every time', paths, steps)[0].target, { step: 30 });
+  assert.equal(matchSymptom('X4 never comes on', paths, steps)[0].target, undefined, 'a plain point symptom goes straight to the wiring steps');
+}
+
+// ── Dev 1's device faults replace the general device cause; machine-level symptoms ──
+{
+  const faults = [{ title: 'No output when target present', causes: ['Lens dirty or misaligned', 'Sensitivity set too low'], fix: ['Clean and align'], source: 'https://example.com/e3z.pdf p.12' }];
+  const c = rankCauses(paths[2], 'never-on', [], faults);
+  assert.deepEqual(c.slice(0, 2).map((x) => x.text), ['PE1: Lens dirty or misaligned', 'PE1: Sensitivity set too low']);
+  assert.match(c[0].why, /maker's manual: https:\/\/example.com\/e3z.pdf p.12/);
+  assert.ok(!c.some((x) => /does not switch: misaligned/.test(x.text)), 'the general device cause is replaced');
+  const m = matchMachineSymptom('the parts are too long', 'Roll former line 2');
+  assert.equal(m?.symptom.id, 'cut-length-wrong');
+  assert.ok(m!.causes.length > 0 && m!.causes[0].rank <= m!.causes[m!.causes.length - 1].rank, 'causes most likely first');
+  assert.equal(matchMachineSymptom('the parts are too long', 'Bottle capper'), null, 'no map for this machine type');
+  assert.equal(matchMachineSymptom('shear misses cuts sometimes', 'flying shear')?.symptom.id, 'shear-does-not-fire');
 }
 
 console.log('assist.test: all passed');
