@@ -141,3 +141,11 @@ The first press of a microphone asks with a native dialog (stubbed: Allow once /
 is explained in the mic popover (no address-bar advice); "Allow once" lasts until the app closes; camera
 requests are refused. Unit test: `npx tsx src/voice/micAccess.test.ts`. The preview e2e checks that the
 preview shows the mic as not available (it has no microphone) and makes no microphone request.
+
+## Cabinet photos → as-built drawing
+
+```bash
+BASE_URL=http://localhost:5204 node e2e/photos.e2e.cjs   # Import → Cabinet photos: 3 photos (AI mocked) → merged review with photo crops → as-built panel layout in the photographed rail order + BOM; hidden items asked on the Machine description page; Convert hands the parts to the shared review
+npx tsx src/convert/photos/photos.test.ts                 # merge (one device per real device), review → as-built design, layout order, BOM, ExistingMachine mapping
+```
+Screenshots land in `e2e/out-photos/`.

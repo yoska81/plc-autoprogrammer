@@ -1,6 +1,7 @@
 import { useSearchParams } from 'react-router-dom';
 import DrawingsImport from '../convert/DrawingsImport';
 import ReviewAndConvert from '../convert/ReviewAndConvert';
+import PhotosImport from '../convert/photos/PhotosImport';
 
 type Tab = 'drawings' | 'program' | 'photos';
 const TABS: { id: Tab; label: string }[] = [{ id: 'drawings', label: 'Drawings' }, { id: 'program', label: 'Program' }, { id: 'photos', label: 'Cabinet photos' }];
@@ -40,12 +41,8 @@ export default function ImportPage() {
             Reading PLC program files is being added. Until then, print the program and its I/O list (symbol table) to PDF and upload them on the <button type="button" className="text-brand-700 underline" onClick={() => setParams({ tab: 'drawings' }, { replace: true })}>Drawings</button> tab with the electrical drawings.
           </div>
         )}
-        {/* Cabinet photos tab: the photo recogniser (src/convert/photos/) plugs in here. */}
-        {tab === 'photos' && (
-          <div className="max-w-3xl rounded-sm border border-steel-200 bg-white p-4 text-sm text-steel-700" data-testid="import-photos">
-            Reading the devices from photos of the cabinet is being added. Until then, upload the photos on the <button type="button" className="text-brand-700 underline" onClick={() => setParams({ tab: 'drawings' }, { replace: true })}>Drawings</button> tab with the drawings.
-          </div>
-        )}
+        {/* Cabinet photos → as-built record, then the shared review / conversion below (src/convert/photos/). */}
+        {tab === 'photos' && <PhotosImport />}
         {/* Every tab hands its reading to the same review, conversion and rebuild. */}
         <ReviewAndConvert />
       </div>
