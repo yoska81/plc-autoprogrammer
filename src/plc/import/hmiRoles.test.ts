@@ -58,4 +58,23 @@ const nicks = (xs: Role[]) => xs.map((x) => x.nickname);
   assert.deepEqual(gx.parallelTo.map((p) => p.role), ['cmd:start', 'cmd:stop', 'cmd:reset']);
 }
 
+// ── Review: the real fixtures (fixtures/import) ──
+{
+  const real = (dir: string, ...names: string[]) => programRoles(planUpgrade(importProgramFiles(names.map((n) => ({ name: n, text: fileText(n, new Uint8Array(readFileSync(join(here, '..', '..', '..', 'fixtures', 'import', dir, n)))) }))).program, 'click').program);
+  const pal = real('ab-palletizer-01', 'Palletizer_PL01.L5X');
+  assert.deepEqual(nicks(pal.stop), ['Stop_PB'], 'a prox at the case stop is not a Stop button; E_Stop_OK is the e-stop');
+  assert.deepEqual(nicks(pal.estop), ['E_Stop_OK']);
+  for (const n of ['Infeed_Case_PE', 'Infeed_OL_OK', 'Light_Red', 'Horn']) assert.ok(!nicks(pal.faults).includes(n), `${n} is not a fault bit`);
+  assert.ok(nicks(pal.faults).includes('Fault_Latched'));
+  assert.equal(panelTags(pal).tags.find((t) => t.role === 'word:count')?.name, 'Pallet_Count', 'the top of the counter chain, not Case_Ctr');
+  const mix = real('siemens-mixer-01', 'MixTank_MT01.xml');
+  for (const n of ['Agitator_OL_OK', 'Lamp_Fault']) assert.ok(!nicks(mix.faults).includes(n), `${n} is not a fault bit`);
+  for (const n of ['Level_Pct', 'Temp_C']) assert.ok(!nicks(mix.setpoints).includes(n), `${n} is measured (written in the kept code), not a setpoint`);
+  assert.ok(nicks(mix.setpoints).includes('SP_Temp'));
+  assert.deepEqual(mix.alarms.slice(0, 2).map((a) => `${a.nickname}: ${a.text}`), ['Alm_EStop: Emergency stop', 'Alm_AgitOverload: Agitator motor overload'], 'the alarm bits with their own text');
+  const cap = real('mitsubishi-capper-01', 'CAPPER_MAIN.csv', 'CAPPER_DeviceComment.csv');
+  assert.ok(cap.alarms.length >= 5 && cap.alarms.every((a) => !/^Original:/.test(a.text)), cap.alarms.map((a) => a.text).join(' | '));
+  assert.equal(cap.alarms[0].text, 'Emergency stop');
+}
+
 console.log('hmiRoles.test: all passed');
