@@ -120,8 +120,21 @@ const MACHINES = [
     equip: { profileId: 'unitronics-vision', cpuId: 'V700-T20BJ', modules: [{ partNumber: 'V200-18-E3XB', quantity: 1, why: 'Snap-in I/O' }], hmi: 'V700-T20BJ' },
     di: 11, do: 5, ai: 1, ao: 0,
   },
-];
-function reply(mc, system) {
+  {
+    key: 'nohmi', name: 'Bench Press', region: 'United States', noHmi: true,
+    text: 'Small pneumatic bench press with no touch screen: the operator uses a start button, a stop button, a reset button, a run/setup selector switch and a green running lamp and red fault lamp. Two-hand start, E-stop, guard door. Press cylinder with up and down sensors, a pressure switch for the air supply.',
+    io: [
+      P('Safety relay OK (E-stop, guard door)', 'input', 'Safety', 'safety-relay-output'), P('Guard door closed', 'input', 'Safety', 'limit-switch'),
+      P('Two-hand start button left', 'input', 'Operator/HMI', 'pushbutton-no'), P('Two-hand start button right', 'input', 'Operator/HMI', 'pushbutton-no'),
+      P('Stop button', 'input', 'Operator/HMI', 'pushbutton-nc'), P('Reset button', 'input', 'Operator/HMI', 'pushbutton-no'), P('Run / setup selector', 'input', 'Operator/HMI', 'selector'),
+      P('Press up', 'input', 'Pneumatic', 'sensor-pnp'), P('Press down', 'input', 'Pneumatic', 'sensor-pnp'), P('Air pressure OK', 'input', 'Pneumatic', 'pressure-switch'),
+      P('Press down solenoid', 'output', 'Pneumatic', 'solenoid'), P('Running lamp (green)', 'output', 'Operator/HMI', 'pilot-light'), P('Fault lamp (red)', 'output', 'Operator/HMI', 'pilot-light'),
+    ],
+    model: { motors: [], estops: 1, guardDoors: [{ zone: 'Press' }], lightCurtains: [], zones: ['Press'], interfaces: [], questions: [] },
+    equip: { profileId: 'click', cpuId: 'C0-11DD1E-D', modules: [{ partNumber: 'C0-08ND3', quantity: 1, why: 'Inputs' }], hmi: null },
+    di: 10, do: 3, ai: 0, ao: 0,
+  },
+];function reply(mc, system) {
   const k = system.includes('checks a machine control design') ? 'review'
     : system.includes('functional specification') ? 'spec'
     : system.includes('choosing the control equipment') ? 'equipment'
@@ -137,7 +150,7 @@ function reply(mc, system) {
       if (mc.equip) return {
         summary: `${mc.equip.cpuId} for ${mc.name}.`, estimatedIO: { digitalInputs: mc.di, digitalOutputs: mc.do, analogInputs: mc.ai, analogOutputs: mc.ao, motionAxes: 0 },
         plc: { profileId: mc.equip.profileId, cpuId: mc.equip.cpuId, why: 'The customer standard.' }, modules: mc.equip.modules,
-        hmi: { partNumber: mc.equip.hmi, why: 'The customer standard.' }, alternatives: [], cautions: [],
+        hmi: mc.equip.hmi ? { partNumber: mc.equip.hmi, why: 'The customer standard.' } : null, alternatives: [], cautions: [],
       };
       const mods = [];
       if (mc.di > 4) mods.push({ partNumber: 'C0-16ND3', quantity: 1, why: 'Inputs' });
@@ -252,7 +265,20 @@ async function journey(browser, mc) {
     await page.getByRole('button', { name: /Generate (Electrical Design|New Design)/ }).click();
     await page.getByRole('button', { name: 'BOM CSV' }).waitFor({ timeout: 30000 });
   });
-  await step('HMI', async () => {
+  if (mc.noHmi) await step('HMI (no touch panel)', async () => {
+    await page.goto(BASE + '/hmi');
+    await page.getByText('This machine has no touch panel.').waitFor({ timeout: 15000 });
+    const door = await page.evaluate(async () => {
+      const { collectProject } = await import('/src/deliverables/collect.ts');
+      const p = collectProject();
+      const { getPart } = await import('/src/electrical/catalog.ts');
+      return { hmi: p.hmi, door: (p.electrical?.components ?? []).map((c) => `${c.tag} ${getPart(c.partNumber)?.description ?? ''} ${c.function}`).filter((d) => /pushbutton|selector|pilot light/i.test(d)) };
+    });
+    if (door.hmi) problem(mc.key, 'HMI', 'an HMI design exists for a machine with no touch panel');
+    log(mc.key, 'door devices', door.door.length, door.door.join(' | ').slice(0, 300));
+    for (const want of [/selector/i, /pilot light, green/i, /pilot light, red/i, /pushbutton, (green|blue)/i]) if (!door.door.some((d) => want.test(d))) problem(mc.key, 'electrical', `no door device for ${want}`);
+  });
+  if (!mc.noHmi) await step('HMI', async () => {
     await page.goto(BASE + '/hmi');
     await page.getByRole('button', { name: 'Design the HMI screens' }).click();
     await page.getByRole('button', { name: 'Redesign screens' }).waitFor({ timeout: 30000 });
