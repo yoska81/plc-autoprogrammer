@@ -98,7 +98,7 @@ export function startGuide(o: GuideOptions): GuideState {
   if (!blocker) return { ...base, result: { text: why.summary, point: '', fix: [] } };
   if (blocker.next !== 'wiring') {
     const a = nextAction(blocker);
-    const sc = blocker.kind === 'setting' ? settingChange(blocker) : null;
+    const sc = blocker.kind === 'setting' ? settingChange(blocker, o.program) : null;
     return { ...base, result: { text: blocker.explain, point: blocker.point, fix: [a.text], ...(sc ? { settingChange: sc } : {}), ...(a.steps ? { editSteps: a.steps } : {}) } };
   }
   const path = typeof o.paths === 'function' ? o.paths(blocker.point) : o.paths.find((p) => p.address.toUpperCase() === blocker.point.toUpperCase()) ?? null;

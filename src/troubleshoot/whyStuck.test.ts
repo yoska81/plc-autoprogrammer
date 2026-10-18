@@ -107,14 +107,15 @@ const press = (sim: Simulator, model: ReturnType<typeof buildMachineModel>, faul
   // ---- End actions: a DS setting is changed live after a confirmation; a panel bit nothing writes gets CLICK edit steps.
   const ds6 = whyStuck(p, values(sim), { output: 'Y002' }, { io: io4 }).blockers[0];
   assert.deepEqual(ds6.limits, { min: 50, max: 300, default: 160 }, 'the range the program declares for DS6');
-  assert.equal(settingChange(ds6)!.to, 160, 'suggested value = the declared default');
-  const ch = settingChange(ds6, 140)!;
+  assert.equal(settingChange(ds6, p)!.to, 160, 'suggested value = the declared default');
+  const ch = settingChange(ds6, p, 140)!;
   assert.deepEqual({ address: ch.address, from: ch.from, to: ch.to, live: ch.live, min: ch.min, max: ch.max }, { address: 'DS6', from: 180, to: 140, live: true, min: 50, max: 300 });
   assert.match(ch.question, /^Write 140 to DS6\? It is 180 now; the program allows 50–300/);
   // Refused: outside the declared range, -32768, a fraction in a DS, a register with no declared range, a bit.
-  for (const bad of [20, 400, -32768, 140.5, NaN]) assert.equal(settingChange(ds6, bad), null, `no change to ${bad}`);
-  assert.equal(settingChange({ ...ds6, limits: undefined }, 140), null, 'no declared range: no live change');
-  for (const point of ['C5', 'T1', 'CT1', 'X001', 'Y001', 'SC1', 'DD1', 'TD1']) assert.equal(settingChange({ ...ds6, point }, 140), null, `${point} is not a setting`);
+  for (const bad of [20, 400, -32768, 140.5, NaN]) assert.equal(settingChange(ds6, p, bad), null, `no change to ${bad}`);
+  assert.equal(settingChange(ds6, { ...p, rungs: p.rungs.filter((r) => r.id !== 'h') }, 140), null, 'no declared range in the program: no live change');
+  assert.equal(settingChange({ ...ds6, limits: { min: -40000, max: 40000 } }, p, -32768), null, "the finding's own limits are not trusted: the program's range decides");
+  for (const point of ['C5', 'T1', 'CT1', 'X001', 'Y001', 'SC1', 'DD1', 'TD1']) assert.equal(settingChange({ ...ds6, point }, p, 140), null, `${point} is not a setting`);
   const never = async () => { throw new Error('must not write'); };
   for (const forged of [{ ...ch, to: -32768 }, { ...ch, address: 'C5' }, { ...ch, min: -40000, to: -32768 }, { address: 'DS6', from: 180, to: -32768, min: -32768, max: 32767, question: '?', live: true }])
     await assert.rejects(applySettingChange(forged, () => true, never), /not made from the program's declared range/, `forged ${JSON.stringify(forged)}`);
@@ -127,7 +128,8 @@ const press = (sim: Simulator, model: ReturnType<typeof buildMachineModel>, faul
   assert.deepEqual(writes, ['DS6=140']);
   const tmr = whyStuck(p, values(sim), { output: 'Y001' }).blockers[0];
   assert.equal(nextAction(tmr).kind, 'setting');
-  const df = settingChange({ ...tmr, point: 'DF9', limits: { min: 0, max: 10 } }, 1)!;
+  const pDf: LadderProgram = { tags: [], rungs: [{ id: 'f', comment: 'DF9 0-10 → 5', branches: [[{ type: 'NO', address: 'SC2' }, { type: 'CMP', left: 'DF9', op: '<', right: '0' }], [{ type: 'NO', address: 'SC2' }, { type: 'CMP', left: 'DF9', op: '>', right: '10' }]], outputs: [{ type: 'COPY', source: '5', dest: 'DF9' }] }] };
+  const df = settingChange({ ...tmr, point: 'DF9' }, pDf, 1)!;
   assert.equal(df.live, false, 'DF cannot be written from Online');
   await assert.rejects(applySettingChange(df, () => true, fake), /cannot be written from here/);
   const panel = nextAction(whyStuck(p, values(sim), { output: 'Y003' }).blockers[0]);

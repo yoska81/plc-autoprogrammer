@@ -146,7 +146,8 @@ function WhatIfCard({ ctx }: { ctx: DrawingContext }) {
     if (c.plc) {
       // Addresses typed for the old PLC do not carry over.
       for (const p of useIOStore.getState().projectIO) if (p.plcAddress) useIOStore.getState().setPlcAddress(p.id, '');
-      applyEquipment({ cpuId: c.plc.cpuId, modules: c.plc.modules, hmiPartNumber: useHmiStore.getState().hmiPartNumber || null }, useProjectStore.getState().recommendation);
+      const warn = applyEquipment({ cpuId: c.plc.cpuId, modules: c.plc.modules, hmiPartNumber: useHmiStore.getState().hmiPartNumber || null }, useProjectStore.getState().recommendation);
+      if (warn) alert(warn);
     }
     if (c.pref) useProjectStore.getState().setInfo({ vendors: c.pref });
     const d = r.ctx.design;

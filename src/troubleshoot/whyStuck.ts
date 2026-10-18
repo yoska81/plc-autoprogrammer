@@ -53,6 +53,22 @@ const up = (a: string) => a.trim().toUpperCase();
 const isNum = (a: string) => /^[-+]?\d+(\.\d+)?$/.test(a.trim());
 const MAX_DEPTH = 12;
 
+/**
+ * The range the program declares for a setting register: a first-scan rung "a < min or a > max → COPY default
+ * to a" (the rules' programs write one per setpoint). Undefined when the program declares none.
+ */
+export function declaredLimits(program: LadderProgram, register: string): { min: number; max: number; default?: number } | undefined {
+  const a = up(register);
+  for (const r of program.rungs) {
+    const def = r.outputs.find((o) => o.type === 'COPY' && up(o.dest) === a);
+    if (!def || def.type !== 'COPY') continue;
+    const cmp = r.branches.flatMap((b) => (b.some((e) => e.type === 'NO' && up(e.address) === 'SC2') ? b : [])).filter((e): e is CompareElement => e.type === 'CMP' && up(e.left) === a && isNum(e.right));
+    const min = cmp.find((e) => e.op === '<'), max = cmp.find((e) => e.op === '>');
+    if (min && max) return { min: Number(min.right), max: Number(max.right), ...(isNum(def.source) ? { default: Number(def.source) } : {}) };
+  }
+  return undefined;
+}
+
 export function whyStuck(program: LadderProgram, values: Values, target: StuckTarget, ctx: StuckContext = {}): WhyStuck {
   const rungNo = new Map(program.rungs.map((r, i) => [r.id, i + 1] as const));
   const desc = new Map<string, string>();
@@ -108,16 +124,7 @@ export function whyStuck(program: LadderProgram, values: Values, target: StuckTa
     return undefined;
   };
 
-  // The range a setting register is declared with: a first-scan rung "a < min or a > max → COPY default to a".
-  const limitsOf = (a: string): Blocker['limits'] => {
-    for (const r of wordWriters.get(up(a)) ?? []) {
-      const cmp = r.branches.flatMap((b) => (b.some((e) => e.type === 'NO' && up(e.address) === 'SC2') ? b : [])).filter((e): e is CompareElement => e.type === 'CMP' && up(e.left) === up(a) && isNum(e.right));
-      const min = cmp.find((e) => e.op === '<'), max = cmp.find((e) => e.op === '>');
-      const def = r.outputs.find((o) => o.type === 'COPY' && up(o.dest) === up(a) && isNum(o.source));
-      if (min && max) return { min: Number(min.right), max: Number(max.right), ...(def && def.type === 'COPY' ? { default: Number(def.source) } : {}) };
-    }
-    return undefined;
-  };
+  const limitsOf = (a: string) => declaredLimits(program, a);
 
   const unwired = (a: string, r: Rung, path: string[]): Omit<Blocker, 'rungNo' | 'description'> => ({ kind: 'logic', point: a, expected: true, actual: values.bit(a), rungId: r.id, path,
     explain: `${up(a)} is not in the I/O list: the program reads an input nothing is wired to. Correct the address in the program, or add the point to the I/O list.`, next: 'logic' });

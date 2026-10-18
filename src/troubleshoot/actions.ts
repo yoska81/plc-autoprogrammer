@@ -7,7 +7,8 @@
  * The CLICK steps follow the CLICK help: PLC > Connect, PLC > Write Project into PLC (help 090); a program change
  * is written with the PLC in STOP.
  */
-import type { Blocker } from './whyStuck';
+import { declaredLimits, type Blocker } from './whyStuck';
+import type { LadderProgram } from '../plc/core/ladder';
 import { isWritable } from '../online/clickModbus';
 import { writePlc } from '../online/useOnline';
 
@@ -31,17 +32,20 @@ const ISSUED = new WeakSet<SettingChange>();
 const SETPOINT = /^(DS|DF)\d+$/;
 
 /**
- * The setting change a finding suggests: only for a DS / DF setpoint the program declares a range for
- * (its first-scan "outside min–max → default" rung); `to` defaults to that rung's default. Null otherwise.
+ * The setting change a finding suggests: only for a DS / DF setpoint that `program` itself declares a range for
+ * (its first-scan "outside min–max → default" rung; the finding's own `limits` are not trusted); `to` defaults to
+ * that rung's default. Null otherwise.
  */
-export function settingChange(b: Blocker, to?: number): SettingChange | null {
-  if (b.kind !== 'setting' || !SETPOINT.test(b.point.toUpperCase()) || !b.limits) return null;
-  const value = to ?? b.limits.default;
-  if (value === undefined || !valueOk(b.point, value, b.limits.min, b.limits.max)) return null;
+export function settingChange(b: Blocker, program: LadderProgram, to?: number): SettingChange | null {
+  if (b.kind !== 'setting' || !SETPOINT.test(b.point.toUpperCase())) return null;
+  const limits = declaredLimits(program, b.point);
+  if (!limits) return null;
+  const value = to ?? limits.default;
+  if (value === undefined || !valueOk(b.point, value, limits.min, limits.max)) return null;
   const live = /^DS/i.test(b.point) && isWritable(b.point);
   const c: SettingChange = Object.freeze({
-    address: b.point.toUpperCase(), from: Number(b.actual), to: value, min: b.limits.min, max: b.limits.max, live,
-    question: `Write ${value} to ${b.point.toUpperCase()}${b.description ? ` (${b.description})` : ''}? It is ${b.actual} now; the program allows ${b.limits.min}–${b.limits.max}. The machine uses the new value at once.`,
+    address: b.point.toUpperCase(), from: Number(b.actual), to: value, min: limits.min, max: limits.max, live,
+    question: `Write ${value} to ${b.point.toUpperCase()}${b.description ? ` (${b.description})` : ''}? It is ${b.actual} now; the program allows ${limits.min}–${limits.max}. The machine uses the new value at once.`,
   });
   ISSUED.add(c);
   return c;
@@ -81,7 +85,7 @@ export function clickEditSteps(b: Blocker, change: string): string[] {
 export function nextAction(b: Blocker): { kind: 'wiring' | 'setting' | 'edit' | 'operator' | 'wait'; text: string; steps?: string[] } {
   switch (b.next) {
     case 'wiring': return { kind: 'wiring', text: `Check the field wiring of ${b.point}${b.description ? ` (${b.description})` : ''}: follow it from the PLC terminal to the device.` };
-    case 'setting': { const live = Boolean(settingChange(b)?.live); return { kind: 'setting', text: `${b.point} is a setting: change it${live ? ' live from Online (with confirmation)' : ' in the program'}${b.limits ? ` (allowed ${b.limits.min}–${b.limits.max})` : ''}.`, ...(live ? {} : { steps: clickEditSteps(b, `Change the value of ${b.point} (or the preset that reads it) to the right value.`) }) }; }
+    case 'setting': { const live = Boolean(b.limits) && /^DS\d+$/i.test(b.point) && isWritable(b.point); return { kind: 'setting', text: `${b.point} is a setting: change it${live ? ' live from Online (with confirmation)' : ' in the program'}${b.limits ? ` (allowed ${b.limits.min}–${b.limits.max})` : ''}.`, ...(live ? {} : { steps: clickEditSteps(b, `Change the value of ${b.point} (or the preset that reads it) to the right value.`) }) }; }
     case 'logic': return { kind: 'edit', text: b.explain, steps: clickEditSteps(b, /touch-panel command|Nothing in the program switches/.test(b.explain)
       ? `Replace the contact ${b.point} with the input that should start it (e.g. the pushbutton's X address), or add a rung that writes ${b.point}.`
       : `Correct the logic of rung ${b.rungNo} so ${b.point} can change: ${b.explain}`) };

@@ -351,7 +351,7 @@ function ensureIoFits(io: { type: string; signal?: string }[]): { note?: string;
   if (cpuFit(cpu, modules, need).ok) return null;
   const mods = modulesToFit(cpuId, modules, need);
   if (!mods) return { error: `${cpuId} with ${modules.length} module(s) cannot hold the ${need.digitalInputs} inputs / ${need.digitalOutputs} outputs of the I/O list, even with more modules: choose a bigger CPU on the Equipment page.` };
-  applyEquipment({ cpuId, modules: mods, hmiPartNumber: useHmiStore.getState().hmiPartNumber || null }, recommendation);
-  return { note: `Added ${mods.slice(modules.length).join(', ')} so the I/O list fits ${cpuId}.` };
+  const warn = applyEquipment({ cpuId, modules: mods, hmiPartNumber: useHmiStore.getState().hmiPartNumber || null }, recommendation);
+  return { note: `Added ${mods.slice(modules.length).join(', ')} so the I/O list fits ${cpuId}.${warn ? ` ${warn}` : ''}` };
 }
 
