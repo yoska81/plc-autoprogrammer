@@ -6,7 +6,7 @@
  * position: fixed (the instruction editor) stay visible, and the workspace is shown as a fixed overlay on
  * top of the app either way — which is also the fallback where the API is missing or refused.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { LadderProgram } from '../../core/ladder';
 
 const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
@@ -48,25 +48,29 @@ export function useFullScreen(): { full: boolean; toggle: () => void } {
  * Undo / redo for hand edits (Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y, also from the toolbar). A program set from
  * elsewhere (AI change approved, rebuild, history restore) starts a new history.
  */
+// The undo / redo stacks outlive the Program page: leaving it and coming back keeps them (QA). They start
+// over when the program is changed elsewhere (a rebuild, a version restored, the I/O list remap).
+const shared = { past: { current: [] as LadderProgram[] }, future: { current: [] as LadderProgram[] }, mine: { current: null as LadderProgram | null } };
+/** Forget the undo / redo history (tests; a project switch changes the program, which also clears it). */
+export const resetLadderHistory = () => { shared.past.current = []; shared.future.current = []; shared.mine.current = null; };
+
 export function useLadderHistory(ladder: LadderProgram, set: (p: LadderProgram) => void) {
-  const past = useRef<LadderProgram[]>([]);
-  const future = useRef<LadderProgram[]>([]);
-  const mine = useRef<LadderProgram | null>(null);
-  const [avail, setAvail] = useState({ undo: false, redo: false });
+  // The stacks belong to the program as this hook last set it; a program set from elsewhere starts them over.
+  const ours = ladder === shared.mine.current;
   useEffect(() => {
-    if (ladder !== mine.current) { past.current = []; future.current = []; mine.current = ladder; setAvail({ undo: false, redo: false }); }
+    if (ladder !== shared.mine.current) { shared.past.current = []; shared.future.current = []; shared.mine.current = ladder; }
   }, [ladder]);
-  const apply = useCallback((p: LadderProgram) => { mine.current = p; set(p); setAvail({ undo: past.current.length > 0, redo: future.current.length > 0 }); }, [set]);
-  const edit = useCallback((p: LadderProgram) => { past.current = [...past.current, ladder].slice(-100); future.current = []; apply(p); }, [ladder, apply]);
+  const apply = useCallback((p: LadderProgram) => { shared.mine.current = p; set(p); }, [set]);
+  const edit = useCallback((p: LadderProgram) => { shared.past.current = [...shared.past.current, ladder].slice(-100); shared.future.current = []; apply(p); }, [ladder, apply]);
   const undo = useCallback(() => {
-    const prev = past.current.at(-1);
+    const prev = shared.past.current.at(-1);
     if (!prev) return;
-    past.current = past.current.slice(0, -1); future.current = [...future.current, ladder]; apply(prev);
+    shared.past.current = shared.past.current.slice(0, -1); shared.future.current = [...shared.future.current, ladder]; apply(prev);
   }, [ladder, apply]);
   const redo = useCallback(() => {
-    const next = future.current.at(-1);
+    const next = shared.future.current.at(-1);
     if (!next) return;
-    future.current = future.current.slice(0, -1); past.current = [...past.current, ladder]; apply(next);
+    shared.future.current = shared.future.current.slice(0, -1); shared.past.current = [...shared.past.current, ladder]; apply(next);
   }, [ladder, apply]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -77,5 +81,5 @@ export function useLadderHistory(ladder: LadderProgram, set: (p: LadderProgram) 
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [undo, redo]);
-  return { edit, undo, redo, canUndo: avail.undo, canRedo: avail.redo };
+  return { edit, undo, redo, canUndo: ours && shared.past.current.length > 0, canRedo: ours && shared.future.current.length > 0 };
 }

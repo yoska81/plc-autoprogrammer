@@ -334,7 +334,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                   <li>✓ <Link to="/io" className="underline">I/O list</Link> — {io.length} points</li>
                   <li>✓ <Link to="/hmi" className="underline">HMI design</Link>{hmiDesign ? ` — ${hmiDesign.screens.length} screens` : ' — none yet'}</li>
                 </ul>
-                {specText ? <div className="text-xs text-gray-500 mt-1">You don't need to copy anything here: change the machine description and press Generate.</div> : <div className="text-xs text-amber-800 mt-1">The machine description is empty: describe the machine first.</div>}
+                {specText ? <div className="text-xs text-gray-500 mt-1">You don't need to copy anything here: change the machine description and press Build program from my project.</div> : <div className="text-xs text-amber-800 mt-1">The machine description is empty: describe the machine first.</div>}
               </div>
               {ladder.rungs.length > 0 && chat[0]?.role === 'assistant' && chat[0].outcome === 'applied' && (
                 <div className="text-xs text-gray-700 bg-green-50 border border-green-200 rounded px-3 py-2 whitespace-pre-wrap" data-testid="program-summary">
@@ -441,7 +441,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleRevise(request); } }}
               rows={3}
               disabled={Boolean(proposal) || !ladder.rungs.length}
-              placeholder={proposal ? 'Approve or reject the proposed change first' : ladder.rungs.length ? 'Describe a problem or change… (Enter to send)' : 'Generate a program first'}
+              placeholder={proposal ? 'Approve or reject the proposed change first' : ladder.rungs.length ? 'Describe a problem or change… (Enter to send)' : 'Build the program first'}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none disabled:bg-gray-50"
             />
             {request.length > 600 && (
