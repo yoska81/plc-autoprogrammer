@@ -18,6 +18,9 @@ import type { CatalogPart } from './types';
  * - PLC CPUs: at least the built-in inputs and outputs, same output type (relay / sinking / sourcing), smallest first;
  * - prox / photo sensors: same type and output (PNP / NPN), same barrel size first;
  * - encoders: same pulses per revolution and output type;
+ * - servo motors: rated power from the drawn one up to 1.5x, closest first (same rated speed first);
+ *   servo drives: rated power at least the drawn one, smallest first. A servo swap is always motor + drive +
+ *   cables of one maker: the motor's pairsWith names the drive;
  * - everything else: the cross-reference function key (crossref.ts).
  * Each match lists what changes (coil voltage, footprint, UL status …). No match = nothing returned, never a guess.
  */
@@ -102,6 +105,15 @@ function candidates(f: CatalogPart, pool: CatalogPart[]): CatalogPart[] {
       if (!ppr) return [];
       const kind = (s: string) => (/line/.test(s) ? 'line driver' : /totem|push/.test(s) ? 'push-pull' : /collector/.test(s) ? 'open collector' : s);
       return same.filter((p) => n(p.ratings.ppr) === ppr && (!type || kind(String(p.ratings.outputType ?? '').toLowerCase()) === kind(type)));
+    }
+    case 'servoMotor':
+    case 'servoDrive': {
+      const w = n(r.ratedWatts) ?? (n(r.kw) !== undefined ? n(r.kw)! * 1000 : undefined), rpm = n(r.ratedRpm);
+      if (!w) return [];
+      const watts = (p: CatalogPart) => n(p.ratings.ratedWatts) ?? (n(p.ratings.kw) ?? 0) * 1000;
+      const max = f.category === 'servoMotor' ? w * 1.5 : Infinity;
+      return same.filter((p) => watts(p) >= w && watts(p) <= max)
+        .sort((x, y) => watts(x) - watts(y) || Number(n(y.ratings.ratedRpm) === rpm) - Number(n(x.ratings.ratedRpm) === rpm));
     }
     case 'pushbutton':
     case 'pilotLight':
