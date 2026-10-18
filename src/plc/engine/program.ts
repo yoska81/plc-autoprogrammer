@@ -209,8 +209,14 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     nick(A, `${x.act.name}_Running`, `${x.act.name} running (its own start / stop)`);
     auxRun.set(x.act.name, A);
   }
-  // The cycle runs only with the auxiliaries running and the servo drives ready.
-  const permits = [...[...auxRun.values()].map(NO), ...(c.axes ?? []).filter((ax) => ax.ready).map((ax) => NO(ax.ready!.address))];
+  // The cycle runs only with the auxiliaries running, the servo drives ready, the drives healthy and material present;
+  // the material at the run-out end stops it (a line that must not run off the end).
+  const healthy = inputs.filter((p) => /\bhealthy\b/i.test(p.description));
+  const material = inputs.filter((p) => /\b(material|strip|stock)\s+present\b|有料|\bentry\b.*\b(sensor|eye|prox)\b/i.test(p.description));
+  const runOutEnd = inputs.filter((p) => /\brun-?out\s+end\b|出料到位|\boverrun\b/i.test(p.description));
+  const permits = [...[...auxRun.values()].map(NO), ...(c.axes ?? []).filter((ax) => ax.ready).map((ax) => NO(ax.ready!.address)),
+    ...healthy.map((p) => NO(p.address)), ...material.map((p) => NO(p.address)), ...runOutEnd.map((p) => NC(p.address))];
+  if (permits.length > auxRun.size) notes.push(`The cycle runs only with ${[...healthy, ...material].map((p) => p.description).concat((c.axes ?? []).filter((ax) => ax.ready).map((ax) => ax.ready!.description)).join(', ')}${runOutEnd.length ? `; ${runOutEnd.map((p) => p.description).join(', ')} stops it` : ''}.`);
   const stopChain = [...(stopPb ? [NO(stopPb.address)] : []), ...permits, ...(hmiStop ? [NC(stop)] : []), ...(selAuto ? [selAuto] : []), NO(SAFE), NC(FAULT), NC(manual), NC(BATCH)];
   R('safety', `Cycle running: ${or(startPb?.description, hmiStart && 'HMI Start', twoHandStarts && 'both two-hand buttons')} seals in; ${[stopPb && `${stopPb.description} (NC)`, hmiStop && 'HMI Stop', modeSel && `${modeSel.description} to Manual`].filter(Boolean).join(', ')}, safety loss, a fault, Manual mode or batch complete drops it`,
     [...(startPb ? [[RISE(startPb.address), ...stopChain]] : []), ...(hmiStart ? [[RISE(start), ...stopChain]] : []),
@@ -334,6 +340,23 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     jog.set(target, { ...jog.get(target), [rev ? 'rev' : 'fwd']: p });
   }
 
+  // Manual cut (the cycle stopped): the shear down to its down limit, then up to its up limit.
+  const manualCut = inputs.find((p) => /\bmanual\b/i.test(p.description) && /\b(cut|shear)\b/i.test(p.description));
+  const cutCyl = manualCut ? c.actuators.find((a) => a.kind === 'cylinder' && a.extend && /\b(shear|cut\w*|knife|blade|saw)\b/i.test(a.name)) : undefined;
+  const mcut = new Map<string, string>(); // output → its manual-cut bit
+  if (manualCut && cutCyl) {
+    const downFb = feedbackOf(cutCyl).ext, upFb = feedbackOf(cutCyl).ret;
+    const MD = bit(), MU = bit();
+    R('safety', `Manual cut: ${manualCut.description} with the cycle stopped starts ${cutCyl.name} down`, [[RISE(manualCut.address), NC(RUN), NO(SAFE), NC(FAULT)]], [SET(MD)]);
+    R('safety', `Manual cut: ${cutCyl.name} down ends ${downFb ? `at ${downFb.description}` : 'after 1 s'}, then up`, [[NO(MD), ...(downFb ? [NO(downFb.address)] : [])], [NC(SAFE)], [NO(RUN)], [NO(FAULT)]], [RST(MD), ...(downFb ? [] : [])]);
+    if (downFb && cutCyl.retract) {
+      R('safety', `Manual cut: ${cutCyl.name} up from ${downFb.description}${upFb ? ` until ${upFb.description}` : ''}`, [[NO(downFb.address), NC(RUN), NO(SAFE)]], [SET(MU)]);
+      R('safety', `Manual cut: ${cutCyl.name} up ends${upFb ? ` at ${upFb.description}` : ''} (or on safety loss / the cycle starting)`, [...(upFb ? [[NO(upFb.address)]] : []), [NC(SAFE)], [NO(RUN)]], [RST(MU)]);
+      mcut.set(cutCyl.retract.address, MU);
+    }
+    mcut.set(cutCyl.extend!.address, MD);
+    nick(MD, `Man_Cut_Down`, `Manual cut: ${cutCyl.name} down`); nick(MU, `Man_Cut_Up`, `Manual cut: ${cutCyl.name} up`);
+  }
   const noJog = manualActs.filter((a) => !jog.has(a));
   if (!panel && noJog.length) notes.push(`No touch panel: Manual mode stops the cycle but has no jog buttons — ${noJog.map((a) => a.name).join(', ')} move only in Auto. Add jog pushbuttons to the I/O list if setup needs them.`);
 
@@ -372,8 +395,9 @@ export function buildProgram(input: ProgramInput): ProgramResult {
       // Jog pushbuttons (hold-to-run) with the cycle stopped: forward on the run output, reverse on the reverse output.
       const jogBtn = out === a.run ? jog.get(a)?.fwd : out === a.reverse ? jog.get(a)?.rev : undefined;
       const other = out === a.run ? jog.get(a)?.rev : jog.get(a)?.fwd;
-      R('outputs', `${out.description}: automatic (cycle running) or manual request${jogBtn ? `, or ${jogBtn.description} held with the cycle stopped` : ''}, Safety OK${faultAlm ? ', no fault' : ''}${opposite ? `, never with ${opposite.description}` : ''}`,
-        [[NO(r.auto), NO(RUN), ...gate], ...(r.manual ? [[NO(r.manual), ...gate]] : []), ...(jogBtn ? [[NO(jogBtn.address), ...(other ? [NC(other.address)] : []), NC(RUN), ...gate]] : [])], [OUT(out.address)]);
+      const mc = mcut.get(out.address);
+      R('outputs', `${out.description}: automatic (cycle running) or manual request${jogBtn ? `, or ${jogBtn.description} held with the cycle stopped` : ''}${mc ? ', or the manual cut' : ''}, Safety OK${faultAlm ? ', no fault' : ''}${opposite ? `, never with ${opposite.description}` : ''}`,
+        [[NO(r.auto), NO(RUN), ...gate], ...(r.manual ? [[NO(r.manual), ...gate]] : []), ...(jogBtn ? [[NO(jogBtn.address), ...(other ? [NC(other.address)] : []), NC(RUN), ...gate]] : []), ...(mc ? [[NO(mc), NC(RUN), ...gate]] : [])], [OUT(out.address)]);
     }
     // The drive's jog-speed input: ON while a jog button is held with the cycle stopped.
     const j = jog.get(a);
