@@ -31,7 +31,11 @@ export function remapHmiDesign(design: HmiDesign, r: IoRemap, describe: (ioId: s
     if (g) notes.push(`Removed the HMI tag ${t.name} (${lost(t.address, g)}): its I/O point was deleted.`);
     return !g;
   }).map((t) => ({ ...t, address: move(t.address), description: moveInText(t.description) }));
-  const alarms = design.alarms.filter((a) => !gone(a.address)).map((a) => ({ ...a, address: move(a.address) }));
+  const alarms = design.alarms.filter((a) => {
+    const g = gone(a.address);
+    if (g) notes.push(`Removed the alarm "${a.message}" (${lost(a.address, g)}): its I/O point was deleted.`);
+    return !g;
+  }).map((a) => ({ ...a, address: move(a.address) }));
   const screens = design.screens.map((s) => ({ ...s, elements: s.elements.map(el) }));
   const unbound = screens.flatMap((s) => s.elements.filter((e) => e.lostIo && !design.screens.find((o) => o.id === s.id)?.elements.find((o) => o.id === e.id)?.lostIo).map((e) => `“${e.label || e.id}” on ${s.name}`));
   if (unbound.length) notes.push(`Unbound ${unbound.length} element(s) whose I/O point was deleted: ${unbound.slice(0, 5).join(', ')}${unbound.length > 5 ? '…' : ''}. Bind them again or delete them.`);

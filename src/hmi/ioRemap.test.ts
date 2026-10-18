@@ -34,6 +34,14 @@ assert.equal(by('b1').address, 'C1001', 'internal bits are untouched');
 assert.deepEqual(d.tags.map((t) => t.address), ['C1001'], 'the tag on the deleted point is removed');
 assert.ok(notes.some((n) => /Unbound 1 element.*“Start PB” on Main/.test(n)) && notes.some((n) => /Start_PB \(X001 Start PB\)/.test(n)));
 
+// An alarm on the deleted point goes, and says so.
+const withAlarm = remapHmiDesign({ ...design, alarms: [{ address: 'X001', message: 'Start PB stuck', severity: 'alarm' }] }, r, (id) => names[id] ?? '');
+assert.equal(withAlarm.design.alarms.length, 0);
+assert.ok(withAlarm.notes.some((n) => /Removed the alarm "Start PB stuck" \(X001 Start PB\)/.test(n)));
+// Bound again: no longer reported, whichever way the address came back.
+const rebound = { ...d, screens: d.screens.map((s) => ({ ...s, elements: s.elements.map((e) => (e.id === 'l1' ? { ...e, address: 'X002' } : e)) })) };
+assert.ok(!checkDesign(rebound, 800, 480, { io: new Set(['X001', 'X002']) }).some((i) => i.elementId === 'l1' && /whose I\/O point was deleted/.test(i.message)));
+
 // The layout check reports the unbound lamp, and any X / Y the I/O list does not have.
 const io = new Set(['X001', 'X002']);
 const issues = checkDesign(d, 800, 480, { io });

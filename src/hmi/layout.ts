@@ -107,7 +107,8 @@ export function checkDesign(design: HmiDesign, widthPx: number, heightPx: number
       // An input / output the I/O list does not have shows nothing (or another point after a renumbering).
       if (a && opts.io && /^[XY]\d+$/i.test(a) && !opts.io.has(a.toUpperCase())) out.push({ screenId: s.id, elementId: e.id, severity: 'error', message: `“${e.label || e.id}” uses ${a.toUpperCase()}, which is not in the I/O list.` });
     }
-    if (e.lostIo) out.push({ screenId: s.id, elementId: e.id, severity: 'error', message: `“${e.label || e.id}” was bound to ${e.lostIo}, whose I/O point was deleted: bind it to another point or delete it.` });
+    // Bound again (any way: typed, dragged, rebuilt) clears it.
+    if (e.lostIo && !e.address) out.push({ screenId: s.id, elementId: e.id, severity: 'error', message: `“${e.label || e.id}” was bound to ${e.lostIo}, whose I/O point was deleted: bind it to another point or delete it.` });
   }
   // Every screen must be reachable: a navigation button (or the header's alarm link) on another screen goes to it.
   const home = design.screens[0]?.id;
