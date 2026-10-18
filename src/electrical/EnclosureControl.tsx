@@ -67,8 +67,8 @@ export default function EnclosureControl({ ctx }: { ctx: DrawingContext }) {
             {families.map((f) => <option key={f} value={f}>{FAMILY_TEXT[f]}</option>)}
           </select>
         </label>
-        <label className="text-xs text-steel-500">Size
-          <select aria-label="Enclosure size" value={pref && list.some((p) => p.partNumber === pref) ? pref : ''} onChange={(e) => pick(e.target.value || null)} className="ml-1 max-w-[42rem] rounded border border-steel-300 px-1 py-0.5 text-sm text-steel-800">
+        <label className="flex min-w-0 max-w-full items-center text-xs text-steel-500">Size
+          <select aria-label="Enclosure size" value={pref && list.some((p) => p.partNumber === pref) ? pref : ''} onChange={(e) => pick(e.target.value || null)} className="ml-1 min-w-0 max-w-full sm:max-w-[42rem] rounded border border-steel-300 px-1 py-0.5 text-sm text-steel-800">
             <option value="">Recommended{recPart ? `: ${recPart.partNumber} — ${enclosureSize(recPart)} in` : ''}</option>
             {list.map((p) => <option key={p.partNumber} value={p.partNumber}>{optionText(p, p.partNumber === rec)}</option>)}
           </select>

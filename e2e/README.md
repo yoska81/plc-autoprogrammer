@@ -62,6 +62,7 @@ BASE_URL=http://localhost:5203 node e2e/hmi-looks.e2e.cjs  # every HMI look: pic
 BASE_URL=http://localhost:5203 node e2e/hmi-no-panel.e2e.cjs # "No touch panel": HMI page shows the operator station (earlier screens kept, not used), no HMI in the simulator or the exports, operator station in the engineering package and Excel
 BASE_URL=http://localhost:5203 node e2e/hmi-motion.e2e.cjs  # servo axes, encoder, ultrasonic level/distance: Motion / Process / Setup screens on a 7" and a 4.3" panel in every look, no text past its element or on another
 BASE_URL=http://localhost:5203 node e2e/recover-list.e2e.cjs  # Project data, recover lists: no sideways scroll at 390 / 1366 px, texts clamped to 2 lines, buttons aligned, grouped by project, older versions folded
+BASE_URL=http://localhost:5203 node e2e/phone.e2e.cjs         # every page at 390 px: the page never scrolls sideways (only explicit overflow-x / data-scroll-x boxes may), headers fit, titles and buttons not squeezed
 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # projects saved by older versions (e2e/old-data/*.json) still open and export
 HASH=1 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # preview build: a new example version never replaces the open project
 ```

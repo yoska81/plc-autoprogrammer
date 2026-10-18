@@ -11,8 +11,8 @@ export default function IOPage() {
   const [filter, setFilter] = useUi<IOFilter>('io.filter', { text: '', type: 'all' });
   return (
     <>
-      <header className="px-4 py-2.5 bg-white border-b border-steel-200 flex items-center justify-between gap-4">
-        <div>
+      <header className="px-4 py-2.5 bg-white border-b border-steel-200 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-[1_1_16rem]">
           <h2 className="text-base font-semibold text-steel-900">3 · I/O List</h2>
           <p className="text-xs text-steel-500 mt-0.5">Every input and output of the machine, with its PLC address</p>
         </div>
