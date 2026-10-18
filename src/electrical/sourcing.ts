@@ -24,6 +24,8 @@ export interface SourcingRecord {
   /** Successor part number named by the maker. */
   successor?: string;
   lifecycleSource?: string;
+  /** The page's own ordering remark, e.g. "Direct ship item from ... warehouse". */
+  orderingNote?: string;
   /** Date the page was read (YYYY-MM-DD). */
   checked: string;
 }

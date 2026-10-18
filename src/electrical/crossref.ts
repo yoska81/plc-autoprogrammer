@@ -12,19 +12,23 @@ import type { CatalogPart, VendorId } from './types';
  */
 
 export type CrossFunction = 'contactor' | 'breaker' | 'motorProtector' | 'overload' | 'powerSupply' | 'ssr' | 'relay'
-  | 'terminal' | 'plcIO' | 'hmi' | 'vfd' | 'enclosure' | 'fuse' | 'safetyRelay';
+  | 'terminal' | 'plcIO' | 'hmi' | 'vfd' | 'enclosure' | 'fuse' | 'safetyRelay' | 'cooling';
 
 export const FUNCTION_TITLE: Record<CrossFunction, string> = {
   contactor: 'Contactors', breaker: 'Circuit breakers', motorProtector: 'Motor protectors', overload: 'Overload relays',
   powerSupply: '24 V power supplies', ssr: 'Solid-state relays', relay: 'Control relays', terminal: 'Terminal blocks',
   plcIO: 'PLC I/O modules', hmi: 'Operator panels (HMI)', vfd: 'Drives (VFD)', enclosure: 'Enclosures', fuse: 'Fuses',
-  safetyRelay: 'Safety relays',
+  safetyRelay: 'Safety relays', cooling: 'Enclosure cooling',
 };
 
 const n = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? Number(v) : undefined);
 /** IEC AC-3 contactor ratings: a 9 A and a 9.5 A contactor are the same size class. */
 const CONTACTOR_A = [6, 7, 9, 12, 16, 18, 22, 25, 32, 38, 40, 50, 65, 80, 95, 115, 150];
 const HP = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 7.5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200];
+/** Cooling size classes: filter-fan airflow (CFM), air-conditioner capacity (W), heat-exchanger W/K. */
+const CFM = [15, 25, 35, 50, 75, 100, 150, 200, 300, 400, 600];
+const COOL_W = [300, 500, 800, 1000, 1500, 2000, 2500, 3000, 4000, 5500];
+const W_PER_K = [10, 20, 35, 50, 75];
 const bucket = (x: number, steps: number[]) => steps.find((s) => s >= x * 0.95) ?? x;
 
 /** Voltage class of a drive input: 240 V, 480 V or 600 V. */
@@ -98,6 +102,18 @@ export function functionKey(p: CatalogPart): [CrossFunction, string] | null {
       return r.kind === 'enclosure' && n(r.heightIn) && n(r.widthIn) ? ['enclosure', `${Math.round(Number(r.heightIn))}x${Math.round(Number(r.widthIn))} in`] : null;
     case 'fuse':
       return r.fuseClass && n(r.amps) && !/holder/i.test(p.description) ? ['fuse', `class ${r.fuseClass} ${r.amps} A`] : null;
+    case 'fan': {
+      // Exhaust grilles have no airflow of their own: they pair with a fan (pairsWith).
+      const cfm = n(r.airflowCfm);
+      return r.kind === 'filter fan' && cfm ? ['cooling', `filter fan up to ${bucket(cfm, CFM)} CFM ${/dc/i.test(String(r.volts ?? '')) ? '24 VDC' : 'AC'}`] : null;
+    }
+    case 'other': {
+      // Air-conditioner capacity in W (BTU/h ÷ 3.412 when only BTU/h is published); nominal ratings, conditions differ by maker.
+      const w = n(r.coolingW) ?? (n(r.coolingBtuh) !== undefined ? n(r.coolingBtuh)! / 3.412 : undefined), wk = n(r.wPerK);
+      if (r.kind === 'air conditioner' && w) return ['cooling', `air conditioner up to ${bucket(w, COOL_W)} W`];
+      if (r.kind === 'heat exchanger' && wk) return ['cooling', `heat exchanger up to ${bucket(wk, W_PER_K)} W/K`];
+      return null;
+    }
     case 'safetyRelay':
       return ['safetyRelay', String(r.application ?? 'safety relay').replace(/\s+/g, ' ').slice(0, 60)];
     default:
@@ -126,6 +142,8 @@ export function differences(a: CatalogPart, b: CatalogPart): string[] {
   diff('Mounts on', ra.forUse, rb.forUse);
   diff('Trip curve', ra.curve, rb.curve);
   diff('Network', ra.network, rb.network);
+  diff('Airflow (CFM)', ra.airflowCfm, rb.airflowCfm);
+  diff('Cooling', ra.coolingW ?? (ra.coolingBtuh && `${ra.coolingBtuh} BTU/h`), rb.coolingW ?? (rb.coolingBtuh && `${rb.coolingBtuh} BTU/h`));
   diff('Cutout (mm)', ra.cutoutWidthMm && `${ra.cutoutWidthMm}×${ra.cutoutHeightMm}`, rb.cutoutWidthMm && `${rb.cutoutWidthMm}×${rb.cutoutHeightMm}`);
   diff('Resolution', ra.resolutionPx, rb.resolutionPx);
   if ((a.family ?? '') !== (b.family ?? '') && a.family && b.family) out.push(`Family: ${a.family} → ${b.family}`);
