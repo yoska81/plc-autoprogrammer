@@ -244,6 +244,27 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - No drive manual gives a DC bus nominal value, so only the trip band is used.
   - In the GS20 short-circuit check, one terminal is a symbol that did not extract. The text says so instead of guessing the terminal.
 
+## Roll former / servo flying shear (Debug 1's acceptance case)
+- **Machine symptom map** (machineSymptoms.ts + machineSymptomData.ts), roll-former-flying-shear, 6 symptoms:
+  - cut-length-wrong (7 causes; EPC TB-108 ranks wheel misalignment as the most common);
+  - shear-does-not-fire (5), material-slips (5), shear-cuts-crooked-or-burr (2), line-stops-servo-alarm (5), hydraulic-cutter-slow (5).
+  - Each cause has devices (fault profile ids or categories), checks, fix and a maker source.
+  - Ranking is the sources' own where they state one; otherwise it follows the documents' emphasis and the cause's `mechanism` says so.
+- **Device fault profiles** (faults/rollformer.ts), 10 profiles, 50 faults:
+  - Omron E6B2-C encoders, NPN and line driver.
+  - Omron H7CX counters, with E1/E2/E3 codes, CP1/CP2 NPN/PNP levels, the factory 30 Hz count-speed trap, and output contact pairs.
+  - Rexroth 4WE6 DC solenoid valves and HED 8 pressure switches.
+- **Imported-part data:**
+  - 15 Omron H7CX counters, discontinued in 2023 (the H7CC successor is named in each record).
+  - 16 Rexroth 4WE6/3WE6 valves (24 VDC K4).
+  - 8 HED 8 pressure switches, unverified: data sheet RE 50061 needs a Rexroth login.
+- **foreignPart() now ignores spaces**, so Rexroth's '4WE 6 E6X/EG24N9K4' finds its record.
+- **Gaps:**
+  - Delta ASDA-A2: deltaww.com is behind a captcha and Delta EMEA redirects there; no mirrors were used.
+  - "KT timers": KT is the Chinese drawing letter code for a time relay, not a brand.
+  - Huade 4WE6: no English data sheet on huade-hyd.com.
+  - Blade wear / burrs, and strip slip in the roll stands: no maker document covers them.
+
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
 - Label-printer PDFs checked with `pdfinfo`: 38x12 → 107.717 x 34.016 pt, 12x6 → 34.016 x 17.008 pt, 25x10 → 70.866 x 28.347 pt, 70x30 → 198.425 x 85.039 pt (all exact); 199 pages for the example project (copies included). Rendered with `pdftoppm` and inspected: bold number + description beside it, tape length follows text, rotated text OK, legend plates.
