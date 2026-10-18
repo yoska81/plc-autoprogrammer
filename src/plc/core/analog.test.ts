@@ -105,7 +105,7 @@ test('generated / imported points: a bare thermocouple gets the thermocouple ran
   assert.equal(analogRangeFor('Seal heater temperature (thermocouple transmitter)', '4-20mA'), '4-20mA');
   assert.equal(analogRangeFor('Oven temperature', '4-20mA'), '4-20mA', 'no thermocouple named');
   assert.equal(analogRangeFor('Thermocouple amplifier output', '0-10V'), '0-10V', 'an explicit voltage range stays');
-  const g = generatedToPoint({ description: 'Seal bar temperature (thermocouple)', type: 'input', category: 'Analog/Process', deviceType: 'other', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } });
+  const g = generatedToPoint({ description: 'Seal bar temperature (thermocouple)', type: 'input', category: 'Analog/Process', deviceType: 'other', reason: 'spec', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } });
   assert.equal(g.analog?.range, 'thermocouple', 'AI-generated thermocouple');
   // end to end on the user's Sealing Head: C0-11DD2E-D + C0-08ND3 + C0-04THM → the THM's CH1
   const cpu = getCpu(click, 'C0-11DD2E-D');
