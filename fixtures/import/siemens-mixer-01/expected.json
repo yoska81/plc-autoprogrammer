@@ -1,0 +1,477 @@
+{
+  "fixture": "siemens-mixer-01",
+  "sourceFiles": [
+    "MixTank_MT01.xml",
+    "PLC_Tags_MT01.csv"
+  ],
+  "format": "PLCopen TC6 XML 2.01 (FB in LD, FC in ST/SCL) + TIA Portal PLC tag table export (CSV of the .xlsx columns)",
+  "machine": "Batch mixing tank MT01. On Start (tank idle, outlet valve closed, lid closed) the tank is filled with ingredient A (water) to 40 % and ingredient B (syrup) to 80 %, measured by a 4-20 mA level transmitter. The agitator then starts and an immersion heater brings the batch to 65 degC; the heater is interlocked with agitator running feedback, minimum level (20 %), the safety thermostat and the setpoint. After 5 minutes of mixing at temperature the outlet valve drains the tank; 10 s after the level is below 3 % the batch is done, counted, and waits for acknowledge. Analog scaling is done by an SCL function, the sequence and interlocks by a LAD function block with set/reset step bits; alarms latch until Reset.",
+  "plc": {
+    "brand": "Siemens",
+    "family": "S7-1200",
+    "cpu": "CPU 1214C DC/DC/DC",
+    "cpuOrderNumber": "6ES7214-1AG40-0XB0",
+    "firmware": "V4.6",
+    "software": "TIA Portal V18",
+    "modules": [
+      {
+        "slot": 1,
+        "name": "PLC_1",
+        "order": "6ES7214-1AG40-0XB0",
+        "description": "CPU 1214C DC/DC/DC, 14 DI 24 V DC / 10 DQ 24 V DC / 2 AI 0-10 V (onboard AI unused)"
+      },
+      {
+        "slot": 2,
+        "name": "AI 4x13BIT_1",
+        "order": "6ES7231-4HD32-0XB0",
+        "description": "SM 1231 AI 4 x 13 bit, channels 0-1 set to current 4-20 mA, I address IW96..IW103"
+      }
+    ],
+    "blocks": [
+      {
+        "name": "FB_Mixer",
+        "type": "FB",
+        "number": 1,
+        "language": "LAD",
+        "instanceDB": "Mixer_DB",
+        "calledFrom": "OB1 Main"
+      },
+      {
+        "name": "FC_ScaleAnalog",
+        "type": "FC",
+        "number": 10,
+        "language": "SCL",
+        "returns": "Real"
+      }
+    ]
+  },
+  "io": [
+    {
+      "address": "%I0.0",
+      "tag": "Start_PB",
+      "description": "Start pushbutton S1 (NO)",
+      "type": "input",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%I0.1",
+      "tag": "Stop_PB",
+      "description": "Stop pushbutton S2 (NC, TRUE = not pressed)",
+      "type": "input",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%I0.2",
+      "tag": "EStop_OK",
+      "description": "E-stop safety relay K0 OK",
+      "type": "input",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%I0.3",
+      "tag": "Agitator_Running",
+      "description": "Agitator contactor K3 auxiliary contact (running feedback)",
+      "type": "input",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%I0.4",
+      "tag": "Agitator_OL_OK",
+      "description": "Agitator motor protector Q3 not tripped",
+      "type": "input",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%I0.5",
+      "tag": "LSHH_OK",
+      "description": "High-high level switch LSHH101 (NC, TRUE = level not high-high)",
+      "type": "input",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%I0.6",
+      "tag": "Outlet_Valve_Closed",
+      "description": "Outlet valve XV103 closed limit switch",
+      "type": "input",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%I0.7",
+      "tag": "Lid_Closed",
+      "description": "Tank lid / manway closed switch",
+      "type": "input",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%I1.0",
+      "tag": "Reset_PB",
+      "description": "Reset / acknowledge pushbutton S3 (NO)",
+      "type": "input",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%I1.1",
+      "tag": "Heater_OT_OK",
+      "description": "Heater safety thermostat TSH102 OK (not over-temperature)",
+      "type": "input",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%Q0.0",
+      "tag": "Inlet_Valve_A",
+      "description": "Ingredient A (water) inlet valve XV101",
+      "type": "output",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%Q0.1",
+      "tag": "Inlet_Valve_B",
+      "description": "Ingredient B (syrup) inlet valve XV102",
+      "type": "output",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%Q0.2",
+      "tag": "Outlet_Valve",
+      "description": "Outlet / drain valve XV103",
+      "type": "output",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%Q0.3",
+      "tag": "Agitator_Run",
+      "description": "Agitator motor M1 contactor K3",
+      "type": "output",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%Q0.4",
+      "tag": "Heater_On",
+      "description": "Immersion heater E1 contactor K4",
+      "type": "output",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%Q0.5",
+      "tag": "Lamp_Running",
+      "description": "Batch running lamp H1 (green)",
+      "type": "output",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%Q0.6",
+      "tag": "Lamp_Fault",
+      "description": "Fault lamp H2 (red)",
+      "type": "output",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%Q0.7",
+      "tag": "Lamp_Batch_Done",
+      "description": "Batch complete lamp H3 (white)",
+      "type": "output",
+      "signal": "digital",
+      "dataType": "Bool"
+    },
+    {
+      "address": "%IW96",
+      "tag": "Level_Raw",
+      "description": "Level transmitter LT101, 4-20 mA = 0-100 % (SM 1231 ch0, raw 0..27648)",
+      "type": "input",
+      "signal": "analog",
+      "dataType": "Int",
+      "analog": {
+        "range": "4-20mA",
+        "rawMin": 0,
+        "rawMax": 27648,
+        "engMin": 0.0,
+        "engMax": 100.0,
+        "units": "%",
+        "scaledTo": "Level_Pct"
+      }
+    },
+    {
+      "address": "%IW98",
+      "tag": "Temp_Raw",
+      "description": "Temperature transmitter TT101, 4-20 mA = 0-150 degC (SM 1231 ch1, raw 0..27648)",
+      "type": "input",
+      "signal": "analog",
+      "dataType": "Int",
+      "analog": {
+        "range": "4-20mA",
+        "rawMin": 0,
+        "rawMax": 27648,
+        "engMin": 0.0,
+        "engMax": 150.0,
+        "units": "degC",
+        "scaledTo": "Temp_C"
+      }
+    }
+  ],
+  "memory": [
+    {
+      "address": "%M10.0",
+      "tag": "HMI_Reset_Count",
+      "description": "HMI button: reset batch counter",
+      "dataType": "Bool"
+    }
+  ],
+  "sequence": {
+    "style": "Set/reset step bits in FB_Mixer statics (S_Idle initial value TRUE)",
+    "steps": [
+      {
+        "step": "S_Idle",
+        "description": "Ready. Rising edge of Start_PB with Stop_PB healthy, no fault, outlet valve closed and lid closed starts the batch (Fill A).",
+        "exitNetwork": 15
+      },
+      {
+        "step": "S_FillA",
+        "description": "Inlet valve A open until Level_Pct >= SP_Level_A (40 %).",
+        "exitNetwork": 16
+      },
+      {
+        "step": "S_FillB",
+        "description": "Inlet valve B open until Level_Pct >= SP_Level_B (80 %).",
+        "exitNetwork": 17
+      },
+      {
+        "step": "S_Heat",
+        "description": "Agitator runs, heater on until Temp_C >= SP_Temp (65 degC).",
+        "exitNetwork": 18
+      },
+      {
+        "step": "S_Mix",
+        "description": "Agitator runs and heater holds temperature for Mix_Time (T#5M).",
+        "exitNetwork": 19
+      },
+      {
+        "step": "S_Drain",
+        "description": "Outlet valve open; when Level_Pct <= SP_Drain_Empty (3 %) for 10 s go to Done.",
+        "exitNetwork": 20
+      },
+      {
+        "step": "S_Done",
+        "description": "Batch counted (C_Batch), done lamp on; Reset_PB returns to Idle.",
+        "exitNetwork": 22
+      }
+    ],
+    "abort": "Stop_PB pressed or any alarm resets every step bit and sets S_Idle (tank is not drained automatically)."
+  },
+  "timers": [
+    {
+      "name": "T_AgitFB",
+      "type": "TON",
+      "presetMs": 3000,
+      "preset": "T#3S",
+      "purpose": "Agitator commanded without running feedback",
+      "where": "FB_Mixer, network 10"
+    },
+    {
+      "name": "T_FillTimeout",
+      "type": "TON",
+      "presetMs": 600000,
+      "preset": "T#10M",
+      "purpose": "Fill A + Fill B watchdog",
+      "where": "FB_Mixer, network 11"
+    },
+    {
+      "name": "T_Mix",
+      "type": "TON",
+      "presetMs": 300000,
+      "preset": "Mix_Time (T#5M)",
+      "purpose": "Mix time at temperature",
+      "where": "FB_Mixer, network 19"
+    },
+    {
+      "name": "T_DrainDelay",
+      "type": "TON",
+      "presetMs": 10000,
+      "preset": "T#10S",
+      "purpose": "Drain run-on after tank reads empty",
+      "where": "FB_Mixer, network 20"
+    }
+  ],
+  "counters": [
+    {
+      "name": "C_Batch",
+      "type": "CTU",
+      "preset": 9999,
+      "purpose": "Completed batches, count value to Batch_Count",
+      "reset": "HMI_Reset_Count (%M10.0)",
+      "where": "FB_Mixer, network 21"
+    }
+  ],
+  "alarms": [
+    {
+      "address": "Mixer_DB.Alm_EStop",
+      "tag": "Alm_EStop",
+      "text": "Emergency stop pressed",
+      "condition": "EStop_OK FALSE",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB",
+      "where": "FB_Mixer, network 4"
+    },
+    {
+      "address": "Mixer_DB.Alm_AgitOverload",
+      "tag": "Alm_AgitOverload",
+      "text": "Agitator motor overload",
+      "condition": "Agitator_OL_OK FALSE",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB",
+      "where": "FB_Mixer, network 5"
+    },
+    {
+      "address": "Mixer_DB.Alm_HeaterOvertemp",
+      "tag": "Alm_HeaterOvertemp",
+      "text": "Heater safety thermostat tripped",
+      "condition": "Heater_OT_OK FALSE",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB",
+      "where": "FB_Mixer, network 6"
+    },
+    {
+      "address": "Mixer_DB.Alm_LevelHH",
+      "tag": "Alm_LevelHH",
+      "text": "Tank level high-high",
+      "condition": "LSHH_OK FALSE",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB",
+      "where": "FB_Mixer, network 7"
+    },
+    {
+      "address": "Mixer_DB.Alm_LevelSensor",
+      "tag": "Alm_LevelSensor",
+      "text": "Level transmitter fault",
+      "condition": "FC_ScaleAnalog Fault output for Level_Raw",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB",
+      "where": "FB_Mixer, network 8"
+    },
+    {
+      "address": "Mixer_DB.Alm_TempSensor",
+      "tag": "Alm_TempSensor",
+      "text": "Temperature transmitter fault",
+      "condition": "FC_ScaleAnalog Fault output for Temp_Raw",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB",
+      "where": "FB_Mixer, network 9"
+    },
+    {
+      "address": "Mixer_DB.Alm_AgitFeedback",
+      "tag": "Alm_AgitFeedback",
+      "text": "Agitator no running feedback",
+      "condition": "Agitator_Run without Agitator_Running for 3 s",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB",
+      "where": "FB_Mixer, network 10"
+    },
+    {
+      "address": "Mixer_DB.Alm_FillTimeout",
+      "tag": "Alm_FillTimeout",
+      "text": "Fill timeout",
+      "condition": "S_FillA or S_FillB active for 10 min",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "Reset_PB",
+      "where": "FB_Mixer, network 11"
+    }
+  ],
+  "interlocks": [
+    {
+      "output": "Inlet_Valve_A",
+      "requires": [
+        "S_FillA",
+        "NOT Fault",
+        "LSHH_OK",
+        "Outlet_Valve_Closed"
+      ],
+      "where": "FB_Mixer, network 23"
+    },
+    {
+      "output": "Inlet_Valve_B",
+      "requires": [
+        "S_FillB",
+        "NOT Fault",
+        "LSHH_OK",
+        "Outlet_Valve_Closed"
+      ],
+      "where": "FB_Mixer, network 24"
+    },
+    {
+      "output": "Agitator_Run",
+      "requires": [
+        "S_Heat or S_Mix",
+        "NOT Fault",
+        "Agitator_OL_OK",
+        "Lid_Closed",
+        "Level_Above_Min (Level_Pct >= 20 %)"
+      ],
+      "where": "FB_Mixer, network 25"
+    },
+    {
+      "output": "Heater_On",
+      "requires": [
+        "S_Heat or S_Mix",
+        "NOT Fault",
+        "Agitator_Running",
+        "Level_Above_Min (Level_Pct >= 20 %)",
+        "Heater_OT_OK",
+        "Temp_C < SP_Temp"
+      ],
+      "where": "FB_Mixer, network 26"
+    },
+    {
+      "output": "Outlet_Valve",
+      "requires": [
+        "S_Drain",
+        "NOT Fault"
+      ],
+      "where": "FB_Mixer, network 27"
+    },
+    {
+      "output": "Batch start",
+      "requires": [
+        "S_Idle",
+        "Start_PB rising edge",
+        "Stop_PB",
+        "NOT Fault",
+        "Outlet_Valve_Closed",
+        "Lid_Closed"
+      ],
+      "where": "FB_Mixer, network 15"
+    }
+  ],
+  "knownIssues": [
+    {
+      "id": "S7-1",
+      "where": "FC_ScaleAnalog (SCL), NORM_X call",
+      "code": "#Norm := NORM_X(MIN := 0, VALUE := #Raw, MAX := 32767);",
+      "what": "Wrong full-scale value: the raw word is normalised with MAX := 32767, but the S7-1200 nominal range for a 4-20 mA channel is 0..27648. Every scaled value reads 15.6 % low (20 mA shows 84.4 % level / 126.6 degC). Level setpoint B (80 %) is only reached at a real level of about 94.8 %, so the tank overfills toward the high-high switch, and the heater runs to about 77 degC real for a 65 degC setpoint.",
+      "fix": "#Norm := NORM_X(MIN := 0, VALUE := #Raw, MAX := 27648);"
+    }
+  ]
+}
