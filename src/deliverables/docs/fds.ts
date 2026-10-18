@@ -1,4 +1,5 @@
 import { powerText } from '../../standards/regions';
+import { operatorInterfaceText } from './operatorStation';
 import type { ProjectSnapshot } from '../collect';
 import { buildModel, naturalCompare, resolveComponents, supplyText } from '../../electrical/derive';
 import { getHmi, hmiMakerOf } from '../../hmi/hmiCatalog';
@@ -23,6 +24,7 @@ export function systemDescription(p: ProjectSnapshot): string[] {
   const parts: string[] = [];
   parts.push(`The machine is controlled by a ${p.profile.vendor} ${p.profile.name} PLC, CPU ${p.cpu.label.startsWith(p.cpu.id) ? p.cpu.label : `${p.cpu.id} (${p.cpu.label})`}${p.equipment?.modules.length ? ` with expansion modules ${p.equipment.modules.join(', ')}` : ''}, handling ${nIn} discrete inputs and ${nOut} discrete outputs.`);
   if (p.hmi) parts.push(`The operator uses a ${hmiText(p.hmi.hmiPartNumber)} touch panel on the control panel door, connected to the PLC over Ethernet, with ${p.hmi.screens.length} screens.`);
+  else if (p.noHmi) parts.push(operatorInterfaceText(p));
   if (d) {
     parts.push(`The control panel is fed from ${supplyText(d.inputs.supply)} through a lockable main disconnect, in a ${d.inputs.enclosureRating} enclosure, with 24 VDC control power.`);
     if (d.inputs.motors.length) parts.push(`Motors: ${d.inputs.motors.map((m) => `${m.tag} ${m.description || ''} (${powerText(m.hp, p.info.region)}, ${m.voltage}, ${m.starter === 'vfd' ? 'VFD' : m.starter === 'motor-protector' ? 'motor protector + contactor' : 'contactor and overload'}${m.reversing ? ', reversing' : ''})`).join('; ')}.`);

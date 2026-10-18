@@ -124,6 +124,28 @@ function programChecks({ p }: ReviewInput): Finding[] {
   return out;
 }
 
+/** The neutral memory the touch panel writes: command bits C1001–C1300, setpoints DS1001–DS1200 and DF101–DF200 (as in the program checker). */
+const HMI_WRITTEN = /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/;
+
+/**
+ * Machine without a touch panel: a command bit or setpoint only a panel would write stays OFF / 0,
+ * so the program would wait for it forever (a Start that can never be pressed, a setpoint of 0).
+ */
+function noPanelChecks({ p }: ReviewInput): Finding[] {
+  if (p.hmi || !p.noHmi || p.profile.language !== 'ladder' || !p.ladder.rungs.length) return [];
+  const writes = new Set(p.ladder.rungs.flatMap((r) => rungWrites(r).map((w) => w.trim().toUpperCase())));
+  const reads = [...new Set(p.ladder.rungs.flatMap((r) => rungReads(r).map((x) => x.address.trim().toUpperCase())))];
+  return reads.filter((a) => HMI_WRITTEN.test(a) && !writes.has(a)).map((a) => {
+    const name = p.labels.get(a) ? ` ${p.labels.get(a)}` : '';
+    const bit = a.startsWith('C');
+    return finding(`nohmi-input:${a}`, 'major', 'hmi', 'program', a, `No touch panel, but the program waits for ${bit ? 'panel command' : 'panel setpoint'} ${a}${name}`,
+      bit ? `${a}${name} is a touch-panel command bit. This machine has no touch panel, so nothing turns it on and what it starts or enables never happens.`
+        : `${a}${name} is a value the operator would enter on a touch panel. This machine has no touch panel, so it stays 0.`,
+      bit ? 'Use the operator-station pushbutton or selector input for this command (or remove it), then update the PLC program.'
+        : 'Give the value a fixed setting in the program, or add a selector / thumbwheel input for it.');
+  });
+}
+
 function hmiChecks({ p }: ReviewInput): Finding[] {
   const out: Finding[] = [];
   if (!p.hmi || p.profile.language !== 'ladder' || !p.ladder.rungs.length) return out;
@@ -444,7 +466,7 @@ function specCoverage({ p, cautions = [] }: ReviewInput): Finding[] {
 export function runChecks(input: ReviewInput): Finding[] {
   const all = [
     ...stageChecks(input), ...specVsIo(input), ...specCoverage(input), ...equipmentChecks(input), ...electricalChecks(input), ...driveChecks(input),
-    ...programChecks(input), ...hmiChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
+    ...programChecks(input), ...hmiChecks(input), ...noPanelChecks(input), ...projectChecks(input), ...codeRuleFindings(input.p),
   ];
   // The Engineer review's rule checks (SCCR weak link, heat, voltage drop…) count here too: one set of findings everywhere.
   const eng = engineerChecksFor(input.p);

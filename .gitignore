@@ -46,6 +46,7 @@ e2e/out-desktop/
 tools/ai-quality/out/
 e2e/out-hmi-editor/
 e2e/out-hmi-looks/
+e2e/out-hmi-no-panel/
 installer/
 e2e/out-walkthrough/
 .claude/worktrees/
