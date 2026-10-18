@@ -4,7 +4,7 @@
  */
 import type { IOPoint } from '../../types/io';
 import type { CatalogCategory, CatalogPart, DesignComponent, FieldDeviceType, IOWiring, MachineWiring } from '../types';
-import { deviceTypeOf, HEATER_RE, TWO_HAND_RE, type MachineModel } from './machineModel';
+import { deviceTypeOf, DRIVE_INPUT_RE, HEATER_RE, TWO_HAND_RE, type MachineModel } from './machineModel';
 import type { ProcessResult } from './process';
 import { comp, type MotorBranch, type Tags } from './power';
 import { num, type Picker } from './select';
@@ -62,6 +62,18 @@ export interface DeviceResult {
 }
 
 const REV = /\b(rev|reverse|backward)\b/i;
+
+/** The drive an I/O description names by tag ("U2 DI7 CAM engage", "VFD1 MI3 jog"): converted machines keep U1/U2. */
+export function namedDrive(desc: string, branches: MotorBranch[]): string | undefined {
+  const m = /\b(U|VFD|SD|SV|INV)\s*-?(\d+)\b/i.exec(desc);
+  if (!m) return undefined;
+  const t = `${m[1].toUpperCase()}${m[2]}`;
+  const exact = branches.find((b) => b.vfd?.toUpperCase() === t)?.vfd;
+  if (exact) return exact;
+  // the design's only VFD is the drive a "U1 … VFD" point names (as electrical/vfd.ts assigns its terminals)
+  const vfds = branches.filter((b) => b.vfd);
+  return vfds.length === 1 && /\b(vfd|drive|inverter)\b/i.test(desc) ? vfds[0].vfd : t;
+}
 const ZONE_WORD = (z: string) => z.toLowerCase().split(/\s+/).filter((w) => w.length > 2 && !/^(zone|station)$/.test(w));
 
 /** Zone a device belongs to: the zone sharing a word with its description (or "Zone 2" for "zone 2"), else the first zone. */
@@ -230,9 +242,10 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
         tag = tags.next('SS'); location = DOOR;
         if (sel) add(comp(tag, sel.partNumber, 1, desc.replace(/\s*\bselector\b/i, '').trim() || desc));
       } else if (type === 'vfd-input' || (/\b(vfd|drive)\b/i.test(desc) && /\b(fault|ready|running|at speed|alarm)\b/i.test(desc))) {
-        const b = motorFor(desc, branches, linkedMotors, 'vfd');
+        const named = namedDrive(desc, branches);
+        const b = named ? undefined : motorFor(desc, branches, linkedMotors, 'vfd');
         type = 'vfd-input';
-        tag = b?.vfd ?? tags.next('VFD');
+        tag = named ?? b?.vfd ?? tags.next('VFD');
       } else if (/\boverload\b|\bol\b.*\b(trip|tripped|fault|ok)\b|\bmotor protector\b.*\b(trip|tripped|fault|ok)\b/i.test(desc)) {
         const b = motorFor(desc, branches, linkedMotors, 'contactor');
         type = 'other';
@@ -266,6 +279,11 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
       if (heater && (heater.ssr || heater.contactor)) {
         // The PLC switches the heater's SSR (time-proportioned), or its contactor when there is no SSR.
         tag = heater.ssr ?? heater.contactor!; type = heater.ssr ? 'relay-coil' : 'contactor-coil';
+      } else if ((type === 'vfd-input' || DRIVE_INPUT_RE.test(desc)) && namedDrive(desc, branches)) {
+        // a drive input on a drive the description names (U1 MI3 jog, U2 DI7 CAM): wired to that drive's own
+        // terminal — never a contactor, never a new motor
+        type = 'vfd-input';
+        tag = namedDrive(desc, branches)!;
       } else if (type === 'contactor-coil' || type === 'vfd-input' || (type === 'relay-coil' && /\b(motor|pump|fan|conveyor|blower|mixer|agitator)\b/i.test(desc) && branches.length)) {
         const b = motorFor(desc, branches, linkedMotors, 'any');
         if (b) {

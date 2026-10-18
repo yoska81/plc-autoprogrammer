@@ -1360,7 +1360,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         addWire({ wire: p.address, from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
         if (p.returnTerminal) addWireOnce({ wire: sink ? lampSupply(p) : '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       } else {
-        addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: `${tag}:${p.deviceType === 'vfd-input' ? 'DI' : p.pins[0]}`, color: 'BU', size: '18 AWG', function: p.description });
+        // a drive input lands on the terminal the description names (U2 DI7, U1 MI3), else the drive's DI
+        const di = p.deviceType === 'vfd-input' ? /\b(?:DI|MI)\d{1,2}\b/i.exec(p.description)?.[0].toUpperCase() ?? 'DI' : p.pins[0];
+        addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: `${tag}:${di}`, color: 'BU', size: '18 AWG', function: p.description });
         if (p.deviceType === 'vfd-input') addWire({ wire: '0V', from: `${tag}:DCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} digital input common` });
         else addWire({ wire: sink ? lampSupply(p) : '0V', from: `${tag}:${p.pins[1]}`, to: `TB1 ${sink ? lampSupply(p) : '0V'}`, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       }

@@ -679,5 +679,28 @@ for (const s of SCENARIOS) {
   assert.deepEqual(run.motors.map((x) => x.description), ['Main forming motor', 'Coiler motor', 'Unwinder motor'], 'drive run outputs still add their motors');
 }
 
+// The side manager's roll-former cases through the whole engine: drive inputs on drives the I/O list names (U1 MI3,
+// U2 DI7) never get a motor or a contactor, and each is wired to that drive's own terminal. (U2 DI1 SON is a servo
+// enable motion.ts reads as a servo axis — the drivesFromIo test above covers it here.)
+{
+  const points: P[] = [
+    pt('E-Stop OK (safety relay)', 'input'), pt('Start Button', 'input'),
+    pt('U2 DI7 CAM engage', 'output', { deviceType: 'vfd-input' }),
+    pt('U1 MI3 VFD jog speed', 'output', { deviceType: 'vfd-input' }),
+    pt('U1 MI1 VFD forward run', 'output', { deviceType: 'vfd-input' }),
+  ];
+  const { r, ctx } = run({ name: 'roll-former-drive-inputs', supply: '480VAC-3PH', points, motors: [motor('M1', 'Main forming motor', 7.5, '480VAC-3PH', 'vfd')] });
+  const by = (d: string) => r.design.ioWiring.find((w) => ctx.io.find((q) => q.address === w.address)?.description === d);
+  for (const [d, drive] of [['U2 DI7 CAM engage', 'U2'], ['U1 MI3 VFD jog speed', 'VFD1'], ['U1 MI1 VFD forward run', 'VFD1']] as const) {
+    assert.equal(by(d)?.deviceTag, drive, `${d}: on ${drive}`);
+  }
+  assert.ok(!r.design.components.some((c) => /^K\d/.test(c.tag)), `no contactor for a drive input: ${r.design.components.filter((c) => /^K\d/.test(c.tag)).map((c) => c.function).join(', ')}`);
+  assert.ok(!r.design.components.some((c) => /^VFD[2-9]/.test(c.tag)), 'no invented second drive');
+  assert.ok(!(r.design.askUser ?? []).some((q) => /not in the motor list|assumed/i.test(q) && /U[12]/.test(q)), 'no invented-load question');
+  const m = buildModel(ctx);
+  // U2 (the servo drive) on its DI7; U1 is the design's one VFD (VFD1): jog on a preset DI, run on FWD/DI1
+  for (const t of ['U2:DI7', 'VFD1:DI3', 'VFD1:DI1']) assert.ok(m.wires.some((w) => w.to === t), `wired to ${t}`);
+}
+
 if (failures) { console.error(`${failures} scenario(s) failed`); process.exit(1); }
 console.log('engine tests passed');
