@@ -6,7 +6,8 @@ import { resolveAddresses } from './profile';
 import { moduleSlots } from './modules';
 import { analogMap, analogNeed } from './analog';
 import { channelTerminal } from './profiles/clickAnalog';
-import type { IOPoint } from '../../types/io';
+import { analogRangeFor, type IOPoint } from '../../types/io';
+import { generatedToPoint } from '../../lib/ai/ioAI';
 
 let passed = 0;
 const failures: string[] = [];
@@ -95,6 +96,21 @@ test('Siemens S7-1200: a 4-20 mA input never takes the CPU\'s 0-10 V inputs (Lev
   const m = analogMap(s7, cpu, moduleSlots(['6ES7231-4HD32-0XB0']), [lvl, v]);
   assert.equal(m.byPoint.get('I001')?.partNumber, '6ES7231-4HD32-0XB0');
   assert.equal(m.byPoint.get('I002')?.partNumber, '6ES7212-1AE40-0XB0', '0-10 V on the CPU input');
+});
+
+test('generated / imported points: a bare thermocouple gets the thermocouple range, a transmitter keeps 4-20 mA', () => {
+  assert.equal(analogRangeFor('Seal bar temperature (thermocouple)', '4-20mA'), 'thermocouple');
+  assert.equal(analogRangeFor('Seal bar temperature (type J)', '4-20mA'), 'thermocouple');
+  assert.equal(analogRangeFor('Oven T/C', '4-20mA'), 'thermocouple');
+  assert.equal(analogRangeFor('Seal heater temperature (thermocouple transmitter)', '4-20mA'), '4-20mA');
+  assert.equal(analogRangeFor('Oven temperature', '4-20mA'), '4-20mA', 'no thermocouple named');
+  assert.equal(analogRangeFor('Thermocouple amplifier output', '0-10V'), '0-10V', 'an explicit voltage range stays');
+  const g = generatedToPoint({ description: 'Seal bar temperature (thermocouple)', type: 'input', category: 'Analog/Process', deviceType: 'other', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 300, units: '°C' } });
+  assert.equal(g.analog?.range, 'thermocouple', 'AI-generated thermocouple');
+  // end to end on the user's Sealing Head: C0-11DD2E-D + C0-08ND3 + C0-04THM → the THM's CH1
+  const cpu = getCpu(click, 'C0-11DD2E-D');
+  const p = { ...g, id: 'I014' } as IOPoint;
+  assert.equal(analogMap(click, cpu, moduleSlots(['C0-08ND3', 'C0-04THM']), [p]).byPoint.get('I014')?.label, 'Slot 2 CH1');
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

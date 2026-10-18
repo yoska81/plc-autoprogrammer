@@ -273,7 +273,7 @@ const STRESS_EXTRA: [string, 'input' | 'output', IOCategory, string][] = Array.f
 
 async function setupRules(v: string) {
   setupVariant(v === 'rules-big' || v === 'rules-floor' ? 'big' : 'us480');
-  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress' || v === 'rules-sealing-4x') {
+  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress' || v === 'rules-sealing-4x' || v === 'rules-sealing-thm') {
     // Only the sealing head's own description: the example's other sections (its conveyor) must not leak in.
     const sections = useSpecStore.getState().sections;
     useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC });
@@ -294,6 +294,17 @@ async function setupRules(v: string) {
     useProjectStore.setState({ plcId: 'click', cpuId: 'C0-10DD1E-D', modules });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, enclosureRating: 'NEMA 4X', motors: [], requiredParts: [{ partNumber: 'C0-10DD2E-D', quantity: 1 }, ...modules.map((partNumber) => ({ partNumber, quantity: 1 }))] });
   }
+  // "rules-sealing-thm": the user's Sealing Head as built — C0-11DD2E-D + C0-08ND3 + C0-04THM, NEMA 4X, the seal bar's
+  // type J thermocouple read straight by the THM (no transmitter, no analog output). The point comes in through the
+  // store's import at the list's 4-20 mA default: the import must make it a 'thermocouple' range, or it gets no channel.
+  if (v === 'rules-sealing-thm') {
+    const io = SEALING_IO.filter(([, type, , , a]) => !(type === 'output' && a))
+      .map(([description, type, category, deviceType, a]) => (a ? ['Seal bar temperature (type J thermocouple)', type, category, deviceType, { range: '4-20mA' as const, min: 0, max: 300, units: '°C' }] as const : [description, type, category, deviceType, a] as const));
+    useIOStore.getState().importPoints(io.map(([description, type, category, deviceType, analog]) => ({ description, type, category, deviceType, ...(analog ? { signal: 'analog' as const, analog } : {}) })), true);
+    const modules = ['C0-08ND3', 'C0-04THM'];
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-11DD2E-D', modules });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, enclosureRating: 'NEMA 4X', motors: [], requiredParts: ['C0-11DD2E-D', ...modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
+  }
   // Unitronics all-in-ones (the screen is the PLC's own): the sealing head on a Vision V700 + snap-in (VisiLogic) or a
   // UniStream US10 + Uni-I/O (UniLogic); the rules build the HMI and the program too, so the exporters run.
   const uni = v === 'rules-unitronics' ? { plcId: 'unitronics-vision', cpu: 'V700-T20BJ', modules: ['V200-18-E3XB'] }
@@ -309,7 +320,7 @@ async function setupRules(v: string) {
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [uni.cpu, ...uni.modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
   }
   const el = useElectricalStore.getState();
-  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
+  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || v === 'rules-sealing-thm' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
