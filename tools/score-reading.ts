@@ -47,7 +47,7 @@ async function readHere(path: string): Promise<ExistingMachine> {
   const { machine } = await deriveFromUpload({
     apiKey, model: process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
     effort: (process.env.READ_EFFORT as Effort | undefined) ?? 'max', split,
-  }, [new File([readFileSync(path)], name, { type })], '', [], { onStage: (t) => console.log(`  ${t}`) });
+  }, [new File([readFileSync(path)], name, { type })], '', [], (t) => console.log(`  ${t}`));
   console.log(`read ${split ? 'in three parts' : 'in one request'}: ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   return machine;
 }

@@ -41,14 +41,13 @@ export async function parallelCached(
     const own = new AbortController();
     if (ctrl.signal.aborted) own.abort(); else ctrl.signal.addEventListener('abort', () => own.abort(), { once: true });
     linkProgress(own.signal, opts.signal);
-    let started = false; // once, also when a retried request starts again
     return callClaude({
       ...opts,
       signal: own.signal,
       task: part.task ?? opts.task,
       schema: part.schema,
       messages: [{ role: 'user', content: [...shared, { type: 'text', text: part.instruction }] }],
-      onStarted: () => { if (started) return; started = true; onPart?.(i, 'started'); onStarted?.(); },
+      onStarted: () => { onPart?.(i, 'started'); onStarted?.(); },
     }).then((r) => { onPart?.(i, 'done'); return r; }, (err: unknown) => { onPart?.(i, 'failed'); ctrl.abort(); throw err; });
   };
   if (!parts.length) return [];

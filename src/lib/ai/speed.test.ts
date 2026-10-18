@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { effectiveEffort, effectiveModel, TASK_EFFORT } from './tasks';
 import { cachedAnswer, cacheKey, clearAiCache, setAiCacheEnabled, setAiCacheSyncKeys } from './cache';
-import { aiBusyMs, type AiCall } from './timing';
+import { aiBusyMs, useAiTimingStore, type AiCall } from './timing';
 import { callClaude, setClaudeInterceptor } from './anthropic';
 import { parallelCached } from './parallelCached';
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -177,6 +177,21 @@ await test('parallelCached: a first part that answers without a start signal sti
   const base = { apiKey: 'k', model: 'm', effort: 'max' as const, system: 'S3', prefix: [{ type: 'text' as const, text: 'f' }] };
   assert.equal((await parallelCached(base, [{ instruction: 'A' }, { instruction: 'B' }])).length, 2);
   assert.deepEqual(seen, ['A', 'B']);
+  setClaudeInterceptor(null);
+});
+
+await test('callClaude: onStarted once per call (a retry or a paused turn starts again); prompt-cache tokens in the timing log', async () => {
+  await clearAiCache();
+  setClaudeInterceptor(async (o) => {
+    o.onStarted?.(); o.onStarted?.(); // two attempts / turns of one request
+    o.usage!.cacheRead += 1200; o.usage!.cacheWrite += 30;
+    return { text: '{}', reasoning: null };
+  });
+  let n = 0;
+  await callClaude({ apiKey: 'k', model: 'm', effort: 'low', system: 'S4', messages: [{ role: 'user', content: 'u' }], onStarted: () => n++ });
+  assert.equal(n, 1);
+  const last = useAiTimingStore.getState().calls.at(-1)!;
+  assert.deepEqual([last.cacheRead, last.cacheWrite], [1200, 30]);
   setClaudeInterceptor(null);
 });
 

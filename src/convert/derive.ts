@@ -47,7 +47,7 @@ export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,applicat
 
 /** One upload as content blocks for the AI: PDFs and images as they are, DXF as its text. */
 /** `notes`: warnings collected while reading (DWG); `onFile`: called before each file is read (progress: "Reading 3 of 8: …"). */
-export async function readUpload(files: File[], { notes = [], onFile }: { notes?: string[]; onFile?: (i: number, name: string) => void } = {}): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
+export async function readUpload(files: File[], notes: string[] = [], onFile?: (i: number, name: string) => void): Promise<Anthropic.Beta.Messages.BetaContentBlockParam[]> {
   if (files.length > MAX_UPLOAD_FILES) throw new Error(`At most ${MAX_UPLOAD_FILES} files at once.`);
   const out: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
   for (const [i, f] of files.entries()) {
@@ -140,16 +140,19 @@ Read and report only what the drawings show. Never invent a part number, address
  */
 export const DERIVE_PARTS = [
   { id: 'hardware', fields: ['drawingStandard', 'language', 'plc', 'modules', 'supplyDrawn', 'components', 'motors', 'axes'],
-    instruction: 'PART 1 of 3 — HARDWARE. Fill only: drawingStandard, language, plc, modules, supplyDrawn, components (every device with its ratings), motors and axes, plus uncertainties. Another reader does the I/O, circuits and description at the same time: use every device tag exactly as printed.' },
+    instruction: 'PART 1 of 3 — HARDWARE. Fill only: drawingStandard, language, plc, modules, supplyDrawn, components (every device with its ratings), motors and axes, plus uncertainties; leave every other field empty ([], "" or null). Another reader does the I/O, circuits and description at the same time: use every device tag exactly as printed.' },
   { id: 'logic', fields: ['io', 'circuits', 'interlocks', 'controller'],
-    instruction: 'PART 2 of 3 — LOGIC. Fill only: io (every I/O point, or on a machine without a PLC every field device as the I/O it would be), circuits (every control circuit with its structured path), interlocks and controller, plus uncertainties. Another reader does the parts list and the description at the same time: use every device tag exactly as printed.' },
+    instruction: 'PART 2 of 3 — LOGIC. Fill only: io (every I/O point, or on a machine without a PLC every field device as the I/O it would be), circuits (every control circuit with its structured path), interlocks and controller, plus uncertainties; leave every other field empty ([], "" or null). Another reader does the parts list and the description at the same time: use every device tag exactly as printed.' },
   { id: 'safety', fields: ['safety', 'spec', 'questions', 'summary'],
-    instruction: 'PART 3 of 3 — SAFETY AND DESCRIPTION. Fill only: safety (E-stops, guards, safety relay, category, kind, and how every drive stops, STO), spec (the machine description, section by section), questions and summary, plus uncertainties. Another reader does the parts list and the I/O at the same time: use every device tag exactly as printed.' },
+    instruction: 'PART 3 of 3 — SAFETY AND DESCRIPTION. Fill only: safety (E-stops, guards, safety relay, category, kind, and how every drive stops, STO), spec (the machine description, section by section), questions and summary, plus uncertainties; leave every other field empty ([], "" or null). Another reader does the parts list and the I/O at the same time: use every device tag exactly as printed.' },
 ] as const;
 
-const pick = (keys: readonly string[]) => Object.fromEntries(keys.map((k) => [k, (EXISTING_PROPS as Record<string, unknown>)[k]]));
-/** A part's answer: its own fields and its uncertainties. */
-export const partSchema = (part: (typeof DERIVE_PARTS)[number]) => obj({ ...pick(part.fields), uncertainties: EXISTING_PROPS.uncertainties });
+/**
+ * A part's answer: the whole reading's schema, the same for all three (the output format is part of what the
+ * prompt cache keys on, so a schema per part would stop parts 2 and 3 reading part 1's cache). The part's
+ * instruction says which fields to fill; mergeParts takes only those.
+ */
+export const partSchema = (): Record<string, unknown> => EXISTING_SCHEMA;
 
 /**
  * The three answers as one reading: each part's own fields, uncertainties from all (once each), and what the
@@ -162,13 +165,15 @@ export function mergeParts(answers: Partial<ExistingMachine>[]): Partial<Existin
   const m = out as Partial<ExistingMachine>;
   const checks: string[] = [];
   const parts = (m.components ?? []).map((c) => c.tag);
-  const known = new Set([...parts, ...(m.io ?? []).map((p) => p.deviceTag).filter((t): t is string => Boolean(t)), ...(m.motors ?? []).map((x) => x.tag)]);
-  const tagOf = (t: string) => t.trim().split(/\s+/)[0];
+  // a tag is the first word, cut at a terminal ("X1:3" → X1); PLC addresses and wiring points (Y0, X1:3) are known through the I/O
+  const tagOf = (t: string) => t.trim().split(/[\s:]+/)[0];
+  const known = new Set([...parts, ...(m.io ?? []).flatMap((p) => [p.deviceTag ?? '', ...p.address.split(/[\s/,]+/).map(tagOf)]).filter(Boolean), ...(m.motors ?? []).map((x) => x.tag)]);
   const used = new Map<string, string>();
   for (const c of m.circuits ?? []) for (const t of [tagOf(c.output), ...c.devices.map(tagOf)]) if (t && !used.has(t)) used.set(t, `circuit ${c.output}`);
   const sf = m.safety;
   for (const t of [...(sf?.estops ?? []), ...(sf?.guards ?? []), ...(sf?.safetyRelay ? [tagOf(sf.safetyRelay)] : []), ...(sf?.drives ?? []).map((d) => d.tag)]) if (t && !used.has(tagOf(t))) used.set(tagOf(t), 'the safety circuit');
-  const unknown = [...used].filter(([t]) => /^[A-Z][A-Z0-9-]*\d/.test(t) && !known.has(t));
+  // terminal strips and PLC addresses (X1, XT2, TB1, Y0) are wiring points, not devices of the parts list
+  const unknown = [...used].filter(([t]) => /^[A-Z][A-Z0-9-]*\d/.test(t) && !/^(X|XT|Y|TB)\d/.test(t) && !known.has(t));
   if (unknown.length) checks.push(`Not in the parts list or the I/O read from the drawings: ${unknown.map(([t, where]) => `${t} (${where})`).join(', ')}. Check these tags on the drawings.`);
   const twice = [...new Set(parts.filter((t, i) => parts.indexOf(t) !== i))];
   if (twice.length) checks.push(`Listed twice in the parts: ${twice.join(', ')}. Check whether these are two devices.`);
@@ -226,9 +231,9 @@ export function normalizeMachine(raw: Partial<ExistingMachine>): ExistingMachine
  * more content for the same request, e.g. a PLC program's symbol table or rung listing from the program
  * reader (src/plc/import/).
  */
-export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = [], { onStage }: { onStage?: (text: string) => void } = {}): Promise<{ machine: ExistingMachine; reasoning: string | null; notes: string[] }> {
+export async function deriveFromUpload(opts: DeriveOptions, files: File[], note = '', extra: Anthropic.Beta.Messages.BetaContentBlockParam[] = [], onStage?: (text: string) => void): Promise<{ machine: ExistingMachine; reasoning: string | null; notes: string[] }> {
   const notes: string[] = [];
-  const blocks = [...(await readUpload(files, { notes, onFile: (i, name) => onStage?.(`Reading the files (${i + 1}/${files.length}): ${name}`) })), ...extra];
+  const blocks = [...(await readUpload(files, notes, (i, name) => onStage?.(`Reading the files (${i + 1}/${files.length}): ${name}`))), ...extra];
   onStage?.('Reading the drawings (AI)');
   const names = files.map((f, i) => `${i + 1}. ${f.name}`).join('\n') || '(none: program data only)';
   const ask = `Files (in the order attached):\n${names}\n\n${note ? `Notes from the engineer:\n${note}\n\n` : ''}Read this machine from its drawings and write its description.`;
@@ -240,10 +245,11 @@ export async function deriveFromUpload(opts: DeriveOptions, files: File[], note 
     const { text, reasoning } = await callClaude({ ...base, schema: EXISTING_SCHEMA, messages: [{ role: 'user', content: [...blocks, { type: 'text', text: ask }] }] });
     return { machine: normalizeMachine(read(text)), reasoning, notes };
   }
-  // the files once as the prompt-cached prefix; each part its own instruction (last) and schema; hardware first,
-  // the other two once its answer starts (they read the cached files); one part failing stops the others
+  // the files once as the prompt-cached prefix, then each part's own instruction (last); one schema for all
+  // (a different output format per part would miss the cache); hardware first, the other two once its answer
+  // starts (they read the cached files); one part failing stops the others
   const answers = await parallelCached({ ...base, prefix: blocks },
-    DERIVE_PARTS.map((p) => ({ instruction: `${ask}\n\n${p.instruction}`, schema: partSchema(p) })));
+    DERIVE_PARTS.map((p) => ({ instruction: `${ask}\n\n${p.instruction}`, schema: partSchema() })));
   const reasoning = answers.map((a) => a.reasoning).filter(Boolean).join('\n\n') || null;
   return { machine: normalizeMachine(mergeParts(answers.map((a) => read(a.text)))), reasoning, notes };
 }
