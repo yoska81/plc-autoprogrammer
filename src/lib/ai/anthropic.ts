@@ -58,7 +58,7 @@ export type ClaudeOptions = {
   webSearch?: { maxUses?: number; allowedDomains?: string[] };
   /** What the request is for: sets its effort in Speed "fast" (src/lib/ai/tasks.ts) and names it in the timing log. */
   task?: AiTask;
-  /** Called once, when the answer starts arriving (the prompt is processed and cached by then); at once for an answer from the answer cache, in the preview and in tests. */
+  /** Called once, when the answer starts arriving (the prompt is processed and cached by then); at once for an answer from the answer cache and in the preview; a test interceptor calls it itself. */
   onStarted?: () => void;
   /** May be answered from the answer cache (Update all). Without it the request is always made (a page's Generate); the answer is stored either way. */
   cache?: boolean;
@@ -87,7 +87,7 @@ export async function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   const log = (ok: boolean, outChars: number, cached: 'memory' | 'stored' | 'shared' | null) =>
     logAiCall({ task: o.task ?? 'other', model: o.model, effort: o.effort, startedAt, endedAt: aiNow(), promptChars, outChars, cached, ok });
   try {
-    const { answer, hit } = await cachedAnswer({ model: o.model, effort: o.effort, system: o.system, messages: o.messages, schema: o.schema }, () => trackAi(() => withRetries(() => (interceptor ? (o.onStarted?.(), interceptor(o, requestClaude)) : requestClaude(o)), {
+    const { answer, hit } = await cachedAnswer({ model: o.model, effort: o.effort, system: o.system, messages: o.messages, schema: o.schema }, () => trackAi(() => withRetries(() => (interceptor ? interceptor(o, requestClaude) : requestClaude(o)), {
       signal: o.signal,
       onRetry: (n) => reportRetry(o.signal, n),
       explain: (err, info) => explainFailure(err, info, o.model),

@@ -6,13 +6,14 @@ import { ROLL_FORMER } from './__fixtures__/rollFormer';
 import { foreignRatings } from './foreignParts';
 import { convertMachine, kwToHp, mm2ToAwg, naTags, NA_TARGET, retag, targetSupply } from './convert';
 import { RELAY_CONVEYOR } from './__fixtures__/relayConveyor';
-import { ioId } from './types';
+import { ioId, type ExistingMachine } from './types';
 import { factsFromExpected, scoreReading, scoreText, type ExpectedJson } from './score';
 import { columnCrop, dxfSheetSvg, parseSource } from './thumbs';
 import { toRelayLogic, type RelayEl } from './relayLogic';
 import { CN_ROLLFORMER_01 } from './__fixtures__/cnRollformer01.facts';
 import { CN_ROLLFORMER_01_READING } from './__fixtures__/cnRollformer01.reading';
-import { normalizeMachine } from './derive';
+import { DERIVE_PARTS, deriveFromUpload, EXISTING_SCHEMA, mergeParts, normalizeMachine, partSchema } from './derive';
+import { setClaudeInterceptor, type ClaudeOptions } from '../lib/ai/anthropic';
 import { applyExistingMachine, storedMachine } from './apply';
 import { functionKept, functionKeptFindings, similarity } from './functionKept';
 import { EMPTY_REVIEW, itemKey, reviewItems, reviewedMachine, unconfirmed } from './review';
@@ -265,6 +266,15 @@ await test('DXF written by LibreDWG (dwg2dxf): blocks placed by INSERT, old POLY
   assert.ok(texts.filter((t) => /^\d+$/.test(t.text)).length >= 1);
   // MTEXT codes stripped
   assert.ok(texts.some((t) => t.text === '急停 E-stop SB0 2NC Ø20'));
+  // MTEXT paragraph codes and non-breaking spaces
+  assert.equal(cleanDxfText('\\pxi-3,l3;KA1\\~11-14'), 'KA1 11-14');
+  // MINSERT: a 3 × 2 grid of the coil block; a polyface mesh is a surface, not a path
+  const grid = ['0', 'SECTION', '2', 'BLOCKS', '0', 'BLOCK', '2', 'T', '10', '0', '20', '0', '0', 'TEXT', '8', '0', '10', '0', '20', '0', '1', 'X', '0', 'ENDBLK', '0', 'ENDSEC',
+    '0', 'SECTION', '2', 'ENTITIES', '0', 'INSERT', '8', 'L', '2', 'T', '10', '100', '20', '50', '70', '3', '71', '2', '44', '10', '45', '20',
+    '0', 'POLYLINE', '8', 'M', '70', '64', '0', 'VERTEX', '10', '1', '20', '1', '0', 'VERTEX', '10', '2', '20', '2', '0', 'SEQEND', '0', 'ENDSEC', '0', 'EOF'].join('\n');
+  const g = parseDxfEntities(grid);
+  assert.deepEqual(g.filter((e) => 'text' in e).map((e) => 'text' in e ? [e.x, e.y] : []), [[100, 50], [110, 50], [120, 50], [100, 70], [110, 70], [120, 70]]);
+  assert.ok(!g.some((e) => e.type === 'LWPOLYLINE'), 'a mesh is not drawn as a wire');
   // and without blocks or sections at all (a bare entity list) it still reads
   assert.deepEqual(parseDxfTexts(['0', 'TEXT', '8', 'L', '10', '1', '20', '2', '1', 'QF1'].join('\n')).map((t) => t.text), ['QF1']);
 });
@@ -429,6 +439,9 @@ await test('cn-rollformer-01: a correct reading scores 100 % on the facts; a wro
     ? { ...c, devices: c.devices.filter((d) => d !== 'KA3'), conditions: c.conditions.filter((t) => !/KA3/.test(t)), path: c.path?.filter((e) => !(e.t === 'contact' && e.tag === 'KA3')) } : c)) }), CN_ROLLFORMER_01);
   assert.equal(one.percent, 99, scoreText(one));
   assert.match(scoreText(one), /Relay logic 79\/80 \(98 %\) — missing: C3a KA2 ← KA3/);
+  // the tags count in the overall score, not only in the cap
+  const withTags = scoreReading(normalizeMachine(CN_ROLLFORMER_01_READING), { ...CN_ROLLFORMER_01, tags: [['KM1', 'M2'], ['QF1', 'CB1']] });
+  assert.equal(withTags.percent, Math.floor((6 + 0.5) / 7 * 100), scoreText(withTags));
   // the older self-written mock is far from the real set
   assert.ok(scoreReading(normalizeMachine(ROLL_FORMER), CN_ROLLFORMER_01).percent < 40);
 });
@@ -560,6 +573,85 @@ await test('relay logic kept: C1–C11 as ladder rungs with the new tags, every 
   // the shared fixture for the ladder-sheet drawings stays what the converter produces
   assert.deepEqual(JSON.parse(readFileSync(new URL('../../e2e/fixtures/convert/cn-rollformer-01.relayLogic.json', import.meta.url), 'utf8')), JSON.parse(JSON.stringify({ ...logic, devices })),
     'e2e/fixtures/convert/cn-rollformer-01.relayLogic.json is stale: regenerate it from toRelayLogic');
+});
+
+await test('the reading as three parts at once: every field in exactly one part; merged = one request (same score)', async () => {
+  const all = Object.keys((EXISTING_SCHEMA as { properties: Record<string, unknown> }).properties).filter((k) => k !== 'uncertainties').sort();
+  assert.deepEqual(DERIVE_PARTS.flatMap((p) => [...p.fields]).sort(), all, 'each field is read by one part');
+  for (const p of DERIVE_PARTS) assert.deepEqual(Object.keys((partSchema(p) as { properties: Record<string, unknown> }).properties).sort(), [...p.fields, 'uncertainties'].sort());
+  // three answers built from the one-request reading give back the same machine
+  const full = { ...CN_ROLLFORMER_01_READING, uncertainties: ['Sheet 7 partly legible'] };
+  const answers = DERIVE_PARTS.map((p, i) => ({ ...Object.fromEntries(p.fields.map((k) => [k, full[k as keyof typeof full]])), uncertainties: i === 1 ? ['Sheet 7 partly legible', 'KA9 contact unclear'] : ['Sheet 7 partly legible'] }));
+  const merged = normalizeMachine(mergeParts(answers as Partial<ExistingMachine>[]));
+  assert.deepEqual({ ...merged, uncertainties: [] }, { ...normalizeMachine(full), uncertainties: [] });
+  assert.deepEqual(merged.uncertainties, ['Sheet 7 partly legible', 'KA9 contact unclear'], 'uncertainties from all parts, once each');
+  assert.equal(scoreReading(merged, CN_ROLLFORMER_01).percent, scoreReading(normalizeMachine(full), CN_ROLLFORMER_01).percent);
+  // the requests: the same system and file prefix (cached at its last block), then the part's instruction and schema
+  const seen: ClaudeOptions[] = [];
+  setClaudeInterceptor(async (o) => {
+    seen.push(o);
+    const content = o.messages[0].content as { type: string; text?: string }[];
+    const part = DERIVE_PARTS.find((p) => content.some((b) => b.text?.includes(p.instruction)));
+    const fields = part ? [...part.fields, 'uncertainties'] : Object.keys(full);
+    return { reasoning: null, text: JSON.stringify(Object.fromEntries(fields.map((k) => [k, (full as Record<string, unknown>)[k]]))) };
+  });
+  try {
+    const file = new File([readFileSync(new URL('../../e2e/fixtures/convert/roll-former.dxf', import.meta.url), 'utf8')], 'roll-former.dxf');
+    const three = await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low', split: true }, [file], 'note');
+    assert.equal(seen.length, 3);
+    assert.ok(seen.every((o) => o.system === seen[0].system), 'one system prompt');
+    const prefixes = seen.map((o) => JSON.stringify((o.messages[0].content as unknown[]).slice(0, -1)));
+    assert.ok(prefixes.every((x) => x === prefixes[0]), 'the same file prefix for every part');
+    assert.deepEqual((seen[0].messages[0].content as { cache_control?: unknown }[]).slice(-2, -1)[0].cache_control, { type: 'ephemeral' }, 'the prefix is cached at its last block');
+    assert.deepEqual(seen.map((o) => Object.keys((o.schema as { properties: object }).properties).length), DERIVE_PARTS.map((p) => p.fields.length + 1));
+    seen.length = 0;
+    const one = await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low' }, [file], 'note');
+    assert.equal(seen.length, 1, 'one request unless split is asked for');
+    assert.deepEqual(three.machine, one.machine);
+
+    // warm-up: the other two parts start when the first one's answer begins (its prompt, files included, is cached by then)
+    const order: string[] = [];
+    setClaudeInterceptor(async (o) => {
+      const i = DERIVE_PARTS.findIndex((p) => JSON.stringify(o.messages).includes(p.instruction));
+      order.push(`start ${i}`);
+      if (i === 0) { await new Promise((r) => setTimeout(r, 20)); order.push('answer 0 begins'); o.onStarted?.(); await new Promise((r) => setTimeout(r, 30)); }
+      order.push(`end ${i}`);
+      return { reasoning: null, text: JSON.stringify(Object.fromEntries([...DERIVE_PARTS[i].fields, 'uncertainties'].map((k) => [k, (full as Record<string, unknown>)[k]]))) };
+    });
+    await deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low', split: true }, [file], 'warm');
+    assert.deepEqual(order.slice(0, 2), ['start 0', 'answer 0 begins'], `the first part starts alone, the others wait for its answer to begin: ${order.join(', ')}`);
+    assert.ok(order.indexOf('start 1') < order.indexOf('end 0') && order.indexOf('start 2') < order.indexOf('end 0'), `parts 2 and 3 start while part 1 is answering: ${order.join(', ')}`);
+
+    // one part failing stops the others and the reading fails
+    const signals: AbortSignal[] = [];
+    setClaudeInterceptor(async (o) => {
+      const i = DERIVE_PARTS.findIndex((p) => JSON.stringify(o.messages).includes(p.instruction));
+      signals[i] = o.signal!;
+      if (i === 0) { o.onStarted?.(); await new Promise((r) => setTimeout(r, 50)); return { reasoning: null, text: '{}' }; }
+      if (i === 1) throw new Error('bad request');
+      await new Promise((r) => setTimeout(r, 50));
+      return { reasoning: null, text: '{}' };
+    });
+    await assert.rejects(deriveFromUpload({ apiKey: 'k', model: 'm', effort: 'low', split: true }, [file], 'fail'), /bad request/);
+    assert.ok(signals.every((x) => x.aborted), 'the other parts are stopped');
+  } finally {
+    setClaudeInterceptor(null);
+  }
+});
+
+await test('merging the parts cross-checks them: unknown tags, a tag listed twice, PLC vs logic', () => {
+  const answers = [
+    { components: [...CN_ROLLFORMER_01_READING.components, CN_ROLLFORMER_01_READING.components.find((c) => c.tag === 'KA1')!], motors: CN_ROLLFORMER_01_READING.motors, plc: { vendor: 'Mitsubishi', model: 'FX3U', cpuPartNumber: null } },
+    { io: CN_ROLLFORMER_01_READING.io, circuits: [...CN_ROLLFORMER_01_READING.circuits, { ...CN_ROLLFORMER_01_READING.circuits[0], output: 'KA99', devices: ['SB2', 'KA99', 'XS7'] }], controller: 'relays' as const },
+    { safety: { ...CN_ROLLFORMER_01_READING.safety, estops: ['SB0', 'SB11'] } },
+  ] as Partial<ExistingMachine>[];
+  const u = mergeParts(answers).uncertainties!;
+  assert.ok(u.some((x) => /Not in the parts list or the I\/O.*KA99 \(circuit KA99\).*XS7 \(circuit KA99\).*SB11 \(the safety circuit\)/.test(x)), u.join(' | '));
+  assert.ok(u.some((x) => /Listed twice in the parts: KA1\./.test(x)));
+  assert.ok(u.some((x) => /A PLC \(Mitsubishi FX3U\) was read, but the logic was read as run by relays/.test(x)));
+  // the reading of cn-rollformer-01 split into its parts raises none of these
+  const clean = mergeParts(DERIVE_PARTS.map((p) => Object.fromEntries(p.fields.map((k) => [k, (CN_ROLLFORMER_01_READING as unknown as Record<string, unknown>)[k]]))) as Partial<ExistingMachine>[]);
+  assert.deepEqual(clean.uncertainties, []);
 });
 
 await test('retag: whole tags only', () => {

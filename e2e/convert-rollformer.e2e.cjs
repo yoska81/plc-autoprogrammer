@@ -18,8 +18,20 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 const M = (tag, description, power, start, zone) => ({ tag, description, power, unit: 'hp', powerGiven: true, start, vertical: false, zone });
 let MACHINE = null;
 const requests = [];
-function reply(system) {
-  if (system.includes('taking over an existing machine from its electrical drawings')) return MACHINE;
+const PARTS = [
+  { marker: 'PART 1 of 3 — HARDWARE', fields: ['drawingStandard', 'language', 'plc', 'modules', 'supplyDrawn', 'components', 'motors', 'axes'] },
+  { marker: 'PART 2 of 3 — LOGIC', fields: ['io', 'circuits', 'interlocks', 'controller'] },
+  { marker: 'PART 3 of 3 — SAFETY AND DESCRIPTION', fields: ['safety', 'spec', 'questions', 'summary'] },
+];
+const derives = [];
+function reply(system, body) {
+  if (system.includes('taking over an existing machine from its electrical drawings')) {
+    // the reading runs as three parts at once (src/convert/derive.ts DERIVE_PARTS): each answers only its own fields
+    const ask = (body?.messages?.[0]?.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const part = PARTS.find((p) => ask.includes(p.marker));
+    derives.push(part ? part.marker : 'one request');
+    return part ? Object.fromEntries([...part.fields, 'uncertainties'].map((k) => [k, MACHINE[k]])) : MACHINE;
+  }
   if (system.includes('checks a machine control design')) return { findings: [], summary: 'No further findings.' };
   if (system.includes('choosing the control equipment')) return {
     summary: 'CLICK PLC for the converted roll former.', estimatedIO: { digitalInputs: 11, digitalOutputs: 5, analogInputs: 0, analogOutputs: 0, motionAxes: 1 },
@@ -50,12 +62,15 @@ function sse(model, text) {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // the app's own summary of each build run: "[update] … equipment done · hmi skipped · electrical done · program done"
+  const updates = [];
+  page.on('console', (m) => { if (m.text().startsWith('[update]')) updates.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
     requests.push(body);
     let text;
-    try { text = JSON.stringify(reply(sysText(body.system))); } catch (e) { fails.push('AI mock: ' + e.message); text = '{}'; }
+    try { text = JSON.stringify(reply(sysText(body.system), body)); } catch (e) { fails.push('AI mock: ' + e.message); text = '{}'; }
     await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, text) });
   });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
@@ -78,6 +93,8 @@ function sse(model, text) {
   await page.getByTestId('convert-files').setInputFiles([FIX + 'roll-former.dxf']);
   await page.getByRole('button', { name: 'Read the drawings' }).click();
   await page.getByTestId('convert-recognised').waitFor({ timeout: 60000 });
+  // one request by default; the three-part reading (split) is tested in src/convert/convert.test.ts
+  check(derives.length === 1 && derives[0] === 'one request', `the drawings are read in one request (${derives.join(', ')})`);
   const sent = requests.find((r) => sysText(r.system).includes('taking over an existing machine'))?.messages[0].content.find((b) => b.type === 'text' && b.text.startsWith('roll-former.dxf'))?.text ?? '';
   fs.writeFileSync(OUT + 'sent_to_ai.txt', sent);
   check(/6 sheets side by side/.test(sent) && (sent.match(/^--- Sheet \d of 6/gm) ?? []).length === 6, 'the DXF goes to the AI split into its 6 sheets');
@@ -121,12 +138,12 @@ function sse(model, text) {
 
   // Rebuild
   await page.getByTestId('convert-build').click();
-  for (let t = 0; t < 360; t++) {
-    if (await page.evaluate(async () => Boolean((await import('/src/spec/updateRun.ts')).useUpdateRun.getState().finishedAt))) break;
-    await page.waitForTimeout(500);
-  }
-  const run = await page.evaluate(async () => (await import('/src/spec/updateRun.ts')).useUpdateRun.getState().results.map((r) => `${r.step}:${r.status}`));
-  log('Build:', run.join(' | '));
+  // wait for this build's summary line (a module imported from the test could be another instance than the app's)
+  const before = updates.length;
+  for (let t = 0; t < 360 && updates.length === before; t++) await page.waitForTimeout(500);
+  const line = updates[before] ?? '';
+  const run = [...line.matchAll(/(equipment|io|electrical|hmi|program) (done|skipped|failed|stopped)/g)].map((x) => `${x[1]}:${x[2]}`);
+  log('Build:', line);
   check(run.filter((r) => /:done$/.test(r)).length === 3, 'equipment, electrical and program built');
   await page.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
   const kept = page.getByTestId('convert-kept');

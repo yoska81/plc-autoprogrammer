@@ -69,14 +69,14 @@ export function scoreReading(m: ExistingMachine, f: ExpectedFacts): Score {
     ['no PLC', (m.controller !== 'plc') === !f.hasPlc],
     ['supply', m.supplyDrawn.volts === f.supply.volts && m.supplyDrawn.hz === f.supply.hz],
   ]);
-  // rounded down, and never 100 % while anything is missing
-  const raw = Math.floor(parts.reduce((a, p) => a + (p.total ? p.found / p.total : 1), 0) / parts.length * 100);
   // device tags of the conversion to North America (only devices the reading has)
   if (f.tags?.length) {
     const conv = convertMachine(m);
     const have = new Set([...m.components, ...ioOnlyDevices(m)].map((c) => c.tag));
     part('Tags', f.tags.filter(([o]) => have.has(o) || m.motors.some((x) => x.tag === o)).map(([o, n]): [string, boolean] => [`${o} → ${n}${conv.tags.get(o) && conv.tags.get(o) !== n ? ` (got ${conv.tags.get(o)})` : ''}`, conv.tags.get(o) === n]));
   }
+  // the mean of every part (tags included), rounded down, and never 100 % while anything is missing
+  const raw = Math.floor(parts.reduce((a, p) => a + (p.total ? p.found / p.total : 1), 0) / parts.length * 100);
   const percent = parts.some((p) => p.found < p.total) ? Math.min(raw, 99) : raw;
   return { parts, percent };
 }

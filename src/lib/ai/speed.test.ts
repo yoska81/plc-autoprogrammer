@@ -119,6 +119,7 @@ await test('parallelCached: shared prefix cached on its last block, first part s
   const firstGate = new Promise<void>((r) => { releaseFirst = r; });
   setClaudeInterceptor(async (o) => {
     calls.push({ task: o.task, blocks: (o.messages[0].content as unknown[]), schema: o.schema });
+    o.onStarted?.(); // the answer begins at once
     if (calls.length === 1) await firstGate; // the first part's answer is still coming when the others start
     return { text: JSON.stringify({ part: (o.messages[0].content as { text?: string }[]).at(-1)?.text }), reasoning: null };
   });
@@ -166,6 +167,16 @@ await test('parallelCached: one part failing fails the whole and stops the other
   await assert.rejects(parallelCached(base, [{ instruction: 'A' }, { instruction: 'B' }, { instruction: 'C' }]), /bad request/);
   for (let i = 0; i < 5 && aborted < 2; i++) await new Promise((r) => setTimeout(r, 10));
   assert.equal(aborted, 2, 'A and C were stopped');
+  setClaudeInterceptor(null);
+});
+
+await test('parallelCached: a first part that answers without a start signal still releases the others', async () => {
+  await clearAiCache();
+  const seen: string[] = [];
+  setClaudeInterceptor(async (o) => { seen.push(String((o.messages[0].content as { text?: string }[]).at(-1)?.text)); return { text: '{}', reasoning: null }; });
+  const base = { apiKey: 'k', model: 'm', effort: 'max' as const, system: 'S3', prefix: [{ type: 'text' as const, text: 'f' }] };
+  assert.equal((await parallelCached(base, [{ instruction: 'A' }, { instruction: 'B' }])).length, 2);
+  assert.deepEqual(seen, ['A', 'B']);
   setClaudeInterceptor(null);
 });
 
