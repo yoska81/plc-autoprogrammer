@@ -15,8 +15,22 @@ export interface UpgradeRoles {
   parallelTo?: { role: string; address: string; nickname: string }[];
   /** Counter presets written as constants in the rung: the HMI batch setpoint replaces the constant. */
   constPresets?: { address: string; nickname: string; preset: string }[];
+  /** The program's own fault / alarm bits with a short text: they go on the HMI alarm list as they are. */
+  alarms?: { address: string; nickname: string; why: string; text: string }[];
   /** What the program has no address for at all, in plain words. */
   missing?: string[];
+}
+
+/** Puts the program's own alarm bits on the design's alarm list (each once, with a read tag). */
+export function addProgramAlarms(design: HmiDesign, roles: UpgradeRoles): void {
+  for (const al of roles.alarms ?? []) {
+    const a = al.address.trim().toUpperCase();
+    if (design.alarms.some((x) => x.address.trim().toUpperCase() === a)) continue;
+    design.alarms.push({ address: a, message: al.text, severity: 'alarm' });
+    if (!design.tags.some((t) => t.address.trim().toUpperCase() === a)) {
+      design.tags.push({ name: al.nickname.replace(/[^A-Za-z0-9]+/g, '_'), address: a, dataType: 'BIT', access: 'read', description: `From the upgraded program: ${al.why}.`, role: `alarm:program:${a}` });
+    }
+  }
 }
 
 /** What a ladder program writes and reads; a timer or counter writes its current value (TDn / CTDn). */

@@ -131,10 +131,11 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
     const f = (await import('/src/review/actions.ts')).refreshChecks().filter((x) => x.area === 'hmi' && x.severity === 'major');
     const tag = (role) => d.tags.find((t) => t.role === role);
-    return { running: tag('sts:running')?.name, start: tag('cmd:start')?.address, changes: d.plcChanges?.length ?? 0, majors: f.map((x) => x.id), list: f.find((x) => x.id === 'hmi-plc-changes')?.detail ?? '' };
+    return { alarms: d.alarms.filter((a) => /^alarm:program:/.test(d.tags.find((t) => t.address === a.address)?.role ?? '')).map((a) => a.message), running: tag('sts:running')?.name, start: tag('cmd:start')?.address, changes: d.plcChanges?.length ?? 0, majors: f.map((x) => x.id), list: f.find((x) => x.id === 'hmi-plc-changes')?.detail ?? '' };
   });
   log(`Upgrade HMI: running = ${hmi.running}; ${hmi.changes} PLC changes; HMI majors: ${hmi.majors.join(', ')}`);
   check(hmi.running === 'Machine_Running', 'the HMI shows the program\'s own running coil');
+  check(hmi.alarms.length > 0, `the program's own alarms are on the HMI alarm list (${hmi.alarms.join(', ')})`);
   check(hmi.majors.length === 1 && hmi.majors[0] === 'hmi-plc-changes', `one HMI finding with the PLC changes (${hmi.majors.length} HMI majors)`);
   check(/in parallel with Start_PB/.test(hmi.list), 'the panel Start goes in parallel with the wired Start_PB');
   await page.goto(BASE + '/upgrade');

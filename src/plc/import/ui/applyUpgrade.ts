@@ -70,5 +70,5 @@ export function projectUpgradeRoles(drafts: Record<string, unknown>, ladder: Lad
   const panel = panelTags(roles);
   // The exact panel Start / Stop changes are in the HMI's PLC change list; the rest is said as the importer found it.
   const missing = roles.missing.filter((m) => !(panel.parallelTo.length && /in parallel/i.test(m)));
-  return { ...panel, missing };
+  return { ...panel, alarms: roles.alarms, missing };
 }

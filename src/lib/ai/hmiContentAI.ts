@@ -3,7 +3,7 @@ import type { ElectricalDesign } from '../../electrical/types';
 import type { HmiDesign, HmiState, HmiStyle } from '../../hmi/types';
 import { buildHmi, defaultHmiContent, type HmiContent } from '../../hmi/engine';
 import { inferRoles } from '../../hmi/engine/roles';
-import { plcChangesFor, type UpgradeRoles } from '../../hmi/engine/upgradeHmi';
+import { addProgramAlarms, plcChangesFor, type UpgradeRoles } from '../../hmi/engine/upgradeHmi';
 import { rungAddresses, rungWrites, type LadderProgram } from '../../plc/core/ladder';
 import { callClaude } from './anthropic';
 import type { AiOptions } from './machineModelAI';
@@ -109,6 +109,7 @@ export async function generateRuleBasedHmi(opts: Partial<AiOptions> & HmiProject
   const usedAddresses = (opts.program?.rungs ?? []).flatMap((r) => [...rungAddresses(r), ...rungWrites(r)]).filter((a) => /^[A-Z]+\d+$/i.test(a));
   const design = buildHmi(content, { ...opts.panel, plcText: opts.plcText, now: opts.now, keepTags, usedAddresses });
   if (roles && opts.program) {
+    addProgramAlarms(design, roles);
     const analogIn = new Set(opts.io.filter((p) => p.type === 'input' && isAnalog(p)).map((p) => (opts.addresses.get(p.id) ?? '').toUpperCase()).filter(Boolean));
     design.plcChanges = plcChangesFor(design, opts.program, roles, analogIn);
     const n = design.plcChanges.length;

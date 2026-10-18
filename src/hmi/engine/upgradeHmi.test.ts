@@ -41,6 +41,7 @@ const roles: UpgradeRoles = {
     { role: 'cmd:reset', address: 'C21', name: 'Fault_Reset', dataType: 'BIT', access: 'write', description: 'Clears the safety fault.' },
   ],
   parallelTo: [{ role: 'cmd:start', address: start, nickname: 'Start_PB' }, { role: 'cmd:stop', address: stop, nickname: 'Stop_PB' }],
+  alarms: [{ address: 'C20', nickname: 'Safety_Fault', why: 'latched', text: 'Safety fault' }, { address: 'C30', nickname: 'Alm_Jam', why: 'a fault bit', text: 'Infeed jam' }],
   missing: ['No machine-state word: the HMI header shows the state from a new register (listed in the PLC changes).'],
 };
 
@@ -57,6 +58,10 @@ assert.equal(byRole('sts:running')?.address, 'C1');
 assert.equal(byRole('alarm:safety')?.address, 'C20');
 assert.equal(byRole('cmd:reset')?.address, 'C21');
 assert.equal(byRole('cmd:reset')?.name, 'Fault_Reset');
+// The program's own alarms are on the alarm list once, with their texts.
+assert.equal(d.alarms.filter((a) => a.address === 'C20').length, 1);
+assert.equal(d.alarms.find((a) => a.address === 'C30')?.message, 'Infeed jam');
+assert.equal(d.tags.find((t) => t.address === 'C30')?.role, 'alarm:program:C30');
 // None of those is a change; a wired Start / Stop gets its own bit, added beside the button.
 const changes = d.plcChanges ?? [];
 assert.ok(!changes.some((c) => ['C1', 'C20', 'C21'].includes(c.address)), JSON.stringify(changes.slice(0, 3)));
