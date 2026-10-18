@@ -11,6 +11,7 @@ import { readClickCsv } from './clickCsv';
 import { convertForeign } from './convert';
 import { decodeCsv, isGxComments, isGxProgram, isIlComments, isIlText, readGxCsv, readIlText } from './gxCsv';
 import { isSiemensTagTable, mergeSiemensTags, readSiemensTags } from './siemensTags';
+import { isStlSource, readStlSource } from './stl';
 import type { ForeignProgram, ImportedProgram, SourceFormat } from './types';
 
 export { materialize } from './convert';
@@ -38,6 +39,7 @@ export function detectFormat(fileName: string, text: string): SourceFormat | nul
   if (/^\s*(IE_VER\s*:=|CONTROLLER\s+\w+\s*\()/m.test(head) || /\.l5k$/i.test(fileName)) return 'l5k';
   if (isGxProgram(head)) return 'mitsubishi-csv';
   if (isIlText(text)) return 'il-text';
+  if (isStlSource(text) || /\.awl$|\.stl$/i.test(fileName)) return 'siemens-stl';
   const first = head.split(/\r?\n/)[0] ?? '';
   if (/address/i.test(first) && /nickname/i.test(first)) return 'click-csv';
   if (/\b(ORGANIZATION_BLOCK|DATA_BLOCK)\b/.test(head) || /FUNCTION_BLOCK\s+"/.test(head) || (/\bBEGIN\b/.test(text) && /\bEND_FUNCTION_BLOCK\b|\bEND_ORGANIZATION_BLOCK\b/.test(text)) || /\.scl$/i.test(fileName)) return 'siemens-scl';
@@ -65,6 +67,7 @@ function read(format: SourceFormat, text: string): ForeignProgram {
     case 'click-csv': return readClickCsv(text);
     case 'mitsubishi-csv': return readGxCsv(text);
     case 'il-text': return readIlText(text);
+    case 'siemens-stl': return readStlSource(text);
     default: throw new Error('This file type is not read yet.');
   }
 }
@@ -109,7 +112,7 @@ export function importProgramFiles(files: { name: string; text: string }[]): { p
   }
   // Siemens: the PLC tag table gives the addresses the SCL source does not have.
   const table = files.find((f) => f !== main && isSiemensTagTable(f.text));
-  if (table && (format === 'siemens-scl' || format === 'st' || format === 'plcopen')) {
+  if (table && (format === 'siemens-scl' || format === 'siemens-stl' || format === 'st' || format === 'plcopen')) {
     const fp = read(format, main.text);
     mergeSiemensTags(fp, readSiemensTags(table.text));
     return { program: convertForeign(fp, main.name), main };

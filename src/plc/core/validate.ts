@@ -151,7 +151,7 @@ export function validateProgram(
 /** PLC families imported instructions come from (profile ids, plus brands the app reads but has no profile for). */
 const VENDOR_NAME: Record<string, string> = {
   logix: 'Logix', click: 'CLICK', micro800: 'Micro800', 'siemens-s7': 'Siemens S7', 'unitronics-unistream': 'UniStream', 'unitronics-vision': 'Vision',
-  'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS',
+  'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS', 'siemens-stl': 'Siemens STL', delta: 'Delta', inovance: 'Inovance', xinje: 'Xinje',
 };
 
 /**
