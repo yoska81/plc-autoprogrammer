@@ -269,6 +269,12 @@ test('kits list real catalog parts: "PN xN" each, every one verified', () => {
   assert.deepEqual(bad, []);
 });
 
+test('every switching disconnect states its UL listing: 98, 489 or 508', () => {
+  // The main-disconnect pick (UL 508A) needs UL 98 / 489; a UL 508 part is a motor disconnect only. Handles and shafts carry no amps.
+  const bad = CATALOG.filter((p) => p.category === 'disconnect' && p.ratings.amps !== undefined && !/^(98|489|508)$/.test(String(p.ratings.ul ?? ''))).map((p) => `${p.partNumber}: ul ${p.ratings.ul}`);
+  assert.deepEqual(bad, []);
+});
+
 test('every CLICK CPU the PLC profile offers is in the catalog with a footprint', () => {
   // The CPU chooser lists CLICK_CPUS; the BOM, back-panel layout and prices need the catalog part.
   const bad = CLICK_CPUS.filter((c) => { const p = CATALOG.find((x) => x.partNumber === c.id); return !p || !(p.widthMm && p.heightMm); }).map((c) => c.id);
