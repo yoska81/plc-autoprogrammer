@@ -1,7 +1,8 @@
 // The PLC's own tag names on the ladder (Dev 3's Siemens walk-through), on the example project:
 //   - CLICK: the Program page shows the app operands (X001, C1) as before;
 //   - Siemens S7 (chosen on the PLC page): the Program page and the Simulator show "E_Stop_OK_safety_relay" (with
-//     %I0.0 and X001 in the small line), #Safety_OK, #FirstScan — the names of the exported SCL.
+//     %I0.0 and X001 in the small line), #Safety_OK, #FirstScan — the names of the exported SCL; the cross reference
+//     lists the PLC names; the Simulator's I/O panel shows %I0.0 / %Q0.0, not X001 / Y001.
 //   npx vite --port 5202 &  ;  BASE_URL=http://localhost:5202 node e2e/plc-names.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const BASE = process.env.BASE_URL || 'http://localhost:5202';
@@ -36,10 +37,17 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   check(/#Safety_OK/.test(s7), 'internal memory as a block member #Safety_OK');
   check(/#FirstScan/.test(s7), 'SC2 as #FirstScan');
 
+  await page.getByRole('button', { name: 'Cross reference' }).click();
+  const xref = page.locator('input[placeholder="Find address or name"]').locator('xpath=ancestor::div[1]/..');
+  await page.locator('input[placeholder="Find address or name"]').fill('Safety_OK');
+  check(/#Safety_OK/.test(await xref.innerText()), 'the cross reference lists #Safety_OK (and finds it by name)');
+
   await page.goto(BASE + '/simulate');
   await page.getByText('#Safety_OK').first().waitFor();
   const sim = await page.locator('body').innerText();
   check(/#Safety_OK/.test(sim) && /"E_Stop_OK_safety_relay"/.test(sim), 'the Simulator\'s live ladder shows the same names');
+  const io = await page.locator('section', { has: page.locator('h4', { hasText: /^Inputs/ }) }).first().innerText();
+  check(/%I0\.0/.test(io) && !/\bX001\b/.test(io), 'the I/O panel shows %I0.0, not X001');
   check(errors.length === 0, `no page errors (${errors.join(' | ')})`);
   await browser.close();
   if (fails.length) { console.log(`plc-names e2e: ${fails.length} failed`); process.exit(1); }

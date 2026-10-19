@@ -1,3 +1,4 @@
+import { useContext } from 'react';
 /**
  * "Machine" column of the simulator: every simulated field device as a card
  * with a small animated drawing. Pure view: all state comes from the snapshot,
@@ -8,6 +9,7 @@ import type {
   PushbuttonDevice, SafetyRelayDevice, SelectorDevice, SensorDevice, SimDevice, StackLightDevice,
 } from './machineModel';
 import { PART_END } from './machineModel';
+import { PlcNamesContext } from '../ui/ladder/mnemonics';
 
 export interface MachineActions {
   press(id: string, pressed: boolean): void;
@@ -56,16 +58,27 @@ function Led({ on, color = 'green', size = 10 }: { on: boolean; color?: LightCol
   );
 }
 
+/** An I/O address as the PLC names it (Siemens %I0.0); the app operand otherwise. */
+function useShownIo(address: string): string {
+  const n = useContext(PlcNamesContext)?.(address);
+  return n ? n.io ?? n.name : address;
+}
+
+function ShownIo({ address }: { address: string }) {
+  return <span className="font-mono text-[10.5px] text-steel-500" title={address}>{useShownIo(address)}</span>;
+}
+
 function AddrChip({ address, on, kind }: { address: string; on: boolean; kind: 'in' | 'out' }) {
+  const shown = useShownIo(address);
   return (
     <span
       className={`inline-flex items-center gap-1 rounded px-1.5 py-px font-mono text-[10.5px] font-semibold ${
         on ? (kind === 'in' ? 'bg-sky-100 text-sky-800' : 'bg-emerald-100 text-emerald-800') : 'bg-steel-100 text-steel-500'
       }`}
-      title={`${address} is ${on ? 'ON' : 'OFF'}`}
+      title={`${shown}${shown !== address ? ` (app operand ${address})` : ''} is ${on ? 'ON' : 'OFF'}`}
     >
       <Led on={on} color={kind === 'in' ? 'blue' : 'green'} size={7} />
-      {address}
+      {shown}
     </span>
   );
 }
@@ -453,7 +466,7 @@ function SensorsCard({ sensors, inputs, onToggle, onSet }: { sensors: SensorDevi
               >
                 <Led on={on} color="blue" />
                 <span className="min-w-0 flex-1 truncate text-steel-700">{s.label}</span>
-                <span className="font-mono text-[10.5px] text-steel-500">{s.input}</span>
+                <ShownIo address={s.input} />
               </button>
               <BypassControl d={s} onSet={onSet} />
             </li>

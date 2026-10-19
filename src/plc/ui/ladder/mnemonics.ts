@@ -1,10 +1,10 @@
 import { createContext } from 'react';
+import type { PlcNameOf } from '../../core/plcNames';
 
 /** Vendor instruction names (PlcProfile.mnemonics) shown on the ladder symbols; undefined = the app's own names. */
 export const MnemonicsContext = createContext<Record<string, string> | undefined>(undefined);
 
-/** The PLC's own name for an app operand (Siemens "Safety_OK" at %I0.0, Logix "Start_PB"); null = show the operand. */
-export type PlcNameOf = (address: string) => { name: string; io?: string } | null;
+export type { PlcNameOf };
 /** Provided for PLCs whose tags are not the app's operands (everything but CLICK); undefined = show the operands. */
 export const PlcNamesContext = createContext<PlcNameOf | undefined>(undefined);
 

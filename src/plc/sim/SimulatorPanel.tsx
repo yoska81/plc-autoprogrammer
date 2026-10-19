@@ -158,6 +158,7 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
   const blockName = (id: string) => blocks.find((b) => b.id === id)?.name ?? id;
 
   return (
+    <PlcNamesContext.Provider value={plcNames}>
     <div className="flex h-full min-h-0 flex-col bg-steel-100 text-[13px] text-steel-800">
       {/* toolbar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-steel-200 bg-white px-3 py-1.5">
@@ -327,12 +328,10 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
           )}
           <div className="min-h-0 flex-1 overflow-auto p-2">
             {view === 'live' ? (
-              <PlcNamesContext.Provider value={plcNames}>
-                <LiveLadder program={program} power={snap.power} bits={snap.bits} words={snap.words}
-                  timers={snap.timers} counters={snap.counters} labelOf={labelOf}
-                  rungBypass={snap.rungBypass} skipped={snap.skippedRungs} onBypassRung={(id, on) => ctl.bypassRung(id, on)}
-                  groups={groups} />
-              </PlcNamesContext.Provider>
+              <LiveLadder program={program} power={snap.power} bits={snap.bits} words={snap.words}
+                timers={snap.timers} counters={snap.counters} labelOf={labelOf}
+                rungBypass={snap.rungBypass} skipped={snap.skippedRungs} onBypassRung={(id, on) => ctl.bypassRung(id, on)}
+                groups={groups} />
             ) : (
               <LadderView program={block ? { ...program, rungs: program.rungs.filter((r) => groups?.[0]?.rungIds.includes(r.id)) } : program} labels={labels} plcNames={plcNames} />
             )}
@@ -351,5 +350,6 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
         </ResizablePane>
       </div>
     </div>
+    </PlcNamesContext.Provider>
   );
 }

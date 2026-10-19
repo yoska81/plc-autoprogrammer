@@ -13,6 +13,7 @@ import { answerText } from '../components/questions/qa';
 import type { ProjectSnapshot } from './collect';
 import { getHmi } from '../hmi/hmiCatalog';
 import { billOfMaterials } from '../electrical/derive';
+import { projectPlcNames } from './plcTagNames';
 
 const hmiText = (pn: string) => {
   const m = getHmi(pn);
@@ -76,10 +77,15 @@ export function machineSpecText(p: ProjectSnapshot): string {
 
   const wiring = new Map((p.electrical?.ioWiring ?? []).map((w) => [w.address, w]));
   h(2, `${next()}. I/O list (${p.io.length} points)`);
-  out.push(table(['Address', 'Type', 'Description', 'Category', 'Device / signal'],
-    p.io.map((x) => [p.addresses.get(x.id) ?? '', x.type, x.description, x.category,
-      x.signal === 'analog' && x.analog ? `analog ${x.analog.range} ${x.analog.min}–${x.analog.max} ${x.analog.units}`
-        : (() => { const w = wiring.get(p.addresses.get(x.id) ?? ''); return w ? `${w.deviceTag} (${w.deviceType})` : x.deviceType ?? ''; })()])));
+  // Siemens / Logix: each point by its PLC tag and the PLC's own address (%I0.0, Local:1:I.Pt00.Data).
+  const names = projectPlcNames(p);
+  const device = (x: (typeof p.io)[number]) => (x.signal === 'analog' && x.analog ? `analog ${x.analog.range} ${x.analog.min}–${x.analog.max} ${x.analog.units}`
+    : (() => { const w = wiring.get(p.addresses.get(x.id) ?? ''); return w ? `${w.deviceTag} (${w.deviceType})` : x.deviceType ?? ''; })());
+  out.push(names
+    ? table(['PLC tag', 'PLC address', 'Type', 'Description', 'Category', 'Device / signal'],
+      p.io.map((x) => { const a = p.addresses.get(x.id) ?? ''; const n = names(a); return [n?.name ?? a, n?.io ?? '', x.type, x.description, x.category, device(x)]; }))
+    : table(['Address', 'Type', 'Description', 'Category', 'Device / signal'],
+      p.io.map((x) => [p.addresses.get(x.id) ?? '', x.type, x.description, x.category, device(x)])));
 
   if (d) {
     // The bill of materials as ordered (quantities include what the terminal plan and accessories need).
@@ -99,7 +105,7 @@ export function machineSpecText(p: ProjectSnapshot): string {
       p.hmi.screens.map((s) => [s.name, s.purpose, s.level ?? 'operator', s.elements.length])));
     if (p.hmi.alarms.length) {
       out.push('', '**Alarms**');
-      out.push(table(['Address', 'Message', 'Severity'], p.hmi.alarms.map((a) => [a.address, a.message, a.severity])));
+      out.push(table([names ? 'PLC tag' : 'Address', 'Message', 'Severity'], p.hmi.alarms.map((a) => [names?.(a.address)?.name ?? a.address, a.message, a.severity])));
     }
   }
 

@@ -1,9 +1,11 @@
+import { useContext } from 'react';
 /**
  * Right column of the simulator: I/O with forcing, internal memory (C bits,
  * timers, counters, registers) and the event log.
  */
 import type { CounterState, TimerState } from './engine';
 import { isBitAddress } from './engine';
+import { PlcNamesContext } from '../ui/ladder/mnemonics';
 import type { LogEntry } from './controller';
 
 interface Props {
@@ -60,10 +62,13 @@ function ForceButtons({ address, force, onForce }: { address: string; force: boo
 type Mark = { text: string; title: string } | null;
 
 function BitRow({ address, on, color, label, right, mark }: { address: string; on: boolean; color: 'sky' | 'emerald' | 'violet'; label: string; right?: React.ReactNode; mark?: Mark }) {
+  // Siemens / Logix: an I/O point by the PLC's own address (%I0.0), memory by its tag name (#Safety_OK).
+  const n = useContext(PlcNamesContext)?.(address);
+  const shown = n ? n.io ?? n.name : address;
   return (
     <div className={`flex items-center gap-2 rounded px-1.5 py-[3px] ${mark ? 'bg-amber-50 ring-1 ring-inset ring-amber-300' : on ? 'bg-steel-50' : ''}`}>
       <Dot on={on} color={color} />
-      <span className="w-11 shrink-0 font-mono text-[12px] font-bold text-steel-700">{address}</span>
+      <span className={`${n ? 'w-24 truncate' : 'w-11'} shrink-0 font-mono text-[12px] font-bold text-steel-700`} title={n ? `${n.name}${n.io ? ` at ${n.io}` : ''} — app operand ${address}` : address}>{shown}</span>
       <span className="min-w-0 flex-1 truncate text-[12px] text-steel-600" title={label}>{label}</span>
       {mark && <span className="shrink-0 rounded bg-amber-500 px-1 text-[9.5px] font-bold text-amber-950" title={mark.title}>{mark.text}</span>}
       {right}
@@ -88,17 +93,18 @@ function fmtTime(ms: number) {
 }
 
 export default function IOPanel(p: Props) {
+  const names = useContext(PlcNamesContext);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <Section title="Inputs X" count={p.inputs.length}>
+        <Section title={names ? 'Inputs' : 'Inputs X'} count={p.inputs.length}>
           {p.inputs.map((a) => (
             <BitRow key={a} address={a} on={p.fieldInputs.get(a) ?? false} color="sky" label={p.labelOf(a)} mark={markOf(p, a)}
               right={<ForceButtons address={a} force={p.forces.get(a)} onForce={p.onForce} />} />
           ))}
           {!p.inputs.length && <p className="px-2 py-1 text-[11px] text-steel-400">none</p>}
         </Section>
-        <Section title="Outputs Y" count={p.outputs.length}>
+        <Section title={names ? 'Outputs' : 'Outputs Y'} count={p.outputs.length}>
           {p.outputs.map((a) => (
             <BitRow key={a} address={a} on={p.bits.get(a) ?? false} color="emerald" label={p.labelOf(a)} mark={markOf(p, a)}
               right={<ForceButtons address={a} force={p.forces.get(a)} onForce={p.onForce} />} />
@@ -106,7 +112,7 @@ export default function IOPanel(p: Props) {
           {!p.outputs.length && <p className="px-2 py-1 text-[11px] text-steel-400">none</p>}
         </Section>
         {p.cBits.length > 0 && (
-          <Section title="Control bits C" count={p.cBits.length}>
+          <Section title={names ? 'Memory bits' : 'Control bits C'} count={p.cBits.length}>
             {p.cBits.map((a) => {
               const on = p.bits.get(a) ?? false;
               return (
@@ -117,7 +123,7 @@ export default function IOPanel(p: Props) {
           </Section>
         )}
         {p.timerAddrs.length > 0 && (
-          <Section title="Timers T / TD" count={p.timerAddrs.length}>
+          <Section title={names ? 'Timers' : 'Timers T / TD'} count={p.timerAddrs.length}>
             {p.timerAddrs.map((a) => {
               const t = p.timers.get(a);
               const pct = t && t.presetMs > 0 ? Math.min(100, (t.accMs / t.presetMs) * 100) : 0;
@@ -125,7 +131,7 @@ export default function IOPanel(p: Props) {
                 <div key={a} className="px-1.5 py-1">
                   <div className="flex items-center gap-2">
                     <Dot on={t?.done ?? false} color="emerald" />
-                    <span className="w-11 shrink-0 font-mono text-[11px] font-bold text-steel-700">{a}</span>
+                    <span className={`${names ? 'w-28 truncate' : 'w-11'} shrink-0 font-mono text-[11px] font-bold text-steel-700`} title={a}>{names?.(a)?.name ?? a}</span>
                     <span className="min-w-0 flex-1 truncate text-[11px] text-steel-600">{p.labelOf(a)}</span>
                     <span className="font-mono text-[10.5px] text-steel-600">TD{a.slice(1)} = {p.words.get(`TD${a.slice(1)}`) ?? 0}</span>
                   </div>
