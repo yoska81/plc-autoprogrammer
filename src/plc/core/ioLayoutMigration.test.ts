@@ -70,6 +70,11 @@ const hmi = useHmiStore.getState().design!;
 assert.deepEqual(hmi.screens[0].elements.map((e) => e.address), ['X101', 'X005'], 'the HMI lamps still show Start and Door');
 assert.equal(hmi.tags[0].address, 'X001');
 assert.equal(useProjectStore.getState().ioLayoutVersion, IO_LAYOUT_VERSION, 'marked with the current layout');
+const i001 = useIOStore.getState().projectIO.find((p) => p.id === 'I001')!;
+assert.equal(i001.addressNote, 'kept on its wired terminal (migration)', 'the I/O list says why the address is fixed');
+assert.equal(useIOStore.getState().projectIO.find((p) => p.id === 'I018')!.addressNote, undefined, 'a translated manual address is the user\'s own');
+useIOStore.getState().setPlcAddress('I001', 'X101');
+assert.equal(useIOStore.getState().projectIO.find((p) => p.id === 'I001')!.addressNote, undefined, 'the user\'s own address: no note');
 const notice = useNoticeStore.getState().message ?? '';
 assert.match(notice, /older CLICK PLUS addressing/);
 assert.match(notice, /fixed address on their old terminal: I001 Start Button → X101/, 'the notice lists the fixed addresses');
@@ -80,6 +85,13 @@ const before = useProgramStore.getState().ladder;
 useNoticeStore.getState().clear();
 addProjectFromData('Copy', { ...data({ ioLayoutVersion: IO_LAYOUT_VERSION }), program: { ladder: before, versions: [], projectName: 'Copy' } });
 assert.equal(JSON.stringify(useProgramStore.getState().ladder), JSON.stringify(before), 'a project with the current layout is not migrated');
+assert.equal(useNoticeStore.getState().message, null);
+
+// Saved by a build that marked the slot-0 layout with ioLayout: 'click-slot0' (before ioLayoutVersion): already
+// the current layout, never migrated a second time.
+useNoticeStore.getState().clear();
+addProjectFromData('Marked', { ...data({ ioLayout: 'click-slot0' }), program: { ladder: before, versions: [], projectName: 'Marked' } });
+assert.equal(JSON.stringify(useProgramStore.getState().ladder), JSON.stringify(before), 'ioLayout click-slot0 is the current layout');
 assert.equal(useNoticeStore.getState().message, null);
 
 // A servo pulse output wired (in the old layout) to the option module's Y202: it stays there — the new automatic

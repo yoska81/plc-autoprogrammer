@@ -92,7 +92,9 @@ function applyRemap(remap: IoRemap, prev: IOPoint[]): string[] {
  */
 export function migrateIoLayout(): string[] {
   const project = useProjectStore.getState();
-  if ((project.ioLayoutVersion ?? 1) >= IO_LAYOUT_VERSION) return [];
+  // Builds of this branch before ioLayoutVersion marked the slot-0 layout with ioLayout: 'click-slot0' (= version 2).
+  const marked = (project as { ioLayout?: string }).ioLayout === 'click-slot0' ? 2 : 1;
+  if ((project.ioLayoutVersion ?? marked) >= IO_LAYOUT_VERSION) return [];
   const setup = plcSetup();
   const slots = moduleSlots(setup.modules);
   if (setup.plcId !== 'click' || !slots.some((m) => m.optionSlot)) { useProjectStore.setState({ ioLayoutVersion: IO_LAYOUT_VERSION }); return []; }
@@ -112,7 +114,7 @@ export function migrateIoLayout(): string[] {
     const now = ioAddresses(next, setup);
     const off = next.find((p) => want.get(p.id) && now.get(p.id) !== want.get(p.id));
     if (!off) break;
-    next = next.map((p) => (p.id === off.id ? { ...p, plcAddress: want.get(p.id) } : p));
+    next = next.map((p) => (p.id === off.id ? { ...p, plcAddress: want.get(p.id), addressNote: 'kept on its wired terminal (migration)' } : p));
   }
   useIOStore.setState({ projectIO: next });
   const after = ioAddresses(next, setup);

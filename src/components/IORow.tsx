@@ -81,7 +81,7 @@ export function IORow({ point, address, duplicate, device, rack }: IORowProps) {
             aria-invalid={bad ? true : undefined}
             placeholder={address || '—'}
             aria-label={`PLC address for ${point.id}`}
-            title={isManual ? 'Manual address. Clear it to assign automatically.' : 'Assigned automatically. Type to override.'}
+            title={isManual ? `${point.addressNote ? `Fixed address: ${point.addressNote}.` : 'Manual address.'} Clear it to assign automatically.` : 'Assigned automatically. Type to override.'}
             onBlur={(e) => typedAddress(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
             className={`${cell} w-20 font-mono ${bad || duplicate ? 'border-red-400 text-red-700' : isManual ? 'text-brand-800 font-semibold' : 'placeholder:text-steel-700'}`}
@@ -89,6 +89,7 @@ export function IORow({ point, address, duplicate, device, rack }: IORowProps) {
           {duplicate && <span className="text-[10px] text-white bg-red-600 px-1 rounded-sm" title="Two I/O points use this address">DUP</span>}
           {isManual && !duplicate && <span className="text-[10px] text-brand-800" title="Manual address">M</span>}
         </div>
+        {isManual && point.addressNote && !bad && <p className="mt-0.5 max-w-xs whitespace-normal text-[10.5px] leading-snug text-steel-500">{point.addressNote}</p>}
         {bad && <p role="alert" className="mt-0.5 max-w-xs whitespace-normal text-[11px] leading-snug text-red-700">{bad.reason}</p>}
       </td>
       <td className={td}>

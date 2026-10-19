@@ -15,8 +15,6 @@ export default function PlcSetupPage() {
   // The last PLC change (or I/O delete) stays undoable here until the next edit.
   const undoLabel = useIoUndo((s) => s.label);
   const remapped = (notes: string[]) => { if (notes.length) notify(`The I/O was renumbered for the new PLC; the program and the HMI followed. ${notes.join(' ')}`, { label: 'Undo', run: () => { undoIoDelete(); } }); };
-  const setPlc = (plcId: string, cpuId: string) => remapped(withIoRemap(() => storeSetPlc(plcId, cpuId), `PLC change to ${cpuId}`));
-  const setModules = (next: string[]) => remapped(withIoRemap(() => storeSetModules(next), 'Module change'));
   const modules = useProjectStore((s) => s.modules);
   const io = useIOStore((s) => s.projectIO);
   const { profile, cpu } = usePlc();
@@ -29,8 +27,10 @@ export default function PlcSetupPage() {
     const need = needFromIo(io, false, 0);
     const sameRack = plcId === profile.id && platformOf(cpuId)?.id === platformOf(cpu.id)?.id;
     const keep = sameRack ? modules : [];
-    setPlc(plcId, cpuId);
-    setModules(io.length ? modulesToFit(cpuId, keep, need) ?? keep : keep);
+    const next = io.length ? modulesToFit(cpuId, keep, need) ?? keep : keep;
+    // The new CPU and its rack in one step (one remap, one Undo): in between, the new CPU with the old rack's
+    // modules would leave points without an address there behind, on another point's terminal.
+    remapped(withIoRemap(() => { storeSetPlc(plcId, cpuId); storeSetModules(next); }, `PLC change to ${cpuId}`));
   };
   const chooseBrand = (plcId: string, defaultCpuId: string) => {
     const p = PLC_PROFILES.find((x) => x.id === plcId);

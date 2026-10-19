@@ -66,6 +66,56 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   check(l.errors.length === 0, `0 checker errors after the switch (${l.errors.slice(0, 3).join(' | ')})`);
   check(l.clickAddr === 0, 'no HMI element left on a CLICK address');
   check(/renumbered/.test(await page.getByRole('alert').innerText()), 'a message says the program and the HMI followed');
+
+  // 3. More points than the CPU has built in (side manager's probe): a CLICK C0-12 with a C0-16ND3 and a C0-08TD1,
+  // 23 points, switched to CompactLogix. The CPU and its rack change in one step: every rung still names its own
+  // point (none lands on another point's terminal), and one Undo puts the CLICK project back.
+  await seed();
+  const program = () => page.evaluate(async () => {
+    const [{ useProgramStore }, { useIOStore }, { useProjectStore }, { ioAddresses }] = await Promise.all([
+      import('/src/store/useProgramStore.ts'), import('/src/store/useIOStore.ts'), import('/src/store/useProjectStore.ts'), import('/src/plc/core/ioChange.ts'),
+    ]);
+    const io = useIOStore.getState().projectIO;
+    const addr = ioAddresses(io);
+    // Each rung's comment is its point's id: the operand must be that point's address now.
+    const wrong = useProgramStore.getState().ladder.rungs.filter((r) => /^P:/.test(r.comment)).filter((r) => {
+      const id = r.comment.slice(2);
+      const op = io.find((p) => p.id === id)?.type === 'input' ? r.branches[0][0].address : r.outputs[0].address;
+      return op !== addr.get(id);
+    }).map((r) => r.comment);
+    return { plc: useProjectStore.getState().plcId, cpu: useProjectStore.getState().cpuId, modules: useProjectStore.getState().modules.join(','), wrong, addr: [...addr.values()].join(',') };
+  });
+  await page.evaluate(async () => {
+    const [{ useProgramStore }, { useIOStore }, { useProjectStore }] = await Promise.all([
+      import('/src/store/useProgramStore.ts'), import('/src/store/useIOStore.ts'), import('/src/store/useProjectStore.ts'),
+    ]);
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-12DD1E-D', modules: ['C0-16ND3', 'C0-08TD1'] });
+    useIOStore.getState().importPoints([
+      ...Array.from({ length: 13 }, (_, i) => ({ description: `Sensor ${i + 1}`, type: 'input', category: 'Product Detection' })),
+      ...Array.from({ length: 10 }, (_, i) => ({ description: `Valve ${i + 1}`, type: 'output', category: 'Pneumatic' })),
+    ], true);
+    const { ioAddresses } = await import('/src/plc/core/ioChange.ts');
+    const io = useIOStore.getState().projectIO, addr = ioAddresses(io);
+    const rungs = io.map((p, i) => (p.type === 'input'
+      ? { id: `r${i}`, comment: `P:${p.id}`, branches: [[{ type: 'NO', address: addr.get(p.id) }]], outputs: [{ type: 'OUT', address: `C${300 + i}` }] }
+      : { id: `r${i}`, comment: `P:${p.id}`, branches: [[{ type: 'NO', address: 'C1' }]], outputs: [{ type: 'OUT', address: addr.get(p.id) }] }));
+    const ladder = useProgramStore.getState().ladder;
+    useProgramStore.getState().editLadder({ ...ladder, rungs: [...ladder.rungs, ...rungs] });
+  });
+  const c0 = await program();
+  check(c0.wrong.length === 0 && /Y205/.test(c0.addr), `the 23-point CLICK project: every rung on its point (${c0.addr})`);
+  await page.goto(BASE + '/plc');
+  await page.waitForTimeout(500);
+  await page.getByRole('button', { name: /CompactLogix/ }).first().click();
+  await page.waitForTimeout(500);
+  const big = await program();
+  check(big.plc === 'logix', `the PLC is now CompactLogix (${big.plc} ${big.cpu} ${big.modules})`);
+  check(big.wrong.length === 0, `every rung still names its own point (${big.wrong.slice(0, 4).join(', ')})`);
+  await page.getByRole('button', { name: /^Undo: PLC change/ }).click();
+  await page.waitForTimeout(300);
+  const back = await program();
+  check(back.plc === 'click' && back.cpu === 'C0-12DD1E-D' && back.modules === 'C0-16ND3,C0-08TD1', `one Undo puts the CPU and the modules back (${back.cpu} ${back.modules})`);
+  check(back.wrong.length === 0 && back.addr === c0.addr, 'and every rung on its CLICK address');
   check(errors.length === 0, `no page errors (${errors.join(' | ')})`);
   await browser.close();
   if (fails.length) { console.log(`plc-switch e2e: ${fails.length} failed`); process.exit(1); }

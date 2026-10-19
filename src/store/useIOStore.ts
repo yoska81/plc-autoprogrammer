@@ -128,7 +128,8 @@ export const useIOStore = create<IOStore>()(
       setPlcAddress: (id: string, address: string) => {
         const plcAddress = address.trim().toUpperCase();
         changed(() => set((s) => ({
-          projectIO: s.projectIO.map((p) => (p.id === id ? { ...p, plcAddress } : p)),
+          // The user's own address: the app's note on why it fixed one no longer applies.
+          projectIO: s.projectIO.map((p) => { if (p.id !== id) return p; const next = { ...p, plcAddress }; delete next.addressNote; return next; }),
         })));
       },
 
