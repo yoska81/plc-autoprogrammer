@@ -150,6 +150,12 @@ async function scenario(browser, quick) {
   check(cpuIds.some((id) => /^6ES7/.test(id)) && !cpuIds.some((id) => /^C[02]-/.test(id)), `Equipment: only Siemens CPUs shown first (${cpuIds.filter((id) => !/^6ES7|^6AV/.test(id)).slice(0, 3).join(', ') || 'no other'})`);
   check(await page.getByRole('button', { name: /^Show \d+ CPUs of other brands$/ }).count() === 1, 'the other brands are one click away');
   check(await page.locator('input[aria-label^="Choose CM5-"]').count() === 0, 'no C-more panel listed by default for an S7');
+  // The brand rows and the CPU table follow the project's PLC (never the untouched CLICK / C-more default).
+  const brandRow = async (g) => page.locator(`select[aria-label="Brand for ${g}"]`).inputValue();
+  const shownBrands = [await brandRow('PLC and I/O'), await brandRow('Operator panel (HMI)')];
+  const hmiNow = await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
+  check(shownBrands[0] === 'siemens' && (!/^6AV/.test(hmiNow ?? '') || shownBrands[1] === 'siemens'), `Preferred brands show the S7 project's brands (${shownBrands.join(' / ')}, panel ${hmiNow})`);
+  check(await page.locator(`input[aria-label="Choose ${CPU}"][type="radio"]`).isChecked(), `the project's ${CPU} is selected in the CPU table`);
   // Online: a plain sentence for an S7 (its own software monitors it), never CLICK's Modbus table.
   await page.goto(BASE + '/online');
   const online = await page.getByTestId('online-not-here').innerText({ timeout: 10000 }).catch(() => '');
@@ -204,6 +210,9 @@ async function extras(browser) {
     applyEquipment({ cpuId: '5069-L310ER', modules: ['5069-IB16', '5069-OB16'], hmiPartNumber: null }, null);
   });
   await page.goto(BASE + '/equipment');
+  await page.locator('select[aria-label="Brand for PLC and I/O"]').waitFor({ timeout: 15000 });
+  check(await page.locator('select[aria-label="Brand for PLC and I/O"]').inputValue() === 'allen-bradley', 'a Logix project shows Allen-Bradley as its PLC brand');
+  check(await page.locator('input[aria-label="Choose 5069-L310ER"][type="radio"]').isChecked(), 'the project\'s 5069-L310ER is selected in the CPU table');
   const sensors = page.locator('select[aria-label^="Brand for"]').filter({ has: page.locator('option[value="ifm"]') }).first();
   await sensors.selectOption('ifm');
   const after = await page.evaluate(async () => {
