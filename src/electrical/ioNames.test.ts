@@ -5,7 +5,7 @@
  * Run with:  npx tsx src/electrical/ioNames.test.ts
  */
 import assert from 'node:assert/strict';
-import { ioNames, renamePin, renameWire, wireOfNative } from './ioNames';
+import { ioNames, renameAddressText, renamePin, renameWire, wireOfNative } from './ioNames';
 import { buildModel, nativeModel, wireListCsv, type DrawingContext } from './derive';
 import { wiringPaths } from '../troubleshoot/wiringPath';
 import { buildCircuit } from '../troubleshoot/circuit';
@@ -25,6 +25,22 @@ assert.equal(renameWire(s7, 'Y001A'), 'Q0.0A', 'a series suffix stays');
 assert.equal(renameWire(s7, '24+S'), '24+S', 'other wires stay');
 assert.equal(renamePin(s7, 'PLC:X002'), 'PLC:I0.1');
 assert.equal(ioNames('C0-10DD1E-D', [], ['X001']).native.size, 0, 'CLICK keeps its addresses');
+
+// one name per address: Unitronics Vision numbers its on-board I/O and expansion I/O apart (with the CPU known)
+const oneEach = (n: ReturnType<typeof ioNames>) => new Set(n.wire.values()).size === n.wire.size && new Set(n.native.values()).size === n.native.size;
+for (const [cpu, mods] of [['V350-35-TR34', []], ['V130-33-T38', []], ['SM43-J-T20', ['V200-18-E3XB']]] as [string, string[]][]) {
+  const n = ioNames(cpu, mods, []);
+  assert.ok(n.wire.size > 0 && oneEach(n), `${cpu}: one wire number per terminal`);
+}
+const sm = ioNames('SM43-J-T20', ['V200-18-E3XB'], []);
+assert.notEqual(sm.wire.get('X001'), sm.wire.get('X101'), 'SM43 + V200-18-E3XB: X001 and X101 are different inputs');
+// only terminals the hardware has: a CPU without on-board I/O (S7-1500 + ET 200SP) leaves a stale X001 / Y001 alone
+const et = ioNames('6ES7511-1AL03-0AB0', ['6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0', '6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0'], ['X001', 'Y001', 'Y101']);
+assert.ok(!et.native.has('X001') && !et.native.has('Y001') && !et.native.has('Y101'), 'no names for terminals the rack does not have');
+assert.equal(et.native.get('X101'), '%I0.0');
+assert.equal(et.native.get('Y201'), '%Q0.0');
+assert.ok(oneEach(et), 'S7-1500 + ET 200SP: one name per terminal');
+assert.equal(renameAddressText(et, 'Stale X001 on rung; Start (X101)'), 'Stale X001 on rung; Start (%I0.0)', 'a stale address in a document keeps its app address');
 
 // a Siemens panel: drawings and lists in the PLC's naming
 const io = DESIGN.ioWiring.map((w) => ({ address: w.address, description: w.description, type: (w.address.startsWith('X') ? 'input' : 'output') as 'input' | 'output' }));

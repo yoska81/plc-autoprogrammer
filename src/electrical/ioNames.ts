@@ -7,6 +7,7 @@
  */
 import { PLC_PROFILES } from '../plc/core/profiles';
 import { moduleSlots } from '../plc/core/modules';
+import { rackTerminals } from '../plc/core/addressCheck';
 
 export interface IoNames {
   /** App address → the PLC's own name (X001 → %I0.0). */
@@ -23,15 +24,21 @@ export function wireOfNative(n: string): string | null {
   return w && w.length <= 10 && /^[A-Z0-9.]+$/i.test(w) ? w.toUpperCase() : null;
 }
 
-/** The I/O names of a PLC (CPU part number) with these modules (part numbers, slot order) for these addresses. */
+/**
+ * The I/O names of a PLC (CPU part number) with these modules (part numbers, slot order): every discrete terminal the
+ * CPU and modules have (spares are drawn too) and the analog addresses given (DF1…). An address the hardware does not
+ * have (a stale X001 on a CPU without on-board inputs) keeps its app address; so does every address when two would
+ * get the same name.
+ */
 export function ioNames(cpuPartNumber: string, modules: string[], addresses: string[]): IoNames {
   const profile = PLC_PROFILES.find((p) => p.cpuModels.some((c) => c.id === cpuPartNumber));
-  if (!profile?.ioTag) return EMPTY;
+  const cpu = profile?.cpuModels.find((c) => c.id === cpuPartNumber);
+  if (!profile?.ioTag || !cpu) return EMPTY;
   const slots = moduleSlots(modules);
+  const rack = { profile, cpu, modules: slots };
+  const terminals = [...rackTerminals(rack, 'input'), ...rackTerminals(rack, 'output')];
   const native = new Map<string, string>(), wire = new Map<string, string>();
-  // every terminal of the rack too (spares are drawn), CPU and each module: X001…X032, Y001…, X101…
-  const rack = [0, ...slots.map((_, i) => i + 1)].flatMap((s) => Array.from({ length: 32 }, (_, k) => [`X${s}${String(k + 1).padStart(2, '0')}`, `Y${s}${String(k + 1).padStart(2, '0')}`]).flat());
-  for (const a of new Set([...addresses, ...rack])) {
+  for (const a of new Set([...terminals, ...addresses.filter((x) => /^DF\d+$/i.test(x))])) {
     const t = profile.ioTag(a, slots, cpuPartNumber);
     if (!t || t.toUpperCase() === a.toUpperCase()) continue;
     // only a name that also works as a wire number: drawings, wire list and markers then always agree (a UniStream
@@ -41,7 +48,9 @@ export function ioNames(cpuPartNumber: string, modules: string[], addresses: str
     native.set(a, t.replace(/^on-board\s*/i, ''));
     wire.set(a, w);
   }
-  return native.size ? { native, wire } : EMPTY;
+  // one name per address: two terminals on one wire number would join two circuits
+  const unique = (m: Map<string, string>) => new Set([...m.values()].map((v) => v.toUpperCase())).size === m.size;
+  return native.size && unique(native) && unique(wire) ? { native, wire } : EMPTY;
 }
 
 /** An I/O wire number in the PLC's naming: X001 → I0.0, Y001A → Q0.0A, DF1+ → IW64+ (others unchanged). */
