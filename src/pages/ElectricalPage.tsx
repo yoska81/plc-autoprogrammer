@@ -170,7 +170,7 @@ export default function ElectricalPage() {
     if (el.isGenerating || (full && !apiKey)) return;
     if (ask && el.design && !confirm('Replace the current electrical design?')) return;
     setError(null);
-    const snap = { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp };
+    const snap = { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, panel: hmiPartNumber || undefined };
     void startAiJob({
       kind: 'electrical', label: full ? 'Electrical design (full AI)' : 'Electrical design', keepResult: true,
       run: async (h) => {
