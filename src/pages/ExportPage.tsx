@@ -22,6 +22,7 @@ import ReviewCard from '../review/ReviewCard';
 import { commissioningItems, progress } from '../commissioning/checklist';
 import { commissioningFor } from '../commissioning/useCommissioningStore';
 import { useProjectsStore } from '../store/useProjectsStore';
+import { rawFamily } from '../plc/core/validate';
 
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 hover:bg-steel-50 disabled:opacity-40';
 const csv = (s: string) => new Blob([s], { type: 'text/csv' });
@@ -120,7 +121,7 @@ export default function ExportPage() {
   const progErrors = p.issues.filter((i) => i.severity === 'error');
   // Instructions of an imported program kept as written (not converted, not simulated).
   const raws = p.ladder.rungs.flatMap((r) => [...r.branches.flat(), ...r.outputs]).filter((x) => x.type === 'RAW');
-  const rawOther = raws.filter((x) => x.type === 'RAW' && x.vendor !== p.profile.id).length;
+  const rawOther = raws.filter((x) => x.type === 'RAW' && rawFamily(x.vendor) !== p.profile.id).length;
   const STAGE_NAME = { equipment: 'Equipment', io: 'I/O list', electrical: 'Electrical design', hmi: 'HMI screens', program: 'PLC program' } as const;
   const stale = (['equipment', 'io', 'electrical', 'hmi', 'program'] as const).filter((s) => stages[s].status === 'stale').map((s) => STAGE_NAME[s]);
 

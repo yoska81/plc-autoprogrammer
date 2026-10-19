@@ -25,7 +25,7 @@ import type { CompareOp, LadderOutput } from '../core/ladder';
 import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType, NetworkAxisImport } from './types';
 import { hmiNotes, type HmiProject } from './emtp';
 
-export const YASKAWA_VENDOR = 'yaskawa';
+export const YASKAWA_VENDOR = 'yaskawa-mp';
 
 /** Start of the box text of an instruction the reader could not read (it does nothing in the program). */
 export const UNREAD = 'Unknown instruction';

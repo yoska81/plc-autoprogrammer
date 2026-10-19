@@ -203,7 +203,12 @@ export function validateProgram(
 const VENDOR_NAME: Record<string, string> = {
   logix: 'Logix', click: 'CLICK', micro800: 'Micro800', 'siemens-s7': 'Siemens S7', 'unitronics-unistream': 'UniStream', 'unitronics-vision': 'Vision',
   'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS', 'siemens-stl': 'Siemens STL', 'siemens-lad': 'a TIA Portal LAD network', delta: 'Delta', inovance: 'Inovance', xinje: 'Xinje',
+  'yaskawa-mp': 'Yaskawa MPE720',
 };
+
+/** The PLC an imported instruction belongs to: its vendor tag, with older tags (projects saved before) mapped to today's profile id. */
+const RAW_FAMILY: Record<string, string> = { yaskawa: 'yaskawa-mp' };
+export const rawFamily = (vendor: string) => RAW_FAMILY[vendor] ?? vendor;
 
 /**
  * An imported instruction kept as written: on its own PLC a warning (it is not checked or simulated);
@@ -211,9 +216,9 @@ const VENDOR_NAME: Record<string, string> = {
  */
 function rawIssues(rungId: string, r: RawInstruction, profile: PlcProfile): ValidationIssue[] {
   const short = r.text.length > 80 ? `${r.text.slice(0, 77).replace(/\s+/g, ' ')}…` : r.text;
-  if (r.vendor !== profile.id) {
+  if (rawFamily(r.vendor) !== profile.id) {
     const what = /^\s*(?:FUNCTION_BLOCK|FUNCTION)\s+"?(\w+)/i.exec(r.text)?.[1] ?? /^(\w+)\(/.exec(r.text)?.[1] ?? short;
-    return [{ rungId, severity: 'error', message: `${what} from ${VENDOR_NAME[r.vendor] ?? r.vendor} cannot run on ${profile.name}: this rung will not work (${short}).` }];
+    return [{ rungId, severity: 'error', message: `${what} from ${VENDOR_NAME[rawFamily(r.vendor)] ?? r.vendor} cannot run on ${profile.name}: this rung will not work (${short}).` }];
   }
   return [{ rungId, severity: 'warning', message: `Not understood: check by hand (${short}).` }, ...rawRules(rungId, r)];
 }

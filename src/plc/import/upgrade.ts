@@ -175,7 +175,7 @@ export function readOnlyNote(source: ImportedProgram['source'], profile: PlcProf
 
 /** Functions an MPE720 rack lists in slots that are built into the MP3000 CPU (CPU-301 / 302), not modules. */
 const BUILT_IN_FUNCTIONS: { re: RegExp; what: string }[] = [
-  { re: /^218IF/i, what: 'Ethernet' },
+  { re: /^218IFD$/i, what: 'Ethernet' },
   { re: /^SVC(32)?$/i, what: 'MECHATROLINK-III' },
   { re: /^SVR(32)?$/i, what: 'virtual axes' },
   { re: /^M-EXECUTOR$/i, what: 'M-EXECUTOR' },
