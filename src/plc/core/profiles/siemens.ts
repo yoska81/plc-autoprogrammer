@@ -73,7 +73,9 @@ export function siemensAddress(base: string, c: CpuModel, modules: ModuleSlot[])
   if (io) {
     const isIn = io[1] === 'X', slot = Number(io[2]), n = Number(io[3]) - 1;
     const area = isIn ? 'I' : 'Q';
-    if (slot === 0) return { address: `%${area}${bit(0, n)}`, inferred: false };
+    // On-board terminals only as many as the CPU has: an S7-1500 has none (its %I0.0 is the first module's, X101), so
+    // a stale X001 must not get a second tag at %I0.0.
+    if (slot === 0) return n < (isIn ? c.builtInInputs : c.builtInOutputs) ? { address: `%${area}${bit(0, n)}`, inferred: false } : null;
     if (fam === 'S7-1200') return { address: `%${area}${bit(8 + 4 * (slot - 1), n)}`, inferred: true };
     // S7-1500 / ET 200SP: modules packed from byte 0 in slot order, ceil(points / 8) bytes each.
     let byte = 0;
@@ -119,7 +121,7 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
       tags.push({ name, address: s.address, type: 'Bool', comment: ctx.labels.get(base) ?? `${base.startsWith('X') ? 'Input' : 'Output'} ${s.address}`, inferred: s.inferred });
       return `"${name}"`;
     },
-    ioTodo: (_base, name) => `(* TODO ${name}: no address on this CPU *)`,
+    ioTodo: (_base, name) => `(* ${name}: no I/O point on this CPU (kept as a static of the block, not wired) *)`,
     // A register the project gives no name: named by its type, never by the CLICK register ("DS1119").
     unnamed: (base) => {
       const m = /^(X|Y|C|T|CT|DS|DD|DH|DF|TXT|SD)(\d+)$/.exec(base);
@@ -189,7 +191,9 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   // descriptions and kept code of another PLC stay as written.
   const users = [...ctx.io.map((x) => x.description), ctx.header, ...program.rungs.flatMap((r) => r.outputs.flatMap((o) => (o.type === 'RAW' ? [o.text] : [])))]
     .map((t) => t.trim()).filter((t) => t && !/^[A-Z]+\d+$/i.test(t)).sort((a, b) => b.length - a.length);
-  const line = (v: StVariable) => `      ${v.name} : ${v.type};   // ${(v.comment === v.base ? v.comment : sclComment(v.comment, st.variables, users)).replace(/[\r\n]+/g, ' ')}`;
+  // A program contact on a terminal the CPU does not have (a stale X001 on an S7-1500): a plain static, said.
+  const stray = (v: StVariable) => (/^[XY]\d+$/.test(v.base) && !v.io ? ' (no I/O point: not wired)' : '');
+  const line = (v: StVariable) => `      ${v.name} : ${v.type};   // ${(v.comment === v.base ? v.comment : sclComment(v.comment, st.variables, users)).replace(/[\r\n]+/g, ' ')}${stray(v)}`;
   const decl = [
     '      Initialized : Bool;   // set after the first scan',
     '      FirstScan : Bool;   // TRUE on the first scan after a start',
