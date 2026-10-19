@@ -14,7 +14,7 @@ import { validateProgram } from '../plc/core/validate';
 import { fingerprint, specToText, changedSections } from './types';
 import { ioFingerprint, hmiFingerprint } from './useStages';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge } from '../lib/ai/ioAI';
-import { equipmentChoices, recommendEquipment } from '../lib/ai/equipmentAI';
+import { recommendEquipment } from '../lib/ai/equipmentAI';
 import { brandNote as brandStepNote, plcPreference, requestedProfiles } from './brand';
 import { applyEquipment, recommendedChoice } from './equipment';
 import { analogRangesOf, cpuFit, findCpu, hmiFit, modulesToFit, type Need } from '../plc/core/fit';
@@ -23,6 +23,7 @@ import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
 import { analogSetup } from '../plc/core/analog';
 import { getPart } from '../electrical/catalog';
 import { vendorPreference } from '../store/useProjectStore';
+import { nearestPanel } from '../hmi/nearestPanel';
 import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
 import { useDraftStore } from '../store/useDraftStore';
 import { projectUpgradeRoles } from '../plc/import/ui/applyUpgrade';
@@ -150,12 +151,13 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         const cur = otherBrand(state.plcId) ? { plcId: asked[0].id, cpuId: '', modules: [] as string[], recommendation: state.recommendation } : state;
         const hmiNow = useHmiStore.getState().hmiPartNumber || null;
         const choice = rulesEquipment(ioNow(), { plcId: cur.plcId, cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: hmiNow });
-        // A panel that cannot talk to the new brand's PLC is swapped for the nearest-size panel that can (said in the
+        // A panel that cannot talk to the new brand's PLC is swapped for the closest panel that can (said in the
         // step message). Never dropped: no panel would add the door pushbuttons and lamps to the I/O list.
         const hmiModel = choice && hmiNow ? getHmi(hmiNow) : undefined;
         const talks = (h: NonNullable<typeof hmiModel>, cpuId: string) => hmiFit(h, { digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null }, cpuId).ok;
         const swap = choice && hmiModel && otherBrand(state.plcId) && !talks(hmiModel, choice.cpuId)
-          ? equipmentChoices(specToText(spec), plcPreference()).hmis.filter((h) => talks(h, choice.cpuId)).sort((a, b) => Math.abs(a.sizeIn - hmiModel.sizeIn) - Math.abs(b.sizeIn - hmiModel.sizeIn))[0] ?? null
+          // The Equipment page's pick (Dev 5's nearestPanel): closest resolution, preferred makers first.
+          ? nearestPanel(choice.cpuId, { digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null }, { w: hmiModel.widthPx, h: hmiModel.heightPx }, vendorPreference().hmi)
           : undefined;
         if (choice && swap) choice.hmiPartNumber = swap.partNumber;
         if (!choice) { onStep({ step, status: 'failed', message: `No ${getProfile(cur.plcId).name} CPU covers the ${ioNow().length} I/O points even with modules: choose a bigger PLC on the Equipment page.` }); return false; }
