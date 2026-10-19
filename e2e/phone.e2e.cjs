@@ -68,7 +68,8 @@ function audit() {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
-  page.on('dialog', (d) => d.dismiss());
+  // Leaving a page with unsaved changes asks (beforeunload): the test means to go on (as sweep.e2e does).
+  page.on('dialog', (d) => (d.type() === 'beforeunload' ? d.accept() : d.dismiss()));
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
   await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });

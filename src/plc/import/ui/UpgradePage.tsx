@@ -17,6 +17,9 @@ import { gunzipText } from '../gz';
 import { programFindings } from '../findings';
 import { upgradeOriginal } from './applyUpgrade';
 import ProgramImport from './ProgramImport';
+import { getProfile, PLC_PROFILES } from '../../core/profiles';
+import { choosePlcBrand } from '../../core/choosePlc';
+import { notify } from '../../../store/useNoticeStore';
 
 /**
  * "Upgrade existing program" (Import → Program; /upgrade leads there): read the machine's program, then compare
@@ -28,6 +31,7 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
   const clearDraft = useDraftStore((s) => s.clearDraft);
   const ladder = useProgramStore((s) => s.ladder);
   const { profile, cpu, labels } = usePlc();
+  const modules = useProjectStore((s) => s.modules);
   const io = useIOStore((s) => s.projectIO);
   const [all, setAll] = useState(false);
   // The download worked out for one version of the program: a later edit makes it stale (not shown).
@@ -37,6 +41,13 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
   const [busy, setBusy] = useState(false);
   const changes = useMemo(() => (original ? upgradeChanges(original, io, ladder) : null), [original, io, ladder]);
   const findings = useMemo(() => programFindings(ladder, labels), [ladder, labels]);
+  // A program kept read only on the machine's own PLC (the app cannot program it): no download until a PLC is chosen.
+  const readOnly = Boolean(profile.readOnly);
+  const fromReadOnly = Boolean(original && getProfile(original.plcId).readOnly && !readOnly);
+  const moveTo = (plcId: string) => {
+    const notes = choosePlcBrand(plcId);
+    if (notes.length) notify(`The I/O was renumbered for the new PLC; the program and the HMI followed. ${notes.join(' ')}`);
+  };
 
   const diff = useMemo(() => {
     if (!original) return null;
@@ -76,8 +87,11 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                   <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-semibold text-gray-800">Original: {original.source.projectName}</h3>
                     <p className="text-xs text-gray-500">{original.source.fileName} · {[original.source.vendor, original.source.controller].filter(Boolean).join(' ')} · read {new Date(original.importedAt).toLocaleString()}</p>
-                    <p className="text-xs text-gray-500">{original.report.converted} of {original.report.rungs} rungs converted · now on {profile.vendor} {profile.name} {cpu.id}</p>
-                    {original.cpuNote && <p className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1" data-testid="upgrade-cpu-note">{original.cpuNote}</p>}
+                    <p className="text-xs text-gray-500" data-testid="upgrade-now-on">{original.report.converted} of {original.report.rungs} rungs converted · {readOnly
+                      ? <>on the machine's {profile.vendor} {original.source.controller} (read only: not programmable here yet)</>
+                      : <>now on {profile.vendor} {profile.name} {cpu.id}{fromReadOnly ? ` (moved from the machine's ${original.source.vendor} ${original.source.controller})` : ''}</>}</p>
+                    {original.cpuNote && (readOnly || !fromReadOnly) && <p className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1" data-testid="upgrade-cpu-note">{original.cpuNote}</p>}
+                    {fromReadOnly && <p className="mt-1 text-xs text-gray-600" data-testid="upgrade-cpu-note">The machine's {original.source.vendor} controller and modules{original.source.modules?.length ? ` (${original.source.modules.map((m) => m.catalog).join(', ')})` : ''} stay with the original. The app picked the {profile.name} modules{modules.length ? `: ${modules.join(', ')}` : ''}; check them on the PLC page before ordering parts.</p>}
                   </div>
                   <button
                     onClick={() => { if (window.confirm('Read another program? The comparison with this original is dropped; the project keeps its current program and I/O.')) clearDraft(UPGRADE_KEY); }}
@@ -89,9 +103,21 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                   <Link to="/io" className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700">I/O list</Link>
                   <Link to="/program" className="text-xs px-3 py-1.5 rounded bg-brand-600 text-white hover:bg-brand-700">Change the program</Link>
                   <Link to="/simulate" className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700">Test it in the simulator</Link>
-                  <Link to="/plc" className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700">Move it to another PLC</Link>
+                  {!readOnly && <Link to="/plc" className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700">Move it to another PLC</Link>}
                 </div>
               </div>
+
+              {readOnly && (
+                <div className="bg-white rounded-lg border-2 border-brand-300 p-5 space-y-3" data-testid="upgrade-choose-plc">
+                  <h3 className="text-sm font-semibold text-gray-800">Move it to another PLC: choose one</h3>
+                  <p className="text-xs text-gray-600">The app cannot write {profile.vendor} files yet. Choose the PLC the machine will have: the I/O gets its addresses, the program and the HMI follow, the app picks its CPU and modules, and the download is made for it. Until then the program, the I/O list and the simulator work on the original's registers.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {PLC_PROFILES.filter((p) => p.available).map((p) => (
+                      <button key={p.id} data-testid={`upgrade-move-${p.id}`} onClick={() => moveTo(p.id)} className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:border-brand-400 hover:bg-brand-50 text-gray-700">{p.vendor} {p.name}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {findings.length > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2" data-testid="upgrade-findings">
@@ -107,7 +133,9 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                 <div className="flex items-center gap-3">
                   <h3 className="text-sm font-semibold text-gray-800 flex-1">Original vs now: <span data-testid="upgrade-diff-summary">{diff.summary}</span></h3>
                   <label className="text-xs text-gray-600 flex items-center gap-1"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Show unchanged rungs</label>
-                  <button data-testid="upgrade-export" onClick={() => void prepare()} disabled={!ladder.rungs.length || busy} className="text-xs px-3 py-1.5 rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50">Download for {profile.vendor} {profile.name}…</button>
+                  {readOnly
+                    ? <span className="text-xs text-gray-500" data-testid="upgrade-export-wait">Download: choose the PLC to move it to first</span>
+                    : <button data-testid="upgrade-export" onClick={() => void prepare()} disabled={!ladder.rungs.length || busy} className="text-xs px-3 py-1.5 rounded bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50">Download for {profile.vendor} {profile.name}…</button>}
                 </div>
                 {prepared && (
                   <div className="border border-gray-200 rounded p-3 space-y-2 text-sm" data-testid="upgrade-prepared">

@@ -113,6 +113,12 @@ export interface PlcProfile {
   language: ProgramLanguage;
   /** Shown in the PLC picker; profiles not yet built are listed but disabled. */
   available: boolean;
+  /**
+   * A program read from this PLC stays on it, read only, until the user chooses the PLC to move it to: the
+   * project keeps the machine's own controller (never silently another one), and nothing is written for it.
+   * Not available (never picked or offered), but getProfile() returns it for its id.
+   */
+  readOnly?: boolean;
   cpuModels: CpuModel[];
   defaultCpuId: string;
   /** Physical address a project I/O point gets on this PLC (by order). */

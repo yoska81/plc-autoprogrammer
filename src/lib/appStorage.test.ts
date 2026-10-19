@@ -219,6 +219,29 @@ await test('only the latest two sets kept aside stay (each clear adds one)', asy
   assert.ok(![...idb.data.keys()].some((k) => k.startsWith(`${CLEARED_PREFIX}${t + 1}:`)), 'an older set is gone from IndexedDB too');
 });
 
+await test('a value kept aside that IndexedDB cannot write (full): the start goes on clean, and the next start sets it aside again', async () => {
+  const program = JSON.stringify({ state: { ladder: { rungs: [{ id: 'r1', comment: 'Kept rung', branches: [], outputs: [] }], tags: [] }, projectName: 'Kept line' }, version: 0 });
+  appStorage.setItem('plc-program-store', program);
+  await flushAppStorage();
+  ls.clear();
+  const put = idb.put.bind(idb);
+  idb.put = async (k, v) => { if (k.startsWith(CLEARED_PREFIX)) throw new Error('disk full'); return put(k, v); };
+  // later than the sets the test before kept aside (only the latest two stay)
+  const later = Date.now() + 10_000;
+  await flushAppStorage(); resetAppStorage();
+  await loadAppStorage({ backend: idb, onFailure: () => {}, now: later });
+  assert.equal(appStorage.getItem('plc-program-store'), null, 'the app starts clean');
+  assert.ok(appStorage.keys().some((k) => k.startsWith(CLEARED_PREFIX) && k.endsWith(':plc-program-store')), 'shown aside for Recover work');
+  assert.equal(idb.data.get('plc-program-store'), program, 'still in IndexedDB under its own key');
+  assert.equal(ls.getItem(MARKER_KEY), null, 'no marker: the next start sets it aside again');
+  idb.put = put;
+  await flushAppStorage(); resetAppStorage();
+  await loadAppStorage({ backend: idb, now: later + 1 });
+  assert.equal(appStorage.getItem('plc-program-store'), null, 'not read back as the open project');
+  assert.ok(![...idb.data.keys()].includes('plc-program-store') && [...idb.data].some(([k, v]) => k.startsWith(CLEARED_PREFIX) && v === program), 'now kept aside in IndexedDB');
+  assert.equal(ls.getItem(MARKER_KEY), 'indexeddb-1');
+});
+
 await test('localStorage full and IndexedDB not writing: nothing gives way to a placeholder (it is the only copy)', async () => {
   const full = new SmallStorage(300);
   full.setItem('plc-project-data:b', 'b'.repeat(150));

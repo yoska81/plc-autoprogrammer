@@ -32,8 +32,9 @@ export const PLC_PROFILES: PlcProfile[] = [
   genericStProfile,
 ];
 
+/** The project's PLC: an available one, or a read-only one a program was read from (src/plc/import/upgrade.ts). */
 export function getProfile(id: string): PlcProfile {
-  return PLC_PROFILES.find((p) => p.id === id && p.available) ?? clickProfile;
+  return PLC_PROFILES.find((p) => p.id === id && (p.available || p.readOnly)) ?? clickProfile;
 }
 
 export function getCpu(profile: PlcProfile, cpuId: string): CpuModel {

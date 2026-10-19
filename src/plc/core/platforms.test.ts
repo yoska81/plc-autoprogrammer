@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { getPart, partsIn } from '../../electrical/catalog';
 import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf, plcModuleFor, plcModulePart } from './platforms';
+import type { Platform } from './platforms';
 import { cpuFit, hmiFit, modulesToFit, platformOf, type Need } from './fit';
 import { PLC_PROFILES } from './profiles';
 import { LOGIX_CPUS } from './profiles/logix';
@@ -135,6 +136,8 @@ assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000
     ['ab-micro850', 'Pro-face lists Micro850 only under EtherNet/IP (roc.htm); its DF1 table has no Micro800'],
     ['schneider-m241', 'not in the Pro-face Schneider serial driver list'],
     ['click', 'not named by Pro-face, Delta or Omron serial drivers (generic Modbus not counted)'],
+    ['yaskawa-mp2000', 'the Weintek / Maple Memobus guide and the Pro-face MP driver used here are Ethernet'],
+    ['yaskawa-mp3000', 'the EBPro MP3000 Extension and Pro-face MP Ethernet drivers are Ethernet'],
   ]);
   for (const p of ALL_HMIS().filter((x) => x.ratings.ethernetPorts === 0 && x.ratings.plcDrivers !== undefined && !String(x.ratings.plcDrivers).startsWith('unitronics'))) {
     assert.ok(p.ratings.serialRouteNote, `${p.partNumber}: serial-only panel needs serialRouteNote (maker driver per family)`);
@@ -173,9 +176,28 @@ assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000
   }
 }
 // Driver ids are platform ids (agreed list; every platform that exists must be on it).
-const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz']);
+const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz', 'yaskawa-mp2000', 'yaskawa-mp3000']);
 for (const pl of PLATFORMS) assert.ok(DRIVER_IDS.has(pl.id), `platform ${pl.id} is on the driver id list`);
 for (const p of ALL_HMIS()) for (const id of driversOf(p)) assert.ok(DRIVER_IDS.has(id), `${p.partNumber}: driver id ${id} is a known platform id`);
+
+// Yaskawa MP (the user's machine: an MP3000 CPU-301 with a Weintek panel on the Memobus driver). Each panel's
+// claim is sourced per family: EasyBuilder Pro (Weintek, Maple) and GP-Pro EX (Pro-face); no sourced Crimson
+// driver for MP2000 / MP3000 Memobus, so no Red Lion; C-more has no driver list entry for them.
+{
+  const fam = (id: string): Platform => ({ id, vendor: 'yaskawa', name: id, cpus: [], modules: [], protocols: ['Ethernet'] } as unknown as Platform);
+  const can = (id: string, pn: string) => hmiCompatible(fam(id), getPart(pn)!).ok;
+  for (const id of ['yaskawa-mp2000', 'yaskawa-mp3000']) {
+    assert.ok(can(id, 'cMT2078X') && can(id, 'PFXGP4401TAD'), `${id}: a Weintek cMT and a Pro-face GP4000 talk to it`);
+    const yes = ALL_HMIS().filter((p) => driversOf(p).includes(id));
+    assert.ok(yes.length >= 100, `${id}: ${yes.length} panels`);
+    for (const p of yes) {
+      assert.ok(/^(Weintek|Maple|Pro-face)/i.test(p.manufacturer), `${p.partNumber}: ${p.manufacturer} is not a sourced maker for ${id}`);
+      assert.ok(p.ratings.driversYaskawaSource, `${p.partNumber}: Yaskawa driver source`);
+      assert.ok(Number(p.ratings.ethernetPorts ?? 0) > 0, `${p.partNumber}: Ethernet drivers only`);
+    }
+    assert.ok(!ALL_HMIS().some((p) => /Red Lion/i.test(p.manufacturer) && driversOf(p).includes(id)), `${id}: no Red Lion`);
+  }
+}
 console.log('driver list tests passed');
 
 // Panel specs for the vendor-neutral HMI designer, from the maker's datasheet. A key is left out

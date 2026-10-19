@@ -3,6 +3,7 @@
 // it needs. An Ethernet panel says nothing more.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/hmi-panel-needs.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 const fails = [];
@@ -11,12 +12,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   const rowNote = async (pn) => {
@@ -27,7 +29,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   };
   const onPlc = async (plcId, cpuId) => {
     await page.evaluate(async ([plcId, cpuId]) => {
-      const { useProjectStore } = await import('/src/store/useProjectStore.ts');
+      const { useProjectStore } = await appImport('/src/store/useProjectStore.ts');
       useProjectStore.getState().setPlc(plcId, cpuId);
       useProjectStore.setState({ modules: [] });
     }, [plcId, cpuId]);

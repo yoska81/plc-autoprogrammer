@@ -607,7 +607,13 @@ export default function HmiPage() {
   // Panels that can talk to this project's PLC (C-more for CLICK; other makers by their driver lists).
   const pickable = [...HMI_MODELS, ...catalogPanels().flatMap((o) => (o.model ? [o.model] : []))].filter(designable)
     .filter((m) => hmiFit(m, ANY_NEED, cpu.id).ok);
-  const picker = (
+  const picker = profile.readOnly ? (
+    // A program kept read only on the machine's own PLC: the panel is picked for the PLC it will talk to.
+    <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-2" data-testid="hmi-read-only">
+      <h3 className="text-sm font-semibold text-gray-800">Which HMI are you using?</h3>
+      <p className="text-sm text-gray-600">A touch panel is picked for the PLC it talks to. This project is on the machine's own {profile.vendor} controller ({cpu.id}), read only: <Link to="/upgrade" className="underline">choose the PLC to move it to</Link> first, then pick its panel here.</p>
+    </div>
+  ) : (
     <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
       <h3 className="text-sm font-semibold text-gray-800">Which HMI are you using?</h3>
       <p className="text-xs text-gray-500">Touch panels that can talk to the {profile.vendor} {cpu.label} (the maker's PLC driver list), {pickable.length} in all.</p>

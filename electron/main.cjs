@@ -107,7 +107,7 @@ function createWindow() {
 
   // Links: pages of the app (print views) open in a new app window, everything else in the browser.
   // pages of the app opened from it (print views) keep projects too: their windows wait the same way
-  win.webContents.on('did-create-window', (child) => waitForStorageOnClose(child));
+  win.webContents.on('did-create-window', (child) => askOnUnsaved(child, waitForStorageOnClose(child)));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isAppUrl(url)) return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true } } };
     if (/^https?:|^mailto:/.test(url)) void shell.openExternal(url);
@@ -116,16 +116,7 @@ function createWindow() {
   win.webContents.on('will-navigate', (e, url) => {
     if (!isAppUrl(url)) { e.preventDefault(); if (/^https?:/.test(url)) void shell.openExternal(url); }
   });
-  // Unsaved changes: the page blocks unload (beforeunload); ask like any Windows program.
-  win.webContents.on('will-prevent-unload', (e) => {
-    const choice = dialog.showMessageBoxSync(win, {
-      type: 'warning', buttons: ['Close without saving', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
-      title: 'ISA Auto Programmer', message: 'The project has unsaved changes.',
-      detail: 'Cancel, then press Save (Ctrl+S) to keep them in the project file.',
-    });
-    if (choice === 0) e.preventDefault();
-    else waitAgain(); // the window stays: the next close waits for the writes again
-  });
+  askOnUnsaved(win, waitAgain);
   const startFile = projectFileArg(process.argv);
   if (startFile) win.webContents.once('did-finish-load', () => setTimeout(() => sendProjectFile(win, startFile), 1500));
   void win.loadURL(`${ORIGIN}/`);
@@ -242,6 +233,23 @@ const flushReady = new Set();
 // Quitting (File › Exit, Cmd-Q): a window that waits for its writes cancels the quit; the quit goes on after them.
 let quitting = false;
 app.on('before-quit', () => { quitting = true; });
+
+/**
+ * Unsaved changes: the page blocks unload (beforeunload); ask like any Windows program. Main and child windows
+ * (print views) alike: on Cancel the window stays, its next close waits for the writes again and a quit in
+ * progress is called off (a later close of another window must not quit the app).
+ */
+function askOnUnsaved(win, waitAgain) {
+  win.webContents.on('will-prevent-unload', (e) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning', buttons: ['Close without saving', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
+      title: 'ISA Auto Programmer', message: 'The project has unsaved changes.',
+      detail: 'Cancel, then press Save (Ctrl+S) to keep them in the project file.',
+    });
+    if (choice === 0) e.preventDefault();
+    else waitAgain();
+  });
+}
 
 /**
  * The page writes the projects to IndexedDB a moment after each change: a window that closes waits for those

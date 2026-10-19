@@ -1,17 +1,15 @@
 import { Link } from 'react-router-dom';
 import { PLC_PROFILES } from '../core/profiles';
 import { useProjectStore } from '../../store/useProjectStore';
-import { undoIoDelete, useIoUndo, withIoRemap } from '../core/ioChange';
+import { undoIoDelete, useIoUndo } from '../core/ioChange';
+import { choosePlc, choosePlcBrand } from '../core/choosePlc';
 import { notify } from '../../store/useNoticeStore';
 import { usePlc } from '../core/usePlc';
 import { useIOStore } from '../../store/useIOStore';
-import { modulesToFit, platformOf } from '../core/fit';
-import { hardwareShortfall, needFromIo } from '../../spec/equipmentRules';
+import { hardwareShortfall } from '../../spec/equipmentRules';
 
 export default function PlcSetupPage() {
   // A PLC / CPU / module change renumbers the I/O: the program and the HMI follow it (one remap), and say so.
-  const storeSetPlc = useProjectStore((s) => s.setPlc);
-  const storeSetModules = useProjectStore((s) => s.setModules);
   // The last PLC change (or I/O delete) stays undoable here until the next edit.
   const undoLabel = useIoUndo((s) => s.label);
   const remapped = (notes: string[]) => { if (notes.length) notify(`The I/O was renumbered for the new PLC; the program and the HMI followed. ${notes.join(' ')}`, { label: 'Undo', run: () => { undoIoDelete(); } }); };
@@ -20,24 +18,9 @@ export default function PlcSetupPage() {
   const { profile, cpu } = usePlc();
   const short = hardwareShortfall(cpu.id, modules, io);
 
-  // A CPU change keeps the modules of the same rack and adds what the I/O list needs; a new brand starts
-  // from an empty rack and takes its first CPU that holds the list. Nothing fits: the CPU is still set and
-  // the shortfall is shown below (never applied silently).
-  const choose = (plcId: string, cpuId: string) => {
-    const need = needFromIo(io, false, 0);
-    const sameRack = plcId === profile.id && platformOf(cpuId)?.id === platformOf(cpu.id)?.id;
-    const keep = sameRack ? modules : [];
-    const next = io.length ? modulesToFit(cpuId, keep, need) ?? keep : keep;
-    // The new CPU and its rack in one step (one remap, one Undo): in between, the new CPU with the old rack's
-    // modules would leave points without an address there behind, on another point's terminal.
-    remapped(withIoRemap(() => { storeSetPlc(plcId, cpuId); storeSetModules(next); }, `PLC change to ${cpuId}`));
-  };
-  const chooseBrand = (plcId: string, defaultCpuId: string) => {
-    const p = PLC_PROFILES.find((x) => x.id === plcId);
-    const need = needFromIo(io, false, 0);
-    const first = io.length ? [defaultCpuId, ...(p?.cpuModels.map((c) => c.id) ?? [])].find((id) => modulesToFit(id, [], need)) : undefined;
-    choose(plcId, first ?? defaultCpuId);
-  };
+  // Nothing fits: the CPU is still set and the shortfall is shown below (never applied silently).
+  const choose = (plcId: string, cpuId: string) => remapped(choosePlc(plcId, cpuId));
+  const chooseBrand = (plcId: string) => remapped(choosePlcBrand(plcId));
 
   return (
     <>
@@ -53,6 +36,11 @@ export default function PlcSetupPage() {
 
       <div className="flex-1 overflow-auto bg-gray-50 p-6">
         <div className="max-w-3xl space-y-6">
+          {profile.readOnly && (
+            <p className="text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded px-3 py-2" data-testid="plc-read-only">
+              This project is on the machine's own {profile.vendor} controller ({cpu.id}), read only: the app cannot program it yet. Choose the PLC to move it to; the I/O, the program and the HMI follow it.
+            </p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {PLC_PROFILES.map((p) => {
               const selected = p.id === profile.id;
@@ -60,7 +48,7 @@ export default function PlcSetupPage() {
                 <button
                   key={p.id}
                   disabled={!p.available}
-                  onClick={() => chooseBrand(p.id, p.defaultCpuId)}
+                  onClick={() => chooseBrand(p.id)}
                   className={`text-left rounded-lg border p-4 transition-colors ${
                     selected
                       ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-200'

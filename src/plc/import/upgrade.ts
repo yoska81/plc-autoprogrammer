@@ -5,7 +5,7 @@
  * use them), writes a first machine description from the program and lists what to ask the user.
  * Pure: the page (ui/ProgramImport.tsx) writes the result into the stores.
  */
-import { isUnreadBox } from './mpe720';
+import { axisText, isUnreadBox } from './mpe720';
 import type { LadderProgram, TagDefinition } from '../core/ladder';
 import type { PlcProfile } from '../core/profile';
 import type { IOPoint } from '../../types/io';
@@ -14,6 +14,7 @@ import { PLC_PROFILES, getProfile } from '../core/profiles';
 import { moduleSlots } from '../core/modules';
 import { resolveAddresses } from '../core/profile';
 import { siemensAddress } from '../core/profiles/siemens';
+import { yaskawaCpuOf } from '../core/profiles/yaskawa';
 import { modulesToFit, type Need } from '../core/fit';
 import { getPart } from '../../electrical/catalog';
 import { importedRange, materialize, nickOf, pretty } from './convert';
@@ -59,13 +60,16 @@ export interface UpgradePlan {
   original: UpgradeOriginal;
 }
 
-/** PLC of the app that a source format comes from. */
-const SAME_FAMILY: Partial<Record<SourceFormat, string>> = { l5x: 'logix', l5k: 'logix', 'click-csv': 'click', 'siemens-scl': 'siemens-s7', 'siemens-stl': 'siemens-s7', 'siemens-xml': 'siemens-s7', 'siemens-tags': 'siemens-s7' };
+/** PLC of the app that a source format comes from (a read-only one: the program stays on it until a PLC is chosen). */
+const SAME_FAMILY: Partial<Record<SourceFormat, string>> = { l5x: 'logix', l5k: 'logix', 'click-csv': 'click', 'siemens-scl': 'siemens-s7', 'siemens-stl': 'siemens-s7', 'siemens-xml': 'siemens-s7', 'siemens-tags': 'siemens-s7', 'yaskawa-mpe720': 'yaskawa-mp' };
 
-/** PLC the program goes on: the original's family, else the current PLC when it draws ladder, else CLICK. */
+/**
+ * PLC the program goes on: the original's family (read only when the app cannot program it yet, never another
+ * brand in its place), else the current PLC when it draws ladder, else CLICK.
+ */
 export function targetPlc(format: SourceFormat, currentPlcId: string, vendor = ''): PlcProfile {
   const same = format === 'plcopen' && /siemens/i.test(vendor) ? 'siemens-s7' : format === 'printout' ? printoutFamily(vendor) : SAME_FAMILY[format];
-  const p = same ? PLC_PROFILES.find((x) => x.id === same && x.available) : undefined;
+  const p = same ? PLC_PROFILES.find((x) => x.id === same && (x.available || x.readOnly)) : undefined;
   if (p) return p;
   const cur = getProfile(currentPlcId);
   return cur.available && cur.language === 'ladder' ? cur : getProfile('click');
@@ -79,6 +83,7 @@ function printoutFamily(text: string): string | undefined {
   if (/siemens|s7-|simatic|tia/i.test(text)) return 'siemens-s7';
   if (/unistream/i.test(text)) return 'unitronics-unistream';
   if (/unitronics|vision/i.test(text)) return 'unitronics-vision';
+  if (/yaskawa|mpe720|\bMP[23]\d{3}/i.test(text)) return 'yaskawa-mp';
   return undefined;
 }
 
@@ -148,6 +153,21 @@ export function originalCpu(profile: PlcProfile, imp: ImportedProgram): { cpuId:
   return null;
 }
 
+/**
+ * A program kept read only on its own PLC: the controller, its rack and its servo axes as the file has them, and
+ * what to do next. Never a module list of another PLC (that is picked once the user chooses the PLC).
+ */
+export function readOnlyNote(source: ImportedProgram['source'], profile: PlcProfile): string {
+  const mods = (source.modules ?? []).map((m) => m.catalog);
+  const axes = (source.axes ?? []).map(axisText);
+  return [
+    `Your machine's controller is a ${profile.vendor} ${source.controller}. The app cannot program it yet, so the project keeps it read only: the program, the I/O list and the simulator work on its own registers, and nothing is downloaded for it.`,
+    mods.length ? `These are the ${profile.vendor} modules: ${mods.join(', ')}. They stay with the original. Choose the new PLC and the app picks its modules.` : '',
+    axes.length ? `Servo axes (${axes.length}): ${axes.join('; ')}.` : '',
+    'To change the machine to another PLC, choose one under "Move it to another PLC" on the Upgrade page.',
+  ].filter(Boolean).join(' ');
+}
+
 /** Analog points whose signal the program does not state: asked (taken as 4–20 mA, which decides the module). */
 function assumedRanges(imp: ImportedProgram): string[] {
   return imp.io.filter((p) => p.analog && importedRange(p.original, p.description).assumed).map((p) => `Analog signal of ${p.name}${p.original && p.original !== p.name ? ` (${p.original})` : ''}: the original program does not say what signal it is (4–20 mA, 0–10 V, an RTD such as a PT100, or a thermocouple). It is taken as 4–20 mA, and a current input is planned for it. Check the transmitter's or sensor's nameplate and set the signal on the I/O list (an RTD needs an RTD input module).`);
@@ -179,7 +199,8 @@ function unassignedIo(program: LadderProgram, profile: PlcProfile, cpu: PlcProfi
 
 export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = new Date()): UpgradePlan {
   const profile = targetPlc(imp.source.format, currentPlcId, `${imp.source.vendor} ${imp.source.controller}`);
-  const { cpuId, modules } = originalCpu(profile, imp) ?? chooseCpu(profile, needOf(imp));
+  // Read only: the machine's own controller as the file names it, no modules of the app's (its rack is said instead).
+  const { cpuId, modules } = profile.readOnly ? { cpuId: yaskawaCpuOf(imp.source.controller).id, modules: [] } : originalCpu(profile, imp) ?? chooseCpu(profile, needOf(imp));
   const cpu = profile.cpuModels.find((c) => c.id === cpuId) ?? profile.cpuModels[0];
   const m = materialize(imp, profile, cpu, moduleSlots(modules));
   // The file names a controller of this family the app does not have (a 1769-L33ER): never swapped silently.
@@ -193,7 +214,7 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
   const moduleText = theirs.length && theirs.join(' ') !== modules.join(' ')
     ? `Your machine's I/O modules are ${theirs.join(', ')} (slots 1–${theirs.length}). ${unknown.length ? `The app does not have ${unknown.join(', ')}, so this` : 'This'} project uses ${modules.join(', ') || 'no modules'} instead: the parts list, drawings and module addresses show those. Check them against the machine before ordering parts.`
     : '';
-  const cpuNote = [cpuText, moduleText].filter(Boolean).join(' ') || undefined;
+  const cpuNote = profile.readOnly ? readOnlyNote(imp.source, profile) : [cpuText, moduleText].filter(Boolean).join(' ') || undefined;
   // A 1769 controller with embedded I/O: the slot numbers after it are to check against the real project.
   const embedded = /^1769-L[12]\d/i.test(cpu.id) ? `Check in Studio 5000 (I/O Configuration) the I/O addresses of the ${cpu.id}: the app puts its embedded I/O at Local:1${/QBFC/i.test(cpu.id) ? ' (analog at Local:2, Ch<n>Data)' : ''} and ${/^1769-L1/i.test(cpu.id) ? 'does not address its 1734 POINT I/O expansion' : `the first expansion module at Local:${/QBFC/i.test(cpu.id) ? 4 : 2}`}.` : '';
   // I/O keeps its name from the original program (Start_PB, not the description).
