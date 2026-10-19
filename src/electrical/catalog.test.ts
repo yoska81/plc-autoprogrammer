@@ -65,6 +65,7 @@ const REQUIRED: Partial<Record<CatalogCategory, string[]>> = {
   vfd: ['inputVolts', 'inputPhases', 'outputAmps'],
   plc: ['supplyVolts'],
   plcModule: ['family'],
+  commModule: ['family', 'interface', 'forUse'],
   enclosure: [],
   estop: ['contacts'],
   pushbutton: ['contacts', 'color'],
@@ -222,7 +223,7 @@ test('parts of other vendors give a datasheet footprint for back-panel parts', (
   const bad = CATALOG.filter((p) => !isAdHost(p.url) && p.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminalAccessory'].includes(p.category) && p.ratings.inCpu !== 'yes' && !(p.widthMm && p.heightMm)).map((p) => p.partNumber);
   assert.deepEqual(bad, []);
   // Option boards that plug into the CPU (FX5-232-BD, NX1W-CIF, CP1W-CIF) take no panel space of their own.
-  for (const p of CATALOG.filter((x) => x.ratings.inCpu === 'yes')) assert.ok(p.category === 'plcModule' && !p.widthMm, `${p.partNumber}: in-CPU board`);
+  for (const p of CATALOG.filter((x) => x.ratings.inCpu === 'yes')) assert.ok(p.category === 'commModule' && !p.widthMm, `${p.partNumber}: in-CPU board`);
 });
 
 test('prices belong to catalog parts and come from the same site', () => {

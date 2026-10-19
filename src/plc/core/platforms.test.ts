@@ -4,7 +4,7 @@
  *   npx tsx src/plc/core/platforms.test.ts
  */
 import assert from 'node:assert/strict';
-import { getPart } from '../../electrical/catalog';
+import { getPart, partsIn } from '../../electrical/catalog';
 import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf, plcModuleFor, plcModulePart } from './platforms';
 import { cpuFit, hmiFit, modulesToFit, platformOf, type Need } from './fit';
 import { PLC_PROFILES } from './profiles';
@@ -158,6 +158,15 @@ assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000
   for (const p of ALL_HMIS().filter((x) => x.ratings.plcModules !== undefined)) for (const id of driversOf(p)) {
     if (plcModuleFor(p, id)) assert.ok(plcModulePart(p, id), `${p.partNumber} + ${id}: module ${plcModuleFor(p, id)} is not a catalog part`);
   }
+  // Interface modules are 'commModule', never I/O 'plcModule': they never take an I/O slot, so adding one leaves
+  // every I/O address (siemensAddress / CLICK slots / Logix Local:n) and the I/O module picker unchanged.
+  const comm = new Set<string>();
+  for (const p of ALL_HMIS()) for (const id of driversOf(p)) { const pn = plcModulePart(p, id); if (pn) comm.add(pn); }
+  assert.ok(comm.size >= 6, `interface modules: ${[...comm].join(', ')}`);
+  for (const pn of comm) assert.equal(getPart(pn)!.category, 'commModule', `${pn}: not an I/O module`);
+  const ioModules = new Set([...partsIn('plcModule'), ...PLATFORMS.flatMap((pl) => pl.modules.map((m) => getPart(m)!))].map((p) => p.partNumber));
+  for (const pn of comm) assert.ok(!ioModules.has(pn), `${pn} offered as an I/O module`);
+  for (const pl of PLATFORMS) for (const cpu of pl.cpus) for (const m of modulesToFit(cpu, [], need({ digitalInputs: 64, digitalOutputs: 32, analogInputs: 8 })) ?? []) assert.ok(!comm.has(m), `${cpu}: ${m} suggested as I/O`);
   for (const p of ALL_HMIS().filter((x) => x.ratings.plcModules !== undefined)) for (const part of String(p.ratings.plcModules).split(';')) {
     const id = part.split('=')[0].trim();
     assert.ok(driversOf(p).includes(id), `${p.partNumber}: plcModules names ${id}, which is not in its driver list`);

@@ -10,7 +10,7 @@ export type CatalogCategory =
   | 'contactor' | 'overload' | 'motorProtector' | 'vfd'
   | 'relay' | 'safetyRelay' | 'terminal' | 'terminalAccessory'
   | 'pushbutton' | 'estop' | 'pilotLight' | 'selector' | 'stackLight'
-  | 'plc' | 'plcModule' | 'hmi' | 'sensor' | 'solenoidValve'
+  | 'plc' | 'plcModule' | 'commModule' | 'hmi' | 'sensor' | 'solenoidValve'
   | 'dinRail' | 'wireDuct' | 'groundBar' | 'fan' | 'other'
   | 'servoDrive' | 'servoMotor' | 'encoder';
 

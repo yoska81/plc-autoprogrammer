@@ -370,7 +370,7 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
 - **PLC module a serial panel needs:** `ratings.plcModules` ("platform-id=module; …") on the serial-only and PROFIBUS panels. `plcModuleFor(hmi, platformId)` in platforms.ts returns it, or null when nothing is needed.
   - Modules: CM 1243-5 on an S7-1200, CM 1542-5 on a non-DP S7-1500, FX5-232-BD/ADP on an FX5U, NX1W-CIF01 on an NX1P2, CP1W-CIF01/11 on a CP2E-N.
   - The picker (Dev 5) shows the note and the BOM (Dev 4) adds the module. The modules themselves are not catalog parts yet.
-- **PLC interface modules as verified catalog parts.** Each comes from its maker's datasheet or manual.
+- **PLC interface modules as verified catalog parts** (category `commModule`, never the I/O `plcModule`, so they never take an I/O slot or shift addresses). Each comes from its maker's datasheet or manual.
   - The parts:
     - Siemens CM 1243-5 (6GK7243-5DX30-0XE0, 30 x 100 mm, 24 VDC 0.1 A).
     - Siemens CM 1542-5 (6GK7542-5DX10-0XE0, which supersedes DX00; 35 x 142 mm, 200 mA at 15 V on the backplane).

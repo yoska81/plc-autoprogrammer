@@ -1364,7 +1364,7 @@ export const MITSUBISHI: CatalogPart[] = [
   },
   {
     partNumber: 'FX5-232-BD',
-    category: 'plcModule',
+    category: 'commModule',
     description: 'FX5 RS-232C expansion board (9-pin D-sub), fits on the front of an FX5S / FX5UJ / FX5U CPU',
     manufacturer: 'Mitsubishi Electric',
     family: 'MELSEC iQ-F',
@@ -1375,7 +1375,7 @@ export const MITSUBISHI: CatalogPart[] = [
   },
   {
     partNumber: 'FX5-232ADP',
-    category: 'plcModule',
+    category: 'commModule',
     description: 'FX5 RS-232C communication adapter (9-pin D-sub, isolated), mounts left of an FX5S / FX5UJ / FX5U / FX5UC CPU',
     manufacturer: 'Mitsubishi Electric',
     family: 'MELSEC iQ-F',

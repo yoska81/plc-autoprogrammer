@@ -3998,7 +3998,7 @@ export const SIEMENS: CatalogPart[] = [
   },
   {
     partNumber: '6GK7243-5DX30-0XE0',
-    category: 'plcModule',
+    category: 'commModule',
     description: 'S7-1200 CM 1243-5 PROFIBUS DP master module (RS-485 Sub-D), mounts left of the CPU, needs 24 VDC',
     manufacturer: 'Siemens',
     family: 'SIMATIC S7-1200',
@@ -4011,7 +4011,7 @@ export const SIEMENS: CatalogPart[] = [
   },
   {
     partNumber: '6GK7542-5DX10-0XE0',
-    category: 'plcModule',
+    category: 'commModule',
     description: 'S7-1500 CM 1542-5 PROFIBUS DP master/device module (RS-485 Sub-D), on the S7-1500 rail',
     manufacturer: 'Siemens',
     family: 'SIMATIC S7-1500',

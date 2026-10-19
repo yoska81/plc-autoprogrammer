@@ -1233,7 +1233,7 @@ export const OMRON: CatalogPart[] = [
   },
   {
     partNumber: 'NX1W-CIF01',
-    category: 'plcModule',
+    category: 'commModule',
     description: 'NX1P2 serial option board, 1 x RS-232C (screwless terminal block)',
     manufacturer: 'Omron',
     family: 'NX1P',
@@ -1244,7 +1244,7 @@ export const OMRON: CatalogPart[] = [
   },
   {
     partNumber: 'NX1W-CIF11',
-    category: 'plcModule',
+    category: 'commModule',
     description: 'NX1P2 serial option board, 1 x RS-422A/485 (screwless terminal block, not isolated)',
     manufacturer: 'Omron',
     family: 'NX1P',
@@ -1255,7 +1255,7 @@ export const OMRON: CatalogPart[] = [
   },
   {
     partNumber: 'CP1W-CIF01',
-    category: 'plcModule',
+    category: 'commModule',
     description: 'CP1E-N / CP2E-N serial option board, 1 x RS-232C (9-pin D-sub female)',
     manufacturer: 'Omron',
     family: 'CP1E / CP2E',
@@ -1266,7 +1266,7 @@ export const OMRON: CatalogPart[] = [
   },
   {
     partNumber: 'CP1W-CIF11',
-    category: 'plcModule',
+    category: 'commModule',
     description: 'CP1E-N / CP2E-N serial option board, 1 x RS-422A/485 (terminal block, not isolated)',
     manufacturer: 'Omron',
     family: 'CP1E / CP2E',
