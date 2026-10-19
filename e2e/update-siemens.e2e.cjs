@@ -28,7 +28,7 @@ const seen = { equipment: null, unknown: [] };
 function reply(system) {
   if (system.includes('choosing the control equipment')) {
     seen.equipment = system;
-    const panel = (system.match(/^- (\S+) \((Siemens|Weintek|Maple Systems|Red Lion)[^)]*\): 7"/m) || system.match(/^- (\S+) \([^)]*\): 7"/m) || system.match(/^- (\S+) \([^)]*\):/m) || [])[1] ?? null;
+    const panel = EQUIP.hmi ?? (system.match(/^- (\S+) \((Siemens|Weintek|Maple Systems|Red Lion)[^)]*\): 7"/m) || system.match(/^- (\S+) \([^)]*\): 7"/m) || system.match(/^- (\S+) \([^)]*\):/m) || [])[1] ?? null;
     return {
       summary: `${EQUIP.cpuId} for the capper.`, estimatedIO: { digitalInputs: 8, digitalOutputs: 4, analogInputs: 0, analogOutputs: 0, motionAxes: 0 },
       plc: { profileId: 'siemens-s7', cpuId: EQUIP.cpuId, why: 'Siemens, as the customer asked.' }, modules: EQUIP.modules.map((partNumber) => ({ partNumber, quantity: 1, why: 'I/O' })),
@@ -225,7 +225,8 @@ async function extras(browser) {
 // tag table (.sdf) gives the same point. The CPU has no I/O of its own, so every point is on an ET 200SP module.
 async function s1500(browser) {
   console.log('• === S7-1500 + ET 200SP: shown and exported addresses agree');
-  EQUIP = { cpuId: '6ES7511-1AL03-0AB0', modules: ['6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0'] };
+  // The AI answers with a C-more panel here: Update all must swap it for one that talks to the S7.
+  EQUIP = { cpuId: '6ES7511-1AL03-0AB0', modules: ['6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0'], hmi: 'CM5-T7W' };
   const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -266,6 +267,9 @@ async function s1500(browser) {
     return { cpu: p.cpu.id, modules: p.modules, exported, ids, hmi: hmiTagRows(p).filter((r) => r.plcIo).map((r) => [r.address, r.plcIo]) };
   });
   console.log('  ·', out.cpu, out.modules.join(', '), '|', shown.slice(0, 3).map((x) => x.join('=')).join(' '), '| export', out.exported.slice(0, 3).map((t) => `${t.name}=${t.address}`).join(' '));
+  check(results.some((r) => /^equipment done: .*The CM5-T7W panel cannot talk to the 6ES7511-1AL03-0AB0: \S+ \(/.test(r)), 'AI path: a panel that cannot talk to the S7 is swapped, and said');
+  const hmiNow = await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
+  check(hmiNow && !/^CM5-/.test(hmiNow), `the project's panel talks to the S7 (${hmiNow})`);
   check(out.cpu === '6ES7511-1AL03-0AB0' && out.modules.length >= 2, `S7-1500 with ET 200SP modules (${out.cpu} ${out.modules.join(', ')})`);
   const exportedAt = new Set(out.exported.filter((t) => t.type === 'Bool').map((t) => t.address));
   // Every wired point is in the tag table with its description (the ones the program does not use say so).

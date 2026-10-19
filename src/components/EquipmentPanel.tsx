@@ -180,7 +180,12 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     if (doorPoints.length && confirm(`The touch panel takes over Start, Stop, Reset and Auto/Manual. Remove the door devices added for "No touch panel"?\n\n${doorPoints.map((p) => `• ${p.description}`).join('\n')}\n\n(Cancel keeps them: the program then uses both.)`)) {
       useIOStore.getState().applyIOUpdate([], [], doorPoints.map((p) => p.id));
     }
-    const warning = applyEquipment(choice, rec);
+    // A panel that cannot talk to the chosen CPU is never applied: the closest one that can takes its place (said).
+    const panel = choice.hmiPartNumber ? getHmi(choice.hmiPartNumber) : undefined;
+    const talks = !choice.hmiPartNumber || hasBuiltInPanel(getPart(choice.hmiPartNumber)) || (panel ? hmiFit(panel, need, choice.cpuId).ok : true);
+    const checked = talks ? choice : { ...choice, ...withCpu(choice.cpuId) };
+    if (!talks) setChoice(checked);
+    const warning = applyEquipment(checked, rec);
     if (warning) alert(warning);
     onApplied?.();
   };
@@ -324,7 +329,12 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                     <div className="font-medium text-steel-800">{a.label}</div>
                     <div className="text-xs font-mono text-steel-600">{a.cpuId}{a.hmiPartNumber ? ` · ${a.hmiPartNumber}` : ''}</div>
                     <p className="text-xs text-steel-600">{a.tradeoff}</p>
-                    <button onClick={() => set({ cpuId: a.cpuId, hmiPartNumber: a.hmiPartNumber })} className="text-xs text-brand-800 font-medium hover:underline">Select</button>
+                    <button onClick={() => {
+                      // The suggestion's own panel when it talks to that CPU, else the same check as any CPU change.
+                      const own = a.hmiPartNumber ? getHmi(a.hmiPartNumber) : undefined;
+                      if (a.hmiPartNumber && (hasBuiltInPanel(getPart(a.hmiPartNumber)) || (own && hmiFit(own, need, a.cpuId).ok))) { setPanelNote(null); set({ cpuId: a.cpuId, hmiPartNumber: a.hmiPartNumber }); }
+                      else set(withCpu(a.cpuId));
+                    }} className="text-xs text-brand-800 font-medium hover:underline">Select</button>
                   </div>
                 ))}
               </div>
