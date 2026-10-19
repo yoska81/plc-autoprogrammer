@@ -42,9 +42,12 @@ export function plcNameOf(p: ProjectSnapshot): (address: string) => string {
   if (p.profile.id === 'click') return (a) => a;
   const modules = moduleSlots(p.modules);
   const tagOf = plcTagNameOf(p);
+  // Only an address a point is on has a terminal to name: an unused X001 on an S7-1500 (no on-board I/O; its %I0.0
+  // is the first module's) or on a UniStream without on-board I/O is left as it is.
+  const used = new Set([...p.addresses.values()].map((a) => a.toUpperCase()));
   return (a) => {
     const up = a.toUpperCase();
-    if (/^[XY]\d+$/.test(up)) return p.profile.ioTag?.(up, modules, p.cpu.id) ?? tagOf(up).io ?? a;
+    if (/^[XY]\d+$/.test(up)) return used.has(up) ? p.profile.ioTag?.(up, modules, p.cpu.id) ?? tagOf(up).io ?? a : a;
     return tagOf(up).name || a;
   };
 }
