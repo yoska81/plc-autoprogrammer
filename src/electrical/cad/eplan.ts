@@ -10,6 +10,7 @@
  * its own instance hierarchy (generic AutomationML roles): EPLAN's AR APC import ignores it, other
  * AutomationML tools read it. Lists for the rest (terminals, cables, connections) are CSV.
  */
+import { ioLabel } from '../ioNames';
 import { billOfMaterials, nativeModel, cableScheduleCsv, terminalPlanCsv, type DrawingContext, type ElectricalModel } from '../derive';
 
 export interface EplanOptions {
@@ -179,7 +180,7 @@ export function amlDocument(ctx: DrawingContext, opts: EplanOptions = {}, model:
         const ioType = p.type === 'input' ? 'Input' : 'Output';
         const chId = uuidOf(`ch/${p.address}`), tId = uuidOf(`tag/${p.address}`);
         chans.push(`<ExternalInterface Name="${esc(`${ioType}_${k}`)}" ID="${chId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Channel">${attr('Type', 'Digital')}${attr('IoType', ioType)}${attr('Number', k, 'xs:int')}${attr('Length', 1, 'xs:int')}</ExternalInterface>`);
-        tagIf.push(`<ExternalInterface Name="${esc(sym.get(p.address) ?? p.address)}" ID="${tId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Tag">${attr('DataType', 'BOOL')}${attr('IoType', ioType)}${attr('LogicalAddress', p.address)}${attr('Comment', p.description)}</ExternalInterface>`);
+        tagIf.push(`<ExternalInterface Name="${esc(sym.get(p.address) ?? p.address)}" ID="${tId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Tag">${attr('DataType', 'BOOL')}${attr('IoType', ioType)}${attr('LogicalAddress', ioLabel(model.ioNames, p.address))}${attr('Comment', p.description)}</ExternalInterface>`);
         links.push(`<InternalLink Name="${esc(`LinkToTag_${p.address}`)}" ID="${uuidOf(`link/${p.address}`)}" RefPartnerSideA="${chId}" RefPartnerSideB="${tId}" />`);
         stats.channels++; stats.tags++;
       });
@@ -188,7 +189,7 @@ export function amlDocument(ctx: DrawingContext, opts: EplanOptions = {}, model:
       const ioType = a.kind === 'output' ? 'Output' : 'Input';
       const chId = uuidOf(`ch/${a.address}`), tId = uuidOf(`tag/${a.address}`);
       chans.push(`<ExternalInterface Name="${esc(`Analog${ioType}_${a.channel || k}`)}" ID="${chId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Channel">${attr('Type', 'Analog')}${attr('IoType', ioType)}${attr('Number', k, 'xs:int')}${attr('Length', 16, 'xs:int')}</ExternalInterface>`);
-      tagIf.push(`<ExternalInterface Name="${esc(sym.get(a.address) ?? a.address)}" ID="${tId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Tag">${attr('DataType', 'REAL')}${attr('IoType', ioType)}${attr('LogicalAddress', a.address)}${attr('Comment', `${a.description} (${a.range}, ${a.scaleMin}..${a.scaleMax} ${a.units})`.trim())}</ExternalInterface>`);
+      tagIf.push(`<ExternalInterface Name="${esc(sym.get(a.address) ?? a.address)}" ID="${tId}" RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Tag">${attr('DataType', 'REAL')}${attr('IoType', ioType)}${attr('LogicalAddress', ioLabel(model.ioNames, a.address))}${attr('Comment', `${a.description} (${a.range}, ${a.scaleMin}..${a.scaleMax} ${a.units})`.trim())}</ExternalInterface>`);
       links.push(`<InternalLink Name="${esc(`LinkToTag_${a.address}`)}" ID="${uuidOf(`link/${a.address}`)}" RefPartnerSideA="${chId}" RefPartnerSideB="${tId}" />`);
       stats.channels++; stats.tags++;
     });
@@ -267,8 +268,8 @@ const fileSafe = (s: string) => s.replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '
 export function plcAssignmentCsv(model: ElectricalModel, ctx: DrawingContext, symbols?: Map<string, string>): string {
   const sym = symbolTable(model, ctx, symbols);
   const rows: unknown[][] = [['PLC card', 'Part number (PLC card)', 'Connection point', 'Address', 'Symbolic address', 'Data type', 'Function text', 'Device tag (field device)', 'Signal type']];
-  for (const g of model.groups) g.points.forEach((p, k) => rows.push([g.devTag, g.devTag === model.plcTag ? ctx.plc.cpuPartNumber : g.partNumber ?? '', k, p.address, sym.get(p.address) ?? p.address, 'BOOL', p.description, p.deviceTag, p.type === 'input' ? 'Digital input' : 'Digital output']));
-  for (const a of ctx.analog ?? []) rows.push([analogCard(ctx, a, model.plcTag), a.partNumber, a.terminal || a.channel, a.address, sym.get(a.address) ?? a.address, 'REAL', a.description, '', `Analog ${a.kind === 'output' ? 'output' : 'input'}`]);
+  for (const g of model.groups) g.points.forEach((p, k) => rows.push([g.devTag, g.devTag === model.plcTag ? ctx.plc.cpuPartNumber : g.partNumber ?? '', k, ioLabel(model.ioNames, p.address), sym.get(p.address) ?? p.address, 'BOOL', p.description, p.deviceTag, p.type === 'input' ? 'Digital input' : 'Digital output']));
+  for (const a of ctx.analog ?? []) rows.push([analogCard(ctx, a, model.plcTag), a.partNumber, a.terminal || a.channel, ioLabel(model.ioNames, a.address), sym.get(a.address) ?? a.address, 'REAL', a.description, '', `Analog ${a.kind === 'output' ? 'output' : 'input'}`]);
   return csv(rows);
 }
 

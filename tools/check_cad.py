@@ -289,7 +289,8 @@ def check_aml(v: str, xml: bytes, data):
                 report('FAIL', where, f'{tagname} base class {p} not in the file')
     tags = doc.findall('.//c:ExternalInterface[@RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Tag"]', NS)
     addrs = sorted(t.findtext('c:Attribute[@Name="LogicalAddress"]/c:Value', namespaces=NS) or '' for t in tags)
-    want = sorted(x['address'] for x in data['io'] if x['address'])
+    # the address as the PLC names it (S7 %I0.0 for X001), as on the drawings
+    want = sorted(x.get('native') or x['address'] for x in data['io'] if x['address'])
     if addrs != want:
         report('FAIL', where, f'tags {len(addrs)} vs {len(want)} I/O points; missing {sorted(set(want) - set(addrs))[:8]}, extra {sorted(set(addrs) - set(want))[:8]}')
     if len({t.get('Name') for t in tags}) != len(tags):
@@ -329,6 +330,11 @@ def check_eplan(v: str, z: zipfile.ZipFile, data, autocad_dxfs: list[str]):
             continue
         if n == 'plc_assignment_list.csv' and len(rows) - 1 != len(data['io']):
             report('FAIL', f'{v} {n}', f'{len(rows) - 1} rows for {len(data["io"])} I/O points')
+        if n == 'plc_assignment_list.csv' and rows[0][:4] == ['PLC card', 'Part number (PLC card)', 'Connection point', 'Address']:
+            shown = {x.get('native') or x['address'] for x in data['io'] if x['address']}
+            listed = {r[3] for r in rows[1:]}
+            if listed != shown:
+                report('FAIL', f'{v} {n}', f'Address column is not the PLC\'s naming: missing {sorted(shown - listed)[:6]}, extra {sorted(listed - shown)[:6]}')
         if n == 'connection_list.csv' and len(rows) - 1 != len(data['wires']):
             report('FAIL', f'{v} {n}', f'{len(rows) - 1} rows for {len(data["wires"])} wires')
     if 'parts_eplan.xml' in names:

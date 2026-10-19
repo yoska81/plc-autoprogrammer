@@ -39,6 +39,7 @@ import { ALL_PARTS } from './catalogs';
 import { coolingCover, dcFanAmps } from './cooling';
 import { coilMatchesRail, relayLadder, type Ladder } from './relayLogic';
 import { ioNames, renamePin, renameWire, type IoNames } from './ioNames';
+import { takesAc } from './inputVolts';
 import { ALLOWED_RISE_C, cabinetHeat } from './thermal';
 import { withIecStrips } from '../standards/designations';
 import { issuedForConstruction } from '../standards/issue';
@@ -3121,14 +3122,18 @@ export function designWarnings(ctx: DrawingContext): string[] {
     for (const q of m.ladder?.questions ?? []) w.push(`Relay logic: ${q}`);
   }
 
+  // a PLC that names only part of its I/O (Micro800 2085 expansion modules, UniStream slot I/O): the rest keeps the
+  // app's addresses on the drawings and lists, so the mix is said
+  const kept = m.ioNames.native.size ? m.io.filter((p) => /^[XY]\d{3}$/.test(p.address) && !m.ioNames.native.has(p.address)).map((p) => p.address) : [];
+  if (kept.length) w.push(`PLC I/O ${kept.length > 3 ? `${kept[0]}…${kept[kept.length - 1]} (${kept.length} points)` : kept.join(', ')} keeps the app's addresses on the drawings and lists (sheet titles say APP ADDRESSES): the PLC's software names these module points only when the module is configured — map them there; the CPU's own I/O is drawn in the PLC's naming.`);
+
   // a 1-phase supply fed phase to phase above its input rating (a 120-240 V SITOP on a 480 V bus), and a branch
   // breaker rated below the system voltage (a 240 V 5SJ4 on 480 V): both fail at power-up
   const sys = SUPPLY_INFO[ctx.design.inputs.supply];
   for (const b of m.psBranches.filter((x) => !x.fromXfmr && m.phases === 3 && x.feedWires.length === 2)) {
-    // every input range it states ("100-120VAC L-N or 200-500VAC L-L"); one fed phase to phase must cover the bus
+    // every AC input it states (ranges, auto-range nominals, L-N ranges aside: inputVolts.ts) must take the bus
     const text = String(b.ps.part?.ratings.inputVolts ?? '');
-    const ranges = [...text.matchAll(/(\d+)\s*[-/]\s*(\d+)\s*VAC(\s*L-N)?/gi)].filter((r) => !r[3]).map((r) => [Number(r[1]), Number(r[2])]);
-    if (ranges.length && !ranges.some(([lo, hi]) => lo <= sys.volts && sys.volts <= hi)) w.push(`${b.ps.tag} ${b.ps.partNumber} takes ${text} but is fed L1-L2 at ${sys.volts} V: it would be destroyed at power-up — choose a supply for ${sys.volts} V (3-phase input) or feed it from a control transformer.`);
+    if (!takesAc(text, sys.volts)) w.push(`${b.ps.tag} ${b.ps.partNumber} takes ${text} but is fed L1-L2 at ${sys.volts} V: it would be destroyed at power-up — choose a supply for ${sys.volts} V (3-phase input) or feed it from a control transformer.`);
   }
   for (const b of [...m.psBranches, ...m.auxBranches]) {
     const p = b.protection?.part;
