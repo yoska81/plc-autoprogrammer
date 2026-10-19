@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ShopRates } from './buildTime';
+import { appPersistStorage } from '../lib/appStorage';
 
 /**
  * The shop's own build-time rates and hourly labour rate, kept in this browser for every project
@@ -24,7 +25,7 @@ export const useShopRatesStore = create<ShopRatesStore>()(
       setHourlyRate: (hourlyRate) => set({ hourlyRate }),
       reset: () => set({ rates: {}, hourlyRate: 0 }),
     }),
-    { name: 'plc-shop-rates' },
+    { name: 'plc-shop-rates', storage: appPersistStorage() },
   ),
 );
 

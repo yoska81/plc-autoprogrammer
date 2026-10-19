@@ -7,6 +7,7 @@
 import type { AnalogCircuit } from '../../analog';
 import { AREA, AREA_B, AREA_R, LW_THIN } from '../geometry';
 import type { DrawingPlan, PlannedSheet, SheetSpec } from '../plan';
+import { useIoLabel } from '../wireNames';
 import { Dot, Ground, Line, TermBox, TermPt, Txt, WireNo } from '../symbols';
 
 export const ANALOG_PER_SHEET = 6;
@@ -16,6 +17,7 @@ const Y0 = AREA.y + 16;
 
 /** PLC analog output wired straight to a device inside the panel (VFD speed input). */
 function InternalLoop({ c, y }: { c: AnalogCircuit; y: number }) {
+  const lbl = useIoLabel();
   const r = c.row, d = c.internal!;
   const yP = y, yM = y + 7, yS = y + 14;
   return (
@@ -45,13 +47,14 @@ function InternalLoop({ c, y }: { c: AnalogCircuit; y: number }) {
       <Dot x={X.dev} y={yM} />
       <Txt x={X.desc} y={yP + 0.2} size={2.6} bold maxW={AREA_R - X.desc - 2}>{r.description.toUpperCase()}</Txt>
       <Txt x={X.desc} y={yP + 4} size={2.2} maxW={AREA_R - X.desc - 2}>{`${r.range} SPEED REFERENCE TO DRIVE ${d.tag}`}</Txt>
-      <Txt x={X.desc} y={yP + 7.8} size={2.2} mono maxW={AREA_R - X.desc - 2}>{`${r.address} = ${r.scaleMin} … ${r.scaleMax} ${r.units}`}</Txt>
+      <Txt x={X.desc} y={yP + 7.8} size={2.2} mono maxW={AREA_R - X.desc - 2}>{`${lbl(r.address)} = ${r.scaleMin} … ${r.scaleMax} ${r.units}`}</Txt>
       <Txt x={X.desc} y={yP + 11.6} size={2.0} maxW={AREA_R - X.desc - 2}>{`CABINET · SHIELDED PAIR · ${r.partNumber}`}</Txt>
     </g>
   );
 }
 
 function Loop({ c, y }: { c: AnalogCircuit; y: number }) {
+  const lbl = useIoLabel();
   if (c.internal) return <InternalLoop c={c} y={y} />;
   const r = c.row;
   const yP = y, yM = y + 7, yS = y + 14;
@@ -102,7 +105,7 @@ function Loop({ c, y }: { c: AnalogCircuit; y: number }) {
       {/* description */}
       <Txt x={X.desc} y={yP + 0.2} size={2.6} bold maxW={AREA_R - X.desc - 2}>{r.description.toUpperCase()}</Txt>
       <Txt x={X.desc} y={yP + 4} size={2.2} maxW={AREA_R - X.desc - 2}>{kind}</Txt>
-      <Txt x={X.desc} y={yP + 7.8} size={2.2} mono maxW={AREA_R - X.desc - 2}>{`${r.address} = ${r.scaleMin} … ${r.scaleMax} ${r.units}`}</Txt>
+      <Txt x={X.desc} y={yP + 7.8} size={2.2} mono maxW={AREA_R - X.desc - 2}>{`${lbl(r.address)} = ${r.scaleMin} … ${r.scaleMax} ${r.units}`}</Txt>
       <Txt x={X.desc} y={yP + 11.6} size={2.0} maxW={AREA_R - X.desc - 2}>{`${(c.zone || 'FIELD').toUpperCase()} · CABLE ${c.cable} · ${r.partNumber}`}</Txt>
     </g>
   );

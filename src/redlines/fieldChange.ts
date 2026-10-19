@@ -96,7 +96,8 @@ export function applyEdits(edits: DesignEdit[], s: { design: ElectricalDesign | 
   const motor = (list: DesignInputs['motors'], tag: string, patch: Partial<DesignInputs['motors'][number]>) => list.map((m) => (m.tag === tag ? { ...m, ...patch } : m));
   for (const e of edits) {
     if (e.kind === 'motor-hp' || e.kind === 'motor-starter') {
-      const patch = e.kind === 'motor-hp' ? { hp: e.hp } : { starter: e.starter };
+      // a motor the field changed is the designer's now (fromDesign cleared, as an edit on the Design tab does)
+      const patch = { ...(e.kind === 'motor-hp' ? { hp: e.hp } : { starter: e.starter }), fromDesign: undefined };
       inputs = { ...inputs, motors: motor(inputs.motors, e.tag, patch) };
       if (design) design = { ...design, inputs: { ...design.inputs, motors: motor(design.inputs.motors, e.tag, patch) } };
     } else if (e.kind === 'io-description') {

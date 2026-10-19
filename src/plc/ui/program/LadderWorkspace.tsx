@@ -1,6 +1,6 @@
 import { useSettingsStore } from '../../../store/useSettingsStore';
 import { noTouchPanelNow, useActiveHmiDesign } from '../../../hmi/projectPanel';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';
 import { useIOStore } from '../../../store/useIOStore';
 import { looksLeftOver } from '../../../spec/leftovers';
@@ -8,7 +8,7 @@ import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, Arrow
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
 import { useProgramStore } from '../../../store/useProgramStore';
-import { generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../ai/ladderAI';
+import { changeScope, generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../ai/ladderAI';
 import { generateRuleBasedProgram } from '../../ai/cycleAI';
 import SequenceTable from './SequenceTable';
 import { useElectricalStore } from '../../../store/useElectricalStore';
@@ -17,6 +17,8 @@ import { diffPrograms, summarizeDiff, type RungChange } from '../../core/diff';
 import { GENERAL_BLOCK, scopeToBlock } from '../../sim/blocks';
 import type { LadderProgram, Rung } from '../../core/ladder';
 import LadderView from '../ladder/LadderView';
+import { usePlc } from '../../core/usePlc';
+import { nativeName } from '../../core/addressCheck';
 import { Spinner, ReasoningPanel } from '../../../components/common';
 import StageBanner from '../../../components/StageBanner';
 import ProgramOutOfStep from '../../../components/ProgramOutOfStep';
@@ -37,6 +39,9 @@ import { useUi } from '../../../store/useUiStore';
 import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 import VoiceTextarea from '../../../voice/VoiceTextarea';
 import SpeakButton from '../../../voice/SpeakButton';
+import { usePlcNames } from '../ladder/plcNames';
+import { useProjectStore } from '../../../store/useProjectStore';
+import { ptoPointsFor } from '../../../electrical/highSpeedIo';
 
 type Tab = 'describe' | 'fix' | 'history';
 
@@ -159,7 +164,28 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     const box = ladderBox.current, w = Number(box?.querySelector('[data-ladder-width]')?.getAttribute('data-ladder-width') ?? 0);
     if (box && w) setZoom(Math.round(Math.min(2, Math.max(0.4, (box.clientWidth - 24) / w)) * 100) / 100);
   };
-  const history = useLadderHistory(ladder, store.editLadder);
+  // While the AI builds or changes the program, hand edits (undo / redo too) are held: its result would replace them.
+  const { editLadder } = store;
+  const setLadder = useCallback((p: LadderProgram) => { if (!useProgramStore.getState().isGenerating) editLadder(p); }, [editLadder]);
+  const history = useLadderHistory(ladder, setLadder);
+  // History: a version before the first hand edit of the visit and before its first rung deletion (once each, so a
+  // run of edits never pushes the AI and restore versions out of the history).
+  const handSaved = useRef(false), deleteSaved = useRef(false);
+  const handEdit = (p: LadderProgram) => {
+    if (isGenerating) return;
+    if (!handSaved.current && ladder.rungs.length) { store.saveVersion('Before hand edits'); handSaved.current = true; }
+    else if (!deleteSaved.current && p.rungs.length < ladder.rungs.length) { store.saveVersion('Before deleting a rung'); deleteSaved.current = true; }
+    history.edit(p);
+  };
+  // The addresses offered when a contact or coil is clicked (the I/O list first, then named tags), with what each is
+  // (input, output, bit, timer …) so a coil is not offered an input, and in the PLC's own name (%I0.1 on an S7).
+  const { modules } = usePlc();
+  const choices = useMemo(() => {
+    const rack = { profile: ctx.profile, cpu: ctx.cpu, modules };
+    return [...labels].map(([address, label]) => ({ address, label, native: nativeName(rack, address), kind: ctx.profile.parseAddress(address)?.kind ?? (/^X\d/.test(address) ? 'input' : /^Y\d/.test(address) ? 'output' : undefined) }));
+  }, [labels, ctx.profile, ctx.cpu, modules]);
+  // Siemens / Logix: the PLC's own tag names on the ladder (the names in the exported program).
+  const plcNames = usePlcNames(ladder);
   const [xrefAddress, setXrefAddress] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(() => (searchParams.get('rung') ? { id: searchParams.get('rung')!, n: 0 } : null));
@@ -194,7 +220,10 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     );
   };
 
-  const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet, hmiDesign ?? undefined), [ladder, ctx.profile, ioAddressSet, hmiDesign]);
+  // CLICK: a motion axis's pulse must be on a pulse-train output of the CPU's option-slot module.
+  const moduleParts = useProjectStore((st) => st.modules);
+  const checkOpts = useMemo(() => (ctx.profile.id === 'click' ? { pulseOutputs: ptoPointsFor(ctx.cpu.id, moduleParts) } : {}), [ctx.profile.id, ctx.cpu.id, moduleParts]);
+  const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet, hmiDesign ?? undefined, checkOpts), [ladder, ctx.profile, ioAddressSet, hmiDesign, checkOpts]);
 
   // While reviewing an AI change, show the proposed program with removed rungs kept in place.
   const review = useMemo(() => {
@@ -206,9 +235,9 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       display,
       changes,
       summary: summarizeDiff(entries),
-      issues: validateProgram(proposal.program, ctx.profile, ioAddressSet, hmiDesign ?? undefined),
+      issues: validateProgram(proposal.program, ctx.profile, ioAddressSet, hmiDesign ?? undefined, checkOpts),
     };
-  }, [proposal, ladder, ctx.profile, ioAddressSet, hmiDesign]);
+  }, [proposal, ladder, ctx.profile, ioAddressSet, hmiDesign, checkOpts]);
 
   const rungNumber = (id: string) => (review?.display ?? ladder).rungs.findIndex((r) => r.id === id) + 1;
 
@@ -266,13 +295,19 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     const scoped = activeBlock !== null && !specUpdate ? `[Block: ${blockName}${activeBlock ? ` (id "${activeBlock}")` : ''}] ${req}` : req;
     store.addChat({ role: 'user', text: scoped });
     setRequest('');
-    return runAI('program-revise', 'PLC program change', (signal) => reviseLadder({ ...ai, signal }, ctx, ladder, issues, history, scoped), (r) => {
+    // A big program: only the chosen block is sent (the AI writes back what it is sent), or the user is told what to do.
+    const simBlock = activeBlock === null || specUpdate ? null : activeBlock === GENERAL ? GENERAL_BLOCK : activeBlock;
+    const scope = changeScope(ladder, ctx, simBlock, blockName);
+    if ('tooBig' in scope) { store.addChat({ role: 'assistant', text: scope.tooBig, outcome: 'no-change' }); return; }
+    const sentIds = scope.part ? new Set(scope.program.rungs.map((r) => r.id)) : null;
+    const sentIssues = sentIds ? issues.filter((i) => !i.rungId || sentIds.has(i.rungId)) : issues;
+    return runAI('program-revise', 'PLC program change', (signal) => reviseLadder({ ...ai, signal }, scope.ctx, scope.program, sentIssues, history, scoped), (r) => {
       const st = useProgramStore.getState();
       if (r.program) {
         // A change asked for one block changes only that block; the rest of the program stays as it is.
         let program = r.program, explanation = r.explanation;
-        if (activeBlock !== null && !specUpdate) {
-          const scopedResult = scopeToBlock(ladder, r.program, activeBlock === GENERAL ? GENERAL_BLOCK : activeBlock);
+        if (simBlock !== null) {
+          const scopedResult = scopeToBlock(ladder, r.program, simBlock, scope.part);
           program = scopedResult.program;
           if (scopedResult.outside) explanation += `\n\nOnly the block ${blockName} was changed: ${scopedResult.outside} change${scopedResult.outside === 1 ? '' : 's'} the AI made to other blocks ${scopedResult.outside === 1 ? 'was' : 'were'} left out. Select "Whole program" to ask for changes there.`;
         }
@@ -334,7 +369,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                   <li>✓ <Link to="/io" className="underline">I/O list</Link> — {io.length} points</li>
                   <li>✓ <Link to="/hmi" className="underline">HMI design</Link>{hmiDesign ? ` — ${hmiDesign.screens.length} screens` : ' — none yet'}</li>
                 </ul>
-                {specText ? <div className="text-xs text-gray-500 mt-1">You don't need to copy anything here: change the machine description and press Generate.</div> : <div className="text-xs text-amber-800 mt-1">The machine description is empty: describe the machine first.</div>}
+                {specText ? <div className="text-xs text-gray-500 mt-1">You don't need to copy anything here: change the machine description and press Build program from my project.</div> : <div className="text-xs text-amber-800 mt-1">The machine description is empty: describe the machine first.</div>}
               </div>
               {ladder.rungs.length > 0 && chat[0]?.role === 'assistant' && chat[0].outcome === 'applied' && (
                 <div className="text-xs text-gray-700 bg-green-50 border border-green-200 rounded px-3 py-2 whitespace-pre-wrap" data-testid="program-summary">
@@ -441,7 +476,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleRevise(request); } }}
               rows={3}
               disabled={Boolean(proposal) || !ladder.rungs.length}
-              placeholder={proposal ? 'Approve or reject the proposed change first' : ladder.rungs.length ? 'Describe a problem or change… (Enter to send)' : 'Generate a program first'}
+              placeholder={proposal ? 'Approve or reject the proposed change first' : ladder.rungs.length ? 'Describe a problem or change… (Enter to send)' : 'Build the program first'}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none disabled:bg-gray-50"
             />
             {request.length > 600 && (
@@ -497,8 +532,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               </button>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
-              <button onClick={history.undo} disabled={!history.canUndo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Undo the last hand edit (Ctrl+Z)" aria-label="Undo"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /></button>
-              <button onClick={history.redo} disabled={!history.canRedo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" aria-label="Redo"><ArrowUturnRightIcon className="h-3.5 w-3.5" /></button>
+              <button onClick={history.undo} disabled={!history.canUndo || isGenerating} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Undo the last hand edit (Ctrl+Z)"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo</button>
+              <button onClick={history.redo} disabled={!history.canRedo || isGenerating} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Redo (Ctrl+Shift+Z / Ctrl+Y)"><ArrowUturnRightIcon className="h-3.5 w-3.5" /> Redo</button>
               <span className="mx-1 h-4 border-l border-gray-300" />
               <button onClick={() => zoomBy(1 / 1.1)} disabled={zoom <= 0.4} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" aria-label="Zoom out"><MagnifyingGlassMinusIcon className="h-3.5 w-3.5" /></button>
               <button onClick={() => setZoom(1)} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40 w-12 justify-center tabular-nums" title="Back to 100%" aria-label="Zoom level">{Math.round(zoom * 100)}%</button>
@@ -536,13 +571,19 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
         {/* The ladder diagram pans both ways. */}
         <div ref={ladderBox} {...phonePanel(narrow, 'program', 'ladder')} className={`flex-1 min-w-0 overflow-auto${narrow && pane !== 'ladder' ? ' hidden' : ''}`} data-scroll-x="">
           {review ? (
-            <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} zoom={zoom} />
+            <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} zoom={zoom} plcNames={plcNames} />
           ) : ladder.rungs.length ? (
             <>
-            {ladder.sequence && (activeBlock === null || activeBlock === 'cycle') && <SequenceTable sequence={ladder.sequence} labels={labels} />}
+            {isGenerating && (
+              <div className="sticky left-0 top-0 z-20 flex items-center gap-2 border-b border-gray-200 bg-[#f7f8f9] px-3 py-2 text-xs text-gray-700">
+                <Spinner className="h-3.5 w-3.5 text-brand-800" /> The AI is working on the program. Hand edits are paused until it finishes, so they are not lost.
+              </div>
+            )}
+            {ladder.sequence && (activeBlock === null || activeBlock === 'cycle') && <SequenceTable sequence={ladder.sequence} labels={labels} plcNames={plcNames} />}
             <LadderView
+              plcNames={plcNames}
               program={shown}
-              onChange={activeBlock === null ? history.edit : (p) => history.edit(mergeBlock(ladder, activeBlock, p))}
+              onChange={isGenerating ? undefined : activeBlock === null ? handEdit : (p) => handEdit(mergeBlock(ladder, activeBlock, p))}
               zoom={zoom}
               numberOf={activeBlock === null ? undefined : realNumber}
               labels={labels}
@@ -550,6 +591,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               selectedRungId={selectedRungId}
               onSelectRung={setSelectedRungId}
               progressive
+              editTools
+              choices={choices}
             />
             </>
           ) : isGenerating ? (
@@ -562,17 +605,23 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               <p>No program yet.</p>
               <p>Click Build program from my project on the left (it uses the machine description, I/O list and HMI), or start an empty program and draw it by hand.</p>
               <button
-                onClick={() => store.editLadder({ rungs: [{ id: 'r_first', comment: '', branches: [[{ type: 'NO', address: '' }]], outputs: [{ type: 'OUT', address: '' }] }], tags: [] })}
-                className="mt-2 px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+                onClick={() => handEdit({ rungs: [{ id: 'r_first', comment: '', branches: [[{ type: 'NO', address: '' }]], outputs: [{ type: 'OUT', address: '' }] }], tags: [] })}
+                className="mt-2 px-3 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700"
               >
                 Start empty program
               </button>
+              {/* The last rung deleted by hand: one click brings it back. */}
+              {history.canUndo && (
+                <button onClick={history.undo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-gray-50" title="Undo the last hand edit (Ctrl+Z)">
+                  <ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo
+                </button>
+              )}
             </div>
           )}
         </div>
         {hasRungs && (narrow ? pane === 'xref' : xrefOpen) && (
           <ResizablePane id="program.xref" defaultSize={340} min={240} max={700} handle="left" fill={narrow} panel={phonePanel(narrow, 'program', 'xref')} className={narrow ? 'overflow-auto' : 'border-l border-gray-200'}>
-            <CrossRefPanel program={ladder} labelOf={labelOf} address={xrefAddress} onAddress={setXrefAddress}
+            <CrossRefPanel program={ladder} labelOf={labelOf} plcNames={plcNames} address={xrefAddress} onAddress={setXrefAddress}
               selectedRungId={selectedRungId} onRung={jumpToRung} onClose={() => (narrow ? setPhonePane('ladder') : setXrefOpen(false))} />
           </ResizablePane>
         )}
@@ -593,7 +642,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       </section>
       {printing && (
         <ProgramPrint program={ladder} projectName={store.projectName} plcName={`${ctx.profile.vendor} ${ctx.profile.name} · ${ctx.cpu.label}`}
-          issues={issues} labels={labels} analog={analog} onClose={() => setPrinting(false)} />
+          issues={issues} labels={labels} analog={analog} plcNames={plcNames} onClose={() => setPrinting(false)} />
       )}
     </div>
   );

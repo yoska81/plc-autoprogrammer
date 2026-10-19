@@ -106,6 +106,8 @@ export interface IsaDesktop {
   /** A project file (.isap) opened from Explorer (double-click / "Open with"). */
   /** Returns an unsubscribe (older app builds return nothing). */
   onOpenFile?(cb: (name: string, bytes: Uint8Array, filePath: string) => void): (() => void) | void;
+  /** Closing the window waits for `flush` (the projects' last writes to IndexedDB), at most 10 s. */
+  onFlushStorage?(flush: () => Promise<void>): void;
   /** Write again to a file chosen earlier in a Save dialog (or opened from Explorer). */
   writeFile?(filePath: string, bytes: Uint8Array): Promise<DesktopSaveResult>;
   /** Microphone permission for voice input: 'always' (remembered), 'session' (until the app closes) or 'ask'. */

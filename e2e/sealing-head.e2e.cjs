@@ -114,9 +114,13 @@ function reply(text) {
   });
 
   await page.goto(BASE + '/#/spec');
-  await page.evaluate(() => localStorage.clear());
+  // Start from the example project (as start-clean.e2e does): with projects kept in IndexedDB a cleared
+  // localStorage alone no longer opens the example.
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/#/spec');
-  await page.waitForTimeout(1500);
+  await page.locator('select[aria-label="Open project"]').selectOption('p_example');
+  await page.locator('main h1, main h2').first().waitFor({ timeout: 15000 });
+  await page.waitForTimeout(300);
   // The user's case: a copy of the example with their own description.
   await page.evaluate(async ({ spec }) => {
     const ps = await appImport('/src/store/useProjectsStore.ts');

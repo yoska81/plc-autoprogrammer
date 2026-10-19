@@ -66,6 +66,8 @@ export interface DesignInputs {
   /** Control circuits kept as relay logic (a converted machine, "keep relay logic with NA parts"): drawn as NFPA 79
    * ladder sheets instead of PLC I/O sheets. Written by the converter (src/convert), read by the engine and drawings. */
   relayLogic?: RelayLogic;
+  /** The motor list's fromDesign marks are set (the engine writes this; absent on inputs saved before the marks). */
+  motorsMarked?: boolean;
 }
 
 /** Relay control logic: rungs between the control rails, in drawing order. */
@@ -147,6 +149,9 @@ export interface MotorSpec {
   voltage: SupplyVoltage;
   starter: StarterType;
   reversing: boolean;
+  /** The engine read this motor from the description / I/O list (not typed or edited by the designer): a later
+   * design for a machine that no longer has it drops it without a note. */
+  fromDesign?: boolean;
 }
 
 /** One placed component in the design (BOM line + drawing symbol). */

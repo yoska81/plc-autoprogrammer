@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { appPersistStorage } from '../lib/appStorage';
 
 /**
  * Values the user typed over generated ones ("edited by you"). Part of the project data (saved per
@@ -105,7 +106,7 @@ export const useEditsStore = create<EditsStore>()(
         return { texts };
       }),
     }),
-    { name: 'plc-edits-store', partialize: (s) => ({ bom: s.bom, labels: s.labels, notes: s.notes, texts: s.texts }) },
+    { name: 'plc-edits-store', storage: appPersistStorage(), partialize: (s) => ({ bom: s.bom, labels: s.labels, notes: s.notes, texts: s.texts }) },
   ),
 );
 

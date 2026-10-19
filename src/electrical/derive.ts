@@ -38,6 +38,7 @@ import { iecColor, iecMotorCurrent, isIec, mm2For, mm2FromAwg, mm2Text, regionSi
 import { ALL_PARTS } from './catalogs';
 import { coolingCover, dcFanAmps } from './cooling';
 import { coilMatchesRail, relayLadder, type Ladder } from './relayLogic';
+import { ioNames, renamePin, renameWire, type IoNames } from './ioNames';
 import { ALLOWED_RISE_C, cabinetHeat } from './thermal';
 import { withIecStrips } from '../standards/designations';
 import { issuedForConstruction } from '../standards/issue';
@@ -488,6 +489,8 @@ export interface ElectricalModel {
   hmi?: HmiLink;
   /** Enclosure filter fan switched by its thermostat (24 VDC from TB1, or AC — not drawn). */
   fan?: FanCircuit;
+  /** The PLC's own I/O names (empty for CLICK): PLC terminal rows and I/O wire numbers follow them (ioNames.ts). */
+  ioNames: IoNames;
   /** The relay ladder kept from a converted machine (DesignInputs.relayLogic), numbered around the panel's own wiring. */
   ladder?: Ladder;
 }
@@ -538,6 +541,22 @@ export function buildModel(ctx: DrawingContext): ElectricalModel {
   const m = ctx.designations === 'iec81346' ? withIecStrips(computeModel(ctx)) : computeModel(ctx);
   cache.set(ctx, m);
   return m;
+}
+
+const nativeCache = new WeakMap<DrawingContext, ElectricalModel>();
+/**
+ * The model as the drawings and lists show it: for a PLC that names its I/O differently (S7 %I0.0, Micro800,
+ * Unitronics) the I/O wire numbers and PLC pins in its own naming (X001 → I0.0, PLC:X001 → PLC:I0.0); the same
+ * model for CLICK. Matching against I/O addresses (troubleshooting, design rules) uses buildModel.
+ */
+export function nativeModel(ctx: DrawingContext): ElectricalModel {
+  const m = buildModel(ctx);
+  if (!m.ioNames.wire.size) return m;
+  const hit = nativeCache.get(ctx);
+  if (hit) return hit;
+  const n = renameIo(m);
+  nativeCache.set(ctx, n);
+  return n;
 }
 
 export function resolveComponents(ctx: DrawingContext): ResolvedComponent[] {
@@ -799,7 +818,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const mw = effectiveMachine(ctx, io, motors);
 
   // groups
-  const modules = byCat(rc, 'plcModule');
+  // A CLICK PLUS option-slot module plugs into the CPU: its points are slot 0 (X001… / Y001…), the CPU's own.
+  const allModules = byCat(rc, 'plcModule');
+  const optionMod = allModules.find((mm) => isOptionSlotModule(mm.part));
+  const modules = allModules.filter((mm) => mm !== optionMod);
   const groups: IoGroup[] = [];
   for (const p of io) {
     let g = groups.find((x) => x.key === p.group);
@@ -809,7 +831,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       let part: CatalogPart | undefined;
       let label: string;
       let devTag = plcTag;
-      if (slot === '0') { partNumber = ctx.plc.cpuPartNumber; part = plcPart; label = `CPU ${ctx.plc.cpuPartNumber}`; }
+      if (slot === '0' && optionMod) { partNumber = optionMod.partNumber; part = optionMod.part; devTag = optionMod.tag; label = `CPU ${ctx.plc.cpuPartNumber} OPTION SLOT ${optionMod.partNumber}`; }
+      else if (slot === '0') { partNumber = ctx.plc.cpuPartNumber; part = plcPart; label = `CPU ${ctx.plc.cpuPartNumber}`; }
       else if (slot) {
         const mod = modules.find((mm) => String(num(mm.part?.ratings, 'slot') ?? '') === slot)
           ?? modules.filter((mm) => num(mm.part?.ratings, 'slot') === undefined)[Number(slot) - 1];
@@ -1403,9 +1426,13 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   if (analog.strip) strips.push(analog.strip);
   machine.cables.push(...analog.cables);
   if (iec) toIec(wires, machine.cables);
+  // a PLC that names its I/O differently (S7 %I0.0, Micro800, Unitronics): its I/O wires are numbered after it on the
+  // drawings and lists (nativeModel); this model keeps the app addresses that the I/O list, troubleshooting and the
+  // design rules match against
+  const names = ioNames(ctx.plc.cpuPartNumber, byCat(rc, 'plcModule').map((c) => c.partNumber), [...io.map((p) => p.address), ...analog.circuits.map((c) => c.row.address)]);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, servos: servo.axes, hmi, fan, ladder,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, servos: servo.axes, hmi, fan, ladder, ioNames: names,
   };
 }
 
@@ -1413,6 +1440,23 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
  * IEC regions: the fixed AWG sizes above become the IEC size with at least the same copper (IEC
  * 60228; e.g. 14 AWG → 2,5 mm², 18 AWG → 1 mm²) and NFPA 79 colours become IEC 60204-1 §13.2 ones.
  */
+/** A copy of the model with its I/O wire numbers and PLC pins in the PLC's own naming (ioNames.ts). */
+function renameIo(m: ElectricalModel): ElectricalModel {
+  const names = m.ioNames;
+  const w = (s: string) => renameWire(names, s), pin = (s: string) => renamePin(names, s);
+  return {
+    ...m,
+    io: m.io.map((p) => ({ ...p, wire: w(p.wire) })),
+    wires: m.wires.map((x) => ({ ...x, wire: w(x.wire), from: pin(x.from), to: pin(x.to) })),
+    strips: m.strips.map((s) => ({ ...s, terminals: s.terminals.map((t) => ({ ...t, wire: w(t.wire), group: w(t.group), internal: pin(t.internal), external: pin(t.external) })) })),
+    machine: {
+      ...m.machine,
+      cables: m.machine.cables.map((c) => ({ ...c, cores: c.cores.map((k) => ({ ...k, wire: w(k.wire), from: pin(k.from), to: pin(k.to) })) })),
+      jbs: m.machine.jbs.map((j) => ({ ...j, terminals: j.terminals.map((t) => ({ ...t, wire: w(t.wire) })) })),
+    },
+  };
+}
+
 function toIec(wires: WireRecord[], cables: { size: string }[]) {
   for (const w of wires) { w.color = iecColor(w.color, w.function); w.size = regionSize(w.size, 'IEC'); }
   for (const c of cables) c.size = regionSize(c.size, 'IEC');
@@ -1816,12 +1860,12 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
 
 /** All wire segments (from/to) with wire number, NFPA 79 color and suggested size. */
 export function wireNumbers(ctx: DrawingContext): WireRecord[] {
-  return buildModel(ctx).wires;
+  return nativeModel(ctx).wires;
 }
 
 /** Terminal strips TB1 (power/24V distribution), TB2 (field inputs), TB3 (field outputs). */
 export function terminalPlan(ctx: DrawingContext): TerminalStrip[] {
-  return buildModel(ctx).strips;
+  return nativeModel(ctx).strips;
 }
 
 export interface BomLine {
@@ -1863,12 +1907,39 @@ export function terminalCounts(ctx: DrawingContext) {
   return { feed, ground, fused, endPlates, endStops };
 }
 
+/**
+ * The parts a kit is ordered as (`ratings.kitParts` "PN xN, PN xN", e.g. a Siemens 8WD44 signal column), or null for
+ * an ordinary part. A distributor takes only real part numbers, so the BOM lists these instead of the kit.
+ */
+export function kitPartsOf(part: CatalogPart | undefined): { partNumber: string; each: number }[] | null {
+  const raw = part?.ratings.kitParts;
+  if (!raw) return null;
+  const parts = String(raw).split(',').map((s) => s.trim().match(/^(\S+)(?:\s*x\s*(\d+))?$/i)).filter((x): x is RegExpMatchArray => !!x)
+    .map((x) => ({ partNumber: x[1], each: x[2] ? parseInt(x[2], 10) : 1 }));
+  return parts.length ? parts : null;
+}
+
 export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
   const m = buildModel(ctx);
   const tc = terminalCounts(ctx);
   const lines = new Map<string, BomLine>();
   const notesFromLayout: BomLine[] = [];
   for (const c of m.rc) {
+    // A kit: one line per real part (qty = kit qty x each), listed with the device it builds; the drawings keep one device.
+    const kit = kitPartsOf(c.part);
+    if (kit) {
+      for (const k of kit) {
+        const key = `${c.category}|${k.partNumber}`;
+        const l = lines.get(key);
+        if (l) { l.qty += c.comp.quantity * k.each; if (!l.tags.includes(c.tag)) l.tags.push(c.tag); continue; }
+        const kp = ctx.getPart(k.partNumber);
+        lines.set(key, {
+          item: 0, qty: c.comp.quantity * k.each, partNumber: k.partNumber, manufacturer: kp?.manufacturer ?? c.part?.manufacturer ?? '',
+          description: `${kp?.description ?? `Part of ${c.part?.description ?? c.partNumber}`} — part of the ${c.tag} kit (${c.partNumber})`, tags: [c.tag], category: c.category,
+        });
+      }
+      continue;
+    }
     const key = `${c.category}|${c.partNumber}`;
     const l = lines.get(key);
     if (l) { l.qty += c.comp.quantity; l.tags.push(c.tag); continue; }
@@ -2994,12 +3065,14 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
   const curtains = (m.safety.extraRelays ?? []).filter((x) => x.kind === 'light-curtain').map((x) => x.relay.tag);
   if (curtains.length && m.servos.some((a) => a.sto)) w.push(`${m.servos.filter((a) => a.sto).map((a) => a.drive.tag).join(', ')}: both STO channels come straight from the safety relay ${m.safety.relay?.tag ?? ''}, so a trip of the light curtain relay ${curtains.join(', ')} does not stop the servo. If the axis is in the guarded area, wire the light curtain into the safety relay's inputs (or use a relay with two safety outputs for each curtain).`);
+  for (const a of m.servos) for (const c of a.pinClashes ?? []) w.push(`ERROR — ${c}`);
   for (const a of m.servos.filter((x) => !x.sto && x.stoMissing)) {
     w.push(a.stoMissing === 'no-relay'
       ? `${a.drive.tag}: Safe Torque Off (STO) is not wired because the design has no safety relay — the servo drive cannot run without it. Add a safety relay with at least two N.O. safety outputs.`
       : `${a.drive.tag}: the safety relay ${m.safety.relay?.tag ?? ''} has no free N.O. safety output for the second STO channel — STO is not wired and the drive cannot run. Choose a safety relay with more safety outputs, or take the PLC status signal from its N.C. auxiliary contact.`);
   }
-  const slots = m.groups.flatMap((g) => { const n = Number(/:(\d+)$/.exec(g.key)?.[1]); return n > 0 ? [{ slot: n, part: g.partNumber ? ctx.getPart(g.partNumber) : undefined }] : []; });
+  // Slot 0 included: a CLICK PLUS option-slot module (where the pulse outputs are) is addressed there.
+  const slots = m.groups.flatMap((g) => { const n = Number(/:(\d+)$/.exec(g.key)?.[1]); return n >= 0 ? [{ slot: n, part: g.partNumber ? ctx.getPart(g.partNumber) : undefined }] : []; });
   w.push(...motionWarnings(ctx.getPart(ctx.plc.cpuPartNumber), ctx.plc.cpuPartNumber, m.io, slots));
   // Analog points (DF) are in ctx.io but not in the discrete m.io.
   const extra = ctx.design.ioWiring.filter((x) => !m.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase()) && !(/^DF\d+$/i.test(x.address) && ctx.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase())));
@@ -3048,6 +3121,21 @@ export function designWarnings(ctx: DrawingContext): string[] {
     for (const q of m.ladder?.questions ?? []) w.push(`Relay logic: ${q}`);
   }
 
+  // a 1-phase supply fed phase to phase above its input rating (a 120-240 V SITOP on a 480 V bus), and a branch
+  // breaker rated below the system voltage (a 240 V 5SJ4 on 480 V): both fail at power-up
+  const sys = SUPPLY_INFO[ctx.design.inputs.supply];
+  for (const b of m.psBranches.filter((x) => !x.fromXfmr && m.phases === 3 && x.feedWires.length === 2)) {
+    // every input range it states ("100-120VAC L-N or 200-500VAC L-L"); one fed phase to phase must cover the bus
+    const text = String(b.ps.part?.ratings.inputVolts ?? '');
+    const ranges = [...text.matchAll(/(\d+)\s*[-/]\s*(\d+)\s*VAC(\s*L-N)?/gi)].filter((r) => !r[3]).map((r) => [Number(r[1]), Number(r[2])]);
+    if (ranges.length && !ranges.some(([lo, hi]) => lo <= sys.volts && sys.volts <= hi)) w.push(`${b.ps.tag} ${b.ps.partNumber} takes ${text} but is fed L1-L2 at ${sys.volts} V: it would be destroyed at power-up — choose a supply for ${sys.volts} V (3-phase input) or feed it from a control transformer.`);
+  }
+  for (const b of [...m.psBranches, ...m.auxBranches]) {
+    const p = b.protection?.part;
+    // the breaker's highest (phase-to-phase) voltage: "230/400 VAC" is a 400 V breaker
+    const rated = p ? Math.max(0, ...[...String(p.ratings.volts ?? '').matchAll(/\d{3}/g)].map((x) => Number(x[0]))) : 0;
+    if (b.protection && rated && rated < sys.volts && !('fromXfmr' in b && b.fromXfmr)) w.push(`${b.protection.tag} ${b.protection.partNumber} is rated ${p!.ratings.volts} but sits on the ${sys.volts} V bus: choose a breaker rated for ${sys.volts} V.`);
+  }
   w.push(...panelLayout(ctx).warnings);
   // cooling: heat the walls cannot shed needs a filter fan, a heat exchanger or an air conditioner in the design
   {
@@ -3100,17 +3188,17 @@ export function bomCsv(ctx: DrawingContext): string {
 
 /** Effective machine wiring (design.machine completed with defaults). */
 export function machineWiring(ctx: DrawingContext): MachineWiring {
-  return buildModel(ctx).machine.wiring;
+  return nativeModel(ctx).machine.wiring;
 }
 
 /** Field cables W001…: trunks cabinet→JB, device cables, motor cables. */
 export function cableSchedule(ctx: DrawingContext): Cable[] {
-  return buildModel(ctx).machine.cables;
+  return nativeModel(ctx).machine.cables;
 }
 
 /** Junction box terminal plans (incoming trunk cores, outgoing device cables). */
 export function junctionBoxPlans(ctx: DrawingContext): JunctionBoxPlan[] {
-  return buildModel(ctx).machine.jbs;
+  return nativeModel(ctx).machine.jbs;
 }
 
 export function cableScheduleCsv(ctx: DrawingContext): string {
@@ -3180,7 +3268,12 @@ export interface PlcRackSlot {
   outputStyle: IoGroup['outputStyle'];
   /** True when the catalog gives the point counts (spare points can be listed). */
   known: boolean;
+  /** A CLICK PLUS option-slot module plugged into this CPU (slot 0): its I/O is slot 0's. */
+  option?: { tag: string; partNumber: string; part?: CatalogPart };
 }
+
+/** A CLICK PLUS option-slot module (plugs into the CPU, addressed as slot 0). */
+const isOptionSlotModule = (p?: CatalogPart) => /option slot/i.test(String(p?.ratings.moduleType ?? ''));
 
 /** CPU + discrete I/O modules in slot order, with point counts from the catalog. */
 export function plcRack(ctx: DrawingContext): PlcRackSlot[] {
@@ -3196,6 +3289,13 @@ export function plcRack(ctx: DrawingContext): PlcRackSlot[] {
   const modules = byCat(m.rc, 'plcModule');
   let free = 0;
   for (const mod of modules) {
+    // The option-slot module is slot 0 (it takes the CPU's place for I/O: a CLICK PLUS CPU has none of its own).
+    if (isOptionSlotModule(mod.part)) {
+      const i = ins(mod.part) ?? 0, o = outs(mod.part) ?? 0;
+      // The CPU stays slot 0's part (the rack still shows it); the option module is listed with it and gives its I/O.
+      out[0] = { ...out[0], description: `${out[0].description} + option slot ${mod.partNumber}`, inputs: out[0].inputs + i, outputs: out[0].outputs + o, outputStyle: outputStyleOf(mod.partNumber, mod.part), known: true, option: { tag: mod.tag, partNumber: mod.partNumber, part: mod.part } };
+      continue;
+    }
     const fixed = num(mod.part?.ratings, 'slot');
     const slot = fixed ?? ++free;
     const i = ins(mod.part), o = outs(mod.part);

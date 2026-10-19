@@ -4,7 +4,7 @@
  * wire sits at WIRE_Y so neighbouring cells line up.
  */
 import { useContext } from 'react';
-import { MnemonicsContext } from './mnemonics';
+import { MnemonicsContext, PlcNamesContext, withPlcNames } from './mnemonics';
 import type { LadderElement, LadderOutput } from '../../core/ladder';
 import {
   BOX_HEADER, BOX_LINE, BOX_TOP, CELL_W, OUT_W, ROW_H, SYM_H, SYM_TOP, WIRE_Y,
@@ -30,24 +30,36 @@ interface CellProps {
 }
 
 function Address({ text, struck }: { text: string; struck?: boolean }) {
+  // The PLC's own tag name on top when it has one (Siemens / Logix); the app operand goes in the small line.
+  const native = useContext(PlcNamesContext)?.(text);
+  const shown = native?.name ?? text;
   return (
     <div
       className={`absolute inset-x-0 top-0 h-[18px] truncate px-1 text-center font-mono text-[12px] font-bold leading-[18px] ${
         text ? 'text-slate-900' : 'text-red-500'
       } ${struck ? 'line-through' : ''}`}
-      title={text}
+      title={native ? `${native.name} — app operand ${text}${native.io ? `, ${native.io}` : ''}` : text}
     >
-      {text || '???'}
+      {shown || '???'}
     </div>
   );
 }
 
-function Label({ text, top }: { text?: string; top: number }) {
+/** The small line under a symbol: with a PLC name on top, the app operand (and the PLC's I/O address) first. */
+function useSubLabel(address: string, label?: string): string | undefined {
+  const native = useContext(PlcNamesContext)?.(address);
+  if (!native) return label;
+  return [address, native.io, label && label !== native.name ? `· ${label}` : ''].filter(Boolean).join(' ');
+}
+
+function Label({ text, top, mnemonic }: { text?: string; top: number; mnemonic?: string }) {
+  // Clear of the vendor mnemonic in the corner (Mnemonic) when the cell shows one.
+  const pad = useContext(MnemonicsContext)?.[mnemonic ?? ''] ? 30 : undefined;
   if (!text) return null;
   return (
     <div
       className="absolute inset-x-0 truncate px-1 text-center text-[10.5px] leading-[14px] text-slate-500"
-      style={{ top }}
+      style={{ top, ...(pad ? { paddingRight: pad } : {}) }}
       title={text}
     >
       {text}
@@ -103,8 +115,10 @@ function ContactSvg({ type }: { type: 'NO' | 'NC' | 'RISE' | 'FALL' }) {
 }
 
 export function ElementCell({ element, label, selected, struck, onClick }: CellProps & { element: LadderElement }) {
+  const names = useContext(PlcNamesContext);
+  const sub = useSubLabel(element.type === 'CMP' || element.type === 'RAW' ? '' : element.address, label);
   if (element.type === 'CMP') {
-    const text = `${element.left || '?'} ${element.op} ${element.right || '?'}`;
+    const text = withPlcNames(`${element.left || '?'} ${element.op} ${element.right || '?'}`, names);
     const bw = CELL_W - 12;
     return (
       <CellShell width={CELL_W} height={ROW_H} selected={selected} onClick={onClick} title={text}>
@@ -114,7 +128,7 @@ export function ElementCell({ element, label, selected, struck, onClick }: CellP
           <CompareTitle op={element.op} />
         </div>
         <div
-          className={`absolute flex items-center justify-center rounded-sm border-2 border-slate-800 bg-white px-1 font-mono text-[11.5px] font-bold text-slate-900 ${struck ? 'line-through' : ''}`}
+          className={`absolute flex items-center justify-center rounded-sm border-2 border-slate-800 bg-white px-1 font-mono ${names ? 'text-[10px]' : 'text-[11.5px]'} font-bold text-slate-900 ${struck ? 'line-through' : ''}`}
           style={{ left: 6, top: SYM_TOP, width: bw, height: SYM_H }}
         >
           <span className="truncate">{text}</span>
@@ -144,7 +158,7 @@ export function ElementCell({ element, label, selected, struck, onClick }: CellP
       <Address text={element.address} struck={struck} />
       <ContactSvg type={element.type} />
       <Mnemonic k={element.type} />
-      <Label text={label} top={SYM_TOP + SYM_H + 3} />
+      <Label text={sub} top={SYM_TOP + SYM_H + 3} mnemonic={element.type} />
     </CellShell>
   );
 }
@@ -184,20 +198,22 @@ function boxTitle(o: LadderOutput, m: Record<string, string> | undefined): strin
 
 export function OutputCell({ output, label, selected, struck, onClick }: CellProps & { output: LadderOutput }) {
   const mn = useContext(MnemonicsContext);
+  const names = useContext(PlcNamesContext);
   const h = outputRowHeight(output);
   const addr = outputAddress(output);
+  const sub = useSubLabel(addr, label);
   if (!isBox(output)) {
     return (
       <CellShell width={OUT_W} height={h} selected={selected} onClick={onClick}>
         <Address text={addr} struck={struck} />
         <CoilSvg type={output.type as 'OUT' | 'SET' | 'RST'} />
         <Mnemonic k={output.type} />
-        <Label text={label} top={SYM_TOP + SYM_H + 3} />
+        <Label text={sub} top={SYM_TOP + SYM_H + 3} mnemonic={output.type} />
       </CellShell>
     );
   }
   const bh = boxHeight(output);
-  const lines = boxLines(output);
+  const lines = boxLines(output).map((l) => withPlcNames(l, names));
   const showAddr = output.type === 'TMR' || output.type === 'CNT';
   return (
     <CellShell width={OUT_W} height={h} selected={selected} onClick={onClick}>
@@ -210,7 +226,7 @@ export function OutputCell({ output, label, selected, struck, onClick }: CellPro
         <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-100 px-2" style={{ height: BOX_HEADER - 2 }}>
           <span className="text-[11px] font-bold tracking-wider text-slate-600">{boxTitle(output, mn)}</span>
           {showAddr && (
-            <span className={`truncate font-mono text-[12px] font-bold ${addr ? 'text-slate-900' : 'text-red-500'}`}>{addr || '???'}</span>
+            <span className={`truncate font-mono text-[12px] font-bold ${addr ? 'text-slate-900' : 'text-red-500'}`} title={addr}>{withPlcNames(addr, names).replace(/\.(Q|DN)$/, '') || '???'}</span>
           )}
         </div>
         <div className="px-2 pt-[3px]">
@@ -221,7 +237,7 @@ export function OutputCell({ output, label, selected, struck, onClick }: CellPro
           ))}
         </div>
       </div>
-      <Label text={label} top={BOX_TOP + bh + 3} />
+      <Label text={sub} top={BOX_TOP + bh + 3} />
     </CellShell>
   );
 }

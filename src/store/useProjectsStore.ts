@@ -12,6 +12,7 @@ import { useDraftStore } from './useDraftStore';
 import { useEditsStore } from '../edits/useEditsStore';
 import { aiBusy } from '../lib/ai/busy';
 import { notify } from './useNoticeStore';
+import { appPersistStorage, appStorage } from '../lib/appStorage';
 
 /** A project name's length limit (the header, summaries and file names stay readable). */
 export const PROJECT_NAME_MAX = 80;
@@ -46,7 +47,8 @@ const dataKey = (id: string) => `plc-project-data:${id}`;
 function snapshot(): Snapshot {
   const out: Snapshot = {};
   for (const [key, store] of Object.entries(PROJECT_STORES) as [StoreKey, (typeof PROJECT_STORES)[StoreKey]][]) {
-    const partialize = store.persist.getOptions().partialize;
+    // Without browser storage (tests, a blocked profile) the persist API may be missing: save the whole state.
+    const partialize = store.persist?.getOptions().partialize;
     const state = store.getState();
     out[key] = partialize ? partialize(state as never) : state;
   }
@@ -67,9 +69,17 @@ export function runDerived(fn: () => void): void {
 /** The stores that hold the open project's own data (for change tracking). */
 export const PROJECT_STORE_LIST = Object.entries(PROJECT_STORES).map(([key, store]) => ({ key, store }));
 
+// Told after a project's data is in the stores (e.g. ioChange migrates an older address layout).
+const loadListeners = new Set<() => void>();
+export function onProjectLoaded(f: () => void): () => void {
+  loadListeners.add(f);
+  return () => { loadListeners.delete(f); };
+}
+
 function load(data: Snapshot | null) {
   loadingProject = true;
   try { loadInto(data); } finally { loadingProject = false; }
+  for (const l of loadListeners) l();
 }
 
 function loadInto(data: Snapshot | null) {
@@ -85,7 +95,7 @@ function loadInto(data: Snapshot | null) {
 
 function save(id: string) {
   try {
-    localStorage.setItem(dataKey(id), JSON.stringify(snapshot()));
+    appStorage.setItem(dataKey(id), JSON.stringify(snapshot()));
   } catch {
     // Storage full or blocked; the active project still lives in the stores.
   }
@@ -93,7 +103,7 @@ function save(id: string) {
 
 function read(id: string): Snapshot | null {
   try {
-    const raw = localStorage.getItem(dataKey(id));
+    const raw = appStorage.getItem(dataKey(id));
     return raw ? (JSON.parse(raw) as Snapshot) : null;
   } catch {
     return null;
@@ -163,11 +173,11 @@ export const useProjectsStore = create<ProjectsStore>()(
       deleteProject: (id) => {
         const { activeId, projects } = get();
         if (id === activeId) return; // can't delete the open project
-        try { localStorage.removeItem(dataKey(id)); } catch { /* ignore */ }
+        try { appStorage.removeItem(dataKey(id)); } catch { /* ignore */ }
         set({ projects: projects.filter((p) => p.id !== id) });
       },
     }),
-    { name: 'plc-projects' }
+    { name: 'plc-projects', storage: appPersistStorage() }
   )
 );
 
@@ -184,14 +194,14 @@ export function saveActiveProject(): void {
 }
 
 /** Copy of the open project, kept before anything is written over the stores. */
-export function backupActiveProject(reason: string): void {
+export function backupActiveProject(reason: string, projectName?: string): void {
   const { activeId, projects } = useProjectsStore.getState();
-  const name = projects.find((p) => p.id === activeId)?.name ?? useProgramStore.getState().projectName;
+  const name = projectName ?? projects.find((p) => p.id === activeId)?.name ?? useProgramStore.getState().projectName;
   try {
     const at = new Date().toISOString();
-    localStorage.setItem(`${BACKUP_PREFIX}${at}`, JSON.stringify({ name, at, reason, projectId: activeId, data: snapshot() }));
-    const keys = Object.keys(localStorage).filter((k) => k.startsWith(BACKUP_PREFIX)).sort();
-    for (const k of keys.slice(0, Math.max(0, keys.length - MAX_BACKUPS))) localStorage.removeItem(k);
+    appStorage.setItem(`${BACKUP_PREFIX}${at}`, JSON.stringify({ name, at, reason, projectId: activeId, data: snapshot() }));
+    const keys = appStorage.keys().filter((k) => k.startsWith(BACKUP_PREFIX)).sort();
+    for (const k of keys.slice(0, Math.max(0, keys.length - MAX_BACKUPS))) appStorage.removeItem(k);
   } catch {
     // storage full or blocked: nothing more we can do here
   }
@@ -228,17 +238,17 @@ export function listSavedWork(): SavedWork[] {
   const { projects, activeId } = useProjectsStore.getState();
   const out: SavedWork[] = [];
   let keys: string[];
-  try { keys = Object.keys(localStorage); } catch { return out; }
+  try { keys = appStorage.keys(); } catch { return out; }
   for (const k of keys) {
     try {
       if (k.startsWith('plc-project-data:')) {
         const id = k.slice('plc-project-data:'.length);
-        const data = JSON.parse(localStorage.getItem(k) ?? 'null') as Snapshot | null;
+        const data = JSON.parse(appStorage.getItem(k) ?? 'null') as Snapshot | null;
         if (!data) continue;
         const name = projects.find((p) => p.id === id)?.name ?? (data.program as { projectName?: string } | undefined)?.projectName ?? 'Unnamed project';
         out.push({ key: k, kind: 'project', name, at: null, reason: id === activeId ? 'Last saved copy of the open project' : null, open: id === activeId, ...summarise(data) });
       } else if (k.startsWith(BACKUP_PREFIX)) {
-        const b = JSON.parse(localStorage.getItem(k) ?? 'null') as { name: string; at: string; reason: string; data: Snapshot } | null;
+        const b = JSON.parse(appStorage.getItem(k) ?? 'null') as { name: string; at: string; reason: string; data: Snapshot } | null;
         if (!b) continue;
         out.push({ key: k, kind: 'backup', name: b.name, at: b.at, reason: b.reason, open: false, ...summarise(b.data) });
       }
@@ -253,7 +263,7 @@ export function listSavedWork(): SavedWork[] {
 export function restoreAsNewProject(key: string, name: string): boolean {
   let data: Snapshot | null;
   try {
-    const raw = JSON.parse(localStorage.getItem(key) ?? 'null') as Snapshot | { data: Snapshot } | null;
+    const raw = JSON.parse(appStorage.getItem(key) ?? 'null') as Snapshot | { data: Snapshot } | null;
     data = raw && 'data' in raw && key.startsWith(BACKUP_PREFIX) ? (raw as { data: Snapshot }).data : (raw as Snapshot | null);
   } catch {
     data = null;

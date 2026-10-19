@@ -23,6 +23,8 @@ export interface IOPoint {
   templateId?: string;
   /** Manual PLC address override (e.g. "X103"); empty = assigned automatically. */
   plcAddress?: string;
+  /** Why the app fixed plcAddress itself (shown on the I/O list), e.g. "kept on its wired terminal (migration)"; cleared when the user sets an address. */
+  addressNote?: string;
   /** Field device type when known (from the spec or the electrical design), e.g. "sensor-pnp". */
   deviceType?: string;
   /** "analog" = 4-20 mA / 0-10 V signal on an analog channel (CLICK: a DF register); missing = discrete on/off. */

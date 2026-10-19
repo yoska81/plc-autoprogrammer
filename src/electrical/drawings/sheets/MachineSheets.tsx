@@ -1,5 +1,6 @@
 /** Machine (field) wiring sheets: zone overview, cable schedule, junction box wiring. */
 import type { MachineDevice } from '../../derive';
+import { useIoLabel } from '../wireNames';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
 import {
   CABLE_ROWS, OV_ROW_H, OV_ZONE_HEAD, type DrawingPlan, type PlannedSheet, type SheetSpec, type ZonePlan, type ZoneRow,
@@ -98,6 +99,7 @@ function ZoneRowView({ r, rowTop, prevJbBus, region }: { r: ZoneRow; rowTop: num
 }
 
 function DeviceNode({ d, cx, busY, region }: { d: MachineDevice; cx: number; busY: number; region?: string }) {
+  const lbl = useIoLabel();
   const top = busY + 8;
   return (
     <g>
@@ -117,7 +119,7 @@ function DeviceNode({ d, cx, busY, region }: { d: MachineDevice; cx: number; bus
           <rect x={cx - DEV_W / 2} y={top} width={DEV_W} height={DEV_H} strokeWidth={LW} fill="#fff" strokeDasharray={d.guessed ? '1.2 0.6' : undefined} />
           <Txt x={cx} y={top + 4.6} size={2.6} mono bold anchor="middle">{d.tag}</Txt>
           <Txt x={cx} y={top + 8.2} size={1.9} anchor="middle" maxW={DEV_W - 1.5}>{TYPE_SHORT[d.deviceType] ?? 'DEVICE'}</Txt>
-          <Txt x={cx} y={top + 11.4} size={1.9} anchor="middle" maxW={DEV_W - 1.5}>{d.points.map((p) => p.address).join(' ')}</Txt>
+          <Txt x={cx} y={top + 11.4} size={1.9} anchor="middle" maxW={DEV_W - 1.5}>{d.points.map((p) => lbl(p.address)).join(' ')}</Txt>
         </g>
       )}
     </g>

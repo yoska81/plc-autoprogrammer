@@ -3,6 +3,7 @@ import { XMarkIcon } from '@heroicons/react/20/solid';
 import type { LadderProgram } from '../../core/ladder';
 import { GENERAL, crossReference, naturalAddress, rungUses } from './programIndex';
 import { useUi } from '../../../store/useUiStore';
+import type { PlcNameOf } from '../ladder/mnemonics';
 
 interface Props {
   program: LadderProgram;
@@ -13,16 +14,19 @@ interface Props {
   selectedRungId: string | null;
   onRung: (rungId: string) => void;
   onClose: () => void;
+  /** Siemens / Logix: the PLC's own names, shown first (the app operand smaller). */
+  plcNames?: PlcNameOf;
 }
 
 /** Cross reference: pick an address and see every rung that reads or writes it. */
-export default function CrossRefPanel({ program, labelOf, address, onAddress, selectedRungId, onRung, onClose }: Props) {
+export default function CrossRefPanel({ program, labelOf, address, onAddress, selectedRungId, onRung, onClose, plcNames }: Props) {
+  const shown = (a: string) => plcNames?.(a)?.name ?? a;
   const [filter, setFilter] = useUi('xref.filter', '');
   const xref = useMemo(() => crossReference(program), [program]);
   const blockName = (id: string) => (id === GENERAL ? 'General' : program.blocks?.find((b) => b.id === id)?.name ?? id);
   const all = useMemo(() => [...xref.keys()].sort(naturalAddress), [xref]);
   const f = filter.trim().toLowerCase();
-  const list = f ? all.filter((a) => `${a} ${labelOf(a)}`.toLowerCase().includes(f)) : all;
+  const list = f ? all.filter((a) => `${a} ${shown(a)} ${plcNames?.(a)?.io ?? ''} ${labelOf(a)}`.toLowerCase().includes(f)) : all;
   const uses = address ? xref.get(address) ?? [] : [];
   const writes = uses.filter((u) => u.kind === 'write');
   const selRung = selectedRungId ? program.rungs.find((r) => r.id === selectedRungId) : undefined;
@@ -42,7 +46,7 @@ export default function CrossRefPanel({ program, labelOf, address, onAddress, se
           <div className="flex flex-wrap gap-1">
             {selAddrs.map((a) => (
               <button key={a} type="button" onClick={() => onAddress(a)}
-                className={`rounded border px-1.5 py-0.5 font-mono ${address === a ? 'border-brand-600 bg-brand-600 text-white' : 'border-gray-300 hover:bg-brand-50'}`}>{a}</button>
+                title={a} className={`rounded border px-1.5 py-0.5 font-mono ${address === a ? 'border-brand-600 bg-brand-600 text-white' : 'border-gray-300 hover:bg-brand-50'}`}>{shown(a)}</button>
             ))}
           </div>
         </div>
@@ -51,7 +55,8 @@ export default function CrossRefPanel({ program, labelOf, address, onAddress, se
       {address && (
         <div className="max-h-[55%] overflow-y-auto border-b border-gray-200 px-3 py-2">
           <div className="flex items-baseline gap-2">
-            <span className="font-mono text-sm font-bold text-gray-900">{address}</span>
+            <span className="font-mono text-sm font-bold text-gray-900">{shown(address)}</span>
+            {plcNames?.(address) && <span className="font-mono text-[11px] text-gray-500">{[plcNames(address)?.io, address].filter(Boolean).join(' · ')}</span>}
             <span className="truncate text-gray-600">{labelOf(address)}</span>
           </div>
           <div className="mt-0.5 text-[11px] text-gray-500">
@@ -94,7 +99,7 @@ export default function CrossRefPanel({ program, labelOf, address, onAddress, se
             <li key={a}>
               <button type="button" onClick={() => onAddress(address === a ? null : a)}
                 className={`flex w-full items-center gap-2 rounded-sm px-1.5 py-0.5 text-left ${address === a ? 'bg-brand-600 text-white' : 'hover:bg-brand-50'}`}>
-                <span className="w-14 shrink-0 font-mono font-semibold">{a}</span>
+                <span className={`${plcNames ? 'w-40' : 'w-14'} shrink-0 truncate font-mono font-semibold`} title={plcNames ? `${shown(a)} — app operand ${a}` : a}>{shown(a)}</span>
                 <span className={`flex-1 truncate ${address === a ? '' : 'text-gray-600'}`}>{labelOf(a)}</span>
                 <span className={`shrink-0 font-mono text-[10.5px] ${address === a ? 'text-brand-800' : 'text-gray-400'}`} title="reads / writes">{u.length - w}R {w}W</span>
               </button>

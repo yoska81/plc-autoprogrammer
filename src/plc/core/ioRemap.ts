@@ -8,7 +8,7 @@
 export interface IoRemap {
   /** Same I/O point, new address (old → new). */
   moved: Map<string, string>;
-  /** The point was deleted: its old address → its I/O id. Whatever now sits at that address is another point. */
+  /** The point was deleted, or has no address after the change: its old address → its I/O id. Whatever now sits at that address is another point. */
   gone: Map<string, string>;
   /** Points that are new in the list: I/O id → address. */
   added: Map<string, string>;
@@ -24,7 +24,10 @@ export function ioRemap(prev: Map<string, string>, next: Map<string, string>): I
     if (!a) continue;
     if (!next.has(id)) { gone.set(a, id); continue; }
     const b = norm(next.get(id));
-    if (b && b !== a) moved.set(a, b);
+    // A point the new PLC has no address for (not enough I/O): its operands are marked like a deleted point's,
+    // never left on an address that is a plain register there (CLICK DF1 on a Micro800) or another point's.
+    if (!b) { gone.set(a, id); continue; }
+    if (b !== a) moved.set(a, b);
   }
   for (const [id, after] of next) if (!prev.has(id) && norm(after)) added.set(id, norm(after));
   return { moved, gone, added };

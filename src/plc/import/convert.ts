@@ -415,10 +415,19 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
  * bit of its own (the conditions of all the reset rungs, OR'ed). Rungs left with no output are dropped.
  */
 export function linkCounterResets(rungs: Rung[], tags: TagDefinition[], newBit: () => string, origin: Record<string, string> = {}): void {
+  // The reset rungs of each address, found once (a big program has thousands of counters).
+  const resets = new Map<string, Rung[]>();
+  for (const r of rungs) {
+    for (const a of new Set(r.outputs.flatMap((o) => (o.type === 'RST' ? [o.address.toUpperCase()] : [])))) {
+      const l = resets.get(a);
+      if (l) l.push(r); else resets.set(a, [r]);
+    }
+  }
   for (const cnt of rungs.flatMap((r) => r.outputs).filter((o): o is Extract<LadderOutput, { type: 'CNT' }> => o.type === 'CNT')) {
     if (cnt.resetAddress) continue;
     const a = cnt.address.toUpperCase();
-    const rst = rungs.filter((r) => r.outputs.some((o) => o.type === 'RST' && o.address.toUpperCase() === a));
+    const rst = resets.get(a) ?? [];
+    resets.delete(a);
     if (!rst.length) continue;
     const single = rst.length === 1 && rst[0].branches.length === 1 && rst[0].branches[0].length === 1 && rst[0].branches[0][0].type === 'NO' ? rst[0].branches[0][0].address : null;
     if (single) cnt.resetAddress = single;
@@ -438,5 +447,7 @@ export function linkCounterResets(rungs: Rung[], tags: TagDefinition[], newBit: 
     }
     for (const r of rst) r.outputs = r.outputs.filter((o) => !(o.type === 'RST' && o.address.toUpperCase() === a));
   }
-  for (let i = rungs.length - 1; i >= 0; i--) if (!rungs[i].outputs.length) rungs.splice(i, 1);
+  let kept = 0;
+  for (const r of rungs) if (r.outputs.length) rungs[kept++] = r;
+  rungs.length = kept;
 }

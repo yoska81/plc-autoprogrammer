@@ -29,11 +29,13 @@ export interface ServoAxisModel {
   cables: Rc[];
   pins: ServoPins | null;
   terminals: ServoTerminal[];
+  /** Drive pins with two signals (an error in the design warnings). */
+  pinClashes?: string[];
   notes: string[];
 }
 
 const ROLE_LABEL: Record<ServoRole, string> = {
-  pulse: '/PULSE (pulse)', direction: '/SIGN (direction)', enable: 'DI1 SON (servo on)', reset: 'DI5 ARST (alarm reset)',
+  pulse: '/PULSE (pulse)', direction: '/SIGN (direction)', enable: 'DI1 SON (servo on)', reset: 'DI5 ARST (alarm reset)', cam: 'DI (E-CAM engage: assign the DI function in the drive)', driveOutput: 'DO (programmable output: assign its function in the drive)',
   ready: 'DO1 SRDY (servo ready)', alarm: 'DO5 ALRM (servo alarm)', inPosition: 'DO4 TPOS (in position)', homed: 'DO3 HOME (homing done)', zeroSpeed: 'DO2 ZSPD (zero speed)',
 };
 
@@ -76,13 +78,15 @@ export function servoControls(
     const P = a.pins;
     const notes: string[] = [];
     const terminals: ServoTerminal[] = [];
+    // A named DO (no default function for it): its [DO+, DO-], wired like the default ones below.
+    const doNamed = new Map<string, [string, string]>();
     for (const p of io.filter((x) => x.deviceTag === t && x.deviceType === 'servo-drive')) {
       const role = servoRole(p);
       if (!role) continue;
       let terminal = '';
       // A relay contact cannot make a pulse train: pulse / direction from relay outputs are not wired.
       if (outStyle === 'relay' && (role === 'pulse' || role === 'direction')) {
-        notes.push(`${t}: ${p.address} is a relay output — it cannot drive the ${role === 'pulse' ? 'pulse' : 'direction'} input; use transistor pulse outputs (CLICK PLUS: a C2-14D1 / C2-14D2 option-slot module, pulses on its Y1 / Y3 / Y5 — Y101 / Y103 / Y105 in slot 1). Not wired.`);
+        notes.push(`${t}: ${p.address} is a relay output — it cannot drive the ${role === 'pulse' ? 'pulse' : 'direction'} input; use transistor pulse outputs (CLICK PLUS: a C2-14D1 / C2-14D2 option-slot module, pulses on its Y1 / Y3 / Y5 — Y001 / Y003 / Y005, the option slot is slot 0). Not wired.`);
         terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal: 'NOT WIRED', label: ROLE_LABEL[role] });
         continue;
       }
@@ -92,8 +96,30 @@ export function servoControls(
         else if (P.di[role]) terminal = P.di[role]!;
         else if (P.do[role]) terminal = inCommon === '0V' ? P.do[role]![1] : P.do[role]![0];
       }
-      terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal: terminal || role.toUpperCase(), label: ROLE_LABEL[role] });
-      terms.set(p.address, { tag: t, terminal: terminal || role.toUpperCase() });
+      // No default pin for the function: the DI / DO the drawing names ("U2 DI7 CAM engage" → DI7, CN1-31), on its
+      // real pin (pair); without one, not wired.
+      const named = /\b(DI|DO)(\d{1,2})\b/i.exec(p.description);
+      if (!terminal && P && named) {
+        const n = Number(named[2]), kind = named[1].toUpperCase();
+        const what = ROLE_LABEL[role].replace(/^D[IO] \(|\)$/g, '').replace(/:.*$/, '');
+        const factory = kind === 'DI' ? P.diFactory[n] : P.doFactory[n];
+        if (kind === 'DI' && P.diPins[n]) {
+          terminal = P.diPins[n].pin;
+          notes.push(`${t}: assign ${what} to DI${n} (${terminal}, ${P.diPins[n].param})${factory ? ` — this repurposes its factory function ${factory}` : ''}.`);
+        } else if (kind === 'DO' && P.doPins[n]) {
+          const [plus, minus] = P.doPins[n];
+          terminal = inCommon === '0V' ? minus : plus;
+          doNamed.set(p.address, [plus, minus]);
+          notes.push(`${t}: assign ${p.description.replace(/^\S+\s*/, '')} to DO${n} (${plus} / ${minus})${factory ? ` — this repurposes its factory function ${factory}` : ''}.`);
+        }
+      }
+      if (!terminal) {
+        notes.push(`${t}: ${p.address} ${p.description} — no default terminal for this function; assign it to a free programmable ${p.type === 'output' ? 'DI' : 'DO'} of the drive and wire it there. Not wired.`);
+        terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal: 'NOT WIRED', label: ROLE_LABEL[role] });
+        continue;
+      }
+      terminals.push({ role, address: p.address, type: p.type, description: p.description, terminal, label: ROLE_LABEL[role] });
+      terms.set(p.address, { tag: t, terminal });
     }
     if (!P) { notes.push(`${t}: terminal names of ${a.drive.partNumber} are not in the app — wire from the drive manual.`); return { ...a, sto, stoMissing: sto ? undefined : stoWhy, terminals, notes }; }
 
@@ -138,8 +164,8 @@ export function servoControls(
       else w('0V', `${t}:${P.com}`, 'TB1 0V', `${t} COM+ digital input common (sourcing PLC outputs)`, 'WH/BU');
     }
     // Digital outputs: DO+ to 24 V, DO- to the PLC input (sinking inputs, common at 0 V); the reverse on NPN inputs.
-    for (const x of terminals.filter((y) => y.type === 'input' && P.do[y.role])) {
-      const [plus, minus] = P.do[x.role]!;
+    for (const x of terminals.filter((y) => y.type === 'input' && (P.do[y.role] || doNamed.has(y.address)))) {
+      const [plus, minus] = doNamed.get(x.address) ?? P.do[x.role]!;
       if (inCommon === '0V') w('24+', 'TB1 24+', `${t}:${plus}`, `${t} ${x.label} supply`);
       else w('0V', `${t}:${minus}`, 'TB1 0V', `${t} ${x.label} return`, 'WH/BU');
     }
@@ -158,7 +184,15 @@ export function servoControls(
       ? `${t}: no safety relay in the design — STO is not wired, so the drive cannot run. Add a safety relay with two safety outputs for STO_A / STO_B; never run it on the CN10 bypass plug.`
       : `${t}: the safety relay has no free N.O. safety output for STO_B (13-14 feeds the safety-switched 24 V; 23-24, when there is one, the PLC status input) — STO is not wired, so the drive cannot run. Choose a safety relay with more N.O. safety outputs, or take the PLC status signal from the relay's N.C. auxiliary contact to free 23-24.`);
     if (!a.motor) notes.push(`${t}: no servo motor chosen — U/V/W and the encoder (CN2) are not drawn.`);
-    return { ...a, sto, stoMissing: sto ? undefined : stoWhy, terminals, notes };
+    // One drive pin, one signal: a named DI / DO that lands on a pin another signal already uses is an error.
+    const pinsOf = (x: ServoTerminal): string[] => {
+      const pair = doNamed.get(x.address) ?? (x.type === 'input' ? P.do[x.role] : undefined);
+      return pair ? [...pair] : x.terminal && x.terminal !== 'NOT WIRED' && x.role !== 'pulse' && x.role !== 'direction' ? [x.terminal] : [];
+    };
+    const users = new Map<string, ServoTerminal[]>();
+    for (const x of terminals) for (const pin of pinsOf(x)) users.set(pin, [...(users.get(pin) ?? []), x]);
+    const pinClashes = [...users].filter(([, xs]) => xs.length > 1).map(([pin, xs]) => `${t}: drive pin ${pin} has two signals — ${xs.map((x) => `${x.address} ${x.description}`).join(' and ')}. Put one on another DI / DO of the drive.`);
+    return { ...a, sto, stoMissing: sto ? undefined : stoWhy, terminals, notes: [...pinClashes, ...notes], ...(pinClashes.length ? { pinClashes } : {}) };
   });
   return { axes: models, wires, terms };
 }

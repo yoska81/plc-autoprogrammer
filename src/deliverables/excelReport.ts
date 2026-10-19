@@ -7,6 +7,8 @@ import { qaTable } from '../components/questions/qaTable';
 import { billOfMaterials, cableSchedule, designWarnings, supplyText, terminalPlan, wireNumbers } from '../electrical/derive';
 import { describeElement, describeOutput } from '../plc/core/clickExport';
 import { getHmi } from '../hmi/hmiCatalog';
+import { nativeIoLabel, screenIoName } from '../hmi/nativeIo';
+import { exportContext } from './exportContext';
 import { calcWarnings, calculations } from './docs/calcs';
 import { designReviewTable, operatorManual } from './docs/manual';
 import { aiReviewNote } from '../review/report';
@@ -17,7 +19,7 @@ import { safetyFunctionTable, safetyFunctions } from './docs/safety';
 import { fatProcedure, satChecklist, satTable, testTable } from './docs/fat';
 import { pmSchedule, sparePartsTable } from './docs/maintenance';
 import { isGroup, type DocTable } from './docs/table';
-import { cableKey, noteOf, wireKeys } from '../edits/lists';
+import { cableKey, noteOf, wireNoteKeys } from '../edits/lists';
 
 /** Deep blue: title rows (white text) and dark text. */
 const BRAND = 'FF0B2A5C';
@@ -204,7 +206,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
       { header: 'Color', key: 'c', width: 8 }, { header: 'Size', key: 's', width: 10 }, { header: 'Function', key: 'fn', width: 40 }, { header: 'Note', key: 'n', width: 40 },
     ]);
     const wireList = wireNumbers(p.drawingCtx);
-    const keys = wireKeys(wireList);
+    const keys = wireNoteKeys(p.drawingCtx);
     wireList.forEach((w, i) => wires.addRow({ w: w.wire, f: w.from, t: w.to, c: w.color, s: w.size, fn: w.function, n: noteOf(keys[i]) }));
     wrapCells(wires);
 
@@ -253,7 +255,10 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
     for (const a of p.hmi.alarms) al.addRow({ a: a.address, s: a.severity, m: a.message });
     const sc = wb.addWorksheet('HMI Screens');
     header(sc, [{ header: 'Screen', key: 's', width: 20 }, { header: 'Element', key: 'e', width: 30 }, { header: 'Kind', key: 'k', width: 14 }, { header: 'Address', key: 'a', width: 10 }, { header: 'Action', key: 'x', width: 11 }]);
-    for (const s of p.hmi.screens) for (const e of s.elements) sc.addRow({ s: s.name, e: e.label, k: e.kind, a: e.address ?? '', x: e.action ?? '' });
+    // Labels as the screens and their images show them (%I0.0 on an S7); the Address column stays the app's.
+    const ctx = exportContext(p);
+    const ioName = screenIoName(p.profile, p.cpu, ctx.modules ?? [], new Set([...p.addresses.values()].map((x) => x.toUpperCase())));
+    for (const s of p.hmi.screens) for (const e of s.elements) sc.addRow({ s: s.name, e: nativeIoLabel(e.label, ioName), k: e.kind, a: e.address ?? '', x: e.action ?? '' });
   }
 
   // No touch panel: the operator station is the operator interface.

@@ -19,6 +19,7 @@ import { getPart } from '../../electrical/catalog';
 import { importedRange, materialize, nickOf, pretty } from './convert';
 import { programFindings } from './findings';
 import type { ImportedProgram, SourceFormat } from './types';
+import { rungAddresses } from '../core/ladder';
 
 /** Draft key (stored with the project) of the original program. */
 export const UPGRADE_KEY = 'upgrade.original';
@@ -168,6 +169,14 @@ function movedS7(imp: ImportedProgram, profile: PlcProfile, cpu: PlcProfile['cpu
   return out;
 }
 
+/** I/O addresses the program uses that no I/O point has: the checker reports them as errors, so say so up front. */
+function unassignedIo(program: LadderProgram, profile: PlcProfile, cpu: PlcProfile['cpuModels'][number], modules: string[], io: IOPoint[]): string[] {
+  const have = new Set([...resolveAddresses(profile, cpu, io, moduleSlots(modules)).values()].map((a) => a.toUpperCase()));
+  const used = [...new Set(program.rungs.flatMap(rungAddresses).map((a) => a.trim().toUpperCase()))]
+    .filter((a) => { const k = profile.parseAddress(a)?.kind; return (k === 'input' || k === 'output') && !have.has(a); });
+  return used.length ? [`The program uses I/O addresses no I/O point has: ${used.slice(0, 12).join(', ')}${used.length > 12 ? '…' : ''}. The checker reports each as an error (an address with no point behind it reads or drives whatever gets that address next): add the points to the I/O list, or change the rungs.`] : [];
+}
+
 export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = new Date()): UpgradePlan {
   const profile = targetPlc(imp.source.format, currentPlcId, `${imp.source.vendor} ${imp.source.controller}`);
   const { cpuId, modules } = originalCpu(profile, imp) ?? chooseCpu(profile, needOf(imp));
@@ -190,8 +199,9 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
   // I/O keeps its name from the original program (Start_PB, not the description).
   const have = new Set(m.program.tags.map((t) => t.address.toUpperCase()));
   const ioTags: TagDefinition[] = [];
+  const addressOf = materializedAddresses(m.names);
   m.io.forEach((p, k) => {
-    const address = materializedAddress(m.names, imp.io[k].name);
+    const address = addressOf.get(imp.io[k].name);
     if (address && !have.has(address.toUpperCase())) ioTags.push({ address, nickname: imp.io[k].name, comment: p.description });
   });
   let program: LadderProgram = { ...m.program, tags: [...ioTags, ...m.program.tags] };
@@ -204,7 +214,7 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
     io: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type, category: p.category, ...(p.signal ? { signal: p.signal, analog: p.analog } : {}), ...(p.plcAddress ? { plcAddress: p.plcAddress } : {}) })),
     spec: describeProgram(imp),
     // Likely bugs (missing seal-in, interlock on another station's sensor) are asked before the general question.
-    questions: withFindings([...(cpuNote ? [cpuNote] : []), ...(embedded ? [embedded] : []), ...questionsFor(imp), ...assumedRanges(imp), ...movedS7(imp, profile, cpu, modules, m.io)], programFindings(program).map((f) => f.message)),
+    questions: withFindings([...(cpuNote ? [cpuNote] : []), ...(embedded ? [embedded] : []), ...questionsFor(imp), ...assumedRanges(imp), ...movedS7(imp, profile, cpu, modules, m.io), ...unassignedIo(program, profile, cpu, modules, m.io)], programFindings(program).map((f) => f.message)),
     original: {
       importedAt: now.toISOString(), source: imp.source, report: imp.report, io: imp.io, plcId: profile.id, cpuId: cpu.id, program, summary,
       ioList: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type })),
@@ -242,7 +252,12 @@ function withFindings(questions: string[], findings: string[]): string[] {
   return [...questions.slice(0, last), ...findings, ...questions.slice(last)];
 }
 
-const materializedAddress = (names: Record<string, string>, name: string) => Object.entries(names).find(([a, n]) => n === name && !a.startsWith('@'))?.[0];
+/** Name → its address in the converted program (the first one, as the names are listed). */
+function materializedAddresses(names: Record<string, string>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [a, n] of Object.entries(names)) if (!a.startsWith('@') && !out.has(n)) out.set(n, a);
+  return out;
+}
 
 // ── Description written from the program ──
 
@@ -256,42 +271,67 @@ const KIND: { section: SpecSectionId; re: RegExp }[] = [
 
 const ioLine = (p: ImportedProgram['io'][number]) => `- ${p.name}${p.description ? `: ${p.description}` : ''} (${p.type}${p.analog ? ', analog' : ''}, ${p.original || 'no address'})`;
 
+/** The rungs of each program part, in order (one pass: a big program has thousands of parts). */
+function rungsByBlock(imp: ImportedProgram): Map<string, ImportedProgram['program']['rungs']> {
+  const out = new Map<string, ImportedProgram['program']['rungs']>();
+  for (const r of imp.program.rungs) if (r.block) { const l = out.get(r.block); if (l) l.push(r); else out.set(r.block, [r]); }
+  return out;
+}
+
 /** A first machine description, in plain words, from what the program shows. */
 export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectionId, string>> {
   const out: Partial<Record<SpecSectionId, string>> = {};
   const s = imp.source;
   const blocks = imp.program.blocks ?? [];
   const where = [s.vendor, s.controller].filter(Boolean).join(' ');
+  // A big program is described by its first lines of each kind (the description goes into every AI request);
+  // a smaller one in full.
+  const timers = imp.program.rungs.flatMap((r) => r.outputs).flatMap((o) => (o.type === 'TMR' ? [o] : []));
+  const counters = imp.program.rungs.flatMap((r) => r.outputs).flatMap((o) => (o.type === 'CNT' ? [o] : []));
+  const lines = imp.program.rungs.filter((r) => r.comment.trim()).length + timers.length + counters.length + imp.io.length;
+  const max = (n: number) => (lines > BIG_DESCRIPTION_LINES ? n : Infinity);
   out.overview = [
     `Existing machine program "${s.projectName}" read from ${s.fileName}${where ? ` (${where})` : ''}.`,
-    `It has ${imp.program.rungs.length} rungs in ${blocks.length} part${blocks.length === 1 ? '' : 's'}: ${blocks.map((b) => b.name).join(', ')}.`,
+    `It has ${imp.program.rungs.length} rungs in ${blocks.length} part${blocks.length === 1 ? '' : 's'}: ${capped(blocks.map((b) => b.name), max(MAX_LINES.parts), (n) => `and ${n} more`).join(', ')}.`,
     `${imp.io.filter((p) => p.type === 'input').length} inputs and ${imp.io.filter((p) => p.type === 'output').length} outputs are wired to the PLC.`,
     'Written from the program: check it and add what the program cannot show (the product, the speed, the line).',
   ].join('\n');
 
   // Rung comments, part by part, are the sequence the original programmer described.
   const seq: string[] = [];
-  for (const b of blocks) {
-    const comments = imp.program.rungs.filter((r) => r.block === b.id && r.comment.trim()).map((r) => `  - ${r.comment.trim()}`);
-    if (comments.length) seq.push(`${b.name}:`, ...comments);
+  const byBlock = rungsByBlock(imp);
+  const partsShown = blocks.slice(0, max(MAX_LINES.parts));
+  for (const b of partsShown) {
+    const comments = (byBlock.get(b.id) ?? []).filter((r) => r.comment.trim()).map((r) => `  - ${r.comment.trim()}`);
+    if (comments.length) seq.push(`${b.name}:`, ...capped(comments, max(MAX_LINES.perPart), (n) => `  - … and ${n} more rung comments`));
   }
-  const timers = imp.program.rungs.flatMap((r) => r.outputs).flatMap((o) => (o.type === 'TMR' ? [o] : []));
+  if (blocks.length > partsShown.length) seq.push(`… and ${blocks.length - partsShown.length} more parts (see the PLC program).`);
   const nick = new Map(imp.program.tags.map((t) => [t.address, t.nickname]));
-  if (timers.length) seq.push('Timers:', ...timers.map((t) => `  - ${nick.get(t.address) ?? t.address}: ${t.preset} ${t.unit}${t.mode === 'OFF_DELAY' ? ' off-delay' : ''}${t.accumulate ? ' (retentive)' : ''}`));
-  const counters = imp.program.rungs.flatMap((r) => r.outputs).flatMap((o) => (o.type === 'CNT' ? [o] : []));
-  if (counters.length) seq.push('Counters:', ...counters.map((c) => `  - ${nick.get(c.address) ?? c.address}: counts to ${c.preset}`));
+  if (timers.length) seq.push('Timers:', ...capped(timers.map((t) => `  - ${nick.get(t.address) ?? t.address}: ${t.preset} ${t.unit}${t.mode === 'OFF_DELAY' ? ' off-delay' : ''}${t.accumulate ? ' (retentive)' : ''}`), max(MAX_LINES.list), (n) => `  - … and ${n} more timers`));
+  if (counters.length) seq.push('Counters:', ...capped(counters.map((c) => `  - ${nick.get(c.address) ?? c.address}: counts to ${c.preset}`), max(MAX_LINES.list), (n) => `  - … and ${n} more counters`));
   if (seq.length) out.sequence = seq.join('\n');
 
+  const moreIo = (n: number) => `- … and ${n} more (all are on the I/O list)`;
   for (const k of KIND) {
     const pts = imp.io.filter((p) => k.re.test(`${p.name} ${p.description}`) && KIND.find((x) => x.re.test(`${p.name} ${p.description}`)) === k);
-    if (pts.length) out[k.section] = pts.map(ioLine).join('\n');
+    if (pts.length) out[k.section] = capped(pts.map(ioLine), max(MAX_LINES.list), moreIo).join('\n');
   }
   const rest = imp.io.filter((p) => !KIND.some((k) => k.re.test(`${p.name} ${p.description}`)));
-  if (rest.length) out.other = `Other I/O:\n${rest.map(ioLine).join('\n')}`;
+  if (rest.length) out.other = `Other I/O:\n${capped(rest.map(ioLine), max(MAX_LINES.list), moreIo).join('\n')}`;
 
-  const alarms = imp.program.rungs.filter((r) => /alarm|fault|jam|timeout|overload/i.test(`${r.comment} ${(imp.program.blocks ?? []).find((b) => b.id === r.block)?.name ?? ''}`));
-  if (alarms.length) out.alarms = alarms.map((r) => `- ${r.comment.trim() || 'Alarm rung'}`).filter((l, i, a) => a.indexOf(l) === i).join('\n');
+  const blockName = new Map(blocks.map((b) => [b.id, b.name]));
+  const alarms = imp.program.rungs.filter((r) => /alarm|fault|jam|timeout|overload/i.test(`${r.comment} ${(r.block && blockName.get(r.block)) ?? ''}`));
+  if (alarms.length) out.alarms = capped([...new Set(alarms.map((r) => `- ${r.comment.trim() || 'Alarm rung'}`))], max(MAX_LINES.list), (n) => `- … and ${n} more alarm rungs`).join('\n');
   return out;
+}
+
+/** Most lines of each kind in the description written from a big program (one of more lines than BIG_DESCRIPTION_LINES). */
+const MAX_LINES = { parts: 40, perPart: 15, list: 150 };
+const BIG_DESCRIPTION_LINES = 1000;
+
+/** The first `max` lines, then one line saying how many more there are. */
+function capped(lines: string[], max: number, more: (n: number) => string): string[] {
+  return lines.length > max ? [...lines.slice(0, max), more(lines.length - max)] : lines;
 }
 
 /** What the program cannot tell: asked on the Machine description page. */
@@ -320,10 +360,11 @@ export function questionsFor(imp: ImportedProgram): string[] {
 export function programSummary(imp: ImportedProgram): string {
   const s = imp.source;
   const r = imp.report;
+  const byBlock = rungsByBlock(imp);
   const lines = [
     `Program: ${s.projectName} (${s.fileName}; ${[s.vendor, s.controller].filter(Boolean).join(' ')})`,
     `Rungs: ${r.converted} of ${r.rungs} converted${r.notConverted.length ? `; not converted: ${r.notConverted.map((n) => `${n.text} (${n.where})`).join('; ')}` : ''}`,
-    `Parts: ${(imp.program.blocks ?? []).map((b) => `${b.name} (${imp.program.rungs.filter((x) => x.block === b.id).length} rungs)`).join(', ')}`,
+    `Parts: ${(imp.program.blocks ?? []).map((b) => `${b.name} (${byBlock.get(b.id)?.length ?? 0} rungs)`).join(', ')}`,
     'I/O:',
     ...imp.io.map(ioLine),
     ...(r.notes.length ? ['Notes:', ...r.notes.map((n) => `- ${n}`)] : []),

@@ -10,6 +10,7 @@ import { SUPPLY_INFO } from '../../standards/regions';
 import { callClaude } from './anthropic';
 import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes, ANSWERED_RULE } from '../../components/questions/classify';
 import { getPart } from '../../electrical/catalog';
+import { staleMotors } from '../../electrical/engine/machineModel';
 import { chooseEnclosure, smallestEnclosure, withEnclosure, type DrawingContext } from '../../electrical/derive';
 
 const DEVICE_TYPES: FieldDeviceType[] = ['pushbutton-no', 'pushbutton-nc', 'selector', 'estop-contact', 'sensor-pnp', 'sensor-npn', 'limit-switch', 'pressure-switch', 'safety-relay-output', 'contactor-coil', 'relay-coil', 'solenoid', 'pilot-light', 'stack-light', 'vfd-input', 'other'];
@@ -129,7 +130,9 @@ export async function generateElectricalDesign(opts: {
   const catalog = opts.catalog ?? catalogFor(vendorPreference());
   const ioAddrs = opts.io.map((p) => opts.addresses.get(p.id) || '').filter(Boolean);
   const ioText = opts.io.map((p) => `${opts.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.category}\t${p.description || '(no description)'}`).join('\n') || '(no I/O yet)';
-  const motors = opts.inputs.motors.map((m) => `${m.tag}: ${m.description}, ${m.hp} HP, ${m.voltage}, ${m.starter}${m.reversing ? ', reversing' : ''}`).join('\n') || '(none)';
+  // motors an earlier design read from another machine are not this machine's (defaultMachineModel drops them too)
+  const stale = new Set(staleMotors(opts.inputs.motors, opts.io, opts.machineDescription).filter((m) => m.fromDesign));
+  const motors = opts.inputs.motors.filter((m) => !stale.has(m)).map((m) => `${m.tag}: ${m.description}, ${m.hp} HP, ${m.voltage}, ${m.starter}${m.reversing ? ', reversing' : ''}`).join('\n') || '(none)';
   const required = opts.inputs.requiredParts.map((r) => `${r.partNumber} x${r.quantity}`).join('\n') || '(none)';
 
   const content = `Machine description:
@@ -179,8 +182,11 @@ ${vendorNotes(catalog)}`;
     throw new Error('The AI returned a design the app could not read. Please try again.', { cause: err });
   }
   const notes = normalizeNotes(parsed.notes);
+  // the motors the AI read from the machine are the design's (a later design for another machine drops them); one the
+  // designer typed stays theirs, as in the rules' design (engine/index.ts)
+  const typed = (m: MotorSpec) => opts.inputs.motors.some((u) => u.tag === m.tag && u.description === m.description && !u.fromDesign);
   const design: ElectricalDesign = {
-      inputs: { ...opts.inputs, motors: parsed.motors },
+      inputs: { ...opts.inputs, motors: parsed.motors.map((m) => (typed(m) ? { ...m, fromDesign: undefined } : { ...m, fromDesign: true })), motorsMarked: true },
       components: parsed.components,
       ioWiring: parsed.ioWiring,
       notes: notes.map((n) => n.text),

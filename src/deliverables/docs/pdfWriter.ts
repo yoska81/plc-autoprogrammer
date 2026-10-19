@@ -50,6 +50,12 @@ export class PdfWriter {
   y = 27;
   headings: Heading[] = [];
 
+  /** Applied to every text before it is written (opt-in): e.g. I/O addresses in the PLC's own naming. */
+  mapText: (t: string) => string = (t) => t;
+
+  /** Text as written: mapped, then made safe for the PDF font. */
+  safe(t: string): string { return pdfSafe(this.mapText(t)); }
+
   constructor(doc: jsPDF) {
     this.doc = doc;
   }
@@ -75,7 +81,7 @@ export class PdfWriter {
   lineH(size: number): number { return size * PT * 1.22; }
 
   split(t: string, w: number): string[] {
-    return this.doc.splitTextToSize(pdfSafe(t), w) as string[];
+    return this.doc.splitTextToSize(this.safe(t), w) as string[];
   }
 
   text(raw: string, o: { size?: number; bold?: boolean; color?: RGB; indent?: number; gap?: number; width?: number } = {}): void {
@@ -97,7 +103,7 @@ export class PdfWriter {
     this.need(16);
     this.headings.push({ level: 1, title, page: this.page });
     this.font(15, true, BRAND);
-    this.doc.text(pdfSafe(title), this.M, this.y + 5);
+    this.doc.text(this.safe(title), this.M, this.y + 5);
     this.y += 7.5;
     this.doc.setDrawColor(...BRAND);
     this.doc.setLineWidth(0.6);
@@ -112,7 +118,7 @@ export class PdfWriter {
     this.y += 1.5;
     if (toc) this.headings.push({ level: 2, title, page: this.page });
     this.font(11.5, true, BRAND);
-    this.doc.text(pdfSafe(title), this.M, this.y + 4);
+    this.doc.text(this.safe(title), this.M, this.y + 4);
     this.y += 6.5;
   }
 
@@ -120,7 +126,7 @@ export class PdfWriter {
     this.need(22);
     this.y += 0.5;
     this.font(9.8, true, INK);
-    this.doc.text(pdfSafe(title), this.M, this.y + 3.4);
+    this.doc.text(this.safe(title), this.M, this.y + 3.4);
     this.y += 5;
   }
 
@@ -172,7 +178,7 @@ export class PdfWriter {
     this.doc.addImage(dataUrl, fmt, x, this.y, w, h, undefined, 'FAST');
     this.doc.rect(x, this.y, w, h);
     this.y += h + 1.5;
-    if (caption) { this.font(8, false, MUTED); this.doc.text(pdfSafe(caption), this.W / 2, this.y + 2.8, { align: 'center' }); this.y += 5; }
+    if (caption) { this.font(8, false, MUTED); this.doc.text(this.safe(caption), this.W / 2, this.y + 2.8, { align: 'center' }); this.y += 5; }
     this.y += 1.5;
   }
 
@@ -259,7 +265,7 @@ export class PdfWriter {
     const word = (s: string, bold: boolean) => {
       this.doc.setFont('helvetica', bold ? 'bold' : 'normal');
       this.doc.setFontSize(fs);
-      return Math.max(0, ...pdfSafe(s).split(/\s+/).map((w) => this.doc.getTextWidth(w)));
+      return Math.max(0, ...this.safe(s).split(/\s+/).map((w) => this.doc.getTextWidth(w)));
     };
     const min = t.columns.map((c, i) => {
       let w = t.columns.length > 1 ? word(c.header, true) : 0;

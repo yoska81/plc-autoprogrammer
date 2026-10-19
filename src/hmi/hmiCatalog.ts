@@ -402,8 +402,8 @@ export const RETIRED_HMI_MODELS: { partNumber: string; replacement?: string; not
 ];
 
 /** A C-more model, else a catalog panel of another maker with a confirmed resolution. */
-export function getHmi(partNumber: string): HmiModel | undefined {
-  const key = partNumber.trim().toUpperCase();
+export function getHmi(partNumber: string | null | undefined): HmiModel | undefined {
+  const key = (partNumber ?? '').trim().toUpperCase();
   return HMI_MODELS.find((m) => m.partNumber === key) ?? (key ? catalogPanel(key) : undefined);
 }
 

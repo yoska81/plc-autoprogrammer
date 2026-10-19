@@ -22,6 +22,8 @@ export interface ModuleSlot {
   /** Analog channels (0 for discrete modules). */
   analogInputs?: number;
   analogOutputs?: number;
+  /** A CLICK PLUS option-slot module (plugs into the CPU): its points are slot 0 (X001… / Y001…), not an expansion slot. */
+  optionSlot?: boolean;
 }
 
 /** One physical analog channel of the PLC (CPU built-in or an expansion module). */

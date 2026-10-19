@@ -11,6 +11,14 @@ const file = (name: string, bytes: Uint8Array | string) => new File([typeof byte
 let passed = 0;
 const test = async (name: string, fn: () => Promise<void>) => { await fn(); passed++; console.log('  ok ', name); };
 
+await test('a PLC program file picked as a drawing is sent to the Program tab, not to the AI', async () => {
+  for (const name of ['1317.YMW7', 'panel.emtp', 'Capper.L5X', 'Main.l5k']) {
+    const why = await checkUploadFile(file(name, new Uint8Array([1, 0, 2, 0, 9, 9])));
+    assert.ok(why && why.startsWith(name) && /PLC program file/.test(why) && /Program/.test(why), `${name}: ${why}`);
+  }
+  assert.equal(await checkUploadFile(file('Drawings.pdf', fixture('sorting_conveyor_drawings.pdf'))), null, 'a drawing is unaffected');
+});
+
 await test('real drawings pass: PDF, DXF, DWG, PNG, JPEG', async () => {
   assert.equal(await checkUploadFile(file('Drawings.pdf', fixture('sorting_conveyor_drawings.pdf'))), null);
   assert.equal(await checkUploadFile(file('E-03.dxf', fixture('E-03_PLC_IO.dxf'))), null);

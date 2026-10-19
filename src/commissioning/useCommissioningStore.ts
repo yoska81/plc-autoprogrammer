@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { cleanRecord, signRefused, type CommRecord, type CommResult, type CommSignoff } from './checklist';
 import { notify } from '../store/useNoticeStore';
+import { appPersistStorage } from '../lib/appStorage';
 
 /**
  * The commissioning checklist as ticked on site: per item pass / fail / N/A with a note, name
@@ -103,6 +104,7 @@ export const useCommissioningStore = create<CommissioningStore>()(
     },
     {
       name: 'isa-commissioning',
+      storage: appPersistStorage(),
       merge: mergeStored,
     },
   ),

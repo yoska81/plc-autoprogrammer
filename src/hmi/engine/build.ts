@@ -8,6 +8,7 @@
  */
 import type { AccessLevel, HmiAlarm, HmiDesign, HmiElement, HmiScreen, HmiState, HmiTag, MachineSymbol, MachineSymbolKind } from '../types';
 import { GAP, MIN_TOUCH, cutTexts, layoutBands } from '../layout';
+import { safeScreenSize } from '../screenSize';
 import type { HmiActuator, HmiAxis, HmiContent, HmiEncoder } from './content';
 
 interface Rect { x: number; y: number; w: number; h: number }
@@ -310,7 +311,8 @@ export interface BuildOptions {
 }
 
 export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
-  const W = o.widthPx, H = o.heightPx;
+  // A size that is not a number (a part the catalog does not know) would put NaN in every element: use the catalog's.
+  const { w: W, h: H } = safeScreenSize(o.widthPx, o.heightPx, { hmiPartNumber: o.partNumber } as HmiDesign);
   const bands = layoutBands(W, H);
   const area = bands.content;
   const rowH = Math.max(MIN_TOUCH.h, H <= 300 ? 48 : H <= 600 ? 52 : 60);
@@ -474,7 +476,7 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
   for (const s of screens) s.elements = s.elements.map(fitTexts);
 
   return {
-    hmiPartNumber: o.partNumber, machineName: c.machineName, screens, alarms: t.alarms, tags: t.tags,
+    hmiPartNumber: o.partNumber ?? '', machineName: c.machineName, screens, alarms: t.alarms, tags: t.tags,
     notes: [
       `Rule-based HMI: ${screens.length} screens (${groups.map((g) => g.name).join(', ')}), ${t.tags.length} HMI tags in the standard ranges (commands C1001-, alarms C1101-, status C1201-, setpoints DS1001-/DF101-, status words DS1101-).`,
       'Passwords: Maintenance for Manual, Setup and counter resets; Engineer for the service interval. Confirm the levels with the customer.',

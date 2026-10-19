@@ -195,6 +195,8 @@ export function generateDesign(input: EngineInput): EngineResult {
     tag: b.motor.tag, description: b.motor.description, hp: b.motor.hp, voltage: supply,
     starter: b.vfd ? 'vfd' : power.components.some((c) => c.motorTag === b.motor.tag && getPart(c.partNumber)?.category === 'motorProtector') ? 'motor-protector' : 'contactor-overload',
     reversing: b.reversing,
+    // a motor the designer typed stays theirs; one the engine read from this machine is marked as the design's
+    ...(inputs.motors.some((m) => m.tag === b.motor.tag && m.description === b.motor.description && !m.fromDesign) ? {} : { fromDesign: true }),
   }));
   if (power.branches.length) {
     const basis = SUPPLY_INFO[supply].hz === 50 ? 'IEC 60947-4-1 Annex G' : 'NEC Table 430.250 / 430.248';
@@ -217,7 +219,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   const ctxOf = (components: DesignComponent[], design: Partial<ElectricalDesign> = {}): DrawingContext => ({
     projectName: input.projectName ?? 'Machine',
     design: {
-      inputs: { ...inputs, motors: motorSpecs }, components, ioWiring: [...dev.ioWiring, ...motion.ioWiring], notes: [], machine: dev.machine,
+      inputs: { ...inputs, motors: motorSpecs, motorsMarked: true }, components, ioWiring: [...dev.ioWiring, ...motion.ioWiring], notes: [], machine: dev.machine,
       generatedAt: input.now ?? new Date().toISOString(), ...design,
     },
     getPart, plc: input.plc,
@@ -367,7 +369,7 @@ export function generateDesign(input: EngineInput): EngineResult {
 
   return {
     design: {
-      inputs: { ...inputs, motors: motorSpecs, enclosureRating: inputs.enclosureRating },
+      inputs: { ...inputs, motors: motorSpecs, motorsMarked: true, enclosureRating: inputs.enclosureRating },
       components: best.components,
       ioWiring: [...dev.ioWiring, ...motion.ioWiring],
       notes: [...askUser, ...notes],

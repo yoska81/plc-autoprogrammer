@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/20/solid';
-import type { LadderProgram } from '../../core/ladder';
+import type { LadderProgram, Rung } from '../../core/ladder';
 import type { ValidationIssue } from '../../core/validate';
 import { GENERAL, blockOf, issueStatus, type BlockStatus } from './programIndex';
 
@@ -27,9 +27,12 @@ export default function BlockTree({ program, issues, active, selectedRungId, onB
   const { byRung, byBlock } = issueStatus(program, issues);
   const total = issues.reduce((s, i) => (i.severity === 'error' ? { ...s, errors: s.errors + 1 } : { ...s, warnings: s.warnings + 1 }), { errors: 0, warnings: 0 });
   const blocks = program.blocks ?? [];
+  // Each block's rungs with their numbers, in one pass over the program.
+  const rungsOf = new Map<string, { r: Rung; n: number }[]>();
+  program.rungs.forEach((r, i) => { const b = blockOf(program, r); const l = rungsOf.get(b); if (l) l.push({ r, n: i + 1 }); else rungsOf.set(b, [{ r, n: i + 1 }]); });
   const items = [
     ...blocks.map((b) => ({ id: b.id, name: b.name || b.id, description: b.description })),
-    ...(program.rungs.some((r) => blockOf(program, r) === GENERAL) ? [{ id: GENERAL, name: blocks.length ? 'General' : 'Rungs', description: 'Rungs without a block' }] : []),
+    ...(rungsOf.has(GENERAL) ? [{ id: GENERAL, name: blocks.length ? 'General' : 'Rungs', description: 'Rungs without a block' }] : []),
   ];
   const toggle = (id: string) => setOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const row = (on: boolean) => `flex w-full items-center gap-1.5 rounded-sm px-1.5 py-1 text-left ${on ? 'bg-brand-600 text-white' : 'text-gray-700 hover:bg-brand-50'}`;
@@ -45,7 +48,7 @@ export default function BlockTree({ program, issues, active, selectedRungId, onB
       </button>
       <ul className="mt-0.5 space-y-px">
         {items.map((b) => {
-          const rungs = program.rungs.map((r, i) => ({ r, n: i + 1 })).filter(({ r }) => blockOf(program, r) === b.id);
+          const rungs = rungsOf.get(b.id) ?? [];
           const isOpen = open.has(b.id);
           return (
             <li key={b.id || '_general'}>

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { appPersistStorage } from '../lib/appStorage';
 
 /**
  * I/O check-out during commissioning: for each I/O point the technician
@@ -43,7 +44,7 @@ export const useCheckoutStore = create<CheckoutStore>()(
       }),
       clear: (projectId) => set((s) => ({ byProject: { ...s.byProject, [key(projectId)]: {} } })),
     }),
-    { name: 'isa-io-checkout' },
+    { name: 'isa-io-checkout', storage: appPersistStorage() },
   ),
 );
 

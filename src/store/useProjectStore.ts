@@ -10,6 +10,13 @@ interface ProjectStore {
   cpuId: string;
   setPlc: (plcId: string, cpuId: string) => void;
   /** Expansion module part numbers in slot order (slot 1 first). */
+  /**
+   * Version of the address layout the project's I/O is numbered with (IO_LAYOUT_VERSION is the current one).
+   *   absent / 1  saved before a CLICK PLUS option-slot module became slot 0 (it was numbered as slot 1, X101…)
+   *   2           the option-slot module is slot 0 (X001… / Y001…)
+   * Older projects are migrated on load (src/plc/core/ioChange.ts migrateIoLayout).
+   */
+  ioLayoutVersion?: number;
   modules: string[];
   setModules: (modules: string[]) => void;
   /** Last AI equipment recommendation (kept so the reasons stay visible). */
@@ -24,6 +31,7 @@ interface ProjectStore {
 export type { Region } from '../standards/regions';
 import type { Region } from '../standards/regions';
 import type { DrawingOptions } from '../standards/drawingOptions';
+import { appPersistStorage } from '../lib/appStorage';
 
 /** One line of the document revision history (drawings and documents share it). */
 export interface Revision {
@@ -63,6 +71,9 @@ export interface ProjectInfo {
   brandOfferDismissed?: string[];
 }
 
+/** The current I/O address layout (see ProjectStore.ioLayoutVersion). */
+export const IO_LAYOUT_VERSION = 2;
+
 export const DEFAULT_INFO: ProjectInfo = {
   region: 'US', customer: '', site: '', drawingPrefix: '', standards: ['NFPA 79', 'UL 508A'],
   projectNumber: '', company: 'ISA', preparedBy: '', checkedBy: '', approvedBy: '',
@@ -89,6 +100,7 @@ export const useProjectStore = create<ProjectStore>()(
     }),
     {
       name: 'plc-project-store',
+      storage: appPersistStorage(),
       // Older projects stored fewer project-data fields.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<ProjectStore>;

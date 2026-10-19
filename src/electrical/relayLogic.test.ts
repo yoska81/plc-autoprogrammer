@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { coilMatchesRail, LADDER, relayLadder, relayPins, type Ladder } from './relayLogic';
 import { buildModel, designWarnings, type DrawingContext } from './derive';
-import { planDrawings } from './drawings/plan';
+import { CONTROL_RUNGS, planDrawings } from './drawings/plan';
 import { getPart } from './catalog';
 import { DESIGN } from '../preview/sampleProject';
 import type { RelayLogic } from './types';
@@ -124,7 +124,7 @@ if (getPart(ac.design.components.find((c) => c.tag === 'K1')!.partNumber)) asser
 const rp = planDrawings({ ...ctx, design: { ...ctx.design, inputs: { ...ctx.design.inputs, relayLogic: roll } } });
 for (const s of rp.sheets.filter((x) => x.spec.kind === 'ladder')) {
   const sp = s.spec as Extract<typeof s.spec, { kind: 'ladder' }>;
-  assert.ok(sp.rungs.every(({ r, idx }) => idx + r.rows - 1 <= 14), `${s.title}: rungs inside the sheet`);
+  assert.ok(sp.rungs.every(({ r, idx }) => idx + r.rows - 1 <= CONTROL_RUNGS), `${s.title}: rungs clear of the title block`);
 }
 assert.ok(designWarnings({ ...ctx, design: { ...ctx.design, inputs: { ...ctx.design.inputs, relayLogic: roll } } }).some((w) => /^Relay logic: Terminal numbers not read/.test(w)));
 

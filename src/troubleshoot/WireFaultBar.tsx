@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useContext } from 'react';
 import type { SimController, SimSnapshot } from '../plc/sim/controller';
 import { normAddress } from '../plc/sim/engine';
 import { collectProject } from '../deliverables/collect';
@@ -6,6 +6,7 @@ import { circuitOf, prepareWiring, wiringPaths } from './wiringPath';
 import { circuitFaultEffects, linksOf, type CircuitFault } from './oracle';
 import TroubleshootPanel, { type Practice } from './TroubleshootPanel';
 import { useNarrow } from './useNarrow';
+import { PlcNamesContext } from '../plc/ui/ladder/mnemonics';
 
 const btn = 'rounded border px-2 py-0.5 text-[12px] font-semibold disabled:opacity-40';
 type Kind = 'open' | 'short-24V' | 'short-0V';
@@ -24,19 +25,22 @@ export default function WireFaultBar({ ctl, snap }: { ctl: SimController; snap: 
     try { if (ctx) { const prep = prepareWiring(ctx); return { paths: wiringPaths(prep), circ: circuitOf(prep) }; } } catch { /* no design */ }
     return { paths: [], circ: null };
   });
+  // Siemens / Logix: a PLC terminal by the PLC's own address ("PLC:%I0.0", not the app's X001).
+  const names = useContext(PlcNamesContext);
   // Every conductor a point's steps walk past, signal ones first; the label says where it runs.
   const options = useMemo(() => {
     if (!circ) return [];
+    const plcIo = (t: string) => t.replace(/(:)([XY]\d{3})\b/g, (m, c: string, a: string) => { const n = names?.(a); return n?.io ? `${c}${n.io}` : m; });
     const seen = new Map<string, { id: string; label: string; signal: boolean; node: string }>();
     for (const p of paths) {
       const sig = new Set(p.signal.map((h) => h.link?.id).filter(Boolean));
       for (const l of linksOf(circ.circuit, p)) {
         if (l.kind === 'contact' || seen.has(l.id)) continue;
-        seen.set(l.id, { id: l.id, label: `${l.wire ?? ''} — ${l.a} → ${l.b}${l.cable ? ` (${l.cable} core ${l.core})` : l.kind === 'jumper' ? ' (jumper)' : ''}`, signal: sig.has(l.id), node: l.b });
+        seen.set(l.id, { id: l.id, label: plcIo(`${l.wire ?? ''} — ${l.a} → ${l.b}${l.cable ? ` (${l.cable} core ${l.core})` : l.kind === 'jumper' ? ' (jumper)' : ''}`), signal: sig.has(l.id), node: l.b });
       }
     }
     return [...seen.values()].sort((a, b) => Number(b.signal) - Number(a.signal) || a.label.localeCompare(b.label));
-  }, [paths, circ]);
+  }, [paths, circ, names]);
   const [pick, setPick] = useState('');
   const [kind, setKind] = useState<Kind>('open');
   const [hidden, setHidden] = useState(false);
