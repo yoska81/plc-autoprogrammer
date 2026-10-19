@@ -111,7 +111,7 @@ export function IORow({ point, address, duplicate, device }: IORowProps) {
               <>
                 <div>It is used by:</div>
                 <ul className="list-disc pl-4 max-h-32 overflow-auto">{confirmUses.map((u, i) => <li key={i}>{u}</li>)}</ul>
-                <div className="text-steel-600">The points after it get new addresses and the program follows them. What used this point is marked for you to fix.</div>
+                <div className="text-steel-600">The points after it get new addresses; the program and the HMI follow them. Rungs and HMI elements that used this point are marked for you to fix; HMI tags and alarms on it are removed. Undo puts everything back.</div>
               </>
             ) : <div className="text-steel-600">Nothing in the program or the HMI uses it.</div>}
             <div className="flex justify-end gap-2">

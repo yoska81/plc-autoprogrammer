@@ -12,7 +12,7 @@ import { seedSampleProject } from '../../preview/sampleProject';
 import { useIOStore } from '../../store/useIOStore';
 import { useProgramStore } from '../../store/useProgramStore';
 import { useProjectStore } from '../../store/useProjectStore';
-import { deletePointWithUndo, ioAddresses, ioUsesOf, lastIoUndo, undoIoDelete, withIoRemap } from './ioChange';
+import { applyIoChange, deletePointWithUndo, ioAddresses, ioUsesOf, lastIoUndo, undoIoDelete, withIoRemap } from './ioChange';
 import '../../hmi/ioParticipant';
 import { useHmiStore } from '../../store/useHmiStore';
 import { generateRuleBasedProgram } from '../ai/cycleAI';
@@ -127,7 +127,9 @@ useHmiStore.setState({ design: { ...hmiBefore, alarms: hmiBefore.alarms.filter((
 // 4. CLICK → CompactLogix: the I/O renumbers (X001 → X101 …), the program, its saved versions and the HMI
 // follow; the checker has 0 errors, and so does a rebuild from the remapped HMI.
 useProgramStore.getState().saveVersion('before Logix');
-const notes = withIoRemap(() => useProjectStore.getState().setPlc('logix', getProfile('logix').defaultCpuId));
+const clickLadder = useProgramStore.getState().ladder, clickHmi = useHmiStore.getState().design;
+const notes = withIoRemap(() => useProjectStore.getState().setPlc('logix', getProfile('logix').defaultCpuId), 'PLC change to CompactLogix');
+assert.equal(lastIoUndo(), 'PLC change to CompactLogix', 'a PLC change can be undone');
 assert.ok(notes.some((n) => /operands moved/.test(n)), notes.join(' | '));
 const lx = getProfile('logix'), lxAddr = ioAddresses(useIOStore.getState().projectIO), lxSet = new Set([...lxAddr.values()]);
 assert.notEqual(lxAddr.get(eye.id), 'X004', 'renumbered for CompactLogix');
@@ -140,5 +142,16 @@ assert.ok(!hmiNow.screens.some((s) => s.elements.some((e) => /^[XY]0\d\d$/.test(
 const io2 = useIOStore.getState().projectIO;
 const rebuilt = await generateRuleBasedProgram({ ctx: { profile: lx, cpu: getCpu(lx, lx.defaultCpuId), io: io2, addresses: lxAddr, wiring: new Map() }, spec: '', electrical: null, hmi: hmiNow, noPanel: false });
 assert.deepEqual(lxErrs(rebuilt.program), [], 'CompactLogix rebuild: 0 checker errors');
+
+// Undo the PLC change: CLICK, the program and the HMI as they were.
+assert.equal(undoIoDelete(), true);
+assert.equal(useProjectStore.getState().plcId, 'click');
+assert.equal(useProgramStore.getState().ladder, clickLadder);
+assert.equal(useHmiStore.getState().design, clickHmi);
+
+// A smaller PLC: points left without an address are named in the messages.
+const many = Array.from({ length: 12 }, (_, i) => ({ id: `S${i}`, description: `Sensor ${i}`, type: 'input', category: 'Station 1' })) as typeof io;
+const shrink = applyIoChange(many, many, { plcId: 'click', cpuId: 'C0-11DD2E-D', modules: ['C0-16ND3'] }, { plcId: 'click', cpuId: 'C0-11DD2E-D', modules: ['C0-16TD1'] });
+assert.ok(shrink.messages.some((m) => /4 I\/O points have no address on the new PLC/.test(m)), shrink.messages.join(' | '));
 
 console.log('ioChange tests passed');

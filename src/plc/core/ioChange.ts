@@ -52,8 +52,13 @@ export function ioAddresses(io: IOPoint[], setup: PlcSetup = plcSetup()): Map<st
 
 /** The program (and its saved versions) and the participants after an address change; returns what to tell the user. */
 export function applyIoChange(prev: IOPoint[], next: IOPoint[], prevSetup: PlcSetup = plcSetup(), nextSetup: PlcSetup = plcSetup()): { remap: IoRemap; messages: string[] } {
-  const remap = ioRemap(ioAddresses(prev, prevSetup), ioAddresses(next, nextSetup));
-  return { remap, messages: applyRemap(remap, prev) };
+  const before = ioAddresses(prev, prevSetup), after = ioAddresses(next, nextSetup);
+  const remap = ioRemap(before, after);
+  const messages = applyRemap(remap, prev);
+  // A smaller PLC: points that had an address and now have none (not enough I/O) — said, not only left to the checker.
+  const lost = next.filter((p) => before.get(p.id) && !after.get(p.id));
+  if (lost.length) messages.push(`${lost.length} I/O point${lost.length === 1 ? ' has' : 's have'} no address on the new PLC (not enough I/O): ${lost.slice(0, 6).map((p) => `${p.id} ${p.description}`.trim()).join(', ')}${lost.length > 6 ? '…' : ''}. Add a module or choose a bigger CPU.`);
+  return { remap, messages };
 }
 
 /** Rewrite the program, its saved versions and the participants through a remap; returns what to tell the user. */
@@ -102,11 +107,32 @@ let wrapping = 0;
  * A change that can move addresses in several steps (a PLC / CPU / module choice, maybe with I/O added): the
  * addresses before, the change, then one remap of the program and the HMI. Returns what to tell the user.
  */
-export function withIoRemap(change: () => void): string[] {
+export function withIoRemap(change: () => void, undoLabel?: string): string[] {
   const prevIo = useIOStore.getState().projectIO, prevSetup = plcSetup();
+  const put = undoLabel ? snapshotAll() : null;
   wrapping++;
   try { change(); } finally { wrapping--; }
-  return applyIoChange(prevIo, useIOStore.getState().projectIO, prevSetup, plcSetup()).messages;
+  const messages = applyIoChange(prevIo, useIOStore.getState().projectIO, prevSetup, plcSetup()).messages;
+  if (put) offerUndo(undoLabel!, put);
+  return messages;
+}
+
+/** The I/O list, the PLC choice, the program (and versions) and each participant's design as they are now; the returned function puts them back (no remap). */
+function snapshotAll(): () => void {
+  const io = useIOStore.getState().projectIO, setup = plcSetup();
+  const { ladder, versions } = useProgramStore.getState();
+  const restores = participants.map((p) => p.snapshot());
+  return () => {
+    useIOStore.setState({ projectIO: io });
+    useProjectStore.setState(setup);
+    useProgramStore.getState().editLadder(ladder);
+    useProgramStore.setState({ versions });
+    for (const r of restores) r();
+  };
+}
+function offerUndo(label: string, restore: () => void) {
+  setUndo({ label, restore });
+  undoRefs = currentRefs();
 }
 
 /** What uses a point's address: program rungs (by number and comment) and the participants (the HMI). */
@@ -129,33 +155,24 @@ const setUndo = (u: typeof undo) => { undo = u; useIoUndo.setState({ label: u?.l
 // Undo puts back a whole snapshot, so it is offered only until the next change to the I/O list, the program or a
 // participant's design: a later edit is never thrown away by it.
 let undoRefs: unknown[] | null = null;
-const currentRefs = () => [useIOStore.getState().projectIO, useProgramStore.getState().ladder];
-const dropUndoOnChange = () => { if (undo && undoRefs && (undoRefs[0] !== useIOStore.getState().projectIO || undoRefs[1] !== useProgramStore.getState().ladder)) setUndo(null); };
+const currentRefs = () => { const p = useProjectStore.getState(); return [useIOStore.getState().projectIO, useProgramStore.getState().ladder, p.plcId, p.cpuId, p.modules]; };
+const dropUndoOnChange = () => { if (undo && undoRefs && currentRefs().some((x, i) => x !== undoRefs![i])) setUndo(null); };
 useIOStore.subscribe(dropUndoOnChange);
 useProgramStore.subscribe(dropUndoOnChange);
+useProjectStore.subscribe(dropUndoOnChange);
 
 /** Delete a point, keeping one undo; returns what changed in the program / HMI. */
 export function deletePointWithUndo(id: string): string[] {
   const io = useIOStore.getState().projectIO;
   const point = io.find((p) => p.id === id);
   if (!point) return [];
-  const { ladder, versions } = useProgramStore.getState();
-  const restores = participants.map((p) => p.snapshot());
+  // Undo puts back exactly what was there (no remap: the list, the program and the HMI are restored together).
+  const put = snapshotAll();
   const messages: string[] = [];
   lastMessages = messages;
   useIOStore.getState().deletePoint(id);
   lastMessages = null;
-  setUndo({
-    label: `Delete ${id}${point.description ? ` ${point.description}` : ''}`,
-    restore: () => {
-      // Put back exactly what was there (no remap: the list, the program and the HMI are restored together).
-      useIOStore.setState({ projectIO: io });
-      useProgramStore.getState().editLadder(ladder);
-      useProgramStore.setState({ versions });
-      for (const r of restores) r();
-    },
-  });
-  undoRefs = currentRefs();
+  offerUndo(`Delete ${id}${point.description ? ` ${point.description}` : ''}`, put);
   return messages;
 }
 

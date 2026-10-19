@@ -114,6 +114,12 @@ export interface ServoPins {
   di: Partial<Record<ServoRole, string>>;
   /** Default DO function → [DO+, DO-]. */
   do: Partial<Record<ServoRole, [string, string]>>;
+  /** Every programmable DIn: its pin and the parameter that sets its function; DOn: [DO+, DO-]. */
+  diPins: Record<number, { pin: string; param: string }>;
+  doPins: Record<number, [string, string]>;
+  /** Factory functions of the DIs / DOs (a signal put on one of them repurposes it). */
+  diFactory: Record<number, string>;
+  doFactory: Record<number, string>;
   sto: { aPlus: string; aMinus: string; bPlus: string; bMinus: string; fbPlus: string; fbMinus: string };
   /** Max pulse frequency with open-collector outputs (kHz). */
   maxPulseKhzOC: number;
@@ -128,6 +134,12 @@ export const SUREServo2: ServoPins = {
   com: 'CN1-11',
   di: { enable: 'CN1-9', reset: 'CN1-33' },
   do: { ready: ['CN1-7', 'CN1-6'], zeroSpeed: ['CN1-5', 'CN1-4'], homed: ['CN1-3', 'CN1-2'], inPosition: ['CN1-1', 'CN1-26'], alarm: ['CN1-28', 'CN1-27'] },
+  // CN1 table and DI function parameters (manual ch. 3).
+  diPins: { 1: { pin: 'CN1-9', param: 'P2.010' }, 2: { pin: 'CN1-10', param: 'P2.011' }, 3: { pin: 'CN1-34', param: 'P2.012' }, 4: { pin: 'CN1-8', param: 'P2.013' }, 5: { pin: 'CN1-33', param: 'P2.014' },
+    6: { pin: 'CN1-32', param: 'P2.015' }, 7: { pin: 'CN1-31', param: 'P2.016' }, 8: { pin: 'CN1-30', param: 'P2.017' }, 9: { pin: 'CN1-29', param: 'P2.036' }, 10: { pin: 'CN1-38', param: 'P2.037' } },
+  doPins: { 1: ['CN1-7', 'CN1-6'], 2: ['CN1-5', 'CN1-4'], 3: ['CN1-3', 'CN1-2'], 4: ['CN1-1', 'CN1-26'], 5: ['CN1-28', 'CN1-27'] },
+  diFactory: { 1: 'SON (servo on)', 5: 'ARST (alarm reset)', 6: 'NL (negative limit)', 7: 'PL (positive limit)' },
+  doFactory: { 1: 'SRDY (servo ready)', 2: 'ZSPD (zero speed)', 3: 'HOME (homing done)', 4: 'TPOS (in position)', 5: 'ALRM (servo alarm)' },
   sto: { aPlus: 'CN10-3', aMinus: 'CN10-4', bPlus: 'CN10-5', bMinus: 'CN10-6', fbPlus: 'CN10-7', fbMinus: 'CN10-8' },
   maxPulseKhzOC: 200,
   source: 'SureServo2 User Manual 2nd Ed. Rev C, ch. 3 (3.4.1 CN1 pins, 3.4.2 default DI/DO, 3.10 CN10 STO)',

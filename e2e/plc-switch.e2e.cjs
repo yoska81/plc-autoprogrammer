@@ -12,6 +12,9 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 } })).newPage();
+  // A cold dev server compiles the app on the first load: allow it time (the waits below are for elements, not delays).
+  page.setDefaultNavigationTimeout(90000);
+  page.setDefaultTimeout(60000);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
@@ -37,7 +40,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   // 1. Delete I002 Start Button.
   await seed();
   await page.goto(BASE + '/io');
-  await page.waitForTimeout(800);
+  await page.waitForSelector('input[aria-label="Description of I002"]');
   const row = page.locator('tr', { has: page.locator('input[aria-label="Description of I002"]') });
   await row.hover();
   await page.getByRole('button', { name: 'Delete I002' }).click();

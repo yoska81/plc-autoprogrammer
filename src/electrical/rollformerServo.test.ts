@@ -32,11 +32,19 @@ assert.ok(!m.ioWiring.some((w) => /Reset|selector/i.test(w.description)), 'opera
 
 // Terminals: the drawn DI / DO when the function has no default pin; SON on its default DI1 pin.
 const wiring = m.ioWiring.map((w) => ({ address: w.address, type: (/^X/.test(w.address) ? 'input' : 'output') as 'input' | 'output', description: w.description, deviceTag: w.deviceTag, deviceType: w.deviceType }));
-const { axes } = servoControls([{ key: 'U2', drive: { tag: 'U2', partNumber: 'SV2A-2040' }, pins: SUREServo2 } as never], wiring, 'sinking', '0V', null, 'no-relay', 'PE', 1);
+const { axes, wires } = servoControls([{ key: 'U2', drive: { tag: 'U2', partNumber: 'SV2A-2040' }, pins: SUREServo2 } as never], wiring, 'sinking', '0V', null, 'no-relay', 'PE', 1);
 const term = (re: RegExp) => axes[0].terminals.find((t) => t.address === A(re))?.terminal;
 assert.equal(term(/DI1 SON/), SUREServo2.di.enable, 'SON on the drive\'s servo-on pin');
-assert.equal(term(/DI7 CAM/), 'DI7', 'CAM engage on the DI the drawing names');
-assert.equal(term(/U2 cut/), 'DO3', 'cut on DO3');
+assert.equal(term(/DI7 CAM/), 'CN1-31', 'CAM engage on the DI the drawing names: DI7 = CN1-31');
+assert.ok(axes[0].notes.some((n) => /assign E-CAM engage to DI7 \(CN1-31, P2\.016\) — this repurposes its factory function PL/.test(n)), axes[0].notes.join(' | '));
+assert.equal(term(/U2 cut/), 'CN1-2', 'cut on DO3: DO- (CN1-2) to the PLC input');
+assert.ok(wires.some((w) => w.from === 'TB1 24+' && w.to === 'U2:CN1-3'), 'DO3+ (CN1-3) from 24 V');
+assert.deepEqual(axes[0].pinClashes ?? [], [], 'no drive pin used twice');
+
+// A drive that also reports homing done (default DO3 = HOME) and has cut on DO3: one pin, two signals — an error.
+const clash = [...wiring, { address: 'X112', type: 'input' as const, description: 'U2 homing complete', deviceTag: 'U2', deviceType: 'servo-drive' }];
+const { axes: ax2 } = servoControls([{ key: 'U2', drive: { tag: 'U2', partNumber: 'SV2A-2040' }, pins: SUREServo2 } as never], clash, 'sinking', '0V', null, 'no-relay', 'PE', 1);
+assert.ok((ax2[0].pinClashes ?? []).some((c) => /drive pin CN1-3 has two signals/.test(c) && /U2 cut/.test(c) && /homing complete/.test(c)), (ax2[0].pinClashes ?? []).join(' | '));
 assert.equal(term(/U2 ready/), SUREServo2.do.ready![1], 'ready on its default DO pin');
 
 console.log('roll former servo tests passed');

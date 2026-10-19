@@ -2914,6 +2914,7 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
   const curtains = (m.safety.extraRelays ?? []).filter((x) => x.kind === 'light-curtain').map((x) => x.relay.tag);
   if (curtains.length && m.servos.some((a) => a.sto)) w.push(`${m.servos.filter((a) => a.sto).map((a) => a.drive.tag).join(', ')}: both STO channels come straight from the safety relay ${m.safety.relay?.tag ?? ''}, so a trip of the light curtain relay ${curtains.join(', ')} does not stop the servo. If the axis is in the guarded area, wire the light curtain into the safety relay's inputs (or use a relay with two safety outputs for each curtain).`);
+  for (const a of m.servos) for (const c of a.pinClashes ?? []) w.push(`ERROR — ${c}`);
   for (const a of m.servos.filter((x) => !x.sto && x.stoMissing)) {
     w.push(a.stoMissing === 'no-relay'
       ? `${a.drive.tag}: Safe Torque Off (STO) is not wired because the design has no safety relay — the servo drive cannot run without it. Add a safety relay with at least two N.O. safety outputs.`
@@ -3079,6 +3080,8 @@ export interface PlcRackSlot {
   outputStyle: IoGroup['outputStyle'];
   /** True when the catalog gives the point counts (spare points can be listed). */
   known: boolean;
+  /** A CLICK PLUS option-slot module plugged into this CPU (slot 0): its I/O is slot 0's. */
+  option?: { tag: string; partNumber: string; part?: CatalogPart };
 }
 
 /** A CLICK PLUS option-slot module (plugs into the CPU, addressed as slot 0). */
@@ -3101,7 +3104,8 @@ export function plcRack(ctx: DrawingContext): PlcRackSlot[] {
     // The option-slot module is slot 0 (it takes the CPU's place for I/O: a CLICK PLUS CPU has none of its own).
     if (isOptionSlotModule(mod.part)) {
       const i = ins(mod.part) ?? 0, o = outs(mod.part) ?? 0;
-      out[0] = { ...out[0], tag: mod.tag, partNumber: mod.partNumber, part: mod.part, description: `${out[0].description} + ${mod.part?.description ?? mod.partNumber}`, inputs: out[0].inputs + i, outputs: out[0].outputs + o, outputStyle: outputStyleOf(mod.partNumber, mod.part), known: true };
+      // The CPU stays slot 0's part (the rack still shows it); the option module is listed with it and gives its I/O.
+      out[0] = { ...out[0], description: `${out[0].description} + option slot ${mod.partNumber}`, inputs: out[0].inputs + i, outputs: out[0].outputs + o, outputStyle: outputStyleOf(mod.partNumber, mod.part), known: true, option: { tag: mod.tag, partNumber: mod.partNumber, part: mod.part } };
       continue;
     }
     const fixed = num(mod.part?.ratings, 'slot');

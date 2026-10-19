@@ -11,6 +11,9 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1366, height: 768 } })).newPage();
+  // A cold dev server compiles the app on the first load: allow it time (the waits below are for elements, not delays).
+  page.setDefaultNavigationTimeout(90000);
+  page.setDefaultTimeout(60000);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());

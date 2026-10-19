@@ -10,6 +10,9 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 } })).newPage();
+  // A cold dev server compiles the app on the first load: allow it time (the waits below are for elements, not delays).
+  page.setDefaultNavigationTimeout(90000);
+  page.setDefaultTimeout(60000);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
@@ -18,7 +21,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.goto(BASE + '/io');
-  await page.waitForTimeout(800);
+  await page.waitForSelector('input[aria-label="Description of I004"]');
   const counter = () => page.evaluate(async () => {
     const { useProgramStore } = await import('/src/store/useProgramStore.ts');
     return JSON.stringify(useProgramStore.getState().ladder.rungs.find((g) => /^Part counter/.test(g.comment))?.branches);

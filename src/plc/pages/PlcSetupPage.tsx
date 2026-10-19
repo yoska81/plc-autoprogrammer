@@ -1,16 +1,18 @@
 import { Link } from 'react-router-dom';
 import { PLC_PROFILES } from '../core/profiles';
 import { useProjectStore } from '../../store/useProjectStore';
-import { withIoRemap } from '../core/ioChange';
+import { undoIoDelete, useIoUndo, withIoRemap } from '../core/ioChange';
 import { notify } from '../../store/useNoticeStore';
 import { usePlc } from '../core/usePlc';
 
 export default function PlcSetupPage() {
   // A PLC / CPU change renumbers the I/O: the program and the HMI follow it (one remap), and say so.
   const storeSetPlc = useProjectStore((s) => s.setPlc);
+  // The last PLC change (or I/O delete) stays undoable here until the next edit.
+  const undoLabel = useIoUndo((s) => s.label);
   const setPlc = (plcId: string, cpuId: string) => {
-    const notes = withIoRemap(() => storeSetPlc(plcId, cpuId));
-    if (notes.length) notify(`The I/O was renumbered for the new PLC; the program and the HMI followed. ${notes.join(' ')}`);
+    const notes = withIoRemap(() => storeSetPlc(plcId, cpuId), `PLC change to ${cpuId}`);
+    if (notes.length) notify(`The I/O was renumbered for the new PLC; the program and the HMI followed. ${notes.join(' ')}`, { label: 'Undo', run: () => { undoIoDelete(); } });
   };
   const { profile, cpu } = usePlc();
 
@@ -19,6 +21,11 @@ export default function PlcSetupPage() {
       <header className="px-4 py-2.5 bg-white border-b border-gray-200">
         <h2 className="text-base font-semibold text-gray-800">PLC Setup</h2>
         <p className="text-xs text-gray-400 mt-0.5">Choose the controller. The AI writes the program in that PLC's own language and addresses.</p>
+        {undoLabel && (
+          <button onClick={() => undoIoDelete()} title="Put back the PLC, the I/O addresses, the program and the HMI as they were" className="mt-2 px-3 py-1.5 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50">
+            Undo: {undoLabel}
+          </button>
+        )}
       </header>
 
       <div className="flex-1 overflow-auto bg-gray-50 p-6">
