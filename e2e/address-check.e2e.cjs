@@ -96,6 +96,18 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await use.click();
   check(/6ES7/.test(await page.getByText(/^Your equipment selection \(/).innerText().catch(() => '')), 'Use this CPU: the Siemens CPU becomes the selection to apply');
 
+  // Across brands with a panel that cannot talk to the new PLC: the panel is swapped for the closest one that can, and said.
+  await page.evaluate(async () => {
+    const { applyEquipment } = await import('/src/spec/equipment.ts');
+    applyEquipment({ cpuId: 'C0-12DD1E-D', modules: [], hmiPartNumber: 'CM5-T7W' }, null);
+  });
+  await page.goto(BASE + '/equipment');
+  await card.getByRole('button', { name: 'Use this CPU' }).first().click();
+  const sel = await page.getByText(/^Your equipment selection \(/).innerText().catch(() => '');
+  const note = await page.getByText(/The CM5-T7W cannot talk to the 6ES7/).innerText().catch(() => '');
+  console.log('  ·', sel.replace(/\s+/g, ' ').slice(0, 120), '|', note.slice(0, 160));
+  check(/6ES7/.test(sel) && !/CM5-T7W/.test(sel) && /is selected instead/.test(note), 'cross-brand pick: the C-more panel is swapped for one that talks to the S7, with a note');
+
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await browser.close();
   console.log(fails.length ? `address-check e2e: ${fails.length} failed` : 'address-check e2e: all passed');
