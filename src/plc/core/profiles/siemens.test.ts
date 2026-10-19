@@ -99,4 +99,16 @@ assert.match(validateProgram(bad, siemensProfile, new Set()).map((i) => i.messag
   assert.ok(names.includes('Tank_level_raw') && names.some((n) => /^Tank_level_raw_\d$/.test(n)), names.join(', '));
 }
 
+// Comments in the program's own names: an HMI description quoting the app's operands is written with the SCL names.
+{
+  const withHmi = { ...ctx, extraTags: [{ address: 'C1001', nickname: 'HMI_Start', comment: 'Momentary Start: runs when Start PB (X001) is ON and Run (C1) is off; Fill_Timer TD1 below DF101; Cycles CTD1' }] };
+  const out = buildScl(program, withHmi).scl;
+  const decl = out.split('\n').find((l) => /^\s+HMI_Start : Bool;/.test(l)) ?? '';
+  assert.match(decl, /Start PB \("Start_PB"\)/, decl);
+  assert.match(decl, /Run \(#Run\) is off/);
+  assert.match(decl, /#Fill_Timer\.ET below #Level_SP/);
+  assert.match(decl, /#Cycles\.CV/);
+  assert.ok(!/\b(X001|C1|TD1|DF101|CTD1)\b/.test(decl.split('//')[1] ?? ''), `no app operand left: ${decl}`);
+}
+
 console.log('siemens tests passed');
