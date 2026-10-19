@@ -119,7 +119,7 @@ export default function ElectricalPage() {
   const { inputs } = el;
   const setInputs = (patch: Partial<DesignInputs>) => el.setInputs({ ...inputs, ...patch });
   const setMotor = (i: number, patch: Partial<MotorSpec>) =>
-    setInputs({ motors: inputs.motors.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
+    setInputs({ motors: inputs.motors.map((m, j) => (j === i ? { ...m, ...patch, fromDesign: undefined } : m)) });
 
   const warnings = useMemo(() => (ctx ? designWarnings(ctx) : []), [ctx]);
   const [pdfBusy, setPdfBusy] = useState<'print' | 'save' | 'autocad' | 'eplan' | null>(null);

@@ -135,8 +135,14 @@ export async function measureOverlaps(variant: Parameters<typeof setup>[0], opts
     const frameSegs = [...svg.querySelectorAll<SVGGraphicsElement>('[data-frame]')].flatMap((el) => segments(el, toRoot(el)));
     const titleEl = svg.querySelector<SVGGraphicsElement>('[data-frame="title"]');
     const titleTop = titleEl ? new DOMPoint(0, titleEl.getBBox().y).matrixTransform(toRoot(titleEl)).y : Infinity;
+    // A bar drawn with a label beside it (data-bar: the PE bar): the label keeps 2 mm from the bar's edges — one
+    // whose descenders sit on the bar reads as touching it in the PDF even when the browser measures a gap.
+    const barSegs = [...svg.querySelectorAll<SVGGraphicsElement>('[data-bar]')].flatMap((el) => segments(el, toRoot(el)));
     for (const x of texts) {
       if (!x.t.closest('[data-cad="GRAPHICS"]')) continue;
+      const near = { x0: x.box.x0 - 2, y0: x.box.y0 - 2, x1: x.box.x1 + 2, y1: x.box.y1 + 2 };
+      const onBar = Math.max(0, ...barSegs.map((s) => inside(s, near)));
+      if (onBar >= minLen) tl.push({ text: `${x.s} (touching a bar)`, len: +onBar.toFixed(2), at: [+x.box.x0.toFixed(1), +x.box.y0.toFixed(1)] });
       const g = { x0: x.box.x0 - 0.5, y0: x.box.y0 - 0.5, x1: x.box.x1 + 0.5, y1: x.box.y1 + 0.5 };
       const onFrame = Math.max(0, ...frameSegs.map((s) => inside(s, g)));
       if (onFrame >= minLen || x.box.y1 > titleTop) tl.push({ text: `${x.s} (on the frame / title block)`, len: +Math.max(onFrame, x.box.y1 - titleTop).toFixed(2), at: [+x.box.x0.toFixed(1), +x.box.y0.toFixed(1)] });

@@ -92,7 +92,8 @@ export function staleMotors(motors: MotorSpec[], io: IOPoint[], spec: string): M
 export function defaultMachineModel(io: IOPoint[], inputs: DesignInputs, spec = ''): MachineModel {
   const assumptions: string[] = [];
   const stale = new Set(staleMotors(inputs.motors, io, spec).map((m) => m.tag));
-  for (const m of inputs.motors.filter((x) => stale.has(x.tag))) {
+  // a motor an earlier design read from another machine is just dropped; one the designer typed is asked about
+  for (const m of inputs.motors.filter((x) => stale.has(x.tag) && !x.fromDesign)) {
     assumptions.push(`${m.tag} ${m.description} (${m.hp} HP) is in the motor list but not in the machine description or I/O list, so it was left out of the design: add it back on the Design tab if this machine has it.`);
   }
   const motors: ModelMotor[] = inputs.motors.filter((m) => !stale.has(m.tag)).map((m) => ({ tag: m.tag, description: m.description, hp: m.hp, start: m.starter === 'vfd' ? 'vfd' : m.starter === 'motor-protector' ? 'motor-protector' : m.reversing ? 'reversing' : 'dol' }));
