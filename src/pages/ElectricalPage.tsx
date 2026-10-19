@@ -18,7 +18,7 @@ import { printPdf } from '../deliverables/printPdf';
 import { sheetOnPaper } from '../standards/regions';
 import { notify } from '../store/useNoticeStore';
 import { keyRatings } from '../electrical/strength';
-import { useProjectStore, useVendorPreference, type Region } from '../store/useProjectStore';
+import { useProjectStore, useVendorPreference, vendorPreference, type Region } from '../store/useProjectStore';
 import { hpToKw, isIec, NEMA_TO_IP, REGIONS, regionSpec, SUPPLY_INFO } from '../standards/regions';
 import { applyRegion, regionOption } from '../standards/applyRegion';
 import { bomCsv, designWarnings, motorFla } from '../electrical/derive';
@@ -36,6 +36,8 @@ import { useQuestions } from '../components/questions/useQuestionStore';
 import { useDrawingContext } from '../electrical/useDrawingContext';
 import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
+import PanelBrandOfferBanner from '../electrical/PanelBrandOfferBanner';
+import { vendorById } from '../electrical/catalogs';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
 import type { CatalogCategory, DesignInputs, EnclosureRating, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
 import { Spinner, ReasoningPanel } from '../components/common';
@@ -163,9 +165,9 @@ export default function ElectricalPage() {
    * rule-based engine designs the panel from it — with no key, or when the AI fails, from the rules'
    * own reading. `full` = the older all-AI design (experimental: the AI picks every part).
    */
-  const generate = (full = false) => {
+  const generate = (full = false, ask = true) => {
     if (el.isGenerating || (full && !apiKey)) return;
-    if (el.design && !confirm('Replace the current electrical design?')) return;
+    if (ask && el.design && !confirm('Replace the current electrical design?')) return;
     setError(null);
     const snap = { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp };
     void startAiJob({
@@ -181,7 +183,7 @@ export default function ElectricalPage() {
           }
           return await generateRuleBasedDesign({
             apiKey: apiKey || undefined, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
-            spec: specText, io, addresses, inputs, region, pref, getPart, hmiPartNumber, analog, modules, projectName,
+            spec: specText, io, addresses, inputs, region, pref: vendorPreference(), getPart, hmiPartNumber, analog, modules, projectName,
             plc: { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label },
           });
         } finally { useElectricalStore.getState().setIsGenerating(false); }
@@ -205,7 +207,7 @@ export default function ElectricalPage() {
         <div className={`flex ${folded ? 'flex-nowrap items-center' : 'flex-wrap items-start'} justify-between gap-x-4 gap-y-2`}>
           <div className="min-w-0 flex-[1_1_16rem]">
             <h2 className={`text-base font-semibold text-steel-800${folded ? ' truncate' : ''}`}>4 · Electrical Design{tab !== 'design' && <span className="font-normal text-steel-500"> — {TAB_TITLE[tab]}</span>}</h2>
-            {!folded && <p className="text-xs text-steel-400 mt-0.5">Control panel design and drawings · AutomationDirect parts · {profile.name} {cpu.id}</p>}
+            {!folded && <p className="text-xs text-steel-400 mt-0.5">Control panel design and drawings · {vendorById(pref.panel[0])?.name ?? 'AutomationDirect'} panel parts · {profile.name} {cpu.id}</p>}
           </div>
           {folded && <HeaderMore onClick={() => setFolded(false)} />}
           {el.design && !folded && (
@@ -228,6 +230,8 @@ export default function ElectricalPage() {
           <button onClick={() => generate()} disabled={el.isGenerating} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
             {el.isGenerating ? 'Updating…' : 'Update design'}
           </button>} />
+        {/* one click: the panel brand is set and the design re-picked (generate reads the preference when it runs) */}
+        <PanelBrandOfferBanner specText={specText} onApplied={() => { if (el.design) generate(false, false); }} />
         {ctx && el.design && <EnclosureControl ctx={ctx} />}
         {ctx && el.design && <EnclosureFitBanner ctx={ctx} />}
       </>}
