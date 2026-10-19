@@ -302,12 +302,12 @@ export default function App() {
       <div className="h-6 flex-shrink-0 bg-shell-900 border-t border-black/40 text-steel-100 flex items-center gap-5 px-3 text-[11px]">
         <span data-testid="save-state">{dirty ? 'Unsaved changes' : fileInfo?.savedAt ? `Saved ${new Date(fileInfo.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Ready'}</span>
         <AiJobsIndicator />
-        <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
-        <span>HMI: {hmiPart || (noHmi ? 'none (pushbuttons and lamps)' : '—')}</span>
-        <span>Rev {rev.rev} · {rev.description}</span>
+        <span className="max-[479px]:hidden">PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
+        <span className="max-[479px]:hidden">HMI: {hmiPart || (noHmi ? 'none (pushbuttons and lamps)' : '—')}</span>
+        <span className="max-[479px]:hidden">Rev {rev.rev} · {rev.description}</span>
         <ReviewStatus />
         <span className="ml-auto" />
-        <span>v{__APP_VERSION__}</span>
+        <span className="max-[479px]:hidden">v{__APP_VERSION__}</span>
       </div>
     </div>
   );
