@@ -32,6 +32,7 @@ import { SUPPLY_INFO, type Region } from '../standards/regions';
 import type { CatalogPart, DesignComponent, FieldDeviceType, IOWiring, SupplyVoltage } from './types';
 import type { IOPoint } from '../types/io';
 import { pointsFromText } from './highSpeedIo';
+import { axesFromSpec, isMechatrolinkCpu, type NetworkAxisInput } from './mechatrolink';
 
 const num = (v: unknown): number | undefined => {
   const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
@@ -121,6 +122,12 @@ export interface ServoPins {
   diFactory: Record<number, string>;
   doFactory: Record<number, string>;
   sto: { aPlus: string; aMinus: string; bPlus: string; bMinus: string; fbPlus: string; fbMinus: string };
+  /** The maker's names for the two STO channels and the feedback, the bypass to remove, and the connector header (default: SureServo2's). */
+  stoNames?: { a: string; b: string; fb: string; bypass: string; connector: string; fbNote: string };
+  /** Network-commanded drive (no pulse / direction): its network and the in / out connectors of the daisy chain. */
+  network?: { name: string; in: string; out: string };
+  /** Two-axis drive: the second axis's motor terminals (power.motor are axis A's). */
+  motorB?: string[];
   /** Max pulse frequency with open-collector outputs (kHz). */
   maxPulseKhzOC: number;
   source: string;
@@ -145,10 +152,53 @@ export const SUREServo2: ServoPins = {
   source: 'SureServo2 User Manual 2nd Ed. Rev C, ch. 3 (3.4.1 CN1 pins, 3.4.2 default DI/DO, 3.10 CN10 STO)',
 };
 
+/**
+ * Yaskawa MECHATROLINK-III SERVOPACKs (no pulse / direction: the axis is commanded over the network). Main circuit
+ * L1/L2/L3, control power L1C/L2C, regenerative resistor B1/+ - B2 (external) with B2-B3 shorted for the built-in
+ * one, motor U/V/W (SGD7W: UA/VA/WA and UB/VB/WB). CN8 safety: 3 /HWBB1-, 4 /HWBB1+, 5 /HWBB2-, 6 /HWBB2+,
+ * 7 EDM1-, 8 EDM1+ (pins 1-2 not used); EDM1 is a source transistor output, ON when both /HWBB inputs are OFF
+ * (base block), 30 VDC 50 mA max — like SureServo2's FDBK it is closed while torque is off, so it sits in the safety
+ * relay's S33-S34 feedback loop. MECHATROLINK-III in CN6A / out CN6B, max 50 m between stations, no terminator.
+ * Sources: SGD7S ML-III manual SIEP S800001 28 (4.3.1 terminals, 4.3.5 regenerative resistors, 4.6 CN8, 4.7
+ * MECHATROLINK-III cables), SGD7W ML-III manual SIEP S800001 29 (UA/VA/WA, UB/VB/WB), SGD7W HWBB option SIEP S800001 72,
+ * Sigma-V catalog KAEP S800000 42 (SGDV 400 V: 24 VDC control power, CN8 HWBB).
+ */
+const YASKAWA_STO = { aPlus: 'CN8-4', aMinus: 'CN8-3', bPlus: 'CN8-6', bMinus: 'CN8-5', fbPlus: 'CN8-8', fbMinus: 'CN8-7' };
+const YASKAWA_STO_NAMES = {
+  a: '/HWBB1', b: '/HWBB2', fb: 'EDM1', bypass: 'the CN8 safety jumper connector (JZSP-CVH05-E)', connector: 'CN8',
+  fbNote: 'EDM1 is a transistor output (30 VDC, 50 mA max, 1.5 V drop): confirm the safety relay\'s feedback input takes a semiconductor contact (Yaskawa: PLe / SIL3 needs EDM1 monitored)',
+};
+const NO_PULSE = { plus: '', minus: '', pullHi: '' };
+export const SIGMA7_ML3: ServoPins = {
+  family: 'Sigma-7 MECHATROLINK-III',
+  power: { line: ['L1', 'L2', 'L3'], control: ['L1C', 'L2C'], motor: ['U', 'V', 'W'], regen: { p: 'B1/+', d: 'B3', c: 'B2' } },
+  pulse: NO_PULSE, direction: NO_PULSE, com: '', di: {}, do: {}, diPins: {}, doPins: {}, diFactory: {}, doFactory: {},
+  sto: YASKAWA_STO, stoNames: YASKAWA_STO_NAMES, network: { name: 'MECHATROLINK-III', in: 'CN6A', out: 'CN6B' },
+  maxPulseKhzOC: 0,
+  source: 'Yaskawa SIEP S800001 28 (4.3 main circuit, 4.6 CN8 HWBB, 4.7 MECHATROLINK-III)',
+};
+export const SIGMA7W_ML3: ServoPins = {
+  ...SIGMA7_ML3, family: 'Sigma-7W MECHATROLINK-III (2 axes)',
+  power: { ...SIGMA7_ML3.power, motor: ['UA', 'VA', 'WA'] }, motorB: ['UB', 'VB', 'WB'],
+  source: 'Yaskawa SIEP S800001 29 (main circuit, UA/VA/WA - UB/VB/WB), SIEP S800001 72 (HWBB option 700, one CN8 for both axes)',
+};
+export const SIGMAV_ML3_400V: ServoPins = {
+  ...SIGMA7_ML3, family: 'Sigma-V 400 V MECHATROLINK-III',
+  power: { line: ['L1', 'L2', 'L3'], control: ['24V', '0V'], motor: ['U', 'V', 'W'], regen: { p: 'B1/+', d: 'B2', c: 'B2' } },
+  source: 'Yaskawa Sigma-V catalog KAEP S800000 42 / manual SIEP S800000 64 (400 V SGDV: 24 VDC control, CN8 HWBB)',
+};
+
 /** Terminal map of a servo drive part (null: family not known — the drawings then show signal names only). */
 export function servoPins(p: CatalogPart | undefined): ServoPins | null {
   if (!p) return null;
-  return /sureservo\s*2|^SV2A-/i.test(`${p.ratings.series ?? ''} ${p.family ?? ''} ${p.partNumber}`) ? SUREServo2 : null;
+  const id = `${p.ratings.series ?? ''} ${p.family ?? ''} ${p.partNumber}`;
+  if (/sureservo\s*2|^SV2A-/i.test(id)) return SUREServo2;
+  if (/MECHATROLINK-III/i.test(String(p.ratings.network ?? '')) && p.ratings.sto === 'yes') {
+    if (/^SGD7W-/.test(p.partNumber)) return SIGMA7W_ML3;
+    if (/^SGD7S-/.test(p.partNumber)) return SIGMA7_ML3;
+    if (/^SGDV-\d{3}D/.test(p.partNumber)) return SIGMAV_ML3_400V;
+  }
+  return null;
 }
 
 export const isServoDrive = (p: CatalogPart | undefined) => !!p && (p.category === 'servoDrive' || kind(p) === 'servo-drive');
@@ -214,6 +264,10 @@ export interface MotionInput {
   parts?: CatalogPart[];
   /** Parts not in the catalog yet, added to it (tests: stand-ins until the catalog has them). */
   extraParts?: CatalogPart[];
+  /** The project's PLC CPU: a MECHATROLINK-III controller commands its axes over the network (no pulse / direction). */
+  cpu?: CatalogPart;
+  /** The project's network axis list (imported program / PLC page); without it the axes are read from the spec. */
+  networkAxes?: NetworkAxisInput[];
 }
 
 export interface MotionResult {
@@ -272,8 +326,11 @@ export function motionDesign(input: MotionInput): MotionResult {
   };
   const info = SUPPLY_INFO[input.supply];
 
+  // ---- Servo axes over MECHATROLINK-III (Yaskawa MP3300): from the axis list, not from I/O points
+  if (isMechatrolinkCpu(input.cpu)) networkServos(input, out, pick);
+
   // ---- Servo axes
-  const servoPoints = input.io.filter(isServoPoint);
+  const servoPoints = isMechatrolinkCpu(input.cpu) ? [] : input.io.filter(isServoPoint);
   const byAxis = new Map<string, IOPoint[]>();
   for (const p of servoPoints) byAxis.set(axisKey(p.description), [...(byAxis.get(axisKey(p.description)) ?? []), p]);
   for (const [key, pts] of byAxis) {
@@ -386,6 +443,107 @@ export function motionDesign(input: MotionInput): MotionResult {
     if (a) out.ioWiring.push({ address: a, deviceTag: tag, deviceType: 'ultrasonic', description: p.description });
   }
   return out;
+}
+
+/**
+ * MECHATROLINK-III axes: one SERVOPACK with safe torque off per axis, or one two-axis SGD7W for two neighbouring axes;
+ * the motor the axis list names (else the drive's own motor for the axis power), its power and encoder cables, the
+ * branch protection, and one MECHATROLINK-III cable per link of the daisy chain (CPU PORT1 → first drive CN6A, CN6B →
+ * next drive CN6A …; no terminator). Drives that do not take the panel supply get a note (200 V Sigma-7 on 480 V).
+ */
+function networkServos(input: MotionInput, out: MotionResult, pick: (ok: (p: CatalogPart) => boolean, size?: (p: CatalogPart) => number) => CatalogPart | undefined) {
+  const all = input.networkAxes?.length ? input.networkAxes : axesFromSpec(input.spec ?? '');
+  const info = SUPPLY_INFO[input.supply];
+  const cls = info.volts >= 380 ? 460 : 230;
+  const cpuAxes = num(input.cpu?.ratings.axes);
+  const virtual = all.filter((a) => a.kind === 'virtual');
+  const axes = all.filter((a) => a.kind !== 'virtual');
+  if (virtual.length) out.notes.push(`${virtual.map((a) => a.name).join(', ')}: virtual axis (SVR) — no drive or motor.`);
+  if (!axes.length) { out.notes.push(`${input.cpu?.partNumber}: no servo axes in the axis list or the specification — add them on the PLC page (or import the program) to get the SERVOPACKs, motors and the MECHATROLINK-III chain.`); return; }
+  if (cpuAxes !== undefined && axes.length > cpuAxes) out.notes.push(`${axes.length} servo axes, but the ${input.cpu?.partNumber} commands ${cpuAxes}: choose the 32-axis CPU (-2-E) or add an SVC-01 module.`);
+  const catalog = (pn?: string) => (pn ? [...ALL_PARTS, ...(input.extraParts ?? [])].find((p) => p.partNumber === pn) : undefined);
+  const netDrive = (p: CatalogPart) => isServoDrive(p) && /MECHATROLINK-III/i.test(String(p.ratings.network ?? '')) && p.ratings.sto === 'yes';
+  const motorW = (a: NetworkAxisInput) => a.watts ?? num(catalog(a.motorPartNumber)?.ratings.ratedWatts);
+  const fitsSupply = (p: CatalogPart) => (voltClass(p) ?? cls) === cls && (info.phases === 3 || /1/.test(String(p.ratings.inputPhases ?? '')));
+  // Only verified, current SERVOPACKs are chosen for a new axis; a legacy one (SGDV, no 1:1 replacement) only when the
+  // axis list names it ("keep existing"). An unverified part only when nothing verified fits, and then with a warning.
+  const current = (p: CatalogPart) => !/legacy/i.test(String(p.ratings.lifecycle ?? ''));
+  const sizedBy = (watts: number, axesPer: number, supplyOk: boolean, ok: (p: CatalogPart) => boolean) => pick((p) => netDrive(p) && current(p) && ok(p) && (num(p.ratings.axes) ?? 1) === axesPer && (num(p.ratings.ratedWatts) ?? 0) >= watts && (!supplyOk || fitsSupply(p)), (p) => num(p.ratings.ratedWatts) ?? 0);
+  const sized = (watts: number, axesPer: number, supplyOk: boolean) => {
+    const v = sizedBy(watts, axesPer, supplyOk, (p) => p.verified);
+    if (v) return v;
+    const u = sizedBy(watts, axesPer, supplyOk, () => true);
+    if (u) out.notes.push(`${u.partNumber}: chosen although its catalog data is not fully verified (${u.verify ?? 'see the catalog'}) — check it against the Yaskawa manual before ordering.`);
+    return u;
+  };
+  const listOfPairs = (d: CatalogPart) => listOf(d.ratings.pairsWith);
+  const units: { drive?: CatalogPart; axes: NetworkAxisInput[]; watts: number[] }[] = [];
+  for (let i = 0; i < axes.length; i++) {
+    const a = axes[i], b = axes[i + 1];
+    const wa = motorW(a) ?? 400;
+    if (a.watts === undefined && motorW(a) === undefined) out.askUser.push(`${a.name}: servo sized for ${wa} W — size it from the load (torque, inertia, speed) and confirm the motor and SERVOPACK.`);
+    const given = catalog(a.drivePartNumber);
+    if (a.drivePartNumber && !given) out.notes.push(`${a.name}: ${a.drivePartNumber} is not in the catalog — check the SERVOPACK model; a catalog drive is used instead.`);
+    if (given && (num(given.ratings.axes) ?? 1) === 2 && b && b.drivePartNumber === given.partNumber) { units.push({ drive: given, axes: [a, b], watts: [wa, motorW(b) ?? 400] }); i++; continue; }
+    if (given) { units.push({ drive: given, axes: [a], watts: [wa] }); continue; }
+    // No model named: two neighbouring axes share a two-axis SGD7W when one carries both, else one SGD7S each.
+    if (b && !b.drivePartNumber) {
+      const wb = motorW(b) ?? 400;
+      const dual = sized(Math.max(wa, wb), 2, true) ?? sized(Math.max(wa, wb), 2, false);
+      if (dual) { units.push({ drive: dual, axes: [a, b], watts: [wa, wb] }); i++; continue; }
+    }
+    units.push({ drive: sized(wa, 1, true) ?? sized(wa, 1, false), axes: [a], watts: [wa] });
+  }
+  let prev = `PLC:M-III PORT1`;
+  let links = 0;
+  for (const u of units) {
+    const keys = u.axes.map((a) => String(a.axis)).join('+');
+    const motorTag = `AX${keys}`;
+    const names = u.axes.map((a) => a.name).join(' / ');
+    if (!u.drive) { out.notes.push(`${names}: no MECHATROLINK-III SERVOPACK with safe torque off in the catalog for ${Math.max(...u.watts)} W — select one.`); continue; }
+    const d = u.drive;
+    const dt = input.nextTag('SVD');
+    const two = u.axes.length === 2;
+    if (!fitsSupply(d)) out.notes.push(`${dt} ${d.partNumber}: takes ${d.ratings.inputVolts} (${d.ratings.inputPhases}-phase), not the ${info.label} supply — feed it from a ${voltClass(d) === 230 ? '200-240 V' : '380-480 V'} transformer sized for the servo load.`);
+    if (/legacy/i.test(String(d.ratings.lifecycle ?? ''))) out.notes.push(`${dt} ${d.partNumber}: ${d.ratings.lifecycle} — kept because the axis list names it (existing machine); Yaskawa names no 1:1 replacement, so a new machine needs the Sigma-7 drive and motor chosen again from the load.`);
+    if (!d.verified) out.notes.push(`${dt} ${d.partNumber}: catalog data not fully verified — ${d.verify ?? 'check it against the Yaskawa manual'}.`);
+    // Branch protection: 1.25 x the input current (the maker's table in the manual gives the maximum).
+    const inA = driveInputAmps(d, info.phases === 3 ? 3 : 1);
+    const needA = num(d.ratings.breakerAmps) ?? (inA !== undefined ? inA * 1.25 : undefined);
+    const poles = info.phases === 3 ? 3 : 2;
+    const cb = needA === undefined ? undefined : pick((p) => p.category === 'breaker' && num(p.ratings.poles) === poles && (num(p.ratings.amps) ?? 0) >= needA
+      && String(p.ratings.branchRated ?? 'yes') !== 'no' && (num(String(p.ratings.volts ?? '').match(/\d{3}/)?.[0]) ?? 600) >= info.volts, (p) => num(p.ratings.amps) ?? 0);
+    if (cb) out.components.push(comp(input.nextTag('CB'), cb.partNumber, 1, `${names} SERVOPACK branch protection — ${num(cb.ratings.amps)} A >= ${needA!.toFixed(1)} A (1.25 x drive input current); check it against the SERVOPACK manual's breaker / fuse table`, motorTag));
+    else out.notes.push(`${dt} ${d.partNumber}: select the branch protection${needA !== undefined ? ` (>= ${needA.toFixed(1)} A, ${poles}-pole)` : ' from the SERVOPACK manual'}.`);
+    out.loadA += inA ?? (num(d.ratings.ratedWatts) ?? 400) * u.axes.length / (info.volts * (info.phases === 3 ? 1.732 : 1) * 0.85);
+    out.components.push(comp(dt, d.partNumber, 1, `${names} SERVOPACK${two ? ' (two axes: A = ' + u.axes[0].name + ', B = ' + u.axes[1].name + ')' : ''} — ${num(d.ratings.ratedWatts)} W${two ? ' per axis' : ''}; MECHATROLINK-III ${prev.replace(/^PLC:/, 'from the CPU ')} → CN6A; safe torque off (HWBB) from the safety relay`, motorTag));
+    if (/24\s*V?DC/i.test(String(d.ratings.controlCircuitVolts ?? ''))) out.notes.push(`${dt} ${d.partNumber}: control power 24 VDC — add its current (SERVOPACK manual) to the 24 V supply.`);
+    // MECHATROLINK-III link into this drive: 1 m in the panel (confirm the routed length; max 50 m).
+    const cable = pick((p) => kind(p) === 'network-cable' && /MECHATROLINK-III/i.test(String(p.ratings.network ?? '')), (p) => num(p.ratings.lengthM) ?? 0);
+    links++;
+    if (cable) out.components.push(comp(input.nextTag('NW'), cable.partNumber, 1, `MECHATROLINK-III cable ${prev.replace(/^PLC:/, 'CPU ')} → ${dt} CN6A, ${num(cable.ratings.lengthM)} m — confirm the routed length (max 50 m between stations)`));
+    else out.notes.push(`MECHATROLINK-III cable ${prev} → ${dt} CN6A: select the cable.`);
+    prev = `${dt}:CN6B`;
+    u.axes.forEach((a, k) => {
+      const vertical = /\b(vertical|z[- ]axis|lift|hoist)\b/i.test(a.name);
+      const given = catalog(a.motorPartNumber);
+      const fits = (p: CatalogPart) => isServoMotor(p) && (num(p.ratings.ratedWatts) ?? 0) >= u.watts[k] && (listOfPairs(d).includes(p.partNumber) || listOf(p.ratings.pairsWith).includes(d.partNumber));
+      const fitsV = (p: CatalogPart) => fits(p) && p.verified;
+      const motor = given ?? pick((p) => fitsV(p) && /yes/i.test(String(p.ratings.brake ?? '')) === vertical, (p) => num(p.ratings.ratedWatts) ?? 0) ?? pick(fitsV, (p) => num(p.ratings.ratedWatts) ?? 0)
+        ?? pick(fits, (p) => num(p.ratings.ratedWatts) ?? 0);
+      if (motor && !motor.verified && !given) out.notes.push(`${motor.partNumber}: chosen although its catalog data is not fully verified (${motor.verify ?? 'see the catalog'}) — check it before ordering.`);
+      if (a.motorPartNumber && !given) out.notes.push(`${a.name}: motor ${a.motorPartNumber} is not in the catalog — check the model.`);
+      if (!motor) { out.notes.push(`${a.name}: no servo motor in the catalog for ${d.partNumber} — select the motor and its cables.`); return; }
+      const side = two ? ` (axis ${k === 0 ? 'A' : 'B'})` : '';
+      out.components.push(comp(input.nextTag('SM'), motor.partNumber, 1, `${a.name} servo motor${side} — ${num(motor.ratings.ratedWatts)} W${/yes/i.test(String(motor.ratings.brake ?? '')) ? ', holding brake 24 VDC' : ''}`, motorTag));
+      for (const [ck, what] of [['power', `motor power cable${/yes/i.test(String(motor.ratings.brake ?? '')) ? ' with brake' : ''}`], ['feedback', 'encoder cable']] as const) {
+        const c = pick((p) => servoCableKind(p) === ck && listOf(p.ratings.forMotor).includes(motor.partNumber), (p) => (/yes/i.test(String(p.ratings.flex ?? '')) ? 1000 : 0) + (num(p.ratings.lengthM) ?? 0));
+        if (c) out.components.push(comp(input.nextTag('SVC'), c.partNumber, 1, `${a.name}${side} ${what}, ${num(c.ratings.lengthM)} m — confirm the routed length; use the flex version in a cable chain`, motorTag));
+        else out.notes.push(`${a.name}: select the ${what} for ${motor.partNumber} (length from the machine layout).`);
+      }
+    });
+  }
+  if (links) out.notes.push(`MECHATROLINK-III: ${links} link${links > 1 ? 's' : ''} from the CPU's PORT1 through ${units.filter((u) => u.drive).length} SERVOPACK${units.length > 1 ? 's' : ''} (CN6A in, CN6B out); the last CN6B stays open — MECHATROLINK-III needs no terminator.`);
 }
 
 /** Device type of a motion point for the I/O sheets (null = not a motion point). */

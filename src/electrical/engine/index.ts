@@ -8,7 +8,7 @@ import type { IOPoint } from '../../types/io';
 import type { AnalogSetupRow } from '../../plc/core/analog';
 import type { Region } from '../../standards/regions';
 import { enclosureText, isIec, powerText, SUPPLY_INFO } from '../../standards/regions';
-import { DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
+import { ALL_PARTS, DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
 import { enclosureFamily, enclosurePanelArea, enclosureRank, enclosureSize, enclosuresFor, panelLayout, SPARE_RULE, spareSpace, terminalCounts, motorFla, vendorTerminal, type DrawingContext } from '../derive';
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
 import { getHmi } from '../../hmi/hmiCatalog';
@@ -22,6 +22,7 @@ import { processLoads } from './process';
 import { num, Picker } from './select';
 import { controlInputAmps, motionDesign, motionDeviceType } from '../motion';
 import { commModulesFor } from '../commModule';
+import type { NetworkAxisInput } from '../mechatrolink';
 
 export { defaultMachineModel, type MachineModel } from './machineModel';
 
@@ -45,6 +46,8 @@ export interface EngineInput {
   spec?: string;
   /** Motion parts not in the catalog yet (tests only; see src/electrical/motion.ts). */
   motionParts?: CatalogPart[];
+  /** Servo axes commanded over a network (Yaskawa MECHATROLINK-III): the project's axis list; else read from the spec. */
+  networkAxes?: NetworkAxisInput[];
   /** Timestamp for generatedAt (tests pass a fixed one). */
   now?: string;
 }
@@ -71,6 +74,9 @@ export function dcLoad(components: DesignComponent[], getPart: EngineInput['getP
     if (p.category === 'solenoidValve') a += ((num(p.ratings.watts) ?? 2) / 24) * c.quantity;
     else if (p.category === 'contactor' && !/24/.test(String(p.ratings.coilVoltage ?? ''))) continue;
     else if (p.category === 'servoDrive') a += controlInputAmps(p) * c.quantity; // 460 V drives: control circuit on 24 VDC
+    // the maker's 24 VDC input current (Yaskawa base units, MP2300); modules in a base unit's slots are powered by it
+    else if (num(p.ratings.inputAmps24V) !== undefined) a += num(p.ratings.inputAmps24V)! * c.quantity;
+    else if (p.ratings.inRack === 'yes') continue;
     else a += (DC_LOAD_A[p.category] ?? 0) * c.quantity;
   }
   const hmi = hmiPartNumber ? getHmi(hmiPartNumber) : undefined;
@@ -99,7 +105,8 @@ export function generateDesign(input: EngineInput): EngineResult {
   const relayDevices = inputs.relayLogic?.devices ?? [];
   const tags = new Tags(['PLC', 'ENC1', 'SP1', 'DS1', 'SR1', ...relayDevices.map((d) => d.tag)]);
   // Servo axes, encoders and ultrasonic sensors (src/electrical/motion.ts): wired there, left out of the rules below.
-  const motion = motionDesign({ io: input.io, addresses: input.addresses, supply, region: input.region, pref: input.pref, spec: input.spec, nextTag: (p) => tags.next(p), extraParts: input.motionParts });
+  const motion = motionDesign({ io: input.io, addresses: input.addresses, supply, region: input.region, pref: input.pref, spec: input.spec, nextTag: (p) => tags.next(p), extraParts: input.motionParts,
+    cpu: getPart(input.plc.cpuPartNumber), networkAxes: input.networkAxes });
   const io = input.io.filter((p) => !motion.claimed.has(p.id));
   const model = drivesFromIo(input.model, io, input.spec ?? '');
   const notes: string[] = [...motion.notes];
@@ -137,6 +144,17 @@ export function generateDesign(input: EngineInput): EngineResult {
     const kind = /analog/i.test(p?.description ?? '') && !discrete ? 'Analog' : /snap-in/i.test(p?.description ?? '') ? 'Snap-in I/O' : 'I/O';
     plc.push(comp(`IO${i + 1}`, pn, 1, `${kind} module, slot ${i + 1}`));
   });
+  // A CPU that plugs into a base unit (Yaskawa MP3300): the base unit with the power supply, the smallest with enough
+  // option slots for the modules (CPU-302 also takes option slot 1); 24 VDC from the panel supply first.
+  const cpuRack = getPart(input.plc.cpuPartNumber);
+  if (cpuRack?.ratings.baseUnit) {
+    const need = input.modules.length + (num(cpuRack.ratings.slotsUsed) ?? 1) - 1;
+    const bus = ALL_PARTS.filter((p) => p.ratings.kind === 'plc-base-unit' && p.ratings.family === cpuRack.ratings.baseUnit && (num(p.ratings.optionSlots) ?? 0) >= need)
+      .sort((a, b) => Number(!/24\s*VDC/i.test(String(a.ratings.supplyVolts))) - Number(!/24\s*VDC/i.test(String(b.ratings.supplyVolts))) || (num(a.ratings.optionSlots) ?? 0) - (num(b.ratings.optionSlots) ?? 0));
+    const bu = bus[0];
+    if (bu) plc.unshift(comp(tags.next('PLCB'), bu.partNumber, 1, `${bu.ratings.family} base unit ${bu.ratings.series}: ${bu.ratings.supplyVolts} power supply, CPU slot + ${bu.ratings.optionSlots} option slots (${need} used)`));
+    else notes.push(`${input.plc.cpuPartNumber}: no ${cpuRack.ratings.baseUnit} base unit in the catalog with ${need} option slots — split the modules over an expansion rack.`);
+  }
   // The PLC-side module the touch panel needs to reach the PLC (src/electrical/commModule.ts): a part, never an I/O slot.
   const comm = commModulesFor(input.hmiPartNumber, input.plc.cpuPartNumber, getPart, (p) => tags.next(p));
   plc.push(...comm.components);

@@ -2164,6 +2164,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     const order: CatalogCategory[] = ['disconnect', 'breaker', 'fuse', 'powerSupply', 'plc', 'plcModule', 'commModule', 'motorProtector', 'contactor', 'vfd', 'safetyRelay', 'relay', 'other'];
     // A communication module mounted on the CPU's left (S7-1200 CM, FX5 adapter) goes just before the CPU.
     if (c.category === 'commModule' && /left side/i.test(String(c.part?.ratings.forUse ?? ''))) return order.indexOf('plc') - 0.5;
+    if (c.part?.ratings.kind === 'plc-base-unit') return order.indexOf('plc');
     const i = order.indexOf(c.category);
     return i < 0 ? 99 : i;
   };
@@ -2174,10 +2175,12 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     used.add(c);
     if (c.category === 'fan') { unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Enclosure side/door mounted' }); continue; }
     if (c.category === 'commModule' && c.part?.ratings.inCpu === 'yes') { unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Option board inside the PLC CPU' }); continue; }
+    // CPU and option modules that plug into a base unit (Yaskawa MP3300): the base unit takes the panel space.
+    if (c.part?.ratings.inRack === 'yes') { const bu = bp.find((x) => x.part?.ratings.kind === 'plc-base-unit'); unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: `In a slot of the base unit${bu ? ` ${bu.tag} ${bu.partNumber}` : ''}` }); continue; }
     if (c.category === 'overload' && bp.some((x) => x.category === 'contactor' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag)) continue;
     if (c.category === 'groundBar') groundBars.push(...expand(c));
     else if (['disconnect', 'breaker', 'fuse'].includes(c.category)) rows[0].push(...expand(c));
-    else if (['powerSupply', 'plc', 'plcModule', 'commModule'].includes(c.category)) rows[1].push(...expand(c));
+    else if (['powerSupply', 'plc', 'plcModule', 'commModule'].includes(c.category) || c.part?.ratings.kind === 'plc-base-unit') rows[1].push(...expand(c));
     else if (c.category === 'contactor') {
       const it = mk(c);
       const ol = bp.find((x) => x.category === 'overload' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag);
