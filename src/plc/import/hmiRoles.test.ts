@@ -88,4 +88,14 @@ const nicks = (xs: Role[]) => xs.map((x) => x.nickname);
   assert.ok(pal.alarms.every((a) => !/^Alm\[|^Alarm \d+:/.test(a.text)), pal.alarms.map((a) => a.text).join(' | '));
 }
 
+// A rung that writes two fault bits gives its comment to neither (each keeps its own name).
+{
+  const prog = { tags: [{ address: 'C1', nickname: 'Overload_1_Alarm', comment: '' }, { address: 'C2', nickname: 'Overload_2_Alarm', comment: '' }], rungs: [
+    { id: 'r1', comment: 'Alarms section: overloads', branches: [[{ type: 'NO' as const, address: 'X001' }]], outputs: [{ type: 'SET' as const, address: 'C1' }, { type: 'SET' as const, address: 'C2' }] },
+  ] };
+  const r = programRoles(prog as never);
+  assert.equal(r.alarms.length, 2, 'both bits are alarms');
+  assert.ok(r.alarms.every((a) => a.text !== 'Alarms section: overloads'), r.alarms.map((a) => a.text).join(' | '));
+}
+
 console.log('hmiRoles.test: all passed');
