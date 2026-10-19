@@ -356,7 +356,47 @@ export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectio
   const blockName = new Map(blocks.map((b) => [b.id, b.name]));
   const alarms = imp.program.rungs.filter((r) => /alarm|fault|jam|timeout|overload/i.test(`${r.comment} ${(r.block && blockName.get(r.block)) ?? ''}`));
   if (alarms.length) out.alarms = capped([...new Set(alarms.map((r) => `- ${r.comment.trim() || 'Alarm rung'}`))], max(MAX_LINES.list), (n) => `- … and ${n} more alarm rungs`).join('\n');
+  machineFacts(imp, out, byBlock, max);
   return out;
+}
+
+/** "IB00012" → its I/O word ("IB0001"), for the MP registers of a Yaskawa project; null for other addresses. */
+const mpWord = (a: string) => /^([IO])B([0-9A-F]{4})[0-9A-F]$/i.exec(a.trim())?.slice(1, 3).join('').toUpperCase() ?? null;
+
+/**
+ * What the project file says about the machine beyond the rungs (an MPE720 project: its rack, its drawings with
+ * their first comment, the I/O by register word, the servo axes, the motion programs, the touch panel), added to
+ * the description written from the program.
+ */
+function machineFacts(imp: ImportedProgram, out: Partial<Record<SpecSectionId, string>>, byBlock: Map<string, ImportedProgram['program']['rungs']>, max: (n: number) => number): void {
+  const s = imp.source;
+  const add = (id: SpecSectionId, lines: string[], after = false) => { if (lines.length) out[id] = (after ? [out[id], lines.join('\n')] : [lines.join('\n'), out[id]]).filter(Boolean).join('\n\n'); };
+  const over: string[] = [];
+  if (s.modules?.length) over.push(`Rack: ${s.modules.map((m) => m.catalog).join(', ')}.`);
+  if (s.format === 'yaskawa-mpe720') {
+    // Each drawing with what its first commented rung says it does.
+    const drawings = (imp.program.blocks ?? []).map((b) => {
+      const first = (byBlock.get(b.id) ?? []).find((r) => r.comment.trim() && r.comment.trim() !== b.name)?.comment.trim();
+      return `- ${b.name}${first ? ` — ${first}` : ''}`;
+    });
+    if (drawings.length) over.push('Drawings (in scan order):', ...capped(drawings, max(MAX_LINES.parts), (n) => `- … and ${n} more drawings`));
+    // The I/O by register word: one word is one 16-point module group on the machine.
+    const words = new Map<string, string[]>();
+    for (const p of imp.io) { const w = mpWord(p.original); if (w) words.set(w, [...(words.get(w) ?? []), p.description || p.name]); }
+    if (words.size) over.push('I/O by register word:', ...capped([...words].sort(([a], [b]) => a.localeCompare(b)).map(([w, names]) => `- ${w[0] === 'I' ? 'Inputs' : 'Outputs'} ${w[0]}B${w.slice(1)}0–${w[0]}B${w.slice(1)}F: ${names.join(', ')}`), max(MAX_LINES.list), (n) => `- … and ${n} more words`));
+  }
+  add('overview', over, true);
+  const motion: string[] = [];
+  if (s.axes?.length) motion.push(`Servo axes on MECHATROLINK (${s.axes.length}):`, ...s.axes.map((a) => `- ${axisText(a)}`));
+  const programs = imp.report.notConverted.filter((n) => / motion program$/.test(n.where));
+  if (programs.length) {
+    motion.push(`Motion programs (${programs.length}), kept as written:`, ...capped(programs.map((n) => {
+      const body = n.text.split('\n').map((l) => l.trim()).filter((l) => l && !/^end;?$/i.test(l));
+      return `- ${body[0] ?? n.where}${body.length > 1 ? ` (${body.length - 1} line${body.length === 2 ? '' : 's'}: ${body.slice(1, 3).join(' ')}${body.length > 3 ? ' …' : ''})` : ''}`;
+    }), max(MAX_LINES.list), (n) => `- … and ${n} more motion programs`));
+  }
+  add('motion', motion);
+  if (s.panel) add('operator', [`Touch panel: ${s.panel.software} project with ${s.panel.screens.length} screen${s.panel.screens.length === 1 ? '' : 's'}${s.panel.screens.length ? ` (${capped(s.panel.screens, 30, (n) => `and ${n} more`).join(', ')})` : ''}.`]);
 }
 
 /** Most lines of each kind in the description written from a big program (one of more lines than BIG_DESCRIPTION_LINES). */
