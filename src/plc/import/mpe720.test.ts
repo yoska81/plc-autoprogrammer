@@ -17,7 +17,7 @@ import { readEmtp } from './emtp';
 import { importProgramFiles } from './index';
 import { runParse } from '../../workers/parseOps';
 import type { LadderElement, LadderOutput, Rung } from '../core/ladder';
-import { describeProgram, planUpgrade, readOnlyNote } from './upgrade';
+import { describeProgram, planUpgrade, questionsFor, readOnlyNote } from './upgrade';
 import { getProfile } from '../core/profiles';
 import { yaskawaCpuOf } from '../core/profiles/yaskawa';
 import { validateProgram } from '../core/validate';
@@ -148,8 +148,14 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   assert.match(d.overview ?? '', /Drawings \(in scan order\):\n- H01 Demo conveyor\n- H01\.01 Demo sub/);
   assert.match(d.overview ?? '', /- Inputs IB00000–IB0000F: Start button, Stop button, Reset button, Count sensor/);
   assert.match(d.overview ?? '', /- Outputs OB00000–OB0000F: Run lamp, Horn, Done lamp, Busy lamp/);
-  assert.match(d.motion ?? '', /^Servo axes on MECHATROLINK \(1\):\n- axis 1 \(line 1\): SGDEMO-AMP01 with motor SGMDEMO-MOT01/);
+  assert.match(d.motion ?? '', /^Servo axes on MECHATROLINK \(1\): [^\n]*\n- axis 1 \(line 1\): SGDEMO-AMP01 with motor SGMDEMO-MOT01/);
   assert.match(d.motion ?? '', /Motion programs \(1\), kept as written:\n- MPM001 "DEMO"; \(1 line: MOV \[A1\]1000;\)/);
+  assert.match(d.motion ?? '', /each servo axis is a Yaskawa servo drive with its servo motor, not a VFD or an AC motor/);
+  assert.match(d.sequence ?? '', /^H01 Demo conveyor\nH01\.01 Demo sub/, 'the drawings in scan order, each once');
+  assert.doesNotMatch(d.sequence ?? '', /H01 Demo conveyor:\n {2}- H01 Demo conveyor/, 'not the drawing name twice');
+  const qs = questionsFor(program);
+  assert.ok(qs.includes('The original program has motion program MPM001 "DEMO", 1 line. It is kept as written (shown under Motion and on the Upgrade page); the simulator can\'t run it. What does it do on the machine?'), 'the motion program is named, not pasted');
+  assert.ok(!qs.some((x) => /MOV \[A1\]/.test(x)), 'no raw motion code in a question');
   assert.match(d.operator ?? '', /^Touch panel: EasyBuilder Pro 5\.07\.01 project with 2 screens \(Main, Alarms\)\./);
   assert.deepEqual(program.source.panel, { vendor: 'weintek', software: 'EasyBuilder Pro 5.07.01', screens: ['Main', 'Alarms'] }, 'the panel project, for the brand rows');
   assert.ok(program.report.notes.some((n) => /3 PLC addresses: 1 of them appear in the ladder/.test(n)));
@@ -216,6 +222,9 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   // A project saved before (its boxes tagged 'yaskawa') is the same family.
   const old = { ...plan.program, rungs: plan.program.rungs.map((r) => ({ ...r, outputs: r.outputs.map((o) => (o.type === 'RAW' ? { ...o, vendor: 'yaskawa' } : o)) })) };
   assert.deepEqual(validateProgram(old, profile, new Set(plan.io.map((p) => p.plcAddress!))).filter((i) => /cannot run on/.test(i.message)), [], 'older tag: still its own PLC');
+  // Written but never read by the rungs: on the machine's own PLC its panel may read it (said, not "does nothing").
+  assert.ok(issues.some((i) => /DS2 is written but never read by the program: it does nothing unless the touch panel reads it\./.test(i.message)));
+  assert.ok(!issues.some((i) => /this logic does nothing/.test(i.message)));
   // On another PLC they are errors, named as Yaskawa MPE720.
   assert.ok(validateProgram(plan.program, getProfile('siemens-s7'), new Set()).some((i) => /from Yaskawa MPE720 cannot run on/.test(i.message)));
   assert.equal(yaskawaCpuOf('CPU-301(16axes)').id, 'CPU-301');

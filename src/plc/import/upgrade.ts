@@ -336,8 +336,10 @@ export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectio
   const byBlock = rungsByBlock(imp);
   const partsShown = blocks.slice(0, max(MAX_LINES.parts));
   for (const b of partsShown) {
-    const comments = (byBlock.get(b.id) ?? []).filter((r) => r.comment.trim()).map((r) => `  - ${r.comment.trim()}`);
+    const comments = (byBlock.get(b.id) ?? []).filter((r) => r.comment.trim() && r.comment.trim() !== b.name).map((r) => `  - ${r.comment.trim()}`);
     if (comments.length) seq.push(`${b.name}:`, ...capped(comments, max(MAX_LINES.perPart), (n) => `  - … and ${n} more rung comments`));
+    // An MPE720 drawing is a step of the scan even when its rungs say nothing more than its title.
+    else if (imp.source.format === 'yaskawa-mpe720') seq.push(`${b.name}`);
   }
   if (blocks.length > partsShown.length) seq.push(`… and ${blocks.length - partsShown.length} more parts (see the PLC program).`);
   const nick = new Map(imp.program.tags.map((t) => [t.address, t.nickname]));
@@ -387,7 +389,12 @@ function machineFacts(imp: ImportedProgram, out: Partial<Record<SpecSectionId, s
   }
   add('overview', over, true);
   const motion: string[] = [];
-  if (s.axes?.length) motion.push(`Servo axes on MECHATROLINK (${s.axes.length}):`, ...s.axes.map((a) => `- ${axisText(a)}`));
+  const servos = (s.axes ?? []).filter((a) => a.kind === 'servo').length;
+  if (s.axes?.length) {
+    motion.push(`Servo axes on MECHATROLINK (${s.axes.length}${servos < s.axes.length ? `, ${s.axes.length - servos} virtual` : ''}): each servo axis is a ${s.vendor} servo drive with its servo motor, not a VFD or an AC motor.`, ...s.axes.map((a) => `- ${axisText(a)}`));
+    // The motion I/O written below are the program's signals: no motor of their own unless they name a contactor or a VFD.
+    if (out.motion) out.motion = `Motion I/O (signals of the program; an AC motor only where a contactor or VFD output is named, from the program: check):\n${out.motion}`;
+  }
   const programs = imp.report.notConverted.filter((n) => / motion program$/.test(n.where));
   if (programs.length) {
     motion.push(`Motion programs (${programs.length}), kept as written:`, ...capped(programs.map((n) => {
@@ -420,6 +427,8 @@ export function questionsFor(imp: ImportedProgram): string[] {
     q.push(`Rewrite by hand: the original program has an instruction that could not be read, "${n.text}" (${n.where}). In this program it does nothing. What does it do on the machine?`);
   }
   for (const n of imp.report.notConverted.filter((x) => !isUnreadBox(x.text)).slice(0, 8)) {
+    // A block of code (a motion program, a function kept whole) is named, not pasted into the question.
+    if (n.text.includes('\n')) { q.push(`The original program has ${codeName(n)}. It is kept as written (shown under Motion and on the Upgrade page); the simulator can't run it. What does it do on the machine?`); continue; }
     q.push(n.kept
       ? `The original program has "${n.text}" (${n.where}). It is kept as it was and goes back into the PLC, but the simulator can't run it. What does it do on the machine?`
       : `The original program has "${n.text}" (${n.where}) that could not be brought in. What does it do on the machine?`);
@@ -428,6 +437,17 @@ export function questionsFor(imp: ImportedProgram): string[] {
   for (const d of imp.report.notes.filter((x) => /^Hard to read:/.test(x))) q.push(`${d.replace(/\.$/, '')}. Please check it against the printout: is it right as read?`);
   q.push('What problems does the machine have today, and what should the upgrade fix?');
   return q;
+}
+
+/** A block of code by its name and size: motion program MPM001 "DEMO", 3 lines; else its part and first line. */
+function codeName(n: ImportedProgram['report']['notConverted'][number]): string {
+  const lines = n.text.split('\n').map((l) => l.trim()).filter((l) => l && !/^end;?$/i.test(l));
+  const mpm = /^(MPM\d+)\s+"([^"]*)"/.exec(lines[0] ?? '');
+  // a motion program's first line is its name: the lines after it are its code
+  const n0 = mpm ? lines.length - 1 : lines.length;
+  const count = `${n0} line${n0 === 1 ? '' : 's'}`;
+  if (mpm) return `motion program ${mpm[1]} "${mpm[2]}", ${count}`;
+  return `a block of ${count} in ${n.where} starting "${(lines[0] ?? '').slice(0, 60)}"`;
 }
 
 /** Short plain-text summary of the import (shown on the page and given to the AI that writes the description). */
