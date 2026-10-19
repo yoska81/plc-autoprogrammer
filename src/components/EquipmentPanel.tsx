@@ -196,7 +196,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
         </div>
       )}
 
-      <BrandHardwareCard need={need} />
+      <BrandHardwareCard need={need} onPick={(cpuId, mods) => set({ ...withCpu(cpuId), modules: mods })} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
         <div className="xl:col-span-2 space-y-4">

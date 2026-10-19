@@ -80,10 +80,14 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.goto(BASE + '/equipment');
   const card = page.locator('section[aria-label="Preferred PLC brands for this machine"]');
   await card.waitFor({ timeout: 10000 }).catch(() => {});
-  check(/This tool cannot program this brand yet, so its CPUs cannot be chosen/.test(await card.innerText().catch(() => '')), 'Mitsubishi card: says why its CPUs cannot be chosen');
+  const mitsu = await card.innerText().catch(() => '');
+  check(/this tool cannot program this brand yet, so its CPUs cannot be chosen/.test(mitsu) && !/Use this CPU/.test(mitsu), 'Mitsubishi card: says why its CPUs cannot be chosen, no Use button');
   await page.evaluate(async () => (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().setInfo({ vendors: { plc: ['siemens'] }, plcChosen: true }));
   await page.waitForTimeout(500);
-  check(await card.count() === 0, 'Siemens: no comparison card (its CPUs are in the list)');
+  const use = card.getByRole('button', { name: 'Use this CPU' }).first();
+  check(await use.count() === 1 && !/cannot program/.test(await card.innerText()), 'Siemens card: its CPUs can be chosen ("Use this CPU")');
+  await use.click();
+  check(/6ES7/.test(await page.getByText(/^Your equipment selection \(/).innerText().catch(() => '')), 'Use this CPU: the Siemens CPU becomes the selection to apply');
 
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await browser.close();

@@ -4,6 +4,10 @@ import { useVendorPreference } from '../store/useProjectStore';
 import type { Need } from '../plc/core/fit';
 import { hmiCompatible, platformFit, platformsOf, suggestModules } from '../plc/core/platforms';
 import { hasPlcProfile } from '../spec/brand';
+import { PLC_PROFILES } from '../plc/core/profiles';
+
+/** The CPU can be programmed here (its profile is built): it can be chosen for the project. */
+const programmable = (cpuId: string) => PLC_PROFILES.some((p) => p.available && p.cpuModels.some((c) => c.id === cpuId));
 
 const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50';
 const td = 'px-3 py-1.5 border-b border-steel-100 align-top';
@@ -16,14 +20,15 @@ function moduleText(mods: string[]): string {
 }
 
 /**
- * Hardware of the preferred PLC brands this tool cannot program yet (Mitsubishi, Omron, Schneider, Delta…), from
- * the verified catalogs: each CPU with the expansion modules it would need, whether it fits, and which touch panels
- * can talk to it. A comparison for quotes. Brands it can program (Siemens, Allen-Bradley, Unitronics) are chosen
- * in the CPU list below like CLICK, so they get no card here.
+ * The preferred PLC brands' hardware for this machine, from the verified catalogs: each CPU with the expansion
+ * modules it would need, whether it fits, and which touch panels can talk to it. A CPU this tool can program
+ * (Siemens, Allen-Bradley, Unitronics) is chosen from here with its modules ("Use this CPU"); a brand it cannot
+ * program yet (Mitsubishi, Omron, Schneider, Delta…) is a comparison for quotes, and the card says so.
  */
-export default function BrandHardwareCard({ need }: { need: Need }) {
+export default function BrandHardwareCard({ need, onPick }: { need: Need; onPick?: (cpuId: string, modules: string[]) => void }) {
   const pref = useVendorPreference();
-  const plcVendors = pref.plc.filter((v) => !hasPlcProfile(v));
+  const plcVendors = pref.plc.filter((v) => v !== 'automationdirect');
+  const notHere = plcVendors.filter((v) => !hasPlcProfile(v));
   const platforms = platformsOf(plcVendors);
   if (!platforms.length) return null;
   const hmiVendors = pref.hmi.filter((v) => v !== 'automationdirect');
@@ -32,14 +37,16 @@ export default function BrandHardwareCard({ need }: { need: Need }) {
     <section className="bg-white border border-steel-200" aria-label="Preferred PLC brands for this machine">
       <div className="px-3 py-2 bg-[#e9edef] border-b border-steel-200">
         <h4 className="text-xs font-semibold text-steel-700">{plcVendors.map((v) => VENDORS.find((x) => x.id === v)?.name).join(' / ')} hardware for this machine</h4>
-        <p className="text-[11px] text-steel-600">From the verified catalogs: the expansion modules each CPU would need for {need.digitalInputs} inputs / {need.digitalOutputs} outputs{need.analogInputs || need.analogOutputs ? ` / ${need.analogInputs} analog in / ${need.analogOutputs} analog out` : ''}. This tool cannot program {plcVendors.length > 1 ? 'these brands' : 'this brand'} yet, so its CPUs cannot be chosen: use this for comparison and quotes. The program, I/O addresses and drawings follow the PLC chosen below (CLICK, Siemens, Allen-Bradley or Unitronics).</p>
+        <p className="text-[11px] text-steel-600">From the verified catalogs: the expansion modules each CPU would need for {need.digitalInputs} inputs / {need.digitalOutputs} outputs{need.analogInputs || need.analogOutputs ? ` / ${need.analogInputs} analog in / ${need.analogOutputs} analog out` : ''}. {notHere.length
+          ? `${notHere.map((v) => VENDORS.find((x) => x.id === v)?.name).join(' / ')}: this tool cannot program ${notHere.length > 1 ? 'these brands' : 'this brand'} yet, so ${notHere.length > 1 ? 'their' : 'its'} CPUs cannot be chosen — use them for comparison and quotes. The program, I/O addresses and drawings follow the PLC chosen below.`
+          : 'Use this CPU sets it with these modules for the project.'}</p>
       </div>
       {platforms.map((pl) => (
         <div key={pl.id} className="border-b border-steel-200 last:border-b-0">
           <div className="px-3 pt-2 text-sm font-semibold text-steel-800">{pl.name} <span className="font-normal text-xs text-steel-500">· {pl.protocols.join(' / ')}</span></div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr>{['CPU', 'Expansion modules needed', 'Fits this machine?'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['CPU', 'Expansion modules needed', 'Fits this machine?', ''].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {pl.cpus.map((c) => {
                   const mods = suggestModules(pl, c, need);
@@ -49,6 +56,9 @@ export default function BrandHardwareCard({ need }: { need: Need }) {
                       <td className={td}><div className="font-mono">{c}</div><div className="text-xs text-steel-500">{getPart(c)?.description}</div></td>
                       <td className={`${td} font-mono text-xs`}>{mods.length ? moduleText(mods) : <span className="font-sans text-steel-500">none (built-in I/O)</span>}</td>
                       <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes · {f.spareIn} in / {f.spareOut} out spare</span> : f.reason}</td>
+                      <td className={`${td} text-xs whitespace-nowrap`}>{programmable(c)
+                        ? (onPick && f.ok && <button onClick={() => onPick(c, mods)} className="text-brand-800 font-medium hover:underline">Use this CPU</button>)
+                        : <span className="text-steel-500">not programmable here yet</span>}</td>
                     </tr>
                   );
                 })}
