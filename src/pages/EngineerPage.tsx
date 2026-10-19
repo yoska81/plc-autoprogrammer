@@ -11,7 +11,7 @@ import { usePlc } from '../plc/core/usePlc';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 import { collectProject } from '../deliverables/collect';
 import { saveBlob } from '../deliverables/files';
-import { checksFor } from '../review/actions';
+import { aiFindingsShown, checksFor } from '../review/actions';
 import { SEVERITY_LABEL, SEVERITY_ORDER, sortFindings, type Severity } from '../review/types';
 import type { EngineerFinding } from '../engineer/checks';
 import { runEngineerAI } from '../engineer/engineerAI';
@@ -44,7 +44,7 @@ export default function EngineerPage() {
     return checksFor(collectProject()).filter((f) => f.area === 'electrical' || f.area === 'safety' || f.id.startsWith('eng:'));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the stores below feed collectProject()
   }, [ctx, cpu, modules, io, addresses, spec]);
-  const all = useMemo(() => sortFindings([...rules, ...(ai?.findings ?? [])]) as EngineerFinding[], [rules, ai]);
+  const all = useMemo(() => sortFindings([...rules, ...aiFindingsShown(collectProject(), ai?.findings)]) as EngineerFinding[], [rules, ai]);
 
   const runAi = () => {
     if (!apiKey) return;

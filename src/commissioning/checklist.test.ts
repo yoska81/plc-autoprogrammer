@@ -175,4 +175,27 @@ assert.ok(texts.some((t) => t.includes('Dismissed|Failed result of io:gone')), '
 assert.ok(/Dismissed results/.test(streams), '…and in the PDF');
 
 // (the .isap round trip of the record is in e2e/field.e2e.cjs: the project file needs the browser's storage)
+// On an S7 the checklist speaks the PLC's own names: %I / %Q terminals and the exported tag names, never X001 / C21 / DS1003.
+{
+  const { applyEquipment } = await import('../spec/equipment');
+  applyEquipment({ cpuId: '6ES7214-1AG40-0XB0', modules: [], hmiPartNumber: null }, null);
+  const s7 = commissioningItems(collectProject());
+  const ins = s7.filter((i) => i.section === 'inputs');
+  assert.ok(ins.length && ins.every((i) => /^%I\d+\.\d /.test(i.title)), ins.map((i) => i.title).join(' | '));
+  assert.ok(ins.every((i) => /PLC input %I\d+\.\d/.test(i.expected) || /reads the matching value/.test(i.expected)), ins[0].expected);
+  // An alarm message is quoted as the HMI shows it (the user's text): its words are not the app's to rename.
+  const snap0 = collectProject();
+  const messages = (snap0.hmi?.alarms ?? []).map((m) => m.message).filter(Boolean);
+  const text = s7.map((i) => `${i.title} ${i.procedure} ${i.expected}`).map((t) => messages.reduce((x, m) => x.split(m).join(''), t)).join('\n');
+  const left = text.match(/\b(?:X|Y)\d{3}\b|\b(?:DS|DD|DF)\d+\b|\bC\d{1,4}\b/g) ?? [];
+  assert.deepEqual([...new Set(left)], [], 'no app operand left on an S7 outside the user\'s own texts');
+  assert.ok(s7.every((i) => /^(io|sf|alarm):/.test(i.id)), 'ids unchanged (ticks stay with their item)');
+  // The user's own words are never renamed: only the operands the app wrote (the item's address) change.
+  const snap = collectProject();
+  const first = snap.io.find((x) => x.type === 'input' && snap.addresses.get(x.id))!;
+  const own = commissioningItems({ ...snap, io: snap.io.map((x) => (x.id === first.id ? { ...x, description: 'Pusher extended (cylinder C1, tank T1)' } : x)) });
+  const item = own.find((i) => i.id === `io:${first.id}`)!;
+  assert.match(item.title, /^%I\d+\.\d Pusher extended \(cylinder C1, tank T1\)$/, item.title);
+}
+
 console.log(`commissioning tests passed (${items.length} items)`);

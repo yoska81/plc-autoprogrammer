@@ -181,12 +181,12 @@ C25 Auto_Gripper_retract: Automatic retract request for Gripper (set by the cycl
 T1 Tmr_Gripper_Ext: Gripper extend timeout
 T2 Tmr_Gripper_Ret: Gripper retract timeout
 C3 Any_Fault: A latched fault: stops the cycle
-C26 Man_Belt_1_Y001: Manual request Belt 1 VFD run
-C27 Man_Belt_1_Y004: Manual request Belt 1 VFD reverse
-C28 Man_Belt_2_Y002: Manual request Belt 2 VFD run
-C29 Man_Belt_3_Y003: Manual request Belt 3 VFD run
-C30 Man_Gripper_Y005: Manual request Gripper close solenoid
-C31 Man_Gripper_Y006: Manual request Gripper open solenoid
+C26 Man_Belt_1_Fwd: Manual request Belt 1 VFD run
+C27 Man_Belt_1_Rev: Manual request Belt 1 VFD reverse
+C28 Man_Belt_2_Run: Manual request Belt 2 VFD run
+C29 Man_Belt_3_Run: Manual request Belt 3 VFD run
+C30 Man_Gripper_Close: Manual request Gripper close solenoid
+C31 Man_Gripper_Open: Manual request Gripper open solenoid
 C6 Pulse_1s: One scan every second
 C4 Batch_Done: Batch target reached
 T3 Tmr_Rate: 10 s rate window

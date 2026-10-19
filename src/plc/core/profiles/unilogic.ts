@@ -151,7 +151,18 @@ export const unistreamProfile: PlcProfile = {
   exporters: EXPORTERS,
   analogChannels: unitronicsAnalogChannels,
   mnemonics: UNILOGIC_MNEMONICS,
-  ioTag: (a, modules) => { const p = pointOf(a); return p ? (p.slot === 0 ? `on-board ${p.isInput ? 'I' : 'O'}${p.index}` : `slot ${p.slot} ${modules[p.slot - 1]?.partNumber ?? ''} ${p.isInput ? 'I' : 'O'}${p.index}`.replace(/\s+/g, ' ')) : null; },
+  // In UniLogic's own words ("on-board input 0", "slot 1 UID-1600 input 3"); none for a terminal the CPU or slot lacks.
+  ioTag: (a, modules, cpuId) => {
+    const p = pointOf(a);
+    if (!p) return null;
+    const kind = p.isInput ? 'input' : 'output';
+    if (p.slot === 0) {
+      const c = UNISTREAM_CPUS.find((x) => x.id === cpuId);
+      return c && p.index >= (p.isInput ? c.builtInInputs : c.builtInOutputs) ? null : `on-board ${kind} ${p.index}`;
+    }
+    const m = modules[p.slot - 1];
+    return m ? `slot ${p.slot} ${m.partNumber} ${kind} ${p.index}` : null;
+  },
   importSteps: [
     'In UniLogic, right-click a Ladder module in Solution Explorer › Import ST Code From File, and pick the _unilogic.st file: it creates the global tags and the ST function Machine_Logic. UniLogic has no ladder import; this ST file is the only program import it offers.',
     'Call Machine_Logic from the Main ladder function on an unconditional rung, so it runs every scan.',

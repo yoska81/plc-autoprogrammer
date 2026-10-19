@@ -103,11 +103,14 @@ export function specQuestionItems(sections: SpecSections, aiQuestions: string[])
 function stageQuestions(): Record<Exclude<QuestionSource, 'review'>, Item[] | null> {
   const ladder = useProgramStore.getState().ladder;
   const plan = useDraftStore.getState().drafts['io.plan'] as { questions?: string[] } | null | undefined;
+  const ioUpdate = useDraftStore.getState().drafts['io.updateQuestions'] as { text: string; assumption?: string }[] | undefined;
   const el = useElectricalStore.getState().design;
   const hmi = activeHmiDesign();
   return {
     spec: specQuestionItems(useSpecStore.getState().sections, useSpecStore.getState().questions),
-    io: plan?.questions ? plan.questions.map((text) => ({ text, topic: foundWhile('io') })) : null,
+    // the I/O page's own reading, else the one Update all made (src/spec/updateAll.ts)
+    io: plan?.questions ? plan.questions.map((text) => ({ text, topic: foundWhile('io') }))
+      : ioUpdate ? ioUpdate.map((q) => ({ ...q, topic: foundWhile('io') })) : null,
     electrical: el ? userNotes(el).map((n) => ({ text: n, assumption: n, topic: foundWhile('electrical') })) : null,
     hmi: hmi ? userNotes(hmi).map((n) => ({ text: n, assumption: n, section: 'operator' as const, topic: foundWhile('hmi') })) : null,
     program: ladder.rungs.length ? (ladder.sequence?.questions ?? []).map((text) => ({ text, section: 'sequence' as const, topic: foundWhile('program') })) : null,
@@ -129,6 +132,15 @@ export function registerStageQuestions(): void {
   }
 }
 
+/** Update all's I/O questions, once every one of them is answered (or dismissed / assumed): no longer kept. */
+function dropAnsweredIoUpdate(): void {
+  const kept = useDraftStore.getState().drafts['io.updateQuestions'] as { text: string }[] | null | undefined;
+  if (!kept?.length) return;
+  const io = listFor(useProjectsStore.getState().activeId).filter((q) => q.source === 'io');
+  const settled = kept.every((k) => io.some((q) => q.text === k.text && q.status !== 'open'));
+  if (settled) runDerived(() => useDraftStore.getState().setDraft('io.updateQuestions', null));
+}
+
 let installed = false;
 /** Keep the spec's Q&A in step with the question list and the open project. */
 export function installQaSync(): void {
@@ -136,6 +148,7 @@ export function installQaSync(): void {
   installed = true;
   setExternalKnowledge(decisionsNow);
   useQuestionStore.subscribe(syncQaIntoSpec);
+  useQuestionStore.subscribe(dropAnsweredIoUpdate);
   useProjectsStore.subscribe(syncQaIntoSpec);
   // A review decision answers the questions that ask the same thing, and is part of the Q&A.
   useReviewStore.subscribe((s, prev) => {

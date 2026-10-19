@@ -481,6 +481,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <div className="flex-1 text-sm text-indigo-900">
               <span className="font-semibold">Review AI change:</span> {review.summary}.
               {review.issues.some((i) => i.severity === 'error') && <span className="text-red-700"> The checker found errors in this change.</span>}
+              {proposal?.note && <span className="block text-xs text-indigo-900 mt-0.5" data-testid="proposal-note">{proposal.note}</span>}
               <span className="block text-xs text-indigo-700 mt-0.5">Green = added, amber = changed, red = removed.</span>
             </div>
             <button onClick={store.rejectProposal} className="px-3 py-1.5 text-sm border border-gray-300 bg-white rounded hover:bg-gray-50">Reject</button>

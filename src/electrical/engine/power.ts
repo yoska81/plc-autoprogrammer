@@ -240,14 +240,30 @@ export function motorBranches(pk: Picker, tags: Tags, motors: ModelMotor[], supp
   return { components, branches, notes };
 }
 
-/** Main disconnect (+ handle + shaft for the enclosure depth) sized for the motors plus the control power. */
-export function mainDisconnect(pk: Picker, branches: MotorBranch[], supply: SupplyVoltage, controlA: number, nema4: boolean, depthIn: number, heaterA = 0): { components: DesignComponent[]; notes: string[]; amps: number } {
+/**
+ * A disconnect that may be the panel's supply disconnect under UL 508A: listed to UL 98 (switch) or UL 489 (breaker).
+ * A UL 508 manual motor controller (Siemens 3LD) is only a motor disconnect. Parts without a stated listing are
+ * accepted as before.
+ */
+export const supplyDisconnectListed = (p: CatalogPart) => p.ratings.ul === undefined || /\b(98|489)\b/.test(String(p.ratings.ul));
+
+/**
+ * Main disconnect (+ handle + shaft for the enclosure depth) sized for the motors plus the control power.
+ * `ul508a` (US / Canada): only a UL 98 / UL 489 listed disconnect.
+ */
+export function mainDisconnect(pk: Picker, branches: MotorBranch[], supply: SupplyVoltage, controlA: number, nema4: boolean, depthIn: number, heaterA = 0, ul508a = true): { components: DesignComponent[]; notes: string[]; amps: number } {
   const flas = branches.map((b) => b.fla);
   // Heaters are continuous loads: 125% of their current.
   const load = flas.reduce((a, b) => a + b, 0) + (flas.length ? Math.max(...flas) * 0.25 : 0) + controlA + heaterA * 1.25;
   const maxHp = Math.max(0, ...branches.map((b) => b.motor.hp));
-  const ds = pk.pick('disconnect', (p) => p.mount === 'backplate' && amps(p) >= load * 1.15 && coversSupply(p, supply) && (hpRating(p, supply) ?? Infinity) >= maxHp, amps);
+  const fits = (p: CatalogPart) => p.mount === 'backplate' && amps(p) >= load * 1.15 && coversSupply(p, supply) && (hpRating(p, supply) ?? Infinity) >= maxHp;
+  const ds = pk.pick('disconnect', (p) => fits(p) && (!ul508a || supplyDisconnectListed(p)), amps);
   const notes: string[] = [];
+  // The preferred brand's only fitting disconnect is a UL 508 motor disconnect: said, and another brand's UL 98 / 489 one used.
+  const motorOnly = ul508a ? pk.pick('disconnect', (p) => fits(p) && !supplyDisconnectListed(p), amps) : null;
+  if (ds && motorOnly && (motorOnly.vendor ?? 'automationdirect') !== (ds.vendor ?? 'automationdirect')) {
+    notes.push(`${motorOnly.partNumber} is listed to UL 508 as a motor disconnect only, not as the panel's supply disconnect (UL 508A needs UL 98 or UL 489): the main disconnect is ${ds.partNumber}.`);
+  }
   const components: DesignComponent[] = [];
   if (!ds) { notes.push(`No catalog disconnect is rated for ${load.toFixed(0)} A: select a main disconnect.`); return { components, notes, amps: load }; }
   components.push(comp('DS1', ds.partNumber, 1, `Main disconnect ${amps(ds)}A — load ${load.toFixed(1)} A (motors + 25% of the largest${heaterA ? ' + 125% of the heaters' : ''} + control) x 1.15`));

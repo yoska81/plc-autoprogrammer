@@ -2,7 +2,10 @@ import { useMemo } from 'react';
 import { CATALOG_GROUPS_NOTE, GROUP_TITLE, VENDORS, fallbackCategories, groupOfPart, groupsOf, type VendorGroup } from '../electrical/catalogs';
 import type { VendorId } from '../electrical/types';
 import { useProjectStore, useVendorPreference } from '../store/useProjectStore';
-import { hasPlcProfile } from '../spec/brand';
+import { hasPlcProfile, plcPreferenceOf, vendorOf } from '../spec/brand';
+import { useHmiStore } from '../store/useHmiStore';
+import { getPart } from '../electrical/catalog';
+import { getProfile } from '../plc/core/profiles';
 
 const GROUPS = Object.keys(GROUP_TITLE) as VendorGroup[];
 
@@ -62,6 +65,20 @@ export default function VendorPreferenceCard() {
     vendors: Object.fromEntries(GROUPS.filter((g) => groupsOf(id).includes(g)).map((g) => [g, [id]])) as Partial<Record<VendorGroup, VendorId[]>>,
     plcChosen: groupsOf(id).includes('plc'),
   });
+  // A PLC or panel brand the user never chose shows what the project uses (a Siemens project: Siemens and its
+  // panel's maker), not the untouched default (AutomationDirect CLICK / C-more).
+  const plcId = useProjectStore((s) => s.plcId);
+  const plcChosen = useProjectStore((s) => s.info.plcChosen);
+  const panel = useHmiStore((s) => s.hmiPartNumber);
+  const plcVendor = vendorOf(getProfile(plcId)) as VendorId | '';
+  const shown = (g: VendorGroup): VendorId[] => {
+    if (g === 'plc' && plcVendor && !plcPreferenceOf(saved?.plc, plcChosen).length) return [plcVendor];
+    if (g === 'hmi' && !saved?.hmi?.length) {
+      const v = panel ? getPart(panel)?.vendor ?? 'automationdirect' : plcVendor;
+      if (v) return [v];
+    }
+    return pref[g];
+  };
   const fallback = fallbackCategories(pref);
   return (
     <section className="rounded-lg border border-steel-200 bg-white p-4 space-y-2" aria-label="Preferred brands">
@@ -81,7 +98,7 @@ export default function VendorPreferenceCard() {
           <div key={g} className="contents">
             <div className="py-1.5 text-sm text-steel-700 border-t border-steel-100" title={GROUP_TITLE[g]}>{SHORT[g]}</div>
             <div className="py-1.5 border-t border-steel-100" role="group" aria-label={GROUP_TITLE[g]}>
-              <BrandSelect group={g} chosen={pref[g]} onChange={(ids) => setGroup(g, ids)} />
+              <BrandSelect group={g} chosen={shown(g)} onChange={(ids) => setGroup(g, ids)} />
             </div>
           </div>
         ))}

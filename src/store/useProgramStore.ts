@@ -25,6 +25,8 @@ export interface Proposal {
   reasoning: string | null;
   /** Made to follow a spec/I/O/HMI change; approving it brings the program up to date. */
   specUpdate?: boolean;
+  /** Shown on the proposal banner: why the rules wrote it and whether it replaces one that was waiting. */
+  note?: string;
 }
 
 const MAX_VERSIONS = 50;

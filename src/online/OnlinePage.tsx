@@ -22,7 +22,14 @@ import { buildCheckoutPdf, checkoutRows, checkoutSummary } from './checkoutPdf';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
+
 import TroubleshootPanel from '../troubleshoot/TroubleshootPanel';
+
+/** The brand's own software for watching the PLC online. */
+const ONLINE_SOFTWARE: Record<string, string> = {
+  'siemens-s7': 'TIA Portal (Go online, Monitor all)', logix: 'Studio 5000 Logix Designer (Go Online)', micro800: 'Connected Components Workbench (Connect)',
+  'unitronics-unistream': 'UniLogic (Online)', 'unitronics-vision': 'VisiLogic (Online test mode)',
+};
 
 type Tab = 'monitor' | 'ladder' | 'hmi' | 'checkout' | 'troubleshoot';
 
@@ -40,7 +47,7 @@ export default function OnlinePage() {
   const projectId = useProjectsStore((s) => s.activeId);
   const checkout = useCheckoutStore((s) => s.byProject[projectId ?? 'default']) ?? NO_CHECKS;
   const { tech, setTech, set: setCheck } = useCheckoutStore();
-  const [tab, setTab] = useUi<Tab>('online.tab', 'monitor');
+  const [savedTab, setTab] = useUi<Tab>('online.tab', 'monitor');
   // A link can open a tab directly (the navigation's "Fault finding" opens ?tab=troubleshoot).
   const [params] = useSearchParams();
   const linked = params.get('tab');
@@ -55,6 +62,8 @@ export default function OnlinePage() {
   const [checks, setChecks] = useState<{ title: string; lines: CheckLine[] } | null>(null);
   const [checking, setChecking] = useState<string | null>(null);
   const isClick = profile.id === 'click';
+  // The Modbus monitor is CLICK's: another brand opens on the I/O check-out.
+  const tab: Tab = savedTab === 'monitor' && !isClick ? 'checkout' : savedTab;
 
   // Every address the project uses: I/O, program, HMI.
   const names = useMemo(() => {
@@ -138,6 +147,14 @@ export default function OnlinePage() {
     <button key={t} onClick={() => setTab(t)} className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 ${tab === t ? 'border-brand-600 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>{label}</button>
   );
 
+  // Live values come over CLICK's Modbus TCP map only: another brand gets a plain sentence in place of the
+  // connection bar and the address table (its own software monitors it online); check-out and fault finding stay.
+  const notHere = (
+    <p className="max-w-2xl rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="online-not-here">
+      Online monitoring here connects to AutomationDirect CLICK PLCs only. To watch the {profile.vendor} {cpu.id} running, go online in {ONLINE_SOFTWARE[profile.id] ?? `${profile.vendor}'s own programming software`}. The I/O check-out and Fault finding tabs work here without a connection.
+    </p>
+  );
+
   return (
     <>
       <header className="px-4 sm:px-6 pt-4 bg-white border-b border-steel-200">
@@ -145,12 +162,14 @@ export default function OnlinePage() {
           <h2 className="min-w-0 flex-[1_1_16rem] text-base font-semibold text-steel-800">Online — connect to the PLC</h2>
           <LoadIntoPlc />
         </div>
-        <p className="text-xs text-steel-500 mt-0.5">Live values from the real {profile.name} {cpu.id} over Ethernet (Modbus TCP). Read-only unless you switch on writes. Use it at the machine during commissioning: watch the ladder, the HMI and every I/O point, and tick the I/O check-out.</p>
-        <div className="flex mt-2 overflow-x-auto">{tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}{tabBtn('troubleshoot', 'Fault finding')}</div>
+        {isClick
+          ? <p className="text-xs text-steel-500 mt-0.5">Live values from the real {profile.name} {cpu.id} over Ethernet (Modbus TCP). Read-only unless you switch on writes. Use it at the machine during commissioning: watch the ladder, the HMI and every I/O point, and tick the I/O check-out.</p>
+          : <p className="text-xs text-steel-500 mt-0.5">The I/O check-out and fault finding for the {profile.name} {cpu.id}.</p>}
+        <div className="flex mt-2 overflow-x-auto">{isClick && tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}{tabBtn('troubleshoot', 'Fault finding')}</div>
       </header>
 
-      {/* Connection bar */}
-      <div className="px-4 sm:px-6 py-2 bg-white border-b border-steel-200 flex flex-wrap items-end gap-3 text-sm">
+      {/* Connection bar (CLICK only) */}
+      {isClick ? <div className="px-4 sm:px-6 py-2 bg-white border-b border-steel-200 flex flex-wrap items-end gap-3 text-sm">
         <label className="text-xs text-steel-600">PLC IP address<br />
           <input aria-label="PLC IP address" value={st.settings.host} onChange={(e) => st.setSettings({ host: e.target.value })} disabled={connected} className={`${input} w-36 font-mono`} /></label>
         <label className="text-xs text-steel-600">Port<br />
@@ -159,8 +178,8 @@ export default function OnlinePage() {
           <input aria-label="Unit id" type="number" min={0} max={255} value={st.settings.unitId} onChange={(e) => st.setSettings({ unitId: Math.max(0, Math.min(255, Number(e.target.value) || 0)) })} disabled={connected} className={`${input} w-16`} /></label>
         {connected || st.status === 'connecting'
           ? <button className={btn} onClick={() => void disconnectPlc()}>Disconnect</button>
-          : <button className="px-4 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700 disabled:opacity-40" disabled={!desktop || !isClick} onClick={() => void connectPlc(all)}>Connect</button>}
-        <button className={btn} disabled={!desktop || !isClick || Boolean(checking) || st.status === 'connecting'} onClick={() => void runTest()}
+          : <button className="px-4 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700 disabled:opacity-40" disabled={!desktop} onClick={() => void connectPlc(all)}>Connect</button>}
+        <button className={btn} disabled={!desktop || Boolean(checking) || st.status === 'connecting'} onClick={() => void runTest()}
           title="Does the PLC answer on Modbus TCP, is it in RUN, any PLC error?">{checking === 'test' ? 'Testing…' : 'Test connection'}</button>
         <button className={btn} disabled={!connected || Boolean(checking)} onClick={() => void runProgramCheck()}
           title="Read every address of the project and the first-scan setpoints: is the program you typed in running?">{checking === 'program' ? 'Checking…' : 'Program check'}</button>
@@ -174,16 +193,15 @@ export default function OnlinePage() {
         <label className={`flex items-center gap-2 text-xs font-semibold ${st.allowWrites ? 'text-red-700' : 'text-steel-600'}`}>
           <input type="checkbox" aria-label="Allow writes" checked={st.allowWrites} disabled={!connected} onChange={(e) => allowWrites(e.target.checked)} /> Allow writes
         </label>
-      </div>
+      </div> : <div className="px-4 sm:px-6 py-2 bg-white border-b border-steel-200">{notHere}</div>}
       {st.allowWrites && connected && (
         <div role="alert" className="px-6 py-2 bg-red-600 text-white text-sm font-semibold">WRITES ENABLED — values you set go to the running machine. Only C bits and DS registers can be written; X inputs and Y outputs never.</div>
       )}
-      {!desktop && (
+      {!desktop && isClick && (
         <div className="mx-6 mt-3 bg-brand-50 border border-brand-200 rounded p-3 text-sm text-steel-800">
           Connecting to a real PLC needs the <b>ISA Auto Programmer desktop app</b> for Windows (a web browser cannot open a connection to the PLC). Here you can still see the Modbus address of every point and fill in the I/O check-out by hand.
         </div>
       )}
-      {!isClick && <div className="mx-6 mt-3 bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900">Online monitoring is available for AutomationDirect CLICK PLCs.</div>}
       {st.error && <div role="alert" className="mx-6 mt-3 bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{st.error}</div>}
       {checks && (
         <div className="mx-6 mt-3 rounded border border-steel-200 bg-white p-3 text-sm" data-testid="online-checks">

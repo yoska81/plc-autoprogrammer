@@ -325,7 +325,11 @@ export function buildProgram(input: ProgramInput): ProgramResult {
         [[NO(manual), NO(SAFE), ...others.map(NC), ...(opposite ? [NC(opposite.address)] : []), ...(a.fault && alarm(`alarm:fault:${a.fault.address}`) ? [NC(alarm(`alarm:fault:${a.fault.address}`)!)] : [])]], [OUT(permit)]);
       const m = bit();
       R('manual', `${a.name}: manual ${word} (${out.description}) while the HMI button is held and permitted${earlier.length ? ' (an earlier jog has priority)' : ''}`, [[NO(jog), NO(permit), ...earlier.map(NC)]], [OUT(m)]);
-      nick(m, `Man_${a.name}_${out.address}`, `Manual request ${out.description}`);
+      // Named by the HMI button's word ("Close", "Down"), else the motion: never by the output's address (an S7 or
+      // Logix export has no Y003).
+      const motion = out === a.extend ? 'Extend' : out === a.retract ? 'Retract' : out === a.reverse ? 'Reverse' : 'Run';
+      const said = /^[A-Za-z]+$/.test(word) && !/^jog$/i.test(word) ? word[0].toUpperCase() + word.slice(1) : motion;
+      nick(m, `Man_${a.name}_${said}`, `Manual request ${out.description}`);
       earlier.push(m);
       req.get(out.address)!.manual = m;
     }

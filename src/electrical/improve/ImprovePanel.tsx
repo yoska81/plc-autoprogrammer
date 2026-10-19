@@ -153,7 +153,7 @@ function WhatIfCard({ ctx }: { ctx: DrawingContext }) {
     const d = r.ctx.design;
     useElectricalStore.getState().setInputs({ ...d.inputs, requiredParts: c.plc ? useElectricalStore.getState().inputs.requiredParts : el.inputs.requiredParts });
     useElectricalStore.getState().setDesign(d, 'generated', `Option applied from "Compare options": ${o.label}.`);
-    useStageStore.getState().markGenerated('electrical', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp });
+    useStageStore.getState().markGenerated('electrical', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, panel: useHmiStore.getState().hmiPartNumber || undefined });
     setRes(null);
     setPicked([]);
     notify(`Applied: ${o.label}.${c.plc ? ' The PLC program and the HMI now need updating for the new PLC.' : ''}`);

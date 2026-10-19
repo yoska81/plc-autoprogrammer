@@ -5,6 +5,7 @@
  * Run with:  npx tsx src/spec/updateAll.test.ts
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { setClaudeInterceptor } from '../lib/ai/anthropic';
 import { clearAiCache } from '../lib/ai/cache';
 import { runUpdateAll, type StepResult } from './updateAll';
@@ -13,6 +14,10 @@ import { useSpecStore } from '../store/useSpecStore';
 import { useIOStore } from '../store/useIOStore';
 import { useSettingsStore, type StageMode } from '../store/useSettingsStore';
 import { useProgramStore } from '../store/useProgramStore';
+import { useDraftStore } from '../store/useDraftStore';
+import { useProjectsStore } from '../store/useProjectsStore';
+import { installQaSync, registerStageQuestions } from '../components/questions/qa';
+import { useQuestionStore } from '../components/questions/useQuestionStore';
 
 let passed = 0;
 const failures: string[] = [];
@@ -103,6 +108,7 @@ await test('no API key, existing program: "No API key — built from rules" (no 
   const rs2: StepResult[] = [];
   await runUpdateAll([...steps], (r) => rs2.push(r));
   assert.match(final(rs2, 'program')?.message ?? '', /It replaces the proposal that was waiting\.$/, JSON.stringify(rs2));
+  assert.equal(useProgramStore.getState().proposal?.note, "No API key — built from rules: the rules' program (default cycle) for the current spec, I/O and HMI. It replaces the proposal that was waiting.", 'the Program page banner says it too');
 });
 
 await test('Cancel during the AI stops the run (no fallback, no proposal)', async () => {
@@ -119,6 +125,32 @@ await test('Cancel during the AI stops the run (no fallback, no proposal)', asyn
   assert.ok(!rs.some((r) => r.status === 'done' && !r.provisional), JSON.stringify(rs));
   assert.equal(useProgramStore.getState().proposal, null);
   assert.equal(useProgramStore.getState().ladder.rungs.length, 0);
+});
+
+await test('the I/O questions from Update all reach the one question list', async () => {
+  installQaSync();
+  const io = () => (useQuestionStore.getState().byProject[useProjectsStore.getState().activeId ?? 'default'] ?? []).filter((q) => q.source === 'io' && q.status === 'open');
+  machine('ai');
+  useIOStore.getState().importPoints([] as never, true);
+  useDraftStore.getState().setDraft('io.plan', null);
+  useSpecStore.setState({ sections: { ...EMPTY_SECTIONS, overview: 'Pump skid: a centrifugal pump on a VFD and a discharge pressure transmitter.' }, questions: [] });
+  // AI: its questions, as asked
+  await clearAiCache();
+  setClaudeInterceptor(async () => ({ reasoning: null, text: JSON.stringify({ points: [{ type: 'output', description: 'Pump motor VFD run', category: 'Motor', deviceType: 'other', signal: 'discrete', analog: null }], questions: ['Is the pump reversible?'] }) }));
+  useSpecStore.setState({ sections: { ...useSpecStore.getState().sections, overview: `${useSpecStore.getState().sections.overview} The pump has a flushing cycle.` } });
+  await runUpdateAll(['io'], () => {});
+  registerStageQuestions();
+  assert.deepEqual(io().map((q) => q.text), ['Is the pump reversible?']);
+  assert.equal(io()[0].assumption ?? undefined, undefined);
+  // a step skipped later (up to date) keeps them; once every one is answered they are no longer kept
+  await runUpdateAll(['io'], () => {});
+  assert.ok(useDraftStore.getState().drafts['io.updateQuestions'], 'kept while open');
+  useQuestionStore.getState().answer(useProjectsStore.getState().activeId, io()[0].id, 'No, one direction', 'answered');
+  assert.equal(useDraftStore.getState().drafts['io.updateQuestions'], null, 'dropped once answered');
+  registerStageQuestions();
+  assert.equal(io().length, 0, 'the answered question is not asked again');
+  // the I/O page's own reading replaces them
+  assert.match(readFileSync(new URL('../components/IOFromSpec.tsx', import.meta.url), 'utf8'), /setPlan\(\{[^\n]*\n[^\n]*\n\s*useDraftStore\.getState\(\)\.setDraft\('io\.updateQuestions', null\)/);
 });
 
 setClaudeInterceptor(null);

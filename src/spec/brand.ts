@@ -124,11 +124,16 @@ function namedMatches(specText: string): { ids: string[]; at: number; text: stri
 export function brandPhrase(specText: string): string | null {
   const m = namedMatches(specText).sort((a, b) => a.at - b.at)[0];
   if (!m) return null;
-  // The sentence around the match, at most ~90 characters, in the user's own words.
-  const start = Math.max(specText.lastIndexOf('.', m.at) + 1, specText.lastIndexOf('\n', m.at) + 1, m.at - 50);
-  const endDot = specText.slice(m.at).search(/[.\n]/);
-  const end = Math.min(endDot < 0 ? specText.length : m.at + endDot, m.at + m.text.length + 40);
-  return `${start > 0 && specText[start - 1] !== '.' && specText[start - 1] !== '\n' ? '…' : ''}${specText.slice(start, end).trim()}${end < specText.length && !/[.\n]/.test(specText[end] ?? '') ? '…' : ''}`;
+  // The sentence around the match (a full stop ends one only before a space or the end: "1.5 m/s", "v4.5" do not),
+  // cut at a word to ~50 characters before and ~40 after the match, in the user's own words.
+  const ends = [...specText.matchAll(/\.(?=\s|$)|\n/g)].map((x) => x.index ?? 0);
+  const after = m.at + m.text.length;
+  let start = Math.max(0, ...ends.filter((i) => i < m.at).map((i) => i + 1));
+  let end = ends.find((i) => i >= after) ?? specText.length;
+  let pre = '', post = '';
+  if (m.at - start > 50) { const cut = specText.indexOf(' ', m.at - 50); start = cut >= 0 && cut < m.at ? cut + 1 : m.at; pre = '…'; }
+  if (end - after > 40) { const cut = specText.lastIndexOf(' ', after + 40); end = cut > after ? cut : after; post = '…'; }
+  return `${pre}${specText.slice(start, end).replace(/\s+/g, ' ').trim()}${post}`;
 }
 
 /**

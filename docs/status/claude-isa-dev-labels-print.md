@@ -380,3 +380,27 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
     - Omron CP1W-CIF01 and CIF11.
   - The boards carry `inCpu: 'yes'`: they take no panel space.
   - `plcModulePart(hmi, platformId)` returns the bare part number, for the BOM and the rack.
+- **Operator contacts in one form:** every maker now writes "(1) N.O." / "(1) N.C." (22 Allen-Bradley / Siemens / Schneider entries normalized). This lets the pushbutton pick choose non-AutomationDirect buttons. Enforced in catalog.test.
+- **Siemens SIRIUS ACT 3SU1 complete units**, from the Siemens TED datasheets:
+  - 1 NO, plain: blue (reset), black, yellow, white.
+  - 1 NO, illuminated with a 24 V AC/DC LED: white and blue.
+  - Front IP66/67/69K, 22.3 mm hole, 49.7 mm behind the panel.
+  - The 230 V and metal variants are left out.
+- **More Siemens panel parts**, each from its Siemens TED datasheet:
+  - 3SU1 pilot lights, white and blue (24 V LED).
+  - 3RT2 contactors from 32 to 110 A: 3RT2027/2028-1BB40 (S0), 3RT2035-2038-1NB30 (S2) and 3RT2045-2047-1NB30 (S3). The S2/S3 coil is 20-33 V AC/DC, which runs on 24 VDC. Each has AC-3 at 400 V and UL FLA / hp at 480 V.
+  - 3SU1400-1AA10-1CA0 1 NC contact module (front-plate mounting in the 3SU1 holder; sold in packs of 5).
+  - 3SU1900-0BC31-0DA0 yellow 75 mm EMERGENCY STOP backing plate.
+  - 8WD44 70 mm column parts: connection element 8WD4408-0AB, LED elements red / yellow / green (8WD4420-5AB/5AD/5AC) and buzzer 8WD4420-0FA.
+- **Gap:** Siemens has no verified pre-assembled red / yellow / green 8WD column, so there is no single Siemens stack-light part. A column is built from the elements above.
+- **Siemens 8WD44 stack light as a kit:** Siemens sells no pre-assembled red / yellow / green column.
+  - The `stackLight` entry is named by its real parts ("8WD4408-0AB + 8WD4420-5AB + 8WD4420-5AD + 8WD4420-5AC"). `kitParts` lists "PN xN"; the BOM expands it into one line per part (Dev 4).
+  - Total 105 mA at 24 V; with the buzzer variant, 130 mA.
+  - Tests: every kit part is a verified catalog part, and the kit name equals its parts.
+- **Siemens relays:**
+  - 3RQ4018-1AB00: slim 6.2 mm, 24 V AC/DC, 1 CO.
+  - 3RQ2000-1BW00: 22.5 mm, 24-240 V AC/DC, 2 CO.
+  - Both cULus.
+- **Siemens SENTRON 3LD switch disconnectors:**
+  - Parts: 3LD2203-0TK51 (32 A), 3LD2504-0TK51 (63 A), 3LD2704-0TK51 (100 A), and the red/yellow EMERGENCY-OFF 3LD2203-0TK53.
+  - UL 508 manual motor controller / motor disconnect only (`ulUse`). They are not a UL 98 / UL 489 supply-circuit disconnect, so they must not be the panel's main disconnect. compareStrength refuses one as a swap for a UL 98 / 489 disconnect, so the Part Picker greys it out.

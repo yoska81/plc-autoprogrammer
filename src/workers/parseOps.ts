@@ -5,15 +5,14 @@ import { planUpgrade } from '../plc/import/upgrade';
 
 /**
  * The heavy parsing of uploaded files (DXF drawings, PLC programs, and the plan that makes a program the
- * project) as plain functions: run by the parse
- * worker (src/workers/parse.worker.ts) and, where no worker can run (the claude.ai preview, Node tests),
- * on the page by src/lib/parseWorker.ts. A DXF is parsed once per file and kept for its sheet pictures
+ * project) as plain functions: run by the parse worker (src/workers/parse.worker.ts) and, where no worker
+ * can run (the claude.ai preview, Node tests), on the page by src/lib/parseWorker.ts. A DXF is parsed once per file and kept for its sheet pictures
  * (later requests send only its key).
  */
 export type ParseRequest =
   | { op: 'dxf-text'; key: string; text?: string; name: string }
   | { op: 'dxf-sheet'; key: string; text?: string; sheet: number }
-  | { op: 'program'; files: { name: string; text: string }[] }
+  | { op: 'program'; files: { name: string; text: string; bytes?: Uint8Array }[] }
   | { op: 'plan'; imp: ImportedProgram; plcId: string };
 
 export type ParseResult<R extends ParseRequest> =

@@ -12,7 +12,7 @@ import type { LadderProgram, Rung } from '../core/ladder';
 export type SourceFormat =
   | 'l5x' | 'l5k' | 'click-csv' | 'plcopen' | 'st'
   | 'siemens-scl' | 'siemens-stl' | 'siemens-xml' | 'siemens-tags'
-  | 'mitsubishi-csv' | 'il-text' | 'printout';
+  | 'mitsubishi-csv' | 'il-text' | 'yaskawa-mpe720' | 'printout';
 
 export const FORMAT_LABEL: Record<SourceFormat, string> = {
   l5x: 'Studio 5000 / RSLogix 5000 export (.L5X)',
@@ -26,6 +26,7 @@ export const FORMAT_LABEL: Record<SourceFormat, string> = {
   'siemens-tags': 'Siemens PLC tag table',
   'mitsubishi-csv': 'Mitsubishi GX Works program (CSV)',
   'il-text': 'Instruction list (Mitsubishi / Delta / Inovance / Xinje)',
+  'yaskawa-mpe720': 'Yaskawa MPE720 project (.YMW7)',
   printout: 'Printout or screenshot of the program (read by the AI)',
 };
 
