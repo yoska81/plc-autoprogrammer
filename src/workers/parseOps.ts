@@ -11,7 +11,7 @@ import { importProgramFiles } from '../plc/import';
 export type ParseRequest =
   | { op: 'dxf-text'; key: string; text?: string; name: string }
   | { op: 'dxf-sheet'; key: string; text?: string; sheet: number }
-  | { op: 'program'; files: { name: string; text: string }[] };
+  | { op: 'program'; files: { name: string; text: string; bytes?: Uint8Array }[] };
 
 export type ParseResult<R extends ParseRequest> =
   R extends { op: 'dxf-text' } ? string : R extends { op: 'dxf-sheet' } ? string | null : ReturnType<typeof importProgramFiles>;
