@@ -3,6 +3,8 @@ import { describeElement, describeOutput } from '../plc/core/clickExport';
 import { blockTable, checkerTable, programInfo, tagTable } from './docs/program';
 import { docMeta } from './docs/meta';
 import { ACCENT, BRAND, INK, MUTED, PdfWriter, pdfSafe } from './docs/pdfWriter';
+import { projectPlcNames } from './plcTagNames';
+import { withPlcNamesAndIo } from '../plc/core/plcNames';
 
 /**
  * Small controlled documents (Letter portrait) for the full package: a title
@@ -75,9 +77,14 @@ export async function buildProgramListingPdf(p: ProjectSnapshot): Promise<Blob |
     }
     const info = programInfo(p);
     const label = (a: string) => (info.name(a) ? ` (${info.name(a)})` : '');
+    // Siemens / Logix: every operand by its PLC tag name (and I/O address), as in the exported program.
+    const names = projectPlcNames(p);
+    const named = (t: string) => withPlcNamesAndIo(t, names);
     w.h2('Program blocks', false);
     w.table(blockTable(p), { fontSize: 8 });
-    w.para('Each rung below lists its contacts in the order they are drawn, the outputs, and the same logic in plain words. Addresses are followed by their nickname or I/O description.');
+    w.para(names
+      ? `Each rung below lists its contacts in the order they are drawn, the outputs, and the same logic in plain words. Operands are shown by their ${p.profile.name} tag names (I/O with its address), followed by their description.`
+      : 'Each rung below lists its contacts in the order they are drawn, the outputs, and the same logic in plain words. Addresses are followed by their nickname or I/O description.');
 
     const blocks = [...(p.ladder.blocks ?? [])];
     const order = [...blocks.map((b) => b.id), ''];
@@ -98,8 +105,8 @@ export async function buildProgramListingPdf(p: ProjectSnapshot): Promise<Blob |
           lines.push(prefix + (br.length ? br.map((el) => describeElement(el, label)).join('  ->  ') : 'wire'));
         });
         for (const o of r.outputs) lines.push(`Output: ${describeOutput(o, label)}`);
-        for (const l of lines) w.text(l, { size: 8.3, indent: 4, gap: 0.4 });
-        const words = info.conditionText(r);
+        for (const l of lines) w.text(named(l), { size: 8.3, indent: 4, gap: 0.4 });
+        const words = info.conditionText(r) && named(info.conditionText(r));
         if (words) w.text(`In words: ${words}.`, { size: 8, indent: 4, color: MUTED, gap: 2.2 });
         else w.y += 1.8;
       }

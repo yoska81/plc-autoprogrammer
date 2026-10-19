@@ -610,7 +610,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
         </div>
         {hasRungs && (narrow ? pane === 'xref' : xrefOpen) && (
           <ResizablePane id="program.xref" defaultSize={340} min={240} max={700} handle="left" fill={narrow} panel={phonePanel(narrow, 'program', 'xref')} className={narrow ? 'overflow-auto' : 'border-l border-gray-200'}>
-            <CrossRefPanel program={ladder} labelOf={labelOf} address={xrefAddress} onAddress={setXrefAddress}
+            <CrossRefPanel program={ladder} labelOf={labelOf} plcNames={plcNames} address={xrefAddress} onAddress={setXrefAddress}
               selectedRungId={selectedRungId} onRung={jumpToRung} onClose={() => (narrow ? setPhonePane('ladder') : setXrefOpen(false))} />
           </ResizablePane>
         )}
@@ -631,7 +631,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       </section>
       {printing && (
         <ProgramPrint program={ladder} projectName={store.projectName} plcName={`${ctx.profile.vendor} ${ctx.profile.name} · ${ctx.cpu.label}`}
-          issues={issues} labels={labels} analog={analog} onClose={() => setPrinting(false)} />
+          issues={issues} labels={labels} analog={analog} plcNames={plcNames} onClose={() => setPrinting(false)} />
       )}
     </div>
   );

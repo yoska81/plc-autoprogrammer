@@ -5,6 +5,7 @@
 import type { ProjectSnapshot } from './collect';
 import { plcTagNames, type PlcTagName } from '../plc/core/tagNames';
 import { exportContext } from './exportContext';
+import { plcNameLookup, type PlcNameOf } from '../plc/core/plcNames';
 
 export function plcTagNameOf(p: ProjectSnapshot): (address: string) => PlcTagName {
   const names = p.profile.language === 'ladder' ? plcTagNames(p.profile, p.ladder, exportContext(p)) : new Map<string, PlcTagName>();
@@ -19,4 +20,9 @@ export function plcTagNameOf(p: ProjectSnapshot): (address: string) => PlcTagNam
     if (p.profile.id === 'click') return { name: a, scope: 'CLICK', dataType: '' };
     return real(a, { name: '', scope: '', dataType: '', io: p.profile.ioTag?.(a, modules ?? [], cpuId) ?? undefined });
   };
+}
+
+/** Siemens / Logix: the PLC's own name (and I/O address) of each operand, as on the Program page; undefined for CLICK. */
+export function projectPlcNames(p: ProjectSnapshot): PlcNameOf | undefined {
+  return plcNameLookup(p.profile, p.ladder, exportContext(p));
 }
