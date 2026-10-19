@@ -22,10 +22,12 @@ export default function AnalogCell({ point, address }: { point: IOPoint; address
   const a = point.signal === 'analog' ? point.analog ?? DEFAULT : null;
   const set = (patch: Partial<AnalogSpec>) => setAnalog(point.id, { ...(a ?? DEFAULT), ...patch });
   const num = (v: string, fallback: number) => (Number.isFinite(Number(v)) && v.trim() !== '' ? Number(v) : fallback);
-  // The scale must rise: a minimum at or above the maximum is refused (the field goes back) with a note.
+  // The scale must be numbers and rise: anything else is refused (the field goes back) with a note.
   const [scaleError, setScaleError] = useState<string | null>(null);
   const setScale = (el: HTMLInputElement, which: 'min' | 'max') => {
     if (!a) return;
+    // not a number: the field goes back to the value kept (the store doesn't change, so it would not redraw)
+    if (el.value.trim() === '' || !Number.isFinite(Number(el.value))) { el.value = String(a[which]); setScaleError(`The scale ${which === 'min' ? 'minimum' : 'maximum'} must be a number (${a[which]} kept).`); return; }
     const v = num(el.value, a[which]);
     const lo = which === 'min' ? v : a.min, hi = which === 'max' ? v : a.max;
     if (lo >= hi) { el.value = String(a[which]); setScaleError(`The scale minimum must be below the maximum (${a.min} – ${a.max} kept).`); return; }

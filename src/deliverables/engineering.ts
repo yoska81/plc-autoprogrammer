@@ -64,7 +64,7 @@ async function pictures(p: ProjectSnapshot): Promise<{ cabinet: { view: string; 
   if (p.hmi) {
     try {
       const { buildHmiImages } = await import('./files');
-      for (const [i, im] of (await buildHmiImages(p)).entries()) out.hmi.push({ name: p.hmi.screens[i]?.name ?? im.name, img: await toJpeg(im.dataUrl, 900) });
+      for (const im of await buildHmiImages(p)) out.hmi.push({ name: p.hmi.screens[im.screen]?.name ?? im.name, img: await toJpeg(im.dataUrl, 900) });
     } catch { /* screens are optional */ }
   }
   return out;

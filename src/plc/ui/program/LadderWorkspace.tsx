@@ -19,8 +19,10 @@ import type { LadderProgram, Rung } from '../../core/ladder';
 import LadderView from '../ladder/LadderView';
 import { Spinner, ReasoningPanel } from '../../../components/common';
 import StageBanner from '../../../components/StageBanner';
+import ProgramOutOfStep from '../../../components/ProgramOutOfStep';
 import ResizablePane from '../../../components/ResizablePane';
 import PhoneTabs from '../../../components/PhoneTabs';
+import { phonePanel } from '../../../components/phoneTabIds';
 import { useNarrow } from '../../../components/useNarrow';
 import { useFingerprints, useStages } from '../../../spec/useStages';
 import { useStageStore } from '../../../store/useStageStore';
@@ -294,14 +296,15 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
 
   const hasRungs = !review && ladder.rungs.length > 0;
   const pane = narrow && !hasRungs && (phonePane === 'blocks' || phonePane === 'xref') ? 'ladder' : phonePane;
+  const xrefOn = narrow ? pane === 'xref' : xrefOpen;
   return (
     <div className={`flex-1 flex overflow-hidden${narrow ? ' flex-col' : ''}`}>
-      {narrow && <PhoneTabs label="Program panes" value={pane} onChange={setPhonePane} tabs={[
+      {narrow && <PhoneTabs idBase="program" label="Program panes" value={pane} onChange={setPhonePane} tabs={[
         { id: 'assistant', label: 'Build / Change' }, { id: 'ladder', label: 'Program' },
         ...(hasRungs ? [{ id: 'blocks' as const, label: 'Blocks' }, { id: 'xref' as const, label: 'Cross-ref' }] : []),
       ]} />}
       {/* Assistant panel */}
-      <ResizablePane id="program.assistant" defaultSize={384} min={260} max={800} fill={narrow}
+      <ResizablePane id="program.assistant" defaultSize={384} min={260} max={800} fill={narrow} panel={phonePanel(narrow, 'program', 'assistant')}
         className={`flex flex-col border-r border-gray-200 bg-white${narrow ? ' min-h-0' : ''}${narrow && pane !== 'assistant' ? ' hidden' : ''}`}>
         <div className="flex border-b border-gray-200">
           {tabButton('describe', 'Build')}
@@ -466,6 +469,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               {isGenerating ? 'Updating…' : 'Update program'}
             </button>} />
         )}
+        {!proposal && <ProgramOutOfStep where="program" />}
         {review ? (
           <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-200 flex items-center gap-3">
             <div className="flex-1 text-sm text-indigo-900">
@@ -503,8 +507,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               <button onClick={toggleFull} aria-pressed={full} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title={full ? 'Leave full screen (Esc or Ctrl+Shift+F)' : 'Ladder over the whole window (Ctrl+Shift+F)'}>
                 {full ? <ArrowsPointingInIcon className="h-3.5 w-3.5" /> : <ArrowsPointingOutIcon className="h-3.5 w-3.5" />} {full ? 'Exit full screen' : 'Full screen'}
               </button>
-              <button onClick={() => (narrow ? setPhonePane('xref') : setXrefOpen((v) => !v))} aria-pressed={narrow ? pane === 'xref' : xrefOpen}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border ${xrefOpen ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-brand-50'}`}
+              <button onClick={() => (narrow ? setPhonePane('xref') : setXrefOpen((v) => !v))} aria-pressed={xrefOn}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border ${xrefOn ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-brand-50'}`}
                 title="Pick an address and see every rung that reads or writes it">
                 <ArrowsRightLeftIcon className="h-3.5 w-3.5" /> Cross reference
               </button>
@@ -523,13 +527,13 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
 
         <div className="flex-1 flex overflow-hidden">
         {hasRungs && (!narrow || pane === 'blocks') && (
-          <ResizablePane id="program.tree" defaultSize={230} min={160} max={480} fill={narrow} className={narrow ? 'overflow-auto' : 'border-r border-gray-200'}>
+          <ResizablePane id="program.tree" defaultSize={230} min={160} max={480} fill={narrow} panel={phonePanel(narrow, 'program', 'blocks')} className={narrow ? 'overflow-auto' : 'border-r border-gray-200'}>
             <BlockTree program={ladder} issues={issues} active={activeBlock} selectedRungId={selectedRungId}
               onBlock={(id) => { setBlock(id); setSelectedRungId(null); if (narrow) setPhonePane('ladder'); }} onRung={jumpToRung} />
           </ResizablePane>
         )}
         {/* The ladder diagram pans both ways. */}
-        <div ref={ladderBox} className={`flex-1 min-w-0 overflow-auto${narrow && pane !== 'ladder' ? ' hidden' : ''}`} data-scroll-x="">
+        <div ref={ladderBox} {...phonePanel(narrow, 'program', 'ladder')} className={`flex-1 min-w-0 overflow-auto${narrow && pane !== 'ladder' ? ' hidden' : ''}`} data-scroll-x="">
           {review ? (
             <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} zoom={zoom} />
           ) : ladder.rungs.length ? (
@@ -555,7 +559,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm gap-2">
               <p>No program yet.</p>
-              <p>Click Generate Program on the left (it uses the machine description, I/O list and HMI), or start an empty program and draw it by hand.</p>
+              <p>Click Build program from my project on the left (it uses the machine description, I/O list and HMI), or start an empty program and draw it by hand.</p>
               <button
                 onClick={() => store.editLadder({ rungs: [{ id: 'r_first', comment: '', branches: [[{ type: 'NO', address: '' }]], outputs: [{ type: 'OUT', address: '' }] }], tags: [] })}
                 className="mt-2 px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
@@ -566,7 +570,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
           )}
         </div>
         {hasRungs && (narrow ? pane === 'xref' : xrefOpen) && (
-          <ResizablePane id="program.xref" defaultSize={340} min={240} max={700} handle="left" fill={narrow} className={narrow ? 'overflow-auto' : 'border-l border-gray-200'}>
+          <ResizablePane id="program.xref" defaultSize={340} min={240} max={700} handle="left" fill={narrow} panel={phonePanel(narrow, 'program', 'xref')} className={narrow ? 'overflow-auto' : 'border-l border-gray-200'}>
             <CrossRefPanel program={ladder} labelOf={labelOf} address={xrefAddress} onAddress={setXrefAddress}
               selectedRungId={selectedRungId} onRung={jumpToRung} onClose={() => (narrow ? setPhonePane('ladder') : setXrefOpen(false))} />
           </ResizablePane>

@@ -6,6 +6,7 @@ import { saveBlob } from '../../deliverables/files';
 import { desktop, desktopPrinters, printLabelPdf, printMessage, type DesktopPrinter } from './print';
 import ResizablePane from '../../components/ResizablePane';
 import PhoneTabs from '../../components/PhoneTabs';
+import { phonePanel } from '../../components/phoneTabIds';
 import { useNarrow } from '../../components/useNarrow';
 import { Spinner } from '../../components/common';
 import { canvasMeasure, expandCopies, layoutLabel } from './layout';
@@ -173,10 +174,10 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
 
   return (
     <div className={`flex-1 flex overflow-hidden bg-steel-50${narrow ? ' flex-col' : ''}`}>
-      {narrow && <PhoneTabs label="Labels panes" value={phonePane} onChange={setPhonePane} tabs={[{ id: 'setup', label: 'Setup' }, { id: 'list', label: 'Labels' }, { id: 'preview', label: 'Preview' }]} />}
+      {narrow && <PhoneTabs idBase="labels" label="Labels panes" value={phonePane} onChange={setPhonePane} tabs={[{ id: 'setup', label: 'Setup' }, { id: 'list', label: 'Labels' }, { id: 'preview', label: 'Preview' }]} />}
       {/* Setup */}
       {/* The pane's content scrolls inside it, so the resize handle stays put and never adds a sideways scroll. */}
-      <ResizablePane id="labels.setup" defaultSize={330} min={260} max={520} fill={narrow} className={`bg-white border-r border-steel-200 flex flex-col${narrow ? ' min-h-0' : ''}${paneHidden('setup')}`}>
+      <ResizablePane id="labels.setup" defaultSize={330} min={260} max={520} fill={narrow} panel={phonePanel(narrow, 'labels', 'setup')} className={`bg-white border-r border-steel-200 flex flex-col${narrow ? ' min-h-0' : ''}${paneHidden('setup')}`}>
         <div className="flex-1 min-h-0 overflow-y-auto"><div className="p-4 space-y-5">
           <Section title="1. Which labels">
             {LABEL_KINDS.map((k) => (
@@ -336,7 +337,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
       </ResizablePane>
 
       {/* Label list */}
-      <div className={`flex-1 min-w-0 min-h-0 flex flex-col${paneHidden('list')}`}>
+      <div {...phonePanel(narrow, 'labels', 'list')} className={`flex-1 min-w-0 min-h-0 flex flex-col${paneHidden('list')}`}>
         <div className="px-4 py-2 bg-white border-b border-steel-200 flex flex-wrap items-center gap-2 text-sm">
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter: number, text or group" aria-label="Filter labels" className={`${input} w-56`} />
           <button className={btn} onClick={() => toggle(shown.map((l) => l.id), true)}>Select all</button>
@@ -396,7 +397,7 @@ export default function LabelsPanel({ ctx, fileBase, projectName }: { ctx: Drawi
       </div>
 
       {/* Preview */}
-      <ResizablePane id="labels.preview" handle="left" defaultSize={420} min={260} max={900} fill={narrow} className={`bg-steel-100 border-l border-steel-200 flex flex-col${narrow ? ' min-h-0' : ''}${paneHidden('preview')}`}>
+      <ResizablePane id="labels.preview" handle="left" defaultSize={420} min={260} max={900} fill={narrow} panel={phonePanel(narrow, 'labels', 'preview')} className={`bg-steel-100 border-l border-steel-200 flex flex-col${narrow ? ' min-h-0' : ''}${paneHidden('preview')}`}>
         <div className="px-3 py-2 bg-white border-b border-steel-200 flex items-center gap-2 text-sm">
           <span className="font-semibold text-steel-700">Preview</span>
           <span className="text-xs text-steel-500">{sizeName}</span>

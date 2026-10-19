@@ -90,6 +90,8 @@ export interface HmiElement {
   level?: AccessLevel;
   /** Permissive bit: the button is only enabled while this bit is ON (shown on the button). */
   interlock?: string | null;
+  /** Was bound to an I/O point that has been deleted (e.g. "X001 Start PB"): unbound, to bind again or delete. */
+  lostIo?: string;
   /** Symbols of a 'machine' element. */
   symbols?: MachineSymbol[];
   /** 'image' elements: the picture as a data URL. */
@@ -158,6 +160,11 @@ export interface HmiDesign {
   machineName?: string;
   /** Visual style; missing means the look of the panel's maker (also for designs saved before looks existed). */
   look?: HmiLook;
+  /**
+   * Screens before they were scaled to another panel (and its size): switching panels scales from these,
+   * so going back restores them exactly. Dropped once the screens are edited after the switch (`after`).
+   */
+  layoutBase?: { w: number; h: number; screens: HmiScreen[]; after: string };
   /** Upgrade of an imported program: what that program must get so this HMI works (src/hmi/engine/upgradeHmi.ts). */
   plcChanges?: PlcChange[];
 }

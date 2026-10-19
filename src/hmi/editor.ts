@@ -60,6 +60,24 @@ export function createElement(kind: HmiElementKind, id: string, cx: number, cy: 
 }
 
 /**
+ * Where a new element of `kind` goes: the first free spot, scanning rows from the top left (under the header),
+ * that overlaps nothing but group panels and pictures; when the screen is full, just below and right of the last
+ * element. Returns the centre, for createElement. New elements no longer stack on top of each other.
+ */
+export function freeSpot(kind: HmiElementKind, elements: HmiElement[], bounds: Bounds, grid = GRID): { cx: number; cy: number } {
+  const [w, h] = DEFAULT_SIZE[kind] ?? [160, 48];
+  const solid = elements.filter((e) => e.kind !== 'panel' && e.kind !== 'image');
+  const hits = (x: number, y: number) => solid.some((e) => x < e.x + e.w && x + w > e.x && y < e.y + e.h && y + h > e.y);
+  const step = Math.max(grid, 8);
+  for (let y = 0; y + h <= bounds.h; y += step) {
+    for (let x = 0; x + w <= bounds.w; x += step) if (!hits(x, y)) return { cx: x + w / 2, cy: y + h / 2 };
+  }
+  const last = elements[elements.length - 1];
+  if (last) return { cx: Math.min(bounds.w - w / 2, last.x + 16 + w / 2), cy: Math.min(bounds.h - h / 2, last.y + 16 + h / 2) };
+  return { cx: bounds.w / 2, cy: bounds.h / 2 };
+}
+
+/**
  * A picture placed on the screen as an element: centred, at most half the panel
  * (keeping its proportions), snapped and on screen.
  */

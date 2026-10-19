@@ -89,6 +89,8 @@ function measure(els) {
     const buttons = page.locator('nav[aria-label="Screens"] > button');
     const names = await buttons.allInnerTexts();
     const wanted = names.map((n, i) => ({ n, i })).filter(({ n }) => /(Motion|Process|Setup)/.test(n));
+    // The page shows the design built above (its Motion screens), never a stale or empty list.
+    check(wanted.length > 0 && names.some((n) => /Motion/.test(n)), `${panel.pn}: the page shows the Motion / Setup screens (${names.length} screens)`);
     for (const look of info.looks) {
       await page.evaluate(async (look) => { const { useHmiStore } = await import('/src/store/useHmiStore.ts'); const s = useHmiStore.getState(); s.setDesign({ ...s.design, look }, null); }, look);
       for (const { i } of wanted) {

@@ -467,6 +467,22 @@ export function newIo(m: ExistingMachine, logic: LogicChoice | null): ImportedIO
 }
 
 /**
+ * An encoder wired into a drive (the measuring wheel on the servo's CN5, a motor encoder on a VFD's PG card) is
+ * the drive's own feedback, used by its E-CAM or speed loop: it stays with the drive, not a PLC input or a
+ * high-speed counter. The drive's own outputs into the PLC (ready, alarm, cut) stay PLC inputs.
+ */
+export function withoutDriveFeedback(m: ExistingMachine, io: ImportedIO[]): ImportedIO[] {
+  const drives = [...m.axes.map((a) => a.driveTag), ...m.components.filter((c) => c.category === 'vfd').map((c) => c.tag)];
+  const encoderOf = (tag: string | null | undefined) => Boolean(tag) && m.axes.some((a) => new RegExp(`\\b${tag}\\b`).test(a.encoder ?? ''));
+  return io.filter((p) => {
+    if (p.type !== 'input') return true;
+    const drive = drives.find((d) => p.address.startsWith(`${d} `));
+    const onPort = drive && /^\S+\s+(CN\d+|PG\d*|ENC\d*|X\d+)\b/i.test(p.address);
+    return !(encoderOf(p.deviceTag) || (onPort && /encoder|resolver|measuring[- ]wheel|编码器/i.test(p.description)));
+  });
+}
+
+/**
  * A watchdog timer on a valve (KT1 "shear down longer than 2 s opens the line run"): the same function in the
  * PLC, at the drawn time. The timer's circuit has the valve's own conditions; the valve's output gets
  * "(watchdog 2 s)", which the program uses as its timeout instead of the default.
@@ -652,5 +668,5 @@ export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TA
   if (hardwired.length) {
     recommendations.push({ section: 'safety', text: `The safety relay's contacts stay hardwired, not through the PLC (NFPA 79 9.4.1; a standard PLC never carries a safety function): ${hardwired.map((c) => `${c.hardwired.join(', ')} in the ${tags.get(c.circuit.output) ?? c.circuit.output} coil circuit`).join('; ')}. Its other safety outputs keep removing power as drawn${m.safety.description ? ` (${retag(m.safety.description, tags)})` : ''}; with the relay logic in the PLC, they switch the safe 24 V (24+S) to the PLC outputs and the valves, not to relays. Re-validate after the conversion.` });
   }
-  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits, io: withWatchdogs(m, withSafetyOk(m, newIo(m, logic), tags)) };
+  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits, io: withWatchdogs(m, withSafetyOk(m, withoutDriveFeedback(m, newIo(m, logic)), tags)) };
 }

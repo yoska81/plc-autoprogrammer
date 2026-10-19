@@ -59,7 +59,7 @@ export interface ProgramResult {
   /** HMI tag address per role (the HMI's own, else the plan's). */
   roles: Map<string, string>;
   /** Internal machine bits (the cycle template uses them). */
-  internal: { safe: string; run: string; fault: string; reset: string };
+  internal: { safe: string; run: string; fault: string; reset: string; countReset?: string };
   /** Every address in use (HMI and program): the cycle template allocates around them. */
   taken: Set<string>;
   /** HMI tags no rule implements (also checker errors when the HMI is passed to the checker). */
@@ -126,6 +126,8 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   // Reset: a general (fault) reset — not a counter's reset; a safety-relay reset only when it also resets the faults.
   const resets = inputs.filter((p) => /\breset\b/i.test(p.description) && !/\b(counter|count)\b/i.test(p.description));
   const resetPb = resets.find((p) => !/safety/i.test(p.description)) ?? resets.find((p) => /\b(alarm|fault|servo)\b/i.test(p.description));
+  // No touch panel: a counter-reset pushbutton resets the counts (Reset then only resets faults); else Reset does.
+  const countResetPb = input.panel !== false ? undefined : inputs.find((p) => /\breset\b/i.test(p.description) && /\b(counter|count)\b/i.test(p.description));
   // Auxiliaries with their own Start / Stop: each pair runs its actuator (by the shared word), and the cycle needs it running.
   const auxPairs = starts.filter((p) => AUX_RE.test(p.description)).map((st) => {
     const word = AUX_RE.exec(st.description)![1].toLowerCase();
@@ -357,7 +359,8 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     mcut.set(cutCyl.extend!.address, MD);
     nick(MD, `Man_Cut_Down`, `Manual cut: ${cutCyl.name} down`); nick(MU, `Man_Cut_Up`, `Manual cut: ${cutCyl.name} up`);
   }
-  const noJog = manualActs.filter((a) => !jog.has(a));
+  // Not jogged: no jog button and no manual cut; an auxiliary with its own Start / Stop runs in either mode.
+  const noJog = manualActs.filter((a) => !jog.has(a) && a !== cutCyl && !auxPairs.some((x) => x.act === a));
   if (!panel && noJog.length) notes.push(`No touch panel: Manual mode stops the cycle but has no jog buttons — ${noJog.map((a) => a.name).join(', ')} move only in Auto. Add jog pushbuttons to the I/O list if setup needs them.`);
 
   // ---- Outputs: one coil per output, every motion output gated by Safety OK
@@ -425,7 +428,9 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   // No touch panel: the service-due warning (written in the status block when run hours are kept) flashes the Fault lamp.
   const serviceDue = !panel && tag('word:runhours') && tag('word:sinceservice') && tag('sp:serviceinterval') ? alarm('alarm:servicedue') : undefined;
   // Lights and indicators by their words; other outputs are left to the cycle block.
-  const actOuts = new Set(c.actuators.flatMap((a) => [a.run, a.reverse, a.extend, a.retract].filter(Boolean).map((p) => p!.address)));
+  // Outputs other rules already drive: the actuators' (with a drive's jog speed) and the axes' (motion.ts: enable, CAM …).
+  const axisOuts = (c.axes ?? []).flatMap((ax) => Object.values(ax).filter((v): v is HmiPoint => !!v && typeof v === 'object' && 'address' in v).map((v) => v.address));
+  const actOuts = new Set([...c.actuators.flatMap((a) => [a.run, a.reverse, a.extend, a.retract, a.jogSpeed].filter(Boolean).map((p) => p!.address)), ...axisOuts]);
   for (const o of c.io.filter((p) => p.type === 'output' && !actOuts.has(p.address))) {
     const d = o.description;
     const named = c.actuators.find((a) => a.run && shareWords(a.name, d));
@@ -468,8 +473,8 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   const count = tag('word:count');
   if (count && c.partSensor) {
     // No touch panel: Reset (the door pushbutton) clears the count, so a completed batch can start again.
-    const resetC = panel ? must('cmd:countreset') : RESET;
-    R('status', `Part counter: each part at ${c.partSensor.description}, ${panel ? 'reset from the HMI' : 'reset by the Reset pushbutton (a new batch)'}`, [[NO(c.partSensor.address)]], [{ type: 'CNT', address: `CT${count.slice(3)}`, direction: 'UP', preset: '9999', resetAddress: resetC }]);
+    const resetC = panel ? must('cmd:countreset') : countResetPb?.address ?? RESET;
+    R('status', `Part counter: each part at ${c.partSensor.description}, ${panel ? 'reset from the HMI' : `reset by ${countResetPb ? countResetPb.description : 'the Reset pushbutton'} (a new batch)`}`, [[NO(c.partSensor.address)]], [{ type: 'CNT', address: `CT${count.slice(3)}`, direction: 'UP', preset: '9999', resetAddress: resetC }]);
     const batch = tag('sp:batch');
     if (batch && !inputs.some((p) => /\bbatch\b/i.test(p.description) && /\b(complete|done|reached|end)\b/i.test(p.description))) { R('status', 'Batch complete: a batch target is set and the part count reached it', [[CMP(batch, '>', '0'), CMP(count, '>=', batch)]], [OUT(BATCH)]); nick(BATCH, 'Batch_Done', 'Batch target reached'); }
     const rate = tag('word:rate');
@@ -548,7 +553,7 @@ export function buildProgram(input: ProgramInput): ProgramResult {
     program: { blocks: blocks.filter((b) => rungs.some((r) => r.block === b.id)), rungs, tags, ...(motion ? { motion } : {}) },
     autoBits,
     roles: new Map([...byRole].map(([k, t]) => [k, t.address])),
-    internal: { safe: SAFE, run: RUN, fault: FAULT, reset: RESET },
+    internal: { safe: SAFE, run: RUN, fault: FAULT, reset: RESET, ...(panel ? {} : { countReset: countResetPb?.address ?? RESET }) },
     taken,
     unmatched,
     cycle: {

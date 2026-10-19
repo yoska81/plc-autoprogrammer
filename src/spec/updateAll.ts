@@ -271,7 +271,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         // Screens edited by hand are kept (re-bound to the new tags).
         const merged = mergeRegenerated(existing, r.design).design;
         useHmiStore.getState().setDesign(existing?.look ? { ...merged, look: existing.look } : merged, r.explanation);
-        mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(merged) });
+        mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(merged), panel: merged.hmiPartNumber });
         if (hmiFingerprint(merged) !== before) ctx.changed.add('hmi');
       };
       const mode = stageMode('hmi');
@@ -325,7 +325,19 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const changed = changedSections(useStageStore.getState().sources.program?.spec ?? null, spec);
       const request = `The machine specification, I/O list and/or HMI changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. Update the program to match, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specToText(spec)}`;
       const ioSet = new Set([...addresses.values()].filter(Boolean));
-      const r = await reviseLadder(aiCfg, ctxP, prog.ladder, validateProgram(prog.ladder, profile, ioSet, undefined, { noPanel: noTouchPanelNow() }), [{ role: 'user', content: `Machine specification:\n${specToText(spec)}` }], request);
+      let r: Awaited<ReturnType<typeof reviseLadder>>;
+      try {
+        r = await reviseLadder(aiCfg, ctxP, prog.ladder, validateProgram(prog.ladder, profile, ioSet, undefined, { noPanel: noTouchPanelNow() }), [{ role: 'user', content: `Machine specification:\n${specToText(spec)}` }], request);
+      } catch (err) {
+        // Cancel stops the stage; any other AI failure falls back to the rules, as the electrical and HMI stages
+        // do: the rules' program becomes a proposal (the program written by hand stays until it is approved).
+        if (signal?.aborted) throw err;
+        const why = err instanceof Error ? err.message : String(err);
+        const q = await rulesProgram(false);
+        prog.setProposal({ program: q.program, explanation: `The AI could not update the program (${why}): this is the rules' program (default cycle) for the current spec, I/O and HMI. ${q.explanation}`, reasoning: null, specUpdate: true });
+        onStep({ step, status: 'proposal', message: `The AI could not update the program (${why}): a rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.` });
+        return true;
+      }
       prog.addChat({ role: 'user', text: 'Update the program for the latest spec, I/O and HMI changes.' });
       if (r.program) {
         prog.addChat({ role: 'assistant', text: r.explanation });

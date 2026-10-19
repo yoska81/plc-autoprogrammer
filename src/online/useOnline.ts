@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { desktopBridge, type ModbusBridge } from '../desktop/bridge';
 import { clickModbus, isWritable } from './clickModbus';
-import { encodeWord, planReads, pollOnce, type ModbusRef, type ReadBlock } from './poll';
+import { encodeWord, planReads, pollOnce, wordValueError, type ModbusRef, type ReadBlock } from './poll';
 
 /**
  * Connection to a real CLICK PLC (desktop app only). Read-only by default:
@@ -121,14 +121,21 @@ export async function disconnectPlc(bridge: ModbusBridge | null = modbusBridge()
   await bridge?.disconnect().catch(() => {});
 }
 
-/** Write one C bit or DS value. Refuses anything else, and when writes are not allowed. */
-export async function writePlc(address: string, value: boolean | number, bridge: ModbusBridge | null = modbusBridge()): Promise<void> {
+/**
+ * Write one C bit or DS value. Refuses anything else, when writes are not allowed, and a value the register
+ * cannot hold or that is outside the project's declared range for it (never sent clamped).
+ */
+export async function writePlc(address: string, value: boolean | number, bridge: ModbusBridge | null = modbusBridge(), declared?: { min: number | null; max: number | null }): Promise<void> {
   const st = useOnlineStore.getState();
   const r = clickModbus(address);
   const log = (ok: boolean, error?: string) => useOnlineStore.setState((s) => ({ writes: [{ at: new Date().toLocaleTimeString(), address: address.toUpperCase(), value: String(value), ok, error }, ...s.writes].slice(0, 50) }));
   if (!bridge || st.status !== 'connected') throw new Error('Not connected to a PLC.');
   if (!st.allowWrites) throw new Error('Writes are switched off. Turn on "Allow writes" first.');
   if (!r || !isWritable(address)) throw new Error(`${address} cannot be written from here: only C bits and DS registers are allowed (never X or Y).`);
+  if (r.table !== 'coil') {
+    const err = wordValueError(address.toUpperCase(), Number(value), r.type, declared);
+    if (err) { log(false, err); throw new Error(err); }
+  }
   try {
     if (r.table === 'coil') await bridge.writeCoil(r.register, Boolean(value));
     else await bridge.writeRegister(r.register, encodeWord(Number(value), r.type));

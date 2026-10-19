@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createImageElement, restack,
   alignElements, createElement, deleteElements, distributeElements, duplicateElements, elementsInRect, historyOf,
-  addNavEntry, missingTags, moveElements, newElementId, record, redo, resizeElement, snap, syncHandTags, undo,
+  addNavEntry, missingTags, moveElements, newElementId, record, redo, resizeElement, snap, syncHandTags, undo, freeSpot,
 } from './editor';
 import type { HmiDesign, HmiScreen } from './types';
 
@@ -188,6 +188,28 @@ test('a hand-added screen gets a navigation button on every screen', () => {
   const tight = { ...design, screens: design.screens.map((s) => ({ ...s, elements: s.elements.map((e) => ({ ...e, w: 60, x: 8 + (e.x - 8) / 2 })) })) } as HmiDesign;
   const t = addNavEntry(tight, 'screen_4', 'Recipes', () => 'y');
   assert.ok(!t.added && t.design === tight && /no room/.test(t.reason ?? ''), 'no room: nothing changes, reason given');
+});
+
+test('new elements go to the next free spot, not on top of each other', () => {
+  const B = { w: 800, h: 480 };
+  const placed: ReturnType<typeof createElement>[] = [];
+  for (let i = 0; i < 6; i++) {
+    const at = freeSpot('button', placed, B);
+    placed.push(createElement('button', `n${i}`, at.cx, at.cy, B));
+  }
+  for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
+    const a = placed[i], b = placed[j];
+    assert.ok(!(a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y), `${a.id} overlaps ${b.id}`);
+  }
+  assert.ok(placed.every((e) => e.x + e.w <= 800 && e.y + e.h <= 480), 'all on screen');
+  // A group panel is not in the way: elements go inside it.
+  const panel = { ...createElement('panel', 'p', 120, 80, B), x: 0, y: 0, w: 800, h: 480 };
+  const inPanel = freeSpot('indicator', [panel], B);
+  assert.deepEqual([inPanel.cx, inPanel.cy], [80, 24]);
+  // A full screen: just below and right of the last element, still on screen.
+  const full = [{ ...createElement('text', 'f', 400, 240, B), x: 0, y: 0, w: 800, h: 480 }];
+  const over = freeSpot('button', full, B);
+  assert.ok(over.cx + 60 <= 800 && over.cy + 28 <= 480);
 });
 
 console.log(`\n${passed} passed`);

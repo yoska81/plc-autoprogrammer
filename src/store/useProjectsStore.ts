@@ -13,6 +13,9 @@ import { useEditsStore } from '../edits/useEditsStore';
 import { aiBusy } from '../lib/ai/busy';
 import { notify } from './useNoticeStore';
 
+/** A project name's length limit (the header, summaries and file names stay readable). */
+export const PROJECT_NAME_MAX = 80;
+
 /**
  * Several projects in one browser. The per-stage stores always hold the
  * ACTIVE project; switching saves their persisted state under the old
@@ -134,8 +137,9 @@ export const useProjectsStore = create<ProjectsStore>()(
         const id = newId();
         set({ projects: [{ id, name: useProgramStore.getState().projectName, createdAt: new Date().toISOString() }], activeId: id });
       },
-      createProject: (name) => {
+      createProject: (typed) => {
         if (blockedByAi()) return false;
+        const name = typed.trim().slice(0, PROJECT_NAME_MAX) || 'Untitled project';
         const { activeId } = get();
         if (activeId) save(activeId);
         load(null);
@@ -151,7 +155,8 @@ export const useProjectsStore = create<ProjectsStore>()(
         load(read(id));
         set({ activeId: id });
       },
-      renameActive: (name) => {
+      renameActive: (typed) => {
+        const name = typed.slice(0, PROJECT_NAME_MAX);
         useProgramStore.getState().setProjectName(name);
         set((s) => ({ projects: s.projects.map((p) => (p.id === s.activeId ? { ...p, name } : p)) }));
       },

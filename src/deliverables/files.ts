@@ -11,6 +11,7 @@ import SheetView from '../electrical/drawings/SheetView';
 import { planDrawings } from '../electrical/drawings/plan';
 import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
+import { drawEachScreen, hmiImagesNote, type HmiImage, type HmiImageFailure } from './hmiImages';
 import { LOOK_LABEL, lookOf } from '../hmi/theme';
 import { getHmi } from '../hmi/hmiCatalog';
 import { bomCsv, terminalPlanCsv, buildModel, type DrawingContext, type DrillingPlan } from '../electrical/derive';
@@ -89,27 +90,28 @@ export async function buildMachiningPdf(ctx: DrawingContext, which: DrillingPlan
   return sheetsPdf(ctx, sheets.map((s) => createElement(SheetView, { key: s.n, plan, sheet: s })), 'Machining drawings');
 }
 
-/** Every HMI screen as a PNG at the panel's native resolution, in the design's look. */
-export async function buildHmiImages(p: ProjectSnapshot): Promise<{ name: string; dataUrl: string }[]> {
+/**
+ * Every HMI screen as a PNG at the panel's native resolution, in the design's look. A screen that fails to
+ * draw is left out and added to `failed` (when given), so one screen never stops the download.
+ */
+export async function buildHmiImages(p: ProjectSnapshot, failed?: HmiImageFailure[]): Promise<HmiImage[]> {
   const model = p.hmi ? getHmi(p.hmi.hmiPartNumber) : undefined;
   if (!p.hmi || !model) return [];
-  const out: { name: string; dataUrl: string }[] = [];
-  for (const [i, screen] of p.hmi.screens.entries()) {
-    const dataUrl = await renderOffscreen(
-      createElement(HmiScreenView, { screen, widthPx: model.widthPx, heightPx: model.heightPx, design: p.hmi }),
-      async (host) => {
-        const svg = host.querySelector('svg');
-        if (!svg) throw new Error(`HMI screen "${screen.name}" could not be drawn for its image.`);
-        return svgToPngDataUrl(svg, model.widthPx, model.heightPx);
-      },
-    );
-    out.push({ name: `${String(i + 1).padStart(2, '0')}_${screen.name.replace(/[^\w-]+/g, '_')}.png`, dataUrl });
-  }
-  return out;
+  const design = p.hmi;
+  const r = await drawEachScreen(design.screens, (screen) => renderOffscreen(
+    createElement(HmiScreenView, { screen, widthPx: model.widthPx, heightPx: model.heightPx, design }),
+    async (host) => {
+      const svg = host.querySelector('svg');
+      if (!svg) throw new Error(`HMI screen "${screen.name}" could not be drawn for its image.`);
+      return svgToPngDataUrl(svg, model.widthPx, model.heightPx);
+    },
+  ));
+  failed?.push(...r.failed);
+  return r.images;
 }
 
 /** HMI screens as one PDF (one page per screen, with the screen name). */
-export async function buildHmiPdf(p: ProjectSnapshot, images: { name: string; dataUrl: string }[]): Promise<Blob | null> {
+export async function buildHmiPdf(p: ProjectSnapshot, images: HmiImage[]): Promise<Blob | null> {
   const model = p.hmi ? getHmi(p.hmi.hmiPartNumber) : undefined;
   if (!p.hmi || !model || !images.length) return null;
   const { jsPDF } = await import('jspdf');
@@ -122,14 +124,17 @@ export async function buildHmiPdf(p: ProjectSnapshot, images: { name: string; da
   // room for the running header (top) and the document-control footer (bottom)
   const top = margin + 6, bottom = pageH - margin - 6;
   const scale = Math.min((pageW - 2 * margin) / model.widthPx, (bottom - top - 12) / model.heightPx);
-  images.forEach((img, i) => {
+  // one page per screen (the package's bookmarks count on it); a screen that could not be drawn says so
+  const screens = p.hmi.screens;
+  screens.forEach((screen, i) => {
     if (i > 0) doc.addPage('letter', 'landscape');
-    const screen = p.hmi!.screens[i];
+    const img = images.find((x) => x.screen === i);
     doc.setFontSize(14);
     doc.text(pdfSafe(`${screen.name} — HMI ${model.partNumber} — ${LOOK_LABEL[lookOf(p.hmi)]} look`), margin, top);
     doc.setFontSize(9);
     doc.text(pdfSafe(screen.purpose.slice(0, 160)), margin, top + 6);
-    doc.addImage(img.dataUrl, 'PNG', margin, top + 10, model.widthPx * scale, model.heightPx * scale, undefined, 'FAST');
+    if (img) doc.addImage(img.dataUrl, 'PNG', margin, top + 10, model.widthPx * scale, model.heightPx * scale, undefined, 'FAST');
+    else doc.text('This screen could not be drawn as an image. It is in the project: open it in the HMI editor.', margin, top + 16);
     // document control on every page: project, revision and date, status, page i of n
     doc.setFontSize(8);
     doc.text(pdfSafe(m.company || ''), margin, margin - 3);
@@ -140,7 +145,7 @@ export async function buildHmiPdf(p: ProjectSnapshot, images: { name: string; da
     doc.line(margin, pageH - margin + 1, pageW - margin, pageH - margin + 1);
     doc.setFontSize(7);
     doc.text(pdfSafe(`${m.status} · Rev ${m.rev.rev} · ${m.rev.date}`), margin, pageH - margin + 5);
-    doc.text(`Page ${i + 1} of ${images.length}`, pageW - margin, pageH - margin + 5, { align: 'right' });
+    doc.text(`Page ${i + 1} of ${screens.length}`, pageW - margin, pageH - margin + 5, { align: 'right' });
   });
   return doc.output('blob');
 }
@@ -232,8 +237,10 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
   }
   if (p.hmi) {
     onProgress?.('HMI screens');
-    const images = await buildHmiImages(p);
+    const failed: HmiImageFailure[] = [];
+    const images = await buildHmiImages(p, failed);
     for (const img of images) zip.file(`hmi/${img.name}`, await dataUrlToBlob(img.dataUrl));
+    if (failed.length) zip.file('hmi/SCREENS_NOT_DRAWN.txt', hmiImagesNote(failed));
     pre.hmiPdf = await buildHmiPdf(p, images);
     if (pre.hmiPdf) zip.file(`hmi/${p.fileBase}_hmi_screens.pdf`, pre.hmiPdf);
     // Panels of other makers: the tag list bound to the PLC program's tags and how to rebuild the screens.

@@ -697,11 +697,12 @@ await test('cn-rollformer-01: the safety relay is sized for its outputs (as draw
   const m = normalizeMachine(CN_ROLLFORMER_01_READING);
   assert.deepEqual(safetyOutputsNeeded(m, ['VFD1', 'SD1']), { need: 6, drawn: ['13-14', '23-24'], why: '2 as drawn (13-14, 23-24) + 2 for the STO of each of VFD1, SD1' });
   const sr = () => convertMachine(m).parts.find((p) => p.oldTag === 'KA0')!;
-  // the catalog's own answer: a verified base with an expansion its maker lists (3 + 5 outputs)
+  // the catalog's own answer: one verified relay with the 6 outputs (IDEM SCR73, 7 N.O.)
   const real = sr();
   assert.equal(real.status, 'matched');
   assert.equal(real.to!.verified, true);
-  assert.ok(real.differences.some((d) => /3 here \+ expansion Dold LG5929-60-100-61 \(5\)/.test(d)), real.differences.join(' | '));
+  assert.equal(real.to!.partNumber, 'SCR73-280005');
+  assert.ok(real.differences.some((d) => /^7 safety outputs for the 6 needed/.test(d)), real.differences.join(' | '));
   // the cases below on a catalog with no relay that has the 6 outputs, alone or with a listed expansion
   const hidden = ALL_PARTS.filter((p) => p.category === 'safetyRelay' && (safetyOutputCount(p) >= 6 || /expansion|extension/i.test(p.description)));
   for (const p of hidden) ALL_PARTS.splice(ALL_PARTS.indexOf(p), 1);
@@ -787,6 +788,16 @@ await test('safety-rated parts: a safety function never gets an unverified part 
   assert.ok(isSafetyRated({ ...p0, category: 'other', description: 'Safety interlock switch with guard locking' }));
   assert.ok(isSafetyRated({ ...p0, category: 'relay', description: 'Relay', ratings: { PL: 'PL e' } }));
   assert.ok(!isSafetyRated({ ...p0, category: 'relay', description: 'Control relay 2 C/O', ratings: { coilVoltage: '24VDC' } }));
+});
+
+await test('cn-rollformer-01: the measuring-wheel encoder on the servo\'s CN5 stays with the drive (not a PLC input or counter)', () => {
+  const m = normalizeMachine(CN_ROLLFORMER_01_READING);
+  const io = convertMachine(m).io;
+  assert.ok(!io.some((p) => p.deviceTag === 'B1' || /encoder/i.test(p.description)), 'B1 is the E-CAM\'s master, wired to U2 CN5');
+  assert.ok(['U2 ready (DO1)', 'U2 cut (DO3)', 'U2 alarm (DO5)'].every((d) => io.some((p) => p.type === 'input' && p.description === d)), 'the drive\'s own outputs stay PLC inputs');
+  // an encoder wired to the PLC itself (a high-speed input) stays a PLC point
+  const plcEnc = { ...m, io: [...m.io, { address: 'X0', description: 'Length encoder A (high-speed counter)', type: 'input' as const, category: 'Product Detection' as const, deviceTag: 'B9', deviceType: 'other' as const, confidence: 'high' as const, source: 'test' }] };
+  assert.ok(convertMachine(plcEnc).io.some((p) => p.deviceTag === 'B9'));
 });
 
 await test('safety relay sizing: one unit with enough outputs first, else a base + an expansion its maker lists (forUse)', () => {

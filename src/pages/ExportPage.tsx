@@ -7,6 +7,7 @@ import { buildExcelReport } from '../deliverables/excelReport';
 import { buildEngineeringPdf } from '../deliverables/engineering';
 import { buildProgramListingPdf } from '../deliverables/programListingPdf';
 import { hmiReadme, hmiTagCsv, needsHmiTagList } from '../deliverables/hmiTags';
+import { hmiImagesNote, type HmiImageFailure } from '../deliverables/hmiImages';
 import { buildDrawingsPdf, buildEverythingZip, dataUrlToBlob, buildHmiImages, buildHmiPdf, buildMachiningPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv } from '../electrical/derive';
 import { wireListCsvWithNotes } from '../edits/lists';
@@ -299,7 +300,9 @@ export default function ExportPage() {
               <B busy={busy} label="Screen images (ZIP)" disabled={!hasHmi} onClick={run('Screen images (ZIP)', async () => {
                 const { default: JSZip } = await import('jszip');
                 const zip = new JSZip();
-                for (const img of await buildHmiImages(collectProject())) zip.file(img.name, await dataUrlToBlob(img.dataUrl));
+                const failed: HmiImageFailure[] = [];
+                for (const img of await buildHmiImages(collectProject(), failed)) zip.file(img.name, await dataUrlToBlob(img.dataUrl));
+                if (failed.length) zip.file('SCREENS_NOT_DRAWN.txt', hmiImagesNote(failed));
                 saveBlob(`${p.fileBase}_hmi_screens.zip`, await zip.generateAsync({ type: 'blob' }));
               })} />
               {needsHmiTagList(p) && <B busy={busy} label="HMI tag list (CSV)" onClick={run('HMI tag list (CSV)', async () => {

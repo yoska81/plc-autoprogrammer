@@ -4,7 +4,8 @@ import { Spinner } from '../components/common';
 import { useActiveProjectId, useQuestionStore, type Question } from '../components/questions/useQuestionStore';
 import { micError, micPlaceNow, startDictation, type Dictation } from './stt';
 import { micUsable } from './micAccess';
-import { speak, stopSpeaking } from './tts';
+import { NO_VOICES, speak, stopSpeaking } from './tts';
+import { notify } from '../store/useNoticeStore';
 import { spokenReply } from './text';
 import { useVoiceSettings } from './useVoiceSettings';
 
@@ -43,6 +44,14 @@ export default function HandsFreeQuestions({ questions }: { questions: Question[
     try { return await d.done; } finally { if (dict.current === d) dict.current = null; }
   };
 
+  /** Say a prompt; nothing can be read aloud (no voice installed): the run stops, with why (once per run, not per prompt). */
+  const say = async (text: string): Promise<boolean> => {
+    if (await speak(text, 'handsfree')) return true;
+    end();
+    notify(NO_VOICES);
+    return false;
+  };
+
   const ask = async (ids: string[], i: number, saved: number) => {
     const t = ++token.current;
     dict.current?.cancel();
@@ -58,7 +67,7 @@ export default function HandsFreeQuestions({ questions }: { questions: Question[
     put('');
     if (!q) { void ask(ids, i + 1, saved); return; }
     setPhase('asking');
-    await speak(`Question ${i + 1} of ${ids.length}. ${q.text}`, 'handsfree');
+    if (!(await say(`Question ${i + 1} of ${ids.length}. ${q.text}`))) return;
     if (!alive(t)) return;
     await answerRound(t, ids, i, saved);
   };
@@ -69,7 +78,7 @@ export default function HandsFreeQuestions({ questions }: { questions: Question[
       let said = await listen(t, false, (s) => alive(t) && put(s));
       if (!alive(t)) return;
       if (!said.trim()) {
-        await speak("I didn't hear an answer. Please say it again, or press Skip.", 'handsfree');
+        if (!(await say("I didn't hear an answer. Please say it again, or press Skip."))) return;
         if (!alive(t)) return;
         setPhase('listening');
         said = await listen(t, false, (s) => alive(t) && put(s));
@@ -85,7 +94,7 @@ export default function HandsFreeQuestions({ questions }: { questions: Question[
   const confirmRound = async (t: number, ids: string[], i: number, saved: number) => {
     setPhase('confirm');
     if (!textRef.current.trim()) return; // nothing to confirm: the buttons are there
-    await speak(`You said: ${textRef.current}. Say yes to save it, no to answer again, or skip.`, 'handsfree');
+    if (!(await say(`You said: ${textRef.current}. Say yes to save it, no to answer again, or skip.`))) return;
     if (!alive(t)) return;
     setPhase('confirm-listen');
     const reply = await listen(t, true, () => undefined).then((said) => spokenReply(said, lang), () => null);
