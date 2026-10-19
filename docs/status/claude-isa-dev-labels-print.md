@@ -403,4 +403,4 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Both cULus.
 - **Siemens SENTRON 3LD switch disconnectors:**
   - Parts: 3LD2203-0TK51 (32 A), 3LD2504-0TK51 (63 A), 3LD2704-0TK51 (100 A), and the red/yellow EMERGENCY-OFF 3LD2203-0TK53.
-  - UL 508 manual motor controller / motor disconnect only (`ulUse`). They are not a UL 98 / UL 489 supply-circuit disconnect, so they must not be the panel's main disconnect.
+  - UL 508 manual motor controller / motor disconnect only (`ulUse`). They are not a UL 98 / UL 489 supply-circuit disconnect, so they must not be the panel's main disconnect. compareStrength refuses one as a swap for a UL 98 / 489 disconnect, so the Part Picker greys it out.
