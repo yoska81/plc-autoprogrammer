@@ -153,7 +153,12 @@ async function scenario(browser, quick) {
   // Online: a plain sentence for an S7 (its own software monitors it), never CLICK's Modbus table.
   await page.goto(BASE + '/online');
   const online = await page.getByTestId('online-not-here').innerText({ timeout: 10000 }).catch(() => '');
-  check(/TIA Portal/.test(online) && !(await page.getByText(/MODBUS|016385|401001/).count()), `Online page: sentence only (${online.slice(0, 80)})`);
+  check(/TIA Portal/.test(online) && !(await page.getByText(/MODBUS|016385|401001/).count()), `Online page: the sentence, no CLICK Modbus table (${online.slice(0, 80)})`);
+  check(await page.getByRole('button', { name: /^I\/O check-out/ }).count() === 1 && await page.getByRole('button', { name: 'Fault finding' }).count() === 1, 'Online page: the I/O check-out and Fault finding tabs stay on an S7');
+  // The navigation's Fault finding link: the troubleshooter works from the wiring alone, on every brand.
+  await page.goto(BASE + '/online?tab=troubleshoot');
+  const troubleshooter = await page.getByLabel('Point to troubleshoot').waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+  check(troubleshooter, 'Fault finding opens on an S7 (/online?tab=troubleshoot)');
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await page.context().close();
 }
