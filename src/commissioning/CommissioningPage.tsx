@@ -184,7 +184,7 @@ export default function CommissioningPage() {
               <SignaturePad value={drawn} onChange={setDrawn} />
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" disabled={Boolean(blocked) || !name.trim() || !(signature.trim() || drawn)} title={blocked ?? undefined}
-                  onClick={() => { if (!sign(projectId, { name: name.trim(), company: company.trim(), signature: signature.trim(), drawn, date: nowStamp() }, ids)) notify('The checklist cannot be signed while an item has failed.'); }}
+                  onClick={() => { if (!sign(projectId, { name: name.trim(), company: company.trim(), signature: signature.trim(), ...(drawn ? { drawn } : {}), date: nowStamp() }, ids)) notify('The checklist cannot be signed while an item has failed.'); }}
                   className="rounded bg-brand-600 px-3 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{rec.signoff ? 'Sign again' : 'Sign'}</button>
                 {rec.signoff && <button type="button" disabled={noName} title={noName ? 'Enter your name as Technician first' : undefined} onClick={() => unsign(projectId, tech)} className="text-sm text-steel-500 underline disabled:opacity-40">Remove signature</button>}
                 {(rec.signoff || orphanFails(items, rec.results).length > 0) && noName && <span className="text-xs text-steel-500">Enter your name as Technician to remove the signature or dismiss a result.</span>}

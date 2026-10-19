@@ -67,7 +67,9 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     useProjectsStore.getState().openProject(id);
     return { before, after };
   });
-  check(require('node:util').isDeepStrictEqual(isap.before, isap.after) && isap.after?.voided?.length === 1, 'the voided sign-off survives save and open (the whole record, deep-equal)');
+  const sameRecord = require('node:util').isDeepStrictEqual(isap.before, isap.after);
+  if (!sameRecord) log('isap before:', JSON.stringify(isap.before), '\nisap after:', JSON.stringify(isap.after));
+  check(sameRecord && isap.after?.voided?.length === 1, 'the voided sign-off survives save and open (the whole record, deep-equal)');
   // a failed result whose item was removed (its I/O point deleted) gets its own row: dismiss it, then sign again
   await page.evaluate(async () => {
     const { useCommissioningStore } = await import('/src/commissioning/useCommissioningStore.ts');
@@ -77,7 +79,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByTestId('comm-orphan').waitFor({ timeout: 5000 }).catch(() => {});
   check(await page.getByTestId('comm-orphan').count() === 1 && await page.getByRole('button', { name: 'Sign', exact: true }).isDisabled(), 'an orphaned failure is shown and blocks the sign-off');
   await page.getByTestId('comm-orphan').getByRole('button', { name: 'Dismiss' }).click();
-  check(await page.getByTestId('comm-orphan').count() === 0 && /Failed result of io:gone .*dismissed/.test(await page.getByTestId('comm-dismissed').innerText()), 'dismissed, on the record');
+  check(await page.getByTestId('comm-orphan').count() === 0 && /^Failed result of io:gone, failed by J\. Tech .*, note: I\/O point deleted: no longer in the checklist, dismissed .+ by J\. Tech\.$/.test(await page.getByTestId('comm-dismissed').innerText()), 'dismissed, on the record');
   await page.getByRole('button', { name: 'Sign', exact: true }).click();
   check(await page.getByTestId('comm-signed').count() === 1, 'signed again after the dismissal');
   for (const [btn, ext] of [['PDF', 'pdf'], ['Excel', 'xlsx']]) {
