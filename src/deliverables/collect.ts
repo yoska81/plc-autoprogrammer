@@ -30,7 +30,9 @@ export function collectProject() {
   const hmiState = useHmiStore.getState();
   // No touch panel: screens left from an earlier panel are ignored everywhere (src/hmi/projectPanel.ts).
   const noHmi = noTouchPanelNow();
-  const hmi = noHmi ? { ...hmiState, design: null } : hmiState;
+  // An older design saved without its panel part number is the project's panel (else no images / PDF are made).
+  const hmi = noHmi ? { ...hmiState, design: null }
+    : hmiState.design && !hmiState.design.hmiPartNumber?.trim() && hmiState.hmiPartNumber ? { ...hmiState, design: { ...hmiState.design, hmiPartNumber: hmiState.hmiPartNumber } } : hmiState;
   const hmiPart = noHmi ? null : hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null;
 
   const profile = getProfile(plcId);

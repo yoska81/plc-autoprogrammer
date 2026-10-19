@@ -360,7 +360,7 @@ function Numeric({ el, value, ctx }: { el: HmiElement; value: boolean | number |
 
 function Bar({ el, value, ctx }: { el: HmiElement; value: boolean | number | undefined; ctx: Ctx }) {
   const { t } = ctx;
-  const v = typeof value === 'number' ? value : 0;
+  const v = typeof value === 'number' && Number.isFinite(value) ? value : 0; // a NaN reading draws an empty bar, not width=NaN
   const min = el.min ?? 0;
   const max = el.max ?? 100;
   const frac = Math.max(0, Math.min(1, (v - min) / (max - min || 1)));
@@ -384,7 +384,7 @@ function Bar({ el, value, ctx }: { el: HmiElement; value: boolean | number | und
 
 function Trend({ el, value, ctx }: { el: HmiElement; value: number | undefined; ctx: Ctx }) {
   const { t } = ctx;
-  const samples = el.address ? ctx.runtime?.trends.get(el.address) ?? [] : [];
+  const samples = (el.address ? ctx.runtime?.trends.get(el.address) ?? [] : []).filter(Number.isFinite);
   const th = Math.min(FRAME_TITLE_H, el.h / 2);
   const pad = 8;
   const fx = el.x + pad, fy = el.y + th + pad, fw = el.w - 2 * pad, fh = el.h - th - 2 * pad;
