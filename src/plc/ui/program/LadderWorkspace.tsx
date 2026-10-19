@@ -162,14 +162,16 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     if (box && w) setZoom(Math.round(Math.min(2, Math.max(0.4, (box.clientWidth - 24) / w)) * 100) / 100);
   };
   // While the AI builds or changes the program, hand edits (undo / redo too) are held: its result would replace them.
-  const setLadder = useCallback((p: LadderProgram) => { if (!useProgramStore.getState().isGenerating) store.editLadder(p); }, [store.editLadder]);
+  const { editLadder } = store;
+  const setLadder = useCallback((p: LadderProgram) => { if (!useProgramStore.getState().isGenerating) editLadder(p); }, [editLadder]);
   const history = useLadderHistory(ladder, setLadder);
-  // History: a version before the first hand edit of the visit, and before a rung is deleted.
-  const handSaved = useRef(false);
+  // History: a version before the first hand edit of the visit and before its first rung deletion (once each, so a
+  // run of edits never pushes the AI and restore versions out of the history).
+  const handSaved = useRef(false), deleteSaved = useRef(false);
   const handEdit = (p: LadderProgram) => {
     if (isGenerating) return;
     if (!handSaved.current && ladder.rungs.length) { store.saveVersion('Before hand edits'); handSaved.current = true; }
-    else if (p.rungs.length < ladder.rungs.length) store.saveVersion('Before deleting a rung');
+    else if (!deleteSaved.current && p.rungs.length < ladder.rungs.length) { store.saveVersion('Before deleting a rung'); deleteSaved.current = true; }
     history.edit(p);
   };
   // The addresses offered when a contact or coil is clicked (the I/O list first, then named tags), with what each is

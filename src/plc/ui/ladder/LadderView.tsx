@@ -574,7 +574,7 @@ export default function LadderView({
 
   return (
     <MnemonicsContext.Provider value={mnemonics}>
-    // Focusable (not in the tab order): a click anywhere in the ladder puts the focus here, for the Delete key.
+    {/* Focusable (not in the tab order): a click anywhere in the ladder puts the focus here, for the Delete key. */}
     <div ref={root} tabIndex={-1} className="h-full overflow-auto bg-white outline-none">
       {editTools && editable && (
         <EditBar program={program} rungId={selectedRungId} picked={livePicked} apply={apply}

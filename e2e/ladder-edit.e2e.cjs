@@ -172,6 +172,8 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   // History: a version before the first hand edit and before a rung was deleted.
   const versions = await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().versions.map((v) => v.label));
   check(versions.includes('Before hand edits') && versions.includes('Before deleting a rung'), `History has "Before hand edits" and "Before deleting a rung" (${versions.slice(0, 4).join(', ')})`);
+  check(versions.filter((v) => v === 'Before deleting a rung').length === 1, 'two rungs deleted: one "Before deleting a rung" version (once per visit)');
+  check(!(await page.locator('main').innerText()).includes('Focusable'), 'no code comment shows as text on the page');
 
   // While the AI works on the program, hand edits are paused (its result would replace them).
   await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().setIsGenerating(true));
