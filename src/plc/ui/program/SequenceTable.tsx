@@ -1,17 +1,20 @@
+import type { PlcNameOf } from '../ladder/mnemonics';
 import { sequenceTable, type CycleSequence } from '../../engine/sequence';
 import AssumptionsUsed from '../../../components/questions/AssumptionsUsed';
 import { useQuestions } from '../../../components/questions/useQuestionStore';
 
 /** The automatic cycle as a readable table (step, what happens, waits for, timeout) above the ladder. */
-export default function SequenceTable({ sequence, labels }: { sequence: CycleSequence; labels?: Map<string, string> }) {
+export default function SequenceTable({ sequence, labels, plcNames }: { sequence: CycleSequence; labels?: Map<string, string>; plcNames?: PlcNameOf }) {
   const rows = sequenceTable(sequence);
   // The cycle's open points are asked on the Machine description page; listed here read-only.
   const asked = useQuestions('program');
-  const named = (text: string) => text.replace(/\b([XY]\d{3})\b/g, (a) => (labels?.get(a) ? `${a} ${labels.get(a)}` : a));
+  // Siemens / Logix: the PLC's own names ("E_Stop_OK", #Step); otherwise the operand with its description.
+  const named = (text: string) => text.replace(/\b([XY]\d{3})\b/g, (a) => plcNames?.(a)?.name ?? (labels?.get(a) ? `${a} ${labels.get(a)}` : a));
+  const register = sequence.register ?? 'DS1150';
   return (
     <details open className="border-b border-gray-200 bg-white text-xs" data-testid="cycle-steps">
       <summary className="px-4 py-2 cursor-pointer font-medium text-gray-700">
-        Automatic cycle: {rows.length} step{rows.length === 1 ? '' : 's'} ({sequence.source === 'ai' ? 'from the description' : 'default from the I/O list'}) — step register {sequence.register ?? 'DS1150'}, after the last step back to step 10
+        Automatic cycle: {rows.length} step{rows.length === 1 ? '' : 's'} ({sequence.source === 'ai' ? 'from the description' : 'default from the I/O list'}) — step register {plcNames?.(register)?.name ?? register}{plcNames?.(register) ? ` (${register})` : ''}, after the last step back to step 10
       </summary>
       <table className="mx-4 mb-2 w-[calc(100%-2rem)]">
         <thead className="text-gray-500 uppercase"><tr>{['Step', 'Name', 'What happens', 'Waits for', 'Timeout'].map((h) => <th key={h} className="text-left py-1 pr-3 font-medium">{h}</th>)}</tr></thead>

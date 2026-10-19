@@ -15,7 +15,7 @@ import type { LadderElement, LadderOutput, LadderProgram, Rung } from '../../cor
 import type { RungChange } from '../../core/diff';
 import type { ValidationIssue } from '../../core/validate';
 import { ElementCell, OutputCell } from './RungSymbol';
-import { MnemonicsContext } from './mnemonics';
+import { MnemonicsContext, PlcNamesContext, type PlcNameOf } from './mnemonics';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { getProfile } from '../../core/profiles';
 import ElementEditor from './ElementEditor';
@@ -47,6 +47,8 @@ export interface LadderViewProps {
   zoom?: number;
   /** Draw the first rungs (and the selected one) at once and the rest while the browser is idle (long programs on screen; not for printing). */
   progressive?: boolean;
+  /** The PLC's own names for the operands (Siemens / Logix): shown on top, the app operand in the small line. */
+  plcNames?: PlcNameOf;
 }
 
 const NO_ISSUES: ValidationIssue[] = [];
@@ -403,7 +405,7 @@ const RungRow = memo(function RungRow(props: RungRowProps) {
 });
 
 export default function LadderView({
-  program, onChange, labels, changes, issues = NO_ISSUES, selectedRungId = null, onSelectRung, numberOf, zoom = 1, progressive = false,
+  program, onChange, labels, changes, issues = NO_ISSUES, selectedRungId = null, onSelectRung, numberOf, zoom = 1, progressive = false, plcNames,
 }: LadderViewProps) {
   const [editing, setEditing] = useState<EditPath | null>(null);
   const [editingComment, setEditingComment] = useState<string | null>(null);
@@ -463,6 +465,7 @@ export default function LadderView({
 
   return (
     <MnemonicsContext.Provider value={mnemonics}>
+    <PlcNamesContext.Provider value={plcNames}>
     <div className="h-full overflow-auto bg-white">
       {globalIssues.length > 0 && (
         <div className="sticky left-0 m-2 rounded border border-slate-200 bg-slate-50 px-3 py-2">
@@ -541,6 +544,7 @@ export default function LadderView({
       </div>
       {editorEl}
     </div>
+    </PlcNamesContext.Provider>
     </MnemonicsContext.Provider>
   );
 }

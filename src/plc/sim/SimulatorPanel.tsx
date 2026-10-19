@@ -24,6 +24,8 @@ import LiveLadder from './LiveLadder';
 import IOPanel from './IOPanel';
 import { useUi } from '../../store/useUiStore';
 import WireFaultBar from '../../troubleshoot/WireFaultBar';
+import { usePlcNames } from '../ui/ladder/plcNames';
+import { PlcNamesContext } from '../ui/ladder/mnemonics';
 
 export type { SimHandle } from './controller';
 
@@ -78,6 +80,8 @@ function bypassItems(snap: SimSnapshot, ctl: SimController, program: LadderProgr
 }
 
 export default function SimulatorPanel({ program, io, wiring, labels, onHandle }: SimulatorPanelProps) {
+  // Siemens / Logix: the PLC's own tag names on the ladder, as on the Program page.
+  const plcNames = usePlcNames(program);
   const { ctl, snap } = useSimulation(program, io, wiring);
   const [view, setView] = useUi<'live' | 'drawing'>('sim.view', 'live');
 
@@ -322,12 +326,14 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
           )}
           <div className="min-h-0 flex-1 overflow-auto p-2">
             {view === 'live' ? (
-              <LiveLadder program={program} power={snap.power} bits={snap.bits} words={snap.words}
-                timers={snap.timers} counters={snap.counters} labelOf={labelOf}
-                rungBypass={snap.rungBypass} skipped={snap.skippedRungs} onBypassRung={(id, on) => ctl.bypassRung(id, on)}
-                groups={groups} />
+              <PlcNamesContext.Provider value={plcNames}>
+                <LiveLadder program={program} power={snap.power} bits={snap.bits} words={snap.words}
+                  timers={snap.timers} counters={snap.counters} labelOf={labelOf}
+                  rungBypass={snap.rungBypass} skipped={snap.skippedRungs} onBypassRung={(id, on) => ctl.bypassRung(id, on)}
+                  groups={groups} />
+              </PlcNamesContext.Provider>
             ) : (
-              <LadderView program={block ? { ...program, rungs: program.rungs.filter((r) => groups?.[0]?.rungIds.includes(r.id)) } : program} labels={labels} />
+              <LadderView program={block ? { ...program, rungs: program.rungs.filter((r) => groups?.[0]?.rungIds.includes(r.id)) } : program} labels={labels} plcNames={plcNames} />
             )}
           </div>
         </div>
