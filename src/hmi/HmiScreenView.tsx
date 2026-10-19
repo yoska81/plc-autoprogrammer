@@ -1,5 +1,8 @@
-
+import { useMemo } from 'react';
 import { bgBox } from './background';
+import { nativeScreen, useScreenIoName } from './nativeIo';
+import { safeGeometry, safeScreenSize } from './screenSize';
+import { useHmiStore } from '../store/useHmiStore';
 import type { HmiDesign, HmiElement, HmiLook, HmiScreen } from './types';
 import type { HmiRuntime } from './runtime';
 import { fitSize, fitText, fmtTime, hmiTheme, LEVEL_SHORT, lookOf, stateTextColor, styleColor, textWidth } from './theme';
@@ -407,7 +410,13 @@ function alarmRows(design: HmiDesign | undefined, read: HmiScreenViewProps['read
   return (design?.alarms ?? []).map((a) => ({ message: a.message, severity: a.severity, on: null, off: null, active: false }));
 }
 
-export default function HmiScreenView({ screen, widthPx, heightPx, read, onPress, onNavigate, onEntry, activeAlarms = [], selectedId, onSelect, design, runtime, staticTime, thumbnail, look }: HmiScreenViewProps) {
+export default function HmiScreenView({ screen: saved, widthPx: givenW, heightPx: givenH, read, onPress, onNavigate, onEntry, activeAlarms = [], selectedId, onSelect, design, runtime, staticTime, thumbnail, look }: HmiScreenViewProps) {
+  // I/O addresses in labels as the PLC names them (%I0.0 on an S7); the saved design keeps the app's.
+  const ioName = useScreenIoName();
+  // Never NaN in the SVG: a missing panel size or element geometry is drawn from the next best (src/hmi/screenSize.ts).
+  const screen = useMemo(() => nativeScreen(safeGeometry(saved), ioName), [saved, ioName]);
+  const projectPanel = useHmiStore((st) => st.hmiPartNumber);
+  const { w: widthPx, h: heightPx } = safeScreenSize(givenW, givenH, design?.hmiPartNumber?.trim() ? design : { ...(design ?? {}), hmiPartNumber: projectPanel } as HmiDesign, screen);
   const live = Boolean(read);
   const rows = alarmRows(design, read, runtime, activeAlarms);
   const t = hmiTheme(look ?? lookOf(design));

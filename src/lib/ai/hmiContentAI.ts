@@ -60,8 +60,6 @@ export interface HmiProjectInput {
   electrical?: ElectricalDesign | null;
   panel: { partNumber: string; widthPx: number; heightPx: number };
   plcText?: string;
-  /** The PLC's own I/O names for the Diagnostics screen (src/hmi/nativeIo.ts). */
-  ioName?: (address: string) => string | null;
   now?: string;
   /** The HMI being redesigned: every function keeps its address (roles inferred for older designs). */
   existingHmi?: HmiDesign | null;
@@ -113,7 +111,7 @@ export async function generateRuleBasedHmi(opts: Partial<AiOptions> & HmiProject
   const own = new Set(roleTags.map((t) => t.role));
   const keepTags = [...roleTags, ...inferred.filter((t) => !own.has(t.role))];
   const usedAddresses = (opts.program?.rungs ?? []).flatMap((r) => [...rungAddresses(r), ...rungWrites(r)]).filter((a) => /^[A-Z]+\d+$/i.test(a));
-  const design = buildHmi(content, { ...opts.panel, plcText: opts.plcText, ioName: opts.ioName, now: opts.now, keepTags, usedAddresses });
+  const design = buildHmi(content, { ...opts.panel, plcText: opts.plcText, now: opts.now, keepTags, usedAddresses });
   if (roles && opts.program) {
     addProgramAlarms(design, roles);
     const analogIn = new Set(opts.io.filter((p) => p.type === 'input' && isAnalog(p)).map((p) => (opts.addresses.get(p.id) ?? '').toUpperCase()).filter(Boolean));

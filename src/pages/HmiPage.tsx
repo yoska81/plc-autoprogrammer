@@ -9,7 +9,6 @@ import { HMI_MODELS, MIN_DESIGN_PX, designable, getHmi, hmiCommsText, hmiMaker, 
 import { catalogPanels } from '../hmi/panels';
 import { setProjectPanel } from '../hmi/retarget';
 import { hmiAddressProblem } from '../hmi/addressField';
-import { screenIoName } from '../hmi/nativeIo';
 import { hmiFit, type Need } from '../plc/core/fit';
 import { generateHmiDesign, recreateScreenFromPicture } from '../lib/ai/hmiAI';
 import { generateRuleBasedHmi, projectHmiContent } from '../lib/ai/hmiContentAI';
@@ -216,7 +215,7 @@ function ScreenInfo({ screen, issues, onLevel, onRename, onDelete, onRebuild }: 
   );
 }
 
-function PanelSpecs({ model, design }: { model: HmiModel; design: HmiDesign }) {
+function PanelSpecs({ model, design, plcId, plcName }: { model: HmiModel; design: HmiDesign; plcId: string; plcName: string }) {
   const b = layoutBands(model.widthPx, model.heightPx);
   const gcd = (a: number, c: number): number => (c ? gcd(c, a % c) : a);
   const g = gcd(model.widthPx, model.heightPx);
@@ -227,7 +226,10 @@ function PanelSpecs({ model, design }: { model: HmiModel; design: HmiDesign }) {
     ['Bands', `header ${b.header.h} px · nav ${b.nav.h} px`],
     ['Screens', String(design.screens.length)],
     ['Tags / alarms', `${design.tags.length} / ${design.alarms.length}`],
-    ['PLC link', isCmore(model) ? (model.supportsClickEthernet ? 'CLICK Ethernet (Modbus TCP 502)' : 'Serial') : "Maker's PLC driver (Ethernet)"],
+    // What links this panel to the project's PLC (C-more panels are set up for CLICK only).
+    ['PLC link', isCmore(model)
+      ? (plcId !== 'click' ? `Not set up for the ${plcName}: C-more panels are set up for CLICK. Choose a panel for this PLC.` : model.supportsClickEthernet ? 'CLICK Ethernet (Modbus TCP 502)' : 'Serial')
+      : `${hmiMaker(model)} driver for the ${plcName}`],
     ...(model.software ? [['Software', model.software] as [string, string]] : []),
   ];
   return (
@@ -316,25 +318,27 @@ export default function HmiPage() {
   const hmiQuestionsRaw = useQuestions('hmi');
   // Allen-Bradley / Siemens: the exported program's tag of each neutral address (null on CLICK, where they are the same).
   const ladder = useProgramStore((s) => s.ladder);
-  const tagName = useMemo(() => {
+  const tagOf = useMemo(() => {
     if (profile.id === 'click') return null;
-    try {
-      const of = plcTagNameOf(collectProject());
-      return (a: string) => of(a).name || null;
-    } catch { return null; }
+    try { return plcTagNameOf(collectProject()); } catch { return null; }
     // collectProject reads the stores; recompute when what it names changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, ladder, design, io, addresses]);
-  // The tag and alarm lists on a non-CLICK PLC: the PLC's own address first (%I0.0 / %Q0.0 for I/O; the symbolic
-  // name for memory, e.g. "Machine_DB".HMI_Start, which in an optimized S7 block is its address), the app's below.
-  const nativeOf = useMemo(() => {
-    if (profile.id === 'click') return null;
-    try {
-      const of = plcTagNameOf(collectProject());
-      return (a: string) => { const t = of(a); return { main: t.io || t.name || a, sub: [t.io && t.name ? t.name : '', a].filter(Boolean).join(' · ') }; };
-    } catch { return null; }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, ladder, design, io, addresses, modules, cpu]);
+  const tagName = useMemo(() => (tagOf ? (a: string) => tagOf(a).name || null : null), [tagOf]);
+  // The tag and alarm lists on a non-CLICK PLC: the PLC's own address first (%I0.0 / %Q0.0 for the project's real
+  // I/O points; the symbolic name for memory, e.g. "Machine_DB".HMI_Start, which in an optimized S7 block is its
+  // address), the app's below. A stale tag on an address that is no I/O point never borrows another point's name.
+  const nativeOf = useMemo(() => {
+    if (!tagOf) return null;
+    const ioSet = new Set([...addresses.values()].map((a) => a.toUpperCase()).filter(Boolean));
+    return (a: string) => {
+      const t = tagOf(a);
+      const io = ioSet.has(a.toUpperCase()) ? t.io : undefined;
+      return { main: io || t.name || a, sub: [io && t.name ? t.name : '', a].filter(Boolean).join(' · ') };
+    };
+  }, [tagOf, addresses]);
+  // The app's own descriptions of a tag ("… (X001)") in the PLC's addresses too.
+  const nativeText = (text: string) => (nativeOf ? text.replace(/\b(?:CTD|TD|CT|DS|DD|DF|DH|C|T|X|Y)\d{1,4}\b/g, (a) => nativeOf(a).main) : text);
   const tagged = (text: string) => withTagNames(text, tagName);
   const hmiQuestions = useMemo(() => hmiQuestionsRaw.map((q) => ({ ...q, text: withTagNames(q.text, tagName) })), [hmiQuestionsRaw, tagName]);
   const screen = design?.screens.find((s) => s.id === screenId) ?? design?.screens[0] ?? null;
@@ -374,7 +378,7 @@ export default function HmiPage() {
   const rebuildThis = (id: string) => {
     if (!design || !model) return;
     const gen = buildHmi(projectHmiContent({ io, addresses, machineName: design.machineName || useProgramStore.getState().projectName, spec: specToText(fp.spec), electrical: useElectricalStore.getState().design, panel: model }),
-      { ...model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`, ioName: screenIoName(profile, cpu, modules) });
+      { ...model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}` });
     const next = rebuildScreen(design, gen, id);
     if (!next) { notify('This screen is not one the generator makes (you added it), so it cannot be rebuilt.'); return; }
     setHist((h) => ({ ...h, past: [...h.past, design].slice(-100), future: [] }));
@@ -558,7 +562,6 @@ export default function HmiPage() {
             apiKey: apiKey || undefined, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
             io, addresses, spec: specToText(fp.spec), machineName: useProgramStore.getState().projectName,
             electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
-            ioName: screenIoName(profile, cpu, modules),
             existingHmi: useHmiStore.getState().design, program: useProgramStore.getState().ladder,
             upgradeRoles: projectUpgradeRoles(useDraftStore.getState().drafts, useProgramStore.getState().ladder),
           });
@@ -807,7 +810,7 @@ export default function HmiPage() {
                     <LookPicker value={design.look} makerLook={defaultLookFor(design.hmiPartNumber)} makerName={hmiMakerOf(design.hmiPartNumber)}
                       onChange={(look) => commit({ ...design, look })} />
                   </div>
-                  <PanelSpecs model={model} design={design} />
+                  <PanelSpecs model={model} design={design} plcId={profile.id} plcName={`${profile.name} (${cpu.id})`} />
                 </section>
               </aside>
               </ResizablePane>
@@ -841,7 +844,7 @@ export default function HmiPage() {
                             <td className="pr-3 py-1.5 text-xs">{t.dataType}</td>
                             <td className="pr-3 py-1.5 text-xs whitespace-nowrap">{t.access}</td>
                             <td className="pr-3 py-1.5 text-xs text-gray-500">{(usedOn.get(t.address.toUpperCase()) ?? []).join(', ') || '—'}</td>
-                            <td className="py-1.5 text-gray-600">{t.description}</td>
+                            <td className="py-1.5 text-gray-600">{nativeText(t.description)}</td>
                           </tr>
                         ))}
                       </tbody>

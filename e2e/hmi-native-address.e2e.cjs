@@ -41,7 +41,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByRole('button', { name: 'Redesign screens' }).click();
   await page.waitForFunction(async () => {
     const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
-    return Boolean(d?.screens.some((s) => s.elements.some((e) => /%I0\.0/.test(e.label ?? ''))));
+    return Boolean(d?.screens.some((s) => s.elements.some((e) => /Siemens/.test(e.label ?? ''))));
   }, null, { timeout: 30000 }).catch(() => {});
   await page.locator('th', { hasText: /^Siemens address$/i }).first().waitFor({ timeout: 15000 });
   const cells = await page.locator('table tbody tr td:first-child').allInnerTexts();
@@ -49,15 +49,20 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(cells.some((c) => /^"Machine_DB"\.\S+\n.*C1\d{3}/.test(c)), 'an HMI bit reads "Machine_DB".…, with C1… below');
   check(!cells.some((c) => /^(X|Y|C|DS)\d+$/.test(c.trim())), 'no row shows only an app address');
 
-  // Diagnostics screen: lamps and group titles in S7 addresses.
-  const diag = await page.evaluate(async () => {
+  // Diagnostics screen: drawn with S7 addresses; the saved design keeps the app's (so a PLC change never leaves them stale).
+  const shown = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
+  check(/Inputs \(CPU\) %I0\.0–%I0\.5/.test(shown), 'the inputs group title gives the S7 range');
+  check(/%I0\.0 E-Stop OK/i.test(shown) && /%Q0\.0 /.test(shown) && !/X001 E-Stop OK/i.test(shown), 'input and output lamps are drawn %I0.0 … / %Q0.0 …');
+  const saved = await page.evaluate(async () => {
     const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
-    const s = d.screens.find((x) => /diag/i.test(x.name) || /diag/i.test(x.id));
-    return s ? s.elements.map((e) => e.label).filter(Boolean) : [];
+    return d.screens.flatMap((s) => s.elements.map((e) => e.label)).filter((l) => /^(X|%I)\S+ E-Stop/i.test(l ?? ''));
   });
-  log('Diagnostics labels:', diag.join(' | '));
-  check(diag.some((l) => /^Inputs \(CPU\)\s+%I0\.0–%I\d+\.\d/.test(l)), 'the inputs group title gives the S7 range');
-  check(diag.some((l) => /^%I0\.0 /.test(l)) && !diag.some((l) => /^X0\d\d /.test(l)), 'input lamps are named %I0.0 …');
+  check(saved.length > 0 && saved.every((l) => /^X001 /.test(l)), `the saved design keeps X001 (${saved.join(', ')})`);
+  // Back to CLICK without redesigning: the same screens are drawn with X001 again.
+  await page.evaluate(async () => { (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().setPlc('click', 'C0-10DD1E-D'); });
+  await page.waitForTimeout(800);
+  const back = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
+  check(/X001 E-Stop OK/i.test(back) && !/%I0\.0/.test(back), 'on CLICK the same screens read X001 again');
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await browser.close();
   if (fails.length) { console.error(`FAILED (${fails.length})`); process.exit(1); }
