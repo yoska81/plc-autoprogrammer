@@ -65,6 +65,16 @@ function* ioAddresses(letter: 'X' | 'Y', builtIn: number, modules: ModuleSlot[])
   }
 }
 
+/**
+ * Addresses as the app gave them before the option-slot module became slot 0: every module numbered from slot 1,
+ * no pulse outputs placed first. Only for migrating projects saved then (src/plc/core/ioChange.ts).
+ */
+export function legacyClickAddresses(io: IOPoint[], cpu: CpuModel, modules: ModuleSlot[]): Map<string, string> {
+  const old = modules.map(({ optionSlot: _o, ...m }) => { void _o; return m; });
+  const auto = neutralAutoAddresses(io, cpu, old, clickAnalogChannels(cpu, old));
+  return new Map(io.map((p) => [p.id, p.plcAddress?.trim() || auto.get(p.id) || ''] as const));
+}
+
 // An axis's pulse output ("Axis 1 servo pulse", "Stepper step"): it must sit on a pulse-train output.
 const PULSE_OUT_RE = /\b(pulse|step|pul)\b/i;
 const MOTION_RE = /\b(servo|stepper|axis|drive|motor)\b/i;

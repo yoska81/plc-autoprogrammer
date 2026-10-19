@@ -67,9 +67,17 @@ export function runDerived(fn: () => void): void {
 /** The stores that hold the open project's own data (for change tracking). */
 export const PROJECT_STORE_LIST = Object.entries(PROJECT_STORES).map(([key, store]) => ({ key, store }));
 
+// Told after a project's data is in the stores (e.g. ioChange migrates an older address layout).
+const loadListeners = new Set<() => void>();
+export function onProjectLoaded(f: () => void): () => void {
+  loadListeners.add(f);
+  return () => { loadListeners.delete(f); };
+}
+
 function load(data: Snapshot | null) {
   loadingProject = true;
   try { loadInto(data); } finally { loadingProject = false; }
+  for (const l of loadListeners) l();
 }
 
 function loadInto(data: Snapshot | null) {

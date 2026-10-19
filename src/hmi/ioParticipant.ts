@@ -21,4 +21,5 @@ registerIoParticipant({
     const design = useHmiStore.getState().design;
     return () => useHmiStore.setState({ design });
   },
+  subscribe: (listener) => useHmiStore.subscribe((s, prev) => { if (s.design !== prev.design) listener(); }),
 });

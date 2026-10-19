@@ -7,6 +7,7 @@
  * Deleting a point: `ioUsesOf` lists what uses it (for the confirmation), and `deletePointWithUndo` keeps
  * one undo (the I/O list, the program and each participant as they were).
  */
+import { create } from 'zustand';
 import { useIOStore, onIoChange } from '../../store/useIOStore';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useProgramStore } from '../../store/useProgramStore';
@@ -17,6 +18,9 @@ import { moduleSlots } from './modules';
 import { rungAddresses } from './ladder';
 import { ioRemap, remapIsEmpty, type IoRemap } from './ioRemap';
 import { remapProgram } from './remapProgram';
+import { legacyClickAddresses } from './profiles/click';
+import { onProjectLoaded } from '../../store/useProjectsStore';
+import { notify } from '../../store/useNoticeStore';
 
 /** Another design that names I/O addresses (the HMI): it follows a remap, says what uses an address, and can be put back. */
 export interface IoParticipant {
@@ -27,11 +31,14 @@ export interface IoParticipant {
   usesOf: (address: string) => string[];
   /** Keep the design as it is now; the returned function puts it back. */
   snapshot: () => () => void;
+  /** Call the listener on any later change to the design (a pending Undo is then dropped). */
+  subscribe?: (listener: () => void) => () => void;
 }
 const participants: IoParticipant[] = [];
 export function registerIoParticipant(p: IoParticipant): () => void {
   participants.push(p);
-  return () => { const i = participants.indexOf(p); if (i >= 0) participants.splice(i, 1); };
+  const off = p.subscribe?.(() => { if (undo && undoRefs) setUndo(null); });
+  return () => { off?.(); const i = participants.indexOf(p); if (i >= 0) participants.splice(i, 1); };
 }
 
 type PlcSetup = { plcId: string; cpuId: string; modules: string[] };
@@ -46,7 +53,12 @@ export function ioAddresses(io: IOPoint[], setup: PlcSetup = plcSetup()): Map<st
 /** The program (and its saved versions) and the participants after an address change; returns what to tell the user. */
 export function applyIoChange(prev: IOPoint[], next: IOPoint[], prevSetup: PlcSetup = plcSetup(), nextSetup: PlcSetup = plcSetup()): { remap: IoRemap; messages: string[] } {
   const remap = ioRemap(ioAddresses(prev, prevSetup), ioAddresses(next, nextSetup));
-  if (remapIsEmpty(remap)) return { remap, messages: [] };
+  return { remap, messages: applyRemap(remap, prev) };
+}
+
+/** Rewrite the program, its saved versions and the participants through a remap; returns what to tell the user. */
+function applyRemap(remap: IoRemap, prev: IOPoint[]): string[] {
+  if (remapIsEmpty(remap)) return [];
   const messages: string[] = [];
   const describe = (id: string) => prev.find((p) => p.id === id)?.description ?? '';
   const { ladder, editLadder, versions } = useProgramStore.getState();
@@ -58,9 +70,30 @@ export function applyIoChange(prev: IOPoint[], next: IOPoint[], prevSetup: PlcSe
     if (r.moved) messages.push(`Program: ${r.moved} operand${r.moved === 1 ? '' : 's'} moved with ${r.moved === 1 ? 'its point' : 'their points'}.`);
     const rungs = new Set(r.deleted.map((d) => d.rungId)).size;
     if (rungs) messages.push(`Program: ${rungs} rung${rungs === 1 ? '' : 's'} used ${[...new Set(r.deleted.map((d) => d.address))].join(', ')}, now deleted. The checker marks them until you pick the new I/O.`);
+    if (r.raw.length) messages.push(`Program: ${r.raw.length} rung${r.raw.length === 1 ? ' has a kept vendor instruction' : 's have kept vendor instructions'} naming I/O that moved (rung${r.raw.length === 1 ? '' : 's'} ${r.raw.map((id) => ladder.rungs.findIndex((g) => g.id === id) + 1).join(', ')}) — not rewritten: check ${r.raw.length === 1 ? 'it' : 'them'} by hand.`);
   }
   for (const p of participants) messages.push(...p.apply(remap, describe));
-  return { remap, messages };
+  return messages;
+}
+
+/**
+ * Projects saved before a CLICK PLUS option-slot module became slot 0 numbered its points X101… / Y101… (and
+ * placed no pulse outputs first). On load their program, saved versions and HMI move to the addresses the app
+ * gives now, once, with a notice; the project is then marked with the new layout.
+ */
+export function migrateIoLayout(): string[] {
+  const project = useProjectStore.getState();
+  if (project.ioLayout === 'click-slot0') return [];
+  const setup = plcSetup();
+  useProjectStore.setState({ ioLayout: 'click-slot0' });
+  const slots = moduleSlots(setup.modules);
+  if (setup.plcId !== 'click' || !slots.some((m) => m.optionSlot)) return [];
+  const io = useIOStore.getState().projectIO;
+  const profile = getProfile('click');
+  const remap = ioRemap(legacyClickAddresses(io, getCpu(profile, setup.cpuId), slots), ioAddresses(io, setup));
+  const messages = applyRemap(remap, io);
+  if (messages.length) notify(`This project was saved with the older CLICK PLUS addressing (the option-slot module as slot 1). Its I/O now starts at X001 / Y001 on the option module; the program and the HMI moved with it. ${messages.join(' ')}`);
+  return messages;
 }
 
 // Inside withIoRemap the I/O store's own notifications are skipped: the wrapper remaps once, at the end.
@@ -89,8 +122,17 @@ export function ioUsesOf(id: string): string[] {
 // The messages of the change in progress (deletePointWithUndo returns them).
 let lastMessages: string[] | null = null;
 let undo: { label: string; restore: () => void } | null = null;
-/** The last delete that can be undone (its label, e.g. "Delete I004 Photo eye"). */
+/** The last delete that can still be undone, for the I/O page's Undo button (label, e.g. "Delete I004 Photo eye"). */
+export const useIoUndo = create<{ label: string | null }>()(() => ({ label: null }));
 export const lastIoUndo = () => (undo ? undo.label : null);
+const setUndo = (u: typeof undo) => { undo = u; useIoUndo.setState({ label: u?.label ?? null }); };
+// Undo puts back a whole snapshot, so it is offered only until the next change to the I/O list, the program or a
+// participant's design: a later edit is never thrown away by it.
+let undoRefs: unknown[] | null = null;
+const currentRefs = () => [useIOStore.getState().projectIO, useProgramStore.getState().ladder];
+const dropUndoOnChange = () => { if (undo && undoRefs && (undoRefs[0] !== useIOStore.getState().projectIO || undoRefs[1] !== useProgramStore.getState().ladder)) setUndo(null); };
+useIOStore.subscribe(dropUndoOnChange);
+useProgramStore.subscribe(dropUndoOnChange);
 
 /** Delete a point, keeping one undo; returns what changed in the program / HMI. */
 export function deletePointWithUndo(id: string): string[] {
@@ -103,7 +145,7 @@ export function deletePointWithUndo(id: string): string[] {
   lastMessages = messages;
   useIOStore.getState().deletePoint(id);
   lastMessages = null;
-  undo = {
+  setUndo({
     label: `Delete ${id}${point.description ? ` ${point.description}` : ''}`,
     restore: () => {
       // Put back exactly what was there (no remap: the list, the program and the HMI are restored together).
@@ -112,15 +154,17 @@ export function deletePointWithUndo(id: string): string[] {
       useProgramStore.setState({ versions });
       for (const r of restores) r();
     },
-  };
+  });
+  undoRefs = currentRefs();
   return messages;
 }
 
 /** Undo the last delete; false when there is nothing to undo. */
 export function undoIoDelete(): boolean {
   if (!undo) return false;
-  undo.restore();
-  undo = null;
+  const u = undo;
+  setUndo(null);
+  u.restore();
   return true;
 }
 
@@ -129,3 +173,8 @@ onIoChange((prev, next) => {
   const { messages } = applyIoChange(prev, next);
   lastMessages?.push(...messages);
 });
+
+// Saved projects: migrate an older address layout when one is opened, and the one already open at start-up.
+onProjectLoaded(() => { migrateIoLayout(); });
+// After every module is loaded, so the participants (the HMI) are registered.
+queueMicrotask(() => { migrateIoLayout(); });

@@ -31,6 +31,7 @@ import { ALL_PARTS, DEFAULT_PREFERENCE, partsFor, type VendorPreference } from '
 import { SUPPLY_INFO, type Region } from '../standards/regions';
 import type { CatalogPart, DesignComponent, FieldDeviceType, IOWiring, SupplyVoltage } from './types';
 import type { IOPoint } from '../types/io';
+import { pointsFromText } from './highSpeedIo';
 
 const num = (v: unknown): number | undefined => {
   const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
@@ -57,7 +58,7 @@ export function servoRole(p: Pick<IOPoint, 'type' | 'description'>): ServoRole |
     if (/\b(reset|arst)\b/i.test(d)) return 'reset';
     if (/\b(servo on|enable|son)\b/i.test(d)) return 'enable';
     // Electronic cam / gear engage ("U2 DI7 CAM engage"): the drive follows its master encoder while it is on.
-    if (/\b(e-?cam|cam|gear\w*|sync\w*)\b/i.test(d)) return 'cam';
+    if (/\be-?cam\b|\bcam\s+(engage|enable|on|start)\b|\belectronic\s+gear|\bgear(ing)?\s+(engage|in|on)\b|\bsync\w*\s+(engage|start|on)\b/i.test(d)) return 'cam';
     return null;
   }
   if (/\b(alarm|fault|alrm)\b/i.test(d)) return 'alarm';
@@ -388,14 +389,6 @@ export function motionDeviceType(p: IOPoint): FieldDeviceType | null {
 
 export interface PlcMotion { hsInputs: string[]; hsKhz?: number; pulseOutputs: string[]; note?: string }
 
-/** "X001-X004" → X001, X002, X003, X004; "X1-X8" on slot 1 → X101 … X108 (the app's CLICK addressing: slot digit + point). */
-function addressRange(text: string, slot = 0): string[] {
-  const m = /([XY])0*(\d+)\s*-\s*[XY]?0*(\d+)/i.exec(text);
-  if (!m) return [];
-  const [, k, a, b] = m;
-  return Array.from({ length: Number(b) - Number(a) + 1 }, (_, i) => `${k.toUpperCase()}${slot}${String(Number(a) + i).padStart(2, '0')}`);
-}
-
 /** A module in a PLC slot, as the electrical model groups the I/O (slot 1 = first module after the CPU). */
 export interface SlotPart { slot: number; part?: CatalogPart }
 
@@ -409,20 +402,19 @@ export interface SlotPart { slot: number; part?: CatalogPart }
 export function plcMotion(cpu: CatalogPart | undefined, slots: SlotPart[] = []): PlcMotion | null {
   const r = cpu?.ratings ?? {};
   if (r.hscInputs === undefined && r.ptoAxes === undefined && r.ptoNote === undefined) return null;
+  // The points come from the ratings text (highSpeedIo.ts reads it the same way): "Y1, Y3, Y5" on the module's slot.
   if (/option slot/i.test(String(r.hscInputs ?? r.ptoOutputs ?? ''))) {
     const opt = slots.find((x) => /option slot/i.test(String(x.part?.ratings.moduleType ?? '')));
     const mr = opt?.part?.ratings ?? {};
-    const axes = num(mr.ptoAxes) ?? 0;
     return {
-      hsInputs: opt ? addressRange(String(mr.hscInputs ?? ''), opt.slot) : [], hsKhz: num(mr.hscMaxKHz),
-      pulseOutputs: opt ? [1, 3, 5].slice(0, axes).map((n) => `Y${opt.slot}0${n}`) : [],
+      hsInputs: opt ? pointsFromText(String(mr.hscInputs ?? ''), 'X', opt.slot) : [], hsKhz: num(mr.hscMaxKHz),
+      pulseOutputs: opt ? pointsFromText(String(mr.ptoOutputs ?? ''), 'Y', opt.slot) : [],
       note: r.ptoNote ? String(r.ptoNote) : undefined,
     };
   }
-  const axes = num(r.ptoAxes) ?? 0;
   return {
-    hsInputs: addressRange(String(r.hscInputs ?? '')), hsKhz: num(r.hscMaxKHz),
-    pulseOutputs: ['Y001', 'Y003', 'Y005'].slice(0, axes), note: r.ptoNote ? String(r.ptoNote) : undefined,
+    hsInputs: pointsFromText(String(r.hscInputs ?? ''), 'X'), hsKhz: num(r.hscMaxKHz),
+    pulseOutputs: pointsFromText(String(r.ptoOutputs ?? ''), 'Y'), note: r.ptoNote ? String(r.ptoNote) : undefined,
   };
 }
 

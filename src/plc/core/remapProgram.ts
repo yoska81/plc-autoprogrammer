@@ -18,11 +18,13 @@ export interface ProgramRemap {
   moved: number;
   /** Rungs (by id) that read or write a deleted point, and those points' old addresses. */
   deleted: { rungId: string; address: string }[];
+  /** Rungs with a kept vendor instruction (RAW) whose text names a moved or deleted address: not rewritten, to check by hand. */
+  raw: string[];
 }
 
 /** Rewrite the program's I/O operands through the remap (rungs, motion, the cycle's waits; tags of deleted points are dropped). */
 export function remapProgram(program: LadderProgram, r: IoRemap): ProgramRemap {
-  if (remapIsEmpty(r)) return { program, moved: 0, deleted: [] };
+  if (remapIsEmpty(r)) return { program, moved: 0, deleted: [], raw: [] };
   let moved = 0;
   const deleted: { rungId: string; address: string }[] = [];
   let rungId = '';
@@ -47,6 +49,9 @@ export function remapProgram(program: LadderProgram, r: IoRemap): ProgramRemap {
       case 'RAW': return o;
     }
   };
+  // A kept vendor instruction's text is the vendor's own: it is not rewritten, only reported.
+  const touched = (t: string) => (t.match(/\b[XY]\d+\b/gi) ?? []).some((a) => r.moved.has(a.toUpperCase()) || r.gone.has(a.toUpperCase()));
+  const raw = program.rungs.filter((g) => [...g.branches.flat(), ...g.outputs].some((x) => x.type === 'RAW' && touched(x.text))).map((g) => g.id);
   const rungs = program.rungs.map((g) => { rungId = g.id; return { ...g, branches: g.branches.map((b) => b.map(el)), outputs: g.outputs.map(out) }; });
   rungId = '';
   const m = program.motion;
@@ -57,5 +62,5 @@ export function remapProgram(program: LadderProgram, r: IoRemap): ProgramRemap {
   };
   const sequence = program.sequence && { ...program.sequence, steps: program.sequence.steps.map((s) => ({ ...s, waitFor: s.waitFor.map((w) => (w.input ? { ...w, input: op(w.input) } : w)) })) };
   const tags = program.tags.filter((t) => !r.gone.has(t.address.trim().toUpperCase())).map((t) => ({ ...t, address: remapAddress(t.address, r) }));
-  return { program: { ...program, rungs, tags, ...(motion ? { motion } : {}), ...(sequence ? { sequence } : {}) }, moved, deleted };
+  return { program: { ...program, rungs, tags, ...(motion ? { motion } : {}), ...(sequence ? { sequence } : {}) }, moved, deleted, raw };
 }

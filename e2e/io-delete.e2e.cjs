@@ -41,7 +41,11 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   check(await counter() === '[[{"type":"NO","address":"?X004"}]]', 'the part counter is marked, not moved onto Pusher extended');
   const alert = page.getByRole('alert');
   check(/Deleted I004/.test(await alert.innerText()), 'a message says what changed');
-  await alert.getByRole('button', { name: 'Undo' }).click();
+  // The Undo stays on the I/O page after the message has gone.
+  await alert.getByRole('button', { name: 'Close message' }).click();
+  const pageUndo = page.getByRole('button', { name: /^Undo: Delete I004/ });
+  check(await pageUndo.isVisible(), 'Undo stays on the I/O page');
+  await pageUndo.click();
   await page.waitForTimeout(300);
   check(await page.locator('input[aria-label="Description of I004"]').count() === 1, 'Undo brings the point back');
   check(await counter() === '[[{"type":"NO","address":"X004"}]]', 'Undo restores the program');

@@ -10,6 +10,11 @@ interface ProjectStore {
   cpuId: string;
   setPlc: (plcId: string, cpuId: string) => void;
   /** Expansion module part numbers in slot order (slot 1 first). */
+  /**
+   * Address layout the project's I/O was numbered with. 'click-slot0': a CLICK PLUS option-slot module is slot 0
+   * (X001… / Y001…). Absent: saved before that (the option module was numbered as slot 1, X101…) — migrated on load.
+   */
+  ioLayout?: 'click-slot0';
   modules: string[];
   setModules: (modules: string[]) => void;
   /** Last AI equipment recommendation (kept so the reasons stay visible). */

@@ -48,7 +48,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
 
   // Simulate legend inside its pane.
   await page.goto(BASE + '/simulate');
-  await page.waitForTimeout(1500);
+  await page.waitForSelector('[data-testid=live-legend]');
   const fit = await page.evaluate(() => {
     const l = document.querySelector('[data-testid=live-legend]');
     const pane = l.parentElement.parentElement.getBoundingClientRect();

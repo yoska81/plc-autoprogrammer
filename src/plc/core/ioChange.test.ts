@@ -43,6 +43,11 @@ assert.deepEqual(r.program.tags, [{ address: 'X001', nickname: 'B', comment: '' 
 assert.deepEqual([r.program.motion!.axes[0].pulse, r.program.motion!.axes[0].direction, r.program.motion!.axes[0].limitPos, ...r.program.motion!.counters[0].channels], ['Y002', 'Y001', 'X002', 'X001', 'X002'], 'motion operands');
 assert.equal(r.program.sequence!.steps[0].waitFor[0].input, 'X002', 'cycle waits');
 assert.deepEqual(r.deleted, [{ rungId: 'r1', address: 'X001' }]);
+// A kept vendor instruction naming a moved address is reported, not rewritten.
+const withRaw: LadderProgram = { ...prog, rungs: [...prog.rungs, { id: 'r3', comment: 'kept', branches: [[{ type: 'RAW', vendor: 'logix', text: 'XIC(X003)' }]], outputs: [{ type: 'OUT', address: 'C1' }] }] };
+const rr = remapProgram(withRaw, ioRemap(prev, next));
+assert.deepEqual(rr.raw, ['r3']);
+assert.deepEqual(rr.program.rungs[2].branches[0][0], { type: 'RAW', vendor: 'logix', text: 'XIC(X003)' });
 const profile = getProfile('click');
 const errs = validateProgram(r.program, profile, new Set(['X001', 'X002', 'Y001', 'Y002'])).filter((i) => i.severity === 'error').map((i) => i.message);
 assert.ok(errs.some((m) => /used X001, whose I\/O point was deleted/.test(m)), errs.join(' | '));
@@ -83,6 +88,15 @@ assert.deepEqual(useIOStore.getState().projectIO, io);
 assert.equal(useProgramStore.getState().ladder, ladderBefore);
 assert.equal(lastIoUndo(), null);
 assert.equal(undoIoDelete(), false);
+
+// Undo is offered only until the next edit (it restores a whole snapshot: a later edit is never thrown away).
+deletePointWithUndo(eye.id);
+assert.ok(lastIoUndo());
+useIOStore.getState().updateDescription(pusherExt.id, 'Pusher extended (B1)');
+assert.equal(lastIoUndo(), null, 'a later edit drops the Undo');
+assert.equal(undoIoDelete(), false);
+useIOStore.setState({ projectIO: io });
+useProgramStore.getState().editLadder(ladderBefore);
 
 // A plain edit that moves nothing leaves the program alone.
 useIOStore.getState().updateDescription(eye.id, 'Part at end photo-eye (PE1)');
