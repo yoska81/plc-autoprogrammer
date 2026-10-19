@@ -133,8 +133,15 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
   const srTag = sr ? add(comp('SR1', sr.partNumber, 1, 'E-stop safety relay — dual channel, monitored manual reset, removes power from the motion outputs (24+S)')) : undefined;
   if (!sr) notes.push('No safety relay in the catalog: the E-stop circuit is drawn as a hardwired chain; select a safety relay.');
   const estopPart = part('estop');
-  const secondNc = pk.byNumber('ECX1030-2');
-  const legend = pk.byNumber('ECX1651');
+  // Accessories from the E-stop's own maker (an AutomationDirect contact block does not mount on a Siemens 3SU1):
+  // an N.C. contact block and the EMERGENCY STOP legend plate; none in the catalog for that maker = a note, never
+  // another brand's part.
+  const maker = (p: CatalogPart) => p.vendor ?? 'automationdirect';
+  const sameMaker = (p: CatalogPart) => !!estopPart && maker(p) === maker(estopPart);
+  const secondNc = estopPart ? pk.pick('other', (p) => sameMaker(p) && /contact (block|module|element)/i.test(p.description) && /\bN\.?\s?C\b/i.test(String(p.ratings.contacts ?? '')) && !/\bN\.?\s?O\b/i.test(String(p.ratings.contacts ?? ''))) : null;
+  const legend = estopPart ? pk.pick('other', (p) => sameMaker(p) && String(p.ratings.kind ?? '') === 'legend plate' && /emergency stop/i.test(String(p.ratings.legend ?? ''))) : null;
+  if (estopPart && !secondNc) notes.push(`${estopPart.partNumber}: no N.C. contact block of the same maker in the catalog — add one per E-stop to the order for the second safety channel (and a third for the PLC status input).`);
+  if (estopPart && !legend) notes.push(`${estopPart.partNumber}: no EMERGENCY STOP legend plate of the same maker in the catalog — add one per E-stop to the order.`);
   const estopIo = points.filter(({ point }) => point.type === 'input' && deviceTypeOf(point) === 'estop-contact');
   const nEstops = Math.max(model.safety.estops, estopIo.length, 1);
   const estopTags: string[] = [];

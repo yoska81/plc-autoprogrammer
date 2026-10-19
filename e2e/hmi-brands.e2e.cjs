@@ -34,7 +34,11 @@ const CASES = [
     // Equipment: the CPU, then the maker's panel from the HMI table.
     if (c.viaUi) {
       await page.goto(BASE + '/equipment');
-      await page.locator(`input[aria-label="Choose ${c.cpu}"]`).locator('xpath=ancestor::tr').click();
+      // Other brands' CPUs are collapsed under "Show N CPUs of other brands".
+      const cpuRadio = page.locator(`input[aria-label="Choose ${c.cpu}"]`);
+      await page.locator('input[aria-label^="Choose C0-"]').first().waitFor();
+      if (!(await cpuRadio.count())) await page.getByRole('button', { name: /^Show \d+ CPUs of other brands$/ }).click();
+      await cpuRadio.locator('xpath=ancestor::tr').click();
     } else {
       // CompactLogix has no built-in I/O: apply it with the modules the platform suggests.
       await page.evaluate(async ({ cpu, platform }) => {

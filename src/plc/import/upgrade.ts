@@ -5,6 +5,7 @@
  * use them), writes a first machine description from the program and lists what to ask the user.
  * Pure: the page (ui/ProgramImport.tsx) writes the result into the stores.
  */
+import { isUnreadBox } from './mpe720';
 import type { LadderProgram, TagDefinition } from '../core/ladder';
 import type { PlcProfile } from '../core/profile';
 import type { IOPoint } from '../../types/io';
@@ -309,7 +310,11 @@ export function questionsFor(imp: ImportedProgram): string[] {
   if (unsure.length) q.push(`Are these wired to the PLC's terminals? ${unsure.map((p) => p.name).join(', ')} (the program does not say).`);
   const noText = imp.io.filter((p) => !p.description);
   if (noText.length) q.push(`What are these I/O points connected to? ${noText.map((p) => p.name).join(', ')}`);
-  for (const n of imp.report.notConverted.slice(0, 8)) {
+  // Instructions the reader could not read at all: every one is listed, to rewrite by hand.
+  for (const n of imp.report.notConverted.filter((x) => isUnreadBox(x.text))) {
+    q.push(`Rewrite by hand: the original program has an instruction that could not be read, "${n.text}" (${n.where}). In this program it does nothing. What does it do on the machine?`);
+  }
+  for (const n of imp.report.notConverted.filter((x) => !isUnreadBox(x.text)).slice(0, 8)) {
     q.push(n.kept
       ? `The original program has "${n.text}" (${n.where}). It is kept as it was and goes back into the PLC, but the simulator can't run it. What does it do on the machine?`
       : `The original program has "${n.text}" (${n.where}) that could not be brought in. What does it do on the machine?`);

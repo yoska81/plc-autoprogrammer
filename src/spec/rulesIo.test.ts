@@ -81,4 +81,89 @@ assert.ok(list('A machine.').questions.some((q) => /No E-stop is named/.test(q))
 // Same description, same list (a later AI run keeps the descriptions).
 assert.deepEqual(list('Three belt conveyors. E-stop.'), list('Three belt conveyors. E-stop.'));
 
+// ── Side manager's probe: counts, names, negation, missing equipment ──
+const d = (r: ReturnType<typeof list>) => r.points.map((p) => p.description);
+// Power figures are not counts; ungrouped alternatives keep their count; one group per qualifier.
+assert.equal(count(list('A 1.5 kW servo drives the flying shear. E-stop.'), /enable$/), 1, '1.5 kW servo: one axis');
+assert.equal(count(list('3 belts carry the boxes. E-stop.'), /^Conveyor \d motor contactor$/), 3, '"3 belts": three');
+{
+  const r = list('Infeed and outfeed conveyors. E-stop.');
+  assert.ok(has(r, 'Infeed conveyor motor contactor', 'output') && has(r, 'Outfeed conveyor motor contactor', 'output'), d(r).join(' | '));
+  const r2 = list('An infeed conveyor feeds the machine; an outfeed conveyor takes the parts away. E-stop.');
+  assert.ok(has(r2, 'Infeed conveyor motor contactor', 'output') && has(r2, 'Outfeed conveyor motor contactor', 'output'), d(r2).join(' | '));
+}
+// Actuator counts.
+assert.equal(count(list('Two cylinders clamp the part. E-stop.'), /^Cylinder [12] extend solenoid$/), 2);
+assert.equal(count(list('4 cylinders lift the tray. E-stop.'), /^Cylinder [1-4] extend solenoid$/), 4);
+// Names and numbering per kind.
+{
+  const r = list('Two photo-eyes and two prox sensors watch the part. There is a photo-eye at the reject chute. E-stop.');
+  assert.ok(has(r, 'Photo-eye 1', 'input') && has(r, 'Photo-eye 2', 'input'), d(r).join(' | '));
+  assert.ok(has(r, 'Proximity sensor 1', 'input') && has(r, 'Proximity sensor 2', 'input'), 'prox numbered from 1');
+  assert.ok(!d(r).some((x) => /photo-ey\b|^Is /i.test(x)), d(r).join(' | '));
+}
+// Every transmitter of a sentence.
+{
+  const r = list('A level transmitter and a pressure transmitter, 4-20 mA. E-stop.');
+  assert.ok(has(r, 'Level transmitter', 'input') && has(r, 'Pressure transmitter', 'input'), d(r).join(' | '));
+}
+// Negation: nothing invented.
+{
+  const r = list('Conveyor with a start button. No E-stop. No stack light, no horn. No light curtain and no guard door. The heater is not used.');
+  assert.ok(!r.points.some((p) => /Safety relay|Stack light|horn|Light curtain|Guard door|Heater/i.test(p.description)), d(r).join(' | '));
+  assert.ok(r.questions.some((q) => /No E-stop on this machine: is the cell's safety status/.test(q)), 'a said "No E-stop" asks for the cell safety');
+  assert.ok(!list('Bench press with no touch screen.', false).questions.every((q) => !/start \/ stop buttons/.test(q)), '"no touch screen" is no panel');
+}
+// Equipment the first version missed.
+{
+  const r = list('The 5.5 kW main roll motor runs on a VFD with speed set from the screen. E-stop.');
+  assert.ok(has(r, 'Main roll VFD run', 'output') && has(r, 'Main roll VFD fault', 'input') && r.points.some((p) => p.description === 'Main roll speed reference'), d(r).join(' | '));
+  assert.ok(has(list('The main drive is on a VFD. E-stop.'), 'Main drive VFD run', 'output'));
+  assert.ok(has(list('A reversing conveyor. E-stop.'), 'Conveyor forward contactor', 'output') && has(list('A reversing conveyor. E-stop.'), 'Conveyor reverse contactor', 'output'));
+  assert.ok(has(list('A two-speed fan. E-stop.'), 'Fan high speed contactor', 'output'));
+  assert.equal(count(list('A star-delta pump. E-stop.'), /^Pump (main|star|delta) contactor$/), 3);
+  const punch = list('A hydraulic punch with up and down limit switches. A dump valve. E-stop.');
+  assert.ok(has(punch, 'Punch down solenoid', 'output') && has(punch, 'Punch up limit switch', 'input') && has(punch, 'Dump valve solenoid', 'output'), d(punch).join(' | '));
+  assert.ok(has(list('Parts are picked by vacuum. E-stop.'), 'Vacuum on', 'output'));
+  const robot = list('A robot loads the press. E-stop.');
+  assert.ok(has(robot, 'Robot cycle done', 'input') && has(robot, 'Robot fault', 'input'));
+  const line = list('Parts come from the upstream filler and go to the downstream capper. E-stop.');
+  assert.ok(has(line, 'Ready to receive from upstream filler', 'output') && has(line, 'Part ready for downstream capper', 'output'), d(line).join(' | '));
+  const hoist = list('An electric hoist lifts the basket. E-stop.');
+  assert.ok(has(hoist, 'Hoist up contactor', 'output') && has(hoist, 'Hoist down contactor', 'output'), d(hoist).join(' | '));
+  assert.ok(!hoist.points.some((p) => /limit|lift/i.test(p.description)), `no limit switch invented, "lifts" is a verb: ${d(hoist).join(' | ')}`);
+}
+// Should-fixes.
+{
+  const lvl = list('A tank level transmitter 0-5 m and a pressure transmitter 0-250 bar. E-stop.');
+  const t = lvl.points.find((p) => p.description === 'Tank level transmitter');
+  const pr = lvl.points.find((p) => p.description === 'Pressure transmitter');
+  assert.deepEqual([t?.analog?.max, t?.analog?.units, pr?.analog?.max, pr?.analog?.units], [5, 'm', 250, 'bar'], 'stated ranges used');
+  assert.ok(!lvl.questions.some((q) => /Ranges of/.test(q)), 'stated ranges are not asked');
+  assert.ok(has(list('A ready signal from the case packer. E-stop.'), 'Case packer ready', 'input'), 'full machine name');
+  assert.ok(list('Two conveyors. Each conveyor runs on a VFD with speed from the screen. E-stop.').points.some((p) => p.description === 'Conveyor 1 speed reference'), 'speed reference in an "each" sentence');
+  const cyc = list('A cycle start button on the door, no touch screen. E-stop.', true);
+  assert.ok(has(cyc, 'Cycle start button', 'input') && !cyc.questions.some((q) => /start \/ stop buttons/.test(q)));
+  assert.ok(!list('A cylinder with 2 end sensors. E-stop.').questions.some((q) => /both end positions/.test(q)), '"2 end sensors" in digits');
+  const air = list('An air pressure switch. E-stop.').points.find((p) => /pressure OK/.test(p.description));
+  assert.equal(air?.category, 'Pneumatic');
+  assert.equal(list('A limit switch at the end of travel. E-stop.').points.find((p) => /limit switch/i.test(p.description))?.category, 'Station 1');
+  const de = list('Die Maschine hat einen Not-Halt und zwei Förderbänder mit Lichtschranken.');
+  assert.deepEqual(de.points, []);
+  assert.ok(de.questions.some((q) => /English descriptions only/.test(q)) && !de.questions.some((q) => /No E-stop/.test(q)));
+  assert.ok(list('Two-hand start. E-stop.').questions.some((q) => /two-hand safety module/.test(q)));
+  assert.equal(list('E-stop.').reasoning, null);
+}
+
+// The roll former (cn-rollformer-01): main drive on a VFD, servo flying shear, encoder, hydraulic punch, pump, safety relay.
+{
+  const r = list('Roll forming machine for roof panels. The 5.5 kW main roll motor runs on a VFD with speed set from the touch screen. A 1.5 kW servo drives the flying shear, following a 1000 ppr measuring-wheel encoder. The hydraulic punch has up and down limit switches. The 2.2 kW hydraulic pump motor is started across the line. A run-out end photo-eye and a material present proximity sensor. Two E-stops and the shear guard go to a safety relay. Start, stop and reset buttons on the panel.');
+  for (const [x, t] of [['Main roll VFD run', 'output'], ['Main roll VFD fault', 'input'], ['Main roll speed reference', 'output'], ['Flying shear servo enable', 'output'], ['Flying shear servo in position', 'input'], ['Punch down solenoid', 'output'], ['Punch up limit switch', 'input'], ['Punch down limit switch', 'input'], ['Hydraulic pump motor contactor', 'output'], ['Hydraulic pump overload tripped', 'input'], ['Run-out end photo-eye', 'input'], ['Material present proximity sensor', 'input'], ['Safety relay OK (E-stop, guard door)', 'input'], ['Start button', 'input'], ['Stop button', 'input'], ['Fault reset button', 'input']] as const) {
+    assert.ok(has(r, x, t), `${x} (${t}) — got: ${d(r).join(' | ')}`);
+  }
+  assert.equal(count(r, /enable$/), 1, 'one servo axis');
+  assert.equal(count(r, /VFD run$/), 1, 'one VFD');
+  assert.ok(!r.points.some((p) => /encoder/i.test(p.description)) && r.questions.some((q) => /encoder/i.test(q)), 'the servo follows the encoder: it is the drive\'s master, asked, not read by the PLC');
+}
+
 console.log('rules I/O tests passed');

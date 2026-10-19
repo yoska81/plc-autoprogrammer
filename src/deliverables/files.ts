@@ -183,7 +183,14 @@ export function programFiles(p: ProjectSnapshot): { name: string; content: strin
 
 export function ioCsv(p: ProjectSnapshot): string {
   const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
-  return ['ID,PLC Address,Type,Category,Description', ...p.io.map((x) => [x.id, p.addresses.get(x.id) ?? '', x.type, x.category, x.description].map(cell).join(','))].join('\r\n');
+  // A PLC with its own address format (Siemens %I0.0, Logix tags…): that address too, as the I/O list page shows it.
+  const { modules, cpuId } = exportContext(p);
+  const native = p.profile.ioTag ? (a: string) => (a ? p.profile.ioTag!(a, modules ?? [], cpuId) ?? '' : '') : null;
+  const head = native ? `ID,PLC Address,${p.profile.vendor} Address,Type,Category,Description` : 'ID,PLC Address,Type,Category,Description';
+  return [head, ...p.io.map((x) => {
+    const a = p.addresses.get(x.id) ?? '';
+    return [x.id, a, ...(native ? [native(a)] : []), x.type, x.category, x.description].map(cell).join(',');
+  })].join('\r\n');
 }
 
 /** A data: URL as a Blob, decoded here: fetch() of a data URL can be blocked by the preview frame's content policy. */

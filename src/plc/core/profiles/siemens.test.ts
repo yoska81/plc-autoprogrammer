@@ -99,4 +99,45 @@ assert.match(validateProgram(bad, siemensProfile, new Set()).map((i) => i.messag
   assert.ok(names.includes('Tank_level_raw') && names.some((n) => /^Tank_level_raw_\d$/.test(n)), names.join(', '));
 }
 
+// Comments in the program's own names: an HMI description quoting the app's operands is written with the SCL names.
+{
+  const withHmi = { ...ctx, extraTags: [{ address: 'C1001', nickname: 'HMI_Start', comment: 'Momentary Start: runs when Start PB (X001) is ON and Run (C1) is off; Fill_Timer TD1 below DF101; Cycles CTD1' }] };
+  const out = buildScl(program, withHmi).scl;
+  const decl = out.split('\n').find((l) => /^\s+HMI_Start : Bool;/.test(l)) ?? '';
+  assert.match(decl, /Start PB \("Start_PB"\)/, decl);
+  assert.match(decl, /Run \(#Run\) is off/);
+  assert.match(decl, /#Fill_Timer\.ET below #Level_SP/);
+  assert.match(decl, /#Cycles\.CV/);
+  assert.ok(!/\b(X001|C1|TD1|DF101|CTD1)\b/.test(decl.split('//')[1] ?? ''), `no app operand left: ${decl}`);
+}
+// The user's own descriptions keep their words: "(cylinder C1, tank T1)" is not the program's C1 / T1.
+{
+  const own = { ...ctx, io: ctx.io.map((x, i) => (i === 0 ? { ...x, description: 'Pusher extended (cylinder C1, tank T1)' } : x)) };
+  const desc = own.io[0];
+  const out = buildScl(program, { ...own, extraTags: [{ address: 'C1001', nickname: 'HMI_Push', comment: `HMI: shows ${addr.get(desc.id)} (Pusher extended (cylinder C1, tank T1)) and Run (C1)` }] }).scl;
+  assert.ok(out.includes('Pusher extended (cylinder C1, tank T1)'), 'the description as written');
+  const decl = out.split('\n').find((l) => /^\s+HMI_Push : Bool;/.test(l)) ?? '';
+  assert.match(decl, /\(Pusher extended \(cylinder C1, tank T1\)\) and Run \(#Run\)/, decl);
+  assert.ok(!decl.includes(`shows ${addr.get(desc.id)} `), `the app's operand is renamed: ${decl}`);
+}
+
+// The example project on an S7-1214C: no app operand anywhere in the .scl outside the user's own I/O descriptions
+// (the generator's tag and rung comments name the symbols too).
+{
+  const { seedSampleProject } = await import('../../../preview/sampleProject');
+  const { applyEquipment } = await import('../../../spec/equipment');
+  const { collectProject } = await import('../../../deliverables/collect');
+  const { exportContext } = await import('../../../deliverables/exportContext');
+  const warn = console.warn;
+  console.warn = () => {};
+  seedSampleProject();
+  applyEquipment({ cpuId: '6ES7214-1AG40-0XB0', modules: [], hmiPartNumber: '6AV2123-2GB03-0AX0' }, null);
+  const p = collectProject();
+  console.warn = warn;
+  let text = buildScl(p.ladder, exportContext(p)).scl;
+  for (const x of [...p.io].sort((a, b) => b.description.length - a.description.length)) text = text.split(x.description).join('');
+  const left = [...new Set(text.match(/\b(?:CTD|TD|CT|DS|DD|DH|DF|SC|SD|TXT|C|T|X|Y)\d+\b/g) ?? [])];
+  assert.deepEqual(left, [], 'no app operand in the example\'s SCL outside the I/O descriptions');
+}
+
 console.log('siemens tests passed');

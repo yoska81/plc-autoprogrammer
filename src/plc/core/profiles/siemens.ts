@@ -26,6 +26,7 @@ import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseA
 import { toIecSt, type StDialect, type StProgram, type StVariable } from './iecSt';
 import { logixName } from './logixExport';
 import { getPart } from '../../../electrical/catalog';
+import { outsideUserText } from '../userText';
 
 type Family = 'S7-1200' | 'S7-1500';
 
@@ -115,10 +116,16 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
     ioVar: (base, name) => {
       const s = siemensAddress(base, c, modules);
       if (!s || !/^[XY]/.test(base)) return null;
-      tags.push({ name, address: s.address, type: 'Bool', comment: ctx.labels.get(base) ?? base, inferred: s.inferred });
+      tags.push({ name, address: s.address, type: 'Bool', comment: ctx.labels.get(base) ?? `${base.startsWith('X') ? 'Input' : 'Output'} ${s.address}`, inferred: s.inferred });
       return `"${name}"`;
     },
-    ioTodo: (base, name) => `(* TODO ${base}: no address on this CPU (${name}) *)`,
+    ioTodo: (_base, name) => `(* TODO ${name}: no address on this CPU *)`,
+    // A register the project gives no name: named by its type, never by the CLICK register ("DS1119").
+    unnamed: (base) => {
+      const m = /^(X|Y|C|T|CT|DS|DD|DH|DF|TXT|SD)(\d+)$/.exec(base);
+      const kind: Record<string, string> = { X: 'Input', Y: 'Output', C: 'Flag', T: 'Timer', CT: 'Counter', DS: 'Int', DD: 'DInt', DH: 'Word', DF: 'Real', TXT: 'Text', SD: 'System' };
+      return m ? { name: `${kind[m[1]]}_${m[2]}`, comment: 'no name in the project' } : undefined;
+    },
     // Kept SCL of the original program reads / writes the channel's raw word (Int 0…27648), as it did.
     rawWord: (base, ref) => (analog.has(base) ? `"${ref.replace(/^#/, '')}_raw"` : null),
     ref: (n) => `#${n}`,
@@ -143,6 +150,22 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
   };
 }
 
+/**
+ * A comment in the program's own names: the app's operands an HMI description quotes ("Safety OK (X001)", "within
+ * DS1001 seconds", "Reset (C1003)") become the SCL names a TIA user sees — PLC tags "Safety_OK", statics
+ * #SP_Head_Timeout, timer / counter values #Tmr.ET / #Cnt.CV. Operands the program does not have are left as they are.
+ */
+export function sclComment(text: string, variables: StVariable[], users: string[] = []): string {
+  const ref = new Map<string, string>();
+  for (const v of variables) ref.set(v.base.toUpperCase(), v.io ?? `#${v.name}`);
+  return outsideUserText(text, users, (m) => {
+    const [, p, n] = /^([A-Z]+)(\d+)$/.exec(m) ?? [];
+    if (p === 'TD') { const t = ref.get(`T${n}`); return t ? `${t}.ET` : m; }
+    if (p === 'CTD') { const c = ref.get(`CT${n}`); return c ? `${c}.CV` : m; }
+    return ref.get(m) ?? m;
+  });
+}
+
 /** TIA Portal reads external sources as UTF-8 only with a byte-order mark. */
 const BOM = '\uFEFF';
 
@@ -161,7 +184,12 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   // Setpoints, counters and run hours survive a power cycle (CLICK keeps DS / DD / DH / DF registers and
   // counters retentive): those statics are RETAIN in the optimized instance DB, the rest are not.
   const RETAIN_RE = /^(DS|DD|DH|DF|CT|CTD)\d+$/i;
-  const line = (v: { name: string; type: string; comment: string }) => `      ${v.name} : ${v.type};   // ${v.comment.replace(/[\r\n]+/g, ' ')}`;
+  // The user's own texts a comment quotes (I/O descriptions, tag comments, rung comments) keep their words.
+  // Comments the app or its AI wrote (tag and rung comments) speak the program's names; the user's own I/O
+  // descriptions and kept code of another PLC stay as written.
+  const users = [...ctx.io.map((x) => x.description), ctx.header, ...program.rungs.flatMap((r) => r.outputs.flatMap((o) => (o.type === 'RAW' ? [o.text] : [])))]
+    .map((t) => t.trim()).filter((t) => t && !/^[A-Z]+\d+$/i.test(t)).sort((a, b) => b.length - a.length);
+  const line = (v: StVariable) => `      ${v.name} : ${v.type};   // ${(v.comment === v.base ? v.comment : sclComment(v.comment, st.variables, users)).replace(/[\r\n]+/g, ' ')}`;
   const decl = [
     '      Initialized : Bool;   // set after the first scan',
     '      FirstScan : Bool;   // TRUE on the first scan after a start',
@@ -169,7 +197,8 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   ];
   const retain = st.variables.filter((v) => RETAIN_RE.test(v.base)).map(line);
   const indent = (s: string) => (s ? `   ${s}` : s);
-  const body = st.body.split('\n').map(indent).join('\n');
+  // Rung comments in the program's own names too ("preset is the HMI setpoint #SP_Push_Time", not DS1001).
+  const body = st.body.replace(/\(\* ([\s\S]*?) \*\)/g, (_m, t: string) => `(* ${sclComment(t, st.variables, users)} *)`).split('\n').map(indent).join('\n');
   const scl = `${BOM}${blocks.map((b) => `${b}\n\n`).join('')}FUNCTION_BLOCK "Machine"
 { S7_Optimized_Access := 'TRUE' }
 VERSION : 0.1

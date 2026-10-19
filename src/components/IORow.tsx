@@ -72,6 +72,7 @@ export function IORow({ point, address, duplicate, device, rack }: IORowProps) {
   return (
     <tr className="hover:bg-brand-50/60 group">
       <td className={`${td} font-mono text-steel-700 whitespace-nowrap`}>{point.id}</td>
+      {rack.profile.ioTag && <td className={`${td} font-mono text-steel-800 whitespace-nowrap`}>{(address && nativeName(rack, address)) || address || '—'}</td>}
       <td className={`${td} whitespace-nowrap`}>
         <div className="flex items-center gap-1">
           <input
@@ -90,7 +91,6 @@ export function IORow({ point, address, duplicate, device, rack }: IORowProps) {
         </div>
         {bad && <p role="alert" className="mt-0.5 max-w-xs whitespace-normal text-[11px] leading-snug text-red-700">{bad.reason}</p>}
       </td>
-      {rack.profile.ioTag && <td className={`${td} font-mono text-xs text-steel-700 whitespace-nowrap`}>{(address && nativeName(rack, address)) || address || '—'}</td>}
       <td className={td}>
         <div className="flex items-center gap-1">
         <input

@@ -2,6 +2,7 @@ import type { ProjectSnapshot } from '../deliverables/collect';
 import { alarmRows, programInfo, type ProgramInfo } from '../deliverables/docs/program';
 import { safetyFunctions, type SafetyFunction } from '../deliverables/docs/safety';
 import { naturalCompare } from '../electrical/derive';
+import { firstPhrase as short, inPlcNames } from '../deliverables/plcNames';
 
 /**
  * On-site commissioning checklist made from the project: every input and output with the result
@@ -27,12 +28,6 @@ export interface CommItem {
   procedure: string;
   /** What must happen (pass criterion). */
   expected: string;
-}
-
-/** First phrase of a rung comment, cut at a word. */
-function short(comment: string): string {
-  const t = comment.trim().split('\n')[0].split(/[:.](\s|$)/)[0].trim();
-  return t.length <= 70 ? t : `${t.slice(0, 70).replace(/\s+\S*$/, '')}…`;
 }
 
 /** Field devices whose PLC input is ON at rest and OFF when operated. */
@@ -90,7 +85,10 @@ export function commissioningItems(p: ProjectSnapshot, info: ProgramInfo = progr
     procedure: `Create the condition: ${r.cause.split('\n')[0]}`,
     expected: `HMI shows "${r.message}" (${r.severity}); ${r.effect.replace(/\.$/, '')}. To clear: ${r.action}`,
   });
-  return items;
+  // In the PLC's own names (%I0.0, "Machine_DB".SP_Service_Interval on an S7): what the technician sees in its software.
+  // Ids stay on the app's addresses, so ticks and notes keep their item.
+  const own = inPlcNames(p);
+  return items.map((it) => ({ ...it, title: own(it.title), procedure: own(it.procedure), expected: own(it.expected), device: it.section === 'alarms' ? own(it.device) : it.device }));
 }
 
 /** One item's record on site. */

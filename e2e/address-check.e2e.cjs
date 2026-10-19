@@ -59,7 +59,9 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.goto(BASE + '/io');
   // The brand's own address is shown next to the app's (A3).
   await field.waitFor();
-  check((await page.locator('th').allInnerTexts()).includes('Siemens address'), 'Siemens address column shown');
+  const heads = await page.locator('th').allInnerTexts();
+  check(heads.includes('Siemens address'), 'Siemens address column shown');
+  check(heads.indexOf('Siemens address') >= 0 && heads.indexOf('Siemens address') < heads.indexOf('Program address') && !heads.includes('Address'), `the Siemens address comes first; the editable one is the program address (${heads.slice(0, 4).join(' | ')})`);
   check(/%I0\.0/.test(await page.locator('tr', { has: field }).innerText()), 'first input shows %I0.0');
   await type('%I0.1');
   check(await saved() === 'X002', `%I0.1 on an S7: saved as X002 (${await saved()})`);
@@ -95,6 +97,18 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(await use.count() === 1 && !/cannot program/.test(await card.innerText()), 'Siemens card: its CPUs can be chosen ("Use this CPU")');
   await use.click();
   check(/6ES7/.test(await page.getByText(/^Your equipment selection \(/).innerText().catch(() => '')), 'Use this CPU: the Siemens CPU becomes the selection to apply');
+
+  // Across brands with a panel that cannot talk to the new PLC: the panel is swapped for the closest one that can, and said.
+  await page.evaluate(async () => {
+    const { applyEquipment } = await import('/src/spec/equipment.ts');
+    applyEquipment({ cpuId: 'C0-12DD1E-D', modules: [], hmiPartNumber: 'CM5-T7W' }, null);
+  });
+  await page.goto(BASE + '/equipment');
+  await card.getByRole('button', { name: 'Use this CPU' }).first().click();
+  const sel = await page.getByText(/^Your equipment selection \(/).innerText().catch(() => '');
+  const note = await page.getByText(/The CM5-T7W cannot talk to the 6ES7/).innerText().catch(() => '');
+  console.log('  ·', sel.replace(/\s+/g, ' ').slice(0, 120), '|', note.slice(0, 160));
+  check(/6ES7/.test(sel) && !/CM5-T7W/.test(sel) && /is selected instead/.test(note), 'cross-brand pick: the C-more panel is swapped for one that talks to the S7, with a note');
 
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await browser.close();

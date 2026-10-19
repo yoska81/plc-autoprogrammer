@@ -2,10 +2,11 @@ import { PLC_PROFILES } from './profiles';
 import { moduleSlots, ioCapacity } from './modules';
 import { getPart } from '../../electrical/catalog';
 import type { HmiModel } from '../../hmi/hmiCatalog';
+import type { CatalogPart } from '../../electrical/types';
 import type { AnalogChannel, CpuModel } from './profile';
 import type { AnalogRange } from '../../types/io';
 import { acceptsRange } from './analog';
-import { driversOf, hmiCompatible, platformById, platformFit, suggestModules, type Platform } from './platforms';
+import { driversOf, hmiCompatible, platformById, platformFit, plcModuleFor, suggestModules, type Platform } from './platforms';
 import { ALL_PARTS } from '../../electrical/catalogs';
 import { hasBuiltInPanel, panelPart } from '../../hmi/panels';
 
@@ -64,7 +65,32 @@ export function analogShortfall(cpu: CpuModel, modules: string[], need: Need): {
 
 const shortfallText = (s: { kind: string; family: string; count: number }) => `No ${s.family} analog ${s.kind} for ${s.count} ${s.family} signal${s.count === 1 ? '' : 's'}.`;
 
-export interface Fit { ok: boolean; reason: string | null; spareIn: number; spareOut: number }
+export interface Fit {
+  ok: boolean; reason: string | null; spareIn: number; spareOut: number;
+  /** What else the pairing needs, for the buyer and the engineer ("PLC needs: CM 1243-5 DP master …"). */
+  note?: string | null;
+}
+
+/**
+ * What a catalog touch panel needs from this PLC beyond its driver: the interface module it reaches the PLC
+ * through (plcModuleFor, src/plc/core/platforms.ts) and the Logix firmware it needs. A CP2E-E / CP2E-S has
+ * only RS-232, so the GT21 panels that are RS-422/485 only cannot reach it at all (reason); a CP2E-N takes the
+ * CP1W-CIF11 board; on the panels that also speak RS-232 the CP2E-E / S needs nothing.
+ */
+export function panelPlcNeeds(part: CatalogPart, platform: Platform, cpuId: string): { reason: string | null; note: string | null } {
+  const notes: string[] = [];
+  let text = plcModuleFor(part, platform.id);
+  if (text && platform.id === 'omron-cp2e') {
+    if (/^CP2E-[ES]/i.test(cpuId)) {
+      if (/not with this panel/i.test(text)) return { reason: 'CP2E-E/S have RS-232 only; this panel is RS-422/485.', note: null };
+      text = /E\/S: built-in RS-232/i.test(text) ? null : text;
+    } else text = text.replace(/\s*\(.*\)\s*$/, '').replace(/\s+on a CP2E-N$/i, '');
+  }
+  if (text) notes.push(`PLC needs: ${text}`);
+  const fw = Number(part.ratings.logixFirmwareMin ?? 0);
+  if (fw && platform.vendor === 'allen-bradley') notes.push(`Needs Logix controller firmware V${fw} or later`);
+  return { reason: null, note: notes.length ? notes.join(' · ') : null };
+}
 
 export function findCpu(id: string): CpuModel | null {
   for (const p of PLC_PROFILES) {
@@ -119,6 +145,7 @@ export function cpuFit(cpu: CpuModel, modules: string[], need: Need): Fit {
  */
 export function hmiFit(hmi: HmiModel, need: Need, cpuId?: string): Fit {
   let reason: string | null = null;
+  let note: string | null = null;
   const platform = cpuId ? platformOf(cpuId) : undefined;
   if (hmi.catalog) {
     const raw = getPart(hmi.partNumber);
@@ -126,12 +153,15 @@ export function hmiFit(hmi: HmiModel, need: Need, cpuId?: string): Fit {
     if (!part) reason = 'Not in the parts catalog.';
     // The screen of an all-in-one PLC comes only with that PLC.
     else if (hasBuiltInPanel(part)) reason = cpuId === part.partNumber ? null : `Built into the ${part.partNumber} PLC: choose it as the CPU.`;
-    else if (platform) reason = hmiCompatible(platform, part).reason;
+    else if (platform) {
+      reason = hmiCompatible(platform, part).reason;
+      if (!reason) ({ reason, note } = panelPlcNeeds(part, platform, cpuId!));
+    }
     else if (!driversOf(part).includes('click')) reason = `CLICK is not in ${part.manufacturer}'s PLC driver list${part.ratings.plcDrivers === undefined ? ' (no driver list in the catalog yet)' : ''}.`;
   } else if (platform) reason = `C-more panels are set up for CLICK only; not checked with the ${platform.name}.`;
   else if (!hmi.supportsClickEthernet) reason = 'Cannot connect to CLICK over Ethernet.';
   if (!reason && need.minHmiSizeIn && hmi.sizeIn < need.minHmiSizeIn) reason = `Smaller than the ${need.minHmiSizeIn}" the screens need.`;
-  return { ok: !reason, reason, spareIn: 0, spareOut: 0 };
+  return { ok: !reason, reason, spareIn: 0, spareOut: 0, note: reason ? null : note };
 }
 
 /**

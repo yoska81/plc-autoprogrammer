@@ -66,6 +66,8 @@ export interface ProjectInfo {
   vendors?: Partial<VendorPreference>;
   /** The user picked the PLC brand on the Brand preference card (an AutomationDirect pick is then a request, not the default). */
   plcChosen?: boolean;
+  /** Makers whose "use them for panel parts too" offer the user turned down (Electrical page). */
+  brandOfferDismissed?: string[];
 }
 
 /** The current I/O address layout (see ProjectStore.ioLayoutVersion). */
