@@ -1,4 +1,5 @@
-// A big imported program (a generated L5X: 300 programs, 15,000 rungs, 2,048 I/O; no customer data) is read,
+// A big imported program (a generated L5X: 500 programs, 25,000 rungs, 2,048 I/O; about 7M characters saved, well
+// over what localStorage holds; no customer data) is read,
 // made the project without freezing the page, and is all there after a reload (kept in IndexedDB: it does not
 // fit in localStorage). Clearing localStorage still starts the app clean.
 //   npx vite --port 5205 &  ;  BASE_URL=http://localhost:5205 node e2e/big-program.e2e.cjs
@@ -19,7 +20,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   try {
     await page.goto(BASE + '/import?tab=program');
-    const text = await page.evaluate(async () => (await appImport('/src/plc/import/__fixtures__/bigPrograms.ts')).l5x(300, 1024));
+    const text = await page.evaluate(async () => (await appImport('/src/plc/import/__fixtures__/bigPrograms.ts')).l5x(500, 1024));
     const rungsOf = () => page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
     // the longest gap between two frames while the program is made the project
     await page.evaluate(() => { window.__gap = 0; let last = performance.now(); const tick = () => { const n = performance.now(); window.__gap = Math.max(window.__gap, n - last); last = n; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
@@ -31,10 +32,13 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
     const rungs = await rungsOf();
     const gap = await page.evaluate(() => window.__gap);
     log(`${(text.length / 1e6).toFixed(1)} MB, ${rungs} rungs; longest frame gap ${(gap / 1000).toFixed(1)} s`);
-    check(rungs >= 15000, 'the big program is the project');
+    check(rungs >= 25000, 'the big program is the project');
     check(gap < 3000, 'the page did not freeze for seconds');
-    const inLs = await page.evaluate(() => localStorage.getItem('plc-program-store'));
-    check(inLs === '\u0000in-indexeddb', 'too big for localStorage: kept in IndexedDB (a placeholder in localStorage)');
+    // the stores write a moment after the last change (appStorage.ts): wait for it, not a fixed time
+    const inLs = await page.waitForFunction(() => localStorage.getItem('plc-program-store') === '\u0000in-indexeddb', null, { timeout: 10000 }).then(() => true, () => false);
+    const size = await page.evaluate(async () => (await appImport('/src/lib/appStorage.ts')).appStorage.getItem('plc-program-store')?.length ?? 0);
+    log(`program store: ${(size / 1e6).toFixed(1)}M characters`);
+    check(inLs, 'too big for localStorage: kept in IndexedDB (a placeholder in localStorage)');
 
     // closing while the program (only IndexedDB holds it) is being written: the browser asks to stay
     const dialogs = [];
