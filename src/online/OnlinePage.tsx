@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useActiveHmiDesign } from '../hmi/projectPanel';
 import { useProgramStore } from '../store/useProgramStore';
 import { usePlc } from '../plc/core/usePlc';
@@ -22,6 +22,12 @@ import { buildCheckoutPdf, checkoutRows, checkoutSummary } from './checkoutPdf';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
+
+/** The brand's own software for watching the PLC online. */
+const ONLINE_SOFTWARE: Record<string, string> = {
+  'siemens-s7': 'TIA Portal (Go online, Monitor all)', logix: 'Studio 5000 Logix Designer (Go Online)', micro800: 'Connected Components Workbench (Connect)',
+  'unitronics-unistream': 'UniLogic (Online)', 'unitronics-vision': 'VisiLogic (Online test mode)',
+};
 import TroubleshootPanel from '../troubleshoot/TroubleshootPanel';
 
 type Tab = 'monitor' | 'ladder' | 'hmi' | 'checkout' | 'troubleshoot';
@@ -138,6 +144,21 @@ export default function OnlinePage() {
     <button key={t} onClick={() => setTab(t)} className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 ${tab === t ? 'border-brand-600 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>{label}</button>
   );
 
+  // Live values come over CLICK's Modbus TCP map only: another brand gets a plain sentence (its own software
+  // monitors it online), never a CLICK address table.
+  if (!isClick) return (
+    <>
+      <header className="px-4 sm:px-6 pt-4 pb-3 bg-white border-b border-steel-200">
+        <h2 className="text-base font-semibold text-steel-800">Online — connect to the PLC</h2>
+      </header>
+      <div className="flex-1 overflow-auto bg-steel-50 p-4">
+        <p className="max-w-2xl rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="online-not-here">
+          Online monitoring here connects to AutomationDirect CLICK PLCs only. To watch the {profile.vendor} {cpu.id} running, go online in {ONLINE_SOFTWARE[profile.id] ?? `${profile.vendor}'s own programming software`}. The I/O check-out list is on the <Link to="/commissioning" className="underline">Commissioning</Link> page.
+        </p>
+      </div>
+    </>
+  );
+
   return (
     <>
       <header className="px-4 sm:px-6 pt-4 bg-white border-b border-steel-200">
@@ -183,7 +204,6 @@ export default function OnlinePage() {
           Connecting to a real PLC needs the <b>ISA Auto Programmer desktop app</b> for Windows (a web browser cannot open a connection to the PLC). Here you can still see the Modbus address of every point and fill in the I/O check-out by hand.
         </div>
       )}
-      {!isClick && <div className="mx-6 mt-3 bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900">Online monitoring is available for AutomationDirect CLICK PLCs.</div>}
       {st.error && <div role="alert" className="mx-6 mt-3 bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{st.error}</div>}
       {checks && (
         <div className="mx-6 mt-3 rounded border border-steel-200 bg-white p-3 text-sm" data-testid="online-checks">

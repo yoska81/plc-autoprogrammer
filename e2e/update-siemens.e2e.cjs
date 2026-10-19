@@ -143,6 +143,10 @@ async function scenario(browser, quick) {
   check(st.exporters.some((f) => /TIA|SCL|\.scl|\.xml/i.test(f)), `TIA Portal export offered (${st.exporters.join(' | ')})`);
   check(!results.some((r) => / failed:/.test(r)), 'no stage failed');
   check(seen.unknown.length === 0, `every AI prompt known to the mock ${seen.unknown.join(' | ')}`);
+  // Online: a plain sentence for an S7 (its own software monitors it), never CLICK's Modbus table.
+  await page.goto(BASE + '/online');
+  const online = await page.getByTestId('online-not-here').innerText({ timeout: 10000 }).catch(() => '');
+  check(/TIA Portal/.test(online) && !(await page.getByText(/MODBUS|016385|401001/).count()), `Online page: sentence only (${online.slice(0, 80)})`);
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await page.context().close();
 }
