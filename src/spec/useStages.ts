@@ -10,7 +10,9 @@ import { noTouchPanelNow, useNoTouchPanel } from '../hmi/projectPanel';
 import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
-import { changedSections, fingerprint, type SpecSections } from './types';
+import { hardwareShortfall } from './equipmentRules';
+import { changedSections, fingerprint, specToText, type SpecSections } from './types';
+import { brandMismatch, plcPreference, plcPreferenceOf } from './brand';
 import type { IOPoint } from '../types/io';
 import type { HmiDesign } from '../hmi/types';
 import { SOURCE_LABEL, type QuestionSource } from '../components/questions/useQuestionStore';
@@ -90,10 +92,14 @@ export interface StageInputs {
   hasProgram: boolean;
   /** The equipment was chosen without a touch panel (pushbuttons and lamps only): the HMI stage is not used. */
   noHmi?: boolean;
+  /** Why the chosen CPU and modules cannot hold the I/O list (hardwareShortfall), or null. */
+  hardwareShort?: string | null;
+  /** Why the project's PLC is not the brand asked for (brandMismatch), or null. */
+  otherBrand?: string | null;
 }
 
 /** Pure stage status (used by the hook below and by the design review). */
-export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi = false }: StageInputs): Record<StageId, StageInfo> {
+export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi = false, hardwareShort = null, otherBrand = null }: StageInputs): Record<StageId, StageInfo> {
   const specEmpty = !Object.values(fp.spec).some((t) => t.trim());
   const hasEquipment = Boolean(sources.equipment);
   const info = (id: StageId, has: boolean, deps: { spec?: boolean; io?: boolean; hmi?: boolean; region?: boolean; panel?: boolean }): StageInfo => {
@@ -118,7 +124,12 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
   };
   return {
     spec: { id: 'spec', status: specEmpty ? 'empty' : 'ready', reason: null },
-    equipment: info('equipment', hasEquipment, { spec: true }),
+    // A PLC that cannot hold the I/O is never "done", however it was chosen (Equipment or PLC page).
+    equipment: hardwareShort
+      ? { id: 'equipment', status: 'stale', reason: `The PLC cannot hold the I/O list: ${hardwareShort} Choose a larger CPU or add modules on the Equipment page.` }
+      // Another brand than the description (or Brand preference) asks for: chosen again by Update all.
+      : otherBrand && hasEquipment ? { id: 'equipment', status: 'stale', reason: `${otherBrand} Choose that brand on the Equipment page, or run Update all.` }
+        : info('equipment', hasEquipment, { spec: true }),
     io: info('io', ioCount > 0, { spec: true }),
     electrical: info('electrical', hasDesign, { spec: true, io: true, region: true }),
     hmi: noHmi && !hasHmi ? { id: 'hmi', status: 'ready', reason: null } : info('hmi', hasHmi, { spec: true, io: true, panel: true }),
@@ -141,6 +152,8 @@ export function stagesNow(): Record<StageId, StageInfo> {
     hasDesign: Boolean(useElectricalStore.getState().design),
     hasHmi: Boolean(hmi),
     hasProgram: prog.ladder.rungs.length > 0 || Boolean(prog.generatedCode),
+    hardwareShort: (() => { const p = useProjectStore.getState(); return hardwareShortfall(p.cpuId, p.modules, io); })(),
+    otherBrand: brandMismatch(specToText(sections), plcPreference(), useProjectStore.getState().plcId),
     noHmi,
   });
 }
@@ -154,6 +167,14 @@ export function useStages(): Record<StageId, StageInfo> {
   const noHmi = useNoTouchPanel();
   const hasHmi = useHmiStore((s) => Boolean(s.design)) && !noHmi;
   const hasProgram = useProgramStore((s) => s.ladder.rungs.length > 0 || Boolean(s.generatedCode));
-  return useMemo(() => computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi }),
-    [fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi]);
+  const io = useIOStore((s) => s.projectIO);
+  const cpuId = useProjectStore((s) => s.cpuId);
+  const modules = useProjectStore((s) => s.modules);
+  const hardwareShort = useMemo(() => hardwareShortfall(cpuId, modules, io), [cpuId, modules, io]);
+  const plcId = useProjectStore((s) => s.plcId);
+  const plcPref = useProjectStore((s) => s.info.vendors?.plc);
+  const plcChosen = useProjectStore((s) => s.info.plcChosen);
+  const otherBrand = useMemo(() => brandMismatch(specToText(fp.spec), plcPreferenceOf(plcPref, plcChosen), plcId), [fp.spec, plcPref, plcChosen, plcId]);
+  return useMemo(() => computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi, hardwareShort, otherBrand }),
+    [fp, sources, ioCount, hasDesign, hasHmi, hasProgram, noHmi, hardwareShort, otherBrand]);
 }

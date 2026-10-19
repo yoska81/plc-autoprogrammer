@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { CATALOG_GROUPS_NOTE, GROUP_TITLE, VENDORS, fallbackCategories, groupOfPart, groupsOf, type VendorGroup } from '../electrical/catalogs';
 import type { VendorId } from '../electrical/types';
 import { useProjectStore, useVendorPreference } from '../store/useProjectStore';
+import { hasPlcProfile } from '../spec/brand';
 
 const GROUPS = Object.keys(GROUP_TITLE) as VendorGroup[];
 
@@ -49,8 +50,18 @@ const partsInGroup = (id: VendorId, g: VendorGroup) => (VENDORS.find((x) => x.id
 export default function VendorPreferenceCard() {
   const pref = useVendorPreference();
   const setInfo = useProjectStore((s) => s.setInfo);
-  const setGroup = (g: VendorGroup, ids: VendorId[]) => setInfo({ vendors: { ...pref, [g]: ids.length ? ids : ['automationdirect'] } });
-  const setAll = (id: VendorId) => setInfo({ vendors: Object.fromEntries(GROUPS.map((g) => [g, groupsOf(id).includes(g) ? [id] : ['automationdirect']])) as Record<VendorGroup, VendorId[]> });
+  // Only the groups the user chose are saved: a group left alone stays unset (the default), so editing the sensors
+  // never writes a PLC preference (which would move a Siemens or Logix project back to CLICK).
+  const saved = useProjectStore((s) => s.info.vendors);
+  const setGroup = (g: VendorGroup, ids: VendorId[]) => {
+    const next: Partial<Record<VendorGroup, VendorId[]>> = { ...saved };
+    if (ids.length) next[g] = ids; else delete next[g];
+    setInfo({ vendors: next, ...(g === 'plc' ? { plcChosen: ids.length > 0 } : {}) });
+  };
+  const setAll = (id: VendorId) => setInfo({
+    vendors: Object.fromEntries(GROUPS.filter((g) => groupsOf(id).includes(g)).map((g) => [g, [id]])) as Partial<Record<VendorGroup, VendorId[]>>,
+    plcChosen: groupsOf(id).includes('plc'),
+  });
   const fallback = fallbackCategories(pref);
   return (
     <section className="rounded-lg border border-steel-200 bg-white p-4 space-y-2" aria-label="Preferred brands">
@@ -78,8 +89,9 @@ export default function VendorPreferenceCard() {
       {fallback.length > 0 && (
         <p className="text-xs text-steel-500">Not offered by the chosen brands, so AutomationDirect parts are used for: {fallback.join(', ')}.</p>
       )}
-      {!pref.plc.includes('automationdirect') && (
-        <p className="text-xs rounded bg-amber-50 border border-amber-200 text-amber-900 p-2">The PLC program, I/O addressing and simulator still use the CLICK PLC below until programming support for {pref.plc.map((id) => nameOf(id)).join(' / ')} is added. The brand's PLC parts are listed in the catalog for the design and the bill of materials.</p>
+      {/* Only brands this tool cannot program yet (Siemens, Allen-Bradley and Unitronics are programmed in their own language). */}
+      {pref.plc.some((id) => !hasPlcProfile(id)) && (
+        <p className="text-xs rounded bg-amber-50 border border-amber-200 text-amber-900 p-2">The PLC program, I/O addressing and simulator still use the CLICK PLC below until programming support for {pref.plc.filter((id) => !hasPlcProfile(id)).map((id) => nameOf(id)).join(' / ')} is added. The brand's PLC parts are listed in the catalog for the design and the bill of materials.</p>
       )}
       <p className="text-xs text-steel-500">{CATALOG_GROUPS_NOTE} After changing brands, update the electrical design so it uses them.</p>
     </section>

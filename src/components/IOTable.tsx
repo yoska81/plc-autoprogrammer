@@ -5,26 +5,31 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { usePlc } from '../plc/core/usePlc';
 import type { IOPoint } from '../types/io';
 import type { IOFilter } from './IOToolbar';
+import type { Rack } from '../plc/core/addressCheck';
+import { useProjectStore } from '../store/useProjectStore';
+import { Link } from 'react-router-dom';
 
-function Group({ title, color, points, addresses, dupes, devices }: {
-  title: string; color: string; points: IOPoint[]; addresses: Map<string, string>; dupes: Set<string>; devices: Map<string, string>;
+function Group({ title, color, points, addresses, dupes, devices, rack }: {
+  title: string; color: string; points: IOPoint[]; addresses: Map<string, string>; dupes: Set<string>; devices: Map<string, string>; rack: Rack;
 }) {
   if (!points.length) return null;
   return (
     <>
       <tr>
-        <td colSpan={6} className="px-3 py-1 bg-[#e9edef] border-y border-steel-200 text-xs font-semibold text-steel-700">
+        <td colSpan={rack.profile.ioTag ? 7 : 6} className="px-3 py-1 bg-[#e9edef] border-y border-steel-200 text-xs font-semibold text-steel-700">
           <span className={`inline-block w-2 h-2 rounded-sm mr-2 ${color}`} />{title} ({points.length})
         </td>
       </tr>
-      {points.map((p) => <IORow key={p.id} point={p} address={addresses.get(p.id) ?? ''} duplicate={dupes.has(addresses.get(p.id) ?? '')} device={devices.get((addresses.get(p.id) ?? '').toUpperCase())} />)}
+      {points.map((p) => <IORow key={p.id} point={p} address={addresses.get(p.id) ?? ''} duplicate={dupes.has(addresses.get(p.id) ?? '')} device={devices.get((addresses.get(p.id) ?? '').toUpperCase())} rack={rack} />)}
     </>
   );
 }
 
 export function IOTable({ filter }: { filter: IOFilter }) {
   const { projectIO } = useIOStore();
-  const { profile, addresses } = usePlc();
+  const { profile, cpu, modules, addresses } = usePlc();
+  const rack: Rack = { profile, cpu, modules };
+  const chosenCpu = useProjectStore((st) => st.cpuId);
   // The field device wired to each address in the electrical design (tag and type).
   const ioWiring = useElectricalStore((st) => st.design?.ioWiring);
   const devices = new Map((ioWiring ?? []).map((w) => [w.address.toUpperCase(), `${w.deviceTag} · ${FIELD_DEVICE_LABEL[w.deviceType] ?? w.deviceType}`]));
@@ -44,6 +49,11 @@ export function IOTable({ filter }: { filter: IOFilter }) {
     );
   }
 
+  // Said, never silent: addresses on modules nobody chose (a preview), and points the PLC has no terminal for.
+  const noCpu = !chosenCpu;
+  const preview = !modules.length && [...addresses.values()].some((a) => /^[XY][1-9]\d\d$/.test(a));
+  const unaddressed = projectIO.filter((p) => !addresses.get(p.id)).length;
+
   const q = filter.text.trim().toLowerCase();
   const shown = projectIO.filter((p) =>
     (filter.type === 'all' || p.type === filter.type) &&
@@ -55,12 +65,20 @@ export function IOTable({ filter }: { filter: IOFilter }) {
         <h4 className="text-xs font-semibold text-steel-700">I/O list — {profile.name}</h4>
         {shown.length !== projectIO.length && <span className="text-xs text-steel-500">Showing {shown.length} of {projectIO.length}</span>}
       </div>
+      {(noCpu || preview || unaddressed > 0) && (
+        <div role="status" className="px-3 py-2 text-xs bg-amber-50 border-b border-amber-200 text-amber-900 space-y-0.5">
+          {noCpu && <p>No PLC CPU is chosen yet: the addresses assume a {cpu.label.split(' — ')[0]}. Choose the PLC on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
+          {preview && <p>No expansion modules are chosen: addresses past the CPU's own {cpu.builtInInputs} inputs / {cpu.builtInOutputs} outputs (X101…, Y101…) are a preview on 16-point modules that do not exist yet. Add the modules on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
+          {unaddressed > 0 && <p>{unaddressed} of {projectIO.length} points have no address: the PLC has no terminal left for them. Choose a larger CPU or more modules on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
             <tr>
               <th className={`${ioTh} w-20`}>Tag</th>
               <th className={`${ioTh} w-28`} title="Address on the selected PLC. Type to override.">Address</th>
+              {profile.ioTag && <th className={`${ioTh} w-36`} title={`The address as ${profile.vendor} software shows it`}>{profile.vendor} address</th>}
               <th className={ioTh}>Description</th>
               <th className={`${ioTh} w-40`}>Category</th>
               <th className={`${ioTh} w-32`} title="Field device type; Discrete / Analog with range and engineering units">Device / signal</th>
@@ -68,8 +86,8 @@ export function IOTable({ filter }: { filter: IOFilter }) {
             </tr>
           </thead>
           <tbody>
-            <Group title="Inputs" color="bg-brand-600" points={shown.filter((p) => p.type === 'input')} addresses={addresses} dupes={dupes} devices={devices} />
-            <Group title="Outputs" color="bg-amber-500" points={shown.filter((p) => p.type === 'output')} addresses={addresses} dupes={dupes} devices={devices} />
+            <Group title="Inputs" color="bg-brand-600" points={shown.filter((p) => p.type === 'input')} addresses={addresses} dupes={dupes} devices={devices} rack={rack} />
+            <Group title="Outputs" color="bg-amber-500" points={shown.filter((p) => p.type === 'output')} addresses={addresses} dupes={dupes} devices={devices} rack={rack} />
           </tbody>
         </table>
         {!shown.length && <p className="px-3 py-3 text-steel-500">Nothing matches the filter.</p>}

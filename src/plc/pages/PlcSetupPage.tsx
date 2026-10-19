@@ -2,10 +2,34 @@ import { Link } from 'react-router-dom';
 import { PLC_PROFILES } from '../core/profiles';
 import { useProjectStore } from '../../store/useProjectStore';
 import { usePlc } from '../core/usePlc';
+import { useIOStore } from '../../store/useIOStore';
+import { modulesToFit, platformOf } from '../core/fit';
+import { hardwareShortfall, needFromIo } from '../../spec/equipmentRules';
 
 export default function PlcSetupPage() {
   const setPlc = useProjectStore((s) => s.setPlc);
+  const setModules = useProjectStore((s) => s.setModules);
+  const modules = useProjectStore((s) => s.modules);
+  const io = useIOStore((s) => s.projectIO);
   const { profile, cpu } = usePlc();
+  const short = hardwareShortfall(cpu.id, modules, io);
+
+  // A CPU change keeps the modules of the same rack and adds what the I/O list needs; a new brand starts
+  // from an empty rack and takes its first CPU that holds the list. Nothing fits: the CPU is still set and
+  // the shortfall is shown below (never applied silently).
+  const choose = (plcId: string, cpuId: string) => {
+    const need = needFromIo(io, false, 0);
+    const sameRack = plcId === profile.id && platformOf(cpuId)?.id === platformOf(cpu.id)?.id;
+    const keep = sameRack ? modules : [];
+    setPlc(plcId, cpuId);
+    setModules(io.length ? modulesToFit(cpuId, keep, need) ?? keep : keep);
+  };
+  const chooseBrand = (plcId: string, defaultCpuId: string) => {
+    const p = PLC_PROFILES.find((x) => x.id === plcId);
+    const need = needFromIo(io, false, 0);
+    const first = io.length ? [defaultCpuId, ...(p?.cpuModels.map((c) => c.id) ?? [])].find((id) => modulesToFit(id, [], need)) : undefined;
+    choose(plcId, first ?? defaultCpuId);
+  };
 
   return (
     <>
@@ -23,7 +47,7 @@ export default function PlcSetupPage() {
                 <button
                   key={p.id}
                   disabled={!p.available}
-                  onClick={() => setPlc(p.id, p.defaultCpuId)}
+                  onClick={() => chooseBrand(p.id, p.defaultCpuId)}
                   className={`text-left rounded-lg border p-4 transition-colors ${
                     selected
                       ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-200'
@@ -50,7 +74,7 @@ export default function PlcSetupPage() {
               <select
                 id="cpu"
                 value={cpu.id}
-                onChange={(e) => setPlc(profile.id, e.target.value)}
+                onChange={(e) => choose(profile.id, e.target.value)}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 {profile.cpuModels.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
@@ -58,6 +82,12 @@ export default function PlcSetupPage() {
               {profile.language === 'ladder' && (
                 <p className="text-xs text-gray-500 mt-2">
                   Built-in I/O: {cpu.builtInInputs} inputs, {cpu.builtInOutputs} outputs.{cpu.notes ? ` ${cpu.notes}` : ''}
+                </p>
+              )}
+              {modules.length > 0 && <p className="text-xs text-gray-500 mt-1">Modules: {modules.join(', ')}</p>}
+              {short && (
+                <p role="alert" className="text-xs bg-red-50 border border-red-200 text-red-800 px-2 py-1.5 mt-2">
+                  This PLC cannot hold the I/O list: {short} Choose a larger CPU, or add modules on the <Link to="/equipment" className="underline">Equipment</Link> page.
                 </p>
               )}
             </div>

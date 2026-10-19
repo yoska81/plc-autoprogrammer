@@ -275,19 +275,28 @@ export function pretty(name: string): string {
  * I/O list category of an imported point from its name and description (Start_PB → Operator/HMI, Box_PE → Product
  * Detection). A point the words do not place is Station 1, never Spare (Spare means an unused terminal).
  */
-export function importedCategory(text: string, analog: boolean): IOCategory {
+export function importedCategory(text: string, analog: boolean, name = '', type: 'input' | 'output' | '' = ''): IOCategory {
   const t = text.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_.:[\]]+/g, ' ');
+  // An input whose tag is only a command word (Start, Stop, Fault_Reset, Cycle_Start) is the operator's button,
+  // unless its comment says it comes from another machine (upstream, interlock, handshake). An output named Stop is not.
+  if (!analog && type !== 'output' && /^((cycle|fault|alarm)[ _-]?)?(start|stop|reset)$/i.test(name.trim())) {
+    return /\b(upstream|downstream|interlock|handshake|from line|other machine)\b/i.test(t) ? 'External Machine' : 'Operator/HMI';
+  }
+  // Whole words only: "Case stop" is not an E-stop and a clamp is not a lamp. A stop or start is an operator's
+  // only as a button (Stop_PB); a stop blade or a stop gate is a machine part.
   const rules: [RegExp, IOCategory][] = [
-    [/e[-\s]?stop|emergency|safety|light curtain|guard|\bdoor\b|interlock|safe torque|\bsto\b/i, 'Safety'],
-    [/\bstart\b|\bstop\b|reset|push ?button|\bpb\b|selector|\bmode\b|\bauto\b|\bmanual\b|\bjog\b|lamp|\blight\b|horn|buzzer|beacon|stack|\bhmi\b|panel/i, 'Operator/HMI'],
-    [/vacuum|suction/i, 'Vacuum'],
-    [/servo|\baxis\b|encoder|\bvfd\b|\bdrive\b|inverter/i, 'Servo/Axis'],
-    [/conveyor|\bbelt\b|\bconv\b/i, 'Conveyor'],
-    [/valve|\bsv\b|solenoid|cylinder|pusher|clamp|\bgate\b|\bair\b|pneumatic|extend|retract/i, 'Pneumatic'],
-    [/photo|\bpe\b|\beye\b|present|detect|\bcount\b|prox|\bpx\b|sensor|\bls\b|limit/i, 'Product Detection'],
-    [/upstream|downstream|external|handshake|interface|from line|to line|\bready\b/i, 'External Machine'],
-    [/level|pressure|temp|flow|transmitter|torque|weight|speed ref/i, 'Analog/Process'],
+    [/\be[-\s]?stop\b|\bemergency\b|\bsafety\b|\blight curtain\b|\bguard\b|\bdoor\b|\binterlock\b|\bsafe torque\b|\bsto\b/i, 'Safety'],
+    [/\b(start|stop|reset|jog)\s+(pb|push ?button|button)\b|\bpush ?button\b|\bpb\b|\bselector\b|\bmode\b|\bauto\b|\bmanual\b|\blamps?\b|\blights?\b|\bhorn\b|\bbuzzer\b|\bbeacon\b|\bstack light\b|\bhmi\b|\bpanel\b/i, 'Operator/HMI'],
+    [/\bvacuum\b|\bsuction\b/i, 'Vacuum'],
+    [/\bservo\b|\baxis\b|\bencoder\b|\bvfd\b|\bdrive\b|\binverter\b/i, 'Servo/Axis'],
+    // A photo-eye on a conveyor detects product: before the conveyor rule.
+    [/\bphoto ?eye\b|\bphoto\b|\bpe\b/i, 'Product Detection'],
+    [/\bconveyor\b|\bbelt\b|\bconv\b/i, 'Conveyor'],
+    [/\bvalve\b|\bsv\b|\bsolenoid\b|\bcylinder\b|\bpusher\b|\bclamp\b|\bgate\b|\bair\b|\bpneumatic\b|\bextend\b|\bretract\b/i, 'Pneumatic'],
+    [/\beye\b|\bpresent\b|\bdetect|\bcount\b|\bprox\b|\bpx\b|\bsensor\b|\bls\b|\blimit\b/i, 'Product Detection'],
+    [/\bupstream\b|\bdownstream\b|\bexternal\b|\bhandshake\b|\binterface\b|\bfrom line\b|\bto line\b|\bready\b/i, 'External Machine'],
   ];
+  // Analog/Process is for analog points only: a level or pressure switch is a digital point.
   if (analog) return 'Analog/Process';
   return rules.find(([re]) => re.test(t))?.[1] ?? 'Station 1';
 }
@@ -356,7 +365,7 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   const full = /logix|allen-bradley|rockwell/i.test(`${imp.source.vendor} ${imp.source.format}`) || /^l5[xk]$/.test(imp.source.format) ? 32767 : 27648;
   const points: IOPoint[] = imp.io.map((p) => ({
     id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++o).padStart(3, '0')}`,
-    description: p.description, type: p.type, category: importedCategory(`${p.name} ${p.description}`, p.analog),
+    description: p.description, type: p.type, category: importedCategory(`${p.name} ${p.description}`, p.analog, p.name, p.type),
     ...(p.analog ? (() => { const r = importedRange(p.original, p.description); return { signal: 'analog' as const, analog: { range: r.range, min: 0, max: full, units: 'raw counts', ...(r.assumed ? { assumed: true } : {}) } }; })() : {}),
     // A CLICK program going back on a CLICK keeps its terminals (X001 stays X001, gaps included); an S7
     // program keeps its %I / %Q bits (%Q0.2 stays %Q0.2).
