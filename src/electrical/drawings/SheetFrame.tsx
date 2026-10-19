@@ -54,7 +54,7 @@ export default function SheetFrame({ info, children, width, height, sheet }: { i
     >
       <rect x={0} y={0} width={SHEET_W} height={SHEET_H} fill="#fff" stroke="none" />
       <rect x={FRAME} y={FRAME} width={SHEET_W - 2 * FRAME} height={SHEET_H - 2 * FRAME} strokeWidth={LW_THIN} />
-      <rect x={BORDER} y={BORDER} width={iw} height={ih} strokeWidth={0.7} />
+      <rect x={BORDER} y={BORDER} width={iw} height={ih} strokeWidth={0.7} data-frame="border" />
       {/* zones */}
       {Array.from({ length: ZONE_COLS }, (_, i) => {
         const x = BORDER + i * zw;
@@ -81,7 +81,7 @@ export default function SheetFrame({ info, children, width, height, sheet }: { i
 
       {/* title block */}
       <g>
-        <rect x={BORDER} y={ty} width={iw} height={TITLE_H} strokeWidth={LW_HEAVY} fill="#fff" />
+        <rect x={BORDER} y={ty} width={iw} height={TITLE_H} strokeWidth={LW_HEAVY} fill="#fff" data-frame="title" />
         {[C1, C2, C3].map((x) => <Line key={x} x1={x} y1={ty} x2={x} y2={ty + TITLE_H} w={LW} />)}
         <CompanyBlock info={info} ty={ty} preliminary={preliminary} status={rs?.status ?? 'PRELIMINARY — NOT FOR CONSTRUCTION'} />
         <RevisionTable ty={ty} revisions={rs?.revisions ?? []} />

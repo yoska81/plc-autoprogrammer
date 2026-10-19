@@ -104,6 +104,9 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const mbX = 84;
   const lastTap = Math.max(...sp.branches.map((b) => b.idx + b.b.feedWires.length - 1), 2 + nPh - 1);
   const busEnd = m.motors.length ? sp.contIdx + 1 : lastTap;
+  // each bus phase runs down to its own last tap (all of them on to the motor sheets): a phase line running past its
+  // last tap ends on another phase's branch feed and reads as a connection (1L3 ending on a 2-pole tap's L2 feed)
+  const phaseEnd = (k: number) => (m.motors.length ? busEnd : Math.max(2 + k, ...sp.branches.filter((b) => !(b.type === 'ps' && b.b.fromXfmr) && b.b.feedWires.length > k).map((b) => b.idx + k)));
   const gy = y(sp.groundIdx);
   const pe = m.groundBar?.tag ?? 'PE BAR';
   const grounds = [
@@ -125,7 +128,7 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
             <TermPt x={30} y={yy} />
             <Line x1={30.7} y1={yy} x2={isN ? BX[k] : dsX - 5} y2={yy} />
             <WireNo x={44} y={yy} n={w} />
-            {isN && <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(busEnd)} />}
+            {isN && <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(phaseEnd(k))} />}
           </g>
         );
       })}
@@ -145,7 +148,7 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
             <Line x1={dsX + 5} y1={yy} x2={m.mainBreaker ? mbX - 5 : BX[k]} y2={yy} />
             {m.mainBreaker && <Line x1={mbX + 5} y1={yy} x2={BX[k]} y2={yy} />}
             <WireNo x={m.mainBreaker ? (mbX + 5 + BX[k]) / 2 : (dsX + 5 + BX[0]) / 2} y={yy} n={m.bus[k]} />
-            <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(busEnd)} />
+            <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(phaseEnd(k))} />
           </g>
         );
       })}
@@ -217,9 +220,10 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
         <Line x1={30.7} y1={y(2 + nPh)} x2={36} y2={y(2 + nPh)} />
         <Line x1={36} y1={y(2 + nPh)} x2={36} y2={gy} />
         <Line x1={36} y1={gy} x2={44} y2={gy} />
-        <rect x={44} y={gy - 1.6} width={260} height={3.2} strokeWidth={0.5} fill="#fff" />
-        <Txt x={44} y={gy - 3.2} size={2.8} mono bold>{pe}</Txt>
-        <Txt x={44 + 14} y={gy - 3.2} size={2.5}>MAIN PROTECTIVE EARTH (PE) BAR — BONDED TO ENCLOSURE AND BACK PANEL</Txt>
+        <rect x={44} y={gy - 1.6} width={260} height={3.2} strokeWidth={0.5} fill="#fff" data-bar="PE" />
+        {/* the bar's name sits clear above it (2 mm between the descenders and the bar) */}
+        <Txt x={44} y={gy - 4.8} size={2.8} mono bold>{pe}</Txt>
+        <Txt x={44 + 14} y={gy - 4.8} size={2.5}>MAIN PROTECTIVE EARTH (PE) BAR — BONDED TO ENCLOSURE AND BACK PANEL</Txt>
         <Ground x={300} y={gy + 1.6} />
         {grounds.map((g, i) => {
           const x = 52 + i * gStep;

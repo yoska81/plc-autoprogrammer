@@ -195,6 +195,8 @@ export function generateDesign(input: EngineInput): EngineResult {
     tag: b.motor.tag, description: b.motor.description, hp: b.motor.hp, voltage: supply,
     starter: b.vfd ? 'vfd' : power.components.some((c) => c.motorTag === b.motor.tag && getPart(c.partNumber)?.category === 'motorProtector') ? 'motor-protector' : 'contactor-overload',
     reversing: b.reversing,
+    // a motor the designer typed stays theirs; one the engine read from this machine is marked as the design's
+    ...(inputs.motors.some((m) => m.tag === b.motor.tag && m.description === b.motor.description && !m.fromDesign) ? {} : { fromDesign: true }),
   }));
   if (power.branches.length) {
     const basis = SUPPLY_INFO[supply].hz === 50 ? 'IEC 60947-4-1 Annex G' : 'NEC Table 430.250 / 430.248';
