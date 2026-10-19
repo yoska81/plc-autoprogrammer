@@ -177,15 +177,22 @@ export async function loadAppStorage(opts: { backend?: StorageBackend; onFailure
   }
   // copies of localStorage's values: not waited for (they are in localStorage until written)
   for (const [k, v] of copies) track(b.put(k, v).then(() => { confirmed.add(k); }, (err) => onFailure(err, k)), false);
-  // what is kept aside is written under its new key before the old one goes
-  await Promise.all(aside.map(async ([k, key]) => { await b.put(key, stored.get(k)!); await b.remove(k); }));
+  // what is kept aside is written under its new key before the old one goes. A write that fails (IndexedDB full)
+  // does not stop the start: the value stays in IndexedDB under its own key, this start still shows it aside
+  // (the app starts clean, Recover work finds it), and the marker is not written, so the next start sets it
+  // aside again instead of reading it as the open project.
+  let asideFailed = false;
+  await Promise.all(aside.map(async ([k, key]) => {
+    try { await b.put(key, stored.get(k)!); } catch { asideFailed = true; onlyInIdb.delete(key); return; }
+    await b.remove(k).catch(() => { asideFailed = true; });
+  }));
   // only the latest sets kept aside stay (each clear adds one, and all are read in at every start)
   const setsAside = [...new Set([...out.keys()].flatMap((k) => (k.startsWith(CLEARED_PREFIX) ? [Number(k.slice(CLEARED_PREFIX.length).split(':')[0])] : [])))].sort((x, y) => y - x);
   const dropped = new Set(setsAside.slice(KEEP_CLEARED_SETS).map((t) => `${CLEARED_PREFIX}${t}:`));
   const old = [...out.keys()].filter((k) => [...dropped].some((pre) => k.startsWith(pre)));
   for (const k of old) { out.delete(k); onlyInIdb.delete(k); }
   await Promise.all(old.map((k) => b.remove(k)));
-  if (s && !writeMarker(s, out, confirmed)) {
+  if (s && !asideFailed && !writeMarker(s, out, confirmed)) {
     // localStorage full: make room by replacing values IndexedDB has (once written) with the placeholder
     await Promise.all(writing.keys());
     writeMarker(s, out, confirmed, true);
