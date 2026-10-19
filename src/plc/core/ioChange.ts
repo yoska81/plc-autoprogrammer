@@ -9,7 +9,7 @@
  */
 import { create } from 'zustand';
 import { useIOStore, onIoChange } from '../../store/useIOStore';
-import { useProjectStore } from '../../store/useProjectStore';
+import { IO_LAYOUT_VERSION, useProjectStore } from '../../store/useProjectStore';
 import { useProgramStore } from '../../store/useProgramStore';
 import type { IOPoint } from '../../types/io';
 import { getCpu, getProfile } from './profiles';
@@ -18,8 +18,9 @@ import { moduleSlots } from './modules';
 import { rungAddresses } from './ladder';
 import { ioRemap, remapIsEmpty, type IoRemap } from './ioRemap';
 import { remapProgram } from './remapProgram';
-import { legacyClickAddresses } from './profiles/click';
-import { onProjectLoaded } from '../../store/useProjectsStore';
+import { legacyClickAddresses, legacyToCurrentAddress } from './profiles/click';
+import { ptoPointsFor } from '../../electrical/highSpeedIo';
+import { backupActiveProject, onProjectLoaded } from '../../store/useProjectsStore';
 import { notify } from '../../store/useNoticeStore';
 
 /** Another design that names I/O addresses (the HMI): it follows a remap, says what uses an address, and can be put back. */
@@ -83,21 +84,45 @@ function applyRemap(remap: IoRemap, prev: IOPoint[]): string[] {
 
 /**
  * Projects saved before a CLICK PLUS option-slot module became slot 0 numbered its points X101… / Y101… (and
- * placed no pulse outputs first). On load their program, saved versions and HMI move to the addresses the app
- * gives now, once, with a notice; the project is then marked with the new layout.
+ * placed no pulse outputs first). On load, once, every point is kept on the same physical terminal: an old
+ * address is that module's point on the slot it has now. Manual addresses are translated, and a point whose new
+ * automatic address would be another terminal gets its old terminal as a fixed address, so a machine wired to
+ * the old drawings keeps its wiring. The program, its saved versions and the HMI follow; a backup is kept first,
+ * and the notice lists the fixed addresses and any pulse output that still has to move to a pulse-train output.
  */
 export function migrateIoLayout(): string[] {
   const project = useProjectStore.getState();
-  if (project.ioLayout === 'click-slot0') return [];
+  if ((project.ioLayoutVersion ?? 1) >= IO_LAYOUT_VERSION) return [];
   const setup = plcSetup();
-  useProjectStore.setState({ ioLayout: 'click-slot0' });
   const slots = moduleSlots(setup.modules);
-  if (setup.plcId !== 'click' || !slots.some((m) => m.optionSlot)) return [];
+  if (setup.plcId !== 'click' || !slots.some((m) => m.optionSlot)) { useProjectStore.setState({ ioLayoutVersion: IO_LAYOUT_VERSION }); return []; }
+  // While a project loads, the open-project id is not yet the loaded one: name the backup after the data itself.
+  backupActiveProject('Before the CLICK PLUS address migration', useProgramStore.getState().projectName || undefined);
+  useProjectStore.setState({ ioLayoutVersion: IO_LAYOUT_VERSION });
   const io = useIOStore.getState().projectIO;
-  const profile = getProfile('click');
-  const remap = ioRemap(legacyClickAddresses(io, getCpu(profile, setup.cpuId), slots), ioAddresses(io, setup));
-  const messages = applyRemap(remap, io);
-  if (messages.length) notify(`This project was saved with the older CLICK PLUS addressing (the option-slot module as slot 1). Its I/O now starts at X001 / Y001 on the option module; the program and the HMI moved with it. ${messages.join(' ')}`);
+  const cpu = getCpu(getProfile('click'), setup.cpuId);
+  const legacy = legacyClickAddresses(io, cpu, slots);
+  const want = new Map(io.map((p) => [p.id, legacyToCurrentAddress(legacy.get(p.id) ?? '', cpu, slots)] as const));
+  // Manual addresses: the same terminal in today's numbering. Then fix the points whose automatic address moved
+  // (fixing one can shift the next: repeat until every point is on its old terminal).
+  let next = io.map((p) => (p.plcAddress?.trim() ? { ...p, plcAddress: want.get(p.id) || p.plcAddress } : p));
+  // One at a time, in list order: fixing a point changes the automatic addresses of the ones after it, so only the
+  // points that really need it get a fixed address.
+  for (let k = 0; k <= io.length; k++) {
+    const now = ioAddresses(next, setup);
+    const off = next.find((p) => want.get(p.id) && now.get(p.id) !== want.get(p.id));
+    if (!off) break;
+    next = next.map((p) => (p.id === off.id ? { ...p, plcAddress: want.get(p.id) } : p));
+  }
+  useIOStore.setState({ projectIO: next });
+  const after = ioAddresses(next, setup);
+  const messages = applyRemap(ioRemap(legacy, after), io);
+  const fixed = next.filter((p) => p.plcAddress && !io.find((q) => q.id === p.id)?.plcAddress?.trim());
+  if (fixed.length) messages.push(`To keep the wiring, ${fixed.length} point${fixed.length === 1 ? ' has' : 's have'} a fixed address on ${fixed.length === 1 ? 'its' : 'their'} old terminal: ${fixed.map((p) => `${p.id} ${p.description} → ${p.plcAddress}`).join(', ')}.`);
+  const pto = new Set(ptoPointsFor(setup.cpuId, setup.modules));
+  const pulses = next.filter((p) => p.type === 'output' && /\b(pulse|step|pul)\b/i.test(p.description) && !pto.has(after.get(p.id) ?? ''));
+  if (pulses.length && pto.size) messages.push(`Pulse output${pulses.length === 1 ? '' : 's'} not on a pulse-train output (${[...pto].join(' / ')}): ${pulses.map((p) => `${p.id} ${p.description} (${after.get(p.id)})`).join(', ')} — move the wire there and set the address on the I/O list.`);
+  if (messages.length) notify(`This project was saved with the older CLICK PLUS addressing (the option-slot module as slot 1). Every point stays on the same terminal; the addresses now start at X001 / Y001 on the option module, and the program and the HMI moved with them (a backup was kept). ${messages.join(' ')}`);
   return messages;
 }
 

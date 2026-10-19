@@ -11,10 +11,12 @@ interface ProjectStore {
   setPlc: (plcId: string, cpuId: string) => void;
   /** Expansion module part numbers in slot order (slot 1 first). */
   /**
-   * Address layout the project's I/O was numbered with. 'click-slot0': a CLICK PLUS option-slot module is slot 0
-   * (X001… / Y001…). Absent: saved before that (the option module was numbered as slot 1, X101…) — migrated on load.
+   * Version of the address layout the project's I/O is numbered with (IO_LAYOUT_VERSION is the current one).
+   *   absent / 1  saved before a CLICK PLUS option-slot module became slot 0 (it was numbered as slot 1, X101…)
+   *   2           the option-slot module is slot 0 (X001… / Y001…)
+   * Older projects are migrated on load (src/plc/core/ioChange.ts migrateIoLayout).
    */
-  ioLayout?: 'click-slot0';
+  ioLayoutVersion?: number;
   modules: string[];
   setModules: (modules: string[]) => void;
   /** Last AI equipment recommendation (kept so the reasons stay visible). */
@@ -63,6 +65,9 @@ export interface ProjectInfo {
   /** Preferred brands per equipment group ("customer standard"); AutomationDirect when absent. */
   vendors?: Partial<VendorPreference>;
 }
+
+/** The current I/O address layout (see ProjectStore.ioLayoutVersion). */
+export const IO_LAYOUT_VERSION = 2;
 
 export const DEFAULT_INFO: ProjectInfo = {
   region: 'US', customer: '', site: '', drawingPrefix: '', standards: ['NFPA 79', 'UL 508A'],

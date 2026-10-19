@@ -35,6 +35,8 @@ function rangesOf(signal: unknown, range: unknown, kind: 'input' | 'output'): An
  * Slot number of each chosen module: a CLICK PLUS option-slot module is slot 0 (the CPU's own I/O, X001… /
  * Y001…, where its high-speed inputs and pulse outputs are); the stackable modules are slots 1..8 in order.
  */
+// CLICK PLUS CPUs have one option slot (catalog optionSlots: 1); a second option-slot module, should one ever be
+// listed, is numbered as a stackable here — check the CLICK help before giving it a slot of its own.
 export function clickSlots(modules: ModuleSlot[]): number[] {
   let next = 1;
   const option = modules.findIndex((m) => m.optionSlot);

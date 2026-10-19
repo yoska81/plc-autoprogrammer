@@ -75,6 +75,20 @@ export function legacyClickAddresses(io: IOPoint[], cpu: CpuModel, modules: Modu
   return new Map(io.map((p) => [p.id, p.plcAddress?.trim() || auto.get(p.id) || ''] as const));
 }
 
+/**
+ * The same physical terminal in today's numbering: an old "X105" (slot 1 = the first module, point 5) is that
+ * module's point 5 on the slot it has now (X005 when it is the option-slot module). Other addresses are unchanged.
+ */
+export function legacyToCurrentAddress(address: string, cpu: CpuModel, modules: ModuleSlot[]): string {
+  const m = /^([XY])([1-8])(\d\d)$/i.exec(address.trim());
+  if (!m) return address;
+  const [, letter, slot, point] = m;
+  const now = clickSlots(modules)[Number(slot) - 1];
+  if (now === undefined) return address;
+  const n = Number(point) + (now === 0 ? (letter.toUpperCase() === 'X' ? cpu.builtInInputs : cpu.builtInOutputs) : 0);
+  return `${letter.toUpperCase()}${now}${String(n).padStart(2, '0')}`;
+}
+
 // An axis's pulse output ("Axis 1 servo pulse", "Stepper step"): it must sit on a pulse-train output.
 const PULSE_OUT_RE = /\b(pulse|step|pul)\b/i;
 const MOTION_RE = /\b(servo|stepper|axis|drive|motor)\b/i;

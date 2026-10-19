@@ -46,7 +46,8 @@ const dataKey = (id: string) => `plc-project-data:${id}`;
 function snapshot(): Snapshot {
   const out: Snapshot = {};
   for (const [key, store] of Object.entries(PROJECT_STORES) as [StoreKey, (typeof PROJECT_STORES)[StoreKey]][]) {
-    const partialize = store.persist.getOptions().partialize;
+    // Without browser storage (tests, a blocked profile) the persist API may be missing: save the whole state.
+    const partialize = store.persist?.getOptions().partialize;
     const state = store.getState();
     out[key] = partialize ? partialize(state as never) : state;
   }
@@ -192,9 +193,9 @@ export function saveActiveProject(): void {
 }
 
 /** Copy of the open project, kept before anything is written over the stores. */
-export function backupActiveProject(reason: string): void {
+export function backupActiveProject(reason: string, projectName?: string): void {
   const { activeId, projects } = useProjectsStore.getState();
-  const name = projects.find((p) => p.id === activeId)?.name ?? useProgramStore.getState().projectName;
+  const name = projectName ?? projects.find((p) => p.id === activeId)?.name ?? useProgramStore.getState().projectName;
   try {
     const at = new Date().toISOString();
     localStorage.setItem(`${BACKUP_PREFIX}${at}`, JSON.stringify({ name, at, reason, projectId: activeId, data: snapshot() }));
