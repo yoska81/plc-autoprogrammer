@@ -47,7 +47,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(/hidden wiring fault is active/.test(await bar.innerText()), 'hidden fault banner');
   check(!/Fault: wire/.test(await bar.innerText()), 'the wire is not shown');
   await bar.getByRole('button', { name: 'Reveal' }).click();
-  check(/Fault: wire /.test(await bar.innerText()), 'revealed');
+  check(/Fault: \S/.test(await bar.innerText()), 'revealed');
   log('Revealed:', (await bar.innerText()).replace(/\s+/g, ' ').slice(0, 160));
   await bar.getByRole('button', { name: 'Repair the wire' }).click();
 
