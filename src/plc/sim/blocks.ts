@@ -156,9 +156,10 @@ export function devicesInBlock(devices: SimDevice[], addresses: Set<string>): Se
 /**
  * A change asked for one block keeps the rest of the program as it is: the proposal's rungs of that block
  * (and new rungs without a block) replace the block's rungs in place; every other rung stays the current one.
- * `outside` counts the proposal's changes to other blocks that were left out (added, changed or removed rungs).
+ * `outside` counts the proposal's changes to other blocks that were left out (added, changed or removed rungs);
+ * with `sentBlockOnly` (only the block was sent to the AI) rungs of other blocks are not looked for in the answer.
  */
-export function scopeToBlock(current: LadderProgram, proposed: LadderProgram, blockId: string): { program: LadderProgram; outside: number } {
+export function scopeToBlock(current: LadderProgram, proposed: LadderProgram, blockId: string, sentBlockOnly = false): { program: LadderProgram; outside: number } {
   const curIds = new Set(current.rungs.map((r) => r.id));
   const inBlock = (p: LadderProgram, r: Rung) => blockOfRung(p, r) === blockId;
   const otherIds = new Set(current.rungs.filter((r) => !inBlock(current, r)).map((r) => r.id));
@@ -169,7 +170,8 @@ export function scopeToBlock(current: LadderProgram, proposed: LadderProgram, bl
   const propById = new Map(proposed.rungs.map((r) => [r.id, r]));
   const mineIds = new Set(mine.map((r) => r.id));
   let outside = 0;
-  for (const r of current.rungs) {
+  // Only the block was sent (a big program): rungs of other blocks missing from the answer were never asked about.
+  for (const r of sentBlockOnly ? [] : current.rungs) {
     if (inBlock(current, r)) continue;
     const p = propById.get(r.id);
     if (!p || !same(p, r)) outside++;
@@ -183,6 +185,7 @@ export function scopeToBlock(current: LadderProgram, proposed: LadderProgram, bl
   }
   if (!placed) rungs.push(...mine);
   const tags = [...current.tags];
-  for (const t of proposed.tags) if (!tags.some((x) => normAddress(x.address) === normAddress(t.address))) tags.push(t);
+  const have = new Set(tags.map((x) => normAddress(x.address)));
+  for (const t of proposed.tags) if (!have.has(normAddress(t.address))) { have.add(normAddress(t.address)); tags.push(t); }
   return { program: { ...current, rungs, tags }, outside };
 }

@@ -10,6 +10,8 @@ import { NOT_PARSED, runParse } from './parseOps';
 import { dxfToText, parseDxfEntities, sheetFrames } from '../convert/dxf';
 import { dxfSheetSvg } from '../convert/dxfPicture';
 import { importProgramFiles } from '../plc/import';
+import { planUpgrade } from '../plc/import/upgrade';
+import { useIOStore } from '../store/useIOStore';
 import { dxfSheet, dxfText, parseOffThread } from '../lib/parseWorker';
 
 let passed = 0;
@@ -59,6 +61,21 @@ await test('program import is the same as on the page; without a Worker (Node) i
   assert.deepEqual(runParse({ op: 'program', files }), importProgramFiles(files));
   const r = await parseOffThread({ op: 'program', files });
   assert.deepEqual(r, importProgramFiles(files));
+});
+
+await test('the plan that makes a program the project is the same off the page (dates aside)', async () => {
+  const imp = importProgramFiles([{ name: 'capper.L5X', text: l5x }]).program;
+  const now = (p: ReturnType<typeof planUpgrade>) => ({ ...p, original: { ...p.original, importedAt: '' } });
+  assert.deepEqual(now(runParse({ op: 'plan', imp, plcId: 'logix' })), now(planUpgrade(imp, 'logix')));
+  assert.deepEqual(now(await parseOffThread({ op: 'plan', imp, plcId: 'click' })), now(planUpgrade(imp, 'click')));
+});
+
+await test('imported I/O points take the lowest free numbers, inputs and outputs apart', () => {
+  const io = useIOStore.getState();
+  io.importPoints([{ description: 'a', type: 'input', category: 'sensor' }, { description: 'b', type: 'output', category: 'motor' }, { description: 'c', type: 'input', category: 'sensor' }] as never, true);
+  io.deletePoint('I001');
+  io.importPoints(Array.from({ length: 3 }, (_, k) => ({ description: `n${k}`, type: k === 1 ? 'output' : 'input', category: 'sensor' })) as never, false);
+  assert.deepEqual(useIOStore.getState().projectIO.map((p) => p.id), ['Q001', 'I002', 'I001', 'Q002', 'I003']);
 });
 
 console.log(failures.length ? `\n${failures.length} failed` : `\n${passed} passed, 0 failed`);

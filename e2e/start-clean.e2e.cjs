@@ -113,7 +113,8 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   check(/Cleared/.test(done) && /Build everything from my description/.test(done), 'offers to build everything again');
   // Project data (the title-block fields every drawing and the machine spec use).
   await page.goto(BASE + '/project');
-  await page.waitForTimeout(800);
+  await page.locator('main input').first().waitFor();
+  await page.waitForTimeout(300);
   const fields = (await page.locator('main input').evaluateAll((els) => els.map((e) => e.value))).join(' | ').toUpperCase();
   check(!/EXAMPLE FOODS|LINE 3|24-117|\bCNV\b/.test(fields), `Project data no longer holds the example's customer, site, job or prefix: ${fields.slice(0, 200)}`);
   check(/\bSH\b/.test(fields), 'drawing prefix from the project name (SH)');
@@ -121,7 +122,7 @@ const OWN = 'Sealing head: a pneumatic heat-sealing head closes on a pouch, hold
   // The banner stays (with the build offer) across pages and reloads until closed.
   await page.goto(BASE + '/io');
   await page.goto(BASE + '/spec');
-  await page.waitForTimeout(600);
+  await page.getByTestId('start-clean').waitFor();
   check(/Build everything from my description/.test(await page.getByTestId('start-clean').innerText()), 'build offer kept across pages');
 
   // Build everything: the AI fails (bad request) → the Update dialog shows it, the banner names what was not built.

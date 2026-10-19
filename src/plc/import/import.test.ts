@@ -115,6 +115,11 @@ assert.equal(detectFormat('names.csv', fixture('click_nicknames.csv')), 'click-c
 assert.match(unreadableReason('Line2.ACD', 'x')!, /L5X/);
 assert.match(unreadableReason('machine.ckp', 'x')!, /Print/);
 assert.match(unreadableReason('prog.bin', 'PK\u0003\u0004\u0000\u0000')!, /not a text export/);
+// Yaskawa: MotionWorks IEC and iCube projects say how to export PLCopen XML; a robot job is not a PLC program
+assert.match(unreadableReason('Press_Line.zwt', 'PK\u0003\u0004')!, /MotionWorks IEC.*Export › PLCopen XML/);
+assert.match(unreadableReason('Press_Line.MWT', 'x')!, /MotionWorks IEC/);
+assert.match(unreadableReason('Cell.pcwex', 'x')!, /iCube Engineer.*PLCopen XML/);
+assert.match(unreadableReason('WELD01.JBI', '/JOB\n//NAME WELD01\nNOP\nEND\n')!, /robot job .* not the machine's PLC program/);
 assert.throws(() => importProgramText('notes.txt', 'hello world'), /not recognised/);
 
 // ── L5X: CompactLogix bottle capper ──

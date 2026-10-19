@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { EMPTY_PROGRAM, type LadderProgram } from '../plc/core/ladder';
 import { keepRungComments } from '../edits/rungComments';
+import { appPersistStorage } from '../lib/appStorage';
 
 export interface ProgramVersion {
   id: string;
@@ -148,6 +149,7 @@ export const useProgramStore = create<ProgramStore>()(
     }),
     {
       name: 'plc-program-store',
+      storage: appPersistStorage(),
       // A generation in flight can't survive a reload; don't persist the flag.
       partialize: (s) => ({
         projectName: s.projectName,

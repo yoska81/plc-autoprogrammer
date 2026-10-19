@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { appPersistStorage } from '../lib/appStorage';
 
 /**
  * Fault log: every guided fault finding that reached an answer, with the point, the symptom, what was found
@@ -58,7 +59,7 @@ export const useFaultLogStore = create<FaultLogStore>()(
         byProject: { ...s.byProject, [key(projectId)]: (s.byProject[key(projectId)] ?? []).filter((x) => x.id !== id) },
       })),
     }),
-    { name: 'isa-fault-log' },
+    { name: 'isa-fault-log', storage: appPersistStorage() },
   ),
 );
 

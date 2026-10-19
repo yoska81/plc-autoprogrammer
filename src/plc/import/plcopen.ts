@@ -233,10 +233,9 @@ export function readPlcopen(src: string): ForeignProgram {
   const routines: ForeignRoutine[] = [];
   const notes: string[] = [];
   const pous = all(kid(project, 'types'), 'pou');
+  const seen = new Set(tags.map((t) => t.name.toLowerCase()));
   for (const pou of pous) {
-    const iface = kid(pou, 'interface');
-    const local_ = variables(iface);
-    for (const v of local_) if (!tags.some((t) => t.name.toLowerCase() === v.name.toLowerCase())) tags.push(v);
+    for (const v of variables(kid(pou, 'interface'))) if (!seen.has(v.name.toLowerCase())) { seen.add(v.name.toLowerCase()); tags.push(v); }
   }
   const types = new Map(tags.map((t) => [t.name.toLowerCase(), t.rawType || t.dataType]));
   const siemens = /siemens|tia portal/i.test(`${header?.attrs.companyName ?? ''} ${header?.attrs.productName ?? ''}`);

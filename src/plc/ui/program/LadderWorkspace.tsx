@@ -8,7 +8,7 @@ import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, Arrow
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
 import { useProgramStore } from '../../../store/useProgramStore';
-import { generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../ai/ladderAI';
+import { changeScope, generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../ai/ladderAI';
 import { generateRuleBasedProgram } from '../../ai/cycleAI';
 import SequenceTable from './SequenceTable';
 import { useElectricalStore } from '../../../store/useElectricalStore';
@@ -290,13 +290,19 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     const scoped = activeBlock !== null && !specUpdate ? `[Block: ${blockName}${activeBlock ? ` (id "${activeBlock}")` : ''}] ${req}` : req;
     store.addChat({ role: 'user', text: scoped });
     setRequest('');
-    return runAI('program-revise', 'PLC program change', (signal) => reviseLadder({ ...ai, signal }, ctx, ladder, issues, history, scoped), (r) => {
+    // A big program: only the chosen block is sent (the AI writes back what it is sent), or the user is told what to do.
+    const simBlock = activeBlock === null || specUpdate ? null : activeBlock === GENERAL ? GENERAL_BLOCK : activeBlock;
+    const scope = changeScope(ladder, ctx, simBlock, blockName);
+    if ('tooBig' in scope) { store.addChat({ role: 'assistant', text: scope.tooBig, outcome: 'no-change' }); return; }
+    const sentIds = scope.part ? new Set(scope.program.rungs.map((r) => r.id)) : null;
+    const sentIssues = sentIds ? issues.filter((i) => !i.rungId || sentIds.has(i.rungId)) : issues;
+    return runAI('program-revise', 'PLC program change', (signal) => reviseLadder({ ...ai, signal }, scope.ctx, scope.program, sentIssues, history, scoped), (r) => {
       const st = useProgramStore.getState();
       if (r.program) {
         // A change asked for one block changes only that block; the rest of the program stays as it is.
         let program = r.program, explanation = r.explanation;
-        if (activeBlock !== null && !specUpdate) {
-          const scopedResult = scopeToBlock(ladder, r.program, activeBlock === GENERAL ? GENERAL_BLOCK : activeBlock);
+        if (simBlock !== null) {
+          const scopedResult = scopeToBlock(ladder, r.program, simBlock, scope.part);
           program = scopedResult.program;
           if (scopedResult.outside) explanation += `\n\nOnly the block ${blockName} was changed: ${scopedResult.outside} change${scopedResult.outside === 1 ? '' : 's'} the AI made to other blocks ${scopedResult.outside === 1 ? 'was' : 'were'} left out. Select "Whole program" to ask for changes there.`;
         }

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useProjectsStore } from '../../store/useProjectsStore';
 import { EMPTY_LAYOUT, type MachineLayout } from './types';
+import { appPersistStorage } from '../../lib/appStorage';
 
 interface LayoutStore {
   /** Machine layout of each project, by project id. */
@@ -20,6 +21,7 @@ export const useLayoutStore = create<LayoutStore>()(
     }),
     {
       name: 'isa-machine-layout',
+      storage: appPersistStorage(),
       version: 1,
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<LayoutStore>;

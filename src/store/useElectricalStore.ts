@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DesignComponent, DesignInputs, ElectricalDesign, IOWiring } from '../electrical/types';
+import { appPersistStorage } from '../lib/appStorage';
 
 export const DEFAULT_INPUTS: DesignInputs = {
   supply: '480VAC-3PH',
@@ -50,6 +51,7 @@ export const useElectricalStore = create<ElectricalStore>()(
     }),
     {
       name: 'plc-electrical-store',
+      storage: appPersistStorage(),
       partialize: (s) => ({ inputs: s.inputs, design: s.design, source: s.source, explanation: s.explanation }),
     }
   )

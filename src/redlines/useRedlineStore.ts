@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Redline } from './fieldChange';
+import { appPersistStorage } from '../lib/appStorage';
 
 /** Redlines and field changes of each project (by project id; also saved in the project file). */
 interface RedlineStore {
@@ -28,7 +29,7 @@ export const useRedlineStore = create<RedlineStore>()(
         byProject: { ...s.byProject, [key(projectId)]: (s.byProject[key(projectId)] ?? []).filter((r) => r.id !== id) },
       })),
     }),
-    { name: 'isa-redlines' },
+    { name: 'isa-redlines', storage: appPersistStorage() },
   ),
 );
 

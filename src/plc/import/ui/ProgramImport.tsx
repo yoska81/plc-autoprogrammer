@@ -1,15 +1,19 @@
 import { useState } from 'react';
 import { FORMAT_LABEL, fileText as decodeFile, type ImportedProgram } from '../index';
 import { parseOffThread } from '../../../lib/parseWorker';
-import { programSummary } from '../upgrade';
+import { useProjectStore } from '../../../store/useProjectStore';
 import { isUnreadBox } from '../mpe720';
 import { applyUpgrade } from './applyUpgrade';
 import PrintoutReader from './PrintoutReader';
 import type { UpgradePlan } from '../upgrade';
 
-const ACCEPT = '.l5x,.L5X,.l5k,.L5K,.xml,.st,.scl,.csv,.txt,.il,.sdf,.awl,.stl,.acd,.ACD,.rss,.ckp,.ap13,.ap14,.ap15,.ap16,.ap17,.ap18,.ap19,.ap20,.s7p,.gx3,.gxw,.isp,.vlp,.ulpr,.ccwsln,.project,.ymw7,.YMW7,.emtp';
+const ACCEPT = '.l5x,.L5X,.l5k,.L5K,.xml,.st,.scl,.csv,.txt,.il,.sdf,.awl,.stl,.acd,.ACD,.rss,.ckp,.ap13,.ap14,.ap15,.ap16,.ap17,.ap18,.ap19,.ap20,.s7p,.gx3,.gxw,.isp,.vlp,.ulpr,.ccwsln,.project,.mwt,.zwt,.pcwex,.jbi,.JBI,.ymw7,.YMW7,.emtp';
 /** Project files read as they are (binary): Yaskawa MPE720, Weintek EasyBuilder Pro. */
 const BINARY = /\.(ymw\d?|emtp)$/i;
+
+/** Longest lists shown in full: a big program has thousands of I/O points and parts (all of them are used). */
+const SHOW_IO = 300;
+const SHOW_NOT_CONVERTED = 100;
 
 const CONF: Record<ImportedProgram['io'][number]['confidence'], { label: string; cls: string }> = {
   high: { label: 'sure', cls: 'bg-green-100 text-green-800' },
@@ -47,10 +51,18 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
     } finally { setBusy(false); }
   };
 
-  const apply = () => {
-    if (!imp) return;
-    const plan = applyUpgrade(imp, fileText ?? undefined);
-    onApplied?.(plan, programSummary(imp));
+  const apply = async () => {
+    if (!imp || busy) return;
+    setError(null);
+    setBusy(`Making ${imp.source.fileName} the project (${imp.report.rungs} rungs)…`);
+    try {
+      // a big program takes seconds to plan: off the main thread
+      const planned = await parseOffThread({ op: 'plan', imp, plcId: useProjectStore.getState().plcId });
+      const plan = applyUpgrade(imp, fileText ?? undefined, planned);
+      onApplied?.(plan, plan.original.summary);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
   };
 
   const r = imp?.report;
@@ -86,7 +98,7 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
             <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900">
               <p className="font-medium">Not converted — you'll be asked what each one does:</p>
               <ul className="list-disc ml-5 mt-1 text-xs space-y-0.5">
-                {r.notConverted.map((n, i) => (
+                {r.notConverted.slice(0, SHOW_NOT_CONVERTED).map((n, i) => (
                   <li key={i}>
                     {/* A block kept whole is its whole source: its first line here, the rest on a click. */}
                     {n.text.includes('\n')
@@ -95,16 +107,17 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
                     {' '}— {n.where}{isUnreadBox(n.text) ? ' (not read: it does nothing, rewrite it by hand)' : n.kept ? ' (kept as it was: it goes back into the PLC, the simulator skips it)' : ' (left out)'}
                   </li>
                 ))}
+                {r.notConverted.length > SHOW_NOT_CONVERTED && <li>… and {r.notConverted.length - SHOW_NOT_CONVERTED} more</li>}
               </ul>
             </div>
           )}
-          {r.notes.length > 0 && <ul className="text-xs text-gray-600 list-disc ml-5 space-y-0.5">{r.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
+          {r.notes.length > 0 && <ul className="text-xs text-gray-600 list-disc ml-5 space-y-0.5">{r.notes.slice(0, SHOW_NOT_CONVERTED).map((n, i) => <li key={i}>{n}</li>)}{r.notes.length > SHOW_NOT_CONVERTED && <li>… and {r.notes.length - SHOW_NOT_CONVERTED} more</li>}</ul>}
 
           <div className="overflow-auto max-h-80 border border-gray-200 rounded">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 text-gray-500 text-left"><tr><th className="px-2 py-1">Name in the program</th><th className="px-2 py-1">What it is</th><th className="px-2 py-1">In / out</th><th className="px-2 py-1">Original address</th><th className="px-2 py-1"></th></tr></thead>
               <tbody>
-                {imp.io.map((p, i) => (
+                {imp.io.slice(0, SHOW_IO).map((p, i) => (
                   <tr key={i} className="border-t border-gray-100">
                     <td className="px-2 py-1 font-mono">{p.name}</td>
                     <td className="px-2 py-1">{p.description || <span className="text-gray-400">no description</span>}</td>
@@ -113,12 +126,13 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
                     <td className="px-2 py-1"><span className={`px-1.5 py-0.5 rounded ${CONF[p.confidence].cls}`}>{CONF[p.confidence].label}</span></td>
                   </tr>
                 ))}
+                {imp.io.length > SHOW_IO && <tr className="border-t border-gray-100"><td colSpan={5} className="px-2 py-1 text-gray-500">… and {imp.io.length - SHOW_IO} more (all of them go into the I/O list)</td></tr>}
               </tbody>
             </table>
           </div>
 
           <div className="flex items-center gap-3">
-            <button data-testid="program-apply" onClick={apply} className="px-5 py-2 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700">Use this program</button>
+            <button data-testid="program-apply" onClick={() => void apply()} disabled={Boolean(busy)} className="px-5 py-2 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-60">{busy || 'Use this program'}</button>
             <span className="text-xs text-gray-500">Replaces this project's I/O list and program (the current program is kept as a version) and fills the empty parts of the machine description.</span>
           </div>
         </div>

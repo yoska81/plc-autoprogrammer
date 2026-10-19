@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { EMPTY_SECTIONS, type SpecDocument, type SpecSectionId, type SpecSections } from '../spec/types';
+import { appPersistStorage } from '../lib/appStorage';
 
 interface SpecStore {
   sections: SpecSections;
@@ -26,6 +27,6 @@ export const useSpecStore = create<SpecStore>()(
       questions: [],
       setQuestions: (questions) => set({ questions }),
     }),
-    { name: 'plc-spec-store' }
+    { name: 'plc-spec-store', storage: appPersistStorage() }
   )
 );

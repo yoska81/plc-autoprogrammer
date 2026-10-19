@@ -24,6 +24,7 @@ interface ProjectStore {
 export type { Region } from '../standards/regions';
 import type { Region } from '../standards/regions';
 import type { DrawingOptions } from '../standards/drawingOptions';
+import { appPersistStorage } from '../lib/appStorage';
 
 /** One line of the document revision history (drawings and documents share it). */
 export interface Revision {
@@ -89,6 +90,7 @@ export const useProjectStore = create<ProjectStore>()(
     }),
     {
       name: 'plc-project-store',
+      storage: appPersistStorage(),
       // Older projects stored fewer project-data fields.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<ProjectStore>;

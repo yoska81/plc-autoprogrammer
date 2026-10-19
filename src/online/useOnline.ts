@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { desktopBridge, type ModbusBridge } from '../desktop/bridge';
 import { clickModbus, isWritable } from './clickModbus';
 import { encodeWord, planReads, pollOnce, wordValueError, type ModbusRef, type ReadBlock } from './poll';
+import { appPersistStorage } from '../lib/appStorage';
 
 /**
  * Connection to a real CLICK PLC (desktop app only). Read-only by default:
@@ -55,7 +56,7 @@ export const useOnlineStore = create<OnlineStore>()(
       setAllowWrites: (allowWrites) => set({ allowWrites }),
       writes: [],
     }),
-    { name: 'isa-online-settings', partialize: (s) => ({ settings: s.settings }) },
+    { name: 'isa-online-settings', storage: appPersistStorage(), partialize: (s) => ({ settings: s.settings }) },
   ),
 );
 
