@@ -6,7 +6,9 @@ import { applyUpgrade } from './applyUpgrade';
 import PrintoutReader from './PrintoutReader';
 import type { UpgradePlan } from '../upgrade';
 
-const ACCEPT = '.l5x,.L5X,.l5k,.L5K,.xml,.st,.scl,.csv,.txt,.il,.sdf,.awl,.stl,.acd,.ACD,.rss,.ckp,.ap13,.ap14,.ap15,.ap16,.ap17,.ap18,.ap19,.ap20,.s7p,.gx3,.gxw,.isp,.vlp,.ulpr,.ccwsln,.project';
+const ACCEPT = '.l5x,.L5X,.l5k,.L5K,.xml,.st,.scl,.csv,.txt,.il,.sdf,.awl,.stl,.acd,.ACD,.rss,.ckp,.ap13,.ap14,.ap15,.ap16,.ap17,.ap18,.ap19,.ap20,.s7p,.gx3,.gxw,.isp,.vlp,.ulpr,.ccwsln,.project,.ymw7,.YMW7,.emtp';
+/** Project files read as they are (binary): Yaskawa MPE720, Weintek EasyBuilder Pro. */
+const BINARY = /\.(ymw\d?|emtp)$/i;
 
 const CONF: Record<ImportedProgram['io'][number]['confidence'], { label: string; cls: string }> = {
   high: { label: 'sure', cls: 'bg-green-100 text-green-800' },
@@ -31,11 +33,14 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
     setError(null); setImp(null);
     setBusy(`Reading ${files.map((f) => f.name).join(', ')} (${(files.reduce((n, f) => n + f.size, 0) / 1e6).toFixed(1)} MB)…`);
     try {
-      const texts = await Promise.all(files.map(async (f) => ({ name: f.name, text: decodeFile(f.name, new Uint8Array(await f.arrayBuffer())) })));
+      const texts = await Promise.all(files.map(async (f) => {
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        return BINARY.test(f.name) ? { name: f.name, text: '', bytes } : { name: f.name, text: decodeFile(f.name, bytes) };
+      }));
       // a long program takes seconds to read: off the main thread
       const { program, main } = await parseOffThread({ op: 'program', files: texts });
       setImp(program);
-      setFileText(main.text);
+      setFileText(main.text || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally { setBusy(false); }
@@ -52,10 +57,10 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
     <div className="space-y-4">
       <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
         <h3 className="text-sm font-semibold text-gray-800">The machine's PLC program</h3>
-        <p className="text-xs text-gray-500">Export the program from the PLC software and choose the file here. Rockwell: File › Save As › .L5X (or .L5K). CODESYS and others: PLCopen XML. Siemens: SCL or STL (AWL) source, or LAD blocks exported as XML (TIA Openness). Mitsubishi GX Works: Export to CSV for the program and the device comments (choose both). Delta / Inovance / Xinje: the instruction list as text, with the device comment list. Siemens: add the PLC tag table. CLICK: the nickname list (.csv).</p>
+        <p className="text-xs text-gray-500">Export the program from the PLC software and choose the file here. Rockwell: File › Save As › .L5X (or .L5K). CODESYS and others: PLCopen XML. Siemens: SCL or STL (AWL) source, or LAD blocks exported as XML (TIA Openness). Mitsubishi GX Works: Export to CSV for the program and the device comments (choose both). Delta / Inovance / Xinje: the instruction list as text, with the device comment list. Siemens: add the PLC tag table. CLICK: the nickname list (.csv). Yaskawa MPE720: the project file (.YMW7) as it is, with the touch-panel project (.emtp) if there is one.</p>
         <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg py-6 cursor-pointer border-gray-300 hover:border-blue-400">
           <span className="text-sm font-medium text-gray-700">{busy || 'Choose the program file (and its comment file)'}</span>
-          <span className="text-xs text-gray-400 mt-1">.L5X · .L5K · PLCopen .xml · .scl · .st · Mitsubishi GX Works .csv · Delta / Inovance / Xinje instruction list · CLICK .csv</span>
+          <span className="text-xs text-gray-400 mt-1">.L5X · .L5K · PLCopen .xml · .scl · .st · Mitsubishi GX Works .csv · Delta / Inovance / Xinje instruction list · CLICK .csv · Yaskawa .YMW7</span>
           <input data-testid="program-file" type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { void read(e.target.files); e.target.value = ''; }} />
         </label>
         {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}

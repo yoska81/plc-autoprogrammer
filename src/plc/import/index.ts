@@ -13,6 +13,8 @@ import { decodeCsv, isGxComments, isGxProgram, isIlComments, isIlText, readGxCsv
 import { isSiemensTagTable, mergeSiemensTags, readSiemensTags } from './siemensTags';
 import { isStlSource, readStlSource } from './stl';
 import { readTiaXml } from './tiaXml';
+import { isYmw7, readYmw7 } from './mpe720';
+import { isEmtp, readEmtp } from './emtp';
 import type { ForeignProgram, ImportedProgram, SourceFormat } from './types';
 
 export { materialize } from './convert';
@@ -86,7 +88,7 @@ export function importProgramText(fileName: string, text: string): ImportedProgr
   return convertForeign(read(format, text), fileName);
 }
 
-const NOT_RECOGNISED = 'This file was not recognised as a PLC program export. Supported: Studio 5000 .L5X / .L5K, PLCopen XML, Structured Text / SCL source, Mitsubishi GX Works CSV (program + device comments), CLICK address list (CSV). Or upload a PDF printout of the ladder.';
+const NOT_RECOGNISED = 'This file was not recognised as a PLC program export. Supported: Studio 5000 .L5X / .L5K, PLCopen XML, Structured Text / SCL source, Mitsubishi GX Works CSV (program + device comments), CLICK address list (CSV), Yaskawa MPE720 project (.YMW7). Or upload a PDF printout of the ladder.';
 
 /** File bytes as text: UTF-16 exports (GX Works) are decoded by their byte order mark. */
 export function fileText(name: string, bytes: Uint8Array): string {
@@ -97,7 +99,15 @@ export function fileText(name: string, bytes: Uint8Array): string {
  * Read the files of one program: the program file plus companions (GX Works device comments).
  * Returns the program and the name of the main file.
  */
-export function importProgramFiles(files: { name: string; text: string }[]): { program: ImportedProgram; main: { name: string; text: string } } {
+export function importProgramFiles(files: { name: string; text: string; bytes?: Uint8Array }[]): { program: ImportedProgram; main: { name: string; text: string } } {
+  // Yaskawa MPE720 project (binary), with the Weintek touch-panel project when it came along.
+  const ymw = files.find((f) => f.bytes && isYmw7(f.name, f.bytes));
+  const panel = files.find((f) => f.bytes && isEmtp(f.name, f.bytes));
+  if (ymw) {
+    const fp = readYmw7(ymw.bytes!, ymw.name, panel ? readEmtp(panel.bytes!) : undefined);
+    return { program: convertForeign(fp, ymw.name), main: { name: ymw.name, text: '' } };
+  }
+  if (panel) throw new Error(`${panel.name}: this is the touch-panel project (Weintek EasyBuilder Pro). Add the PLC project with it (Yaskawa MPE720: the .YMW7 file).`);
   for (const f of files) { const why = unreadableReason(f.name, f.text); if (why) throw new Error(`${f.name}: ${why}`); }
   const gx = files.find((f) => isGxProgram(f.text));
   if (gx) {
