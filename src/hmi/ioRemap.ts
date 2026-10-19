@@ -15,15 +15,29 @@ export function remapHmiDesign(design: HmiDesign, r: IoRemap, describe: (ioId: s
   // Descriptions name the I/O they act on ("PLC runs Y001 while …"): the roles are read from them, so they move too
   // (one pass: every address in the text looked up once).
   const moveInText = (text: string) => text.replace(/\b[XY]\d+\b/gi, (a) => move(a));
+  // Labels and alarm texts the operator reads ("X001 E-stop OK", "Start PB (X002)"): the address moves with its
+  // point in the same one pass, and a deleted point's address is dropped with its brackets or separator.
+  const moveInLabel = (text: string) => {
+    let dropped = false;
+    const out = text.replace(/\s*\(\s*([XY]\d+)\s*\)|\b([XY]\d+)\b(\s*[:\u2013\u2014-]\s+|\s+)?/gi, (m, inParens: string | undefined, bare: string | undefined, sep: string | undefined) => {
+      const a = (inParens ?? bare)!;
+      if (gone(a)) { dropped = true; return ''; }
+      return inParens ? m.replace(a, move(a)) : move(a) + (sep ?? '');
+    });
+    return dropped ? out.replace(/[ \t]{2,}/g, ' ').trim() : out;
+  };
   const el = (e: HmiElement): HmiElement => {
     const g = gone(e.address);
-    const next: HmiElement = { ...e };
+    const next: HmiElement = { ...e, label: e.label ? moveInLabel(e.label) : e.label };
     if (g) { next.address = ''; next.lostIo = lost(e.address!, g); } else if (e.address) next.address = move(e.address);
     if (e.interlock) {
       const gi = gone(e.interlock);
       if (gi) { next.interlock = null; next.lostIo = next.lostIo ?? lost(e.interlock, gi); } else next.interlock = move(e.interlock);
     }
-    if (e.symbols) next.symbols = e.symbols.map((s) => (gone(s.address) ? { ...s, address: '' } : s.address ? { ...s, address: move(s.address) } : s));
+    if (e.symbols) next.symbols = e.symbols.map((s) => {
+      const label = s.label ? moveInLabel(s.label) : s.label;
+      return gone(s.address) ? { ...s, label, address: '' } : s.address ? { ...s, label, address: move(s.address) } : { ...s, label };
+    });
     return next;
   };
   const tags = design.tags.filter((t) => {
@@ -35,7 +49,7 @@ export function remapHmiDesign(design: HmiDesign, r: IoRemap, describe: (ioId: s
     const g = gone(a.address);
     if (g) notes.push(`Removed the alarm "${a.message}" (${lost(a.address, g)}): its I/O point was deleted.`);
     return !g;
-  }).map((a) => ({ ...a, address: move(a.address) }));
+  }).map((a) => ({ ...a, address: move(a.address), message: moveInLabel(a.message) }));
   const screens = design.screens.map((s) => ({ ...s, elements: s.elements.map(el) }));
   const unbound = screens.flatMap((s) => s.elements.filter((e) => e.lostIo && !design.screens.find((o) => o.id === s.id)?.elements.find((o) => o.id === e.id)?.lostIo).map((e) => `“${e.label || e.id}” on ${s.name}`));
   if (unbound.length) notes.push(`Unbound ${unbound.length} element(s) whose I/O point was deleted: ${unbound.slice(0, 5).join(', ')}${unbound.length > 5 ? '…' : ''}. Bind them again or delete them.`);
