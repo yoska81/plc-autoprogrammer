@@ -63,7 +63,7 @@ export function renamePin(names: IoNames, end: string): string {
 /** I/O addresses in a document's text in the PLC's own naming: "Start button (X002)" → "Start button (%I0.1)". */
 export function renameAddressText(names: IoNames, text: string): string {
   if (!names.native.size) return text;
-  return text.replace(/(?<![\w%.])([XY]\d{3})(?![\w])/g, (a) => names.native.get(a) ?? a);
+  return text.replace(/(?<![\w%.])([XY]\d{3}|DF\d+)(?![\w])/g, (a) => names.native.get(a) ?? a);
 }
 
 /** An I/O address as the PLC names it, for drawing text: X001 → %I0.0 on an S7, X001 on a CLICK. */

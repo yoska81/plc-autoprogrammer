@@ -191,8 +191,8 @@ def check(vdir: Path):
             report('FAIL', v, f'I/O address {shown} not on the drawings')
         elif a in native and re.search(r'(?<!\w)' + a + r'(?!\w)', drw_all):
             report('FAIL', v, f'I/O address {a} on the drawings of a PLC that names it {native[a]}')
-        if a not in eng_all:
-            report('FAIL', v, f'I/O address {a} not in the engineering package')
+        if shown not in eng_all:
+            report('FAIL', v, f'I/O address {shown} not in the engineering package')
         if re.fullmatch(r'DF\d+', a):
             if not re.search(r'(?<!\w)' + a + r'(?!\w)', ana_txt):
                 report('FAIL', v, f'analog I/O address {a} not in the analog setup CSV')
