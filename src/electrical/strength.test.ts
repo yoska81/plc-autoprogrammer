@@ -80,4 +80,9 @@ console.log('power supply feed tests passed');
 
 // Disconnects: a UL 98 switch is never swapped for a UL 508 motor disconnect (Siemens 3LD).
 assert.match(compareStrength(getPart('22013003')!, getPart('3LD2203-0TK51')!).reason, /^UL 508 motor disconnect only/);
+// Role-based: a back-panel supply disconnect with no ul stated still refuses a UL 508 candidate.
+const noUlRatings = Object.fromEntries(Object.entries(getPart('22013003')!.ratings).filter(([k]) => k !== 'ul'));
+const noUl = { ...getPart('22013003')!, ratings: noUlRatings };
+assert.match(compareStrength(noUl, getPart('3LD2504-0TK51')!).reason, /^UL 508 motor disconnect only/);
+assert.ok(compareStrength(getPart('22013003')!, getPart('22013006')!).ok, 'UL 98 for UL 98: fine');
 console.log('disconnect UL listing tests passed');
