@@ -32,9 +32,12 @@ export function ioNames(cpuPartNumber: string, modules: string[], addresses: str
   for (const a of addresses) {
     const t = profile.ioTag(a, slots, cpuPartNumber);
     if (!t || t.toUpperCase() === a.toUpperCase()) continue;
-    native.set(a, t);
+    // only a name that also works as a wire number: drawings, wire list and markers then always agree (a UniStream
+    // slot input "slot 1 UID-1600 I0" stays X101); the label drops an "on-board" prefix
     const w = wireOfNative(t);
-    if (w) wire.set(a, w);
+    if (!w) continue;
+    native.set(a, t.replace(/^on-board\s*/i, ''));
+    wire.set(a, w);
   }
   return native.size ? { native, wire } : EMPTY;
 }
