@@ -1033,7 +1033,7 @@ export const SCHNEIDER: CatalogPart[] = [
     family: 'Harmony XB5',
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=XB5AA31_DATASHEET_US_en-US.pdf&p_Doc_Ref=XB5AA31_DATASHEET_US_en-US',
     mount: 'door',
-    ratings: { family: 'Harmony XB5', color: 'green', contacts: '1NO', action: 'momentary', size: '22mm', operator: 'flush' },
+    ratings: { family: 'Harmony XB5', color: 'green', contacts: '(1) N.O.', action: 'momentary', size: '22mm', operator: 'flush' },
     verified: true,
   },
   {
@@ -1044,7 +1044,7 @@ export const SCHNEIDER: CatalogPart[] = [
     family: 'Harmony XB5',
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=XB5AA42_DATASHEET_US_en-US.pdf&p_Doc_Ref=XB5AA42_DATASHEET_US_en-US',
     mount: 'door',
-    ratings: { family: 'Harmony XB5', color: 'red', contacts: '1NC', action: 'momentary', size: '22mm', operator: 'flush' },
+    ratings: { family: 'Harmony XB5', color: 'red', contacts: '(1) N.C.', action: 'momentary', size: '22mm', operator: 'flush' },
     verified: true,
   },
   {
@@ -1055,7 +1055,7 @@ export const SCHNEIDER: CatalogPart[] = [
     family: 'Harmony XB5',
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=XB5AS8444_DATASHEET_US_en-US.pdf&p_Doc_Ref=XB5AS8444_DATASHEET_US_en-US',
     mount: 'door',
-    ratings: { family: 'Harmony XB5', color: 'red', contacts: '2NC', action: 'push-latch, turn to release', size: '22mm', operator: '40mm mushroom' },
+    ratings: { family: 'Harmony XB5', color: 'red', contacts: '(2) N.C.', action: 'push-latch, turn to release', size: '22mm', operator: '40mm mushroom' },
     verified: true,
   },
   {
@@ -1066,7 +1066,7 @@ export const SCHNEIDER: CatalogPart[] = [
     family: 'Harmony XB5',
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=XB5AS8442_DATASHEET_US_en-US.pdf&p_Doc_Ref=XB5AS8442_DATASHEET_US_en-US',
     mount: 'door',
-    ratings: { family: 'Harmony XB5', color: 'red', contacts: '1NC', action: 'push-latch, turn to release', size: '22mm', operator: '40mm mushroom' },
+    ratings: { family: 'Harmony XB5', color: 'red', contacts: '(1) N.C.', action: 'push-latch, turn to release', size: '22mm', operator: '40mm mushroom' },
     verified: true,
   },
   {
@@ -1077,7 +1077,7 @@ export const SCHNEIDER: CatalogPart[] = [
     family: 'Harmony XB5',
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=XB5AD21_DATASHEET_US_en-US.pdf&p_Doc_Ref=XB5AD21_DATASHEET_US_en-US',
     mount: 'door',
-    ratings: { family: 'Harmony XB5', color: 'black', contacts: '1NO', action: 'maintained', size: '22mm', operator: 'standard handle', positions: 2 },
+    ratings: { family: 'Harmony XB5', color: 'black', contacts: '(1) N.O.', action: 'maintained', size: '22mm', operator: 'standard handle', positions: 2 },
     verified: true,
   },
   {
@@ -1088,7 +1088,7 @@ export const SCHNEIDER: CatalogPart[] = [
     family: 'Harmony XB5',
     url: 'https://download.schneider-electric.com/files?p_enDocType=Product+Data+Sheet&p_File_Name=XB5AD33_DATASHEET_US_en-US.pdf&p_Doc_Ref=XB5AD33_DATASHEET_US_en-US',
     mount: 'door',
-    ratings: { family: 'Harmony XB5', color: 'black', contacts: '2NO', action: 'maintained', size: '22mm', operator: 'standard handle', positions: 3 },
+    ratings: { family: 'Harmony XB5', color: 'black', contacts: '(2) N.O.', action: 'maintained', size: '22mm', operator: 'standard handle', positions: 3 },
     verified: true,
   },
   {
