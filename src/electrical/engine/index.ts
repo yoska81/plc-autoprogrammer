@@ -7,7 +7,7 @@
 import type { IOPoint } from '../../types/io';
 import type { AnalogSetupRow } from '../../plc/core/analog';
 import type { Region } from '../../standards/regions';
-import { enclosureText, powerText, SUPPLY_INFO } from '../../standards/regions';
+import { enclosureText, isIec, powerText, SUPPLY_INFO } from '../../standards/regions';
 import { DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
 import { enclosureFamily, enclosurePanelArea, enclosureRank, enclosureSize, enclosuresFor, panelLayout, SPARE_RULE, spareSpace, terminalCounts, motorFla, vendorTerminal, type DrawingContext } from '../derive';
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
@@ -247,7 +247,7 @@ export function generateDesign(input: EngineInput): EngineResult {
     if (hit) return hit;
     const sub = pk.byNumber(String(enc.ratings.subpanel ?? '')) ?? getPart(String(enc.ratings.subpanel ?? ''));
     const depth = num(enc.ratings.depthIn) ?? 8;
-    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps + motion.loadA);
+    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps + motion.loadA, !isIec(input.region));
     const head = [
       comp('ENC1', enc.partNumber, 1, `Main enclosure ${enc.ratings.heightIn}x${enc.ratings.widthIn}x${enc.ratings.depthIn} ${enclosureText(inputs.enclosureRating, input.region)}`),
       ...(sub ? [comp('SP1', sub.partNumber, 1, 'Back panel')] : []),
