@@ -15,6 +15,10 @@ export interface NetworkAxis {
   /** SVR axes are virtual (no drive). */
   kind?: 'servo' | 'virtual';
   drivePartNumber?: string;
+  /** MECHATROLINK station address (hex, "13"): two axes on one station are one two-axis drive (SGD7W). */
+  station?: string;
+  /** Axis within the station (0 / 1). */
+  stationAxis?: number;
   motorPartNumber?: string;
   watts?: number;
   source?: 'import' | 'spec' | 'user';

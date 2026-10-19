@@ -24,6 +24,7 @@ import { and, el, not, or, toBranches, toRungs, TRUE, type Cond, type Driven } f
 import type { CompareOp, LadderOutput } from '../core/ladder';
 import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType, NetworkAxisImport } from './types';
 import { hmiNotes, type HmiProject } from './emtp';
+import { networkNotes, readEthernetConnections, readSvcStations, type EthernetConnection, type MechatrolinkAxis } from './mpe720Network';
 
 export const YASKAWA_VENDOR = 'yaskawa';
 
@@ -358,7 +359,7 @@ function asciiRuns(b: Uint8Array, min = 3): string[] {
 }
 
 /** An axis in plain words: "axis 1 (line 1): SGD7S-… with motor SGM7J-…", "axis 3 (line 1): virtual". */
-export const axisText = (a: NetworkAxisImport) => `axis ${a.axis} (line ${a.line}): ${a.kind === 'virtual' ? 'virtual' : a.drive ?? 'amplifier ?'}${a.motor ? ` with motor ${a.motor}` : ''}`;
+export const axisText = (a: NetworkAxisImport) => `axis ${a.axis} (line ${a.line}${a.station ? `, station ${a.station}` : ''}): ${a.kind === 'virtual' ? 'virtual' : a.drive ?? 'amplifier ?'}${a.motor ? ` with motor ${a.motor}` : ''}`;
 
 /** "$GH01_02" → "H01.02", "$GL" → "L". */
 const drawingId = (file: string) => file.replace(/^\$G/, '').replace(/_/g, '.');
@@ -402,6 +403,19 @@ export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: Hmi
     // No drive named: a virtual axis (SVR), unless the file says it is a servo some other way.
     const virtual = !drive && (runs.some((r) => /SVR|VIRTUAL/i.test(r)) || !motor);
     axisList.push({ line: Number(m[1]), axis: Number(m[2]), ...(drive ? { drive } : {}), ...(motor ? { motor } : {}), kind: virtual ? 'virtual' : 'servo' });
+  }
+  // The SVC / 218IFD set-up, as far as the files say it for certain (src/plc/import/mpe720Network.ts).
+  const stations: MechatrolinkAxis[] = [], connections: EthernetConnection[] = [];
+  for (const [path, f] of [...files].sort(([a], [b]) => a.localeCompare(b))) {
+    if (!/^PRG\/IOMAP\/\$SLT\d+$/.test(path)) continue;
+    if (!stations.length) stations.push(...readSvcStations(f.data));
+    if (!connections.length) connections.push(...readEthernetConnections(f.data));
+  }
+  // Each axis on the first circuit gets its station (record n = axis n).
+  const circuit = Math.min(...axisList.map((x) => x.line));
+  for (const s of stations) {
+    const x = axisList.find((a) => a.line === circuit && a.axis === s.axis);
+    if (x) { x.station = s.station; x.stationAxis = s.stationAxis; }
   }
   const axes = axisList.map(axisText);
 
@@ -474,6 +488,7 @@ export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: Hmi
     'Drawings call each other with SEE (kept as boxes); every drawing is a block of the program, in scan order. Local registers (D) and the compiler\'s work bits carry their drawing in the name (H01_02_DB000090).',
     'Function calls (FUNC) and the servo / motion registers (IW/OW 8000 and up) are kept as written; check them against the new PLC.',
     ...(axes.length ? [`Servo axes (MECHATROLINK): ${axes.join('; ')}.`] : []),
+    ...networkNotes(stations, connections),
     ...(hmi ? hmiNotes(hmi, (a) => comments.get(a), (a) => used.has(a)) : []),
   );
   return {
