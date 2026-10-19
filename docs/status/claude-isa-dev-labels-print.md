@@ -367,3 +367,6 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Delta DOP-100 serial models keep only DVP and AS300.
   - KTP Basic DP needs a CM 1243-5 on an S7-1200, and a DP CPU or CM 1542-5 on an S7-1500.
   - Tested in platforms.test.ts.
+- **PLC module a serial panel needs:** `ratings.plcModules` ("platform-id=module; …") on the serial-only and PROFIBUS panels. `plcModuleFor(hmi, platformId)` in platforms.ts returns it, or null when nothing is needed.
+  - Modules: CM 1243-5 on an S7-1200, CM 1542-5 on a non-DP S7-1500, FX5-232-BD/ADP on an FX5U, NX1W-CIF01 on an NX1P2, CP1W-CIF01/11 on a CP2E-N.
+  - The picker (Dev 5) shows the note and the BOM (Dev 4) adds the module. The modules themselves are not catalog parts yet.

@@ -278,6 +278,18 @@ export function protocolsOf(p: CatalogPart): Protocol[] {
 export const driversOf = (hmi: CatalogPart): string[] => String(hmi.ratings.plcDrivers ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
 /**
+ * The interface module the PLC needs before this panel can reach it (serial / PROFIBUS panels: a CM 1243-5 on an
+ * S7-1200, an FX5-232 board on an FX5U …), from ratings.plcModules ("platform-id=module; …"). null when none is needed.
+ */
+export function plcModuleFor(hmi: CatalogPart, platformId: string): string | null {
+  for (const part of String(hmi.ratings.plcModules ?? '').split(';')) {
+    const [id, ...rest] = part.split('=');
+    if (id.trim() === platformId) return rest.join('=').trim() || null;
+  }
+  return null;
+}
+
+/**
  * Can this touch panel talk to the platform? Panels with a maker's PLC driver
  * list: only the families on it. Same brand: yes unless its protocols are stated and
  * don't match. Another brand: only when a shared Ethernet protocol is stated

@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { getPart } from '../../electrical/catalog';
-import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf } from './platforms';
+import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf, plcModuleFor } from './platforms';
 import { cpuFit, hmiFit, modulesToFit, platformOf, type Need } from './fit';
 import { PLC_PROFILES } from './profiles';
 import { LOGIX_CPUS } from './profiles/logix';
@@ -143,6 +143,15 @@ assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000
   assert.ok(!ok('siemens-s7-1200', 'NB5Q-TW00B') && !ok('siemens-s7-1200', 'GT2104-PMBDS'), 'NB and GT21 reach S7-1200 only over Ethernet (V108 2-1-2, SH-081199 16.1)');
   assert.ok(ok('siemens-s7-1200', 'PFXGP4116T2D') && !ok('siemens-s7-1200', 'PFXGP4115T2D'), 'S7-1200 via CM 1243-5 needs RS-485 (SIE_MPID_39)');
   assert.ok(ok('omron-nx1p2', 'NB7W-TW00B') && !ok('omron-nx1p2', 'GT2105-QTBDS'), 'NX1P2: NB with NX1W-CIF board yes, GOT serial no');
+  // The module the PLC needs for such a panel (shown by the picker, added to the BOM).
+  assert.match(plcModuleFor(getPart('PFXGP4116T2D')!, 'siemens-s7-1200') ?? '', /6GK7243-5DX30-0XE0/);
+  assert.match(plcModuleFor(getPart('NB7W-TW00B')!, 'omron-nx1p2') ?? '', /NX1W-CIF01/);
+  assert.equal(plcModuleFor(getPart('PFXGP4116T2D')!, 'schneider-m221'), null, 'M221: built-in serial');
+  assert.equal(plcModuleFor(getPart('2713P-T7WD1')!, 'ab-compactlogix-5370'), null, 'Ethernet panel: nothing');
+  for (const p of ALL_HMIS().filter((x) => x.ratings.plcModules !== undefined)) for (const part of String(p.ratings.plcModules).split(';')) {
+    const id = part.split('=')[0].trim();
+    assert.ok(driversOf(p).includes(id), `${p.partNumber}: plcModules names ${id}, which is not in its driver list`);
+  }
 }
 // Driver ids are platform ids (agreed list; every platform that exists must be on it).
 const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz']);
