@@ -92,6 +92,7 @@ async function scenario(browser, quick) {
   });
   for (const r of results) console.log('  ·', r.slice(0, 220));
 
+  check(results.some((r) => /^equipment done: Using Siemens .* because the description says ".*Siemens S7-1200.*"\. Change it in Brand preference/.test(r)), 'the equipment step quotes where the brand was read');
   if (!quick) {
     check(seen.equipment && !/^- C0-|^- C2-/m.test(seen.equipment), 'equipment prompt offers no CLICK CPU or module');
     check(seen.equipment && /^- 6ES7/m.test(seen.equipment), 'equipment prompt offers Siemens CPUs');

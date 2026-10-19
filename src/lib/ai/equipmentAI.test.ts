@@ -68,7 +68,8 @@ assert.deepEqual(unsupportedBrands('Beckhoff CX9020 with TwinCAT 3'), ['Beckhoff
 assert.deepEqual(unsupportedBrands('A Siemens LOGO! 8 runs it'), ['Siemens LOGO!']);
 assert.deepEqual(unsupportedBrands('Omron photo-eyes and a Mitsubishi servo'), [], 'sensors and drives of a maker are not a PLC');
 assert.equal(brandNote('Mitsubishi PLC', 'AutomationDirect CLICK (C0-12DD1E-D)'), "Mitsubishi PLC isn't supported yet — using AutomationDirect CLICK (C0-12DD1E-D).");
-assert.equal(brandNote('Mitsubishi servo, Siemens S7-1200 PLC', 'Siemens'), null, 'a supported PLC is named: nothing to say');
+assert.equal(brandNote('Mitsubishi servo, Siemens S7-1200 PLC', 'Siemens S7-1200 / S7-1500 (6ES7214-1AG40-0XB0)'),
+  `Using Siemens S7-1200 / S7-1500 (6ES7214-1AG40-0XB0) because the description says "Mitsubishi servo, Siemens S7-1200 PLC". Change it in Brand preference if that's wrong.`, 'a supported PLC named: quoted, no unsupported warning');
 assert.equal(brandNote('Pick and place', 'CLICK'), null);
 assert.deepEqual(unsupportedBrands('Productivity 2000 PLC'), ['AutomationDirect Productivity / BRX / Do-more']);
 assert.deepEqual(unsupportedBrands('BRX controller'), ['AutomationDirect Productivity / BRX / Do-more']);
@@ -83,8 +84,26 @@ const PROBES: [string, string[]][] = [
   ['PLC (Siemens)', ['siemens-s7']],
   ['Siemens-PLC', ['siemens-s7']],
   ["Allen-Bradley's PLC", ['logix', 'micro800']],
-  ['SPS: Siemens', ['siemens-s7']],
-  ['Automate Siemens', ['siemens-s7']],
+  ['Die SPS ist eine Siemens', ['siemens-s7']],
+  ["L'automate Siemens pilote la ligne", ['siemens-s7']],
+  ['The PLC is CLICK', ['click']],
+  ['PLC: CLICK', ['click']],
+  // Devices and other controllers of a maker are not its PLC (side manager's probes).
+  ['Allen-Bradley PowerFlex 525 PLC-controlled', ['click']],
+  ['Allen-Bradley Guardmaster safety controller', ['click']],
+  ['Allen-Bradley Kinetix 5700 PLC', ['click']],
+  ['Allen-Bradley E-stop PLC', ['click']],
+  ['Siemens temperature controller and a PLC', ['click']],
+  ['Siemens fan speed controller', ['click']],
+  ['Siemens light curtain PLC input', ['click']],
+  ['Siemens 7 inch PLC panel', ['click']],
+  ['We want to automate the Siemens packaging line', ['click']],
+  ['Siemens 24 V SPS', ['click']],
+  ['Die Anlage hat ein 24 V SPS Netzteil von Siemens', ['click']],
+  ['Interfaces to the PLC: Siemens G120 drive via Profinet', ['click']],
+  ['Siemens LOGO 8 PLC', ['click']],
+  ['Siemens LOGO! controller', ['click']],
+  ['Rockwell Automation controller', ['logix', 'micro800']],
   ['Steuerung: Siemens S7', ['siemens-s7']],
   ['Siemens S7-1200 controller', ['siemens-s7']],
   ['Siemens drive and Allen-Bradley PLC', ['logix', 'micro800']],
@@ -94,6 +113,12 @@ const PROBES: [string, string[]][] = [
 ];
 for (const [text, want] of PROBES) assert.deepEqual(ids(text), want, text);
 assert.deepEqual(unsupportedBrands('Omron photo-eyes and a Mitsubishi servo'), [], 'no unsupported warning for sensors and servos');
+assert.deepEqual(unsupportedBrands('Omron temperature controller'), [], 'an Omron temperature controller is not a PLC');
+assert.deepEqual(unsupportedBrands('Siemens LOGO 8 PLC'), ['Siemens LOGO!'], 'LOGO 8 (no "!") is the LOGO');
+assert.match(brandNote('Siemens LOGO 8 PLC', 'AutomationDirect CLICK (C0-10DD1E-D)') ?? '', /^Siemens LOGO! PLC isn't supported yet — using AutomationDirect CLICK/);
+// Read from the description: the phrase is quoted.
+assert.match(brandNote('Bottle capper. The PLC shall be Siemens S7-1200. E-stop.', 'Siemens S7-1200 / S7-1500 (6ES7214-1AG40-0XB0)') ?? '', /Using Siemens .* because the description says "The PLC shall be Siemens S7-1200"/);
+assert.equal(brandNote('PLC: CLICK. Siemens motors.', 'CLICK'), `Using CLICK because the description says "PLC: CLICK". Change it in Brand preference if that's wrong.`, 'CLICK named: no "mentions Siemens" note');
 // Safety net: a maker with a PLC here, mentioned next to a PLC word without naming the PLC, is said.
 assert.equal(brandNote('Siemens motor started by the PLC', 'AutomationDirect CLICK (C0-12DD1E-D)'),
   "The description mentions Siemens but doesn't say the PLC is Siemens — using AutomationDirect CLICK (C0-12DD1E-D). Set the PLC brand in Brand preference if that's wrong.");
