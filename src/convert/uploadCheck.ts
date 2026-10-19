@@ -19,9 +19,14 @@ const IMAGE_SIGS: Record<string, (b: Uint8Array) => boolean> = {
 /** Entity types that show something on a sheet. */
 const DRAWN = /\n\s*0\s*\r?\n\s*(LINE|LWPOLYLINE|POLYLINE|TEXT|MTEXT|INSERT|CIRCLE|ARC|ELLIPSE|SPLINE|DIMENSION|SOLID|HATCH|LEADER|MLEADER|ATTRIB|POINT)\s*\r?\n/;
 
+/** PLC (and touch-panel) program files: read on the Import page's Program tab, not as drawings or spec documents. */
+export const PLC_PROGRAM_FILE = /\.(ymw\d?|emtp|l5x|l5k|mwt|zwt|pcwex|jbi|acd|rss|ckp|ccwsln|gx3|gxw|ap\d+|s7p|scl|awl|stl)$/i;
+export const PLC_PROGRAM_HINT = 'is a PLC program file: open it on Import an existing machine → Program (project tree: Existing machine → PLC program: read / upgrade).';
+
 /** null when the file looks readable, else what is wrong with it, in plain words. */
 export async function checkUploadFile(f: File): Promise<string | null> {
   const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+  if (PLC_PROGRAM_FILE.test(f.name)) return `${f.name} ${PLC_PROGRAM_HINT}`;
   if (f.size === 0) return `${f.name} is empty (0 bytes). Export or copy it again.`;
   const head = new Uint8Array(await f.slice(0, 1024).arrayBuffer());
   if (ext === 'pdf') {
