@@ -3,9 +3,10 @@
  * Positioned with `position: fixed` from the clicked cell's bounding rect;
  * closes on Escape, outside click, or page scroll.
  */
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import type { CompareOp, LadderElement, LadderOutput, TimeUnit } from '../../core/ladder';
+import type { AddressKind } from '../../core/profile';
 import { defaultElement, defaultOutput, normAddr } from './ladderEdit';
 import type { ElementType, OutputType } from './ladderEdit';
 
@@ -25,7 +26,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/** The PLC's own names of the project's addresses (%I0.2 → X003 on an S7): one typed in a field becomes the app's address. */
+const NativeNames = createContext<Map<string, string>>(new Map());
+
 function AddrInput({ value, onChange, placeholder, autoFocus }: { value: string; onChange: (v: string) => void; placeholder?: string; autoFocus?: boolean }) {
+  const natives = useContext(NativeNames);
   return (
     <input
       className={monoCls}
@@ -34,6 +39,7 @@ function AddrInput({ value, onChange, placeholder, autoFocus }: { value: string;
       autoFocus={autoFocus}
       spellCheck={false}
       onChange={(e) => onChange(normAddr(e.target.value))}
+      onBlur={() => { const a = natives.get(normAddr(value)); if (a) onChange(a); }}
     />
   );
 }
@@ -187,6 +193,19 @@ export interface AddressChoice {
   label: string;
   /** The PLC's own name of the address when it differs (%I0.0 for X001 on an S7); the program keeps `address`. */
   native?: string | null;
+  /** What the address is (input, output, bit, timer …), to offer each instruction only what it can use. */
+  kind?: AddressKind;
+}
+
+/** Contacts read any bit; coils write outputs and internal bits only. Timers, counters, compares and boxes get no list. */
+function choicesFor(v: LadderElement | LadderOutput, choices: AddressChoice[]): AddressChoice[] {
+  const read: (AddressKind | undefined)[] = ['input', 'output', 'bit', 'timer', 'counter', 'system'];
+  const write: (AddressKind | undefined)[] = ['output', 'bit'];
+  switch (v.type) {
+    case 'NO': case 'NC': case 'RISE': case 'FALL': return choices.filter((c) => read.includes(c.kind));
+    case 'OUT': case 'SET': case 'RST': return choices.filter((c) => write.includes(c.kind));
+    default: return [];
+  }
 }
 
 /** The target with its main address (the contact's / coil's address, a compare's left side, a copy's or math's result) set. */
@@ -215,7 +234,7 @@ function AddressPicker({ choices, value, onPick }: { choices: AddressChoice[]; v
       <select className={inputCls} data-testid="ladder-address-pick" value={choices.some((c) => c.address === value) ? value : ''}
         onChange={(e) => { if (e.target.value) onPick(e.target.value); }}>
         <option value="">— choose a signal —</option>
-        {choices.map((c) => <option key={c.address} value={c.address}>{c.native ?? c.address}{c.label ? ` — ${c.label}` : ''}</option>)}
+        {choices.map((c) => <option key={c.address} value={c.address}>{c.native ? `${c.native} (${c.address})` : c.address}{c.label ? ` — ${c.label}` : ''}</option>)}
       </select>
     </Field>
   );
@@ -263,7 +282,10 @@ export default function ElementEditor({
     ? { left, top: pos.bottom + 6, width }
     : { left, bottom: window.innerHeight - pos.top + 6, width };
 
+  const offered = choicesFor(target.value, choices);
+  const natives = new Map(choices.filter((c) => c.native).map((c) => [normAddr(c.native!), c.address]));
   return (
+    <NativeNames.Provider value={natives}>
     <div ref={ref} className="fixed z-50 rounded-lg border border-slate-300 bg-white p-3 shadow-xl" style={style} role="dialog">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -274,8 +296,8 @@ export default function ElementEditor({
         </button>
       </div>
       <div className="space-y-2">
-        {choices.length > 0 && target.value.type !== 'RAW' && (
-          <AddressPicker choices={choices} value={mainAddress(target.value)}
+        {offered.length > 0 && (
+          <AddressPicker choices={offered} value={mainAddress(target.value)}
             onPick={(a) => (target.kind === 'element' ? target.onChange(withAddress(target.value, a)) : target.onChange(withAddress(target.value, a)))} />
         )}
         {target.kind === 'element'
@@ -291,5 +313,6 @@ export default function ElementEditor({
         </button>
       </div>
     </div>
+    </NativeNames.Provider>
   );
 }

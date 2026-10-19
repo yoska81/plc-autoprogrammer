@@ -43,6 +43,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByRole('button', { name: 'Start empty program' }).click();
   const bar = page.getByTestId('ladder-edit-bar');
   await bar.waitFor({ timeout: 10000 });
+  check(await page.getByRole('button', { name: 'Undo', exact: true }).isEnabled(), '"Start empty program" is a hand edit: Undo takes it back');
   check(await bar.getByRole('button', { name: 'Add rung' }).isVisible(), 'the edit bar shows without clicking a rung first');
   const rungEls = page.locator('[data-rung-id]');
   const rung = (n) => rungEls.nth(n);
@@ -79,6 +80,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await bar.getByRole('button', { name: 'Contact (NC)' }).click();
   const in2 = await setAddress(0, '[data-ladder-item="0.1"]', /^X0*2\b/);
   await bar.getByRole('button', { name: 'Branch' }).click();
+  await rung(0).locator('[data-ladder-output="0"]').getByRole('button').click();
+  const coilChoices = (await page.getByTestId('ladder-address-pick').locator('option').allInnerTexts()).slice(1);
+  check(coilChoices.length > 0 && !coilChoices.some((o) => /^X\d/.test(o)), `a coil is offered outputs and bits only (${coilChoices.length}, no X inputs)`);
+  await page.keyboard.press('Escape');
   const out1 = await setAddress(0, '[data-ladder-output="0"]', /^Y/);
   await setAddress(0, '[data-ladder-item="1.0"]', new RegExp(`^${out1}\\b`));
   log('rung 1:', in1, in2, out1);
@@ -88,6 +93,9 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await rung(1).locator('[data-ladder-output="0"]').getByRole('button').click();
   await page.getByRole('button', { name: 'Delete this output' }).click();
   await bar.getByRole('button', { name: 'Timer' }).click();
+  await rung(1).locator('[data-ladder-output="0"]').getByRole('button').click();
+  check(await page.getByTestId('ladder-address-pick').count() === 0, 'a timer is not offered the I/O list');
+  await page.keyboard.press('Escape');
   // Rung 3: a contact and a coil.
   await bar.getByRole('button', { name: 'Add rung' }).click();
   await setAddress(2, '[data-ladder-item="0.0"]', /^X0*4\b/);
@@ -118,6 +126,35 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   check((await ladder()).rungs[2].branches[0].length === 1, 'Redo removes it again');
 
+  // The Delete key acts only on a selection the user can see.
+  const n3 = async () => (await ladder()).rungs[2].branches[0].length;
+  const item3 = (i) => rung(2).locator(`[data-ladder-item="0.${i}"]`).getByRole('button');
+  await selectRung(2);
+  await bar.getByRole('button', { name: 'Contact (NO)' }).click();
+  await item3(1).click();
+  await page.keyboard.press('Escape');
+  await selectRung(1);
+  await page.keyboard.press('Delete');
+  check(await n3() === 2, 'Delete does nothing once another rung is selected');
+  await item3(1).click();
+  await page.keyboard.press('Escape');
+  for (const k of ['Control+Delete', 'Shift+Delete', 'Alt+Delete']) await page.keyboard.press(k);
+  check(await n3() === 2, 'Ctrl / Shift / Alt + Delete do not delete');
+  await page.getByRole('button', { name: 'Zoom in' }).focus();
+  await page.keyboard.press('Delete');
+  check(await n3() === 2, 'Delete with the focus on a page button outside the ladder does nothing');
+  // After an undo the place holds another item: the selection is gone, nothing else is deleted.
+  await item3(0).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Delete');
+  check(await n3() === 1, 'Delete removes the selected first contact');
+  await item3(0).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await selectRung(2);
+  await page.keyboard.press('Delete');
+  check(await n3() === 2, 'after Undo, Delete does not remove the contact now in the selected one\'s place');
+
   // Insert above, move, delete a rung.
   await selectRung(1);
   await bar.getByRole('button', { name: 'Insert rung above' }).click();
@@ -131,6 +168,21 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await bar.getByRole('button', { name: 'Move up' }).click();
   check((await ladder()).rungs[0].outputs[0].address === out3, 'Move up');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
+
+  // History: a version before the first hand edit and before a rung was deleted.
+  const versions = await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().versions.map((v) => v.label));
+  check(versions.includes('Before hand edits') && versions.includes('Before deleting a rung'), `History has "Before hand edits" and "Before deleting a rung" (${versions.slice(0, 4).join(', ')})`);
+
+  // While the AI works on the program, hand edits are paused (its result would replace them).
+  await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().setIsGenerating(true));
+  await page.getByText('Hand edits are paused').waitFor({ timeout: 5000 });
+  check(await page.getByTestId('ladder-edit-bar').count() === 0, 'no edit bar while the AI is working');
+  const beforeZ = JSON.stringify(await ladder());
+  await selectRung(0);
+  await page.keyboard.press('Control+z');
+  check(JSON.stringify(await ladder()) === beforeZ, 'Ctrl+Z does nothing while the AI is working');
+  await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().setIsGenerating(false));
+  await bar.waitFor({ timeout: 5000 });
 
   // The cross reference sees the edit.
   await page.getByRole('button', { name: 'Cross reference' }).click();
@@ -166,6 +218,11 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(s7.some((o) => /^%I0\.0\b/.test(o)) && s7.some((o) => /^%Q0\.0\b/.test(o)), 'Siemens: the I/O list in %I / %Q addresses');
   const s7addr = await setAddress(0, '[data-ladder-item="0.0"]', /^%I0\.1\b/);
   check((await ladder()).rungs[0].branches[0][0].address === s7addr, `Siemens: contact set to %I0.1 (${s7addr} in the program)`);
+  // An S7 address typed by hand becomes the app's address of that terminal.
+  await rung(0).locator('[data-ladder-item="0.0"]').getByRole('button').click();
+  await page.getByRole('dialog').getByPlaceholder('X001').fill('%I0.2');
+  await page.getByRole('button', { name: 'Done' }).click();
+  check((await ladder()).rungs[0].branches[0][0].address === 'X003', `Siemens: "%I0.2" typed by hand is stored as X003 (${(await ladder()).rungs[0].branches[0][0].address})`);
   await page.screenshot({ path: OUT + 'siemens.png' });
   await page.goto(BASE + '/export');
   await page.getByText('PLC program', { exact: true }).first().waitFor({ timeout: 15000 });
@@ -195,6 +252,20 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   log('imported program:', before.rungs.length, 'rungs →', after.rungs.length, '| new rung 2 reads', picked);
   check(after.rungs.length === before.rungs.length + 1 && addr(after.rungs[1].branches[0][0]) === picked, 'imported program: a rung added below rung 1 and its contact set from the list');
   check(JSON.stringify(after.rungs.filter((r) => r.id !== after.rungs[1].id)) === JSON.stringify(before.rungs), 'imported program: the other rungs are untouched');
+
+  // A phone: with another pane shown, the hidden ladder does not take Delete.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(BASE + '/program');
+  await page.locator('[data-phone-tabs] [role="tab"]').first().waitFor({ timeout: 10000 });
+  const tabs = await page.locator('[data-phone-tabs] [role="tab"]').allInnerTexts();
+  await page.locator('[data-phone-tabs] [role="tab"]', { hasText: /ladder|program/i }).first().click();
+  await rung(1).locator('[data-ladder-item="0.0"]').getByRole('button').click();
+  await page.keyboard.press('Escape');
+  const phoneBefore = JSON.stringify(await ladder());
+  await page.locator('[data-phone-tabs] [role="tab"]', { hasText: /blocks/i }).first().click();
+  await page.keyboard.press('Delete');
+  check(JSON.stringify(await ladder()) === phoneBefore, `phone: Delete does nothing while another pane (${tabs.find((t) => /blocks/i.test(t))}) is shown`);
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   log('Page errors:', errors.length ? errors : 'none');
   if (errors.length) fails.push(`${errors.length} page/console error(s)`);

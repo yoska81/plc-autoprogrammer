@@ -1,6 +1,6 @@
 import { useSettingsStore } from '../../../store/useSettingsStore';
 import { noTouchPanelNow, useActiveHmiDesign } from '../../../hmi/projectPanel';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';
 import { useIOStore } from '../../../store/useIOStore';
 import { looksLeftOver } from '../../../spec/leftovers';
@@ -161,12 +161,23 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     const box = ladderBox.current, w = Number(box?.querySelector('[data-ladder-width]')?.getAttribute('data-ladder-width') ?? 0);
     if (box && w) setZoom(Math.round(Math.min(2, Math.max(0.4, (box.clientWidth - 24) / w)) * 100) / 100);
   };
-  const history = useLadderHistory(ladder, store.editLadder);
-  // The addresses offered when a contact or coil is clicked (the I/O list first, then named tags).
+  // While the AI builds or changes the program, hand edits (undo / redo too) are held: its result would replace them.
+  const setLadder = useCallback((p: LadderProgram) => { if (!useProgramStore.getState().isGenerating) store.editLadder(p); }, [store.editLadder]);
+  const history = useLadderHistory(ladder, setLadder);
+  // History: a version before the first hand edit of the visit, and before a rung is deleted.
+  const handSaved = useRef(false);
+  const handEdit = (p: LadderProgram) => {
+    if (isGenerating) return;
+    if (!handSaved.current && ladder.rungs.length) { store.saveVersion('Before hand edits'); handSaved.current = true; }
+    else if (p.rungs.length < ladder.rungs.length) store.saveVersion('Before deleting a rung');
+    history.edit(p);
+  };
+  // The addresses offered when a contact or coil is clicked (the I/O list first, then named tags), with what each is
+  // (input, output, bit, timer …) so a coil is not offered an input, and in the PLC's own name (%I0.1 on an S7).
   const { modules } = usePlc();
   const choices = useMemo(() => {
     const rack = { profile: ctx.profile, cpu: ctx.cpu, modules };
-    return [...labels].map(([address, label]) => ({ address, label, native: nativeName(rack, address) }));
+    return [...labels].map(([address, label]) => ({ address, label, native: nativeName(rack, address), kind: ctx.profile.parseAddress(address)?.kind ?? (/^X\d/.test(address) ? 'input' : /^Y\d/.test(address) ? 'output' : undefined) }));
   }, [labels, ctx.profile, ctx.cpu, modules]);
   const [xrefAddress, setXrefAddress] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
@@ -504,8 +515,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               </button>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
-              <button onClick={history.undo} disabled={!history.canUndo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Undo the last hand edit (Ctrl+Z)"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo</button>
-              <button onClick={history.redo} disabled={!history.canRedo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Redo (Ctrl+Shift+Z / Ctrl+Y)"><ArrowUturnRightIcon className="h-3.5 w-3.5" /> Redo</button>
+              <button onClick={history.undo} disabled={!history.canUndo || isGenerating} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Undo the last hand edit (Ctrl+Z)"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo</button>
+              <button onClick={history.redo} disabled={!history.canRedo || isGenerating} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Redo (Ctrl+Shift+Z / Ctrl+Y)"><ArrowUturnRightIcon className="h-3.5 w-3.5" /> Redo</button>
               <span className="mx-1 h-4 border-l border-gray-300" />
               <button onClick={() => zoomBy(1 / 1.1)} disabled={zoom <= 0.4} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" aria-label="Zoom out"><MagnifyingGlassMinusIcon className="h-3.5 w-3.5" /></button>
               <button onClick={() => setZoom(1)} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40 w-12 justify-center tabular-nums" title="Back to 100%" aria-label="Zoom level">{Math.round(zoom * 100)}%</button>
@@ -546,10 +557,15 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} zoom={zoom} />
           ) : ladder.rungs.length ? (
             <>
+            {isGenerating && (
+              <div className="sticky left-0 top-0 z-20 flex items-center gap-2 border-b border-gray-200 bg-[#f7f8f9] px-3 py-2 text-xs text-gray-700">
+                <Spinner className="h-3.5 w-3.5 text-brand-800" /> The AI is working on the program. Hand edits are paused until it finishes, so they are not lost.
+              </div>
+            )}
             {ladder.sequence && (activeBlock === null || activeBlock === 'cycle') && <SequenceTable sequence={ladder.sequence} labels={labels} />}
             <LadderView
               program={shown}
-              onChange={activeBlock === null ? history.edit : (p) => history.edit(mergeBlock(ladder, activeBlock, p))}
+              onChange={isGenerating ? undefined : activeBlock === null ? handEdit : (p) => handEdit(mergeBlock(ladder, activeBlock, p))}
               zoom={zoom}
               numberOf={activeBlock === null ? undefined : realNumber}
               labels={labels}
@@ -571,11 +587,17 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               <p>No program yet.</p>
               <p>Click Build program from my project on the left (it uses the machine description, I/O list and HMI), or start an empty program and draw it by hand.</p>
               <button
-                onClick={() => store.editLadder({ rungs: [{ id: 'r_first', comment: '', branches: [[{ type: 'NO', address: '' }]], outputs: [{ type: 'OUT', address: '' }] }], tags: [] })}
+                onClick={() => handEdit({ rungs: [{ id: 'r_first', comment: '', branches: [[{ type: 'NO', address: '' }]], outputs: [{ type: 'OUT', address: '' }] }], tags: [] })}
                 className="mt-2 px-3 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700"
               >
                 Start empty program
               </button>
+              {/* The last rung deleted by hand: one click brings it back. */}
+              {history.canUndo && (
+                <button onClick={history.undo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-gray-50" title="Undo the last hand edit (Ctrl+Z)">
+                  <ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo
+                </button>
+              )}
             </div>
           )}
         </div>
