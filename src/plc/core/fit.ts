@@ -147,6 +147,11 @@ export function hmiFit(hmi: HmiModel, need: Need, cpuId?: string): Fit {
   let reason: string | null = null;
   let note: string | null = null;
   const platform = cpuId ? platformOf(cpuId) : undefined;
+  // A controller kept read only (a program read from a PLC the app cannot program yet): no panel is checked
+  // against it, and none against CLICK in its place; the panel is picked once the PLC to move to is chosen.
+  if (cpuId && !platform && PLC_PROFILES.some((p) => p.readOnly && p.cpuModels.some((c) => c.id === cpuId))) {
+    return { ok: false, reason: `Choose the PLC first: the ${cpuId} is the machine's own controller, kept read only, and a panel is picked for the PLC it will talk to.`, spareIn: 0, spareOut: 0, note: null };
+  }
   if (hmi.catalog) {
     const raw = getPart(hmi.partNumber);
     const part = raw ? panelPart(raw) : undefined;

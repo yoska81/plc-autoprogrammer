@@ -71,7 +71,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   };
   const up = await noClick('/upgrade');
   check(/on the machine's Yaskawa CPU-DEMO\(4axes\) \(read only: not programmable here yet\)/.test(up), 'shown on the machine\'s Yaskawa controller, read only');
-  check(/These are the Yaskawa modules: DEMOCPU, DEMOIO\. They stay with the original\. Choose the new PLC and the app picks its modules\./.test(up), 'the modules notice says they stay with the original');
+  check(/These are the Yaskawa modules: DEMOIO\. They stay with the original\. Choose the new PLC and the app picks its modules\./.test(up), 'the modules notice says they stay with the original');
   check(/Servo axes \(1\)/.test(up), 'the servo axes as information');
   check(await page.getByTestId('upgrade-choose-plc').isVisible(), 'the "Move it to another PLC: choose one" step');
   check(await page.getByTestId('upgrade-export').count() === 0, 'no "Download for …" until a PLC is chosen');
@@ -83,6 +83,12 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(await page.locator('[data-rung-id]').count() >= 10, 'the program opens read only');
   await noClick('/simulate');
   await noClick('/hmi');
+  // The Equipment page is a catalog of every brand: its panel table must not judge panels against a CLICK.
+  await page.goto(BASE + '/equipment');
+  await page.waitForFunction(() => window.__isaAppReady && /Choose the PLC first|Fits this machine/.test(document.querySelector('main')?.innerText ?? ''), null, { timeout: 30000 });
+  const eq = await page.locator('main').innerText();
+  check(!/to CLICK|CLICK is not in|CLICK only/.test(eq), '/equipment: no panel judged against a CLICK');
+  check(/Choose the PLC first: the MP-CPU is the machine's own controller/.test(eq), '/equipment: panels wait for the PLC to be chosen');
   await noClick('/export');
   check(await page.getByTestId('export-read-only').isVisible(), 'the deliverables say a PLC is needed for the program files');
 

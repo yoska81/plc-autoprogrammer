@@ -158,15 +158,28 @@ export function originalCpu(profile: PlcProfile, imp: ImportedProgram): { cpuId:
  * what to do next. Never a module list of another PLC (that is picked once the user chooses the PLC).
  */
 export function readOnlyNote(source: ImportedProgram['source'], profile: PlcProfile): string {
-  const mods = (source.modules ?? []).map((m) => m.catalog);
+  const slots = (source.modules ?? []).map((m) => m.catalog);
+  // The CPU itself ("CPU301(16)", "CPU") and the functions built into it are listed apart from the rack modules.
+  const builtIn = slots.flatMap((c) => { const f = BUILT_IN_FUNCTIONS.find((x) => x.re.test(c)); return f ? [f.what === c ? c : `${f.what} (${c})`] : []; });
+  const mods = slots.filter((c) => !/CPU/i.test(c) && !BUILT_IN_FUNCTIONS.some((x) => x.re.test(c)));
+  const cpu = source.controller.replace(/\s*\([^)]*\)\s*$/, '');
   const axes = (source.axes ?? []).map(axisText);
   return [
     `Your machine's controller is a ${profile.vendor} ${source.controller}. The app cannot program it yet, so the project keeps it read only: the program, the I/O list and the simulator work on its own registers, and nothing is downloaded for it.`,
+    builtIn.length ? `Built into the ${cpu}: ${builtIn.join(', ')}.` : '',
     mods.length ? `These are the ${profile.vendor} modules: ${mods.join(', ')}. They stay with the original. Choose the new PLC and the app picks its modules.` : '',
     axes.length ? `Servo axes (${axes.length}): ${axes.join('; ')}.` : '',
     'To change the machine to another PLC, choose one under "Move it to another PLC" on the Upgrade page.',
   ].filter(Boolean).join(' ');
 }
+
+/** Functions an MPE720 rack lists in slots that are built into the MP3000 CPU (CPU-301 / 302), not modules. */
+const BUILT_IN_FUNCTIONS: { re: RegExp; what: string }[] = [
+  { re: /^218IF/i, what: 'Ethernet' },
+  { re: /^SVC(32)?$/i, what: 'MECHATROLINK-III' },
+  { re: /^SVR(32)?$/i, what: 'virtual axes' },
+  { re: /^M-EXECUTOR$/i, what: 'M-EXECUTOR' },
+];
 
 /** Analog points whose signal the program does not state: asked (taken as 4–20 mA, which decides the module). */
 function assumedRanges(imp: ImportedProgram): string[] {
