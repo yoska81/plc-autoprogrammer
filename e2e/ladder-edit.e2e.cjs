@@ -113,9 +113,9 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(await bar.getByRole('button', { name: 'Delete selected' }).isEnabled(), 'a clicked contact stays selected after its editor closes');
   await page.keyboard.press('Delete');
   check((await ladder()).rungs[2].branches[0].length === 1, 'the Delete key removes the selected contact');
-  await bar.getByRole('button', { name: 'Undo' }).click();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
   check((await ladder()).rungs[2].branches[0].length === 2, 'Undo brings it back');
-  await bar.getByRole('button', { name: 'Redo' }).click();
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
   check((await ladder()).rungs[2].branches[0].length === 1, 'Redo removes it again');
 
   // Insert above, move, delete a rung.
@@ -130,7 +130,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await selectRung(1);
   await bar.getByRole('button', { name: 'Move up' }).click();
   check((await ladder()).rungs[0].outputs[0].address === out3, 'Move up');
-  await bar.getByRole('button', { name: 'Undo' }).click();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
 
   // The cross reference sees the edit.
   await page.getByRole('button', { name: 'Cross reference' }).click();

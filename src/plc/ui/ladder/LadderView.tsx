@@ -8,7 +8,7 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useProgressiveCount } from '../../../lib/useProgressive';
 import {
-  ArrowDownIcon, ArrowUpIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, ChatBubbleBottomCenterTextIcon, DocumentDuplicateIcon,
+  ArrowDownIcon, ArrowUpIcon, ChatBubbleBottomCenterTextIcon, DocumentDuplicateIcon,
   ExclamationCircleIcon, ExclamationTriangleIcon, PlusIcon, TrashIcon,
 } from '@heroicons/react/24/outline';
 import type { LadderElement, LadderOutput, LadderProgram, Rung } from '../../core/ladder';
@@ -47,8 +47,8 @@ export interface LadderViewProps {
   zoom?: number;
   /** Draw the first rungs (and the selected one) at once and the rest while the browser is idle (long programs on screen; not for printing). */
   progressive?: boolean;
-  /** An always-visible bar of labelled editing tools (with undo / redo), acting on the selected rung and item; Delete removes the selected item. */
-  editTools?: { undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean };
+  /** An always-visible bar of labelled editing tools acting on the selected rung and item (Undo / Redo stay in the page's own bar); Delete removes the selected item. */
+  editTools?: boolean;
   /** Addresses offered in the instruction editor (the project's I/O in the chosen PLC's addressing). */
   choices?: AddressChoice[];
 }
@@ -264,14 +264,13 @@ interface EditBarProps {
   program: LadderProgram;
   rungId: string | null;
   picked: Picked | null;
-  tools: NonNullable<LadderViewProps['editTools']>;
   apply: (fn: (p: LadderProgram) => LadderProgram) => void;
   select: (id: string) => void;
   deletePicked: () => void;
 }
 
-/** Labelled tools for building the ladder by hand: rungs, contacts, branches, outputs, delete, move, undo / redo. */
-function EditBar({ program, rungId, picked, tools, apply, select, deletePicked }: EditBarProps) {
+/** Labelled tools for building the ladder by hand: rungs, contacts, branches, outputs, delete, move. */
+function EditBar({ program, rungId, picked, apply, select, deletePicked }: EditBarProps) {
   const i = rungId ? program.rungs.findIndex((r) => r.id === rungId) : -1;
   const rung = i >= 0 ? program.rungs[i] : undefined;
   const upd = (fn: (r: Rung) => Rung) => rung && apply((p) => updateRung(p, rung.id, fn));
@@ -302,9 +301,6 @@ function EditBar({ program, rungId, picked, tools, apply, select, deletePicked }
         <button type="button" className={barBtn} disabled={!rung} onClick={() => upd((r) => addOutput(r, 'TMR'))}>Timer</button>
         <button type="button" className={barBtn} disabled={!rung} onClick={() => upd((r) => addOutput(r, 'CNT'))}>Counter</button>
         <button type="button" className={barBtn} disabled={!picked} onClick={deletePicked} title="Delete the selected contact or output (Delete key)"><TrashIcon className="h-3.5 w-3.5" /> Delete selected</button>
-        {sep}
-        <button type="button" className={barBtn} disabled={!tools.canUndo} onClick={tools.undo} title="Ctrl+Z"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo</button>
-        <button type="button" className={barBtn} disabled={!tools.canRedo} onClick={tools.redo} title="Ctrl+Shift+Z / Ctrl+Y"><ArrowUturnRightIcon className="h-3.5 w-3.5" /> Redo</button>
       </div>
       <p className="mt-1 truncate text-[11px] text-gray-500">
         {rung ? `Rung ${i + 1} selected.` : 'Click a rung to select it.'} Click a contact or coil to choose its address; the Delete key removes the selected one.
@@ -561,7 +557,7 @@ export default function LadderView({
     <MnemonicsContext.Provider value={mnemonics}>
     <div className="h-full overflow-auto bg-white">
       {editTools && editable && (
-        <EditBar program={program} rungId={selectedRungId} picked={livePicked} tools={editTools} apply={apply}
+        <EditBar program={program} rungId={selectedRungId} picked={livePicked} apply={apply}
           select={(id) => onSelectRung?.(id)} deletePicked={deletePicked} />
       )}
       {globalIssues.length > 0 && (
@@ -616,7 +612,7 @@ export default function LadderView({
             <div className="absolute inset-y-0 right-0 bg-slate-800" style={{ width: RAIL_W }} />
             <div className="flex items-center gap-2 px-3 py-3">
               {program.rungs.length === 0 && <span className="text-xs italic text-slate-400">No rungs.</span>}
-              {editable && (
+              {editable && !editTools && (
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 rounded border border-dashed border-slate-400 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-sky-500 hover:text-sky-700"

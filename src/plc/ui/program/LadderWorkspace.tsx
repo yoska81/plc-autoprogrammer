@@ -162,8 +162,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     if (box && w) setZoom(Math.round(Math.min(2, Math.max(0.4, (box.clientWidth - 24) / w)) * 100) / 100);
   };
   const history = useLadderHistory(ladder, store.editLadder);
-  // The edit bar's undo / redo, and the addresses offered when a contact or coil is clicked (the I/O list first, then named tags).
-  const editTools = useMemo(() => ({ undo: history.undo, redo: history.redo, canUndo: history.canUndo, canRedo: history.canRedo }), [history.undo, history.redo, history.canUndo, history.canRedo]);
+  // The addresses offered when a contact or coil is clicked (the I/O list first, then named tags).
   const { modules } = usePlc();
   const choices = useMemo(() => {
     const rack = { profile: ctx.profile, cpu: ctx.cpu, modules };
@@ -505,8 +504,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               </button>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
-              <button onClick={history.undo} disabled={!history.canUndo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Undo the last hand edit (Ctrl+Z)" aria-label="Undo"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /></button>
-              <button onClick={history.redo} disabled={!history.canRedo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" aria-label="Redo"><ArrowUturnRightIcon className="h-3.5 w-3.5" /></button>
+              <button onClick={history.undo} disabled={!history.canUndo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Undo the last hand edit (Ctrl+Z)"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo</button>
+              <button onClick={history.redo} disabled={!history.canRedo} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Redo (Ctrl+Shift+Z / Ctrl+Y)"><ArrowUturnRightIcon className="h-3.5 w-3.5" /> Redo</button>
               <span className="mx-1 h-4 border-l border-gray-300" />
               <button onClick={() => zoomBy(1 / 1.1)} disabled={zoom <= 0.4} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" aria-label="Zoom out"><MagnifyingGlassMinusIcon className="h-3.5 w-3.5" /></button>
               <button onClick={() => setZoom(1)} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40 w-12 justify-center tabular-nums" title="Back to 100%" aria-label="Zoom level">{Math.round(zoom * 100)}%</button>
@@ -558,7 +557,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               selectedRungId={selectedRungId}
               onSelectRung={setSelectedRungId}
               progressive
-              editTools={editTools}
+              editTools
               choices={choices}
             />
             </>
