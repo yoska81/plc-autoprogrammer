@@ -256,8 +256,11 @@ function sensors(sentences: string[], groups: Map<string, string[]>, used: Set<n
       const isSwitch = /switch/.test(kind);
       const deviceType: FieldDeviceType = /pressure|vacuum/.test(kind) ? 'pressure-switch' : /limit/.test(kind) ? 'limit-switch' : 'sensor-pnp';
       const base = kind.split(' ').map(singular).join(' ').replace(/^photo-?eye$/, 'photo-eye').replace(/^prox(?:imity)? /, 'proximity ');
+      // "Two photo-eyes on the infeed": named after the conveyor they sit on.
+      const on = /^\s+(?:on|at)\s+the\s+([a-z-]+)/.exec(s.slice((m.index ?? 0) + m[0].length))?.[1];
+      const where = on && [...groups.keys()].some((k) => k.toLowerCase().split(' ')[0] === on) ? on : '';
       const what = /vacuum/.test(kind) ? 'Vacuum OK' : /float|level/.test(kind) ? cap(`${pre || 'tank level'} ${base}`)
-        : /pressure/.test(kind) ? `${cap(pre ? `${pre} ` : /\bair\b/.test(s) ? 'air ' : '')}pressure OK` : `${cap(pre ? `${pre} ` : '')}${base}`;
+        : /pressure/.test(kind) ? `${cap(pre ? `${pre} ` : /\bair\b/.test(s) ? 'air ' : '')}pressure OK` : `${cap(pre ? `${pre} ` : where ? `${where} ` : '')}${base}`;
       const cat: IOCategory = /limit/.test(kind) ? 'Station 1' : isSwitch ? (/vacuum/.test(kind) ? 'Vacuum' : /pressure/.test(kind) && /\bair\b/.test(`${pre} ${s}`) ? 'Pneumatic' : 'Station 1') : 'Product Detection';
       // Numbered per kind of sensor (two prox sensors are 1 and 2, whatever came before).
       for (let i = 0; i < count; i++) {
