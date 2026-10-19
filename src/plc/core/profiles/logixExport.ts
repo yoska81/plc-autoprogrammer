@@ -91,7 +91,11 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
       return tag;
     }
     const label = ctx.labels.get(base);
-    const alias = dataType === 'BOOL' || dataType === 'REAL' ? ioTag(base, modules, ctx.cpuId) : null;
+    // Studio 5000 refuses an alias to a module that is not configured: a point on a slot with no module (an address
+    // previewed before the modules are chosen) is a plain tag until its module is there.
+    const slot = /^[XY](\d)\d\d$/.exec(base)?.[1];
+    const onRack = !slot || slot === '0' || Boolean(modules[Number(slot) - 1]);
+    const alias = (dataType === 'BOOL' || dataType === 'REAL') && onRack ? ioTag(base, modules, ctx.cpuId) : null;
     const tag: LogixTag = {
       base,
       name: logixName(n?.nickname || label || GENERATED[base] || base, used, base),
