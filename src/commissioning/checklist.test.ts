@@ -77,7 +77,7 @@ assert.ok(texts.some((t) => t.includes('Signature|J. Tech')));
   assert.ok(ins.every((i) => /PLC input %I\d+\.\d/.test(i.expected) || /reads the matching value/.test(i.expected)), ins[0].expected);
   // An alarm message is quoted as the HMI shows it (the user's text): its words are not the app's to rename.
   const snap0 = collectProject();
-  const messages = [...(snap0.hmi?.alarms ?? []).map((m) => m.message), ...snap0.ladder.tags.map((t) => t.comment ?? '')].filter(Boolean);
+  const messages = (snap0.hmi?.alarms ?? []).map((m) => m.message).filter(Boolean);
   const text = s7.map((i) => `${i.title} ${i.procedure} ${i.expected}`).map((t) => messages.reduce((x, m) => x.split(m).join(''), t)).join('\n');
   const left = text.match(/\b(?:X|Y)\d{3}\b|\b(?:DS|DD|DF)\d+\b|\bC\d{1,4}\b/g) ?? [];
   assert.deepEqual([...new Set(left)], [], 'no app operand left on an S7 outside the user\'s own texts');

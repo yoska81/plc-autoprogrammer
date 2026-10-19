@@ -121,4 +121,23 @@ assert.match(validateProgram(bad, siemensProfile, new Set()).map((i) => i.messag
   assert.ok(!decl.includes(`shows ${addr.get(desc.id)} `), `the app's operand is renamed: ${decl}`);
 }
 
+// The example project on an S7-1214C: no app operand anywhere in the .scl outside the user's own I/O descriptions
+// (the generator's tag and rung comments name the symbols too).
+{
+  const { seedSampleProject } = await import('../../../preview/sampleProject');
+  const { applyEquipment } = await import('../../../spec/equipment');
+  const { collectProject } = await import('../../../deliverables/collect');
+  const { exportContext } = await import('../../../deliverables/exportContext');
+  const warn = console.warn;
+  console.warn = () => {};
+  seedSampleProject();
+  applyEquipment({ cpuId: '6ES7214-1AG40-0XB0', modules: [], hmiPartNumber: '6AV2123-2GB03-0AX0' }, null);
+  const p = collectProject();
+  console.warn = warn;
+  let text = buildScl(p.ladder, exportContext(p)).scl;
+  for (const x of [...p.io].sort((a, b) => b.description.length - a.description.length)) text = text.split(x.description).join('');
+  const left = [...new Set(text.match(/\b(?:CTD|TD|CT|DS|DD|DH|DF|SC|SD|TXT|C|T|X|Y)\d+\b/g) ?? [])];
+  assert.deepEqual(left, [], 'no app operand in the example\'s SCL outside the I/O descriptions');
+}
+
 console.log('siemens tests passed');

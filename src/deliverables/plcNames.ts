@@ -21,15 +21,14 @@ export function firstPhrase(comment: string): string {
 }
 
 /**
- * The texts the user (or the AI for them) wrote that a generated text quotes: I/O descriptions, tag comments, rung
- * comments, alarm messages, device tags and the specification. Never renamed: "Pusher extended (cylinder C1, tank
+ * The texts the user wrote that a generated text quotes: I/O descriptions, rung comments, the HMI's alarm messages,
+ * device tags and the specification. Program tag comments are the generator's own text: their operands are renamed. Never renamed: "Pusher extended (cylinder C1, tank
  * T1)" keeps its C1 and T1 whatever the PLC calls the app's own C1. Longest first, only those quoting an operand.
  */
 export function userTexts(p: ProjectSnapshot): string[] {
   const out = new Set<string>();
   const put = (t: string | undefined) => { const x = t?.trim(); if (x && HAS_OPERAND.test(x) && !ONLY_OPERAND.test(x)) out.add(x); };
   for (const x of p.io) put(x.description);
-  for (const t of p.ladder.tags) { put(t.nickname); put(t.comment); }
   for (const r of p.ladder.rungs) if (r.comment) { put(r.comment); for (const l of r.comment.split('\n')) put(l); put(firstPhrase(r.comment).replace(/…$/, '')); }
   for (const a of p.hmi?.alarms ?? []) put(a.message);
   for (const w of p.electrical?.ioWiring ?? []) { put(w.deviceTag); put(w.location); }
