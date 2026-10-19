@@ -3,6 +3,7 @@
 // edited, revision bumped, change list in the revision history). Ticks and redlines survive a reload.
 //   npm run dev -- --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/field.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const path = require('path');
 const BASE = process.env.BASE_URL || 'http://localhost:5204';
@@ -15,13 +16,14 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 }, acceptDownloads: true })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
@@ -87,7 +89,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   const rev = (await applyBtn.innerText()).replace(/.*revision\s+/, '').trim();
   await applyBtn.click();
   check(/Rev \w+/.test(await page.getByRole('region', { name: 'Applied changes' }).innerText()), 'changes closed with their revision');
-  const motor = await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().inputs.motors.find((m) => m.tag === 'M1')?.hp);
+  const motor = await page.evaluate(async () => (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().inputs.motors.find((m) => m.tag === 'M1')?.hp);
   check(motor === 3, `M1 is 3 HP in the design (${motor})`);
   await page.goto(BASE + '/project');
   const changes = page.getByLabel(`Changes in revision ${rev}`);

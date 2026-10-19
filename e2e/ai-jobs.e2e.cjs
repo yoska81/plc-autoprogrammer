@@ -3,6 +3,7 @@
 //
 //   npm run dev -- --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/ai-jobs.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const OUT = __dirname + '/out-ai-jobs/';
 fs.rmSync(OUT, { recursive: true, force: true });
@@ -34,6 +35,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1600, height: 950 } });
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('dialog', (d) => d.accept());
@@ -64,8 +66,8 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
 
   await page.goto(BASE + '/spec');
   await page.evaluate(async () => {
-    const mod = await import('/src/preview/sampleProject.ts');
-    const ps = await import('/src/store/useProjectsStore.ts');
+    const mod = await appImport('/src/preview/sampleProject.ts');
+    const ps = await appImport('/src/store/useProjectsStore.ts');
     localStorage.clear();
     localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'max', openaiApiKey: '', openaiModel: 'gpt-4o', showExperimental: true }, version: 2 }));
     mod.seedSampleProject();
@@ -73,7 +75,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   });
   await page.reload();
   const bar = page.getByTestId('ai-jobs');
-  const explanation = () => page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation);
+  const explanation = () => page.evaluate(async () => (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation);
 
   // 1. A generation keeps running while the user visits three other pages; its result is applied.
   script.electrical.push({ delay: 4000 });
@@ -87,7 +89,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
     check(await bar.locator('[data-job="electrical"]').count() === 1 || (await explanation()) === ELECTRICAL.explanation, `job still shown on ${path}`);
   }
   await page.locator('nav, aside').getByText('Electrical design', { exact: true }).first().click();
-  await waitInPage(async (exp) => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation === exp, ELECTRICAL.explanation, 15000);
+  await waitInPage(async (exp) => (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation === exp, ELECTRICAL.explanation, 15000);
   await page.waitForFunction(() => !document.querySelector('[data-job="electrical"][data-status="running"]'));
   check(calls.electrical === 1, 'one request, not restarted by navigation');
   log('After navigating across 3 pages: design applied:', await explanation());
@@ -114,7 +116,7 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   check(calls.electrical === 3, `retried once (${calls.electrical} requests in total)`);
 
   // 4. Cancel stops a running job; the design stays as it was.
-  await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.setState({ explanation: 'before cancel' }));
+  await page.evaluate(async () => (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.setState({ explanation: 'before cancel' }));
   script.electrical.push({ delay: 20000 });
   await page.goto(BASE + '/electrical?tab=design'); // a finished generation switches to the Cabinet tab
   // cancel once the request is on its way (cancelled earlier, nothing is sent and the scripted reply would go to the next request)
@@ -137,13 +139,13 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   check(/no credit/i.test(await failed.innerText()), 'plain-English failure');
   check(await page.getByRole('alert').filter({ hasText: /no credit/i }).count() >= 1, 'failure shown on the page too');
   await bar.getByRole('button', { name: 'Retry Electrical design' }).click();
-  await waitInPage(async (exp) => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation === exp, ELECTRICAL.explanation, 10000);
+  await waitInPage(async (exp) => (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation === exp, ELECTRICAL.explanation, 10000);
   log('Retry succeeded');
 
   // 6. A request that never answers (the preview hang) is stopped by the watchdog, retried, and the retry succeeds.
   script.electrical.push({ hang: true }, {});
   await page.goto(BASE + '/electrical?tab=design');
-  await page.evaluate(async () => (await import('/src/lib/ai/errors.ts')).setAiLimits({ idleMs: 1500 })); // after the page load
+  await page.evaluate(async () => (await appImport('/src/lib/ai/errors.ts')).setAiLimits({ idleMs: 1500 })); // after the page load
   await page.getByRole('button', { name: 'AI full design (experimental)' }).click();
   await bar.getByText(/did not answer in time, retrying \(1\/3\)/).waitFor({ timeout: 8000 });
   log('Hung request:', await bar.innerText());
@@ -155,8 +157,8 @@ const stageOf = (system) => (system.includes('industrial control panel') ? 'elec
   script.machine.push({ status: 400, type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' });
   await page.goto(BASE + '/electrical?tab=design');
   await page.getByRole('button', { name: 'Generate New Design' }).click();
-  await waitInPage(async () => /^Rule-based design/.test((await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation ?? ''), null, 15000);
-  const fallbackNote = await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design.notes[0]);
+  await waitInPage(async () => /^Rule-based design/.test((await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().explanation ?? ''), null, 15000);
+  const fallbackNote = await page.evaluate(async () => (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design.notes[0]);
   log('AI failed, rules designed the panel:', fallbackNote.slice(0, 120));
   check(/AI could not read the specification/.test(fallbackNote), 'fallback note on the design');
   check(await bar.locator('[data-status="failed"]').count() === 0, 'no failed job: the design was made by the rules');

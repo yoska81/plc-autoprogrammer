@@ -5,6 +5,7 @@
 // an Allen-Bradley project shows the PLC's tag names in the Tags tab and the element editor.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/hmi-qa.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 const fails = [];
@@ -12,13 +13,14 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
 async function open(browser) {
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   return { page, errors };
@@ -30,7 +32,7 @@ const openScreen = async (page, name) => {
   await screenButton(page, name).click();
   await page.waitForFunction((n) => document.querySelector('input[aria-label="Screen name"]')?.value === n, name, { timeout: 10000 });
 };
-const hmiState = (page) => page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design);
+const hmiState = (page) => page.evaluate(async () => (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design);
 
 (async () => {
   const browser = await chromium.launch();
@@ -38,7 +40,7 @@ const hmiState = (page) => page.evaluate(async () => (await import('/src/store/u
 
   // 1. Layout check: a label too long for its button and a screen no nav button goes to.
   await page.evaluate(async () => {
-    const { useHmiStore } = await import('/src/store/useHmiStore.ts');
+    const { useHmiStore } = await appImport('/src/store/useHmiStore.ts');
     const d = useHmiStore.getState().design;
     const main = d.screens[0];
     const b = main.elements.find((e) => e.kind === 'button');
@@ -80,7 +82,7 @@ const hmiState = (page) => page.evaluate(async () => (await import('/src/store/u
 
   // 4. Background with zoom / offset / dim -> movable picture -> background.
   await page.evaluate(async () => {
-    const { useHmiStore } = await import('/src/store/useHmiStore.ts');
+    const { useHmiStore } = await appImport('/src/store/useHmiStore.ts');
     const d = useHmiStore.getState().design;
     // 40x20 red PNG.
     const c = document.createElement('canvas'); c.width = 40; c.height = 20; const g = c.getContext('2d'); g.fillStyle = '#c00'; g.fillRect(0, 0, 40, 20);
@@ -101,8 +103,8 @@ const hmiState = (page) => page.evaluate(async () => (await import('/src/store/u
 
   // 8. Lock badge vs text: no protected button's text runs into its badge (the check reports none).
   const lockCut = await page.evaluate(async () => {
-    const { cutTexts, lockInset } = await import('/src/hmi/layout.ts');
-    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+    const { cutTexts, lockInset } = await appImport('/src/hmi/layout.ts');
+    const d = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
     return d.screens.flatMap((s) => s.elements.filter((e) => lockInset(e) && cutTexts(e).length).map((e) => `${s.name}: ${e.label}`));
   });
   log('Protected buttons whose text would reach the lock:', lockCut.join('; ') || 'none');
@@ -131,7 +133,7 @@ const hmiState = (page) => page.evaluate(async () => (await import('/src/store/u
 
   // 3. A 128x64 C-more Micro: refused with a reason, not offered in the picker.
   await page.evaluate(async () => {
-    const { useHmiStore } = await import('/src/store/useHmiStore.ts');
+    const { useHmiStore } = await appImport('/src/store/useHmiStore.ts');
     useHmiStore.setState({ design: null, hmiPartNumber: 'EA3-S3ML' });
   });
   await page.goto(BASE + '/hmi');
@@ -145,11 +147,11 @@ const hmiState = (page) => page.evaluate(async () => (await import('/src/store/u
   // 9. Allen-Bradley CompactLogix: the HMI page shows the program's tag names.
   const ab = await open(browser);
   await ab.page.evaluate(async () => {
-    const { platformById, suggestModules } = await import('/src/plc/core/platforms.ts');
-    const { applyEquipment } = await import('/src/spec/equipment.ts');
+    const { platformById, suggestModules } = await appImport('/src/plc/core/platforms.ts');
+    const { applyEquipment } = await appImport('/src/spec/equipment.ts');
     const need = { digitalInputs: 6, digitalOutputs: 3, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null };
     applyEquipment({ cpuId: '5069-L306ER', modules: suggestModules(platformById('ab-compactlogix-5380'), '5069-L306ER', need), hmiPartNumber: '2711R-T7T' }, null);
-    (await import('/src/hmi/retarget.ts')).setProjectPanel('2711R-T7T');
+    (await appImport('/src/hmi/retarget.ts')).setProjectPanel('2711R-T7T');
   });
   await ab.page.goto(BASE + '/hmi');
   await ab.page.waitForTimeout(1200);
@@ -161,7 +163,7 @@ const hmiState = (page) => page.evaluate(async () => (await import('/src/store/u
   check(/^[A-Za-z_][\w.]* [CDXYT]/.test(firstRow), 'AB: tag name shown above the memory address');
   await ab.page.getByRole('button', { name: 'Edit screen' }).click();
   const bound = await ab.page.evaluate(async () => {
-    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+    const d = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
     return d.screens[0].elements.find((e) => e.kind === 'button' && e.address)?.id;
   });
   const box = await ab.page.locator(`[data-testid="hmi-editor"] [data-el="${bound}"]`).first().boundingBox();

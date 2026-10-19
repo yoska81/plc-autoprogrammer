@@ -5,6 +5,7 @@
 // tag names; the original survives a reload.
 //   npx vite --port 5205 &  ;  BASE_URL=http://localhost:5205 node e2e/upgrade.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const BASE = process.env.BASE_URL || 'http://localhost:5205';
@@ -19,6 +20,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, acceptDownloads: true });
   const page = await context.newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -52,10 +54,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByTestId('upgrade-original').waitFor({ timeout: 5000 });
   check((await page.getByTestId('upgrade-diff-summary').innerText()) === 'no rung changes', 'nothing changed yet');
   const state = await page.evaluate(async () => {
-    const plc = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState();
-    const io = (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
-    const prog = (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder;
-    const spec = (await import('/src/store/useSpecStore.ts')).useSpecStore.getState();
+    const plc = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState();
+    const io = (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
+    const prog = (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder;
+    const spec = (await appImport('/src/store/useSpecStore.ts')).useSpecStore.getState();
     return { plcId: plc.plcId, cpuId: plc.cpuId, modules: plc.modules, io: io.length, rungs: prog.rungs.length, overview: spec.sections.overview, operator: spec.sections.operator, questions: spec.questions };
   });
   check(state.plcId === 'logix' && state.modules.length > 0, `Logix PLC with modules (${state.plcId}, ${state.modules.join(' ')})`);
@@ -102,7 +104,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   }
 
   log('download for another PLC: what is missing is confirmed first');
-  const cpuBefore = await page.evaluate(async () => { const s = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState(); const c = s.cpuId; s.setPlc('micro800', ''); return c; });
+  const cpuBefore = await page.evaluate(async () => { const s = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState(); const c = s.cpuId; s.setPlc('micro800', ''); return c; });
   // The page follows the PLC change live. Fallback: a long-running dev server can hand the test a second copy of the
   // store module (after hot updates); the project is saved in the browser, so a reload shows the change then.
   const showsMicro800 = (ms) => page.waitForFunction(() => /Micro8/.test(document.querySelector('[data-testid="upgrade-export"]')?.textContent ?? ''), null, { timeout: ms }).then(() => true, () => false);
@@ -119,7 +121,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(await page.getByTestId('upgrade-download').isDisabled(), 'download waits for "I understand"');
   await page.getByTestId('upgrade-understood').check();
   check(!(await page.getByTestId('upgrade-download').isDisabled()), 'then it can be downloaded');
-  await page.evaluate(async (c) => (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().setPlc('logix', c), cpuBefore);
+  await page.evaluate(async (c) => (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().setPlc('logix', c), cpuBefore);
 
   log('reload');
   await page.reload();
@@ -128,13 +130,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
   // The HMI for the upgraded program binds to the program's own addresses; what the program lacks for it is
   // one list of PLC changes on the review page, not a major finding per HMI tag.
-  await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().setHmiPartNumber('CM5-T7W'));
+  await page.evaluate(async () => (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().setHmiPartNumber('CM5-T7W'));
   await page.goto(BASE + '/hmi');
   await page.getByRole('button', { name: /Design the HMI screens|Redesign screens/ }).first().click();
   await page.getByText(/^Rule-based HMI for/).first().waitFor({ timeout: 20000 });
   const hmi = await page.evaluate(async () => {
-    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
-    const f = (await import('/src/review/actions.ts')).refreshChecks().filter((x) => x.area === 'hmi' && x.severity === 'major');
+    const d = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+    const f = (await appImport('/src/review/actions.ts')).refreshChecks().filter((x) => x.area === 'hmi' && x.severity === 'major');
     const tag = (role) => d.tags.find((t) => t.role === role);
     return { alarms: d.alarms.filter((a) => /^alarm:program:/.test(d.tags.find((t) => t.address === a.address)?.role ?? '')).map((a) => a.message), running: tag('sts:running')?.name, start: tag('cmd:start')?.address, changes: d.plcChanges?.length ?? 0, majors: f.map((x) => x.id), list: f.find((x) => x.id === 'hmi-plc-changes')?.detail ?? '' };
   });

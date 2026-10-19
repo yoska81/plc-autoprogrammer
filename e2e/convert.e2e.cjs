@@ -5,6 +5,7 @@
 // page, the rebuilt design (480 V, reversing starter, every original I/O) and that nothing is lost.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/convert.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
 // its own folder: the roll-former test writes to out-convert/rollformer/ and may run at the same time
 const OUT = __dirname + '/out-convert/conveyor/';
@@ -60,6 +61,7 @@ function sse(model, text) {
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   // the app's own summary of each build run: "[update] … equipment done · hmi skipped · electrical done · program done"
@@ -76,7 +78,7 @@ function sse(model, text) {
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE);
   // The mocked AI answers with what a good AI reads from this set (src/convert/__fixtures__/chineseConveyor.ts).
-  MACHINE = await page.evaluate(async () => (await import('/src/convert/__fixtures__/chineseConveyor.ts')).CHINESE_CONVEYOR);
+  MACHINE = await page.evaluate(async () => (await appImport('/src/convert/__fixtures__/chineseConveyor.ts')).CHINESE_CONVEYOR);
   // one reading the AI is unsure of: it must become a question unless the user confirms it
   MACHINE.io = MACHINE.io.map((p) => (p.address === 'X7' ? { ...p, confidence: 'low' } : p));
   await page.evaluate(() => {
@@ -154,13 +156,13 @@ function sse(model, text) {
   check(run.length === 4 && run.every((r) => /:done$/.test(r) || r === 'hmi:skipped'), 'equipment, electrical and program built (no HMI: the old machine has none)');
   await page.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
   const after = await page.evaluate(async () => {
-    const el = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState();
-    const io = (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
-    const info = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().info;
+    const el = (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState();
+    const io = (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
+    const info = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().info;
     // what the conversion hands over (the original I/O, the E-stop on the safety relay, its Safety OK into the PLC)
-    const { convertMachine } = await import('/src/convert/convert.ts');
-    const { CHINESE_CONVEYOR } = await import('/src/convert/__fixtures__/chineseConveyor.ts');
-    const { similarity } = await import('/src/convert/functionKept.ts');
+    const { convertMachine } = await appImport('/src/convert/convert.ts');
+    const { CHINESE_CONVEYOR } = await appImport('/src/convert/__fixtures__/chineseConveyor.ts');
+    const { similarity } = await appImport('/src/convert/functionKept.ts');
     // matched by function, as the function-kept check does (the operator station may name a button "Start pushbutton")
     const left = io.map((p) => ({ type: p.type, description: p.description }));
     const missing = convertMachine(CHINESE_CONVEYOR).io.filter((o) => {
@@ -193,8 +195,8 @@ function sse(model, text) {
   fs.writeFileSync(OUT + 'spec_page.txt', spec);
   check(/pusher take to extend/i.test(spec) && /50 Hz/.test(spec) && /single-channel/.test(spec), 'questions on the Machine description page (drawings + conversion)');
   check(/Please check on the machine: X7 Conveyor overload/.test(spec), 'the unconfirmed low-confidence reading is a question');
-  check(/Start pushbutton \(启动\)/.test(await page.evaluate(async () => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.map((p) => p.description).join('|'))), 'the correction is in the I/O list');
-  const review = await page.evaluate(async () => (await import('/src/review/actions.ts')).refreshChecks().filter((f) => f.id.startsWith('convert:kept:')).map((f) => f.title));
+  check(/Start pushbutton \(启动\)/.test(await page.evaluate(async () => (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.map((p) => p.description).join('|'))), 'the correction is in the I/O list');
+  const review = await page.evaluate(async () => (await appImport('/src/review/actions.ts')).refreshChecks().filter((f) => f.id.startsWith('convert:kept:')).map((f) => f.title));
   check(review.length === 0, `no "function lost" review findings: ${review.join('; ')}`);
 
   check(errors.length === 0, `page errors: ${errors.join(' | ')}`);

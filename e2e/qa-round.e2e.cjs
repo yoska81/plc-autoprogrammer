@@ -4,6 +4,7 @@
 // the HMI and the program out of date; using the AI's assumption stales nothing.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/qa-round.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 const fails = [];
@@ -12,18 +13,19 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   // Straight to Design review: no stage page visited in this session.
   await page.goto(BASE + '/review');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.waitForTimeout(1200);
   const qs = await page.evaluate(async () => {
-    const { useQuestionStore } = await import('/src/components/questions/useQuestionStore.ts');
+    const { useQuestionStore } = await appImport('/src/components/questions/useQuestionStore.ts');
     const list = useQuestionStore.getState().byProject.p_example ?? [];
     return { total: list.length, bySource: list.reduce((m, q) => ({ ...m, [q.source]: (m[q.source] ?? 0) + 1 }), {}) };
   });
@@ -36,7 +38,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(await page.locator('li[data-question]').count() > 0, 'Machine description lists the questions to answer');
 
   // Answer an HMI question: only HMI and program go out of date.
-  const stages = () => page.evaluate(async () => { const s = (await import('/src/spec/useStages.ts')).stagesNow(); return Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.status])); });
+  const stages = () => page.evaluate(async () => { const s = (await appImport('/src/spec/useStages.ts')).stagesNow(); return Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.status])); });
   const before = await stages();
   const hmiQ = page.locator('li[data-question^="hmi"]').first();
   const id = await hmiQ.getAttribute('data-question');
@@ -50,7 +52,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   // "Change": the saved answer stays until Save; Cancel leaves it.
   const card = page.locator(`li[data-question="${id}"]`);
   await card.getByRole('button', { name: 'Change' }).click();
-  const status = () => page.evaluate(async (qid) => { const { useQuestionStore } = await import('/src/components/questions/useQuestionStore.ts'); const q = useQuestionStore.getState().byProject.p_example.find((x) => x.id === qid); return `${q.status}:${q.answer}`; }, id);
+  const status = () => page.evaluate(async (qid) => { const { useQuestionStore } = await appImport('/src/components/questions/useQuestionStore.ts'); const q = useQuestionStore.getState().byProject.p_example.find((x) => x.id === qid); return `${q.status}:${q.answer}`; }, id);
   check(await status() === 'answered:Main screen first.', 'Change keeps the saved answer while editing');
   await card.locator('textarea').fill('Alarms first.');
   await card.getByRole('button', { name: 'Cancel' }).click();
@@ -59,9 +61,9 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
   // The AI's assumption (already used by the design) stales nothing.
   await page.evaluate(async () => {
-    const { useStageStore } = await import('/src/store/useStageStore.ts');
-    const { useSpecStore } = await import('/src/store/useSpecStore.ts');
-    const { fingerprint } = await import('/src/spec/types.ts');
+    const { useStageStore } = await appImport('/src/store/useStageStore.ts');
+    const { useSpecStore } = await appImport('/src/store/useSpecStore.ts');
+    const { fingerprint } = await appImport('/src/spec/types.ts');
     const spec = useSpecStore.getState().sections;
     for (const st of ['equipment', 'io', 'electrical', 'hmi', 'program']) useStageStore.getState().markGenerated(st, { specFp: fingerprint(spec), spec });
   });
